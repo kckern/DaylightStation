@@ -165,6 +165,23 @@ keyword → emoji to keyword → icon name with the same rule table (its test is
 updated to assert names); it is used for the tile icon so a voice reads by its
 family even inside **Mine**.
 
+**Illustrations.** On top of the icons, the rail and the voice tiles show a
+licensed colour instrument illustration where the pack has one. The pack is
+85 SVGs (720×720) at `media/img/music/instruments/<kebab-name>.svg` with an
+`index.yml` mapping the pack's original numbering to those names; the kiosk
+loads them through the static image route (`/api/v1/static/img/music/
+instruments/<name>.svg`, served as-is — SVG is never resized). `voiceArt.js`
+maps a voice name to a basename by keyword, first match wins, and `familyArt`
+gives each rail family one representative picture (Voices and Mine keep their
+icons); 113 of the 138 device voices get art, the rest — sound effects, choirs,
+zithers, the coiled horn — return null on purpose and keep the icon. The
+`TransportButton` `art` prop renders the picture in the icon's place and falls
+back to the icon on a load error, so an unsynced pack on prod shows glyphs,
+never broken-image marks. Sizing: 3.2em on tiles, 2em on the rail. A tile with
+art is now about 6.1rem tall, so a full 24-voice family is roughly 634px of the
+~656px canvas body at 1280×800 — tight; the Task 12 screenshot gate is what
+proves it does not scroll.
+
 ---
 
 ## 5. Maintenance sheet

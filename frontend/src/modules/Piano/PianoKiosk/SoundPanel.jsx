@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoSoundBundle } from './usePianoSoundBundle.js';
 import { sameSoundPreset, soundVoiceKey, usePianoPreset } from './usePianoPreset.js';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
@@ -39,7 +40,8 @@ const TYPE_LABELS = Object.freeze({ 'Large Room': 'Big room', 'Large Hall': 'Big
 const artUrl = (name) => (name ? DaylightMediaPath(`/static/img/music/instruments/${name}.svg`) : undefined);
 
 function EffectRows({ name, icon, value, config, onChange }) {
-  const activeIndex = EFFECT_STEPS.findIndex((step) => step.level === value.level && step.on === !!value.on);
+  // Off is Off whatever level the bundle still remembers; only the lit steps need an exact level.
+  const activeIndex = value.on ? EFFECT_STEPS.findIndex((step) => step.on && step.level === value.level) : 0;
   const percent = value.on ? Math.round((value.level || 0) / 127 * 100) : 0;
   const types = config?.types || [];
   const typeIndex = types.findIndex((type) => type.value === value.type);
@@ -58,16 +60,13 @@ export default function SoundPanel({ open, onClose }) {
   const { pianoLevel, setPianoLevel } = usePianoMix();
   const midi = usePianoMidi();
   const { health } = usePianoConnection();
-  const [family, setFamily] = useState(null); // null = follow the current voice
+  const logger = useMemo(() => getLogger().child({ component: 'piano-sound-sheet' }), []);
+  // The rail family is latched when the sheet opens (from the voice playing at
+  // that moment) and changes only under the finger. null = not resolved yet,
+  // which only lasts until the open effect below runs.
+  const [family, setFamily] = useState(null);
   const [favoriteMessage, setFavoriteMessage] = useState(null);
   const [heard, setHeard] = useState(null);
-
-  useEffect(() => {
-    if (!open) return;
-    setFamily(null);
-    setFavoriteMessage(null);
-    setHeard(null);
-  }, [open]);
 
   const saved = useMemo(() => preset?.favorites || [], [preset?.favorites]);
   const funnel = useMemo(() => buildFunnel({ favorites: saved, shortlistVoices: config?.shortlist?.voices || [], allGroups: device?.voiceGroups || [] }), [saved, config?.shortlist?.voices, device?.voiceGroups]);
@@ -75,24 +74,43 @@ export default function SoundPanel({ open, onClose }) {
   const currentKey = soundVoiceKey(currentBundle);
   const currentName = currentBundle?.voice?.name || 'Keyboard';
 
-  const applyVoice = (voice) => applyBundle({ ...currentBundle, voice: { ...voice, bank: voice.bank || 0 } });
   const applyEffect = (name, patch) => applyBundle({ ...currentBundle, [name]: { ...currentBundle[name], ...patch } });
 
-  // Mine = favourites (recalled whole) then the deduped house shortlist (voice only).
+  // Mine = favourites (recalled whole) then the deduped house shortlist (voice
+  // only). The memo holds data alone — a tile carries its `sound` or `voice`
+  // and is bound to applyBundle at render, so a tap always lands on the bundle
+  // as it is now, not as it was when the list was built.
   const mineTiles = useMemo(() => [
-    ...saved.map((sound, index) => ({ key: `fav:${soundVoiceKey(sound)}:${index}`, voiceKey: soundVoiceKey(sound), name: sound.voice?.name || 'Sound', pick: () => applyBundle(sound) })),
-    ...funnel.shortlist.map((voice) => ({ key: `short:${voice.pc}:${voice.bank || 0}`, voiceKey: `${voice.pc}:${voice.bank || 0}`, name: voice.name, pick: () => applyVoice(voice) })),
-  ], [saved, funnel.shortlist]); // eslint-disable-line react-hooks/exhaustive-deps -- applyBundle/applyVoice are stable per render of the bundle they close over
+    ...saved.map((sound, index) => ({ key: `fav:${soundVoiceKey(sound)}:${index}`, voiceKey: soundVoiceKey(sound), name: sound.voice?.name || 'Sound', sound })),
+    ...funnel.shortlist.map((voice) => ({ key: `short:${voice.pc}:${voice.bank || 0}`, voiceKey: `${voice.pc}:${voice.bank || 0}`, name: voice.name, voice })),
+  ], [saved, funnel.shortlist]);
 
   const autoFamily = mineTiles.some((tile) => tile.voiceKey === currentKey) ? 'mine' : (familyOf(currentBundle?.voice) || FAMILIES[0].id);
+  const autoFamilyRef = useRef(autoFamily);
+  autoFamilyRef.current = autoFamily;
+  useEffect(() => {
+    if (!open) return;
+    setFamily(autoFamilyRef.current);
+    setFavoriteMessage(null);
+    setHeard(null);
+  }, [open]);
   const activeFamily = family ?? autoFamily;
   const gridTiles = activeFamily === 'mine' ? mineTiles
-    : (families[activeFamily] || []).map((voice) => ({ key: `${voice.pc}:${voice.bank || 0}`, voiceKey: `${voice.pc}:${voice.bank || 0}`, name: voice.name, pick: () => applyVoice(voice) }));
+    : (families[activeFamily] || []).map((voice) => ({ key: `${voice.pc}:${voice.bank || 0}`, voiceKey: `${voice.pc}:${voice.bank || 0}`, name: voice.name, voice }));
+
+  const pick = (tile) => {
+    const voice = tile.sound ? tile.sound.voice : tile.voice;
+    logger.info('piano.sound.pick', { pc: voice?.pc, bank: voice?.bank || 0, name: tile.name, from: activeFamily });
+    if (tile.sound) applyBundle(tile.sound);
+    else applyBundle({ ...currentBundle, voice: { ...tile.voice, bank: tile.voice.bank || 0 } });
+  };
 
   const savedInstrument = saved.find((sound) => soundVoiceKey(sound) === currentKey);
   const savedExactly = !!savedInstrument && sameSoundPreset(savedInstrument, currentBundle);
   const levelIndex = LEVEL_STEPS.findIndex((step) => step.value === pianoLevel);
   const outputUp = health?.output?.state === 'up';
+  // A Hear-it failure is about the link at that moment; once output is back it no longer applies.
+  useEffect(() => { if (outputUp) setHeard(null); }, [outputUp]);
 
   const save = async () => {
     setFavoriteMessage('Saving sound…');
@@ -111,18 +129,23 @@ export default function SoundPanel({ open, onClose }) {
   const persistenceCopy = persistenceState === 'saving' ? 'Saving…'
     : persistenceState === 'remembered' ? `Remembered for ${playerName}`
       : persistenceState === 'failed' ? 'Couldn’t save' : null;
+  // One status slot: the newest message wins. A favourite message holds the
+  // slot until persistence moves again, so a change there is never masked.
+  useEffect(() => { setFavoriteMessage(null); }, [persistenceState]);
+  const statusCopy = favoriteMessage ?? persistenceCopy;
+  const showRetry = !favoriteMessage && persistenceState === 'failed';
 
   return <TransportSheet open={open} title="Sound" onClose={onClose} size="canvas" className="piano-sound-sheet">
     <div className="piano-settings__sound">
       <nav className="piano-settings__rail" role="group" aria-label="Instrument families">
-        <TransportButton layout="rail" icon="star" label="Mine" on={activeFamily === 'mine'} onPress={() => setFamily('mine')} />
-        {FAMILIES.map((item) => <TransportButton key={item.id} layout="rail" icon={item.icon} art={artUrl(familyArt(item.id))} label={item.label} on={activeFamily === item.id} onPress={() => setFamily(item.id)} />)}
+        <TransportButton layout="rail" icon="star" label="Mine" on={activeFamily === 'mine'} aria-pressed={activeFamily === 'mine'} onPress={() => setFamily('mine')} />
+        {FAMILIES.map((item) => <TransportButton key={item.id} layout="rail" icon={item.icon} art={artUrl(familyArt(item.id))} label={item.label} on={activeFamily === item.id} aria-pressed={activeFamily === item.id} onPress={() => setFamily(item.id)} />)}
       </nav>
 
-      {/* Voice tiles are one radio-like set, so every tile carries an explicit aria-pressed (TransportButton alone omits it when off). */}
+      {/* Rail items and voice tiles are radio-like sets, so each carries an explicit aria-pressed (TransportButton alone omits it when off). */}
       <div className="piano-settings__grid" role="group" aria-label="Instruments">
         {gridTiles.length === 0 && <p className="piano-settings__empty">Save a sound and it will show up here.</p>}
-        {gridTiles.map((tile) => <TransportButton key={tile.key} layout="tile" icon={instrumentIcon(tile.name)} art={artUrl(voiceArt(tile.name))} label={tile.name} on={tile.voiceKey === currentKey} aria-pressed={tile.voiceKey === currentKey} onPress={tile.pick} />)}
+        {gridTiles.map((tile) => <TransportButton key={tile.key} layout="tile" icon={instrumentIcon(tile.name)} art={artUrl(voiceArt(tile.name))} label={tile.name} on={tile.voiceKey === currentKey} aria-pressed={tile.voiceKey === currentKey} onPress={() => pick(tile)} />)}
       </div>
 
       <div className="piano-settings__tonecol">
@@ -137,8 +160,7 @@ export default function SoundPanel({ open, onClose }) {
           <TransportButton label={savedExactly ? 'Saved' : savedInstrument ? 'Update saved sound' : 'Save sound'} icon="star" disabled={savedExactly || (!savedInstrument && saved.length >= maxFavorites)} onPress={save} />
           {savedInstrument && <TransportButton label="Remove" icon="trash" emphasis="quiet" onPress={remove} />}
         </div> : <p className="piano-settings__note">Pick a player to save sounds.</p>}
-        {favoriteMessage && <p role="status" className="piano-settings__note">{favoriteMessage}</p>}
-        {persistenceCopy && <p role="status" className="piano-settings__note">{persistenceCopy}{persistenceState === 'failed' && <> — <button type="button" className="piano-tbtn piano-tbtn--quiet" onClick={retryLastSound}>Retry</button></>}</p>}
+        {statusCopy && <p role="status" className="piano-settings__note">{statusCopy}{showRetry && <> — <button type="button" className="piano-tbtn piano-tbtn--quiet" onClick={retryLastSound}>Retry</button></>}</p>}
       </div>
     </div>
   </TransportSheet>;
