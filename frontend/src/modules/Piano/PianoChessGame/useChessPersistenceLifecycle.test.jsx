@@ -278,3 +278,90 @@ describe('the ladder rung', () => {
     }));
   });
 });
+
+/**
+ * "Play again" in the middle of a game. When a match gate owns the boundary it
+ * unmounts the board and the unmount archive catches the transcript — but an
+ * ungated restart mints the next game id IN PLACE, and until this was fixed the
+ * outgoing transcript went out with the lifecycle it belonged to: never filed,
+ * never archived, simply absent from the child's history.
+ */
+describe('a game abandoned by starting another', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  /** Play six plies under one id, then arrive at the next id with a fresh board. */
+  const playThenRestart = (restartOverrides = {}) => {
+    const utils = renderHook(
+      ({ currentGame, ...rest }) => useChessPersistenceLifecycle(props(currentGame, rest)),
+      { initialProps: { currentGame: game(false, 4), gameId: 'game-1' } },
+    );
+    act(() => utils.rerender({ currentGame: game(false, 6), gameId: 'game-1' }));
+    act(() => utils.rerender({ currentGame: game(false, 0), gameId: 'game-2', ...restartOverrides }));
+    return utils;
+  };
+
+  it('archives the outgoing transcript under the outgoing game\'s own facts', () => {
+    // The next match's rung is already published on the render that carries the
+    // new id, so an archive built from live props would file this game against
+    // a rung it was never played on.
+    const { unmount } = playThenRestart({ rungId: 'climber' });
+    expect(api.archiveGame).toHaveBeenCalledOnce();
+    expect(api.archiveGame).toHaveBeenCalledWith(expect.objectContaining({
+      game_id: 'game-1', completed: false, ended_by: 'restarted', move_count: 6, rung: 'learner',
+    }));
+    // And once only: the game that has just been archived must not be archived
+    // again when the screen eventually goes away.
+    unmount();
+    expect(api.archiveGame).toHaveBeenCalledOnce();
+  });
+
+  it('does not archive a restart that happened before any move', () => {
+    const { rerender } = renderHook(
+      ({ currentGame, ...rest }) => useChessPersistenceLifecycle(props(currentGame, rest)),
+      { initialProps: { currentGame: game(false, 0), gameId: 'game-1' } },
+    );
+    act(() => rerender({ currentGame: game(false, 0), gameId: 'game-2' }));
+    expect(api.archiveGame).not.toHaveBeenCalled();
+  });
+
+  it('does not archive a finished game a second time when the child plays again', async () => {
+    const { rerender } = renderPlayedGame({ gameId: 'game-1' });
+    await waitFor(() => expect(api.saveGameRecord).toHaveBeenCalledOnce());
+    act(() => rerender({ currentGame: game(false, 0), gameId: 'game-2' }));
+    expect(api.archiveGame).toHaveBeenCalledOnce();
+    expect(api.archiveGame).toHaveBeenCalledWith(expect.objectContaining({ ended_by: 'game_over' }));
+  });
+
+  it('lets a deferred result file itself before the outgoing game is judged abandoned', () => {
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const { rerender } = renderHook(
+      ({ currentGame, ...rest }) => useChessPersistenceLifecycle(props(currentGame, rest)),
+      { initialProps: { currentGame: game(false, 21), ladderReady: false, ladderLevel: null, logger } },
+    );
+    act(() => rerender({ currentGame: game(true, 22), ladderReady: false, ladderLevel: null, logger }));
+    expect(api.archiveGame).not.toHaveBeenCalled();
+    // The restart carries the parked filing out first, so by the time the
+    // abandon judgement runs the match is already archived as the completed
+    // game it was — not refused as a transcript, and not filed twice.
+    act(() => rerender({ currentGame: game(false, 0), gameId: 'game-2', ladderReady: true, ladderLevel: 4, logger }));
+    expect(api.archiveGame).toHaveBeenCalledOnce();
+    expect(api.archiveGame).toHaveBeenCalledWith(expect.objectContaining({ ended_by: 'game_over' }));
+    expect(logger.warn).not.toHaveBeenCalledWith('game-abandon-refused', expect.anything());
+  });
+
+  it('still refuses a transcript it never watched, and still says so', () => {
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const { rerender } = renderHook(
+      ({ currentGame, ...rest }) => useChessPersistenceLifecycle(props(currentGame, rest)),
+      { initialProps: { currentGame: game(false, 0), logger } },
+    );
+    // A finished board this mount never saw played, and then a restart on top
+    // of it. A restart is not a licence to file junk.
+    act(() => rerender({ currentGame: game(true, 21), logger }));
+    act(() => rerender({ currentGame: game(false, 0), gameId: 'game-2', logger }));
+    expect(api.archiveGame).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith('game-abandon-refused', expect.objectContaining({
+      gameId: 'game-1', plies: 21, watchedPlies: 0, reason: 'not-played-here',
+    }));
+  });
+});
