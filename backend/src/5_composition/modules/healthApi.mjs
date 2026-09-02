@@ -12,6 +12,8 @@ import { SetDailyCoachingUseCase } from '#apps/health/SetDailyCoachingUseCase.mj
 import { HealthOperations } from '#apps/health/HealthOperations.mjs';
 import { YamlHealthGoalsDatastore } from '#adapters/persistence/yaml/YamlHealthGoalsDatastore.mjs';
 import { BudgetService } from '#apps/health/BudgetService.mjs';
+import { YamlSavedMealsDatastore } from '#adapters/persistence/yaml/YamlSavedMealsDatastore.mjs';
+import { SavedMealsService } from '#apps/health/SavedMealsService.mjs';
 import { dataService } from '../runtimePersistence.mjs';
 import { nowDate } from '#system/utils/time.mjs';
 import { v4 as uuidv4 } from 'uuid';
@@ -100,6 +102,14 @@ export function createHealthApiRouter(config) {
     logger,
   });
 
+  const savedMealsService = new SavedMealsService({
+    mealsStore: new YamlSavedMealsDatastore({ dataService }),
+    nutriListStore: healthServices.nutriListStore,
+    clock: { now: () => Date.now() },
+    createId: uuidv4,
+    logger,
+  });
+
   return createHealthRouter({
     healthService: healthServices.healthService,
     healthOperations,
@@ -107,6 +117,7 @@ export function createHealthApiRouter(config) {
     longitudinalService,
     catalogService,
     budgetService,
+    savedMealsService,
     logger
   });
 }
