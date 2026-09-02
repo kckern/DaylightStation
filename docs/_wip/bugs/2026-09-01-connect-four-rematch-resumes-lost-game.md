@@ -122,16 +122,58 @@ phantom (`user_2`'s real 16-move game was 2026-08-29). Ladders untouched.
 Copies of all 34 files are in `/tmp/c4-phantom-backup` on the homeserver until
 its next reboot.
 
-## Follow-ups
+## Follow-ups — all three closed, 2026-09-01
 
-1. **`game.over` races `ladder-loaded`.** Every terminal report is filed with
-   whatever `level` happens to be resolved at that instant, which is `1` on a
-   fresh mount. A result should not be recorded before the ladder it is being
-   recorded against is known.
-2. **The "fresh mount" premise is undocumented and load-free.** Three separate
-   comments assert that a remount gives a game fresh state. Nothing enforces it.
-   A game that persists anything across mounts silently breaks the match gate;
-   `isResumableSession` fixes the three that exist, not the next one.
-3. **A phantom result is silent.** Ten ranked losses were written for one game
-   with no warning anywhere. `useAddressedBoardGame` could refuse to file a
-   result for a match whose first render was already terminal, and log it.
+Branch `piano/board-game-result-integrity`. The implementation plan these were
+executed from was never committed and was lost when `main`'s history was
+rewritten concurrently on 2026-09-01; this section is the surviving record of
+what each task did.
+
+1. **`game.over` raced `ladder-loaded`.** ~~A result should not be recorded
+   before the ladder it is being recorded against is known.~~ Closed by
+   `e6cfb4140`: `ladderSettled` gates the save effect until the ladder read has
+   ANSWERED, with a 5s fail-open (`game.ladder-read-slow`) so a hung read cannot
+   cost a played game its record.
+
+   That gate opened a data-loss window of its own — a deferred result whose
+   component unmounted inside it was refused by the abandon guard, losing a
+   played match whole, and reachable because the match gate unmounts the game on
+   "play again". Closed by `262de064d` (flush a deferred result on the way out)
+   and `a19f31dcb`, which fixed the flush filing against live refs rather than a
+   snapshot: an offline practice game could have filed as **ranked** because
+   `restart()` resets `rankedRef` before the flush runs, violating this file's
+   own rule that a dropped kiosk WiFi must never turn engine help into ladder
+   advancement.
+
+2. **The "fresh mount" premise was unenforced.** Closed by `1fda8a65c`:
+   `game-platform/host/sessionResumeGuard.test.js` asserts, by name, that every
+   `use*Authority.js` hook in the Piano tree calls `isResumableSession`. Named
+   rather than counted, so a moved file cannot drop coverage silently. The check
+   looks for a CALL, not the bare symbol — a whole-file substring check stays
+   green with the call site gutted, which was verified by gutting it.
+
+3. **A phantom result was silent.** Closed by `926a48540` and its successors: a
+   result whose match this component never watched play out is refused and
+   logged (`game.result-refused`), and the same test guards the unmount
+   "abandoned" archive (`game.abandon-refused`).
+
+### Still open
+
+- **Chess does not go through `useAddressedBoardGame`.** Follow-ups 1 and 3
+  above harden the shared hook, and only `PianoCheckers` and `PianoConnectFour`
+  use it. Chess files through `PianoChessGame/useChessPersistenceLifecycle.js`,
+  which has its own `registerCompletion` and its own `ladderLevel` and **no rung
+  gate and no played-here guard**. Follow-up 2 does cover chess, since that
+  governs the authority hooks. If the `level: 1` fingerprint can occur in chess,
+  it is still open there — worth checking its records before deciding.
+- **A deferred result reaches `registerCompletion` up to 5s late.** The match
+  gate's completion barrier then reads `pendingRef`, which still holds the
+  *previous* match's already-settled promise — so `waitForCompletion()` resolves
+  on the next microtask and the barrier looks satisfied when it is not, leaving
+  `completedGames` briefly stale. Accepted deliberately; self-corrects when the
+  ladder answers. Recorded so the next person looks for the right symptom.
+- **One ply per commit** is now a stated contract of `useAddressedBoardGame`,
+  pinned by a test named as a known limitation. A future board game that commits
+  a player move and an engine reply in the same render loses its results whole.
+- **Nothing here is deployed.** The kiosk runs the build from the homeserver
+  tree; none of this reaches a child until that happens.
