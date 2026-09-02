@@ -104,6 +104,10 @@ export class SessionSerializerV3 {
     const timelineOutput = {
       interval_seconds: Math.round((timeline?.timebase?.intervalMs || 5000) / 1000),
       tick_count: timeline?.timebase?.tickCount || 0,
+      // How many ticks were dropped off the FRONT by the history cap. Non-zero
+      // means series index 0 is tick `pruned_ticks`, not the session start —
+      // without it a windowed series is indistinguishable from a whole one.
+      pruned_ticks: timeline?.timebase?.prunedTickCount || 0,
       encoding: 'rle',
       participants: {},
       equipment: {},
