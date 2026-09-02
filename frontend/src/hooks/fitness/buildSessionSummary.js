@@ -44,7 +44,54 @@ function findSeries(series, slug, v2Metric, compactMetric, legacyV2 = null, lega
  * @param {number} params.intervalSeconds - Seconds per tick
  * @returns {Object} Session summary
  */
-export function buildSessionSummary({ participants, series, events, treasureBox, intervalSeconds, warmupConfig }) {
+
+/**
+ * Rings earned during a media item's span.
+ *
+ * Rings are the household's measure of EFFORT, and effort is what "the main
+ * workout" means — a hard 20-minute session earns more than an hour of gentle
+ * cooldown. Duration only ever stood in for that.
+ *
+ * The ring series is cumulative per tick, so an item's contribution is the
+ * difference between its last and first covered tick. Returns null when the
+ * series does not cover the item (a resume that truncated the timeline, or a
+ * session with no ring data at all), which the selector reads as "unknown" and
+ * falls back to duration rather than scoring it zero — scoring an uncovered
+ * item zero would drop exactly the workout we are trying to find.
+ *
+ * @param {number[]} cumulative - cumulative rings per tick
+ * @param {number} startMs - item start (absolute ms)
+ * @param {number} endMs - item end (absolute ms)
+ * @param {number} sessionStartMs - tick 0
+ * @param {number} intervalSeconds
+ * @returns {number|null}
+ */
+export function ringsForSpan(cumulative, startMs, endMs, sessionStartMs, intervalSeconds) {
+  if (!Array.isArray(cumulative) || !cumulative.length) return null;
+  if (![startMs, endMs, sessionStartMs].every(Number.isFinite)) return null;
+  const interval = (Number(intervalSeconds) || 5) * 1000;
+  const firstTick = Math.floor((startMs - sessionStartMs) / interval);
+  // The LAST tick the item actually overlaps. An end landing exactly on a tick
+  // boundary belongs to the previous tick — the item stopped as that one began,
+  // and counting it would credit the item with a tick it never played.
+  const lastTick = Math.max(firstTick, Math.ceil((endMs - sessionStartMs) / interval) - 1);
+  if (lastTick < 0 || firstTick >= cumulative.length) return null;
+
+  const valueAt = (tick) => {
+    for (let i = Math.min(tick, cumulative.length - 1); i >= 0; i--) {
+      if (Number.isFinite(cumulative[i])) return cumulative[i];
+    }
+    return null;
+  };
+  // The value at the tick BEFORE the item is its baseline; at tick 0 there is
+  // nothing earned yet, so the baseline is 0.
+  const before = firstTick <= 0 ? 0 : valueAt(firstTick - 1);
+  const after = valueAt(lastTick);
+  if (before == null || after == null) return null;
+  return Math.max(0, after - before);
+}
+
+export function buildSessionSummary({ participants, series, events, treasureBox, intervalSeconds, warmupConfig, startTimeMs = null }) {
   const safeSeries = series || {};
   const safeEvents = events || [];
 
@@ -76,6 +123,10 @@ export function buildSessionSummary({ participants, series, events, treasureBox,
 
   // ---------- Media events ----------
   const mediaEvents = safeEvents.filter(e => e.type === 'media');
+  // Global rings, falling back to the sum of per-user series for sessions
+  // written before a global track existed.
+  const globalRings = safeSeries['global:rings'] || safeSeries['global:rings_total'] || null;
+  const ringsFor = (d) => ringsForSpan(globalRings, d.start, d.end, startTimeMs, intervalSeconds);
   const media = mediaEvents.map(e => {
     const d = e.data || {};
     const durationMs = (d.end != null && d.start != null) ? d.end - d.start : 0;
@@ -90,6 +141,7 @@ export function buildSessionSummary({ participants, series, events, treasureBox,
       grandparentId: d.grandparentId,
       parentId: d.parentId,
       durationMs,
+      ...(ringsFor(d) != null ? { rings: ringsFor(d) } : {}),
       ...(d.description ? { description: d.description } : {}),
       ...(Array.isArray(d.labels) && d.labels.length ? { labels: d.labels } : {}),
     };

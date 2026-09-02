@@ -122,11 +122,16 @@ export function selectPrimaryMedia(mediaItems, config) {
   const realCandidates = videos.filter(v => !isWarmup(v) && !isDeprioritized(v));
   const eligible = realCandidates.filter(v => (v.durationMs || 0) >= MIN_PRIMARY_MS);
   if (eligible.length > 0) {
-    const longest = eligible.reduce((best, item) =>
-      (item.durationMs || 0) > (best.durationMs || 0) ? item : best
-    );
-    const nearTieFloor = (longest.durationMs || 0) * NEAR_TIE_RATIO;
-    const nearTies = eligible.filter(v => (v.durationMs || 0) >= nearTieFloor);
+    // Effort first: rings are what "the main workout" actually means, and a
+    // hard short session beats a long gentle one. Only used when EVERY
+    // candidate carries a figure, so a scored item is never compared against an
+    // unscored one. Sessions predating ring attribution fall back to time.
+    const ringsOf = (item) => (Number.isFinite(item.rings) ? item.rings : null);
+    const useRings = eligible.every(v => ringsOf(v) != null) && eligible.some(v => ringsOf(v) > 0);
+    const rank = useRings ? ringsOf : (item) => (item.durationMs || 0);
+    const best = eligible.reduce((top, item) => (rank(item) > rank(top) ? item : top));
+    const nearTieFloor = rank(best) * NEAR_TIE_RATIO;
+    const nearTies = eligible.filter(v => rank(v) >= nearTieFloor);
     return nearTies[nearTies.length - 1];
   }
 

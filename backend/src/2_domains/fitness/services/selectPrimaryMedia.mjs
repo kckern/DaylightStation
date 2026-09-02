@@ -140,6 +140,32 @@ function buildDeprioritizedChecker(config) {
  *
  * See docs/_wip/bugs/2026-09-01-media-duration-divided-twice.md
  */
+/**
+ * The EFFORT an item represents, when that is knowable.
+ *
+ * Rings are the household's effort measure, and effort is what "the main
+ * workout" means: a hard 20-minute session beats an hour of gentle cooldown,
+ * which ranking on the clock alone gets backwards. `summary.media[].rings` is
+ * attributed per item at summary-build time by diffing the cumulative ring
+ * series across the item's span (see buildSessionSummary.ringsForSpan).
+ *
+ * Returns null unless EVERY candidate has a ring figure — a mixed comparison
+ * would rank a scored item against an unscored one and always pick the scored
+ * one regardless of effort. Sessions predating ring attribution therefore fall
+ * back whole to played time, which is the previous behaviour.
+ */
+function ringsRankerFor(candidates) {
+  const ringsOf = (event) => {
+    const value = event?.data?.rings;
+    return Number.isFinite(value) ? value : null;
+  };
+  if (!candidates.length) return null;
+  if (!candidates.every(c => ringsOf(c) != null)) return null;
+  // All-zero rings say nothing about which item mattered; fall back to time.
+  if (candidates.every(c => ringsOf(c) === 0)) return null;
+  return ringsOf;
+}
+
 function eventSeconds(event) {
   const d = event?.data || {};
   if (Number.isFinite(d.start) && Number.isFinite(d.end) && d.end > d.start) {
@@ -171,11 +197,13 @@ export function selectPrimaryMedia(mediaEvents, config) {
   const realCandidates = episodes.filter(e => !isWarmup(e) && !isDeprioritized(e));
   const eligible = realCandidates.filter(e => eventSeconds(e) >= MIN_PRIMARY_SEC);
   if (eligible.length > 0) {
-    const longest = eligible.reduce((best, event) =>
-      eventSeconds(event) > eventSeconds(best) ? event : best
-    );
-    const nearTieFloor = eventSeconds(longest) * NEAR_TIE_RATIO;
-    const nearTies = eligible.filter(e => eventSeconds(e) >= nearTieFloor);
+    // Rank on effort where every candidate carries it, otherwise on played time.
+    // The near-tie recency rule applies to whichever measure is in use: two
+    // items that scored the same read as "the later one was the main event".
+    const rank = ringsRankerFor(eligible) ?? eventSeconds;
+    const best = eligible.reduce((top, event) => (rank(event) > rank(top) ? event : top));
+    const nearTieFloor = rank(best) * NEAR_TIE_RATIO;
+    const nearTies = eligible.filter(e => rank(e) >= nearTieFloor);
     return nearTies[nearTies.length - 1];
   }
 
@@ -233,6 +261,7 @@ export function selectPrimaryMediaSummary(mediaItems, config) {
       artist: m.mediaType === 'audio' ? (m.artist || 'audio') : m.artist,
       // cascade floors are in seconds; durationMs is the played span
       durationSeconds: (m.durationMs || 0) / 1000,
+      ...(Number.isFinite(m.rings) ? { rings: m.rings } : {}),
     },
   }));
   const picked = selectPrimaryMedia(asEvents, config);

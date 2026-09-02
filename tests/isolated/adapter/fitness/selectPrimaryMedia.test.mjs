@@ -363,3 +363,57 @@ describe('ranks on the played span, not the stored nominal duration', () => {
     expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Full Workout');
   });
 });
+
+// Rings are the household's effort measure. Ranking on the clock alone gets the
+// intense-then-cooldown case backwards; ranking on rings gets it right, and
+// falls back to time wherever ring attribution is absent.
+describe('ranks on rings (effort) when every candidate carries them', () => {
+  const ringed = (title, playedSeconds, rings) =>
+    playedEvent(title, playedSeconds, playedSeconds, { rings });
+
+  test('an intense short workout beats a long gentle cooldown', () => {
+    const events = [
+      ringed('HIIT Blast', 1200, 900),     // 20 min, hard
+      ringed('Recovery Spin', 3600, 300),  // 60 min, easy
+    ];
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('HIIT Blast');
+  });
+
+  test('falls back to played time when any candidate lacks a ring figure', () => {
+    const events = [
+      ringed('Scored', 1200, 900),
+      playedEvent('Unscored', 3600, 3600),
+    ];
+    // Mixed data must not let a scored item win purely by being scored.
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Unscored');
+  });
+
+  test('falls back to played time when every candidate scored zero', () => {
+    const events = [ringed('A', 1200, 0), ringed('B', 3600, 0)];
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('B');
+  });
+
+  test('the near-tie recency rule applies to rings too', () => {
+    const events = [
+      ringed('Earlier', 1800, 1000),
+      ringed('Later', 1800, 900),   // 90% of 1000 — inside the band
+    ];
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Later');
+  });
+
+  test('a materially harder workout is not displaced by a later easy one', () => {
+    const events = [
+      ringed('Hard', 1800, 1000),
+      ringed('Easy', 1800, 400),
+    ];
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Hard');
+  });
+
+  test('a warmup still cannot win, however many rings it earned', () => {
+    const events = [
+      ringed('Ten minute warm-up', 2400, 2000),
+      ringed('Real Workout', 1200, 500),
+    ];
+    expect(selectPrimaryMedia(events, defaultConfig).data.title).toBe('Real Workout');
+  });
+});
