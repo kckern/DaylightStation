@@ -11,7 +11,7 @@ export const FAMILIES = Object.freeze([
   { id: 'keys', label: 'Keys & Organs', icon: 'family-keys', match: inRange(8, 23) },
   { id: 'guitars', label: 'Guitars & Bass', icon: 'family-guitar', match: inRange(24, 39) },
   { id: 'strings', label: 'Strings', icon: 'family-strings', match: inRange(40, 51) },
-  { id: 'voices', label: 'Voices', icon: 'studio', match: inRange(52, 54) },
+  { id: 'voices', label: 'Voices', icon: 'singalong', match: inRange(52, 54) },
   { id: 'winds', label: 'Winds & Brass', icon: 'family-winds', match: inRange(56, 79) },
   { id: 'synths', label: 'Synths', icon: 'family-synths', match: inRange(80, 103) },
   { id: 'world', label: 'World', icon: 'family-world', match: ({ pc, bank }) => bank !== 0 || (pc >= 104 && pc <= 111) },

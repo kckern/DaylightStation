@@ -6,6 +6,8 @@ describe('voiceFamilies', () => {
   it('has nine families with ids, labels and icons', () => {
     expect(FAMILIES.map((f) => f.id)).toEqual(['pianos', 'keys', 'guitars', 'strings', 'voices', 'winds', 'synths', 'world', 'fun']);
     for (const family of FAMILIES) { expect(family.label).toBeTruthy(); expect(family.icon).toBeTruthy(); }
+    expect(FAMILIES.find((f) => f.id === 'pianos').icon).toBe('piano');
+    expect(FAMILIES.find((f) => f.id === 'voices').icon).toBe('singalong'); // the mic — studio.svg is a grand piano
   });
 
   it('places every device voice in exactly one family', () => {
