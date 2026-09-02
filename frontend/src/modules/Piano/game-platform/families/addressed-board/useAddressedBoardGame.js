@@ -146,27 +146,30 @@ export function useAddressedBoardGame({
     watchedPliesRef.current = Math.max(watchedPliesRef.current, moves.length);
   }, [moves.length, result]);
 
-  // A result the rung gate below deferred, held as the whole judgement-and-
-  // filing of the render that produced it, so that whoever makes it
-  // unreachable can still carry it out.
   const pendingFileRef = useRef(null);
 
   // Persist the finished game once. `savedRef` rather than a state flag: this
   // has to be closed the instant it fires, and a re-render is too late.
   useEffect(() => {
-    // A DEFERRAL MEANS WAIT, NEVER LOSE. Two things can put a deferred result
-    // beyond this effect's reach: a restart, handled here, and an unmount,
-    // handled in the abandon cleanup below. Either way it is filed against the
-    // rung we have — the fallback is the answer we would have written before
-    // this gate existed, and it beats no record at all.
+    // A DEFERRAL MEANS WAIT, NEVER LOSE. An ordinary re-render rebuilds the
+    // parked filing from scratch, which is how a settled ladder gets the real
+    // rung into it. But a render that is no longer the deferred match's own —
+    // a new session after a restart, a new child after a profile switch —
+    // cannot stand in for the render that deferred, and rebuilding there would
+    // file that match under the wrong identity. So it carries it out instead.
+    // (The third way out, an unmount, is handled in the abandon cleanup.)
     const deferred = pendingFileRef.current;
     pendingFileRef.current = null;
-    if (deferred && !result) {
-      deferred();
-      // The flush belonged to the match that just ENDED. `savedRef` is the
-      // one-shot of the match now taking the seat, and that one has filed
-      // nothing — leaving it closed would swallow the next real result.
-      savedRef.current = false;
+    if (deferred && (!result
+      || deferred.userId !== userId || deferred.gameSessionId !== gameSessionId)) {
+      deferred.file();
+      // A flush of a match that has ENDED must not spend the one-shot of
+      // whatever takes the seat next. The tracker reopens it at the new
+      // match's first playable render, but only for a `restart()` it was told
+      // about; a caller that simply clears `result` gets the same guarantee
+      // here. A profile switch is the SAME match, already filed, so its
+      // one-shot stays shut.
+      if (!result) savedRef.current = false;
     }
 
     // WAIT FOR THE RUNG. Not a refusal and not a filing — the same result is
@@ -183,27 +186,44 @@ export function useAddressedBoardGame({
     // refused — and then its abandon archive refused too, so the match vanishes
     // whole. See the KNOWN LIMITATION test before writing such a game.
     //
-    // SNAPSHOTTED, not read when the filing happens: a flush can run after a
-    // restart has already re-pointed the ref at the NEW match, and the
-    // judgement has to stay the one this render deserved.
-    const watchedPlies = watchedPliesRef.current;
+    // EVERYTHING THE FILING NEEDS IS FROZEN HERE, not read back off the refs
+    // when the filing happens: a flush runs at least one render later, and by
+    // then `restart()` has set `rankedRef` back to true and the render it
+    // triggered has published the next match's reset dialogue. Read live,
+    // those two blend two matches — offline practice filed as ranked, and the
+    // finished match's commentary replaced by an empty one. `watchedPlies`
+    // drifts later still, at the new match's first playable render; it is
+    // frozen on the same principle rather than because a path reaches it.
+    //
+    // `level` is the deliberate exception: it is the thing the wait is FOR, and
+    // an ordinary re-render rebuilds this closure once the ladder answers.
+    // `userId` and `gameSessionId` are this render's own values, held here so
+    // the flush above can tell whether a later render is still the same match.
+    const snapshot = {
+      watchedPlies: watchedPliesRef.current,
+      ranked: rankedRef.current,
+      context: archiveContextRef.current,
+      userId,
+      gameSessionId,
+    };
 
     // The judgement and the filing of THIS render's result — the same code
     // whether the ladder answers or the child walks off, so there is one rule
     // and not two.
     const fileResult = (flushed = false) => {
       if (savedRef.current) return;
+      const { watchedPlies } = snapshot;
       if (watchedPlies < 0 || watchedPlies < moves.length - 1) {
         // A refusal is a judgement about the TRANSCRIPT in front of us on this
         // render, never about the session. `savedRef` means "this session's
         // result has been FILED", and a refusal files nothing, so it has no
         // business closing the one-shot: leave it open and a game that really is
         // played afterwards can still file.
-        const phantom = `${gameSessionId}:${moves.length}`;
+        const phantom = `${snapshot.gameSessionId}:${moves.length}`;
         if (warnedPhantomRef.current !== phantom) {
           warnedPhantomRef.current = phantom;
           logger.warn('game.result-refused', {
-            gameId, gameSessionId, result, plies: moves.length,
+            gameId, gameSessionId: snapshot.gameSessionId, result, plies: moves.length,
             watchedPlies, reason: 'not-played-here',
           });
         }
@@ -215,24 +235,32 @@ export function useAddressedBoardGame({
         // still hanging when this match lost its screen, so the rung below is
         // the fallback and not the child's.
         logger.warn('game.result-flushed', {
-          gameId, gameSessionId, result, level, plies: moves.length,
+          gameId, gameSessionId: snapshot.gameSessionId, result, level, plies: moves.length,
         });
       }
-      const { prepareTerminal, ...baseContext } = archiveContextRef.current;
+      const { prepareTerminal, ...baseContext } = snapshot.context;
       // This runs before persistence so the result card, archive, and rivalry
-      // memory all receive the same final displayed line.
-      const preparedContext = prepareTerminal?.() || {};
+      // memory all receive the same final displayed line — but only when there
+      // is a card. `prepareTerminal` exists to put a line on SCREEN, and the
+      // flush path has already lost its screen, so the way out asks for no
+      // reaction and files the context as it stood when the match ended.
+      const preparedContext = flushed ? {} : (prepareTerminal?.() || {});
       const record = {
-        game_id: gameSessionId, moves, result, level, ranked: rankedRef.current, completed: true,
+        game_id: snapshot.gameSessionId,
+        moves,
+        result,
+        level,
+        ranked: snapshot.ranked,
+        completed: true,
         played_on: new Date().toISOString().slice(0, 10),
         ...baseContext,
         ...preparedContext,
       };
       logger.info('game.over', {
-        gameId, result, level, ranked: rankedRef.current, plies: moves.length,
+        gameId, result, level, ranked: snapshot.ranked, plies: moves.length,
       });
-      if (userId) {
-        const request = client.saveGame(userId, record);
+      if (snapshot.userId) {
+        const request = client.saveGame(snapshot.userId, record);
         matchGateRef.current?.registerCompletion?.(request);
         request.then((response) => {
           if (!response?.ladder) return;
@@ -242,11 +270,11 @@ export function useAddressedBoardGame({
           });
         });
       }
-      client.archiveGame({ ...record, user_id: userId });
+      client.archiveGame({ ...record, user_id: snapshot.userId });
     };
 
     if (!ladderSettled) {
-      pendingFileRef.current = () => fileResult(true);
+      pendingFileRef.current = { ...snapshot, file: () => fileResult(true) };
       return;
     }
     fileResult();
@@ -254,12 +282,19 @@ export function useAddressedBoardGame({
 
   // A game walked away from is still a game that happened. Mount-scoped so a
   // profile change cannot trip it — see userRef above.
+  //
+  // THE FLUSH BELOW DEPENDS ON TWO THINGS ABOUT EFFECT ORDER. The parked result
+  // is carried out and then judged as abandoned in ONE cleanup, so their order
+  // is the textual one and cannot drift. And the save effect must never grow a
+  // cleanup of its own: React tears effects down in declaration order, so a
+  // save-effect cleanup would run first and could clear the parked result
+  // before this ever sees it.
   useEffect(() => () => {
     // A result still waiting on the ladder when the screen goes away. The match
     // gate unmounts this game on "play again", so this is an ordinary path and
     // not a curiosity, and filing it here is what keeps the premise below true:
     // a finished game has set `savedRef` by the time we reach the guard.
-    pendingFileRef.current?.();
+    pendingFileRef.current?.file();
     pendingFileRef.current = null;
     if (savedRef.current || !movesRef.current.length) return;
     // ...but only a game this component actually played. A transcript it never
