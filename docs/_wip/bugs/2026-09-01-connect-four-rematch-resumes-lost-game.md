@@ -155,15 +155,46 @@ Plan: `docs/_wip/plans/2026-09-01-board-game-result-integrity.md`.
    logged (`game.result-refused`), and the same test guards the unmount
    "abandoned" archive (`game.abandon-refused`).
 
-### Still open
+### Chess had the same damage, and now the same two guards — 2026-09-01
 
-- **Chess does not go through `useAddressedBoardGame`.** Follow-ups 1 and 3
-  above harden the shared hook, and only `PianoCheckers` and `PianoConnectFour`
-  use it. Chess files through `PianoChessGame/useChessPersistenceLifecycle.js`,
-  which has its own `registerCompletion` and its own `ladderLevel` and **no rung
-  gate and no played-here guard**. Follow-up 2 does cover chess, since that
-  governs the authority hooks. If the `level: 1` fingerprint can occur in chess,
-  it is still open there — worth checking its records before deciding.
+Chess does not go through `useAddressedBoardGame`; it files through
+`PianoChessGame/useChessPersistenceLifecycle.js`, so follow-ups 1 and 3 did not
+reach it. Its records were checked, and the fingerprint is there — with chess's
+own signature rather than Connect Four's `level: 1`:
+
+| Field | A real chess win | The phantom beside it |
+|---|---|---|
+| `duration_ms` | 225343 | 3710 |
+| `level` | 0 | **null** |
+| `rung` | `first-moves` | `learner` (the shipped default) |
+| `opponent` | the ladder rung | **null** |
+| `moves` | 21 | 21 — the same game |
+
+Five such records, one child, 2026-08-25 to 08-27, each duplicating the move
+count of a real game earlier the same day and each three to six seconds long.
+The `level: null` is chess's version of the `level: 1` fingerprint: the ladder
+read had not answered when the resurrected board filed itself.
+
+The route that made them is the same resume, closed by `isResumableSession`. The
+two follow-up guards are now chess's too:
+
+- **A played-here guard.** A `watchedPlies` high-water mark, keyed by game id so
+  an identity that moves on while the terminal board is still mounted cannot
+  inherit the finished match's mark. A result whose match this component never
+  watched play out is refused and logged (`game-record-refused`), and the same
+  test guards the unmount archive (`game-abandon-refused`). A refusal judges the
+  transcript, not the game, so it does not spend the one-shot.
+- **A rung gate.** Filing waits for `ladderReady` — the ladder read having
+  ANSWERED — with a 5s fail-open and a flush on unmount so a deferred result is
+  never lost. Chess's fail-open files `level: null` rather than a guessed rung,
+  deliberately: `buildGameRecord` treats an unknown level as uncountable, but it
+  would count a guess, and promote a child off a rung they never played.
+
+The damage is **not scrubbed** — five records and their ladder series entries
+remain. They are `counted: false` already (a null level cannot promote), so they
+inflate the history without moving anyone's rung.
+
+### Still open
 - **A deferred result reaches `registerCompletion` up to 5s late.** The match
   gate's completion barrier then reads `pendingRef`, which still holds the
   *previous* match's already-settled promise — so `waitForCompletion()` resolves

@@ -156,11 +156,14 @@ describe('a match this component never watched', () => {
     }));
   });
 
-  it('complains once about one phantom, not once per render', () => {
+  it('complains once about one phantom, not once per re-judgement', () => {
     const logger = { info: vi.fn(), warn: vi.fn() };
     const { rerender } = renderPhantom({ logger });
     act(() => rerender({ currentGame: game(true, 21), logger }));
-    act(() => rerender({ currentGame: game(true, 21), logger, addressing: 'staff' }));
+    // The player lock is released once a game is over, so a profile switch on
+    // top of a phantom board is an ordinary thing to do — and it judges the
+    // same phantom again. A warning that cries wolf is one nobody reads.
+    act(() => rerender({ currentGame: game(true, 21), logger, userId: 'ada' }));
     expect(logger.warn.mock.calls.filter(([event]) => event === 'game-record-refused')).toHaveLength(1);
   });
 

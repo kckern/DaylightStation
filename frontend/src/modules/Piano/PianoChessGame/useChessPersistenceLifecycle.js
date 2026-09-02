@@ -201,8 +201,8 @@ export function useChessPersistenceLifecycle({
     // under the wrong identity. So it carries it out instead. (The third way
     // out, an unmount, is handled in the cleanup above.)
     const deferred = pendingFileRef.current;
+    pendingFileRef.current = null;
     if (deferred && (!gameOver || deferred.gameId !== gameId || deferred.userId !== userId)) {
-      pendingFileRef.current = null;
       deferred.file();
     }
 
