@@ -5,6 +5,7 @@ import { EquationStrip } from './EquationStrip.jsx';
 import { MacroFooter } from './MacroFooter.jsx';
 import { LogTable } from './LogTable.jsx';
 import { AddCombobox } from './AddCombobox.jsx';
+import { EntryEditSheet } from './EntryEditSheet.jsx';
 import { localTodayISO as todayISO } from './mealBuckets.js';
 
 export function TodayView({ onSetupGoals, onCoachTap }) {
@@ -29,7 +30,8 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
           ) : null} />
       ) : null}
       <MacroFooter items={day.items} coachLine={null} onCoachTap={onCoachTap} />
-      {/* F6 mounts the edit sheet on editingRow */}
+      <EntryEditSheet row={editingRow} open={Boolean(editingRow)}
+        onClose={() => setEditingRow(null)} onChanged={day.reload} />
     </div>
   );
 }
