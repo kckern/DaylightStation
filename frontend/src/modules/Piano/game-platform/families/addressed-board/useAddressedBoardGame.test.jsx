@@ -192,10 +192,23 @@ describe('useAddressedBoardGame', () => {
     expect(seen.current.localPractice).toBe(false);
     expect(seen.current.gameSessionId).not.toBe(first);
 
-    // The next game is savable again — the one-shot guard reopened.
-    await act(async () => { rerender({ result: 'win' }); });
+    // The next game is savable again — the one-shot guard reopened. It has to
+    // actually PLAY to get there: a result is filed only if this component
+    // watched the game reach its final ply while still playable, so the second
+    // game passes through a playable render before it ends. Do not "simplify"
+    // this back to flipping 'loss' straight to 'win' on an unchanged
+    // transcript — that is the stale-render duplicate the guard exists to
+    // refuse, and it filed a phantom under a fresh session id. See
+    // docs/_wip/bugs/2026-09-01-connect-four-rematch-resumes-lost-game.md.
+    await act(async () => { rerender({ moves: [1, 2], result: null }); });
+    await act(async () => { rerender({ moves: [1, 2, 3], result: 'win' }); });
     expect(client.saveGame).toHaveBeenCalledTimes(2);
-    expect(client.saveGame.mock.calls[1][1]).toMatchObject({ ranked: true });
+    // Named exactly, because what used to sit in this slot was a DUPLICATE of
+    // the loss above, filed under the fresh session id by restart's own
+    // re-render. The second save must be the second GAME.
+    expect(client.saveGame.mock.calls[1][1]).toMatchObject({
+      result: 'win', moves: [1, 2, 3], ranked: true,
+    });
   });
 
   it('hands an ARMED match gate the rematch instead of restarting itself', async () => {
