@@ -42,8 +42,17 @@ All SVGs use `fill="currentColor"` — set color via CSS `color:`.
 | studio | record | `studio/record.svg` | solar:record-bold |
 | studio | stop | `studio/stop.svg` | solar:stop-bold |
 | studio | trash | `studio/trash.svg` | solar:trash-bin-trash-bold |
+| family | family-keys | `family-keys.svg` | SVG Repo 13825 accordion (pack music-3) — not Solar; normalized to 1em/currentColor |
+| family | family-guitar | `family-guitar.svg` | SVG Repo 23347 acoustic-guitar (pack music-control-panel) — not Solar; normalized to 1em/currentColor |
+| family | family-strings | `family-strings.svg` | SVG Repo 3260 violin (pack musical-instruments-gallery) — not Solar; normalized to 1em/currentColor |
+| family | family-winds | `family-winds.svg` | SVG Repo 510290 trumpet (Zest Interface Icons, MIT) — not Solar; normalized to 1em/currentColor |
+| family | family-synths | `family-synths.svg` | solar:soundwave-bold |
+| family | family-world | `family-world.svg` | solar:global-bold |
+| family | family-fun | `family-fun.svg` | SVG Repo 33972 drum (pack carnival-fill) — not Solar; normalized to 1em/currentColor |
+| family | star | `star.svg` | solar:star-bold |
 
 ## Notes
+- **family-\*** are the Sound sheet rail glyphs (`PianoKiosk/voiceFamilies.js`); `pianos` reuses `piano` and `voices` reuses `studio`. Solar has no guitar/violin/trumpet/drum/accordion, so those four plus the accordion come from SVG Repo, stripped of the XML prolog, fixed 800px size and `#000000` fills, and given `width="1em" height="1em" fill="currentColor"` on the root. `instrumentIcon.js` maps voice names onto the same names.
 - **skip-back/forward-30** use the DOUBLE-chevron `rewind-back` / `rewind-forward` glyph; **skip-back/forward-15** use a SINGLE chevron (`alt-arrow`, mirrored for forward). The chevron count encodes the step size; the video chrome renders the 15/30 numeral beside it. Do not re-unify these four — identical glyphs is exactly the bug this replaced.
 - **loop-in / loop-out** are the loop's start and end marks. They are the SAME glyph, mirrored — `loop-out.svg` wraps the path in `translate(32 0) scale(-1 1)`. Editing one means editing both. They deliberately do NOT use a circular-arrow glyph: in the video chrome, a circle means "looping", and only the loop toggle (`repeat`) gets one.
 - **loop-toggle / clear-loop** are STROKE icons (`stroke="currentColor"`, `fill="none"`) in an otherwise filled set. The video chrome sizes them to 1.25em so they don't read lighter than the filled brackets beside them — if you swap in a filled glyph, drop that rule.

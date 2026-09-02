@@ -1,27 +1,24 @@
-// instrumentIcon.js — a decorative emoji glyph for an instrument / voice / GM
-// family, chosen by keyword. Placeholder icons (per #12) until real artwork; the
-// picker reads far better with a glyph than a wall of names. First match wins, so
-// keep the more specific rules above the generic ones.
+// instrumentIcon.js — the house SVG icon name for an instrument / voice / GM
+// family, chosen by keyword. Tiles in the Sound sheet read by family glyph
+// (see voiceFamilies.js for the rail's own icons). First match wins, so keep
+// the more specific rules above the generic ones.
 const RULES = [
-  [/pian|grand|clavichord|harpsichord|rhodes|wurl|electric piano|honky/i, '🎹'],
-  [/organ|accordion|harmonica|bandoneon/i, '🪗'],
-  [/bass/i, '🎸'],
-  [/guitar|banjo|sitar|ukulele|mandolin|shamisen|koto/i, '🎸'],
-  [/violin|viola|cello|contrabass|fiddle|string|orchestra|pizzicato|harp\b/i, '🎻'],
-  [/sax/i, '🎷'],
-  [/trumpet|trombone|tuba|cornet|\bhorn\b|brass|fanfare/i, '🎺'],
-  [/flute|piccolo|recorder|whistle|\bpipe|clarinet|oboe|bassoon|reed|ocarina|shakuhachi/i, '🪈'],
-  [/choir|voice|vocal|\baah|\booh|lead vocal|synth voice/i, '🎤'],
-  [/drum|percuss|timpani|\bkit\b|cymbal|\btom\b|taiko|conga|bongo|snare/i, '🥁'],
-  [/bell|glocken|celesta|vibraphone|marimba|xylophone|chime|music box|tinkle|kalimba|steel drum/i, '🔔'],
-  [/synth|\bpad\b|\bfx\b|\blead\b|saw|square|sci-?fi|atmosphere|sweep|sound track|charang|goblin/i, '🎛️'],
+  [/pian|grand|clavichord|harpsichord|rhodes|wurl|honky/i, 'piano'],
+  [/organ|accordion|harmonica|bandoneon|celesta|glocken|vibraphone|marimba|xylophone|bell|music box|dulcimer|chime/i, 'family-keys'],
+  [/bass|guitar|banjo|ukulele|mandolin/i, 'family-guitar'],
+  [/violin|viola|cello|contrabass|fiddle|string|orchestra|pizzicato|harp\b|timpani/i, 'family-strings'],
+  [/sax|trumpet|trombone|tuba|cornet|\bhorn\b|brass|fanfare|flute|piccolo|recorder|whistle|\bpipe|clarinet|oboe|bassoon|reed|ocarina|shakuhachi|bottle/i, 'family-winds'],
+  [/choir|voice|vocal|\baah|\booh/i, 'studio'],
+  [/sitar|shamisen|koto|kalimba|bagpipe|shanai|yangqin|pipa|zheng|erhu|banhu|suona|sheng|dizi/i, 'family-world'],
+  [/drum|percuss|\bkit\b|cymbal|\btom\b|taiko|conga|bongo|snare|agogo|woodblock|tinkle|steel|noise|seashore|bird|telephone|helicopter|applause|gunshot/i, 'family-fun'],
+  [/synth|\bpad\b|\bfx\b|\blead\b|saw|square|sci-?fi|atmosphere|sweep|sound track|charang|goblin|rain|crystal|brightness|echoes|calliope|chiff|fifth/i, 'family-synths'],
 ];
 
-/** Emoji glyph for an instrument/voice/family name (falls back to a music note). */
-export function instrumentEmoji(name) {
+/** House icon name for an instrument/voice/family name (falls back to the music note). */
+export function instrumentIcon(name) {
   const s = String(name || '');
-  for (const [re, emoji] of RULES) if (re.test(s)) return emoji;
-  return '🎵';
+  for (const [re, icon] of RULES) if (re.test(s)) return icon;
+  return 'music';
 }
 
-export default instrumentEmoji;
+export default instrumentIcon;
