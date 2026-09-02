@@ -40,4 +40,13 @@ describe('TransportButton', () => {
     expect(scss).toMatch(/\.piano-tbtn\s*\{[^}]*min-height:\s*3rem/s);
     expect(scss).toMatch(/\.piano-tbtn\s*\{[^}]*min-width:\s*3rem/s);
   });
+
+  it('applies tile and rail layout modifiers and the danger emphasis', () => {
+    const { rerender } = render(<TransportButton icon="close" label="Reboot" layout="tile" emphasis="danger" onPress={() => {}} />);
+    const button = screen.getByRole('button', { name: 'Reboot' });
+    expect(button).toHaveClass('piano-tbtn--tile');
+    expect(button).toHaveClass('piano-tbtn--danger');
+    rerender(<TransportButton icon="close" label="Pianos" layout="rail" onPress={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Pianos' })).toHaveClass('piano-tbtn--rail');
+  });
 });

@@ -9,7 +9,8 @@ import './Transport.scss';
  * @param {string} [icon] - shared icon name (icons/svg/*.svg)
  * @param {string} [label] - ASCII text label; icon and label may combine
  * @param {string} [ariaLabel] - required when icon-only
- * @param {'default'|'primary'|'quiet'} [emphasis]
+ * @param {'default'|'primary'|'quiet'|'danger'} [emphasis]
+ * @param {'inline'|'tile'|'rail'} [layout] - inline (default) sits in a strip; tile stacks icon over a wrapping label for grids; rail is a full-width icon-left row for a side rail.
  * @param {boolean} [on] - lit/latched state (aria-pressed + .is-on)
  * @param {boolean} [disabled]
  * @param {() => void} [onPress]
@@ -19,12 +20,13 @@ import './Transport.scss';
  *   where the numeral must sit innermost, nearest the button it mirrors around).
  */
 export default function TransportButton({
-  icon, label, ariaLabel, emphasis = 'default', on = false,
+  icon, label, ariaLabel, emphasis = 'default', layout = 'inline', on = false,
   disabled = false, onPress, className = '', labelFirst = false, ...rest
 }) {
   const classes = [
     'piano-tbtn',
     emphasis !== 'default' ? `piano-tbtn--${emphasis}` : '',
+    layout !== 'inline' ? `piano-tbtn--${layout}` : '',
     on ? 'is-on' : '',
     className,
   ].filter(Boolean).join(' ');
