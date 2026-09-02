@@ -7,6 +7,7 @@ import './Transport.scss';
  * SVG-icon faces (never Unicode glyphs), `is-on` grammar via aria-pressed.
  *
  * @param {string} [icon] - shared icon name (icons/svg/*.svg)
+ * @param {string} [art] - illustration URL; when set it takes the icon's place (the icon is the fallback, so pass both)
  * @param {string} [label] - ASCII text label; icon and label may combine
  * @param {string} [ariaLabel] - required when icon-only
  * @param {'default'|'primary'|'quiet'|'danger'} [emphasis]
@@ -20,7 +21,7 @@ import './Transport.scss';
  *   where the numeral must sit innermost, nearest the button it mirrors around).
  */
 export default function TransportButton({
-  icon, label, ariaLabel, emphasis = 'default', layout = 'inline', on = false,
+  icon, art, label, ariaLabel, emphasis = 'default', layout = 'inline', on = false,
   disabled = false, onPress, className = '', labelFirst = false, ...rest
 }) {
   const classes = [
@@ -30,7 +31,9 @@ export default function TransportButton({
     on ? 'is-on' : '',
     className,
   ].filter(Boolean).join(' ');
-  const iconEl = icon && <Icon key="icon" name={icon} />;
+  const iconEl = art
+    ? <img key="icon" className="piano-tbtn__art" src={art} alt="" draggable={false} />
+    : icon && <Icon key="icon" name={icon} />;
   const labelEl = label != null && <span key="label" className="piano-tbtn__label">{label}</span>;
   return (
     <button

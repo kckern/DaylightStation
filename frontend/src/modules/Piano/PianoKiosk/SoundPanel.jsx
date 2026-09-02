@@ -9,6 +9,8 @@ import { usePianoConnection } from './usePianoConnection.js';
 import { buildFunnel } from './voiceFunnel.js';
 import { FAMILIES, familyOf, partitionVoices } from './voiceFamilies.js';
 import { instrumentIcon } from './instrumentIcon.js';
+import { familyArt, voiceArt } from './voiceArt.js';
+import { DaylightMediaPath } from '../../../lib/api.mjs';
 import TransportSheet from './transport/TransportSheet.jsx';
 import TransportButton from './transport/TransportButton.jsx';
 import StepGrid from './transport/StepGrid.jsx';
@@ -32,6 +34,9 @@ const LEVEL_STEPS = Object.freeze([
 ]);
 // Device type names shortened to fit a five-across tile row.
 const TYPE_LABELS = Object.freeze({ 'Large Room': 'Big room', 'Large Hall': 'Big hall', 'Chorus 1': 'One', 'Chorus 2': 'Two', 'Chorus 3': 'Three', 'FB Chorus': 'Deep', Flanger: 'Flange' });
+
+// Illustration URL for a pack basename, or undefined so the tile keeps its icon.
+const artUrl = (name) => (name ? DaylightMediaPath(`/static/img/music/instruments/${name}.svg`) : undefined);
 
 function EffectRows({ name, icon, value, config, onChange }) {
   const activeIndex = EFFECT_STEPS.findIndex((step) => step.level === value.level && step.on === !!value.on);
@@ -111,13 +116,13 @@ export default function SoundPanel({ open, onClose }) {
     <div className="piano-settings__sound">
       <nav className="piano-settings__rail" role="group" aria-label="Instrument families">
         <TransportButton layout="rail" icon="star" label="Mine" on={activeFamily === 'mine'} onPress={() => setFamily('mine')} />
-        {FAMILIES.map((item) => <TransportButton key={item.id} layout="rail" icon={item.icon} label={item.label} on={activeFamily === item.id} onPress={() => setFamily(item.id)} />)}
+        {FAMILIES.map((item) => <TransportButton key={item.id} layout="rail" icon={item.icon} art={artUrl(familyArt(item.id))} label={item.label} on={activeFamily === item.id} onPress={() => setFamily(item.id)} />)}
       </nav>
 
       {/* Voice tiles are one radio-like set, so every tile carries an explicit aria-pressed (TransportButton alone omits it when off). */}
       <div className="piano-settings__grid" role="group" aria-label="Instruments">
         {gridTiles.length === 0 && <p className="piano-settings__empty">Save a sound and it will show up here.</p>}
-        {gridTiles.map((tile) => <TransportButton key={tile.key} layout="tile" icon={instrumentIcon(tile.name)} label={tile.name} on={tile.voiceKey === currentKey} aria-pressed={tile.voiceKey === currentKey} onPress={tile.pick} />)}
+        {gridTiles.map((tile) => <TransportButton key={tile.key} layout="tile" icon={instrumentIcon(tile.name)} art={artUrl(voiceArt(tile.name))} label={tile.name} on={tile.voiceKey === currentKey} aria-pressed={tile.voiceKey === currentKey} onPress={tile.pick} />)}
       </div>
 
       <div className="piano-settings__tonecol">

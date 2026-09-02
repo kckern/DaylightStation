@@ -58,6 +58,15 @@
   }
 }
 
+// Illustration art standing in for the icon (TransportButton `art`).
+.piano-tbtn__art {
+  width: 2.6em;
+  height: 2.6em;
+  object-fit: contain;
+  flex: none;
+  pointer-events: none;
+}
+
 // Tile — icon over a wrapping label; the settings-grid primitive. Overrides the
 // inline anti-wrap rule on purpose: a 4-across grid has room for two lines and
 // truncating "Chromatic Percussion" to "Chromatic Per…" is the old bug.
@@ -72,6 +81,7 @@
   text-align: center;
   line-height: 1.15;
   .piano-icon { font-size: 1.9em; }
+  .piano-tbtn__art { width: 3.2em; height: 3.2em; }
 }
 
 // Rail — full-width icon-left row for the Sound sheet's family rail.
@@ -82,6 +92,7 @@
   padding: 0.5rem 0.8rem;
   white-space: normal;
   text-align: left;
+  .piano-tbtn__art { width: 2em; height: 2em; }
 }
 
 .piano-tsheet {
