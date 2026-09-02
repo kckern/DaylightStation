@@ -28,9 +28,7 @@ describe('HealthHub', () => {
   it('renders skeleton when loading', () => {
     const { container } = r(<HealthHub loading={true} dashboard={null} />);
     expect(container.querySelector('.health-hub')).toBeTruthy();
-    // Mantine Skeleton renders div elements — confirm at least one is present
-    const skeletons = container.querySelectorAll('[class*="mantine"]');
-    expect(skeletons.length).toBeGreaterThan(0);
+    expect(container.querySelectorAll('.ds-skeleton').length).toBeGreaterThan(0);
   });
 
   it('renders nothing visible when not loading and no dashboard', () => {

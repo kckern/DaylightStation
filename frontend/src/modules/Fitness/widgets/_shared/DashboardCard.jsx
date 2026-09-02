@@ -1,6 +1,7 @@
 import React from 'react';
-import { Paper, Text, Group, Skeleton } from '@mantine/core';
+import { Paper, Text, Group } from '@mantine/core';
 import './DashboardCard.scss';
+import Skeleton from '@/lib/ui/Skeleton.jsx';
 
 export function DashboardCard({ title, icon, children, className = '', onClick }) {
   return (

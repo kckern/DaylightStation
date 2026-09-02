@@ -1,0 +1,37 @@
+// See Skeleton.jsx. Tokens are local so the block sits correctly on any of the
+// app's dark panels without each surface restating them.
+.ds-skeleton {
+  --ds-skeleton-base: rgb(255 255 255 / 6%);
+  --ds-skeleton-sheen: rgb(255 255 255 / 13%);
+
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  flex: none;
+  background: var(--ds-skeleton-base);
+}
+
+// The sweep is a pseudo-element so the base block keeps whatever size and
+// radius the caller set, and the animation never touches layout.
+.ds-skeleton--animate::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--ds-skeleton-sheen) 50%,
+    transparent 100%
+  );
+  animation: ds-skeleton-sweep 1.6s ease-in-out infinite;
+}
+
+@keyframes ds-skeleton-sweep {
+  to { transform: translateX(100%); }
+}
+
+// A placeholder is never worth motion sickness.
+@media (prefers-reduced-motion: reduce) {
+  .ds-skeleton--animate::after { animation: none; }
+}
