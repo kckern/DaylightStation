@@ -45,7 +45,8 @@ const RULES = [
   [/brass section/i, 'trumpet-3'],
   [/synth brass|suona/i, 'trumpet-4'],
   [/trumpet|bugle|cornet/i, 'trumpet-1'],
-  [/french horn|flugel/i, 'flugelhorn'],
+  // No French horn: the pack's flugelhorn is a different shape, so the icon stands.
+  [/french horn/i, null],
   [/trombone/i, 'trombone'],
   [/tuba/i, 'tuba'],
   // Woodwinds. The pack has no oboe or bassoon; the clarinet stands in for the reed family.
@@ -59,10 +60,10 @@ const RULES = [
   [/flute|piccolo|dizi/i, 'flute'],
   [/recorder/i, 'recorder-1'],
   [/shakuhachi|whistle/i, 'recorder-2'],
-  // Drums and small percussion.
-  [/\bkit\b|synth drum|drums?\b/i, 'drum-kit'],
+  // Drums and small percussion: the named drums first, the kit catch-all last.
   [/snare/i, 'snare-drum-1'],
   [/taiko/i, 'tabor-drum'],
+  [/steel drum/i, null], // a steel pan is not a kit
   [/djembe/i, 'djembe-1'],
   [/conga/i, 'conga'],
   [/bongo/i, 'bongos-1'],
@@ -73,6 +74,7 @@ const RULES = [
   [/gong/i, 'gong'],
   [/cymbal/i, 'cymbal'],
   [/woodblock|wood block/i, 'wood-block'],
+  [/\bkit\b|synth drum|drums?\b/i, 'drum-kit'],
   // Synth patches last: anything played from a synth keyboard. Voice Lead and
   // Choir Pad belong to the Voices family and are excluded (no art for voices).
   [/voice|choir|vocal|\baah|\booh/i, null],
