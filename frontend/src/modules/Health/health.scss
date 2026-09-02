@@ -79,3 +79,33 @@
   &__actions { display: flex; gap: 0.4rem; align-items: center; }
   &__error { color: var(--ds-danger); font-size: 0.8rem; }
 }
+
+.health-progress {
+  display: flex; flex-direction: column; gap: 0.75rem;
+
+  &__stats {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 0.5rem; margin-top: 0.5rem;
+  }
+  &__bars { display: flex; align-items: flex-end; gap: 3px; height: 64px; }
+  &__bar {
+    flex: 1; min-width: 4px; border-radius: 2px 2px 0 0;
+    background: var(--ds-border);
+    &--under { background: var(--ds-success); }
+    &--over { background: var(--ds-danger); }
+    &--gap { background: var(--ds-border); opacity: 0.4; }
+  }
+}
+
+.health-medical {
+  display: flex; flex-direction: column; gap: 0.75rem;
+
+  &__row {
+    display: flex; align-items: baseline; gap: 0.5rem;
+    padding: 0.3rem 0; border-bottom: 1px solid var(--ds-border);
+    font-size: 0.85rem;
+  }
+  &__date { color: var(--ds-text-mid); min-width: 5.5rem; }
+  &__value { font-variant-numeric: tabular-nums; color: var(--ds-text-high); }
+  &__note { color: var(--ds-text-low); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
