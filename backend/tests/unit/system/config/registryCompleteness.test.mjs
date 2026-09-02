@@ -9,12 +9,34 @@ function requireDataDir() {
   return dataDir;
 }
 
+/**
+ * Apps whose household config is genuinely OPTIONAL.
+ *
+ * `loadHouseholdApps` adds a key only when a file is actually there
+ * (`if (config) appsFromRegistry[appName] = config`), so a registry entry
+ * declares WHERE a config would live, not that one exists. An app with a
+ * working default is therefore allowed to ship none.
+ *
+ * `state-gates` composes as
+ * `reloadHouseholdAppConfig(...) ?? getHouseholdAppConfig(...) ?? installedPolicy`
+ * — the installed policy IS the household's policy until someone writes a file
+ * to override it. Creating an empty one here to satisfy a test would override
+ * the policy that governs entitlements with nothing, which is the opposite of
+ * harmless.
+ *
+ * An app is added here only with the fallback that justifies it. Everything else
+ * must exist, so a typo in a registered path still fails loudly.
+ */
+const OPTIONAL_CONFIGS = new Set(['state-gates']);
+
 it('every registered app config exists on disk at its registered path', () => {
   const dataDir = requireDataDir();
-  const missing = Object.entries(HOUSEHOLD_APP_CONFIGS).filter(
-    ([, rel]) => !['', '.yml', '.yaml'].some((ext) =>
-      ext && fs.existsSync(path.join(dataDir, 'household', `${rel}${ext}`))),
-  );
+  const missing = Object.entries(HOUSEHOLD_APP_CONFIGS)
+    .filter(([app]) => !OPTIONAL_CONFIGS.has(app))
+    .filter(
+      ([, rel]) => !['', '.yml', '.yaml'].some((ext) =>
+        ext && fs.existsSync(path.join(dataDir, 'household', `${rel}${ext}`))),
+    );
   expect(missing).toEqual([]);
 });
 
