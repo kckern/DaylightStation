@@ -33,8 +33,10 @@ export function BarcodeCapture({ open, onClose, onDecode, busy }) {
             if (stopped) return;
             try {
               const codes = await detector.detect(videoRef.current);
+              if (stopped) return; // sheet closed while detect() was in flight — don't fire a spurious submit
               if (codes.length) { logger.info('decode.native', {}); return onDecode(codes[0].rawValue); }
             } catch { /* frame not ready */ }
+            if (stopped) return;
             requestAnimationFrame(tick);
           };
           tick();
