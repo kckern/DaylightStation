@@ -29,7 +29,8 @@ describe('AddCombobox', () => {
   it('picking a suggestion quick-adds with the bucket and calls onDone', async () => {
     apiMock.mockImplementation(async (path, body) => {
       if (path.includes('suggest')) return SUGGEST;
-      if (path.includes('quickadd')) return { uuid: 'row-1' };
+      // Real quickadd envelope — uuid lives at item.uuid, never top-level.
+      if (path.includes('quickadd')) return { logged: true, item: { uuid: 'row-1' } };
       return {};
     });
     const onDone = vi.fn();
@@ -59,4 +60,39 @@ describe('AddCombobox', () => {
     await waitFor(() => expect(screen.getByText(/140 kcal/)).toBeTruthy());
     expect(screen.getByRole('button', { name: /accept/i })).toBeTruthy();
   });
+
+  it('a slow older suggest response cannot overwrite a newer one (stale-response guard)', async () => {
+    const older = { items: [{ id: 'x', name: 'OLD RESULT', nutrients: {} }] };
+    const newer = { items: [{ id: 'y', name: 'NEW RESULT', nutrients: {} }] };
+    let resolveOlder, resolveNewer;
+    const olderPromise = new Promise((res) => { resolveOlder = res; });
+    const newerPromise = new Promise((res) => { resolveNewer = res; });
+    apiMock.mockImplementation((path) => {
+      if (path.endsWith('q=c')) return olderPromise;
+      if (path.endsWith('q=ch')) return newerPromise;
+      return Promise.resolve({ items: [] });
+    });
+
+    r(<AddCombobox bucketId="afternoon" onDone={() => {}} onCancel={() => {}} />);
+    const input = screen.getByRole('textbox');
+
+    fireEvent.change(input, { target: { value: 'c' } });
+    // Real debounce delay — let the first ('c') request fire and stay in flight.
+    await new Promise((res) => setTimeout(res, 300));
+
+    fireEvent.change(input, { target: { value: 'ch' } });
+    // Let the second ('ch') request fire and stay in flight too.
+    await new Promise((res) => setTimeout(res, 300));
+
+    // Newer resolves first (fast); older resolves later (slow) — the guard must
+    // keep the newer results and ignore the stale older response.
+    resolveNewer(newer);
+    await waitFor(() => expect(screen.getByText('NEW RESULT')).toBeTruthy());
+
+    resolveOlder(older);
+    await new Promise((res) => setTimeout(res, 50));
+
+    expect(screen.queryByText('OLD RESULT')).toBeFalsy();
+    expect(screen.getByText('NEW RESULT')).toBeTruthy();
+  }, 8000);
 });
