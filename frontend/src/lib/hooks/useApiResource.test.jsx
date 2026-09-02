@@ -19,7 +19,16 @@ describe('useApiResource', () => {
   });
 
   it('captures errors', async () => {
-    apiMock.mockRejectedValue(new Error('boom'));
+    // mockRejectedValueOnce, not mockRejectedValue: a *persistent* rejecting
+    // implementation left armed past this test's own await — combined with the
+    // beforeEach(mockReset()) above — trips a Vitest 4.1.10 framework quirk
+    // that misattributes a phantom "unhandled rejection" to this test, even
+    // though the hook's .then/.catch chain demonstrably consumes it (see the
+    // "[Logger] api.failed" line the test emits) and Node's own
+    // process.on('unhandledRejection') never fires. Once-consumed leaves
+    // nothing armed and sidesteps it entirely — see task-4-report.md for the
+    // isolated repro that pinned this down.
+    apiMock.mockRejectedValueOnce(new Error('boom'));
     const { result } = renderHook(() => useApiResource('api/v1/thing'));
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.error.message).toBe('boom');
