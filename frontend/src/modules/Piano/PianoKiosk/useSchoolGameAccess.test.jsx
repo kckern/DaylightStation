@@ -1,7 +1,13 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const h = vi.hoisted(() => ({ response: null, stateGatesHandler: null }));
+const h = vi.hoisted(() => ({
+  response: null, stateGatesHandler: null,
+  // STABLE spies, not a fresh pair per call: a logger double rebuilt on every
+  // `getLogger()` cannot be asserted against, which is how "was the verdict
+  // even recorded?" stayed an unanswerable question.
+  log: { warn: vi.fn(), info: vi.fn() },
+}));
 
 function entitlement({ decision = 'denied', basisState = 'unsatisfied', learnerId = 'kid-one' } = {}) {
   return {
@@ -28,7 +34,7 @@ vi.mock('../../../hooks/useWebSocket.js', () => ({
 // `status: 'error'` — and `error` locks games. A logger double that is missing
 // a level the code calls is a double that tests the wrong program.
 vi.mock('../../../lib/logging/Logger.js', () => ({
-  default: () => ({ child: () => ({ warn: vi.fn(), info: vi.fn() }) }),
+  default: () => ({ child: () => h.log }),
 }));
 
 import { DaylightAPI } from '../../../lib/api.mjs';
@@ -38,6 +44,8 @@ beforeEach(() => {
   h.response = entitlement();
   h.stateGatesHandler = null;
   DaylightAPI.mockClear();
+  h.log.warn.mockClear();
+  h.log.info.mockClear();
 });
 
 afterEach(() => vi.useRealTimers());
@@ -146,5 +154,72 @@ describe('useSchoolGameAccess', () => {
     const { result } = renderHook(() => useSchoolGameAccess('kid-one'));
     await waitFor(() => expect(result.current.status).toBe('ready'));
     expect(result.current).toMatchObject({ state: 'indeterminate', unlocked: false });
+  });
+});
+
+describe('useSchoolGameAccess for a household member School does not track', () => {
+  // 2026-09-02: an adult has no `piano.games` entitlement item at all — State
+  // Gates enumerates instances from evidence, and School publishes claims only
+  // for learners. No item reads as `indeterminate`, and `indeterminate` fails
+  // closed, so both grown-ups were permanently locked out of Games and told to
+  // go finish schoolwork they had never been assigned.
+  //
+  // "Not a learner" and "a learner whose day cannot be judged" are different
+  // answers and must not collapse into one. The fail-closed posture is right
+  // for the second and meaningless for the first.
+  it('does not gate a member the roster marks as not a school learner', async () => {
+    h.response = { items: [] };
+    const { result } = renderHook(() => useSchoolGameAccess('dad', { schoolLearner: false }));
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current).toMatchObject({ state: 'not_gated', unlocked: true });
+    // Not merely unlocked — never asked. There is no question to put to a gate
+    // whose subject it does not cover.
+    expect(DaylightAPI).not.toHaveBeenCalled();
+  });
+
+  it('still gates a learner, and still fails closed on no evidence', async () => {
+    h.response = { items: [] };
+    const { result } = renderHook(() => useSchoolGameAccess('kid-one', { schoolLearner: true }));
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current).toMatchObject({ state: 'indeterminate', unlocked: false });
+  });
+
+  // The roster arrives over the network. Until it does, nothing is known about
+  // whether this id is a learner, and an unknown must not open the gate — that
+  // would hand every child a reliable unlock by racing the roster fetch.
+  it('gates while the roster has not said yet', async () => {
+    h.response = { items: [] };
+    const { result } = renderHook(() => useSchoolGameAccess('kid-one'));
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.unlocked).toBe(false);
+  });
+});
+
+describe('useSchoolGameAccess verdict logging', () => {
+  // The 2026-08-28 lesson, applied to the branch added on 2026-09-02: a verdict
+  // that opens Games and leaves no trace makes "why were games open for this
+  // person?" unanswerable. `not_gated` is an UNLOCK, and the newest one — the
+  // first place to look when the next report says the gate let someone through.
+  it('records the verdict when a member is outside the gate entirely', async () => {
+    const { result } = renderHook(() => useSchoolGameAccess('dad', { schoolLearner: false }));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    expect(h.log.info).toHaveBeenCalledWith(
+      'piano.school-access.verdict',
+      expect.objectContaining({ learnerId: 'dad', state: 'not_gated', unlocked: true }),
+    );
+  });
+
+  it('records it once, not on every refresh', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderHook(() => useSchoolGameAccess('dad', { schoolLearner: false }));
+    await waitFor(() => expect(h.log.info).toHaveBeenCalledTimes(1));
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+
+    expect(h.log.info).toHaveBeenCalledTimes(1);
   });
 });

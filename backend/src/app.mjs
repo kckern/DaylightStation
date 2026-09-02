@@ -2895,6 +2895,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
   v1Routers.piano = createPianoRouter({
     pianoContainer,
+    // LATE-BOUND on purpose. `schoolLearnerDirectory` is constructed a little
+    // below this line (School is wired after Piano), and the roster route only
+    // calls this on a request, long after both exist. A forward reference in a
+    // thunk keeps the two subsystems in their current order instead of
+    // reshuffling the composition root around one field.
+    schoolLearnerDirectory: { listLearners: () => schoolLearnerDirectory.listLearners() },
     pianoAttemptStore,
     pianoLearningService,
     pianoGameBudgetService,

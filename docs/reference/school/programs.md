@@ -118,6 +118,43 @@ Two surfaces read it, and the coverage is deliberately partial:
   `${basePath}/videos`: without it, "you may only do Reading Music" hands the child
   a door into a room where Reading Music is one tile among ten.
 
+### The daily video cap
+
+An enrollment may carry an optional **`videosLockedAfter: <n>`**. Once the
+learner has finished `n` lessons for that program in the current study day, the
+piano kiosk's **Videos mode** is locked until the 4am rollover. It exists to
+stop a video course being farmed all day under the banner of schoolwork.
+
+It rides on the same payload as `gated` but is a **separate field**, `videos:
+{ locked, reason, completedToday, cap }`, and that separation is forced rather
+than tidy. `gated` means *you still owe today's lesson* and funnels the kiosk
+INTO a lesson video; the cap means *you have had enough*. Collapsing them would
+have the menu launching a lesson at the learner it is trying to stop. A capped
+learner is by definition **not** gated — they have done today's work.
+
+**The counter is `completedLessonsToday`**, which is the same array the launcher
+maps into `servedWork` and the agenda status board draws as one disc per
+finished lesson. So the number a parent counts on the wall panel and the number
+the cap enforces are the same by construction. Counting watch events, sessions
+or launches instead would let the board and the cap disagree about one day, and
+the board is what the rule was described in terms of.
+
+Optional and off by default: only a positive whole `videosLockedAfter` caps
+anything. A zero, a negative, a fraction or a string is ignored rather than
+guessed at — a mistyped cap silently becoming `0` would lock a child out of
+video permanently, the worst reading of an ambiguous config. It **fails open**
+at every unknown, like everything else in this gate: an unavailable launcher
+read, a payload with no `videos` block, and a guest all leave video open.
+
+Unlike `gated`, the cap is enforced at **all three Videos routes** — grid,
+course, and lecture. For `gated` the deep-link routes below are residual escapes
+whose cost is starting the wrong lesson; for the cap they are the main road,
+because the exercise checkpoint's Continue replays a stored
+`/videos/<course>/<lecture>` link as an ordinary daily path. A cap enforced only
+at the grid would never fire for the child it exists for. The menu tile is
+disabled alongside, captioned with the count — `2 of 2 lessons today` — because
+a live tile that bounced a child back to the menu reads as a broken kiosk.
+
 **`CourseDetailRoute` and `LecturePlayerRoute` do NOT read the gate.** They take
 `:courseId` from the URL, so a non-assigned course reached *without passing the
 grid* still plays — a verdict that flips to `gated` while a course is already on
