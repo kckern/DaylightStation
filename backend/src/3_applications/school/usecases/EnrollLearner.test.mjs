@@ -119,13 +119,13 @@ describe('EnrollLearner', () => {
   });
 
   it('snapshots the syllabus school-day schedule onto the enrollment', async () => {
-    await h.useCase.execute({ learnerId: 'learner-a', syllabusId: 'elements-weekdays', enrolledBy: 'kckern', pin: '7410' });
+    await h.useCase.execute({ learnerId: 'user_4', syllabusId: 'elements-weekdays', enrolledBy: 'kckern', pin: '7410' });
     const entry = h.saved[0].courses.find((c) => c.courseId === 'elements');
     expect(entry.enrollment.schedule).toEqual(SCHEDULED_SYLLABUS.schedule);
   });
 
   it('leaves an unscheduled enrollment without a schedule at all', async () => {
-    await h.useCase.execute({ learnerId: 'learner-a', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
+    await h.useCase.execute({ learnerId: 'user_4', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
     const entry = h.saved[0].courses.find((c) => c.courseId === 'elements');
     expect(entry.enrollment).not.toHaveProperty('schedule');
   });

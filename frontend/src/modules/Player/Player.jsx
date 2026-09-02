@@ -9,7 +9,7 @@ import { PlayerOverlayLoading } from './components/PlayerOverlayLoading.jsx';
 import { PlayerOverlayPaused } from './components/PlayerOverlayPaused.jsx';
 import { PlayerOverlayStateDebug } from './components/PlayerOverlayStateDebug.jsx';
 import { PlayerOverlayAutoplayBlocked } from './components/PlayerOverlayAutoplayBlocked.jsx';
-import { useMediaResilience, mergeMediaResilienceConfig } from './hooks/useMediaResilience.js';
+import { useMediaResilience, mergeMediaResilienceConfig, RESILIENCE_STATUS } from './hooks/useMediaResilience.js';
 import { useMediaErrorReporter } from './hooks/useMediaErrorReporter.js';
 import { usePlaybackSession } from './hooks/usePlaybackSession.js';
 import { resolveCollectionKey } from './utils/collectionKey.js';
@@ -21,6 +21,7 @@ import { getLogWaitKey, describeWaitKey } from './lib/waitKeyLabel.js';
 import { useMediaTransportAdapter } from './hooks/transport/useMediaTransportAdapter.js';
 import { shouldSkipResilienceReload } from './lib/shouldSkipResilienceReload.js';
 import { createRemountStormGuard } from './lib/remountStormGuard.js';
+import { shouldSkipScheduledRemount } from './lib/scheduledRemountGuard.js';
 import { changedKeyComponent } from './lib/keyChange.js';
 import { createIdentityChurnCounter } from './lib/identityChurn.js';
 import { getLogger } from '../../lib/logging/Logger.js';
@@ -278,6 +279,11 @@ const Player = forwardRef(function Player(props, ref) {
   const resilienceBridgeRef = useRef(null);
   const remountInfoRef = useRef(remountState);
   const remountTimerRef = useRef(null);
+  // What the armed timer is FOR. Held beside remountTimerRef (never without it)
+  // so `player-remount-cancelled` can be joined to the `player-remount-scheduled`
+  // line it cancelled, and so the cancel branch can tell a user-initiated retry
+  // from an automatic recovery attempt.
+  const pendingRemountRef = useRef(null);
 
   useEffect(() => {
     remountInfoRef.current = remountState;
@@ -303,6 +309,7 @@ const Player = forwardRef(function Player(props, ref) {
       clearTimeout(remountTimerRef.current);
       remountTimerRef.current = null;
     }
+    pendingRemountRef.current = null;
   }, []);
 
   const computeRemountDelayMs = useCallback((attempt = 1) => {
@@ -656,6 +663,15 @@ const Player = forwardRef(function Player(props, ref) {
   const scheduleSinglePlayerRemount = useCallback((input = null) => {
     const attempt = (remountInfoRef.current?.nonce ?? 0) + 1;
     const backoffMs = computeRemountDelayMs(attempt);
+    // The viewer pressed retry. Neither of the "playback looks fine now" brakes
+    // below may discard this: by the time recovery is exhausted the nonce is
+    // high, so the backoff can run to REMOUNT_BACKOFF_MAX_MS, and inside that
+    // window a stray `playing` or 100ms of clock movement would swallow an
+    // explicit request — along with the exact position the user picked
+    // (seekToIntentMs). A user-initiated retry also needs a REAL remount for the
+    // reason given at the hardReset short-circuit below: in-place reattach on a
+    // reaped Plex transcode session leaves the <video> wedged at readyState=0.
+    const userInitiated = input?.userInitiated === true;
 
     clearRemountTimer();
 
@@ -666,6 +682,7 @@ const Player = forwardRef(function Player(props, ref) {
       guid: currentMediaGuid,
       playerType: playerType || null,
       isQueue,
+      userInitiated,
       playbackSeconds: playbackMetricsRef.current?.seconds ?? null
     }, { level: backoffMs > 0 ? 'info' : 'debug' });
 
@@ -674,8 +691,38 @@ const Player = forwardRef(function Player(props, ref) {
       return;
     }
 
+    // Where the playhead sat when the timer was armed. Compared against the live
+    // value at fire time so a remount armed against a stall does not tear down an
+    // element that has since started playing (2026-09-01, story time).
+    const armedAtSeconds = playbackMetricsRef.current?.seconds ?? null;
+    pendingRemountRef.current = { attempt, backoffMs, armedAtSeconds, userInitiated };
     remountTimerRef.current = setTimeout(() => {
       remountTimerRef.current = null;
+      pendingRemountRef.current = null;
+      const currentSeconds = playbackMetricsRef.current?.seconds ?? null;
+      const verdict = userInitiated
+        ? { skip: false, reason: null, advancedSeconds: null }
+        : shouldSkipScheduledRemount({
+          armedAtSeconds,
+          currentSeconds,
+          stalled: playbackMetricsRef.current?.stalled === true,
+          // A wedged forward seek advances the clock without playing anything;
+          // see the guard's docblock.
+          isSeeking: playbackMetricsRef.current?.isSeeking === true
+        });
+      if (verdict.skip) {
+        playbackLog('player-remount-skipped', {
+          ...resolvedWaitKeyFields,
+          attempt,
+          backoffMs,
+          reason: verdict.reason,
+          armedAtSeconds,
+          playbackSeconds: currentSeconds,
+          advancedSeconds: verdict.advancedSeconds,
+          guid: currentMediaGuid
+        }, { level: 'info' });
+        return;
+      }
       forceSinglePlayerRemount(input, { scheduledDelayMs: backoffMs, attempt });
     }, backoffMs);
     // See forceSinglePlayerRemount: playbackMetrics is read via ref, not closed over.
@@ -883,10 +930,30 @@ const Player = forwardRef(function Player(props, ref) {
   const resolvedResilienceOnState = resolvedResilience.onStateChange;
 
   const compositeAwareOnState = useCallback((state) => {
+    // A pending backoff remount exists because playback was not progressing.
+    // The hook saying "playing" means that reason is gone; a timer that fires
+    // now would tear down a working element (2026-09-01, story time).
+    const pending = pendingRemountRef.current;
+    if (
+      state?.status === RESILIENCE_STATUS.playing
+      && remountTimerRef.current
+      && pending?.userInitiated !== true
+    ) {
+      playbackLog('player-remount-cancelled', {
+        ...resolvedWaitKeyFields,
+        reason: 'playback-resumed',
+        attempt: pending?.attempt ?? null,
+        backoffMs: pending?.backoffMs ?? null,
+        armedAtSeconds: pending?.armedAtSeconds ?? null,
+        playbackSeconds: playbackMetricsRef.current?.seconds ?? null,
+        guid: currentMediaGuid
+      }, { level: 'info' });
+      clearRemountTimer();
+    }
     if (typeof resolvedResilienceOnState === 'function') {
       resolvedResilienceOnState(state);
     }
-  }, [resolvedResilienceOnState]);
+  }, [resolvedResilienceOnState, clearRemountTimer, resolvedWaitKeyFields, currentMediaGuid]);
 
   const handleResilienceReload = useCallback((options = {}) => {
     // Guard: skip recovery for phantom/unresolvable entries
@@ -903,6 +970,7 @@ const Player = forwardRef(function Player(props, ref) {
 
     const {
       forceRemount,
+      userInitiated,
       seekToIntentMs,
       refreshUrl,
       ...rest
@@ -971,6 +1039,14 @@ const Player = forwardRef(function Player(props, ref) {
 
     scheduleSinglePlayerRemount({
       seekSeconds,
+      // Only the hook's retry-from-exhausted path (useMediaResilience.js:320)
+      // sets this, and only a viewer drives that path. Deliberately NOT derived
+      // from forceRemount: that flag is about MECHANISM ("an in-place hardReset
+      // won't do"), and the stall-jolt ladder raises it automatically on rung 1
+      // (stallJolt.js:33) ~9.5s into any mid-playback stall. Reading it as
+      // consent would bypass both brakes on the commonest recovery path there
+      // is — reopening the 2026-09-01 incident rather than closing it.
+      userInitiated: Boolean(userInitiated),
       reason: rest?.reason || 'resilience',
       source: rest?.source || 'resilience',
       trigger: triggerDetails,

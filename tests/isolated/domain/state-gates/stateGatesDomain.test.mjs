@@ -10,7 +10,7 @@ const period = new PeriodRef({
   startsAt: Date.parse('2026-08-29T00:00:00-07:00'),
   endsAt: Date.parse('2026-08-30T00:00:00-07:00'),
 });
-const learner = new SubjectRef({ kind: 'learner', id: 'learner-a' });
+const learner = new SubjectRef({ kind: 'learner', id: 'user_4' });
 
 function candidate(expression = { kind: 'claim', claimTypeId: 'school.done', publisherId: 'school', subject: '$subject', period: '$period', nodeId: 'claim' }) {
   return {

@@ -22,6 +22,7 @@
 // frame pump is not tied to render cycles.
 
 import CRT_GEOM_SRC from '../shaders/crt-geom.glsl?raw';
+import { createCrtFrameStats } from './crtFrameStats.js';
 
 // crt-geom deltas from the shader's own defaults, settled 2026-08-18 in the CRT lab
 // (frontend/public/crt-lab/). Everything not listed stays at the shader default,
@@ -135,7 +136,7 @@ export function createCrtRenderer({
 
   const unsupported = (reason, extra = {}) => {
     log.warn('crt.unsupported', { reason, ...extra });
-    return { supported: false, reason, start() {}, stop() {}, resize() {}, setParams() {}, setPreFilter() {}, destroy() {} };
+    return { supported: false, reason, start() {}, stop() {}, resize() {}, setParams() {}, setPreFilter() {}, destroy() {}, stats: () => ({ drawn: 0, skipped: 0 }) };
   };
 
   if (!canvas || !video) return unsupported('missing-canvas-or-video');
@@ -248,6 +249,7 @@ export function createCrtRenderer({
   let scale = renderScale;
   let view = { x: 0, y: 0, w: 0, h: 0 };
   let frameCount = 0;
+  const frameStats = createCrtFrameStats();
   let running = false;
   let rvfcHandle = null;
   let rafHandle = null;
@@ -323,11 +325,13 @@ export function createCrtRenderer({
     return rt[1].tex;
   }
 
+  // Returns whether a frame was actually painted, so the frame accounting does
+  // not credit a draw that bailed out at one of the guards below.
   function drawFrame() {
-    if (contextLost || uploadFailed) return;
+    if (contextLost || uploadFailed) return false;
     const vw = video.videoWidth;
     const vh = video.videoHeight;
-    if (!vw || !vh || video.readyState < 2) return;
+    if (!vw || !vh || video.readyState < 2) return false;
 
     if (view.w === 0 || canvas.width === 0) resize();
 
@@ -339,7 +343,7 @@ export function createCrtRenderer({
       // the hook reads `failed` and falls back to the CSS overlay.
       uploadFailed = true;
       log.error('crt.texture-upload-failed', { error: e?.message, width: vw, height: vh });
-      return;
+      return false;
     }
 
     const source = preFilter.blurRadiusSourcePx > 0.001 ? runPreFilter(vw, vh) : srcTexture;
@@ -368,14 +372,41 @@ export function createCrtRenderer({
     gl.bindTexture(gl.TEXTURE_2D, source);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     frameCount++;
+    return true;
   }
 
   // Drive off decoded frames where the browser offers it, so we do not burn a
   // draw per display refresh on 24fps content.
   const useRvfc = typeof video.requestVideoFrameCallback === 'function';
-  function pump() {
+  // rVFC calls pump(now, metadata); rAF calls pump(now) with no metadata, so the
+  // second argument is simply absent on the fallback path and no skip is read.
+  function pump(_now, metadata) {
     if (!running) return;
-    drawFrame();
+    // Observe only a frame that actually reached the canvas. drawFrame() bails
+    // out on a lost context, a failed upload or readyState < 2, and the pump
+    // keeps re-arming through all of those — crediting those passes as draws
+    // would report a busy canvas while the viewer is looking at black.
+    // A gap in metadata.presentedFrames means the browser composited frames of
+    // this element that our callback never painted: getVideoPlaybackQuality
+    // cannot see this, it only counts DECODER drops.
+    if (!drawFrame()) { schedule(); return; }
+    const gap = frameStats.observe(metadata?.presentedFrames);
+    if (gap > 0 && typeof log.sampled === 'function') {
+      // Distinct keys on purpose: `skipped` is THIS gap, `skippedTotal` the
+      // running total. Spreading the snapshot over a `skipped: gap` key would
+      // silently overwrite the gap with the total and make the event lie.
+      const totals = frameStats.snapshot();
+      log.sampled(
+        'crt.frames-skipped',
+        {
+          skipped: gap,
+          mediaTime: metadata?.mediaTime ?? null,
+          drawnTotal: totals.drawn,
+          skippedTotal: totals.skipped
+        },
+        { maxPerMinute: 6, aggregate: true }
+      );
+    }
     schedule();
   }
   function schedule() {
@@ -401,6 +432,7 @@ export function createCrtRenderer({
       log.debug('crt.started', {});
     },
     stop() {
+      const wasRunning = running;
       running = false;
       if (rvfcHandle != null && typeof video.cancelVideoFrameCallback === 'function') {
         video.cancelVideoFrameCallback(rvfcHandle);
@@ -408,7 +440,16 @@ export function createCrtRenderer({
       if (rafHandle != null) cancelAnimationFrame(rafHandle);
       rvfcHandle = null;
       rafHandle = null;
+      // destroy() also calls stop(), and stop() is idempotent, so only the
+      // transition out of running reports the session's frame accounting.
+      if (wasRunning) {
+        log.info('crt.stopped', {
+          driver: useRvfc ? 'requestVideoFrameCallback' : 'requestAnimationFrame',
+          ...frameStats.snapshot()
+        });
+      }
     },
+    stats: () => frameStats.snapshot(),
     resize,
     setParams(next) { params = { ...params, ...(next || {}) }; },
     setPreFilter(next) { preFilter = { ...preFilter, ...(next || {}) }; },

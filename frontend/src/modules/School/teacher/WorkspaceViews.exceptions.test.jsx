@@ -59,7 +59,7 @@ vi.mock('./panels/AttestationPanel.jsx', () => ({ default: () => null }));
 vi.mock('./panels/ReassignPanel.jsx', () => ({ default: () => null }));
 import { teacherWorkspaceApi } from './teacherWorkspaceApi.js';
 
-const KIDS = [{ id: 'learner-b', name: 'Learner B' }];
+const KIDS = [{ id: 'user_2', name: 'User_2' }];
 
 describe('CurriculumExceptionPanel neutral defaults', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -172,7 +172,7 @@ describe('one home per repair panel (UX audit IA4)', () => {
   });
 
   it('keeps stuck-session clearing on School Operations only', async () => {
-    const { unmount } = render(<LearnerOperationsView learnerId="learner-b" learnerName="Learner B" kids={KIDS} />);
+    const { unmount } = render(<LearnerOperationsView learnerId="user_2" learnerName="User_2" kids={KIDS} />);
     // The learner page points at the tool instead of hosting a second copy.
     expect(await screen.findByText('Clear a lesson that never finished')).toBeInTheDocument();
     expect(screen.queryByText(/Stuck sessions/i)).not.toBeInTheDocument();
@@ -182,8 +182,8 @@ describe('one home per repair panel (UX audit IA4)', () => {
   });
 
   it('gives each workspace page the interventions index as its way in', async () => {
-    render(<LearnerOperationsView learnerId="learner-b" learnerName="Learner B" kids={KIDS} />);
+    render(<LearnerOperationsView learnerId="user_2" learnerName="User_2" kids={KIDS} />);
     expect(await screen.findByRole('link', { name: /Give credit for work you saw/ }))
-      .toHaveAttribute('href', '/school/teacher/students/learner-b/operations');
+      .toHaveAttribute('href', '/school/teacher/students/user_2/operations');
   });
 });

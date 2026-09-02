@@ -11,7 +11,7 @@ const required = {
   mode: 'quiz',
   given: 'B',
   correct: true,
-  attributedTo: 'learner-a',
+  attributedTo: 'user_4',
 };
 
 describe('School attempt event time', () => {

@@ -10,7 +10,7 @@
 
 **Tech Stack:** Node ESM backend; React + the screen framework on the frontend; the existing WebSocket event bus.
 
-**Learner ids:** use `learner-c` / `learner-d` in code, tests and docs. Real roster ids only in config under `$DAYLIGHT_BASE_PATH`.
+**Learner ids:** use `user_5` / `user_3` in code, tests and docs. Real roster ids only in config under `$DAYLIGHT_BASE_PATH`.
 
 **Read first:**
 - `docs/reference/trigger/events.md` — the `trigger:<location>:<modality>` broadcast shape the screen subscribes to
@@ -106,26 +106,26 @@ it('has no session at a location until a card opens one', () => {
 
 it('opens a session for a learner at a location', () => {
   const s = new ReadingSessionService({ clock: () => new Date('2026-08-26T18:00:00Z'), logger: silent });
-  s.open({ location: 'livingroom', learnerId: 'learner-c' });
-  expect(s.current('livingroom')).toMatchObject({ learnerId: 'learner-c', location: 'livingroom' });
+  s.open({ location: 'livingroom', learnerId: 'user_5' });
+  expect(s.current('livingroom')).toMatchObject({ learnerId: 'user_5', location: 'livingroom' });
 });
 
 it('a second card REPLACES the first — last tap wins', () => {
   const s = new ReadingSessionService({ logger: silent });
-  s.open({ location: 'livingroom', learnerId: 'learner-c' });
-  s.open({ location: 'livingroom', learnerId: 'learner-d' });
-  expect(s.current('livingroom').learnerId).toBe('learner-d');
+  s.open({ location: 'livingroom', learnerId: 'user_5' });
+  s.open({ location: 'livingroom', learnerId: 'user_3' });
+  expect(s.current('livingroom').learnerId).toBe('user_3');
 });
 
 it('scopes sessions per location', () => {
   const s = new ReadingSessionService({ logger: silent });
-  s.open({ location: 'livingroom', learnerId: 'learner-c' });
+  s.open({ location: 'livingroom', learnerId: 'user_5' });
   expect(s.current('study')).toBeNull();
 });
 
 it('closes a session', () => {
   const s = new ReadingSessionService({ logger: silent });
-  s.open({ location: 'livingroom', learnerId: 'learner-c' });
+  s.open({ location: 'livingroom', learnerId: 'user_5' });
   s.close('livingroom');
   expect(s.current('livingroom')).toBeNull();
 });
@@ -135,10 +135,10 @@ it('broadcasts the open so the screen can render it', () => {
   const s = new ReadingSessionService({
     eventBus: { broadcast: (t, p) => sent.push({ topic: t, payload: p }) }, logger: silent,
   });
-  s.open({ location: 'livingroom', learnerId: 'learner-c' });
+  s.open({ location: 'livingroom', learnerId: 'user_5' });
   expect(sent[0]).toMatchObject({
     topic: 'reading:livingroom',
-    payload: { event: 'session-open', learnerId: 'learner-c' },
+    payload: { event: 'session-open', learnerId: 'user_5' },
   });
 });
 ```

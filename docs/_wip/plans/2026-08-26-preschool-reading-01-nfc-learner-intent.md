@@ -105,7 +105,7 @@ describe('school learner cards', () => {
       office: { target: 'office-tv', action: 'play-next', learner_action: null, defaults: {} },
     },
     tags: {
-      '048ba600cc2a81': { global: { note: 'Learner A personal card (red)', school_learner: 'learner-a' }, overrides: {} },
+      '048ba600cc2a81': { global: { note: 'User_4 personal card (red)', school_learner: 'user_4' }, overrides: {} },
     },
   };
 
@@ -114,7 +114,7 @@ describe('school learner cards', () => {
       location: 'study', value: '04:8B:A6:00:CC:2A:81', registry,
       contentIdResolver: makeContentIdResolver(),
     });
-    expect(intent).toMatchObject({ action: 'print-agenda', learnerId: 'learner-a' });
+    expect(intent).toMatchObject({ action: 'print-agenda', learnerId: 'user_4' });
   });
 
   it('gives the SAME card a different action at a different reader', () => {
@@ -123,7 +123,7 @@ describe('school learner cards', () => {
       contentIdResolver: makeContentIdResolver(),
     });
     expect(intent.action).toBe('reading-session');
-    expect(intent.learnerId).toBe('learner-a');
+    expect(intent.learnerId).toBe('user_4');
   });
 
   it('resolves to null at a reader that declares no learner_action', () => {
@@ -212,8 +212,8 @@ import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
 
 describe('Response.learner', () => {
   it('freezes a learner response carrying op, learner and location', () => {
-    const r = Response.learner({ op: 'print-agenda', learnerId: 'learner-a', location: 'study', target: 'portal' });
-    expect(r).toMatchObject({ kind: 'learner', op: 'print-agenda', learnerId: 'learner-a', location: 'study' });
+    const r = Response.learner({ op: 'print-agenda', learnerId: 'user_4', location: 'study', target: 'portal' });
+    expect(r).toMatchObject({ kind: 'learner', op: 'print-agenda', learnerId: 'user_4', location: 'study' });
     expect(Object.isFrozen(r)).toBe(true);
   });
 
@@ -222,7 +222,7 @@ describe('Response.learner', () => {
   });
 
   it('refuses a learner response with no op', () => {
-    expect(() => Response.learner({ learnerId: 'learner-a' })).toThrow(ValidationError);
+    expect(() => Response.learner({ learnerId: 'user_4' })).toThrow(ValidationError);
   });
 });
 ```
@@ -277,13 +277,13 @@ git commit -m "feat(trigger): Response.learner kind"
 import { mapIntentToResponse } from '#apps/trigger/mapIntentToResponse.mjs';
 
 it('maps any intent carrying a learnerId to a learner Response', () => {
-  const r = mapIntentToResponse({ action: 'print-agenda', learnerId: 'learner-b', target: 'portal', params: {} });
-  expect(r).toMatchObject({ kind: 'learner', op: 'print-agenda', learnerId: 'learner-b' });
+  const r = mapIntentToResponse({ action: 'print-agenda', learnerId: 'user_2', target: 'portal', params: {} });
+  expect(r).toMatchObject({ kind: 'learner', op: 'print-agenda', learnerId: 'user_2' });
 });
 
 it('maps a reading-session intent the same way — the op is not enumerated here', () => {
-  const r = mapIntentToResponse({ action: 'reading-session', learnerId: 'learner-c', target: 'livingroom-tv', params: {} });
-  expect(r).toMatchObject({ kind: 'learner', op: 'reading-session', learnerId: 'learner-c' });
+  const r = mapIntentToResponse({ action: 'reading-session', learnerId: 'user_5', target: 'livingroom-tv', params: {} });
+  expect(r).toMatchObject({ kind: 'learner', op: 'reading-session', learnerId: 'user_5' });
 });
 
 it('still maps content actions unchanged', () => {
@@ -356,10 +356,10 @@ it('routes a registered op to its handler with the learner and location', async 
     return { status: 'agenda_printed' };
   });
   const result = await responseHandlers.learner(
-    { kind: 'learner', op: 'print-agenda', learnerId: 'learner-a', location: 'study' },
+    { kind: 'learner', op: 'print-agenda', learnerId: 'user_4', location: 'study' },
     { learnerActions, logger: silent },
   );
-  expect(seen).toEqual([{ learnerId: 'learner-a', location: 'study' }]);
+  expect(seen).toEqual([{ learnerId: 'user_4', location: 'study' }]);
   expect(result.status).toBe('agenda_printed');
 });
 
@@ -367,7 +367,7 @@ it('refuses an unregistered op by NAME rather than falling back to another handl
   const learnerActions = createLearnerActions({ logger: silent });
   learnerActions.register('print-agenda', async () => ({ status: 'agenda_printed' }));
   const result = await responseHandlers.learner(
-    { kind: 'learner', op: 'reading-session', learnerId: 'learner-c', location: 'livingroom' },
+    { kind: 'learner', op: 'reading-session', learnerId: 'user_5', location: 'livingroom' },
     { learnerActions, logger: silent },
   );
   expect(result).toMatchObject({ status: 'no_handler', op: 'reading-session' });
@@ -377,7 +377,7 @@ it('never rejects when a handler throws', async () => {
   const learnerActions = createLearnerActions({ logger: silent });
   learnerActions.register('boom', async () => { throw new Error('printer on fire'); });
   const result = await responseHandlers.learner(
-    { kind: 'learner', op: 'boom', learnerId: 'learner-b', location: 'study' },
+    { kind: 'learner', op: 'boom', learnerId: 'user_2', location: 'study' },
     { learnerActions, logger: silent },
   );
   expect(result).toMatchObject({ status: 'failed' });
@@ -497,8 +497,8 @@ it('print-agenda calls ResolvePersonalCard and reports its status', async () => 
   const learnerActions = createLearnerActions({ logger: silent });
   learnerActions.register('print-agenda', async ({ learnerId }) => resolvePersonalCard.execute({ learnerId }));
 
-  const result = await learnerActions.get('print-agenda')({ learnerId: 'learner-b', location: 'study' });
-  expect(calls).toEqual(['learner-b']);
+  const result = await learnerActions.get('print-agenda')({ learnerId: 'user_2', location: 'study' });
+  expect(calls).toEqual(['user_2']);
   expect(result.status).toBe('agenda_printed');
 });
 ```
@@ -755,10 +755,10 @@ it('broadcasts agenda-suppressed so a cooldown tap is still acknowledged on scre
     execute: async () => ({ status: 'agenda_suppressed', sinceMinutes: 3, cooldownMinutes: 15 }),
   };
   const handler = makePrintAgendaHandler({ resolvePersonalCard, eventBus });
-  await handler({ learnerId: 'learner-d', location: 'study' });
+  await handler({ learnerId: 'user_3', location: 'study' });
   expect(broadcasts).toEqual([{
     topic: 'omr',
-    payload: expect.objectContaining({ event: 'agenda-suppressed', learnerId: 'learner-d', sinceMinutes: 3, cooldownMinutes: 15 }),
+    payload: expect.objectContaining({ event: 'agenda-suppressed', learnerId: 'user_3', sinceMinutes: 3, cooldownMinutes: 15 }),
   }]);
 });
 ```
@@ -880,9 +880,9 @@ After this plan, with `reading-session` deliberately unregistered:
 
 | Tap | Reader | Result |
 |---|---|---|
-| Learner B's card | study | agenda prints (unchanged behaviour) |
-| Learner B's card, twice inside 15min | study | second tap: no paper, `agenda-suppressed` ceremony on the panel (unchanged) |
-| Learner C's card | livingroom | resolves to `reading-session`, answers `no_handler`, logs `trigger.learner.no_handler` — **does not print in the study** |
+| User_2's card | study | agenda prints (unchanged behaviour) |
+| User_2's card, twice inside 15min | study | second tap: no paper, `agenda-suppressed` ceremony on the panel (unchanged) |
+| User_5's card | livingroom | resolves to `reading-session`, answers `no_handler`, logs `trigger.learner.no_handler` — **does not print in the study** |
 | A registered book | livingroom | plays on the TV (unchanged) |
 | `04ffca71cc2a81` | livingroom | plays, once Task 10 lands and the container restarts |
 | An unknown tag | livingroom | observed-registry write + phone push (unchanged) |

@@ -43,7 +43,7 @@ describe('PrintPendingView unavailable state', () => {
 });
 
 describe('PrintPendingView — the sheet preview and the requester\'s quota (audit 4.3)', () => {
-  const KIDS = [{ id: 'learner-b', name: 'Learner B' }];
+  const KIDS = [{ id: 'user_2', name: 'User_2' }];
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -52,8 +52,8 @@ describe('PrintPendingView — the sheet preview and the requester\'s quota (aud
 
   it('renders a preview link per job, carrying its own printableId', async () => {
     schoolApi.printPending.mockResolvedValue({ ok: true, status: 200, data: [
-      { id: 'job-1', userId: 'learner-b', printableId: 'printable-a', label: 'Worksheet A', pages: 2, copies: 1 },
-      { id: 'job-2', userId: 'learner-b', printableId: 'printable-b', label: 'Worksheet B', pages: 3, copies: 1 },
+      { id: 'job-1', userId: 'user_2', printableId: 'printable-a', label: 'Worksheet A', pages: 2, copies: 1 },
+      { id: 'job-2', userId: 'user_2', printableId: 'printable-b', label: 'Worksheet B', pages: 3, copies: 1 },
     ] });
     render(<PrintPendingView kids={KIDS} />);
     const links = await screen.findAllByRole('link', { name: 'Preview sheet' });
@@ -64,7 +64,7 @@ describe('PrintPendingView — the sheet preview and the requester\'s quota (aud
 
   it('shows the quota line when the read succeeds, approve/deny present', async () => {
     schoolApi.printPending.mockResolvedValue({ ok: true, status: 200, data: [
-      { id: 'job-1', userId: 'learner-b', printableId: 'printable-a', label: 'Worksheet A', pages: 2, copies: 1 },
+      { id: 'job-1', userId: 'user_2', printableId: 'printable-a', label: 'Worksheet A', pages: 2, copies: 1 },
     ] });
     render(<PrintPendingView kids={KIDS} />);
     await waitFor(() => expect(screen.getByText('14 of 5 pages this window')).toBeInTheDocument());
@@ -75,7 +75,7 @@ describe('PrintPendingView — the sheet preview and the requester\'s quota (aud
   it('renders nothing for the quota when the read fails — approve/deny keep working', async () => {
     schoolApi.printQuota.mockResolvedValue({ ok: false, status: 500, data: null });
     schoolApi.printPending.mockResolvedValue({ ok: true, status: 200, data: [
-      { id: 'job-1', userId: 'learner-b', printableId: 'printable-a', label: 'Worksheet A', pages: 2, copies: 1 },
+      { id: 'job-1', userId: 'user_2', printableId: 'printable-a', label: 'Worksheet A', pages: 2, copies: 1 },
     ] });
     render(<PrintPendingView kids={KIDS} />);
     await screen.findByText('Worksheet A');
@@ -87,12 +87,12 @@ describe('PrintPendingView — the sheet preview and the requester\'s quota (aud
 
   it('reads quota once per distinct child, even with two of their jobs pending', async () => {
     schoolApi.printPending.mockResolvedValue({ ok: true, status: 200, data: [
-      { id: 'job-1', userId: 'learner-b', printableId: 'printable-a', label: 'Worksheet A', pages: 2, copies: 1 },
-      { id: 'job-2', userId: 'learner-b', printableId: 'printable-b', label: 'Worksheet B', pages: 3, copies: 1 },
+      { id: 'job-1', userId: 'user_2', printableId: 'printable-a', label: 'Worksheet A', pages: 2, copies: 1 },
+      { id: 'job-2', userId: 'user_2', printableId: 'printable-b', label: 'Worksheet B', pages: 3, copies: 1 },
     ] });
     render(<PrintPendingView kids={KIDS} />);
     await waitFor(() => expect(screen.getAllByText('14 of 5 pages this window')).toHaveLength(2));
     expect(schoolApi.printQuota).toHaveBeenCalledTimes(1);
-    expect(schoolApi.printQuota).toHaveBeenCalledWith('learner-b');
+    expect(schoolApi.printQuota).toHaveBeenCalledWith('user_2');
   });
 });

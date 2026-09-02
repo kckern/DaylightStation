@@ -5,7 +5,7 @@ import path from 'node:path';
 const OUT_DIR = path.join(process.cwd(), 'docs/_wip/audits/teacher-workspace');
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
-const learnerB = { id: 'learner-b', name: 'Learner B' };
+const learnerB = { id: 'user_2', name: 'User_2' };
 const session = {
   schema: 'school.teacher-session/v3',
   sessionId: 'ses_a6NVUhN9',
@@ -18,7 +18,7 @@ const session = {
     posterUrl: '/api/v1/school/teacher/curriculum/civilization%2Fyoung-peoples-atlas-us/poster.jpg',
   },
   state: {
-    learnerId: 'learner-b',
+    learnerId: 'user_2',
     state: 'closed',
     machineGrade: { percent: 100 },
     effectiveGrade: { percent: 100 },
@@ -38,7 +38,7 @@ const session = {
 };
 
 const day = [{
-  learnerId: 'learner-b', effectiveScoreTotals: { correct: 6, total: 6 }, pendingReview: 0,
+  learnerId: 'user_2', effectiveScoreTotals: { correct: 6, total: 6 }, pendingReview: 0,
   sessions: [{
     sessionId: 'ses_a6NVUhN9', lessonTitle: 'Illinois', subject: 'civilization',
     courseTitle: 'United States Regions and States', moduleTitle: 'Midwest',
@@ -94,7 +94,7 @@ async function installTeacherReadModel(page) {
       return;
     }
     if (pathname.endsWith('/artifacts/receipt-illinois/original')) {
-      await route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="220" height="400"><rect width="100%" height="100%" fill="#fff"/><text x="18" y="40" font-size="18">Learner B — Illinois</text><text x="18" y="75" font-size="14">6 of 6 correct</text></svg>' });
+      await route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="220" height="400"><rect width="100%" height="100%" fill="#fff"/><text x="18" y="40" font-size="18">User_2 — Illinois</text><text x="18" y="75" font-size="14">6 of 6 correct</text></svg>' });
       return;
     }
     if (pathname.endsWith('/poster.jpg')) {
@@ -105,10 +105,10 @@ async function installTeacherReadModel(page) {
       const studyDay = new URL(route.request().url()).searchParams.get('studyDay');
       if (new URL(route.request().url()).searchParams.get('format') === 'json') {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
-          learnerId: 'learner-b', studyDay, sections: agendaSections, entries: [], errors: [],
+          learnerId: 'user_2', studyDay, sections: agendaSections, entries: [], errors: [],
         }) });
       } else {
-        await route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200"><rect width="100%" height="100%" fill="#fff"/><text x="24" y="70" font-size="24">Learner B agenda preview</text></svg>' });
+        await route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200"><rect width="100%" height="100%" fill="#fff"/><text x="24" y="70" font-size="24">User_2 agenda preview</text></svg>' });
       }
       return;
     }
@@ -145,11 +145,11 @@ test.describe('Teacher workspace route contracts', () => {
   test('opens a historical session read-only with the real lesson taxonomy', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await installTeacherReadModel(page);
-    await page.goto('/school/teacher/students/learner-b/history/sessions/ses_a6NVUhN9');
+    await page.goto('/school/teacher/students/user_2/history/sessions/ses_a6NVUhN9');
 
     await expect(page.getByRole('heading', { name: 'Illinois' })).toBeVisible();
     await expect(page.getByText('Civilization', { exact: true })).toBeVisible();
-    await expect(page.getByText('Learner B completed this lesson', { exact: false })).toBeVisible();
+    await expect(page.getByText('User_2 completed this lesson', { exact: false })).toBeVisible();
     await expect(page.getByText('United States Regions and States', { exact: true })).toBeVisible();
     await expect(page.getByText('Midwest', { exact: true })).toBeVisible();
     await expect(page.locator('.teacher-subject-identity .teacher-subject-identity__icon')).toHaveCount(1);
@@ -171,7 +171,7 @@ test.describe('Teacher workspace route contracts', () => {
     await page.goto('/school/teacher');
     await page.waitForTimeout(750);
     await expect(page.getByText(/This tab hit a rendering error/i)).toHaveCount(0);
-    await page.locator('.teacher-roster__card').filter({ hasText: 'Learner B' }).click();
+    await page.locator('.teacher-roster__card').filter({ hasText: 'User_2' }).click();
 
     // The drill-in still NAMES the lesson — it just no longer re-renders the
     // day beneath it. The issued paper lives on the day record now.
@@ -184,11 +184,11 @@ test.describe('Teacher workspace route contracts', () => {
     await expect(page.getByText('Processed today')).toHaveCount(0);
 
     const dayLink = details.getByRole('link', { name: /Open the full day record/ });
-    await expect(dayLink).toHaveAttribute('href', /\/students\/learner-b\/day$/);
+    await expect(dayLink).toHaveAttribute('href', /\/students\/user_2\/day$/);
     await dayLink.click();
 
     // One route, and the paper record is one fold away on the lesson's own row.
-    await expect(page.getByRole('heading', { name: 'Learner B’s day' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'User_2’s day' })).toBeVisible();
     await page.getByText('Paper record', { exact: true }).click();
     await expect(page.getByRole('link', { name: 'Open worksheet' })).toHaveAttribute('href', /artifacts\/worksheet-illinois\/original\.pdf$/);
     await expect(page.getByRole('link', { name: 'Open receipt' })).toHaveAttribute('href', /receipt-illinois\/original$/);
@@ -202,7 +202,7 @@ test.describe('Teacher workspace route contracts', () => {
   test('retraces any study day in one place — plan, record, and paper', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 1100 });
     await installTeacherReadModel(page);
-    await page.goto('/school/teacher/students/learner-b/day/2026-08-24');
+    await page.goto('/school/teacher/students/user_2/day/2026-08-24');
 
     await expect(page.getByText('Monday, Aug 24')).toBeVisible();
     await expect(page.getByTestId('day-summary')).toBeVisible();
@@ -234,7 +234,7 @@ test.describe('Teacher workspace route contracts', () => {
     });
     await page.setViewportSize({ width: 1440, height: 1100 });
     await installTeacherReadModel(page);
-    await page.goto('/school/teacher/students/learner-b/day/2026-08-24');
+    await page.goto('/school/teacher/students/user_2/day/2026-08-24');
 
     await page.getByRole('button', { name: /show the printed agenda/i }).click();
     const printed = page.getByAltText(/printed agenda/i);
@@ -256,18 +256,18 @@ test.describe('Teacher workspace route contracts', () => {
     });
     await page.setViewportSize({ width: 1440, height: 1000 });
     await installTeacherReadModel(page);
-    await page.goto('/school/teacher/students/learner-b/day');
+    await page.goto('/school/teacher/students/user_2/day');
 
     const studyDay = page.locator('input[type="date"]');
     await expect(studyDay).toHaveCount(1);
     await studyDay.fill('2099-01-01');
     // The day picker drives the URL, so a previewed day is bookmarkable.
-    await expect(page).toHaveURL(/\/students\/learner-b\/day\/2099-01-01$/);
+    await expect(page).toHaveURL(/\/students\/user_2\/day\/2099-01-01$/);
     await expect(page.locator('.teacher-day-nav__label')).toContainText('Thursday, Jan 1');
     // The dry-run promise now rides the printed agenda it describes.
     await page.getByRole('button', { name: 'Show the printed agenda' }).click();
     await expect(page.getByText('This is the paper as it would print — but the codes on this copy don’t work. Nothing here starts a lesson.', { exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Print Learner B’s agenda' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Print User_2’s agenda' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /print .* agenda/i })).toHaveCount(0);
     expect(writes).toEqual([]);
     await page.screenshot({ path: path.join(OUT_DIR, 'future-agenda-preview.png'), fullPage: true });

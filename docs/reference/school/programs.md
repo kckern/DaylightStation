@@ -63,8 +63,81 @@ launcher error, or an unwired lifecycle all return `gated: false`. A wrong
 `false` merely fails to nag. (`GetPlayableUnits`'s co-progress exemption fails
 CLOSED — opposite stakes, deliberately opposite posture.)
 
+Fails open is not the same as *open while we wait*. On the client
+(`usePianoLessonGate`) an unanswered read is **pending**, not permission: the
+menu greys out — every tile and the recent-courses strip — with one caption,
+and only opens once a verdict lands or the 20s loading ceiling gives up on the
+read. A read that *fails* is equally unanswered, so a network error or a 5xx
+also holds the learner pending and lets the next poll retry; only a definite
+refusal opens the menu at once, which is what the 404 of a School-less install
+is. The hook exposes one `pending` flag for this so that no screen re-derives
+the rule — the menu and the Videos course grid both read it. On 2026-09-01 a learner picked his name and left through the
+recent-courses strip 3.5s later, because the cold read took 11.1s and `gated`
+was false for all of it. A learner whose verdict has already landed never
+returns to pending, so a slow poll can never reopen a gate that read as owed.
+
+The verdict is also **memoised per learner** for `MEMO_TTL_MS` (60s), so a
+child tapping their own name three times pays for one read rather than three.
+Freshness comes from invalidation, not the TTL: the use case subscribes to
+`onCompletionInputChanged` — completions, passed challenges, assignment edits
+and bypass grants all arrive there — and drops that learner's entry. The TTL
+is only the backstop for what no event announces (a dropped bus message, a
+plan file edited on disk, an episode added to the Plex course, the 4am
+study-day rollover), and it bounds every one of those to a minute. Two things
+the memo deliberately does not do: it never caches the `unavailable` verdict,
+because that is the fail-open answer for a broken read and holding it would
+extend a one-second Plex blip into a minute of open gate; and it does nothing
+for the **cold** read. Sixty seconds is also deliberately shorter than the
+5-minute structure cache one layer down, so this memo can never extend
+structure staleness — the worst it can do is re-serve an answer that cache was
+going to give anyway.
+
+On the cold read: the 11.1s is best explained as a cold miss in
+`FitnessPlayableService`'s structure cache (5-minute TTL, watch-state
+enrichment deliberately excluded), since the 0.35s warm figure includes that
+live enrichment and so cannot be where the ten seconds went. That is an
+**inference from the two timings, not a measurement** — nobody instrumented
+which layer spent the time. Either way the memo cannot help here: the first
+caller after a restart pays in full. That is what the client's pending state
+is for.
+
 The piano itself is never gated: auto-enter-Studio arms on the menu ROUTE, and
 the gate is a render branch of that same route.
+
+#### What the gate actually gates
+
+Two surfaces read it, and the coverage is deliberately partial:
+
+- **The kiosk menu** — `gated` replaces the whole tile grid with `TodaysLessonGate`,
+  the one launcher a gated learner has.
+- **The Videos course grid** (`CourseGridRoute`) — a gated named learner is sent
+  back to the menu with `<Navigate replace>` and the redirect is logged as
+  `piano.videos.grid-redirected`. `replace` so the grid leaves no history entry to
+  bounce off; the menu never sends a gated learner to `/videos`, so it cannot loop.
+  This exists because the mode crumb in PianoChrome points straight at
+  `${basePath}/videos`: without it, "you may only do Reading Music" hands the child
+  a door into a room where Reading Music is one tile among ten.
+
+**`CourseDetailRoute` and `LecturePlayerRoute` do NOT read the gate.** They take
+`:courseId` from the URL, so a non-assigned course reached *without passing the
+grid* still plays — a verdict that flips to `gated` while a course is already on
+screen, history back/forward or a reload onto a stale URL, a DoNow push, and
+(first-order and in-app) the exercise checkpoint's `return` param, which
+`LecturePlayerRoute` persists as `returnTo` and `Exercises` navigates to on a pass.
+Closing those needs an **owed-set** comparison, because the gate response names one
+course while `status()` is gated on *any* owed enrollment; comparing against the
+single shown course would evict a learner legitimately working a second owed one.
+That is an API change, not a route guard. Vectors and reasoning:
+`docs/_wip/bugs/2026-09-01-piano-lesson-gate-escapes-via-course-grid.md`.
+
+A completion that belongs to no enrolled course is correctly ignored — a Hot Cross
+Buns lesson must not discharge a Reading Music obligation — but it is no longer
+ignored *silently*: `PianoLessonCeremonyBridge` emits
+`school.piano-ceremony.ignored` at **info** with the plex id, the title and the
+courses that could have been discharged. Info, not warn: nothing is wrong, but it
+must be visible without turning debug on mid-incident. The cheaper "no piano
+enrollment at all" exit above it stays silent, so a grown-up noodling never
+reaches this line.
 
 ### Parent bypass — excusing one day
 
@@ -268,8 +341,8 @@ minutes in is not a story read). `school ops read` is the manual-correction
 path — a book read on a lap, a mis-scanned sticker:
 
 ```bash
-node cli/school.mjs ops read learner-c --title="The Jungle Book" --content=plex:620681
-node cli/school.mjs ops read learner-c --title="The Jungle Book" --content=plex:620681 --apply
+node cli/school.mjs ops read user_5 --title="The Jungle Book" --content=plex:620681
+node cli/school.mjs ops read user_5 --title="The Jungle Book" --content=plex:620681 --apply
 ```
 
 The learner id is resolved against `school.yml` `students:` and an unknown one

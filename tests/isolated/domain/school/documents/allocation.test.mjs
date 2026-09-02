@@ -426,11 +426,11 @@ describe('checkCollision', () => {
   });
 
   it('collides regardless of learner (a physical card cannot host two documents on the same rows)', () => {
-    const learnerA = { ...base, documentId: 'doc-a', learnerId: 'kid-1' };
-    const result = checkCollision([learnerA], {
+    const user_4 = { ...base, documentId: 'doc-a', learnerId: 'kid-1' };
+    const result = checkCollision([user_4], {
       cardId: '1234567', startRow: 5, endRow: 6,
     });
-    expect(result).toEqual([learnerA]);
+    expect(result).toEqual([user_4]);
   });
 
   it('returns no collision when ranges are disjoint on the same card', () => {

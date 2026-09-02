@@ -101,7 +101,7 @@ function harness({
         ? {
           deviceId, platformId: 'future',
           resolveLearnerKey: (learnerKey) => (learnerKey === 4
-            ? { learnerKey: 4, learnerId: 'learner-a', active: true }
+            ? { learnerKey: 4, learnerId: 'user_4', active: true }
             : null),
           ...device,
         }
@@ -135,7 +135,7 @@ describe('ImportSchoolCalcResult', () => {
       },
     });
     const session = {
-      studySessionId: 'study-one', workSessionId: 'work-one', learnerId: 'learner-a', status: 'open',
+      studySessionId: 'study-one', workSessionId: 'work-one', learnerId: 'user_4', status: 'open',
       artifact: { artifactId: quizArtifact.artifactId },
       resolution: { deviceId: 'DEVICE01', learnerKey: 4 },
       curation: { policy: { cardCount: 1, itemCount: 1, maxExposuresPerCard: 4, passingPercent: 80 } },
@@ -173,7 +173,7 @@ describe('ImportSchoolCalcResult', () => {
       ] } },
     } });
     const studySessions = { getByCode: async () => ({
-      studySessionId: 'study-one', learnerId: 'learner-a', status: 'open',
+      studySessionId: 'study-one', learnerId: 'user_4', status: 'open',
       artifact: { artifactId: quizArtifact.artifactId }, resolution: { deviceId: 'DEVICE01', learnerKey: 4 },
       curation: { policy: { cardCount: 1, itemCount: 1, maxExposuresPerCard: 4, passingPercent: 80 } },
     }) };
@@ -199,7 +199,7 @@ describe('ImportSchoolCalcResult', () => {
     expect(retry).toMatchObject({ status: 'duplicate', acknowledge: true });
     expect(grader.importSchoolCalcAssessment).toHaveBeenCalledTimes(1);
     expect(grader.importSchoolCalcAssessment).toHaveBeenCalledWith(expect.objectContaining({
-      learnerId: 'learner-a',
+      learnerId: 'user_4',
       mode: 'quiz',
       recordDigest: 'digest-a',
       receivedAt: '2026-08-01T15:00:00.000Z',
@@ -252,7 +252,7 @@ describe('ImportSchoolCalcResult', () => {
     expect(duplicate.remediation).toEqual(first.remediation);
     expect(remediationOffers.execute).toHaveBeenCalledTimes(1);
     expect(remediationOffers.execute).toHaveBeenCalledWith(expect.objectContaining({
-      learnerId: 'learner-a',
+      learnerId: 'user_4',
       source: expect.objectContaining({
         surface: 'schoolcalc', learnerKey: 4,
         externalId: 'DEVICE01:7', moduleId: 'check',
@@ -278,7 +278,7 @@ describe('ImportSchoolCalcResult', () => {
     expect(outcome).toMatchObject({ status: 'accepted', acknowledge: true });
     expect(grader.importSchoolCalcAssessment).not.toHaveBeenCalled();
     expect(progress.saveLatest).toHaveBeenCalledWith(expect.objectContaining({
-      learnerId: 'learner-a',
+      learnerId: 'user_4',
       lessonId: 'linear-equations',
       moduleId: 'check',
       progress: { status: 'viewed', position: 3, total: 8 },

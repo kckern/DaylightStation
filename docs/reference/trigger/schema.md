@@ -92,8 +92,8 @@ A **learner card** is an NFC tag carrying `school_learner:` — it names a *pers
 ```yaml
 # tags
 048ba600cc2a81:
-  note: learner-a personal card (red)
-  school_learner: learner-a
+  note: user_4 personal card (red)
+  school_learner: user_4
 ```
 
 The card names **who**. The reader decides **what happens to them**, via that location's `learner_action`:

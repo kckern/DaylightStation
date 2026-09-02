@@ -97,12 +97,16 @@ export class ProxyService {
 
   /**
    * Proxy with retry logic
+   * @param {string|null} [pathOverride] - Upstream path to fetch INSTEAD of the
+   *   one derived from `req.url`. Set only when re-issuing against an adapter's
+   *   `getFallbackPath()`; its presence is also what stops a fallback chaining
+   *   into another fallback.
    * @private
    */
-  async #proxyWithRetry(adapter, req, res, retryConfig, timeout, attempt) {
+  async #proxyWithRetry(adapter, req, res, retryConfig, timeout, attempt, pathOverride = null) {
     const serviceName = adapter.getServiceName();
     const baseUrl = adapter.getBaseUrl();
-    const path = adapter.transformPath?.(req.url) || req.url;
+    const path = pathOverride ?? (adapter.transformPath?.(req.url) || req.url);
 
     // Build target URL
     const targetUrl = new URL(path, baseUrl);
@@ -177,6 +181,27 @@ export class ProxyService {
             adapter, proxyRes.headers.location, headers, timeout, res, maxRedirects
           ).then(resolve);
           return;
+        }
+
+        // An upstream can advertise an asset at one path and serve it at
+        // another: a Plex playlist whose thumb field is set but whose image file
+        // is gone still has its auto-composite. Give the adapter one chance to
+        // name where the asset actually lives before this becomes an error.
+        // `pathOverride` guards the recursion — a fallback gets no fallback.
+        if (statusCode >= 400 && !pathOverride) {
+          const fallbackPath = adapter.getFallbackPath?.(path, statusCode);
+          if (fallbackPath) {
+            proxyRes.resume(); // discard the miss
+            this.#logger.debug?.('proxy.fallbackPath', {
+              service: serviceName,
+              statusCode,
+              from: path,
+              to: fallbackPath,
+            });
+            this.#proxyWithRetry(adapter, req, res, retryConfig, timeout, 0, fallbackPath)
+              .then(resolve);
+            return;
+          }
         }
 
         // Forward response — or fall back to placeholder SVG for image proxies

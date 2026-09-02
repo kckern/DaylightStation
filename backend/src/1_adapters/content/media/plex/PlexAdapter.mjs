@@ -64,6 +64,29 @@ export function sanitizePlexSessionId(raw) {
 }
 
 /**
+ * Which of a Plex item's art fields to display.
+ *
+ * A playlist carries BOTH: `thumb` when someone has uploaded a poster for it,
+ * and `composite` — the auto-generated 2x2 mosaic of its first few items —
+ * always, custom poster or not. So preferring `composite` makes every uploaded
+ * playlist poster unreachable, which is how the "STRETCH / MOBILITY" art on
+ * playlist 672606 stayed hidden behind a mosaic of unrelated show covers (26 of
+ * 63 playlists on this server have custom art). Prefer the deliberate choice.
+ *
+ * Non-playlist items have no `composite`, so this is a no-op for them.
+ *
+ * A few playlists advertise a `thumb` whose image file is gone upstream; those
+ * 404s are recovered back to the composite by `PlexProxyAdapter.getFallbackPath`
+ * at serve time, which is the only layer that learns an asset is missing.
+ *
+ * @param {Object} item - Raw Plex metadata entry
+ * @returns {string|null} Plex-relative art path, or null when the item has none
+ */
+export function plexArtPath(item) {
+  return item?.thumb || item?.composite || null;
+}
+
+/**
  * Plex content source adapter.
  * Implements IContentSource interface for accessing Plex Media Server content.
  */
@@ -286,8 +309,7 @@ export class PlexAdapter {
       const item = metadata?.MediaContainer?.Metadata?.[0];
       if (!item) return ['', '', ''];
 
-      // Playlists use 'composite' (auto-generated mosaic), others use 'thumb'
-      const primaryThumb = item.composite || item.thumb;
+      const primaryThumb = plexArtPath(item);
       const { parentThumb, grandparentThumb } = item;
       // Legacy returns empty string "" for missing thumbs
       return [primaryThumb, parentThumb, grandparentThumb].map(
@@ -304,7 +326,7 @@ export class PlexAdapter {
 
   /**
    * Get the primary thumbnail URL for an item
-   * Handles different item types (playlists use 'composite', others use 'thumb')
+   * Art-field precedence lives in `plexArtPath` — see it for the playlist case.
    * @param {string} ratingKey - Plex rating key
    * @returns {Promise<string|null>} Thumbnail URL or null
    */
@@ -314,8 +336,7 @@ export class PlexAdapter {
       const item = metadata?.MediaContainer?.Metadata?.[0];
       if (!item) return null;
 
-      // Playlists use 'composite' (auto-generated mosaic), others use 'thumb'
-      const thumbPath = item.composite || item.thumb;
+      const thumbPath = plexArtPath(item);
       return thumbPath ? `${this.proxyPath}${thumbPath}` : null;
     } catch (err) {
       this.logger.error?.('plex.getThumbnail.exception', {
@@ -684,8 +705,7 @@ export class PlexAdapter {
     const id = item.ratingKey || item.key?.replace(/^\//, '').replace(/\/children$/, '');
 
     // Use proxy URL for thumbnails (not direct Plex URL)
-    // Playlists use 'composite' (auto-generated mosaic), others use 'thumb'
-    const thumbPath = item.composite || item.thumb;
+    const thumbPath = plexArtPath(item);
     const thumbnail = thumbPath ? `${this.proxyPath}${thumbPath}` : null;
 
     // Build metadata with hierarchy info
@@ -786,7 +806,7 @@ export class PlexAdapter {
         title: mergedC?.title || item.title || item.titleSort || `[${item.type || 'Untitled'}]`,
         itemType: 'container',
         childCount: item.leafCount || 0,
-        thumbnail: (item.composite || item.thumb) ? `${this.proxyPath}${(item.composite || item.thumb)}` : null,
+        thumbnail: plexArtPath(item) ? `${this.proxyPath}${plexArtPath(item)}` : null,
         metadata: containerMetadata
       });
     }
@@ -1011,10 +1031,7 @@ export class PlexAdapter {
       return {
         key: localId,
         title: item.title,
-        // composite first: playlists serve art at /playlists/:id/composite (the
-        // /library/metadata/:id/thumb path 404s for them); non-playlists have no
-        // composite so they fall through to thumb. Matches the rest of the adapter.
-        image: (item.composite || item.thumb) ? `${this.proxyPath}${item.composite || item.thumb}` : null,
+        image: plexArtPath(item) ? `${this.proxyPath}${plexArtPath(item)}` : null,
         summary: item.summary || null,
         tagline: item.tagline || null,
         year: item.year || null,
@@ -2016,7 +2033,7 @@ export class PlexAdapter {
    * @private
    */
   _hubResultToListableItem(item) {
-    const thumbPath = item.composite || item.thumb;
+    const thumbPath = plexArtPath(item);
     const thumbnail = thumbPath ? `${this.proxyPath}${thumbPath}` : null;
     const isContainer = ['show', 'artist', 'album', 'collection', 'season'].includes(item.type);
 
@@ -2127,8 +2144,7 @@ export class PlexAdapter {
           title: p.title,
           itemType: 'container',
           childCount: p.leafCount || 0,
-          thumbnail: p.composite ? `${this.proxyPath}${p.composite}` :
-                    (p.thumb ? `${this.proxyPath}${p.thumb}` : null),
+          thumbnail: plexArtPath(p) ? `${this.proxyPath}${plexArtPath(p)}` : null,
           metadata: {
             type: 'playlist',
             category: this.#mapTypeToCategory('playlist'),

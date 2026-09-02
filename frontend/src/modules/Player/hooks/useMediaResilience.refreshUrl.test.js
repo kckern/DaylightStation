@@ -118,6 +118,29 @@ describe('useMediaResilience — retryFromExhausted (user retry after exhaustion
     }));
   });
 
+  // `userInitiated` is the hook telling the Player "a human asked for this", which
+  // exempts the remount from the Player's cancel-on-playing and fire-time brakes.
+  // It must NOT be inferred from forceRemount downstream: the stall-jolt ladder
+  // raises that automatically (stallJolt.js:33), and treating it as consent
+  // reopened the 2026-09-01 post-success remount on the commonest stall path.
+  it('declares userInitiated so the Player will not second-guess a viewer retry', () => {
+    const args = exhaustionArgs();
+    const { result } = renderHook(() => useMediaResilience(args));
+    act(() => result.current.retryFromExhausted());
+    expect(args.onReload).toHaveBeenCalledWith(expect.objectContaining({
+      reason: 'user-retry-exhausted',
+      userInitiated: true
+    }));
+  });
+
+  it('does NOT declare userInitiated for an automatic recovery', () => {
+    const args = exhaustionArgs();
+    const { result } = renderHook(() => useMediaResilience(args));
+    act(() => result.current._testTriggerRecovery?.('playback-stalled'));
+    expect(args.onReload).toHaveBeenCalledTimes(1);
+    expect(args.onReload.mock.calls[0][0].userInitiated).toBeUndefined();
+  });
+
   it('clears the recovery ledger so the next attempt is not gated by maxAttempts', () => {
     // Recovery accounting lives in the shared recoveryLedger; install a
     // cooldown-free instance so back-to-back triggers reach the session cap

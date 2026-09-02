@@ -15,8 +15,8 @@ describe('RecordStoryRead', () => {
       clock: () => new Date('2026-08-27T01:30:00.000Z'),
       logger: silent,
     });
-    await useCase.execute({ learnerId: 'learner-c', title: 'The Jungle Book', contentId: 'plex:620681', tagUid: '04215172cc2a81', location: 'livingroom' });
-    expect(appended[0]).toMatchObject({ learnerId: 'learner-c', studyDay: '2026-08-26', title: 'The Jungle Book' });
+    await useCase.execute({ learnerId: 'user_5', title: 'The Jungle Book', contentId: 'plex:620681', tagUid: '04215172cc2a81', location: 'livingroom' });
+    expect(appended[0]).toMatchObject({ learnerId: 'user_5', studyDay: '2026-08-26', title: 'The Jungle Book' });
   });
 
   it('refuses a read with no learner', async () => {
@@ -31,9 +31,9 @@ describe('RecordStoryRead', () => {
       realtime: { storyReadRecorded: (payload) => sent.push({ topic: 'school', payload: { event: 'story-read', ...payload } }) },
       studyDay: () => '2026-08-26', clock: () => new Date('2026-08-26T18:00:00.000Z'), logger: silent,
     });
-    await useCase.execute({ learnerId: 'learner-c', title: 'The Jungle Book' });
+    await useCase.execute({ learnerId: 'user_5', title: 'The Jungle Book' });
     expect(sent[0].topic).toBe('school');
-    expect(sent[0].payload).toMatchObject({ event: 'story-read', learnerId: 'learner-c', title: 'The Jungle Book' });
+    expect(sent[0].payload).toMatchObject({ event: 'story-read', learnerId: 'user_5', title: 'The Jungle Book' });
   });
 
   it('still records the read when the broadcast throws', async () => {
@@ -42,7 +42,7 @@ describe('RecordStoryRead', () => {
       realtime: { storyReadRecorded: () => { throw new Error('bus down'); } },
       studyDay: () => '2026-08-26', clock: () => new Date('2026-08-26T18:00:00.000Z'), logger: silent,
     });
-    await expect(useCase.execute({ learnerId: 'learner-c', title: 'x' })).resolves.toMatchObject({ learnerId: 'learner-c' });
+    await expect(useCase.execute({ learnerId: 'user_5', title: 'x' })).resolves.toMatchObject({ learnerId: 'user_5' });
   });
   // Composition wires only the launcher today. When plan 03 wires this use
   // case, an omitted `timezone` would have defaulted to UTC while the launcher
@@ -64,7 +64,7 @@ describe('RecordStoryRead', () => {
       // Deliberately a DIFFERENT instant than the study day implies: the row
       // must carry the key it was handed, never one re-derived from the clock.
       clock: () => new Date('2026-08-27T01:30:00.000Z'), logger: silent,
-    }).execute({ learnerId: 'learner-c', title: 'One' });
+    }).execute({ learnerId: 'user_5', title: 'One' });
     expect(appended[0].studyDay).toBe('2026-08-26');
     expect(appended[0].at).toBe('2026-08-27T01:30:00.000Z');
   });
@@ -77,7 +77,7 @@ describe('RecordStoryRead', () => {
     await new RecordStoryRead({
       readingLog: { append: async (row) => { appended.push(row); return row; } },
       studyDay: () => '2026-08-26', clock: () => new Date('2026-08-26T18:00:00.000Z'), logger: silent,
-    }).execute({ learnerId: 'learner-c', title: 'One', pickId: 'pick_abc123' });
+    }).execute({ learnerId: 'user_5', title: 'One', pickId: 'pick_abc123' });
     expect(appended[0].pickId).toBe('pick_abc123');
   });
 
@@ -86,7 +86,7 @@ describe('RecordStoryRead', () => {
     await new RecordStoryRead({
       readingLog: { append: async (row) => { appended.push(row); return row; } },
       studyDay: () => '2026-08-26', clock: () => new Date('2026-08-26T18:00:00.000Z'), logger: silent,
-    }).execute({ learnerId: 'learner-c', title: 'One' });
+    }).execute({ learnerId: 'user_5', title: 'One' });
     expect(appended[0]).toHaveProperty('pickId', null);
   });
 });

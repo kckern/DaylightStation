@@ -422,7 +422,7 @@ describe('the school-day calendar', () => {
 
   it('keeps work obligated when a schedule is malformed', () => {
     const { sections } = on(SATURDAY, {
-      plan: { learnerId: 'learner-a', entries: [entry({ unitId: 'u1', subject: 'math', courseId: 'c1', schedule: { except: ['Christmas'] } })], errors: [] },
+      plan: { learnerId: 'user_4', entries: [entry({ unitId: 'u1', subject: 'math', courseId: 'c1', schedule: { except: ['Christmas'] } })], errors: [] },
     });
     expect(sections[0].obligation).toEqual({ state: 'obligated', reason: null });
   });

@@ -586,9 +586,15 @@ export async function createSchoolLifecycle({
   // The piano kiosk's menu gate — "does this learner owe a lesson right now?".
   // Null without a launcher, which makes the lifecycle router skip the route
   // and the kiosk hook fail open to the ordinary menu.
+  // `realtime` is what keeps its per-learner memo honest; `.start()` happens
+  // below, with the other subscriptions, so a bus that cannot subscribe never
+  // reaches it (see `realtimeSubscriptionsAvailable`).
   const { GetPianoLessonGate } = await import('#apps/school/usecases/GetPianoLessonGate.mjs');
   const getPianoLessonGate = pianoCourseLauncher
-    ? new GetPianoLessonGate({ assignments: stores.assignments, launcher: pianoCourseLauncher, logger })
+    ? new GetPianoLessonGate({
+      assignments: stores.assignments, launcher: pianoCourseLauncher,
+      realtime: schoolRealtime, clock, logger,
+    })
     : null;
 
   // Story time — a daily obligation with no course behind it. Unconditional:
@@ -1128,6 +1134,10 @@ export async function createSchoolLifecycle({
       });
       pianoLessonCeremonyBridge.start();
     }
+    // The kiosk gate's memo listens to the same completion inputs. Started
+    // here rather than at construction so it shares this guard: without a
+    // subscribable bus the memo still expires on its own TTL.
+    getPianoLessonGate?.start();
   } else {
     logger.warn?.('school.lifecycle.completion-bridge-unwired', { reason: 'no eventBus' });
   }

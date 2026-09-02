@@ -14,7 +14,7 @@ function makeLauncher({ rows = [], target = 2, now = '2026-08-26T18:00:00.000Z' 
 
 describe('StoryTimeProgramLauncher', () => {
   it('is not done with no reads', async () => {
-    const s = await makeLauncher({ rows: [] }).status({ userId: 'learner-c' });
+    const s = await makeLauncher({ rows: [] }).status({ userId: 'user_5' });
     expect(s.doneToday).toBe(false);
     expect(s.progressLabel).toBe('0 of 2 stories');
     expect(s.obligationProgress).toEqual({ completed: 0, total: 2 });
@@ -22,7 +22,7 @@ describe('StoryTimeProgramLauncher', () => {
   });
 
   it('is not done partway', async () => {
-    const s = await makeLauncher({ rows: [{ title: 'One' }] }).status({ userId: 'learner-c' });
+    const s = await makeLauncher({ rows: [{ title: 'One' }] }).status({ userId: 'user_5' });
     expect(s.doneToday).toBe(false);
     expect(s.progressLabel).toBe('1 of 2 stories');
     expect(s.obligationProgress).toEqual({ completed: 1, total: 2 });
@@ -30,7 +30,7 @@ describe('StoryTimeProgramLauncher', () => {
   });
 
   it('is done at the target', async () => {
-    const s = await makeLauncher({ rows: [{ title: 'One' }, { title: 'Two' }] }).status({ userId: 'learner-c' });
+    const s = await makeLauncher({ rows: [{ title: 'One' }, { title: 'Two' }] }).status({ userId: 'user_5' });
     expect(s.doneToday).toBe(true);
     expect(s.progressLabel).toBe('2 of 2 stories');
     expect(s.obligationProgress).toEqual({ completed: 2, total: 2 });
@@ -38,7 +38,7 @@ describe('StoryTimeProgramLauncher', () => {
   });
 
   it('stays done past the target — extra stories are never a penalty', async () => {
-    const s = await makeLauncher({ rows: [{}, {}, {}] }).status({ userId: 'learner-c' });
+    const s = await makeLauncher({ rows: [{}, {}, {}] }).status({ userId: 'user_5' });
     expect(s.doneToday).toBe(true);
     expect(s.progressLabel).toBe('3 of 2 stories');
     expect(s.obligationProgress).toEqual({ completed: 2, total: 2 });
@@ -46,7 +46,7 @@ describe('StoryTimeProgramLauncher', () => {
   });
 
   it('is never terminal — a daily obligation does not complete', async () => {
-    const s = await makeLauncher({ rows: [{}, {}] }).status({ userId: 'learner-c' });
+    const s = await makeLauncher({ rows: [{}, {}] }).status({ userId: 'user_5' });
     expect(s.terminal).toBe(false);
   });
 
@@ -59,8 +59,8 @@ describe('StoryTimeProgramLauncher', () => {
       // day does not roll until 4am — so this is still the 26th.
       timezone: 'America/Los_Angeles', clock: at('2026-08-27T01:30:00.000Z'), logger: silent,
     });
-    await launcher.status({ userId: 'learner-c' });
-    expect(asked).toEqual([['learner-c', '2026-08-26']]);
+    await launcher.status({ userId: 'user_5' });
+    expect(asked).toEqual([['user_5', '2026-08-26']]);
   });
 
   it('reports an error rather than a false zero when the log is unreadable', async () => {
@@ -69,7 +69,7 @@ describe('StoryTimeProgramLauncher', () => {
       assignments: { get: async () => ({ programs: [{ programId: 'story-time', target: 2 }] }) },
       timezone: 'America/Los_Angeles', clock: at('2026-08-26T18:00:00.000Z'), logger: silent,
     });
-    const s = await launcher.status({ userId: 'learner-c' });
+    const s = await launcher.status({ userId: 'user_5' });
     expect(s.error).toBe(true);
     expect(s.doneToday).toBe(false);
     expect(s.obligationProgress).toBeNull();
@@ -80,7 +80,7 @@ describe('StoryTimeProgramLauncher', () => {
   // the room to walk to.
   it('refuses a launch in DoNow\'s own shape, naming the room', async () => {
     const launcher = makeLauncher();
-    expect(await launcher.launch({ userId: 'learner-c' })).toEqual({
+    expect(await launcher.launch({ userId: 'user_5' })).toEqual({
       decision: 'failed', message: 'Story time happens on the living room TV — tap your card there.',
     });
     expect(launcher.locationHint).toBe('on the living room TV');
@@ -98,7 +98,7 @@ describe('StoryTimeProgramLauncher', () => {
       assignments: { get: async () => null },
       timezone: 'America/Los_Angeles', clock: at('2026-08-26T18:00:00.000Z'), logger: silent,
     });
-    const s = await launcher.status({ userId: 'learner-c' });
+    const s = await launcher.status({ userId: 'user_5' });
     expect(s.error).toBe(true);
     expect(s.doneToday).toBe(false);
     expect(s.target).toBe(null);
@@ -110,7 +110,7 @@ describe('StoryTimeProgramLauncher', () => {
       assignments: { get: async () => ({ programs: [{ programId: 'story-time', target: '5' }] }) },
       timezone: 'America/Los_Angeles', clock: at('2026-08-26T18:00:00.000Z'), logger: silent,
     });
-    const s = await launcher.status({ userId: 'learner-c' });
+    const s = await launcher.status({ userId: 'user_5' });
     expect(s.error).toBe(true);
     expect(s.target).toBe(null);
   });
@@ -121,7 +121,7 @@ describe('StoryTimeProgramLauncher', () => {
       assignments: { get: async () => ({ programs: [{ programId: 'story-time' }] }) },
       timezone: 'America/Los_Angeles', clock: at('2026-08-26T18:00:00.000Z'), logger: silent,
     });
-    expect((await launcher.status({ userId: 'learner-c' })).progressLabel).toBe('0 of 2 stories');
+    expect((await launcher.status({ userId: 'user_5' })).progressLabel).toBe('0 of 2 stories');
   });
 
   it('reports an error rather than a guessed target when the assignments store throws', async () => {
@@ -130,7 +130,7 @@ describe('StoryTimeProgramLauncher', () => {
       assignments: { get: async () => { throw new Error('disk gone'); } },
       timezone: 'America/Los_Angeles', clock: at('2026-08-26T18:00:00.000Z'), logger: silent,
     });
-    const s = await launcher.status({ userId: 'learner-c' });
+    const s = await launcher.status({ userId: 'user_5' });
     expect(s.error).toBe(true);
     expect(s.doneToday).toBe(false);
   });
@@ -142,14 +142,14 @@ describe('StoryTimeProgramLauncher', () => {
       readingLog: { listForDay: async () => { throw new Error('disk gone'); } },
       assignments: { get: async () => ({ programs: [{ programId: 'story-time', target: 3 }] }) },
       timezone: 'America/Los_Angeles', clock: at('2026-08-26T18:00:00.000Z'), logger: silent,
-    }).status({ userId: 'learner-c' });
+    }).status({ userId: 'user_5' });
     expect(unreadableLog).toMatchObject({ error: true, count: null, target: 3, reads: [], terminal: false, score: null });
 
     const unknownTarget = await new StoryTimeProgramLauncher({
       readingLog: { listForDay: async () => [] },
       assignments: { get: async () => null },
       timezone: 'America/Los_Angeles', clock: at('2026-08-26T18:00:00.000Z'), logger: silent,
-    }).status({ userId: 'learner-c' });
+    }).status({ userId: 'user_5' });
     expect(unknownTarget).toMatchObject({ error: true, count: null, target: null, reads: [], terminal: false, score: null });
   });
   // ── enrolled vs unreadable ────────────────────────────────────────────────
@@ -159,7 +159,7 @@ describe('StoryTimeProgramLauncher', () => {
   // came back "browsing", so a genuinely broken read silently RELAXED a child
   // who was mid-assignment. `enrolled` is the field that separates them.
   it('reports an enrolled learner as enrolled', async () => {
-    const s = await makeLauncher({ rows: [] }).status({ userId: 'learner-c' });
+    const s = await makeLauncher({ rows: [] }).status({ userId: 'user_5' });
     expect(s).toMatchObject({ error: false, enrolled: true, target: 2 });
   });
 
@@ -169,7 +169,7 @@ describe('StoryTimeProgramLauncher', () => {
       assignments: { get: async () => ({ programs: [{ programId: 'piano-course' }] }) },
       timezone: 'America/Los_Angeles', clock: at('2026-08-26T18:00:00.000Z'), logger: silent,
     });
-    const s = await launcher.status({ userId: 'learner-d' });
+    const s = await launcher.status({ userId: 'user_3' });
     expect(s.error).toBe(false);
     expect(s.enrolled).toBe(false);
     expect(s.target).toBe(null);
@@ -183,7 +183,7 @@ describe('StoryTimeProgramLauncher', () => {
       assignments: { get: async () => ({}) },
       timezone: 'America/Los_Angeles', clock: at('2026-08-26T18:00:00.000Z'), logger: silent,
     });
-    expect(await launcher.status({ userId: 'learner-d' })).toMatchObject({ error: false, enrolled: false });
+    expect(await launcher.status({ userId: 'user_3' })).toMatchObject({ error: false, enrolled: false });
   });
 
   it('never asks the reading log about a learner who is not enrolled', async () => {
@@ -193,7 +193,7 @@ describe('StoryTimeProgramLauncher', () => {
       assignments: { get: async () => ({ programs: [] }) },
       timezone: 'America/Los_Angeles', clock: at('2026-08-26T18:00:00.000Z'), logger: silent,
     });
-    await launcher.status({ userId: 'learner-d' });
+    await launcher.status({ userId: 'user_3' });
     expect(asked).toEqual([]);
   });
 
@@ -203,7 +203,7 @@ describe('StoryTimeProgramLauncher', () => {
       assignments: { get: async () => null },
       timezone: 'America/Los_Angeles', clock: at('2026-08-26T18:00:00.000Z'), logger: silent,
     });
-    const s = await launcher.status({ userId: 'learner-c' });
+    const s = await launcher.status({ userId: 'user_5' });
     expect(s.error).toBe(true);
     expect(s.enrolled).toBe(null);
   });
@@ -214,7 +214,7 @@ describe('StoryTimeProgramLauncher', () => {
       assignments: { get: async () => ({ programs: [{ programId: 'story-time', target: '5' }] }) },
       timezone: 'America/Los_Angeles', clock: at('2026-08-26T18:00:00.000Z'), logger: silent,
     });
-    expect(await launcher.status({ userId: 'learner-c' })).toMatchObject({ error: true, enrolled: true });
+    expect(await launcher.status({ userId: 'user_5' })).toMatchObject({ error: true, enrolled: true });
   });
 
   it('an unreadable LOG is an error on an enrollment that reads fine', async () => {
@@ -223,6 +223,6 @@ describe('StoryTimeProgramLauncher', () => {
       assignments: { get: async () => ({ programs: [{ programId: 'story-time', target: 2 }] }) },
       timezone: 'America/Los_Angeles', clock: at('2026-08-26T18:00:00.000Z'), logger: silent,
     });
-    expect(await launcher.status({ userId: 'learner-c' })).toMatchObject({ error: true, enrolled: true, target: 2 });
+    expect(await launcher.status({ userId: 'user_5' })).toMatchObject({ error: true, enrolled: true, target: 2 });
   });
 });

@@ -1,9 +1,10 @@
 import { useMemo, useCallback, useRef, useEffect } from 'react';
-import { Routes, Route, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import { usePianoCoursePlayable } from './usePianoCoursePlayable.js';
 import { usePianoUser } from '../../PianoUserContext.jsx';
+import usePianoLessonGate, { PENDING_CAPTION } from '../../usePianoLessonGate.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import CourseGrid from './CourseGrid.jsx';
 import CourseDetail from './CourseDetail.jsx';
@@ -59,10 +60,71 @@ export function Videos({ source, PlayerComponent }) {
   );
 }
 
-/** Course grid → push the selected course id (relative). */
-function CourseGridRoute({ groups }) {
+/**
+ * Course grid → push the selected course id (relative).
+ *
+ * Under the lesson gate the grid does not exist for that learner: the ONE
+ * launcher they have is the lesson card on the menu, and PianoChrome's mode
+ * crumb points straight here (`${basePath}/videos`), which is the door a
+ * learner walked out of on 2026-09-01 — assigned course → crumb → every course
+ * → a lesson from the wrong one. Guests, School-less installs and failed or
+ * timed-out reads see the full grid (the hook fails open on purpose).
+ *
+ * While a named learner's verdict is in flight the grid is withheld — a cold
+ * read was measured at 11.1s and a wall tablet that showed the wall for 11s
+ * would be teaching the escape. It says so rather than going blank: a dark
+ * pane on a kiosk reads as a crash, and the menu's pending state uses these
+ * same words (PianoMenu's `piano-home__pending` caption).
+ *
+ * NOTE (2026-09-01): this closes the GRID. `CourseDetailRoute` and
+ * `LecturePlayerRoute` still take `:courseId` from the URL with no gate read,
+ * so a non-assigned course reached without passing the grid still plays.
+ * Strongest first:
+ *   1. The exercise checkpoint `return` param — first-order and in-app.
+ *      `handleAutoAdvance` below builds
+ *      `${pianoBase}/videos/${courseId}/${lectureId}` and both passes it as the
+ *      `return` query param and persists it through
+ *      `pianoLearningApi.rememberCheckpoint` as `returnTo`. `Exercises.jsx`
+ *      reads `query.get('return')` and, on a pass, navigates straight to it —
+ *      a live deep link into an arbitrary course that never touches the grid.
+ *      The exercises dashboard's Continue replays the same stored value
+ *      (`next_up.return_to`), so it outlives the session that made it.
+ *   2. A DoNow / `useKioskLaunchCommand` push: `onPianoCourseOpen` in
+ *      `PianoApp.jsx` → `openPianoCourseLesson` navigates to
+ *      `${basePath}/videos/${courseId}/${lessonId}` with no gate read.
+ *      Grown-up-initiated, so arguably legitimate.
+ *   3. A verdict that flips to gated while a course is already on screen.
+ *   4. History back/forward onto a stale `/videos/<other-course>` entry.
+ *   5. A reload or a watchdog remount on a stale URL.
+ * Full list, and why closing them needs the gate API to return the owed SET
+ * rather than one course, under "Residual escape vectors" in
+ * docs/_wip/bugs/2026-09-01-piano-lesson-gate-escapes-via-course-grid.md.
+ */
+export function CourseGridRoute({ groups }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-videos' }), []);
   const navigate = useNavigate();
+  const { basePath } = usePianoKioskConfig();
+  const { currentUser } = usePianoUser();
+  const gate = usePianoLessonGate(currentUser);
+  const redirected = gate.gated;
+  const courseId = gate.course?.id ?? null;
+  // Logged from an effect, not from render: render must stay pure, and this is
+  // the event the incident was traced by.
+  useEffect(() => {
+    if (redirected) logger.info('piano.videos.grid-redirected', { learnerId: currentUser, courseId });
+  }, [redirected, logger, currentUser, courseId]);
+
+  // `replace` so the grid leaves no history entry to come back to — a pushed
+  // one would let Back land here again and bounce straight out a second time.
+  // The menu never sends a gated learner to /videos, so this cannot loop.
+  if (redirected) return <Navigate to={basePath} replace />;
+  // The hook owns who is waiting (a guest never is) and owns the wording, so
+  // this screen and the menu cannot drift apart on either.
+  if (gate.pending) {
+    return (
+      <p className="piano-mode__placeholder" role="status">{PENDING_CAPTION}</p>
+    );
+  }
   return (
     <CourseGrid
       groups={groups}

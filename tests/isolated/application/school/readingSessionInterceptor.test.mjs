@@ -63,19 +63,19 @@ describe('ReadingSessionInterceptor — no session', () => {
 
   it('does NOT claim a tap at a different location', async () => {
     const { interceptor, sessions } = build();
-    sessions.open({ location: 'study', learnerId: 'learner-c' });
+    sessions.open({ location: 'study', learnerId: 'user_5' });
     expect(await interceptor.claim(bookTap())).toBeNull();
   });
 
   it('does NOT claim a response carrying no location at all', async () => {
     const { interceptor, sessions } = build();
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     expect(await interceptor.claim(bookTap({ location: undefined }))).toBeNull();
   });
 
   it('does NOT claim a non-content response', async () => {
     const { interceptor, sessions } = build();
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     expect(await interceptor.claim({ kind: 'device', target: 't', location: 'livingroom' })).toBeNull();
   });
 });
@@ -83,24 +83,24 @@ describe('ReadingSessionInterceptor — no session', () => {
 describe('ReadingSessionInterceptor — a book at the prompt', () => {
   it('claims a book tap when a session is open and nothing is playing', async () => {
     const { interceptor, sessions } = build();
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     expect(await interceptor.claim(bookTap())).toMatchObject({ claimed: true, by: 'reading-session' });
   });
 
   it('carries the learner and the content id in the broadcast', async () => {
     const { interceptor, sessions, sent } = build();
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     await interceptor.claim(bookTap());
     const selected = sent.find((m) => m.payload.event === 'book-selected');
     expect(selected).toMatchObject({
       topic: 'reading:livingroom',
-      payload: { event: 'book-selected', learnerId: 'learner-c', contentId: 'plex:620681' },
+      payload: { event: 'book-selected', learnerId: 'user_5', contentId: 'plex:620681' },
     });
   });
 
   it('moves the session to confirm and records the pick', async () => {
     const { interceptor, sessions } = build();
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     await interceptor.claim(bookTap());
     expect(sessions.current('livingroom')).toMatchObject({
       state: 'confirm', pick: { contentId: 'plex:620681' },
@@ -111,13 +111,13 @@ describe('ReadingSessionInterceptor — a book at the prompt', () => {
   // the screen, or a child who tapped their card would get no countdown.
   it('claims at the prompt in browsing mode too', async () => {
     const { interceptor, sessions } = build({ storyTime: finished });
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     expect(await interceptor.claim(bookTap())).toMatchObject({ claimed: true });
   });
 
   it('claims a second, different book during the countdown — swapping the pick', async () => {
     const { interceptor, sessions } = build();
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     await interceptor.claim(bookTap());
     const swap = await interceptor.claim(bookTap({ expression: { action: 'play-next', contentId: 'plex:999', options: {} } }));
     expect(swap).toMatchObject({ claimed: true });
@@ -128,20 +128,20 @@ describe('ReadingSessionInterceptor — a book at the prompt', () => {
 describe('ReadingSessionInterceptor — a book mid-story', () => {
   it('claims AND refuses a mid-story tap in assignment mode', async () => {
     const { interceptor, sessions, sent } = build();
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     sessions.update('livingroom', { state: 'reading' });
     const claim = await interceptor.claim(bookTap());
     // Claiming is what stops it reaching the queue; refusing is what the child sees.
     expect(claim).toMatchObject({ claimed: true, by: 'reading-session', refused: true });
     expect(sent.find((m) => m.payload.event === 'book-refused')).toMatchObject({
       topic: 'reading:livingroom',
-      payload: { event: 'book-refused', learnerId: 'learner-c', contentId: 'plex:620681' },
+      payload: { event: 'book-refused', learnerId: 'user_5', contentId: 'plex:620681' },
     });
   });
 
   it('a refused tap does not disturb the story or the pick', async () => {
     const { interceptor, sessions } = build();
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     sessions.update('livingroom', { state: 'reading', pick: { contentId: 'plex:111' } });
     await interceptor.claim(bookTap());
     expect(sessions.current('livingroom')).toMatchObject({
@@ -151,21 +151,21 @@ describe('ReadingSessionInterceptor — a book mid-story', () => {
 
   it('does NOT claim a mid-story tap in browsing mode — the queue still owns it', async () => {
     const { interceptor, sessions } = build({ storyTime: finished });
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     sessions.update('livingroom', { state: 'reading' });
     expect(await interceptor.claim(bookTap())).toBeNull();
   });
 
   it('a learner with no story-time enrollment is in browsing mode — no special case', async () => {
     const { interceptor, sessions } = build({ storyTime: notEnrolled });
-    sessions.open({ location: 'livingroom', learnerId: 'learner-d' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_3' });
     sessions.update('livingroom', { state: 'reading' });
     expect(await interceptor.claim(bookTap())).toBeNull();
   });
 
   it('says nothing on screen about a learner who is simply not enrolled', async () => {
     const { interceptor, sessions, sent } = build({ storyTime: notEnrolled });
-    sessions.open({ location: 'livingroom', learnerId: 'learner-d' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_3' });
     sessions.update('livingroom', { state: 'reading' });
     await interceptor.claim(bookTap());
     expect(sent.filter((m) => m.payload.event === 'session-error')).toEqual([]);
@@ -179,19 +179,19 @@ describe('ReadingSessionInterceptor — a book mid-story', () => {
 describe('ReadingSessionInterceptor — an obligation that cannot be read', () => {
   it('does NOT claim — the failure mode of this seam is still the old behaviour', async () => {
     const { interceptor, sessions } = build({ storyTime: unreadable });
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     sessions.update('livingroom', { state: 'reading' });
     expect(await interceptor.claim(bookTap())).toBeNull();
   });
 
   it('SURFACES it on the screen rather than downgrading in silence', async () => {
     const { interceptor, sessions, sent } = build({ storyTime: unreadable });
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     sessions.update('livingroom', { state: 'reading' });
     await interceptor.claim(bookTap());
     expect(sent.find((m) => m.payload.event === 'session-error')).toMatchObject({
       topic: 'reading:livingroom',
-      payload: { event: 'session-error', reason: 'obligation-unreadable', learnerId: 'learner-c' },
+      payload: { event: 'session-error', reason: 'obligation-unreadable', learnerId: 'user_5' },
     });
   });
 
@@ -199,7 +199,7 @@ describe('ReadingSessionInterceptor — an obligation that cannot be read', () =
     const { interceptor, sessions, sent } = build({
       storyTime: { status: async () => { throw new Error('log unreadable'); } },
     });
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     sessions.update('livingroom', { state: 'reading' });
     expect(await interceptor.claim(bookTap())).toBeNull();
     expect(sent.find((m) => m.payload.event === 'session-error')).toBeTruthy();
@@ -210,7 +210,7 @@ describe('ReadingSessionInterceptor — an obligation that cannot be read', () =
   // time a book plays would be a lie about this household's state.
   it('does NOT surface an error when no mode source is wired at all', async () => {
     const { interceptor, sessions, sent } = build({ storyTime: null });
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     sessions.update('livingroom', { state: 'reading' });
     expect(await interceptor.claim(bookTap())).toBeNull();
     expect(sent.filter((m) => m.payload.event === 'session-error')).toEqual([]);
@@ -228,7 +228,7 @@ describe('ReadingSessionInterceptor — mode is derived, never stored', () => {
       sessions,
       storyTime: { status: async () => ({ error: false, count, target: 2, doneToday: count >= 2 }) },
     });
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     sessions.update('livingroom', { state: 'reading' });
 
     expect(await interceptor.claim(bookTap())).toMatchObject({ refused: true });
@@ -245,10 +245,10 @@ describe('ReadingSessionInterceptor — mode is derived, never stored', () => {
       sessions,
       storyTime: { status: async ({ userId }) => { asked.push(userId); return { error: false, count: 0, target: 2 }; } },
     });
-    sessions.open({ location: 'livingroom', learnerId: 'learner-d' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_3' });
     sessions.update('livingroom', { state: 'reading' });
     await interceptor.claim(bookTap());
-    expect(asked).toEqual(['learner-d']);
+    expect(asked).toEqual(['user_3']);
   });
 });
 
@@ -260,14 +260,14 @@ describe('ReadingSessionInterceptor — failure paths', () => {
     const { interceptor, sessions } = build({
       storyTime: { status: async () => { throw new Error('log unreadable'); } },
     });
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     sessions.update('livingroom', { state: 'reading' });
     expect(await interceptor.claim(bookTap())).toBeNull();
   });
 
   it('falls back to browsing when there is no mode source wired at all', async () => {
     const { interceptor, sessions } = build({ storyTime: null });
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     sessions.update('livingroom', { state: 'reading' });
     expect(await interceptor.claim(bookTap())).toBeNull();
   });
@@ -283,14 +283,14 @@ describe('ReadingSessionInterceptor — failure paths', () => {
       realtime: { readingRoomChanged: () => { throw new Error('bus down'); } },
       logger: silent,
     });
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     expect(await interceptor.claim(bookTap())).toBeNull();
   });
 
   it('does NOT claim when no event bus is wired at all', async () => {
     const sessions = new ReadingSessionService({ logger: silent });
     const interceptor = new ReadingSessionInterceptor({ sessions, storyTime: owing, logger: silent });
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     expect(await interceptor.claim(bookTap())).toBeNull();
   });
 
@@ -302,7 +302,7 @@ describe('ReadingSessionInterceptor — failure paths', () => {
 describe('ReadingSessionInterceptor — through the real content seam', () => {
   it('a claimed book never reaches wake-and-load', async () => {
     const { interceptor, sessions } = build();
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     const loaded = [];
     await responseHandlers.content(bookTap(), {
       wakeAndLoadService: { execute: async () => { loaded.push(1); } },
@@ -325,7 +325,7 @@ describe('ReadingSessionInterceptor — through the real content seam', () => {
 
   it('a mid-story book in BROWSING mode reaches the queue unchanged', async () => {
     const { interceptor, sessions } = build({ storyTime: finished });
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     sessions.update('livingroom', { state: 'reading' });
     const loaded = [];
     await responseHandlers.content(bookTap(), {
@@ -351,7 +351,7 @@ describe('ReadingSessionInterceptor — through the real content seam', () => {
 describe('ReadingSessionInterceptor — suppressing the location end behaviour (D8)', () => {
   it('suppresses while a session is open at that location', () => {
     const { interceptor, sessions } = build();
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     expect(interceptor.suppressEnd(bookTap({ end: 'tv-off', endLocation: 'livingroom' }))).toBe(true);
   });
 
@@ -362,19 +362,19 @@ describe('ReadingSessionInterceptor — suppressing the location end behaviour (
 
   it('does NOT suppress a tap at another reader', () => {
     const { interceptor, sessions } = build();
-    sessions.open({ location: 'study', learnerId: 'learner-c' });
+    sessions.open({ location: 'study', learnerId: 'user_5' });
     expect(interceptor.suppressEnd(bookTap({ end: 'tv-off' }))).toBe(false);
   });
 
   it('suppresses in BROWSING mode too — the mode decides claiming, never teardown', () => {
     const { interceptor, sessions } = build({ storyTime: finished });
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     expect(interceptor.suppressEnd(bookTap({ end: 'tv-off' }))).toBe(true);
   });
 
   it('stops suppressing the moment the session closes', () => {
     const { interceptor, sessions } = build();
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     sessions.close('livingroom');
     expect(interceptor.suppressEnd(bookTap({ end: 'tv-off' }))).toBe(false);
   });
@@ -396,7 +396,7 @@ describe('ReadingSessionInterceptor — suppressing the location end behaviour (
    */
   it('a browsing-mode mid-story book still plays, and no longer carries tv-off with it', async () => {
     const { interceptor, sessions } = build({ storyTime: finished });
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     sessions.update('livingroom', { state: 'reading' });
 
     const loaded = [];
@@ -440,11 +440,11 @@ describe('ReadingSessionInterceptor — suppressing the location end behaviour (
 describe('ReadingSessionInterceptor — an unknown tag inside a session (D9)', () => {
   it('tells the screen when a session is open at that reader', () => {
     const { interceptor, sessions, sent } = build();
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     expect(interceptor.noteUnknownTag({ location: 'livingroom', tagUid: '04a1b2c3' })).toBe(true);
     expect(sent.at(-1)).toMatchObject({
       topic: 'reading:livingroom',
-      payload: { event: 'book-unknown', tagUid: '04a1b2c3', learnerId: 'learner-c' },
+      payload: { event: 'book-unknown', tagUid: '04a1b2c3', learnerId: 'user_5' },
     });
   });
 
@@ -456,7 +456,7 @@ describe('ReadingSessionInterceptor — an unknown tag inside a session (D9)', (
 
   it('says nothing about a reader in another room', () => {
     const { interceptor, sessions, sent } = build();
-    sessions.open({ location: 'study', learnerId: 'learner-c' });
+    sessions.open({ location: 'study', learnerId: 'user_5' });
     const before = sent.length;
     expect(interceptor.noteUnknownTag({ location: 'livingroom', tagUid: '04a1b2c3' })).toBe(false);
     expect(sent).toHaveLength(before);
@@ -471,7 +471,7 @@ describe('ReadingSessionInterceptor — an unknown tag inside a session (D9)', (
 
   it('a dead bus is a log line, not a throw — the registry write must still happen upstream', () => {
     const sessions = new ReadingSessionService({ logger: silent });
-    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     const interceptor = new ReadingSessionInterceptor({
       sessions, storyTime: owing,
       realtime: { readingRoomChanged() { throw new Error('bus is gone'); } },

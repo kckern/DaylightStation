@@ -39,7 +39,7 @@ beforeEach(() => {
     { subject: 'art', suppressed: { bySubject: 'math' } },
   ], errors: [] }));
   schoolApi.teacherDay.mockResolvedValue(ok({ learners: [{
-    learnerId: 'learner-a',
+    learnerId: 'user_4',
     sessions: [{ sessionId: 'ses_1', subject: 'scripture', lessonTitle: 'Monday · Psalms 49, 50, 51, 61',
       courseTitle: 'Come Follow Me', effectiveScore: { correctCount: 5, totalCount: 5, percent: 100 } }],
     processedToday: [],
@@ -47,7 +47,7 @@ beforeEach(() => {
 });
 
 const mount = (props = {}) => render(
-  <LearnerDayView learnerId="learner-a" learnerName="Learner A" studyDay="2026-08-25"
+  <LearnerDayView learnerId="user_4" learnerName="User_4" studyDay="2026-08-25"
     onChangeStudyDay={vi.fn()} onOpenSession={vi.fn()} {...props} />,
 );
 
@@ -96,7 +96,7 @@ describe('LearnerDayView', () => {
 
   it('shows work graded today that belongs to another study day, labelled as such', async () => {
     schoolApi.teacherDay.mockResolvedValue(ok({ learners: [{
-      learnerId: 'learner-a', sessions: [],
+      learnerId: 'user_4', sessions: [],
       processedToday: [{ sessionId: 'ses_old', subject: 'civilization', lessonTitle: 'The Midwestern States',
         studyDay: '2026-08-23', processedAt: '2026-08-25T14:03:00Z' }],
     }] }));
@@ -114,7 +114,7 @@ describe('LearnerDayView', () => {
       { subject: 'civilization', servedToday: true, next: null },
     ], errors: [] }));
     schoolApi.teacherDay.mockResolvedValue(ok({ learners: [{
-      learnerId: 'learner-a', sessions: [],
+      learnerId: 'user_4', sessions: [],
       processedToday: [{ sessionId: 'ses_old', subject: 'civilization', lessonTitle: 'The Midwestern States',
         studyDay: '2026-08-23', processedAt: '2026-08-25T14:03:00Z',
         effectiveScore: { correctCount: 9, totalCount: 10, percent: 90 } }],
@@ -153,13 +153,13 @@ describe('LearnerDayView', () => {
 
   it('re-points the printer image when the day changes', async () => {
     const { rerender } = render(
-      <LearnerDayView learnerId="learner-a" learnerName="A" studyDay="2026-08-25"
+      <LearnerDayView learnerId="user_4" learnerName="A" studyDay="2026-08-25"
         onChangeStudyDay={vi.fn()} onOpenSession={vi.fn()} />,
     );
     fireEvent.click(await screen.findByRole('button', { name: /show the printed agenda/i }));
     expect(await screen.findByAltText(/printed agenda/i)).toHaveAttribute('src', expect.stringContaining('2026-08-25'));
     rerender(
-      <LearnerDayView learnerId="learner-a" learnerName="A" studyDay="2026-08-24"
+      <LearnerDayView learnerId="user_4" learnerName="A" studyDay="2026-08-24"
         onChangeStudyDay={vi.fn()} onOpenSession={vi.fn()} />,
     );
     await waitFor(() => expect(screen.getByAltText(/printed agenda/i))
@@ -173,7 +173,7 @@ describe('LearnerDayView', () => {
     await screen.findByAltText(/printed agenda/i);
     expect(schoolApi.agendaDispatch).not.toBeDefined();
     // The only agenda call the view makes is the read-only JSON preview.
-    expect(schoolApi.agendaPreview).toHaveBeenCalledWith('learner-a', '2026-08-25');
+    expect(schoolApi.agendaPreview).toHaveBeenCalledWith('user_4', '2026-08-25');
   });
 });
 
@@ -262,27 +262,27 @@ describe('LearnerDayView — agenda dispatch', () => {
     await waitFor(() => expect(teacherWorkspaceApi.agendaDispatch).toHaveBeenCalled());
     const [, , , grantToken] = teacherWorkspaceApi.agendaDispatch.mock.calls[0];
     expect(grantToken).toBe('grant-xyz');
-    expect(requestAuthorizationMock).toHaveBeenCalledWith({ action: 'agenda.dispatch', resource: 'learner-a' });
+    expect(requestAuthorizationMock).toHaveBeenCalledWith({ action: 'agenda.dispatch', resource: 'user_4' });
   });
 
   it('does not carry a prepared preview across a learner switch', async () => {
     // The Students rail re-renders the SAME LearnerDayView position for a new
     // learnerId — it does not remount the tree by itself. Without a key on
     // AgendaDispatch, its `preview`/`idempotencyKey` state would survive that
-    // switch: a "ready to print" box built from Learner A's plan, wearing
-    // Learner B's name, offering to print unpreviewed paper for the wrong
+    // switch: a "ready to print" box built from User_4's plan, wearing
+    // User_2's name, offering to print unpreviewed paper for the wrong
     // child. The fix is a `key={learnerId:studyDay}` on the element, which
     // this proves by forcing the box back to its closed state on switch.
     teacherWorkspaceApi.agendaDispatchPreview.mockResolvedValue(readyPreview);
     const { rerender } = render(
-      <LearnerDayView learnerId="learner-a" learnerName="Learner A" studyDay="2026-08-25"
+      <LearnerDayView learnerId="user_4" learnerName="User_4" studyDay="2026-08-25"
         onChangeStudyDay={vi.fn()} onOpenSession={vi.fn()} />,
     );
     fireEvent.click(await screen.findByRole('button', { name: /Print the day.s agenda/i }));
-    await screen.findByText(/will print for Learner A/);
+    await screen.findByText(/will print for User_4/);
 
     rerender(
-      <LearnerDayView learnerId="learner-b" learnerName="Learner B" studyDay="2026-08-25"
+      <LearnerDayView learnerId="user_2" learnerName="User_2" studyDay="2026-08-25"
         onChangeStudyDay={vi.fn()} onOpenSession={vi.fn()} />,
     );
     await waitFor(() => expect(screen.getByRole('button', { name: /Print the day.s agenda/i })).toBeInTheDocument());

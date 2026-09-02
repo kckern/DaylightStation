@@ -10,7 +10,7 @@ import LiveKeyboard from './LiveKeyboard.jsx';
 import { balancedColumns } from './tileGridLayout.js';
 import usePianoCurfew from './usePianoCurfew.js';
 import useSchoolGameAccess from './useSchoolGameAccess.js';
-import usePianoLessonGate from './usePianoLessonGate.js';
+import usePianoLessonGate, { PENDING_CAPTION } from './usePianoLessonGate.js';
 import TodaysLessonGate from './TodaysLessonGate.jsx';
 import { PIANO_MODES } from './pianoModes.js';
 
@@ -28,6 +28,13 @@ import { PIANO_MODES } from './pianoModes.js';
  * (TodaysLessonGate) — not greyed out, which is curfew's look and would read as
  * "everything is closed" rather than "here is the one thing". It clears itself
  * when School says the day is discharged. Curfew outranks it.
+ *
+ * Until that verdict arrives the menu is PENDING: greyed like curfew, with one
+ * caption, because nothing here is tappable *yet*. Reading `gated === false`
+ * alone is what let a learner walk out through the activity strip on
+ * 2026-09-01, 3.5s into an 11.1s read. A verdict of any kind — including the
+ * hook's timeout and error — opens the menu; the gate must never lock a child
+ * out over a fault.
  *
  * Both are render branches of THIS component, never a redirect: the auto-Studio
  * trigger arms on `pathname === menuPath`, so a child who sits down and plays
@@ -48,9 +55,15 @@ export function PianoMenu() {
   // closed-for-the-night view stands rather than a launchable lesson card.
   const lessonGate = usePianoLessonGate(currentUser);
   const gated = !curfew && lessonGate.gated;
+  // A learner whose verdict has not arrived is PENDING, not free: on
+  // 2026-09-01 one walked out through the activity strip 3.5s into an 11.1s
+  // read, so `gated === false` alone is not permission to open the menu. Who
+  // counts as waiting is the HOOK's rule, not re-derived here — this screen
+  // only adds that curfew outranks it, having nothing left to wait for.
+  const pending = !curfew && lessonGate.pending;
 
   const open = (id) => {
-    if (curfew) return; // belt-and-braces: the tiles are already disabled
+    if (curfew || pending) return; // belt-and-braces: the tiles are already disabled
     logger.info('piano.mode-enter', { mode: id, pianoId });
     navigate(`${basePath}/${id}`);
   };
@@ -72,20 +85,21 @@ export function PianoMenu() {
         ) : (
           <>
           <PianoMenuActivity
-            disabled={curfew}
+            disabled={curfew || pending}
             onOpenCourse={(courseId, userId) => {
               logger.info('piano.menu-activity.open-course', { courseId, userId });
               // Tapping a player's card IS picking that player: their progress,
               // their credit (owner-requested 2026-07-28 — supersedes the
               // original no-switch design).
               if (userId) setCurrentUser(userId);
+              if (curfew || pending) return; // the door the 2026-09-01 escape used
               navigate(`${basePath}/videos/${String(courseId).replace(/^plex:/, '')}`);
             }}
           />
           <ul className="piano-menu__tiles" style={{ '--tile-cols': cols }}>
             {PIANO_MODES.map((m) => {
               const schoolLocked = m.id === 'games' && !gameAccess.unlocked;
-              const disabled = m.disabled || schoolLocked || curfew;
+              const disabled = m.disabled || schoolLocked || curfew || pending;
               const blurb = m.id !== 'games' || gameAccess.unlocked
                 ? m.blurb
                 : gameAccess.status === 'error'
@@ -116,6 +130,9 @@ export function PianoMenu() {
           <p className="piano-home__curfew" role="status">
             Screen time is over for tonight — but the piano is still on. Just play.
           </p>
+        )}
+        {pending && (
+          <p className="piano-home__pending" role="status">{PENDING_CAPTION}</p>
         )}
       </div>
       {/* Live keyboard at the foot of the home screen: lights up to the played

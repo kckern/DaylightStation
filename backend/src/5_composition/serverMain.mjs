@@ -9,6 +9,7 @@ import { createServer } from 'http';
 import dotenv from 'dotenv';
 import { installCrashHandlers } from '#system/boot/installCrashHandlers.mjs';
 import { backendModulePaths, resolveRuntimeDataPaths, runtimeLogDirectory } from '#system/boot/runtimePaths.mjs';
+import { createEventLoopLagMonitor } from '#system/runtime/eventLoopLag.mjs';
 import { createServerRequestHandler } from '#api/serverRequestHandler.mjs';
 
 installCrashHandlers();
@@ -270,4 +271,24 @@ export async function main() {
     logger[level]('server.memory', data);
   }, 5 * 60 * 1000);
   memInterval.unref?.();
+
+  // ==========================================================================
+  // Event-loop lag monitor
+  // ==========================================================================
+  // The sibling of the memory watchdog above: that one watches how much the
+  // process is holding, this one watches whether it can run at all. It exists
+  // because the 2026-09-01 story-time stall (every request from one device hung
+  // ~45 s, then released together) could not be told apart from a LAN hiccup
+  // after the fact — a loop stall makes timers fire late, a network stall does
+  // not, and nothing measured that. See eventLoopLag.mjs for the evidence that
+  // this process really does stall for seconds at a time, and for how to read
+  // the rows.
+  //
+  // Started here, at the end of boot, for two reasons. It needs `logger`, which
+  // only exists once every transport is registered, so it cannot live up beside
+  // installCrashHandlers(). And starting it before this point would measure the
+  // deliberately synchronous config and module load, guaranteeing a warn on
+  // every restart — a false positive on a known-blocking phase is how an alert
+  // gets trained out of people.
+  createEventLoopLagMonitor({ logger }).start();
 }

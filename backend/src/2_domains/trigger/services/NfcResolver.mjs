@@ -43,7 +43,7 @@ const METADATA_KEYS = new Set(['scanned_at', 'note']);
 
 /**
  * A learner id becomes a URL segment downstream. `String(raw)` would happily
- * mint "learner-a,learner-b" from a YAML list and "[object Object]" from a map,
+ * mint "user_4,user_2" from a YAML list and "[object Object]" from a map,
  * and the 404 that follows names neither the tag nor the line that caused it —
  * so refuse here, where the tag uid is still in hand. A number is allowed
  * because an unquoted numeric id is an ordinary YAML slip, not a mistake.

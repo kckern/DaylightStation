@@ -81,7 +81,7 @@ async function harness() {
     sessions, sessionIdFactory: () => 'rem_ABC123', clock: () => new Date(instant),
   });
   const offer = await offers.execute({
-    learnerId: 'learner-a', source, lesson, module, bank,
+    learnerId: 'user_4', source, lesson, module, bank,
     responses: [{ itemId: 'q1', given: '3' }],
   });
   let turn = 0;

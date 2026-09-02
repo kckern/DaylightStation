@@ -26,6 +26,13 @@ vi.mock('./PianoUserContext.jsx', () => ({
 vi.mock('./useSchoolGameAccess.js', () => ({
   default: () => schoolGate,
 }));
+// This file is about the tile wall and the School games gate. A named learner's
+// lesson verdict is PENDING at first paint (it disables everything until it
+// lands, by design — see PianoMenu.gate.test.js), so stub it as already-answered
+// or every assertion here would be measuring the wrong gate.
+vi.mock('./usePianoLessonGate.js', () => ({
+  default: () => ({ status: 'ready', gated: false, course: null, unit: null, lesson: null, challenge: null }),
+}));
 vi.mock('./PianoMidiContext.jsx', () => ({
   usePianoMidi: () => ({ pressNote: () => {}, releaseNote: () => {} }),
 }));

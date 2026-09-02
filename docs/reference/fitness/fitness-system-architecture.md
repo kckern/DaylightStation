@@ -197,8 +197,8 @@ ANT+ Sensor          Backend              WebSocket        FitnessContext      F
     │                    │                    │                  │         │ 3. DeviceManager.registerDevice()
     │                    │                    │                  │         │ 4. UserManager.resolveUserForDevice()
     │                    │                    │                  │         │ 5. user.updateFromDevice()
-    │                    │                    │                  │         │ 6. TreasureBox.recordHeartRateForDevice()
-    │                    │                    │                  │         │ 7. ZoneProfileStore.syncFromUsers()
+    │                    │                    │                  │         │ 6. ZoneProfileStore.syncFromUsers()   ← BEFORE the box
+    │                    │                    │                  │         │ 7. TreasureBox.recordHeartRateForDevice()
     │                    │                    │                  │         │ 8. [if zone changed]
     │                    │                    │                  │         │    GovernanceEngine.notifyZoneChange()
     │                    │                    │                  │         └──────────┤
@@ -530,8 +530,8 @@ The complete path for a single heart rate reading, naming every component it tou
     │   ├── DeviceManager.registerDevice()          → device.heartRate = 130
     │   ├── UserManager.resolveUserForDevice()       → user = "user_2"
     │   ├── user.updateFromDevice()                  → user.currentData.heartRate = 130
-    │   ├── TreasureBox.recordHeartRateForDevice()   → acc.highestZone = "active"
     │   ├── ZoneProfileStore.syncFromUsers()          → profile.currentZoneId = "active"
+    │   ├── TreasureBox.recordHeartRateForDevice()   → acc.highestZone = "active"
     │   └── [if zone changed]
     │       GovernanceEngine.notifyZoneChange("user_2", {fromZone: "cool", toZone: "active"})
     │       → debounce 100ms → evaluate()
@@ -569,6 +569,56 @@ Zone Hierarchy (lowest → highest):
 
 Per-user overrides can adjust thresholds (e.g., User_2's "warm" starts at 110).
 ```
+
+### Threshold precedence — which zone table pays
+
+`TreasureBox.resolveZone(userId, hr)` resolves thresholds in this order, and the
+order is the contract:
+
+```
+usersConfigOverrides   →   ZoneProfileStore profile   →   global zone table
+   (per-user config)          (per-user, live)              (fallback)
+```
+
+Three rules keep the paying table and the displayed table the same one. All three
+exist because on 2026-09-01 they did not, and a learner was paid rings on the
+global table for a whole session while his tile, his zone series and the garage
+LED all read his personal one.
+
+1. **A missing profile is NEVER cached.** `resolveZone` caches only a threshold
+   map it actually built. Caching the miss made a single early read decide the
+   rest of the session. A miss instead emits `treasurebox.zone_override_miss` at
+   **warn**, once per user per session (unguarded it would fire ~1/s and bury
+   itself), and means one specific thing: *this user never reached
+   `syncFromUsers`*. It is not the guest case — a present, synced guest gets a
+   profile carrying the base zone config and resolves normally.
+2. **The box PULLS a store-owned config revision; nothing pushes invalidation.**
+   `ZoneProfileStore` owns a zone-config revision bumped **only** when some
+   user's `zoneConfig` `id:min` set changes; `resolveZone` reads
+   `getZoneConfigRevision()` and clears its cache when it moves. The earlier push
+   model (`invalidateZoneOverrideCache()`, called from `FitnessSession`) was
+   deleted: every call site had to remember to invalidate and one already did
+   not, and `syncFromUsers` reports `changed` when *heart rate* moves — i.e. on
+   nearly every packet — so the cache was being dropped constantly while claiming
+   to avoid per-sample profile clones. There is no longer a call site that can
+   forget.
+3. **Sync precedes scoring.** In `FitnessSession.recordDeviceActivity` the
+   `_syncZoneProfiles` block sits **above** the `recordHeartRateForDevice` feed.
+   Both are gated by the same `startupDiscarded` flag, so both open on the same
+   packet; with the box first, its very first `resolveZone` found no profile and
+   fell back to global thresholds, and since `acc.highestZone` is a high-water
+   mark, one sample above global-active but below the rider's personal active
+   paid a spurious ring for that interval. Hoisting is safe:
+   `user.updateFromDevice()` has already run, `getPresentParticipantIds()` reads
+   only DeviceManager/UserManager, `registerDevice()` ran earlier, and
+   `notifyZoneChange` only arms a 100 ms debounce — so governance now sees the
+   zone the ring is about to be scored against, with no synchronous side effect
+   either way. Pinned by `FitnessSession.zoneSyncOrder.test.js`.
+
+Note that **colour** was always read live: the box asks
+`ZoneProfileStore.getZoneState()` uncached on every sample. Only the **award**
+path went through the cached override map, which is why the display was right and
+the payout was wrong.
 
 ### Zone Hysteresis (ZoneProfileStore)
 
@@ -1021,6 +1071,25 @@ Analysis of 14 audit/bug documents, 72 fix commits (Dec 2025 – Feb 2026), and 
 - Any code path that calls `forceUpdate()` MUST use `batchedForceUpdate()` — never direct.
 - Timer starts MUST be idempotent (`if (this._timer) return`).
 - Render frequency telemetry (`fitness.render_thrashing`) detects the problem but doesn't prevent it; consider a circuit breaker.
+
+**Reading the two frame signals.** They measure different things and neither is a
+substitute for the other:
+
+- **`fitness.video_fps_degraded`** comes from the profiler's
+  `getVideoPlaybackQuality` sample and counts what the **decoder** delivered.
+  Frames are divided by the **media-time** delta (`video.currentTime`), not
+  wall-clock, so a video that starts mid-window is no longer reported as slow
+  (`videoFpsSample.js`). A sample whose media time outran wall clock × the
+  current `playbackRate` is a **seek** — the footer writes `currentTime` directly
+  — and reports `fps: null` rather than a fake low reading. Under a second of
+  media played also reports `null`, which the `fps < 20` gate already skips.
+- **`crt.frames-skipped`** (Player) counts what the **canvas** never painted.
+  Under the CRT shader the `<video>` is hidden and the visible surface is a WebGL
+  canvas driven on the main thread, so a starved main thread drops frames the
+  decoder never counts. This is the only measure of a *visible* drop on a CRT
+  session; read it with the caveats in `docs/reference/player/README.md`
+  (per-instance counters, unverified Firefox fidelity, detection without
+  attribution).
 
 ---
 

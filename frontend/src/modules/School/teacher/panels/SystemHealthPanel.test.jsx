@@ -11,7 +11,7 @@ vi.mock('../../schoolApi.js', () => ({
 }));
 import { schoolApi } from '../../schoolApi.js';
 
-const KIDS = [{ id: 'learner-a', name: 'Learner A' }, { id: 'learner-b', name: 'Learner B' }];
+const KIDS = [{ id: 'user_4', name: 'User_4' }, { id: 'user_2', name: 'User_2' }];
 const PERIODS = [{ periodId: 'fall-2026', label: 'Fall 2026', startsAt: '2026-08-01T00:00:00Z', endsAt: '2026-12-19T00:00:00Z' }];
 
 describe('SystemHealthPanel', () => {
@@ -100,14 +100,14 @@ describe('SystemHealthPanel', () => {
     await screen.findByTestId('system-health-versions-ok');
     const learnerSelect = screen.getByLabelText('Learner');
     expect(learnerSelect).toBeInTheDocument();
-    fireEvent.change(learnerSelect, { target: { value: 'learner-b' } });
+    fireEvent.change(learnerSelect, { target: { value: 'user_2' } });
     // Immediately after the selection — the versions read is now re-entering
     // 'loading' — the control itself must still be in the document, not
     // unmounted by the PanelFrame it lives outside of.
     expect(screen.getByLabelText('Learner')).toBeInTheDocument();
-    expect(screen.getByLabelText('Learner').value).toBe('learner-b');
+    expect(screen.getByLabelText('Learner').value).toBe('user_2');
     await waitFor(() => expect(schoolApi.reportCardFrozenVersions).toHaveBeenCalledWith(
-      expect.objectContaining({ learnerId: 'learner-b' }),
+      expect.objectContaining({ learnerId: 'user_2' }),
     ));
     expect(screen.getByLabelText('Learner')).toBeInTheDocument();
   });

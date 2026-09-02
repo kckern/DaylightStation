@@ -56,8 +56,11 @@ export function ActivitySkeleton({ shape }) {
  * kiosk paints the previous strip immediately and repaints only if the server
  * disagrees.
  *
- * `disabled` greys the whole strip out and blocks the course buttons — the menu
- * passes it under curfew, when every door out of the home screen is shut.
+ * `disabled` greys the whole strip out and blocks the course buttons. The menu
+ * passes it whenever every door out of the home screen is shut: under curfew,
+ * and while a learner's lesson verdict is still outstanding (this strip is the
+ * door the 2026-09-01 gate escape actually went through, so it shuts on the
+ * same signal as the tiles rather than a weaker one).
  */
 export default function PianoMenuActivity({ onOpenCourse, disabled }) {
   const { data: players, loading } = usePianoList(

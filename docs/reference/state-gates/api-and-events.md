@@ -93,7 +93,7 @@ Returns declared gate definitions plus materialized evaluations matching the fil
       "definition": { "id": "chores.daily-complete" },
       "evaluation": {
         "gateId": "chores.daily-complete",
-        "subject": { "kind": "learner", "id": "learner-a" },
+        "subject": { "kind": "learner", "id": "user_4" },
         "period": { "kind": "local_day", "id": "2026-08-30" },
         "state": "satisfied",
         "progress": null,
@@ -138,7 +138,7 @@ Returns declared entitlement definitions plus current binary decisions:
     {
       "capabilityId": "media.evening",
       "gateId": "chores.daily-complete",
-      "subject": { "kind": "learner", "id": "learner-a" },
+      "subject": { "kind": "learner", "id": "user_4" },
       "period": { "kind": "local_day", "id": "2026-08-30" },
       "decision": "granted",
       "basisState": "satisfied",
@@ -167,9 +167,9 @@ Creates or corrects an assertion under the fixed authenticated publisher
 
 ```json
 {
-  "assertionId": "chores:learner-a:2026-08-30",
+  "assertionId": "chores:user_4:2026-08-30",
   "claimTypeId": "chores.daily.done",
-  "subject": { "kind": "learner", "id": "learner-a" },
+  "subject": { "kind": "learner", "id": "user_4" },
   "period": {
     "kind": "local_day",
     "id": "2026-08-30"
@@ -179,7 +179,7 @@ Creates or corrects an assertion under the fixed authenticated publisher
   "observedAt": "2026-08-30T18:00:00-07:00",
   "validFrom": "2026-08-30T18:00:00-07:00",
   "validUntil": "2026-08-31T00:00:00-07:00",
-  "evidenceRef": "chores/checklist/2026-08-30/learner-a"
+  "evidenceRef": "chores/checklist/2026-08-30/user_4"
 }
 ```
 
@@ -208,7 +208,7 @@ Creates a higher-revision retraction tombstone:
 {
   "sourceRevision": 2,
   "retractedAt": "2026-08-30T19:00:00-07:00",
-  "evidenceRef": "chores/checklist/2026-08-30/learner-a"
+  "evidenceRef": "chores/checklist/2026-08-30/user_4"
 }
 ```
 

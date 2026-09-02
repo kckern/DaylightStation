@@ -3,7 +3,7 @@ import { YamlRemediationSessionRepository } from './YamlRemediationSessionReposi
 
 const now = '2026-08-02T12:00:00.000Z';
 const session = {
-  schema: 'school.adaptive-remediation-session/v1', sessionId: 'rem_ABC123', learnerId: 'learner-a',
+  schema: 'school.adaptive-remediation-session/v1', sessionId: 'rem_ABC123', learnerId: 'user_4',
   source: { surface: 'schoolcalc', endpointId: 'DEVICE01', externalId: 'DEVICE01:9' },
   status: 'offered', nextClientSequence: 0, createdAt: now,
 };
