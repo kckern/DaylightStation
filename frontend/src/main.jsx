@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route, useParams, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { MantineProvider } from '@mantine/core';
 import '@mantine/core/styles.css';
+import { createAppTheme } from './lib/theme/createAppTheme.js';
 import { WebSocketProvider } from './contexts/WebSocketContext.jsx';
 import HomeApp from './Apps/HomeApp.jsx';
 import FinanceApp from './Apps/FinanceApp.jsx';
@@ -169,7 +170,7 @@ function SetupCheck({ children }) {
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <MantineProvider>
+  <MantineProvider theme={createAppTheme(null)} defaultColorScheme="dark">
   <BrowserRouter>
     <SetupCheck>
       <Routes>
