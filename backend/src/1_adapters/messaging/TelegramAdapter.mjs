@@ -407,7 +407,16 @@ export class TelegramAdapter extends IMessagingGateway {
   }
 
   /**
-   * Transcribe a voice message
+   * Transcribe a voice message.
+   *
+   * `fileId` is normally a Telegram file identifier, resolved to a download
+   * URL and transcribed from there. The web nutrition-input path has no
+   * Telegram fileId — WebNutribotAdapter decodes the browser's captured audio
+   * into a `{ buffer, mimeType }` pair and passes that through this same
+   * parameter instead (LogFoodFromVoice forwards voiceData.fileId opaquely,
+   * so this is the only seam available without touching that use case). That
+   * shape transcribes the buffer directly, skipping the file-download step;
+   * the string-fileId path Telegram actually uses is untouched.
    */
   async transcribeVoice(fileId) {
     if (!this.transcriptionService) {
@@ -417,9 +426,31 @@ export class TelegramAdapter extends IMessagingGateway {
       });
     }
 
+    if (fileId && typeof fileId === 'object' && Buffer.isBuffer(fileId.buffer)) {
+      const extension = this.#extensionForMimeType(fileId.mimeType);
+      const result = await this.transcriptionService.transcribe(fileId.buffer, {
+        filename: `voice.${extension}`,
+        contentType: fileId.mimeType || `audio/${extension}`,
+      });
+      return result.text;
+    }
+
     const fileUrl = await this.getFileUrl(fileId);
     const result = await this.transcriptionService.transcribeUrl(fileUrl);
     return result.text;
+  }
+
+  /**
+   * Map a MIME type to a filename extension for the transcription service.
+   * @private
+   */
+  #extensionForMimeType(mimeType) {
+    const subtype = String(mimeType || '').split('/')[1]?.split(';')[0];
+    const known = ['webm', 'ogg', 'oga', 'mp3', 'mpeg', 'mp4', 'm4a', 'wav', 'x-wav'];
+    if (subtype && known.includes(subtype)) {
+      return subtype === 'x-wav' ? 'wav' : subtype;
+    }
+    return 'webm';
   }
 
   /**

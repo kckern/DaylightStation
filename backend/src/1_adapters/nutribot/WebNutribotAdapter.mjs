@@ -32,17 +32,55 @@ export class WebNutribotAdapter {
   }
 
   /**
+   * Decode a `data:<mime>[;param=value...];base64,<payload>` URL into its
+   * parts.
+   *
+   * The web frontend sends image/voice content as a data URL (see
+   * PhotoCapture/VoiceCapture, `FileReader.readAsDataURL()`). VoiceCapture's
+   * MediaRecorder mimeType routinely carries a codec param — e.g.
+   * `audio/webm;codecs=opus` — producing `data:audio/webm;codecs=opus;base64,...`,
+   * so the header can hold an arbitrary number of `;key=value` segments, not
+   * just a single `;charset=`. Telegram's own path never calls this — it
+   * always carries a real fileId string.
+   *
+   * @private
+   * @param {string} dataUrl
+   * @param {string} kind - Label for error messages ("image" | "voice")
+   * @returns {{ mimeType: string, buffer: Buffer }}
+   */
+  #decodeDataUrl(dataUrl, kind) {
+    if (typeof dataUrl !== 'string' || dataUrl.length === 0) {
+      throw new Error(`${kind} input requires a non-empty data URL string`);
+    }
+    const commaIndex = dataUrl.indexOf(',');
+    if (!dataUrl.startsWith('data:') || commaIndex === -1) {
+      throw new Error(`${kind} input must be a base64 data URL (data:<mime-type>;base64,...)`);
+    }
+    const header = dataUrl.slice('data:'.length, commaIndex);
+    const segments = header.split(';');
+    if (segments[segments.length - 1] !== 'base64') {
+      throw new Error(`${kind} input must be base64-encoded (data:<mime-type>;base64,...)`);
+    }
+    const mimeType = segments[0] || 'application/octet-stream';
+    const buffer = Buffer.from(dataUrl.slice(commaIndex + 1), 'base64');
+    if (buffer.length === 0) {
+      throw new Error(`${kind} input decoded to an empty buffer`);
+    }
+    return { mimeType, buffer };
+  }
+
+  /**
    * Process a nutrition input from the web UI.
    *
    * @param {Object} input
    * @param {string} input.type - "text" | "voice" | "image" | "barcode"
-   * @param {string} [input.content] - Text content or barcode/UPC string
-   * @param {Buffer} [input.buffer] - Audio or image binary (for voice/image types)
+   * @param {string} [input.content] - Text/barcode string, or (for voice/image)
+   *   a `data:<mime>;base64,...` data URL carrying the captured bytes.
    * @param {string} input.userId - Username
    * @returns {Promise<Object>} Captured response from the bot pipeline
    */
   async process(input) {
-    const { type, content, buffer, userId } = input;
+    const { type, content, userId } = input;
     const conversationId = `web:${userId}`;
 
     const event = {
@@ -65,16 +103,29 @@ export class WebNutribotAdapter {
         event.payload.text = content;
         routerType = 'upc';
         break;
-      case 'voice':
-        // handleVoice expects event.payload.fileId (or audioBuffer for web)
-        event.payload.fileId = null;
-        event.payload.audioBuffer = buffer;
+      case 'voice': {
+        // handleVoice forwards event.payload.fileId straight through as
+        // voiceData.fileId, which LogFoodFromVoice hands unchanged to
+        // messagingGateway.transcribeVoice(fileId). Telegram passes a plain
+        // fileId string there; TelegramAdapter.transcribeVoice also accepts
+        // this { buffer, mimeType } shape and transcribes the buffer
+        // directly, skipping the Telegram file-download step entirely.
+        const { buffer, mimeType } = this.#decodeDataUrl(content, 'voice');
+        event.payload.fileId = { buffer, mimeType };
         break;
+      }
       case 'image':
-        // handleImage expects event.payload.fileId (or imageBuffer for web)
+        // handleImage passes event.payload.imageUrl through as imageData.url.
+        // LogFoodFromImage uses imageData.url as-is when no fileId is set, and
+        // its aiGateway.chatWithImage() call accepts a base64 data URL
+        // directly — no decoding needed for images, but we still validate the
+        // shape (via #decodeDataUrl, discarding the buffer) so a malformed
+        // payload fails fast here instead of surfacing as a confusing
+        // downstream AI-analysis error. fileId stays null so the (unrelated)
+        // fileId-resolution branch never fires.
+        this.#decodeDataUrl(content, 'image');
         event.payload.fileId = null;
-        event.payload.imageBuffer = buffer;
-        event.payload.text = content || null; // optional caption
+        event.payload.imageUrl = content;
         break;
       default:
         throw new Error(`Unsupported input type: ${type}`);

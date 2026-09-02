@@ -310,6 +310,69 @@ describe('TelegramAdapter', () => {
     });
   });
 
+  describe('transcribeVoice', () => {
+    let mockTranscriptionService;
+    let adapterWithTranscription;
+
+    beforeEach(() => {
+      mockTranscriptionService = {
+        transcribe: vi.fn().mockResolvedValue({ text: 'two eggs and toast' }),
+        transcribeUrl: vi.fn().mockResolvedValue({ text: 'two eggs and toast' }),
+      };
+      adapterWithTranscription = new TelegramAdapter({
+        token: 'test-token-123',
+        httpClient: mockHttpClient,
+        logger: mockLogger,
+        transcriptionService: mockTranscriptionService,
+      });
+    });
+
+    test('resolves a Telegram fileId via getFileUrl + transcribeUrl (regression)', async () => {
+      mockHttpClient.post.mockResolvedValue({
+        data: { ok: true, result: { file_path: 'voice/file_123.ogg' } }
+      });
+
+      const text = await adapterWithTranscription.transcribeVoice('file-id-123');
+
+      expect(mockHttpClient.post).toHaveBeenCalled(); // getFile
+      expect(mockTranscriptionService.transcribeUrl).toHaveBeenCalledWith(
+        expect.stringContaining('voice/file_123.ogg')
+      );
+      expect(mockTranscriptionService.transcribe).not.toHaveBeenCalled();
+      expect(text).toBe('two eggs and toast');
+    });
+
+    test('transcribes a { buffer, mimeType } payload directly, skipping file download (web path)', async () => {
+      const buffer = Buffer.from('fake-webm-bytes');
+
+      const text = await adapterWithTranscription.transcribeVoice({ buffer, mimeType: 'audio/webm' });
+
+      expect(mockHttpClient.get).not.toHaveBeenCalled();
+      expect(mockHttpClient.post).not.toHaveBeenCalled(); // no getFile call
+      expect(mockTranscriptionService.transcribeUrl).not.toHaveBeenCalled();
+      expect(mockTranscriptionService.transcribe).toHaveBeenCalledWith(
+        buffer,
+        expect.objectContaining({ filename: 'voice.webm', contentType: 'audio/webm' })
+      );
+      expect(text).toBe('two eggs and toast');
+    });
+
+    test('falls back to a webm filename for an unrecognized mime type', async () => {
+      const buffer = Buffer.from('fake-bytes');
+
+      await adapterWithTranscription.transcribeVoice({ buffer, mimeType: 'audio/x-totally-unknown' });
+
+      expect(mockTranscriptionService.transcribe).toHaveBeenCalledWith(
+        buffer,
+        expect.objectContaining({ filename: 'voice.webm' })
+      );
+    });
+
+    test('throws when no transcription service is configured', async () => {
+      await expect(adapter.transcribeVoice('file-id-123')).rejects.toThrow('Transcription service not configured');
+    });
+  });
+
   describe('send (INotificationChannel)', () => {
     test('sends notification as Telegram message', async () => {
       mockHttpClient.post.mockResolvedValue({
