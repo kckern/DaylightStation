@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { ActionIcon } from '@mantine/core';
+import { ActionIcon, Button } from '@mantine/core';
 import { LoadingState, ErrorState } from '@/lib/ui';
+import { DaylightAPI } from '../../../lib/api.mjs';
 import { useHealthDay } from './useHealthDay.js';
 import { EquationStrip } from './EquationStrip.jsx';
 import { MacroFooter } from './MacroFooter.jsx';
 import { LogTable } from './LogTable.jsx';
 import { AddCombobox } from './AddCombobox.jsx';
 import { EntryEditSheet } from './EntryEditSheet.jsx';
+import { SavedMealsSheet } from './SavedMealsSheet.jsx';
 import { localTodayISO as todayISO } from './mealBuckets.js';
 import { useNutritionInput } from '../capture/useNutritionInput.js';
 import { BarcodeCapture } from '../capture/BarcodeCapture.jsx';
@@ -36,7 +38,34 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   const [editingRow, setEditingRow] = useState(null); // row | null — F6 renders the edit sheet
   const [captureMode, setCaptureMode] = useState(null); // 'barcode' | null
   const [unknownUpc, setUnknownUpc] = useState(null);
+  const [savedMealsFor, setSavedMealsFor] = useState(null); // bucketId | null — F8's saved-meals picker
   const nutrition = useNutritionInput();
+
+  // Past-day bucket → today, via a saved-meal template used purely as
+  // transport (created, immediately logged to today, then discarded).
+  const copyMealToToday = async (rows, bucketId, label) => {
+    const items = rows.map((r) => ({ name: r.name || r.item, calories: r.calories, protein: r.protein, carbs: r.carbs, fat: r.fat, color: r.color }));
+    const { meal } = await DaylightAPI('api/v1/health/nutrition/meals', { name: `Copied ${label}`, items }, 'POST');
+    await DaylightAPI(`api/v1/health/nutrition/meals/${meal.id}/log`, { date: todayISO(), mealTime: bucketId }, 'POST');
+    await DaylightAPI(`api/v1/health/nutrition/meals/${meal.id}`, {}, 'DELETE');
+    day.reload();
+  };
+
+  // Today's bucket → a named, kept saved meal (US-2.2).
+  const saveBucketAsMeal = async (rows, label) => {
+    const name = window.prompt('Name this meal:', `My ${label.toLowerCase()}`);
+    if (!name) return;
+    const items = rows.map((r) => ({ name: r.name || r.item, calories: r.calories, protein: r.protein, carbs: r.carbs, fat: r.fat, color: r.color }));
+    await DaylightAPI('api/v1/health/nutrition/meals', { name, items }, 'POST');
+  };
+
+  const bucketHeaderAction = (bucketId, rows, label) => {
+    if (!rows.length) return null;
+    if (date !== todayISO()) {
+      return <Button size="compact-xs" variant="subtle" onClick={() => copyMealToToday(rows, bucketId, label)}>Copy to today</Button>;
+    }
+    return <Button size="compact-xs" variant="subtle" onClick={() => saveBucketAsMeal(rows, label)}>Save as meal</Button>;
+  };
 
   return (
     <div className="health-today">
@@ -47,10 +76,12 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
       {!day.loading && !day.error ? (
         <LogTable byBucket={day.byBucket} sessions={day.budget?.sessions || []}
           onAddTo={setAddingTo} onRowTap={setEditingRow} addingTo={addingTo}
+          bucketHeaderAction={bucketHeaderAction}
           addSlot={addingTo ? (
             <AddCombobox bucketId={addingTo}
               onDone={() => { setAddingTo(null); day.reload(); }}
-              onCancel={() => setAddingTo(null)} />
+              onCancel={() => setAddingTo(null)}
+              onSavedMeals={() => setSavedMealsFor(addingTo)} />
           ) : null} />
       ) : null}
       <MacroFooter items={day.items} coachLine={null} onCoachTap={onCoachTap}>
@@ -72,6 +103,9 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
         onCreated={() => { setUnknownUpc(null); day.reload(); }} />
       <EntryEditSheet row={editingRow} open={Boolean(editingRow)}
         onClose={() => setEditingRow(null)} onChanged={day.reload} />
+      <SavedMealsSheet open={Boolean(savedMealsFor)} bucketId={savedMealsFor}
+        onLogged={() => { setSavedMealsFor(null); setAddingTo(null); day.reload(); }}
+        onClose={() => setSavedMealsFor(null)} />
     </div>
   );
 }

@@ -4,12 +4,15 @@ import { EntryRow } from './EntryRow.jsx';
 
 const kcal = (rows) => Math.round(rows.reduce((s, r) => s + (Number(r.calories) || 0), 0));
 
-function Section({ label, rows, onAdd, onRowTap }) {
+function Section({ label, rows, onAdd, onRowTap, headerAction }) {
   return (
     <section className="health-meal">
       <header className="health-meal__header">
         <h4 className="health-meal__label">{label}</h4>
-        <span className="health-meal__kcal">{rows.length ? `${kcal(rows)} kcal` : '—'}</span>
+        <span className="health-meal__header-right">
+          <span className="health-meal__kcal">{rows.length ? `${kcal(rows)} kcal` : '—'}</span>
+          {headerAction || null}
+        </span>
       </header>
       {rows.map((row) => <EntryRow key={row.uuid} row={row} onTap={onRowTap} />)}
       {onAdd ? (
@@ -19,17 +22,21 @@ function Section({ label, rows, onAdd, onRowTap }) {
   );
 }
 
-export function LogTable({ byBucket, sessions = [], onAddTo, onRowTap, addSlot, addingTo }) {
+export function LogTable({ byBucket, sessions = [], onAddTo, onRowTap, addSlot, addingTo, bucketHeaderAction }) {
   const orphans = byBucket.get(null) || [];
   return (
     <div className="health-log">
-      {BUCKETS.map((b) => (
-        <div key={b.id}>
-          <Section label={b.label} rows={byBucket.get(b.id) || []}
-            onAdd={() => onAddTo(b.id)} onRowTap={onRowTap} />
-          {addingTo === b.id && addSlot ? addSlot : null}
-        </div>
-      ))}
+      {BUCKETS.map((b) => {
+        const rows = byBucket.get(b.id) || [];
+        return (
+          <div key={b.id}>
+            <Section label={b.label} rows={rows}
+              onAdd={() => onAddTo(b.id)} onRowTap={onRowTap}
+              headerAction={bucketHeaderAction ? bucketHeaderAction(b.id, rows, b.label) : null} />
+            {addingTo === b.id && addSlot ? addSlot : null}
+          </div>
+        );
+      })}
       {sessions.length ? (
         <section className="health-meal health-meal--exercise">
           <header className="health-meal__header">
