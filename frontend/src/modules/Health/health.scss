@@ -2,3 +2,25 @@
 // Health app styling — DS pack shell (Task F1). var(--ds-*) tokens only
 // (audit:ui gate rejects raw colors). Styles accrete as later Part F tasks
 // land (today/, capture/, progress/, medical/).
+
+.health-equation {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 0.25rem 0.75rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid var(--ds-border);
+
+  &__math { display: flex; align-items: baseline; gap: 0.35rem; font-variant-numeric: tabular-nums; color: var(--ds-text-high); }
+  &__op { color: var(--ds-text-low); }
+  &__net { font-size: 1.1rem; }
+  &__status { font-size: 0.75rem; text-transform: uppercase; color: var(--ds-success); }
+  &--over &__status, &--over &__net { color: var(--ds-danger); }
+  &__stale { font-size: 0.7rem; color: var(--ds-warning); }
+}
+
+.health-footer {
+  display: flex; flex-direction: column; gap: 0.25rem;
+  &__coach { background: none; border: none; text-align: left; cursor: pointer; color: var(--ds-text-mid); font-size: 0.8rem; padding: 0; }
+  &__row { display: flex; align-items: center; justify-content: space-between; }
+  &__macros { font-size: 0.8rem; color: var(--ds-text-mid); font-variant-numeric: tabular-nums; }
+  &__actions { display: flex; gap: 0.4rem; }
+}
