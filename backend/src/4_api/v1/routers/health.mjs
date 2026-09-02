@@ -57,7 +57,7 @@ function serializeHealthMetric(metric) {
  * @returns {express.Router}
  */
 export function createHealthRouter(config) {
-  const { healthService, healthOperations, dashboardService, catalogService, longitudinalService, budgetService, savedMealsService, logger = console } = config;
+  const { healthService, healthOperations, dashboardService, catalogService, longitudinalService, budgetService, savedMealsService, medicalService, logger = console } = config;
   const router = express.Router();
 
   // JSON parsing middleware
@@ -675,6 +675,41 @@ export function createHealthRouter(config) {
       } catch (err) {
         if (err.code === 'MEALS_WRITE_FAILED') {
           logger.error?.('health.meals.remove.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        throw err;
+      }
+    }));
+  }
+
+  // ==========================================================================
+  // Medical Readings Endpoints
+  // ==========================================================================
+
+  if (medicalService) {
+    router.get('/medical', asyncHandler(async (req, res) =>
+      res.json(await medicalService.listGrouped(getDefaultUsername()))));
+
+    router.post('/medical', asyncHandler(async (req, res) => {
+      try {
+        return res.json({ reading: await medicalService.add(req.body, getDefaultUsername()) });
+      } catch (err) {
+        if (err.code === 'INVALID_READING') return res.status(400).json({ error: err.message });
+        if (err.code === 'MEDICAL_WRITE_FAILED') {
+          logger.error?.('health.medical.add.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        throw err;
+      }
+    }));
+
+    router.delete('/medical/:id', asyncHandler(async (req, res) => {
+      try {
+        await medicalService.remove(req.params.id, getDefaultUsername());
+        return res.json({ ok: true });
+      } catch (err) {
+        if (err.code === 'MEDICAL_WRITE_FAILED') {
+          logger.error?.('health.medical.remove.write_failed', { error: err.message });
           return sendInternalError(res, { error: err.message, code: err.code });
         }
         throw err;

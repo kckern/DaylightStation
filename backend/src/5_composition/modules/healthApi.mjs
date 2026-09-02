@@ -14,6 +14,8 @@ import { YamlHealthGoalsDatastore } from '#adapters/persistence/yaml/YamlHealthG
 import { BudgetService } from '#apps/health/BudgetService.mjs';
 import { YamlSavedMealsDatastore } from '#adapters/persistence/yaml/YamlSavedMealsDatastore.mjs';
 import { SavedMealsService } from '#apps/health/SavedMealsService.mjs';
+import { YamlMedicalReadingsDatastore } from '#adapters/persistence/yaml/YamlMedicalReadingsDatastore.mjs';
+import { MedicalReadingsService } from '#apps/health/MedicalReadingsService.mjs';
 import { dataService } from '../runtimePersistence.mjs';
 import { nowDate } from '#system/utils/time.mjs';
 import { v4 as uuidv4 } from 'uuid';
@@ -110,6 +112,12 @@ export function createHealthApiRouter(config) {
     logger,
   });
 
+  const medicalService = new MedicalReadingsService({
+    store: new YamlMedicalReadingsDatastore({ dataService }),
+    createId: uuidv4,
+    logger,
+  });
+
   return createHealthRouter({
     healthService: healthServices.healthService,
     healthOperations,
@@ -118,6 +126,7 @@ export function createHealthApiRouter(config) {
     catalogService,
     budgetService,
     savedMealsService,
+    medicalService,
     logger
   });
 }
