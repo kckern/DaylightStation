@@ -54,25 +54,57 @@ describe('Piano maintenance', () => {
     expect(card.querySelectorAll('.is-warn')).toHaveLength(1);
   });
 
+  it('names every bridge link state in plain words', () => {
+    const { rerender } = renderDrawer();
+    const show = (bridge) => {
+      Object.assign(connection.health, { bridge });
+      rerender(<><button type="button">opener</button><OperatorDrawer open onClose={vi.fn()} /></>);
+      return screen.getByRole('group', { name: 'Connection' });
+    };
+    let card = show({ state: 'idle', unavailable: false });
+    expect(card).toHaveTextContent('Bridge: connecting…');
+    expect(card.querySelectorAll('.is-warn')).toHaveLength(1);
+    card = show({ state: 'connecting', unavailable: false });
+    expect(card).toHaveTextContent('Bridge: connecting…');
+    card = show({ state: 'closed', unavailable: false });
+    expect(card).toHaveTextContent('Bridge: not connected');
+    expect(card.querySelectorAll('.is-warn')).toHaveLength(0);
+    card = show({ state: 'closed', unavailable: true });
+    expect(card).toHaveTextContent('Bridge: not running');
+  });
+
   it('shows Bluetooth pairing whenever configured, primary while not ready', () => {
     const { rerender } = renderDrawer();
     const bluetooth = screen.getByRole('button', { name: 'Bluetooth pairing' });
     expect(bluetooth).toHaveClass('piano-tbtn--primary');
     fireEvent.click(bluetooth);
     expect(launchAndroidTarget).toHaveBeenCalledWith('pkg/.Bluetooth');
-    Object.assign(connection.health, { state: 'ready', copy: 'connected', input: { state: 'bridge', name: 'Keys' }, output: { state: 'up', name: 'Piano' }, bridge: { state: 'open', unavailable: false } });
+    Object.assign(connection.health, { state: 'ready', copy: 'connected', input: { state: 'bridge', name: 'Keys' }, output: { state: 'up', name: 'Piano' }, bridge: { state: 'connected', unavailable: false } });
     rerender(<><button type="button">opener</button><OperatorDrawer open onClose={vi.fn()} /></>);
     expect(screen.getByRole('button', { name: 'Bluetooth pairing' })).not.toHaveClass('piano-tbtn--primary');
     expect(screen.getByRole('button', { name: 'Repair connection' })).not.toHaveClass('piano-tbtn--primary');
+    const card = screen.getByRole('group', { name: 'Connection' });
+    expect(card).toHaveTextContent('Bridge: connected');
+    expect(card.querySelectorAll('.is-on')).toHaveLength(3);
+    expect(card.querySelectorAll('.is-off')).toHaveLength(0);
+    expect(card.querySelectorAll('.is-warn')).toHaveLength(0);
   });
 
   it('repairs centrally and shows the repair message under the tile', () => {
-    renderDrawer();
+    const { rerender } = renderDrawer();
     fireEvent.click(screen.getByRole('button', { name: 'Repair connection' }));
     expect(repairConnection).toHaveBeenCalledTimes(1);
     Object.assign(connection.repair, { state: 'working', message: 'Repairing connection…' });
-    renderDrawer();
-    expect(screen.getAllByRole('button', { name: 'Repairing connection…' })[0]).toBeDisabled();
+    rerender(<><button type="button">opener</button><OperatorDrawer open onClose={vi.fn()} /></>);
+    const tile = screen.getByRole('button', { name: 'Repair connection' });
+    expect(tile).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('Repairing…');
+    expect(screen.queryByText('Repairing connection…')).toBeNull();
+    Object.assign(connection.repair, { state: 'failed', message: 'Couldn’t reach the piano.' });
+    rerender(<><button type="button">opener</button><OperatorDrawer open onClose={vi.fn()} /></>);
+    expect(screen.getByRole('button', { name: 'Repair connection' })).not.toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('Couldn’t reach the piano.');
+    expect(screen.getByRole('status')).toHaveClass('is-failed');
   });
 
   it('offers a test note only with output and reports whether it was sent on the tile', () => {
@@ -135,6 +167,25 @@ describe('Piano maintenance', () => {
     await act(async () => { fireEvent.click(armed); });
     expect(daylightAPI).toHaveBeenCalledWith('api/v1/device/tablet-1/reboot', {}, 'POST');
     expect(screen.getByRole('status')).toHaveTextContent('Couldn’t reboot tablet: server offline');
+  });
+
+  it('forgets armed tiles, Diagnostics and result lines when the sheet closes', async () => {
+    const { rerender } = renderDrawer();
+    const closed = () => rerender(<><button type="button">opener</button><OperatorDrawer open={false} onClose={vi.fn()} /></>);
+    const opened = () => rerender(<><button type="button">opener</button><OperatorDrawer open onClose={vi.fn()} /></>);
+    fireEvent.click(screen.getByRole('button', { name: 'Reboot tablet' }));
+    expect(screen.getByRole('button', { name: 'Tap again to reboot tablet' })).toBeTruthy();
+    closed(); opened();
+    expect(screen.getByRole('button', { name: 'Reboot tablet' })).not.toHaveAttribute('aria-pressed');
+    expect(screen.queryByRole('button', { name: 'Tap again to reboot tablet' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Stop stuck notes' }));
+    expect(screen.getByRole('status')).toHaveTextContent('Stop stuck notes command sent.');
+    fireEvent.click(screen.getByRole('button', { name: 'Diagnostics' }));
+    expect(screen.getByTestId('midi-monitor')).toBeTruthy();
+    closed(); opened();
+    expect(screen.queryByTestId('midi-monitor')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Reboot tablet' })).toBeTruthy();
   });
 
   it('keeps feedback adult-only with maintenance context', () => {
