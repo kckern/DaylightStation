@@ -57,7 +57,7 @@ function serializeHealthMetric(metric) {
  * @returns {express.Router}
  */
 export function createHealthRouter(config) {
-  const { healthService, healthOperations, dashboardService, catalogService, longitudinalService, budgetService, logger = console } = config;
+  const { healthService, healthOperations, dashboardService, catalogService, longitudinalService, budgetService, savedMealsService, logger = console } = config;
   const router = express.Router();
 
   // JSON parsing middleware
@@ -632,6 +632,37 @@ export function createHealthRouter(config) {
         logger.error?.('health.goals.put.error', { error: err.message });
         return sendInternalError(res, { error: err.message });
       }
+    }));
+  }
+
+  // ==========================================================================
+  // Saved Meals (SavedMealsService)
+  // ==========================================================================
+  if (savedMealsService) {
+    router.get('/nutrition/meals', asyncHandler(async (req, res) =>
+      res.json({ meals: await savedMealsService.list(getDefaultUsername()) })));
+
+    router.post('/nutrition/meals', asyncHandler(async (req, res) => {
+      const { name, items } = req.body;
+      try {
+        return res.json({ meal: await savedMealsService.create({ name, items }, getDefaultUsername()) });
+      } catch (err) {
+        return res.status(400).json({ error: err.message });
+      }
+    }));
+
+    router.post('/nutrition/meals/:id/log', asyncHandler(async (req, res) => {
+      const { date, mealTime } = req.body || {};
+      try {
+        return res.json(await savedMealsService.logToDate(req.params.id, getDefaultUsername(), { date, mealTime }));
+      } catch (err) {
+        return res.status(404).json({ error: err.message });
+      }
+    }));
+
+    router.delete('/nutrition/meals/:id', asyncHandler(async (req, res) => {
+      await savedMealsService.remove(req.params.id, getDefaultUsername());
+      return res.json({ ok: true });
     }));
   }
 
