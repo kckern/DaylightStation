@@ -647,6 +647,10 @@ export function createHealthRouter(config) {
       try {
         return res.json({ meal: await savedMealsService.create({ name, items }, getDefaultUsername()) });
       } catch (err) {
+        if (err.code === 'MEALS_WRITE_FAILED') {
+          logger.error?.('health.meals.create.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
         return res.status(400).json({ error: err.message });
       }
     }));
@@ -656,13 +660,25 @@ export function createHealthRouter(config) {
       try {
         return res.json(await savedMealsService.logToDate(req.params.id, getDefaultUsername(), { date, mealTime }));
       } catch (err) {
+        if (err.code === 'MEALS_WRITE_FAILED') {
+          logger.error?.('health.meals.log.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
         return res.status(404).json({ error: err.message });
       }
     }));
 
     router.delete('/nutrition/meals/:id', asyncHandler(async (req, res) => {
-      await savedMealsService.remove(req.params.id, getDefaultUsername());
-      return res.json({ ok: true });
+      try {
+        await savedMealsService.remove(req.params.id, getDefaultUsername());
+        return res.json({ ok: true });
+      } catch (err) {
+        if (err.code === 'MEALS_WRITE_FAILED') {
+          logger.error?.('health.meals.remove.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        throw err;
+      }
     }));
   }
 
