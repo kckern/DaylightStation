@@ -137,6 +137,19 @@ function normalizeContentId(id) {
   return s.includes(':') ? s : `plex:${s}`;
 }
 
+/**
+ * A stored session window (`'YYYY-MM-DD HH:mm:ss.SSS'`) as epoch ms, or null.
+ *
+ * Wall-clock in the session's own timezone, which is the kiosk's, so local
+ * interpretation is the correct reading. The space is swapped for a `T` because
+ * the bare form is not part of the Date spec and is only parsed by grace.
+ */
+function parseSessionClock(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const ms = new Date(value.trim().replace(' ', 'T')).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
 export class FitnessSession {
   constructor(getTimeoutsFn = getFitnessTimeouts) {
     this._getTimeouts = getTimeoutsFn;
@@ -1399,9 +1412,24 @@ export class FitnessSession {
     // Set session identity
     this.sessionTimestamp = String(sessionId).replace(/^fs_/, '');
     this.sessionId = sessionId.startsWith('fs_') ? sessionId : `fs_${sessionId}`;
-    this.startTime = typeof sessionData.startTime === 'number'
+    // A v3 record carries its window as `session.start`/`session.end` wall-clock
+    // strings; only PRE-v3 records get numeric startTime/endTime at the root
+    // (see dehydrateSessionRecord, which guards that assignment on !hasV3Session).
+    // Reading only the numeric field meant every v3 resume fell through to `now`
+    // and silently rebased the session to the reload moment: session
+    // 20260901154746 recorded a 20-minute window over a 94-minute workout and
+    // lost every tick before the reload, while its media events — which carry
+    // absolute timestamps — kept the real span and disagreed with the header.
+    const resumedStart = typeof sessionData.startTime === 'number'
       ? sessionData.startTime
-      : now;
+      : parseSessionClock(sessionData.session?.start);
+    if (resumedStart == null) {
+      getLogger().warn('fitness.resume.window_unknown', {
+        sessionId,
+        message: 'no startTime or session.start on the resume payload; rebasing to now loses prior ticks',
+      });
+    }
+    this.startTime = resumedStart ?? now;
     this.endTime = null;
     this.lastActivityTime = now;
 
@@ -1432,7 +1460,10 @@ export class FitnessSession {
     // Calculate gap and pad with nulls
     const previousEndTime = typeof sessionData.endTime === 'number'
       ? sessionData.endTime
-      : (this.startTime + (sessionData.durationMs || 0));
+      : (parseSessionClock(sessionData.session?.end)
+        ?? this.startTime
+          + (sessionData.durationMs
+            || (Number(sessionData.session?.duration_seconds) || 0) * 1000));
     const gapMs = Math.max(0, now - previousEndTime);
     const intervalMs = this.timeline.timebase.intervalMs || 5000;
     const gapTicks = Math.floor(gapMs / intervalMs);
