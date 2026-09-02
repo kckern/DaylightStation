@@ -91,9 +91,12 @@ export function planWindow(session) {
   // The id must vouch for the earliest event. Without that agreement the events
   // are not this session's lost head and the window stays as it is.
   if (Math.abs(idMs - firstEvent) > ID_AGREEMENT_MS) return null;
-  // And the id must disagree with the stored start — that disagreement IS the
-  // rebase. A window that already begins at its id is simply correct.
-  if (Math.abs(idMs - storedStart) <= ID_AGREEMENT_MS) return null;
+  // And the stored start must be LATER than the id. Direction matters: a rebase
+  // can only push the start FORWARD, to the reload moment. A window that starts
+  // EARLIER than its id is something else (a merge, a hand edit), and
+  // "repairing" it would move the start forward and discard real minutes — the
+  // 2026-02-03 session would have lost 18 of them to exactly that.
+  if (storedStart <= idMs + ID_AGREEMENT_MS) return null;
 
   const startMs = Math.min(idMs, firstEvent);
   const endMs = Math.max(storedEnd, lastEvent);
