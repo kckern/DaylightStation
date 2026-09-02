@@ -101,6 +101,7 @@
     "hooks:install": "node scripts/install-git-hooks.mjs",
     "audit:fs": "node scripts/audit-direct-fs-imports.mjs",
     "audit:layers": "node scripts/audit-layer-imports.mjs",
+    "audit:ui": "node scripts/audit-ui-tokens.mjs",
     "test:refactor": "vitest run tests/unit/tooling/auditLayerImports.test.mjs tests/unit/tooling/auditDirectFsImports.test.mjs tests/unit/system/vendorError.test.mjs tests/unit/system/systemErrors.test.mjs tests/unit/system/errorHandlerString.test.mjs tests/unit/system/deepMerge.test.mjs tests/unit/system/logging/inputChannelRouting.test.mjs tests/unit/system/logging/sessionEventsFile.test.mjs tests/unit/domains/fitness/zoneSSOT.test.mjs tests/unit/domains/fitness/receiptStats.char.test.mjs tests/unit/domains/messaging/conversationStoredShape.char.test.mjs tests/unit/domains/gratitude/gratitudeStoredShape.char.test.mjs tests/unit/config/timezoneDefault.test.mjs tests/unit/applications/fitness/querySessionsDateWindow.test.mjs tests/unit/applications/fitness/manageAccessEligibility.test.mjs tests/unit/applications/admin/yamlConfigFileService.test.mjs tests/unit/applications/piano/GetCourseProgress.char.test.mjs tests/unit/applications/piano/GetPlayableUnits.char.test.mjs tests/unit/domains/health/foodCatalogStoredShape.char.test.mjs",
     "test:composition-contracts": "vitest run --pool=forks backend/src/5_composition/composition-contract-registry.test.mjs",
     "dev": "npm run start:dev",
