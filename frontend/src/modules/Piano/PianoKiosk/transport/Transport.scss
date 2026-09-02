@@ -81,6 +81,22 @@
   }
 }
 
+// Settings sheets fill the design canvas minus a margin. The panel is a
+// column flexbox; the sheet body lays out in a grid and MUST NOT scroll —
+// a scrollbar here is a layout bug, not a feature.
+.piano-tsheet--canvas .piano-tsheet__panel {
+  position: absolute;
+  inset: 1.5rem;
+  min-width: 0;
+  max-width: none;
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 1rem 1.25rem 1.25rem;
+  .piano-tsheet__head h2 { font-size: 1.4rem; }
+}
+
 .piano-stepgrid {
   display: flex;
   gap: 0.4rem;
