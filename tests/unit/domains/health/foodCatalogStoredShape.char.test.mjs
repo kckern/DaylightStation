@@ -56,6 +56,7 @@ describe('food catalog stored YAML shape (characterization)', () => {
     expect(Array.isArray(arr)).toBe(true);
     expect(arr).toHaveLength(1);
     // Exact stored shape (order-independent via yaml.dump of a canonical object)
+    // favorite field added to dehydrated shape in YamlFoodCatalogDatastore#dehydrate
     expect(yaml.dump(arr[0])).toBe(yaml.dump({
       id: 'fc-1',
       name: 'Greek Yogurt',
@@ -64,6 +65,7 @@ describe('food catalog stored YAML shape (characterization)', () => {
       source: 'manual',
       barcodeUpc: '012345678905',
       useCount: 3,
+      favorite: false,
       lastUsed: '2026-07-08',
       createdAt: '2026-07-01T00:00:00.000Z',
     }));
