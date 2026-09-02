@@ -25,6 +25,11 @@
   &__actions { display: flex; gap: 0.4rem; }
 }
 
+.health-barcode {
+  &__manual { display: flex; gap: 0.4rem; margin-top: 0.5rem; }
+  &__manual-input { flex: 1; }
+}
+
 .health-meal {
   margin-top: 0.75rem;
   &__header { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid var(--ds-border); padding-bottom: 0.2rem; }
