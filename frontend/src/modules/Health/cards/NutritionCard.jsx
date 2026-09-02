@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Text, Title, Stack, Badge, Group, TextInput, Button, Skeleton } from '@mantine/core';
+import { Text, Title, Stack, Badge, Group, TextInput, Button } from '@mantine/core';
 import { DashboardCard } from '../../Fitness/widgets/_shared/DashboardCard';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
+import Skeleton from '@/lib/ui/Skeleton.jsx';
 
 export default function NutritionCard({ nutrition, onRefresh, onClick }) {
   const logger = useMemo(() => getLogger().child({ component: 'NutritionCard' }), []);

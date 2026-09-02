@@ -1,7 +1,8 @@
 import React from 'react';
-import { Text, Title, Stack, Badge, Skeleton } from '@mantine/core';
+import { Text, Title, Stack, Badge } from '@mantine/core';
 import { useScreenData } from '@/screen-framework/data/useScreenData.js';
 import { DashboardCard } from '../_shared/DashboardCard.jsx';
+import Skeleton from '@/lib/ui/Skeleton.jsx';
 
 function parseWeightData(raw) {
   if (!raw || typeof raw !== 'object') return null;

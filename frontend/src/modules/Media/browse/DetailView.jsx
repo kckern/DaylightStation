@@ -2,12 +2,13 @@
 // One item, all its actions: artwork, description, Play Now / Play Next /
 // Up Next / Add / Cast.
 import React from 'react';
-import { Skeleton, Alert, Stack, Title, Text, Button, Group, Image } from '@mantine/core';
+import { Alert, Stack, Title, Text, Button, Group, Image } from '@mantine/core';
 import { IconPlayerPlayFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd, IconAlertCircle } from '@tabler/icons-react';
 import { useContentInfo } from './useContentInfo.js';
 import { useSessionController } from '../controller/useSessionController.js';
 import { resultToQueueInput } from '../search/resultToQueueInput.js';
 import { CastButton } from '../cast/CastButton.jsx';
+import Skeleton from '@/lib/ui/Skeleton.jsx';
 
 export function DetailView({ contentId }) {
   const { info, loading, error } = useContentInfo(contentId);

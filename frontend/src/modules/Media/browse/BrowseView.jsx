@@ -16,7 +16,7 @@
 // never pass a containerItem, so the header stays absent there — nothing
 // single to play.
 import React, { useMemo } from 'react';
-import { Skeleton, Alert, Text, Stack, Button } from '@mantine/core';
+import { Alert, Text, Stack, Button } from '@mantine/core';
 import {
   IconChevronRight,
   IconAlertCircle,
@@ -32,6 +32,7 @@ import { resultToQueueInput } from '../search/resultToQueueInput.js';
 import { isContainer } from '../../Content/combobox/comboboxMachine.js';
 import { DestinationLine } from '../cast/DestinationLine.jsx';
 import getLogger from '../../../lib/logging/Logger.js';
+import Skeleton from '@/lib/ui/Skeleton.jsx';
 
 function splitPath(path) {
   if (!path) return [];

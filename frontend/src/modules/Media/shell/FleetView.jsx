@@ -4,7 +4,7 @@
 // Peek opens the remote control; Take Over appears only when a session is
 // actually active (portability phase wires the action).
 import React, { useCallback, useState } from 'react';
-import { Title, Text, Badge, Button, Progress, Group, Skeleton, Alert, Stack } from '@mantine/core';
+import { Title, Text, Badge, Button, Progress, Group, Alert, Stack } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconDeviceRemote, IconAlertCircle, IconPlayerPlay } from '@tabler/icons-react';
 import { useFleetContext } from '../fleet/useFleetContext.js';
@@ -15,6 +15,7 @@ import { useNav } from './NavProvider.jsx';
 import { useTakeOver } from '../peek/useTakeOver.js';
 import { stateColor } from '../theme/mediaTheme.js';
 import { deviceStateLabel } from './stateCopy.js';
+import Skeleton from '@/lib/ui/Skeleton.jsx';
 
 const ACTIVE_STATES = new Set(['playing', 'paused', 'buffering', 'stalled']);
 

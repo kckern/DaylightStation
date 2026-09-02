@@ -1,4 +1,4 @@
-import { Skeleton } from '@mantine/core';
+
 import './HealthHub.scss';
 import { WeightHeroCard } from './cards/WeightHeroCard.jsx';
 import { WorkoutsHeroCard } from './cards/WorkoutsHeroCard.jsx';
@@ -9,6 +9,7 @@ import SessionsCard from '../cards/SessionsCard.jsx';
 import RecencyCard from '../cards/RecencyCard.jsx';
 import GoalsCard from '../cards/GoalsCard.jsx';
 import CoachingComplianceCard from '../widgets/CoachingComplianceCard.jsx';
+import Skeleton from '@/lib/ui/Skeleton.jsx';
 
 /**
  * Adapt the raw API dashboard (today/recency/goals/history) shape to the

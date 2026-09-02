@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } from 'react';
-import { Text, Skeleton } from '@mantine/core';
+import { Text } from '@mantine/core';
 import { getWidgetRegistry } from '@/screen-framework/widgets/registry.js';
 import { useScreen } from '@/screen-framework/providers/useScreen.js';
 import { useScreenData, useScreenDataRefetch } from '@/screen-framework/data/useScreenData.js';
@@ -19,6 +19,7 @@ import { selectVideoMarkerEvents } from './timelineOverlay.js';
 import { deriveRecap } from './recapVideo.js';
 import { useSettledRecapPlay } from './recapPlayback.js';
 import RingIcon from '@/lib/icons/RingIcon.jsx';
+import Skeleton from '@/lib/ui/Skeleton.jsx';
 
 const StravaIcon = ({ size = 12, color = '#fc4c02' }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill={color} style={{ flexShrink: 0 }}>
