@@ -24,4 +24,37 @@ describe('cards', () => {
     expect(screen.getByText('kcal')).toBeTruthy();
     expect(container.querySelector('.ds-stat--emphasis')).toBeTruthy();
   });
+
+  it('SectionCard with neither title nor actions renders NO header element', () => {
+    const { container } = render(
+      <SectionCard>
+        <span>body content</span>
+      </SectionCard>
+    );
+    expect(container.querySelector('.ds-card__header')).toBeNull();
+    expect(screen.getByText('body content')).toBeTruthy();
+  });
+
+  it('SectionCard with title only renders header with title and no actions', () => {
+    const { container } = render(
+      <SectionCard title="Metrics">
+        <span>body</span>
+      </SectionCard>
+    );
+    expect(screen.getByText('Metrics')).toBeTruthy();
+    expect(container.querySelector('.ds-card__header')).toBeTruthy();
+    expect(container.querySelector('.ds-card__actions')).toBeNull();
+  });
+
+  it('StatCard with only label and value renders minimal content', () => {
+    const { container } = render(
+      <StatCard label="Steps" value={8423} />
+    );
+    expect(screen.getByText('Steps')).toBeTruthy();
+    expect(screen.getByText('8423')).toBeTruthy();
+    expect(container.querySelector('.ds-stat__unit')).toBeNull();
+    expect(container.querySelector('.ds-stat__trend')).toBeNull();
+    expect(container.querySelector('.ds-stat__spark')).toBeNull();
+    expect(container.querySelector('.ds-stat--emphasis')).toBeNull();
+  });
 });
