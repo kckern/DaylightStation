@@ -45,3 +45,37 @@
   &__unit { font-size: 0.8rem; color: var(--ds-text-low); }
   &__trend { font-size: 0.8rem; color: var(--ds-text-mid); }
 }
+
+.ds-sheet {
+  position: fixed; inset: 0; z-index: 300;
+
+  &__scrim {
+    position: absolute; inset: 0;
+    background: rgba(0, 0, 0, 0.55); /* data-color: scrim alpha, not a palette color */
+  }
+  &__panel {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    max-height: 85dvh; overflow-y: auto;
+    background: var(--ds-surface);
+    border-top: 1px solid var(--ds-border);
+    border-radius: 14px 14px 0 0;
+    padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+    animation: ds-sheet-up var(--ds-motion-base) var(--ds-motion-easing);
+
+    @include bp.tablet-up {
+      left: auto; top: 0; bottom: 0; width: 420px;
+      border-radius: 0; border-left: 1px solid var(--ds-border);
+    }
+  }
+  &__header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
+  &__title { margin: 0; font-size: 1rem; color: var(--ds-text-high); }
+}
+
+@keyframes ds-sheet-up {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-sheet__panel { animation: none; }
+}
