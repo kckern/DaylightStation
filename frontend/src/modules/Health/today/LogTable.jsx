@@ -46,7 +46,7 @@ export function LogTable({ byBucket, sessions = [], onAddTo, onRowTap, addSlot, 
           {sessions.map((s, i) => (
             <div key={i} className="health-row health-row--readonly">
               <span className="health-row__name">{s.type || s.title || 'Workout'}</span>
-              <span className="health-row__portion">{s.duration_min ? `${Math.round(s.duration_min)} min` : ''}</span>
+              <span className="health-row__portion">{(s.minutes ?? s.duration_min) ? `${Math.round(s.minutes ?? s.duration_min)} min` : ''}</span>
               <span className="health-row__kcal">+{Math.round(s.calories || 0)}</span>
             </div>
           ))}

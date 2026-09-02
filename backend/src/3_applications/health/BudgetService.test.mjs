@@ -65,6 +65,18 @@ describe('BudgetService.getBudget', () => {
     expect(b.remaining).toBeLessThan(0);
   });
 
+  it('flattens grouped-array workout sessions (real getWorkoutsForDate shape) before summing exercise', async () => {
+    const svc = makeService({
+      healthStore: {
+        getWorkoutsForDate: async () => ([[{ calories: 320, minutes: 42 }], []]),
+      },
+    });
+    const b = await svc.getBudget('kckern', '2026-09-02');
+    expect(b.exercise).toBe(320);
+    expect(b.sessions).toHaveLength(1);
+    expect(b.sessions[0]).toMatchObject({ calories: 320, minutes: 42 });
+  });
+
   it('rounds food once so remaining === budget - food + exercise exactly, even with fractional-calorie rows', async () => {
     const svc = makeService({
       nutriListStore: { findByDate: async () => ([
