@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 
 vi.mock('../../lib/api.mjs', () => ({ DaylightAPI: vi.fn().mockResolvedValue({}) }));
 const { FitnessSession } = await import('./FitnessSession.js');
@@ -12,6 +12,16 @@ const { FitnessSession } = await import('./FitnessSession.js');
  * window over a 94-minute workout, with every pre-reload tick gone.
  */
 describe('FitnessSession resume — v3 session window', () => {
+  // The resume path pads the gap between the session's end and NOW, and
+  // padWithNulls prunes the head once the series grows past its window. Left on
+  // the real clock these tests pass in the morning and fail by evening, because
+  // the gap keeps growing against a fixed fixture. Pin the clock just after the
+  // session ends so the gap is the small, intended one.
+  afterEach(() => { vi.useRealTimers(); });
+  const pinClockJustAfterSession = () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-01T17:22:00.000'));
+  };
   const v3 = (startStr, endStr) => ({
     sessionId: '20260901154746',
     version: 3,
@@ -48,6 +58,7 @@ describe('FitnessSession resume — v3 session window', () => {
   });
 
   it('restores the saved ticks rather than starting the count over', () => {
+    pinClockJustAfterSession();
     const s = new FitnessSession();
     s._hydrateFromSession(v3('2026-09-01 15:47:46.102', '2026-09-01 17:21:16.000'));
     // The tail is null padding for the gap since the session's real end; what
@@ -58,6 +69,7 @@ describe('FitnessSession resume — v3 session window', () => {
   it('measures the resume gap from session.end, not from the start', () => {
     // With no numeric endTime, the old code fell back to startTime + 0 and
     // padded the gap as if the session had never run.
+    pinClockJustAfterSession();
     const s = new FitnessSession();
     s._hydrateFromSession(v3('2026-09-01 15:47:46.102', '2026-09-01 17:21:16.000'));
     const paddedTo = s.timeline.series['user_3:rings'].length;

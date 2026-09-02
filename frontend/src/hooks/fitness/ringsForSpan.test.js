@@ -44,7 +44,36 @@ describe('ringsForSpan', () => {
     expect(ringsForSpan(wobbly, S + 5_000, S + 10_000, S, 5)).toBe(0);
   });
 
-  it('clamps an item running past the end of the series', () => {
-    expect(ringsForSpan(cumulative, min(4), min(99), S, 5)).toBe(590 - 470);
+  it('tolerates a few ticks of overhang at the session tail', () => {
+    // 60 ticks recorded; an item ending a tick or two past the last is ordinary
+    // rounding, not missing data.
+    expect(ringsForSpan(cumulative, min(4), min(5) + 10_000, S, 5)).toBe(590 - 470);
+  });
+
+  it('refuses an item running far past the recorded ticks', () => {
+    // Session 20260901154746: a 444-tick workout against a 235-tick series that
+    // covered a different stretch of the session. Clamping to the last value
+    // credited the workout with every ring the session earned.
+    expect(ringsForSpan(cumulative, min(4), min(99), S, 5)).toBeNull();
+  });
+});
+
+describe('ringsForSpan — a null-padded series', () => {
+  // A repaired window null-pads the series out to the full axis. Array length
+  // then overstates coverage: the data may span 20 minutes inside a 94-minute
+  // array, and an item in the padded region must score null, not the remainder.
+  const padded = [...Array.from({ length: 20 }, (_, i) => i * 10), ...new Array(40).fill(null)];
+
+  it('scores an item inside the recorded stretch', () => {
+    // Covers ticks 0..9; cumulative[9] is 90 against a baseline of 0.
+    expect(ringsForSpan(padded, S, S + 50_000, S, 5)).toBe(90);
+  });
+
+  it('refuses an item out in the padding', () => {
+    expect(ringsForSpan(padded, S + 200_000, S + 250_000, S, 5)).toBeNull();
+  });
+
+  it('refuses a series that is nothing but padding', () => {
+    expect(ringsForSpan(new Array(40).fill(null), S, S + 50_000, S, 5)).toBeNull();
   });
 });

@@ -34,6 +34,7 @@ import * as enrichPlex from './lib/fitness/enrichPlex.mjs';
 import * as backfillMediaMemory from './lib/fitness/backfillMediaMemory.mjs';
 import * as backfillPrimaryMedia from './lib/fitness/backfillPrimaryMedia.mjs';
 import * as repairMediaDuration from './lib/fitness/repairMediaDuration.mjs';
+import * as backfillMediaRings from './lib/fitness/backfillMediaRings.mjs';
 import * as pairOrphanMedia from './lib/fitness/pairOrphanMedia.mjs';
 
 import * as stravaCrud from './lib/fitness/stravaCrud.mjs';
@@ -70,6 +71,7 @@ const GROUPS = {
       'backfill-memory': cmd(backfillMediaMemory),
       'backfill-primary': cmd(backfillPrimaryMedia),
       'repair-duration': cmd(repairMediaDuration),
+      'backfill-rings': cmd(backfillMediaRings),
       'pair-orphans': cmd(pairOrphanMedia),
     },
     aliases: new Set(),
