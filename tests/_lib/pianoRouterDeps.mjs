@@ -38,6 +38,14 @@ export function withPianoRouterServices(config = {}) {
       logger,
     }),
     producerIdPattern: producerRecords.PRODUCER_ID_RE,
+    // createPianoRouter takes these directly and guards on them — a missing
+    // attempt store makes every attempts route answer 501. They are
+    // destructured out of `config` above, so they are NOT in `...rest` and have
+    // to be handed back explicitly or the caller's store silently never
+    // arrives. Placed AFTER the services spread so an explicit value wins.
+    pianoAttemptStore,
+    exerciseBank,
+    eventBus,
     logger,
   };
 }
