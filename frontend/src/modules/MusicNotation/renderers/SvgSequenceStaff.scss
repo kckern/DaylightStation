@@ -70,9 +70,27 @@
   }
 
   // ── Run state ─────────────────────────────────────────────────────────────
-  // Ink for what is left to play, spent ink for what is behind, and a filled
-  // ring for the one note being asked for right now. A child reads position
-  // first and colour second, so state never moves a notehead — only its weight.
+  // Opacity carries exactly ONE meaning on this staff: "this is your finger,
+  // not the music." Every notehead below — played, at the cursor, or still to
+  // come — is drawn at full opacity, always; nothing here ever fades a
+  // notehead, sets an `opacity` below 1, or animates a colour transition
+  // (`raw-motion` is not a thing this stylesheet reaches for). The four
+  // states below are pure COLOUR, and colour alone answers "have I played
+  // this, and if I'm playing it right now, is it right":
+  //   done  — jet black.  Already played; the base `.action-staff__note` ink,
+  //           stated explicitly so `done` never silently rides on "whatever
+  //           the default happens to be".
+  //   todo  — brown.      Not yet played, INCLUDING the cursor's own entry
+  //           while it sits idle with nothing held. Chosen against the cream
+  //           paper (#f5f0e8) for a hue clearly apart from black at a glance,
+  //           not a faded version of it.
+  //   hit   — green.      A target notehead, in the entry currently under an
+  //           attempt, that IS being held.
+  //   miss  — red.        A target notehead, in the entry currently under an
+  //           attempt, that is NOT being held.
+  // `hit`/`miss` only ever appear on the cursor's own entry, and only while at
+  // least one key is down (SvgSequenceStaff.jsx's `attemptInProgress` gate) —
+  // an entry never sits red or green with nothing held.
   .action-staff__note {
     fill: rgba(0, 0, 0, 1);
     stroke: rgba(0, 0, 0, 1);
@@ -80,30 +98,42 @@
   }
 
   .sequence-note-done {
-    fill: rgba(0, 150, 70, 0.85);
-    stroke: rgba(0, 130, 60, 0.85);
-  }
-
-  .sequence-note-next {
     fill: rgba(0, 0, 0, 1);
     stroke: rgba(0, 0, 0, 1);
-    stroke-width: 1.5;
   }
 
   .sequence-note-todo {
-    fill: rgba(0, 0, 0, 0.55);
-    stroke: rgba(0, 0, 0, 0.55);
+    fill: rgba(120, 66, 22, 1);
+    stroke: rgba(120, 66, 22, 1);
   }
 
-  [data-state='done'] {
-    .action-staff__stem { stroke: rgba(0, 150, 70, 0.85); }
-    .action-staff__accidental { color: rgba(0, 150, 70, 0.85); }
+  .sequence-note-hit {
+    fill: rgba(0, 150, 70, 1);
+    stroke: rgba(0, 130, 60, 1);
   }
 
-  [data-state='todo'] {
-    .action-staff__stem { stroke: rgba(0, 0, 0, 0.55); }
-    .action-staff__accidental { color: rgba(0, 0, 0, 0.55); }
+  .sequence-note-miss {
+    fill: rgba(200, 40, 40, 1);
+    stroke: rgba(160, 20, 20, 1);
   }
+
+  .action-staff__accidental {
+    &--todo { color: rgba(120, 66, 22, 1); }
+    &--hit { color: rgba(0, 150, 70, 1); }
+    &--miss { color: rgba(160, 20, 20, 1); }
+  }
+
+  // The stem is ONE line per entry (see SvgSequenceStaff.jsx for why a mixed
+  // chord leaves it at `mixed`, uncoloured): `hit`/`miss` only ever land when
+  // every notehead in the column agrees, so a coloured stem is never a
+  // verdict a notehead itself doesn't also carry.
+  [data-stem-state='todo'] .action-staff__stem { stroke: rgba(120, 66, 22, 1); }
+  [data-stem-state='hit'] .action-staff__stem { stroke: rgba(0, 150, 70, 1); }
+  [data-stem-state='miss'] .action-staff__stem { stroke: rgba(160, 20, 20, 1); }
+  // `done` and `mixed` are deliberately absent: both keep the base
+  // `.action-staff__stem` black — `done` because that IS jet black, `mixed`
+  // because a chord split between hit and miss has no single verdict to give
+  // the shared stem, so it stays the plain, no-verdict ink.
 
   // The cursor is a lane, not an outline: it sits behind the notehead so the
   // ink stays the thing being read, and it is wide enough to be found at a
@@ -114,28 +144,23 @@
     stroke-width: 1;
   }
 
-  // ── The wrong note, drawn where it actually is ────────────────────────────
-  // Red enough to read as "not this", transparent enough that it never looks
-  // like part of the ask. Its vertical position is the whole point: the child
-  // sees the distance between what they played and what was asked.
+  // ── The ghost: a held pitch that is not one of the cursor entry's targets ──
+  // Semi-opaque BLACK — never a hue, never the miss-red above — because a
+  // ghost is not a verdict at all: it is "you are here", the distance between
+  // what was played and what was asked. The target it displaced is coloured
+  // miss-red in its own right (rule 2); the ghost's job is only to say where
+  // the finger actually landed.
   .sequence-note-wrong-ghost {
-    fill: rgba(200, 40, 40, 0.45);
-    stroke: rgba(160, 20, 20, 0.6);
+    fill: rgba(0, 0, 0, 0.45);
+    stroke: rgba(0, 0, 0, 0.6);
     stroke-width: 1;
   }
 
   .sequence-staff__ghost-accidental {
-    color: rgba(160, 20, 20, 0.55);
+    color: rgba(0, 0, 0, 0.55);
   }
 
-  .sequence-staff__wrong-ledger {
-    stroke: rgba(160, 20, 20, 0.35);
-  }
-
-  // Held keys that are neither target nor the flagged wrong note: reference
-  // ink at half strength, the same as the single-simultaneity staff.
-  .sequence-staff__held-ghost {
-    fill: rgba(0, 0, 0, 0.15);
-    stroke: rgba(0, 0, 0, 0.1);
+  .sequence-staff__ghost-ledger {
+    stroke: rgba(0, 0, 0, 0.35);
   }
 }

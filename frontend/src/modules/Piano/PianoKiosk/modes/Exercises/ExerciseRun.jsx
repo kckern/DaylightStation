@@ -872,10 +872,14 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
             className={`piano-exercise-run__sequence${stage === 'single-note' ? ' piano-exercise-run__single-note' : ''}`}
             style={{ '--staff-aspect': staffViewBox.width / staffViewBox.height }}
           >
+            {/* No `wrongMidi`: the staff reads hit/miss/ghost straight off
+                `activeNotes` in real time (SvgSequenceStaff's own contract),
+                never off `lastWrong` — that flag can outlive the key that set
+                it, and a ghost that outlives a key-up is exactly the bug the
+                rule this component now follows exists to forbid. */}
             <SvgSequenceStaff
               notes={staffNotes}
               cursorIndex={eventIndex}
-              wrongMidi={lastWrong?.midi ?? null}
               activeNotes={activeNotes}
               clef={clefForInstance(instance)}
               accidental={accidental}

@@ -68,10 +68,12 @@ export default function KeysAsk({
     <div className="keys-ask">
       {showStaff && (
         <div className="keys-ask__staff">
+          {/* No `wrongMidi`: the staff derives hit/miss/ghost entirely from
+              `activeNotes` now (SvgSequenceStaff's real-time contract) —
+              `wrongMidi` here only ever fed the keyboard's `wrongNotes` below. */}
           <SvgSequenceStaff
             notes={staffNotes}
             cursorIndex={cursorIndex}
-            wrongMidi={wrongMidi}
             activeNotes={activeNotes}
             accidental={accidental}
             clef={clef ?? clefForAsk(events)}

@@ -115,7 +115,10 @@ vi.mock('../../../../MusicNotation/renderers/SvgSequenceStaff.jsx', async (impor
   SvgSequenceStaff: (props) => (
     <div
       data-testid="sequence-staff"
-      data-wrong={props.wrongMidi ?? ''}
+      // No `data-wrong`: the real component takes no `wrongMidi` prop any
+      // more — it derives hit/miss/ghost from `activeNotes` in real time.
+      // `data-active` proves the run still forwards the live held set.
+      data-active={[...(props.activeNotes ?? [])].map(([midi]) => midi).sort((a, b) => a - b).join(',')}
       data-cursor={props.cursorIndex}
       data-clef={props.clef ?? ''}
       data-accidental={props.accidental}
@@ -271,14 +274,19 @@ describe('ExerciseRun shared assessment wiring', () => {
     // the ready phase is a child finding their hands, not a wrong answer.
     await armFree(view, props); // 60 arms and hits event one; event two wants 62
 
-    press(view, props, 61); // a semitone below the expected 62 — wrong, but plausible
+    // Held, not pressed-and-released: the staff's ghost/miss colouring is now
+    // real-time off `activeNotes` (SvgSequenceStaff's own contract), so the
+    // assertion below has to catch the note while it is still down.
+    hold(view, props, [61]); // a semitone below the expected 62 — wrong, but plausible
 
     await waitFor(() => expect(screen.getByTestId('keyboard')).toHaveAttribute('data-wrong', '61'));
     expect(screen.getByRole('status')).toHaveTextContent('That note was not expected');
-    // Tier 2's staff wants the PITCH, not a flag — it draws the wrong note at
-    // its own position. (The ABC stage still gets the flag; that is asserted
-    // in the tier-3 row of the stage-boundary table below.)
-    expect(screen.getByTestId('sequence-staff')).toHaveAttribute('data-wrong', '61');
+    // Tier 2's staff wants the currently-HELD set, not a flag — it derives the
+    // wrong note's own position from `activeNotes` itself. (The ABC stage
+    // still gets a flag; that is asserted in the tier-3 row of the
+    // stage-boundary table below.)
+    expect(screen.getByTestId('sequence-staff')).toHaveAttribute('data-active', '61');
+    hold(view, props, []);
 
     press(view, props, 62); // a hit clears it
     await waitFor(() => expect(screen.getByTestId('keyboard')).toHaveAttribute('data-wrong', ''));
@@ -799,7 +807,10 @@ describe('ExerciseRun tier-driven presentation', () => {
   it.each([
     [0, 'keys-ask', '61'],
     [1, 'keys-ask', '61'],
-    [2, 'sequence-staff', '61'],
+    // Tier 2's sequence-staff is deliberately absent from this table: it no
+    // longer takes a "wrong note" flag/pitch prop at all — see the dedicated
+    // case just below, which holds the note rather than pressing-and-releasing
+    // it, matching SvgSequenceStaff's own real-time contract.
     // The ABC path only ever wanted a flag, and still gets exactly that.
     [3, 'notation', 'true'],
   ])('tier %i mounts the %s stage alone, and gives it the wrong note', async (tier, stage, wrong) => {
@@ -815,6 +826,26 @@ describe('ExerciseRun tier-driven presentation', () => {
     pressKey(view, props, 60); // arms the run and grades event one
     pressKey(view, props, 61); // a semitone below the expected 62
     await waitFor(() => expect(screen.getByTestId(stage)).toHaveAttribute('data-wrong', wrong));
+  });
+
+  it('tier 2 mounts the sequence-staff stage alone, and hands it the held wrong note directly', async () => {
+    const props = practice({ tier: 2 });
+    const view = render(<ExerciseRun {...props} />);
+    await ready();
+
+    expect(screen.getByTestId('sequence-staff')).toBeInTheDocument();
+    for (const other of STAGES.filter((id) => id !== 'sequence-staff')) {
+      expect(screen.queryByTestId(other)).not.toBeInTheDocument();
+    }
+
+    pressKey(view, props, 60); // arms the run and grades event one
+    // Held, not pressed-and-released: SvgSequenceStaff derives its own ghost
+    // and miss colouring straight from `activeNotes`, in real time, so the
+    // wiring this proves is that the run forwards the live held set — not a
+    // flag — to the staff.
+    act(() => { h.activeNotes = new Map([[61, { velocity: 1 }]]); view.rerender(<ExerciseRun {...props} />); });
+    await waitFor(() => expect(screen.getByTestId('sequence-staff')).toHaveAttribute('data-active', '61'));
+    act(() => { h.activeNotes = new Map(); view.rerender(<ExerciseRun {...props} />); });
   });
 
   it.each([[0, 'false'], [1, 'true']])('tier %i gets the keys ask with showStaff=%s', async (tier, shown) => {
