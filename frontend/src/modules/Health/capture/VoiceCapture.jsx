@@ -11,8 +11,19 @@ const MicIcon = ({ active }) => (
   </svg>
 );
 
-/** Tap to record, tap to stop → data URL → the voice pipeline. */
-export function VoiceCapture({ onCapture, busy }) {
+/**
+ * Tap to record, tap to stop → data URL → the voice pipeline.
+ *
+ * `bucket` is a per-meal targeting id (e.g. `morning`), optional — when a
+ * caller (LogTable's per-meal header) supplies it, this both (a) names the
+ * meal in the button's accessible name so a screen-reader user hitting four
+ * otherwise-identical "Voice log" buttons can tell them apart, and (b)
+ * forwards it back through `onCapture(dataUrl, bucket)` so the caller knows
+ * which meal to submit against without needing its own per-instance closure
+ * state. The footer's single global instance omits both props and keeps its
+ * original generic label/behavior.
+ */
+export function VoiceCapture({ onCapture, busy, bucket, mealLabel }) {
   const recRef = useRef(null);
   const [recording, setRecording] = useState(false);
 
@@ -27,20 +38,24 @@ export function VoiceCapture({ onCapture, busy }) {
         stream.getTracks().forEach((t) => t.stop());
         setRecording(false);
         const reader = new FileReader();
-        reader.onload = () => onCapture(reader.result);
+        reader.onload = () => onCapture(reader.result, bucket);
         reader.readAsDataURL(new Blob(chunks, { type: rec.mimeType }));
       };
       recRef.current = rec;
       rec.start();
       setRecording(true);
-      logger.info('voice.start', {});
+      logger.info('voice.start', { bucket: bucket || undefined });
     } catch (err) {
       logger.warn('voice.mic_unavailable', { error: err?.message });
     }
   };
 
+  const idleLabel = mealLabel ? `Log by voice to ${mealLabel}` : 'Voice log';
+  const activeLabel = mealLabel ? `Stop recording — ${mealLabel}` : 'Stop recording';
+
   return (
-    <ActionIcon aria-label={recording ? 'Stop recording' : 'Voice log'} loading={busy}
+    <ActionIcon aria-label={recording ? activeLabel : idleLabel} loading={busy}
+      className={mealLabel ? 'health-meal__capture-btn' : undefined}
       color={recording ? 'red' : undefined} onClick={toggle}>
       <MicIcon active={recording} />
     </ActionIcon>

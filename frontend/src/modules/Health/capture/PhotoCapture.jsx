@@ -9,12 +9,20 @@ const CameraIcon = () => (
   </svg>
 );
 
-/** Photo → data URL → the image pipeline. */
-export function PhotoCapture({ onCapture, busy }) {
+/**
+ * Photo → data URL → the image pipeline.
+ *
+ * See VoiceCapture.jsx's header comment for the `bucket`/`mealLabel`
+ * contract — same shape here: optional, meal-scoped naming + forwarding.
+ */
+export function PhotoCapture({ onCapture, busy, bucket, mealLabel }) {
   const inputRef = useRef(null);
+  const label = mealLabel ? `Log by photo to ${mealLabel}` : 'Photo log';
   return (
     <>
-      <ActionIcon aria-label="Photo log" loading={busy} onClick={() => inputRef.current?.click()}>
+      <ActionIcon aria-label={label} loading={busy}
+        className={mealLabel ? 'health-meal__capture-btn' : undefined}
+        onClick={() => inputRef.current?.click()}>
         <CameraIcon />
       </ActionIcon>
       <input ref={inputRef} type="file" accept="image/*" capture="environment" hidden
@@ -22,7 +30,7 @@ export function PhotoCapture({ onCapture, busy }) {
           const file = e.target.files?.[0];
           if (!file) return;
           const reader = new FileReader();
-          reader.onload = () => onCapture(reader.result); // data URL
+          reader.onload = () => onCapture(reader.result, bucket); // data URL
           reader.readAsDataURL(file);
           e.target.value = '';
         }} />

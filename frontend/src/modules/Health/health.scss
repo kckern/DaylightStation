@@ -54,14 +54,28 @@
 
 .health-meal {
   margin-top: 0.75rem;
-  &__header { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid var(--ds-border); padding-bottom: 0.2rem; }
-  &__header-right { display: flex; align-items: baseline; gap: 0.5rem; }
+  &__header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--ds-border); padding-bottom: 0.2rem; }
+  &__header-right { display: flex; align-items: center; gap: 0.5rem; }
   &__label { margin: 0; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ds-text-mid); }
   &__kcal { font-size: 0.8rem; color: var(--ds-text-low); font-variant-numeric: tabular-nums; }
   &__add { display: block; width: 100%; text-align: left; padding: 0.5rem 0.25rem; color: var(--ds-text-low); font-size: 0.85rem; border-radius: 6px;
     &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; } }
   &--exercise .health-row__kcal { color: var(--ds-success); }
+
+  // Per-meal mic/camera/barcode trio (Task 4.2) — the prime-directive
+  // affordance: capture directly on the meal it targets, no scrolling to
+  // a footer and no relying on the clock to guess which bucket it lands in.
+  &__capture { display: flex; align-items: center; gap: 0.15rem; }
 }
+
+// Shared by VoiceCapture/PhotoCapture (only when rendered with a
+// `mealLabel`, i.e. from a meal-row header — the footer's global instances
+// are unaffected) and LogTable's own per-meal barcode trigger. Mantine's
+// ActionIcon defaults to well under 44px; min-width/min-height act as a
+// floor over its own width/height (CSS spec: min-* always wins over a
+// smaller explicit width/height), same pattern as `.health-row__confirm` /
+// `.health-row__expand` above.
+.health-meal__capture-btn { min-width: 44px; min-height: 44px; }
 
 // Wraps EntryRow's tappable content plus (when unsettled) the confirm
 // control — kept as a sibling, never nested inside the row button (a

@@ -1,9 +1,29 @@
 import { useState } from 'react';
-import { UnstyledButton } from '@mantine/core';
+import { ActionIcon, UnstyledButton } from '@mantine/core';
 import { LoadingState } from '@/lib/ui';
 import { BUCKETS, UNGROUPED } from './mealBuckets.js';
 import { EntryRow } from './EntryRow.jsx';
 import { groupRows } from './groupRows.js';
+import { VoiceCapture } from '../capture/VoiceCapture.jsx';
+import { PhotoCapture } from '../capture/PhotoCapture.jsx';
+
+// Same inline-SVG pattern as TodayView.jsx's footer BarcodeIcon — duplicated
+// rather than shared to avoid a LogTable <-> TodayView circular import
+// (TodayView already imports LogTable).
+const BarcodeIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+    <path d="M2 3v12M5 3v12M7.5 3v12M10 3v12M13 3v12M16 3v12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+  </svg>
+);
+
+/** Opens the barcode-scan sheet, pre-targeted at this meal's bucket. */
+function MealBarcodeButton({ label, onClick }) {
+  return (
+    <ActionIcon aria-label={`Scan barcode to ${label}`} className="health-meal__capture-btn" onClick={onClick}>
+      <BarcodeIcon />
+    </ActionIcon>
+  );
+}
 
 // Numeric-tolerant bucket-total sum. A group row carries zero nutrition BY
 // DESIGN (its children carry the real values as siblings in this same flat
@@ -13,7 +33,10 @@ import { groupRows } from './groupRows.js';
 // to "fix" it into double-counting if a group ever did carry a value.
 const kcal = (rows) => Math.round(rows.reduce((s, r) => s + (Number(r.calories) || 0), 0));
 
-function Section({ label, rows, onAdd, onRowTap, onConfirm, headerAction, coldLoading, pending }) {
+function Section({
+  label, rows, onAdd, onRowTap, onConfirm, headerAction, coldLoading, pending,
+  bucketId, onVoiceCapture, onPhotoCapture, onOpenBarcode, captureBusy,
+}) {
   const [expanded, setExpanded] = useState(() => new Set());
   const entries = groupRows(rows);
   // The section frame (heading + kcal + add row) is PERMANENT structure —
@@ -37,6 +60,17 @@ function Section({ label, rows, onAdd, onRowTap, onConfirm, headerAction, coldLo
         <h4 className="health-meal__label">{label}</h4>
         <span className="health-meal__header-right">
           <span className="health-meal__kcal">{rows.length ? `${kcal(rows)} kcal` : '—'}</span>
+          {/* Per-meal capture controls (Task 4.2) — only present when this
+              Section IS a real meal bucket (bucketId set); the Ungrouped /
+              orphans Section below never passes one, so no capture trio
+              renders there. */}
+          {bucketId ? (
+            <span className="health-meal__capture">
+              <VoiceCapture bucket={bucketId} mealLabel={label} busy={captureBusy} onCapture={onVoiceCapture} />
+              <PhotoCapture bucket={bucketId} mealLabel={label} busy={captureBusy} onCapture={onPhotoCapture} />
+              <MealBarcodeButton label={label} onClick={() => onOpenBarcode(bucketId)} />
+            </span>
+          ) : null}
           {headerAction || null}
         </span>
       </header>
@@ -102,6 +136,7 @@ function Section({ label, rows, onAdd, onRowTap, onConfirm, headerAction, coldLo
 export function LogTable({
   byBucket, sessions = [], exerciseAvailable = false, onAddTo, onRowTap, onConfirm,
   addSlot, addingTo, bucketHeaderAction, coldLoading = false, capturePendingBucket = null,
+  onVoiceCapture, onPhotoCapture, onOpenBarcode, captureBusy = false,
 }) {
   const orphans = byBucket.get(null) || [];
   return (
@@ -113,7 +148,9 @@ export function LogTable({
             <Section label={b.label} rows={rows}
               onAdd={() => onAddTo(b.id)} onRowTap={onRowTap} onConfirm={onConfirm}
               headerAction={bucketHeaderAction ? bucketHeaderAction(b.id, rows, b.label) : null}
-              coldLoading={coldLoading} pending={capturePendingBucket === b.id} />
+              coldLoading={coldLoading} pending={capturePendingBucket === b.id}
+              bucketId={b.id} onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
+              onOpenBarcode={onOpenBarcode} captureBusy={captureBusy} />
             {addingTo === b.id && addSlot ? addSlot : null}
           </div>
         );

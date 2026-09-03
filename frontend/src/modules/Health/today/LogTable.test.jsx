@@ -182,6 +182,53 @@ describe('LogTable', () => {
       expect(screen.getByText('Side item')).toBeTruthy();
     });
 
+  });
+
+  describe('per-meal capture controls (Task 4.2)', () => {
+    it('every meal section renders mic/camera/barcode controls with bucket-specific accessible names', () => {
+      render(<LogTable byBucket={emptyByBucket} sessions={[]}
+        onAddTo={() => {}} onRowTap={() => {}}
+        onVoiceCapture={() => {}} onPhotoCapture={() => {}} onOpenBarcode={() => {}} />, { wrapper });
+
+      // One meal spot-checked in full…
+      expect(screen.getByRole('button', { name: 'Log by voice to Breakfast' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Log by photo to Breakfast' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Scan barcode to Breakfast' })).toBeTruthy();
+      // …and every OTHER bucket gets its own distinctly-named trio, not a
+      // shared/ambiguous "Log by voice" label repeated four times — that's
+      // the whole point of the a11y requirement (four otherwise-identical
+      // buttons would be indistinguishable to a screen-reader user).
+      for (const label of ['Lunch', 'Dinner', 'Snacks']) {
+        expect(screen.getByRole('button', { name: `Log by voice to ${label}` })).toBeTruthy();
+        expect(screen.getByRole('button', { name: `Log by photo to ${label}` })).toBeTruthy();
+        expect(screen.getByRole('button', { name: `Scan barcode to ${label}` })).toBeTruthy();
+      }
+    });
+
+    it('tapping a given section\'s barcode control fires onOpenBarcode with THAT section\'s bucket id', () => {
+      const onOpenBarcode = vi.fn();
+      render(<LogTable byBucket={emptyByBucket} sessions={[]}
+        onAddTo={() => {}} onRowTap={() => {}}
+        onVoiceCapture={() => {}} onPhotoCapture={() => {}} onOpenBarcode={onOpenBarcode} />, { wrapper });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Scan barcode to Lunch' }));
+      expect(onOpenBarcode).toHaveBeenCalledWith('afternoon');
+      expect(onOpenBarcode).not.toHaveBeenCalledWith('morning');
+    });
+
+    it('the Ungrouped/orphans section carries NO capture controls (only real meal buckets do)', () => {
+      const withOrphan = new Map(byBucket);
+      withOrphan.set(null, [{ uuid: '9', name: 'Mystery', calories: 100 }]);
+      render(<LogTable byBucket={withOrphan} sessions={[]}
+        onAddTo={() => {}} onRowTap={() => {}}
+        onVoiceCapture={() => {}} onPhotoCapture={() => {}} onOpenBarcode={() => {}} />, { wrapper });
+
+      const ungroupedSection = screen.getByText('Ungrouped').closest('section');
+      expect(ungroupedSection.querySelector('.health-meal__capture')).toBeNull();
+    });
+  });
+
+  describe('grouped rows — settled cue', () => {
     it('a group row with settled:false still shows the unsettled cue and confirm button', () => {
       const unsettledGroupBucket = new Map([
         ['morning', [
