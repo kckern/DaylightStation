@@ -27,6 +27,7 @@ export class LogFoodFromImage {
   #reconciliationReader;
   #catalogService;
   #imageDownloader;
+  #photoStore;
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
@@ -45,6 +46,9 @@ export class LogFoodFromImage {
     this.#reconciliationReader = deps.reconciliationReader || null;
     this.#catalogService = deps.catalogService || null;
     this.#imageDownloader = deps.imageDownloader;
+    // Optional — persists the captured photo for later serving (Task 2.3).
+    // Persistence failures must NEVER break food logging; see #persistPhoto.
+    this.#photoStore = deps.photoStore || null;
   }
 
   /**
@@ -221,6 +225,13 @@ export class LogFoodFromImage {
         return { success: false, error: 'No food detected' };
       }
 
+      // 6b. Persist the captured photo and stamp its ref onto the produced
+      // entries. Never fatal — a persistence failure (disk error, undecodable
+      // buffer, missing photoStore) must not prevent the food from logging;
+      // see #persistPhoto.
+      const effectiveUserId = conversationId.split(':')[0] === 'cli' ? 'cli-user' : userId;
+      await this.#persistPhoto({ effectiveUserId, conversationId, photoSource, foodItems });
+
       // 7. Create NutriLog domain entity
       const timezone = this.#getTimezone();
       const now = new Date();
@@ -233,7 +244,7 @@ export class LogFoodFromImage {
       else if (localHour >= 20 || localHour < 5) mealTime = 'night';
 
       const nutriLog = createNutriLog({
-        userId: conversationId.split(':')[0] === 'cli' ? 'cli-user' : userId,
+        userId: effectiveUserId,
         conversationId,
         items: foodItems,
         meal: {
@@ -463,6 +474,70 @@ ${conservativeNote}${portionBoost}`,
       });
       return [];
     }
+  }
+
+  /**
+   * Extract raw image bytes from whatever `photoSource` turned out to be
+   * (see execute() step 2). Returns null when there is nothing persistable —
+   * e.g. the download failed and the code fell back to a bare URL string.
+   * @private
+   */
+  #extractImageBuffer(photoSource) {
+    if (Buffer.isBuffer(photoSource)) return photoSource;
+    if (typeof photoSource === 'string' && photoSource.startsWith('data:')) {
+      const match = photoSource.match(/^data:[^;,]*;base64,(.*)$/s);
+      if (match) {
+        try {
+          return Buffer.from(match[1], 'base64');
+        } catch {
+          return null;
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Persist the captured photo (best-effort) and stamp its `photoRef` onto
+   * the entry that owns it: the GROUP row for a grouped (multi-item dish)
+   * parse, or the standalone ITEM row for a single-item parse. Group members
+   * (kind:'item' with a parentId) do NOT get their own photoRef — the group
+   * they belong to already carries it.
+   *
+   * Never throws — a failure here (no photoStore configured, no persistable
+   * buffer, a disk error, or jimp throwing inside PhotoStore) is logged as a
+   * warning and the food is still logged without a photoRef.
+   * @private
+   */
+  async #persistPhoto({ effectiveUserId, conversationId, photoSource, foodItems }) {
+    if (!this.#photoStore) return;
+
+    const buffer = this.#extractImageBuffer(photoSource);
+    if (!buffer) {
+      this.#logger.debug?.('logImage.photoStore.noBuffer', { conversationId });
+      return;
+    }
+
+    let photoRef;
+    try {
+      photoRef = await this.#photoStore.save(effectiveUserId, buffer);
+    } catch (e) {
+      this.#logger.warn?.('logImage.photoStore.save.failed', {
+        conversationId,
+        userId: effectiveUserId,
+        error: e.message,
+      });
+      return;
+    }
+
+    for (const entry of foodItems) {
+      const isStandaloneItem = entry.kind === 'item' && !entry.parentId;
+      if (entry.kind === 'group' || isStandaloneItem) {
+        entry.photoRef = photoRef;
+      }
+    }
+
+    this.#logger.info?.('logImage.photoStore.saved', { conversationId, userId: effectiveUserId, photoRef });
   }
 
   /**

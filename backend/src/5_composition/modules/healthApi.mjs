@@ -16,6 +16,7 @@ import { YamlSavedMealsDatastore } from '#adapters/persistence/yaml/YamlSavedMea
 import { SavedMealsService } from '#apps/health/SavedMealsService.mjs';
 import { YamlMedicalReadingsDatastore } from '#adapters/persistence/yaml/YamlMedicalReadingsDatastore.mjs';
 import { MedicalReadingsService } from '#apps/health/MedicalReadingsService.mjs';
+import { PhotoStore } from '#adapters/persistence/PhotoStore.mjs';
 import { dataService } from '../runtimePersistence.mjs';
 import { nowDate } from '#system/utils/time.mjs';
 import { v4 as uuidv4 } from 'uuid';
@@ -118,6 +119,11 @@ export function createHealthApiRouter(config) {
     logger,
   });
 
+  // Same PhotoStore instance the nutribot image use case persists through
+  // (see createNutribotServices) — both resolve the same
+  // users/{userId}/lifelog/nutrition/photos directory via dataService.
+  const photoStore = new PhotoStore({ dataService, logger });
+
   return createHealthRouter({
     healthService: healthServices.healthService,
     healthOperations,
@@ -127,6 +133,7 @@ export function createHealthApiRouter(config) {
     budgetService,
     savedMealsService,
     medicalService,
+    photoStore,
     logger
   });
 }
