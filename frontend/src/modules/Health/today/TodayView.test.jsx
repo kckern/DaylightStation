@@ -29,17 +29,22 @@ const baseApi = (overrides = {}) => async (path) => {
   if (path.includes('nutrilist/')) return NUTRILIST;
   if (path.includes('budget')) return BUDGET;
   if (path.includes('dashboard')) return DASHBOARD;
+  if (path.includes('nutrition/pending')) return overrides.pending ?? { pending: [] };
   if (path.includes('nutrition/input')) return overrides.nutritionInput ?? {};
   return {};
 };
 
-describe('TodayView — photo/voice capture pendings (I-4)', () => {
+// Captures are committed on arrival (Task 1.1): a successful photo/voice
+// submit already logged the row(s) as accepted+unsettled — there is no
+// review phase, no PendingConfirmCard, and no Undo/Accept/Done affordance
+// here. The day reload picks the new unsettled rows up via LogTable/EntryRow.
+describe('TodayView — photo/voice capture: no review phase, day reload instead (I-4 follow-up)', () => {
   beforeEach(() => { apiMock.mockReset(); });
 
-  // Captures are committed on arrival now, so the server sends Undo/Edit — never Accept.
-  it('an image submit whose response carries choices renders the review card with Undo', async () => {
+  it('an image submit whose response carries choices (food detected) reloads the day and renders no review card', async () => {
     apiMock.mockImplementation(baseApi({
       nutritionInput: {
+        committed: true,
         messages: [{
           text: 'Grilled chicken — 350 kcal',
           choices: [[
@@ -52,12 +57,17 @@ describe('TodayView — photo/voice capture pendings (I-4)', () => {
 
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
     await waitFor(() => screen.getByText('MockPhotoCapture'));
+    const callsBefore = apiMock.mock.calls.length;
     fireEvent.click(screen.getByText('MockPhotoCapture'));
 
-    await waitFor(() => expect(screen.getByText(/350 kcal/)).toBeTruthy());
-    expect(screen.getByRole('button', { name: /undo/i })).toBeTruthy();
+    // day.reload() re-fetches nutrilist+budget — no card ever mounts to wait on.
+    await waitFor(() => expect(apiMock.mock.calls.length).toBeGreaterThan(callsBefore + 1));
+
+    expect(document.querySelector('.health-pending')).toBeFalsy();
+    expect(screen.queryByText(/350 kcal/)).toBeFalsy();
+    expect(screen.queryByRole('button', { name: /undo/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /accept/i })).toBeNull();
-    expect(document.querySelector('.health-pending')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^done$/i })).toBeNull();
   });
 
   it('an image submit with no food detected surfaces the message instead of silence, and is dismissible', async () => {
@@ -76,45 +86,19 @@ describe('TodayView — photo/voice capture pendings (I-4)', () => {
     expect(screen.queryByText(/couldn't identify/i)).toBeFalsy();
   });
 
-  const committedChoices = [[
-    { text: '↩️ Undo', callback_data: '{"cmd":"x","id":"log-1"}' },
-    { text: '✏️ Edit', callback_data: '{"cmd":"r","id":"log-1"}' },
-  ]];
-
-  it('dismissing a committed capture clears the card and reloads the day', async () => {
+  it('the NeedsReviewSection mount is only fed scale-origin pending logs (telegram/web are filtered out)', async () => {
     apiMock.mockImplementation(baseApi({
-      nutritionInput: { messages: [{ text: 'Grilled chicken — 350 kcal', choices: committedChoices }] },
+      pending: {
+        pending: [
+          { id: 'log-1', source: 'telegram', items: [{ label: 'Oatmeal', calories: 210 }] },
+          { id: 'log-2', source: 'scale', items: [{ label: 'Chicken breast', calories: 231 }] },
+        ],
+      },
     }));
 
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
-    await waitFor(() => screen.getByText('MockPhotoCapture'));
-    fireEvent.click(screen.getByText('MockPhotoCapture'));
-    await waitFor(() => screen.getByRole('button', { name: /done/i }));
 
-    const callsBefore = apiMock.mock.calls.length;
-    fireEvent.click(screen.getByRole('button', { name: /done/i }));
-
-    await waitFor(() => expect(document.querySelector('.health-pending')).toBeFalsy());
-    // day.reload() re-fetches nutrilist+budget.
-    await waitFor(() => expect(apiMock.mock.calls.length).toBeGreaterThan(callsBefore + 1));
-  });
-
-  it('Undo posts the discard callback AND reloads the day (it deletes a counting entry)', async () => {
-    apiMock.mockImplementation(baseApi({
-      nutritionInput: { messages: [{ text: 'Grilled chicken — 350 kcal', choices: committedChoices }] },
-    }));
-
-    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
-    await waitFor(() => screen.getByText('MockPhotoCapture'));
-    fireEvent.click(screen.getByText('MockPhotoCapture'));
-    await waitFor(() => screen.getByRole('button', { name: /undo/i }));
-
-    const callsBefore = apiMock.mock.calls.length;
-    fireEvent.click(screen.getByRole('button', { name: /undo/i }));
-
-    await waitFor(() => expect(document.querySelector('.health-pending')).toBeFalsy());
-    const after = apiMock.mock.calls.slice(callsBefore);
-    expect(after.some(([path]) => path.includes('nutrition/callback'))).toBe(true);
-    expect(after.some(([path]) => path.includes('nutrilist'))).toBe(true);
+    await waitFor(() => expect(screen.getByText('Chicken breast')).toBeTruthy());
+    expect(screen.queryByText('Oatmeal')).toBeFalsy();
   });
 });

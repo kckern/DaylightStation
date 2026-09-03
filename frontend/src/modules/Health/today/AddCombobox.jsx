@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { TextInput, UnstyledButton, Loader } from '@mantine/core';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
-import { PendingConfirmCard } from './PendingConfirmCard.jsx';
 
 const logger = createAppLogger('health').child('add-combobox');
 
@@ -10,8 +9,7 @@ export function AddCombobox({ bucketId, onDone, onCancel, onSavedMeals }) {
   const [text, setText] = useState('');
   const [items, setItems] = useState([]);
   const [highlight, setHighlight] = useState(-1);
-  const [phase, setPhase] = useState('typing'); // typing | parsing | review
-  const [pending, setPending] = useState(null); // { messages }
+  const [phase, setPhase] = useState('typing'); // typing | parsing
   const [error, setError] = useState(null);
   const debounceRef = useRef(null);
   const ridRef = useRef(0); // guards against a slow older suggest response overwriting a newer one
@@ -57,9 +55,12 @@ export function AddCombobox({ bucketId, onDone, onCancel, onSavedMeals }) {
     setPhase('parsing'); setError(null);
     logger.info('sentence.submit', { length: text.length });
     try {
-      const result = await DaylightAPI('api/v1/health/nutrition/input', { type: 'text', content: text.trim() }, 'POST');
-      setPending({ messages: result?.messages || [] });
-      setPhase('review');
+      // POST /nutrition/input now commits immediately ({ committed: true, ... }) —
+      // no review phase. The rows are already logged (unsettled); the day
+      // reload picks them up and shows the unsettled cue in place.
+      await DaylightAPI('api/v1/health/nutrition/input', { type: 'text', content: text.trim() }, 'POST');
+      logger.info('sentence.committed', {});
+      onDone();
     } catch (err) {
       logger.error('sentence.failed', { error: err?.message });
       setError(err); setPhase('typing'); // text preserved — input never lost
@@ -76,10 +77,6 @@ export function AddCombobox({ bucketId, onDone, onCancel, onSavedMeals }) {
       else submitSentence();
     }
   };
-
-  if (phase === 'review' && pending) {
-    return <PendingConfirmCard messages={pending.messages} onDone={onDone} onDiscard={onCancel} />;
-  }
 
   return (
     <div className="health-suggest">
