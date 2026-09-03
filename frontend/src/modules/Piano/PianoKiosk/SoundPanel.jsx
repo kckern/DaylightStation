@@ -15,7 +15,6 @@ import { DaylightMediaPath } from '../../../lib/api.mjs';
 import TransportSheet from './transport/TransportSheet.jsx';
 import TransportButton from './transport/TransportButton.jsx';
 import StepGrid from './transport/StepGrid.jsx';
-import SettingsTile from './SettingsTile.jsx';
 import Icon from '../ui/icons/Icon.jsx';
 import './SettingsSheets.scss';
 
@@ -169,12 +168,16 @@ export default function SoundPanel({ open, onClose }) {
         <div className="piano-settings__tonehead"><Icon name="volume" /><span>Piano level</span>{levelIndex < 0 && <small>now {Math.round(pianoLevel * 100)}%</small>}</div>
         <StepGrid ariaLabel="Piano level" steps={LEVEL_STEPS.map((step) => ({ label: step.label }))} activeIndex={levelIndex} onPick={(i) => setPianoLevel(LEVEL_STEPS[i].value)} />
         <p className="piano-settings__note">This piano remembers this level.</p>
-        <SettingsTile icon="music" label="Hear it" emphasis="primary" disabled={!outputUp} onPress={hear} message={!outputUp ? 'Piano not connected.' : heard} tone={!outputUp || heard ? 'failed' : 'idle'} />
+        {/* Inline, not a tile: the column has no vertical room for an 88px audition tile once a status line shows. */}
+        <div className="piano-settings__hear">
+          <TransportButton icon="music" label="Hear it" emphasis="primary" disabled={!outputUp} onPress={hear} />
+          {(!outputUp || heard) && <p role="status" className="piano-settings__tilemsg is-failed">{!outputUp ? 'Piano not connected.' : heard}</p>}
+        </div>
         {canSave ? <div className="piano-settings__save">
           <TransportButton label={savedExactly ? 'Saved' : savedInstrument ? 'Update saved sound' : 'Save sound'} icon="star" disabled={savedExactly || (!savedInstrument && saved.length >= maxFavorites)} onPress={save} />
           {savedInstrument && <TransportButton label="Remove" icon="trash" emphasis="quiet" onPress={remove} />}
         </div> : <p className="piano-settings__note">Pick a player to save sounds.</p>}
-        {statusCopy && <p role="status" className="piano-settings__note">{statusCopy}{showRetry && <> — <button type="button" className="piano-tbtn piano-tbtn--quiet" onClick={retryLastSound}>Retry</button></>}</p>}
+        {statusCopy && <p role="status" className="piano-settings__note">{statusCopy}{showRetry && <> — <button type="button" className="piano-settings__link" onClick={retryLastSound}>Retry</button></>}</p>}
       </div>
     </div>
   </TransportSheet>;

@@ -186,6 +186,10 @@ describe('Piano maintenance', () => {
     expect(screen.queryByTestId('midi-monitor')).toBeNull();
     expect(screen.queryByRole('status')).toBeNull();
     expect(screen.getByRole('button', { name: 'Reboot tablet' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Record feedback' }));
+    expect(screen.getByTestId('feedback')).toBeTruthy();
+    closed(); opened();
+    expect(screen.queryByTestId('feedback')).toBeNull();
   });
 
   it('keeps feedback adult-only with maintenance context', () => {

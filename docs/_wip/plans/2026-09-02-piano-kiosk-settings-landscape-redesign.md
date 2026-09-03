@@ -155,6 +155,9 @@ Below the rows:
   logic verbatim, including the 8-favourite limit copy. Guest: one muted line,
   "Pick a player to save sounds." (text, not a button).
 
+
+**Height correction (final review, 2026-09-02).** The tone column was measured in Chromium at 1280×800 against the shipped CSS: with a signed-in player and one status line it ran 35–61 px over the 656 px body (the spec did the grid arithmetic but never the column's). Fixed by `line-height: 1.25` on the column (Mantine's body default is 1.55), "Hear it" as an inline button row instead of an 88 px tile, and a text-link Retry. The Playwright gate now includes a signed-in-player state.
+
 ### 4d. Icons
 
 New Solar icons via the MANIFEST process (Iconify, `fill="currentColor"`):
