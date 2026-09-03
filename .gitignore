@@ -202,3 +202,6 @@ _extensions/ti86-app/dist/
 # the favicon set, both of which are functional. Keep bitmaps to those two
 # places and to tests/_fixtures/; put anything else here.
 .playwright-mcp/
+
+# Playwright screenshot artifacts (visual gates)
+tests/_artifacts/

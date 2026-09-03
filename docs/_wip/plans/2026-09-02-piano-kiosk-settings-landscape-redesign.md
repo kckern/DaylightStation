@@ -1,7 +1,7 @@
 # Piano kiosk settings: landscape tile redesign of the Sound and Maintenance sheets
 
 **Date:** 2026-09-02
-**Status:** design, agreed with KC; not implemented
+**Status:** implemented and merged to `main` 2026-09-02 via `piano/settings-landscape`
 **Fixes:** `docs/_wip/bugs/2026-09-02-piano-kiosk-settings-sheets-unusable-on-touch.md` (all of A–E)
 **Supersedes:** `docs/_wip/plans/2026-07-11-piano-kiosk-settings-rebuild-design.md` for everything about how the sheets *look*; its funnel, bundle and persistence decisions stand.
 **Hardware:** SM-T590 in Fully Kiosk, 1280×800 CSS px landscape, finger only, no keyboard.
@@ -155,6 +155,9 @@ Below the rows:
   logic verbatim, including the 8-favourite limit copy. Guest: one muted line,
   "Pick a player to save sounds." (text, not a button).
 
+
+**Height correction (final review, 2026-09-02).** The tone column was measured in Chromium at 1280×800 against the shipped CSS: with a signed-in player and one status line it ran 35–61 px over the 656 px body (the spec did the grid arithmetic but never the column's). Fixed by `line-height: 1.25` on the column (Mantine's body default is 1.55), "Hear it" as an inline button row instead of an 88 px tile, and a text-link Retry. The Playwright gate now includes a signed-in-player state.
+
 ### 4d. Icons
 
 New Solar icons via the MANIFEST process (Iconify, `fill="currentColor"`):
@@ -164,6 +167,23 @@ New Solar icons via the MANIFEST process (Iconify, `fill="currentColor"`):
 keyword → emoji to keyword → icon name with the same rule table (its test is
 updated to assert names); it is used for the tile icon so a voice reads by its
 family even inside **Mine**.
+
+**Illustrations.** On top of the icons, the rail and the voice tiles show a
+licensed colour instrument illustration where the pack has one. The pack is
+85 SVGs (720×720) at `media/img/music/instruments/<kebab-name>.svg` with an
+`index.yml` mapping the pack's original numbering to those names; the kiosk
+loads them through the static image route (`/api/v1/static/img/music/
+instruments/<name>.svg`, served as-is — SVG is never resized). `voiceArt.js`
+maps a voice name to a basename by keyword, first match wins, and `familyArt`
+gives each rail family one representative picture (Voices and Mine keep their
+icons); 113 of the 138 device voices get art, the rest — sound effects, choirs,
+zithers, the coiled horn — return null on purpose and keep the icon. The
+`TransportButton` `art` prop renders the picture in the icon's place and falls
+back to the icon on a load error, so an unsynced pack on prod shows glyphs,
+never broken-image marks. Sizing: 3.2em on tiles, 2em on the rail. A tile with
+art is now about 6.1rem tall, so a full 24-voice family is roughly 634px of the
+~656px canvas body at 1280×800 — tight; the Task 12 screenshot gate is what
+proves it does not scroll.
 
 ---
 
@@ -180,7 +200,7 @@ One card, one source (`usePianoConnection().health`):
 |---|---|---|
 | Keys | `input.state`: up → on, other → off | "Keys: Digital Keyboard" / "Keys: not connected" |
 | Sound | `output.state === 'up'` → on | "Sound: Digital Keyboard" / "Sound: not connected" |
-| Bridge | ready → on, connecting/reconnecting → warn, down/unavailable → off | "Bridge: connected / reconnecting… / not running" |
+| Bridge | `bridge.state` (`usePianoBridgeNotes` link): connected → on, idle/connecting/reconnecting → warn, closed → off, unavailable → off | "Bridge: connected / connecting… / reconnecting… / not connected / not running" |
 
 Card head is `health.copy` (the sentence the chip already uses), so the card can
 never contradict the chip or itself. The July `__hwdot` colours come back for
