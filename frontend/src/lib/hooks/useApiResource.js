@@ -9,7 +9,11 @@
 // cached value immediately with `loading: false`, while a `revalidating` flag
 // reports that a background refresh is in flight. Callers that do not pass
 // `swr` never touch the cache and see byte-identical behavior to before this
-// option existed — see useApiResource.swr.test.jsx's "regression pin".
+// option existed — see useApiResource.swr.test.jsx's "regression pin". Cache
+// writes are gated by the same per-effect-run liveness flag as state writes,
+// so a superseded response (unmount, path change, or an overlapping older
+// `reload()`) can never clobber a cache entry a newer request already wrote
+// — see the "overlapping reloads" tests in that same file.
 import { useCallback, useEffect, useState } from 'react';
 import { DaylightAPI } from '../api.mjs';
 import { createAppLogger } from '../ui/createAppLogger.js';
@@ -52,17 +56,22 @@ export function resetApiResourceCache(path) {
 }
 
 export function useApiResource(path, { deps = [], enabled = true, label, logger = defaultLogger, swr = false } = {}) {
+  // Single shared cache lookup for the three lazy initializers below — each
+  // useState initializer only runs once (on mount), and all three run inside
+  // the same render, so a memoized closure keeps `cacheGet` (which mutates
+  // the Map's iteration order for LRU) to one real call instead of three.
+  let initialCache;
+  const getInitialCache = () => (initialCache ??= (swr && path) ? cacheGet(path) : { hit: false });
+
   const [data, setData] = useState(() => {
-    if (!swr || !path) return null;
-    const { hit, value } = cacheGet(path);
+    const { hit, value } = getInitialCache();
     return hit ? value : null;
   });
   const [loading, setLoading] = useState(() => {
-    if (!Boolean(enabled && path)) return false;
-    if (swr && cacheGet(path).hit) return false;
-    return true;
+    if (!(enabled && path)) return false;
+    return !getInitialCache().hit;
   });
-  const [revalidating, setRevalidating] = useState(() => Boolean(swr && path && cacheGet(path).hit));
+  const [revalidating, setRevalidating] = useState(() => getInitialCache().hit);
   const [error, setError] = useState(null);
   const [nonce, setNonce] = useState(0);
 
@@ -86,11 +95,21 @@ export function useApiResource(path, { deps = [], enabled = true, label, logger 
     const startedAt = performance.now();
     DaylightAPI(path)
       .then((result) => {
-        // Cache the response regardless of whether this component is still
-        // mounted — a fetch kicked off before an unmount still benefits the
-        // next mount of the same path. Only *state* writes are discarded.
-        if (swr) cacheSet(path, result);
+        // `live` is this specific effect run's liveness — it goes false on
+        // unmount AND on any dependency change that tears this run down
+        // (path change, `reload()`, swr/enabled/deps change). Checking it
+        // BEFORE the cache write (not just before the state writes) is load
+        // bearing: two overlapping reloads each get their own effect run and
+        // their own `live`; if the older one's response resolves after the
+        // newer one's, its `live` is already false by then, so it can never
+        // clobber the cache with a stale value the newer run already
+        // replaced. The trade-off: a response for a path this hook has since
+        // abandoned (unmount, or moved on to a different path) is dropped
+        // entirely rather than opportunistically cached — correctness for
+        // "last-issued wins" over squeezing a little more cache mileage out
+        // of a request nobody is waiting on anymore.
         if (!live) return;
+        if (swr) cacheSet(path, result);
         setData(result);
         setLoading(false);
         if (swr) setRevalidating(false);

@@ -170,4 +170,113 @@ describe('useApiResource swr mode', () => {
     expect(b2.result.current.loading).toBe(false); // still cached
     expect(b2.result.current.data).toEqual({ v: 1 });
   });
+
+  // Cache-write ordering — reviewer-found bug, fixed by gating the cache
+  // write on the same `live` flag that already guards the state writes.
+  it('two overlapping reloads: an older response that resolves LAST does not clobber the cache with a stale value', async () => {
+    apiMock.mockResolvedValueOnce({ n: 1 });
+    const first = renderHook(() => useApiResource('api/v1/thing', { swr: true }));
+    await waitFor(() => expect(first.result.current.loading).toBe(false));
+
+    let resolveOld;
+    let resolveNew;
+    apiMock.mockReturnValueOnce(new Promise((r) => { resolveOld = r; }));
+    act(() => { first.result.current.reload(); }); // older reload, issued first
+    apiMock.mockReturnValueOnce(new Promise((r) => { resolveNew = r; }));
+    act(() => { first.result.current.reload(); }); // newer reload, issued second
+
+    // Resolve the NEWER one first.
+    await act(async () => { resolveNew({ n: 3 }); await Promise.resolve(); });
+    await waitFor(() => expect(first.result.current.data).toEqual({ n: 3 }));
+
+    // Now let the OLDER, slower request resolve late.
+    await act(async () => { resolveOld({ n: 2 }); await Promise.resolve(); });
+    // On-screen data must still be the newer value (already guarded by `live`).
+    expect(first.result.current.data).toEqual({ n: 3 });
+
+    first.unmount();
+
+    // A cache hit always kicks off its own background revalidation too —
+    // give it something harmless to resolve to so it doesn't crash on an
+    // exhausted mock queue; the assertion only cares about the synchronous
+    // value served from cache.
+    apiMock.mockResolvedValue({ n: 3 });
+
+    // The real assertion: a FRESH mount on the same path must be served the
+    // newer cached value, not the stale one the late response would have
+    // written without the fix.
+    const fresh = renderHook(() => useApiResource('api/v1/thing', { swr: true }));
+    expect(fresh.result.current.data).toEqual({ n: 3 });
+    expect(fresh.result.current.loading).toBe(false);
+    await act(async () => { await Promise.resolve(); });
+    fresh.unmount();
+  });
+
+  it('unmount mid-flight: the in-flight response is not written to the cache', async () => {
+    apiMock.mockResolvedValueOnce({ n: 1 });
+    const first = renderHook(() => useApiResource('api/v1/thing', { swr: true }));
+    await waitFor(() => expect(first.result.current.loading).toBe(false));
+    first.unmount();
+
+    // A second mount of the same path serves the cache immediately, and
+    // also kicks off its own background revalidation — which we control here
+    // and then abandon by unmounting before it resolves.
+    let resolveLate;
+    apiMock.mockReturnValueOnce(new Promise((r) => { resolveLate = r; }));
+    const second = renderHook(() => useApiResource('api/v1/thing', { swr: true }));
+    expect(second.result.current.data).toEqual({ n: 1 });
+    second.unmount(); // unmounts WHILE the revalidation fetch is still pending
+
+    await act(async () => { resolveLate({ n: 999 }); await Promise.resolve(); });
+
+    // A third, fresh mount must still see the last-known-good cached value —
+    // the abandoned in-flight response must not have written to the cache.
+    // (Its own revalidation fetch is given a harmless resolved value too.)
+    apiMock.mockResolvedValue({ n: 1 });
+    const third = renderHook(() => useApiResource('api/v1/thing', { swr: true }));
+    expect(third.result.current.data).toEqual({ n: 1 });
+    await act(async () => { await Promise.resolve(); });
+    third.unmount();
+  });
+
+  it('path change mid-flight: a late response for the abandoned path does not write into the new path\'s cache entry, nor resurrect its own', async () => {
+    let resolveA;
+    apiMock.mockReturnValueOnce(new Promise((r) => { resolveA = r; }));
+    const { result, rerender, unmount } = renderHook(
+      ({ p }) => useApiResource(p, { swr: true }),
+      { initialProps: { p: 'api/v1/a' } },
+    );
+    expect(result.current.loading).toBe(true); // cold mount on A, fetch in flight
+
+    apiMock.mockResolvedValueOnce({ from: 'b' });
+    rerender({ p: 'api/v1/b' }); // abandons A mid-flight, mounts cold on B
+    await waitFor(() => expect(result.current.data).toEqual({ from: 'b' }));
+
+    // Now let A's late response resolve.
+    await act(async () => { resolveA({ from: 'a-late' }); await Promise.resolve(); });
+    unmount();
+
+    // B's cache entry must be untouched by A's late response. (B's own
+    // background revalidation, triggered by this fresh mount, gets a
+    // harmless matching value.)
+    apiMock.mockResolvedValue({ from: 'b' });
+    const freshB = renderHook(() => useApiResource('api/v1/b', { swr: true }));
+    expect(freshB.result.current.data).toEqual({ from: 'b' });
+    expect(freshB.result.current.loading).toBe(false);
+    await act(async () => { await Promise.resolve(); });
+    freshB.unmount();
+
+    // Decision: A's own cache entry is NOT resurrected either. The consumer
+    // never rendered A's data (it moved on to B before A resolved), so a
+    // late response for a path this hook has abandoned should not silently
+    // populate the cache for some future, unrelated mount of A — that would
+    // be caching a value nobody ever validated was still wanted. This is a
+    // cold mount (no cache), so it issues its own real fetch too.
+    apiMock.mockResolvedValueOnce({ from: 'a-fresh' });
+    const freshA = renderHook(() => useApiResource('api/v1/a', { swr: true }));
+    expect(freshA.result.current.loading).toBe(true); // cold: A was never cached
+    expect(freshA.result.current.data).toBeNull();
+    await act(async () => { await Promise.resolve(); });
+    freshA.unmount();
+  });
 });
