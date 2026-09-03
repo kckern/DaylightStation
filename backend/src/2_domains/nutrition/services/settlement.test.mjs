@@ -23,4 +23,18 @@ describe('effectiveSettled', () => {
     expect(presentSettlement({ settled: false, date: '2026-09-02' }, '2026-09-02')).toEqual({ settled: false, settledBy: null });
     expect(presentSettlement({ settled: true, settledBy: 'user', date: '2026-09-02' }, '2026-09-02')).toEqual({ settled: true, settledBy: 'user' });
   });
+  it('3-day boundary: exactly 3 days old = still unsettled', () => {
+    expect(effectiveSettled({ settled: false, date: '2026-08-30' }, '2026-09-02')).toBe(false);
+    expect(presentSettlement({ settled: false, date: '2026-08-30' }, '2026-09-02')).toEqual({ settled: false, settledBy: null });
+  });
+  it('4-day boundary: 4 days old = auto-settled', () => {
+    expect(effectiveSettled({ settled: false, date: '2026-08-29' }, '2026-09-02')).toBe(true);
+    expect(presentSettlement({ settled: false, date: '2026-08-29' }, '2026-09-02')).toEqual({ settled: true, settledBy: 'auto' });
+  });
+  it('malformed/missing date: no date = settled', () => {
+    expect(effectiveSettled({ settled: false }, '2026-09-02')).toBe(true);
+  });
+  it('malformed/missing date: invalid date string = settled', () => {
+    expect(effectiveSettled({ settled: false, date: 'not-a-date' }, '2026-09-02')).toBe(true);
+  });
 });
