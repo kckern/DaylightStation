@@ -3479,9 +3479,43 @@ export class GovernanceEngine {
     // clock exactly like a pause: no depletion, no progress, no ramp/init
     // timeout, no lock. A starved pipeline must never lock a kid who is
     // pedalling. Consume dt so the resume tick computes a small delta.
+    // Edge-logged, like the base-requirement gate below it. This is the event
+    // that proves the fix fired: without it the only evidence a stall was
+    // survived is the ABSENCE of a lock, and absence cannot distinguish "the
+    // gate worked" from "there was no stall". Pairs with
+    // `device-manager.transport_stalled` (which says the pipeline went quiet)
+    // to answer "did a quiet pipeline cost a rider a lock?" in one query.
     if (ctx.cadenceFlags?.transportStalled) {
+      if (active._stalledAt == null) {
+        active._stalledAt = now;
+        getLogger().warn('governance.cycle.frozen_by_transport_stall', {
+          challengeId: active.id,
+          cycleState: active.cycleState,
+          rider: active.rider,
+          heldRpm: ctx.equipmentRpm ?? null,
+          frozenFields: {
+            initElapsedMs: active.initElapsedMs,
+            rampElapsedMs: active.rampElapsedMs,
+            phaseProgressMs: active.phaseProgressMs,
+            cycleHealthMs: active.cycleHealthMs
+          }
+        });
+      }
       active._lastCycleTs = now;
       return;
+    }
+
+    // Resume edge. `stalledMs` is the headline number: how long a rider would
+    // have been depleting toward a lock under the pre-2026-09-02 behaviour.
+    if (active._stalledAt != null) {
+      getLogger().info('governance.cycle.resumed_after_transport_stall', {
+        challengeId: active.id,
+        cycleState: active.cycleState,
+        rider: active.rider,
+        stalledMs: now - active._stalledAt,
+        cycleHealthMs: active.cycleHealthMs
+      });
+      active._stalledAt = null;
     }
 
     // Pause gate: base requirement failing globally → freeze all cycle timers.

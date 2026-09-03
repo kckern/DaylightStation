@@ -66,6 +66,7 @@ export async function createStateGatesModule({
   const engine = new YamlStateGatesStateEngine({
     resolveFilePath: id => `${configService.getHouseholdPath('state-gates/current', id)}.yml`,
     ...journalRetention,
+    logger: moduleLogger,
   });
   const projectionRepository = new YamlStateGatesProjectionRepository({ engine });
   const transitionRepository = new YamlStateGatesTransitionRepository({ engine });
