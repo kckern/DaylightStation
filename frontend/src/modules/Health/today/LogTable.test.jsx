@@ -93,5 +93,42 @@ describe('LogTable', () => {
       // 0 (group) + 105 + 120 = 225, not 450 (double-counted) or 0.
       expect(screen.getByText('225 kcal')).toBeTruthy();
     });
+
+    // Regression: LogTable must render attached children regardless of the
+    // parent row's `kind` — groupRows() attaches a child whenever its
+    // parentId resolves to ANY row, not only a kind:'group' one, so gating
+    // the render on kind:'group' silently dropped the child from the
+    // screen even though groupRows() had already attached it correctly.
+    it('renders a child even when its parent row is NOT kind:"group" (e.g. kind:"item" or no kind at all)', () => {
+      const plainParentBucket = new Map([
+        ['morning', [
+          { uuid: 'p1', id: 'p1', kind: 'item', name: 'Plate', calories: 0 },
+          { uuid: 's1', id: 's1', parentId: 'p1', name: 'Side item', calories: 200 },
+        ]],
+        ['afternoon', []], ['evening', []], ['night', []],
+        [null, []],
+      ]);
+      render(<LogTable byBucket={plainParentBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+      expect(screen.getByText('Plate')).toBeTruthy();
+      // Rolled-up kcal shown collapsed; the child itself appears once expanded.
+      expect(screen.getByText('200')).toBeTruthy();
+      const expandBtn = screen.getByRole('button', { name: /expand plate/i });
+      fireEvent.click(expandBtn);
+      expect(screen.getByText('Side item')).toBeTruthy();
+    });
+
+    it('a group row with settled:false still shows the unsettled cue and confirm button', () => {
+      const unsettledGroupBucket = new Map([
+        ['morning', [
+          { uuid: 'g1', id: 'g1', kind: 'group', name: 'Smoothie', calories: 0, settled: false },
+          { uuid: 'c1', id: 'c1', parentId: 'g1', name: 'Banana', calories: 105 },
+        ]],
+        ['afternoon', []], ['evening', []], ['night', []],
+        [null, []],
+      ]);
+      render(<LogTable byBucket={unsettledGroupBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+      expect(screen.getByText(/unconfirmed/i)).toBeTruthy();
+      expect(screen.getByRole('button', { name: /confirm entry/i })).toBeTruthy();
+    });
   });
 });

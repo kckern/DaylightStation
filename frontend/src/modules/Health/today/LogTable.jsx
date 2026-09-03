@@ -33,7 +33,13 @@ function Section({ label, rows, onAdd, onRowTap, onConfirm, headerAction }) {
       </header>
       {entries.map(({ row, children, rollup }) => {
         const key = row.uuid ?? row.id;
-        const isGroup = row.kind === 'group' && children.length > 0;
+        // Render as a group whenever groupRows() actually attached
+        // children — NEVER gate this on row.kind. groupRows() attaches a
+        // child to ANY row its parentId resolves to, regardless of the
+        // parent's kind, and nothing upstream guarantees only
+        // kind:'group' rows carry children. Gating on kind here would
+        // silently drop the children from the screen.
+        const isGroup = children.length > 0;
         if (!isGroup) {
           return <EntryRow key={key} row={row} onTap={onRowTap} onConfirm={onConfirm} />;
         }

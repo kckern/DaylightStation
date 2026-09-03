@@ -99,4 +99,65 @@ describe('groupRows', () => {
     expect(out[0].rollup.calories).toBe(150);
     expect(out[1].rollup.calories).toBe(500);
   });
+
+  // Every row that goes into groupRows() must come back out somewhere —
+  // either as a top-level entry's `row`, or inside exactly one entry's
+  // `children`. A parentId cycle must never make its members vanish (the
+  // same policy already applied to an unresolvable/orphan parentId).
+  it('a 2-row parentId cycle (A -> B -> A) renders both rows top-level, dropping neither', () => {
+    const rows = [
+      { id: 'A', parentId: 'B', name: 'A', calories: 100 },
+      { id: 'B', parentId: 'A', name: 'B', calories: 200 },
+    ];
+    const out = groupRows(rows);
+    expect(out.map((e) => e.row.id)).toEqual(['A', 'B']);
+    expect(out.every((e) => e.children.length === 0)).toBe(true);
+  });
+
+  it('a 3-row parentId cycle (A -> B -> C -> A) renders every row top-level, dropping none', () => {
+    const rows = [
+      { id: 'A', parentId: 'C', name: 'A', calories: 10 },
+      { id: 'B', parentId: 'A', name: 'B', calories: 20 },
+      { id: 'C', parentId: 'B', name: 'C', calories: 30 },
+    ];
+    const out = groupRows(rows);
+    expect(out.map((e) => e.row.id)).toEqual(['A', 'B', 'C']);
+    expect(out.every((e) => e.children.length === 0)).toBe(true);
+  });
+
+  // The invariant that actually protects the user: no input row is ever
+  // lost, and none is ever counted twice. Verified over a fixture that
+  // mixes every shape this function has to handle at once — a normal
+  // group, a loose (childless) item, an orphan, a 2-row cycle, and a
+  // group nested inside a group.
+  it('preserves every input row exactly once — no loss, no duplication — across a mixed fixture', () => {
+    const rows = [
+      // Ordinary group with two children.
+      { id: 'g1', kind: 'group', name: 'Smoothie', calories: 0 },
+      { id: 'g1-a', parentId: 'g1', name: 'Banana', calories: 105 },
+      { id: 'g1-b', parentId: 'g1', name: 'Protein powder', calories: 120 },
+      // Loose childless item.
+      { id: 'loose', name: 'Apple', calories: 95 },
+      // Orphan — parentId resolves to nothing in this set.
+      { id: 'orphan', parentId: 'ghost', name: 'Mystery', calories: 300 },
+      // 2-row cycle.
+      { id: 'cyc-a', parentId: 'cyc-b', name: 'Cyc A', calories: 10 },
+      { id: 'cyc-b', parentId: 'cyc-a', name: 'Cyc B', calories: 20 },
+      // Group nested inside a group.
+      { id: 'top', kind: 'group', name: 'Dinner', calories: 0 },
+      { id: 'mid', parentId: 'top', kind: 'group', name: 'Pasta course', calories: 0 },
+      { id: 'leaf', parentId: 'mid', name: 'Noodles', calories: 200 },
+    ];
+
+    const out = groupRows(rows);
+
+    const returnedIds = [];
+    for (const entry of out) {
+      returnedIds.push(entry.row.id);
+      for (const child of entry.children) returnedIds.push(child.id);
+    }
+
+    const inputIds = rows.map((r) => r.id);
+    expect(returnedIds.slice().sort()).toEqual(inputIds.slice().sort());
+  });
 });
