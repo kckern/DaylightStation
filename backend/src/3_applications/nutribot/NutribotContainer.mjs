@@ -66,6 +66,7 @@ export class NutribotContainer {
   #catalogService;
   #scaleConfig;
   #imageDownloader;
+  #photoStore;
   #pause;
 
   // Use Cases (lazy-loaded)
@@ -136,6 +137,7 @@ export class NutribotContainer {
     this.#catalogService = options.catalogService || null;
     this.#scaleConfig = options.scaleConfig || null;
     this.#imageDownloader = options.imageDownloader;
+    this.#photoStore = options.photoStore || null;
     this.#pause = options.pause || (async () => {});
   }
 
@@ -220,6 +222,7 @@ export class NutribotContainer {
         reconciliationReader: this.#reconciliationReader,
         catalogService: this.#catalogService,
         imageDownloader: this.#imageDownloader,
+        photoStore: this.#photoStore,
       });
     }
     return this.#logFoodFromImage;

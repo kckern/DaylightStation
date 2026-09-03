@@ -10,8 +10,15 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
 
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
+import { createLocalFileResource, sendLocalFileResource } from '#system/http/streamFile.mjs';
 import { presentFoodCatalogEntry } from '../presenters/FoodCatalogPresenter.mjs';
 import { presentPendingNutritionLog } from '../presenters/PendingNutritionLogPresenter.mjs';
+
+// Same allowlist PhotoStore enforces internally (1_adapters/persistence/PhotoStore.mjs).
+// Duplicated here — not imported — because the API layer may not import
+// adapters directly; this is the defense-in-depth check at the HTTP boundary,
+// applied BEFORE the ref is handed to photoStore.resolvePath() at all.
+const PHOTO_REF_PATTERN = /^ph_[A-Za-z0-9]+$/;
 
 /** Local (not UTC) YYYY-MM-DD from a Date instance. */
 function localDateISO(d) {
@@ -66,7 +73,7 @@ function serializeHealthMetric(metric) {
  * @returns {express.Router}
  */
 export function createHealthRouter(config) {
-  const { healthService, healthOperations, dashboardService, catalogService, longitudinalService, budgetService, savedMealsService, medicalService, logger = console } = config;
+  const { healthService, healthOperations, dashboardService, catalogService, longitudinalService, budgetService, savedMealsService, medicalService, photoStore = null, logger = console } = config;
   const router = express.Router();
 
   // JSON parsing middleware
@@ -823,6 +830,56 @@ export function createHealthRouter(config) {
       }
     }));
   }
+
+  // ==========================================================================
+  // Photo Serving (Task 2.3 — capture photo persistence)
+  // ==========================================================================
+
+  /**
+   * GET /api/v1/health/nutrition/photos/:photoRef - Serve a stored capture photo
+   *
+   * Security: `photoRef` is a URL path segment. It is checked against the
+   * exact same allowlist PhotoStore enforces internally, BEFORE it is passed
+   * anywhere near a path join (belt-and-braces — PhotoStore.resolvePath()
+   * repeats the check and additionally verifies containment on the resolved
+   * path). Any ref that fails — `..`, a slash, a null byte, an absolute
+   * path, a percent-encoded traversal form, or simply the wrong shape — is
+   * refused with 404 before touching the filesystem.
+   *
+   * Content-Type is never taken from the client; PhotoStore always stores
+   * (and this always serves) a `.jpg`-named file, so the type is fixed to
+   * image/jpeg — derived from what was actually stored, not asserted by the
+   * request.
+   *
+   * Query: size=thumb (optional) - serves the thumbnail variant, falling
+   * back to the original photo if no thumbnail exists.
+   */
+  router.get('/nutrition/photos/:photoRef', asyncHandler(async (req, res) => {
+    if (!photoStore) {
+      return res.status(404).json({ error: 'Photo not found' });
+    }
+
+    const { photoRef } = req.params;
+    if (!PHOTO_REF_PATTERN.test(photoRef || '')) {
+      logger.debug?.('health.nutrition.photos.invalidRef', { photoRef });
+      return res.status(404).json({ error: 'Photo not found' });
+    }
+
+    const userId = req.query.userId || getDefaultUsername();
+    const size = req.query.size === 'thumb' ? 'thumb' : undefined;
+    const absolutePath = photoStore.resolvePath(userId, photoRef, { size });
+    if (!absolutePath) {
+      return res.status(404).json({ error: 'Photo not found' });
+    }
+
+    const resource = createLocalFileResource(absolutePath, { mimeType: 'image/jpeg' });
+    return sendLocalFileResource(req, res, resource, (err) => {
+      if (err && !res.headersSent) {
+        logger.warn?.('health.nutrition.photos.sendFailed', { photoRef, error: err.message });
+        res.status(404).json({ error: 'Photo not found' });
+      }
+    });
+  }));
 
   // ==========================================================================
   // Error Handler Middleware
