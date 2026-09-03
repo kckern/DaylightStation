@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ActionIcon, Button } from '@mantine/core';
+import { Button } from '@mantine/core';
 import { ErrorState } from '@/lib/ui';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
@@ -13,27 +13,11 @@ import { AddCombobox } from './AddCombobox.jsx';
 import { NeedsReviewSection } from './NeedsReviewSection.jsx';
 import { EntryEditSheet } from './EntryEditSheet.jsx';
 import { SavedMealsSheet } from './SavedMealsSheet.jsx';
-import { localTodayISO as todayISO, currentMealBucketId, BUCKETS } from './mealBuckets.js';
+import { QuickCaptureBar } from './QuickCaptureBar.jsx';
+import { localTodayISO as todayISO, currentMealBucketId, bucketLabel } from './mealBuckets.js';
 import { useNutritionInput } from '../capture/useNutritionInput.js';
 import { BarcodeCapture } from '../capture/BarcodeCapture.jsx';
-import { PhotoCapture } from '../capture/PhotoCapture.jsx';
-import { VoiceCapture } from '../capture/VoiceCapture.jsx';
 import { CustomFoodSheet } from '../capture/CustomFoodSheet.jsx';
-
-const BarcodeIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-    <path d="M2 3v12M5 3v12M7.5 3v12M10 3v12M13 3v12M16 3v12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-  </svg>
-);
-
-/** Opens the barcode-scan sheet — camera decode with a manual-UPC fallback. */
-function BarcodeButton({ onClick }) {
-  return (
-    <ActionIcon aria-label="Scan barcode" onClick={onClick}>
-      <BarcodeIcon />
-    </ActionIcon>
-  );
-}
 
 const logger = createAppLogger('health').child('today');
 
@@ -44,8 +28,9 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   const [editingRow, setEditingRow] = useState(null); // row | null — F6 renders the edit sheet
   const [captureMode, setCaptureMode] = useState(null); // 'barcode' | null
   // bucketId | null — which meal's header-row barcode button opened the
-  // sheet (null = the footer's clock-based launch). Forwarded to
-  // BarcodeCapture so it can hand the same id back on decode.
+  // sheet (null = an unlabeled launch; QuickCaptureBar always passes its
+  // own clock-derived default, never null). Forwarded to BarcodeCapture so
+  // it can hand the same id back on decode.
   const [barcodeTargetBucket, setBarcodeTargetBucket] = useState(null);
   const [unknownUpc, setUnknownUpc] = useState(null);
   const [savedMealsFor, setSavedMealsFor] = useState(null); // bucketId | null — F8's saved-meals picker
@@ -110,11 +95,6 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
     }
   };
 
-  // Meal label for a bucket id (e.g. 'afternoon' -> 'Lunch') — falls back to
-  // the raw id if it's somehow not one of the four known buckets, so the
-  // moved-to cue below never silently renders blank text.
-  const bucketLabel = (id) => BUCKETS.find((b) => b.id === id)?.label || id;
-
   // Photo/voice/barcode submissions land immediately as an already-logged
   // (unsettled) NutriLog (food detected — the day reload shows it in place
   // with the unsettled cue) or as a plain status message (e.g. "no food
@@ -151,9 +131,10 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   // before the request goes out, always clear it afterward regardless of
   // outcome — a failed capture must not leave a stuck "Analyzing…" row.
   // `bucket` is the explicit per-meal target (from a meal-row capture
-  // button); when absent (the footer's clock-based launch) we fall back to
-  // the same currentMealBucketId() guess as before — this is ONLY where the
-  // placeholder shows, never the backend's actual resolution.
+  // button, or QuickCaptureBar's own clock-derived default); when absent we
+  // fall back to the same currentMealBucketId() guess as before — this is
+  // ONLY where the placeholder shows, never the backend's actual
+  // resolution.
   const submitWithPending = async (type, content, { bucket } = {}) => {
     const bucketId = bucket || currentMealBucketId();
     setCapturePending(bucketId);
@@ -164,17 +145,20 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
     }
   };
 
-  // Shared by the footer's global Voice/Photo triggers AND every per-meal
-  // header trigger LogTable renders — VoiceCapture/PhotoCapture forward
-  // `(dataUrl, bucket)`, with `bucket` undefined for the footer's instances.
+  // Shared by QuickCaptureBar's global Voice/Photo triggers AND every
+  // per-meal header trigger LogTable renders — VoiceCapture/PhotoCapture
+  // forward `(dataUrl, bucket)`, with `bucket` always the clock-derived
+  // default for QuickCaptureBar's instances and the specific meal's id for
+  // LogTable's.
   const handleVoiceOrPhotoCapture = async (type, dataUrl, bucket) => {
     handleCaptureResult(await submitWithPending(type, dataUrl, { bucket }));
   };
   const onVoiceCapture = (dataUrl, bucket) => handleVoiceOrPhotoCapture('voice', dataUrl, bucket);
   const onPhotoCapture = (dataUrl, bucket) => handleVoiceOrPhotoCapture('image', dataUrl, bucket);
 
-  // Opens the barcode sheet, optionally pre-targeted at one meal's bucket
-  // (called with no argument by the footer's clock-based launch).
+  // Opens the barcode sheet, pre-targeted at a meal's bucket — LogTable's
+  // per-meal trigger passes that meal's id; QuickCaptureBar passes its own
+  // clock-derived default.
   const openBarcode = (bucketId = null) => {
     setBarcodeTargetBucket(bucketId);
     setCaptureMode('barcode');
@@ -225,11 +209,9 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
             onCancel={() => setAddingTo(null)}
             onSavedMeals={() => setSavedMealsFor(addingTo)} />
         ) : null} />
-      <MacroFooter items={day.items} coachLine={coachLine} onCoachTap={onCoachTap}>
-        <PhotoCapture busy={nutrition.busy} onCapture={onPhotoCapture} />
-        <BarcodeButton onClick={() => openBarcode()} />
-        <VoiceCapture busy={nutrition.busy} onCapture={onVoiceCapture} />
-      </MacroFooter>
+      <MacroFooter items={day.items} coachLine={coachLine} onCoachTap={onCoachTap} />
+      <QuickCaptureBar onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
+        onOpenBarcode={openBarcode} onAddTo={setAddingTo} busy={nutrition.busy} />
       <BarcodeCapture open={captureMode === 'barcode'} busy={nutrition.busy} bucket={barcodeTargetBucket}
         onClose={() => { setCaptureMode(null); setBarcodeTargetBucket(null); }}
         onDecode={async (upc, bucket) => {

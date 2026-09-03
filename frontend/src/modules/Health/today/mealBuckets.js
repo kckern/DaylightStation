@@ -37,3 +37,31 @@ export function currentMealBucketId(d = new Date()) {
   if (hour >= 17 && hour < 21) return 'evening';
   return 'night';
 }
+
+/**
+ * Hour -> bucket default for the global QuickCaptureBar (Task 4.3).
+ *
+ * DELIBERATE DIVERGENCE from `currentMealBucketId` above: this codebase
+ * already has TWO disagreeing hour->meal mappings server-side —
+ * `getMealTimeFromHour` (backend/src/2_domains/nutrition/entities/schemas.mjs:
+ * 5-12 morning / 12-17 afternoon / 17-21 evening / else night) and
+ * `SavedMealsService`'s local `mealTimeFromHour`
+ * (backend/src/3_applications/health/SavedMealsService.mjs:
+ * <11 morning / <15 afternoon / <20 evening / else night). This function
+ * matches **SavedMealsService's** thresholds, NOT `getMealTimeFromHour`'s
+ * (which `currentMealBucketId` above already mirrors) — chosen because
+ * SavedMealsService is the write path closest in spirit to what the bar
+ * does here (defaulting a *new, undated* log's meal purely from the clock,
+ * with no other signal), whereas `getMealTimeFromHour` backs the
+ * request-time resolver that also considers an explicit bucket/utterance
+ * override. Do NOT invent a third mapping — if these two ever need to
+ * converge, fix it in both call sites, not by adding a fourth definition
+ * here.
+ */
+export const bucketForHour = (h) => (h < 11 ? 'morning' : h < 15 ? 'afternoon' : h < 20 ? 'evening' : 'night');
+
+/** Meal label for a bucket id (e.g. 'afternoon' -> 'Lunch') — falls back to
+ * the raw id if it's somehow not one of the four known buckets. */
+export function bucketLabel(id) {
+  return BUCKETS.find((b) => b.id === id)?.label || id;
+}

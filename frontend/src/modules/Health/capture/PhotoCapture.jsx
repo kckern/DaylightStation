@@ -12,16 +12,21 @@ const CameraIcon = () => (
 /**
  * Photo → data URL → the image pipeline.
  *
- * See VoiceCapture.jsx's header comment for the `bucket`/`mealLabel`
- * contract — same shape here: optional, meal-scoped naming + forwarding.
+ * See VoiceCapture.jsx's header comment for the `bucket`/`mealLabel`/
+ * `labelPrefix`/`className` contract — same shape here: optional,
+ * meal-scoped naming + forwarding, with `labelPrefix` letting
+ * QuickCaptureBar's global instance read as "Quick photo log to X" instead
+ * of the per-meal header's "Log by photo to X".
  */
-export function PhotoCapture({ onCapture, busy, bucket, mealLabel }) {
+export function PhotoCapture({ onCapture, busy, bucket, mealLabel, labelPrefix, className }) {
   const inputRef = useRef(null);
-  const label = mealLabel ? `Log by photo to ${mealLabel}` : 'Photo log';
+  const label = labelPrefix
+    ? `${labelPrefix} to ${mealLabel}`
+    : (mealLabel ? `Log by photo to ${mealLabel}` : 'Photo log');
   return (
     <>
       <ActionIcon aria-label={label} loading={busy}
-        className={mealLabel ? 'health-meal__capture-btn' : undefined}
+        className={className || (mealLabel ? 'health-meal__capture-btn' : undefined)}
         onClick={() => inputRef.current?.click()}>
         <CameraIcon />
       </ActionIcon>
