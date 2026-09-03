@@ -907,7 +907,10 @@ describe('the exercise run, per tier, in a real layout engine at 1280x800', () =
 
     const before = await probe.all('.action-staff__note');
     await probe.press(60);              // arms the run and grades note one
-    await probe.press(61);              // a semitone under the expected 62
+    // HELD, not pressed-and-released: the ghost is real-time off the currently
+    // held set (SvgSequenceStaff's own contract — rule 4, "ghosts clear on
+    // key-up"), so it only exists while this key is actually down.
+    await probe.hold([61]);             // a semitone under the expected 62
 
     await page.waitForFunction(() => document.querySelector('.sequence-note-wrong-ghost') !== null);
     const staff = await probe.one('.sequence-staff');

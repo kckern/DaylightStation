@@ -107,36 +107,49 @@ describe('SvgSequenceStaff', () => {
     });
   });
 
-  // ── Cursor state classes ───────────────────────────────────────────────────
-  describe('cursor', () => {
-    it('classes every notehead done / next / todo around cursorIndex', () => {
+  // ── Resting palette: colour, never opacity (rule 1 + the brown amendment) ──
+  // Opacity carries exactly one meaning on this staff — "this is your finger,
+  // not the music" — so a NOTATED note is full opacity in every state, always.
+  // Weight-behind/weight-ahead used to be encoded as green-done/dimmed-todo;
+  // it is now jet-black-done vs. brown-todo, and the cursor's own entry reads
+  // as todo (brown) until something is actually held against it.
+  describe('resting palette (done / todo, no attempt in progress)', () => {
+    it('colours entries before the cursor done and the rest todo, with no held-key state', () => {
       const { container } = render(<SvgSequenceStaff notes={notes(60, 62, 64, 65)} cursorIndex={2} />);
       expect(container.querySelectorAll('.sequence-note-done')).toHaveLength(2);
-      expect(container.querySelectorAll('.sequence-note-next')).toHaveLength(1);
-      expect(container.querySelectorAll('.sequence-note-todo')).toHaveLength(1);
-      expect(container.querySelector('.sequence-note-next').getAttribute('data-midi')).toBe('64');
+      expect(container.querySelectorAll('.sequence-note-todo')).toHaveLength(2);
+      expect(container.querySelectorAll('.sequence-note-hit')).toHaveLength(0);
+      expect(container.querySelectorAll('.sequence-note-miss')).toHaveLength(0);
+      // The cursor's OWN entry is one of the two todo notes here — resting,
+      // not a distinct "next" treatment (that state no longer exists).
+      expect(container.querySelector('[data-sequence-index="2"] .action-staff__note').getAttribute('class'))
+        .toContain('sequence-note-todo');
     });
 
-    it('marks nothing done at the start of a run', () => {
+    it('marks nothing done at the start of a run — the cursor entry rests as todo, not black', () => {
       const { container } = render(<SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={0} />);
       expect(container.querySelectorAll('.sequence-note-done')).toHaveLength(0);
-      expect(container.querySelectorAll('.sequence-note-next')).toHaveLength(1);
-      expect(container.querySelectorAll('.sequence-note-todo')).toHaveLength(2);
+      expect(container.querySelectorAll('.sequence-note-todo')).toHaveLength(3);
     });
 
-    it('marks everything done and nothing next once the sequence is complete', () => {
+    it('marks everything done once the sequence is complete', () => {
       const { container } = render(<SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={3} />);
       expect(container.querySelectorAll('.sequence-note-done')).toHaveLength(3);
-      expect(container.querySelectorAll('.sequence-note-next')).toHaveLength(0);
       expect(container.querySelectorAll('.sequence-note-todo')).toHaveLength(0);
     });
 
-    it('classes every notehead of a simultaneous entry alike', () => {
+    it('classes every notehead of a resting simultaneous cursor entry alike', () => {
       const { container } = render(
         <SvgSequenceStaff notes={[{ midis: [60, 64, 67] }, { midi: 72 }]} cursorIndex={0} />
       );
-      expect(container.querySelectorAll('.sequence-note-next')).toHaveLength(3);
-      expect(container.querySelectorAll('.sequence-note-todo')).toHaveLength(1);
+      expect(container.querySelectorAll('.sequence-note-todo')).toHaveLength(4);
+    });
+
+    it('never sets a partial-opacity attribute on a notated notehead, done or todo', () => {
+      const { container } = render(<SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1} />);
+      for (const note of container.querySelectorAll('.action-staff__note')) {
+        expect(note.getAttribute('opacity')).toBeNull();
+      }
     });
 
     it('marks the cursor column itself so the child can see where they are', () => {
@@ -154,49 +167,169 @@ describe('SvgSequenceStaff', () => {
     });
   });
 
-  // ── The wrong note, shown where it actually is ─────────────────────────────
-  describe('wrong-note ghost', () => {
-    it('adds exactly one ghost notehead without disturbing the targets', () => {
+  // ── An attempt in progress at the cursor (rule 2 + 5) ──────────────────────
+  // Colour is per NOTE, scoped to the cursor's own entry, and gated entirely on
+  // whether anything is currently held — never a remembered flag.
+  describe('an attempt in progress at the cursor', () => {
+    it('renders plain todo, not miss, when nothing at all is held', () => {
+      // Rule 5, the one this whole model hinges on: an unplayed note is not a
+      // standing accusation. No keys down means no verdict of any kind.
+      const { container } = render(<SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1} />);
+      expect(container.querySelectorAll('.sequence-note-miss')).toHaveLength(0);
+      expect(container.querySelectorAll('.sequence-note-hit')).toHaveLength(0);
+      expect(container.querySelector('[data-sequence-index="1"] .action-staff__note').getAttribute('class'))
+        .toContain('sequence-note-todo');
+    });
+
+    it('colours a held single-note target green, with a green stem', () => {
+      const active = new Map([[62, { velocity: 80 }]]);
       const { container } = render(
-        <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1} wrongMidi={65} />
+        <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1} activeNotes={active} />
+      );
+      const hit = container.querySelector('.sequence-note-hit');
+      expect(hit).toBeTruthy();
+      expect(hit.getAttribute('data-midi')).toBe('62');
+      expect(container.querySelectorAll('.sequence-note-miss')).toHaveLength(0);
+      expect(
+        container.querySelector('[data-sequence-index="1"]').getAttribute('data-stem-state')
+      ).toBe('hit');
+    });
+
+    it('colours the cursor target red — plus a stemless ghost — when a DIFFERENT pitch is held', () => {
+      const active = new Map([[61, { velocity: 80 }]]); // a semitone under the expected 62
+      const { container } = render(
+        <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1} activeNotes={active} />
+      );
+      const miss = container.querySelector('.sequence-note-miss');
+      expect(miss).toBeTruthy();
+      expect(miss.getAttribute('data-midi')).toBe('62');
+      expect(container.querySelectorAll('.sequence-note-hit')).toHaveLength(0);
+      expect(
+        container.querySelector('[data-sequence-index="1"]').getAttribute('data-stem-state')
+      ).toBe('miss');
+      const ghost = container.querySelector('.sequence-note-wrong-ghost');
+      expect(ghost.getAttribute('data-midi')).toBe('61');
+    });
+
+    it('the owner\'s worked example: a chord with the top two held and the bottom not — two green, one red, NO ghost', () => {
+      const active = new Map([[64, { velocity: 80 }], [67, { velocity: 80 }]]);
+      const { container } = render(
+        <SvgSequenceStaff notes={[{ midis: [60, 64, 67] }]} cursorIndex={0} activeNotes={active} />
+      );
+      expect(container.querySelectorAll('.sequence-note-hit')).toHaveLength(2);
+      expect(container.querySelectorAll('.sequence-note-miss')).toHaveLength(1);
+      expect(container.querySelector('.sequence-note-miss').getAttribute('data-midi')).toBe('60');
+      // The chord being incomplete is not the same as playing something wrong:
+      // every pitch that WAS played was on target, so there is nothing to ghost.
+      expect(container.querySelectorAll('.sequence-note-wrong-ghost')).toHaveLength(0);
+    });
+
+    it('a mixed chord leaves the shared stem uncoloured — no verdict for the whole chord', () => {
+      const active = new Map([[64, { velocity: 80 }]]); // only the middle note of the triad
+      const { container } = render(
+        <SvgSequenceStaff notes={[{ midis: [60, 64, 67] }]} cursorIndex={0} activeNotes={active} />
+      );
+      expect(
+        container.querySelector('[data-sequence-index="0"]').getAttribute('data-stem-state')
+      ).toBe('mixed');
+    });
+
+    it('a fully missed chord reds every target and colours the stem — no note played was correct', () => {
+      const active = new Map([[99, { velocity: 80 }]]); // nothing to do with this chord
+      const { container } = render(
+        <SvgSequenceStaff notes={[{ midis: [60, 64, 67] }]} cursorIndex={0} activeNotes={active} />
+      );
+      expect(container.querySelectorAll('.sequence-note-miss')).toHaveLength(3);
+      expect(container.querySelectorAll('.sequence-note-hit')).toHaveLength(0);
+      expect(
+        container.querySelector('[data-sequence-index="0"]').getAttribute('data-stem-state')
+      ).toBe('miss');
+    });
+
+    it('a fully hit chord greens every target and the stem alike', () => {
+      const active = new Map([[60, {}], [64, {}], [67, {}]]);
+      const { container } = render(
+        <SvgSequenceStaff notes={[{ midis: [60, 64, 67] }]} cursorIndex={0} activeNotes={active} />
+      );
+      expect(container.querySelectorAll('.sequence-note-hit')).toHaveLength(3);
+      expect(
+        container.querySelector('[data-sequence-index="0"]').getAttribute('data-stem-state')
+      ).toBe('hit');
+    });
+
+    it('never colours an entry other than the cursor\'s, even mid-attempt', () => {
+      const active = new Map([[62, { velocity: 80 }]]);
+      const { container } = render(
+        <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1} activeNotes={active} />
+      );
+      expect(container.querySelector('[data-sequence-index="0"]').getAttribute('data-state')).toBe('done');
+      expect(container.querySelector('[data-sequence-index="2"]').getAttribute('data-state')).toBe('todo');
+    });
+
+    it('everything reverts to todo/black and the ghost clears the instant nothing is held (rule 4)', () => {
+      const held = new Map([[61, { velocity: 80 }]]);
+      const { container, rerender } = render(
+        <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1} activeNotes={held} />
+      );
+      expect(container.querySelectorAll('.sequence-note-miss')).toHaveLength(1);
+      expect(container.querySelectorAll('.sequence-note-wrong-ghost')).toHaveLength(1);
+
+      rerender(<SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1} activeNotes={new Map()} />);
+      expect(container.querySelectorAll('.sequence-note-miss')).toHaveLength(0);
+      expect(container.querySelectorAll('.sequence-note-hit')).toHaveLength(0);
+      expect(container.querySelectorAll('.sequence-note-wrong-ghost')).toHaveLength(0);
+      expect(container.querySelector('[data-sequence-index="1"] .action-staff__note').getAttribute('class'))
+        .toContain('sequence-note-todo');
+    });
+  });
+
+  // ── The ghost: a held pitch that is not one of the CURSOR ENTRY's targets ──
+  describe('the off-target ghost', () => {
+    it('adds exactly one ghost notehead without disturbing the targets', () => {
+      const active = new Map([[65, { velocity: 80 }]]);
+      const { container } = render(
+        <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1} activeNotes={active} />
       );
       expect(container.querySelectorAll('.action-staff__note')).toHaveLength(3);
       expect(container.querySelectorAll('.sequence-note-wrong-ghost')).toHaveLength(1);
     });
 
-    it('renders no ghost when nothing wrong was played', () => {
+    it('renders no ghost when nothing is held', () => {
       const { container } = render(<SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1} />);
       expect(container.querySelectorAll('.sequence-note-wrong-ghost')).toHaveLength(0);
     });
 
     it('sits at its OWN staff position, not the target\'s', () => {
-      // Target at the cursor is D4 (62); the child played F4 (65). The ghost
-      // must sit where an F4 belongs, which is a different line offset.
+      // Target at the cursor is D4 (62); the child is holding F4 (65). The
+      // ghost must sit where an F4 belongs, which is a different line offset.
+      const active = new Map([[65, { velocity: 80 }]]);
       const { container } = render(
-        <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1} wrongMidi={65} />
+        <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1} activeNotes={active} />
       );
       const [ghost] = lineOffsets(container, '.sequence-note-wrong-ghost');
       const target = Number(
-        container.querySelector('.sequence-note-next').getAttribute('data-line-offset')
+        container.querySelector('.sequence-note-miss').getAttribute('data-line-offset')
       );
       expect(ghost).toBe(1); // F4 on treble
       expect(target).toBe(-1); // D4 on treble
       expect(ghost).not.toBe(target);
     });
 
-    it('reads the wrong note on the CHOSEN clef too', () => {
+    it('reads the ghost on the CHOSEN clef too', () => {
+      const active = new Map([[65, { velocity: 80 }]]);
       const { container } = render(
-        <SvgSequenceStaff notes={notes(60, 62)} clef="bass" cursorIndex={0} wrongMidi={65} />
+        <SvgSequenceStaff notes={notes(60, 62)} clef="bass" cursorIndex={0} activeNotes={active} />
       );
       expect(lineOffsets(container, '.sequence-note-wrong-ghost')).toEqual([13]); // F4 on bass
     });
 
     it('stands near the cursor column so the child can compare', () => {
+      const active = new Map([[61, { velocity: 80 }]]);
       const { container } = render(
-        <SvgSequenceStaff notes={notes(60, 62, 64, 65)} cursorIndex={2} wrongMidi={61} />
+        <SvgSequenceStaff notes={notes(60, 62, 64, 65)} cursorIndex={2} activeNotes={active} />
       );
       const ghostX = Number(container.querySelector('.sequence-note-wrong-ghost').getAttribute('cx'));
-      const cursorX = Number(container.querySelector('.sequence-note-next').getAttribute('cx'));
+      const cursorX = Number(container.querySelector('.sequence-note-miss').getAttribute('cx'));
       const nextColX = Number(
         container.querySelector('[data-sequence-index="3"] .action-staff__note').getAttribute('cx')
       );
@@ -204,45 +337,46 @@ describe('SvgSequenceStaff', () => {
       expect(ghostX).toBeLessThan(nextColX);
     });
 
-    it('draws the accidental of a wrong black key', () => {
+    it('draws the accidental of a held black key that is off-target', () => {
+      const active = new Map([[61, { velocity: 80 }]]);
       const { container } = render(
-        <SvgSequenceStaff notes={notes(60, 62)} cursorIndex={0} wrongMidi={61} />
+        <SvgSequenceStaff notes={notes(60, 62)} cursorIndex={0} activeNotes={active} />
       );
       const acc = container.querySelector('.sequence-staff__ghost-accidental');
       expect(acc).toBeTruthy();
       expect(acc.querySelector('text')).toBeNull();
       expect(acc.querySelectorAll('path, line').length).toBeGreaterThan(0);
     });
-  });
 
-  // ── Held keys ──────────────────────────────────────────────────────────────
-  describe('held-key ghosts', () => {
-    it('ghosts a held non-target key at 50%', () => {
-      const active = new Map([[69, { velocity: 80 }]]); // A4, not in the sequence
-      const { container } = render(
-        <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={0} activeNotes={active} />
-      );
-      const held = container.querySelectorAll('.sequence-staff__held-ghost');
-      expect(held).toHaveLength(1);
-      expect(held[0].getAttribute('opacity')).toBe('0.5');
-      expect(held[0].getAttribute('data-midi')).toBe('69');
-    });
-
-    it('never ghosts a key that is one of the targets', () => {
-      const active = new Map([[60, { velocity: 80 }], [62, { velocity: 80 }]]);
-      const { container } = render(
-        <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={0} activeNotes={active} />
-      );
-      expect(container.querySelectorAll('.sequence-staff__held-ghost')).toHaveLength(0);
-    });
-
-    it('never double-draws the wrong note as a held ghost as well', () => {
+    it('carries no stem of its own', () => {
       const active = new Map([[65, { velocity: 80 }]]);
       const { container } = render(
-        <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1} wrongMidi={65} activeNotes={active} />
+        <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1} activeNotes={active} />
       );
-      expect(container.querySelectorAll('.sequence-note-wrong-ghost')).toHaveLength(1);
-      expect(container.querySelectorAll('.sequence-staff__held-ghost')).toHaveLength(0);
+      const ghostGroup = container.querySelector('.sequence-staff__ghost');
+      expect(ghostGroup.querySelector('.action-staff__stem')).toBeNull();
+    });
+
+    it('never ghosts a key that is one of the CURSOR ENTRY\'s own targets', () => {
+      const active = new Map([[60, { velocity: 80 }]]);
+      const { container } = render(
+        <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={0} activeNotes={active} />
+      );
+      expect(container.querySelectorAll('.sequence-note-wrong-ghost')).toHaveLength(0);
+    });
+
+    it('DOES ghost a held key that matches some OTHER entry\'s target — "the target" is scoped to the cursor', () => {
+      // 60 is entry 0's own note, already played (done); the cursor is on
+      // entry 1 (62). Holding 60 right now is not what entry 1 is asking for,
+      // so it is exactly as off-target as any other wrong pitch.
+      const active = new Map([[60, { velocity: 80 }]]);
+      const { container } = render(
+        <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1} activeNotes={active} />
+      );
+      const ghost = container.querySelector('.sequence-note-wrong-ghost');
+      expect(ghost).toBeTruthy();
+      expect(ghost.getAttribute('data-midi')).toBe('60');
+      expect(container.querySelector('.sequence-note-miss').getAttribute('data-midi')).toBe('62');
     });
   });
 
