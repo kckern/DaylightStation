@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { formatFoodList, formatDateHeader, formatLoggedSummary } from '#domains/nutrition/entities/formatters.mjs';
 import { repairTruncatedJson } from '../lib/repairJson.mjs';
 import { createNutriLog } from '../nutriLogRecords.mjs';
+import { groupParsedItems } from '#domains/nutrition/services/groupParsedItems.mjs';
 
 /**
  * Log food from image use case
@@ -373,6 +374,7 @@ export class LogFoodFromImage {
 5. Assign a noom_color: "green" (low cal density), "yellow" (moderate), or "orange" (high cal density).
 6. Select the best matching icon from this list: ${this.#foodIconsString}
 7. Use Title Case for all food names.
+8. If a food is a composite dish (e.g. a sandwich, a smoothie, a burger) that you broke down into ingredient items per instruction 2, give every one of those ingredient items the SAME "dish" string (the dish's name). Standalone foods that were not broken down OMIT "dish" entirely. If the photo shows two separate dishes or plates, use a DIFFERENT "dish" value for each plate's items.
 
 Respond in JSON format:
 {
@@ -391,10 +393,12 @@ Respond in JSON format:
       "fiber": 2,
       "sugar": 3,
       "sodium": 200,
-      "cholesterol": 25
+      "cholesterol": 25,
+      "dish": "Burger"
     }
   ]
 }
+("dish" is OPTIONAL — omit it for a standalone item; include it only on items that are part of a named composite or a specific plate.)
 
 ${conservativeNote}${portionBoost}`,
       },
@@ -432,7 +436,7 @@ ${conservativeNote}${portionBoost}`,
       const rawItems = data.items || [];
       this.#logger.info?.('logImage.parse.success', { itemCount: rawItems.length });
 
-      return rawItems.map((item) => ({
+      const items = rawItems.map((item) => ({
         id: uuidv4(),
         label: item.name || item.label || 'Unknown',
         grams: item.grams || this.#estimateGrams(item),
@@ -448,7 +452,10 @@ ${conservativeNote}${portionBoost}`,
         sugar: item.sugar ?? 0,
         sodium: item.sodium ?? 0,
         cholesterol: item.cholesterol ?? 0,
+        ...(item.dish ? { dish: item.dish } : {}),
       }));
+
+      return groupParsedItems(items, { makeId: uuidv4 });
     } catch (e) {
       this.#logger.warn?.('logImage.parse.error', {
         error: e.message,

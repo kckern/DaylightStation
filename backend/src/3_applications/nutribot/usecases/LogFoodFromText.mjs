@@ -10,6 +10,7 @@ import { formatFoodList, formatDateHeader, formatLoggedSummary } from '#domains/
 import { repairTruncatedJson } from '../lib/repairJson.mjs';
 import { deriveLogDate } from '../lib/deriveLogDate.mjs';
 import { createNutriLog, serializeNutriLog } from '../nutriLogRecords.mjs';
+import { groupParsedItems } from '#domains/nutrition/services/groupParsedItems.mjs';
 
 /**
  * Get current time details for date context in prompts
@@ -444,6 +445,7 @@ export class LogFoodFromText {
 7. Use Title Case for all food names (e.g., "Grilled Chicken Breast", "Mashed Potatoes")
 8. Prefer grams (g) or ml as the unit; only use other units (cup, tbsp, oz, piece) if the user explicitly says so.
 9. Round grams to sensible whole numbers (nearest 5g).
+10. If the description is a composite dish whose parts are listed separately (e.g. a smoothie and its ingredients, or spaghetti with noodles/sauce/cheese listed out), give every part item the SAME "dish" string (the dish's name). Standalone foods that are not part of a listed composite OMIT "dish" entirely.
 
 Respond in JSON format:
 {
@@ -464,10 +466,12 @@ Respond in JSON format:
       "fiber": 2,
       "sugar": 3,
       "sodium": 200,
-      "cholesterol": 25
+      "cholesterol": 25,
+      "dish": "Smoothie"
     }
   ]
 }
+("dish" is OPTIONAL — omit it for a standalone item; include it only on items that are part of a named composite.)
 
 Be conservative with estimates. Use USDA values when possible.
 Begin response with '{' character - output only valid JSON, no markdown.${portionBoost}`,
@@ -523,11 +527,12 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
             sugar: item.sugar ?? 0,
             sodium: item.sodium ?? 0,
             cholesterol: item.cholesterol ?? 0,
+            ...(item.dish ? { dish: item.dish } : {}),
           };
         });
 
         return {
-          items,
+          items: groupParsedItems(items, { makeId: uuidv4 }),
           date: data.date || today,
           time: data.time || null,
         };
