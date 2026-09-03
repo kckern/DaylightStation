@@ -29,7 +29,11 @@ export function groupRows(rows) {
   const list = Array.isArray(rows) ? rows : [];
   if (list.length === 0) return [];
 
-  // Look up a row by either identifier it might be referenced by.
+  // Look up a row by either identifier it might be referenced by. If a
+  // child's parentId happens to collide across rows — matching one row's
+  // `id` and a different row's `uuid` — the later-indexed row wins (last
+  // write into the map). Not expected in practice (ids/uuids are meant to
+  // be unique within a day), but worth naming since it's otherwise silent.
   const byKey = new Map();
   for (const row of list) {
     if (row.id != null) byKey.set(String(row.id), row);
@@ -38,11 +42,36 @@ export function groupRows(rows) {
 
   // Resolve each row's parent WITHIN this set — a parentId that doesn't
   // resolve here makes the row an orphan (top-level), not a dropped child.
-  const parentOf = new Map();
+  const rawParentOf = new Map();
   for (const row of list) {
     if (row.parentId == null) continue;
     const parent = byKey.get(String(row.parentId));
-    if (parent && parent !== row) parentOf.set(row, parent);
+    if (parent && parent !== row) rawParentOf.set(row, parent);
+  }
+
+  // A parentId CYCLE (A -> B -> A, or longer) must never make every member
+  // vanish. Without this guard, each row in the cycle has a `parentOf`
+  // entry, so `isTopLevel` is false for all of them and none is ever a
+  // descendant of a genuine top-level row either — `list.filter(isTopLevel)`
+  // silently drops the whole cycle. Treat a cyclic parent link the same way
+  // an unresolvable one is already treated: unresolvable, so the row falls
+  // back to rendering top-level. This guarantees the invariant that matters
+  // — every input row appears exactly once in the output, as a top-level
+  // entry or as exactly one parent's child — holds even for malformed data.
+  const isInCycle = (row) => {
+    let cur = rawParentOf.get(row);
+    let steps = 0;
+    while (cur) {
+      if (cur === row) return true;
+      if (++steps > list.length) return false; // defensive; unreachable without a cycle
+      cur = rawParentOf.get(cur);
+    }
+    return false;
+  };
+
+  const parentOf = new Map();
+  for (const [row, parent] of rawParentOf) {
+    if (!isInCycle(row)) parentOf.set(row, parent);
   }
 
   const directChildrenOf = new Map();
