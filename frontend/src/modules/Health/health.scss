@@ -139,11 +139,14 @@
 
 // The edit sheet's group-only controls (rename field + Save, scale-group
 // chips) are NEW controls this task adds — Mantine's default `size="xs"`
-// button/input (1.875rem tall, ~30px) falls under the 44px touch-target
-// floor, so pin min-height explicitly here rather than resizing every
-// pre-existing xs button in the sheet (item mode must render exactly as it
-// does today; this class only ever attaches to the new controls).
-.health-edit__control { min-height: 44px; }
+// button/input (1.875rem tall, ~30px, and narrower than 44px wide on a
+// short label like "Save" or "×½") falls under the 44px touch-target floor
+// on BOTH axes, so pin min-width AND min-height explicitly here — same
+// pattern as `.health-row__confirm`/`.health-row__expand` above — rather
+// than resizing every pre-existing xs button in the sheet (item mode must
+// render exactly as it does today; this class only ever attaches to the
+// new controls).
+.health-edit__control { min-width: 44px; min-height: 44px; }
 
 // The larger, full-width capture photo shown inside the edit sheet — not a
 // touch target, so no min-height rule; sized for legibility, not tapping.

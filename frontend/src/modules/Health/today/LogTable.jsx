@@ -39,6 +39,18 @@ function Section({ label, rows, onAdd, onRowTap, onConfirm, headerAction }) {
         // parent's kind, and nothing upstream guarantees only
         // kind:'group' rows carry children. Gating on kind here would
         // silently drop the children from the screen.
+        //
+        // CROSS-REFERENCE: EntryEditSheet.jsx's group mode and the backend
+        // cascade (HealthOperations#cascadeMealTimeToChildren) gate the
+        // OPPOSITE way — strictly on `row.kind === 'group'`, never on "has
+        // children" — because they must never act on a row nothing marked
+        // as a group. The two decisions are equivalent only as long as
+        // every write path stamps kind:'group' before ever giving a row
+        // children (true today — groupParsedItems.mjs). If a future write
+        // path breaks that invariant, this file would still show the
+        // group collapsed, but the edit sheet would treat it as a plain
+        // item (no rename/scale-group/cascade) — keep both sites' logic in
+        // sync if that invariant ever needs to change.
         const isGroup = children.length > 0;
         if (!isGroup) {
           return <EntryRow key={key} row={row} onTap={onRowTap} onConfirm={onConfirm} />;

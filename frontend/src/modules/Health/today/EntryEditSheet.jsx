@@ -37,6 +37,18 @@ export function EntryEditSheet({ row, open, onClose, onChanged }) {
 
   if (!row) return null;
 
+  // Gated on `row.kind === 'group'` — the SAME field the backend cascade
+  // gates on (HealthOperations#cascadeMealTimeToChildren). LogTable.jsx
+  // deliberately gates its OWN group presentation on "does this row have
+  // resolved children" instead (its comment explains why: nothing upstream
+  // guarantees only kind:'group' rows carry children). The two are
+  // equivalent today only because every real write path stamps kind:'group'
+  // on a row before ever giving it children (groupParsedItems.mjs) — a
+  // future write path that sets `parentId` without `kind:'group'` would
+  // silently fall through to ITEM mode here (no rename/scale-group/cascade),
+  // reintroducing the orphaning failure this task exists to prevent. If you
+  // change how one site decides "is this a group", change the other the
+  // same way.
   const isGroup = row.kind === 'group';
   const children = Array.isArray(row.children) ? row.children : [];
 
@@ -49,6 +61,33 @@ export function EntryEditSheet({ row, open, onClose, onChanged }) {
       onClose();
     } catch (err) {
       logger.error(`${event}.failed`, { uuid: row.uuid, error: err?.message });
+      setError(err);
+    } finally { setBusy(false); }
+  };
+
+  // "Move to" gets its own handler (rather than reusing `run`) because a
+  // GROUP move needs to inspect the response: the backend cascades a
+  // mealTime change to every child server-side (HealthOperations), but that
+  // cascade silently no-ops if the group row is missing a `date` (see
+  // report's Concerns section) — `cascadedIds` exists specifically so this
+  // can be caught instead of the sheet closing on a lie ("moved!" when the
+  // children stayed behind). Item-mode moves are unaffected: the warning
+  // check is gated on `isGroup && children.length > 0`, so a plain item's
+  // response (no `cascadedIds` at all) never trips it.
+  const moveTo = async (bucketId) => {
+    setBusy(true); setError(null);
+    try {
+      const result = await DaylightAPI(`api/v1/health/nutrilist/${row.uuid}`, { mealTime: bucketId }, 'PUT');
+      onChanged();
+      if (isGroup && children.length > 0 && !(result?.cascadedIds?.length)) {
+        logger.warn('move.cascade_missing', { uuid: row.uuid, childCount: children.length });
+        setError(new Error(`${displayName(row)} moved, but its ${children.length} item${children.length === 1 ? '' : 's'} did not move with it — check them manually.`));
+        return;
+      }
+      logger.info('move', { uuid: row.uuid, bucketId });
+      onClose();
+    } catch (err) {
+      logger.error('move.failed', { uuid: row.uuid, error: err?.message });
       setError(err);
     } finally { setBusy(false); }
   };
@@ -102,13 +141,61 @@ export function EntryEditSheet({ row, open, onClose, onChanged }) {
     );
   };
 
-  const deleteGroup = () => {
+  // Deliberately NOT `runBatch` — group delete has an ordering requirement
+  // runBatch's flat "fire every id, report failures" shape can't express:
+  // the group row's OWN delete must never be attempted while any child
+  // delete failed. Attempting it anyway (the original bug) deletes the
+  // dish while stranding the surviving child as a top-level row — the user
+  // asked to remove a dish and got a vanished dish plus an orphaned
+  // ingredient, with no message even hinting at it. Children still get the
+  // same "attempt all of them, don't stop at the first failure" treatment
+  // as before; only the FINAL step (the group itself) is now conditional.
+  const deleteGroup = async () => {
     const n = children.length;
     const label = displayName(row) || 'this group';
     const msg = n > 0 ? `Delete ${label} and its ${n} item${n === 1 ? '' : 's'}?` : `Delete ${label}?`;
     if (!window.confirm(msg)) return;
-    const ids = [...children.map((c) => c.uuid), row.uuid];
-    runBatch(ids, (id) => DaylightAPI(`api/v1/health/nutrilist/${id}`, {}, 'DELETE'), 'group-delete');
+
+    setBusy(true); setError(null);
+    const childIds = children.map((c) => c.uuid);
+    const childFailures = [];
+    for (const id of childIds) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await DaylightAPI(`api/v1/health/nutrilist/${id}`, {}, 'DELETE');
+      } catch (err) {
+        childFailures.push({ id, error: err });
+      }
+    }
+
+    let groupFailed = false;
+    if (childFailures.length === 0) {
+      // Safe to remove the group ONLY when every child is confirmed gone —
+      // never delete the parent out from under a surviving child.
+      try {
+        await DaylightAPI(`api/v1/health/nutrilist/${row.uuid}`, {}, 'DELETE');
+      } catch (err) {
+        groupFailed = true;
+        logger.error('group-delete.group_failed', { uuid: row.uuid, error: err?.message });
+      }
+    }
+
+    setBusy(false);
+    onChanged();
+
+    if (childFailures.length > 0) {
+      logger.error('group-delete.partial_failure', {
+        uuid: row.uuid, failed: childFailures.length, total: childIds.length,
+      });
+      setError(new Error(`${childFailures.length} of ${childIds.length} items could not be deleted — ${label} was NOT deleted and still has its remaining items. The list has been reloaded to show what's actually there.`));
+      return;
+    }
+    if (groupFailed) {
+      setError(new Error(`${label}'s items were removed, but ${label} itself could not be deleted — try again.`));
+      return;
+    }
+    logger.info('group-delete', { uuid: row.uuid, count: childIds.length + 1 });
+    onClose();
   };
 
   return (
@@ -142,7 +229,7 @@ export function EntryEditSheet({ row, open, onClose, onChanged }) {
           {BUCKETS.map((b) => (
             <Button key={b.id} size="xs" disabled={busy}
               variant={row.mealTime === b.id ? 'filled' : 'light'}
-              onClick={() => run(() => DaylightAPI(`api/v1/health/nutrilist/${row.uuid}`, { mealTime: b.id }, 'PUT'), 'move')}>
+              onClick={() => moveTo(b.id)}>
               {b.label}
             </Button>
           ))}
