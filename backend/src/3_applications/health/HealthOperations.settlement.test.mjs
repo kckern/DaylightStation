@@ -154,6 +154,71 @@ describe('HealthOperations updateNutritionItem settles on edit', () => {
   });
 });
 
+describe('HealthOperations updateNutritionItem cascades mealTime to a group\'s children', () => {
+  const groupRow = {
+    uuid: 'g1', id: 'g1', kind: 'group', name: 'Smoothie', mealTime: 'morning', date: '2026-09-02',
+  };
+  const child1 = { uuid: 'c1', kind: 'item', parentId: 'g1', mealTime: 'morning', date: '2026-09-02' };
+  const child2 = { uuid: 'c2', kind: 'item', parentId: 'g1', mealTime: 'morning', date: '2026-09-02' };
+  const unrelated = { uuid: 'u1', kind: 'item', parentId: 'some-other-group', mealTime: 'morning', date: '2026-09-02' };
+
+  function buildOps(existing, siblings) {
+    const findByUuid = vi.fn(async () => existing);
+    const findByDate = vi.fn(async () => siblings);
+    const update = vi.fn(async (username, id, changes) => ({ id, ...changes }));
+    const ops = new HealthOperations({
+      healthData: {},
+      nutritionItems: { findByUuid, findByDate, update },
+      today: () => '2026-09-02',
+    });
+    return { ops, findByUuid, findByDate, update };
+  }
+
+  it('a mealTime update on a GROUP row also moves every row whose parentId matches it', async () => {
+    const { ops, findByDate, update } = buildOps(groupRow, [groupRow, child1, child2, unrelated]);
+
+    const result = await ops.updateNutritionItem('kc', 'g1', { mealTime: 'evening' });
+
+    expect(findByDate).toHaveBeenCalledWith('kc', '2026-09-02');
+    // The group's own row, plus both of its children — never the unrelated
+    // sibling whose parentId points elsewhere.
+    expect(update).toHaveBeenCalledTimes(3);
+    const childCalls = update.mock.calls.filter(([, id]) => id === 'c1' || id === 'c2');
+    expect(childCalls).toHaveLength(2);
+    for (const [username, , changes] of childCalls) {
+      expect(username).toBe('kc');
+      expect(changes).toEqual({ mealTime: 'evening' });
+    }
+    expect(update.mock.calls.some(([, id]) => id === 'u1')).toBe(false);
+    expect(result.cascadedIds.sort()).toEqual(['c1', 'c2']);
+  });
+
+  it('an ITEM row update does NOT cascade, even when another row happens to carry a matching parentId', async () => {
+    // A row referencing the item as a parent should never occur in real
+    // data, but the guard must hold even if it did — cascade is gated on
+    // the EDITED row's own kind, not on "does anything point at me".
+    const itemRow = { uuid: 'c1', id: 'c1', kind: 'item', mealTime: 'morning', date: '2026-09-02' };
+    const dependent = { uuid: 'weird', kind: 'item', parentId: 'c1', mealTime: 'morning', date: '2026-09-02' };
+    const { ops, findByDate, update } = buildOps(itemRow, [itemRow, dependent]);
+
+    const result = await ops.updateNutritionItem('kc', 'c1', { mealTime: 'evening' });
+
+    expect(findByDate).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update.mock.calls[0][1]).toBe('c1');
+    expect(result.cascadedIds).toEqual([]);
+  });
+
+  it('a rename (no mealTime in the change) on a group does NOT cascade', async () => {
+    const { ops, findByDate, update } = buildOps(groupRow, [groupRow, child1, child2]);
+
+    await ops.updateNutritionItem('kc', 'g1', { name: 'Berry Smoothie' });
+
+    expect(findByDate).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('HealthOperations deleteNutritionItem is the discard replacement', () => {
   it('hard-deletes the row via deleteById', async () => {
     const existing = { uuid: 'row-1', mealTime: 'morning' };

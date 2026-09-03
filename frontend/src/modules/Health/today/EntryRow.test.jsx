@@ -117,4 +117,38 @@ describe('EntryRow', () => {
     expect(screen.getByText(/unconfirmed/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: /confirm entry/i })).toBeTruthy();
   });
+
+  describe('photo thumbnail', () => {
+    it('a row with photoRef renders a thumbnail whose src carries size=thumb', () => {
+      r(<EntryRow row={{ ...baseRow, photoRef: 'ph_abc123' }} onTap={() => {}} onConfirm={() => {}} />);
+      const img = document.querySelector('img.health-row__thumb');
+      expect(img).toBeTruthy();
+      expect(img.getAttribute('src')).toContain('ph_abc123');
+      expect(img.getAttribute('src')).toContain('size=thumb');
+      expect(img.getAttribute('loading')).toBe('lazy');
+      // Decorative — the row text already names the food.
+      expect(img.getAttribute('alt')).toBe('');
+    });
+
+    it('a row without photoRef renders no thumbnail', () => {
+      r(<EntryRow row={{ ...baseRow }} onTap={() => {}} onConfirm={() => {}} />);
+      expect(document.querySelector('img.health-row__thumb')).toBeFalsy();
+    });
+
+    it('an onError on the thumbnail hides it without leaving a broken-image glyph', () => {
+      r(<EntryRow row={{ ...baseRow, photoRef: 'ph_abc123' }} onTap={() => {}} onConfirm={() => {}} />);
+      const img = document.querySelector('img.health-row__thumb');
+      expect(img.style.display).not.toBe('none');
+      fireEvent.error(img);
+      expect(img.style.display).toBe('none');
+    });
+
+    it('a group row with photoRef also renders a thumbnail', () => {
+      r(<EntryRow row={{ uuid: 'g1', name: 'Smoothie', calories: 0, kind: 'group', photoRef: 'ph_group1' }}
+        onTap={() => {}} onConfirm={() => {}} isGroup expanded={false} onToggle={() => {}} rollupKcal={225} />);
+      const img = document.querySelector('img.health-row__thumb');
+      expect(img).toBeTruthy();
+      expect(img.getAttribute('src')).toContain('ph_group1');
+    });
+  });
 });

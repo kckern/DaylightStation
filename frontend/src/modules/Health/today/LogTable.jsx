@@ -46,8 +46,13 @@ function Section({ label, rows, onAdd, onRowTap, onConfirm, headerAction }) {
         const isOpen = expanded.has(key);
         return (
           <div key={key} className="health-group">
+            {/* `children` is attached to the row object here — not read
+                by EntryRow's own rendering (which uses rollupKcal/isGroup
+                for display) — purely so the tap handler forwards them to
+                whatever opens next (EntryEditSheet's group mode needs the
+                full child list to scale/move/delete them together). */}
             <EntryRow
-              row={row} onTap={onRowTap} onConfirm={onConfirm}
+              row={{ ...row, children }} onTap={onRowTap} onConfirm={onConfirm}
               isGroup expanded={isOpen} onToggle={() => toggle(key)} rollupKcal={rollup.calories}
             />
             {isOpen ? children.map((c) => (

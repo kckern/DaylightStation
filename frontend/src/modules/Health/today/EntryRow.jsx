@@ -1,8 +1,16 @@
 import { UnstyledButton } from '@mantine/core';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
+import { nutritionPhotoUrl } from './photoUrl.js';
 
 const logger = createAppLogger('health').child('entry-row');
+
+// A failed thumbnail load hides itself in place — no broken-image glyph,
+// no layout jump. Direct DOM mutation (not React state) because the
+// element's own 32px grid column is reserved unconditionally by
+// `photoRef`'s presence, not by load success — hiding the <img> alone
+// leaves that column's width intact, so nothing around it reflows.
+const hideBrokenThumb = (e) => { e.currentTarget.style.display = 'none'; };
 
 const NOOM = { green: 'var(--ds-success)', yellow: 'var(--ds-warning)', orange: 'var(--ds-danger)' };
 
@@ -44,11 +52,14 @@ export function EntryRow({ row, onTap, onConfirm, isGroup = false, expanded = fa
     child && 'health-row-line--child',
   ].filter(Boolean).join(' ');
 
+  const hasThumb = Boolean(row.photoRef);
+
   const rowClass = [
     'health-row',
     unsettled && 'health-row--unsettled',
     isGroup && 'health-row--group',
     child && 'health-row--child',
+    hasThumb && 'health-row--thumb',
   ].filter(Boolean).join(' ');
 
   return (
@@ -69,6 +80,15 @@ export function EntryRow({ row, onTap, onConfirm, isGroup = false, expanded = fa
         </UnstyledButton>
       ) : null}
       <UnstyledButton className={rowClass} onClick={() => onTap(row)}>
+        {hasThumb ? (
+          <img
+            className="health-row__thumb"
+            src={nutritionPhotoUrl(row.photoRef, { thumb: true })}
+            alt=""
+            loading="lazy"
+            onError={hideBrokenThumb}
+          />
+        ) : null}
         {!isGroup ? (
           <span className="health-row__dot" style={{ background: NOOM[row.color] || 'var(--ds-text-low)' }} />
         ) : null}
