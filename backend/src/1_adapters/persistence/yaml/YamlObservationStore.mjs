@@ -106,6 +106,17 @@
  * ARRAY, not a single record, because one entry can be the pairing target of more than
  * one observation (weight + density + container all consumed into the same entry).
  *
+ * ## `get` is READ-ONLY — it exists so a bare-id route never has to write to look up a row
+ *
+ * A pair/dismiss route typically receives only `:id` in its URL — no date, no scaleId,
+ * no entry id — so none of `listByDate`/`openForScale`/`findByPairedEntry` can serve it.
+ * `update(userId, id, {})` would technically return the row too, but only by taking an
+ * unconditional write as a side effect — every lookup, including ones that turn out to be
+ * no-ops or invalid, would touch disk. `get(userId, id)` performs no write, ever; it reads
+ * through the same `#readAllValid` filter as every other read method, so a malformed row
+ * is skipped identically rather than special-cased, and it throws the same `NOT_FOUND`
+ * shape `update`/`updateMany` already raise so a caller can handle all three the same way.
+ *
  * @module persistence/yaml/YamlObservationStore
  */
 
@@ -336,7 +347,7 @@ export class YamlObservationStore {
 
   /**
    * `#readAll`, minus any row that fails `isStructurallyValid`. Used by every method that
-   * hands rows BACK to a caller (`listByDate`, `openForScale`, `findByPairedEntry`) — never
+   * hands rows BACK to a caller (`listByDate`, `openForScale`, `findByPairedEntry`, `get`) — never
    * by `append`/`update`/`updateMany`, which read-modify-write the RAW array so a
    * malformed row already on disk is preserved untouched rather than dropped by an
    * unrelated write. One bad row must not deny the rest of the day, so this logs a `warn`
@@ -597,6 +608,42 @@ export class YamlObservationStore {
       .filter((r) => r.pairedEntryUuid === entryUuid)
       .sort((a, b) => a.at.localeCompare(b.at))
       .map((r) => ({ ...r }));
+  }
+
+  /**
+   * Read-only fetch of a single observation by bare id — no date, no scaleId, no entry
+   * id required. Exists because a route that only receives `:id` (e.g. a pair/dismiss
+   * endpoint) has no OTHER contractual way to read a row's `kind`/`value`/`unit`/`status`/
+   * `pairedEntryUuid` before deciding what to do with it. `update(userId, id, {})` could
+   * do this as a side effect of an unconditional write, but that would mean every lookup
+   * — including ones that turn out to be no-ops or invalid — performs a spurious disk
+   * write; `get` performs NO write under any circumstance.
+   *
+   * Reads through the same `#readAllValid` filter as `listByDate` / `openForScale` /
+   * `findByPairedEntry`, so a malformed row is skipped here exactly as it would be
+   * anywhere else — `get` does not special-case its way past that guard. Deliberately not
+   * date- or status-scoped: a bare id is either in the file or it isn't, regardless of
+   * which day it fell on or whether it is still `open`.
+   *
+   * @param {string} userId
+   * @param {string} id
+   * @returns {Observation} The record (a plain-object copy).
+   * @throws {ValidationError} `INVALID_OBSERVATION_ID` if `id` is not a non-empty string.
+   * @throws {InfrastructureError} `NOT_FOUND` if no observation with `id` exists (same
+   *   shape `update`/`updateMany` already raise, so a caller can handle all three
+   *   uniformly); `CORRUPT_OBSERVATIONS_FILE` — see `#readAll`.
+   */
+  get(userId, id) {
+    requireUserId(userId);
+    this.#requirePatchId(id);
+
+    const record = this.#readAllValid(userId).find((r) => r.id === id);
+    if (!record) {
+      throw new InfrastructureError(`Observation not found: ${id}`, {
+        code: 'NOT_FOUND', entity: 'Observation', id,
+      });
+    }
+    return { ...record };
   }
 }
 
