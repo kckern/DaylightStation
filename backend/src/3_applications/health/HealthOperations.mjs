@@ -1,3 +1,5 @@
+import { presentSettlement } from '#domains/nutrition/services/settlement.mjs';
+
 const NUTRITION_UPDATE_FIELDS = new Set([
   'item', 'name', 'unit', 'amount', 'grams', 'noom_color', 'color',
   'calories', 'fat', 'carbs', 'protein', 'fiber', 'sugar', 'sodium', 'cholesterol', 'date',
@@ -76,8 +78,10 @@ export class HealthOperations {
     return this.today();
   }
 
-  findNutritionItemsByDate(username, date) {
-    return this.nutritionItems.findByDate(username, date);
+  async findNutritionItemsByDate(username, date) {
+    const rows = await this.nutritionItems.findByDate(username, date);
+    const today = this.today();
+    return rows.map((row) => ({ ...row, ...presentSettlement(row, today) }));
   }
 
   findNutritionItem(username, id) {
