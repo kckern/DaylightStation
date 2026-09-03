@@ -386,6 +386,7 @@ export class NutribotContainer {
       this.#discardFoodLog = new DiscardFoodLog({
         messagingGateway: this.getMessagingGateway(),
         foodLogStore: this.#foodLogStore,
+        nutriListStore: this.#nutriListStore,
         conversationStateStore: this.#conversationStateStore,
         logger: this.#logger,
       });

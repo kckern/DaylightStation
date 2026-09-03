@@ -2,6 +2,8 @@
 
 import { BaseInputRouter } from '#apps/common/input/BaseInputRouter.mjs';
 import { decodeCallback, CallbackActions } from '../lib/callback.mjs';
+import { buildCommittedChoices, withCommittedChoices } from '../lib/committedChoices.mjs';
+import { serializeFoodItem } from '../nutriLogRecords.mjs';
 import { NutribotScaleRefusal } from '../ports/NutribotScaleRefusal.mjs';
 
 /**
@@ -27,6 +29,130 @@ export class NutribotInputRouter extends BaseInputRouter {
     this.#userIdentityService = options.userIdentityService || null;
     this.#userResolver = options.userResolver;
     this.#aiGatewayAvailable = options.aiGatewayAvailable !== false;
+  }
+
+  // ==================== Auto-commit seam ====================
+  //
+  // AI captures (text / voice / image / barcode) are logged IMMEDIATELY as
+  // unsettled — there is no pending Accept/Revise/Discard gate any more. The
+  // seam is two narrow pieces, both owned here:
+  //
+  //   * message seam — `withCommittedChoices` decorates the responseContext the
+  //     use case sends through, so the keyboard it builds and sends from inside
+  //     itself never reaches the user offering Accept.
+  //   * accept seam — after execute() returns, every item is stamped
+  //     `settled: false` and the log runs the same accept path AcceptFoodLog
+  //     uses (status -> accepted, acceptedAt stamped, nutrilist synced), which
+  //     is what makes the rows visible to the day view and counted by
+  //     BudgetService.
+  //
+  // SCALE IS EXEMPT: the scale branches never call this — they keep their
+  // multi-step composition flow until a later phase replaces it.
+  //
+  // BARCODE stamps but does not accept: the UPC flow has no Accept gate to
+  // retire, it commits at the portion-selection step (SelectUPCPortion), which
+  // would refuse a log this seam had already accepted. Stamping here means the
+  // rows that step writes carry `settled: false` without touching that use case.
+
+  /**
+   * Run a capture use case through the auto-commit seam.
+   * @private
+   * @param {Object} event
+   * @param {Object|null} responseContext
+   * @param {Object} opts
+   * @param {string} opts.source - capture kind, for logs
+   * @param {boolean} opts.commit - run the accept path (false for multi-step flows)
+   * @param {(responseContext: Object|null) => Promise<any>} run
+   */
+  async #capture(event, responseContext, { source, commit }, run) {
+    const decorated = withCommittedChoices(responseContext, {
+      onRewrite: (logId, method) => {
+        this.logger.debug?.('nutribot.capture.choicesRewritten', { source, logId, method });
+      },
+    });
+
+    const result = await run(decorated);
+    const logId = result?.nutrilogUuid || null;
+
+    if (!logId) {
+      this.logger.debug?.('nutribot.capture.noLog', { source, conversationId: event.conversationId });
+      return { ok: true, result, committed: false, logId: null, items: [] };
+    }
+
+    const userId = this.#resolveUserId(event);
+    const items = await this.#stampUnsettled(userId, logId, source);
+
+    if (!commit) {
+      this.logger.debug?.('nutribot.capture.stampedOnly', { source, logId, itemCount: items.length });
+      return { ok: true, result, committed: false, logId, items };
+    }
+
+    const committed = await this.#commitCapture({
+      userId,
+      conversationId: event.conversationId,
+      logId,
+      responseContext: decorated,
+      source,
+    });
+
+    return { ok: true, result, committed, logId, items };
+  }
+
+  /**
+   * Stamp `settled: false` on every item of a freshly parsed log.
+   * Written verbatim — never `?? false` — because an ABSENT `settled` key is
+   * the migration signal for legacy rows.
+   * @private
+   * @returns {Promise<Object[]>} the stamped item records
+   */
+  async #stampUnsettled(userId, logId, source) {
+    let store = null;
+    try {
+      store = this.container.getFoodLogStore?.();
+    } catch {
+      store = null;
+    }
+    if (!store?.findByUuid || !store?.save) return [];
+
+    try {
+      const log = await store.findByUuid(logId, userId);
+      if (!log?.items?.length) return [];
+      const items = log.items.map(item => ({ ...serializeFoodItem(item), settled: false }));
+      await store.save(log.updateItems(items, new Date()));
+      this.logger.debug?.('nutribot.capture.unsettledStamped', { source, logId, itemCount: items.length });
+      return items;
+    } catch (e) {
+      this.logger.warn?.('nutribot.capture.stampFailed', { source, logId, error: e.message });
+      return [];
+    }
+  }
+
+  /**
+   * Run the accept path on a freshly captured log.
+   * `messageId` is deliberately omitted: the capture message has already been
+   * sent (with Undo/Edit), and AcceptFoodLog would otherwise strip its buttons.
+   * @private
+   * @returns {Promise<boolean>}
+   */
+  async #commitCapture({ userId, conversationId, logId, responseContext, source }) {
+    try {
+      const useCase = this.container.getAcceptFoodLog();
+      const accepted = await useCase.execute({ userId, conversationId, logUuid: logId, responseContext });
+      if (accepted?.success === false) {
+        this.logger.warn?.('nutribot.capture.commitRefused', { source, logId, error: accepted.error });
+        return false;
+      }
+      this.logger.info?.('nutribot.capture.committed', {
+        source,
+        conversationId,
+        logId,
+        itemCount: accepted?.itemCount ?? null,
+      });
+      return true;
+    } catch (e) {
+      this.logger.error?.('nutribot.capture.commitFailed', { source, logId, error: e.message });
+      return false;
+    }
   }
 
   // ==================== Event Handlers ====================
@@ -100,14 +226,14 @@ export class NutribotInputRouter extends BaseInputRouter {
       return this.#aiUnavailable(event, responseContext, 'Food analysis is temporarily unavailable. Please try again shortly.');
     }
     const useCase = this.container.getLogFoodFromText();
-    const result = await useCase.execute({
-      userId: this.#resolveUserId(event),
-      conversationId: event.conversationId,
-      text: event.payload.text,
-      messageId: event.messageId,
-      responseContext,
-    });
-    return { ok: true, result };
+    return await this.#capture(event, responseContext, { source: 'text', commit: true }, (rc) =>
+      useCase.execute({
+        userId: this.#resolveUserId(event),
+        conversationId: event.conversationId,
+        text: event.payload.text,
+        messageId: event.messageId,
+        responseContext: rc,
+      }));
   }
 
   async handleImage(event, responseContext) {
@@ -115,21 +241,21 @@ export class NutribotInputRouter extends BaseInputRouter {
       return this.#aiUnavailable(event, responseContext, 'Image nutrition analysis is temporarily unavailable. Please describe the food instead.');
     }
     const useCase = this.container.getLogFoodFromImage();
-    const result = await useCase.execute({
-      userId: this.#resolveUserId(event),
-      conversationId: event.conversationId,
-      imageData: {
-        fileId: event.payload.fileId,
-        // Web path: a data URL set by WebNutribotAdapter. LogFoodFromImage only
-        // consults `url` when `fileId` is falsy, so Telegram's fileId-driven
-        // resolution is unaffected.
-        url: event.payload.imageUrl,
-        caption: event.payload.text,
-      },
-      messageId: event.messageId,
-      responseContext,
-    });
-    return { ok: true, result };
+    return await this.#capture(event, responseContext, { source: 'image', commit: true }, (rc) =>
+      useCase.execute({
+        userId: this.#resolveUserId(event),
+        conversationId: event.conversationId,
+        imageData: {
+          fileId: event.payload.fileId,
+          // Web path: a data URL set by WebNutribotAdapter. LogFoodFromImage only
+          // consults `url` when `fileId` is falsy, so Telegram's fileId-driven
+          // resolution is unaffected.
+          url: event.payload.imageUrl,
+          caption: event.payload.text,
+        },
+        messageId: event.messageId,
+        responseContext: rc,
+      }));
   }
 
   async handleVoice(event, responseContext) {
@@ -137,28 +263,30 @@ export class NutribotInputRouter extends BaseInputRouter {
       return this.#aiUnavailable(event, responseContext, 'Voice nutrition analysis is temporarily unavailable. Please describe the food instead.');
     }
     const useCase = this.container.getLogFoodFromVoice();
-    const result = await useCase.execute({
-      userId: this.#resolveUserId(event),
-      conversationId: event.conversationId,
-      voiceData: {
-        fileId: event.payload.fileId,
-      },
-      messageId: event.messageId,
-      responseContext,
-    });
-    return { ok: true, result };
+    return await this.#capture(event, responseContext, { source: 'voice', commit: true }, (rc) =>
+      useCase.execute({
+        userId: this.#resolveUserId(event),
+        conversationId: event.conversationId,
+        voiceData: {
+          fileId: event.payload.fileId,
+        },
+        messageId: event.messageId,
+        responseContext: rc,
+      }));
   }
 
   async handleUpc(event, responseContext) {
     const useCase = this.container.getLogFoodFromUPC();
-    const result = await useCase.execute({
-      userId: this.#resolveUserId(event),
-      conversationId: event.conversationId,
-      upc: event.payload.text,
-      messageId: event.messageId,
-      responseContext,
-    });
-    return { ok: true, result };
+    // commit:false — the barcode flow commits at its portion-selection step,
+    // which refuses an already-accepted log. Items are still stamped unsettled.
+    return await this.#capture(event, responseContext, { source: 'barcode', commit: false }, (rc) =>
+      useCase.execute({
+        userId: this.#resolveUserId(event),
+        conversationId: event.conversationId,
+        upc: event.payload.text,
+        messageId: event.messageId,
+        responseContext: rc,
+      }));
   }
 
   #aiUnavailable(event, responseContext, message) {
@@ -458,14 +586,9 @@ export class NutribotInputRouter extends BaseInputRouter {
 
         if (responseContext?.updateMessage) {
           try {
-            const encodeCallback = (cmd, data) => JSON.stringify({ cmd, ...data });
-            const buttons = [
-              [
-                { text: '✅ Accept', callback_data: encodeCallback('a', { id: decoded.id }) },
-                { text: '✏️ Revise', callback_data: encodeCallback('r', { id: decoded.id }) },
-                { text: '🗑️ Discard', callback_data: encodeCallback('x', { id: decoded.id }) },
-              ],
-            ];
+            // The log is already committed — restore the committed keyboard,
+            // not the retired Accept/Revise/Discard gate.
+            const buttons = buildCommittedChoices(decoded.id);
             await responseContext.updateMessage(event.messageId, { choices: buttons, inline: true });
           } catch (e) {
             this.logger.warn?.('nutribot.callback.cr.updateFailed', { error: e.message });
