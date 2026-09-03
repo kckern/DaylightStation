@@ -12,12 +12,17 @@ export function useNutritionInput() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
-  const submit = useCallback(async (type, content) => {
+  const submit = useCallback(async (type, content, { bucket } = {}) => {
     setBusy(true); setError(null);
-    logger.info('capture.submit', { type, size: String(content || '').length });
+    // `bucket` is only added to the body when a caller actually names one —
+    // omitting the key entirely (not sending `bucket: undefined`) keeps the
+    // request byte-identical to the pre-Task-4.2 shape for every existing
+    // caller that doesn't pass one.
+    const body = bucket ? { type, content, bucket } : { type, content };
+    logger.info('capture.submit', { type, size: String(content || '').length, bucket: bucket || undefined });
     try {
-      const result = await DaylightAPI('api/v1/health/nutrition/input', { type, content }, 'POST');
-      logger.info('capture.result', { type, unknownUpc: result?.unknownUpc === true });
+      const result = await DaylightAPI('api/v1/health/nutrition/input', body, 'POST');
+      logger.info('capture.result', { type, unknownUpc: result?.unknownUpc === true, moved: result?.moved === true });
       return result;
     } catch (err) {
       logger.error('capture.failed', { type, error: err?.message });

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { ActionIcon, Button } from '@mantine/core';
-import { LoadingState, ErrorState } from '@/lib/ui';
+import { Button } from '@mantine/core';
+import { ErrorState } from '@/lib/ui';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
@@ -10,31 +10,14 @@ import { WeekStrip } from './WeekStrip.jsx';
 import { MacroFooter } from './MacroFooter.jsx';
 import { LogTable } from './LogTable.jsx';
 import { AddCombobox } from './AddCombobox.jsx';
-import { PendingConfirmCard } from './PendingConfirmCard.jsx';
 import { NeedsReviewSection } from './NeedsReviewSection.jsx';
 import { EntryEditSheet } from './EntryEditSheet.jsx';
 import { SavedMealsSheet } from './SavedMealsSheet.jsx';
-import { localTodayISO as todayISO } from './mealBuckets.js';
+import { QuickCaptureBar } from './QuickCaptureBar.jsx';
+import { localTodayISO as todayISO, currentMealBucketId, bucketLabel } from './mealBuckets.js';
 import { useNutritionInput } from '../capture/useNutritionInput.js';
 import { BarcodeCapture } from '../capture/BarcodeCapture.jsx';
-import { PhotoCapture } from '../capture/PhotoCapture.jsx';
-import { VoiceCapture } from '../capture/VoiceCapture.jsx';
 import { CustomFoodSheet } from '../capture/CustomFoodSheet.jsx';
-
-const BarcodeIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-    <path d="M2 3v12M5 3v12M7.5 3v12M10 3v12M13 3v12M16 3v12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-  </svg>
-);
-
-/** Opens the barcode-scan sheet — camera decode with a manual-UPC fallback. */
-function BarcodeButton({ onClick }) {
-  return (
-    <ActionIcon aria-label="Scan barcode" onClick={onClick}>
-      <BarcodeIcon />
-    </ActionIcon>
-  );
-}
 
 const logger = createAppLogger('health').child('today');
 
@@ -44,18 +27,33 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   const [addingTo, setAddingTo] = useState(null);   // bucketId | null — F5 renders the combobox here
   const [editingRow, setEditingRow] = useState(null); // row | null — F6 renders the edit sheet
   const [captureMode, setCaptureMode] = useState(null); // 'barcode' | null
+  // bucketId | null — which meal's header-row barcode button opened the
+  // sheet (null = an unlabeled launch; QuickCaptureBar always passes its
+  // own clock-derived default, never null). Forwarded to BarcodeCapture so
+  // it can hand the same id back on decode.
+  const [barcodeTargetBucket, setBarcodeTargetBucket] = useState(null);
   const [unknownUpc, setUnknownUpc] = useState(null);
   const [savedMealsFor, setSavedMealsFor] = useState(null); // bucketId | null — F8's saved-meals picker
-  const [pendingCapture, setPendingCapture] = useState(null); // { messages } | null — photo/voice review card (I-4)
   const [captureNotice, setCaptureNotice] = useState(null); // string | null — e.g. "no food detected"
+  // bucketId | null — set the instant an AI capture (photo/voice/barcode)
+  // submit starts, cleared in a `finally` once the result (success OR
+  // failure) comes back. LogTable renders the "Analyzing…" placeholder row
+  // in this exact bucket — the wait is shown where the result will land,
+  // never as a page-level spinner.
+  const [capturePending, setCapturePending] = useState(null);
   const nutrition = useNutritionInput();
   const dash = useApiResource('api/v1/health/dashboard', { label: 'dashboard', logger });
-  // Pending-review NutriLogs for the viewed date — created off-surface
-  // (Telegram, the scale bridge, a failed AI call) and otherwise invisible
-  // here, since a pending log never syncs into the nutrilist that day.byBucket
-  // is built from. Root-cause fix, live incident 2026-09-02.
+  // Pending NutriLogs for the viewed date. Text/image/voice/barcode captures
+  // now land immediately as accepted+unsettled rows in the nutrilist (Task 1.1),
+  // so they no longer show up here. The scale bridge's multi-step composition
+  // flow still mints status:'pending' logs (not replaced until a later phase)
+  // and a pending log never syncs into the nutrilist that day.byBucket is
+  // built from — so this stays as the scale's off-surface visibility fix.
   const pendingReview = useApiResource(`api/v1/health/nutrition/pending?date=${date}`,
     { deps: [date], label: 'pending-review', logger });
+  // Only surface scale-origin pending logs — the other sources (telegram,
+  // web) no longer mint pending rows now that captures commit on arrival.
+  const scalePending = (pendingReview.data?.pending || []).filter((p) => p.source === 'scale');
   // dashboard.today.coaching is an array of {type, text, timestamp} — text is
   // multi-line HTML-flavored copy (a full "morning brief"), not a one-liner.
   // Take the first line of the most recent entry and strip markup for the
@@ -97,20 +95,73 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
     }
   };
 
-  // Photo/voice submissions can come back either as a pending NutriLog with
-  // Accept/Revise/Discard choices (food detected) or as a plain status
-  // message (e.g. "no food detected") with no choices at all. Either way the
-  // response must be shown — silently discarding it is exactly the "no
-  // visible result" failure the spec forbids (I-4, final review 2026-09-02).
+  // Photo/voice/barcode submissions land immediately as an already-logged
+  // (unsettled) NutriLog (food detected — the day reload shows it in place
+  // with the unsettled cue) or as a plain status message (e.g. "no food
+  // detected") with no choices at all. The no-food-detected case must still
+  // be shown — silently discarding it is exactly the "no visible result"
+  // failure the spec forbids (I-4, final review 2026-09-02).
+  //
+  // THE MOVED CUE (Task 4.2): the backend's meal-resolution precedence is
+  // "named meal in the utterance/caption" > "the bucket we sent" > "the
+  // clock". When an explicitly-named meal overrides a DIFFERENT bucket than
+  // the one this capture targeted, the response carries `moved: true` +
+  // the resolved `mealTime` — e.g. tapping the mic on the Breakfast row but
+  // saying "log this for lunch" must not silently land the entry under
+  // Breakfast with no explanation. Reuse the existing captureNotice banner
+  // rather than inventing a second notice mechanism.
   const handleCaptureResult = (result) => {
+    if (result?.moved) {
+      setCaptureNotice(`Moved to ${bucketLabel(result.mealTime)}`);
+      day.reload();
+      return;
+    }
     const messages = result?.messages || [];
     const hasChoices = messages.some((m) => (m.choices || []).flat().length > 0);
-    if (hasChoices) {
-      setPendingCapture({ messages });
-    } else {
+    if (!hasChoices) {
       const text = messages[0]?.text;
       if (text) setCaptureNotice(text);
+      return;
     }
+    day.reload();
+  };
+
+  // Wraps any capture submit (photo/voice/barcode) with the in-place pending
+  // placeholder: mark the bucket a new entry would land in NOW as pending
+  // before the request goes out, always clear it afterward regardless of
+  // outcome — a failed capture must not leave a stuck "Analyzing…" row.
+  // `bucket` is the explicit per-meal target (from a meal-row capture
+  // button, or QuickCaptureBar's own clock-derived default); when absent we
+  // fall back to the same currentMealBucketId() guess as before — this is
+  // ONLY where the placeholder shows, never the backend's actual
+  // resolution.
+  const submitWithPending = async (type, content, { bucket } = {}) => {
+    const bucketId = bucket || currentMealBucketId();
+    setCapturePending(bucketId);
+    try {
+      return await nutrition.submit(type, content, { bucket });
+    } finally {
+      setCapturePending(null);
+    }
+  };
+
+  // Shared by QuickCaptureBar's global Voice/Photo triggers AND every
+  // per-meal header trigger LogTable renders — VoiceCapture/PhotoCapture
+  // forward `(dataUrl, bucket)`, with `bucket` always the clock-derived
+  // default for QuickCaptureBar's instances and the specific meal's id for
+  // LogTable's.
+  const handleVoiceOrPhotoCapture = async (type, dataUrl, bucket) => {
+    handleCaptureResult(await submitWithPending(type, dataUrl, { bucket }));
+  };
+  const onVoiceCapture = (dataUrl, bucket) => handleVoiceOrPhotoCapture('voice', dataUrl, bucket);
+  const onPhotoCapture = (dataUrl, bucket) => handleVoiceOrPhotoCapture('image', dataUrl, bucket);
+
+  // Opens the barcode sheet, pre-targeted at a meal's bucket — LogTable's
+  // per-meal trigger passes that meal's id; QuickCaptureBar passes its own
+  // clock-derived default.
+  const openBarcode = (bucketId = null) => {
+    setBarcodeTargetBucket(bucketId);
+    setCaptureMode('barcode');
   };
 
   const bucketHeaderAction = (bucketId, rows, label) => {
@@ -121,18 +172,20 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
     return <Button size="compact-xs" variant="subtle" onClick={() => saveBucketAsMeal(rows, label)}>Save as meal</Button>;
   };
 
+  // The day's STRUCTURE (headings, section frames, add rows) renders
+  // unconditionally via LogTable below — this only decides whether a
+  // section's BODY shows a shimmer in place of its (still-empty) entries.
+  // True cold start = never loaded this date before (no SWR cache hit) AND
+  // still loading; a background revalidation after a mutation leaves
+  // `day.loading` false the whole time, so it never re-triggers this.
+  const coldLoading = day.loading && !day.items.length;
+
   return (
     <div className="health-today">
       <EquationStrip budget={day.budget} budgetError={day.budgetError}
         date={date} today={todayISO()} onDateChange={setDate} onSetupGoals={onSetupGoals} />
       <WeekStrip date={date} today={todayISO()} onDateChange={setDate} />
-      {day.loading ? <LoadingState label="food log" rows={6} /> : null}
       {day.error ? <ErrorState error={day.error} onRetry={day.reload} label="Food log" /> : null}
-      {pendingCapture ? (
-        <PendingConfirmCard messages={pendingCapture.messages}
-          onDone={() => { setPendingCapture(null); day.reload(); }}
-          onDiscard={() => setPendingCapture(null)} />
-      ) : null}
       {captureNotice ? (
         <div className="health-pending" role="status">
           <p className="health-pending__line">{captureNotice}</p>
@@ -141,32 +194,32 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
           </div>
         </div>
       ) : null}
-      <NeedsReviewSection pending={pendingReview.data?.pending}
+      <NeedsReviewSection pending={scalePending}
         onChanged={() => { pendingReview.reload(); day.reload(); }} />
-      {!day.loading && !day.error ? (
-        <LogTable byBucket={day.byBucket} sessions={day.budget?.sessions || []}
-          onAddTo={setAddingTo} onRowTap={setEditingRow} addingTo={addingTo}
-          bucketHeaderAction={bucketHeaderAction}
-          addSlot={addingTo ? (
-            <AddCombobox bucketId={addingTo}
-              onDone={() => { setAddingTo(null); day.reload(); }}
-              onCancel={() => setAddingTo(null)}
-              onSavedMeals={() => setSavedMealsFor(addingTo)} />
-          ) : null} />
-      ) : null}
-      <MacroFooter items={day.items} coachLine={coachLine} onCoachTap={onCoachTap}>
-        <PhotoCapture busy={nutrition.busy}
-          onCapture={async (dataUrl) => handleCaptureResult(await nutrition.submit('image', dataUrl))} />
-        <BarcodeButton onClick={() => setCaptureMode('barcode')} />
-        <VoiceCapture busy={nutrition.busy}
-          onCapture={async (dataUrl) => handleCaptureResult(await nutrition.submit('voice', dataUrl))} />
-      </MacroFooter>
-      <BarcodeCapture open={captureMode === 'barcode'} busy={nutrition.busy}
-        onClose={() => setCaptureMode(null)}
-        onDecode={async (upc) => {
-          const result = await nutrition.submit('barcode', upc);
-          if (result?.unknownUpc) { setCaptureMode(null); setUnknownUpc(result.upc); }
-          else { setCaptureMode(null); day.reload(); }
+      <LogTable byBucket={day.byBucket} sessions={day.budget?.sessions || []}
+        exerciseAvailable={Boolean(day.budget)}
+        coldLoading={coldLoading} capturePendingBucket={capturePending}
+        onAddTo={setAddingTo} onRowTap={setEditingRow} onConfirm={day.reload} addingTo={addingTo}
+        bucketHeaderAction={bucketHeaderAction}
+        onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
+        onOpenBarcode={openBarcode} captureBusy={nutrition.busy}
+        addSlot={addingTo ? (
+          <AddCombobox bucketId={addingTo}
+            onDone={() => { setAddingTo(null); day.reload(); }}
+            onCancel={() => setAddingTo(null)}
+            onSavedMeals={() => setSavedMealsFor(addingTo)} />
+        ) : null} />
+      <MacroFooter items={day.items} coachLine={coachLine} onCoachTap={onCoachTap} />
+      <QuickCaptureBar onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
+        onOpenBarcode={openBarcode} onAddTo={setAddingTo} busy={nutrition.busy} />
+      <BarcodeCapture open={captureMode === 'barcode'} busy={nutrition.busy} bucket={barcodeTargetBucket}
+        onClose={() => { setCaptureMode(null); setBarcodeTargetBucket(null); }}
+        onDecode={async (upc, bucket) => {
+          const result = await submitWithPending('barcode', upc, { bucket });
+          if (result?.unknownUpc) { setCaptureMode(null); setUnknownUpc(result.upc); return; }
+          setCaptureMode(null);
+          if (result?.moved) setCaptureNotice(`Moved to ${bucketLabel(result.mealTime)}`);
+          day.reload();
         }} />
       <CustomFoodSheet upc={unknownUpc} open={Boolean(unknownUpc)}
         onClose={() => setUnknownUpc(null)}

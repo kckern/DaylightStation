@@ -47,6 +47,21 @@ export class FoodItem {
   #sodium;
   /** @type {number} */
   #cholesterol;
+  // Lifecycle / group fields (PRD Themes 2–3)
+  /** @type {'item'|'group'} */
+  #kind;
+  /** @type {string|null} */
+  #parentId;
+  /** @type {string|null} */
+  #photoRef;
+  /** @type {boolean|undefined} — ABSENT means "legacy row, treat as settled" */
+  #settled;
+  /** @type {'user'|'auto'|null} */
+  #settledBy;
+  /** @type {string|null} */
+  #settledAt;
+  /** @type {'ai'|'catalog'|null} */
+  #microsSource;
 
   /**
    * @param {object} props
@@ -78,6 +93,15 @@ export class FoodItem {
     this.#sugar = data.sugar ?? 0;
     this.#sodium = data.sodium ?? 0;
     this.#cholesterol = data.cholesterol ?? 0;
+    // Lifecycle / group fields. `settled` is the one field whose ABSENCE is
+    // meaningful (legacy row = settled), so it is never defaulted here.
+    this.#kind = data.kind;
+    this.#parentId = data.parentId;
+    this.#photoRef = data.photoRef;
+    if (data.settled !== undefined) this.#settled = data.settled;
+    this.#settledBy = data.settledBy;
+    this.#settledAt = data.settledAt;
+    this.#microsSource = data.microsSource;
 
     Object.freeze(this);
   }
@@ -101,6 +125,15 @@ export class FoodItem {
   get sugar() { return this.#sugar; }
   get sodium() { return this.#sodium; }
   get cholesterol() { return this.#cholesterol; }
+  // Lifecycle / group getters
+  get kind() { return this.#kind; }
+  get parentId() { return this.#parentId; }
+  get photoRef() { return this.#photoRef; }
+  /** @returns {boolean|undefined} undefined = absent = legacy row (treat as settled) */
+  get settled() { return this.#settled; }
+  get settledBy() { return this.#settledBy; }
+  get settledAt() { return this.#settledAt; }
+  get microsSource() { return this.#microsSource; }
 
   // ==================== Computed Properties ====================
 
@@ -157,6 +190,14 @@ export class FoodItem {
       sugar: this.#sugar,
       sodium: this.#sodium,
       cholesterol: this.#cholesterol,
+      kind: this.#kind,
+      parentId: this.#parentId,
+      photoRef: this.#photoRef,
+      // Absence must survive a copy — never widen it to null/false.
+      ...(this.#settled !== undefined ? { settled: this.#settled } : {}),
+      settledBy: this.#settledBy,
+      settledAt: this.#settledAt,
+      microsSource: this.#microsSource,
       ...updates,
     });
   }

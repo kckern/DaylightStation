@@ -56,8 +56,10 @@ sign and `.toLocaleString()` for grouping.
 3. Computes `budget` via `computeDailyBudget` (Mifflin-St Jeor, see [Goals](#goals) below),
    using that weight and the goals' height/sex/activity/rate/floor.
 4. Sums `food` from that date's NutriList rows, **excluding** any row with
-   `status: 'pending' | 'rejected' | 'deleted'` — a pending entry (see
-   [Capture funnels](#capture-funnels)) does not count until accepted.
+   `status: 'pending' | 'rejected' | 'deleted'`. AI captures are committed
+   `accepted` the moment they are parsed (see [Capture funnels](#capture-funnels)),
+   so they count immediately; `settled` is an orthogonal review axis and never
+   affects the total.
 5. Sums `exercise` from that date's workout sessions (`calories`, tolerant of an array or a
    keyed object).
 6. Returns `{ date, budget, food, exercise, net, remaining, status, stale, sessions, goals }`
@@ -96,14 +98,62 @@ saved-meal logging (`SavedMealsService.logToDate`, when no explicit `mealTime` i
 either path accepts an explicit override — the bucket the user tapped "+ Add food…" in, or
 a `mealTime` chosen when moving a saved meal to a specific meal. Moving an already-logged
 row to a different bucket is a plain `PUT /nutrilist/{uuid} { mealTime }` from
-`EntryEditSheet`'s "Move to" row.
+`EntryEditSheet`'s "Move to" row. The Today view's quick-capture bar (below) defaults to
+this exact same hour mapping when it has no other meal to target.
+
+A second, disagreeing hour→meal split exists elsewhere in the pipeline: 5–11 morning,
+12–16 afternoon, 17–20 evening, else night. That mapping backs the clock default an AI
+capture's own parse is stamped with before any declared bucket or explicitly named meal
+is applied (see [Capture funnels](#capture-funnels) below), and the client-side guess used
+only to position an in-flight capture's loading placeholder before a result is known. The
+two mappings are deliberately independent; a future change to one is not a bug in the
+other, and a third one is never the fix for a mismatch between them.
+
+---
+
+## Loading and refresh
+
+Today's structure is permanent. `LogTable`'s four meal-bucket headings, their
+kcal subtotals, and each bucket's "+ Add food…" row render regardless of
+whether the day's data has arrived, is mid-refresh, or failed to load; only a
+bucket's entry list can be swapped for a loading placeholder, and only on a
+genuine cold start — the first time a date is opened in the tab, before
+anything has ever loaded for it. A bucket that already holds rows, or a day
+that has loaded once before, never shows that placeholder again, including
+during a background refresh.
+
+Reopening a day already seen in this tab renders it instantly from a small
+client-side cache while the real values load quietly behind it; when the
+fetch resolves, the displayed rows are replaced with no loading state ever
+reappearing. The same holds after any change made from the day view itself —
+logging, editing, confirming, or deleting an entry all trigger the identical
+quiet reload, never a spinner. This comes from the shared fetch hook's
+stale-while-revalidate mode; see
+[`docs/reference/frontend/design-system.md`](../frontend/design-system.md#data-fetching)
+for how the primitive itself works.
+
+The Exercise section's header follows the same discipline for a different
+reason: it appears once the day's budget has loaded, whether or not any
+workout is logged, so a workout-free day gets a stable header rather than one
+that pops in and out as sessions come and go.
 
 ---
 
 ## Capture funnels
 
-Four ways to get a food onto the log, all reachable from Today's per-bucket
-"+ Add food…" row and the footer's photo/barcode/voice icons.
+Four ways to get a food onto the log — type, speak, photograph, or scan a barcode — start
+from one of two places on Today.
+
+Each of the four meal sections carries its own voice, photo, and barcode buttons in its
+header, scoped to that meal — one tap from Breakfast's row starts a capture that targets
+Breakfast — alongside the "+ Add food…" row underneath for a typed sentence or type-ahead
+pick against the same meal.
+
+A single quick-capture bar (`QuickCaptureBar.jsx`) is fixed on Today independent of scroll
+position, offering the same four capture types with no meal of its own — it defaults to
+whichever meal the current time of day implies (the hour mapping in
+[Meal buckets](#meal-buckets) above). This is the day view's only such affordance: the
+footer below the log carries the macro summary and coach line, never capture controls.
 
 ### Type-ahead suggest (`AddCombobox`)
 
@@ -128,37 +178,171 @@ The same shape repeats everywhere a value is already known and doesn't need inte
 - **Saved-meal logging** (`SavedMealsSheet`, "Copy to today", below) — `POST
   /nutrition/meals/:id/log` writes NutriList rows directly.
 
-None of these touch the AI parsing pipeline, so none of them produce a pending entry.
+None of these touch the AI parsing pipeline.
 
-### Free-text sentence, photo, voice, barcode — the AI/pending path
+### Free-text sentence, photo, voice, barcode — the AI capture path
 
 Everything else — a typed sentence with nothing highlighted, a photo of a plate, a voice
 note, or a barcode scan — goes through the **same unified endpoint**,
 `POST /api/v1/health/nutrition/input { type: 'text'|'image'|'voice'|'barcode', content }`,
 which is the web transport onto the pre-existing Telegram nutrition-bot pipeline
 (`WebNutribotAdapter` → `NutribotInputRouter.handleText/handleImage/handleVoice/handleUpc`
-→ `LogFoodFromText`/`LogFoodFromImage`/`LogFoodFromVoice`/`LogFoodFromUPC`). Every one of
-those use cases **creates the NutriLog entry with `status: 'pending'`** and returns an
-inline choice keyboard — Accept/Discard for a parsed description, a portion-size picker for
-a resolved barcode product — captured as `{ messages: [...] }` in the JSON response (the
-same shape Telegram's `choices`/`callback_data` protocol uses).
+→ `LogFoodFromText`/`LogFoodFromImage`/`LogFoodFromVoice`/`LogFoodFromUPC`).
 
-`AddCombobox.submitSentence()` is the one call site that renders this inline: on success it
-sets `phase = 'review'` and shows `PendingConfirmCard`, which offers:
+An optional `bucket` field on that same request declares the meal the capture was
+launched from — a meal section's own header trigger sends that meal's id, the
+quick-capture bar sends its clock-derived default. A value outside the four meal ids is
+rejected with `400` before it reaches the pipeline at all — never guessed at, never
+passed through. Where the capture actually lands is one precedence, applied once
+regardless of transport: a meal named explicitly in what was said or captioned wins;
+failing that, the declared bucket; failing that, the clock default the capture was
+already parsed with. Only the first case — an explicit meal overriding a *different*
+declared bucket — is worth telling the person about, since every other outcome is just
+the capture landing where it was asked to: Today surfaces that one case as a "Moved to
+{meal}" notice on reload.
 
-- **Accept** — resolves the `callback_data` for "Accept" via
-  `POST /nutrition/callback { callbackData }`.
-- **Discard** — same mechanism, the "Discard" button's callback.
-- **Revise** — a follow-up `TextInput` that re-submits the correction as a fresh
-  `POST /nutrition/input { type: 'text' }` (e.g. "that was 2 slices, not 1").
+**There is no confirmation gate.** Those use cases still build a `pending` NutriLog
+internally, but the router commits it before returning: an auto-commit seam in
+`NutribotInputRouter` stamps `settled: false` on every item and runs the same accept path
+`AcceptFoodLog` uses (status → `accepted`, `acceptedAt` stamped, NutriList synced), so the
+entry is visible and counted straight away. The same seam decorates the response context
+the use case sends through, so the inline keyboard that reaches the client offers **Undo**
+and **Edit** — never Accept. Those two buttons reuse the existing `x` (discard) and `r`
+(revise) callback commands, and Undo *deletes*: `DiscardFoodLog` marks the log
+`deleted` and removes its NutriList rows. The message copy itself matches: a text or image
+capture's reply opens with "Logged ✓ — *n* items, *k* kcal" rather than a question, so the
+words read as a confirmation and not just the buttons. This applies to every transport —
+web, Telegram, and the coach's `log_food` alike.
 
-A pending entry already appears in the day's log (`GET /nutrilist/:date` returns every
-status, unfiltered) with its full calorie value shown on the row — but `BudgetService`
-excludes `pending` rows from the food total, so the equation doesn't move until it's
-accepted. Photo and voice captures (`PhotoCapture`/`VoiceCapture` → `TodayView`) and a
-known-barcode hit (`BarcodeCapture` → `TodayView`, when the result isn't `unknownUpc`)
-submit through the identical `/nutrition/input` call and reload the day afterward; the
-combobox's inline review card is the funnel's confirmation surface today.
+Two flows are deliberately exempt from the accept half of the seam:
+
+- **Scale** captures keep their multi-step composition flow (tare → density → describe)
+  and still mint a `pending` NutriLog for the duration of that flow. A pending row never
+  syncs into the day's NutriList, so it doesn't appear among Today's normal rows and
+  doesn't count toward the budget; `GET /nutrition/pending?date=` surfaces it separately,
+  and Today renders it in a **NEEDS REVIEW** banner above the meal buckets, with its own
+  Accept/Discard. That endpoint returns pending rows regardless of origin, but every
+  other capture commits on arrival (above), so Today filters the banner to scale-origin
+  rows.
+- **Barcode** has no Accept gate to retire — it commits at its portion-selection step
+  (`SelectUPCPortion`). The seam still stamps its items unsettled so the rows that step
+  writes land the same way.
+
+Messages are captured as `{ messages: [...] }` in the JSON response (the same shape
+Telegram's `choices`/`callback_data` protocol uses).
+
+The accept path runs with `autoReport: false`. Every capture that reaches it already commits
+on arrival (above), so `findPending` is essentially always empty by the time it runs — firing
+the daily report on every request would otherwise render an image, send messages, and kick the
+coaching orchestrator inside *every* capture. Manual Accept paths (the scale's own Accept
+button) keep the default, so the report still fires normally when the day's last pending item
+is confirmed by hand.
+
+While an AI capture is being analyzed, Today shows a placeholder row inline in
+the meal bucket the result will land in — never a page-level spinner — so the
+wait is visible exactly where the outcome will appear. It clears once the
+capture resolves, whether that means food was found, none was, or the request
+failed outright.
+
+There is no post-capture review card on web. A response's messages carry choices (the
+Undo/Edit keyboard) only when food was actually detected — `TodayView` reloads the day
+when it sees any choices, and otherwise (an empty detection, e.g. "no food found")
+surfaces the message text as a one-line notice instead, so a miss is still visible rather
+than silently dropped. `AddCombobox`'s sentence submit follows the same shape directly:
+on success it just reloads — no confirmation step of its own.
+
+A captured entry appears in the day's log (`GET /nutrilist/:date` returns every status,
+unfiltered) and counts toward the budget immediately, carrying `settled: false`. It
+renders like any other row: tapping it opens `EntryEditSheet` to edit or delete, and its
+"Unconfirmed" badge carries the one-tap settle button (see
+[Unsettled vs. settled](#unsettled-vs-settled) below). Photo and voice captures
+(`PhotoCapture`/`VoiceCapture` → `TodayView`) and a known-barcode hit (`BarcodeCapture` →
+`TodayView`, when the result isn't `unknownUpc`) submit through the identical
+`/nutrition/input` call and follow the same reload-or-notice handling.
+
+### Groups (composite dishes)
+
+A **group** is a dish or course within a meal, not the meal itself — a smoothie and its
+ingredients, spaghetti with its noodles/sauce/cheese, or an appetizer/main/dessert logged
+as siblings in one dinner. Meal buckets (Breakfast/Lunch/Dinner/Snacks, above) are the
+coarse container a day's food falls into; a group is a finer subdivision inside one
+bucket, and grouping never changes which bucket anything lands in.
+
+A group is a NutriList row like any other — its own `uuid`, its own `mealTime`, present in
+the same flat per-date array as everything else — but it carries `kind: 'group'` and every
+nutrition field (`calories`, `protein`, `carbs`, `fat`, …) pinned to zero. Its members are
+ordinary rows (`kind: 'item'`, the default) carrying `parentId` set to the group's id. A
+group row never holds nutrition itself: day and meal totals sum every row in the flat
+list, so the group's zero contributes nothing and each food is counted exactly once, on
+its own member row.
+
+The AI capture path (free text or photo) is the only producer of groups. When the parse
+tags two or more items with the same `dish` name, the parser synthesizes one group entry
+ahead of them and stamps that group's id onto each member's `parentId`; an item with no
+`dish` stays standalone. A parse where nothing carries a `dish` produces an ordinary flat
+list of items — grouping is additive, never a mode the rest of the pipeline branches on.
+
+Today's log renders a group collapsed by default, showing a rolled-up calorie total
+computed by summing its members at read time (never a stored value on the group row
+itself); tapping it expands the row to show its members indented beneath it. A member
+whose `parentId` doesn't resolve to any row on the day — a deleted or otherwise missing
+parent — still renders as its own top-level row rather than disappearing: no logged food
+is ever hidden for having a broken group link.
+
+Editing a group, from its own edit sheet:
+
+- **Rename** changes the group's own label.
+- **Move to** another meal bucket cascades the same `mealTime` to every member
+  server-side, so the whole dish moves together instead of leaving members behind in the
+  old bucket — provided the group row itself carries a `date`. A group somehow missing one
+  cascades to nothing, and the edit sheet surfaces a warning naming the stranded item count
+  rather than closing as if the move fully succeeded.
+- **Scale** (a coarser ×½/×¾/×1½/×2 set than a single item gets) scales every member's
+  amount and nutrition; the group row itself has nothing to scale.
+- **Delete** prompts first with a count ("Delete Spaghetti and its 3 items?"), then removes
+  every member and, once all of them are confirmed gone, the group row itself.
+
+### Photo persistence
+
+A photo capture that produces at least one food item is persisted, not thrown away after
+the AI call. `PhotoStore` (`backend/src/1_adapters/persistence/PhotoStore.mjs`) writes the
+original under the capturing user's own data tree —
+`users/{userId}/lifelog/nutrition/photos/{photoRef}.jpg` — plus a best-effort
+`{photoRef}.thumb.jpg` thumbnail (via `jimp`; a decode failure there is logged and
+swallowed, never blocking the save). `photoRef` is a short opaque id (`ph_` + base62) minted
+fresh per photo, written exclusively (a collision throws rather than silently overwriting).
+
+**Where the ref lands.** A grouped (multi-dish) parse stamps `photoRef` on each synthesized
+GROUP row, not on its members — one photo can produce two sibling groups (two plates in
+one frame) plus a standalone item, and all three top-level rows share the same ref. A
+single ungrouped item gets the ref directly. A group's members never carry their own
+`photoRef`; the row above them already does.
+
+**Failure posture.** Photo persistence can never block food logging. A `PhotoStore`
+failure (disk error, an undecodable buffer, no store configured at all) is caught, logged
+as a warning, and the entry is saved exactly as if no photo had been supplied — no
+`photoRef`, nothing else different.
+
+**Serving.** `GET /nutrition/photos/:photoRef` streams the file back, resolved through the
+same `PhotoStore`. An optional `?size=thumb` query param serves the 320px thumbnail
+variant, falling back to the original photo when no thumbnail file exists on disk (the
+same jimp failure at capture time that can skip writing one); rows in the day log request
+this variant, so a missing thumbnail file never breaks the row's image, only its size. The
+route always resolves the photo under the household's own user —
+there is no `userId` query parameter, deliberately: this program is single-user, nothing
+sends one, and honoring a client-supplied value would let it point the containment check
+at an attacker-chosen base directory. `photoRef` is checked against a strict `ph_`+base62
+allowlist before it touches any path, and the resolved path is independently confirmed to
+stay inside the user's photo directory after the join. Content-Type is always set
+explicitly to `image/jpeg` (plus `X-Content-Type-Options: nosniff`) from the fixed
+`.jpg`/`.thumb.jpg` naming PhotoStore always writes — never taken from the client, and
+never left to Express's extension-sniffing to get right on its own. `save()` does not
+inspect magic bytes, so "the stored file is actually a JPEG" is an assumption the fixed
+extension makes true in practice, not something enforced at write time.
+
+**Retention.** Photos are kept indefinitely alongside the log — there is no deletion path
+and no garbage collection. A photo may be referenced by more than one entry, so deleting a
+log entry never deletes its photo file.
 
 ### Barcode → unknown UPC → custom food
 
@@ -166,8 +350,7 @@ combobox's inline review card is the funnel's confirmation surface today.
 `@zxing/browser`, and always offers a manual-UPC text field as the same submit path (and
 the deterministic test seam). A decode calls `nutrition.submit('barcode', upc)`:
 
-- **Known UPC** (catalog or gateway hit) — proceeds through the pending/portion-pick path
-  above.
+- **Known UPC** (catalog or gateway hit) — proceeds through the portion-pick path above.
 - **Unknown UPC** (`result.unknownUpc === true`) — opens `CustomFoodSheet` with that UPC.
 
 `CustomFoodSheet.save()` does two calls: `POST /nutrition/catalog { name, calories,
@@ -181,6 +364,33 @@ gateway — a user's custom mapping wins and can override bad upstream data. Res
 same UPC after creating a custom food resolves from the catalog with no gateway round trip
 and no "unknown" sheet. A UPC that still misses both the catalog and the gateway returns
 `{ success: false, unknownUpc: true, upc }`.
+
+---
+
+## Unsettled vs. settled
+
+Every nutrition-log row carries two independent axes. `status` decides whether the row
+exists and counts toward the day's calories — `accepted` counts, `pending`/`rejected`/
+`deleted` don't (see [the budget equation](#the-budget-equation--one-server-side-home)
+above). `settled` decides whether a person has ratified the machine's estimate; it never
+affects whether a row counts.
+
+A row reads as **settled** when `settled` is `true`, or when the field is **absent** — no
+write path ever defaults it in, so a row with no `settled` key at all (every row that
+predates this tracking) reads as already-ratified with no backfill needed. A row reads as
+**unsettled** only when `settled` is explicitly `false`, which is the state every AI
+capture is stamped into the moment it's parsed (see [Capture funnels](#capture-funnels)
+above).
+
+An unsettled row also **auto-settles by age**: once it's more than three days old it
+presents as settled even though the stored value is still `false`. This is computed each
+time the day is read, not written back — nothing ever mutates the row to auto-settle it,
+and no scheduled job runs the check.
+
+A person settles a row two ways: any successful edit (a `PUT` on the row, from
+`EntryEditSheet` or elsewhere) stamps `settled: true, settledBy: 'user'` alongside
+whatever else changed, and an unsettled row's "Unconfirmed" badge carries its own
+one-tap confirm button that sends that same stamp with no other field changed.
 
 ---
 
@@ -247,18 +457,20 @@ edit UI to match.
 
 ---
 
-## Coach `log_food` (pending-only)
+## Coach `log_food`
 
 `backend/src/3_applications/agents/health-coach/tools/NutritionActionToolFactory.mjs`
 registers `log_food` — the coach's only write path into nutrition. It takes `{ userId,
 description }` and calls the identical text pipeline the web combobox's sentence path
 uses (`nutritionInput.process({ type: 'text', content: description, userId })` —
-`nutritionInput` is `WebNutribotAdapter`). Because it can only ever reach `handleText` and
-never the accept/callback pipeline, **every entry the coach logs is created `pending`** —
-the coach has no code path to `AcceptFoodLog`, so it cannot accept a meal on the user's
-behalf. It returns `{ status: 'pending_confirmation', summary }` (`summary` is the parsed
-itemization's first response line, e.g. "🟡 2 eggs — 140 kcal"), which lets the model tell
-the user it logged something *and* that it still needs confirming in the app.
+`nutritionInput` is `WebNutribotAdapter`). It reaches `handleText`, which means it goes
+through the same auto-commit seam as every other transport: **the coach's entries are
+logged immediately as `accepted` + `settled: false`**, with no separate acceptance gate
+for this transport — it behaves exactly like a typed sentence submitted from the combobox.
+It returns
+`{ status: 'logged', summary }` (`summary` is the parsed itemization's first response line,
+e.g. "🟡 2 eggs — 140 kcal"), which lets the model tell the user what landed; the user
+reviews or undoes it in the app.
 
 ---
 
@@ -323,7 +535,9 @@ All under `/api/v1/health/`, from `backend/src/4_api/v1/routers/health.mjs`:
 | `POST /nutrition/catalog/backfill` | seed the catalog from existing log history |
 | `GET /nutrition/meals`, `POST /nutrition/meals`, `POST /nutrition/meals/:id/log`, `DELETE /nutrition/meals/:id` | saved meals |
 | `POST /nutrition/input` | unified capture entry point (`type: text\|image\|voice\|barcode`) |
-| `POST /nutrition/callback` | resolve a pending entry's Accept/Discard/portion choice |
+| `POST /nutrition/callback` | resolve a capture's Undo/Edit/portion choice, or a scale-pending Accept/Discard |
+| `GET /nutrition/pending?date=` | pending NutriLogs for a date (the scale's NEEDS REVIEW banner) |
+| `GET /nutrition/photos/:photoRef` | serve a captured photo (see [Photo persistence](#photo-persistence) below) |
 | `GET /medical`, `POST /medical`, `DELETE /medical/:id` | medical readings |
 | `GET /dashboard` | aggregate summary (weight/nutrition/sessions/goals) consumed by `TodayView`'s coach-line footer |
 | `GET /mentions/all` (separate router, `health-mentions.mjs`) | `@`-mention autocomplete for the coach chat composer (periods, recent days, metrics) |

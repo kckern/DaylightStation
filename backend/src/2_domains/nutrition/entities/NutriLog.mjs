@@ -30,6 +30,16 @@ function foodItemRecord(item) {
     sugar: item.sugar,
     sodium: item.sodium,
     cholesterol: item.cholesterol,
+    // Lifecycle / group fields must survive every FoodItem -> record -> NutriLog
+    // round-trip (`with`, `setItems`, `updateItem` all go through here).
+    // `settled` is absence-sensitive: absent = legacy row = treat as settled.
+    kind: item.kind,
+    parentId: item.parentId,
+    photoRef: item.photoRef,
+    ...(item.settled !== undefined ? { settled: item.settled } : {}),
+    settledBy: item.settledBy,
+    settledAt: item.settledAt,
+    microsSource: item.microsSource,
   };
 }
 

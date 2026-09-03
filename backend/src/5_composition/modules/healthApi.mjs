@@ -16,6 +16,7 @@ import { YamlSavedMealsDatastore } from '#adapters/persistence/yaml/YamlSavedMea
 import { SavedMealsService } from '#apps/health/SavedMealsService.mjs';
 import { YamlMedicalReadingsDatastore } from '#adapters/persistence/yaml/YamlMedicalReadingsDatastore.mjs';
 import { MedicalReadingsService } from '#apps/health/MedicalReadingsService.mjs';
+import { PhotoStore } from '#adapters/persistence/PhotoStore.mjs';
 import { dataService } from '../runtimePersistence.mjs';
 import { nowDate } from '#system/utils/time.mjs';
 import { v4 as uuidv4 } from 'uuid';
@@ -118,6 +119,16 @@ export function createHealthApiRouter(config) {
     logger,
   });
 
+  // A SEPARATE PhotoStore instance from the one createNutribotServices
+  // builds for the image use case (bootstrap.mjs) — same pattern this file
+  // already uses for goals/savedMeals/medical datastores: each composition
+  // path constructs its own adapter instance off the shared `dataService`,
+  // rather than threading one instance across composition boundaries. Both
+  // instances resolve the identical on-disk
+  // users/{userId}/lifelog/nutrition/photos directory, so this is
+  // operationally equivalent to a singleton without actually being one.
+  const photoStore = new PhotoStore({ dataService, logger });
+
   return createHealthRouter({
     healthService: healthServices.healthService,
     healthOperations,
@@ -127,6 +138,7 @@ export function createHealthApiRouter(config) {
     budgetService,
     savedMealsService,
     medicalService,
+    photoStore,
     logger
   });
 }

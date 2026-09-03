@@ -8,9 +8,14 @@ const logger = createAppLogger('health').child('barcode-capture');
 /**
  * Camera barcode scan with a manual-UPC field that is ALWAYS present —
  * it is the permission-denied fallback and the test seam: both paths call
- * the same onDecode(upc).
+ * the same onDecode(upc, bucket).
+ *
+ * `bucket` names which meal launched this scan (set by the caller before
+ * opening the sheet); it is forwarded back unchanged on decode so the
+ * caller can apply it without needing to track "which button opened this
+ * modal" itself. Undefined for the footer's clock-based launch.
  */
-export function BarcodeCapture({ open, onClose, onDecode, busy }) {
+export function BarcodeCapture({ open, onClose, onDecode, busy, bucket }) {
   const videoRef = useRef(null);
   const [manualUpc, setManualUpc] = useState('');
   const [cameraState, setCameraState] = useState('starting'); // starting | live | denied
@@ -34,7 +39,7 @@ export function BarcodeCapture({ open, onClose, onDecode, busy }) {
             try {
               const codes = await detector.detect(videoRef.current);
               if (stopped) return; // sheet closed while detect() was in flight — don't fire a spurious submit
-              if (codes.length) { logger.info('decode.native', {}); return onDecode(codes[0].rawValue); }
+              if (codes.length) { logger.info('decode.native', {}); return onDecode(codes[0].rawValue, bucket); }
             } catch { /* frame not ready */ }
             if (stopped) return;
             requestAnimationFrame(tick);
@@ -44,7 +49,7 @@ export function BarcodeCapture({ open, onClose, onDecode, busy }) {
           const { BrowserMultiFormatReader } = await import('@zxing/browser');
           const reader = new BrowserMultiFormatReader();
           zxingControls = await reader.decodeFromVideoElement(videoRef.current, (result) => {
-            if (result && !stopped) { logger.info('decode.zxing', {}); onDecode(result.getText()); }
+            if (result && !stopped) { logger.info('decode.zxing', {}); onDecode(result.getText(), bucket); }
           });
         }
       } catch (err) {
@@ -72,7 +77,7 @@ export function BarcodeCapture({ open, onClose, onDecode, busy }) {
           value={manualUpc} onChange={(e) => setManualUpc(e.target.value)}
           aria-label="Manual UPC entry" />
         <Button size="sm" loading={busy} disabled={!manualUpc.trim()}
-          onClick={() => onDecode(manualUpc.trim())}>Look up</Button>
+          onClick={() => onDecode(manualUpc.trim(), bucket)}>Look up</Button>
       </div>
     </Sheet>
   );

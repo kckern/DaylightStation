@@ -5,8 +5,9 @@ import { createTool } from '../../ports/ITool.mjs';
 
 /**
  * Registers `log_food` — the coach's WRITE path into nutrition. It runs the
- * same text pipeline the web AddBar uses, so entries land as PENDING and the
- * human confirms them in the UI. The coach can never auto-accept a meal.
+ * same text pipeline the web AddBar uses, so entries land IMMEDIATELY as
+ * counted log entries marked unsettled (`settled: false`) — there is no
+ * confirmation gate on any transport. The human reviews or undoes afterwards.
  */
 export class NutritionActionToolFactory extends ToolFactory {
   static domain = 'health-coach';
@@ -25,10 +26,11 @@ export class NutritionActionToolFactory extends ToolFactory {
         name: 'log_food',
         description:
           'Log food the user described in conversation. Parses the description '
-          + 'into itemized entries with estimated macros and creates a PENDING '
-          + 'log the user must confirm in the Health app — you cannot accept it '
-          + 'for them. Use when the user asks you to log/record a meal. Returns '
-          + '{ status: "pending_confirmation", summary }.',
+          + 'into itemized entries with estimated macros and logs them '
+          + 'immediately — the entry counts toward the day right away and is '
+          + 'marked unsettled so the user can review or undo it in the Health '
+          + 'app. Use when the user asks you to log/record a meal. Returns '
+          + '{ status: "logged", summary }.',
         parameters: {
           type: 'object',
           properties: {
@@ -45,8 +47,8 @@ export class NutritionActionToolFactory extends ToolFactory {
             const result = await nutritionInput.process({
               type: 'text', content: description.trim(), userId,
             });
-            const summary = result?.messages?.[0]?.text || 'Logged (pending confirmation)';
-            return { status: 'pending_confirmation', summary };
+            const summary = result?.messages?.[0]?.text || 'Logged (unsettled — review or undo in the Health app)';
+            return { status: 'logged', summary };
           } catch (err) {
             return { error: err?.message || String(err) };
           }

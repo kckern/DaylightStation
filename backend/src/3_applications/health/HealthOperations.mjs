@@ -1,3 +1,6 @@
+import { presentSettlement } from '#domains/nutrition/services/settlement.mjs';
+import { nowTs24 } from '#system/utils/time.mjs';
+
 const NUTRITION_UPDATE_FIELDS = new Set([
   'item', 'name', 'unit', 'amount', 'grams', 'noom_color', 'color',
   'calories', 'fat', 'carbs', 'protein', 'fiber', 'sugar', 'sodium', 'cholesterol', 'date',
@@ -5,6 +8,11 @@ const NUTRITION_UPDATE_FIELDS = new Set([
   // (Breakfast/Lunch/Dinner/Snacks) — the today-view combobox (F5) and edit
   // sheet (F6) both PUT this field expecting it to persist.
   'mealTime',
+  // settled/settledBy/settledAt: a human edit (or an explicit one-tap
+  // confirm, `{ settled: true }` alone) ratifies the machine's estimate.
+  // Without these in the whitelist, updateNutritionItem's stamp below is
+  // silently dropped before it ever reaches the store.
+  'settled', 'settledBy', 'settledAt',
 ]);
 
 /**
@@ -76,8 +84,10 @@ export class HealthOperations {
     return this.today();
   }
 
-  findNutritionItemsByDate(username, date) {
-    return this.nutritionItems.findByDate(username, date);
+  async findNutritionItemsByDate(username, date) {
+    const rows = await this.nutritionItems.findByDate(username, date);
+    const today = this.today();
+    return rows.map((row) => ({ ...row, ...presentSettlement(row, today) }));
   }
 
   findNutritionItem(username, id) {
@@ -111,14 +121,75 @@ export class HealthOperations {
   }
 
   async updateNutritionItem(username, id, changes) {
-    if (!await this.nutritionItems.findByUuid(username, id)) return null;
-    const allowedChanges = Object.fromEntries(
-      Object.entries(changes).filter(([field]) => NUTRITION_UPDATE_FIELDS.has(field)),
-    );
-    return {
-      item: await this.nutritionItems.update(username, id, allowedChanges),
-      changedFields: Object.keys(allowedChanges),
+    const existing = await this.nutritionItems.findByUuid(username, id);
+    if (!existing) return null;
+    // Any successful edit is a human touch ratifying the machine's estimate —
+    // settle the row. A body of just `{ settled: true }` (the one-tap
+    // confirm) flows through this same stamp. Never conditional/defaulted:
+    // this is an explicit write, not a fallback. The stamp is merged BEFORE
+    // the whitelist filter (not after) so NUTRITION_UPDATE_FIELDS stays the
+    // single real gate on what reaches the store — settled/settledBy/settledAt
+    // must be present in that Set or this stamp is silently dropped too.
+    const stampedChanges = {
+      ...changes,
+      settled: true,
+      settledBy: 'user',
+      settledAt: nowTs24(),
     };
+    const allowedChanges = Object.fromEntries(
+      Object.entries(stampedChanges).filter(([field]) => NUTRITION_UPDATE_FIELDS.has(field)),
+    );
+    const item = await this.nutritionItems.update(username, id, allowedChanges);
+    const cascadedIds = await this.#cascadeMealTimeToChildren(username, existing, allowedChanges);
+    return {
+      item,
+      changedFields: Object.keys(allowedChanges),
+      cascadedIds,
+    };
+  }
+
+  /**
+   * A `mealTime` move on a GROUP row ("move this dish to Dinner") must carry
+   * its children with it — the UI shows a group as one collapsed unit, so a
+   * child left behind in the old bucket would be a silent, confusing
+   * regression. Gated deliberately narrow:
+   *  - only when `mealTime` is actually one of the fields this edit touched
+   *    (a rename or a portion edit on a group must NOT go move its children);
+   *  - only when the EDITED row's own `kind` is `'group'` — never inferred
+   *    from "does anything reference this row as a parent", so an ordinary
+   *    item update can never accidentally cascade even if some unrelated
+   *    row happens to carry a matching parentId.
+   * Runs client-of-one call at a time is not required here (this is one
+   * server-side operation, not N client PUTs) — a client-side loop is
+   * exactly what this method exists to replace, so a mid-way failure here
+   * cannot leave the day half-moved from the browser's point of view.
+   *
+   * CROSS-REFERENCE: EntryEditSheet.jsx's group mode gates the exact same
+   * way (`row.kind === 'group'`), while LogTable.jsx's group PRESENTATION
+   * gates the opposite way — on "does this row have resolved children" —
+   * by design (a row can carry children without being marked kind:'group'
+   * and LogTable must still show them). The two decisions are equivalent
+   * today only because every write path stamps kind:'group' before a row
+   * is ever given children (groupParsedItems.mjs) — keep this gate and
+   * EntryEditSheet.jsx's in sync if that invariant ever changes.
+   * @private
+   */
+  async #cascadeMealTimeToChildren(username, groupRow, allowedChanges) {
+    if (groupRow.kind !== 'group') return [];
+    if (!Object.prototype.hasOwnProperty.call(allowedChanges, 'mealTime')) return [];
+    if (groupRow.date == null) return [];
+
+    const siblings = await this.nutritionItems.findByDate(username, groupRow.date);
+    const children = (siblings || []).filter((row) => {
+      if (row.parentId == null) return false;
+      return row.parentId === groupRow.id || row.parentId === groupRow.uuid;
+    });
+
+    await Promise.all(children.map((child) => (
+      this.nutritionItems.update(username, child.uuid ?? child.id, { mealTime: allowedChanges.mealTime })
+    )));
+
+    return children.map((child) => child.uuid ?? child.id);
   }
 
   async deleteNutritionItem(username, id) {
@@ -130,8 +201,19 @@ export class HealthOperations {
     return !!this.nutritionInput;
   }
 
-  processNutritionInput(input) {
-    return this.nutritionInput.process(input);
+  /**
+   * @param {Object} input
+   * @param {string} input.type - "text" | "voice" | "image" | "barcode"
+   * @param {string} [input.content]
+   * @param {string} input.userId
+   * @param {string} [input.bucket] - Pre-validated meal-time bucket id the
+   *   capture was launched from (validated by the API router against the four
+   *   known ids before this is ever called). Threaded straight through to the
+   *   nutribot input pipeline, where the router seam applies the precedence:
+   *   explicit-in-utterance/caption > bucket > clock default.
+   */
+  processNutritionInput({ type, content, userId, bucket }) {
+    return this.nutritionInput.process({ type, content, userId, bucket });
   }
 
   processNutritionCallback(input) {

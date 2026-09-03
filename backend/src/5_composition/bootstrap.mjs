@@ -253,6 +253,7 @@ import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotCo
 import { dataService } from './runtimePersistence.mjs';
 import { YamlNutriListDatastore } from '#adapters/persistence/yaml/YamlNutriListDatastore.mjs';
 import { FetchImageDownloader } from '#adapters/nutribot/FetchImageDownloader.mjs';
+import { PhotoStore } from '#adapters/persistence/PhotoStore.mjs';
 import { FilesystemFoodIconCatalog } from '#adapters/nutribot/FilesystemFoodIconCatalog.mjs';
 import { LatestReconciliationReader } from '#apps/health/LatestReconciliationReader.mjs';
 import { NodePromiseDeadline } from '#adapters/scheduling/NodePromiseDeadline.mjs';
@@ -2210,6 +2211,11 @@ export async function createNutribotServices(config) {
     logger
   });
 
+  // Photo persistence for captured food images (Task 2.3). Same adapter
+  // instantiation shape as healthApi.mjs's photo-serving route — both share
+  // the users/{userId}/lifelog/nutrition/photos directory via dataService.
+  const photoStore = new PhotoStore({ dataService, logger });
+
   // NOTE: Legacy nutriCoachStore removed — coaching is now handled by
   // HealthCoachAgent via healthStore.loadCoachingData/saveCoachingData
 
@@ -2270,6 +2276,7 @@ export async function createNutribotServices(config) {
     pause,
     agentOrchestrator,
     imageDownloader: new FetchImageDownloader(),
+    photoStore,
     logger
   });
 

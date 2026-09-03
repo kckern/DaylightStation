@@ -84,10 +84,15 @@ export class WebNutribotAdapter {
    * @param {string} [input.content] - Text/barcode string, or (for voice/image)
    *   a `data:<mime>;base64,...` data URL carrying the captured bytes.
    * @param {string} input.userId - Username
+   * @param {string} [input.bucket] - Pre-validated meal-time bucket id
+   *   ("morning" | "afternoon" | "evening" | "night") the capture was launched
+   *   from. Validated by the HTTP boundary (health.mjs) before it ever reaches
+   *   here — this adapter just threads it onto the event for the router's
+   *   precedence seam (NutribotInputRouter#resolveMealTime).
    * @returns {Promise<Object>} Captured response from the bot pipeline
    */
   async process(input) {
-    const { type, content, userId } = input;
+    const { type, content, userId, bucket } = input;
     const conversationId = `web:${userId}`;
 
     const event = {
@@ -96,7 +101,7 @@ export class WebNutribotAdapter {
       platform: 'web',
       platformUserId: userId,
       messageId: null,
-      payload: {},
+      payload: { bucket: bucket || null },
     };
 
     // Map input type to router event type and payload shape
@@ -149,13 +154,13 @@ export class WebNutribotAdapter {
     try {
       switch (routerType) {
         case 'text':
-          await this.#inputRouter.handleText(event, responseContext);
+          routerResult = await this.#inputRouter.handleText(event, responseContext);
           break;
         case 'voice':
-          await this.#inputRouter.handleVoice(event, responseContext);
+          routerResult = await this.#inputRouter.handleVoice(event, responseContext);
           break;
         case 'image':
-          await this.#inputRouter.handleImage(event, responseContext);
+          routerResult = await this.#inputRouter.handleImage(event, responseContext);
           break;
         case 'upc':
           routerResult = await this.#inputRouter.handleUpc(event, responseContext);
@@ -176,6 +181,17 @@ export class WebNutribotAdapter {
       logged: captured.logged,
       responseText,
     };
+
+    // Task 4.1 — surface the meal-time precedence outcome (computed once, in
+    // NutribotInputRouter#resolveMealTime) to the HTTP caller: which bucket the
+    // capture actually landed in, and whether that differs from the bucket the
+    // request asked for (an explicitly-named meal beat it) — the "moved to
+    // Lunch" cue. Only capture paths (#capture-wrapped handlers) set these;
+    // callback/revision-only responses simply won't have them.
+    if (routerResult && (routerResult.mealTime !== undefined || routerResult.moved !== undefined)) {
+      response.mealTime = routerResult.mealTime ?? null;
+      response.moved = routerResult.moved === true;
+    }
 
     // Barcode lookups surface use-case-level fields (success, unknownUpc, upc,
     // product, nutrilogUuid) to the HTTP caller — `messages` from the capture
