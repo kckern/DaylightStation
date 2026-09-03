@@ -83,6 +83,11 @@
   &__kcal { text-align: right; font-variant-numeric: tabular-nums; }
   &--readonly { grid-template-columns: 1fr auto 3.5rem; color: var(--ds-text-mid); }
 
+  // In-place AI-capture wait row (TodayView's capturePending) — same
+  // readonly-ish layout as an exercise credit row, just quieter (italic,
+  // low-emphasis text) since nothing here is tappable yet.
+  &--pending { grid-template-columns: 1fr; color: var(--ds-text-low); font-style: italic; }
+
   // Group row: no dot slot (the expand control, a sibling button, takes
   // that visual position instead — see `&__expand` below).
   &--group { grid-template-columns: 1fr auto 3.5rem; }

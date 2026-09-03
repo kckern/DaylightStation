@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { UnstyledButton } from '@mantine/core';
+import { LoadingState } from '@/lib/ui';
 import { BUCKETS, UNGROUPED } from './mealBuckets.js';
 import { EntryRow } from './EntryRow.jsx';
 import { groupRows } from './groupRows.js';
@@ -12,9 +13,17 @@ import { groupRows } from './groupRows.js';
 // to "fix" it into double-counting if a group ever did carry a value.
 const kcal = (rows) => Math.round(rows.reduce((s, r) => s + (Number(r.calories) || 0), 0));
 
-function Section({ label, rows, onAdd, onRowTap, onConfirm, headerAction }) {
+function Section({ label, rows, onAdd, onRowTap, onConfirm, headerAction, coldLoading, pending }) {
   const [expanded, setExpanded] = useState(() => new Set());
   const entries = groupRows(rows);
+  // The section frame (heading + kcal + add row) is PERMANENT structure —
+  // it never depends on whether data has arrived yet. Only the entry list
+  // itself swaps for a shimmer, and only on a true cold start (this bucket
+  // has no rows AND the day hasn't loaded once yet): a background
+  // revalidation (SWR) or a bucket that is genuinely empty must never show
+  // this — see LogTable's `coldLoading` prop, computed once by the caller
+  // from `day.loading && !day.items.length`.
+  const showShimmer = coldLoading && rows.length === 0;
 
   const toggle = (key) => setExpanded((prev) => {
     const next = new Set(prev);
@@ -31,7 +40,8 @@ function Section({ label, rows, onAdd, onRowTap, onConfirm, headerAction }) {
           {headerAction || null}
         </span>
       </header>
-      {entries.map(({ row, children, rollup }) => {
+      {showShimmer ? <LoadingState label={`${label} entries`} rows={2} /> : null}
+      {!showShimmer && entries.map(({ row, children, rollup }) => {
         const key = row.uuid ?? row.id;
         // Render as a group whenever groupRows() actually attached
         // children — NEVER gate this on row.kind. groupRows() attaches a
@@ -73,6 +83,15 @@ function Section({ label, rows, onAdd, onRowTap, onConfirm, headerAction }) {
           </div>
         );
       })}
+      {/* In-place AI-capture wait: shown where the result will land (this
+          bucket), never as a page-level spinner. `aria-busy` on the row
+          itself, not the whole section — the heading/kcal/add-row above
+          stay fully interactive while a capture is in flight. */}
+      {pending ? (
+        <div className="health-row health-row--pending" aria-busy="true">
+          <span className="health-row__name">Analyzing…</span>
+        </div>
+      ) : null}
       {onAdd ? (
         <UnstyledButton className="health-meal__add" onClick={onAdd}>+ Add food…</UnstyledButton>
       ) : null}
@@ -80,7 +99,10 @@ function Section({ label, rows, onAdd, onRowTap, onConfirm, headerAction }) {
   );
 }
 
-export function LogTable({ byBucket, sessions = [], onAddTo, onRowTap, onConfirm, addSlot, addingTo, bucketHeaderAction }) {
+export function LogTable({
+  byBucket, sessions = [], exerciseAvailable = false, onAddTo, onRowTap, onConfirm,
+  addSlot, addingTo, bucketHeaderAction, coldLoading = false, capturePendingBucket = null,
+}) {
   const orphans = byBucket.get(null) || [];
   return (
     <div className="health-log">
@@ -90,16 +112,22 @@ export function LogTable({ byBucket, sessions = [], onAddTo, onRowTap, onConfirm
           <div key={b.id}>
             <Section label={b.label} rows={rows}
               onAdd={() => onAddTo(b.id)} onRowTap={onRowTap} onConfirm={onConfirm}
-              headerAction={bucketHeaderAction ? bucketHeaderAction(b.id, rows, b.label) : null} />
+              headerAction={bucketHeaderAction ? bucketHeaderAction(b.id, rows, b.label) : null}
+              coldLoading={coldLoading} pending={capturePendingBucket === b.id} />
             {addingTo === b.id && addSlot ? addSlot : null}
           </div>
         );
       })}
-      {sessions.length ? (
+      {/* Gated on `exerciseAvailable` (budget data has arrived), NOT on
+          `sessions.length` — a zero-session day is a real, stable answer
+          ("no workout yet today"), not an absence of data. Gating on length
+          alone made the header pop in and out as sessions changed, which is
+          exactly the "chrome dissolves" problem this task exists to fix. */}
+      {exerciseAvailable || sessions.length ? (
         <section className="health-meal health-meal--exercise">
           <header className="health-meal__header">
             <h4 className="health-meal__label">Exercise</h4>
-            <span className="health-meal__kcal">+{kcal(sessions)} kcal</span>
+            <span className="health-meal__kcal">{sessions.length ? `+${kcal(sessions)} kcal` : '—'}</span>
           </header>
           {sessions.map((s, i) => (
             <div key={i} className="health-row health-row--readonly">

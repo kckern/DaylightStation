@@ -5,6 +5,7 @@ const apiMock = vi.fn();
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => apiMock(...a) }));
 
 import { useHealthDay } from './useHealthDay.js';
+import { resetApiResourceCache } from '../../../lib/hooks/useApiResource.js';
 
 const ROWS = [
   { uuid: '1', name: 'Eggs', calories: 140, mealTime: 'morning' },
@@ -17,6 +18,11 @@ const BUDGET = { budget: 2100, food: 640, exercise: 0, remaining: 1460, status: 
 describe('useHealthDay', () => {
   beforeEach(() => {
     apiMock.mockReset();
+    // The swr cache is module-level and keyed by path — every test in this
+    // file uses the SAME date, so without a reset, an earlier test's
+    // cached payload would leak into a later test's "cold" mount (loading
+    // would read false when the test expects a true cold start).
+    resetApiResourceCache();
     apiMock.mockImplementation(async (path) =>
       path.includes('/budget') ? BUDGET : NUTRILIST_ENVELOPE);
   });
@@ -59,5 +65,42 @@ describe('useHealthDay', () => {
     await act(() => result.current.mutate(action));
     expect(action).toHaveBeenCalled();
     expect(apiMock.mock.calls.length).toBeGreaterThan(callsBefore);
+  });
+
+  // Task 3.2: swr:true on both resources — a mutation's reload() must never
+  // flip `loading` back to true once the day has loaded once. `revalidating`
+  // is the seam the view uses instead to know a background refresh is live.
+  it('reload() after the first load revalidates quietly: loading never flips back to true, revalidating does', async () => {
+    const { result } = renderHook(() => useHealthDay('2026-09-02'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.revalidating).toBe(false);
+
+    let resolveNutrilist;
+    apiMock.mockImplementation((path) => {
+      if (path.includes('/budget')) return Promise.resolve(BUDGET);
+      return new Promise((r) => { resolveNutrilist = r; });
+    });
+
+    act(() => { result.current.reload(); });
+    // Synchronously after the reload-triggering act() flushes effects: the
+    // cached day is still showing, loading never observed true.
+    expect(result.current.loading).toBe(false);
+    expect(result.current.revalidating).toBe(true);
+    expect(result.current.items).toHaveLength(3); // stale-but-present, not cleared
+
+    await act(async () => { resolveNutrilist(NUTRILIST_ENVELOPE); await Promise.resolve(); });
+    await waitFor(() => expect(result.current.revalidating).toBe(false));
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('a second mount of the same date serves cached data immediately with loading:false (SWR cache hit)', async () => {
+    const first = renderHook(() => useHealthDay('2026-09-02'));
+    await waitFor(() => expect(first.result.current.loading).toBe(false));
+    first.unmount();
+
+    const second = renderHook(() => useHealthDay('2026-09-02'));
+    // No waitFor — this is the very first render after mount.
+    expect(second.result.current.loading).toBe(false);
+    expect(second.result.current.items).toHaveLength(3);
   });
 });

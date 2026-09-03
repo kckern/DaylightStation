@@ -17,7 +17,17 @@ vi.mock('../capture/VoiceCapture.jsx', () => ({ VoiceCapture: () => null }));
 vi.mock('../capture/BarcodeCapture.jsx', () => ({ BarcodeCapture: () => null }));
 vi.mock('../capture/CustomFoodSheet.jsx', () => ({ CustomFoodSheet: () => null }));
 
+// Pin the capture-pending bucket target so the "which bucket does the
+// placeholder land in" tests are deterministic regardless of wall-clock
+// time — everything else in mealBuckets.js (BUCKETS, localTodayISO, …)
+// stays real.
+vi.mock('./mealBuckets.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, currentMealBucketId: () => 'afternoon' };
+});
+
 import { TodayView } from './TodayView.jsx';
+import { resetApiResourceCache } from '../../../lib/hooks/useApiResource.js';
 
 function r(ui) { return render(<MantineProvider>{ui}</MantineProvider>); }
 
@@ -39,7 +49,7 @@ const baseApi = (overrides = {}) => async (path) => {
 // review phase, no PendingConfirmCard, and no Undo/Accept/Done affordance
 // here. The day reload picks the new unsettled rows up via LogTable/EntryRow.
 describe('TodayView — photo/voice capture: no review phase, day reload instead (I-4 follow-up)', () => {
-  beforeEach(() => { apiMock.mockReset(); });
+  beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); });
 
   it('an image submit whose response carries choices (food detected) reloads the day and renders no review card', async () => {
     apiMock.mockImplementation(baseApi({
@@ -100,5 +110,139 @@ describe('TodayView — photo/voice capture: no review phase, day reload instead
 
     await waitFor(() => expect(screen.getByText('Chicken breast')).toBeTruthy());
     expect(screen.queryByText('Oatmeal')).toBeFalsy();
+  });
+});
+
+const NUTRILIST_WITH_ROW = { data: [{ uuid: 'r1', name: 'Bagel', calories: 300, mealTime: 'morning' }] };
+const NUTRILIST_WITH_TWO_ROWS = {
+  data: [
+    { uuid: 'r1', name: 'Bagel', calories: 300, mealTime: 'morning' },
+    { uuid: 'r2', name: 'Toast', calories: 120, mealTime: 'morning' },
+  ],
+};
+
+describe('TodayView — Task 3.2: permanent chrome, SWR day data, in-place capture pending', () => {
+  beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); });
+
+  it('renders every meal heading during a true cold load, with the shimmer confined to section bodies', async () => {
+    apiMock.mockImplementation(async (path) => {
+      if (path.includes('nutrilist/')) return new Promise(() => {}); // never resolves — stay cold
+      if (path.includes('budget')) return BUDGET;
+      if (path.includes('dashboard')) return DASHBOARD;
+      if (path.includes('nutrition/pending')) return { pending: [] };
+      return {};
+    });
+
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+
+    // Synchronously, before anything resolves: structure is already there.
+    expect(screen.getByText('Breakfast')).toBeTruthy();
+    expect(screen.getByText('Lunch')).toBeTruthy();
+    expect(screen.getByText('Dinner')).toBeTruthy();
+    expect(screen.getByText('Snacks')).toBeTruthy();
+    expect(screen.getAllByText(/Add food/).length).toBe(4);
+    // The shimmer lives INSIDE a section body, not as a page-level spinner.
+    const shimmers = screen.getAllByLabelText(/^Loading /);
+    expect(shimmers.length).toBeGreaterThan(0);
+    for (const shimmer of shimmers) expect(shimmer.closest('section')).toBeTruthy();
+  });
+
+  it('a cached day renders immediately on mount with no shimmer and rows already present (SWR cache hit)', async () => {
+    apiMock.mockImplementation(async (path) => {
+      if (path.includes('nutrilist/')) return NUTRILIST_WITH_ROW;
+      if (path.includes('budget')) return BUDGET;
+      if (path.includes('dashboard')) return DASHBOARD;
+      if (path.includes('nutrition/pending')) return { pending: [] };
+      return {};
+    });
+
+    const first = r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => expect(screen.getByText('Bagel')).toBeTruthy());
+    first.unmount();
+
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    // No waitFor: this must already be true on first paint of the remount.
+    expect(screen.getByText('Bagel')).toBeTruthy();
+    expect(screen.queryByLabelText(/^Loading /)).toBeNull();
+  });
+
+  it('a mutation-triggered day.reload() shows no shimmer at any point across the update (regression: onDiscard -> reload, I-4)', async () => {
+    let phase = 'initial';
+    let resolveReload;
+    apiMock.mockImplementation(async (path) => {
+      if (path.includes('nutrition/callback')) return { ok: true };
+      if (path.includes('budget')) return BUDGET;
+      if (path.includes('dashboard')) return DASHBOARD;
+      if (path.includes('nutrition/pending')) {
+        return phase === 'initial'
+          ? { pending: [{ id: 'log-9', source: 'scale', items: [{ label: 'Chicken breast', calories: 231 }] }] }
+          : { pending: [] };
+      }
+      if (path.includes('nutrilist/')) {
+        if (phase === 'initial') return NUTRILIST_WITH_ROW;
+        return new Promise((res) => { resolveReload = () => res(NUTRILIST_WITH_TWO_ROWS); });
+      }
+      return {};
+    });
+
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => expect(screen.getByText('Bagel')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Chicken breast')).toBeTruthy()); // NeedsReviewSection mounted
+    expect(screen.queryByLabelText(/^Loading /)).toBeNull();
+
+    phase = 'reload';
+    fireEvent.click(screen.getByRole('button', { name: /discard/i }));
+
+    // Mid-flight (the reload's nutrilist fetch is deliberately hanging):
+    // the previously-loaded row is still shown, structure intact, no shimmer.
+    await waitFor(() => expect(resolveReload).toBeTruthy());
+    expect(screen.getByText('Breakfast')).toBeTruthy();
+    expect(screen.getByText('Bagel')).toBeTruthy();
+    expect(screen.queryByLabelText(/^Loading /)).toBeNull();
+
+    resolveReload();
+    await waitFor(() => expect(screen.getByText('Toast')).toBeTruthy());
+    expect(screen.queryByLabelText(/^Loading /)).toBeNull();
+  });
+
+  it('the Exercise header renders with zero sessions once budget data has loaded', async () => {
+    apiMock.mockImplementation(async (path) => {
+      if (path.includes('nutrilist/')) return NUTRILIST;
+      if (path.includes('budget')) return BUDGET; // sessions: []
+      if (path.includes('dashboard')) return DASHBOARD;
+      if (path.includes('nutrition/pending')) return { pending: [] };
+      return {};
+    });
+
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => expect(screen.getByText('Exercise')).toBeTruthy());
+  });
+
+  it('shows an in-place "Analyzing…" placeholder in the target bucket while a capture is in flight, cleared once the result lands', async () => {
+    let resolveInput;
+    apiMock.mockImplementation(async (path) => {
+      if (path.includes('nutrilist/')) return NUTRILIST;
+      if (path.includes('budget')) return BUDGET;
+      if (path.includes('dashboard')) return DASHBOARD;
+      if (path.includes('nutrition/pending')) return { pending: [] };
+      if (path.includes('nutrition/input')) return new Promise((res) => { resolveInput = res; });
+      return {};
+    });
+
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => screen.getByText('MockPhotoCapture'));
+    fireEvent.click(screen.getByText('MockPhotoCapture'));
+
+    await waitFor(() => expect(screen.getByText('Analyzing…')).toBeTruthy());
+    const placeholder = screen.getByText('Analyzing…');
+    expect(placeholder.closest('[aria-busy="true"]')).toBeTruthy();
+    // currentMealBucketId() is mocked to 'afternoon' (Lunch) for this file.
+    const lunchSection = screen.getByText('Lunch').closest('section');
+    const breakfastSection = screen.getByText('Breakfast').closest('section');
+    expect(lunchSection.contains(placeholder)).toBe(true);
+    expect(breakfastSection.contains(placeholder)).toBe(false);
+
+    resolveInput({ messages: [] });
+    await waitFor(() => expect(screen.queryByText('Analyzing…')).toBeNull());
   });
 });
