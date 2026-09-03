@@ -19,6 +19,13 @@ describe('BoardGameFrame', () => {
     expect(container.querySelector('.instrument-board-stage__rail--left').textContent).toContain('left');
     expect(container.querySelector('.instrument-board-stage__rail--right').textContent).toContain('right');
     expect(container.querySelector('.pg-status').textContent).toContain('Your turn');
+    // Status is a rail-column grid item, not the old full-width bottom-row
+    // footer: it must not sit inside either semantic rail (so hiding/moving
+    // a rail can never take the status line with it) and there is no
+    // `<footer>` element left in the stage at all.
+    const status = container.querySelector('.instrument-board-stage__status');
+    expect(status.closest('.instrument-board-stage__rail')).toBeFalsy();
+    expect(container.querySelector('footer')).toBeFalsy();
     fireEvent.click(getByLabelText('Settings'));
     expect(onOpen).toHaveBeenCalledOnce();
   });
