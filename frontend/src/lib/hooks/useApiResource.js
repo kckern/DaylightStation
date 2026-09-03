@@ -10,10 +10,18 @@
 // reports that a background refresh is in flight. Callers that do not pass
 // `swr` never touch the cache and see byte-identical behavior to before this
 // option existed — see useApiResource.swr.test.jsx's "regression pin". Cache
-// writes are gated by the same per-effect-run liveness flag as state writes,
-// so a superseded response (unmount, path change, or an overlapping older
-// `reload()`) can never clobber a cache entry a newer request already wrote
-// — see the "overlapping reloads" tests in that same file.
+// writes go through two independent guards that do different jobs:
+//   - `live` (per effect run) discards a response whose OWN component/effect
+//     run is no longer current — unmount, path change, or an overlapping
+//     older `reload()` on the SAME hook instance.
+//   - a per-path generation counter discards a response that is stale
+//     RELATIVE TO ANOTHER REQUEST for the same path, including one issued by
+//     a completely different mounted hook instance (e.g. two components
+//     showing the same day's data side by side). `live` alone can't see
+//     that: instance A's own effect stays "live" the whole time even while
+//     instance B's later, faster request for the same path resolves first.
+// See the "overlapping reloads" and "two mounts, same path" tests in
+// useApiResource.swr.test.jsx.
 import { useCallback, useEffect, useState } from 'react';
 import { DaylightAPI } from '../api.mjs';
 import { createAppLogger } from '../ui/createAppLogger.js';
@@ -27,6 +35,17 @@ const defaultLogger = createAppLogger('ds');
 // a kiosk tab left open for days. Eviction is LRU by access/write recency.
 const MAX_CACHE_ENTRIES = 100;
 const swrCache = new Map();
+
+// Per-path "who issued the request that should win" counter. Every request a
+// swr-enabled hook issues for a path claims the next number; a response only
+// gets to write the cache if its number is still the highest issued for that
+// path at the time it resolves — i.e. it's provably the most-recently-issued
+// request, regardless of which mounted component instance issued it or how
+// long each one took to come back. Bounded alongside swrCache below (an
+// evicted path's generation counter is dropped with it — nothing depends on
+// generation numbers surviving eviction, only on them being monotonic while
+// a path is active).
+const pathGenerations = new Map();
 
 function cacheGet(path) {
   if (!swrCache.has(path)) return { hit: false };
@@ -44,15 +63,30 @@ function cacheSet(path, value) {
   if (swrCache.size > MAX_CACHE_ENTRIES) {
     const oldestKey = swrCache.keys().next().value;
     swrCache.delete(oldestKey);
+    pathGenerations.delete(oldestKey);
   }
+}
+
+// Claims the next generation number for `path` — call this once per issued
+// request, at issue time, and keep the returned number to check against
+// `isNewestGeneration` when that request resolves.
+function claimGeneration(path) {
+  const next = (pathGenerations.get(path) || 0) + 1;
+  pathGenerations.set(path, next);
+  return next;
+}
+
+function isNewestGeneration(path, generation) {
+  return pathGenerations.get(path) === generation;
 }
 
 // Test-only reset, and the seam a later task (day-view mutation) can use to
 // invalidate a specific path after a write — call with a path to drop just
 // that entry, or with no argument to clear everything.
 export function resetApiResourceCache(path) {
-  if (path === undefined) { swrCache.clear(); return; }
+  if (path === undefined) { swrCache.clear(); pathGenerations.clear(); return; }
   swrCache.delete(path);
+  pathGenerations.delete(path);
 }
 
 export function useApiResource(path, { deps = [], enabled = true, label, logger = defaultLogger, swr = false } = {}) {
@@ -92,24 +126,30 @@ export function useApiResource(path, { deps = [], enabled = true, label, logger 
       setError(null);
     }
 
+    // Claimed at issue time (not resolve time) so "which request is newest
+    // for this path" reflects issue order, matching the state-write side's
+    // "last-issued wins" semantics for the single-instance case.
+    const myGeneration = swr ? claimGeneration(path) : null;
+
     const startedAt = performance.now();
     DaylightAPI(path)
       .then((result) => {
-        // `live` is this specific effect run's liveness — it goes false on
-        // unmount AND on any dependency change that tears this run down
-        // (path change, `reload()`, swr/enabled/deps change). Checking it
-        // BEFORE the cache write (not just before the state writes) is load
-        // bearing: two overlapping reloads each get their own effect run and
-        // their own `live`; if the older one's response resolves after the
-        // newer one's, its `live` is already false by then, so it can never
-        // clobber the cache with a stale value the newer run already
-        // replaced. The trade-off: a response for a path this hook has since
-        // abandoned (unmount, or moved on to a different path) is dropped
-        // entirely rather than opportunistically cached — correctness for
-        // "last-issued wins" over squeezing a little more cache mileage out
-        // of a request nobody is waiting on anymore.
+        // Two independent guards here, doing different jobs:
+        //   - `live` is THIS effect run's own liveness — false on unmount or
+        //     on any dependency change that tears this run down (path
+        //     change, `reload()`, swr/enabled/deps change). It protects
+        //     STATE: a component whose own request/effect is superseded
+        //     should not paint a response it no longer represents.
+        //   - the generation check protects the CACHE specifically: it's
+        //     false when some OTHER request for the same path — possibly
+        //     from a different mounted instance whose own `live` is still
+        //     true — was issued more recently and hasn't necessarily
+        //     resolved yet. Without it, two components mounted on the same
+        //     path could race and let whichever response happens to resolve
+        //     last win the cache, even if it was issued first (i.e. is
+        //     actually the staler answer).
         if (!live) return;
-        if (swr) cacheSet(path, result);
+        if (swr && isNewestGeneration(path, myGeneration)) cacheSet(path, result);
         setData(result);
         setLoading(false);
         if (swr) setRevalidating(false);

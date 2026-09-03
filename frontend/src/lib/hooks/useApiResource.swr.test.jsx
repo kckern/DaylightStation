@@ -279,4 +279,47 @@ describe('useApiResource swr mode', () => {
     await act(async () => { await Promise.resolve(); });
     freshA.unmount();
   });
+
+  // Cross-instance race — the `live` flag alone can't see this: it tracks a
+  // single effect run's own lifecycle, not "is some OTHER request for this
+  // path newer than mine". Two separately mounted components on the same
+  // path (e.g. a day view and a sidebar both showing today's data) each get
+  // their own `live`, which stays true for both as long as neither unmounts
+  // — so out-of-order resolution between them needed the per-path generation
+  // guard, not `live`.
+  it('two separately mounted components on the same path: an older request that resolves LAST does not win the cache over a newer one that already resolved', async () => {
+    let resolveA;
+    apiMock.mockReturnValueOnce(new Promise((r) => { resolveA = r; })); // A's request — issued FIRST
+    const a = renderHook(() => useApiResource('api/v1/thing', { swr: true }));
+    expect(a.result.current.loading).toBe(true); // cold, nothing cached yet
+
+    let resolveB;
+    apiMock.mockReturnValueOnce(new Promise((r) => { resolveB = r; })); // B's request — issued SECOND
+    const b = renderHook(() => useApiResource('api/v1/thing', { swr: true }));
+    expect(b.result.current.loading).toBe(true); // also cold — A hasn't resolved/cached yet
+
+    // B, issued SECOND, resolves FIRST with the fresh value.
+    await act(async () => { resolveB({ from: 'B-fresh' }); await Promise.resolve(); });
+    await waitFor(() => expect(b.result.current.data).toEqual({ from: 'B-fresh' }));
+
+    // A, issued FIRST, resolves LAST with the stale value. Neither component
+    // unmounts or changes path — both `live` flags stay true throughout.
+    await act(async () => { resolveA({ from: 'A-slow-stale' }); await Promise.resolve(); });
+    await waitFor(() => expect(a.result.current.data).toEqual({ from: 'A-slow-stale' }));
+
+    a.unmount();
+    b.unmount();
+
+    // The real assertion is the CACHE's contents, read via a fresh mount's
+    // synchronous initial value — not either component's on-screen state.
+    // An on-screen assertion would pass even with the bug: `a` and `b` each
+    // correctly show whatever their own request returned regardless of the
+    // cache: `live` (unchanged, still correct) governs that, not this guard.
+    apiMock.mockResolvedValue({ from: 'B-fresh' }); // harmless value for the fresh mount's own background revalidation
+    const fresh = renderHook(() => useApiResource('api/v1/thing', { swr: true }));
+    expect(fresh.result.current.data).toEqual({ from: 'B-fresh' });
+    expect(fresh.result.current.loading).toBe(false);
+    await act(async () => { await Promise.resolve(); });
+    fresh.unmount();
+  });
 });
