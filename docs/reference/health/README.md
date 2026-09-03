@@ -149,12 +149,20 @@ entry is visible and counted straight away. The same seam decorates the response
 the use case sends through, so the inline keyboard that reaches the client offers **Undo**
 and **Edit** — never Accept. Those two buttons reuse the existing `x` (discard) and `r`
 (revise) callback commands, and Undo now *deletes*: `DiscardFoodLog` marks the log
-`deleted` and removes its NutriList rows. This applies to every transport — web, Telegram,
-and the coach's `log_food` alike.
+`deleted` and removes its NutriList rows. The message copy itself matches: a text or image
+capture's reply opens with "Logged ✓ — *n* items, *k* kcal" rather than a question, so the
+words read as a confirmation and not just the buttons. This applies to every transport —
+web, Telegram, and the coach's `log_food` alike.
 
 Two flows are deliberately exempt from the accept half of the seam:
 
-- **Scale** captures keep their multi-step composition flow (tare → density → describe).
+- **Scale** captures keep their multi-step composition flow (tare → density → describe)
+  and still mint a `pending` NutriLog for the duration of that flow. A pending row never
+  syncs into the day's NutriList, so it doesn't appear among Today's normal rows and
+  doesn't count toward the budget; `GET /nutrition/pending?date=` surfaces it separately,
+  and Today renders it in a **NEEDS REVIEW** banner above the meal buckets, with its own
+  Accept/Discard. That endpoint returns pending rows regardless of origin, but every
+  other capture commits on arrival now, so Today filters the banner to scale-origin rows.
 - **Barcode** has no Accept gate to retire — it commits at its portion-selection step
   (`SelectUPCPortion`). The seam still stamps its items unsettled so the rows that step
   writes land the same way.
@@ -167,27 +175,21 @@ essentially always empty, so the report `AcceptFoodLog` fires when nothing is pe
 otherwise render an image, send messages and kick the coaching orchestrator inside *every*
 capture request. Manual Accept paths keep it.
 
-`AddCombobox.submitSentence()` is the one call site that renders this inline: on success it
-sets `phase = 'review'` and shows `PendingConfirmCard`, which offers:
-
-- **Undo** — resolves the `x` button's `callback_data` via
-  `POST /nutrition/callback { callbackData }`, deleting the log and its NutriList rows.
-- **Edit** — opens a follow-up `TextInput` that re-submits the correction as a fresh
-  `POST /nutrition/input { type: 'text' }` (e.g. "that was 2 slices, not 1"). A revision
-  re-syncs the NutriList from the revised log and carries `settled: false` forward, so the
-  edit reaches the day view and the totals.
-- **Done** — dismisses the card. It confirms nothing; the entry is already logged.
-
-The card resolves each callback by matching the button's label text, so those labels are a
-contract between `committedChoices.mjs` and `PendingConfirmCard.jsx`. Undo and Edit both
-reload the day afterwards — Undo deletes an entry that was already counting.
+There is no post-capture review card on web. A response's messages carry choices (the
+Undo/Edit keyboard) only when food was actually detected — `TodayView` reloads the day
+when it sees any choices, and otherwise (an empty detection, e.g. "no food found")
+surfaces the message text as a one-line notice instead, so a miss is still visible rather
+than silently dropped. `AddCombobox`'s sentence submit follows the same shape directly:
+on success it just reloads — no confirmation step of its own.
 
 A captured entry appears in the day's log (`GET /nutrilist/:date` returns every status,
-unfiltered) and counts toward the budget immediately, carrying `settled: false` until it is
-reviewed. Photo and voice captures (`PhotoCapture`/`VoiceCapture` → `TodayView`) and a
-known-barcode hit (`BarcodeCapture` → `TodayView`, when the result isn't `unknownUpc`)
-submit through the identical `/nutrition/input` call and reload the day afterward; the
-combobox's inline review card is the funnel's confirmation surface today.
+unfiltered) and counts toward the budget immediately, carrying `settled: false`. It
+renders like any other row: tapping it opens `EntryEditSheet` to edit or delete, and its
+"Unconfirmed" badge carries the one-tap settle button (see
+[Unsettled vs. settled](#unsettled-vs-settled) below). Photo and voice captures
+(`PhotoCapture`/`VoiceCapture` → `TodayView`) and a known-barcode hit (`BarcodeCapture` →
+`TodayView`, when the result isn't `unknownUpc`) submit through the identical
+`/nutrition/input` call and follow the same reload-or-notice handling.
 
 ### Barcode → unknown UPC → custom food
 
@@ -209,6 +211,33 @@ gateway — a user's custom mapping wins and can override bad upstream data. Res
 same UPC after creating a custom food resolves from the catalog with no gateway round trip
 and no "unknown" sheet. A UPC that still misses both the catalog and the gateway returns
 `{ success: false, unknownUpc: true, upc }`.
+
+---
+
+## Unsettled vs. settled
+
+Every nutrition-log row carries two independent axes. `status` decides whether the row
+exists and counts toward the day's calories — `accepted` counts, `pending`/`rejected`/
+`deleted` don't (see [the budget equation](#the-budget-equation--one-server-side-home)
+above). `settled` decides whether a person has ratified the machine's estimate; it never
+affects whether a row counts.
+
+A row reads as **settled** when `settled` is `true`, or when the field is **absent** — no
+write path ever defaults it in, so a row with no `settled` key at all (every row that
+predates this tracking) reads as already-ratified with no backfill needed. A row reads as
+**unsettled** only when `settled` is explicitly `false`, which is the state every AI
+capture is stamped into the moment it's parsed (see [Capture funnels](#capture-funnels)
+above).
+
+An unsettled row also **auto-settles by age**: once it's more than three days old it
+presents as settled even though the stored value is still `false`. This is computed each
+time the day is read, not written back — nothing ever mutates the row to auto-settle it,
+and no scheduled job runs the check.
+
+A person settles a row two ways: any successful edit (a `PUT` on the row, from
+`EntryEditSheet` or elsewhere) stamps `settled: true, settledBy: 'user'` alongside
+whatever else changed, and an unsettled row's "Unconfirmed" badge carries its own
+one-tap confirm button that sends that same stamp with no other field changed.
 
 ---
 
@@ -352,7 +381,8 @@ All under `/api/v1/health/`, from `backend/src/4_api/v1/routers/health.mjs`:
 | `POST /nutrition/catalog/backfill` | seed the catalog from existing log history |
 | `GET /nutrition/meals`, `POST /nutrition/meals`, `POST /nutrition/meals/:id/log`, `DELETE /nutrition/meals/:id` | saved meals |
 | `POST /nutrition/input` | unified capture entry point (`type: text\|image\|voice\|barcode`) |
-| `POST /nutrition/callback` | resolve a capture's Undo/Edit/portion choice |
+| `POST /nutrition/callback` | resolve a capture's Undo/Edit/portion choice, or a scale-pending Accept/Discard |
+| `GET /nutrition/pending?date=` | pending NutriLogs for a date (the scale's NEEDS REVIEW banner) |
 | `GET /medical`, `POST /medical`, `DELETE /medical/:id` | medical readings |
 | `GET /dashboard` | aggregate summary (weight/nutrition/sessions/goals) consumed by `TodayView`'s coach-line footer |
 | `GET /mentions/all` (separate router, `health-mentions.mjs`) | `@`-mention autocomplete for the coach chat composer (periods, recent days, metrics) |
