@@ -85,3 +85,16 @@ describe('schoolLog', () => {
     expect(warn).toHaveBeenCalledWith('school.surface.profile-unresolved', expect.objectContaining({ screenId: 'screen-kitchen' }));
   });
 });
+
+// ── Reading shelf (book-shelf UI design §7) ──────────────────────────────────
+describe('schoolLog.bookShelf', () => {
+  it('emits school.book-shelf.<detail> at info', () => {
+    schoolLog.bookShelf('opened', { learnerId: 'kid' });
+    expect(info).toHaveBeenCalledWith('school.book-shelf.opened', expect.objectContaining({ learnerId: 'kid' }));
+  });
+
+  it('emits school.book-shelf.<detail> at error via bookShelfError', () => {
+    schoolLog.bookShelfError('shelf.failed', { status: 503 });
+    expect(error).toHaveBeenCalledWith('school.book-shelf.shelf.failed', expect.objectContaining({ status: 503 }));
+  });
+});

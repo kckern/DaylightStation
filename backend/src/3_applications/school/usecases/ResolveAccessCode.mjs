@@ -60,6 +60,7 @@ import { resolveTokenState } from '#domains/school/sessions/tokens.mjs';
 import { nextMove } from './offerSession.mjs';
 import { pausedExceptionFor } from '../curriculumExceptionProjection.mjs';
 import { projectProgramEntry } from '../assignedProgramPlan.mjs';
+import { findContinuationEntry } from './continuationEntry.mjs';
 
 /**
  * The sessionId the synthetic `created` event carries. Never persisted, and
@@ -253,7 +254,9 @@ export class ResolveAccessCode {
 
     try {
       const resolution = await this.#resolve({
-        learnerId, subject, continueToday: record.subject?.continueToday === true,
+        learnerId, subject,
+        continueToday: record.subject?.continueToday === true,
+        program: record.subject?.program ?? null,
       });
       const options = {
         mediaSurface: this.#mediaSurface,
@@ -628,7 +631,9 @@ export class ResolveAccessCode {
    * The `ResolveSubjectNext` resolution shape, computed WITHOUT ensuring a
    * session. See the file header for why the two are not one function.
    */
-  async #resolve({ learnerId, subject, continueToday = false }) {
+  async #resolve({
+    learnerId, subject, continueToday = false, program = null,
+  }) {
     // The SAME assembly the agenda printed from and the scan path resolves
     // through. The `projection` shape this file already returned is the shape
     // `PlanProjection` returns, so nothing downstream of `#resolve` changes.
@@ -647,15 +652,17 @@ export class ResolveAccessCode {
     // "one more?" action (`CloseSessionOutcome.mjs`, ~:290-314) — the panel
     // DOES have the affordance to do it again, because that code IS it. The
     // token carries `continueToday` for exactly this, and this resolver must
-    // honour the token's own flag, never assume it is always false. Mirror
-    // `ResolveSubjectNext.mjs` (the scan path reading the same token) so the
-    // two resolvers can never disagree about what one token means: only
+    // honour the token's own flag, never assume it is always false: only
     // refuse with `served` when the subject is served AND the token did not
     // ask to continue anyway.
     if (section.servedToday && !continueToday) return withProjection({ kind: 'served', subjectLabel: subject });
 
+    // What a served subject continues TO is the one rule this file shares
+    // with `ResolveSubjectNext` (`continuationEntry.mjs`), not a mirror of
+    // it. The mirror read the planner's pre-append snapshots and closed the
+    // reading shelf at the panel after the scan path had been fixed.
     const entry = section.next ?? (continueToday && section.servedToday
-      ? [...plan.inProgress, ...plan.available].find((candidate) => candidate.subject === subject)
+      ? findContinuationEntry(plan, { subject, program })
       : null);
     if (!entry) {
       if (section.lockedRemedy) return withProjection({ kind: 'locked', remedy: section.lockedRemedy });

@@ -140,6 +140,10 @@ export function derivePianos(raw) {
   return [{ id: 'default', label: shared.label || 'Piano' }];
 }
 
+// The Sound sheet's Mine rail item is favourites (≤8) + this shortlist in a
+// 24-tile grid that must not scroll. 16 is the remaining headroom.
+const SHORTLIST_MAX = 16;
+
 /** Resolve one piano's effective config: per-piano values override shared, over defaults. */
 export function resolvePianoConfig(raw, pianoId) {
   const shared = raw || {};
@@ -157,7 +161,10 @@ export function resolvePianoConfig(raw, pianoId) {
     playalong: { ...PIANO_CONFIG_DEFAULTS.playalong, ...(shared.playalong || {}), ...(p.playalong || {}) },
     singalong: { ...PIANO_CONFIG_DEFAULTS.singalong, ...(shared.singalong || {}), ...(p.singalong || {}) },
     karaoke: { ...PIANO_CONFIG_DEFAULTS.karaoke, ...(shared.karaoke || {}), ...(p.karaoke || {}) },
-    shortlist: { ...PIANO_CONFIG_DEFAULTS.shortlist, ...(shared.shortlist || {}), ...(p.shortlist || {}) },
+    shortlist: (() => {
+      const merged = { ...PIANO_CONFIG_DEFAULTS.shortlist, ...(shared.shortlist || {}), ...(p.shortlist || {}) };
+      return { ...merged, voices: (merged.voices || []).slice(0, SHORTLIST_MAX) };
+    })(),
     music: {
       collection: p.music?.collection ?? shared.music?.collection ?? null,
       playlists: p.music?.playlists ?? shared.music?.playlists ?? [],

@@ -39,6 +39,7 @@ import { ensureSession, nextMove } from './offerSession.mjs';
 import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display.mjs';
 import { curriculumPosterRef } from '#apps/common/resources/publicResourceRefs.mjs';
 import { lessonProgressRowsFromPlan } from '#domains/school/lessonProgress.mjs';
+import { BOOK_LOG_PROGRAM_ID, DEFAULT_BOOK_LOG_SUBJECT } from '#domains/school/bookLog.mjs';
 
 const DEFAULT_SUBJECT_TOKEN_TTL_HOURS = 168;
 const HOUR_MS = 3_600_000;
@@ -286,6 +287,11 @@ export class BuildAgenda {
     // is the same value, just without needing to smuggle a loop-scoped
     // `const` past the loop's closing brace.
     const expiresAt = new Date(Date.parse(nowIso) + this.#ttlMs).toISOString();
+    // Subjects whose code must still open once the day's obligation is met
+    // (see `ResolveSubjectNext`'s `continueToday`): the reading shelf is a
+    // place to add a book, not only a lesson to finish. Read from the
+    // assignment `PlanProjection` already loaded — no second store read.
+    const readingSubjects = subjectsWithReadingShelf(assignment);
 
     for (const section of sectionsWithProgress) {
       const entry = section.next;
@@ -377,7 +383,19 @@ export class BuildAgenda {
       if (accessCode) mintedCodes.add(accessCode);
       const record = mintToken({
         tokenClass: 'subject_next',
-        subject: { learnerId, subject: section.subject },
+        subject: {
+          learnerId,
+          subject: section.subject,
+          // The reading code keeps opening once the day's obligation is met,
+          // and it names WHAT it reopens: the shelf. Without `program`, the
+          // continuation rule (`continuationEntry.mjs`) hands a re-entered
+          // code the first eligible entry, which on a day with an available
+          // english lesson is the lesson. forwardAction's "One more?" tokens
+          // carry `continueToday` without a program and still mean a lesson.
+          ...(readingSubjects.has(section.subject)
+            ? { continueToday: true, program: BOOK_LOG_PROGRAM_ID }
+            : {}),
+        },
         at: nowIso,
         rng: this.#rng,
         expiresAt,
@@ -698,6 +716,20 @@ export class BuildAgenda {
     const move = nextMove(unitsById.get(entry.unitId) ?? {}, state);
     return { sessionId, suffix: move.label, created, moveKind: move.kind };
   }
+}
+
+/**
+ * The subjects a learner's assigned `book-log` programs sit under (the
+ * enrollment's `subject`, `DEFAULT_BOOK_LOG_SUBJECT` when unset — the same
+ * default `validateBookLogEnrollment` applies). A `subject_next` code for one of these
+ * carries `continueToday` so a met obligation still opens the shelf.
+ * @param {{programs?: Array<{programId?: string, subject?: string}>}|null} assignment
+ * @returns {Set<string>}
+ */
+function subjectsWithReadingShelf(assignment) {
+  return new Set((assignment?.programs ?? [])
+    .filter((program) => program?.programId === BOOK_LOG_PROGRAM_ID)
+    .map((program) => program.subject ?? DEFAULT_BOOK_LOG_SUBJECT));
 }
 
 function formatStudyCode(code) {

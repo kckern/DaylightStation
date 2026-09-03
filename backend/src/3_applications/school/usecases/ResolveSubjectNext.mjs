@@ -35,6 +35,7 @@ import { PlanProjection } from '../PlanProjection.mjs';
 import { ensureSession, nextMove } from './offerSession.mjs';
 import { pausedExceptionFor } from '../curriculumExceptionProjection.mjs';
 import { projectProgramEntry } from '../assignedProgramPlan.mjs';
+import { findContinuationEntry } from './continuationEntry.mjs';
 
 export class ResolveSubjectNext {
   // `curriculum`, `assignments`, `attestations` and `curriculumExceptions` are
@@ -90,6 +91,9 @@ export class ResolveSubjectNext {
    * @param {object} args
    * @param {string} args.learnerId
    * @param {string} args.subject
+   * @param {boolean} [args.continueToday] the token asked to continue past a served day
+   * @param {string|null} [args.program] the program the token named (the daily
+   *   reading code names `book-log`; forwardAction's tokens name none)
    * @returns {Promise<
    *   { kind: 'served', subjectLabel: string } |
    *   { kind: 'locked', remedy: string|null } |
@@ -99,7 +103,9 @@ export class ResolveSubjectNext {
    *   { kind: 'move', move: object, sessionId: string, state: object, unit: object|null, entry: object }
    * >}
    */
-  async execute({ learnerId, subject, continueToday = false } = {}) {
+  async execute({
+    learnerId, subject, continueToday = false, program = null,
+  } = {}) {
     // BuildAgenda's recipe, not a copy of it. The ticket names a learner and a
     // subject rather than a moment, so "what's next" is recomputed on every
     // scan — and it must be recomputed the same WAY the paper was printed, or
@@ -117,8 +123,11 @@ export class ResolveSubjectNext {
     if (!section) return { kind: 'empty' };
     if (section.servedToday && !continueToday) return { kind: 'served', subjectLabel: subject };
 
+    // The served-day continuation is ONE rule shared with `ResolveAccessCode`
+    // (`continuationEntry.mjs`): read `plan.entries` by status, prefer the
+    // program the token named. Two inline copies of this line drifted once.
     const entry = section.next ?? (continueToday && section.servedToday
-      ? [...plan.inProgress, ...plan.available].find((candidate) => candidate.subject === subject)
+      ? findContinuationEntry(plan, { subject, program })
       : null);
     if (!entry) {
       if (section.lockedRemedy) return { kind: 'locked', remedy: section.lockedRemedy };

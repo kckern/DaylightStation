@@ -40,6 +40,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { screenOff } from '../../../lib/fkb.js';
 import useArmedAction from '../../../lib/identity/useArmedAction.js';
+import useTapFire from './useTapFire.js';
 import { schoolLog } from '../schoolLog.js';
 
 const DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
@@ -105,37 +106,6 @@ const STRAY_PRESS_MS = 700;
  * restarts it.
  */
 const ABANDONED_ENTRY_MS = 60_000;
-
-/**
- * Buttons that fire on TOUCH-DOWN.
- *
- * The pad is a wall panel a child jabs at, and `onClick` waits for a full
- * press-and-release ON the same element — a jab that slides a few pixels, or a
- * finger that rolls off the key, produces nothing at all, which is exactly the
- * "the buttons are hard to press" complaint. `pointerdown` fires the moment the
- * finger lands, for touch and mouse alike.
- *
- * `preventDefault()` on pointerdown suppresses the compatibility mouse events
- * (focus, text selection, the drag ghost) but NOT the click that follows, so
- * the click handler stays for keyboard/synthetic activation and guards against
- * firing the same tap twice. The guard is a timestamp rather than a flag
- * because a pointerdown that never becomes a click (finger dragged off the key)
- * must not swallow the NEXT activation.
- */
-function useTapFire() {
-  const lastPointerAt = useRef(0);
-  return useCallback((fn) => ({
-    onPointerDown: (event) => {
-      event.preventDefault();
-      lastPointerAt.current = Date.now();
-      fn();
-    },
-    onClick: () => {
-      if (Date.now() - lastPointerAt.current < 700) return; // our own tap, arriving again
-      fn();
-    },
-  }), []);
-}
 
 /**
  * @param {object} props
