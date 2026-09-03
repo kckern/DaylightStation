@@ -237,6 +237,24 @@ export class FoodCatalogService {
     return this.#catalogStore.findByUpc(upc, userId);
   }
 
+  /**
+   * Permanently remove a catalog entry (e.g. test-created junk, a bad
+   * custom-food typo). Not a soft delete — there's no "undo" for the food
+   * catalog the way there is for a NutriLog.
+   * @param {string} id
+   * @param {string} userId
+   * @throws {Error} code NOT_FOUND when the id doesn't exist
+   */
+  async remove(id, userId) {
+    const removed = await this.#catalogStore.removeById(id, userId);
+    if (!removed) {
+      const err = new Error(`Catalog entry not found: ${id}`);
+      err.code = 'NOT_FOUND';
+      throw err;
+    }
+    this.#logger.info?.('health.catalog.removed', { id, userId });
+  }
+
   /** Create a user-authored food, optionally mapped to a barcode. */
   async createCustom({ name, calories, protein, carbs, fat, barcodeUpc = null }, userId) {
     if (!name) throw new Error('createCustom requires name');

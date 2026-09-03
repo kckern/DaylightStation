@@ -330,6 +330,19 @@ export class YamlFoodLogDatastore extends IFoodLogDatastore {
   }
 
   /**
+   * Find pending logs for a single meal.date. Backs the web Today view's
+   * "Needs review" surface — pending logs created off-surface (Telegram,
+   * scale, a failed AI call) otherwise never show up there, since a pending
+   * NutriLog never gets synced into the nutrilist.
+   * @param {string} userId
+   * @param {string} date - Date (YYYY-MM-DD)
+   * @returns {Promise<NutriLog[]>}
+   */
+  async findPendingByDate(userId, date) {
+    return this.findAll(userId, { status: 'pending', date });
+  }
+
+  /**
    * Find accepted logs
    * @param {string} userId
    * @returns {Promise<NutriLog[]>}

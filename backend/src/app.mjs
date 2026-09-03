@@ -1542,6 +1542,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       ?? Promise.reject(new Error('webNutribotAdapter not yet initialized')),
     processCallback: (...args) => webNutribotAdapterProxy._delegate?.processCallback?.(...args)
       ?? Promise.reject(new Error('webNutribotAdapter not yet initialized')),
+    listPendingByDate: (...args) => webNutribotAdapterProxy._delegate?.listPendingByDate?.(...args)
+      ?? Promise.reject(new Error('webNutribotAdapter not yet initialized')),
     _delegate: null,
   };
 

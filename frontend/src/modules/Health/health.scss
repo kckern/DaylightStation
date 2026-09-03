@@ -78,6 +78,23 @@
   &__line { margin: 0 0 0.35rem; white-space: pre-wrap; font-size: 0.85rem; }
   &__actions { display: flex; gap: 0.4rem; align-items: center; }
   &__error { color: var(--ds-danger); font-size: 0.8rem; }
+
+  &__heading {
+    margin: 0 0 0.5rem; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em;
+    color: var(--ds-warning); text-transform: uppercase;
+  }
+  &__row {
+    display: flex; flex-direction: column; gap: 0.3rem;
+    padding: 0.4rem 0; border-top: 1px solid var(--ds-border);
+    &:first-of-type { border-top: none; padding-top: 0; }
+  }
+  &__row-info { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
+  &__row-items { font-size: 0.85rem; }
+  &__row-meta { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: var(--ds-text-mid); white-space: nowrap; }
+  &__tag {
+    padding: 0.05rem 0.4rem; border-radius: 999px; font-size: 0.7rem;
+    background: var(--ds-surface-alt); color: var(--ds-text-mid);
+  }
 }
 
 .health-progress {

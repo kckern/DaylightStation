@@ -14,16 +14,23 @@
 
 export class WebNutribotAdapter {
   #inputRouter;
+  #foodLogStore;
   #logger;
 
   /**
    * @param {Object} config
    * @param {Object} config.inputRouter - NutribotInputRouter instance
+   * @param {Object} [config.foodLogStore] - IFoodLogDatastore, for the
+   *   pending-review query surface (listPendingByDate). The input router has
+   *   no query-side methods of its own — this is the cleanest seam onto the
+   *   store the nutribot container already holds, without threading a whole
+   *   nutribot use case through the web adapter.
    * @param {Object} [config.logger]
    */
   constructor(config) {
     if (!config.inputRouter) throw new Error('WebNutribotAdapter requires inputRouter');
     this.#inputRouter = config.inputRouter;
+    this.#foodLogStore = config.foodLogStore || null;
     this.#logger = config.logger || null;
   }
 
@@ -235,6 +242,21 @@ export class WebNutribotAdapter {
       logged: captured.logged,
       responseText: captured.messages[captured.messages.length - 1]?.text || null,
     };
+  }
+
+  /**
+   * List pending NutriLogs for a single meal.date — the query behind the web
+   * Today view's "Needs review" surface.
+   *
+   * @param {string} userId
+   * @param {string} date - Date (YYYY-MM-DD)
+   * @returns {Promise<import('#domains/nutrition/entities/NutriLog.mjs').NutriLog[]>}
+   */
+  async listPendingByDate(userId, date) {
+    if (!this.#foodLogStore) {
+      throw new Error('WebNutribotAdapter has no foodLogStore configured');
+    }
+    return this.#foodLogStore.findPendingByDate(userId, date);
   }
 
   #createCaptureContext(captured) {

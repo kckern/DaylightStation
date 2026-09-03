@@ -128,57 +128,78 @@ describe('Health/LoseIt live API', () => {
   });
 
   // ==========================================================================
-  // 3. Food catalog: custom create → suggest → favorite → suggest-first
+  // 3. Food catalog: custom create → suggest → favorite → suggest-first → delete
   // ==========================================================================
-  describe('food catalog: create, suggest, favorite', () => {
+  describe('food catalog: create, suggest, favorite, delete', () => {
     const CUSTOM_NAME = 'ZZZ Integration Food';
 
-    test('POST custom food (idempotent) appears in suggest, then favoriting ranks it first', async () => {
-      // Idempotent create: only POST if a prior run hasn't already left it
-      // behind. No DELETE route exists for catalog entries (checked
-      // backend/src/4_api/v1/routers/health.mjs — only GET/POST/PUT under
-      // /nutrition/catalog*), so it's expected to persist across runs.
-      const existingSearch = await getJson(`/nutrition/catalog?q=${encodeURIComponent('zzz')}`);
-      expect(existingSearch.status).toBe(200);
-      const alreadyExists = existingSearch.body.items.some((i) => i.name === CUSTOM_NAME);
-
-      if (!alreadyExists) {
-        const created = await sendJson('POST', '/nutrition/catalog', {
-          name: CUSTOM_NAME,
-          calories: 123,
-        });
-        expect(created.status).toBe(200);
-        expect(created.body.entry.name).toBe(CUSTOM_NAME);
-        expect(created.body.entry.nutrients.calories).toBe(123);
+    test('POST custom food appears in suggest, favoriting ranks it first, DELETE removes it for good', async () => {
+      // A prior run that crashed before its own cleanup can leave this
+      // entry behind (there was no DELETE route until this endpoint shipped
+      // — every earlier run of this test was necessarily idempotent-create,
+      // never cleanup). Clear any stale copy first so this run starts clean.
+      const staleSearch = await getJson(`/nutrition/catalog?q=${encodeURIComponent('zzz')}`);
+      expect(staleSearch.status).toBe(200);
+      for (const stale of staleSearch.body.items.filter((i) => i.name === CUSTOM_NAME)) {
+        const del = await fetch(`${BASE}/nutrition/catalog/${stale.id}`, { method: 'DELETE' });
+        expect(del.status).toBe(200);
       }
 
-      const suggested = await getJson('/nutrition/catalog/suggest?q=zzz');
-      expect(suggested.status).toBe(200);
-      const names = suggested.body.items.map((i) => i.name);
-      expect(names).toContain(CUSTOM_NAME);
+      const created = await sendJson('POST', '/nutrition/catalog', {
+        name: CUSTOM_NAME,
+        calories: 123,
+      });
+      expect(created.status).toBe(200);
+      expect(created.body.entry.name).toBe(CUSTOM_NAME);
+      expect(created.body.entry.nutrients.calories).toBe(123);
+      const entryId = created.body.entry.id;
+      expect(entryId).toBeTruthy();
 
       try {
-        const favorited = await sendJson('PUT', '/nutrition/catalog/favorite', {
-          name: CUSTOM_NAME,
-          favorite: true,
-        });
-        expect(favorited.status).toBe(200);
-        expect(favorited.body.entry.favorite).toBe(true);
+        const suggested = await getJson('/nutrition/catalog/suggest?q=zzz');
+        expect(suggested.status).toBe(200);
+        const names = suggested.body.items.map((i) => i.name);
+        expect(names).toContain(CUSTOM_NAME);
 
-        const suggestedAfterFavorite = await getJson('/nutrition/catalog/suggest?q=zzz');
-        expect(suggestedAfterFavorite.status).toBe(200);
-        expect(suggestedAfterFavorite.body.items.length).toBeGreaterThan(0);
-        expect(suggestedAfterFavorite.body.items[0].name).toBe(CUSTOM_NAME);
-        expect(suggestedAfterFavorite.body.items[0].favorite).toBe(true);
+        try {
+          const favorited = await sendJson('PUT', '/nutrition/catalog/favorite', {
+            name: CUSTOM_NAME,
+            favorite: true,
+          });
+          expect(favorited.status).toBe(200);
+          expect(favorited.body.entry.favorite).toBe(true);
+
+          const suggestedAfterFavorite = await getJson('/nutrition/catalog/suggest?q=zzz');
+          expect(suggestedAfterFavorite.status).toBe(200);
+          expect(suggestedAfterFavorite.body.items.length).toBeGreaterThan(0);
+          expect(suggestedAfterFavorite.body.items[0].name).toBe(CUSTOM_NAME);
+          expect(suggestedAfterFavorite.body.items[0].favorite).toBe(true);
+        } finally {
+          // Never leave the test entry favorited — it sorts first in every
+          // real "+ Add food…" suggest list, including the empty-query one
+          // (I-3, final review 2026-09-02).
+          await sendJson('PUT', '/nutrition/catalog/favorite', {
+            name: CUSTOM_NAME,
+            favorite: false,
+          });
+        }
       } finally {
-        // Never leave the test entry favorited — it sorts first in every
-        // real "+ Add food…" suggest list, including the empty-query one
-        // (I-3, final review 2026-09-02).
-        await sendJson('PUT', '/nutrition/catalog/favorite', {
-          name: CUSTOM_NAME,
-          favorite: false,
-        });
+        // Never leave test junk permanently accreting in the live catalog —
+        // this is the whole point of the DELETE route existing (2026-09-02
+        // incident: no delete route meant live runs of this exact test could
+        // only accumulate entries, never remove them).
+        const del = await fetch(`${BASE}/nutrition/catalog/${entryId}`, { method: 'DELETE' });
+        expect(del.status).toBe(200);
+        const delBody = await del.json();
+        expect(delBody.ok).toBe(true);
       }
+
+      const afterDelete = await getJson(`/nutrition/catalog?q=${encodeURIComponent('zzz')}`);
+      expect(afterDelete.body.items.some((i) => i.id === entryId)).toBe(false);
+
+      // A second DELETE of the same (now-gone) id 404s.
+      const redelete = await fetch(`${BASE}/nutrition/catalog/${entryId}`, { method: 'DELETE' });
+      expect(redelete.status).toBe(404);
     });
   });
 

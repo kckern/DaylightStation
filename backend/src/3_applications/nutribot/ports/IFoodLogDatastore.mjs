@@ -70,6 +70,18 @@ export class IFoodLogDatastore {
   }
 
   /**
+   * Find pending logs whose meal.date matches — the query behind the web
+   * Today view's "Needs review" surface (pending logs are otherwise
+   * invisible there, since they never land in the nutrilist).
+   * @param {string} userId - User identifier
+   * @param {string} date - Date (YYYY-MM-DD)
+   * @returns {Promise<NutriLog[]>}
+   */
+  async findPendingByDate(userId, date) {
+    throw new Error('IFoodLogDatastore.findPendingByDate must be implemented');
+  }
+
+  /**
    * Find accepted logs
    * @param {string} userId - User identifier
    * @returns {Promise<NutriLog[]>}

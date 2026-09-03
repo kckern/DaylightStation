@@ -137,6 +137,14 @@ export class HealthOperations {
   processNutritionCallback(input) {
     return this.nutritionInput.processCallback(input);
   }
+
+  get pendingNutritionAvailable() {
+    return typeof this.nutritionInput?.listPendingByDate === 'function';
+  }
+
+  listPendingNutrition(username, date) {
+    return this.nutritionInput.listPendingByDate(username, date);
+  }
 }
 
 export default HealthOperations;
