@@ -179,6 +179,24 @@ export function validateFoodItem(item) {
     errors.push(...colorResult.errors);
   }
 
+  // Lifecycle / taxonomy fields (PRD Themes 2–3). Absent `settled` must STAY
+  // absent — presentation treats absence as settled (migration by defaulting).
+  if (item.kind !== undefined && !['item', 'group'].includes(item.kind)) {
+    errors.push("kind must be 'item' or 'group'");
+  }
+  if (item.parentId !== undefined && item.parentId !== null && typeof item.parentId !== 'string') {
+    errors.push('parentId must be a string when present');
+  }
+  if (item.settled !== undefined && typeof item.settled !== 'boolean') {
+    errors.push('settled must be a boolean when present');
+  }
+  if (item.settledBy !== undefined && item.settledBy !== null && !['user', 'auto'].includes(item.settledBy)) {
+    errors.push("settledBy must be 'user' or 'auto'");
+  }
+  if (item.microsSource !== undefined && item.microsSource !== null && !['ai', 'catalog'].includes(item.microsSource)) {
+    errors.push("microsSource must be 'ai' or 'catalog'");
+  }
+
   if (errors.length > 0) {
     return { valid: false, errors };
   }
@@ -205,6 +223,14 @@ export function validateFoodItem(item) {
       sugar: item.sugar ?? 0,
       sodium: item.sodium ?? 0,
       cholesterol: item.cholesterol ?? 0,
+      // Lifecycle / group fields
+      kind: item.kind || 'item',
+      parentId: item.parentId ?? null,
+      photoRef: item.photoRef ?? null,
+      ...(item.settled !== undefined ? { settled: item.settled } : {}),
+      settledBy: item.settledBy ?? null,
+      settledAt: item.settledAt ?? null,
+      microsSource: item.microsSource ?? null,
     },
   };
 }
