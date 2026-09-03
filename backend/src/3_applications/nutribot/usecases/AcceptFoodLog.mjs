@@ -60,9 +60,14 @@ export class AcceptFoodLog {
    * @param {string} input.logUuid
    * @param {string} [input.messageId]
    * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
+   * @param {boolean} [input.autoReport=true] - Generate the daily report when no pending logs
+   *   remain. The auto-commit seam passes `false`: with the pending gate retired, `findPending`
+   *   is essentially always empty, so this would render an image, send messages and kick the
+   *   coaching orchestrator after EVERY capture — inline, inside the capture request.
    */
   async execute(input) {
     const { userId, conversationId, logUuid, messageId, responseContext } = input;
+    const autoReport = input.autoReport !== false;
 
     this.#logger.debug?.('acceptLog.start', { conversationId, logUuid, hasResponseContext: !!responseContext });
 
@@ -158,7 +163,9 @@ export class AcceptFoodLog {
       });
 
       // 7. If no pending logs remain, auto-generate today's report
-      if (this.#foodLogStore?.findPending && this.#generateDailyReport?.execute) {
+      if (!autoReport) {
+        this.#logger.debug?.('acceptLog.autoreport.suppressed', { userId, logUuid });
+      } else if (this.#foodLogStore?.findPending && this.#generateDailyReport?.execute) {
         try {
           const pending = await this.#foodLogStore.findPending(userId);
           this.#logger.debug?.('acceptLog.autoreport.pendingCheck', { userId, pendingCount: pending.length });

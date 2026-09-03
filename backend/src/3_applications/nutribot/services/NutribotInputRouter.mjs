@@ -137,7 +137,13 @@ export class NutribotInputRouter extends BaseInputRouter {
   async #commitCapture({ userId, conversationId, logId, responseContext, source }) {
     try {
       const useCase = this.container.getAcceptFoodLog();
-      const accepted = await useCase.execute({ userId, conversationId, logUuid: logId, responseContext });
+      // autoReport:false — with the pending gate retired `findPending` is always
+      // empty, so the accept path's auto-report would fire a full daily report
+      // (rendered image + coaching kick, after a 300ms pause) inline in EVERY
+      // capture request. Manual Accept paths keep the report.
+      const accepted = await useCase.execute({
+        userId, conversationId, logUuid: logId, responseContext, autoReport: false,
+      });
       if (accepted?.success === false) {
         this.logger.warn?.('nutribot.capture.commitRefused', { source, logId, error: accepted.error });
         return false;
@@ -183,13 +189,15 @@ export class NutribotInputRouter extends BaseInputRouter {
             text: event.payload.text?.substring(0, 50),
           });
           const useCase = this.container.getProcessRevisionInput();
+          // Decorated: a revision lands on an ALREADY-COMMITTED log, so its
+          // terminal keyboard must not offer Accept either.
           const result = await useCase.execute({
             userId: this.#resolveUserId(event),
             conversationId: event.conversationId,
             logUuid: pendingLogUuid,
             text: event.payload.text,
             messageId: event.messageId,
-            responseContext,
+            responseContext: withCommittedChoices(responseContext),
           });
           return { ok: true, result };
         }

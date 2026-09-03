@@ -162,14 +162,25 @@ Two flows are deliberately exempt from the accept half of the seam:
 Messages are captured as `{ messages: [...] }` in the JSON response (the same shape
 Telegram's `choices`/`callback_data` protocol uses).
 
+The accept path runs with `autoReport: false` — with the gate retired `findPending` is
+essentially always empty, so the report `AcceptFoodLog` fires when nothing is pending would
+otherwise render an image, send messages and kick the coaching orchestrator inside *every*
+capture request. Manual Accept paths keep it.
+
 `AddCombobox.submitSentence()` is the one call site that renders this inline: on success it
 sets `phase = 'review'` and shows `PendingConfirmCard`, which offers:
 
 - **Undo** — resolves the `x` button's `callback_data` via
   `POST /nutrition/callback { callbackData }`, deleting the log and its NutriList rows.
-- **Edit** — the `r` button's callback, which opens the revision flow.
-- A follow-up `TextInput` re-submits a correction as a fresh
-  `POST /nutrition/input { type: 'text' }` (e.g. "that was 2 slices, not 1").
+- **Edit** — opens a follow-up `TextInput` that re-submits the correction as a fresh
+  `POST /nutrition/input { type: 'text' }` (e.g. "that was 2 slices, not 1"). A revision
+  re-syncs the NutriList from the revised log and carries `settled: false` forward, so the
+  edit reaches the day view and the totals.
+- **Done** — dismisses the card. It confirms nothing; the entry is already logged.
+
+The card resolves each callback by matching the button's label text, so those labels are a
+contract between `committedChoices.mjs` and `PendingConfirmCard.jsx`. Undo and Edit both
+reload the day afterwards — Undo deletes an entry that was already counting.
 
 A captured entry appears in the day's log (`GET /nutrilist/:date` returns every status,
 unfiltered) and counts toward the budget immediately, carrying `settled: false` until it is

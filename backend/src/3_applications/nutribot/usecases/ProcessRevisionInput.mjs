@@ -8,6 +8,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
 import { repairTruncatedJson } from '../lib/repairJson.mjs';
+import { buildCommittedChoices } from '../lib/committedChoices.mjs';
 
 /**
  * Process revision input use case
@@ -16,10 +17,10 @@ export class ProcessRevisionInput {
   #messagingGateway;
   #aiGateway;
   #foodLogStore;
+  #nutriListStore;
   #conversationStateStore;
   #config;
   #logger;
-  #encodeCallback;
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
@@ -28,10 +29,10 @@ export class ProcessRevisionInput {
     this.#messagingGateway = deps.messagingGateway;
     this.#aiGateway = deps.aiGateway;
     this.#foodLogStore = deps.foodLogStore;
+    this.#nutriListStore = deps.nutriListStore;
     this.#conversationStateStore = deps.conversationStateStore;
     this.#config = deps.config;
     this.#logger = deps.logger || console;
-    this.#encodeCallback = deps.encodeCallback || ((cmd, data) => JSON.stringify({ cmd, ...data }));
   }
 
   /**
@@ -112,16 +113,31 @@ export class ProcessRevisionInput {
       const response = await this.#aiGateway.chat(prompt, { maxTokens: 4096 });
 
       // 6. Parse revised items
-      const revisedItems = this.#parseRevisionResponse(response);
+      const revisedItems = this.#carryForwardSettlement(
+        nutriLog.items,
+        this.#parseRevisionResponse(response),
+      );
 
       if (revisedItems.length === 0) {
         await messaging.sendMessage("❓ I couldn't understand that revision. Try being more specific.", {});
         return { success: false, error: 'Could not parse revision' };
       }
 
-      // 7. Update log with revised items
+      // 7. Update log with revised items, then RE-SYNC the nutrilist.
+      // The log rows are written at capture time now, so without this re-sync a
+      // revision would change nothing the day view shows or BudgetService counts.
       if (this.#foodLogStore) {
-        await this.#foodLogStore.updateItems(userId, logUuid, revisedItems);
+        const revisedLog = await this.#foodLogStore.updateItems(userId, logUuid, revisedItems);
+        if (revisedLog && this.#nutriListStore?.syncFromLog) {
+          try {
+            await this.#nutriListStore.syncFromLog(revisedLog);
+            this.#logger.debug?.('processRevision.nutrilistSynced', {
+              logUuid, itemCount: revisedItems.length, status: revisedLog.status,
+            });
+          } catch (e) {
+            this.#logger.warn?.('processRevision.nutrilistSyncFailed', { logUuid, error: e.message });
+          }
+        }
       }
 
       // 8. Update state back to confirmation
@@ -300,17 +316,32 @@ Noom colors:
   }
 
   /**
-   * Build action buttons
+   * Carry the log's settlement state onto freshly re-parsed items.
+   *
+   * The AI returns raw items with no `settled` key, so without this a revision
+   * would silently strip `settled: false` off an unsettled entry — split-brain
+   * against rows already written at capture time. The absence rule still
+   * governs: if the existing items carry no `settled` key (legacy row), the
+   * revised ones don't either. Never defaulted.
+   *
+   * @private
+   */
+  #carryForwardSettlement(existingItems, revisedItems) {
+    const wasUnsettled = (existingItems || []).some(item => item?.settled === false);
+    if (!wasUnsettled) return revisedItems;
+    return revisedItems.map(item => ({ ...item, settled: false }));
+  }
+
+  /**
+   * Build action buttons.
+   *
+   * The log is already committed by the time a revision runs, so this offers the
+   * committed keyboard (Undo / Edit) — never Accept, which `AcceptFoodLog`
+   * would refuse with 'Log already processed'.
    * @private
    */
   #buildActionButtons(logUuid) {
-    return [
-      [
-        { text: '✅ Accept', callback_data: this.#encodeCallback('a', { id: logUuid }) },
-        { text: '✏️ Revise', callback_data: this.#encodeCallback('r', { id: logUuid }) },
-        { text: '🗑️ Discard', callback_data: this.#encodeCallback('x', { id: logUuid }) },
-      ],
-    ];
+    return buildCommittedChoices(logUuid);
   }
 }
 

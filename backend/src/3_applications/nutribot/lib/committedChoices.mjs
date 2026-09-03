@@ -69,9 +69,12 @@ export function findAcceptedLogId(choices) {
 }
 
 /**
- * Replace an Accept row with the committed (Undo/Edit) row.
- * Choices carrying no Accept button (UPC portion picker, image retry, report
- * controls) pass through untouched.
+ * Replace a keyboard that offers Accept with the committed (Undo/Edit) keyboard.
+ *
+ * Note this replaces ALL rows, not just the row the Accept button sits in — every
+ * current sender emits the Accept row as its only row, and a committed capture has
+ * no other affordance to preserve. Choices carrying no Accept button (UPC portion
+ * picker, image retry, report controls) pass through untouched.
  *
  * @param {any} choices
  * @returns {{ choices: any, rewrittenLogId: string|null }}
@@ -96,6 +99,12 @@ function rewriteOptions(options) {
  * offers Undo/Edit instead. Everything else on the context (deleteMessage,
  * createStatusIndicator, transcription helpers, adapter-specific extras) is
  * passed straight through, still bound to the original context.
+ *
+ * LIMIT: only `sendMessage`, `sendPhoto` and `updateMessage` are rewritten. A
+ * keyboard sent through the OBJECT RETURNED BY `createStatusIndicator(...)` — or
+ * any other nested handle — escapes the rewrite silently, because the proxy only
+ * sees calls made on the context itself. No sender does that today; if one starts,
+ * wrap that handle here too rather than adding buttons at the call site.
  *
  * @param {Object|null} responseContext
  * @param {Object} [options]
