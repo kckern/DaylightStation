@@ -62,10 +62,21 @@ vi.mock('./GameGate.jsx', () => ({
     );
   },
 }));
+// A vi.fn() (not a plain closure) so tests can assert what Games() actually
+// PASSES the hook — specifically the `schoolLearner` escape-hatch option
+// (2026-09-03: Games.jsx was the one call site that omitted it, so a grown-up
+// School does not track queried an entitlement that does not exist for them
+// and was told to finish schoolwork they never had). The mock mirrors the
+// real hook's own `notGated` gate exactly, so these tests fail against the
+// un-fixed call site instead of only exercising the stub.
 vi.mock('../../useSchoolGameAccess.js', () => ({
-  default: () => ({
-    status: 'ready', state: schoolAccess.unlocked ? 'complete' : 'incomplete',
-    unlocked: schoolAccess.unlocked, refresh: vi.fn(),
+  default: vi.fn((learnerId, opts) => {
+    const notGated = opts?.schoolLearner === false && learnerId !== 'guest' && Boolean(learnerId);
+    if (notGated) return { status: 'ready', state: 'not_gated', unlocked: true, refresh: vi.fn() };
+    return {
+      status: 'ready', state: schoolAccess.unlocked ? 'complete' : 'incomplete',
+      unlocked: schoolAccess.unlocked, refresh: vi.fn(),
+    };
   }),
 }));
 vi.mock('../../useGameBudgetMeter.js', () => ({
@@ -104,11 +115,18 @@ function Navigator({ to }) {
   return <button type="button" onClick={() => navigate(to)}>{`go:${to}`}</button>;
 }
 
-function renderGames(initialEntry = '/games', currentUser = 'guest', config = testConfig, navTargets = []) {
+// `users` defaults to a single-entry roster with no `schoolLearner` field —
+// exactly what every pre-existing test in this file was implicitly relying
+// on (an unanswered/absent roster field), so their behaviour is unchanged.
+// Pass an explicit roster to exercise the `schoolLearner` wiring itself.
+function renderGames(
+  initialEntry = '/games', currentUser = 'guest', config = testConfig, navTargets = [],
+  users = [{ id: currentUser, name: currentUser }],
+) {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
       <ActivePianoProvider pianoId="test" config={config}>
-        <PianoUserContext.Provider value={{ currentUser, currentProfile: { id: currentUser, name: currentUser } }}>
+        <PianoUserContext.Provider value={{ currentUser, currentProfile: { id: currentUser, name: currentUser }, users }}>
           <PianoMidiProvider>
             {navTargets.map((to) => <Navigator key={to} to={to} />)}
             <Routes>
@@ -181,6 +199,39 @@ describe('Games mode', () => {
     expect(await screen.findByText('Games are locked')).toBeTruthy();
     expect(screen.getByText(/Finish today’s schoolwork/)).toBeTruthy();
     expect(document.querySelector('.piano-game-fullscreen')).toBeNull();
+  });
+
+  // 2026-09-03 regression: Games() is the one call site of useSchoolGameAccess
+  // that omitted the `schoolLearner` escape-hatch option, so a grown-up School
+  // does not track queried an entitlement that does not exist for them,
+  // read as `indeterminate`, and stayed locked out of Games entirely.
+  describe('school-access wiring (grown-up escape hatch)', () => {
+    it('reaches the game for a roster member marked schoolLearner: false, even while the entitlement read would otherwise lock', () => {
+      // schoolAccess.unlocked = false simulates the indeterminate/incomplete
+      // verdict a person with no piano.games gate instance actually gets back
+      // — the exact shape of the reported bug. `notGated` must bypass it.
+      schoolAccess.unlocked = false;
+      renderGames('/games/tetris', 'kckern', testConfig, [], [{ id: 'kckern', name: 'KC', schoolLearner: false }]);
+      expect(document.querySelector('.piano-game-fullscreen')).not.toBeNull();
+      expect(screen.queryByText('Games are locked')).toBeNull();
+    });
+
+    it('still locks a roster member marked schoolLearner: true with incomplete schoolwork — the gate is not a no-op', () => {
+      schoolAccess.unlocked = false;
+      renderGames('/games/tetris', 'learner1', testConfig, [], [{ id: 'learner1', name: 'Learner One', schoolLearner: true }]);
+      expect(screen.getByText('Games are locked')).toBeTruthy();
+      expect(document.querySelector('.piano-game-fullscreen')).toBeNull();
+    });
+
+    it('stays locked while the roster has not yet answered whether this user is a school learner (schoolLearner undefined)', () => {
+      // An empty roster is the race window between "identity picked" and
+      // "roster fetch resolved". Racing it must never be a reliable unlock
+      // for a child with unfinished schoolwork.
+      schoolAccess.unlocked = false;
+      renderGames('/games/tetris', 'learner1', testConfig, [], []);
+      expect(screen.getByText('Games are locked')).toBeTruthy();
+      expect(document.querySelector('.piano-game-fullscreen')).toBeNull();
+    });
   });
 
   it('navigates to the game host on tile click (relative nav)', () => {
