@@ -9,8 +9,8 @@ const FOCUSABLE = 'button:not([disabled]), [href], select:not([disabled]), input
 // its parent's, so a nested pair mounted open in one commit would otherwise
 // crown the outer sheet.
 const openSheets = [];
-const top = () => openSheets.reduce((a, b) =>
-  (a.current && b.current && (a.current.compareDocumentPosition(b.current) & Node.DOCUMENT_POSITION_FOLLOWING)) ? b : a);
+const top = () => (openSheets.length === 0 ? null : openSheets.reduce((a, b) =>
+  (a.current && b.current && (a.current.compareDocumentPosition(b.current) & Node.DOCUMENT_POSITION_FOLLOWING)) ? b : a));
 
 /**
  * TransportSheet — the kiosk's one modal-sheet shell: full-screen scrim that

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Icon from '../../ui/icons/Icon.jsx';
+import getLogger from '../../../../lib/logging/Logger.js';
 import './Transport.scss';
 
 /**
@@ -38,6 +39,12 @@ export default function TransportButton({
   const iconEl = art && !artFailed
     ? <img key="icon" className="piano-tbtn__art" src={art} alt="" draggable={false} decoding="async" onError={() => setArtFailed(true)} />
     : icon && <Icon key="icon" name={icon} />;
+  // Fallback is invisible by design (a glyph instead of a picture), so the
+  // condition that causes it — an unsynced pack on prod, a renamed file — is
+  // logged, sampled so a whole grid of 404s is one line, not twenty-four.
+  useEffect(() => {
+    if (artFailed && art) getLogger().child({ component: 'transport-button' }).sampled('piano.tile.art-failed', { art }, { maxPerMinute: 5, aggregate: true });
+  }, [artFailed, art]);
   const labelEl = label != null && <span key="label" className="piano-tbtn__label">{label}</span>;
   return (
     <button

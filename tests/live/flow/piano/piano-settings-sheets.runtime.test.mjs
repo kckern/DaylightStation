@@ -63,6 +63,20 @@ test.describe('piano settings sheets', () => {
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog', { name: 'Sound' })).toHaveCount(0);
 
+    // Signed-in player: the tone column grows a 48px save row, which is the
+    // state the final review measured as the tightest. Pick the first roster
+    // player through the chrome chip. Nothing is saved — a real favourite write
+    // on a real player is not a test side effect we want.
+    await page.getByRole('button', { name: 'Switch player' }).click();
+    await page.locator('.piano-userpicker .piano-usercard').first().click();
+    await expect(page.getByRole('button', { name: 'Switch player' })).toBeVisible();
+    await page.locator(CHIP).click();
+    await page.getByRole('button', { name: 'Winds & Brass' }).click();
+    await expect(page.getByRole('button', { name: /^(Save sound|Update saved sound|Saved)$/ })).toBeVisible();
+    await noOverflow(page, '4b-sound-signed-in-winds');
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog', { name: 'Sound' })).toHaveCount(0);
+
     // Maintenance: hold the chip 550ms+.
     const box = await page.locator(CHIP).boundingBox();
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);

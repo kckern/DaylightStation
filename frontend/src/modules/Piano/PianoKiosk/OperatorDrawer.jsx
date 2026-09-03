@@ -89,6 +89,7 @@ export default function OperatorDrawer({ open, onClose }) {
     if (open) return;
     disarmScreen(); disarmReload(); disarmReboot();
     setDiagnostics(false);
+    setFeedbackOpen(false);
     setAction({ state: 'idle', message: null, name: null });
   }, [open, disarmScreen, disarmReload, disarmReboot]);
 
