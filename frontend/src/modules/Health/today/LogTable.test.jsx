@@ -10,6 +10,11 @@ const byBucket = new Map([
   [null, []],
 ]);
 
+const emptyByBucket = new Map([
+  ['morning', []], ['afternoon', []], ['evening', []], ['night', []],
+  [null, []],
+]);
+
 const wrapper = ({ children }) => <MantineProvider>{children}</MantineProvider>;
 
 describe('LogTable', () => {
@@ -47,6 +52,66 @@ describe('LogTable', () => {
     expect(onAddTo).toHaveBeenCalledWith('morning');
     fireEvent.click(screen.getByText('Eggs'));
     expect(onRowTap).toHaveBeenCalledWith(expect.objectContaining({ uuid: '1' }));
+  });
+
+  describe('permanent chrome (Task 3.2)', () => {
+    it('renders all bucket headings and add rows during a true cold start (coldLoading, no rows anywhere)', () => {
+      render(<LogTable byBucket={emptyByBucket} sessions={[]} coldLoading
+        onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+      expect(screen.getByText('Breakfast')).toBeTruthy();
+      expect(screen.getByText('Lunch')).toBeTruthy();
+      expect(screen.getByText('Dinner')).toBeTruthy();
+      expect(screen.getByText('Snacks')).toBeTruthy();
+      // Structure is present alongside the shimmer, not instead of it.
+      expect(screen.getAllByText(/Add food/)).toHaveLength(BUCKETS.length);
+      expect(screen.getAllByLabelText(/^Loading /).length).toBeGreaterThan(0);
+    });
+
+    it('does NOT show a shimmer for a bucket that already has cached rows, even while coldLoading is (incorrectly) passed true', () => {
+      render(<LogTable byBucket={byBucket} sessions={[]} coldLoading
+        onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+      // Breakfast has a row -> no shimmer there, and the row itself renders.
+      expect(screen.getByText('Eggs')).toBeTruthy();
+      expect(screen.queryByLabelText(/loading breakfast/i)).toBeNull();
+      // The genuinely empty buckets DO shimmer.
+      expect(screen.getByLabelText(/loading lunch/i)).toBeTruthy();
+    });
+
+    it('shows no shimmer anywhere when coldLoading is false, even with empty buckets (background revalidation)', () => {
+      render(<LogTable byBucket={emptyByBucket} sessions={[]} coldLoading={false}
+        onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+      expect(screen.queryByLabelText(/^Loading /)).toBeNull();
+    });
+
+    it('the Exercise header renders with zero sessions once budget data exists (exerciseAvailable)', () => {
+      render(<LogTable byBucket={byBucket} sessions={[]} exerciseAvailable
+        onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+      expect(screen.getByText('Exercise')).toBeTruthy();
+    });
+
+    it('the Exercise header is absent before budget data has ever loaded (exerciseAvailable false, no sessions)', () => {
+      render(<LogTable byBucket={byBucket} sessions={[]}
+        onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+      expect(screen.queryByText('Exercise')).toBeNull();
+    });
+
+    it('shows an "Analyzing…" placeholder in the targeted bucket only, with aria-busy', () => {
+      render(<LogTable byBucket={byBucket} sessions={[]} capturePendingBucket="afternoon"
+        onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+      const placeholder = screen.getByText('Analyzing…');
+      expect(placeholder.closest('[aria-busy="true"]')).toBeTruthy();
+      // It sits under Lunch (afternoon), not Breakfast (morning).
+      const lunchSection = screen.getByText('Lunch').closest('section');
+      expect(lunchSection.contains(placeholder)).toBe(true);
+      const breakfastSection = screen.getByText('Breakfast').closest('section');
+      expect(breakfastSection.contains(placeholder)).toBe(false);
+    });
+
+    it('shows no placeholder in any bucket when capturePendingBucket is null', () => {
+      render(<LogTable byBucket={byBucket} sessions={[]}
+        onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+      expect(screen.queryByText('Analyzing…')).toBeNull();
+    });
   });
 
   describe('grouped rows', () => {

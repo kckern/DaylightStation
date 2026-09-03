@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ActionIcon, Button } from '@mantine/core';
-import { LoadingState, ErrorState } from '@/lib/ui';
+import { ErrorState } from '@/lib/ui';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
@@ -13,7 +13,7 @@ import { AddCombobox } from './AddCombobox.jsx';
 import { NeedsReviewSection } from './NeedsReviewSection.jsx';
 import { EntryEditSheet } from './EntryEditSheet.jsx';
 import { SavedMealsSheet } from './SavedMealsSheet.jsx';
-import { localTodayISO as todayISO } from './mealBuckets.js';
+import { localTodayISO as todayISO, currentMealBucketId } from './mealBuckets.js';
 import { useNutritionInput } from '../capture/useNutritionInput.js';
 import { BarcodeCapture } from '../capture/BarcodeCapture.jsx';
 import { PhotoCapture } from '../capture/PhotoCapture.jsx';
@@ -46,6 +46,12 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   const [unknownUpc, setUnknownUpc] = useState(null);
   const [savedMealsFor, setSavedMealsFor] = useState(null); // bucketId | null — F8's saved-meals picker
   const [captureNotice, setCaptureNotice] = useState(null); // string | null — e.g. "no food detected"
+  // bucketId | null — set the instant an AI capture (photo/voice/barcode)
+  // submit starts, cleared in a `finally` once the result (success OR
+  // failure) comes back. LogTable renders the "Analyzing…" placeholder row
+  // in this exact bucket — the wait is shown where the result will land,
+  // never as a page-level spinner.
+  const [capturePending, setCapturePending] = useState(null);
   const nutrition = useNutritionInput();
   const dash = useApiResource('api/v1/health/dashboard', { label: 'dashboard', logger });
   // Pending NutriLogs for the viewed date. Text/image/voice/barcode captures
@@ -117,6 +123,20 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
     day.reload();
   };
 
+  // Wraps any capture submit (photo/voice/barcode) with the in-place pending
+  // placeholder: mark the bucket a new entry would land in NOW as pending
+  // before the request goes out, always clear it afterward regardless of
+  // outcome — a failed capture must not leave a stuck "Analyzing…" row.
+  const submitWithPending = async (type, content) => {
+    const bucketId = currentMealBucketId();
+    setCapturePending(bucketId);
+    try {
+      return await nutrition.submit(type, content);
+    } finally {
+      setCapturePending(null);
+    }
+  };
+
   const bucketHeaderAction = (bucketId, rows, label) => {
     if (!rows.length) return null;
     if (date !== todayISO()) {
@@ -125,12 +145,19 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
     return <Button size="compact-xs" variant="subtle" onClick={() => saveBucketAsMeal(rows, label)}>Save as meal</Button>;
   };
 
+  // The day's STRUCTURE (headings, section frames, add rows) renders
+  // unconditionally via LogTable below — this only decides whether a
+  // section's BODY shows a shimmer in place of its (still-empty) entries.
+  // True cold start = never loaded this date before (no SWR cache hit) AND
+  // still loading; a background revalidation after a mutation leaves
+  // `day.loading` false the whole time, so it never re-triggers this.
+  const coldLoading = day.loading && !day.items.length;
+
   return (
     <div className="health-today">
       <EquationStrip budget={day.budget} budgetError={day.budgetError}
         date={date} today={todayISO()} onDateChange={setDate} onSetupGoals={onSetupGoals} />
       <WeekStrip date={date} today={todayISO()} onDateChange={setDate} />
-      {day.loading ? <LoadingState label="food log" rows={6} /> : null}
       {day.error ? <ErrorState error={day.error} onRetry={day.reload} label="Food log" /> : null}
       {captureNotice ? (
         <div className="health-pending" role="status">
@@ -142,28 +169,28 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
       ) : null}
       <NeedsReviewSection pending={scalePending}
         onChanged={() => { pendingReview.reload(); day.reload(); }} />
-      {!day.loading && !day.error ? (
-        <LogTable byBucket={day.byBucket} sessions={day.budget?.sessions || []}
-          onAddTo={setAddingTo} onRowTap={setEditingRow} onConfirm={day.reload} addingTo={addingTo}
-          bucketHeaderAction={bucketHeaderAction}
-          addSlot={addingTo ? (
-            <AddCombobox bucketId={addingTo}
-              onDone={() => { setAddingTo(null); day.reload(); }}
-              onCancel={() => setAddingTo(null)}
-              onSavedMeals={() => setSavedMealsFor(addingTo)} />
-          ) : null} />
-      ) : null}
+      <LogTable byBucket={day.byBucket} sessions={day.budget?.sessions || []}
+        exerciseAvailable={Boolean(day.budget)}
+        coldLoading={coldLoading} capturePendingBucket={capturePending}
+        onAddTo={setAddingTo} onRowTap={setEditingRow} onConfirm={day.reload} addingTo={addingTo}
+        bucketHeaderAction={bucketHeaderAction}
+        addSlot={addingTo ? (
+          <AddCombobox bucketId={addingTo}
+            onDone={() => { setAddingTo(null); day.reload(); }}
+            onCancel={() => setAddingTo(null)}
+            onSavedMeals={() => setSavedMealsFor(addingTo)} />
+        ) : null} />
       <MacroFooter items={day.items} coachLine={coachLine} onCoachTap={onCoachTap}>
         <PhotoCapture busy={nutrition.busy}
-          onCapture={async (dataUrl) => handleCaptureResult(await nutrition.submit('image', dataUrl))} />
+          onCapture={async (dataUrl) => handleCaptureResult(await submitWithPending('image', dataUrl))} />
         <BarcodeButton onClick={() => setCaptureMode('barcode')} />
         <VoiceCapture busy={nutrition.busy}
-          onCapture={async (dataUrl) => handleCaptureResult(await nutrition.submit('voice', dataUrl))} />
+          onCapture={async (dataUrl) => handleCaptureResult(await submitWithPending('voice', dataUrl))} />
       </MacroFooter>
       <BarcodeCapture open={captureMode === 'barcode'} busy={nutrition.busy}
         onClose={() => setCaptureMode(null)}
         onDecode={async (upc) => {
-          const result = await nutrition.submit('barcode', upc);
+          const result = await submitWithPending('barcode', upc);
           if (result?.unknownUpc) { setCaptureMode(null); setUnknownUpc(result.upc); }
           else { setCaptureMode(null); day.reload(); }
         }} />
