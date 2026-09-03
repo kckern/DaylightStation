@@ -220,7 +220,7 @@ export class LogFoodFromText {
       this.#logger.debug?.('logText.aiResponse', { conversationId, response: response?.substring?.(0, 500) });
 
       // 3. Parse response into food items and date — same pin
-      const { items: foodItems, date: aiDate, time: aiTime } = this.#parseFoodResponse(response, asOfDateForRevision);
+      const { items: foodItems, date: aiDate, time: aiTime, mealTimeExplicit } = this.#parseFoodResponse(response, asOfDateForRevision);
 
       this.#logger.debug?.('logText.parsed', {
         conversationId,
@@ -376,6 +376,13 @@ export class LogFoodFromText {
         nutrilogUuid: nutriLog.id,
         messageId: statusMsgId,
         itemCount: foodItems.length,
+        // Task 4.1 — meal-time precedence seam (NutribotInputRouter#capture).
+        // The log itself always stores the CLOCK-derived meal.time above (unchanged,
+        // for backward compatibility); mealTime/mealTimeExplicit here just report what
+        // the AI parsed, so the router seam can override the stored log when the user
+        // named a meal explicitly ("for lunch") or a bucket param was supplied.
+        mealTime: aiTime,
+        mealTimeExplicit: mealTimeExplicit === true,
       };
     } catch (error) {
       this.#logger.error?.('logText.error', { conversationId, error: error.message });
@@ -446,11 +453,13 @@ export class LogFoodFromText {
 8. Prefer grams (g) or ml as the unit; only use other units (cup, tbsp, oz, piece) if the user explicitly says so.
 9. Round grams to sensible whole numbers (nearest 5g).
 10. If the description is a composite dish whose parts are listed separately (e.g. a smoothie and its ingredients, or spaghetti with noodles/sauce/cheese listed out), give every part item the SAME "dish" string (the dish's name). Standalone foods that are not part of a listed composite OMIT "dish" entirely.
+11. Determine whether the user explicitly named or clearly implied a specific meal (e.g. "for lunch", "breakfast was...", "a midnight snack"). If so, set "mealTimeExplicit" to true and set "time" to that meal: "morning", "afternoon", "evening", or "night". If no meal is named or implied, omit "mealTimeExplicit" (or set it to false) and use your best-guess "time" as before.
 
 Respond in JSON format:
 {
   "date": "YYYY-MM-DD",
   "time": "${time}",
+  "mealTimeExplicit": false,
   "items": [
     {
       "name": "Food Name In Title Case",
@@ -472,6 +481,7 @@ Respond in JSON format:
   ]
 }
 ("dish" is OPTIONAL — omit it for a standalone item; include it only on items that are part of a named composite.)
+("mealTimeExplicit" is OPTIONAL — set true only when a meal is explicitly named or clearly implied; omit or use false otherwise.)
 
 Be conservative with estimates. Use USDA values when possible.
 Begin response with '{' character - output only valid JSON, no markdown.${portionBoost}`,
@@ -504,7 +514,7 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
             this.#logger.warn?.('logText.parseRepaired', { itemCount: data.items?.length || 0 });
           }
         }
-        if (!data) return { items: [], date: today, time: null };
+        if (!data) return { items: [], date: today, time: null, mealTimeExplicit: false };
         const rawItems = data.items || [];
 
         const items = rawItems.map((item) => {
@@ -535,12 +545,13 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
           items: groupParsedItems(items, { makeId: uuidv4 }),
           date: data.date || today,
           time: data.time || null,
+          mealTimeExplicit: data.mealTimeExplicit === true,
         };
       }
-      return { items: [], date: today, time: null };
+      return { items: [], date: today, time: null, mealTimeExplicit: false };
     } catch (e) {
       this.#logger.warn?.('logText.parseError', { error: e.message });
-      return { items: [], date: today, time: null };
+      return { items: [], date: today, time: null, mealTimeExplicit: false };
     }
   }
 

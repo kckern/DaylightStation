@@ -201,8 +201,19 @@ export class HealthOperations {
     return !!this.nutritionInput;
   }
 
-  processNutritionInput(input) {
-    return this.nutritionInput.process(input);
+  /**
+   * @param {Object} input
+   * @param {string} input.type - "text" | "voice" | "image" | "barcode"
+   * @param {string} [input.content]
+   * @param {string} input.userId
+   * @param {string} [input.bucket] - Pre-validated meal-time bucket id the
+   *   capture was launched from (validated by the API router against the four
+   *   known ids before this is ever called). Threaded straight through to the
+   *   nutribot input pipeline, where the router seam applies the precedence:
+   *   explicit-in-utterance/caption > bucket > clock default.
+   */
+  processNutritionInput({ type, content, userId, bucket }) {
+    return this.nutritionInput.process({ type, content, userId, bucket });
   }
 
   processNutritionCallback(input) {
