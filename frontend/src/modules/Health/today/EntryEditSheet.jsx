@@ -69,7 +69,10 @@ export function EntryEditSheet({ row, open, onClose, onChanged }) {
                   { name: row.name || row.item, favorite: true }, 'PUT');
                 setStarred(true);
                 logger.info('favorite', { name: row.name });
-              } catch (err) { setError(err); }
+              } catch (err) {
+                logger.warn('favorite.failed', { name: row.name, error: err?.message });
+                setError(err);
+              }
             }}>
             {starred ? '★ Favorited' : '☆ Favorite'}
           </Button>

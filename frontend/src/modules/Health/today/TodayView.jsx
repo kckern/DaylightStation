@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { ActionIcon, Button } from '@mantine/core';
 import { LoadingState, ErrorState } from '@/lib/ui';
 import { DaylightAPI } from '../../../lib/api.mjs';
+import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { useHealthDay } from './useHealthDay.js';
 import { EquationStrip } from './EquationStrip.jsx';
@@ -35,6 +36,8 @@ function BarcodeButton({ onClick }) {
   );
 }
 
+const logger = createAppLogger('health').child('today');
+
 export function TodayView({ onSetupGoals, onCoachTap }) {
   const [date, setDate] = useState(todayISO());
   const day = useHealthDay(date);
@@ -46,7 +49,7 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   const [pendingCapture, setPendingCapture] = useState(null); // { messages } | null — photo/voice review card (I-4)
   const [captureNotice, setCaptureNotice] = useState(null); // string | null — e.g. "no food detected"
   const nutrition = useNutritionInput();
-  const dash = useApiResource('api/v1/health/dashboard', { label: 'dashboard' });
+  const dash = useApiResource('api/v1/health/dashboard', { label: 'dashboard', logger });
   // Pending-review NutriLogs for the viewed date — created off-surface
   // (Telegram, the scale bridge, a failed AI call) and otherwise invisible
   // here, since a pending log never syncs into the nutrilist that day.byBucket
@@ -68,10 +71,16 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   // transport (created, immediately logged to today, then discarded).
   const copyMealToToday = async (rows, bucketId, label) => {
     const items = rows.map((r) => ({ name: r.name || r.item, calories: r.calories, protein: r.protein, carbs: r.carbs, fat: r.fat, color: r.color }));
-    const { meal } = await DaylightAPI('api/v1/health/nutrition/meals', { name: `Copied ${label}`, items }, 'POST');
-    await DaylightAPI(`api/v1/health/nutrition/meals/${meal.id}/log`, { date: todayISO(), mealTime: bucketId }, 'POST');
-    await DaylightAPI(`api/v1/health/nutrition/meals/${meal.id}`, {}, 'DELETE');
-    day.reload();
+    try {
+      const { meal } = await DaylightAPI('api/v1/health/nutrition/meals', { name: `Copied ${label}`, items }, 'POST');
+      await DaylightAPI(`api/v1/health/nutrition/meals/${meal.id}/log`, { date: todayISO(), mealTime: bucketId }, 'POST');
+      await DaylightAPI(`api/v1/health/nutrition/meals/${meal.id}`, {}, 'DELETE');
+      logger.info('copy-to-today', { bucketId, count: items.length });
+      day.reload();
+    } catch (err) {
+      logger.error('copy-to-today.failed', { bucketId, error: err?.message });
+      setCaptureNotice(`Couldn't copy ${label.toLowerCase()} to today — try again.`);
+    }
   };
 
   // Today's bucket → a named, kept saved meal (US-2.2).
@@ -79,7 +88,13 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
     const name = window.prompt('Name this meal:', `My ${label.toLowerCase()}`);
     if (!name) return;
     const items = rows.map((r) => ({ name: r.name || r.item, calories: r.calories, protein: r.protein, carbs: r.carbs, fat: r.fat, color: r.color }));
-    await DaylightAPI('api/v1/health/nutrition/meals', { name, items }, 'POST');
+    try {
+      await DaylightAPI('api/v1/health/nutrition/meals', { name, items }, 'POST');
+      logger.info('save-bucket-as-meal', { name, count: items.length });
+    } catch (err) {
+      logger.error('save-bucket-as-meal.failed', { name, error: err?.message });
+      setCaptureNotice(`Couldn't save "${name}" as a meal — try again.`);
+    }
   };
 
   // Photo/voice submissions can come back either as a pending NutriLog with

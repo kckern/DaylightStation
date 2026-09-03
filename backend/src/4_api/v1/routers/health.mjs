@@ -444,7 +444,7 @@ export function createHealthRouter(config) {
 
       const newItem = await healthOperations.createNutritionItem(userId, itemData);
 
-      logger.debug?.('health.nutrilist.create', { userId, item: newItem.item });
+      logger.info?.('health.nutrilist.create', { userId, uuid: newItem.uuid, name: newItem.name });
 
       res.status(201).json({
         message: 'Nutrilist item created successfully',
@@ -467,7 +467,7 @@ export function createHealthRouter(config) {
         return res.status(404).json({ error: 'Nutrilist item not found' });
       }
 
-      logger.debug?.('health.nutrilist.update', { userId, uuid, fields: update.changedFields });
+      logger.info?.('health.nutrilist.update', { userId, uuid, fields: update.changedFields });
 
       res.json({
         message: 'Nutrilist item updated successfully',
@@ -489,14 +489,14 @@ export function createHealthRouter(config) {
         return res.status(404).json({ error: 'Nutrilist item not found' });
       }
 
-      logger.debug?.('health.nutrilist.delete', { userId, uuid });
-
       if (result.deleted) {
+        logger.info?.('health.nutrilist.delete', { userId, uuid });
         res.json({
           message: 'Nutrilist item deleted successfully',
           uuid
         });
       } else {
+        logger.error?.('health.nutrilist.delete.write_failed', { userId, uuid });
         sendInternalError(res, { error: 'Failed to delete nutrilist item' });
       }
     }));
@@ -588,6 +588,7 @@ export function createHealthRouter(config) {
           : await catalogService.setFavoriteByName(name, userId, favorite);
         return res.json({ entry });
       } catch (err) {
+        logger.warn?.('health.catalog.favorite.error', { id, name, error: err.message });
         return res.status(404).json({ error: err.message });
       }
     }));

@@ -44,7 +44,9 @@ export function WeekStrip({ date, today, onDateChange }) {
     Promise.all(dates.map((d) => DaylightAPI(`api/v1/health/budget?date=${d}`)
       .then((budget) => ({ date: d, budget }))
       .catch((err) => {
-        logger.debug('week.day.gap', { date: d, status: err?.status });
+        const expectedGap = err?.status === 404 || err?.status === 409;
+        if (expectedGap) logger.debug('week.day.gap', { date: d, status: err?.status });
+        else logger.warn('week.day.failed', { date: d, status: err?.status, error: err?.message });
         return { date: d, budget: null };
       })))
       .then((results) => { if (live) { setDays(results); setLoading(false); } });
