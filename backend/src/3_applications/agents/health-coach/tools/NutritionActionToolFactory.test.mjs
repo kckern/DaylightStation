@@ -10,12 +10,14 @@ describe('NutritionActionToolFactory', () => {
     return tools.find((t) => t.name === 'log_food');
   };
 
-  it('creates a pending log via the text pipeline and never accepts', async () => {
+  // The pending-confirmation gate was retired: the text pipeline now commits
+  // captures immediately as unsettled, on every transport including the coach.
+  it('logs immediately via the text pipeline', async () => {
     const process = vi.fn(async () => ({ messages: [{ text: '🟡 2 eggs — 140 kcal' }] }));
     const tool = make(process);
     const out = await tool.execute({ userId: 'u', description: '2 eggs' });
     expect(process).toHaveBeenCalledWith({ type: 'text', content: '2 eggs', userId: 'u' });
-    expect(out.status).toBe('pending_confirmation');
+    expect(out.status).toBe('logged');
     expect(out.summary).toContain('2 eggs');
   });
 

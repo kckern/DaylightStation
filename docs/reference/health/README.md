@@ -56,8 +56,10 @@ sign and `.toLocaleString()` for grouping.
 3. Computes `budget` via `computeDailyBudget` (Mifflin-St Jeor, see [Goals](#goals) below),
    using that weight and the goals' height/sex/activity/rate/floor.
 4. Sums `food` from that date's NutriList rows, **excluding** any row with
-   `status: 'pending' | 'rejected' | 'deleted'` — a pending entry (see
-   [Capture funnels](#capture-funnels)) does not count until accepted.
+   `status: 'pending' | 'rejected' | 'deleted'`. AI captures are committed
+   `accepted` the moment they are parsed (see [Capture funnels](#capture-funnels)),
+   so they count immediately; `settled` is an orthogonal review axis and never
+   affects the total.
 5. Sums `exercise` from that date's workout sessions (`calories`, tolerant of an array or a
    keyed object).
 6. Returns `{ date, budget, food, exercise, net, remaining, status, stale, sessions, goals }`
@@ -128,34 +130,50 @@ The same shape repeats everywhere a value is already known and doesn't need inte
 - **Saved-meal logging** (`SavedMealsSheet`, "Copy to today", below) — `POST
   /nutrition/meals/:id/log` writes NutriList rows directly.
 
-None of these touch the AI parsing pipeline, so none of them produce a pending entry.
+None of these touch the AI parsing pipeline.
 
-### Free-text sentence, photo, voice, barcode — the AI/pending path
+### Free-text sentence, photo, voice, barcode — the AI capture path
 
 Everything else — a typed sentence with nothing highlighted, a photo of a plate, a voice
 note, or a barcode scan — goes through the **same unified endpoint**,
 `POST /api/v1/health/nutrition/input { type: 'text'|'image'|'voice'|'barcode', content }`,
 which is the web transport onto the pre-existing Telegram nutrition-bot pipeline
 (`WebNutribotAdapter` → `NutribotInputRouter.handleText/handleImage/handleVoice/handleUpc`
-→ `LogFoodFromText`/`LogFoodFromImage`/`LogFoodFromVoice`/`LogFoodFromUPC`). Every one of
-those use cases **creates the NutriLog entry with `status: 'pending'`** and returns an
-inline choice keyboard — Accept/Discard for a parsed description, a portion-size picker for
-a resolved barcode product — captured as `{ messages: [...] }` in the JSON response (the
-same shape Telegram's `choices`/`callback_data` protocol uses).
+→ `LogFoodFromText`/`LogFoodFromImage`/`LogFoodFromVoice`/`LogFoodFromUPC`).
+
+**There is no confirmation gate.** Those use cases still build a `pending` NutriLog
+internally, but the router commits it before returning: an auto-commit seam in
+`NutribotInputRouter` stamps `settled: false` on every item and runs the same accept path
+`AcceptFoodLog` uses (status → `accepted`, `acceptedAt` stamped, NutriList synced), so the
+entry is visible and counted straight away. The same seam decorates the response context
+the use case sends through, so the inline keyboard that reaches the client offers **Undo**
+and **Edit** — never Accept. Those two buttons reuse the existing `x` (discard) and `r`
+(revise) callback commands, and Undo now *deletes*: `DiscardFoodLog` marks the log
+`deleted` and removes its NutriList rows. This applies to every transport — web, Telegram,
+and the coach's `log_food` alike.
+
+Two flows are deliberately exempt from the accept half of the seam:
+
+- **Scale** captures keep their multi-step composition flow (tare → density → describe).
+- **Barcode** has no Accept gate to retire — it commits at its portion-selection step
+  (`SelectUPCPortion`). The seam still stamps its items unsettled so the rows that step
+  writes land the same way.
+
+Messages are captured as `{ messages: [...] }` in the JSON response (the same shape
+Telegram's `choices`/`callback_data` protocol uses).
 
 `AddCombobox.submitSentence()` is the one call site that renders this inline: on success it
 sets `phase = 'review'` and shows `PendingConfirmCard`, which offers:
 
-- **Accept** — resolves the `callback_data` for "Accept" via
-  `POST /nutrition/callback { callbackData }`.
-- **Discard** — same mechanism, the "Discard" button's callback.
-- **Revise** — a follow-up `TextInput` that re-submits the correction as a fresh
+- **Undo** — resolves the `x` button's `callback_data` via
+  `POST /nutrition/callback { callbackData }`, deleting the log and its NutriList rows.
+- **Edit** — the `r` button's callback, which opens the revision flow.
+- A follow-up `TextInput` re-submits a correction as a fresh
   `POST /nutrition/input { type: 'text' }` (e.g. "that was 2 slices, not 1").
 
-A pending entry already appears in the day's log (`GET /nutrilist/:date` returns every
-status, unfiltered) with its full calorie value shown on the row — but `BudgetService`
-excludes `pending` rows from the food total, so the equation doesn't move until it's
-accepted. Photo and voice captures (`PhotoCapture`/`VoiceCapture` → `TodayView`) and a
+A captured entry appears in the day's log (`GET /nutrilist/:date` returns every status,
+unfiltered) and counts toward the budget immediately, carrying `settled: false` until it is
+reviewed. Photo and voice captures (`PhotoCapture`/`VoiceCapture` → `TodayView`) and a
 known-barcode hit (`BarcodeCapture` → `TodayView`, when the result isn't `unknownUpc`)
 submit through the identical `/nutrition/input` call and reload the day afterward; the
 combobox's inline review card is the funnel's confirmation surface today.
@@ -166,8 +184,7 @@ combobox's inline review card is the funnel's confirmation surface today.
 `@zxing/browser`, and always offers a manual-UPC text field as the same submit path (and
 the deterministic test seam). A decode calls `nutrition.submit('barcode', upc)`:
 
-- **Known UPC** (catalog or gateway hit) — proceeds through the pending/portion-pick path
-  above.
+- **Known UPC** (catalog or gateway hit) — proceeds through the portion-pick path above.
 - **Unknown UPC** (`result.unknownUpc === true`) — opens `CustomFoodSheet` with that UPC.
 
 `CustomFoodSheet.save()` does two calls: `POST /nutrition/catalog { name, calories,
@@ -247,18 +264,19 @@ edit UI to match.
 
 ---
 
-## Coach `log_food` (pending-only)
+## Coach `log_food`
 
 `backend/src/3_applications/agents/health-coach/tools/NutritionActionToolFactory.mjs`
 registers `log_food` — the coach's only write path into nutrition. It takes `{ userId,
 description }` and calls the identical text pipeline the web combobox's sentence path
 uses (`nutritionInput.process({ type: 'text', content: description, userId })` —
-`nutritionInput` is `WebNutribotAdapter`). Because it can only ever reach `handleText` and
-never the accept/callback pipeline, **every entry the coach logs is created `pending`** —
-the coach has no code path to `AcceptFoodLog`, so it cannot accept a meal on the user's
-behalf. It returns `{ status: 'pending_confirmation', summary }` (`summary` is the parsed
-itemization's first response line, e.g. "🟡 2 eggs — 140 kcal"), which lets the model tell
-the user it logged something *and* that it still needs confirming in the app.
+`nutritionInput` is `WebNutribotAdapter`). It reaches `handleText`, which means it goes
+through the same auto-commit seam as every other transport: **the coach's entries are
+logged immediately as `accepted` + `settled: false`**. The earlier "the coach can never
+accept a meal for you" rule was retired with the pending queue. It returns
+`{ status: 'logged', summary }` (`summary` is the parsed itemization's first response line,
+e.g. "🟡 2 eggs — 140 kcal"), which lets the model tell the user what landed; the user
+reviews or undoes it in the app.
 
 ---
 
@@ -323,7 +341,7 @@ All under `/api/v1/health/`, from `backend/src/4_api/v1/routers/health.mjs`:
 | `POST /nutrition/catalog/backfill` | seed the catalog from existing log history |
 | `GET /nutrition/meals`, `POST /nutrition/meals`, `POST /nutrition/meals/:id/log`, `DELETE /nutrition/meals/:id` | saved meals |
 | `POST /nutrition/input` | unified capture entry point (`type: text\|image\|voice\|barcode`) |
-| `POST /nutrition/callback` | resolve a pending entry's Accept/Discard/portion choice |
+| `POST /nutrition/callback` | resolve a capture's Undo/Edit/portion choice |
 | `GET /medical`, `POST /medical`, `DELETE /medical/:id` | medical readings |
 | `GET /dashboard` | aggregate summary (weight/nutrition/sessions/goals) consumed by `TodayView`'s coach-line footer |
 | `GET /mentions/all` (separate router, `health-mentions.mjs`) | `@`-mention autocomplete for the coach chat composer (periods, recent days, metrics) |

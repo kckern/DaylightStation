@@ -37,7 +37,16 @@ function dehydrateFoodItem(item) {
     fiber: item.fiber,
     sugar: item.sugar,
     sodium: item.sodium,
-    cholesterol: item.cholesterol
+    cholesterol: item.cholesterol,
+    // Lifecycle / group fields. `settled` is absence-sensitive — an absent key
+    // means "legacy row, treat as settled" — so it is written only when set.
+    kind: item.kind,
+    parentId: item.parentId,
+    photoRef: item.photoRef,
+    ...(item.settled !== undefined ? { settled: item.settled } : {}),
+    settledBy: item.settledBy,
+    settledAt: item.settledAt,
+    microsSource: item.microsSource
   };
 }
 
