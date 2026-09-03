@@ -20,10 +20,18 @@ const MicIcon = ({ active }) => (
  * otherwise-identical "Voice log" buttons can tell them apart, and (b)
  * forwards it back through `onCapture(dataUrl, bucket)` so the caller knows
  * which meal to submit against without needing its own per-instance closure
- * state. The footer's single global instance omits both props and keeps its
- * original generic label/behavior.
+ * state.
+ *
+ * `labelPrefix` (Task 4.3) lets a second caller with its OWN meal-targeted
+ * instance — QuickCaptureBar's global mic — read differently from a
+ * per-meal header's ("Log by voice to Lunch") even though both target the
+ * exact same bucket: e.g. "Quick voice log to Lunch". Without this, two
+ * buttons on the page would carry the identical accessible name while doing
+ * conceptually different things (one lives on the meal row, the other is
+ * reachable from anywhere). `className` similarly lets QuickCaptureBar apply
+ * its own sizing class instead of the meal-row default.
  */
-export function VoiceCapture({ onCapture, busy, bucket, mealLabel }) {
+export function VoiceCapture({ onCapture, busy, bucket, mealLabel, labelPrefix, className }) {
   const recRef = useRef(null);
   const [recording, setRecording] = useState(false);
 
@@ -50,12 +58,14 @@ export function VoiceCapture({ onCapture, busy, bucket, mealLabel }) {
     }
   };
 
-  const idleLabel = mealLabel ? `Log by voice to ${mealLabel}` : 'Voice log';
+  const idleLabel = labelPrefix
+    ? `${labelPrefix} to ${mealLabel}`
+    : (mealLabel ? `Log by voice to ${mealLabel}` : 'Voice log');
   const activeLabel = mealLabel ? `Stop recording — ${mealLabel}` : 'Stop recording';
 
   return (
     <ActionIcon aria-label={recording ? activeLabel : idleLabel} loading={busy}
-      className={mealLabel ? 'health-meal__capture-btn' : undefined}
+      className={className || (mealLabel ? 'health-meal__capture-btn' : undefined)}
       color={recording ? 'red' : undefined} onClick={toggle}>
       <MicIcon active={recording} />
     </ActionIcon>

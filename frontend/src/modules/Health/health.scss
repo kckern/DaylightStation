@@ -44,7 +44,43 @@
   &__coach { background: none; border: none; text-align: left; cursor: pointer; color: var(--ds-text-mid); font-size: 0.8rem; padding: 0; }
   &__row { display: flex; align-items: center; justify-content: space-between; }
   &__macros { font-size: 0.8rem; color: var(--ds-text-mid); font-variant-numeric: tabular-nums; }
-  &__actions { display: flex; gap: 0.4rem; }
+}
+
+// The Today page's scroll root. Bottom padding equal to (roughly) the
+// fixed QuickCaptureBar's own footprint plus its clearance offset below —
+// Task 4.3's layout requirement: a fixed/floating element must never end up
+// covering the last log row or an open add-combobox when the page is
+// scrolled all the way down.
+.health-today { padding-bottom: 7rem; }
+
+// The global quick-capture surface (Task 4.3) — text/mic/camera/barcode,
+// fixed bottom-right, reachable from anywhere on Today without scrolling.
+// The bottom offset clears AppChrome's bottom tab bar on mobile
+// (`.ds-chrome__nav` — a real grid row, roughly 4.5rem tall including its
+// own safe-area padding); on desktop that nav is a left rail instead, so
+// the same offset just reads as comfortable clearance from the screen edge
+// (the "mobile: always visible; desktop: same, unobtrusive" interface
+// note) — no breakpoint-specific rule needed.
+.health-quickbar {
+  position: fixed; z-index: 30;
+  right: max(1rem, env(safe-area-inset-right));
+  bottom: max(4.5rem, calc(env(safe-area-inset-bottom) + 4.5rem));
+  display: flex; align-items: center; gap: 0.4rem;
+  padding: 0.35rem; border-radius: 999px;
+  background: var(--ds-surface); border: 1px solid var(--ds-border);
+
+  // Same 44px-touch-target floor as `.health-meal__capture-btn` — see that
+  // rule's comment (min-width/min-height always win over ActionIcon's
+  // smaller default). Kept as its own class (not shared with
+  // `.health-meal__capture-btn`) since the two surfaces are conceptually
+  // distinct — this one is never nested inside a meal row.
+  &__btn {
+    min-width: 44px; min-height: 44px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; color: var(--ds-text-high);
+    &:hover { background: var(--ds-surface-alt); }
+    &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
+  }
 }
 
 .health-barcode {
