@@ -84,3 +84,105 @@ describe('HealthOperations findNutritionItemsByDate settlement', () => {
     expect(rawAged.settledBy).toBeUndefined();
   });
 });
+
+describe('HealthOperations updateNutritionItem settles on edit', () => {
+  function buildOps({ existing = { uuid: 'row-1', mealTime: 'morning', settled: false } } = {}) {
+    const findByUuid = vi.fn(async () => existing);
+    const update = vi.fn(async (username, id, changes) => ({ ...existing, ...changes }));
+    const ops = new HealthOperations({
+      healthData: {},
+      nutritionItems: { findByUuid, update },
+      today: () => '2026-09-02',
+    });
+    return { ops, findByUuid, update };
+  }
+
+  it('an edit of an unrelated field also stamps settled:true/settledBy:user/settledAt, and the edit survives', async () => {
+    const { ops, update } = buildOps();
+    const result = await ops.updateNutritionItem('kc', 'row-1', { mealTime: 'evening' });
+
+    expect(update).toHaveBeenCalledTimes(1);
+    const [, , persistedChanges] = update.mock.calls[0];
+    expect(persistedChanges.mealTime).toBe('evening');
+    expect(persistedChanges.settled).toBe(true);
+    expect(persistedChanges.settledBy).toBe('user');
+    expect(typeof persistedChanges.settledAt).toBe('string');
+    expect(persistedChanges.settledAt.length).toBeGreaterThan(0);
+
+    expect(result.item.mealTime).toBe('evening');
+    expect(result.item.settled).toBe(true);
+    expect(result.changedFields).toContain('mealTime');
+    expect(result.changedFields).toContain('settled');
+    expect(result.changedFields).toContain('settledBy');
+    expect(result.changedFields).toContain('settledAt');
+  });
+
+  it('a bare { settled: true } one-tap confirm reaches the store (whitelist regression guard)', async () => {
+    const { ops, update } = buildOps();
+    await ops.updateNutritionItem('kc', 'row-1', { settled: true });
+
+    expect(update).toHaveBeenCalledTimes(1);
+    const [, , persistedChanges] = update.mock.calls[0];
+    expect(persistedChanges.settled).toBe(true);
+    expect(persistedChanges.settledBy).toBe('user');
+    expect(persistedChanges.settledAt).toBeTruthy();
+  });
+
+  it('settledAt is a local timestamp, not a UTC ISO string', async () => {
+    const { ops, update } = buildOps();
+    await ops.updateNutritionItem('kc', 'row-1', { mealTime: 'evening' });
+
+    const [, , persistedChanges] = update.mock.calls[0];
+    // A UTC ISO string looks like 2026-09-02T23:59:59.123Z — local timestamps
+    // (nowTs24 shape) use a space separator and no trailing Z / milliseconds.
+    expect(persistedChanges.settledAt).not.toMatch(/T/);
+    expect(persistedChanges.settledAt).not.toMatch(/Z$/);
+    expect(persistedChanges.settledAt).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+  });
+
+  it('returns null (no update call) when the row does not exist', async () => {
+    const findByUuid = vi.fn(async () => null);
+    const update = vi.fn();
+    const ops = new HealthOperations({
+      healthData: {},
+      nutritionItems: { findByUuid, update },
+      today: () => '2026-09-02',
+    });
+    const result = await ops.updateNutritionItem('kc', 'missing', { mealTime: 'evening' });
+    expect(result).toBeNull();
+    expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe('HealthOperations deleteNutritionItem is the discard replacement', () => {
+  it('hard-deletes the row via deleteById', async () => {
+    const existing = { uuid: 'row-1', mealTime: 'morning' };
+    const findByUuid = vi.fn(async () => existing);
+    const deleteById = vi.fn(async () => true);
+    const ops = new HealthOperations({
+      healthData: {},
+      nutritionItems: { findByUuid, deleteById },
+      today: () => '2026-09-02',
+    });
+
+    const result = await ops.deleteNutritionItem('kc', 'row-1');
+
+    expect(deleteById).toHaveBeenCalledWith('kc', 'row-1');
+    expect(result).toEqual({ found: true, deleted: true });
+  });
+
+  it('reports not-found without attempting delete when the row is missing', async () => {
+    const findByUuid = vi.fn(async () => null);
+    const deleteById = vi.fn(async () => true);
+    const ops = new HealthOperations({
+      healthData: {},
+      nutritionItems: { findByUuid, deleteById },
+      today: () => '2026-09-02',
+    });
+
+    const result = await ops.deleteNutritionItem('kc', 'missing');
+
+    expect(deleteById).not.toHaveBeenCalled();
+    expect(result).toEqual({ found: false, deleted: false });
+  });
+});

@@ -1,4 +1,5 @@
 import { presentSettlement } from '#domains/nutrition/services/settlement.mjs';
+import { nowTs24 } from '#system/utils/time.mjs';
 
 const NUTRITION_UPDATE_FIELDS = new Set([
   'item', 'name', 'unit', 'amount', 'grams', 'noom_color', 'color',
@@ -7,6 +8,11 @@ const NUTRITION_UPDATE_FIELDS = new Set([
   // (Breakfast/Lunch/Dinner/Snacks) — the today-view combobox (F5) and edit
   // sheet (F6) both PUT this field expecting it to persist.
   'mealTime',
+  // settled/settledBy/settledAt: a human edit (or an explicit one-tap
+  // confirm, `{ settled: true }` alone) ratifies the machine's estimate.
+  // Without these in the whitelist, updateNutritionItem's stamp below is
+  // silently dropped before it ever reaches the store.
+  'settled', 'settledBy', 'settledAt',
 ]);
 
 /**
@@ -116,8 +122,21 @@ export class HealthOperations {
 
   async updateNutritionItem(username, id, changes) {
     if (!await this.nutritionItems.findByUuid(username, id)) return null;
+    // Any successful edit is a human touch ratifying the machine's estimate —
+    // settle the row. A body of just `{ settled: true }` (the one-tap
+    // confirm) flows through this same stamp. Never conditional/defaulted:
+    // this is an explicit write, not a fallback. The stamp is merged BEFORE
+    // the whitelist filter (not after) so NUTRITION_UPDATE_FIELDS stays the
+    // single real gate on what reaches the store — settled/settledBy/settledAt
+    // must be present in that Set or this stamp is silently dropped too.
+    const stampedChanges = {
+      ...changes,
+      settled: true,
+      settledBy: 'user',
+      settledAt: nowTs24(),
+    };
     const allowedChanges = Object.fromEntries(
-      Object.entries(changes).filter(([field]) => NUTRITION_UPDATE_FIELDS.has(field)),
+      Object.entries(stampedChanges).filter(([field]) => NUTRITION_UPDATE_FIELDS.has(field)),
     );
     return {
       item: await this.nutritionItems.update(username, id, allowedChanges),
