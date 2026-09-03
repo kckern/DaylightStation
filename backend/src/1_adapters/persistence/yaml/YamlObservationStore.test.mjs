@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -351,5 +351,80 @@ describe('YamlObservationStore malformed INDIVIDUAL record (rest of the day stil
 
     const onDisk = yaml.load(fs.readFileSync(filePath('u1'), 'utf8'));
     expect(onDisk.some((r) => r.id === 'garbage-row')).toBe(true);
+  });
+});
+
+describe('YamlObservationStore.get (read-only bare-id lookup)', () => {
+  it('returns a full record by id', () => {
+    const saved = store.append('u1', { kind: 'weight', value: 214, unit: 'g', scaleId: 'kitchen-1', at: '2026-09-02 18:04:12' });
+    expect(store.get('u1', saved.id)).toEqual(saved);
+  });
+
+  it('throws NOT_FOUND for an unknown id', () => {
+    let caught = null;
+    try {
+      store.get('u1', 'does-not-exist');
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).not.toBeNull();
+    expect(caught.code).toBe('NOT_FOUND');
+    expect(caught.name).toBe('InfrastructureError');
+  });
+
+  it('does NOT write to disk — no write/rename syscall happens, and the file is byte-identical', () => {
+    const saved = store.append('u1', { kind: 'weight', value: 100, unit: 'g', scaleId: 'kitchen-1', at: '2026-09-02 08:00:00' });
+    const before = fs.readFileSync(filePath('u1'), 'utf8');
+
+    // Content staying byte-identical is necessary but NOT sufficient (a spurious
+    // write-back of the unmodified array would also be byte-identical), so this
+    // asserts on the actual write/rename syscalls directly.
+    const writeSpy = vi.spyOn(fs, 'writeFileSync');
+    const renameSpy = vi.spyOn(fs, 'renameSync');
+
+    store.get('u1', saved.id);
+    // Also exercise the not-found path — a failed lookup must not write either.
+    try { store.get('u1', 'nope'); } catch { /* expected */ }
+
+    expect(writeSpy).not.toHaveBeenCalled();
+    expect(renameSpy).not.toHaveBeenCalled();
+    writeSpy.mockRestore();
+    renameSpy.mockRestore();
+
+    const after = fs.readFileSync(filePath('u1'), 'utf8');
+    expect(after).toBe(before);
+  });
+
+  it('skips a malformed row the same way other read paths do (finds the good one, ignores garbage)', () => {
+    const good = store.append('u1', { kind: 'weight', value: 1, unit: 'g', scaleId: 'kitchen-1', at: '2026-09-02 08:00:00' });
+    const raw = yaml.load(fs.readFileSync(filePath('u1'), 'utf8'));
+    raw.push({ id: 'garbage-row', date: '2026-09-02' }); // missing kind/at/status
+    fs.writeFileSync(filePath('u1'), yaml.dump(raw), 'utf8');
+
+    expect(store.get('u1', good.id)).toMatchObject({ id: good.id });
+    let caught = null;
+    try {
+      store.get('u1', 'garbage-row');
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).not.toBeNull();
+    expect(caught.code).toBe('NOT_FOUND'); // treated as absent, not returned as-is
+  });
+
+  it('finds a record regardless of date — not accidentally day-scoped', () => {
+    const yesterday = store.append('u1', { kind: 'container', value: 'bowl', scaleId: 'kitchen-1', at: '2026-08-15 09:00:00' });
+    expect(store.get('u1', yesterday.id).id).toBe(yesterday.id);
+  });
+
+  it('a missing file throws NOT_FOUND (not a crash) for a bare-id lookup on a fresh user', () => {
+    let caught = null;
+    try {
+      store.get('fresh-user', 'anything');
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).not.toBeNull();
+    expect(caught.code).toBe('NOT_FOUND');
   });
 });
