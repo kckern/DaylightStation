@@ -6,7 +6,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
+import { formatFoodList, formatDateHeader, formatLoggedSummary } from '#domains/nutrition/entities/formatters.mjs';
 import { repairTruncatedJson } from '../lib/repairJson.mjs';
 import { createNutriLog } from '../nutriLogRecords.mjs';
 
@@ -500,7 +500,8 @@ ${conservativeNote}${portionBoost}`,
   #formatFoodCaption(items, date) {
     const dateHeader = date ? formatDateHeader(date, { timezone: this.#getTimezone(), now: new Date() }) : '';
     const foodList = formatFoodList(items);
-    return `${dateHeader}\n\n${foodList}`;
+    const loggedSummary = formatLoggedSummary(items);
+    return `${loggedSummary}\n${dateHeader}\n\n${foodList}`;
   }
 
   /**

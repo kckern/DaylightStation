@@ -6,7 +6,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
+import { formatFoodList, formatDateHeader, formatLoggedSummary } from '#domains/nutrition/entities/formatters.mjs';
 import { repairTruncatedJson } from '../lib/repairJson.mjs';
 import { deriveLogDate } from '../lib/deriveLogDate.mjs';
 import { createNutriLog, serializeNutriLog } from '../nutriLogRecords.mjs';
@@ -321,22 +321,23 @@ export class LogFoodFromText {
         }
       }
 
-      // 6. Update message with date header, food list, and buttons
+      // 6. Update message with the logged summary, date header, food list, and buttons
       const dateHeader = formatDateHeader(logDate, { timezone: this.#getTimezone(), now: new Date() });
       const foodList = formatFoodList(foodItems);
+      const loggedSummary = formatLoggedSummary(foodItems);
       const buttons = this.#buildActionButtons(nutriLog.id);
 
       try {
         if (status) {
           // Use status indicator's finish (stops animation, updates in place)
-          await status.finish(`${dateHeader}\n\n${foodList}`, {
+          await status.finish(`${loggedSummary}\n${dateHeader}\n\n${foodList}`, {
             choices: buttons,
             inline: true,
           });
         } else {
           // Fallback: direct update
           await messaging.updateMessage(statusMsgId, {
-            text: `${dateHeader}\n\n${foodList}`,
+            text: `${loggedSummary}\n${dateHeader}\n\n${foodList}`,
             choices: buttons,
             inline: true,
           });

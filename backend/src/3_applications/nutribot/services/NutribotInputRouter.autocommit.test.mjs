@@ -26,6 +26,7 @@ import { NutribotInputRouter } from './NutribotInputRouter.mjs';
 import { AcceptFoodLog } from '../usecases/AcceptFoodLog.mjs';
 import { DiscardFoodLog } from '../usecases/DiscardFoodLog.mjs';
 import { SelectUPCPortion } from '../usecases/SelectUPCPortion.mjs';
+import { LogFoodFromText } from '../usecases/LogFoodFromText.mjs';
 import { createNutriLog } from '../nutriLogRecords.mjs';
 
 const silentLogger = { debug() {}, info() {}, warn() {}, error() {} };
@@ -98,8 +99,8 @@ function makeCaptureUseCase(foodLogStore, { items } = {}) {
   };
 }
 
-function makeHarness({ conversationState = null, captureUseCase, scaleUseCase } = {}) {
-  const foodLogStore = makeFoodLogStore();
+function makeHarness({ conversationState = null, captureUseCase, scaleUseCase, foodLogStore } = {}) {
+  foodLogStore = foodLogStore || makeFoodLogStore();
   const nutriListStore = { saveMany: vi.fn(async () => {}), removeByLogId: vi.fn(async () => 2) };
   const messagingGateway = {
     sendMessage: vi.fn(async () => ({ messageId: 'm' })),
@@ -288,6 +289,51 @@ describe('daily-report cadence', () => {
     // full report (image render + coaching kick) would fire inside every capture.
     expect(acceptSpy.mock.calls[0][0].autoReport).toBe(false);
     expect(generateDailyReport.execute).not.toHaveBeenCalled();
+  });
+});
+
+describe('Telegram copy for a committed capture (task 1.4)', () => {
+  it('reads as already-logged — "Logged ✓ — n items, kcal kcal" — with Undo/Edit, not Accept', async () => {
+    const foodLogStore = makeFoodLogStore();
+    const aiGateway = {
+      chat: vi.fn(async () => JSON.stringify({
+        items: [
+          { name: 'Apple', grams: 180, calories: 95, noom_color: 'green' },
+          { name: 'Toast', grams: 40, calories: 120, noom_color: 'yellow' },
+        ],
+        date: '2026-09-02',
+        time: 'morning',
+      })),
+    };
+    const realLogFoodFromText = new LogFoodFromText({
+      messagingGateway: { sendMessage: vi.fn(), updateMessage: vi.fn(), deleteMessage: vi.fn() },
+      aiGateway,
+      foodLogStore,
+      logger: silentLogger,
+    });
+
+    const { router } = makeHarness({ foodLogStore, captureUseCase: realLogFoodFromText });
+    const rc = makeResponseContext();
+
+    const out = await router.handleText(textEvent, rc);
+
+    expect(out.committed).toBe(true);
+
+    // The real LogFoodFromText sends the "Analyzing..." status message, then
+    // updates it in place with the committed copy — that update is what the
+    // user actually sees.
+    expect(rc.updated).toHaveLength(1);
+    const { text } = rc.updated[0].updates;
+
+    // Copy reads as a confirmation, not a prompt: no "Accept" anywhere, and an
+    // explicit "Logged" + item-count + kcal-total summary line.
+    expect(text).toMatch(/^Logged ✓ — 2 items, 215 kcal/);
+    expect(text).not.toMatch(/Accept/i);
+
+    // Keyboard is still the committed Undo/Edit row (the message seam), not Accept.
+    const buttons = allButtons(rc.updated[0].updates.choices);
+    expect(buttons.map(b => b.text).some(t => /Accept/i.test(t))).toBe(false);
+    expect(callbackCmds(rc.updated[0].updates.choices).sort()).toEqual(['r', 'x']);
   });
 });
 
