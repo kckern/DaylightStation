@@ -124,6 +124,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { readYamlFromPath, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
+// The application-facing contract this adapter satisfies. D7: an adapter that imports
+// an application port must EXTEND it rather than duck-type it, so the interface a
+// service depends on and the class the composition root injects cannot drift apart.
+import { IObservationStore } from '#apps/nutrition/ports/IObservationStore.mjs';
 
 /** The four scale signal kinds this store persists. */
 const KNOWN_KINDS = Object.freeze(['weight', 'upc', 'container', 'density']);
@@ -265,7 +269,7 @@ function isStructurallyValid(r) {
  *
  * @implements durable replacement for the in-memory half of `CompositionStore`'s state
  */
-export class YamlObservationStore {
+export class YamlObservationStore extends IObservationStore {
   #dataService;
   #logger;
 
@@ -277,6 +281,7 @@ export class YamlObservationStore {
    *   inject one; see `YamlNutriListDatastore` for the identical fallback.
    */
   constructor(options) {
+    super();
     if (!options?.dataService) {
       throw new InfrastructureError('YamlObservationStore requires dataService', {
         code: 'MISSING_DEPENDENCY',
