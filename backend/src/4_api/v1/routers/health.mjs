@@ -119,9 +119,13 @@ export function createHealthRouter(config) {
   /**
    * GET /health/longitudinal
    * Get longitudinal (30-day daily + 26-week weekly) aggregated health data
+   *
+   * Single-user app: always resolves the head-of-household username.
+   * Deliberately ignores any client-supplied userId (was a cross-user /
+   * traversal vector into per-user datastore reads).
    */
   router.get('/longitudinal', asyncHandler(async (req, res) => {
-    const username = req.query.userId || getDefaultUsername();
+    const username = getDefaultUsername();
     const result = await longitudinalService.aggregate(username);
     res.json(result);
   }));
@@ -345,14 +349,16 @@ export function createHealthRouter(config) {
 
   /**
    * GET /health/dashboard - Unified health dashboard
-   * Query params:
-   *   - userId: username (optional, defaults to head of household)
+   *
+   * Single-user app: always resolves the head-of-household username.
+   * Deliberately ignores any client-supplied userId (was a cross-user /
+   * traversal vector into per-user datastore reads; see /longitudinal).
    */
   router.get('/dashboard', asyncHandler(async (req, res) => {
     if (!dashboardService) {
       return res.status(501).json({ error: 'Dashboard service not configured' });
     }
-    const userId = req.query.userId || getDefaultUsername();
+    const userId = getDefaultUsername();
     logger.debug?.('health.dashboard.request', { userId });
 
     const dashboard = await dashboardService.execute(userId);
