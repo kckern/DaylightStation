@@ -99,7 +99,16 @@ describe('EntryEditSheet — item mode is unaffected', () => {
 });
 
 describe('EntryEditSheet — group mode', () => {
-  beforeEach(() => apiMock.mockClear());
+  // `mockClear()` resets call history but NOT a `mockImplementation` set by
+  // a previous test — several tests below install one, so restore the
+  // shared default here or a later test silently inherits an earlier
+  // test's override (observed: the "zero cascaded children" warning test
+  // never fired because the prior test's `{ cascadedIds: [...] }` override
+  // was still active).
+  beforeEach(() => {
+    apiMock.mockReset();
+    apiMock.mockImplementation(async () => ({}));
+  });
 
   it('renders rename, move, scale-group chips, and delete — no per-row Portion chips', () => {
     mountGroup({});
@@ -132,9 +141,11 @@ describe('EntryEditSheet — group mode', () => {
     expect(body).toMatchObject({ name: 'Berry Smoothie' });
   });
 
-  it('move to Dinner PUTs mealTime to the GROUP row only (backend cascades to children)', async () => {
+  it('move to Dinner PUTs mealTime to the GROUP row only, and closes cleanly when the backend confirms both children cascaded', async () => {
+    apiMock.mockImplementation(async () => ({ cascadedIds: ['c1', 'c2'] }));
     const onChanged = vi.fn();
-    mountGroup({ onChanged });
+    const onClose = vi.fn();
+    mountGroup({ onChanged, onClose });
     fireEvent.click(screen.getByRole('button', { name: 'Dinner' }));
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
     expect(apiMock).toHaveBeenCalledTimes(1);
@@ -142,6 +153,23 @@ describe('EntryEditSheet — group mode', () => {
     expect(path).toContain('nutrilist/g1');
     expect(method).toBe('PUT');
     expect(body).toMatchObject({ mealTime: 'evening' });
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(screen.queryByText(/did not move/i)).toBeNull();
+  });
+
+  it('move to Dinner surfaces a warning (and does NOT close) when the backend reports zero cascaded children', async () => {
+    // Default apiMock resolves `{}` — no `cascadedIds` at all. This is
+    // exactly the fail-open shape HealthOperations returns when the
+    // cascade silently no-ops (e.g. the group row is missing `date`) — the
+    // group itself still moved, but its children did not, and the sheet
+    // must say so rather than closing as if everything moved together.
+    const onChanged = vi.fn();
+    const onClose = vi.fn();
+    mountGroup({ onChanged, onClose });
+    fireEvent.click(screen.getByRole('button', { name: 'Dinner' }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    expect(await screen.findByText(/did not move/i)).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('scale ×2 PUTs scaled values to EVERY child row, not the group row', async () => {
@@ -182,20 +210,53 @@ describe('EntryEditSheet — group mode', () => {
     expect(apiMock).not.toHaveBeenCalled();
   });
 
-  it('a PARTIAL delete failure reloads the day and surfaces an error, without pretending success', async () => {
+  it('a PARTIAL delete failure (a child) leaves the group row IN PLACE — its own DELETE is never issued', async () => {
     global.confirm = vi.fn(() => true);
     apiMock.mockImplementation(async (path) => {
       if (path?.includes('nutrilist/c2')) throw new Error('network down');
       return {};
     });
     const onChanged = vi.fn();
-    mountGroup({ onChanged });
+    const onClose = vi.fn();
+    mountGroup({ onChanged, onClose });
     fireEvent.click(screen.getByRole('button', { name: /^delete$/i }));
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
-    // Reality must be reloaded even though one delete failed.
-    expect(onChanged).toHaveBeenCalled();
-    // The user must be told — not left believing the whole group is gone.
-    expect(await screen.findByText(/failed/i)).toBeTruthy();
+
+    const deleteCalls = apiMock.mock.calls.filter((c) => c[2] === 'DELETE');
+    const paths = deleteCalls.map((c) => c[0]);
+    // Both children were attempted (continue-on-failure for children is
+    // unchanged)...
+    expect(paths.some((p) => p.includes('nutrilist/c1'))).toBe(true);
+    expect(paths.some((p) => p.includes('nutrilist/c2'))).toBe(true);
+    // ...but the group's OWN delete must never fire when a child failed —
+    // deleting the dish while stranding a surviving ingredient is exactly
+    // the bug this test guards against.
+    expect(paths.some((p) => p.includes('nutrilist/g1'))).toBe(false);
+    // The sheet stays open (it wasn't fully deleted) and says so plainly.
+    expect(onClose).not.toHaveBeenCalled();
+    expect(await screen.findByText(/not deleted/i)).toBeTruthy();
+  });
+
+  it('once every child succeeds but the GROUP\'s own delete fails, the failure is reported distinctly (children are already gone)', async () => {
+    global.confirm = vi.fn(() => true);
+    apiMock.mockImplementation(async (path) => {
+      if (path?.includes('nutrilist/g1')) throw new Error('network down');
+      return {};
+    });
+    const onChanged = vi.fn();
+    const onClose = vi.fn();
+    mountGroup({ onChanged, onClose });
+    fireEvent.click(screen.getByRole('button', { name: /^delete$/i }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+
+    const deleteCalls = apiMock.mock.calls.filter((c) => c[2] === 'DELETE');
+    const paths = deleteCalls.map((c) => c[0]);
+    expect(paths.some((p) => p.includes('nutrilist/c1'))).toBe(true);
+    expect(paths.some((p) => p.includes('nutrilist/c2'))).toBe(true);
+    // The group delete WAS attempted here (both children succeeded first).
+    expect(paths.some((p) => p.includes('nutrilist/g1'))).toBe(true);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(await screen.findByText(/could not be deleted/i)).toBeTruthy();
   });
 
   it('a PARTIAL scale failure reloads the day and surfaces an error, without pretending success', async () => {

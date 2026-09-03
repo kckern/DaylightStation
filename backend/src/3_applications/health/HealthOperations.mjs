@@ -163,6 +163,15 @@ export class HealthOperations {
    * server-side operation, not N client PUTs) — a client-side loop is
    * exactly what this method exists to replace, so a mid-way failure here
    * cannot leave the day half-moved from the browser's point of view.
+   *
+   * CROSS-REFERENCE: EntryEditSheet.jsx's group mode gates the exact same
+   * way (`row.kind === 'group'`), while LogTable.jsx's group PRESENTATION
+   * gates the opposite way — on "does this row have resolved children" —
+   * by design (a row can carry children without being marked kind:'group'
+   * and LogTable must still show them). The two decisions are equivalent
+   * today only because every write path stamps kind:'group' before a row
+   * is ever given children (groupParsedItems.mjs) — keep this gate and
+   * EntryEditSheet.jsx's in sync if that invariant ever changes.
    * @private
    */
   async #cascadeMealTimeToChildren(username, groupRow, allowedChanges) {
