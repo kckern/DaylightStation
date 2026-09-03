@@ -17,6 +17,28 @@
   &__stale { font-size: 0.7rem; color: var(--ds-warning); }
 }
 
+.health-weekstrip {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.3rem;
+  padding: 0.4rem 0 0.3rem; border-bottom: 1px solid var(--ds-border);
+
+  &__cell {
+    display: flex; flex-direction: column; align-items: center; gap: 0.15rem;
+    padding: 0.35rem 0.1rem; border-radius: 8px; color: var(--ds-text-mid);
+    &:hover { background: var(--ds-surface-alt); }
+    &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
+    &--active { background: var(--ds-surface-alt); color: var(--ds-text-high); }
+  }
+  &__dow { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  &__num { font-size: 0.95rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ds-text-high); }
+  &__kcal { font-size: 0.62rem; font-variant-numeric: tabular-nums; color: var(--ds-text-low); }
+  &__dot {
+    width: 6px; height: 6px; border-radius: 50%; margin-top: 0.1rem; background: var(--ds-border);
+    &--under { background: var(--ds-success); }
+    &--over { background: var(--ds-danger); }
+    &--gap { background: var(--ds-border); opacity: 0.5; }
+  }
+}
+
 .health-footer {
   display: flex; flex-direction: column; gap: 0.25rem;
   &__coach { background: none; border: none; text-align: left; cursor: pointer; color: var(--ds-text-mid); font-size: 0.8rem; padding: 0; }

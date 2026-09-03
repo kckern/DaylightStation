@@ -201,6 +201,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/media" element={<MediaApp />} />
         <Route path="/media/channels/*" element={<LiveStreamApp />} />
         <Route path="/health" element={<HealthApp />} />
+        <Route path="/health/*" element={<HealthApp />} />
         {/* Vehicle record system — mobile-first; see docs/_wip/plans/2026-08-12-auto-app-design.md */}
         <Route path="/auto" element={<AutoApp />} />
         <Route path="/auto/*" element={<AutoApp />} />

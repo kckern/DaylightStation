@@ -1,3 +1,4 @@
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import '@mantine/core/styles.css';
 import {
@@ -24,26 +25,48 @@ const TABS = [
   { id: 'coach', label: 'Coach', icon: <Icon d="M3 5h14v9H8l-4 3v-3H3z" /> },
 ];
 
+// A top-level tab's route, keyed by AppChrome's tab id. "today" is the bare
+// /health path (no trailing segment) — matches the index route below.
+const TAB_PATH = { today: '/health', progress: '/health/progress', health: '/health/medical', coach: '/health/coach' };
+
+// Which tab a pathname belongs to — the inverse of TAB_PATH. Any unrecognized
+// /health/* subpath (including the bare /health itself) falls through to
+// "today", matching the index route's <Navigate>-free default render.
+function tabForPath(pathname) {
+  if (pathname.startsWith('/health/progress')) return 'progress';
+  if (pathname.startsWith('/health/medical')) return 'health';
+  if (pathname.startsWith('/health/coach')) return 'coach';
+  return 'today';
+}
+
 const userId = (typeof window !== 'undefined' && window.DAYLIGHT_USER_ID) || 'default';
 
 const HealthApp = () => {
   useDocumentTitle('Health');
-  const [tab, setTab] = useState('today');
+  const navigate = useNavigate();
+  const location = useLocation();
   const [overlayOpen, setOverlayOpen] = useState(false);
   useHotkey('mod+k', () => setOverlayOpen(true));
+
+  const activeTab = tabForPath(location.pathname);
 
   return (
     <AppThemeProvider pack="health">
       <DismissStackProvider>
-        <AppChrome title="Health" tabs={TABS} activeTab={tab} onTabChange={setTab}>
-          {tab === 'today' && <TodayView onSetupGoals={() => setTab('progress')} onCoachTap={() => setOverlayOpen(true)} />}
-          {tab === 'progress' && <ProgressView />}
-          {tab === 'health' && <MedicalView />}
-          {/* CoachChat only supports variant 'light'|'overlay' (see AgentChatSurface) —
-              'full' isn't a real variant. The default 'light' variant is already the
-              full-height flex-column layout (`.coach-chat { height: 100% }`), which is
-              exactly what a tab-body mount needs, so we use it here unchanged. */}
-          {tab === 'coach' && <CoachChat userId={userId} style={{ height: '100%' }} />}
+        <AppChrome title="Health" tabs={TABS} activeTab={activeTab}
+          onTabChange={(id) => navigate(TAB_PATH[id] || '/health')}>
+          <Routes>
+            <Route index element={<TodayView onSetupGoals={() => navigate('/health/progress')} onCoachTap={() => setOverlayOpen(true)} />} />
+            <Route path="progress" element={<ProgressView />} />
+            <Route path="medical" element={<MedicalView />} />
+            {/* CoachChat only supports variant 'light'|'overlay' (see AgentChatSurface) —
+                'full' isn't a real variant. The default 'light' variant is already the
+                full-height flex-column layout (`.coach-chat { height: 100% }`), which is
+                exactly what a tab-body mount needs, so we use it here unchanged. */}
+            <Route path="coach" element={<CoachChat userId={userId} style={{ height: '100%' }} />} />
+            {/* Unknown subpath — render Today rather than 404ing the tab shell. */}
+            <Route path="*" element={<Navigate to="/health" replace />} />
+          </Routes>
         </AppChrome>
         <ChatOverlay open={overlayOpen} onClose={() => setOverlayOpen(false)} userId={userId}>
           <CoachChat userId={userId} variant="overlay" />

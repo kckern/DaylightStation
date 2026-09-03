@@ -129,9 +129,28 @@ export function ProgressView() {
         gridLineWidth: 1,
         lineColor: tokens.border,
         labels: { rotation: -35, style: { color: tokens.textMid, fontSize: '0.75rem' } },
+        // Weekly vertical guides (Weight.jsx's month-boundary plotLines,
+        // ported to a week boundary — Monday — so the grid reads at the same
+        // cadence as the weekly tickInterval above).
+        plotLines: windowed.map((e, index) => (
+          new Date(`${e.date}T12:00:00`).getDay() === 1
+            ? { color: tokens.border, width: 1, value: index, zIndex: 1 }
+            : null
+        )).filter(Boolean),
       },
       plotOptions: {
-        areaspline: { marker: { enabled: false }, lineWidth: 2, fillOpacity: 0.15 },
+        // Visible point markers on the smoothed series (Weight.jsx's
+        // treatment) — small filled circles at every day, not just the
+        // hover state.
+        areaspline: {
+          marker: { enabled: true, radius: 2.5, symbol: 'circle', fillColor: tokens.accent },
+          lineWidth: 2,
+          fillOpacity: 0.15,
+          tooltip: {
+            headerFormat: '',
+            pointFormatter() { return `<b>${this.category}</b>: ${this.y.toFixed(1)} lbs`; },
+          },
+        },
         line: { marker: { enabled: false } },
       },
       series: [
