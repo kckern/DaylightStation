@@ -49,7 +49,11 @@ describe('AddCombobox', () => {
     apiMock.mockImplementation(async (path) => {
       if (path.includes('suggest')) return { items: [] };
       if (path.includes('nutrition/input')) return {
-        messages: [{ text: '2 eggs — 140 kcal', choices: [[{ text: '✅ Accept', callback_data: 'cb-1' }]] }],
+        // Captures are committed on arrival — the server sends Undo/Edit, not Accept.
+        messages: [{
+          text: '2 eggs — 140 kcal',
+          choices: [[{ text: '↩️ Undo', callback_data: '{"cmd":"x","id":"log-1"}' }]],
+        }],
       };
       return {};
     });
@@ -58,7 +62,8 @@ describe('AddCombobox', () => {
     fireEvent.change(input, { target: { value: '2 eggs and toast' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(screen.getByText(/140 kcal/)).toBeTruthy());
-    expect(screen.getByRole('button', { name: /accept/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /undo/i })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /accept/i })).toBeNull();
   });
 
   it('a slow older suggest response cannot overwrite a newer one (stale-response guard)', async () => {

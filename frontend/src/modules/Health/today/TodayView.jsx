@@ -97,8 +97,8 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
     }
   };
 
-  // Photo/voice submissions can come back either as a pending NutriLog with
-  // Accept/Revise/Discard choices (food detected) or as a plain status
+  // Photo/voice submissions can come back either as an already-logged (unsettled)
+  // NutriLog with Undo/Edit choices (food detected) or as a plain status
   // message (e.g. "no food detected") with no choices at all. Either way the
   // response must be shown — silently discarding it is exactly the "no
   // visible result" failure the spec forbids (I-4, final review 2026-09-02).
@@ -131,7 +131,9 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
       {pendingCapture ? (
         <PendingConfirmCard messages={pendingCapture.messages}
           onDone={() => { setPendingCapture(null); day.reload(); }}
-          onDiscard={() => setPendingCapture(null)} />
+          // Undo DELETES a counting entry — reload or the row lingers and the
+          // budget stays stale.
+          onDiscard={() => { setPendingCapture(null); day.reload(); }} />
       ) : null}
       {captureNotice ? (
         <div className="health-pending" role="status">

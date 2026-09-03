@@ -36,10 +36,17 @@ const baseApi = (overrides = {}) => async (path) => {
 describe('TodayView — photo/voice capture pendings (I-4)', () => {
   beforeEach(() => { apiMock.mockReset(); });
 
-  it('an image submit whose response carries choices renders PendingConfirmCard with Accept', async () => {
+  // Captures are committed on arrival now, so the server sends Undo/Edit — never Accept.
+  it('an image submit whose response carries choices renders the review card with Undo', async () => {
     apiMock.mockImplementation(baseApi({
       nutritionInput: {
-        messages: [{ text: 'Grilled chicken — 350 kcal', choices: [[{ text: '✅ Accept', callback_data: 'cb-1' }]] }],
+        messages: [{
+          text: 'Grilled chicken — 350 kcal',
+          choices: [[
+            { text: '↩️ Undo', callback_data: '{"cmd":"x","id":"log-1"}' },
+            { text: '✏️ Edit', callback_data: '{"cmd":"r","id":"log-1"}' },
+          ]],
+        }],
       },
     }));
 
@@ -48,7 +55,8 @@ describe('TodayView — photo/voice capture pendings (I-4)', () => {
     fireEvent.click(screen.getByText('MockPhotoCapture'));
 
     await waitFor(() => expect(screen.getByText(/350 kcal/)).toBeTruthy());
-    expect(screen.getByRole('button', { name: /accept/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /undo/i })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /accept/i })).toBeNull();
     expect(document.querySelector('.health-pending')).toBeTruthy();
   });
 
@@ -68,23 +76,45 @@ describe('TodayView — photo/voice capture pendings (I-4)', () => {
     expect(screen.queryByText(/couldn't identify/i)).toBeFalsy();
   });
 
-  it('accepting a pending capture clears the card and reloads the day', async () => {
+  const committedChoices = [[
+    { text: '↩️ Undo', callback_data: '{"cmd":"x","id":"log-1"}' },
+    { text: '✏️ Edit', callback_data: '{"cmd":"r","id":"log-1"}' },
+  ]];
+
+  it('dismissing a committed capture clears the card and reloads the day', async () => {
     apiMock.mockImplementation(baseApi({
-      nutritionInput: {
-        messages: [{ text: 'Grilled chicken — 350 kcal', choices: [[{ text: '✅ Accept', callback_data: 'cb-1' }]] }],
-      },
+      nutritionInput: { messages: [{ text: 'Grilled chicken — 350 kcal', choices: committedChoices }] },
     }));
 
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
     await waitFor(() => screen.getByText('MockPhotoCapture'));
     fireEvent.click(screen.getByText('MockPhotoCapture'));
-    await waitFor(() => screen.getByRole('button', { name: /accept/i }));
+    await waitFor(() => screen.getByRole('button', { name: /done/i }));
 
     const callsBefore = apiMock.mock.calls.length;
-    fireEvent.click(screen.getByRole('button', { name: /accept/i }));
+    fireEvent.click(screen.getByRole('button', { name: /done/i }));
 
     await waitFor(() => expect(document.querySelector('.health-pending')).toBeFalsy());
-    // Accept posts the callback, then day.reload() re-fetches nutrilist+budget.
+    // day.reload() re-fetches nutrilist+budget.
     await waitFor(() => expect(apiMock.mock.calls.length).toBeGreaterThan(callsBefore + 1));
+  });
+
+  it('Undo posts the discard callback AND reloads the day (it deletes a counting entry)', async () => {
+    apiMock.mockImplementation(baseApi({
+      nutritionInput: { messages: [{ text: 'Grilled chicken — 350 kcal', choices: committedChoices }] },
+    }));
+
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => screen.getByText('MockPhotoCapture'));
+    fireEvent.click(screen.getByText('MockPhotoCapture'));
+    await waitFor(() => screen.getByRole('button', { name: /undo/i }));
+
+    const callsBefore = apiMock.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: /undo/i }));
+
+    await waitFor(() => expect(document.querySelector('.health-pending')).toBeFalsy());
+    const after = apiMock.mock.calls.slice(callsBefore);
+    expect(after.some(([path]) => path.includes('nutrition/callback'))).toBe(true);
+    expect(after.some(([path]) => path.includes('nutrilist'))).toBe(true);
   });
 });

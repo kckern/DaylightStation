@@ -4,25 +4,42 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 
 const logger = createAppLogger('health').child('pending-card');
-const findCallback = (messages, label) =>
-  (messages?.[0]?.choices?.flat?.() || []).find((c) => c.text?.includes(label))?.callback_data || null;
+/**
+ * Resolve a button's callback by label. Captures are committed on arrival now, so
+ * the server sends `↩️ Undo` / `✏️ Edit`; the legacy `Discard` / `Revise` labels stay
+ * in the fallback list so an in-flight older response still resolves.
+ */
+const findCallback = (messages, labels) => {
+  const buttons = messages?.[0]?.choices?.flat?.() || [];
+  for (const label of labels) {
+    const hit = buttons.find((c) => c.text?.includes(label))?.callback_data;
+    if (hit) return hit;
+  }
+  return null;
+};
 
-/** Accept / Revise / Discard funnel for AI-parsed entries. */
+/** Review card for an AI-parsed entry that is ALREADY logged (unsettled). */
 export function PendingConfirmCard({ messages, onDone, onDiscard }) {
   const [revising, setRevising] = useState(false);
   const [revision, setRevision] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  const act = async (label, after) => {
-    const callbackData = findCallback(messages, label);
+  const act = async (labels, after) => {
+    const callbackData = findCallback(messages, labels);
+    if (!callbackData) {
+      // Never close as though it worked — this action deletes a counting entry.
+      logger.error('pending.action_unresolved', { labels });
+      setError(new Error('That action is unavailable for this entry'));
+      return;
+    }
     setBusy(true); setError(null);
     try {
-      if (callbackData) await DaylightAPI('api/v1/health/nutrition/callback', { callbackData }, 'POST');
-      logger.info('pending.action', { label });
+      await DaylightAPI('api/v1/health/nutrition/callback', { callbackData }, 'POST');
+      logger.info('pending.action', { labels });
       after();
     } catch (err) {
-      logger.error('pending.action_failed', { label, error: err?.message });
+      logger.error('pending.action_failed', { labels, error: err?.message });
       setError(err);
     } finally { setBusy(false); }
   };
@@ -53,9 +70,10 @@ export function PendingConfirmCard({ messages, onDone, onDiscard }) {
         </div>
       ) : (
         <div className="health-pending__actions">
-          <Button size="xs" color="green" loading={busy} disabled={busy} onClick={() => act('Accept', onDone)}>Accept</Button>
-          <Button size="xs" variant="light" disabled={busy} onClick={() => setRevising(true)}>Revise</Button>
-          <Button size="xs" variant="subtle" color="red" loading={busy} disabled={busy} onClick={() => act('Discard', onDiscard)}>Discard</Button>
+          {/* The entry is already logged — Done just dismisses, it confirms nothing. */}
+          <Button size="xs" color="green" disabled={busy} onClick={onDone}>Done</Button>
+          <Button size="xs" variant="light" disabled={busy} onClick={() => setRevising(true)}>Edit</Button>
+          <Button size="xs" variant="subtle" color="red" loading={busy} disabled={busy} onClick={() => act(['Undo', 'Discard'], onDiscard)}>Undo</Button>
         </div>
       )}
     </div>

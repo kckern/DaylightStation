@@ -412,6 +412,7 @@ export class NutribotContainer {
         messagingGateway: this.getMessagingGateway(),
         aiGateway: this.getAIGateway(),
         foodLogStore: this.#foodLogStore,
+        nutriListStore: this.#nutriListStore,
         conversationStateStore: this.#conversationStateStore,
         logger: this.#logger,
       });

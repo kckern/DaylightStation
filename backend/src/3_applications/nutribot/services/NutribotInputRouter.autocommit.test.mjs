@@ -25,6 +25,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { NutribotInputRouter } from './NutribotInputRouter.mjs';
 import { AcceptFoodLog } from '../usecases/AcceptFoodLog.mjs';
 import { DiscardFoodLog } from '../usecases/DiscardFoodLog.mjs';
+import { SelectUPCPortion } from '../usecases/SelectUPCPortion.mjs';
 import { createNutriLog } from '../nutriLogRecords.mjs';
 
 const silentLogger = { debug() {}, info() {}, warn() {}, error() {} };
@@ -105,8 +106,9 @@ function makeHarness({ conversationState = null, captureUseCase, scaleUseCase } 
     updateMessage: vi.fn(async () => {}),
     deleteMessage: vi.fn(async () => {}),
   };
+  const generateDailyReport = { execute: vi.fn(async () => ({ success: true })) };
   const acceptFoodLog = new AcceptFoodLog({
-    messagingGateway, foodLogStore, nutriListStore, logger: silentLogger,
+    messagingGateway, foodLogStore, nutriListStore, generateDailyReport, logger: silentLogger,
   });
   const acceptSpy = vi.spyOn(acceptFoodLog, 'execute');
 
@@ -128,7 +130,7 @@ function makeHarness({ conversationState = null, captureUseCase, scaleUseCase } 
   };
 
   const router = new NutribotInputRouter(container, { logger: silentLogger });
-  return { router, foodLogStore, nutriListStore, acceptSpy, logFoodFromText, logScaleFoodFromText };
+  return { router, foodLogStore, nutriListStore, acceptSpy, generateDailyReport, logFoodFromText, logScaleFoodFromText };
 }
 
 const textEvent = {
@@ -272,6 +274,52 @@ describe('NutribotInputRouter auto-commit seam', () => {
     expect(foodLogStore.logs.get(out.logId).status).toBe('pending');
     // Items ARE stamped, so the portion step's rows land unsettled.
     expect(foodLogStore.logs.get(out.logId).items.every(i => i.settled === false)).toBe(true);
+  });
+});
+
+describe('daily-report cadence', () => {
+  it('does NOT fire the daily report on a seam-driven commit', async () => {
+    const { router, generateDailyReport, acceptSpy } = makeHarness();
+    const rc = makeResponseContext();
+
+    await router.handleText(textEvent, rc);
+
+    // findPending is essentially always empty now, so without autoReport:false a
+    // full report (image render + coaching kick) would fire inside every capture.
+    expect(acceptSpy.mock.calls[0][0].autoReport).toBe(false);
+    expect(generateDailyReport.execute).not.toHaveBeenCalled();
+  });
+});
+
+describe('barcode portion selection on a stamped log', () => {
+  it('writes nutrilist rows carrying settled:false', async () => {
+    const { router, foodLogStore, nutriListStore } = makeHarness();
+    const rc = makeResponseContext();
+
+    // 1. Scan: the seam stamps settled:false but leaves the log pending.
+    const out = await router.handleUpc({ ...textEvent, type: 'upc', payload: { text: '012345678905' } }, rc);
+    expect(out.committed).toBe(false);
+
+    // 2. Portion tap: SelectUPCPortion is what actually commits the barcode flow.
+    const selectPortion = new SelectUPCPortion({
+      messagingGateway: {
+        sendMessage: vi.fn(async () => ({ messageId: 'm' })),
+        updateMessage: vi.fn(async () => {}),
+        deleteMessage: vi.fn(async () => {}),
+      },
+      foodLogStore,
+      nutriListStore,
+      logger: silentLogger,
+    });
+    await selectPortion.execute({
+      userId: 'kc', conversationId: 'web:kc', logUuid: out.logId, portionFactor: 2,
+    });
+
+    expect(nutriListStore.saveMany).toHaveBeenCalledTimes(1);
+    const [rows] = nutriListStore.saveMany.mock.calls[0];
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) expect(row.settled).toBe(false);
+    expect(foodLogStore.logs.get(out.logId).status).toBe('accepted');
   });
 });
 
