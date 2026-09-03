@@ -1,4 +1,5 @@
-import { validateFoodItem, validateNutriLog } from '#domains/nutrition/entities/schemas.mjs';
+import { describe, it, expect } from 'vitest';
+import { validateFoodItem, validateNutriLog } from './schemas.mjs';
 
 const baseItem = {
   id: 'aB3dE5fG7h', label: 'Oatmeal', grams: 100, unit: 'g', amount: 100, color: 'yellow',
