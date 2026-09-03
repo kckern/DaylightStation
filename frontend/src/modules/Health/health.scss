@@ -170,7 +170,11 @@ $health-quickbar-margin: 0.5rem; // deliberate slack over the exact footprint
   // loaded — see EntryRow.jsx's hideBrokenThumb: a failed load hides the
   // <img> in place so this column's width holds and nothing reflows.
   &--thumb { grid-template-columns: 32px 14px 1fr auto 3.5rem; }
-  &--group&--thumb { grid-template-columns: 32px 1fr auto 3.5rem; }
+  // Compound selector (both modifiers on the same element) — `&--x&--y`
+  // is invalid Sass (a bare `&` may only start a compound selector, not
+  // appear a second time mid-selector), so the second `&` is spelled out
+  // literally as `.health-row` instead.
+  &--group.health-row--thumb { grid-template-columns: 32px 1fr auto 3.5rem; }
   &__thumb { width: 32px; height: 32px; border-radius: 6px; object-fit: cover; }
 
   // A group's child, indented one level. Flattened (PRD F2.4) — a

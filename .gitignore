@@ -81,6 +81,7 @@ config.app-local.yml
 !scripts/school-reorg-rehearse.sh
 !scripts/audit-household-paths.mjs
 !scripts/check-parse.mjs
+!scripts/check-scss-build.mjs
 !scripts/probe-printer-jobstate.mjs
 !scripts/audit-ui-tokens.mjs
 !scripts/audit-ui-tokens.baseline.json
