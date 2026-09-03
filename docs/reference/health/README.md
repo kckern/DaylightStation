@@ -98,7 +98,16 @@ saved-meal logging (`SavedMealsService.logToDate`, when no explicit `mealTime` i
 either path accepts an explicit override — the bucket the user tapped "+ Add food…" in, or
 a `mealTime` chosen when moving a saved meal to a specific meal. Moving an already-logged
 row to a different bucket is a plain `PUT /nutrilist/{uuid} { mealTime }` from
-`EntryEditSheet`'s "Move to" row.
+`EntryEditSheet`'s "Move to" row. The Today view's quick-capture bar (below) defaults to
+this exact same hour mapping when it has no other meal to target.
+
+A second, disagreeing hour→meal split exists elsewhere in the pipeline: 5–11 morning,
+12–16 afternoon, 17–20 evening, else night. That mapping backs the clock default an AI
+capture's own parse is stamped with before any declared bucket or explicitly named meal
+is applied (see [Capture funnels](#capture-funnels) below), and the client-side guess used
+only to position an in-flight capture's loading placeholder before a result is known. The
+two mappings are deliberately independent; a future change to one is not a bug in the
+other, and a third one is never the fix for a mismatch between them.
 
 ---
 
@@ -132,8 +141,19 @@ that pops in and out as sessions come and go.
 
 ## Capture funnels
 
-Four ways to get a food onto the log, all reachable from Today's per-bucket
-"+ Add food…" row and the footer's photo/barcode/voice icons.
+Four ways to get a food onto the log — type, speak, photograph, or scan a barcode — start
+from one of two places on Today.
+
+Each of the four meal sections carries its own voice, photo, and barcode buttons in its
+header, scoped to that meal — one tap from Breakfast's row starts a capture that targets
+Breakfast — alongside the "+ Add food…" row underneath for a typed sentence or type-ahead
+pick against the same meal.
+
+A single quick-capture bar (`QuickCaptureBar.jsx`) is fixed on Today independent of scroll
+position, offering the same four capture types with no meal of its own — it defaults to
+whichever meal the current time of day implies (the hour mapping in
+[Meal buckets](#meal-buckets) above). This is the day view's only such affordance: the
+footer below the log carries the macro summary and coach line, never capture controls.
 
 ### Type-ahead suggest (`AddCombobox`)
 
@@ -169,6 +189,18 @@ which is the web transport onto the pre-existing Telegram nutrition-bot pipeline
 (`WebNutribotAdapter` → `NutribotInputRouter.handleText/handleImage/handleVoice/handleUpc`
 → `LogFoodFromText`/`LogFoodFromImage`/`LogFoodFromVoice`/`LogFoodFromUPC`).
 
+An optional `bucket` field on that same request declares the meal the capture was
+launched from — a meal section's own header trigger sends that meal's id, the
+quick-capture bar sends its clock-derived default. A value outside the four meal ids is
+rejected with `400` before it reaches the pipeline at all — never guessed at, never
+passed through. Where the capture actually lands is one precedence, applied once
+regardless of transport: a meal named explicitly in what was said or captioned wins;
+failing that, the declared bucket; failing that, the clock default the capture was
+already parsed with. Only the first case — an explicit meal overriding a *different*
+declared bucket — is worth telling the person about, since every other outcome is just
+the capture landing where it was asked to: Today surfaces that one case as a "Moved to
+{meal}" notice on reload.
+
 **There is no confirmation gate.** Those use cases still build a `pending` NutriLog
 internally, but the router commits it before returning: an auto-commit seam in
 `NutribotInputRouter` stamps `settled: false` on every item and runs the same accept path
@@ -176,7 +208,7 @@ internally, but the router commits it before returning: an auto-commit seam in
 entry is visible and counted straight away. The same seam decorates the response context
 the use case sends through, so the inline keyboard that reaches the client offers **Undo**
 and **Edit** — never Accept. Those two buttons reuse the existing `x` (discard) and `r`
-(revise) callback commands, and Undo now *deletes*: `DiscardFoodLog` marks the log
+(revise) callback commands, and Undo *deletes*: `DiscardFoodLog` marks the log
 `deleted` and removes its NutriList rows. The message copy itself matches: a text or image
 capture's reply opens with "Logged ✓ — *n* items, *k* kcal" rather than a question, so the
 words read as a confirmation and not just the buttons. This applies to every transport —
@@ -190,7 +222,8 @@ Two flows are deliberately exempt from the accept half of the seam:
   doesn't count toward the budget; `GET /nutrition/pending?date=` surfaces it separately,
   and Today renders it in a **NEEDS REVIEW** banner above the meal buckets, with its own
   Accept/Discard. That endpoint returns pending rows regardless of origin, but every
-  other capture commits on arrival now, so Today filters the banner to scale-origin rows.
+  other capture commits on arrival (above), so Today filters the banner to scale-origin
+  rows.
 - **Barcode** has no Accept gate to retire — it commits at its portion-selection step
   (`SelectUPCPortion`). The seam still stamps its items unsettled so the rows that step
   writes land the same way.
