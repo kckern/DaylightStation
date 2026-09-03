@@ -74,6 +74,38 @@
  * it — this file is loaded at boot, so it uses the explicit form. Same reasoning as
  * `CompositionStore.mjs`.
  *
+ * ## `updateMany` is ALL-OR-NOTHING
+ *
+ * A completed scale composition can consume up to three observations (a weight, a
+ * density, a container tare) into one food-log entry. Applying that as N separate
+ * `update()` calls means N separate read-modify-write-rename cycles; a crash or throw
+ * between them can leave an entry backed by only some of its consumed observations, with
+ * nothing able to detect the mismatch after the fact. `updateMany(userId, patches)`
+ * applies a whole batch of per-id patches inside ONE read-modify-write-rename cycle, so
+ * the set lands atomically or not at all.
+ *
+ * "Not at all" is a deliberate choice over "apply what you can and report the rest":
+ * this method exists specifically for a consume operation where a partial application
+ * is not a lesser success, it is exactly the corruption this fix was written to prevent —
+ * two observations flip to `consumed` and point at an entry while a third stays `open`,
+ * and nothing downstream can tell that happened short of a manual audit. Every id is
+ * verified to exist BEFORE any write happens; if one is missing, `InfrastructureError`
+ * `NOT_FOUND` is thrown (naming every missing id) and the file is untouched. Patch shape
+ * (unknown fields, invalid `status`) is likewise validated for the whole batch before
+ * touching the file — the same "build first, write second" discipline `CompositionStore`
+ * documents for its own setters.
+ *
+ * ## `findByPairedEntry` is NOT date-scoped
+ *
+ * Same reasoning as `openForScale`: an entry's consumed observations are not guaranteed
+ * to share the entry's own date (the 900s composition window can straddle midnight), so
+ * the re-pair flow that needs to find "whichever observation(s) currently point at this
+ * entry" cannot safely assume date-locality. Because storage is one file per user, "search
+ * every row" costs nothing beyond a linear scan already implied by every other read
+ * method here — there is no day-boundary reconciliation to get wrong. It returns an
+ * ARRAY, not a single record, because one entry can be the pairing target of more than
+ * one observation (weight + density + container all consumed into the same entry).
+ *
  * @module persistence/yaml/YamlObservationStore
  */
 
@@ -165,6 +197,34 @@ function requireValue(value) {
     });
   }
   return value;
+}
+
+/**
+ * Structural shape check for one row already inside the file (as opposed to `require*`,
+ * which validates a caller's INPUT before it is ever written). A row failing this is
+ * garbage that reached the file some other way — a hand edit, a future schema change read
+ * by old code, disk corruption confined to one row rather than the whole document — and
+ * is skipped rather than trusted, WITHOUT being removed from the underlying file (see
+ * `#readAllValid`).
+ *
+ * Deliberately loose on `value`, `unit`, and `pairedEntryUuid`: those are allowed to be
+ * various types or `null` by design, so over-constraining them here would reject valid
+ * rows. This checks only the fields whose shape is load-bearing for every other method in
+ * this class (id lookup, date filtering, scale filtering, status filtering).
+ *
+ * @param {unknown} r
+ * @returns {boolean}
+ */
+function isStructurallyValid(r) {
+  return (
+    r !== null && typeof r === 'object' &&
+    typeof r.id === 'string' && r.id.length > 0 &&
+    KNOWN_KINDS.includes(r.kind) &&
+    typeof r.scaleId === 'string' && r.scaleId.length > 0 &&
+    typeof r.at === 'string' && LOCAL_TIMESTAMP_RE.test(r.at) &&
+    typeof r.date === 'string' && DATE_RE.test(r.date) &&
+    KNOWN_STATUSES.includes(r.status)
+  );
 }
 
 /** @typedef {'weight'|'upc'|'container'|'density'} ObservationKind */
@@ -274,6 +334,34 @@ export class YamlObservationStore {
     saveYamlToPathAtomic(this.#filePath(userId), records, { noRefs: true, lineWidth: -1 });
   }
 
+  /**
+   * `#readAll`, minus any row that fails `isStructurallyValid`. Used by every method that
+   * hands rows BACK to a caller (`listByDate`, `openForScale`, `findByPairedEntry`) — never
+   * by `append`/`update`/`updateMany`, which read-modify-write the RAW array so a
+   * malformed row already on disk is preserved untouched rather than dropped by an
+   * unrelated write. One bad row must not deny the rest of the day, so this logs a `warn`
+   * per skipped row and continues instead of throwing — a single corrupt record is not the
+   * same failure as a corrupt FILE (see `#readAll`'s `CORRUPT_OBSERVATIONS_FILE`, which is
+   * reserved for "the document itself could not be parsed / is not a list at all").
+   *
+   * @param {string} userId
+   * @returns {Observation[]}
+   */
+  #readAllValid(userId) {
+    const raw = this.#readAll(userId);
+    const valid = [];
+    for (const [i, r] of raw.entries()) {
+      if (isStructurallyValid(r)) {
+        valid.push(r);
+      } else {
+        this.#logger.warn?.('observationStore.read.invalidRecordSkipped', {
+          userId, index: i, id: r?.id, kind: r?.kind, date: r?.date,
+        });
+      }
+    }
+    return valid;
+  }
+
   // ==================== Public API ====================
 
   /**
@@ -334,7 +422,7 @@ export class YamlObservationStore {
   listByDate(userId, date) {
     requireUserId(userId);
     requireDate(date);
-    return this.#readAll(userId)
+    return this.#readAllValid(userId)
       .filter((r) => r.date === date)
       .sort((a, b) => a.at.localeCompare(b.at))
       .map((r) => ({ ...r }));
@@ -357,12 +445,33 @@ export class YamlObservationStore {
    */
   update(userId, id, patch) {
     requireUserId(userId);
+    this.#requirePatchId(id);
+    this.#requirePatchShape(patch);
+
+    const records = this.#readAll(userId);
+    const index = records.findIndex((r) => r.id === id);
+    if (index === -1) {
+      throw new InfrastructureError(`Observation not found: ${id}`, {
+        code: 'NOT_FOUND', entity: 'Observation', id,
+      });
+    }
+
+    records[index] = { ...records[index], ...patch };
+    this.#writeAll(userId, records);
+
+    return { ...records[index] };
+  }
+
+  #requirePatchId(id) {
     if (typeof id !== 'string' || id.length === 0) {
       throw new ValidationError(`id must be a non-empty string (received: ${describeValue(id)})`, {
         code: 'INVALID_OBSERVATION_ID', field: 'id', value: id,
       });
     }
+    return id;
+  }
 
+  #requirePatchShape(patch) {
     const patchKeys = Object.keys(patch ?? {});
     const unknown = patchKeys.filter((k) => !PATCHABLE_FIELDS.includes(k));
     if (unknown.length > 0) {
@@ -377,19 +486,68 @@ export class YamlObservationStore {
         { code: 'INVALID_OBSERVATION_STATUS', field: 'status', value: patch.status },
       );
     }
+    return patch;
+  }
 
-    const records = this.#readAll(userId);
-    const index = records.findIndex((r) => r.id === id);
-    if (index === -1) {
-      throw new InfrastructureError(`Observation not found: ${id}`, {
-        code: 'NOT_FOUND', entity: 'Observation', id,
+  /**
+   * Apply a batch of per-id patches in ONE read-modify-write-rename cycle — ALL-OR-NOTHING.
+   * See the module docstring ("`updateMany` is ALL-OR-NOTHING") for the reasoning.
+   *
+   * Every entry's shape is validated (same rules as `update`'s `patch`), every `id` is
+   * confirmed to exist, and duplicate ids within one call are rejected — ALL before the
+   * file is touched. `[]` is a no-op: it validates trivially and writes nothing.
+   *
+   * @param {string} userId
+   * @param {Array<{id: string, status?: ObservationStatus, pairedEntryUuid?: string|null}>} patches
+   * @returns {Observation[]} The updated records, in the same order as `patches`.
+   * @throws {ValidationError} `INVALID_OBSERVATION_ID` / `UNKNOWN_PATCH_FIELD` /
+   *   `INVALID_OBSERVATION_STATUS` for a malformed entry; `DUPLICATE_PATCH_ID` if the same
+   *   `id` appears more than once in `patches`. Nothing is written when any of these throw.
+   * @throws {InfrastructureError} `NOT_FOUND` if ANY id in `patches` does not exist —
+   *   lists every missing id in `context.ids`, and nothing is written, not even for the
+   *   ids that DID exist.
+   * @throws {InfrastructureError} `CORRUPT_OBSERVATIONS_FILE` — see `#readAll`.
+   */
+  updateMany(userId, patches) {
+    requireUserId(userId);
+    if (!Array.isArray(patches)) {
+      throw new ValidationError(`patches must be an array (received: ${describeValue(patches)})`, {
+        code: 'INVALID_BATCH', field: 'patches', value: patches,
       });
     }
+    if (patches.length === 0) return [];
 
-    records[index] = { ...records[index], ...patch };
+    const seen = new Set();
+    for (const entry of patches) {
+      const id = this.#requirePatchId(entry?.id);
+      if (seen.has(id)) {
+        throw new ValidationError(`patches contains id "${id}" more than once`, {
+          code: 'DUPLICATE_PATCH_ID', field: 'id', value: id,
+        });
+      }
+      seen.add(id);
+      const { id: _id, ...patch } = entry;
+      this.#requirePatchShape(patch);
+    }
+
+    const records = this.#readAll(userId);
+    const indexById = new Map(records.map((r, i) => [r.id, i]));
+
+    const missing = patches.map((p) => p.id).filter((id) => !indexById.has(id));
+    if (missing.length > 0) {
+      throw new InfrastructureError(
+        `Observation(s) not found: ${missing.join(', ')}`,
+        { code: 'NOT_FOUND', entity: 'Observation', ids: missing },
+      );
+    }
+
+    for (const { id, ...patch } of patches) {
+      const index = indexById.get(id);
+      records[index] = { ...records[index], ...patch };
+    }
     this.#writeAll(userId, records);
 
-    return { ...records[index] };
+    return patches.map(({ id }) => ({ ...records[indexById.get(id)] }));
   }
 
   /**
@@ -408,8 +566,35 @@ export class YamlObservationStore {
   openForScale(userId, scaleId) {
     requireUserId(userId);
     requireScaleId(scaleId);
-    return this.#readAll(userId)
+    return this.#readAllValid(userId)
       .filter((r) => r.scaleId === scaleId && r.status === 'open')
+      .sort((a, b) => a.at.localeCompare(b.at))
+      .map((r) => ({ ...r }));
+  }
+
+  /**
+   * Every observation currently paired to a given food-log entry, oldest first, across
+   * the WHOLE file (not date-scoped — see the module docstring). Returns an array because
+   * more than one observation (weight + density + container) can share one
+   * `pairedEntryUuid` from a single consumed composition.
+   *
+   * @param {string} userId
+   * @param {string} entryUuid
+   * @returns {Observation[]} `[]` if nothing is currently paired to `entryUuid` — including
+   *   for a user with no observations at all.
+   * @throws {ValidationError} `INVALID_ENTRY_UUID` if `entryUuid` is not a non-empty string.
+   * @throws {InfrastructureError} `CORRUPT_OBSERVATIONS_FILE` — see `#readAll`.
+   */
+  findByPairedEntry(userId, entryUuid) {
+    requireUserId(userId);
+    if (typeof entryUuid !== 'string' || entryUuid.length === 0) {
+      throw new ValidationError(
+        `entryUuid must be a non-empty string (received: ${describeValue(entryUuid)})`,
+        { code: 'INVALID_ENTRY_UUID', field: 'entryUuid', value: entryUuid },
+      );
+    }
+    return this.#readAllValid(userId)
+      .filter((r) => r.pairedEntryUuid === entryUuid)
       .sort((a, b) => a.at.localeCompare(b.at))
       .map((r) => ({ ...r }));
   }
