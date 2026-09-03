@@ -48,4 +48,50 @@ describe('LogTable', () => {
     fireEvent.click(screen.getByText('Eggs'));
     expect(onRowTap).toHaveBeenCalledWith(expect.objectContaining({ uuid: '1' }));
   });
+
+  describe('grouped rows', () => {
+    const groupBucket = new Map([
+      ['morning', [
+        { uuid: 'g1', id: 'g1', kind: 'group', name: 'Smoothie', calories: 0 },
+        { uuid: 'c1', id: 'c1', parentId: 'g1', name: 'Banana', calories: 105 },
+        { uuid: 'c2', id: 'c2', parentId: 'g1', name: 'Protein powder', calories: 120 },
+      ]],
+      ['afternoon', []], ['evening', []], ['night', []],
+      [null, []],
+    ]);
+
+    it('a collapsed group shows its rolled-up kcal while its children are not rendered', () => {
+      render(<LogTable byBucket={groupBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+      expect(screen.getByText('Smoothie')).toBeTruthy();
+      // Rollup (105 + 120), not the group row's own (zero) calories.
+      expect(screen.getByText('225')).toBeTruthy();
+      expect(screen.queryByText('Banana')).toBeNull();
+      expect(screen.queryByText('Protein powder')).toBeNull();
+      const expandBtn = screen.getByRole('button', { name: /expand smoothie/i });
+      expect(expandBtn.getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('expanding the group reveals its children indented, without changing the rollup', () => {
+      render(<LogTable byBucket={groupBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+      fireEvent.click(screen.getByRole('button', { name: /expand smoothie/i }));
+      expect(screen.getByText('Banana')).toBeTruthy();
+      expect(screen.getByText('Protein powder')).toBeTruthy();
+      expect(screen.getByText('225')).toBeTruthy();
+      const collapseBtn = screen.getByRole('button', { name: /collapse smoothie/i });
+      expect(collapseBtn.getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('tapping the group row itself (not the chevron) fires onRowTap like an item row', () => {
+      const onRowTap = vi.fn();
+      render(<LogTable byBucket={groupBucket} sessions={[]} onAddTo={() => {}} onRowTap={onRowTap} />, { wrapper });
+      fireEvent.click(screen.getByText('Smoothie'));
+      expect(onRowTap).toHaveBeenCalledWith(expect.objectContaining({ id: 'g1' }));
+    });
+
+    it('bucket kcal total counts each gram once (group contributes zero, children carry the values)', () => {
+      render(<LogTable byBucket={groupBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+      // 0 (group) + 105 + 120 = 225, not 450 (double-counted) or 0.
+      expect(screen.getByText('225 kcal')).toBeTruthy();
+    });
+  });
 });
