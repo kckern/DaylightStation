@@ -5,6 +5,7 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { useHealthDay } from './useHealthDay.js';
 import { EquationStrip } from './EquationStrip.jsx';
+import { WeekStrip } from './WeekStrip.jsx';
 import { MacroFooter } from './MacroFooter.jsx';
 import { LogTable } from './LogTable.jsx';
 import { AddCombobox } from './AddCombobox.jsx';
@@ -109,6 +110,7 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
     <div className="health-today">
       <EquationStrip budget={day.budget} budgetError={day.budgetError}
         date={date} today={todayISO()} onDateChange={setDate} onSetupGoals={onSetupGoals} />
+      <WeekStrip date={date} today={todayISO()} onDateChange={setDate} />
       {day.loading ? <LoadingState label="food log" rows={6} /> : null}
       {day.error ? <ErrorState error={day.error} onRetry={day.reload} label="Food log" /> : null}
       {pendingCapture ? (
