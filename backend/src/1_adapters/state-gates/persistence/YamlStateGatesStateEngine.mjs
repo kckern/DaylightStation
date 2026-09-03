@@ -49,12 +49,12 @@ function emptyState() {
 }
 
 export class YamlStateGatesStateEngine {
-  #resolveFilePath; #load; #save; #maxEntries; #maxAgeMs; #queues = new Map(); #cache = new Map();
+  #resolveFilePath; #load; #save; #maxEntries; #maxAgeMs; #queues = new Map(); #cache = new Map(); #logger;
   // Retention defaults match composition's (5_composition/modules/stateGates.mjs).
   // The journal shares current.yml with the projection, so its size is the cost
   // of every commit — these are deliberately small, and a direct construction
   // that omits them should not silently inherit the old 5000/30d.
-  constructor({ filePath, resolveFilePath, load = strictLoad, save = saveYamlToPathAtomic, maxEntries = 500, maxAgeMs = 7 * 24 * 60 * 60 * 1000 }) {
+  constructor({ filePath, resolveFilePath, load = strictLoad, save = saveYamlToPathAtomic, maxEntries = 500, maxAgeMs = 7 * 24 * 60 * 60 * 1000, logger = null }) {
     if (!filePath && !resolveFilePath) throw new Error('YamlStateGatesStateEngine requires filePath or resolveFilePath');
     if (!Number.isInteger(maxEntries) || maxEntries < 1 || !Number.isFinite(maxAgeMs) || maxAgeMs < 1) {
       throw new Error('YamlStateGatesStateEngine retention must be positive');
@@ -64,6 +64,7 @@ export class YamlStateGatesStateEngine {
     this.#save = save;
     this.#maxEntries = maxEntries;
     this.#maxAgeMs = maxAgeMs;
+    this.#logger = logger;
   }
 
   #read(householdId) {
@@ -108,6 +109,15 @@ export class YamlStateGatesStateEngine {
     try { this.#save(this.#resolveFilePath(householdId), stored, { noRefs: true, sortKeys: true }); }
     catch (error) {
       this.#cache.delete(householdId); // disk is truth again; re-parse on the next read
+      // The drop IS the durability contract working, and it is otherwise
+      // invisible: the thrown error says "save failed", not "the in-memory copy
+      // was discarded so the next read re-parses from disk".
+      // stateGatesPersistence.matrix.test.mjs pins the behaviour; this makes it
+      // observable in the field, where the cache is what stands between a
+      // failed write and serving mutated-but-unsaved entitlements.
+      this.#logger?.warn?.('state-gates.cache-dropped-after-failed-write', {
+        householdId, error: error?.message ?? String(error),
+      });
       throw persistenceError('State Gates state could not be saved', error);
     }
   }

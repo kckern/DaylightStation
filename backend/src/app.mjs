@@ -3200,9 +3200,22 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // Pre-warm the bank summaries too (the 4600-file scan), ASYNC so it never
     // blocks boot/the event loop, and keep them warm on a background interval so
     // a home load / gating lookup always hits the cache instead of a cold scan.
-    const warmSchoolBanks = () => schoolService.warmBanks({ force: true })
-      .then((list) => rootLogger.child({ module: 'school-materials' }).info?.('school.banks.prewarmed', { count: list.length }))
-      .catch((err) => rootLogger.child({ module: 'school-materials' }).warn?.('school.banks.prewarm-failed', { error: err.message }));
+    // `elapsedMs` is the point of this log, not `count`. This scan blocked the
+    // event loop ~7.8s every 4 minutes until 2026-09-02 (O(N^2) sync YAML in
+    // readAllBankRaws), which is what made the fitness wall read 0 RPM on a
+    // schedule. The count cannot show that; the duration can, and it is the
+    // only direct check that the fix is still holding.
+    // See docs/_wip/bugs/2026-09-02-fitness-rpm-false-zeros-pause-video-during-cycle-challenge.md
+    const warmSchoolBanks = () => {
+      const startedAt = Date.now();
+      return schoolService.warmBanks({ force: true })
+        .then((list) => rootLogger.child({ module: 'school-materials' }).info?.('school.banks.prewarmed', {
+          count: list.length, elapsedMs: Date.now() - startedAt,
+        }))
+        .catch((err) => rootLogger.child({ module: 'school-materials' }).warn?.('school.banks.prewarm-failed', {
+          error: err.message, elapsedMs: Date.now() - startedAt,
+        }));
+    };
     warmSchoolBanks();
     setInterval(warmSchoolBanks, 4 * 60 * 1000).unref(); // force a refresh before the 5-min TTL lapses, so requests always hit a warm cache
     // Rebuilt from schoolService.listBanks() (cheap YAML-directory read, no

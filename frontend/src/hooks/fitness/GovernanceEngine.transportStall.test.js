@@ -8,9 +8,18 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 
+// Capturing rather than noop: the freeze/resume pair is the only field
+// evidence that this gate fired. Absence of a lock cannot distinguish "the
+// gate worked" from "there was no stall", so the events are part of the
+// contract and are asserted below.
+const logged = [];
 vi.mock('../../lib/logging/Logger.js', () => {
   const noop = () => {};
-  const logger = { child: () => logger, debug: noop, info: noop, warn: noop, error: noop, sampled: noop };
+  const rec = (level) => (event, data) => { logged.push({ level, event, data }); };
+  const logger = {
+    child: () => logger, debug: noop, sampled: noop,
+    info: rec('info'), warn: rec('warn'), error: rec('error'),
+  };
   return { default: () => logger };
 });
 
@@ -172,5 +181,38 @@ describe('Cycle SM — pipeline stall vs genuine silence', () => {
     for (let i = 0; i < 40; i += 1) { silence.push({ ts, entry: { rpm: 0, connected: false } }); ts += STEP; }
     drive(f, silence);
     expect(f.engine.challengeState.activeChallenge.totalLockEventsCount).toBeGreaterThan(0);
+  });
+});
+
+describe('Cycle SM — the stall is observable, not just survived', () => {
+  it('logs the freeze once on entry and the resume once, with the stall duration', () => {
+    logged.length = 0;
+    const f = makeEngineWithActiveCycle();
+    const { samples, ts: afterWarm } = warmUp();
+    drive(f, samples);
+
+    const lastFreshTs = afterWarm - STEP;
+    const stall = [];
+    let ts = afterWarm;
+    for (let i = 0; i < 20; i += 1) {
+      stall.push({ ts, entry: { rpm: 80, connected: false, transportStalled: true, ts: lastFreshTs } });
+      ts += STEP;
+    }
+    drive(f, stall);
+
+    // Edge-triggered: one event for a 4s stall, not one per tick.
+    const frozen = logged.filter((l) => l.event === 'governance.cycle.frozen_by_transport_stall');
+    expect(frozen).toHaveLength(1);
+    expect(frozen[0].level).toBe('warn');
+    expect(frozen[0].data).toMatchObject({ cycleState: 'maintain', rider: 'user_2' });
+
+    // Resuming emits the duration — the number that says how long a rider
+    // would have been depleting toward a lock before 2026-09-02.
+    const resume = [];
+    for (let i = 0; i < 5; i += 1) { resume.push({ ts, entry: fresh(80, ts) }); ts += STEP; }
+    drive(f, resume);
+    const resumed = logged.filter((l) => l.event === 'governance.cycle.resumed_after_transport_stall');
+    expect(resumed).toHaveLength(1);
+    expect(resumed[0].data.stalledMs).toBeGreaterThan(0);
   });
 });
