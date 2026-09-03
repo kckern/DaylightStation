@@ -146,8 +146,7 @@ export function instanceKeySignature(instance) {
 /**
  * The pitch windows one staff holds without ledger lines nobody can count.
  * Treble: C4 (one ledger below) up to A5 (one ledger above). Bass: E2 up to C4.
- * Both land inside the ±ledger band `SvgSequenceStaff` already draws its held
- * ghosts within, so an ask that fits here is an ask that renders legibly.
+ * An ask that fits inside one of these windows is an ask that renders legibly.
  */
 const TREBLE_WINDOW = [60, 81];
 const BASS_WINDOW = [40, 60];
@@ -202,9 +201,9 @@ export function clefForInstance(instance) {
 
 /**
  * The pitch band ONE staff holds. `SvgSequenceStaff` is 112 view units tall
- * whatever it is handed, and only draws its held ghosts inside staff positions
- * -3 to 11 — B3 to B5 on a treble clef, a hair over two octaves. Ink outside
- * that band is drawn anyway, off the card, with nothing on screen to say so.
+ * whatever it is handed — staff positions -3 to 11, B3 to B5 on a treble
+ * clef, a hair over two octaves. Ink outside that band is drawn anyway, off
+ * the card, with nothing on screen to say so.
  */
 const SEQUENCE_STAFF_SPAN = 24;
 
