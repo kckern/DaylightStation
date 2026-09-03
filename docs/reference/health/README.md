@@ -102,6 +102,34 @@ row to a different bucket is a plain `PUT /nutrilist/{uuid} { mealTime }` from
 
 ---
 
+## Loading and refresh
+
+Today's structure is permanent. `LogTable`'s four meal-bucket headings, their
+kcal subtotals, and each bucket's "+ Add food…" row render regardless of
+whether the day's data has arrived, is mid-refresh, or failed to load; only a
+bucket's entry list can be swapped for a loading placeholder, and only on a
+genuine cold start — the first time a date is opened in the tab, before
+anything has ever loaded for it. A bucket that already holds rows, or a day
+that has loaded once before, never shows that placeholder again, including
+during a background refresh.
+
+Reopening a day already seen in this tab renders it instantly from a small
+client-side cache while the real values load quietly behind it; when the
+fetch resolves, the displayed rows are replaced with no loading state ever
+reappearing. The same holds after any change made from the day view itself —
+logging, editing, confirming, or deleting an entry all trigger the identical
+quiet reload, never a spinner. This comes from the shared fetch hook's
+stale-while-revalidate mode; see
+[`docs/reference/frontend/design-system.md`](../frontend/design-system.md#data-fetching)
+for how the primitive itself works.
+
+The Exercise section's header follows the same discipline for a different
+reason: it appears once the day's budget has loaded, whether or not any
+workout is logged, so a workout-free day gets a stable header rather than one
+that pops in and out as sessions come and go.
+
+---
+
 ## Capture funnels
 
 Four ways to get a food onto the log, all reachable from Today's per-bucket
@@ -170,10 +198,18 @@ Two flows are deliberately exempt from the accept half of the seam:
 Messages are captured as `{ messages: [...] }` in the JSON response (the same shape
 Telegram's `choices`/`callback_data` protocol uses).
 
-The accept path runs with `autoReport: false` — with the gate retired `findPending` is
-essentially always empty, so the report `AcceptFoodLog` fires when nothing is pending would
-otherwise render an image, send messages and kick the coaching orchestrator inside *every*
-capture request. Manual Accept paths keep it.
+The accept path runs with `autoReport: false`. Every capture that reaches it already commits
+on arrival (above), so `findPending` is essentially always empty by the time it runs — firing
+the daily report on every request would otherwise render an image, send messages, and kick the
+coaching orchestrator inside *every* capture. Manual Accept paths (the scale's own Accept
+button) keep the default, so the report still fires normally when the day's last pending item
+is confirmed by hand.
+
+While an AI capture is being analyzed, Today shows a placeholder row inline in
+the meal bucket the result will land in — never a page-level spinner — so the
+wait is visible exactly where the outcome will appear. It clears once the
+capture resolves, whether that means food was found, none was, or the request
+failed outright.
 
 There is no post-capture review card on web. A response's messages carry choices (the
 Undo/Edit keyboard) only when food was actually detected — `TodayView` reloads the day
@@ -225,7 +261,9 @@ Editing a group, from its own edit sheet:
 - **Rename** changes the group's own label.
 - **Move to** another meal bucket cascades the same `mealTime` to every member
   server-side, so the whole dish moves together instead of leaving members behind in the
-  old bucket.
+  old bucket — provided the group row itself carries a `date`. A group somehow missing one
+  cascades to nothing, and the edit sheet surfaces a warning naming the stranded item count
+  rather than closing as if the move fully succeeded.
 - **Scale** (a coarser ×½/×¾/×1½/×2 set than a single item gets) scales every member's
   amount and nutrition; the group row itself has nothing to scale.
 - **Delete** prompts first with a count ("Delete Spaghetti and its 3 items?"), then removes

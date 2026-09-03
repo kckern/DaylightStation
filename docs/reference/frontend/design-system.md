@@ -106,6 +106,43 @@ UI is built from these, not from raw Mantine or hand-rolled equivalents.
 | `AskAffordance` | The entry pill that opens an app's chat/coach overlay (pairs with `modules/Agent/AgentChatSurface`). | Any other kind of search or command input — this is scoped to the ask/chat affordance, not a generic search box. |
 | `createAppLogger` | The lazy per-app structured logger (`logger.debug/info/warn/error/sampled`, `.child()`), avoiding import-time logger races. One call per app module. | Ad hoc `console.*` calls anywhere — see the logging framework rules for the general policy this specializes. |
 
+## Data fetching
+
+`frontend/src/lib/hooks/useApiResource.js` is the house `{ data, loading,
+error, revalidating, reload }` fetch hook — a GET-backed request wrapped in
+the loading/error bookkeeping every app needs, so no screen hand-rolls its
+own. In its default mode it behaves like any plain fetch-on-mount hook:
+`loading` starts `true` and clears once the request settles, and `reload()`
+always re-enters that same loading state. This mode is unaffected by anything
+below — no cache read, no cache write, nothing new to opt into.
+
+An opt-in stale-while-revalidate mode (`swr: true`) is for a view whose
+structure should survive a refetch rather than disappear behind a loading
+state. A small in-memory cache, keyed by the request path and bounded to a
+fixed number of entries (least-recently-used eviction), holds the last
+successful payload for the life of the tab. When a path already has a cached
+entry, the hook renders that value on the very first paint — `loading` is
+`false` immediately, and a separate `revalidating` flag reports that a
+background refresh is running instead. The fetch still happens; its result
+quietly replaces the displayed data and updates the cache, with no loading
+state appearing at any point. `reload()` on a path with a cached entry behaves
+the same way, which is what lets a mutation's refresh stay invisible instead
+of flashing the view back to a loading state. A path with no cached entry yet
+behaves exactly like the default mode until its first successful response
+seeds the cache.
+
+Cache writes are race-protected: a response is only allowed to overwrite its
+path's cached value if it is still the most-recently-issued request for that
+path by the time it resolves. This covers both an overlapping reload on one
+component and two separately mounted components requesting the same path — in
+either case, a slower, superseded response can never clobber a fresher answer
+that already landed.
+
+The Health app's day view is the primitive's first consumer of the `swr`
+mode; see
+[`docs/reference/health/README.md`](../health/README.md#loading-and-refresh)
+for what that looks like end to end.
+
 ## The rules
 
 - New webapp UI is built from `@/lib/ui` and the token contract — not raw
