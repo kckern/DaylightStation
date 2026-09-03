@@ -724,7 +724,11 @@ export class ResolveScanAction {
   async #subjectNext(record) {
     const { learnerId, subject } = record.subject ?? {};
     const r = await this.#subjectResolver.execute({
-      learnerId, subject, continueToday: record.subject?.continueToday === true,
+      learnerId, subject,
+      continueToday: record.subject?.continueToday === true,
+      // The daily reading code names the shelf; forwardAction's tokens name
+      // nothing and mean a lesson. Forwarded as-is, same as the typed-code path.
+      program: record.subject?.program ?? null,
     });
     const nice = (s) => (s ? s[0].toUpperCase() + s.slice(1) : 'That');
 

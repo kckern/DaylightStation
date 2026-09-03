@@ -1879,6 +1879,290 @@
     font-family: inherit; font-size: 1.2rem; font-weight: 700; color: var(--school-muted);
   }
 }
+
+// The reading shelf's number pad (books/NumberPad.jsx). Keypad's vocabulary
+// (same keys, same Kongtext digits, same slots) with none of its behaviour:
+// no auto-submit, the entry survives a submit, the length is the caller's,
+// and the glyph size follows the slot count so thirteen fit the panel's 32rem.
+.school-books-pad {
+  width: min(32rem, 100%); margin: 0 auto;
+  display: flex; flex-direction: column; align-items: stretch; gap: clamp(0.6rem, 1.6vh, 1rem);
+}
+.school-books-pad__label { @extend .school-selfservice__title; text-align: center; }
+.school-books-pad__entry { @extend .school-selfservice__entry; }
+.school-books-pad__slot {
+  @extend .school-selfservice__slot;
+  // Sized from the slot count, not the viewport. The row is `min(32rem, 100%)`
+  // wide; twelve gaps take about a fifth of that and each slot spends 4px on
+  // its border, so thirteen 1em-advance Kongtext glyphs fit at ~24px where
+  // the inherited `3.6vw` would have set 32px into a 27px cell. Six or fewer
+  // slots hit the 2rem ceiling, matching Keypad.
+  font-size: clamp(0.85rem, calc((min(32rem, 100vw) * 0.8 / var(--slots, 6) - 4px) * 0.9), 2rem);
+}
+.school-books-pad__keys { @extend .school-selfservice__pad; }
+.school-books-pad__key {
+  @extend .school-selfservice__key;
+  &--blank { visibility: hidden; pointer-events: none; }
+}
+.school-books-pad__submit {
+  @extend .school-selfservice__key;
+  min-height: 64px; font-family: inherit; font-size: 1.25rem; font-weight: 700;
+  border-color: var(--school-accent);
+  &:disabled { opacity: 0.45; cursor: default; }
+}
+.school-books-pad__hint {
+  margin: 0; text-align: center; font-weight: 700; color: var(--school-danger);
+}
+
+// The shelf's day picker (books/DayPicker.jsx): three rolling weeks, weekday
+// first, no month breaks. The weekday header is the headline, the day of the
+// month is the small print, and the month is a footnote where it changes.
+.school-books-days {
+  width: min(32rem, 100%); margin: 0 auto;
+  display: flex; flex-direction: column; gap: clamp(0.5rem, 1.4vh, 0.9rem);
+}
+.school-books-days__summary {
+  // `Today · Wed 2` is words, so the app's face; only the day number inside
+  // a cell is a code (Kongtext, via __day).
+  margin: 0; font-size: clamp(1.1rem, 3vw, 1.6rem); font-weight: 700;
+  text-align: center; color: var(--school-fg);
+}
+.school-books-days__toggle, .school-books-days__confirm {
+  @extend .school-selfservice__key;
+  font-family: inherit; font-size: 1.2rem; font-weight: 700;
+}
+.school-books-days__toggle { color: var(--school-muted); }
+.school-books-days__confirm { min-height: 64px; border-color: var(--school-accent); }
+.school-books-days__grid { display: flex; flex-direction: column; gap: clamp(0.3rem, 1vh, 0.5rem); }
+.school-books-days__row {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: clamp(0.3rem, 1vh, 0.5rem);
+}
+.school-books-days__head {
+  text-align: center; color: var(--school-muted); font-size: 0.85rem; font-weight: 700;
+}
+.school-books-days__cell {
+  @extend .school-selfservice__key;
+  position: relative; padding: 0;
+  // The button itself speaks the app's face so the month caption (a word)
+  // inherits it; only the day number (a code) is Kongtext, via __day.
+  font-family: inherit;
+  &.is-today { border-width: 2px; border-color: var(--school-fg); }
+  &.is-selected { background: var(--school-accent); color: var(--school-accent-ink); border-color: var(--school-accent); }
+}
+.school-books-days__day { font-family: 'Kongtext', ui-monospace, monospace; font-size: 1.3rem; }
+.school-books-days__month {
+  position: absolute; top: 2px; left: 6px;
+  font-size: 0.7rem; font-weight: 700; opacity: 0.8;
+}
+.school-books-days__spacer { visibility: hidden; }
+
+// The reading shelf itself (books/BookShelf.jsx, ShelfTile.jsx, History.jsx):
+// cover tiles of the books in progress, `+ Add a book` last, `history ›` in
+// the corner, an always-visible Done. The locked body clips, so the GRID is
+// the scroll container: flex-sized between the header and the footer, which
+// stay put. Tiles are laid out for a ~500px cover and never upscale it — the
+// column caps at 16rem and the image is `width: 100%` of that.
+.school-books {
+  width: min(64rem, 100%); margin: 0 auto; height: 100%;
+  display: flex; flex-direction: column; gap: clamp(0.5rem, 1.4vh, 0.9rem);
+  padding: clamp(0.6rem, 2vh, 1.2rem); box-sizing: border-box;
+  color: var(--school-fg);
+}
+.school-books__header {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.school-books__who { display: flex; align-items: center; gap: 1rem; min-width: 0; }
+.school-books__title { margin: 0; font-size: 1.6rem; font-weight: 800; }
+// The chip is a walk-away safeguard here, not a card header: no bottom margin.
+.school-books__who .school-selfservice-card__learner { margin-bottom: 0; }
+.school-books__done {
+  @extend .school-selfservice__key;
+  min-height: 64px; font-family: inherit; font-size: 1.2rem; font-weight: 700; padding: 0 1.5rem;
+}
+.school-books__obligation { flex: 0 0 auto; margin: 0; color: var(--school-muted); font-size: 1.15rem; font-weight: 700; }
+.school-books__loading, .school-books__empty {
+  margin: auto; text-align: center; color: var(--school-muted); font-size: 1.2rem;
+}
+.school-books__fault {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 0.6rem 1rem; border: 1px solid var(--school-danger); border-radius: 12px;
+}
+.school-books__fault-text { margin: 0; font-weight: 700; }
+.school-books__retry {
+  @extend .school-selfservice__key;
+  min-height: 52px; font-family: inherit; font-size: 1.1rem; font-weight: 700; padding: 0 1.2rem;
+}
+.school-books__grid {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 16rem));
+  gap: clamp(0.6rem, 1.6vh, 1rem); align-content: start; justify-content: start;
+  padding-bottom: 0.25rem;
+}
+.school-books__footer { flex: 0 0 auto; display: flex; justify-content: flex-end; }
+.school-books__history-link, .school-books__back {
+  @extend .school-selfservice__key;
+  min-height: 52px; font-family: inherit; font-size: 1.1rem; font-weight: 700;
+  color: var(--school-muted); background: transparent; border-color: transparent; padding: 0 1rem;
+}
+.school-books__back { align-self: flex-start; }
+
+.school-books-tile {
+  display: flex; flex-direction: column; gap: 0.4rem; text-align: left; padding: 0.5rem;
+  border: 1px solid var(--school-border); border-radius: 14px;
+  background: var(--school-surface); color: var(--school-fg);
+  font-family: inherit; font-size: 1.05rem; cursor: pointer; touch-action: manipulation;
+  min-width: 0; box-sizing: border-box;
+  &:active { background: var(--school-surface-2); transform: scale(0.98); }
+  &--still { cursor: default; &:active { background: var(--school-surface); transform: none; } }
+}
+.school-books-tile__cover {
+  width: 100%; max-width: 100%; aspect-ratio: 2 / 3; object-fit: cover; object-position: center top;
+  border-radius: 8px; box-sizing: border-box;
+}
+// The placeholder class is the launch card's; only the corner radius follows the tile.
+.school-books-tile .school-selfservice-card__poster-placeholder { border-radius: 8px; font-size: 2rem; }
+.school-books-tile__title {
+  font-weight: 700; line-height: 1.2;
+  overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.school-books-tile__bar { height: 0.6rem; border-radius: 999px; background: var(--school-border); overflow: hidden; }
+.school-books-tile__fill { height: 100%; background: var(--school-accent); }
+// The number a child reads is a code; the words around it are not.
+.school-books-tile__caption { font-family: 'Kongtext', ui-monospace, monospace; font-size: 0.85rem; color: var(--school-fg); }
+.school-books-tile__tag { font-size: 0.75rem; color: var(--school-muted); }
+.school-books-tile--add {
+  align-items: center; justify-content: center; min-height: 12rem; gap: 0.6rem;
+  border-style: dashed; font-size: 1.1rem; font-weight: 700; text-align: center;
+}
+.school-books-tile__plus { font-size: 3rem; line-height: 1; color: var(--school-accent); }
+
+.school-books-history { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: clamp(0.5rem, 1.4vh, 0.9rem); }
+.school-books-history__scroll { display: flex; flex-direction: column; gap: clamp(0.6rem, 1.6vh, 1rem); }
+.school-books-history__group { margin: 0; }
+.school-books-history__month { margin: 0 0 0.5rem; color: var(--school-muted); font-size: 1.1rem; font-weight: 700; }
+.school-books-history__tiles {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 16rem));
+  gap: clamp(0.6rem, 1.6vh, 1rem); justify-content: start;
+}
+
+// The update overlay (books/UpdateBook.jsx): cover and title, ONE control
+// matched to the mode, `I finished it` beside it, `set it aside` small and
+// low. The progress line is a button — tapping it opens the mode chooser.
+.school-books-update {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column; align-items: stretch; gap: clamp(0.6rem, 1.6vh, 1rem);
+}
+.school-books-update__book {
+  display: flex; align-items: center; gap: 1rem; width: min(32rem, 100%); margin: 0 auto;
+}
+.school-books-update__cover {
+  flex: 0 0 auto; width: clamp(4rem, 12vw, 6rem); aspect-ratio: 2 / 3; object-fit: cover;
+  border-radius: 8px; background: var(--school-surface);
+}
+.school-books-update .school-selfservice-card__poster-placeholder { border-radius: 8px; font-size: 1.6rem; }
+.school-books-update__meta { display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; flex: 1 1 auto; }
+.school-books-update__title {
+  margin: 0; font-size: 1.4rem; font-weight: 800; line-height: 1.15;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+.school-books-update__progress {
+  display: flex; flex-direction: column; gap: 0.35rem; align-items: stretch;
+  min-height: 52px; padding: 0.4rem 0.6rem; border: 1px dashed var(--school-border); border-radius: 10px;
+  background: transparent; color: var(--school-fg); text-align: left; cursor: pointer;
+  touch-action: manipulation;
+  &[aria-expanded='true'] { border-style: solid; border-color: var(--school-accent); }
+}
+.school-books-update__bar { display: block; }
+.school-books-update__caption { font-family: 'Kongtext', ui-monospace, monospace; font-size: 0.9rem; }
+.school-books-update__prompt { @extend .school-selfservice__title; text-align: center; }
+.school-books-update__check, .school-books-update__finish, .school-books-update__chooser {
+  width: min(32rem, 100%); margin: 0 auto;
+  display: flex; flex-direction: column; align-items: stretch; gap: clamp(0.6rem, 1.6vh, 1rem);
+}
+.school-books-update__checkin, .school-books-update__mode, .school-books-update__finished {
+  @extend .school-selfservice__key;
+  min-height: 64px; font-family: inherit; font-size: 1.25rem; font-weight: 700;
+}
+.school-books-update__checkin { border-color: var(--school-accent); }
+.school-books-update__mode.is-current { border-color: var(--school-accent); }
+.school-books-update__outcomes {
+  width: min(32rem, 100%); margin: 0 auto;
+  display: flex; flex-direction: column; align-items: center; gap: clamp(0.5rem, 1.4vh, 0.8rem);
+}
+.school-books-update__finished { width: 100%; }
+// A real outcome, not the thing a thumb lands on: still ≥52px tall, but
+// quiet — no border, muted, smaller word.
+.school-books-update__aside, .school-books-update__quiet {
+  min-height: 52px; padding: 0 1rem; border: none; border-radius: 10px;
+  background: transparent; color: var(--school-muted);
+  font-size: 1rem; font-weight: 700; cursor: pointer; touch-action: manipulation;
+}
+.school-books-update__fault {
+  margin: 0; text-align: center; font-weight: 700; color: var(--school-danger);
+}
+
+// The add flow (books/AddBook.jsx): the pad, the card, the three doors, then
+// the pad or the day picker. Every step keeps `‹ back` at the top.
+.school-books-add {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column; align-items: stretch; gap: clamp(0.6rem, 1.6vh, 1rem);
+}
+.school-books-add__number, .school-books-add__where, .school-books-add__page, .school-books-add__when {
+  width: min(32rem, 100%); margin: 0 auto;
+  display: flex; flex-direction: column; align-items: stretch; gap: clamp(0.6rem, 1.6vh, 1rem);
+}
+.school-books-add__retry { align-self: center; }
+.school-books-add__card {
+  width: min(32rem, 100%); margin: 0 auto;
+  display: flex; flex-direction: column; align-items: center; gap: clamp(0.5rem, 1.4vh, 0.9rem);
+}
+.school-books-add__cover {
+  width: clamp(7rem, 24vw, 11rem); aspect-ratio: 2 / 3; object-fit: cover;
+  border-radius: 8px; background: var(--school-surface);
+}
+.school-books-add .school-selfservice-card__poster-placeholder { border-radius: 8px; font-size: 2rem; }
+.school-books-add__about { text-align: center; display: flex; flex-direction: column; gap: 0.3rem; }
+.school-books-add__title {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 800;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.school-books-add__author { margin: 0; color: var(--school-muted); font-size: 1.05rem; font-weight: 700; }
+.school-books-add__description {
+  margin: 0; color: var(--school-muted); font-size: 0.95rem; line-height: 1.35;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical;
+}
+.school-books-add__prompt { @extend .school-selfservice__title; text-align: center; }
+.school-books-add__answers {
+  display: grid; grid-template-columns: 1fr 1fr; gap: clamp(0.45rem, 1.4vh, 0.7rem); width: 100%;
+}
+.school-books-add__yes, .school-books-add__no, .school-books-add__door {
+  @extend .school-selfservice__key;
+  min-height: 64px; font-family: inherit; font-size: 1.25rem; font-weight: 700;
+}
+.school-books-add__yes { border-color: var(--school-accent); }
+.school-books-add__no { color: var(--school-muted); }
+.school-books-add__doors { display: flex; flex-direction: column; gap: clamp(0.45rem, 1.4vh, 0.7rem); }
+.school-books-add__book { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
+.school-books-add__thumb {
+  flex: 0 0 auto; width: 2.6rem; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 6px;
+  background: var(--school-surface);
+  &.school-selfservice-card__poster-placeholder { font-size: 1rem; }
+}
+.school-books-add__line {
+  font-size: 1.1rem; font-weight: 700; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.school-books-add__fault {
+  margin: 0; text-align: center; font-weight: 700; color: var(--school-danger);
+}
 .school-selfservice__screen-off {
   position: fixed; right: max(1rem, env(safe-area-inset-right));
   bottom: max(1rem, env(safe-area-inset-bottom)); z-index: 2;

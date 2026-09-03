@@ -166,6 +166,7 @@ export function createApiRouter(config) {
     // gets it into the api.mounted log and still 404s until its path appears
     // here, which is a convincing way to look wired and not be.
     '/measures': 'measures',
+    '/books': 'books',  // Book metadata resolution (OpenLibrary/Google Books) — the School shelf is under /school/books
   };
 
   // Mount each router at its path

@@ -78,6 +78,7 @@ import { createPlaybackStallDetector } from '#composition/modules/playbackStall.
 import { createHubFleetBridge } from '#composition/modules/hubFleetBridge.mjs';
 import { createApiRouters } from '#composition/modules/contentApi.mjs';
 import { createFitnessApiRouter, createFitnessPlayableModule } from '#composition/modules/fitnessApi.mjs';
+import { createBooksApiRouter, createBooksModule } from '#composition/modules/booksApi.mjs';
 import { createFinanceApiRouter } from '#composition/modules/financeApi.mjs';
 import { createCostApiRouter } from '#composition/modules/costApi.mjs';
 import { createHomeAutomationApiRouter, createHomeDashboardApiRouter } from '#composition/modules/homeApi.mjs';
@@ -368,6 +369,7 @@ import { YamlAssignmentStore } from './1_adapters/persistence/yaml/YamlAssignmen
 import { HmacSchoolStudyGrantIssuer } from './1_adapters/school/actions/HmacSchoolStudyGrantIssuer.mjs';
 import { HmacSchoolReelGrantIssuer } from './1_adapters/school/actions/HmacSchoolReelGrantIssuer.mjs';
 import { HmacSchoolCubeGrantIssuer } from './1_adapters/school/actions/HmacSchoolCubeGrantIssuer.mjs';
+import { HmacSchoolBookGrantIssuer } from './1_adapters/school/actions/HmacSchoolBookGrantIssuer.mjs';
 import { KociembaCubeRecoverySolver } from './1_adapters/school/rubiksCube/KociembaCubeRecoverySolver.mjs';
 import { FilesystemLanguageReelRepository } from './1_adapters/school/FilesystemLanguageReelRepository.mjs';
 import { FilesystemRubiksCubeProgressRepository } from './1_adapters/school/FilesystemRubiksCubeProgressRepository.mjs';
@@ -378,6 +380,7 @@ import { RubiksPacketPlanner } from './3_applications/school/rubiksCube/RubiksPa
 import { YamlDocumentFileStore } from './1_adapters/school/YamlDocumentFileStore.mjs';
 import { RUBIKS_CUBE_COURSE_ID, RUBIKS_CUBE_REVISION } from './3_applications/school/rubiksCube/courseCatalog.mjs';
 import { createRubiksCubeRouter } from './4_api/v1/routers/rubiksCube.mjs';
+import { createSchoolBooksRouter } from './4_api/v1/routers/schoolBooks.mjs';
 import { GetSchoolReport } from './3_applications/school/GetSchoolReport.mjs';
 import { GetLearningProgress } from './3_applications/school/GetLearningProgress.mjs';
 import { GetInstructionalInsights } from './3_applications/school/GetInstructionalInsights.mjs';
@@ -3271,6 +3274,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   let schoolStudyGrants = null;
   let schoolReelGrants = null;
   let schoolCubeGrants = null;
+  let schoolBookGrants = null;
   try {
     schoolStudyGrants = new HmacSchoolStudyGrantIssuer({ key: jwtSecret });
   } catch (error) {
@@ -3281,6 +3285,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }
   try { schoolCubeGrants = new HmacSchoolCubeGrantIssuer({ key: jwtSecret }); } catch (error) {
     rootLogger.error('school.rubiks-cube.grants-unavailable', { error: error.message });
+  }
+  try { schoolBookGrants = new HmacSchoolBookGrantIssuer({ key: jwtSecret }); } catch (error) {
+    rootLogger.error('school.books.grants-unavailable', { error: error.message });
   }
   const schoolDocumentFileStore = new YamlDocumentFileStore();
   const languageReelService = new LanguageReelService({
@@ -3829,6 +3836,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const broadcastScreenWake = new WakeScreenForBroadcast({ devices: deviceServices.deviceService });
   const wakeScreenForBroadcast = (args) => broadcastScreenWake.execute(args);
 
+  // The Books domain (metadata gateways, household repository, ResolveBook),
+  // built once here so School's shelf and the household `/books` API share
+  // one repository and one resolver.
+  const books = createBooksModule({ configService, logger: rootLogger });
+
   try {
     const { createSchoolLifecycle } = await import('#composition/modules/schoolLifecycle.mjs');
     schoolLifecycle = await createSchoolLifecycle({
@@ -3876,6 +3888,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       flashcardStudyService: flashcardStudy,
       rubiksCubeService,
       rubiksCubeGrants: schoolCubeGrants,
+      // The reading shelf (book-log program): grants for the panel's /act
+      // target, the Books domain's resolver and repository for the shelf.
+      bookGrants: schoolBookGrants,
+      resolveBook: books.resolveBook,
+      bookRepository: books.bookRepository,
       donow: donowModule?.service ?? null,
       donowSurfaces: donowModule?.surfaces ?? null,
       donowDatastore: donowModule?.datastore ?? null,
@@ -4445,6 +4462,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     service: rubiksCubeService, grants: schoolCubeGrants, revision: RUBIKS_CUBE_REVISION,
     logger: rootLogger.child({ module: 'school-rubiks-cube-api' }),
   }));
+  // Household-wide book resolution (`/api/v1/books/resolve`). `v1Routers` is
+  // keyed by path segment, so a top-level router is a property, not a `.use`.
+  v1Routers.books = createBooksApiRouter({ resolveBook: books.resolveBook });
+  // The School reading shelf. Needs the lifecycle's shelf use cases (absent in
+  // a composition without the Books domain deps) and a grant issuer.
+  if (schoolLifecycle.wired && schoolBookGrants && schoolLifecycle.useCases?.getBookShelf) {
+    v1Routers.school.use('/books', createSchoolBooksRouter({
+      grants: schoolBookGrants,
+      getBookShelf: schoolLifecycle.useCases.getBookShelf,
+      openBookShelfItem: schoolLifecycle.useCases.openBookShelfItem,
+      recordBookProgress: schoolLifecycle.useCases.recordBookProgress,
+    }));
+  }
 
   if (schoolLifecycle.router) {
     v1Routers.school.use('/lifecycle', schoolLifecycle.router);

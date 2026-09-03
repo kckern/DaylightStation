@@ -283,3 +283,75 @@ describe('media-lesson endpoints', () => {
     await expect(schoolApi.lessonPosition('ses1', 42)).resolves.toEqual({ ok: false, status: 0, data: null });
   });
 });
+
+// ── Reading shelf (book-shelf UI design §6) ──────────────────────────────────
+// Every shelf write rides the book grant header, and the item id is minted
+// as `learner:isbn:entry` — colons the route would otherwise split on — so
+// the tests below pin the header and the encoding, not just "a request
+// happened".
+describe('books endpoints', () => {
+  const okFetch = () => vi.fn(async () => new Response('{}', { status: 200 }));
+  const GRANT = { 'X-School-Book-Grant': 'g1' };
+
+  it('books.shelf() GETs the learner shelf with the grant header', async () => {
+    vi.stubGlobal('fetch', okFetch());
+    await schoolApi.books.shelf('kid', 'g1');
+    const [url, opts] = fetch.mock.calls.at(-1);
+    expect(url).toBe('/api/v1/school/books/kid/shelf');
+    expect(opts.method).toBe('GET');
+    expect(opts.headers).toEqual(GRANT);
+    expect(opts.body).toBeUndefined();
+  });
+
+  it('books.open() POSTs the open body as JSON with the grant header', async () => {
+    vi.stubGlobal('fetch', okFetch());
+    const body = { bookId: '9780064400558', entryId: 'e1', where: 'partway', page: 84, progressEntryId: 'e2' };
+    await schoolApi.books.open('kid', 'g1', body);
+    const [url, opts] = fetch.mock.calls.at(-1);
+    expect(url).toBe('/api/v1/school/books/kid/shelf');
+    expect(opts.method).toBe('POST');
+    expect(opts.headers).toEqual({ 'Content-Type': 'application/json', ...GRANT });
+    expect(JSON.parse(opts.body)).toEqual(body);
+  });
+
+  it('books.progress() encodes the colon-separated item id and POSTs the event', async () => {
+    vi.stubGlobal('fetch', okFetch());
+    await schoolApi.books.progress('kid', 'g1', 'kid:b:e1', { kind: 'progress', page: 90, entryId: 'e3' });
+    const [url, opts] = fetch.mock.calls.at(-1);
+    expect(url).toBe('/api/v1/school/books/kid/shelf/kid%3Ab%3Ae1/progress');
+    expect(opts.method).toBe('POST');
+    expect(opts.headers).toEqual({ 'Content-Type': 'application/json', ...GRANT });
+    expect(JSON.parse(opts.body)).toEqual({ kind: 'progress', page: 90, entryId: 'e3' });
+  });
+
+  it('books.mode() POSTs {progressMode} to the item', async () => {
+    vi.stubGlobal('fetch', okFetch());
+    await schoolApi.books.mode('kid', 'g1', 'kid:b:e1', 'check');
+    const [url, opts] = fetch.mock.calls.at(-1);
+    expect(url).toBe('/api/v1/school/books/kid/shelf/kid%3Ab%3Ae1/mode');
+    expect(opts.method).toBe('POST');
+    expect(opts.headers).toEqual({ 'Content-Type': 'application/json', ...GRANT });
+    expect(JSON.parse(opts.body)).toEqual({ progressMode: 'check' });
+  });
+
+  it('books.resolve() GETs the shared lookup outside /school, with no grant header', async () => {
+    vi.stubGlobal('fetch', okFetch());
+    await schoolApi.books.resolve('9780064400558');
+    const [url, opts] = fetch.mock.calls.at(-1);
+    expect(url).toBe('/api/v1/books/resolve?id=9780064400558');
+    expect(opts.method).toBe('GET');
+    expect(opts.headers).toBeUndefined();
+  });
+
+  it('passes a non-2xx through as {ok:false, status, data} without throwing', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      JSON.stringify({ ok: false, error: { type: 'validation', message: 'page must be a whole number', code: 'BAD_PAGE' }, traceId: 't1' }),
+      { status: 400 },
+    )));
+    const res = await schoolApi.books.progress('kid', 'g1', 'kid:b:e1', { kind: 'progress', page: -1, entryId: 'e3' });
+    expect(res).toMatchObject({ ok: false, status: 400 });
+    expect(res.data.error.message).toBe('page must be a whole number');
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('net'); }));
+    await expect(schoolApi.books.shelf('kid', 'g1')).resolves.toEqual({ ok: false, status: 0, data: null });
+  });
+});

@@ -30,6 +30,7 @@ import LanguageReelsProgram from './Programs/LanguageReels/LanguageReelsProgram.
 import FlashcardProgram from './Programs/Flashcards/FlashcardProgram.jsx';
 import FlashcardDeckBrowser from './Programs/Flashcards/FlashcardDeckBrowser.jsx';
 import RubiksCubeProgram from './Programs/RubiksCube/RubiksCubeProgram.jsx';
+import BookShelf from './books/BookShelf.jsx';
 import ReportPanel from './report/ReportPanel.jsx';
 import AdaptiveTutorPanel from './remediation/AdaptiveTutorPanel.jsx';
 import LearningCatalogBrowser from './catalog/LearningCatalogBrowser.jsx';
@@ -214,6 +215,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   const [studyLaunch, setStudyLaunch] = useState(null);
   const [reelLaunch, setReelLaunch] = useState(null);
   const [cubeLaunch, setCubeLaunch] = useState(null);
+  const [bookLaunch, setBookLaunch] = useState(null);
   const [banks, setBanks] = useState([]);         // bank summaries, for shelving + titles
   // The catalog fetch is Plex-backed and can be SLOW on a cold cache (first open
   // after a redeploy fans out to every source). Track whether it has resolved so
@@ -460,6 +462,20 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       openSection('rubiks-cube');
       return true;
     }
+    // The reading shelf (book-shelf UI design §2): the grant is the shelf's
+    // only identity — every shelf request carries it and the router acts for
+    // the learner it names — so a target without one has nothing to mount.
+    if (target?.kind === 'program' && target.program === 'book-log') {
+      const learnerId = launchedLearnerId ?? target.learnerId ?? null;
+      if (!target.bookGrant || !learnerId) {
+        schoolLog.bookShelf('launch-refused', { reason: !target.bookGrant ? 'no-grant' : 'no-learner' });
+        return false;
+      }
+      setBookLaunch({ learnerId, bookGrant: target.bookGrant });
+      schoolLog.bookShelf('launch', { learnerId });
+      openSection('book-shelf');
+      return true;
+    }
     if (target?.kind === 'program' && target.program === 'flashcards') {
       const learnerId = launchedLearnerId ?? target.learnerId ?? null;
       if (!target.deckId || !learnerId) return false;
@@ -573,6 +589,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   const goHome = useCallback(() => {
     setSection(null);
     setStudyLaunch(null);
+    setBookLaunch(null); // the grant leaves with the shelf; nothing keeps a credential past its workspace
     setActive(null);
     setNotice(null);
     setMaterialPath([]);
@@ -655,6 +672,15 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     ));
     setReelLaunch((current) => (current && current.learnerId !== currentUser?.id ? null : current));
     setCubeLaunch((current) => (current && current.learnerId !== currentUser?.id ? null : current));
+    // The shelf is the one section that hides BOTH its runner and the locked
+    // panel's Done overlay (it carries its own), so an identity lapse that
+    // only nulled the launch would leave `section` on a blank wall with no
+    // way back. A lapse ends the workspace: home, which is the keypad here.
+    if (bookLaunch && bookLaunch.learnerId !== currentUser?.id) goHome();
+    // Deps are deliberately the identity alone: `bookLaunch`/`goHome` are read,
+    // not watched — listing them would re-run this on every launch and clear
+    // the notice/panel state it exists to protect. `SchoolApp.launch.test.jsx`
+    // ("an identity lapse with the shelf up …") pins the lapse path.
   }, [currentUser?.id, isGuest]);
 
   const subjectId = section?.startsWith('subject:') ? section.slice(8) : null;
@@ -675,6 +701,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
               : section === 'typing' ? 'Typing'
                 : section === 'geography' ? 'Geography'
                   : section === 'rubiks-cube' ? 'Rubik’s Cube'
+                  : section === 'book-shelf' ? 'Reading'
                   : launchPreviewLink ? 'Launch card preview'
                   : languageCourseId ? (courses.find((c) => c.id === languageCourseId)?.label ?? 'Language')
                     : section;
@@ -994,8 +1021,12 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             way off one screen after "Leave preview" and the card's "Go back".
             The preview already carries its exit in the band above the card,
             deliberately outside it, so the never-dead-end rule is satisfied
-            without this: the honest fix is not to draw it. */}
-        {lock.locked && section && !launchPreviewLink && !active && !courseId && (
+            without this: the honest fix is not to draw it.
+
+            NOR ON THE SHELF. It is a workspace, not a section (design §2),
+            and carries its own always-visible Done; a second one, drawn
+            bottom-right over its `history ›` link, would be a duplicate. */}
+        {lock.locked && section && !launchPreviewLink && !active && !courseId && section !== 'book-shelf' && (
           <button
             type="button"
             className="school-selfservice-card__action school-selfservice-card__action--exit school-app__locked-exit"
@@ -1032,6 +1063,19 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             userId={reelLaunch.learnerId}
             reelId={reelLaunch.reelId}
             reelGrant={reelLaunch.reelGrant}
+            onExit={goHome}
+          />
+        )}
+        {/* The reading shelf sits out here with the ladder and the reels, not
+            beside the cube: the wall panel mounts it LOCKED, from the reading
+            code, and the `!lock.locked` wrapper above never paints in that
+            mode. The idle knob is the panel's own lock config — the same
+            source the keypad's card timer reads — never a constant here. */}
+        {section === 'book-shelf' && !active && bookLaunch && bookLaunch.learnerId === currentUser?.id && (
+          <BookShelf
+            learnerId={bookLaunch.learnerId}
+            grant={bookLaunch.bookGrant}
+            idleTimeoutSeconds={lock.idleTimeoutSeconds}
             onExit={goHome}
           />
         )}

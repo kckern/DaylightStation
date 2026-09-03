@@ -58,6 +58,7 @@ import { YamlIssuedArtifactStore } from '#adapters/persistence/yaml/YamlIssuedAr
 import { YamlReviewQueue } from '#adapters/persistence/yaml/YamlReviewQueue.mjs';
 import { YamlAgendaCooldownStore } from '#adapters/persistence/yaml/YamlAgendaCooldownStore.mjs';
 import { YamlReadingLogStore } from '#adapters/persistence/yaml/YamlReadingLogStore.mjs';
+import { YamlBookLogStore } from '#adapters/persistence/yaml/YamlBookLogStore.mjs';
 import { YamlTeacherActionReceiptStore } from '#adapters/persistence/yaml/YamlTeacherActionReceiptStore.mjs';
 import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrintDocumentRepository.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
@@ -86,6 +87,7 @@ import { PreviewSchoolSessionStore, PreviewSchoolTokenRegistry } from '#apps/sch
 import { SyllabusManagementService } from '#apps/school/SyllabusManagementService.mjs';
 import { SurfaceProgramLauncher } from '#apps/school/SurfaceProgramLauncher.mjs';
 import { StoryTimeProgramLauncher } from '#apps/school/StoryTimeProgramLauncher.mjs';
+import { BookLogProgramLauncher } from '#apps/school/BookLogProgramLauncher.mjs';
 import { PianoCourseProgramLauncher } from '#apps/school/PianoCourseProgramLauncher.mjs';
 import { PianoLessonCeremonyBridge } from '#apps/school/PianoLessonCeremonyBridge.mjs';
 import { DoNowSchoolBridge } from '#apps/school/DoNowSchoolBridge.mjs';
@@ -97,6 +99,9 @@ import { BuildAgenda } from '#apps/school/usecases/BuildAgenda.mjs';
 import { TeacherAgendaDispatch } from '#apps/school/usecases/TeacherAgendaDispatch.mjs';
 import { ListLearnerSessions } from '#apps/school/usecases/ListLearnerSessions.mjs';
 import { ListPrintableWorksheetSessions } from '#apps/school/usecases/ListPrintableWorksheetSessions.mjs';
+import { GetBookShelf } from '#apps/school/usecases/GetBookShelf.mjs';
+import { OpenBookShelfItem } from '#apps/school/usecases/OpenBookShelfItem.mjs';
+import { RecordBookProgress } from '#apps/school/usecases/RecordBookProgress.mjs';
 import { makeTeacherGate } from '#apps/school/TeacherGate.mjs';
 import { YamlPassOverrideStore } from '#adapters/persistence/yaml/YamlPassOverrideStore.mjs';
 import { YamlAttestationLog } from '#adapters/persistence/yaml/YamlAttestationLog.mjs';
@@ -132,6 +137,7 @@ import { CreateLostAnswerSheetTicket } from '#apps/school/usecases/CreateLostAns
 import { EnrollLearner } from '#apps/school/usecases/EnrollLearner.mjs';
 import { UnenrollLearner } from '#apps/school/usecases/UnenrollLearner.mjs';
 import { STORY_TIME_PROGRAM_ID } from '#domains/school/storyTime.mjs';
+import { BOOK_LOG_PROGRAM_ID } from '#domains/school/bookLog.mjs';
 import { validateFitnessActivityDescriptor } from '#domains/school/fitnessCourse.mjs';
 import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
 import { createSchoolLifecycleRouter } from '#api/v1/routers/schoolLifecycle.mjs';
@@ -243,6 +249,11 @@ export async function createSchoolLifecycle({
   flashcardStudyService = null,
   rubiksCubeService = null,
   rubiksCubeGrants = null,
+  // The reading shelf. `bookGrants` signs the panel's launch target; the
+  // Books domain's resolver and repository come from `booksApi.mjs`. Null for
+  // any of them degrades: the launcher still registers (an enrollment with no
+  // obligation is complete on its own), only the shelf use cases are skipped.
+  bookGrants = null, resolveBook = null, bookRepository = null,
   donow = null, donowSurfaces = null, donowDatastore = null,
   tokenRegistry = null, schoolCalcActionResolver = null, schoolCalcStudies = null,
   // A THUNK returning every `learner_action` the household's trigger sources
@@ -510,6 +521,9 @@ export async function createSchoolLifecycle({
     // Story-time evidence: durable `records/`, sharded by the household's own
     // study day so the launcher's "how many today" is one file read.
     readingLog: new YamlReadingLogStore({ configService, logger }),
+    // Book-log evidence: the learner-sharded reading shelf (`records/`), one
+    // file per learner, read by the launcher for "how much today/this week".
+    bookLog: new YamlBookLogStore({ configService, logger }),
     teacherActionReceipts: new YamlTeacherActionReceiptStore({ configService }),
   };
   // Long-expired token files are dead weight (a pruned scan resolves to the
@@ -606,6 +620,15 @@ export async function createSchoolLifecycle({
   launchers.set(STORY_TIME_PROGRAM_ID, new StoryTimeProgramLauncher({
     readingLog: stores.readingLog, assignments: stores.assignments, timezone, clock, logger, startReadingSession,
   }));
+
+  // The reading shelf. Unconditional like story-time: an enrollment with no
+  // obligation is complete on its own, so no service has to exist first.
+  // `grants` may be null in a degraded boot; the launcher then refuses to
+  // issue a target and /act answers "Ask a grown-up", which is honest.
+  const bookLogLauncher = new BookLogProgramLauncher({
+    bookLog: stores.bookLog, assignments: stores.assignments, timezone, clock, logger, grants: bookGrants,
+  });
+  launchers.set(BOOK_LOG_PROGRAM_ID, bookLogLauncher);
 
   // `school.yml` `programs:` — one `SurfaceProgramLauncher` per entry, config
   // selecting from the closed DoNow surface vocabulary (spec §6 "Surface
@@ -1293,6 +1316,24 @@ export async function createSchoolLifecycle({
   const listLearnerSessions = new ListLearnerSessions({ sessions: stores.sessions, timezone, clock });
   const listPrintableWorksheetSessions = new ListPrintableWorksheetSessions({ listLearnerSessions, curriculum });
 
+  // The shelf's own use cases need the Books domain (resolver + repository);
+  // without them the launcher still answers the agenda, and `/school/books`
+  // is simply not mounted (app.mjs guards on `useCases.getBookShelf`).
+  const bookShelfUseCases = resolveBook && bookRepository
+    ? {
+      getBookShelf: new GetBookShelf({ bookLog: stores.bookLog, bookRepository, bookLogLauncher, clock, logger }),
+      // The launcher's dayOf: the write use cases judge "not in the future" on
+      // the same study day GetBookShelf counts with (review m1).
+      openBookShelfItem: new OpenBookShelfItem({ bookLog: stores.bookLog, resolveBook, clock, dayOf: (iso) => bookLogLauncher.dayOf(iso), logger }),
+      recordBookProgress: new RecordBookProgress({ bookLog: stores.bookLog, clock, dayOf: (iso) => bookLogLauncher.dayOf(iso), logger }),
+    }
+    : {};
+  if (!bookShelfUseCases.getBookShelf) {
+    logger.warn?.('school.lifecycle.book-shelf-unwired', {
+      resolveBook: Boolean(resolveBook), bookRepository: Boolean(bookRepository),
+    });
+  }
+
   const useCases = {
     buildAgenda, issueDocument, issueComposedWorksheet, dispatchMedia, recordMediaCompletion,
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation, replaceRemediation,
@@ -1303,6 +1344,7 @@ export async function createSchoolLifecycle({
     enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction, recordLessonCompanionProgress,
     getLearnerDayCompletion, teacherAgendaDispatch, reprintIssuedArtifact, reprintResultReceiptArtifact, issueCorrectedResultReceipt, manageCurriculumException,
     getPianoLessonGate, manageProgramDayBypass, getCompanionFinishCode,
+    ...bookShelfUseCases,
   };
 
   const lifecycleAgendaResource = new SchoolLifecycleAgendaResource({
@@ -1396,7 +1438,7 @@ export async function createSchoolLifecycle({
     // rather than a second store pointed at a directory that could drift.
     stores: {
       ...stores, curriculum, printDocuments, allocationStore, heldCardScans, worksheetInstances, companions, issuedArtifacts, curriculumExceptionStore,
-      programDayBypassStore,
+      programDayBypassStore, bookRepository,
     },
     // The `RenderPrintDocument` instance the print-document pipeline shares
     // between `issueDocument`'s tracked-quiz path and any other caller (proof
