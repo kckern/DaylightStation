@@ -41,10 +41,13 @@ const swrCache = new Map();
 // gets to write the cache if its number is still the highest issued for that
 // path at the time it resolves — i.e. it's provably the most-recently-issued
 // request, regardless of which mounted component instance issued it or how
-// long each one took to come back. Bounded alongside swrCache below (an
-// evicted path's generation counter is dropped with it — nothing depends on
-// generation numbers surviving eviction, only on them being monotonic while
-// a path is active).
+// long each one took to come back. An entry is dropped only as a side effect
+// of swrCache's own LRU eviction (below), which only happens on a successful
+// cache write — a path that never writes the cache (every request for it
+// fails, or is always superseded before it can) keeps its counter here
+// indefinitely. That's a real, unbounded-in-theory growth path, just a slow
+// and low-severity one: it costs one Map entry per distinct never-succeeding
+// path, not per request.
 const pathGenerations = new Map();
 
 function cacheGet(path) {
