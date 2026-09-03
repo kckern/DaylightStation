@@ -44,6 +44,9 @@ const build = ({
   wireDonow = true,
   resolveLearningAction = null,
   replaceLostAnswerSheet = null,
+  // A stand-in subject resolver, for a test that asserts what the scan path
+  // FORWARDS from the token rather than what the resolver answers.
+  subjectResolver = null,
   logger = silentLogger,
 } = {}) => {
   clock = fakeClock();
@@ -98,7 +101,7 @@ const build = ({
     roster: { displayName: (id) => (id === 'kid1' ? 'Sam' : null) },
     logger: silentLogger,
   });
-  const resolveSubjectNext = new ResolveSubjectNext({
+  const resolveSubjectNext = subjectResolver ?? new ResolveSubjectNext({
     curriculum, assignments, sessions, launchers,
     clock: clock.now, newSessionId: sequentialIds('ses_s'), logger: silentLogger,
   });
@@ -512,6 +515,35 @@ describe('the subject ticket', () => {
     expect(result).toMatchObject({ status: 'dispatched', tokenClass: 'media_action', physical: 'receipt', printed: true });
     expect(sessions.ids()).toHaveLength(1);
     expect(playback.dispatches).toHaveLength(1);
+  });
+
+  it('forwards the token\'s continueToday AND program to the resolver — the token says what it continues to', async () => {
+    // The daily reading code carries `program: book-log` (BuildAgenda) so a
+    // re-entered code reopens the SHELF rather than the first eligible lesson;
+    // forwardAction's "One more?" tokens carry no program. The scan path must
+    // hand both through unchanged, as the typed-code path does.
+    const execute = vi.fn(async () => ({ kind: 'served', subjectLabel: 'english' }));
+    build({ subjectResolver: { execute } });
+    const record = mintToken({
+      tokenClass: 'subject_next',
+      subject: { learnerId: 'kid1', subject: 'english', continueToday: true, program: 'book-log' },
+      at: clock.iso(), rng,
+    });
+    await tokens.put(record);
+    await resolve.execute({ code: record.token });
+    expect(execute).toHaveBeenCalledWith({
+      learnerId: 'kid1', subject: 'english', continueToday: true, program: 'book-log',
+    });
+
+    execute.mockClear();
+    const plain = mintToken({
+      tokenClass: 'subject_next', subject: { learnerId: 'kid1', subject: 'english', continueToday: true }, at: clock.iso(), rng,
+    });
+    await tokens.put(plain);
+    await resolve.execute({ code: plain.token });
+    expect(execute).toHaveBeenCalledWith({
+      learnerId: 'kid1', subject: 'english', continueToday: true, program: null,
+    });
   });
 
   it('a subject served today prints a done-for-today slip, not a move', async () => {

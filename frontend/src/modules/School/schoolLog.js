@@ -48,6 +48,12 @@ export const schoolLog = {
   // ids rode along, so a scan that made no visible mark on the room still
   // leaves a trace here.
   scan: (detail, data) => emit('scan', detail, data),
+  // The reading shelf (book-shelf UI design §7): opened | closed{reason} |
+  // lookup{status} | item-opened | progress{kind} | add.rejected{reason} |
+  // cover.unresolved. The number a child typed is never logged, only the
+  // verdict on it — the same discipline as the self-service code above.
+  bookShelf: (detail, data) => emit('book-shelf', detail, data),
+  bookShelfError: (detail, data) => emit('book-shelf', detail, data, 'error'), // shelf.failed | write.failed
 };
 
 export default schoolLog;

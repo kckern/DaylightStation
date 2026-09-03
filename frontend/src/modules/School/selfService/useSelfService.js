@@ -198,11 +198,17 @@ function launchTarget(action, effect) {
     title: effect.title ?? null, parts: effect.parts ?? [], state: effect.state ?? {},
     participation: effect.participation ?? 'optional', learnerId: effect.learnerId ?? null,
   };
+  // Copied by NAME, not spread: a grant only reaches SchoolApp if it is
+  // listed here. The backend sends `{ ...target, programId, unitId,
+  // learnerId }`, so a launcher's grant IS in the effect — and the reading
+  // shelf's `bookGrant` was dropped on this line for exactly that reason,
+  // leaving the card saying "Opening it here" over a `mount.refused`.
   if (effect?.kind === 'program') {
     return {
       kind: 'program', program: effect.programId ?? action.target ?? null,
       corpusId: effect.corpusId ?? null,
       studyGrant: effect.studyGrant ?? null,
+      bookGrant: effect.bookGrant ?? null,
       learnerId: effect.learnerId ?? null,
     };
   }
