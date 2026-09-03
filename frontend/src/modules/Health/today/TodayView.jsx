@@ -55,7 +55,7 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   // here, since a pending log never syncs into the nutrilist that day.byBucket
   // is built from. Root-cause fix, live incident 2026-09-02.
   const pendingReview = useApiResource(`api/v1/health/nutrition/pending?date=${date}`,
-    { deps: [date], label: 'pending-review' });
+    { deps: [date], label: 'pending-review', logger });
   // dashboard.today.coaching is an array of {type, text, timestamp} — text is
   // multi-line HTML-flavored copy (a full "morning brief"), not a one-liner.
   // Take the first line of the most recent entry and strip markup for the
