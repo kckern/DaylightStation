@@ -32,6 +32,7 @@ test.describe('piano settings sheets', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
   test('Sound and Maintenance fit the canvas in every state', async ({ page }) => {
+    test.setTimeout(300_000); // the readiness poll alone may take 2 min on a cold backend
     // Playwright's webServer only waits for Vite; the backend behind the /api
     // proxy boots later and answers 500 through the proxy until it is up. Poll
     // a real asset to readiness first — the same request also proves the
