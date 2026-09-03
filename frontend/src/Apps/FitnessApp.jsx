@@ -1805,6 +1805,14 @@ const PressureMatEventBridge = ({ logger }) => {
       event: event.payload.event,
       steps: event.payload.steps,
       stomps: event.payload.stomps,
+      voltage: event.payload.voltage,
+      restVoltage: event.payload.restVoltage,
+      deltaV: event.payload.deltaV,
+      gradientVps: event.payload.gradientVps,
+      peakDeltaV: event.payload.peakDeltaV,
+      peakGradientVps: event.payload.peakGradientVps,
+      pressDurationMs: event.payload.pressDurationMs,
+      classifiedStomp: event.payload.classifiedStomp,
     });
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('fitness:pressure-mat', { detail: event }));

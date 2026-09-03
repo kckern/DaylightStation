@@ -9,7 +9,9 @@ const firmwareDir = path.join(here, '..');
 const argv = process.argv.slice(2);
 const portIndex = argv.indexOf('--port');
 let port = portIndex >= 0 ? argv[portIndex + 1] : null;
-const rest = argv.filter((arg, index) => arg !== '--port' && index !== portIndex + 1);
+const rest = portIndex >= 0
+  ? argv.filter((arg, index) => arg !== '--port' && index !== portIndex + 1)
+  : argv;
 const src = rest[0] || process.env.DAYLIGHT_PRESSURE_MATS_CONFIG;
 const id = rest[1] || '';
 if (!src) {
@@ -31,4 +33,3 @@ const run = (command, args) => {
 run('node', ['tools/gen-config.mjs', src, ...(id ? [id] : [])]);
 run('pio', ['run', '-e', 'trampletek-blue', '-t', 'upload', '--upload-port', port]);
 console.log(`\n[flash] done -> ${port}`);
-

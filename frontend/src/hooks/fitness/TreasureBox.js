@@ -47,6 +47,7 @@ export class FitnessTreasureBox {
     // Structured award callback for ephemeral celebrations. Accounting remains
     // here; consumers only observe a completed, canonical award.
     this._ringAwardCb = null;
+    this._bonusAwardKeys = new Set();
     this._autoInterval = null; // timer id
     // REMOVED: _governanceCb - governance now reads from ZoneProfileStore on tick boundaries
   }
@@ -193,6 +194,7 @@ export class FitnessTreasureBox {
     this._zoneOverrideCacheRev = null;
     this._zoneOverrideMissLogged = new Set();
     this._globalZonesDescending = [];
+    this._bonusAwardKeys.clear();
 
     // Note: Keep globalZones, ringTimeUnitMs, callbacks - these are configuration, not session state
   }
@@ -758,6 +760,69 @@ export class FitnessTreasureBox {
       this._log('ring_award_callback_error', { message: err?.message || String(err) }, 'warn');
     }
     this._notifyMutation();
+  }
+
+  /**
+   * Award an explicit, idempotent session bonus through the same ring ledger.
+   * Returns a result instead of throwing so repeated success snapshots are safe.
+   */
+  awardBonus({ idempotencyKey, userId, rings, zoneId, color, source = 'challenge', metadata = {} } = {}) {
+    const key = String(idempotencyKey || '').trim();
+    const uid = String(userId || '').trim();
+    const amount = Number(rings);
+    if (!key || !uid || !Number.isFinite(amount) || amount <= 0) {
+      return { awarded: false, reason: 'invalid_bonus' };
+    }
+    const persistedDuplicate = this.sessionRef?.timeline?.events?.some?.((event) =>
+      event?.type === 'ring_bonus' && event?.data?.idempotencyKey === key
+    );
+    if (this._bonusAwardKeys.has(key) || persistedDuplicate) {
+      this._bonusAwardKeys.add(key);
+      return { awarded: false, reason: 'duplicate' };
+    }
+    const acc = this.perUser.get(uid);
+    if (!acc) return { awarded: false, reason: 'user_not_active' };
+
+    const bucketColor = color || '#94a3b8';
+    if (!(bucketColor in this.buckets)) this.buckets[bucketColor] = 0;
+    this.buckets[bucketColor] += amount;
+    this.totalRings += amount;
+    acc.totalRings = (acc.totalRings || 0) + amount;
+    const now = Date.now();
+    acc.lastAwardedAt = now;
+    const start = this.sessionRef?.startTime || this.sessionRef?.timebase?.startAbsMs || now;
+    const intervalMs = this.ringTimeUnitMs > 0 ? this.ringTimeUnitMs : 5000;
+    const intervalIndex = Math.floor(Math.max(0, now - start) / intervalMs);
+    this._ensureTimelineIndex(intervalIndex, bucketColor);
+    const colorSeries = this._timeline.perColor.get(bucketColor);
+    if (colorSeries) colorSeries[intervalIndex] += amount;
+    if (this._timeline.cumulative.length > intervalIndex) {
+      this._timeline.cumulative[intervalIndex] += amount;
+    }
+    this._timeline.lastIndex = Math.max(this._timeline.lastIndex, intervalIndex);
+    if (this.sessionRef?.timebase && intervalIndex + 1 > this.sessionRef.timebase.intervalCount) {
+      this.sessionRef.timebase.intervalCount = intervalIndex + 1;
+    }
+    this._bonusAwardKeys.add(key);
+
+    const award = {
+      userId: uid,
+      rings: amount,
+      zone: zoneId || null,
+      color: bucketColor,
+      userTotal: acc.totalRings,
+      totalRings: this.totalRings,
+      awardedAt: now,
+      bonus: true,
+      source,
+      metadata,
+    };
+    this.sessionRef?.logEvent?.('ring_bonus', { idempotencyKey: key, ...award });
+    try { this._ringAwardCb?.(award); } catch (error) {
+      this._log('ring_award_callback_error', { message: error?.message || String(error) }, 'warn');
+    }
+    this._notifyMutation();
+    return { awarded: true, rings: amount, award };
   }
 
   get summary() {

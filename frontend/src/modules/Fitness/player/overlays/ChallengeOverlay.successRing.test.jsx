@@ -44,3 +44,19 @@ describe('ChallengeOverlay — success render (issue 1)', () => {
     expect(ring.getAttribute('style') || '').not.toContain('#22c55e');
   });
 });
+
+describe('ChallengeOverlay — step challenge count', () => {
+  it('uses a numeric counter instead of rendering one block per step', () => {
+    const governanceState = {
+      challenge: {
+        id: 'step-1', type: 'step', status: 'pending', zoneLabel: 'Steps', metric: 'steps',
+        requiredCount: 70, actualCount: 12, totalSeconds: 60, remainingSeconds: 48,
+      },
+    };
+    const { result } = renderHook(() => useChallengeOverlays(governanceState, []));
+    expect(result.current.current.countDisplay).toBe('numeric');
+    const { container } = render(<ChallengeOverlay overlay={result.current.current} />);
+    expect(container.querySelector('.challenge-overlay__numeric-count')?.textContent).toContain('12/ 70 steps');
+    expect(container.querySelectorAll('.challenge-overlay__count-block')).toHaveLength(0);
+  });
+});

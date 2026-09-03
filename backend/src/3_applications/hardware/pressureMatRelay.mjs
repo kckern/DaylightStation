@@ -15,6 +15,7 @@ import { formatLocalTimestamp } from '#domains/core/utils/time.mjs';
 import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
 const VALID_EVENTS = new Set(['pressed', 'stomped', 'released']);
+const finite = (value) => Number.isFinite(Number(value)) ? Number(value) : null;
 
 /**
  * @param {object}   deps
@@ -46,6 +47,7 @@ export function createPressureMatRelay({ pressureMatGateway, persistenceEnabled 
   }
 
   let writeChain = Promise.resolve();
+  const activePresses = new Map();
   const enqueueAppend = (id, record) => {
     writeChain = writeChain
       .then(() => dayLog.append(id, record))
@@ -57,6 +59,37 @@ export function createPressureMatRelay({ pressureMatGateway, persistenceEnabled 
     if (!VALID_EVENTS.has(event)) return;
     const id = payload.id || 'unknown';
     const ts = formatLocalTimestamp(new Date(payload.receivedAt || Date.now()), timezone);
+    const receivedAtMs = Date.parse(payload.receivedAt || '') || Date.now();
+    let active = activePresses.get(id) || null;
+    if (event === 'pressed') {
+      active = {
+        startedAtMs: receivedAtMs,
+        maxObservedDeltaV: Math.max(0, finite(payload.deltaV) || 0),
+        maxObservedGradientVps: Math.max(0, -(finite(payload.gradientVps) || 0)),
+        classifiedStomp: false,
+      };
+      activePresses.set(id, active);
+    } else if (active) {
+      active.maxObservedDeltaV = Math.max(active.maxObservedDeltaV, finite(payload.deltaV) || 0);
+      active.maxObservedGradientVps = Math.max(active.maxObservedGradientVps, -(finite(payload.gradientVps) || 0));
+      if (event === 'stomped') active.classifiedStomp = true;
+    }
+
+    const firmwareSummary = event === 'released'
+      && finite(payload.peakDeltaV) !== null
+      && finite(payload.peakGradientVps) !== null
+      && finite(payload.pressDurationMs) !== null;
+    const completion = event === 'released' ? {
+      peakDeltaV: firmwareSummary ? finite(payload.peakDeltaV) : finite(active?.maxObservedDeltaV),
+      peakGradientVps: firmwareSummary ? finite(payload.peakGradientVps) : finite(active?.maxObservedGradientVps),
+      pressDurationMs: firmwareSummary
+        ? finite(payload.pressDurationMs)
+        : (active?.startedAtMs ? Math.max(0, receivedAtMs - active.startedAtMs) : null),
+      classifiedStomp: typeof payload.classifiedStomp === 'boolean'
+        ? payload.classifiedStomp
+        : Boolean(active?.classifiedStomp),
+      metricsSource: firmwareSummary ? 'firmware_summary' : 'transition_fallback',
+    } : null;
     const record = {
       ts,
       event,
@@ -65,11 +98,34 @@ export function createPressureMatRelay({ pressureMatGateway, persistenceEnabled 
       stomps: Math.max(0, Number(payload.stomps) || 0),
     };
     if (Number.isFinite(Number(payload.voltage))) record.voltage = Number(payload.voltage);
+    if (Number.isFinite(Number(payload.restVoltage))) record.rest_voltage = Number(payload.restVoltage);
     if (Number.isFinite(Number(payload.deltaV))) record.delta_v = Number(payload.deltaV);
     if (Number.isFinite(Number(payload.gradientVps))) record.gradient_vps = Number(payload.gradientVps);
     if (Number.isFinite(Number(payload.deviceTs))) record.device_ts = Number(payload.deviceTs);
+    if (completion) {
+      if (completion.peakDeltaV !== null) record.peak_delta_v = completion.peakDeltaV;
+      if (completion.peakGradientVps !== null) record.peak_gradient_vps = completion.peakGradientVps;
+      if (completion.pressDurationMs !== null) record.press_duration_ms = completion.pressDurationMs;
+      record.classified_stomp = completion.classifiedStomp;
+      record.metrics_source = completion.metricsSource;
+    }
 
     enqueueAppend(id, record);
+    if (completion) {
+      logger.info?.('pressure_mat.press.completed', {
+        matId: id,
+        steps: record.steps,
+        stomps: record.stomps,
+        restVoltage: finite(payload.restVoltage),
+        releaseVoltage: finite(payload.voltage),
+        peakDeltaV: completion.peakDeltaV,
+        peakGradientVps: completion.peakGradientVps,
+        pressDurationMs: completion.pressDurationMs,
+        classifiedStomp: completion.classifiedStomp,
+        metricsSource: completion.metricsSource,
+      });
+      activePresses.delete(id);
+    }
   };
 
   const unsubscribe = pressureMatGateway.subscribePresence(onPayload);

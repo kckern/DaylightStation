@@ -50,6 +50,41 @@
 
 }
 
+.governance-lock__activity {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 1.25rem;
+  min-height: 7rem;
+  padding: 1.1rem 1.35rem;
+  border-radius: 1rem;
+  background: rgba(14, 165, 233, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+}
+
+.governance-lock__activity-icon {
+  font-size: clamp(2.25rem, 5vw, 4rem);
+}
+
+.governance-lock__activity-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+
+  strong { font-size: clamp(1.2rem, 2.4vw, 2rem); }
+  span { color: rgba(226, 232, 240, 0.82); }
+}
+
+.governance-lock__activity-rate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: #7dd3fc;
+
+  strong { font-size: clamp(2.5rem, 6vw, 5rem); line-height: 0.9; }
+  span { font-size: 0.85rem; letter-spacing: 0.14em; }
+}
+
 @keyframes governance-row-grow-in {
   from {
     opacity: 0;

@@ -41,6 +41,18 @@ export class CadenceFilter {
     return { rpm: value, ts, flags };
   }
 
+  /**
+   * Pipeline stall: no device at all is delivering (see
+   * DeviceManager.isTransportStalled). Advance the staleness clock WITHOUT a
+   * sample so the stall is not charged to the rider as silence — otherwise
+   * tick() would decay this to a "lost signal" 0 and the cycle SM would read
+   * the rider as stopped. Returns the held value.
+   */
+  hold(nowTs) {
+    if (this._lastUpdateTs !== null) this._lastUpdateTs = nowTs;
+    return this._ema ?? 0;
+  }
+
   tick(nowTs) {
     const flags = {
       implausible: false,

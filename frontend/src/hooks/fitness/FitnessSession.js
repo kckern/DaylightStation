@@ -13,6 +13,7 @@ import { ActivityMonitor } from '../../modules/Fitness/domain/ActivityMonitor.js
 import { SessionEntityRegistry } from './SessionEntity.js';
 import { DeviceEventRouter } from './DeviceEventRouter.js';
 import { VibrationActivityTracker } from './VibrationActivityTracker.js';
+import { PressureMatActivityTracker } from './PressureMatActivityTracker.js';
 import { findUnclosedMedia } from './closeOpenMedia.js';
 import getLogger from '../../lib/logging/Logger.js';
 import { heapSnapshotFields } from '../../lib/perf/memoryProbe.js';
@@ -29,6 +30,7 @@ const FITNESS_TIMEOUTS = {
   inactive: 60000,
   remove: 1800000, // 30 minutes — keeps session alive during breaks
   rpmZero: 1200,  // zero RPM ~1.2s after the last cadence broadcast (silence case)
+  transportStallMs: 1200, // MUST equal rpmZero: the stall check and the zero gate have to cross on the same prune tick, or a tick landing between them zeroes the meter and the hold then preserves that zero for the whole stall
   emptySession: 60000, // 6A: Time (ms) with empty roster before auto-ending session
   sessionEndCooldown: 600000, // 10 minutes — prevents duplicate sessions from leftover HR data
   resumeContentWait: 6000 // Max time to wait for content to register before starting a fresh (un-merged) session
@@ -108,10 +110,11 @@ const roundValue = (key, value) => {
   return value;
 };
 
-export const setFitnessTimeouts = ({ inactive, remove, rpmZero, emptySession, sessionEndCooldown } = {}) => {
+export const setFitnessTimeouts = ({ inactive, remove, rpmZero, transportStallMs, emptySession, sessionEndCooldown } = {}) => {
   if (typeof inactive === 'number' && !Number.isNaN(inactive)) FITNESS_TIMEOUTS.inactive = inactive;
   if (typeof remove === 'number' && !Number.isNaN(remove)) FITNESS_TIMEOUTS.remove = remove;
   if (typeof rpmZero === 'number' && !Number.isNaN(rpmZero)) FITNESS_TIMEOUTS.rpmZero = rpmZero;
+  if (typeof transportStallMs === 'number' && !Number.isNaN(transportStallMs)) FITNESS_TIMEOUTS.transportStallMs = transportStallMs;
   if (typeof emptySession === 'number' && !Number.isNaN(emptySession)) FITNESS_TIMEOUTS.emptySession = emptySession;
   if (typeof sessionEndCooldown === 'number' && !Number.isNaN(sessionEndCooldown)) FITNESS_TIMEOUTS.sessionEndCooldown = sessionEndCooldown;
 };
@@ -185,6 +188,8 @@ export class FitnessSession {
     this.eventJournal = new EventJournal();
     this.treasureBox = null; // Instantiated on start
     this._vibrationTrackers = new Map(); // equipmentId -> VibrationActivityTracker
+    this._pressureMatTrackers = new Map(); // equipmentId -> PressureMatActivityTracker
+    this._pressureMatEquipmentByHardwareId = new Map(); // relay mat id -> equipment id
     this._equipmentRider = new Map(); // equipmentId -> userId (current claimed rider; null/absent = unclaimed)
     this._equipmentById = new Map(); // equipmentId -> equipment config entry (cycle challenge reverse lookup)
     this._deviceHrSampleCount = new Map(); // deviceId -> count for startup discard
@@ -938,6 +943,7 @@ export class FitnessSession {
     // Delegate to DeviceEventRouter for unified equipment lookups
     this._deviceRouter.setEquipmentCatalog(equipmentList);
     this.initVibrationTrackers(equipmentList);
+    this.initPressureMatTrackers(equipmentList);
 
     // Build a minimal equipmentId -> entry lookup used by accessors such as
     // getEquipmentCadence. The router already keeps cadence-id -> entry maps,
@@ -999,6 +1005,69 @@ export class FitnessSession {
     return this._vibrationTrackers.get(String(equipmentId)) || null;
   }
 
+  /** Build pressure-mat trackers from the public fitness equipment catalog. */
+  initPressureMatTrackers(equipmentList = []) {
+    this._pressureMatTrackers.clear();
+    this._pressureMatEquipmentByHardwareId.clear();
+    equipmentList.forEach((item) => {
+      const matId = item?.pressure_mat || item?.pressureMat || item?.sensor?.pressure_mat;
+      const isPressureMat = item?.type === 'pressure_mat'
+        || item?.type === 'step_mat'
+        || item?.sensor?.type === 'pressure_mat';
+      if (!item?.id || !matId || !isPressureMat) return;
+      const equipmentId = String(item.id);
+      const hardwareId = String(matId);
+      const tracker = new PressureMatActivityTracker(equipmentId, hardwareId, item.activity || {});
+      this._pressureMatTrackers.set(equipmentId, tracker);
+      this._pressureMatEquipmentByHardwareId.set(hardwareId, equipmentId);
+      getLogger().info('fitness.pressure_mat.tracker_created', { equipmentId, matId: hardwareId });
+    });
+    this._timelineRecorder?.setPressureMatTrackers?.(this._pressureMatTrackers);
+  }
+
+  /** Route one normalized relay message into the configured session tracker. */
+  ingestPressureMat(reading, { timestamp = Date.now() } = {}) {
+    const matId = reading?.id != null ? String(reading.id) : null;
+    if (!matId) return null;
+    const equipmentId = this._pressureMatEquipmentByHardwareId.get(matId);
+    if (!equipmentId) return null;
+    const tracker = this._pressureMatTrackers.get(equipmentId);
+    if (!tracker) return null;
+    const assignedUserId = this.getEquipmentRider(equipmentId);
+    const before = tracker.snapshot(timestamp);
+    const snapshot = tracker.ingest(reading, {
+      timestamp,
+      assignedUserId,
+      countSession: Boolean(this.sessionId),
+    });
+    if (!before.engaged && snapshot.engaged) {
+      this.logEvent('activity_engaged', { type: 'pressure_mat', equipmentId, matId });
+    }
+    if (snapshot.sessionSteps > before.sessionSteps) this.lastActivityTime = timestamp;
+    return snapshot;
+  }
+
+  getPressureMatTracker(equipmentId) {
+    return this._pressureMatTrackers.get(String(equipmentId)) || null;
+  }
+
+  getPressureMatSnapshots(timestamp = Date.now()) {
+    const snapshots = {};
+    this._pressureMatTrackers.forEach((tracker, equipmentId) => {
+      snapshots[equipmentId] = tracker.snapshot(timestamp);
+    });
+    return snapshots;
+  }
+
+  disengagePressureMat(equipmentId, { reason = 'manual' } = {}) {
+    const tracker = this.getPressureMatTracker(equipmentId);
+    if (!tracker || !tracker.disengage()) return false;
+    this.logEvent('activity_disengaged', {
+      type: 'pressure_mat', equipmentId: String(equipmentId), matId: tracker.matId, reason,
+    });
+    return true;
+  }
+
   /**
    * Record the rider currently claiming a piece of equipment (physical selector
    * button press). Sticky until reassigned or the session resets. Last write wins.
@@ -1039,6 +1108,16 @@ export class FitnessSession {
     return this._equipmentRider?.get(String(equipmentId)) || null;
   }
 
+  // Activity-neutral aliases for touchscreen assignment. Existing rider APIs
+  // remain the compatibility contract for physical cycle selectors.
+  setEquipmentUser(equipmentId, userId) {
+    return this.setEquipmentRider(equipmentId, userId);
+  }
+
+  getEquipmentUser(equipmentId) {
+    return this.getEquipmentRider(equipmentId);
+  }
+
   /**
    * Get the current cadence (RPM) reading for a piece of equipment.
    *
@@ -1077,12 +1156,17 @@ export class FitnessSession {
     const deviceIds = (Array.isArray(cadenceRef) ? cadenceRef : [cadenceRef])
       .map((d) => String(d).trim()).filter(Boolean);
     let best = null;
+    let stalled = null;
     for (const id of deviceIds) {
       const reading = this._readCadenceDevice(id);
+      if (reading.transportStalled && (!stalled || reading.rpm > stalled.rpm)) stalled = reading;
       if (!reading.connected) continue;
       if (!best || reading.rpm > best.rpm) best = reading;
     }
-    return best || disconnected;
+    // A live sensor on any wheel wins. Otherwise, if the pipeline is stalled,
+    // surface that (with the held rpm) rather than a bare "disconnected" — the
+    // two are different states and only one means the rider stopped.
+    return best || stalled || disconnected;
   }
 
   // Read a single cadence device's live reading (rpm + connected + ts), applying the
@@ -1095,11 +1179,22 @@ export class FitnessSession {
     if (!device) return disconnected;
     const rpmRaw = device.cadence;
     if (!Number.isFinite(rpmRaw)) return disconnected;
-    const { rpmZero } = this._getTimeouts();
+    const { rpmZero, transportStallMs = 1200 } = this._getTimeouts();
     const lastActivity = Number.isFinite(device.lastSignificantActivity)
       ? device.lastSignificantActivity
       : (Number.isFinite(device.lastSeen) ? device.lastSeen : null);
     if (lastActivity == null) return disconnected;
+    // Pipeline stalled: NO device at all is delivering, so this device's silence
+    // says nothing about its rider. Report `connected: false` — every existing
+    // consumer then keeps the behaviour it already has for a dropped sensor,
+    // including CycleGame's bounded anti-cheat hold — but carry the held rpm and
+    // a `transportStalled` flag for the one reader that must tell a starved
+    // pipeline from a stopped rider (GovernanceEngine's cadence filter).
+    // Do NOT report connected:true here: CycleGame would treat it as fresh
+    // truth and accrue phantom race distance.
+    if (this.deviceManager?.isTransportStalled?.(transportStallMs)) {
+      return { rpm: rpmRaw, connected: false, transportStalled: true, ts: device.lastSeen ?? lastActivity };
+    }
     if (Date.now() - lastActivity > rpmZero) return disconnected;
     // Use lastSeen (advances on every packet, including 0 readings) so 0-RPM blips
     // between rotations reach CadenceFilter's EMA.
@@ -1737,6 +1832,8 @@ export class FitnessSession {
       resolveEquipmentId: (device) => this._resolveEquipmentId(device)
     });
     this._timelineRecorder.setVibrationTrackers(this._vibrationTrackers);
+    this._pressureMatTrackers.forEach((tracker) => tracker.reset());
+    this._timelineRecorder.setPressureMatTrackers?.(this._pressureMatTrackers);
 
     this._participantRoster.reset();
     this._participantRoster.configure({
@@ -2061,6 +2158,7 @@ export class FitnessSession {
     this._equipmentRider.forEach((userId, equipmentId) => {
       if (userId) equipmentRiderMap[equipmentId] = userId;
     });
+    const activityMetricMap = this.getPressureMatSnapshots();
 
     this.governanceEngine.evaluate({
         activeParticipants,
@@ -2071,7 +2169,8 @@ export class FitnessSession {
         hrInactiveUsers,
         guestIds,
         equipmentCadenceMap,
-        equipmentRiderMap
+        equipmentRiderMap,
+        activityMetricMap
     });
   }
 
@@ -2480,6 +2579,7 @@ export class FitnessSession {
     // Note: Don't clear _sessionEndedCallbacks - they persist across sessions
     this.governanceEngine.reset();
     this._vibrationTrackers.forEach(t => t.reset());
+    this._pressureMatTrackers.forEach(t => t.reset());
     this._equipmentRider?.clear();
     if (this.timeline) {
       this.timeline.reset(Date.now(), this.timeline.timebase?.intervalMs || 5000);
@@ -2524,6 +2624,11 @@ export class FitnessSession {
     // Clear vibration trackers
     this._vibrationTrackers.clear();
     this._vibrationTrackers = null;
+
+    this._pressureMatTrackers.clear();
+    this._pressureMatTrackers = null;
+    this._pressureMatEquipmentByHardwareId.clear();
+    this._pressureMatEquipmentByHardwareId = null;
 
     // Clear rider claims
     this._equipmentRider?.clear();

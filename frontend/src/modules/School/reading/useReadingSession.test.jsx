@@ -107,8 +107,8 @@ describe('useReadingSession — playback', () => {
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
-      await Promise.resolve();
     });
+    await act(async () => { await vi.advanceTimersByTimeAsync(40); });
 
     expect(result.current.view).toBe('open');
     expect(result.current.learner).toMatchObject({ id: 'user_5' });
@@ -156,8 +156,8 @@ describe('useReadingSession — playback', () => {
     await act(async () => {
       await Promise.resolve();
       await vi.advanceTimersByTimeAsync(1000);
-      await Promise.resolve();
     });
+    await act(async () => { await vi.advanceTimersByTimeAsync(40); });
 
     expect(result.current.view).toBe('open');
     expect(result.current.learner).toMatchObject({ id: 'user_5' });
@@ -194,15 +194,43 @@ describe('useReadingSession — playback', () => {
     expect(posted('/reading/read')).toHaveLength(1);
   });
 
-  // D4. The screen belongs to whoever is standing there; the story keeps the
-  // credit it was picked with. Re-reading the learner at completion is the one
-  // mistake here that nobody would ever notice.
-  it('credits the child who PICKED, even after another card swapped the screen mid-story', async () => {
+  it('keeps the picker and playback unchanged when another card is refused mid-story', async () => {
     const { result } = await mountAndPick({ learnerId: 'user_5' });
-    await act(async () => { h.handler({ event: 'session-open', learnerId: 'user_3', location: 'livingroom' }); });
-    expect(result.current.view).toBe('playing');          // the story is not interrupted
+    await act(async () => {
+      h.handler({
+        event: 'session-switch-refused', learnerId: 'user_3', currentLearnerId: 'user_5',
+        currentSessionId: 'rs-learner-a', state: 'reading', location: 'livingroom',
+      });
+    });
+    expect(result.current.view).toBe('playing');
+    expect(result.current.learner.id).toBe('user_5');
+    expect(result.current.notice).toMatchObject({ title: 'Finish this first' });
     await act(async () => { await result.current.notePlaybackCompleted(); });
     expect(posted('/reading/read')[0].body.learnerId).toBe('user_5');
+  });
+
+  it('ACKs the exact presentation only after the unobscured launch card renders', async () => {
+    const props = { obscured: true };
+    const { result, rerender } = renderHook(() => useReadingSession({
+      location: 'livingroom', presentationObscured: props.obscured,
+    }));
+    const payload = {
+      event: 'session-present', location: 'livingroom', learnerId: 'user_3',
+      sessionId: 'rs-new', presentationId: 'rp-new', revision: 7, serverEpoch: 'reading-1', reason: 'switch',
+    };
+    await act(async () => { h.handler(payload); });
+    expect(result.current.view).toBe('open');
+    expect(result.current.learner).toMatchObject({ id: 'user_3' });
+    await act(async () => { await vi.advanceTimersByTimeAsync(40); });
+    expect(posted('/reading/session/ack')).toHaveLength(0);
+
+    props.obscured = false;
+    rerender();
+    await act(async () => { await vi.advanceTimersByTimeAsync(40); });
+    expect(posted('/reading/session/ack')[0].body).toEqual({
+      location: 'livingroom', learnerId: 'user_3', sessionId: 'rs-new',
+      presentationId: 'rp-new', revision: 7, serverEpoch: 'reading-1',
+    });
   });
 
   it('records NOTHING when the player goes away without the story ending', async () => {

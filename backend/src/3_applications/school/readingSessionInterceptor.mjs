@@ -92,12 +92,12 @@ export class ReadingSessionInterceptor {
     const contentId = response.expression?.contentId ?? null;
     const { learnerId } = session;
 
-    if (session.state === 'starting') {
+    if (['starting', 'presenting', 'returning'].includes(session.state)) {
       this.#broadcast(location, {
-        event: 'book-refused', reason: 'screen-starting', learnerId, location, contentId,
+        event: 'book-refused', reason: 'launch-card-not-ready', learnerId, location, contentId,
         at: this.#clock().toISOString(),
       });
-      return { claimed: true, by: CLAIMED_BY, refused: true, reason: 'screen-starting', learnerId, contentId };
+      return { claimed: true, by: CLAIMED_BY, refused: true, reason: 'launch-card-not-ready', learnerId, contentId };
     }
 
     if (MID_STORY.has(session.state)) {

@@ -92,6 +92,7 @@ export class TimelineRecorder {
 
     // Vibration trackers reference (injected via setVibrationTrackers)
     this._vibrationTrackers = null;
+    this._pressureMatTrackers = null;
 
     // Pending snapshot reference for next tick
     this._pendingSnapshotRef = null;
@@ -157,6 +158,10 @@ export class TimelineRecorder {
    */
   setVibrationTrackers(trackers) {
     this._vibrationTrackers = trackers || null;
+  }
+
+  setPressureMatTrackers(trackers) {
+    this._pressureMatTrackers = trackers || null;
   }
 
   /**
@@ -371,6 +376,23 @@ export class TimelineRecorder {
           assignMetric(`vib:${equipmentId}:intensity`, snap.currentIntensity);
         }
         assignMetric(`vib:${equipmentId}:impacts`, snap.estimatedImpacts);
+      });
+    }
+
+    // Mat metrics use the canonical device/user namespaces. Raw step edges are
+    // retained by the hardware log, not duplicated into the fitness timeline.
+    if (this._pressureMatTrackers) {
+      this._pressureMatTrackers.forEach((tracker, equipmentId) => {
+        const snap = tracker.snapshot(timestamp);
+        if (!snap.seenThisSession) return;
+        assignMetric(`device:${equipmentId}:active`, snap.active ? 1 : 0);
+        assignMetric(`device:${equipmentId}:steps_total`, snap.sessionSteps);
+        assignMetric(`device:${equipmentId}:stomps_total`, snap.sessionStomps);
+        assignMetric(`device:${equipmentId}:steps_per_minute`, Math.round(snap.stepsPerMinute));
+        Object.entries(snap.users || {}).forEach(([userId, totals]) => {
+          assignMetric(`user:${userId}:steps_total`, totals.steps || 0);
+          assignMetric(`user:${userId}:stomps_total`, totals.stomps || 0);
+        });
       });
     }
 

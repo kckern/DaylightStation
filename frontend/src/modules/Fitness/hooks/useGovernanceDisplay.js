@@ -24,6 +24,7 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
     activeUserCount
   } = govState;
   const normalizedRequirements = Array.isArray(requirements) ? requirements : [];
+  const activityRequirements = normalizedRequirements.filter((req) => req?.type === 'activity_rate');
 
   if (status === 'unlocked') {
     // Cycle challenges can enter `cycleState: 'locked'` independently of
@@ -67,7 +68,7 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
         activeUserCount: Number.isFinite(activeUserCount) ? Math.max(0, Math.round(activeUserCount)) : null
       };
     }
-    return { show: false, status, rows: [], metRows: [] };
+    return { show: false, status, rows: [], metRows: [], activityRequirements };
   }
 
   // Collect all (userId, targetZoneId) pairs from unsatisfied requirements + active challenge
@@ -215,7 +216,8 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
     });
   }
 
-  const show = rows.length > 0 || status === 'locked' || status === 'pending';
+  const show = rows.length > 0 || activityRequirements.some((req) => !req.satisfied)
+    || status === 'locked' || status === 'pending';
 
   return {
     show,
@@ -225,6 +227,7 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
     videoLocked: videoLocked || false,
     challenge: challenge || null,
     requirements: normalizedRequirements,
+    activityRequirements,
     activeUserCount: Number.isFinite(activeUserCount) ? Math.max(0, Math.round(activeUserCount)) : null,
     rows,
     metRows

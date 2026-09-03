@@ -10,16 +10,16 @@
  * FOUR VIEWS, AND ONE THAT ONLY APPEARS ON THE LAST BOOK:
  *   idle        no session — the widget renders nothing and the screen's own
  *               menu is untouched
- *   open        PROMPT: avatar, name, today's count, yesterday's books
+ *   open        PROMPT: avatar, name, today's count, recent books
  *   picking     CONFIRM: cover, title, a countdown you can change your mind in
  *   playing     READING: the Player owns the screen; this widget is out of it
+ *   returning   completion is being saved; the launch face is not ready yet
  *   celebrating the read that met the target just landed
  *
  * ATTRIBUTION IS FROZEN AT PICK TIME AND NEVER RE-READ. `attributionRef` is
  * written once, when the countdown expires, and is what the completion POST
- * sends. Reading the learner back off the session at completion would credit
- * the story to whoever wandered past the reader while it played (D4) — a bug
- * that leaves no trace anywhere and is invisible until a report card is wrong.
+ * sends. Learner cards are refused after that point; the frozen identity is a
+ * second guard against ever crediting a completion to the wrong child.
  *
  * ONE PICK IS ONE `pickId`. Minted at expiry, sent with the completion, and
  * the reading log dedups on it — so duplicate Player terminal notifications,
@@ -114,19 +114,23 @@ function useConfirmCountdown(deadline, onExpire) {
  *   whoever mounts the player. Called ONCE per pick, at expiry.
  * @param {(tone: 'success'|'warn'|'error') => void} [opts.onCue] - the audible
  *   half of each acknowledgement. Optional: the screen must be legible without it.
+ * @param {boolean} [opts.presentationObscured] - true while a fullscreen
+ *   overlay covers the launch card; a covered face must never be ACKed.
  */
 export function useReadingSession({
   location = 'livingroom',
   confirmMs = DEFAULT_CONFIRM_MS,
   onPlay = null,
   onCue = null,
+  presentationObscured = false,
 } = {}) {
   const [view, setView] = useState('idle');
   const [learner, setLearner] = useState(null);      // { id, name }
-  const [summary, setSummary] = useState(null);      // count/target/yesterday
+  const [summary, setSummary] = useState(null);      // count/target/recent
   const [pick, setPick] = useState(null);            // { contentId, title, image }
   const [notice, setNotice] = useState(null);        // { tone, title, detail }
   const [deadline, setDeadline] = useState(null);
+  const [presentation, setPresentation] = useState(null);
 
   // Refs mirror what the async paths need to read WITHOUT re-subscribing or
   // going stale inside a closure that outlives its render.
@@ -146,6 +150,10 @@ export function useReadingSession({
   onCueRef.current = onCue;
   const noticeTimer = useRef(null);
   const celebrateTimer = useRef(null);
+  const presentationRef = useRef(null);
+  const versionRef = useRef({ serverEpoch: null, revision: 0 });
+  const ackedPresentationRef = useRef(null);
+  const ackInFlightRef = useRef(null);
   const mounted = useRef(true);
 
   useEffect(() => () => {
@@ -167,7 +175,82 @@ export function useReadingSession({
     }, NOTICE_MS);
   }, []);
 
-  /** Today's count, the target, and what they read yesterday. Never throws. */
+  const rememberPresentation = useCallback((payload) => {
+    if (!payload?.sessionId || !payload?.learnerId) return false;
+    const revision = Number(payload.revision);
+    const serverEpoch = payload.serverEpoch ?? null;
+    const last = versionRef.current;
+    if (serverEpoch && last.serverEpoch === serverEpoch
+      && Number.isFinite(revision) && revision < last.revision) {
+      readingLog.warn('presentation-stale', {
+        learnerId: payload.learnerId, revision, currentRevision: last.revision,
+      });
+      return false;
+    }
+    if (serverEpoch) {
+      versionRef.current = {
+        serverEpoch,
+        revision: Number.isFinite(revision) ? revision : 0,
+      };
+    }
+    const next = {
+      location: payload.location ?? location,
+      learnerId: payload.learnerId,
+      sessionId: payload.sessionId,
+      presentationId: payload.presentationId ?? null,
+      revision: Number.isFinite(revision) ? revision : null,
+      serverEpoch,
+      reason: payload.reason ?? 'replay',
+    };
+    presentationRef.current = next;
+    setPresentation(next);
+    return true;
+  }, [location]);
+
+  // This is the visibility proof. Receiving a websocket message is not proof
+  // that React committed it, and committing under Player/screensaver is not
+  // proof that the child can see it. Wait through two paint opportunities only
+  // while the unobscured launch card is the rendered view.
+  useEffect(() => {
+    if (view !== 'open' || presentationObscured || !presentation) return undefined;
+    const key = presentation.presentationId ?? `legacy:${presentation.sessionId}`;
+    if (ackedPresentationRef.current === key || ackInFlightRef.current === key) return undefined;
+    let firstFrame = 0;
+    let secondFrame = 0;
+    let cancelled = false;
+    firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(async () => {
+        if (cancelled || presentationRef.current !== presentation || viewRef.current !== 'open') return;
+        ackInFlightRef.current = key;
+        const body = presentation.presentationId
+          ? {
+              location: presentation.location,
+              sessionId: presentation.sessionId,
+              presentationId: presentation.presentationId,
+              learnerId: presentation.learnerId,
+              revision: presentation.revision,
+              serverEpoch: presentation.serverEpoch,
+            }
+          : { location: presentation.location, sessionId: presentation.sessionId };
+        const result = await schoolApi.acknowledgeReadingSession(body).catch?.(() => null);
+        if (!cancelled && result?.ok) ackedPresentationRef.current = key;
+        if (ackInFlightRef.current === key) ackInFlightRef.current = null;
+        readingLog.session(result?.ok ? 'presentation-acknowledged' : 'presentation-ack-failed', {
+          learnerId: presentation.learnerId,
+          sessionId: presentation.sessionId,
+          presentationId: presentation.presentationId,
+          status: result?.status ?? 0,
+        });
+      });
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(firstFrame);
+      cancelAnimationFrame(secondFrame);
+    };
+  }, [presentation, presentationObscured, view]);
+
+  /** Today's count, the target, and their recent reads. Never throws. */
   const loadSummary = useCallback(async (learnerId) => {
     if (!learnerId) return null;
     const res = await schoolApi.readingSummary(learnerId);
@@ -296,7 +379,7 @@ export function useReadingSession({
     readingLog.playback('playback-completed', {
       learnerId: attribution.learnerId, contentId: attribution.contentId, pickId: attribution.pickId,
     });
-    setView('open');
+    setView('returning');
     let res = await schoolApi.readingRead({
       learnerId: attribution.learnerId,
       contentId: attribution.contentId,
@@ -326,8 +409,13 @@ export function useReadingSession({
       readingLog.error('record-failed', { status: res.status, pickId: attribution.pickId });
       cue('error');
       say({ tone: 'error', title: "I couldn't save that one", detail: 'Tell a grown-up — the story still counts, it just needs writing down.' });
+      setView('open');
       return;
     }
+    if (res.data?.presentation) rememberPresentation({
+      location: attribution.location,
+      ...res.data.presentation,
+    });
     const fresh = await loadSummary(attribution.learnerId);
     if (!mounted.current) return;
     if (fresh?.doneToday === true) {
@@ -337,8 +425,10 @@ export function useReadingSession({
       celebrateTimer.current = setTimeout(() => {
         if (mounted.current) setView('open');
       }, CELEBRATE_MS);
+    } else {
+      setView('open');
     }
-  }, [cue, loadSummary, say]);
+  }, [cue, loadSummary, rememberPresentation, say]);
 
   const notePlaybackProgress = useCallback((media) => {
     const attribution = attributionRef.current;
@@ -368,26 +458,40 @@ export function useReadingSession({
 
   const handle = useCallback((payload) => {
     switch (payload?.event) {
+      case 'session-present': {
+        if (!rememberPresentation(payload)) return;
+        const who = { id: payload.learnerId, name: null };
+        learnerRef.current = who;
+        setLearner(who);
+        setSummary(null);
+        say(null);
+        // A return can arrive while Player or the completion ceremony still
+        // owns the screen. Remember it now, but only the completion path may
+        // reveal the launch card; the visibility effect will wait for that.
+        if (payload.reason === 'return' && ['playing', 'returning', 'celebrating'].includes(viewRef.current)) return;
+        pickRef.current = null;
+        setPick(null);
+        setDeadline(null);
+        setView('open');
+        loadSummary(payload.learnerId);
+        readingLog.session('session-present', {
+          learnerId: payload.learnerId,
+          location: payload.location ?? location,
+          presentationId: payload.presentationId ?? null,
+          reason: payload.reason ?? null,
+        });
+        return;
+      }
       case 'session-open': {
+        if (payload.sessionId && !rememberPresentation(payload)) return;
         const who = { id: payload.learnerId, name: null };
         learnerRef.current = who;
         setLearner(who);
         setSummary(null);
         say(null);
         loadSummary(payload.learnerId);
-        if (payload.sessionId) {
-          schoolApi.acknowledgeReadingSession({ location: payload.location ?? location, sessionId: payload.sessionId })
-            .catch?.(() => {});
-        }
-        // D4: a card tapped MID-STORY swaps the context only. The story keeps
-        // playing and keeps the credit it was picked with, so the view does not
-        // move and `attributionRef` is deliberately untouched.
-        if (viewRef.current === 'playing') {
-          readingLog.session('learner-swapped', { learnerId: payload.learnerId, during: 'playing' });
-          return;
-        }
-        // D3: a different card during the countdown drops the pick — a pick
-        // belongs to whoever made it. D7: the same tap cancels a teardown.
+        // A committed session-open is now only initial/prompt/reconnect. Card
+        // taps cannot produce one during confirmation or playback.
         pickRef.current = null;
         setPick(null);
         setDeadline(null);
@@ -412,13 +516,11 @@ export function useReadingSession({
         const contentId = payload.contentId ?? null;
         if (!contentId) return;
         // THE LOUDEST SIGNAL THIS FEATURE HAS. A book arrived for a session
-        // this screen never learned about — `session-open` was broadcast while
-        // the TV was off/reloading and there is no snapshot fetch to recover
-        // it. Everything downstream still WORKS: the countdown runs, the story
-        // plays, the child sees nothing wrong. But attribution freezes as null
-        // in `commitPick`, the completion POST is rejected, and the read is
-        // lost. On 2026-08-28 that happened in the field and the only trace was
-        // an ABSENT field on two info lines nobody was looking at.
+        // this screen never learned about. Snapshot hydration and rendered
+        // presentation ACKs should make that impossible, but everything
+        // downstream can still appear to work while attribution freezes null
+        // and the read is lost. On 2026-08-28 that happened in the field and
+        // the only trace was an ABSENT field on two info lines.
         //
         // The payload carries the authoritative learner — the interceptor reads
         // it straight off the session — so this also records the id we could
@@ -492,6 +594,22 @@ export function useReadingSession({
         });
         return;
       }
+      case 'session-switch-refused': {
+        readingLog.session('session-switch-refused', {
+          learnerId: payload.learnerId ?? null,
+          currentLearnerId: payload.currentLearnerId ?? null,
+          sessionId: payload.currentSessionId ?? null,
+          state: payload.state ?? null,
+          reason: payload.reason ?? null,
+        });
+        cue('warn');
+        say({
+          tone: 'warn',
+          title: 'Finish this first',
+          detail: 'Story Time is still in use.',
+        });
+        return;
+      }
       case 'session-error': {
         readingLog.error('session-error', { reason: payload.reason ?? null, learnerId: payload.learnerId ?? null });
         cue('warn');
@@ -503,7 +621,7 @@ export function useReadingSession({
         // own view state, and the session's mirror of it is not an instruction.
         readingLog.screen('event-ignored', { event: payload?.event ?? null });
     }
-  }, [commitPick, confirmMs, cue, loadBook, loadSummary, location, say]);
+  }, [commitPick, confirmMs, cue, loadBook, loadSummary, location, rememberPresentation, say]);
 
   useWebSocketSubscription(readingTopic(location), handle, [handle]);
 
@@ -534,10 +652,10 @@ export function useReadingSession({
         retryWithinBudget('session-starting');
         return;
       }
-      // `handle(session-open)` owns the one ACK for both websocket delivery and
-      // snapshot recovery. Keeping it there prevents the hydration path from
-      // acknowledging twice while preserving the invariant that only an
-      // applied, non-STARTING session is acknowledged.
+      if (session.pendingPresentation) {
+        handle({ event: 'session-present', location, ...session.pendingPresentation });
+        return;
+      }
       handle({ event: 'session-open', ...session });
     };
     hydrate();
