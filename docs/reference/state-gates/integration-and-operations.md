@@ -186,8 +186,14 @@ ratios are from 0 through 1.
 
 Default retention is:
 
-- maximum 5,000 entries; and
-- maximum age 30 days.
+- maximum 500 entries; and
+- maximum age 7 days.
+
+The journal shares `current.yml` with the projection and every commit rewrites
+the whole file, so these bounds are the cost of every write — not just a
+storage ceiling. They were 5,000 / 30 days until 2026-09-02, which let the file
+reach 2.6 MB and never compact; see
+`docs/_wip/bugs/2026-09-02-fitness-rpm-false-zeros-pause-video-during-cycle-challenge.md`.
 
 Compaction removes only complete published revision batches, oldest first. It never
 removes an unpublished batch. Retraction tombstones stay in current assertion

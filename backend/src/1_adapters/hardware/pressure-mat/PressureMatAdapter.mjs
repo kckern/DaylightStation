@@ -65,8 +65,12 @@ export class PressureMatAdapter {
     if (!id) return this.#reject('missing_id', { clientId, type: message.type });
 
     const voltage = Number(message.voltage);
+    const restVoltage = Number(message.rest_voltage);
     const deltaV = Number(message.delta_v);
     const gradientVps = Number(message.gradient_vps);
+    const peakDeltaV = Number(message.peak_delta_v);
+    const peakGradientVps = Number(message.peak_gradient_vps);
+    const pressDurationMs = Number(message.press_duration_ms);
     if (message.type !== 'hello' &&
         (!Number.isFinite(voltage) || !Number.isFinite(deltaV) || !Number.isFinite(gradientVps))) {
       return this.#reject('bad_reading', { clientId, id, type: message.type });
@@ -78,6 +82,7 @@ export class PressureMatAdapter {
     const receivedAtMs = this.#now();
     const payload = {
       source: RELAY_SOURCE,
+      protocolVersion: Math.max(1, Number(message.protocol_version) || 1),
       id,
       type: message.type,
       occupied: Boolean(message.occupied),
@@ -87,8 +92,13 @@ export class PressureMatAdapter {
       receivedAt: new Date(receivedAtMs).toISOString(),
     };
     if (Number.isFinite(voltage)) payload.voltage = voltage;
+    if (Number.isFinite(restVoltage)) payload.restVoltage = restVoltage;
     if (Number.isFinite(deltaV)) payload.deltaV = deltaV;
     if (Number.isFinite(gradientVps)) payload.gradientVps = gradientVps;
+    if (Number.isFinite(peakDeltaV)) payload.peakDeltaV = Math.max(0, peakDeltaV);
+    if (Number.isFinite(peakGradientVps)) payload.peakGradientVps = Math.max(0, peakGradientVps);
+    if (Number.isFinite(pressDurationMs)) payload.pressDurationMs = Math.max(0, pressDurationMs);
+    if (typeof message.classified_stomp === 'boolean') payload.classifiedStomp = message.classified_stomp;
     if (message.type === 'presence') payload.event = message.event;
     if (message.type === 'hello') {
       payload.uptimeS = Math.max(0, Number(message.uptime_s) || 0);

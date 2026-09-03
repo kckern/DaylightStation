@@ -210,6 +210,25 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
     return requirements.find((req) => req && !req.satisfied) || requirements[0] || null;
   }, [requirements]);
 
+  const activeActivityRequirement = useMemo(() => {
+    const activityRequirements = Array.isArray(display?.activityRequirements)
+      ? display.activityRequirements
+      : requirements.filter((requirement) => requirement?.type === 'activity_rate');
+    return activityRequirements.find((requirement) => requirement && !requirement.satisfied)
+      || activityRequirements[0]
+      || null;
+  }, [display?.activityRequirements, requirements]);
+  const hasActivityRequirement = Boolean(activeActivityRequirement);
+  const isFailedStepChallenge = challenge?.type === 'step' && challenge?.status === 'failed';
+  const stepChallengeTarget = Math.max(0, Math.round(
+    Number(challenge?.target ?? challenge?.requiredCount) || 0
+  ));
+  const stepChallengeActual = Math.min(
+    stepChallengeTarget,
+    Math.max(0, Math.round(Number(challenge?.actualCount) || 0))
+  );
+  const stepChallengeUnit = challenge?.metric === 'stomps' ? 'stomps' : 'steps';
+
   const targetZoneName = challenge?.zoneLabel
     || challenge?.zone
     || activeRequirement?.zoneLabel
@@ -252,9 +271,18 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
   );
 
   const hasTargetCount = Number.isFinite(targetCount) && targetCount > 0;
-  const showCountBlocks = !isInitPoolEmpty && hasTargetCount;
+  const showCountBlocks = !hasActivityRequirement && !isFailedStepChallenge && !isInitPoolEmpty && hasTargetCount;
 
   const summaryMain = useMemo(() => {
+    if (hasActivityRequirement) {
+      if (activeActivityRequirement.suspended) return 'Step mat sensor unavailable';
+      const actual = Math.max(0, Math.round(activeActivityRequirement.currentRate || 0));
+      const target = Math.max(0, Math.round(activeActivityRequirement.targetRate || 0));
+      return `Keep stepping: ${actual} / ${target} SPM`;
+    }
+    if (isFailedStepChallenge) {
+      return `Keep going: ${stepChallengeActual} / ${stepChallengeTarget} ${stepChallengeUnit}`;
+    }
     if (isInitPoolEmpty) {
       return 'No participants connected';
     }
@@ -265,7 +293,7 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
       return `${activeUserCount} participant${activeUserCount === 1 ? '' : 's'} in pool`;
     }
     return 'Waiting for participant data...';
-  }, [isInitPoolEmpty, hasTargetCount, targetCount, actualCount, targetZoneName, activeUserCount]);
+  }, [hasActivityRequirement, activeActivityRequirement, isFailedStepChallenge, stepChallengeActual, stepChallengeTarget, stepChallengeUnit, isInitPoolEmpty, hasTargetCount, targetCount, actualCount, targetZoneName, activeUserCount]);
 
   // Log when "Waiting for participant data" renders (rate-limited)
   const lastWaitingLogRef = useRef(0);
@@ -424,11 +452,45 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
         </div>
 
         <div
-          className={`governance-lock__table${isInitPoolEmpty ? ' governance-lock__table--init' : ''}`}
+          className={`governance-lock__table${isInitPoolEmpty && !hasActivityRequirement && !isFailedStepChallenge ? ' governance-lock__table--init' : ''}`}
           role="table"
           aria-label="Unlock requirements"
         >
-            {hasAnimatedRows ? animatedRows.map((entry) => {
+            {isFailedStepChallenge ? (
+              <div className="governance-lock__activity" role="row">
+                <div className="governance-lock__activity-icon" aria-hidden="true">
+                  {challenge.metric === 'stomps' ? '💥' : '👟'}
+                </div>
+                <div className="governance-lock__activity-copy" role="cell">
+                  <strong>Finish the {stepChallengeUnit} challenge</strong>
+                  <span>Catch up to resume playback.</span>
+                </div>
+                <div className="governance-lock__activity-rate" role="cell">
+                  <strong>{stepChallengeActual}/{stepChallengeTarget}</strong>
+                  <span>{stepChallengeUnit}</span>
+                </div>
+              </div>
+            ) : hasActivityRequirement ? (
+              <div className="governance-lock__activity" role="row">
+                <div className="governance-lock__activity-icon" aria-hidden="true">
+                  {activeActivityRequirement.suspended ? '⚠' : '👟'}
+                </div>
+                <div className="governance-lock__activity-copy" role="cell">
+                  <strong>{activeActivityRequirement.suspended ? 'Mat unavailable' : 'Stay on the step mat'}</strong>
+                  <span>
+                    {activeActivityRequirement.suspended
+                      ? 'Playback is not penalized while the sensor is offline.'
+                      : `Reach ${Math.round(activeActivityRequirement.targetRate || 0)} steps per minute to continue.`}
+                  </span>
+                </div>
+                {!activeActivityRequirement.suspended ? (
+                  <div className="governance-lock__activity-rate" role="cell">
+                    <strong>{Math.round(activeActivityRequirement.currentRate || 0)}</strong>
+                    <span>SPM</span>
+                  </div>
+                ) : null}
+              </div>
+            ) : hasAnimatedRows ? animatedRows.map((entry) => {
             const row = entry.row;
             const frozenCurrent = frozenCurrentByRowRef.current.get(row.key) || null;
             const frozenCurrentZoneId = frozenCurrent?.zoneId || row.currentZone?.id || null;
@@ -506,7 +568,8 @@ GovernancePanelOverlay.propTypes = {
     rows: PropTypes.array,
     metRows: PropTypes.array,
     requirements: PropTypes.array,
-    activeUserCount: PropTypes.number
+    activeUserCount: PropTypes.number,
+    activityRequirements: PropTypes.array
   }),
   overlay: PropTypes.shape({
     status: PropTypes.string,

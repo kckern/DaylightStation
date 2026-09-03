@@ -36,6 +36,25 @@ describe('PressureMatAdapter', () => {
     expect(h.broadcasts[0].payload).toMatchObject({ event: 'stomped', steps: 4, stomps: 2 });
   });
 
+  it('normalizes a firmware v2 completed-press summary', () => {
+    const h = harness();
+    h.emit({
+      source: 'pressure-mat-relay', protocol_version: 2, type: 'presence', event: 'released', id: 'mat1',
+      voltage: 3.1, rest_voltage: 3.2, delta_v: 0, gradient_vps: .7,
+      peak_delta_v: .83, peak_gradient_vps: 2.4, press_duration_ms: 780,
+      classified_stomp: true, occupied: false, steps: 4, stomps: 2, ts: 1500,
+    });
+    expect(h.broadcasts[0].payload).toMatchObject({
+      protocolVersion: 2,
+      event: 'released',
+      restVoltage: 3.2,
+      peakDeltaV: .83,
+      peakGradientVps: 2.4,
+      pressDurationMs: 780,
+      classifiedStomp: true,
+    });
+  });
+
   it('reads live status only from the configured device host', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
     const h = harness({ pressure_mats: { mat1: { device: { host: 'mat1.local' } } } }, { fetchImpl });

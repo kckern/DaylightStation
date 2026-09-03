@@ -153,12 +153,21 @@ export class DeviceManager {
     // ParticipantRoster's roster cache to know when a rebuild is required.
     // See docs/_wip/plans/2026-07-17-fitness-context-rearchitecture.md (Stage 1).
     this.mutationVersion = 0;
+    // Wall-clock of the last packet from ANY device — the pipeline's liveness
+    // signal. While it advances, one device's silence is that device (the
+    // rider stopped). When it stops advancing, nothing is being delivered
+    // (backend/socket stalled) and per-device staleness is meaningless.
+    // See docs/_wip/bugs/2026-09-02-fitness-rpm-false-zeros-pause-video-during-cycle-challenge.md
+    this.lastPacketAt = 0;
+    this._transportStalledSince = null;
   }
 
   updateDevice(deviceId, profile, rawData) {
     // Use device ID directly - no transformation
     const id = deviceId ? String(deviceId) : null;
     if (!id) return null;
+
+    this.lastPacketAt = Date.now();
 
     // Normalize raw ANT+ data
     const normalized = {
@@ -238,6 +247,16 @@ export class DeviceManager {
     return id ? this.devices.get(String(id)) : null;
   }
 
+  /**
+   * True when no device at all has delivered a packet for longer than
+   * `stallMs` — the sensor pipeline is starved, not any one sensor. Never
+   * true before the first packet.
+   */
+  isTransportStalled(stallMs, now = Date.now()) {
+    if (!this.lastPacketAt) return false;
+    return (now - this.lastPacketAt) > stallMs;
+  }
+
   getAllDevices() {
     return Array.from(this.devices.values());
   }
@@ -273,12 +292,32 @@ export class DeviceManager {
 
     // Handle legacy signature (timeoutMs) or new config object
     const timeouts = typeof config === 'number' 
-      ? { inactive: config, remove: config * 3, rpmZero: 1200 }
+      ? { inactive: config, remove: config * 3, rpmZero: 1200, transportStallMs: 1200 }
       : {
           inactive: config.inactive || 60000,
           remove: config.remove || 180000,
-          rpmZero: config.rpmZero || 1200
+          rpmZero: config.rpmZero || 1200,
+          // MUST match rpmZero above: if the stall gate lags the zero gate, a
+          // prune tick landing between them zeroes the meter and the hold branch
+          // then preserves that zero for the rest of the stall.
+          transportStallMs: config.transportStallMs || 1200
         };
+
+    // Pipeline liveness gate. If NO device has delivered recently the link is
+    // stalled, and "this cadence device is stale" says nothing about the rider
+    // — every device would read stale at once. Hold the last values; a starved
+    // pipeline must never render as 0 RPM. Logged on the edges so a stall is
+    // visible in the log store instead of reconstructed from two sources.
+    const transportStalled = this.isTransportStalled(timeouts.transportStallMs, now);
+    if (transportStalled && this._transportStalledSince == null) {
+      this._transportStalledSince = now;
+      getLogger().warn('device-manager.transport_stalled', {
+        sinceMs: now - this.lastPacketAt, deviceCount: this.devices.size
+      });
+    } else if (!transportStalled && this._transportStalledSince != null) {
+      getLogger().info('device-manager.transport_resumed', { stalledMs: now - this._transportStalledSince });
+      this._transportStalledSince = null;
+    }
 
     for (const [id, device] of this.devices) {
       // Determine effective last activity time
@@ -295,7 +334,7 @@ export class DeviceManager {
       // 0. Check for RPM Zeroing (stale data while connected)
       // If we haven't had significant activity (pedaling) for a while, reset display values to 0
       const timeSinceSignificant = now - (device.lastSignificantActivity || device.lastSeen);
-      if (isCadence && timeSinceSignificant > timeouts.rpmZero) {
+      if (isCadence && !transportStalled && timeSinceSignificant > timeouts.rpmZero) {
         if (device.cadence > 0 || device.power > 0 || device.speed > 0) {
           device.resetMetrics();
           mutated = true;

@@ -8,6 +8,7 @@
 import { PersonCard } from './PersonCard.jsx';
 import { RpmDeviceCard } from './RpmDeviceCard.jsx';
 import { VibrationCard } from './VibrationCard.jsx';
+import { StepMatCard } from './StepMatCard.jsx';
 import { BaseRealtimeCard, StatsRow } from './BaseRealtimeCard.jsx';
 import RpmDeviceAvatar from './RpmDeviceAvatar.jsx';
 import VibrationActivityAvatar from './VibrationActivityAvatar.jsx';
@@ -31,6 +32,8 @@ const CARD_REGISTRY = {
   punching_bag: VibrationCard,
   step_platform: VibrationCard,
   pull_up_bar: VibrationCard,
+  pressure_mat: StepMatCard,
+  step_mat: StepMatCard,
 };
 
 /**
@@ -77,6 +80,7 @@ export {
   calculateRpmProgress,
   getRpmZoneColor,
   VibrationCard,
+  StepMatCard,
   BaseRealtimeCard,
   StatsRow
 };
@@ -91,6 +95,7 @@ export default {
   RpmDeviceAvatar,
   VibrationActivityAvatar,
   VibrationCard,
+  StepMatCard,
   BaseRealtimeCard,
   StatsRow
 };

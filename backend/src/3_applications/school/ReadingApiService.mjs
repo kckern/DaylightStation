@@ -1,4 +1,6 @@
 const YESTERDAY_LIMIT = 4;
+const RECENT_LIMIT = 6;
+const RECENT_DAYS = 7;
 const trimmed = value => typeof value === 'string' && value.trim() ? value.trim() : null;
 
 function dayBefore(studyDay) {
@@ -18,8 +20,8 @@ export class ReadingApiService {
     this.#observations = observationStore; this.#clock = clock; this.#nowMs = nowMs;
   }
   session(location) { return this.#sessions.snapshot(location); }
-  acknowledge(location, sessionId) {
-    const session = this.#sessions.acknowledge(location, sessionId);
+  acknowledge(location, proof) {
+    const session = this.#sessions.acknowledge(location, proof);
     return { ok: Boolean(session), session };
   }
   async events(location, limit) {
@@ -75,7 +77,7 @@ export class ReadingApiService {
     } else if (attributedLearnerId !== updated.learnerId) {
       this.#logger.info?.('school.reading.playing-learner-differs', { location, contentId, pickId,
         screenLearnerId: learnerId, sessionLearnerId: updated.learnerId,
-        note: 'D4: the story keeps the learner it was picked with; the session has since swapped' });
+        note: 'defense in depth: the story keeps its pick-time learner even if a legacy/direct caller changed the session' });
     }
     this.#logger.info?.('school.reading.playback-started', { location, learnerId: attributedLearnerId,
       contentId: attributedContentId, pickId, attributable: Boolean(attributedLearnerId) });
@@ -87,8 +89,26 @@ export class ReadingApiService {
     const serverPick = location ? this.#sessions.current(location)?.pick ?? null : null;
     const requestPickId = trimmed(body.pickId);
     const requestSessionId = trimmed(body.sessionId);
-    if (requestSessionId && (!current || current.sessionId !== requestSessionId || !serverPick)) return { kind: 'session_expired' };
-    if (serverPick?.pickId && serverPick.pickId !== requestPickId) return { kind: 'pick_mismatch' };
+    if (requestSessionId && (!current || current.sessionId !== requestSessionId || !serverPick)) {
+      this.#logger.warn?.('school.reading.read-conflict', {
+        reason: 'session-or-pick-expired', location,
+        requestSessionId, currentSessionId: current?.sessionId ?? null,
+        requestPickId, currentPickId: serverPick?.pickId ?? null,
+        requestLearnerId: trimmed(body.learnerId), currentLearnerId: current?.learnerId ?? null,
+        state: current?.state ?? null,
+      });
+      return { kind: 'session_expired' };
+    }
+    if (serverPick?.pickId && serverPick.pickId !== requestPickId) {
+      this.#logger.warn?.('school.reading.read-conflict', {
+        reason: 'pick-mismatch', location,
+        requestSessionId, currentSessionId: current?.sessionId ?? null,
+        requestPickId, currentPickId: serverPick.pickId,
+        requestLearnerId: trimmed(body.learnerId), currentLearnerId: current?.learnerId ?? null,
+        state: current?.state ?? null,
+      });
+      return { kind: 'pick_mismatch' };
+    }
     let read;
     try {
       read = await this.#recordStoryRead.execute({ learnerId: serverPick?.learnerId ?? body.learnerId,
@@ -101,29 +121,51 @@ export class ReadingApiService {
         consequence: 'the story played and the obligation did not move' });
       throw err;
     }
-    if (location) this.#sessions.update(location, { state: 'prompt', pick: null, playing: null });
-    return { kind: 'ok', read };
+    const returning = location ? this.#sessions.beginReturn(location, { reason: 'story-finished' }) : null;
+    return { kind: 'ok', read, presentation: returning?.presentation ?? null };
   }
   async summary(learnerId) {
     let status = null;
     try { status = (await this.#storyTime?.status?.({ userId: learnerId })) ?? null; }
     catch (err) { this.#logger.warn?.('school.reading.summary-status-failed', { learnerId, error: err.message }); }
     let yesterday = [];
+    let recent = [];
     const studyDay = (() => { try { return this.#storyTime?.studyDay?.() ?? null; } catch { return null; } })();
-    const previous = studyDay ? dayBefore(studyDay) : null;
-    if (previous && this.#readingLog?.listForDay) {
-      try {
-        const rows = await this.#readingLog.listForDay(learnerId, previous);
-        yesterday = (Array.isArray(rows) ? rows : []).slice(0, YESTERDAY_LIMIT)
-          .map(row => ({ title: row?.title ?? null, contentId: row?.contentId ?? null }));
-      } catch (err) {
-        this.#logger.warn?.('school.reading.summary-yesterday-failed', { learnerId, day: previous, error: err.message });
+    if (studyDay && this.#readingLog?.listForDay) {
+      const days = [studyDay];
+      while (days.length < RECENT_DAYS) {
+        const prior = dayBefore(days.at(-1));
+        if (!prior) break;
+        days.push(prior);
       }
+      const batches = await Promise.all(days.map(async (day) => {
+        try {
+          const rows = await this.#readingLog.listForDay(learnerId, day);
+          return (Array.isArray(rows) ? rows : []).map((row, index) => ({ ...row, studyDay: day, _index: index }));
+        } catch (err) {
+          this.#logger.warn?.('school.reading.summary-history-failed', { learnerId, day, error: err.message });
+          return [];
+        }
+      }));
+      yesterday = (batches[1] ?? []).slice(0, YESTERDAY_LIMIT)
+        .map(row => ({ title: row?.title ?? null, contentId: row?.contentId ?? null }));
+      recent = batches.flat()
+        .sort((a, b) => {
+          const byTime = (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0);
+          if (byTime) return byTime;
+          const byDay = String(b.studyDay).localeCompare(String(a.studyDay));
+          return byDay || b._index - a._index;
+        })
+        .slice(0, RECENT_LIMIT)
+        .map(row => ({
+          title: row?.title ?? null, contentId: row?.contentId ?? null,
+          pickId: row?.pickId ?? null, at: row?.at ?? null, studyDay: row.studyDay,
+        }));
     }
     let displayName = null;
     try { displayName = trimmed(this.#resolveLearner?.(learnerId)?.name); } catch { displayName = null; }
     return { learnerId, displayName, enrolled: status?.enrolled ?? null, error: status ? status.error === true : true,
       count: status?.count ?? null, target: status?.target ?? null, progressLabel: status?.progressLabel ?? null,
-      doneToday: status?.doneToday ?? null, studyDay, yesterday };
+      doneToday: status?.doneToday ?? null, studyDay, yesterday, recent };
   }
 }

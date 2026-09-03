@@ -7,6 +7,7 @@ import getLogger from '../../lib/logging/Logger.js';
 import { CadenceFilter } from './CadenceFilter.js';
 import { resolveCycleAudioCue } from './challengeAudioCues.js';
 import { hasGovernedLabel } from './governedContent.js';
+import { GovernanceTypeRegistry } from './GovernanceTypeRegistry.js';
 
 const normalizeLabelList = (labels) => {
   if (!Array.isArray(labels)) return [];
@@ -133,6 +134,9 @@ export const compareSeverity = (a, b, options = {}) => {
 };
 
 const buildRequirementKey = (req) => {
+  if (req?.type === 'activity_rate') {
+    return `activity_rate|${req.equipment || ''}|${req.metric || ''}|${req.requiredCount || ''}`;
+  }
   const zoneId = normalizeZoneId(req?.zone || req?.zoneLabel) || 'zone';
   const selection = req?.selectionLabel || '';
   const rule = req?.ruleLabel || req?.rule || '';
@@ -207,8 +211,9 @@ export const normalizeRequirements = (rawReqs, comparator = compareSeverity, opt
     }
   });
 
-  // Include requirements without specific participants (only if no participant-specific ones exist)
-  if (grouped.size === 0 && noParticipantReqs.length > 0) {
+  // Equipment-wide requirements have no missing participant IDs and must remain
+  // visible alongside participant-specific zone rows.
+  if (noParticipantReqs.length > 0) {
     noParticipantReqs.forEach((req) => {
       const key = buildRequirementKey(req);
       if (!grouped.has(key)) {
@@ -228,6 +233,9 @@ export class GovernanceEngine {
     this._random = typeof options.random === 'function' ? options.random : () => Math.random();
 
     this.session = session;  // Reference to FitnessSession for direct roster access
+    this.challengeTypes = new GovernanceTypeRegistry('challenge');
+    this.requirementTypes = new GovernanceTypeRegistry('requirement');
+    this._registerGovernanceTypes();
     this.config = {};
     this.policies = [];
     this.media = null;
@@ -278,7 +286,8 @@ export class GovernanceEngine {
 
     this.timers = {
       governance: null,
-      challenge: null
+      challenge: null,
+      activity: null,
     };
 
     this.callbacks = {
@@ -296,6 +305,7 @@ export class GovernanceEngine {
       totalCount: 0,
       equipmentCadenceMap: {},
       equipmentRiderMap: {},
+      activityMetricMap: {},
       guestIds: []
     };
     this._lastEvaluationTs = null;
@@ -327,6 +337,84 @@ export class GovernanceEngine {
     // only treat a cadence-map entry as fresh when its `ts` strictly advances.
     this._cadenceFilters = new Map();      // equipmentId → CadenceFilter
     this._lastSeenCadenceTs = new Map();   // equipmentId → last ts we treated as fresh
+    this._activeRequirementIds = new Set();
+  }
+
+  _registerGovernanceTypes() {
+    this.challengeTypes
+      .register('zone', {
+        isEligible: (_selection, ctx) => ({
+          eligible: Array.isArray(ctx.activeParticipants) && ctx.activeParticipants.length > 0,
+          reason: Array.isArray(ctx.activeParticipants) && ctx.activeParticipants.length > 0 ? null : 'no_participants',
+        }),
+        evaluate: (challenge, ctx) => this.evaluateChallengeZone(
+          challenge, ctx.activeParticipants, ctx.userZoneMap, ctx.totalCount
+        ),
+      })
+      .register('vibration', {
+        isEligible: (selection) => {
+          const eligible = Boolean(this.session?.getVibrationTracker?.(selection.vibration));
+          return { eligible, reason: eligible ? null : 'sensor_unavailable' };
+        },
+        evaluate: (challenge, ctx) => {
+          const satisfied = this._evaluateVibrationChallenge(challenge);
+          const tracker = this.session?.getVibrationTracker?.(challenge.vibration);
+          const snap = tracker?.snapshot || {};
+          return {
+            satisfied,
+            metUsers: satisfied ? ctx.activeParticipants : [],
+            missingUsers: [],
+            actualCount: satisfied ? 1 : 0,
+            requiredCount: 1,
+            zoneLabel: challenge.selectionLabel || challenge.vibration,
+            vibrationSnapshot: snap,
+          };
+        },
+      })
+      .register('step', {
+        isEligible: (selection, ctx) => {
+          const snap = ctx.activityMetricMap?.[selection.equipment];
+          if (!snap?.online) return { eligible: false, reason: 'sensor_offline' };
+          if (selection.requiresActive !== false && !snap.active) return { eligible: false, reason: 'mat_inactive' };
+          return { eligible: true, reason: null };
+        },
+        evaluate: (challenge, ctx) => {
+          const snap = ctx.activityMetricMap?.[challenge.equipment] || null;
+          const total = challenge.metric === 'stomps' ? snap?.sessionStomps : snap?.sessionSteps;
+          const actualCount = Math.max(0, (Number(total) || 0) - (Number(challenge.startCount) || 0));
+          const assignedUserId = ctx.equipmentRiderMap?.[challenge.equipment] || null;
+          return {
+            satisfied: actualCount >= challenge.target,
+            actualCount,
+            requiredCount: challenge.target,
+            metUsers: actualCount >= challenge.target && assignedUserId ? [assignedUserId] : [],
+            missingUsers: [],
+            assignedUserId,
+            online: Boolean(snap?.online),
+            active: Boolean(snap?.active),
+            stepsPerMinute: Number(snap?.stepsPerMinute) || 0,
+            zoneLabel: challenge.metric === 'stomps' ? 'Stomps' : 'Steps',
+          };
+        },
+      })
+      .register('cycle', {
+        managed: true,
+        isEligible: (selection, ctx) => {
+          const participants = new Set(ctx.activeParticipants || []);
+          const claimed = ctx.equipmentRiderMap?.[selection.equipment] || null;
+          const eligibleUsers = this._getEligibleUsers(selection.equipment);
+          const eligible = Boolean((claimed && participants.has(claimed))
+            || eligibleUsers.some((userId) => participants.has(userId)));
+          return { eligible, reason: eligible ? null : 'no_eligible_active_rider' };
+        },
+        start: (selection, context) => this._startCycleChallenge(selection, context),
+      });
+
+    this.requirementTypes
+      .register('zone', {})
+      .register('activity_rate', {
+        evaluate: (requirement, ctx) => this._evaluateActivityRateRequirement(requirement, ctx),
+      });
   }
 
   /**
@@ -560,6 +648,16 @@ export class GovernanceEngine {
       this._cadenceFilters.set(equipmentId, filter);
     }
     const cadenceEntry = this._latestInputs?.equipmentCadenceMap?.[equipmentId];
+    if (cadenceEntry?.transportStalled) {
+      // No device at all is delivering. Hold the filter's value and its clock;
+      // do NOT run tick(), whose decay would turn a starved pipeline into a
+      // "lost signal" 0 that the cycle SM reads as the rider stopping.
+      return {
+        rpm: filter.hold(nowTs),
+        ts: nowTs,
+        flags: { implausible: false, smoothed: false, stale: false, lostSignal: false, transportStalled: true }
+      };
+    }
     const entryTs = Number(cadenceEntry?.ts);
     const entryRpm = Number(cadenceEntry?.rpm);
     const lastSeen = this._lastSeenCadenceTs.get(equipmentId) ?? -Infinity;
@@ -796,6 +894,7 @@ export class GovernanceEngine {
 
     return {
       id: activeChallenge.id,
+      type: activeChallenge.type || 'zone',
       status: activeChallenge.status,
       zone: activeChallenge.zone,
       zoneLabel,
@@ -808,6 +907,14 @@ export class GovernanceEngine {
       startedAt,
       expiresAt,
       selectionLabel: activeChallenge.selectionLabel || null,
+      equipment: activeChallenge.equipment || null,
+      metric: activeChallenge.metric || null,
+      target: activeChallenge.target || null,
+      startCount: activeChallenge.startCount ?? null,
+      assignedUserId: summary?.assignedUserId || null,
+      stepsPerMinute: summary?.stepsPerMinute ?? null,
+      sensorOnline: summary?.online ?? null,
+      reward: activeChallenge.reward || null,
       paused
     };
   }
@@ -878,6 +985,9 @@ export class GovernanceEngine {
       equipmentRiderMap: payload.equipmentRiderMap && typeof payload.equipmentRiderMap === 'object'
         ? { ...payload.equipmentRiderMap }
         : (this._latestInputs?.equipmentRiderMap || {}),
+      activityMetricMap: payload.activityMetricMap && typeof payload.activityMetricMap === 'object'
+        ? { ...payload.activityMetricMap }
+        : (this._latestInputs?.activityMetricMap || {}),
       guestIds: Array.isArray(payload.guestIds) ? [...payload.guestIds] : []
     };
     this._lastEvaluationTs = this._now();
@@ -1010,6 +1120,47 @@ export class GovernanceEngine {
         return acc;
       }, {});
 
+      const typedRequirementsRaw = Array.isArray(policyValue.requirements) ? policyValue.requirements : null;
+      const requirements = typedRequirementsRaw
+        ? typedRequirementsRaw.map((entry, requirementIndex) => {
+          if (!entry || typeof entry !== 'object') return null;
+          const type = String(entry.type || 'zone').trim().toLowerCase();
+          if (type === 'zone') {
+            const zone = entry.zone || entry.zone_id || entry.zoneId;
+            if (!zone) return null;
+            const rule = entry.rule ?? entry.min_participants ?? entry.minParticipants ?? 'all';
+            baseRequirement[String(zone)] = rule;
+            return { id: entry.id || `${policyId}_requirement_${requirementIndex}`, type, zone: String(zone), rule };
+          }
+          if (type === 'activity_rate') {
+            const equipment = String(entry.equipment || '').trim();
+            const minimum = Number(entry.minimum ?? entry.min_spm);
+            const windowSeconds = Number(entry.window_seconds ?? 15);
+            if (!equipment || !Number.isFinite(minimum) || minimum <= 0 || !Number.isFinite(windowSeconds) || windowSeconds <= 0) {
+              getLogger().warn('governance.activity_rate.config_rejected', { policyId, requirementIndex, equipment, minimum, windowSeconds });
+              return null;
+            }
+            return {
+              id: entry.id || `${policyId}_requirement_${requirementIndex}`,
+              type,
+              equipment,
+              metric: String(entry.metric || 'steps_per_minute'),
+              minimum,
+              windowSeconds,
+              enabled: entry.enabled !== false,
+              engageOn: String(entry.engage_on || 'first_step'),
+              offlinePolicy: String(entry.offline_policy || 'suspend'),
+            };
+          }
+          getLogger().warn('governance.requirement.unknown_type', { policyId, requirementIndex, type });
+          return null;
+        }).filter(Boolean)
+        : Object.entries(baseRequirement)
+          .filter(([zone]) => zone !== 'grace_period_seconds')
+          .map(([zone, rule], requirementIndex) => ({
+            id: `${policyId}_requirement_${requirementIndex}`, type: 'zone', zone, rule,
+          }));
+
       const minParticipants = Number.isFinite(policyValue.min_participants)
         ? Number(policyValue.min_participants)
         : Number.isFinite(policyValue.minParticipants)
@@ -1048,6 +1199,35 @@ export class GovernanceEngine {
           const selections = selectionList
             .map((selectionValue, selectionIndex) => {
               if (!selectionValue || typeof selectionValue !== 'object') return null;
+
+              if (selectionValue.type === 'step') {
+                const selectionId = `${policyId}_${index}_${selectionIndex}`;
+                const equipment = String(selectionValue.equipment || '').trim();
+                const metric = String(selectionValue.metric || 'steps').trim().toLowerCase();
+                const target = Math.round(Number(selectionValue.target ?? selectionValue.count));
+                const timeAllowed = Number(selectionValue.time_allowed ?? selectionValue.timeAllowed);
+                const weight = Number(selectionValue.weight ?? 1);
+                if (!equipment || !['steps', 'stomps'].includes(metric) || !Number.isFinite(target) || target <= 0
+                  || !Number.isFinite(timeAllowed) || timeAllowed <= 0) {
+                  getLogger().warn('governance.step.config_rejected', { selectionId, equipment, metric, target, timeAllowed });
+                  return null;
+                }
+                return {
+                  id: selectionId,
+                  type: 'step',
+                  label: selectionValue.label || selectionValue.name || null,
+                  equipment,
+                  metric,
+                  target,
+                  timeAllowedSeconds: Math.max(1, Math.round(timeAllowed)),
+                  weight: Number.isFinite(weight) && weight > 0 ? weight : 1,
+                  requiresActive: selectionValue.requires_active !== false,
+                  sensorGraceSeconds: Math.max(1, Number(selectionValue.sensor_grace_seconds) || 10),
+                  rewardMultiplier: Number.isFinite(Number(selectionValue.reward_multiplier))
+                    ? Math.max(0, Number(selectionValue.reward_multiplier))
+                    : 1,
+                };
+              }
 
               // Cycle challenge selection branch — distinct shape from zone/vibration
               if (selectionValue.type === 'cycle') {
@@ -1154,6 +1334,7 @@ export class GovernanceEngine {
 
               return {
                 id: `${policyId}_${index}_${selectionIndex}`,
+                type: vibration ? 'vibration' : 'zone',
                 zone: zone ? String(zone) : null,
                 rule,
                 timeAllowedSeconds: Math.max(1, Math.round(timeAllowed)),
@@ -1188,6 +1369,7 @@ export class GovernanceEngine {
         name: policyValue.name || policyId,
         minParticipants,
         baseRequirement,
+        requirements,
         challenges
       });
     });
@@ -1481,6 +1663,15 @@ export class GovernanceEngine {
     this.timers.challenge = setTimeout(() => this._triggerPulse(), safeDelay);
   }
 
+  _scheduleActivityPulse(delayMs) {
+    if (this.timers.activity) {
+      clearTimeout(this.timers.activity);
+      this.timers.activity = null;
+    }
+    if (delayMs === null) return;
+    this.timers.activity = setTimeout(() => this._triggerPulse(), Math.max(250, delayMs));
+  }
+
   _clearTimers() {
     if (this.timers.governance) {
       clearTimeout(this.timers.governance);
@@ -1489,6 +1680,10 @@ export class GovernanceEngine {
     if (this.timers.challenge) {
       clearTimeout(this.timers.challenge);
       this.timers.challenge = null;
+    }
+    if (this.timers.activity) {
+      clearTimeout(this.timers.activity);
+      this.timers.activity = null;
     }
   }
 
@@ -1662,13 +1857,15 @@ export class GovernanceEngine {
       zoneInfoMap: {},
       totalCount: 0,
       equipmentCadenceMap: {},
-      equipmentRiderMap: {}
+      equipmentRiderMap: {},
+      activityMetricMap: {}
     };
     this._lastEvaluationTs = null;
     this._timersPaused = false;
     this._pausedAt = null;
     this._remainingMs = null;
     this._warningCooldownUntil = null;
+    this._activeRequirementIds.clear();
 
     // State caching for performance - throttle recomputation to 200ms
     this._stateCache = null;
@@ -1736,6 +1933,7 @@ export class GovernanceEngine {
     const preservedZoneInfoMap = this._latestInputs?.zoneInfoMap || {};
     const preservedEquipmentCadenceMap = this._latestInputs?.equipmentCadenceMap || {};
     const preservedEquipmentRiderMap = this._latestInputs?.equipmentRiderMap || {};
+    const preservedActivityMetricMap = this._latestInputs?.activityMetricMap || {};
     this._latestInputs = {
       activeParticipants: [],
       userZoneMap: {},
@@ -1743,7 +1941,8 @@ export class GovernanceEngine {
       zoneInfoMap: preservedZoneInfoMap,
       totalCount: 0,
       equipmentCadenceMap: preservedEquipmentCadenceMap,
-      equipmentRiderMap: preservedEquipmentRiderMap
+      equipmentRiderMap: preservedEquipmentRiderMap,
+      activityMetricMap: preservedActivityMetricMap
     };
     this._lastEvaluationTs = null;
     this._timersPaused = false;
@@ -1751,6 +1950,7 @@ export class GovernanceEngine {
     this._remainingMs = null;
     this._warningCooldownUntil = null;
     this._stateCache = null;
+    this._activeRequirementIds.clear();
     this._stateCacheTs = 0;
     this._stateCacheThrottleMs = 200;
     this._stateVersion = 0;
@@ -1966,6 +2166,10 @@ export class GovernanceEngine {
       const dropped = [];
       rows.forEach((row) => {
         const missing = Array.isArray(row.missingUsers) ? row.missingUsers : [];
+        if (!missing.length) {
+          deduped.push({ ...row, missingUsers: [] });
+          return;
+        }
         const remaining = [];
         missing.forEach((name) => {
           const key = normalizeName(name);
@@ -2042,7 +2246,7 @@ export class GovernanceEngine {
    * @param {number} params.totalCount - Total number of active participants
    * @param {Object.<string, {rpm: number, connected: boolean}>} input.equipmentCadenceMap - Latest cadence reading per equipment id. Default: {}.
    */
-  evaluate({ activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, hrInactiveUsers, guestIds, equipmentCadenceMap, equipmentRiderMap } = {}) {
+  evaluate({ activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, hrInactiveUsers, guestIds, equipmentCadenceMap, equipmentRiderMap, activityMetricMap } = {}) {
     // Tag which code path triggered this evaluation (for prod log diagnostics)
     this._lastEvaluatePath = activeParticipants ? 'snapshot' : 'pulse';
 
@@ -2056,6 +2260,13 @@ export class GovernanceEngine {
     // Governance is configured iff there are governed labels — the trigger.
     // governed_types alone (no labels) governs nothing (see governedContent.js).
     const hasGovernanceRules = this._governedLabelSet.size > 0;
+
+    // Timer-driven pulses must age pressure-mat liveness as well as HR state.
+    // A cached snapshot can otherwise remain `online: true` forever after the
+    // relay disappears, because the disappearance itself produces no event.
+    if (activityMetricMap === undefined && this.session?.getPressureMatSnapshots) {
+      activityMetricMap = this.session.getPressureMatSnapshots(now);
+    }
 
     // Use canonical participant state from ParticipantRoster (SSOT).
     // This replaces reading session.roster and re-extracting IDs/zones.
@@ -2191,6 +2402,9 @@ export class GovernanceEngine {
     if (equipmentRiderMap && typeof equipmentRiderMap === 'object') {
       this._latestInputs.equipmentRiderMap = { ...equipmentRiderMap };
     }
+    if (activityMetricMap && typeof activityMetricMap === 'object') {
+      this._latestInputs.activityMetricMap = { ...activityMetricMap };
+    }
 
     // Build evalContext so _setPhase logging reads current data (not stale _latestInputs)
     const evalContext = { userZoneMap, zoneRankMap, zoneInfoMap, activeParticipants };
@@ -2212,6 +2426,7 @@ export class GovernanceEngine {
       const equipmentRpm = filtered.rpm;
       this._evaluateCycleChallenge(active, {
         equipmentRpm,
+        cadenceFlags: filtered.flags,
         activeParticipants: this._latestInputs?.activeParticipants || [],
         userZoneMap: this._latestInputs?.userZoneMap || {},
         baseReqSatisfiedForRider: true,
@@ -2271,8 +2486,15 @@ export class GovernanceEngine {
       return;
     }
 
-    // 2. Check participants
-    if (activeParticipants.length === 0) {
+    // 2. Check participants. An engaged equipment requirement is itself a
+    // governance subject, so it may continue even without an HR broadcaster.
+    const zeroParticipantPolicy = activeParticipants.length === 0 ? this._chooseActivePolicy(0) : null;
+    const hasEngagedActivityRequirement = Boolean(zeroParticipantPolicy?.requirements?.some((requirement) =>
+      requirement?.type === 'activity_rate'
+      && requirement.enabled !== false
+      && this._latestInputs?.activityMetricMap?.[requirement.equipment]?.engaged
+    ));
+    if (activeParticipants.length === 0 && !hasEngagedActivityRequirement) {
       // Already pending with no participants — skip redundant work to avoid feedback loop
       if (this.phase === 'pending' && this._latestInputs?.activeParticipants?.length === 0) {
         return;
@@ -2302,7 +2524,7 @@ export class GovernanceEngine {
       if (activePolicy) {
         const baseRequirement = activePolicy.baseRequirement || {};
         const prePopulatedRequirements = this._buildRequirementShell(
-          baseRequirement,
+          activePolicy.requirements || baseRequirement,
           zoneRankMap || {},
           zoneInfoMap || {}
         );
@@ -2342,6 +2564,9 @@ export class GovernanceEngine {
         equipmentRiderMap: equipmentRiderMap && typeof equipmentRiderMap === 'object'
           ? { ...equipmentRiderMap }
           : (this._latestInputs?.equipmentRiderMap || {}),
+        activityMetricMap: activityMetricMap && typeof activityMetricMap === 'object'
+          ? { ...activityMetricMap }
+          : (this._latestInputs?.activityMetricMap || {}),
       };
       this._invalidateStateCache();
       // No polling needed here - governance is reactive via TreasureBox mutation callback
@@ -2372,7 +2597,14 @@ export class GovernanceEngine {
 
     // 5. Evaluate Base Requirements
     const baseRequirement = activePolicy.baseRequirement || {};
-    const { summaries, allSatisfied } = this._evaluateRequirementSet(baseRequirement, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount);
+    const { summaries, allSatisfied, justEngaged } = this._evaluateRequirementSet(
+      activePolicy.requirements || baseRequirement,
+      activeParticipants,
+      userZoneMap,
+      zoneRankMap,
+      zoneInfoMap,
+      totalCount
+    );
 
     this.requirementSummary = {
       policyId: activePolicy.id,
@@ -2382,9 +2614,18 @@ export class GovernanceEngine {
     };
 
     // 6. Determine Phase
-    const challengeForcesRed = this.challengeState.activeChallenge && this.challengeState.activeChallenge.status === 'failed';
+    const activeChallengeForPhase = this.challengeState.activeChallenge;
+    const failedStepSensorUnavailable = activeChallengeForPhase?.type === 'step'
+      && !this._latestInputs?.activityMetricMap?.[activeChallengeForPhase.equipment]?.online;
+    const challengeForcesRed = activeChallengeForPhase?.status === 'failed'
+      && !failedStepSensorUnavailable;
     const defaultGrace = this.config.grace_period_seconds || 0;
     const baseGraceSeconds = Number.isFinite(baseRequirement.grace_period_seconds) ? baseRequirement.grace_period_seconds : defaultGrace;
+    if (justEngaged && !allSatisfied && summaries.every((summary) => summary.type === 'activity_rate' || summary.satisfied)) {
+      // First use receives the ordinary governance grace instead of locking
+      // while the rolling SPM window fills.
+      this.meta.satisfiedOnce = true;
+    }
 
     if (challengeForcesRed) {
       // Failed challenge -> locked (regardless of base requirements)
@@ -2463,6 +2704,17 @@ export class GovernanceEngine {
     }
     this._evaluateChallenges(activePolicy, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, evalContext);
 
+    // Once an activity requirement is latched, keep a low-rate clock running
+    // even if both the mat and all HR broadcasters disappear. This ages SPM,
+    // online state, the fail-open indicator, and the realtime card without
+    // relying on a new sensor event to announce that the sensor went silent.
+    const needsActivityPulse = activePolicy.requirements?.some((requirement) =>
+      requirement?.type === 'activity_rate'
+      && requirement.enabled !== false
+      && this._latestInputs?.activityMetricMap?.[requirement.equipment]?.engaged
+    );
+    this._scheduleActivityPulse(needsActivityPulse ? 1000 : null);
+
     this._captureLatestInputs({
       activeParticipants,
       userZoneMap,
@@ -2472,7 +2724,8 @@ export class GovernanceEngine {
       hrInactiveUsers,
       guestIds,
       equipmentCadenceMap,
-      equipmentRiderMap
+      equipmentRiderMap,
+      activityMetricMap
     });
 
     // Invalidate state cache after evaluation completes
@@ -2512,15 +2765,35 @@ export class GovernanceEngine {
    * @returns {Array} - Array of requirement objects with zone labels but no participant data
    */
   _buildRequirementShell(requirementMap, _zoneRankMap, _zoneInfoMap) {
-    if (!requirementMap || typeof requirementMap !== 'object') {
-      return [];
-    }
-    const entries = Object.entries(requirementMap).filter(([key]) => key !== 'grace_period_seconds');
-    if (!entries.length) {
-      return [];
-    }
-
-    return entries.map(([zoneKey, rule]) => {
+    const definitions = Array.isArray(requirementMap)
+      ? requirementMap
+      : Object.entries(requirementMap || {})
+        .filter(([key]) => key !== 'grace_period_seconds')
+        .map(([zone, rule], index) => ({ id: `legacy_${index}`, type: 'zone', zone, rule }));
+    return definitions.map((definition) => {
+      if (definition?.type === 'activity_rate') {
+        const snap = this._latestInputs?.activityMetricMap?.[definition.equipment];
+        if (!definition.enabled || !snap?.engaged) return null;
+        return {
+          id: definition.id,
+          type: 'activity_rate',
+          equipment: definition.equipment,
+          zone: null,
+          zoneLabel: 'Step Mat',
+          targetZoneId: null,
+          severity: definition.minimum,
+          rule: 'minimum',
+          ruleLabel: `Keep ${Math.round(definition.minimum)} SPM`,
+          requiredCount: definition.minimum,
+          actualCount: Number(snap.stepsPerMinute) || 0,
+          metUsers: [],
+          missingUsers: [],
+          suspended: !snap.online,
+          satisfied: !snap.online,
+        };
+      }
+      const zoneKey = definition?.zone;
+      const rule = definition?.rule;
       const zoneId = zoneKey ? String(zoneKey).toLowerCase() : null;
       if (!zoneId) return null;
 
@@ -2545,20 +2818,30 @@ export class GovernanceEngine {
   }
 
   _evaluateRequirementSet(requirementMap, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount) {
-    if (!requirementMap || typeof requirementMap !== 'object') {
-      // No requirements defined - cannot satisfy what doesn't exist
-      return { summaries: [], allSatisfied: false };
-    }
-    const entries = Object.entries(requirementMap).filter(([key]) => key !== 'grace_period_seconds');
-    if (!entries.length) {
+    const definitions = Array.isArray(requirementMap)
+      ? requirementMap
+      : Object.entries(requirementMap || {})
+        .filter(([key]) => key !== 'grace_period_seconds')
+        .map(([zone, rule], index) => ({ id: `legacy_${index}`, type: 'zone', zone, rule }));
+    if (!definitions.length) {
       // Only grace_period_seconds present, no actual zone requirements - treat as unsatisfied
       // to prevent resetting during an active grace period countdown
-      return { summaries: [], allSatisfied: false };
+      return { summaries: [], allSatisfied: false, justEngaged: false };
     }
     const summaries = [];
     let allSatisfied = true;
-    entries.forEach(([zoneKey, rule]) => {
-      const summary = this._evaluateZoneRequirement(zoneKey, rule, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount);
+    let justEngaged = false;
+    definitions.forEach((definition) => {
+      let summary = null;
+      if (definition?.type === 'activity_rate') {
+        summary = this.requirementTypes.evaluate('activity_rate', definition, {
+          activityMetricMap: this._latestInputs?.activityMetricMap || {},
+        });
+        if (summary?.justEngaged) justEngaged = true;
+      } else {
+        summary = this._evaluateZoneRequirement(definition?.zone, definition?.rule, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount);
+        if (summary) summary.type = 'zone';
+      }
       if (summary) {
         summaries.push(summary);
         if (!summary.satisfied) {
@@ -2569,10 +2852,49 @@ export class GovernanceEngine {
     // BUG FIX: If we have requirement entries but produced no summaries, zoneRankMap may be
     // incomplete (race condition). Treat as unsatisfied to prevent accidentally clearing
     // an active grace period countdown.
-    if (entries.length > 0 && summaries.length === 0) {
-      return { summaries: [], allSatisfied: false };
+    if (definitions.length > 0 && summaries.length === 0) {
+      // A disengaged/disabled activity requirement is intentionally dormant,
+      // not a failed requirement. Preserve the defensive fail-closed behavior
+      // for zone definitions whose metadata has not loaded yet.
+      const containsZoneRequirement = definitions.some((definition) => definition?.type !== 'activity_rate');
+      return { summaries: [], allSatisfied: !containsZoneRequirement, justEngaged };
     }
-    return { summaries, allSatisfied };
+    return { summaries, allSatisfied, justEngaged };
+  }
+
+  _evaluateActivityRateRequirement(requirement, { activityMetricMap = {} } = {}) {
+    const snap = activityMetricMap?.[requirement.equipment];
+    const id = requirement.id || `activity_rate:${requirement.equipment}`;
+    if (!requirement.enabled || !snap?.engaged) {
+      this._activeRequirementIds.delete(id);
+      return null;
+    }
+    const justEngaged = !this._activeRequirementIds.has(id);
+    this._activeRequirementIds.add(id);
+    const online = Boolean(snap.online);
+    const actual = Number(snap.stepsPerMinute) || 0;
+    const suspended = !online && requirement.offlinePolicy === 'suspend';
+    return {
+      id,
+      type: 'activity_rate',
+      equipment: requirement.equipment,
+      metric: requirement.metric,
+      zone: null,
+      zoneLabel: 'Step Mat',
+      targetZoneId: null,
+      severity: requirement.minimum,
+      rule: 'minimum',
+      ruleLabel: suspended ? 'Sensor unavailable' : `Keep ${Math.round(requirement.minimum)} SPM`,
+      requiredCount: requirement.minimum,
+      actualCount: actual,
+      currentRate: actual,
+      targetRate: requirement.minimum,
+      metUsers: [],
+      missingUsers: [],
+      suspended,
+      justEngaged,
+      satisfied: suspended || actual >= requirement.minimum,
+    };
   }
 
   _evaluateZoneRequirement(zoneKey, rule, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount) {
@@ -2868,7 +3190,10 @@ export class GovernanceEngine {
 
       case 'intensity': {
         const count = Number(selection.count) || 1;
-        const hits = (snap.recentIntensityHistory || []).filter(m => m >= target);
+        const hits = (snap.recentIntensityHistory || []).filter((entry) => {
+          const magnitude = typeof entry === 'number' ? entry : entry?.magnitude;
+          return Number.isFinite(magnitude) && magnitude >= target;
+        });
         return hits.length >= count;
       }
 
@@ -2876,6 +3201,31 @@ export class GovernanceEngine {
         getLogger().warn('governance.vibration_challenge.unknown_criteria', { criteria });
         return false;
     }
+  }
+
+  _awardStepChallengeBonus(challenge, summary, userZoneMap) {
+    if (challenge?.type !== 'step' || !summary?.assignedUserId || !this.session?.treasureBox?.awardBonus) return null;
+    const userId = summary.assignedUserId;
+    const zoneId = userZoneMap?.[userId] || null;
+    const zone = zoneId ? this._getZoneInfo(zoneId) : null;
+    const baseRings = Number(zone?.rings);
+    const multiplier = Number(challenge.rewardMultiplier ?? 1);
+    const rings = baseRings * (Number.isFinite(multiplier) ? Math.max(0, multiplier) : 1);
+    if (!zone || !Number.isFinite(rings) || rings <= 0) {
+      challenge.reward = { awarded: false, reason: zone ? 'zone_has_no_rings' : 'no_completion_zone', userId, zoneId };
+      return challenge.reward;
+    }
+    const result = this.session.treasureBox.awardBonus({
+      idempotencyKey: `${challenge.id}:${userId}:completion`,
+      userId,
+      rings,
+      zoneId,
+      color: zone.color,
+      source: 'step_challenge',
+      metadata: { challengeId: challenge.id, equipmentId: challenge.equipment, metric: challenge.metric },
+    });
+    challenge.reward = { ...result, userId, zoneId, multiplier };
+    return challenge.reward;
   }
 
   _pickIntervalMs(rangeSeconds) {
@@ -3122,6 +3472,50 @@ export class GovernanceEngine {
     if (this._timersPaused) {
       active._lastCycleTs = now;
       return;
+    }
+
+    // Pipeline-stall gate: no device at all is delivering (backend/socket
+    // stalled — 2026-09-02). We know nothing about the rider, so freeze the
+    // clock exactly like a pause: no depletion, no progress, no ramp/init
+    // timeout, no lock. A starved pipeline must never lock a kid who is
+    // pedalling. Consume dt so the resume tick computes a small delta.
+    // Edge-logged, like the base-requirement gate below it. This is the event
+    // that proves the fix fired: without it the only evidence a stall was
+    // survived is the ABSENCE of a lock, and absence cannot distinguish "the
+    // gate worked" from "there was no stall". Pairs with
+    // `device-manager.transport_stalled` (which says the pipeline went quiet)
+    // to answer "did a quiet pipeline cost a rider a lock?" in one query.
+    if (ctx.cadenceFlags?.transportStalled) {
+      if (active._stalledAt == null) {
+        active._stalledAt = now;
+        getLogger().warn('governance.cycle.frozen_by_transport_stall', {
+          challengeId: active.id,
+          cycleState: active.cycleState,
+          rider: active.rider,
+          heldRpm: ctx.equipmentRpm ?? null,
+          frozenFields: {
+            initElapsedMs: active.initElapsedMs,
+            rampElapsedMs: active.rampElapsedMs,
+            phaseProgressMs: active.phaseProgressMs,
+            cycleHealthMs: active.cycleHealthMs
+          }
+        });
+      }
+      active._lastCycleTs = now;
+      return;
+    }
+
+    // Resume edge. `stalledMs` is the headline number: how long a rider would
+    // have been depleting toward a lock under the pre-2026-09-02 behaviour.
+    if (active._stalledAt != null) {
+      getLogger().info('governance.cycle.resumed_after_transport_stall', {
+        challengeId: active.id,
+        cycleState: active.cycleState,
+        rider: active.rider,
+        stalledMs: now - active._stalledAt,
+        cycleHealthMs: active.cycleHealthMs
+      });
+      active._stalledAt = null;
     }
 
     // Pause gate: base requirement failing globally → freeze all cycle timers.
@@ -3502,17 +3896,42 @@ export class GovernanceEngine {
       if (!challengeConfig.selections || !challengeConfig.selections.length) return null;
       let selection = null;
       let cursorIndex = null;
+      const eligibilityContext = {
+        activityMetricMap: this._latestInputs?.activityMetricMap || {},
+        equipmentRiderMap: this._latestInputs?.equipmentRiderMap || {},
+        activeParticipants,
+        userZoneMap,
+        totalCount,
+      };
+      const eligibleIndexes = challengeConfig.selections
+        .map((candidate, idx) => ({ candidate, idx, result: this.challengeTypes.eligibility(candidate.type || 'zone', candidate, eligibilityContext) }))
+        .filter(({ result }) => result.eligible)
+        .map(({ idx }) => idx);
+      if (!eligibleIndexes.length) {
+        getLogger().sampled('governance.challenge.no_eligible_selection', {
+          configId: challengeConfig.id,
+          types: challengeConfig.selections.map((candidate) => candidate.type || 'zone'),
+        }, { maxPerMinute: 2, aggregate: true });
+        return null;
+      }
 
       if (challengeConfig.selectionType === 'cyclic') {
         const cursor = this.challengeState.selectionCursor[challengeConfig.id] || 0;
-        selection = challengeConfig.selections[cursor % challengeConfig.selections.length];
-        cursorIndex = (cursor + 1) % challengeConfig.selections.length;
+        for (let offset = 0; offset < challengeConfig.selections.length; offset += 1) {
+          const idx = (cursor + offset) % challengeConfig.selections.length;
+          if (!eligibleIndexes.includes(idx)) continue;
+          selection = challengeConfig.selections[idx];
+          cursorIndex = (idx + 1) % challengeConfig.selections.length;
+          break;
+        }
       } else {
         // Random weighted
         let bag = this.challengeState.selectionRandomBag[challengeConfig.id];
+        if (Array.isArray(bag)) bag = bag.filter((idx) => eligibleIndexes.includes(idx));
         if (!Array.isArray(bag) || bag.length === 0) {
           bag = [];
           challengeConfig.selections.forEach((sel, idx) => {
+            if (!eligibleIndexes.includes(idx)) return;
             const weight = sel.weight || 1;
             for (let i = 0; i < weight; i++) bag.push(idx);
           });
@@ -3534,7 +3953,9 @@ export class GovernanceEngine {
     const assignNextChallengePreview = (scheduledForTs, payload) => {
       const challengeZone = payload.selection.zone ? String(payload.selection.zone).toLowerCase() : null;
       const timeLimitSeconds = payload.selection.timeAllowedSeconds;
-      const requiredCount = this._normalizeRequiredCount(payload.selection.rule, totalCount, activeParticipants);
+      const requiredCount = payload.selection.type === 'step'
+        ? payload.selection.target
+        : this._normalizeRequiredCount(payload.selection.rule, totalCount, activeParticipants);
       const selectionType = payload.selection.type || (payload.selection.vibration ? 'vibration' : 'zone');
 
       this.challengeState.nextChallenge = {
@@ -3578,13 +3999,23 @@ export class GovernanceEngine {
       }
 
       const existing = this.challengeState.nextChallenge;
+      const existingEligibility = existing?.selection
+        ? this.challengeTypes.eligibility(existing.type || 'zone', existing.selection, {
+          activityMetricMap: this._latestInputs?.activityMetricMap || {},
+          equipmentRiderMap: this._latestInputs?.equipmentRiderMap || {},
+          activeParticipants,
+          userZoneMap,
+          totalCount,
+        })
+        : { eligible: false };
       if (
         existing &&
         existing.configId === challengeConfig.id &&
         Math.abs((existing.scheduledFor ?? targetTs) - targetTs) < 5 &&
         Number.isFinite(existing.requiredCount) &&
         existing.requiredCount > 0 &&
-        existing.requiredCount <= totalCount
+        (existing.type === 'step' || existing.requiredCount <= totalCount) &&
+        existingEligibility.eligible
       ) {
         return true;
       }
@@ -3637,8 +4068,9 @@ export class GovernanceEngine {
       // bypasses the zone-feasibility check (which is specific to HR zones) and
       // delegates construction to _startCycleChallenge. If no rider is
       // available, treat as a skipped-infeasible case and re-queue.
-      if (preview.type === 'cycle' && preview.selection) {
-        const cycleActive = this._startCycleChallenge(preview.selection, {
+      const managedChallengeType = this.challengeTypes.get(preview.type);
+      if (managedChallengeType?.managed && preview.selection) {
+        const cycleActive = managedChallengeType.start?.(preview.selection, {
           policyId: activePolicy.id,
           policyName: this.challengeState.activePolicyName,
           configId: challengeConfig.id
@@ -3675,7 +4107,7 @@ export class GovernanceEngine {
       }
 
       // Feasibility check: don't start challenges participants can't reach
-      if (!forced) {
+      if (!forced && preview.type === 'zone') {
         const feasibility = this._checkChallengeFeasibility(
           preview.zone, preview.rule, activeParticipants
         );
@@ -3704,6 +4136,12 @@ export class GovernanceEngine {
       const requiredCount = Number.isFinite(preview.requiredCount) && preview.requiredCount > 0
         ? preview.requiredCount
         : this._normalizeRequiredCount(preview.rule, totalCount, activeParticipants);
+      const activitySnapshot = preview.type === 'step'
+        ? this._latestInputs?.activityMetricMap?.[preview.selection?.equipment]
+        : null;
+      const startCount = preview.type === 'step'
+        ? (preview.selection?.metric === 'stomps' ? activitySnapshot?.sessionStomps : activitySnapshot?.sessionSteps)
+        : null;
 
       this.challengeState.activeChallenge = {
         id: `${challengeConfig.id}_${startedAt}`,
@@ -3712,8 +4150,19 @@ export class GovernanceEngine {
         configId: challengeConfig.id,
         selectionId: preview.selectionId,
         selectionLabel: preview.selectionLabel || null,
+        type: preview.type || 'zone',
+        selection: preview.selection || null,
         zone: preview.zone,
         rule: preview.rule,
+        equipment: preview.selection?.equipment || null,
+        metric: preview.selection?.metric || null,
+        vibration: preview.selection?.vibration || null,
+        criteria: preview.selection?.criteria || null,
+        target: preview.selection?.target || requiredCount,
+        count: preview.selection?.count || null,
+        startCount: Number(startCount) || 0,
+        sensorGraceSeconds: preview.selection?.sensorGraceSeconds || 10,
+        rewardMultiplier: preview.selection?.rewardMultiplier ?? 1,
         requiredCount,
         timeLimitSeconds,
         startedAt,
@@ -3745,31 +4194,21 @@ export class GovernanceEngine {
         forced
       });
 
-      this._schedulePulse(Math.max(50, expiresAt - startedAt));
+      this._schedulePulse(preview.type === 'step'
+        ? Math.min(500, Math.max(50, expiresAt - startedAt))
+        : Math.max(50, expiresAt - startedAt));
       return true;
     };
 
     const buildChallengeSummary = (challenge) => {
-        if (!challenge) return null;
-
-        // Vibration-based challenge — no zone/participant evaluation needed
-        if (challenge.vibration) {
-          const satisfied = this._evaluateVibrationChallenge(challenge);
-          const tracker = this.session?.getVibrationTracker?.(challenge.vibration);
-          const snap = tracker?.snapshot || {};
-          return {
-            satisfied,
-            metUsers: satisfied ? activeParticipants : [],
-            missingUsers: satisfied ? [] : activeParticipants,
-            actualCount: satisfied ? 1 : 0,
-            requiredCount: 1,
-            zoneLabel: challenge.label || challenge.vibration,
-            vibrationSnapshot: snap
-          };
-        }
-
-        // Existing zone-based logic follows unchanged...
-        return this.evaluateChallengeZone(challenge, activeParticipants, userZoneMap, totalCount);
+      if (!challenge) return null;
+      return this.challengeTypes.evaluate(challenge.type || 'zone', challenge, {
+        activeParticipants,
+        userZoneMap,
+        totalCount,
+        activityMetricMap: this._latestInputs?.activityMetricMap || {},
+        equipmentRiderMap: this._latestInputs?.equipmentRiderMap || {},
+      });
     };
 
     // --- Main Logic ---
@@ -3783,9 +4222,58 @@ export class GovernanceEngine {
       } else {
         const challenge = this.challengeState.activeChallenge;
 
+        if (challenge.type === 'step') {
+          const mat = this._latestInputs?.activityMetricMap?.[challenge.equipment];
+          if (!mat?.online) {
+            challenge.summary = buildChallengeSummary(challenge);
+            if (!Number.isFinite(challenge.sensorUnavailableAt)) challenge.sensorUnavailableAt = now;
+            const unavailableMs = now - challenge.sensorUnavailableAt;
+            const sensorGraceMs = (challenge.sensorGraceSeconds || 10) * 1000;
+            this.challengeState.videoLocked = false;
+            if (unavailableMs >= sensorGraceMs) {
+              this.challengeState.challengeHistory.push({
+                id: challenge.id,
+                type: 'step',
+                status: 'cancelled',
+                cancelReason: 'sensor_offline',
+                equipment: challenge.equipment,
+                metric: challenge.metric,
+                target: challenge.target,
+                startedAt: challenge.startedAt,
+                completedAt: now,
+              });
+              if (this.challengeState.challengeHistory.length > 20) {
+                this.challengeState.challengeHistory.splice(
+                  0,
+                  this.challengeState.challengeHistory.length - 20
+                );
+              }
+              this.session?.logEvent?.('challenge_cancelled', {
+                challengeId: challenge.id,
+                type: 'step',
+                reason: 'sensor_offline',
+                equipmentId: challenge.equipment,
+                metric: challenge.metric,
+              }, now);
+              this.challengeState.activeChallenge = null;
+              const nextDelay = this._pickIntervalMs(challengeConfig.intervalRangeSeconds);
+              queueNextChallenge(nextDelay);
+              this._schedulePulse(50);
+              return;
+            }
+            this._schedulePulse(Math.min(500, Math.max(50, sensorGraceMs - unavailableMs)));
+            return;
+          }
+          if (Number.isFinite(challenge.sensorUnavailableAt)) {
+            const unavailableMs = Math.max(0, now - challenge.sensorUnavailableAt);
+            if (challenge.status === 'pending') challenge.expiresAt += unavailableMs;
+            challenge.sensorUnavailableAt = null;
+          }
+        }
+
         // Cycle challenge branch — RPM-driven state machine. Skips the
         // zone-specific pending/expiry/summary flow entirely.
-        if (challenge.type === 'cycle') {
+        if (this.challengeTypes.get(challenge.type)?.managed) {
           const filtered = this._filteredCadenceFor(challenge.equipment, this._now());
           const equipmentRpm = filtered.rpm;
 
@@ -3797,6 +4285,7 @@ export class GovernanceEngine {
 
           const ctx = {
             equipmentRpm,
+            cadenceFlags: filtered.flags,
             activeParticipants,
             userZoneMap,
             baseReqSatisfiedForRider,
@@ -4001,14 +4490,23 @@ export class GovernanceEngine {
             challenge.pausedAt = null;
             challenge.pausedRemainingMs = null;
             challenge.summary = buildChallengeSummary(challenge);
+            this._awardStepChallengeBonus(challenge, challenge.summary, userZoneMap);
             if (!challenge.historyRecorded) {
               this.challengeState.challengeHistory.push({
                 id: challenge.id,
+                type: challenge.type || 'zone',
                 status: 'success',
                 zone: challenge.zone,
                 zoneLabel: challenge.summary?.zoneLabel || null,
                 rule: challenge.rule,
                 requiredCount: challenge.requiredCount,
+                actualCount: challenge.summary?.actualCount ?? null,
+                equipment: challenge.equipment || null,
+                metric: challenge.metric || null,
+                target: challenge.target || null,
+                startCount: challenge.startCount ?? null,
+                assignedUserId: challenge.summary?.assignedUserId || null,
+                reward: challenge.reward || null,
                 startedAt: challenge.startedAt,
                 completedAt: challenge.completedAt,
                 selectionLabel: challenge.selectionLabel || null
@@ -4060,7 +4558,9 @@ export class GovernanceEngine {
             this._schedulePulse(500);
             return;
           } else {
-            this._schedulePulse(Math.max(50, challenge.expiresAt - now));
+            this._schedulePulse(challenge.type === 'step'
+              ? Math.min(500, Math.max(50, challenge.expiresAt - now))
+              : Math.max(50, challenge.expiresAt - now));
             return;
           }
         } else {
@@ -4086,15 +4586,24 @@ export class GovernanceEngine {
               challenge.status = 'success';
               challenge.completedAt = now;
               challenge.summary = buildChallengeSummary(challenge);
+              this._awardStepChallengeBonus(challenge, challenge.summary, userZoneMap);
               this.challengeState.videoLocked = false;
               if (!challenge.historyRecorded) {
                 this.challengeState.challengeHistory.push({
                   id: challenge.id,
+                  type: challenge.type || 'zone',
                   status: 'success',
                   zone: challenge.zone,
                   zoneLabel: challenge.summary?.zoneLabel || null,
                   rule: challenge.rule,
                   requiredCount: challenge.requiredCount,
+                  actualCount: challenge.summary?.actualCount ?? null,
+                  equipment: challenge.equipment || null,
+                  metric: challenge.metric || null,
+                  target: challenge.target || null,
+                  startCount: challenge.startCount ?? null,
+                  assignedUserId: challenge.summary?.assignedUserId || null,
+                  reward: challenge.reward || null,
                   startedAt: challenge.startedAt,
                   completedAt: challenge.completedAt,
                   selectionLabel: challenge.selectionLabel || null

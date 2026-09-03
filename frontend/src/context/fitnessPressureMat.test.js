@@ -5,8 +5,16 @@ describe('fitness pressure mat', () => {
   it('normalizes a live step count and analog diagnostics', () => {
     expect(normalizePressureMatMessage({
       topic: 'pressure-mat', id: 'mat1', type: 'presence', event: 'pressed',
-      occupied: true, steps: 12, stomps: 3, voltage: 2.1, deltaV: .6, gradientVps: -1.2,
-    })).toMatchObject({ id: 'mat1', event: 'pressed', steps: 12, stomps: 3, occupied: true });
+      occupied: true, steps: 12, stomps: 3, voltage: 2.1, restVoltage: 2.7,
+      deltaV: .6, gradientVps: -1.2, peakDeltaV: .9, peakGradientVps: 2.1,
+      pressDurationMs: 640, classifiedStomp: true, protocolVersion: 2,
+      deviceTs: 1234, bootCount: 4, lastReset: 'POWERON',
+    })).toMatchObject({
+      id: 'mat1', event: 'pressed', steps: 12, stomps: 3, occupied: true,
+      restVoltage: 2.7, peakDeltaV: .9, peakGradientVps: 2.1,
+      pressDurationMs: 640, classifiedStomp: true, protocolVersion: 2,
+      deviceTs: 1234, bootCount: 4, lastReset: 'POWERON',
+    });
   });
 
   it('keeps step and stomp events distinct', () => {

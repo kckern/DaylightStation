@@ -20,6 +20,34 @@ describe('FitnessTreasureBox ring award callback', () => {
   });
 });
 
+describe('FitnessTreasureBox explicit challenge bonus', () => {
+  it('awards exactly once and records it in totals, timeline, event log, and callback', () => {
+    const logEvent = vi.fn();
+    const session = { startTime: Date.now(), timebase: {}, timeline: { events: [] }, logEvent };
+    const box = new FitnessTreasureBox(session);
+    box.perUser.set('user_2', { profileId: 'user_2', totalRings: 5 });
+    const onAward = vi.fn();
+    box.setRingAwardCallback(onAward);
+
+    const first = box.awardBonus({
+      idempotencyKey: 'step-1:user_2:completion', userId: 'user_2', rings: 3,
+      zoneId: 'warm', color: 'yellow', source: 'step_challenge',
+    });
+    const duplicate = box.awardBonus({
+      idempotencyKey: 'step-1:user_2:completion', userId: 'user_2', rings: 3,
+      zoneId: 'warm', color: 'yellow', source: 'step_challenge',
+    });
+
+    expect(first.awarded).toBe(true);
+    expect(duplicate).toEqual({ awarded: false, reason: 'duplicate' });
+    expect(box.totalRings).toBe(3);
+    expect(box.perUser.get('user_2').totalRings).toBe(8);
+    expect(box._timeline.cumulative[0]).toBe(3);
+    expect(logEvent).toHaveBeenCalledOnce();
+    expect(onAward).toHaveBeenCalledOnce();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // 2026-09-01: user_4's first HR sample reached the box 1ms before ZoneProfileStore
 // had built his profile. The box cached the miss and scored him on GLOBAL

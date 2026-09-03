@@ -116,6 +116,25 @@
     }
   }
 
+  &__numeric-count {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 0.35rem;
+    color: #bae6fd;
+
+    strong {
+      font-size: clamp(1.8rem, calc(var(--challenge-overlay-diameter) * 0.2), 3rem);
+      line-height: 1;
+    }
+
+    span {
+      font-size: clamp(0.68rem, calc(var(--challenge-overlay-diameter) * 0.055), 0.95rem);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+  }
+
   &__time-block {
     width: 100%;
     flex: 1;

@@ -9,12 +9,21 @@ export function normalizePressureMatMessage(message, previous = null) {
     id: message.id,
     type: message.type,
     event: message.event || null,
+    protocolVersion: optionalNonnegative(message.protocolVersion, previous?.protocolVersion),
+    deviceTs: optionalNonnegative(message.deviceTs, previous?.deviceTs),
+    bootCount: optionalNonnegative(message.bootCount, previous?.bootCount),
+    lastReset: message.lastReset || previous?.lastReset || null,
     occupied: Boolean(message.occupied),
     steps: nonnegative(message.steps, previous?.steps),
     stomps: nonnegative(message.stomps, previous?.stomps),
     voltage: finiteOr(message.voltage, previous?.voltage),
+    restVoltage: finiteOr(message.restVoltage, previous?.restVoltage),
     deltaV: finiteOr(message.deltaV, previous?.deltaV),
     gradientVps: finiteOr(message.gradientVps, previous?.gradientVps),
+    peakDeltaV: finiteOr(message.peakDeltaV),
+    peakGradientVps: finiteOr(message.peakGradientVps),
+    pressDurationMs: finiteOr(message.pressDurationMs),
+    classifiedStomp: typeof message.classifiedStomp === 'boolean' ? message.classifiedStomp : null,
     receivedAt: message.receivedAt || new Date().toISOString(),
   };
 }
@@ -30,3 +39,7 @@ export function pressureMatFitnessEvent(reading) {
 
 const finiteOr = (value, fallback = null) => Number.isFinite(Number(value)) ? Number(value) : (fallback ?? null);
 const nonnegative = (value, fallback = 0) => Math.max(0, Number.isFinite(Number(value)) ? Number(value) : (fallback ?? 0));
+const optionalNonnegative = (value, fallback = null) => {
+  if (Number.isFinite(Number(value))) return Math.max(0, Number(value));
+  return Number.isFinite(Number(fallback)) ? Math.max(0, Number(fallback)) : null;
+};

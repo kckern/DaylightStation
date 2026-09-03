@@ -11,6 +11,7 @@
 #include <WebSocketsClient.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
+#include <ArduinoOTA.h>
 #include <esp_task_wdt.h>
 #include <esp_system.h>
 #include <esp32-hal-rgb-led.h>
@@ -19,6 +20,16 @@
 #define RELAY_SOURCE "pressure-mat-relay"
 #define ARM_WINDOW_MS 5000UL
 #define WDT_TIMEOUT_S 20
+
+// OTA defaults OFF so an older generated config.h cannot accidentally expose
+// an unauthenticated firmware receiver. gen-config.mjs enables it only when the
+// private mat config also supplies a password.
+#ifndef OTA_ENABLED
+#define OTA_ENABLED 0
+#endif
+#ifndef OTA_PASSWORD
+#define OTA_PASSWORD ""
+#endif
 
 static WebSocketsClient ws;
 static WebServer http(80);
@@ -47,7 +58,9 @@ static uint32_t helloAt = 0;
 static uint32_t stepCount = 0;
 static uint32_t stompCount = 0;
 static uint32_t transitionCount = 0;
+static uint32_t pressStartedAt = 0;
 static bool stompReported = false;
+static float peakDeltaVoltage = 0.0f;
 static float peakImpactGradient = 0.0f;
 static uint32_t bootCount = 0;
 static esp_reset_reason_t resetReason = ESP_RST_UNKNOWN;
@@ -56,6 +69,9 @@ static uint8_t sampleIndex = 0;
 static uint8_t sampleCount = 0;
 static uint8_t lastWifiDisconnectReason = 0;
 static uint16_t wifiDisconnectRepeats = 0;
+#if OTA_ENABLED
+static volatile bool otaActive = false;
+#endif
 
 static const char* resetReasonName(esp_reset_reason_t reason) {
   switch (reason) {
@@ -101,8 +117,10 @@ static bool sendDocument(JsonDocument& doc) {
 }
 
 static void addReading(JsonDocument& doc) {
+  doc["protocol_version"] = 2;
   doc["id"] = MAT_ID;
   doc["voltage"] = serialized(String(voltage, 3));
+  doc["rest_voltage"] = serialized(String(restVoltage, 3));
   doc["delta_v"] = serialized(String(deltaVoltage, 3));
   doc["gradient_vps"] = serialized(String(gradient, 3));
   doc["occupied"] = occupied;
@@ -119,12 +137,18 @@ static void sendReading() {
   sendDocument(doc);
 }
 
-static void sendPresence(const char* event) {
+static void sendPresence(const char* event, bool includePressSummary = false) {
   JsonDocument doc;
   doc["source"] = RELAY_SOURCE;
   doc["type"] = "presence";
   doc["event"] = event;
   addReading(doc);
+  if (includePressSummary) {
+    doc["peak_delta_v"] = serialized(String(peakDeltaVoltage, 3));
+    doc["peak_gradient_vps"] = serialized(String(peakImpactGradient, 3));
+    doc["press_duration_ms"] = pressStartedAt ? millis() - pressStartedAt : 0;
+    doc["classified_stomp"] = stompReported;
+  }
   sendDocument(doc);
   Serial.printf("[mat] %s voltage=%.3f delta=%.3f gradient=%.3f steps=%lu\n",
                 event, voltage, deltaVoltage, gradient, (unsigned long)stepCount);
@@ -181,16 +205,24 @@ static void transitionTo(bool nextOccupied) {
   releaseArmed = false;
   if (occupied) {
     stepCount++;
+    pressStartedAt = millis();
     stompReported = false;
     peakImpactGradient = max(0.0f, -gradient);
     deltaVoltage = max(0.0f, restVoltage - voltage);
+    peakDeltaVoltage = deltaVoltage;
     flashLed(0, 32, 0);
     sendPresence("pressed");
     maybeReportStomp();
   } else {
     deltaVoltage = 0.0f;
     flashLed(0, 0, 32);
-    sendPresence("released");
+    // Release is the authoritative one-record-per-press observation. It carries
+    // the maxima accumulated across the whole occupied interval, rather than
+    // whichever instantaneous sample happened to cross an event threshold.
+    sendPresence("released", true);
+    pressStartedAt = 0;
+    stompReported = false;
+    peakDeltaVoltage = peakImpactGradient = 0.0f;
   }
 }
 
@@ -221,6 +253,7 @@ static void sampleSensor() {
     if (pressArmed && voltage <= pressThreshold) transitionTo(true);
   } else {
     deltaVoltage = max(0.0f, restVoltage - voltage);
+    peakDeltaVoltage = max(peakDeltaVoltage, deltaVoltage);
     peakImpactGradient = max(peakImpactGradient, -gradient);
     maybeReportStomp();
     if (!releaseArmed && gradient >= configuredPressGradient * RELEASE_GRADIENT_RATIO) {
@@ -235,6 +268,7 @@ static void sampleSensor() {
 
 static void statusResponse() {
   JsonDocument doc;
+  doc["protocol_version"] = 2;
   doc["id"] = MAT_ID;
   doc["source"] = RELAY_SOURCE;
   doc["uptime_s"] = millis() / 1000;
@@ -244,6 +278,8 @@ static void statusResponse() {
   doc["wifi"]["ip"] = WiFi.localIP().toString();
   doc["wifi"]["rssi"] = WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0;
   doc["ws"]["connected"] = wsConnected;
+  doc["ota"]["enabled"] = OTA_ENABLED == 1;
+  doc["ota"]["port"] = OTA_ENABLED == 1 ? 3232 : 0;
   doc["sensor"]["pin"] = SENSOR_PIN;
   doc["sensor"]["voltage"] = voltage;
   doc["sensor"]["rest_voltage"] = restVoltage;
@@ -253,6 +289,9 @@ static void statusResponse() {
   doc["sensor"]["steps"] = stepCount;
   doc["sensor"]["stomps"] = stompCount;
   doc["sensor"]["transitions"] = transitionCount;
+  doc["sensor"]["current_press_peak_delta_v"] = peakDeltaVoltage;
+  doc["sensor"]["current_press_peak_gradient_vps"] = peakImpactGradient;
+  doc["sensor"]["current_press_duration_ms"] = occupied && pressStartedAt ? millis() - pressStartedAt : 0;
   doc["detection"]["press_delta_v"] = configuredPressDelta;
   doc["detection"]["press_gradient_vps"] = configuredPressGradient;
   doc["detection"]["stomp_delta_v"] = configuredStompDelta;
@@ -282,6 +321,9 @@ static void wsEvent(WStype_t type, uint8_t* payload, size_t length) {
       initialized = false;
       sampleCount = 0;
       pressArmed = releaseArmed = false;
+      pressStartedAt = 0;
+      stompReported = false;
+      peakDeltaVoltage = peakImpactGradient = 0.0f;
       Serial.println("[command] recalibrate");
     } else if (strcmp(action, "threshold") == 0) {
       const float delta = command["delta"] | configuredPressDelta;
@@ -391,6 +433,9 @@ void setup() {
     initialized = false;
     sampleCount = 0;
     pressArmed = releaseArmed = false;
+    pressStartedAt = 0;
+    stompReported = false;
+    peakDeltaVoltage = peakImpactGradient = 0.0f;
     http.send(200, "application/json", "{\"ok\":true,\"action\":\"recalibrate\"}");
   });
   http.on("/threshold", HTTP_POST, []() {
@@ -425,10 +470,38 @@ void setup() {
 
   esp_task_wdt_init(WDT_TIMEOUT_S, true);
   esp_task_wdt_add(NULL);
+
+#if OTA_ENABLED
+  ArduinoOTA.setHostname(MAT_ID);
+  ArduinoOTA.setPassword(OTA_PASSWORD);
+  ArduinoOTA.onStart([]() {
+    // Writing flash must own the loop. Network maintenance during the transfer
+    // can stall espota long enough to abort it, so resume everything by reboot.
+    otaActive = true;
+    ws.disconnect();
+    http.stop();
+    Serial.println("[ota] update starting; websocket + http quiesced");
+  });
+  // ArduinoOTA receives the whole image inside one handle() call. Feed per
+  // chunk so a healthy slow transfer survives while a stalled one still trips.
+  ArduinoOTA.onProgress([](unsigned int, unsigned int) { esp_task_wdt_reset(); });
+  ArduinoOTA.onEnd([]() { Serial.println("[ota] update complete; rebooting"); });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("[ota] failed error=%u; rebooting into previous image\n", (unsigned)error);
+    delay(200);
+    ESP.restart();
+  });
+  ArduinoOTA.begin();
+  Serial.println("[ota] ready udp=3232 auth=enabled");
+#endif
 }
 
 void loop() {
   esp_task_wdt_reset();
+#if OTA_ENABLED
+  ArduinoOTA.handle();
+  if (otaActive) return;
+#endif
   ensureWifi();
   ws.loop();
   http.handleClient();

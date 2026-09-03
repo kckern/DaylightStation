@@ -92,8 +92,8 @@ describe('trigger learner actions — composition contract', () => {
 
     const result = await makeService(learnerActions).handleTrigger('livingroom', 'nfc', '048ba600cc2a81');
 
-    expect(result.dispatch).toMatchObject({ status: 'reading_session_open', learnerId: 'user_2' });
-    expect(sessions.current('livingroom')).toMatchObject({ learnerId: 'user_2', state: 'prompt' });
+    expect(result.dispatch).toMatchObject({ status: 'reading_session_presenting', learnerId: 'user_2' });
+    expect(sessions.current('livingroom')).toMatchObject({ learnerId: 'user_2', state: 'presenting' });
     expect(printed).toEqual([]);
   });
 
