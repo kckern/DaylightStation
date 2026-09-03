@@ -191,6 +191,46 @@ renders like any other row: tapping it opens `EntryEditSheet` to edit or delete,
 `TodayView`, when the result isn't `unknownUpc`) submit through the identical
 `/nutrition/input` call and follow the same reload-or-notice handling.
 
+### Groups (composite dishes)
+
+A **group** is a dish or course within a meal, not the meal itself — a smoothie and its
+ingredients, spaghetti with its noodles/sauce/cheese, or an appetizer/main/dessert logged
+as siblings in one dinner. Meal buckets (Breakfast/Lunch/Dinner/Snacks, above) are the
+coarse container a day's food falls into; a group is a finer subdivision inside one
+bucket, and grouping never changes which bucket anything lands in.
+
+A group is a NutriList row like any other — its own `uuid`, its own `mealTime`, present in
+the same flat per-date array as everything else — but it carries `kind: 'group'` and every
+nutrition field (`calories`, `protein`, `carbs`, `fat`, …) pinned to zero. Its members are
+ordinary rows (`kind: 'item'`, the default) carrying `parentId` set to the group's id. A
+group row never holds nutrition itself: day and meal totals sum every row in the flat
+list, so the group's zero contributes nothing and each food is counted exactly once, on
+its own member row.
+
+The AI capture path (free text or photo) is the only producer of groups. When the parse
+tags two or more items with the same `dish` name, the parser synthesizes one group entry
+ahead of them and stamps that group's id onto each member's `parentId`; an item with no
+`dish` stays standalone. A parse where nothing carries a `dish` produces an ordinary flat
+list of items — grouping is additive, never a mode the rest of the pipeline branches on.
+
+Today's log renders a group collapsed by default, showing a rolled-up calorie total
+computed by summing its members at read time (never a stored value on the group row
+itself); tapping it expands the row to show its members indented beneath it. A member
+whose `parentId` doesn't resolve to any row on the day — a deleted or otherwise missing
+parent — still renders as its own top-level row rather than disappearing: no logged food
+is ever hidden for having a broken group link.
+
+Editing a group, from its own edit sheet:
+
+- **Rename** changes the group's own label.
+- **Move to** another meal bucket cascades the same `mealTime` to every member
+  server-side, so the whole dish moves together instead of leaving members behind in the
+  old bucket.
+- **Scale** (a coarser ×½/×¾/×1½/×2 set than a single item gets) scales every member's
+  amount and nutrition; the group row itself has nothing to scale.
+- **Delete** prompts first with a count ("Delete Spaghetti and its 3 items?"), then removes
+  every member and, once all of them are confirmed gone, the group row itself.
+
 ### Photo persistence
 
 A photo capture that produces at least one food item is persisted, not thrown away after
@@ -213,7 +253,11 @@ as a warning, and the entry is saved exactly as if no photo had been supplied �
 `photoRef`, nothing else different.
 
 **Serving.** `GET /nutrition/photos/:photoRef` streams the file back, resolved through the
-same `PhotoStore`. The route always resolves the photo under the household's own user —
+same `PhotoStore`. An optional `?size=thumb` query param serves the 320px thumbnail
+variant, falling back to the original photo when no thumbnail file exists on disk (the
+same jimp failure at capture time that can skip writing one); rows in the day log request
+this variant, so a missing thumbnail file never breaks the row's image, only its size. The
+route always resolves the photo under the household's own user —
 there is no `userId` query parameter, deliberately: this program is single-user, nothing
 sends one, and honoring a client-supplied value would let it point the containment check
 at an attacker-chosen base directory. `photoRef` is checked against a strict `ph_`+base62
@@ -350,8 +394,9 @@ description }` and calls the identical text pipeline the web combobox's sentence
 uses (`nutritionInput.process({ type: 'text', content: description, userId })` —
 `nutritionInput` is `WebNutribotAdapter`). It reaches `handleText`, which means it goes
 through the same auto-commit seam as every other transport: **the coach's entries are
-logged immediately as `accepted` + `settled: false`**. The earlier "the coach can never
-accept a meal for you" rule was retired with the pending queue. It returns
+logged immediately as `accepted` + `settled: false`**, with no separate acceptance gate
+for this transport — it behaves exactly like a typed sentence submitted from the combobox.
+It returns
 `{ status: 'logged', summary }` (`summary` is the parsed itemization's first response line,
 e.g. "🟡 2 eggs — 140 kcal"), which lets the model tell the user what landed; the user
 reviews or undoes it in the app.
