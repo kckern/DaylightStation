@@ -134,6 +134,22 @@ export function formatFoodList(items) {
   return items.map(formatFoodItem).join('\n');
 }
 
+/**
+ * Format the "already logged" summary line shown on a committed capture.
+ * Captures land immediately (status:'accepted', settled:false) — there is no
+ * Accept gate left to prompt for, so the message must read as a confirmation,
+ * not a question.
+ * Format: "Logged ✓ — 2 items, 215 kcal"
+ * @param {Object[]} items - Array of food items (each may carry .calories)
+ * @returns {string} Formatted summary line
+ */
+export function formatLoggedSummary(items) {
+  const list = items || [];
+  const count = list.length;
+  const kcal = Math.round(list.reduce((sum, item) => sum + (Number(item.calories) || 0), 0));
+  return `Logged ✓ — ${count} item${count === 1 ? '' : 's'}, ${kcal} kcal`;
+}
+
 export default {
   NOOM_COLOR_EMOJI,
   getNoomColorEmoji,
@@ -143,4 +159,5 @@ export default {
   formatDateHeader,
   formatFoodItem,
   formatFoodList,
+  formatLoggedSummary,
 };
