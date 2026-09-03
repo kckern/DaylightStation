@@ -1,10 +1,27 @@
+import { useState } from 'react';
 import { UnstyledButton } from '@mantine/core';
 import { BUCKETS, UNGROUPED } from './mealBuckets.js';
 import { EntryRow } from './EntryRow.jsx';
+import { groupRows } from './groupRows.js';
 
+// Numeric-tolerant bucket-total sum. A group row carries zero nutrition BY
+// DESIGN (its children carry the real values as siblings in this same flat
+// `rows` array), so summing every row — groups included — already counts
+// each gram of food exactly once. Do NOT filter `kind:'group'` out here:
+// that would change nothing (they're already zero) while inviting someone
+// to "fix" it into double-counting if a group ever did carry a value.
 const kcal = (rows) => Math.round(rows.reduce((s, r) => s + (Number(r.calories) || 0), 0));
 
 function Section({ label, rows, onAdd, onRowTap, onConfirm, headerAction }) {
+  const [expanded, setExpanded] = useState(() => new Set());
+  const entries = groupRows(rows);
+
+  const toggle = (key) => setExpanded((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+
   return (
     <section className="health-meal">
       <header className="health-meal__header">
@@ -14,7 +31,25 @@ function Section({ label, rows, onAdd, onRowTap, onConfirm, headerAction }) {
           {headerAction || null}
         </span>
       </header>
-      {rows.map((row) => <EntryRow key={row.uuid} row={row} onTap={onRowTap} onConfirm={onConfirm} />)}
+      {entries.map(({ row, children, rollup }) => {
+        const key = row.uuid ?? row.id;
+        const isGroup = row.kind === 'group' && children.length > 0;
+        if (!isGroup) {
+          return <EntryRow key={key} row={row} onTap={onRowTap} onConfirm={onConfirm} />;
+        }
+        const isOpen = expanded.has(key);
+        return (
+          <div key={key} className="health-group">
+            <EntryRow
+              row={row} onTap={onRowTap} onConfirm={onConfirm}
+              isGroup expanded={isOpen} onToggle={() => toggle(key)} rollupKcal={rollup.calories}
+            />
+            {isOpen ? children.map((c) => (
+              <EntryRow key={c.uuid ?? c.id} row={c} onTap={onRowTap} onConfirm={onConfirm} child />
+            )) : null}
+          </div>
+        );
+      })}
       {onAdd ? (
         <UnstyledButton className="health-meal__add" onClick={onAdd}>+ Add food…</UnstyledButton>
       ) : null}
