@@ -113,9 +113,17 @@ $health-quickbar-margin: 0.5rem; // deliberate slack over the exact footprint
 .health-meal {
   margin-top: 0.75rem;
   &__header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--ds-border); padding-bottom: 0.2rem; }
-  &__header-right { display: flex; align-items: center; gap: 0.5rem; }
+  // Three capture buttons (voice/photo/barcode) plus a Copy-to-today /
+  // Save-as-meal action can outgrow the space left by the label at narrow
+  // widths. Let this cluster wrap onto a second line — never force the kcal
+  // text (below) to break internally, and never let the cluster overflow
+  // past the card edge.
+  &__header-right { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 0.35rem 0.5rem; }
   &__label { margin: 0; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ds-text-mid); }
-  &__kcal { font-size: 0.8rem; color: var(--ds-text-low); font-variant-numeric: tabular-nums; }
+  // Must never wrap mid-value ("230" / "kcal" landing on separate lines) —
+  // that's the narrow-width regression this rule guards against. The
+  // header-right cluster wraps around it instead; see that rule above.
+  &__kcal { font-size: 0.8rem; color: var(--ds-text-low); font-variant-numeric: tabular-nums; white-space: nowrap; }
   &__add { display: block; width: 100%; text-align: left; padding: 0.5rem 0.25rem; color: var(--ds-text-low); font-size: 0.85rem; border-radius: 6px;
     &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; } }
   &--exercise .health-row__kcal { color: var(--ds-success); }
