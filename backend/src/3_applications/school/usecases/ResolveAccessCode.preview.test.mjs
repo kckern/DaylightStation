@@ -236,7 +236,7 @@ describe('ResolveAccessCode.preview — a Plex-hosted course keeps one artwork i
   const pianoProjection = {
     async project() {
       return {
-        plan: { inProgress: [], available: [pianoEntry] },
+        plan: { entries: [{ ...pianoEntry, status: 'available' }] },
         sections: [{ subject: 'arts', servedToday: false, next: pianoEntry }],
         activeExceptions: [],
         programStatuses: [pianoStatus],

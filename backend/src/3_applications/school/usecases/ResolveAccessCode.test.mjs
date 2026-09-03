@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import { ResolveAccessCode } from './ResolveAccessCode.mjs';
 import { ResolveSubjectNext } from './ResolveSubjectNext.mjs';
 import { mintToken } from '#domains/school/sessions/tokens.mjs';
+import { appendAssignedProgramEntries } from '#apps/school/assignedProgramPlan.mjs';
 
 const LEARNER_ID = 'learner4';
 const SUBJECT = 'scripture';
@@ -163,5 +164,86 @@ describe('ResolveAccessCode — continueToday parity with ResolveSubjectNext', (
 
     expect(codeResolution.kind).toBe(scanResolution.kind);
     expect(codeResolution.entry?.unitId).toBe(scanResolution.entry?.unitId);
+  });
+});
+
+/**
+ * The typed-code path is where a child re-enters the day's reading code after
+ * the check-in, so this is the path on which the shelf must reopen. The plan
+ * is built by the real append (curriculum first, programs after) and the
+ * section is served, so the answer can only come from the continuation rule
+ * — the pre-fix code read the planner's snapshots, which a `PlanProjection`
+ * double does not even carry.
+ */
+describe('ResolveAccessCode — a served reading code continues to what the token names', () => {
+  const ENGLISH_LESSON = {
+    unitId: 'eng-1', title: 'English 1', subject: 'english', status: 'available', program: null, sessionId: null,
+  };
+
+  function servedEnglishProjection() {
+    const assignment = { learnerId: LEARNER_ID, courses: [], programs: [{ programId: 'book-log', subject: 'english' }] };
+    const plan = appendAssignedProgramEntries({ entries: [{ ...ENGLISH_LESSON }], errors: [] }, assignment);
+    const sections = [{ subject: 'english', servedToday: true, next: null, progressRows: [] }];
+    const programStatuses = [{
+      programId: 'book-log', programInstance: 'shelf',
+      status: { enrolled: true, error: false, doneToday: true, terminal: false, progressLabel: null, score: null },
+    }];
+    return {
+      plan,
+      async project() {
+        return {
+          plan, sections, activeExceptions: [], programStatuses,
+          projection: { assignment, units: [], sessions: [], works: [], nowIso: NOW_ISO },
+        };
+      },
+    };
+  }
+
+  function readingRecord({ program }) {
+    let n = 0;
+    return mintToken({
+      tokenClass: 'subject_next',
+      subject: { learnerId: LEARNER_ID, subject: 'english', continueToday: true, ...(program ? { program } : {}) },
+      at: NOW_ISO,
+      rng: () => { n += 1; return (n % 97) / 97; },
+      accessCode: '482913',
+      accessCodeExpiresAt: '2026-08-26T04:00:00.000Z',
+    });
+  }
+
+  function resolverFor({ record, planProjection }) {
+    return new ResolveAccessCode({
+      tokens: { async getByAccessCode() { return record; } },
+      curriculum: makeCurriculum(),
+      assignments: makeAssignments(),
+      sessions: makeSessions({ served: false }),
+      planProjection,
+      clock: () => new Date(NOW_ISO),
+      logger: noopLogger,
+    });
+  }
+
+  it('served, continueToday, program: book-log ⇒ the shelf, not the lesson that precedes it', async () => {
+    const planProjection = servedEnglishProjection();
+    expect(planProjection.plan.entries.map((entry) => entry.unitId)).toEqual(['eng-1', 'book-log:shelf']);
+    const resolver = resolverFor({ record: readingRecord({ program: 'book-log' }), planProjection });
+
+    const { card, resolution } = await resolver.resolve({ code: '482913' });
+
+    expect(resolution).not.toBeNull();
+    expect(resolution.kind).toBe('program');
+    expect(resolution.programId).toBe('book-log');
+    expect(resolution.unit?.unitId).toBe('book-log:shelf');
+    expect(card.ok).toBe(true);
+  });
+
+  it('served, continueToday, no program on the token ⇒ the lesson', async () => {
+    const resolver = resolverFor({ record: readingRecord({ program: null }), planProjection: servedEnglishProjection() });
+
+    const { resolution } = await resolver.resolve({ code: '482913' });
+
+    expect(resolution).not.toBeNull();
+    expect(resolution.kind).toBe('move');
+    expect(resolution.entry?.unitId).toBe('eng-1');
   });
 });

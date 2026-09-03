@@ -16,6 +16,29 @@ describe('planDailyAgenda once-only programs', () => {
   });
 });
 
+describe('planDailyAgenda once-only book-log', () => {
+  // A `book-log` enrollment with a `per: 'once'` obligation is projected with
+  // `cadence: 'once'`; its launcher reports `terminal: true` once the series
+  // is read. The pair is what lets a finished series leave the agenda on the
+  // days that follow, while a daily shelf with the same launcher verdict is
+  // offered again tomorrow.
+  const shelf = (cadence) => ({
+    unitId: 'book-log:shelf', subject: 'english', program: 'book-log', programInstance: 'shelf',
+    cadence, status: 'available', timingPriority: 3, timingRank: 0,
+  });
+  const laterDay = { 'book-log::shelf': { doneToday: false, terminal: true, progressLabel: 'Series read', score: null } };
+
+  it('drops a terminal once-cadence shelf from candidacy', () => {
+    const agenda = planDailyAgenda({ plan: { entries: [shelf('once')] }, now: '2026-08-25T18:00:00.000Z', programStatuses: laterDay });
+    expect(agenda.sections[0].next).toBeNull();
+  });
+
+  it('keeps a daily shelf a candidate under the same launcher verdict', () => {
+    const agenda = planDailyAgenda({ plan: { entries: [shelf('daily')] }, now: '2026-08-25T18:00:00.000Z', programStatuses: laterDay });
+    expect(agenda.sections[0].next?.unitId).toBe('book-log:shelf');
+  });
+});
+
 describe('served work from a program subject', () => {
   // A program subject (piano/arts) completes outside a work session, so its
   // work never appears in the plan entries `servedWork` was built from. The

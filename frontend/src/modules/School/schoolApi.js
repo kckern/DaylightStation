@@ -87,6 +87,26 @@ export const schoolApi = {
     `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/packets/${encodeURIComponent(packetId)}/verify`, { faces }, 'POST', { 'X-School-Cube-Grant': grant },
   ),
   roster: () => req('/roster'),
+  // The reading shelf (book-shelf UI design §6). Every shelf call carries the
+  // book grant the launch card handed over; the server takes the learner from
+  // that, never from the body. `resolve` is the shared lookup OUTSIDE
+  // /school — no grant, it names a book, not a child. Item ids are
+  // `learner:isbn:entry`, so they are encoded (Express decodes them back).
+  books: {
+    resolve: (id) => reqAbsolute(`/api/v1/books/resolve?id=${encodeURIComponent(id)}`),
+    shelf: (learnerId, grant) => req(
+      `/books/${encodeURIComponent(learnerId)}/shelf`, undefined, 'GET', { 'X-School-Book-Grant': grant },
+    ),
+    open: (learnerId, grant, body) => req(
+      `/books/${encodeURIComponent(learnerId)}/shelf`, body, 'POST', { 'X-School-Book-Grant': grant },
+    ),
+    progress: (learnerId, grant, itemId, body) => req(
+      `/books/${encodeURIComponent(learnerId)}/shelf/${encodeURIComponent(itemId)}/progress`, body, 'POST', { 'X-School-Book-Grant': grant },
+    ),
+    mode: (learnerId, grant, itemId, progressMode) => req(
+      `/books/${encodeURIComponent(learnerId)}/shelf/${encodeURIComponent(itemId)}/mode`, { progressMode }, 'POST', { 'X-School-Book-Grant': grant },
+    ),
+  },
   // Fail-closed surface resolution (spec §4.2): 404 -> {ok:false}, same as any
   // other unresolved-resource response — the caller never treats a missing
   // profile as "everything allowed".

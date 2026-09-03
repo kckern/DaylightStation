@@ -6,8 +6,11 @@
  */
 
 import { STORY_TIME_PROGRAM_ID } from '#domains/school/storyTime.mjs';
+import { BOOK_LOG_PROGRAM_ID, DEFAULT_BOOK_LOG_SUBJECT } from '#domains/school/bookLog.mjs';
 
-const baseEntry = ({ unitId, title, subject, program, programInstance, schedule = null }) => ({
+const baseEntry = ({
+  unitId, title, subject, program, programInstance, schedule = null, cadence = 'daily',
+}) => ({
   unitId,
   title,
   description: null,
@@ -27,7 +30,7 @@ const baseEntry = ({ unitId, title, subject, program, programInstance, schedule 
   elective: false,
   program,
   programInstance,
-  cadence: 'daily',
+  cadence,
   status: 'available',
   sessionId: null,
   state: null,
@@ -62,6 +65,25 @@ export function appendAssignedProgramEntries(plan, assignment) {
         program: STORY_TIME_PROGRAM_ID,
         programInstance: 'daily',
         schedule: enrollment.schedule,
+      }));
+    }
+    if (enrollment?.programId === BOOK_LOG_PROGRAM_ID) {
+      // One shelf per learner — `corpusId: null` is the dedupe key
+      // SetAssignments already enforces. The entry is what makes the agenda
+      // consult the launcher at all (collectProgramStatuses reads plan.entries);
+      // without it a book-log enrollment was silently inert.
+      plan.entries.push(baseEntry({
+        unitId: `${BOOK_LOG_PROGRAM_ID}:shelf`,
+        title: enrollment.title ?? 'Reading',
+        subject: enrollment.subject ?? DEFAULT_BOOK_LOG_SUBJECT,
+        program: BOOK_LOG_PROGRAM_ID,
+        programInstance: 'shelf',
+        schedule: enrollment.schedule,
+        // The agenda retires a program entry only when it is `once` AND its
+        // launcher says terminal. The launcher reports a met once-obligation
+        // as terminal; without the matching cadence a finished series would
+        // be offered on every future study day.
+        cadence: enrollment.obligation?.per === 'once' ? 'once' : 'daily',
       }));
     }
     if (enrollment?.programId === 'piano-course') {
