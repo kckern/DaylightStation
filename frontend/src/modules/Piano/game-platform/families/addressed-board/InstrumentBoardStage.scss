@@ -7,7 +7,23 @@
      being the same. */
   --rail-width: minmax(var(--pg-rail-w, 15.5rem), 0.28fr);
   display: grid;
-  grid-template: minmax(0, 1fr) auto / var(--rail-width) minmax(0, 1fr) var(--rail-width);
+  grid-template-columns: var(--rail-width) minmax(0, 1fr) var(--rail-width);
+  /* Two rows so the status band can claim a thin slice of the LEFT column
+     without ever taking a bite out of the board's box: `board` and the right
+     rail are each assigned to BOTH rows below (a spanning grid area), so
+     their total height is the full stage whether or not a status band
+     exists above the left rail's own content. The row this replaced ran
+     `auto` the FULL WIDTH beneath the board — that full-width row was the
+     wasted vertical space, not the one line of text sitting in it: the
+     board's own row got shorter by that row's height + gap no matter how
+     short the text was. Below the rail breakpoint (rails collapse to
+     nothing, see the media query) this reverts to that original two-row,
+     full-width-footer shape, because a status band living inside a hidden
+     rail column is invisible. */
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "status     board rail-right"
+    "rail-left  board rail-right";
   gap: 1rem;
   width: 100%;
   height: 100%;
@@ -27,7 +43,10 @@
   min-height: 0;
   overflow: hidden;
 }
+.instrument-board-stage__rail--left { grid-area: rail-left; }
+.instrument-board-stage__rail--right { grid-area: rail-right; }
 .instrument-board-stage__boards {
+  grid-area: board;
   display: grid;
   /* An `auto` row for the top-rail, then everything else the primary/secondary
      board(s) already claimed via place-items. When there is no topRail this
@@ -75,12 +94,48 @@
      and printed straight over the status text. */
   container-type: size;
 }
-.instrument-board-stage__status { grid-column: 1 / -1; text-align: center; }
+/* The left column's own top band, above whatever the game put in its left
+   rail (Connect Four and Checkers already dock an "Opponent" panel there, so
+   turn-taking state now reads as one group with it; Chess docks its settings
+   rail there instead — the gear icon is pinned to that rail's FOOT, a
+   separate band from this one at its top). `--pg-hairline` is a token from
+   `gameChrome.scss`'s cabinet variables and falls back to `transparent` where
+   that cabinet isn't present (bare renders, tests), so the divider only draws
+   where the surrounding chrome actually defines the token — never a raw
+   colour of its own. */
+.instrument-board-stage__status {
+  grid-area: status;
+  padding-block-end: 0.6rem;
+  margin-block-end: 0.6rem;
+  border-block-end: 1px solid var(--pg-hairline, transparent);
+}
 .instrument-board-stage--dual-equal .instrument-board-stage__boards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .instrument-board-stage--primary-secondary .instrument-board-stage__boards { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 1rem; }
 .instrument-board-stage--single-wide { --rail-width: minmax(min(5rem, var(--pg-rail-w, 15.5rem)), 0.14fr); }
 
+/* Below this width the rails collapse to nothing (`--rail-width: 0fr` +
+   `overflow: hidden`) so their own content can no longer be read — a status
+   band living inside a hidden rail column would vanish with it, and the one
+   thing this status line exists to say (whose turn it is, why a move was
+   refused) is worse to lose than the vertical space it costs. So on a
+   narrow kiosk this single element (no duplicate node, same DOM) is instead
+   given its own full-width row back under the board — the exact shape this
+   change removed above the breakpoint. */
 @media (max-width: 850px) {
-  .instrument-board-stage { --rail-width: minmax(0, 0fr); gap: .5rem; padding: .5rem; }
+  .instrument-board-stage {
+    --rail-width: minmax(0, 0fr);
+    gap: .5rem;
+    padding: .5rem;
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "rail-left  board rail-right"
+      "status     status status";
+  }
   .instrument-board-stage__rail { overflow: hidden; }
+  .instrument-board-stage__status {
+    padding-block-end: 0;
+    margin-block-end: 0;
+    border-block-end: 0;
+    text-align: center;
+  }
 }

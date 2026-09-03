@@ -22,6 +22,17 @@ export default function InstrumentBoardStage({
   }
   return (
     <section className={`instrument-board-stage instrument-board-stage--${layout} ${className}`.trim()}>
+      {/* Above the left rail's own content (settings default to the RIGHT
+          rail, and the left rail is where Connect Four/Checkers already put
+          the "who you're playing" panel — turn-taking state reads naturally
+          stacked over it). A named grid area, not a nested child of the rail
+          aside: that is what lets the >850px layout give it its own thin band
+          in the LEFT column while `board` and the right rail span straight
+          through it untouched — see InstrumentBoardStage.scss. Below the rail
+          breakpoint the same media query falls back to a full-width row under
+          the board, because a status tucked inside a collapsed, hidden rail
+          is a status nobody can read. */}
+      {status && <div className="instrument-board-stage__status">{status}</div>}
       <aside className="instrument-board-stage__rail instrument-board-stage__rail--left">{leftRail}</aside>
       <main className="instrument-board-stage__boards">
         {/* Above `primary`, inside the SAME centred column it is — not a
@@ -33,7 +44,6 @@ export default function InstrumentBoardStage({
         {secondary && <div className="instrument-board-stage__secondary">{secondary}</div>}
       </main>
       <aside className="instrument-board-stage__rail instrument-board-stage__rail--right">{rightRail}</aside>
-      {status && <footer className="instrument-board-stage__status">{status}</footer>}
     </section>
   );
 }
