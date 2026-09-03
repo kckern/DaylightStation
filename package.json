@@ -116,6 +116,7 @@
     "frontend:dev": "npm run dev --prefix frontend",
     "test": "npm run check:parse && npm run test:isolated && npm run test:integrated && npm run test:backend && npm run test:integration",
     "check:parse": "node scripts/check-parse.mjs",
+    "check:scss": "node scripts/check-scss-build.mjs",
     "test:isolated": "node tests/_infrastructure/harnesses/isolated.harness.mjs",
     "test:integrated": "node tests/_infrastructure/harnesses/integrated.harness.mjs",
     "test:unit": "node tests/unit/harness.mjs",

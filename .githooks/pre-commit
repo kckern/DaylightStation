@@ -19,4 +19,5 @@ npm run audit:links
 node scripts/audit-esm-links.mjs --staged
 npm run check:parse
 node scripts/check-parse.mjs --staged
+npm run check:scss
 npm run test:composition-contracts

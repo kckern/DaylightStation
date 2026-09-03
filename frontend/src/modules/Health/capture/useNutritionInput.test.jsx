@@ -17,6 +17,26 @@ describe('useNutritionInput', () => {
       { type: 'barcode', content: '012345678905' }, 'POST');
   });
 
+  // Backward-compat pin (Task 4.2): every existing caller that doesn't know
+  // about buckets must keep sending the exact same body it always has — no
+  // stray `bucket: undefined` key sneaking into the request.
+  it('with no bucket passed, the request body is exactly what it was before Task 4.2', async () => {
+    apiMock.mockResolvedValue({ messages: [] });
+    const { result } = renderHook(() => useNutritionInput());
+    await act(() => result.current.submit('voice', 'data:audio/webm;base64,zzz'));
+    const [, body] = apiMock.mock.calls[0];
+    expect(Object.keys(body).sort()).toEqual(['content', 'type']);
+    expect(body).toEqual({ type: 'voice', content: 'data:audio/webm;base64,zzz' });
+  });
+
+  it('a bucket passed via options is included in the request body', async () => {
+    apiMock.mockResolvedValue({ messages: [] });
+    const { result } = renderHook(() => useNutritionInput());
+    await act(() => result.current.submit('voice', 'data:audio/webm;base64,zzz', { bucket: 'afternoon' }));
+    expect(apiMock).toHaveBeenCalledWith('api/v1/health/nutrition/input',
+      { type: 'voice', content: 'data:audio/webm;base64,zzz', bucket: 'afternoon' }, 'POST');
+  });
+
   it('surfaces unknownUpc results', async () => {
     apiMock.mockResolvedValue({ success: false, unknownUpc: true, upc: '000', messages: [] });
     const { result } = renderHook(() => useNutritionInput());

@@ -50,6 +50,13 @@ function dehydrateNutriListItem(log, item) {
     status: log.status,
     createdAt: log.createdAt,
     acceptedAt: log.acceptedAt,
+    kind: item.kind,
+    parentId: item.parentId,
+    photoRef: item.photoRef,
+    settled: item.settled,
+    settledBy: item.settledBy,
+    settledAt: item.settledAt,
+    microsSource: item.microsSource,
   };
 }
 
@@ -134,6 +141,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
       color: item.color || item.noom_color || 'yellow',
       grams: item.grams || item.amount || 0,
       logId: item.logId || item.log_uuid || item.logUuid,
+      kind: item.kind || 'item',
     };
   }
 
@@ -250,6 +258,13 @@ export class YamlNutriListDatastore extends INutriListDatastore {
         logId: item.logId || item.log_uuid || item.logUuid,
         log_uuid: item.log_uuid || item.logUuid,
         userId: item.userId,
+        kind: item.kind || 'item',
+        parentId: item.parentId ?? null,
+        photoRef: item.photoRef ?? null,
+        settled: item.settled,
+        settledBy: item.settledBy ?? null,
+        settledAt: item.settledAt ?? null,
+        microsSource: item.microsSource ?? null,
       };
     });
 

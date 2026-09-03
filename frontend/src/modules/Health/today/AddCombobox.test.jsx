@@ -45,20 +45,42 @@ describe('AddCombobox', () => {
     expect(putCall[1]).toMatchObject({ mealTime: 'afternoon' });
   });
 
-  it('free sentence with no pick submits to the NL pipeline', async () => {
+  it('free sentence with no pick submits to the NL pipeline and, on commit, just calls onDone (no review phase)', async () => {
+    // POST /nutrition/input now commits immediately — { committed: true, ... } —
+    // the rows are already logged (unsettled). There is no review card to show;
+    // the caller's onDone() triggers the day reload that surfaces them.
     apiMock.mockImplementation(async (path) => {
       if (path.includes('suggest')) return { items: [] };
-      if (path.includes('nutrition/input')) return {
-        messages: [{ text: '2 eggs — 140 kcal', choices: [[{ text: '✅ Accept', callback_data: 'cb-1' }]] }],
-      };
+      if (path.includes('nutrition/input')) return { committed: true, count: 1 };
       return {};
     });
-    r(<AddCombobox bucketId="morning" onDone={() => {}} onCancel={() => {}} />);
+    const onDone = vi.fn();
+    r(<AddCombobox bucketId="morning" onDone={onDone} onCancel={() => {}} />);
     const input = screen.getByRole('textbox');
     fireEvent.change(input, { target: { value: '2 eggs and toast' } });
     fireEvent.keyDown(input, { key: 'Enter' });
-    await waitFor(() => expect(screen.getByText(/140 kcal/)).toBeTruthy());
-    expect(screen.getByRole('button', { name: /accept/i })).toBeTruthy();
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    const inputCall = apiMock.mock.calls.find(([p]) => p.includes('nutrition/input'));
+    expect(inputCall[1]).toMatchObject({ type: 'text', content: '2 eggs and toast' });
+    // No review card of any kind — no Undo/Accept/Done affordance rendered here.
+    expect(screen.queryByRole('button', { name: /undo/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /accept/i })).toBeNull();
+  });
+
+  it('a failed sentence submit preserves the typed text and shows the error (input never lost)', async () => {
+    apiMock.mockImplementation(async (path) => {
+      if (path.includes('suggest')) return { items: [] };
+      if (path.includes('nutrition/input')) throw new Error('network down');
+      return {};
+    });
+    const onDone = vi.fn();
+    r(<AddCombobox bucketId="morning" onDone={onDone} onCancel={() => {}} />);
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: '2 eggs and toast' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(screen.getByText(/network down/)).toBeTruthy());
+    expect(input.value).toBe('2 eggs and toast');
+    expect(onDone).not.toHaveBeenCalled();
   });
 
   it('a slow older suggest response cannot overwrite a newer one (stale-response guard)', async () => {

@@ -6,9 +6,10 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
+import { formatFoodList, formatDateHeader, formatLoggedSummary } from '#domains/nutrition/entities/formatters.mjs';
 import { repairTruncatedJson } from '../lib/repairJson.mjs';
 import { createNutriLog } from '../nutriLogRecords.mjs';
+import { groupParsedItems } from '#domains/nutrition/services/groupParsedItems.mjs';
 
 /**
  * Log food from image use case
@@ -26,6 +27,7 @@ export class LogFoodFromImage {
   #reconciliationReader;
   #catalogService;
   #imageDownloader;
+  #photoStore;
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
@@ -44,6 +46,9 @@ export class LogFoodFromImage {
     this.#reconciliationReader = deps.reconciliationReader || null;
     this.#catalogService = deps.catalogService || null;
     this.#imageDownloader = deps.imageDownloader;
+    // Optional — persists the captured photo for later serving (Task 2.3).
+    // Persistence failures must NEVER break food logging; see #persistPhoto.
+    this.#photoStore = deps.photoStore || null;
   }
 
   /**
@@ -90,6 +95,7 @@ export class LogFoodFromImage {
    */
   async execute(input) {
     const { userId, conversationId, imageData, messageId: userMessageId, responseContext } = input;
+    const userCaption = imageData?.caption || null;
 
     this.#logger.info?.('logImage.start', {
       conversationId,
@@ -195,7 +201,7 @@ export class LogFoodFromImage {
         }
       }
 
-      const prompt = this.#buildDetectionPrompt(portionBoost);
+      const prompt = this.#buildDetectionPrompt(portionBoost, userCaption);
       const response = await this.#aiGateway.chatWithImage(prompt, imageForAI, { maxTokens: 4096 });
 
       this.#logger.info?.('logImage.aiResponse', {
@@ -205,7 +211,7 @@ export class LogFoodFromImage {
       });
 
       // 6. Parse response into food items
-      const foodItems = this.#parseFoodResponse(response);
+      const { items: foodItems, time: aiTime, mealTimeExplicit } = this.#parseFoodResponse(response);
 
       if (foodItems.length === 0) {
         this.#logger.warn?.('logImage.noFoodDetected', {
@@ -220,6 +226,13 @@ export class LogFoodFromImage {
         return { success: false, error: 'No food detected' };
       }
 
+      // 6b. Persist the captured photo and stamp its ref onto the produced
+      // entries. Never fatal — a persistence failure (disk error, undecodable
+      // buffer, missing photoStore) must not prevent the food from logging;
+      // see #persistPhoto.
+      const effectiveUserId = conversationId.split(':')[0] === 'cli' ? 'cli-user' : userId;
+      await this.#persistPhoto({ effectiveUserId, conversationId, photoSource, foodItems });
+
       // 7. Create NutriLog domain entity
       const timezone = this.#getTimezone();
       const now = new Date();
@@ -232,7 +245,7 @@ export class LogFoodFromImage {
       else if (localHour >= 20 || localHour < 5) mealTime = 'night';
 
       const nutriLog = createNutriLog({
-        userId: conversationId.split(':')[0] === 'cli' ? 'cli-user' : userId,
+        userId: effectiveUserId,
         conversationId,
         items: foodItems,
         meal: {
@@ -299,6 +312,13 @@ export class LogFoodFromImage {
         nutrilogUuid: nutriLog.id,
         messageId: photoMsgId,
         itemCount: foodItems.length,
+        // Task 4.1 — meal-time precedence seam (NutribotInputRouter#capture).
+        // The log itself always stores the CLOCK-derived meal.time above (unchanged,
+        // for backward compatibility); mealTime/mealTimeExplicit here just report what
+        // the AI parsed from the caption, so the router seam can override the stored
+        // log when the caption named a meal explicitly or a bucket param was supplied.
+        mealTime: aiTime,
+        mealTimeExplicit: mealTimeExplicit === true,
       };
     } catch (error) {
       this.#logger.error?.('logImage.error', {
@@ -357,7 +377,7 @@ export class LogFoodFromImage {
    * Build detection prompt
    * @private
    */
-  #buildDetectionPrompt(portionBoost = '') {
+  #buildDetectionPrompt(portionBoost = '', caption = null) {
     const conservativeNote = portionBoost
       ? 'Use the portion adjustment factor above to calibrate your gram estimates.'
       : 'Be conservative with estimates.';
@@ -373,9 +393,13 @@ export class LogFoodFromImage {
 5. Assign a noom_color: "green" (low cal density), "yellow" (moderate), or "orange" (high cal density).
 6. Select the best matching icon from this list: ${this.#foodIconsString}
 7. Use Title Case for all food names.
+8. If a food is a composite dish (e.g. a sandwich, a smoothie, a burger) that you broke down into ingredient items per instruction 2, give every one of those ingredient items the SAME "dish" string (the dish's name). Standalone foods that were not broken down OMIT "dish" entirely. If the photo shows two separate dishes or plates, use a DIFFERENT "dish" value for each plate's items.
+9. If a caption is provided with the photo, determine whether it explicitly ASSIGNS this food to a specific meal (e.g. "for lunch", "breakfast", "a midnight snack") — not merely mentions a time or a meal word in passing. Do NOT set the flag for an incidental time reference (e.g. "after my morning run" — describes when something else happened, not this food's meal) or a meal word used as scenery rather than an assignment (e.g. "grabbed it on the way to dinner with friends" — the food itself isn't being called dinner). If the caption does explicitly assign a meal, set "mealTimeExplicit" to true and set "time" to that meal: "morning", "afternoon", "evening", or "night". Otherwise (no caption, or it does not explicitly assign one), omit "mealTimeExplicit" (or set it to false) and omit "time".
 
 Respond in JSON format:
 {
+  "time": "afternoon",
+  "mealTimeExplicit": false,
   "items": [
     {
       "name": "Food Name In Title Case",
@@ -391,16 +415,21 @@ Respond in JSON format:
       "fiber": 2,
       "sugar": 3,
       "sodium": 200,
-      "cholesterol": 25
+      "cholesterol": 25,
+      "dish": "Burger"
     }
   ]
 }
+("dish" is OPTIONAL — omit it for a standalone item; include it only on items that are part of a named composite or a specific plate.)
+("time" and "mealTimeExplicit" are OPTIONAL — set mealTimeExplicit true and time to the named meal only when the caption explicitly names or implies one; omit both otherwise.)
 
 ${conservativeNote}${portionBoost}`,
       },
       {
         role: 'user',
-        content: 'What food do you see in this image? Provide nutrition estimates.',
+        content: caption
+          ? `What food do you see in this image? Provide nutrition estimates. The user captioned this photo: "${caption}"`
+          : 'What food do you see in this image? Provide nutrition estimates.',
       },
     ];
   }
@@ -410,6 +439,7 @@ ${conservativeNote}${portionBoost}`,
    * @private
    */
   #parseFoodResponse(response) {
+    const empty = { items: [], time: null, mealTimeExplicit: false };
     try {
       const jsonMatch = response.match(/\{[\s\S]*\}?/);
       if (!jsonMatch) {
@@ -417,7 +447,7 @@ ${conservativeNote}${portionBoost}`,
           responseLength: response?.length || 0,
           responsePreview: response?.substring(0, 300),
         });
-        return [];
+        return empty;
       }
       let data;
       try {
@@ -428,11 +458,11 @@ ${conservativeNote}${portionBoost}`,
           this.#logger.warn?.('logImage.parseRepaired', { itemCount: data.items?.length || 0 });
         }
       }
-      if (!data) return [];
+      if (!data) return empty;
       const rawItems = data.items || [];
       this.#logger.info?.('logImage.parse.success', { itemCount: rawItems.length });
 
-      return rawItems.map((item) => ({
+      const items = rawItems.map((item) => ({
         id: uuidv4(),
         label: item.name || item.label || 'Unknown',
         grams: item.grams || this.#estimateGrams(item),
@@ -448,14 +478,85 @@ ${conservativeNote}${portionBoost}`,
         sugar: item.sugar ?? 0,
         sodium: item.sodium ?? 0,
         cholesterol: item.cholesterol ?? 0,
+        ...(item.dish ? { dish: item.dish } : {}),
       }));
+
+      return {
+        items: groupParsedItems(items, { makeId: uuidv4 }),
+        time: data.time || null,
+        mealTimeExplicit: data.mealTimeExplicit === true,
+      };
     } catch (e) {
       this.#logger.warn?.('logImage.parse.error', {
         error: e.message,
         responsePreview: response?.substring(0, 300),
       });
-      return [];
+      return empty;
     }
+  }
+
+  /**
+   * Extract raw image bytes from whatever `photoSource` turned out to be
+   * (see execute() step 2). Returns null when there is nothing persistable —
+   * e.g. the download failed and the code fell back to a bare URL string.
+   * @private
+   */
+  #extractImageBuffer(photoSource) {
+    if (Buffer.isBuffer(photoSource)) return photoSource;
+    if (typeof photoSource === 'string' && photoSource.startsWith('data:')) {
+      const match = photoSource.match(/^data:[^;,]*;base64,(.*)$/s);
+      if (match) {
+        try {
+          return Buffer.from(match[1], 'base64');
+        } catch {
+          return null;
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Persist the captured photo (best-effort) and stamp its `photoRef` onto
+   * the entry that owns it: the GROUP row for a grouped (multi-item dish)
+   * parse, or the standalone ITEM row for a single-item parse. Group members
+   * (kind:'item' with a parentId) do NOT get their own photoRef — the group
+   * they belong to already carries it.
+   *
+   * Never throws — a failure here (no photoStore configured, no persistable
+   * buffer, a disk error, or jimp throwing inside PhotoStore) is logged as a
+   * warning and the food is still logged without a photoRef.
+   * @private
+   */
+  async #persistPhoto({ effectiveUserId, conversationId, photoSource, foodItems }) {
+    if (!this.#photoStore) return;
+
+    const buffer = this.#extractImageBuffer(photoSource);
+    if (!buffer) {
+      this.#logger.debug?.('logImage.photoStore.noBuffer', { conversationId });
+      return;
+    }
+
+    let photoRef;
+    try {
+      photoRef = await this.#photoStore.save(effectiveUserId, buffer);
+    } catch (e) {
+      this.#logger.warn?.('logImage.photoStore.save.failed', {
+        conversationId,
+        userId: effectiveUserId,
+        error: e.message,
+      });
+      return;
+    }
+
+    for (const entry of foodItems) {
+      const isStandaloneItem = entry.kind === 'item' && !entry.parentId;
+      if (entry.kind === 'group' || isStandaloneItem) {
+        entry.photoRef = photoRef;
+      }
+    }
+
+    this.#logger.info?.('logImage.photoStore.saved', { conversationId, userId: effectiveUserId, photoRef });
   }
 
   /**
@@ -500,7 +601,8 @@ ${conservativeNote}${portionBoost}`,
   #formatFoodCaption(items, date) {
     const dateHeader = date ? formatDateHeader(date, { timezone: this.#getTimezone(), now: new Date() }) : '';
     const foodList = formatFoodList(items);
-    return `${dateHeader}\n\n${foodList}`;
+    const loggedSummary = formatLoggedSummary(items);
+    return `${loggedSummary}\n${dateHeader}\n\n${foodList}`;
   }
 
   /**
