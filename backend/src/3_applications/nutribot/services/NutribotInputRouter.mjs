@@ -172,6 +172,16 @@ export class NutribotInputRouter extends BaseInputRouter {
       this.logger.info?.('nutribot.capture.mealMoved', {
         source, logId, requestedBucket: validBucket, resolvedMealTime,
       });
+    } else if (explicit && resolvedMealTime !== currentMealTime) {
+      // No requested-bucket conflict to report as "moved" (no bucket was sent,
+      // or the explicit meal happened to match it) — but the entry still
+      // deviated from the clock default because a meal was named explicitly.
+      // Distinct event name (not just a `moved` field) so a log query for
+      // "did the explicit-meal signal ever fire" doesn't have to also filter
+      // on a boolean that's false by construction here.
+      this.logger.info?.('nutribot.capture.mealTimeExplicitApplied', {
+        source, logId, requestedBucket: validBucket, resolvedMealTime, clockDefault: currentMealTime,
+      });
     }
 
     return { mealTime: resolvedMealTime, moved };

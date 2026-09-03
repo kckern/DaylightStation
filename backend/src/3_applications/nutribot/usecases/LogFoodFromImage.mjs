@@ -394,7 +394,7 @@ export class LogFoodFromImage {
 6. Select the best matching icon from this list: ${this.#foodIconsString}
 7. Use Title Case for all food names.
 8. If a food is a composite dish (e.g. a sandwich, a smoothie, a burger) that you broke down into ingredient items per instruction 2, give every one of those ingredient items the SAME "dish" string (the dish's name). Standalone foods that were not broken down OMIT "dish" entirely. If the photo shows two separate dishes or plates, use a DIFFERENT "dish" value for each plate's items.
-9. If a caption is provided with the photo, determine whether it explicitly names or clearly implies a specific meal (e.g. "for lunch", "breakfast", "a midnight snack"). If so, set "mealTimeExplicit" to true and set "time" to that meal: "morning", "afternoon", "evening", or "night". If there is no caption, or it does not name a meal, omit "mealTimeExplicit" (or set it to false) and omit "time".
+9. If a caption is provided with the photo, determine whether it explicitly ASSIGNS this food to a specific meal (e.g. "for lunch", "breakfast", "a midnight snack") — not merely mentions a time or a meal word in passing. Do NOT set the flag for an incidental time reference (e.g. "after my morning run" — describes when something else happened, not this food's meal) or a meal word used as scenery rather than an assignment (e.g. "grabbed it on the way to dinner with friends" — the food itself isn't being called dinner). If the caption does explicitly assign a meal, set "mealTimeExplicit" to true and set "time" to that meal: "morning", "afternoon", "evening", or "night". Otherwise (no caption, or it does not explicitly assign one), omit "mealTimeExplicit" (or set it to false) and omit "time".
 
 Respond in JSON format:
 {
