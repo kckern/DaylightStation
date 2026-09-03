@@ -3,7 +3,7 @@
 import { BaseInputRouter } from '#apps/common/input/BaseInputRouter.mjs';
 import { decodeCallback, CallbackActions } from '../lib/callback.mjs';
 import { buildCommittedChoices, withCommittedChoices } from '../lib/committedChoices.mjs';
-import { serializeFoodItem } from '../nutriLogRecords.mjs';
+import { stampUnsettled } from '../lib/unsettledStamp.mjs';
 import { NutribotScaleRefusal } from '../ports/NutribotScaleRefusal.mjs';
 import { MealTimes } from '#domains/nutrition/entities/schemas.mjs';
 
@@ -201,19 +201,10 @@ export class NutribotInputRouter extends BaseInputRouter {
     } catch {
       store = null;
     }
-    if (!store?.findByUuid || !store?.save) return [];
-
-    try {
-      const log = await store.findByUuid(logId, userId);
-      if (!log?.items?.length) return [];
-      const items = log.items.map(item => ({ ...serializeFoodItem(item), settled: false }));
-      await store.save(log.updateItems(items, new Date()));
-      this.logger.debug?.('nutribot.capture.unsettledStamped', { source, logId, itemCount: items.length });
-      return items;
-    } catch (e) {
-      this.logger.warn?.('nutribot.capture.stampFailed', { source, logId, error: e.message });
-      return [];
-    }
+    // Delegated, not duplicated: the scale commit path (`ObservationService`) has to
+    // produce an entry indistinguishable from a capture, so the stamp has exactly one
+    // implementation and both callers reach it. Log events are unchanged.
+    return await stampUnsettled({ foodLogStore: store, userId, logId, source, logger: this.logger });
   }
 
   /**
