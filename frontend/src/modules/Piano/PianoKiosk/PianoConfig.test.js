@@ -127,6 +127,12 @@ describe('resolvePianoConfig', () => {
   it('defaults shortlist to an empty voice list when unconfigured', () => {
     expect(resolvePianoConfig({}, 'default').shortlist.voices).toEqual([]);
   });
+  it('caps shortlist.voices at 16 so the Mine grid never exceeds the 24-tile ceiling', () => {
+    const voices = Array.from({ length: 20 }, (_, pc) => ({ pc, name: `V${pc}` }));
+    const config = resolvePianoConfig({ shortlist: { voices } }, 'default');
+    expect(config.shortlist.voices).toHaveLength(16);
+    expect(config.shortlist.voices[0]).toEqual({ pc: 0, name: 'V0' });
+  });
 
   it('resolves screensaver config (per-piano deviceId over shared defaults)', () => {
     const raw = {

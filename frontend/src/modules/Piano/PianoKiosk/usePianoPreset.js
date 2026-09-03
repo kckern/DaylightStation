@@ -9,12 +9,23 @@ const Ctx = createContext(null);
 const MAX_FAVORITES = 8;
 const logger = () => getLogger().child({ component: 'piano-preset' });
 
+// Only the fields the device understands survive a save. Anything else (a
+// picker's display label, a future UI hint) would be written to the user's
+// preset file and then compared by sameSoundPreset forever.
+const EFFECT_KEYS = ['type', 'level', 'on'];
+const effectOnly = (item) => {
+  if (!item) return null;
+  const out = {};
+  for (const key of EFFECT_KEYS) if (item[key] !== undefined) out[key] = item[key];
+  return out;
+};
+
 export function sanitizeSoundPreset(value) {
   if (!value || typeof value !== 'object' || value.voice?.pc == null) return null;
   return {
     voice: { ...value.voice, bank: value.voice.bank || 0 },
-    reverb: value.reverb ? { ...value.reverb } : null,
-    chorus: value.chorus ? { ...value.chorus } : null,
+    reverb: effectOnly(value.reverb),
+    chorus: effectOnly(value.chorus),
   };
 }
 

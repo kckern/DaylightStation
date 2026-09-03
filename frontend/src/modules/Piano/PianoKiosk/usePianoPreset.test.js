@@ -39,6 +39,12 @@ describe('sanitizeSoundPreset', () => {
       { voice: { bank: 0, pc: 4, name: 'Piano' }, reverb: { type: 2, level: 64, on: true }, chorus: null },
     )).toBe(true);
   });
+  it('sanitizeSoundPreset keeps only type/level/on under reverb and chorus', () => {
+    const sound = sanitizeSoundPreset({ voice: { pc: 0, name: 'Grand' }, reverb: { level: 64, on: true, type: 4, label: 'Medium' }, chorus: { level: 0, on: false, label: 'Off' } });
+    expect(sound.reverb).toEqual({ level: 64, on: true, type: 4 });
+    expect(sound.chorus).toEqual({ level: 0, on: false });
+    expect(sound.voice).toEqual({ pc: 0, bank: 0, name: 'Grand' });
+  });
 });
 
 describe('usePianoPreset', () => {
