@@ -40,6 +40,11 @@ import { ReadingSessionScreen } from './ReadingSessionScreen.jsx';
 const SUMMARY = {
   learnerId: 'user_5', displayName: 'User_5', enrolled: true, error: false,
   count: 1, target: 2, progressLabel: '1 of 2 stories', doneToday: false,
+  studyDay: '2026-09-02',
+  recent: [
+    { title: 'The Three Little Pigs', contentId: 'plex:620707', studyDay: '2026-09-02', at: '2026-09-03T01:26:42.729Z' },
+    { title: 'Corduroy', contentId: 'plex:1', studyDay: '2026-09-01', at: '2026-09-01T18:00:00Z' },
+  ],
   yesterday: [{ title: 'Corduroy', contentId: 'plex:1' }],
 };
 
@@ -74,7 +79,7 @@ describe('ReadingSessionScreen', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('open: the child sees themselves, the question, the count and yesterday', async () => {
+  it('open: the child sees themselves, the question, the count and recent history', async () => {
     render(<ReadingSessionScreen />);
     await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
 
@@ -82,7 +87,11 @@ describe('ReadingSessionScreen', () => {
     expect(screen.getByText('What do you want to read today?')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText('User_5')).toBeInTheDocument());
     expect(screen.getByTestId('reading-count')).toHaveTextContent('1 of 2 stories');
-    expect(screen.getByTestId('reading-yesterday')).toHaveTextContent('Corduroy');
+    expect(screen.getByTestId('reading-recent')).toHaveTextContent('Recent');
+    expect(screen.getByTestId('reading-recent')).toHaveTextContent('The Three Little Pigs');
+    expect(screen.getByTestId('reading-recent')).toHaveTextContent('Today');
+    expect(screen.getByTestId('reading-recent')).toHaveTextContent('Corduroy');
+    expect(screen.getByTestId('reading-recent')).toHaveTextContent('Yesterday');
   });
 
   it('picking: the cover, the title, a visible countdown and how to change your mind', async () => {
@@ -97,16 +106,18 @@ describe('ReadingSessionScreen', () => {
     expect(screen.getByRole('img', { name: 'Frog and Toad' })).toHaveAttribute('src', '/img/frog.jpg');
   });
 
-  // D3: a pick belongs to whoever made it. Transferring it would credit the
-  // wrong child, so a different card drops it and goes back to the prompt.
-  it('a different card during the countdown swaps the learner and DROPS the pick', async () => {
+  it('a different card during the countdown is refused and keeps the pick', async () => {
     render(<ReadingSessionScreen />);
     await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
     await deliver({ event: 'book-selected', learnerId: 'user_5', contentId: 'plex:620681' });
-    await deliver({ event: 'session-open', learnerId: 'user_3', location: 'livingroom' });
+    await deliver({
+      event: 'session-switch-refused', learnerId: 'user_3', currentLearnerId: 'user_5',
+      currentSessionId: 'rs-1', state: 'confirm', location: 'livingroom',
+    });
 
-    expect(screen.getByTestId('reading-session')).toHaveAttribute('data-view', 'open');
-    expect(screen.queryByTestId('reading-pick')).toBeNull();
+    expect(screen.getByTestId('reading-session')).toHaveAttribute('data-view', 'picking');
+    expect(screen.getByTestId('reading-pick')).toBeInTheDocument();
+    expect(screen.getByTestId('reading-notice')).toHaveTextContent('Finish this first');
   });
 
   // D5, assignment mode. The tap was claimed by the backend precisely so that
@@ -223,6 +234,25 @@ describe('ReadingSessionScreen', () => {
       expect(h.overlay.shown[0].props.play).toMatchObject({ contentId: 'plex:620681' });
       // Out of the Player's way for as long as the story is up.
       expect(screen.queryByTestId('reading-session')).toBeNull();
+    });
+
+    it('shows a refused learner card as a toast above Player without replacing it', async () => {
+      render(<ReadingSessionScreen confirmMs={100} />);
+      await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+      await deliver({ event: 'book-selected', learnerId: 'user_5', contentId: 'plex:620681' });
+      await act(async () => { await vi.advanceTimersByTimeAsync(150); });
+      const player = h.overlay.shown[0];
+
+      await deliver({
+        event: 'session-switch-refused', learnerId: 'user_3', currentLearnerId: 'user_5',
+        currentSessionId: 'rs-1', state: 'reading', location: 'livingroom',
+      });
+
+      expect(h.overlay.shown[0]).toBe(player);
+      expect(h.overlay.shown[1]).toMatchObject({
+        options: { mode: 'toast', timeout: 7000 },
+        props: { notice: { title: 'Finish this first' } },
+      });
     });
 
     it('records semantic Player completion once before cleanup, but not a genuine dismissal', async () => {

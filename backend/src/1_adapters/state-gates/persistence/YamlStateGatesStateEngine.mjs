@@ -49,8 +49,12 @@ function emptyState() {
 }
 
 export class YamlStateGatesStateEngine {
-  #resolveFilePath; #load; #save; #maxEntries; #maxAgeMs; #queues = new Map();
-  constructor({ filePath, resolveFilePath, load = strictLoad, save = saveYamlToPathAtomic, maxEntries = 5000, maxAgeMs = 30 * 24 * 60 * 60 * 1000 }) {
+  #resolveFilePath; #load; #save; #maxEntries; #maxAgeMs; #queues = new Map(); #cache = new Map();
+  // Retention defaults match composition's (5_composition/modules/stateGates.mjs).
+  // The journal shares current.yml with the projection, so its size is the cost
+  // of every commit — these are deliberately small, and a direct construction
+  // that omits them should not silently inherit the old 5000/30d.
+  constructor({ filePath, resolveFilePath, load = strictLoad, save = saveYamlToPathAtomic, maxEntries = 500, maxAgeMs = 7 * 24 * 60 * 60 * 1000 }) {
     if (!filePath && !resolveFilePath) throw new Error('YamlStateGatesStateEngine requires filePath or resolveFilePath');
     if (!Number.isInteger(maxEntries) || maxEntries < 1 || !Number.isFinite(maxAgeMs) || maxAgeMs < 1) {
       throw new Error('YamlStateGatesStateEngine retention must be positive');
@@ -74,11 +78,38 @@ export class YamlStateGatesStateEngine {
     return mapKeys(stored, camel);
   }
 
+  /**
+   * Parsed state for a household, from memory after the first read. Every
+   * operation used to re-read and re-parse the whole file — 2.6 MB with the
+   * journal inside it, ~140 ms parse plus a deep key-walk, 18-24 times per
+   * fitness reconcile cycle (the 2026-09-02 event-loop stall). Writers are
+   * already serialised per household (#serialized), so one copy is safe:
+   * mutate it under the queue, write through, and drop it if the write fails
+   * so the next read comes from disk — the interrupted-write contract that
+   * stateGatesPersistence.matrix.test.mjs pins. Read paths hand out
+   * structuredClone()s, never the copy itself.
+   */
+  #state(householdId) {
+    let state = this.#cache.get(householdId);
+    if (!state) {
+      state = this.#read(householdId);
+      this.#cache.set(householdId, state);
+    }
+    return state;
+  }
+
   #write(householdId, state) {
     const stored = mapKeys(plain(state), snake);
     stored.schema = 'daylight.state-gates-state/v1';
+    // Only the save is guarded. `state` is plain by construction here — commit()
+    // serialises caller input before it touches the cached copy — so widening
+    // this try to cover mapKeys/plain guards nothing reachable, and an
+    // unreachable guard no test can kill does not earn its place.
     try { this.#save(this.#resolveFilePath(householdId), stored, { noRefs: true, sortKeys: true }); }
-    catch (error) { throw persistenceError('State Gates state could not be saved', error); }
+    catch (error) {
+      this.#cache.delete(householdId); // disk is truth again; re-parse on the next read
+      throw persistenceError('State Gates state could not be saved', error);
+    }
   }
 
   async #serialized(householdId, operation) {
@@ -90,16 +121,25 @@ export class YamlStateGatesStateEngine {
 
   async loadProjection(householdId = 'default') {
     await (this.#queues.get(householdId) ?? Promise.resolve());
-    return this.#read(householdId).projection;
+    return structuredClone(this.#state(householdId).projection);
   }
 
   async commit(householdId, expectedRevision, projection, envelopes) {
     return this.#serialized(householdId, () => {
-      const state = this.#read(householdId);
+      const state = this.#state(householdId);
       const currentRevision = state.projection?.householdRevision ?? 0;
       if (currentRevision !== expectedRevision) return { committed: false, currentRevision };
-      state.projection = plain(projection);
-      state.journal.push(...plain(envelopes).map(envelope => ({ ...envelope, published: false })));
+      // Serialise caller input BEFORE touching the cached copy. plain() throws on
+      // a value it cannot walk (a self-referential one recurses to RangeError),
+      // and that throw must leave nothing mutated -- so the cache stays truthful
+      // and there is no half-applied commit to drop.
+      let nextProjection; let appended;
+      try {
+        nextProjection = plain(projection);
+        appended = plain(envelopes).map(envelope => ({ ...envelope, published: false }));
+      } catch (error) { throw persistenceError('State Gates state could not be saved', error); }
+      state.projection = nextProjection;
+      state.journal.push(...appended);
       this.#compact(state, Date.now());
       this.#write(householdId, state);
       return { committed: true, currentRevision: projection.householdRevision };
@@ -108,13 +148,13 @@ export class YamlStateGatesStateEngine {
 
   async pending(householdId = 'default') {
     await (this.#queues.get(householdId) ?? Promise.resolve());
-    return this.#read(householdId).journal.filter(item => !item.published).map(({ published, ...item }) => item);
+    return structuredClone(this.#state(householdId).journal.filter(item => !item.published).map(({ published, ...item }) => item));
   }
 
   async markPublished(householdId, ids) {
     if (!ids.length) return;
     await this.#serialized(householdId, () => {
-      const state = this.#read(householdId);
+      const state = this.#state(householdId);
       const wanted = new Set(ids);
       state.journal = state.journal.map(item => wanted.has(item.transitionId) ? { ...item, published: true } : item);
       const revisions = [...new Set(state.journal.map(item => item.householdRevision))].sort((a, b) => a - b);
@@ -150,7 +190,7 @@ export class YamlStateGatesStateEngine {
 
   async replayAfter(householdId, afterRevision, limit) {
     await (this.#queues.get(householdId) ?? Promise.resolve());
-    const state = this.#read(householdId);
+    const state = this.#state(householdId);
     const currentRevision = state.projection?.householdRevision ?? 0;
     if (afterRevision > currentRevision) {
       const error = new Error('Replay cursor is ahead of current state');
@@ -169,7 +209,7 @@ export class YamlStateGatesStateEngine {
     }
     const revisions = [...new Set(state.journal.filter(item => item.householdRevision > afterRevision).map(item => item.householdRevision))].sort((a, b) => a - b);
     const included = revisions.slice(0, limit);
-    const events = state.journal.filter(item => included.includes(item.householdRevision)).map(({ published, ...item }) => item);
+    const events = structuredClone(state.journal.filter(item => included.includes(item.householdRevision)).map(({ published, ...item }) => item));
     const hasMore = revisions.length > included.length;
     const nextRevision = hasMore ? (included.at(-1) ?? afterRevision) : currentRevision;
     return {
@@ -185,7 +225,7 @@ export class YamlStateGatesStateEngine {
 
   async compactThrough(householdId, revision) {
     await this.#serialized(householdId, () => {
-      const state = this.#read(householdId);
+      const state = this.#state(householdId);
       const revisions = [...new Set(state.journal.map(item => item.householdRevision))].sort((a, b) => a - b);
       for (const value of revisions) {
         if (value > revision) break;
@@ -200,7 +240,7 @@ export class YamlStateGatesStateEngine {
 
   async oldestAvailableRevision(householdId = 'default') {
     await (this.#queues.get(householdId) ?? Promise.resolve());
-    return (this.#read(householdId).compactedThrough ?? 0) + 1;
+    return (this.#state(householdId).compactedThrough ?? 0) + 1;
   }
 }
 

@@ -109,12 +109,19 @@ export class YamlSchoolDatastore {
   }
 
   /**
+   * One walk of a v2 course, every bank parsed once. Feeds both the id index
+   * (#v2BankEntries) and the bulk read (readAllBankRaws) — which used to walk
+   * and re-parse the whole course once PER BANK ID through #bankFile: O(N^2)
+   * synchronous YAML that blocked the event loop ~8 s on every 4-minute
+   * prewarm, independent of anything else running.
+   * See docs/_wip/bugs/2026-09-02-fitness-rpm-false-zeros-pause-video-during-cycle-challenge.md
+   *
    * Every question-bank YAML inside a v2 course is a typed bank artifact.
    * This is intentionally semantic discovery: compact `<lessonId>.yml` files
    * and rich lesson directories both work, while the bank's stable `id` stays
    * independent of its author-facing location.
    */
-  #v2BankEntries(subject, work) {
+  #v2BankRaws(subject, work) {
     if (!this.#courseV2(subject, work)) return [];
     const compactRoot = this.#workDir(subject, work);
     const entries = new Map();
@@ -124,9 +131,13 @@ export class YamlSchoolDatastore {
       const raw = loadYamlSafe(base);
       if (!raw || !['school.question-bank/v1', 'school.question-bank/v2'].includes(raw.schema)
         || typeof raw.id !== 'string' || !raw.id) continue;
-      entries.set(raw.id, { id: raw.id, file: base });
+      entries.set(raw.id, { id: raw.id, file: base, raw });
     }
     return [...entries.values()].sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  #v2BankEntries(subject, work) {
+    return this.#v2BankRaws(subject, work).map(({ id, file }) => ({ id, file }));
   }
 
   #works(subject) {
@@ -230,31 +241,45 @@ export class YamlSchoolDatastore {
   }
 
   /**
-   * Read every bank's raw YAML ASYNCHRONOUSLY, in bounded-concurrency batches,
-   * so the 4600-file scan runs off the main thread (libuv threadpool) instead
-   * of blocking the event loop for ~8-10s. Returns [{ id, raw }] (raw null on a
-   * parse/read miss). Parsing is sync per file but tiny; batching keeps the
-   * per-tick CPU burst small too.
+   * Read every bank's raw YAML: legacy `quizzes/` files asynchronously in
+   * bounded batches (libuv threadpool), v2 courses via ONE synchronous walk per
+   * course (#v2BankRaws) with a real macrotask yield between works — an
+   * `await Promise.all` over already-synchronous work never leaves the
+   * microtask queue, which is why the previous "async" version still blocked
+   * the loop for ~8 s. Returns [{ id, raw }] sorted by id (raw null on a miss).
    */
   async readAllBankRaws({ batch = 200 } = {}) {
-    const ids = this.listBankIds();
     const out = [];
-    for (let i = 0; i < ids.length; i += batch) {
-      const slice = ids.slice(i, i + batch);
-      // eslint-disable-next-line no-await-in-loop
-      const chunk = await Promise.all(slice.map(async (id) => {
-        try {
-          const file = this.#bankFile(id);
-          if (!file) return { id, raw: null };
-          const text = await readTextFromPathAsync(`${file}.yml`);
-          return { id, raw: yaml.load(text) };
-        } catch {
-          return { id, raw: null };
+    for (const subject of SUBJECT_IDS) {
+      for (const work of this.#works(subject)) {
+        const quizzes = this.#quizzesDir(subject, work);
+        // Both id sources are gated on BANK_ID_RE, exactly as #bankFile gates the
+        // single read. The two paths must stay in sync: an id the bulk read
+        // accepts but #bankFile rejects is summarised into the /banks catalog
+        // and then returns null when opened.
+        const legacyIds = listYamlFiles(quizzes, { recursive: true })
+          .map((rest) => `${subject}/${work}/${rest}`)
+          .filter((id) => BANK_ID_RE.test(id));
+        for (let i = 0; i < legacyIds.length; i += batch) {
+          // eslint-disable-next-line no-await-in-loop
+          const chunk = await Promise.all(legacyIds.slice(i, i + batch).map(async (id) => {
+            try {
+              const text = await readTextFromPathAsync(`${path.join(quizzes, ...id.split('/').slice(2))}.yml`);
+              return { id, raw: yaml.load(text) };
+            } catch {
+              return { id, raw: null };
+            }
+          }));
+          out.push(...chunk);
         }
-      }));
-      out.push(...chunk);
+        for (const { id, raw } of this.#v2BankRaws(subject, work)) {
+          if (BANK_ID_RE.test(id)) out.push({ id, raw });
+        }
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve) => setImmediate(resolve));
+      }
     }
-    return out;
+    return out.sort((a, b) => a.id.localeCompare(b.id));
   }
 
   appendAttempt(userId, attempt) {

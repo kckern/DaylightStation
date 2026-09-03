@@ -69,6 +69,16 @@ export function buildChallengeToast(event, challenge, { resolveUserName, resolve
     if (c.type === 'cycle') {
       return { icon: '🚴', title: 'Cycling challenge started', variant: 'info' };
     }
+    if (c.type === 'step') {
+      const metric = c.metric === 'stomps' ? 'stomps' : 'steps';
+      const seconds = Number.isFinite(c.totalSeconds) ? Math.round(c.totalSeconds) : null;
+      return {
+        icon: c.metric === 'stomps' ? '💥' : '👟',
+        title: `${requiredCount ?? ''} ${metric} challenge`.trim(),
+        subtitle: seconds ? `${seconds} seconds` : undefined,
+        variant: 'info'
+      };
+    }
     const subtitle = (requiredCount != null && zoneLabel)
       ? `Get ${requiredCount} ${peopleWord(requiredCount)} to ${zoneLabel}`
       : undefined;
@@ -93,6 +103,23 @@ export function buildChallengeToast(event, challenge, { resolveUserName, resolve
     const cycleContributors = buildContributors(c, resolveUserName);
     if (cycleContributors.length) cycleToast.contributors = cycleContributors;
     return cycleToast;
+  }
+
+  if (c.type === 'step') {
+    const contributors = buildContributors(c, resolveUserName);
+    const names = joinNames(contributors.map((x) => x.name));
+    const metric = c.metric === 'stomps' ? 'stomps' : 'steps';
+    const count = Number.isFinite(actualCount) ? actualCount : requiredCount;
+    const took = formatElapsed(elapsedSecondsFor(c));
+    const toast = {
+      icon: c.metric === 'stomps' ? '💥' : '👟',
+      title: names ? `${names} completed ${count} ${metric}` : `${count} ${metric} complete`,
+      subtitle: took ? `in ${took}` : undefined,
+      variant: 'success',
+      achievement: true
+    };
+    if (contributors.length) toast.contributors = contributors;
+    return toast;
   }
 
   const contributors = buildContributors(c, resolveUserName);

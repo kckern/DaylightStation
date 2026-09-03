@@ -67,33 +67,51 @@
   color: #ffd479;
 }
 
-.reading-session__yesterday {
+.reading-session__recent {
   margin-top: 1vh;
-  font-size: 3vh;
-  color: rgba(246, 242, 232, 0.72);
+  width: min(72vw, 110vh);
+  padding: 1.5vh 2vw;
+  border-radius: 1.5vh;
+  background: rgba(246, 242, 232, 0.07);
+  color: rgba(246, 242, 232, 0.82);
+  text-align: left;
 }
 
-.reading-session__yesterday-label {
+.reading-session__recent-label {
   display: block;
+  margin: 0 0 1vh;
   font-size: 2.4vh;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  opacity: 0.7;
+  color: #ffd479;
 }
 
-.reading-session__yesterday-list {
+.reading-session__recent-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8vh 2.4vw;
   list-style: none;
   padding: 0;
 
-  li + li::before {
-    content: '·';
-    margin: 0 0.6em;
-    opacity: 0.5;
-  }
-
   li {
-    display: inline;
+    display: flex;
+    justify-content: space-between;
+    gap: 1vw;
+    min-width: 0;
+    font-size: 2.8vh;
   }
+}
+
+.reading-session__recent-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reading-session__recent-day {
+  flex: none;
+  font-size: 2.2vh;
+  color: rgba(246, 242, 232, 0.52);
 }
 
 /* ── The pick: cover, title, and the change-your-mind clock ─────────────── */

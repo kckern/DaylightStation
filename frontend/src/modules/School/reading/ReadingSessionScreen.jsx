@@ -51,19 +51,32 @@ function cueTone(tone) {
   playScanCeremonyTone(tone);
 }
 
-function Yesterday({ reads }) {
+function recentDayLabel(studyDay, currentStudyDay) {
+  if (!studyDay) return '';
+  if (studyDay === currentStudyDay) return 'Today';
+  const current = Date.parse(`${currentStudyDay}T00:00:00Z`);
+  const day = Date.parse(`${studyDay}T00:00:00Z`);
+  if (Number.isFinite(current) && current - day === 86_400_000) return 'Yesterday';
+  if (!Number.isFinite(day)) return studyDay;
+  return new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(new Date(day));
+}
+
+function Recent({ reads, studyDay }) {
   if (!Array.isArray(reads) || reads.length === 0) return null;
   const named = reads.filter((r) => r?.title);
   if (named.length === 0) return null;
   return (
-    <div className="reading-session__yesterday" data-testid="reading-yesterday">
-      <span className="reading-session__yesterday-label">Yesterday you read</span>
-      <ul className="reading-session__yesterday-list">
+    <section className="reading-session__recent" data-testid="reading-recent" aria-label="Recent stories">
+      <h3 className="reading-session__recent-label">Recent</h3>
+      <ul className="reading-session__recent-list">
         {named.map((read, index) => (
-          <li key={`${read.contentId ?? 'book'}-${index}`}>{read.title}</li>
+          <li key={`${read.pickId ?? read.contentId ?? 'book'}-${read.at ?? index}`}>
+            <span className="reading-session__recent-title">{read.title}</span>
+            <span className="reading-session__recent-day">{recentDayLabel(read.studyDay, studyDay)}</span>
+          </li>
         ))}
       </ul>
-    </div>
+    </section>
   );
 }
 
@@ -84,7 +97,7 @@ function Notice({ notice }) {
  * @param {number} [props.confirmMs] - the change-your-mind window.
  */
 export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFAULT_CONFIRM_MS } = {}) {
-  const { showOverlay, dismissOverlay } = useScreenOverlay();
+  const { showOverlay, dismissOverlay, hasOverlay } = useScreenOverlay();
   // The hook needs `onPlay`; `onPlay` needs the hook's callbacks. A ref breaks
   // the cycle without making either of them re-created on every render.
   const handlers = useRef({});
@@ -149,7 +162,10 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
     }, { chrome: 'media', priority: 'high' });
   }, [attachMedia, detachMedia, dismissOverlay, showOverlay]);
 
-  const session = useReadingSession({ location, confirmMs, onPlay, onCue: cueTone });
+  const session = useReadingSession({
+    location, confirmMs, onPlay, onCue: cueTone,
+    presentationObscured: hasOverlay,
+  });
 
   // Rebound every render so the media listeners and Player completion callback
   // always call the freshest closures.
@@ -180,6 +196,15 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
     }
     wasIdle.current = session.view === 'idle';
   }, [session.view, dismissOverlay]);
+
+  // The reading widget deliberately renders nothing while Player owns the
+  // screen, so an inline refusal would be invisible in the exact mid-story
+  // case it exists for. Toast mode stacks above Player without replacing or
+  // pausing it; `hasOverlay` intentionally excludes toasts.
+  useEffect(() => {
+    if (session.view !== 'playing' || !session.notice) return;
+    showOverlay(Notice, { notice: session.notice }, { mode: 'toast', timeout: 7000 });
+  }, [session.notice, session.view, showOverlay]);
 
   const { view, learner, summary, pick, notice, confirmRemainingMs, confirmTotalMs } = session;
 
@@ -243,7 +268,7 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
           {summary?.progressLabel
             ? <p className="reading-session__count" data-testid="reading-count">{summary.progressLabel}</p>
             : null}
-          <Yesterday reads={summary?.yesterday} />
+          <Recent reads={summary?.recent} studyDay={summary?.studyDay} />
         </div>
       ) : null}
 
@@ -254,6 +279,15 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
           </div>
           <h1 className="reading-session__ask">Great reading{name ? `, ${name}` : ''}!</h1>
           {summary?.progressLabel ? <p className="reading-session__count">{summary.progressLabel}</p> : null}
+        </div>
+      ) : null}
+
+      {view === 'returning' ? (
+        <div className="reading-session__returning" data-testid="reading-returning">
+          <div className="reading-session__who">
+            <ProfileAvatar id={learner?.id} name={name || learner?.id} size={256} />
+          </div>
+          <h1 className="reading-session__ask">Finishing up…</h1>
         </div>
       ) : null}
     </div>

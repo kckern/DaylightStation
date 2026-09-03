@@ -54,7 +54,9 @@ export const ChallengeOverlay = ({ overlay }) => {
 		statusLabel,
 		timeLabel,
 		countdownPaused,
-		timeLeftSeconds
+		timeLeftSeconds,
+		countDisplay,
+		metric
 	} = overlay;
 
 	const classNames = ['challenge-overlay'];
@@ -76,8 +78,9 @@ export const ChallengeOverlay = ({ overlay }) => {
 	const normalizedTarget = Number.isFinite(requiredCount) ? Math.max(0, requiredCount) : 0;
 	const normalizedActual = Number.isFinite(actualCount) ? Math.max(0, actualCount) : 0;
 	const clampedActual = normalizedTarget > 0 ? Math.min(normalizedTarget, normalizedActual) : normalizedActual;
-	const showCountBlocks = variant !== 'upcoming' && normalizedTarget > 0;
-	const countAriaLabel = showCountBlocks
+	const showCount = variant !== 'upcoming' && normalizedTarget > 0;
+	const showCountBlocks = showCount && countDisplay !== 'numeric';
+	const countAriaLabel = showCount
 		? `Challenge completion ${clampedActual} of ${normalizedTarget}`
 		: undefined;
 	const timeAriaLabel = hideTime
@@ -122,6 +125,12 @@ export const ChallengeOverlay = ({ overlay }) => {
 							ariaLabel={countAriaLabel}
 						/>
 					)}
+					{showCount && countDisplay === 'numeric' ? (
+						<div className="challenge-overlay__numeric-count" aria-label={countAriaLabel}>
+							<strong>{Math.round(normalizedActual)}</strong>
+							<span>/ {Math.round(normalizedTarget)} {metric === 'stomps' ? 'stomps' : 'steps'}</span>
+						</div>
+					) : null}
 				</div>
 				<div className="challenge-overlay__time-block" aria-label={timeAriaLabel} role="timer">
 					{isSuccess ? (
@@ -154,7 +163,9 @@ ChallengeOverlay.propTypes = {
 		phase: PropTypes.string,
 		satisfied: PropTypes.bool,
 		done: PropTypes.bool,
-		timeLeftSeconds: PropTypes.number
+		timeLeftSeconds: PropTypes.number,
+		countDisplay: PropTypes.oneOf(['blocks', 'numeric']),
+		metric: PropTypes.string
 	})
 };
 

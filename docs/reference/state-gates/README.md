@@ -86,7 +86,7 @@ State Gates owns:
 - deterministic four-state evaluation;
 - explicit progress projections and validity boundaries;
 - binary entitlement decisions with `fail_open` or `fail_closed` posture;
-- durable current projection and bounded transition journal;
+- durable current projection and a bounded transition journal (default 500 entries / 7 days — the journal shares `current.yml` with the projection, so its size is the cost of every commit);
 - current-state queries, replay, and administrative diagnostics; and
 - startup reconciliation, live delivery recovery, and time-bound reevaluation.
 

@@ -24,7 +24,21 @@ export function createReadingRouter({ readingService } = {}) {
     const location = trimmed(req.body?.location);
     const sessionId = trimmed(req.body?.sessionId);
     if (!location || !sessionId) throw badRequest('location and sessionId are required');
-    return res.json(readingService.acknowledge(location, sessionId));
+    const presentationId = trimmed(req.body?.presentationId);
+    const learnerId = trimmed(req.body?.learnerId);
+    const revision = Number(req.body?.revision);
+    const serverEpoch = trimmed(req.body?.serverEpoch);
+    // Legacy session-only ACKs stay valid for already-committed snapshots. A
+    // presentation-aware client must prove the entire candidate version.
+    const proof = presentationId
+      ? { sessionId, presentationId, learnerId, revision, serverEpoch }
+      : sessionId;
+    if (presentationId && (!learnerId || !Number.isFinite(revision) || !serverEpoch)) {
+      throw badRequest('presentationId, learnerId, revision, and serverEpoch are required together');
+    }
+    const result = readingService.acknowledge(location, proof);
+    if (!result.ok && presentationId) return res.status(409).json({ ok: false, reason: 'stale-presentation' });
+    return res.json(result);
   }));
 
   router.get('/events', asyncHandler(async (req, res) => {
@@ -72,7 +86,7 @@ export function createReadingRouter({ readingService } = {}) {
     const result = await readingService.read(req.body || {});
     if (result.kind === 'session_expired') return res.status(409).json({ recorded: false, reason: 'session-or-pick-expired' });
     if (result.kind === 'pick_mismatch') return res.status(409).json({ recorded: false, reason: 'pick-mismatch' });
-    return res.json({ recorded: true, read: result.read });
+    return res.json({ recorded: true, read: result.read, presentation: result.presentation ?? null });
   }));
 
   router.get('/summary', asyncHandler(async (req, res) => {

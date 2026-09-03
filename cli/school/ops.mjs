@@ -27,7 +27,7 @@ Read-only:
 Writes to the household reading log directly, no server needed (dry-run by
 default, add --apply):
   school ops read <learner> [--title TEXT] [--content ID] [--location ROOM]
-                            [--pick ID] [--apply]
+                            [--pick ID] [--day YYYY-MM-DD] [--at ISO] [--apply]
 
 Dry-run/preview by default; add --apply to write:
   school ops assign <learner> --file plan.yml --teacher ID --pin-env NAME [--apply]
@@ -67,7 +67,7 @@ const VALUE_OPTIONS = new Set([
   '--output', '--name', '--idempotency-key', '--percent', '--correct', '--total',
   '--missed', '--verdicts', '--base-revision', '--base-seq', '--adjustment',
   '--from-day', '--to-day', '--from', '--to', '--day',
-  '--subject', '--origin', '--path', '--title', '--content', '--location', '--pick',
+  '--subject', '--origin', '--path', '--title', '--content', '--location', '--pick', '--at',
 ]);
 
 export function option(argv, name, fallback = null) {
@@ -320,6 +320,22 @@ export async function runOps({
       throw new Error(`unknown learner '${learnerId}' — school.yml students: ${roster.join(', ')}`);
     }
 
+    const requestedDay = option(rest, '--day');
+    if (requestedDay) {
+      const parsedDay = new Date(`${requestedDay}T00:00:00.000Z`);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDay)
+        || Number.isNaN(parsedDay.getTime())
+        || parsedDay.toISOString().slice(0, 10) !== requestedDay) {
+        throw new Error('--day must be a real calendar date in YYYY-MM-DD form');
+      }
+    }
+    const requestedAt = option(rest, '--at');
+    const parsedAt = requestedAt ? new Date(requestedAt) : null;
+    const isoInstant = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
+    if (requestedAt && (!isoInstant.test(requestedAt) || Number.isNaN(parsedAt.getTime()))) {
+      throw new Error('--at must be a valid ISO instant');
+    }
+
     const silent = { info() {}, warn() {}, error() {}, debug() {} };
     const store = new YamlReadingLogStore({ configService: config, logger: console });
     // The launcher is built for its `studyDay()` — the ONE place the
@@ -340,6 +356,7 @@ export async function runOps({
     await new RecordStoryRead({
       readingLog: { append: async (row) => { captured.push(row); return apply ? store.append(row) : row; } },
       studyDay: () => launcher.studyDay(),
+      clock: requestedAt ? () => new Date(parsedAt.getTime()) : () => new Date(),
       logger: silent,
     }).execute({
       learnerId,
@@ -347,6 +364,7 @@ export async function runOps({
       contentId: option(rest, '--content'),
       location: option(rest, '--location'),
       pickId: option(rest, '--pick'),
+      studyDay: requestedDay,
     });
     if (!apply) {
       print({ schema: 'school.ops-dry-run/v1', dryRun: true, write: { kind: 'story-read', row: captured[0] } }, stdout);

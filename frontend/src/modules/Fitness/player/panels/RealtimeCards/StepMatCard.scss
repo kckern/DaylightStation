@@ -1,0 +1,26 @@
+.step-mat-card {
+  border-color: rgba(56, 189, 248, .65);
+  background: linear-gradient(135deg, rgba(14, 116, 144, .26), rgba(15, 23, 42, .9));
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.step-mat-card__rate {
+  display: flex;
+  align-items: baseline;
+  gap: .3rem;
+  color: #e0f2fe;
+}
+
+.step-mat-card__rate strong { font-size: 1.35rem; }
+.step-mat-card__rate span { margin-left: auto; color: #7dd3fc; font-size: .72rem; text-transform: uppercase; }
+
+.step-mat-card__totals {
+  display: flex;
+  gap: .8rem;
+  color: #bae6fd;
+  font-size: .82rem;
+}
+
+.step-mat-card.inactive { opacity: .72; }

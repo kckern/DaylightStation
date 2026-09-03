@@ -170,6 +170,8 @@ export const useChallengeOverlays = (governanceState, zones) => {
 		statusLabel: '',
 		timeLabel: '—',
 		countdownPaused: false,
+		countDisplay: 'blocks',
+		metric: null,
 		ringColor: null,
 		satisfied: false,
 		done: false,
@@ -233,7 +235,10 @@ export const useChallengeOverlays = (governanceState, zones) => {
 		const missingUsers = Array.isArray(challenge.missingUsers) ? challenge.missingUsers.filter(Boolean) : [];
 		const metUsers = Array.isArray(challenge.metUsers) ? challenge.metUsers.filter(Boolean) : [];
 		const zoneLabel = challenge.zoneLabel || challenge.zone || 'Zone';
-		const zoneInfo = resolveZoneDetails(challenge.zone || challenge.zoneLabel);
+		const isStepChallenge = challenge.type === 'step';
+		const zoneInfo = isStepChallenge
+			? { id: 'step', color: '#38bdf8' }
+			: resolveZoneDetails(challenge.zone || challenge.zoneLabel);
 		const selectionLabel = challenge.selectionLabel || '';
 		let progress = totalSeconds
 			? Math.max(
@@ -322,6 +327,8 @@ export const useChallengeOverlays = (governanceState, zones) => {
 			statusLabel,
 			timeLabel,
 			countdownPaused,
+			countDisplay: isStepChallenge ? 'numeric' : 'blocks',
+			metric: challenge.metric || null,
 			// Issue 1: keep the target zone color on success — a green ring reads as
 			// the "active" HR zone. Success is signalled by a green check badge
 			// (rendered in the center) while the ring stays the zone hue.
@@ -337,4 +344,3 @@ export const useChallengeOverlays = (governanceState, zones) => {
 	return { current, upcoming };
 	}, [challengeMachine, governanceState, zoneColorLookup]);
 };
-

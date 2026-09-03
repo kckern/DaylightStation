@@ -8,11 +8,11 @@
  * restart, and a session recovered from disk would credit a book to a child
  * who left the room an hour ago.
  *
- * LAST TAP WINS. A second card at the same reader replaces the first outright
- * rather than being refused, because the session IS the screen and the screen
- * belongs to whoever is in front of it. Attribution for a story is settled at
- * PICK time and travels with the pick, so a sibling wandering past mid-story
- * swaps the context without stealing the read.
+ * THE LAUNCH CARD IS THE ONLY HAND-OFF POINT. A second learner is first
+ * presented on the screen, then becomes authoritative only after the screen
+ * proves that learner's face was actually painted with no fullscreen overlay
+ * above it. A card during confirmation, playback, celebration, or return is a
+ * refusal and cannot rotate the session id underneath a finishing story.
  *
  * STATE IS STORED; MODE IS NOT. `state` (prompt / confirm / reading) is a fact
  * about this session that nothing else can derive, so it lives here. The
@@ -42,6 +42,8 @@
 /** Where a fresh session starts: nothing picked, nothing playing. */
 export const PROMPT = 'prompt';
 export const STARTING = 'starting';
+export const PRESENTING = 'presenting';
+export const RETURNING = 'returning';
 
 /** ~2 minutes of quiet. Long enough to fetch a book from the shelf. */
 export const DEFAULT_IDLE_TIMEOUT_MS = 120_000;
@@ -54,7 +56,7 @@ export const DEFAULT_SWEEP_INTERVAL_MS = 15_000;
  * deliberately absent: a 45-minute audiobook is not an idle room, and the
  * whole point of the timeout is to catch the room that is genuinely empty.
  */
-const IDLE_STATES = new Set(['prompt', 'confirm']);
+const IDLE_STATES = new Set([STARTING, PRESENTING, PROMPT, 'confirm', RETURNING]);
 
 /**
  * How long a session may sit in `reading` before the sweep calls it stuck.
@@ -189,9 +191,8 @@ export class ReadingSessionService {
         : session.progress.paused ? age > PAUSED_PLAYBACK_TIMEOUT_MS
           : age > PLAYBACK_STALL_MS;
       if (!expired) continue;
-      this.update(session.location, {
-        state: PROMPT, pick: null, playing: null, progress: null,
-        recovery: { reason: terminal ? 'terminal-without-read' : session.progress.paused ? 'paused-too-long' : 'progress-stalled', at: this.#clock().toISOString() },
+      this.beginReturn(session.location, {
+        reason: terminal ? 'terminal-without-read' : session.progress.paused ? 'paused-too-long' : 'progress-stalled',
       });
       this.#log('warn', 'school.reading.playback-recovered', { location: session.location, learnerId: session.learnerId, terminal, age });
     }
@@ -263,34 +264,107 @@ export class ReadingSessionService {
     });
   }
 
-  acknowledge(location, sessionId) {
+  /** Whether the face currently on the launch card is a safe hand-off point. */
+  isSwitchable(location) {
     const session = this.#sessions.get(location) ?? null;
-    if (!session || session.sessionId !== sessionId) return null;
-    const updated = this.update(location, { acknowledgedAt: this.#clock().toISOString() });
-    this.#observe('acknowledged', updated, { sessionId });
-    const waiter = this.#ackWaiters.get(sessionId);
-    if (waiter) waiter(true);
-    return updated;
+    return Boolean(session
+      && session.state === PROMPT
+      && session.presentedAt
+      && !session.pendingPresentation
+      && !session.pick
+      && !session.playing);
+  }
+
+  /**
+   * Commit only the exact face presentation the screen says it rendered.
+   * A string remains accepted for legacy committed snapshots; new clients
+   * send the full compare-and-swap identity.
+   */
+  acknowledge(location, proof) {
+    const session = this.#sessions.get(location) ?? null;
+    if (!session) return null;
+    const legacySessionId = typeof proof === 'string' ? proof : null;
+    const expected = session.pendingPresentation ?? {
+      presentationId: session.presentationId,
+      sessionId: session.sessionId,
+      learnerId: session.learnerId,
+      revision: session.revision,
+      serverEpoch: session.serverEpoch,
+      reason: 'replay',
+    };
+    const exact = legacySessionId
+      ? expected.sessionId === legacySessionId
+      : proof
+        && expected.presentationId === proof.presentationId
+        && expected.sessionId === proof.sessionId
+        && expected.learnerId === proof.learnerId
+        && expected.revision === proof.revision
+        && expected.serverEpoch === proof.serverEpoch;
+    if (!exact) return null;
+
+    // Re-ACKing a committed prompt after reconnect is intentionally idempotent.
+    if (!session.pendingPresentation && session.state === PROMPT && session.presentedAt) {
+      this.#resolveAcknowledgement(expected);
+      return session;
+    }
+    if (!session.pendingPresentation || ![PRESENTING, RETURNING].includes(session.state)) return null;
+
+    const at = this.#clock();
+    const presentation = session.pendingPresentation;
+    const committed = Object.freeze({
+      ...session,
+      learnerId: presentation.learnerId,
+      target: presentation.target ?? session.target ?? null,
+      sessionId: presentation.sessionId,
+      state: PROMPT,
+      revision: presentation.revision,
+      serverEpoch: presentation.serverEpoch,
+      presentationId: presentation.presentationId,
+      presentedAt: at.toISOString(),
+      acknowledgedAt: at.toISOString(),
+      pendingPresentation: null,
+      openedAt: presentation.reason === 'switch' ? at.toISOString() : session.openedAt,
+      lastActivityAt: at.getTime(),
+    });
+    this.#sessions.set(location, committed);
+    this.#observe('presentation-acknowledged', committed, {
+      presentationId: presentation.presentationId, reason: presentation.reason,
+    });
+    this.#log('info', 'school.reading.session-switch-rendered', {
+      location, learnerId: committed.learnerId, sessionId: committed.sessionId,
+      presentationId: committed.presentationId, reason: presentation.reason,
+    });
+    this.#broadcast(location, { event: 'session-open', ...committed });
+    this.#resolveAcknowledgement(presentation);
+    return committed;
   }
 
   /** Wait for the screen that applied a snapshot to prove it is listening. */
-  waitForAcknowledgement(sessionId, timeoutMs = 8_000) {
-    if (!sessionId) return Promise.resolve(false);
-    if ([...this.#sessions.values()].some((session) => session.sessionId === sessionId && session.acknowledgedAt)) {
+  waitForAcknowledgement(token, timeoutMs = 8_000) {
+    if (!token) return Promise.resolve(false);
+    if ([...this.#sessions.values()].some((session) => session.presentedAt
+      && (session.presentationId === token || session.sessionId === token))) {
       return Promise.resolve(true);
     }
-    const acknowledgement = new Promise((resolve) => this.#ackWaiters.set(sessionId, resolve));
+    const acknowledgement = new Promise((resolve) => this.#ackWaiters.set(token, resolve));
     return this.#scheduler.withDeadline(acknowledgement, {
-      milliseconds: timeoutMs, description: `reading acknowledgement ${sessionId}`,
-    }).catch(() => false).finally(() => this.#ackWaiters.delete(sessionId));
+      milliseconds: timeoutMs, description: `reading acknowledgement ${token}`,
+    }).catch(() => false).finally(() => this.#ackWaiters.delete(token));
   }
 
-  /** Replay the exact current state; snapshots make this safe for a reload. */
-  reannounce(location, sessionId) {
+  /** Replay the exact presentation; snapshots make this safe for a reload. */
+  reannounce(location, token) {
     const session = this.#sessions.get(location) ?? null;
-    if (!session || session.sessionId !== sessionId) return null;
+    if (!session) return null;
+    const presentation = session.pendingPresentation;
+    if (presentation && [presentation.presentationId, presentation.sessionId].includes(token)) {
+      this.#broadcast(location, { event: 'session-present', location, ...presentation });
+      this.#observe('presentation-reannounced', session, { presentationId: presentation.presentationId });
+      return session;
+    }
+    if (![session.presentationId, session.sessionId].includes(token)) return null;
     this.#broadcast(location, { event: 'session-open', ...session });
-    this.#observe('reannounced', session, { sessionId });
+    this.#observe('reannounced', session, { sessionId: session.sessionId });
     return session;
   }
 
@@ -321,6 +395,8 @@ export class ReadingSessionService {
     }
     const previous = this.#sessions.get(location) ?? null;
     const at = this.#clock();
+    const directPrompt = state === PROMPT;
+    const presentationId = directPrompt ? this.#nextId('rp') : null;
     const session = Object.freeze({
       location: location.trim(),
       learnerId: learnerId.trim(),
@@ -329,6 +405,13 @@ export class ReadingSessionService {
       revision: this.#nextRevision(location.trim()),
       serverEpoch: this.#serverEpoch,
       state,
+      presentationId,
+      // `open(..., prompt)` is retained as a trusted fixture/restore seam.
+      // The production card workflow always reserves STARTING and reaches
+      // prompt only through a rendered presentation acknowledgement.
+      presentedAt: directPrompt ? at.toISOString() : null,
+      acknowledgedAt: directPrompt ? at.toISOString() : null,
+      pendingPresentation: null,
       openedAt: at.toISOString(),
       // Epoch ms, not an ISO string: the idle sweep compares it on every pass
       // and a re-parse per session per sweep buys nothing. Every tap moves it
@@ -350,18 +433,110 @@ export class ReadingSessionService {
     return session;
   }
 
-  /** Promote a reserved reader only if it has not been superseded. */
+  /** Ask the screen to paint a reserved learner; prompt follows its ACK. */
   activate(location, sessionId) {
     const session = this.#sessions.get(location) ?? null;
-    if (!session || session.sessionId !== sessionId) return null;
+    if (!session || session.sessionId !== sessionId || session.state !== STARTING) return null;
+    const revision = this.#nextRevision(session.location);
+    const presentation = Object.freeze({
+      presentationId: this.#nextId('rp'), sessionId: session.sessionId,
+      learnerId: session.learnerId, target: session.target ?? null,
+      revision, serverEpoch: this.#serverEpoch, reason: 'initial',
+    });
     const active = Object.freeze({
-      ...session, state: PROMPT, revision: this.#nextRevision(session.location),
+      ...session, state: PRESENTING, revision,
+      presentedAt: null, acknowledgedAt: null, pendingPresentation: presentation,
       lastActivityAt: this.#clock().getTime(),
     });
     this.#sessions.set(location, active);
-    this.#observe('activated', active);
-    this.#broadcast(location, { event: 'session-open', ...active });
+    this.#observe('presentation-requested', active, { presentationId: presentation.presentationId, reason: 'initial' });
+    this.#broadcast(location, { event: 'session-present', location, ...presentation });
     return active;
+  }
+
+  /** Begin an atomic learner hand-off from an already rendered launch card. */
+  beginSwitch({ location, learnerId, target = null } = {}) {
+    const session = this.#sessions.get(location) ?? null;
+    if (!session || !this.isSwitchable(location)) return null;
+    if (typeof learnerId !== 'string' || !learnerId.trim()) return null;
+    if (session.learnerId === learnerId.trim()) {
+      this.reannounce(location, session.presentationId ?? session.sessionId);
+      return Object.freeze({ noChange: true, session, presentation: null });
+    }
+    const revision = this.#nextRevision(location);
+    const presentation = Object.freeze({
+      presentationId: this.#nextId('rp'), sessionId: this.#nextId('rs'),
+      learnerId: learnerId.trim(), target,
+      revision, serverEpoch: this.#serverEpoch, reason: 'switch',
+    });
+    const pending = Object.freeze({
+      ...session, state: PRESENTING, revision,
+      pendingPresentation: presentation, lastActivityAt: this.#clock().getTime(),
+    });
+    this.#sessions.set(location, pending);
+    this.#observe('switch-requested', pending, {
+      presentationId: presentation.presentationId,
+      requestedLearnerId: presentation.learnerId,
+    });
+    this.#log('info', 'school.reading.session-switch-requested', {
+      location, currentLearnerId: session.learnerId,
+      requestedLearnerId: presentation.learnerId,
+      currentSessionId: session.sessionId, requestedSessionId: presentation.sessionId,
+      presentationId: presentation.presentationId,
+    });
+    this.#broadcast(location, { event: 'session-present', location, ...presentation });
+    return Object.freeze({ noChange: false, session: pending, presentation });
+  }
+
+  /** A finished/recovered story is not switchable until its face returns. */
+  beginReturn(location, { reason = 'story-finished' } = {}) {
+    const session = this.#sessions.get(location) ?? null;
+    if (!session) return null;
+    const revision = this.#nextRevision(location);
+    const presentation = Object.freeze({
+      presentationId: this.#nextId('rp'), sessionId: session.sessionId,
+      learnerId: session.learnerId, target: session.target ?? null,
+      revision, serverEpoch: this.#serverEpoch, reason: 'return', returnReason: reason,
+    });
+    const returning = Object.freeze({
+      ...session, state: RETURNING, revision,
+      pick: null, playing: null, progress: null,
+      presentedAt: null, acknowledgedAt: null,
+      pendingPresentation: presentation,
+      recovery: reason === 'story-finished' ? session.recovery ?? null : { reason, at: this.#clock().toISOString() },
+      lastActivityAt: this.#clock().getTime(),
+    });
+    this.#sessions.set(location, returning);
+    this.#observe('return-requested', returning, { presentationId: presentation.presentationId, reason });
+    this.#broadcast(location, { event: 'session-present', location, ...presentation });
+    return Object.freeze({ session: returning, presentation });
+  }
+
+  /** Restore the prior face if a candidate was never visibly acknowledged. */
+  rollbackPresentation(location, presentationId) {
+    const session = this.#sessions.get(location) ?? null;
+    const failed = session?.pendingPresentation ?? null;
+    if (!session || failed?.presentationId !== presentationId || failed.reason !== 'switch') return null;
+    const revision = this.#nextRevision(location);
+    const rollback = Object.freeze({
+      presentationId: this.#nextId('rp'), sessionId: session.sessionId,
+      learnerId: session.learnerId, target: session.target ?? null,
+      revision, serverEpoch: this.#serverEpoch, reason: 'rollback',
+    });
+    const restoring = Object.freeze({
+      ...session, state: PRESENTING, revision, pendingPresentation: rollback,
+      lastActivityAt: this.#clock().getTime(),
+    });
+    this.#sessions.set(location, restoring);
+    this.#observe('switch-rollback-requested', restoring, {
+      failedPresentationId: presentationId, presentationId: rollback.presentationId,
+    });
+    this.#log('error', 'school.reading.session-switch-unacknowledged', {
+      location, currentLearnerId: session.learnerId,
+      requestedLearnerId: failed.learnerId, presentationId,
+    });
+    this.#broadcast(location, { event: 'session-present', location, ...rollback });
+    return rollback;
   }
 
   /**
@@ -400,6 +575,9 @@ export class ReadingSessionService {
     if (!session) return null;
     this.#sessions.delete(location);
     this.#ackWaiters.get(session.sessionId)?.(false);
+    this.#ackWaiters.get(session.presentationId)?.(false);
+    this.#ackWaiters.get(session.pendingPresentation?.sessionId)?.(false);
+    this.#ackWaiters.get(session.pendingPresentation?.presentationId)?.(false);
     const revision = this.#nextRevision(session.location);
     this.#stuckReported.delete(location);
     this.#observe('closed', session, { reason });
@@ -433,6 +611,13 @@ export class ReadingSessionService {
     if (this.#idFactory) return this.#idFactory(prefix);
     this.#idSequence += 1;
     return `${prefix}_${this.#clock().getTime().toString(36)}_${this.#idSequence.toString(36)}`;
+  }
+
+  #resolveAcknowledgement(presentation) {
+    for (const token of [presentation?.presentationId, presentation?.sessionId]) {
+      const waiter = token ? this.#ackWaiters.get(token) : null;
+      if (waiter) waiter(true);
+    }
   }
 
   #observe(type, session, extra = {}) {
