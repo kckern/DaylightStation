@@ -162,6 +162,14 @@ for what that looks like end to end.
   violations lowers a baseline number in the same change; a new violation
   raising a count above its baseline is a hard failure, never grounds for
   raising the baseline instead.
+- `npm run check:scss` guarantees every SCSS entrypoint under `frontend/src`
+  actually compiles — an invalid selector or other Sass error fails the
+  pre-commit gate with the offending file and line, the same way it would
+  fail `vite build` (and therefore the Docker image build), instead of only
+  surfacing once someone tries to ship. Token/mixin partials aren't compiled
+  standalone; each is exercised transitively through whichever entrypoint
+  pulls it in via `@use`/`@import`, matching how Vite's own CSS pipeline sees
+  them.
 
 ## Visual verification
 
