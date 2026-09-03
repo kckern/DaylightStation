@@ -111,7 +111,7 @@ function makeCaptureUseCase(foodLogStore, { items, mealTime, mealTimeExplicit } 
   };
 }
 
-function makeHarness({ conversationState = null, captureUseCase, scaleUseCase, foodLogStore, voiceUseCase } = {}) {
+function makeHarness({ conversationState = null, captureUseCase, scaleUseCase, foodLogStore, voiceUseCase, logger } = {}) {
   foodLogStore = foodLogStore || makeFoodLogStore();
   const nutriListStore = { saveMany: vi.fn(async () => {}), removeByLogId: vi.fn(async () => 2) };
   const messagingGateway = {
@@ -143,7 +143,7 @@ function makeHarness({ conversationState = null, captureUseCase, scaleUseCase, f
     ...(voiceUseCase ? { getLogFoodFromVoice: () => voiceUseCase } : {}),
   };
 
-  const router = new NutribotInputRouter(container, { logger: silentLogger });
+  const router = new NutribotInputRouter(container, { logger: logger || silentLogger });
   return { router, foodLogStore, nutriListStore, acceptSpy, generateDailyReport, logFoodFromText, logScaleFoodFromText };
 }
 
@@ -467,6 +467,31 @@ describe('meal-time precedence (Task 4.1) — explicit-in-utterance > bucket > c
     expect(out.mealTime).toBe('afternoon');
     expect(out.moved).toBe(false);
     expect(foodLogStore.logs.get(out.logId).meal.time).toBe('afternoon');
+  });
+
+  it('no bucket, explicit meal: lands at the explicit meal (moved:false, nothing to move from) but is still observable in logs', async () => {
+    // Review finding (fix round): this path previously left NO trace in the
+    // logs — the entry deviates from the clock default, but `moved` is
+    // correctly false because there was no requested bucket to conflict
+    // with. A distinct event name makes this queryable separately from an
+    // actual moved-from-a-requested-bucket capture.
+    const foodLogStore = makeFoodLogStore();
+    const captureUseCase = makeCaptureUseCase(foodLogStore, { mealTime: 'afternoon', mealTimeExplicit: true });
+    const info = vi.fn();
+    const logger = { debug() {}, info, warn() {}, error() {} };
+    const { router } = makeHarness({ captureUseCase, foodLogStore, logger });
+    const rc = makeResponseContext();
+    const event = { ...textEvent, payload: { text: 'chicken wrap for lunch' } }; // no bucket
+
+    const out = await router.handleText(event, rc);
+
+    expect(out.mealTime).toBe('afternoon');
+    expect(out.moved).toBe(false);
+    expect(foodLogStore.logs.get(out.logId).meal.time).toBe('afternoon');
+
+    const eventNames = info.mock.calls.map(([name]) => name);
+    expect(eventNames).toContain('nutribot.capture.mealTimeExplicitApplied');
+    expect(eventNames).not.toContain('nutribot.capture.mealMoved');
   });
 
   it('voice genuinely inherits the precedence: LogFoodFromVoice delegates verbatim to LogFoodFromText', async () => {

@@ -453,7 +453,7 @@ export class LogFoodFromText {
 8. Prefer grams (g) or ml as the unit; only use other units (cup, tbsp, oz, piece) if the user explicitly says so.
 9. Round grams to sensible whole numbers (nearest 5g).
 10. If the description is a composite dish whose parts are listed separately (e.g. a smoothie and its ingredients, or spaghetti with noodles/sauce/cheese listed out), give every part item the SAME "dish" string (the dish's name). Standalone foods that are not part of a listed composite OMIT "dish" entirely.
-11. Determine whether the user explicitly named or clearly implied a specific meal (e.g. "for lunch", "breakfast was...", "a midnight snack"). If so, set "mealTimeExplicit" to true and set "time" to that meal: "morning", "afternoon", "evening", or "night". If no meal is named or implied, omit "mealTimeExplicit" (or set it to false) and use your best-guess "time" as before.
+11. Determine whether the user explicitly ASSIGNS this food to a specific meal (e.g. "for lunch", "breakfast was...", "a midnight snack") — not merely mentions a time or a meal word in passing. Do NOT set the flag for an incidental time reference (e.g. "I had this after my morning run" — the run happened in the morning, but no meal is being assigned) or a meal word used as scenery rather than an assignment (e.g. "grabbed it on the way to dinner with friends" — the food itself isn't being called dinner). If the user does explicitly assign a meal, set "mealTimeExplicit" to true and set "time" to that meal: "morning", "afternoon", "evening", or "night". Otherwise, omit "mealTimeExplicit" (or set it to false) and use your best-guess "time" as before.
 
 Respond in JSON format:
 {
