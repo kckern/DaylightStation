@@ -339,3 +339,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-01 | fix/school-parked-2026-09-01 | a3d2cfea6 | Six parked fixes: card-lineage corruption, agenda preview fidelity, IPP job-id, OMR decode confidence, reachability false-warn, bus topics. Merged to main. |
 | 2026-09-01 | feat/printer-job-tracking | 5407afe45 | IPP job-state observability: Get-Job-Attributes, job-state classifier, getJobState, detached awaitJobOutcome poll, real-hardware probe. Merged to main. |
 | 2026-09-01 | fix/media-duration | 2ee4adee1 | durationSeconds unit bug (3-part fix + repair CLI) and 16 pre-existing test-failure fixes |
+| 2026-09-02 | books/shelf |  | Books domain + School reading shelf (40 commits, incl. a merge of main). Squash-merged to main as 421aa45bc; branch kept LOCAL and never pushed: three early commits add a fixture line the push guard refuses. |
