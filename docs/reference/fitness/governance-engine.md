@@ -6,7 +6,9 @@ This document covers the GovernanceEngine, FitnessSession, and related subsystem
 
 ## Overview
 
-The Governance Engine controls video playback based on heart rate zone requirements. When users watch "governed" content (tagged with specific Plex labels), they must maintain certain heart rate zones to continue watching.
+The Governance Engine controls video playback from typed requirements. Heart-rate
+zones remain the primary requirement, and equipment activity (currently step-mat
+steps per minute) can opt into the same warning, grace, and lock lifecycle.
 
 **Key concept**: Governance is about zone requirements, not raw heart rate values. A user at 130 BPM might be in different zones depending on their personal zone configuration.
 
@@ -195,6 +197,57 @@ This means:
 - Users must meet BASE requirements for challenge timer to run
 - If phase is `warning` or `pending`, challenge pauses
 - Challenge can never timeout while video is locked
+
+### Typed requirements and challenges
+
+`GovernanceTypeRegistry` is the runtime dispatch boundary. Requirements and
+challenges carry an explicit `type`; the registry owns eligibility and evaluation
+instead of making the session event bus a second state machine.
+
+Registered requirement types:
+
+- `zone` — the existing participant heart-rate-zone requirement.
+- `activity_rate` — an optional, equipment-scoped rolling-rate requirement.
+
+Registered challenge types:
+
+- `zone` — participant count in a target heart-rate zone.
+- `vibration` — duration, impact, or intensity criteria from a vibration tracker.
+- `cycle` — the existing RPM phase state machine, registered as a managed type.
+- `step` — a physical step or stomp count relative to the count at challenge start.
+
+Unknown types fail eligibility/config normalization rather than silently behaving
+like an HR challenge.
+
+### Step-mat lifecycle
+
+The pressure mat is dormant until the first classified session step. That first
+step latches the activity as engaged, makes the realtime card visible for the rest
+of the session, and activates any enabled `activity_rate` requirement. The card is
+placed beside the RPM equipment and shows rolling SPM, session steps, and session
+stomps. Tap it to assign an active HR participant; hold and confirm to disengage
+continuous mat governance.
+
+Assignment is resolved at each repetition, so session history retains honest
+physical totals plus per-user attributed totals. A stomp is one step with an
+additional stomp classification; it never increments steps twice.
+
+Continuous mat governance defaults to 30 SPM over a 15-second rolling window. On
+first engagement it uses the ordinary 30-second governance grace, then follows the
+standard warning → locked → recovered behavior. If the sensor goes offline, this
+requirement suspends (fails open); the card remains visible as “Sensor unavailable.”
+
+A `step` challenge is eligible only while its configured mat is online and has had
+a classified step within the previous 10 seconds. It snapshots the device count at
+start and counts only subsequent steps or stomps. If the mat disconnects during a
+challenge, the timer pauses without a video penalty; after the sensor grace window
+the challenge is cancelled and requeued.
+
+The physical count completes a step challenge even when no user is assigned. When
+an assigned participant has a current HR zone at completion, `TreasureBox` awards
+an idempotent bonus equal to that zone's configured `rings` multiplied by the
+challenge's `reward_multiplier`. The completion-time assignee and completion-time
+zone determine the reward; the physical count itself is never multiplied.
 
 ---
 
@@ -463,7 +516,7 @@ window.__fitnessGovernance = {
 
 ### Governance Policies
 
-Located in `data/household/config/fitness.yml`:
+Located in `data/household/fitness/config.yml`:
 
 ```yaml
 governance:
@@ -484,6 +537,75 @@ governance:
               time_allowed: 45
               min_participants: 1
 ```
+
+### Step-mat configuration
+
+```yaml
+equipment:
+  - name: Step Mat
+    id: step_mat
+    type: pressure_mat
+    pressure_mat: garage-step-mat
+    activity:
+      active_timeout_seconds: 10
+      online_timeout_seconds: 5
+      spm_window_seconds: 15
+
+governance:
+  grace_period_seconds: 30
+  policies:
+    default:
+      requirements:
+        - type: zone
+          zone: active
+          rule: all
+        - id: keep-stepping
+          type: activity_rate
+          equipment: step_mat
+          metric: steps_per_minute
+          minimum: 30
+          window_seconds: 15
+          engage_on: first_step
+          offline_policy: suspend
+          enabled: true
+      challenges:
+        - interval: [30, 120]
+          min_participants: 0
+          selection_type: random
+          selections:
+            - type: step
+              equipment: step_mat
+              metric: steps
+              target: 40
+              time_allowed: 60
+              weight: 3
+            - type: step
+              equipment: step_mat
+              metric: steps
+              target: 70
+              time_allowed: 60
+              weight: 2
+            - type: step
+              equipment: step_mat
+              metric: stomps
+              target: 8
+              time_allowed: 30
+              weight: 1
+```
+
+Set the `activity_rate` entry's `enabled` to `false` to keep the card, totals,
+assignment, persistence, and challenges while disabling the continuous minimum.
+Each step selection also accepts `sensor_grace_seconds` (default `10`),
+`requires_active` (default `true`), and `reward_multiplier` (default `1`).
+
+Step telemetry is deliberately two-tiered:
+
+- The pressure-mat relay persists every raw transition and one completed-press
+  structured log with voltage/depth/speed diagnostics.
+- The fitness session samples `device:step_mat:steps_total`, `stomps_total`,
+  `steps_per_minute`, `active`, and per-user totals every five seconds, plus
+  semantic engagement/disengagement and challenge events. Raw edges are transient
+  app-bus notifications and are not copied into the workout event timeline.
 
 ### Audio Cues
 

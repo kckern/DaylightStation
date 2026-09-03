@@ -41,3 +41,39 @@ describe('GovernanceStateOverlay — Skip / Unlock button', () => {
     expect(screen.queryByRole('button', { name: /skip or unlock/i })).toBeNull();
   });
 });
+
+describe('GovernanceStateOverlay — activity-rate requirement', () => {
+  it('shows current and target SPM in the standard lock surface', () => {
+    render(<GovernanceStateOverlay display={{
+      show: true,
+      status: 'locked',
+      videoLocked: true,
+      rows: [],
+      activeUserCount: 0,
+      requirements: [],
+      activityRequirements: [{
+        type: 'activity_rate', currentRate: 12, targetRate: 30, satisfied: false,
+      }],
+    }} />);
+    expect(screen.getByText('Keep stepping: 12 / 30 SPM')).toBeTruthy();
+    expect(screen.getByText('Stay on the step mat')).toBeTruthy();
+  });
+});
+
+describe('GovernanceStateOverlay — failed step challenge', () => {
+  it('shows the remaining physical target instead of participant vitals', () => {
+    render(<GovernanceStateOverlay display={{
+      show: true,
+      status: 'locked',
+      videoLocked: true,
+      rows: [],
+      activeUserCount: 2,
+      challenge: {
+        id: 'step-1', type: 'step', status: 'failed', metric: 'steps', target: 40, actualCount: 27,
+      },
+    }} />);
+    expect(screen.getByText('Keep going: 27 / 40 steps')).toBeTruthy();
+    expect(screen.getByText('Catch up to resume playback.')).toBeTruthy();
+    expect(screen.queryByText('Collecting participant vitals...')).toBeNull();
+  });
+});

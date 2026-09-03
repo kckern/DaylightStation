@@ -1,8 +1,8 @@
 # Living-room reading sessions — lifecycle and state machine
 
-> **Status:** built and wired, 2026-08-26. Cold-wake recovery repaired locally
-> 2026-08-30 after a field failure; the repaired path still needs the hardware
-> verification in §11.
+> **Status:** built and wired, 2026-08-26. Cold-wake recovery repaired 2026-08-30.
+> Learner hand-off was hardened 2026-09-02 after a card changed the authoritative
+> session during playback and caused the finished read to be rejected.
 > Implementation plan: `docs/_wip/plans/2026-08-26-preschool-reading-03-livingroom-session-screen.md`.
 > This document is the authority on *behaviour*; the plan is the authority on *how*.
 
@@ -119,9 +119,11 @@ sequenceDiagram
     K->>R: taps personal card
     R->>B: trigger livingroom nfc uid
     Note over B: resolves to learner_action:<br/>reading-session
-    B->>B: open session, derive mode
+    B->>B: reserve session, derive mode
     B->>TV: wake, route to reading screen
-    TV-->>K: avatar, prompt to pick a book,<br/>today's count, yesterday's reads
+    TV-->>K: avatar, prompt to pick a book,<br/>today's count, recent reads
+    TV->>B: rendered-face ACK<br/>(no fullscreen overlay)
+    B->>B: commit PROMPT
 
     K->>R: taps a book sticker
     R->>B: trigger livingroom nfc uid
@@ -138,15 +140,14 @@ sequenceDiagram
     TV->>B: Player natural-end callback, with pickId
     B->>B: RecordStoryRead to the reading log
     B-->>TV: story-read on the school topic
-    TV-->>K: back to their screen, 2 of 2
-
     alt target now met
         TV-->>K: ceremony — good job
-        TV->>B: teardown
-        B->>TV: tv-off
+        TV-->>K: back to their launch screen, 2 of 2
     else still owed
-        TV-->>K: prompt for the next book
+        TV-->>K: back to their launch screen,<br/>prompt for the next book
     end
+    TV->>B: rendered-face ACK
+    B->>B: commit PROMPT
 ```
 
 ---
@@ -158,10 +159,13 @@ sequenceDiagram
 | `OFF` | TV off, no session |
 | `TV_IDLE` | TV on, no session, nothing playing — menu or art screensaver |
 | `FOREIGN_PLAY` | Content playing that no reading session started |
-| `PROMPT` | Session open; "what do you want to read?" |
+| `STARTING` | Initial card reserved the reader while it wakes |
+| `PRESENTING` | A candidate face was sent; authority waits for rendered ACK |
+| `PROMPT` | Launch face visibly acknowledged; "what do you want to read?" |
 | `CONFIRM` | Book picked; countdown running; nothing playing yet |
 | `READING` | The story is playing, attributed to the learner who picked it |
-| `CELEBRATE` | The read just met the daily target |
+| `CELEBRATE` | Frontend ceremony while the backend remains non-switchable |
+| `RETURNING` | Backend has recorded/cleared the story and is waiting for the launch face to become visible again |
 | `TEARDOWN` | Closing the session and powering the TV off |
 
 `FOREIGN_PLAY` is deliberately its own state and not a flavour of `READING`. The
@@ -174,33 +178,37 @@ stateDiagram-v2
     direction LR
     [*] --> OFF
 
-    OFF --> PROMPT: card
+    OFF --> STARTING: card
+    STARTING --> PRESENTING: wake complete, publish face
+    PRESENTING --> PROMPT: exact rendered-face ACK
     OFF --> FOREIGN_PLAY: book, no session
-    TV_IDLE --> PROMPT: card
+    TV_IDLE --> STARTING: card
     TV_IDLE --> FOREIGN_PLAY: book, no session
 
     FOREIGN_PLAY --> FOREIGN_PLAY: card — refused, D2
     FOREIGN_PLAY --> TV_IDLE: playback-completed
 
     PROMPT --> CONFIRM: book
-    PROMPT --> PROMPT: another card — swap learner
+    PROMPT --> PRESENTING: different card — present candidate
+    PROMPT --> PROMPT: same card — reannounce, no new session
     PROMPT --> TEARDOWN: timeout, D6
 
     CONFIRM --> CONFIRM: different book — swap pick
     CONFIRM --> READING: expire, or same book again D10
-    CONFIRM --> PROMPT: another card — drop pick, D3
+    CONFIRM --> CONFIRM: card — refused, D3
     CONFIRM --> TEARDOWN: timeout, D6
 
-    READING --> READING: card — swap context only, D4
+    READING --> READING: card — refused, D4
     READING --> READING: book — assignment mode refuses, D5
     READING --> CONFIRM: book — browsing mode relaxes, D5
-    READING --> CELEBRATE: playback-completed, target met
-    READING --> PROMPT: playback-completed, still owed
+    READING --> CELEBRATE: playback-completed, target met<br/>(backend enters RETURNING)
+    READING --> RETURNING: playback-completed, still owed
 
-    CELEBRATE --> TEARDOWN: ceremony done
-    CELEBRATE --> PROMPT: any tap cancels, D7
+    CELEBRATE --> RETURNING: ceremony done, paint launch face
+    CELEBRATE --> CELEBRATE: card — refused
+    RETURNING --> PROMPT: rendered-face ACK
+    RETURNING --> RETURNING: card — refused
     TEARDOWN --> OFF: tv-off
-    TEARDOWN --> PROMPT: any tap cancels, D7
 ```
 
 ---
@@ -218,12 +226,10 @@ flowchart TD
     C -->|yes| D{reader declares<br/>learner_action?}
     D -->|no| D1[no_handler — named refusal,<br/>acknowledged on screen]
     D -->|yes| E{current state}
-    E -->|OFF or TV_IDLE| F[wake TV, open session,<br/>derive mode, PROMPT]
+    E -->|OFF or TV_IDLE| F[reserve STARTING, wake TV,<br/>present face, await rendered ACK]
     E -->|FOREIGN_PLAY| G[D2: refuse visibly.<br/>content keeps playing]
-    E -->|PROMPT| H[swap learner, re-derive mode]
-    E -->|CONFIRM| I[D3: swap learner, DROP the pick]
-    E -->|READING| J[D4: swap context only.<br/>story keeps its original credit]
-    E -->|CELEBRATE or TEARDOWN| K[D7: cancel teardown, reopen]
+    E -->|acknowledged PROMPT| H[present candidate immediately;<br/>commit only after rendered ACK]
+    E -->|STARTING, PRESENTING, CONFIRM,<br/>READING, CELEBRATE, RETURNING| I[refuse visibly;<br/>change nothing]
 ```
 
 ### `book` — what to read
@@ -254,14 +260,16 @@ The two modes differ in exactly one cell, which is the point of the distinction.
 
 | State | `card` | `book` | `playback-completed` | `expire` | `timeout` |
 |---|---|---|---|---|---|
-| `OFF` | wake → `PROMPT` | plays → `FOREIGN_PLAY` | — | — | — |
-| `TV_IDLE` | → `PROMPT` | plays → `FOREIGN_PLAY` | — | — | — |
+| `OFF` | wake → `STARTING` | plays → `FOREIGN_PLAY` | — | — | — |
+| `TV_IDLE` | → `STARTING` | plays → `FOREIGN_PLAY` | — | — | — |
 | `FOREIGN_PLAY` | refuse visibly, stay | existing queue rules | → `TV_IDLE` | — | — |
-| `PROMPT` | swap learner, stay | → `CONFIRM` | — | — | → `TEARDOWN` |
-| `CONFIRM` | swap learner, drop pick → `PROMPT` | swap pick / same book confirms | — | → `READING` | → `TEARDOWN` |
-| `READING` | swap context, stay | **refuse — finish this one** | target met → `CELEBRATE`; else → `PROMPT` | — | — |
-| `CELEBRATE` | cancel → `PROMPT` | cancel → `CONFIRM` | — | — | → `TEARDOWN` |
-| `TEARDOWN` | cancel → `PROMPT` | cancel → `CONFIRM` | — | — | → `OFF` |
+| `STARTING` / `PRESENTING` | **refuse, stay** | **refuse, stay** | — | — | → `TEARDOWN` |
+| `PROMPT` | present learner; commit on rendered ACK | → `CONFIRM` | — | — | → `TEARDOWN` |
+| `CONFIRM` | **refuse, keep pick** | swap pick / same book confirms | — | → `READING` | → `TEARDOWN` |
+| `READING` | **refuse, keep exact session/pick** | **refuse — finish this one** | backend → `RETURNING`; screen may show `CELEBRATE` first | — | — |
+| `CELEBRATE` | **refuse, stay** | **refuse, stay** | — | — | → `TEARDOWN` |
+| `RETURNING` | **refuse, stay** | **refuse, stay** | — | — | → `TEARDOWN` |
+| `TEARDOWN` | refuse | refuse | — | — | → `OFF` |
 
 ### Browsing mode — relaxed
 
@@ -279,16 +287,16 @@ Identical, except:
 |---|---|---|
 | **D1** | A card not enrolled in story-time | Opens an ordinary session in browsing mode. Reads logged, nothing counted. No special case. |
 | **D2** | A card tapped while unrelated content plays | **Refuse, visibly.** Brief on-screen acknowledgement; the content keeps playing. A reading session never seizes the TV from whoever is already watching. |
-| **D3** | A different card during the confirm countdown | Swap learner and **drop the pick**. A pick belongs to whoever made it; transferring it would credit the wrong child. |
-| **D4** | A card tapped mid-story | Context switches; the story keeps playing and is credited to whoever **picked** it. Attribution is decided at pick time. |
+| **D3** | A card during the confirm countdown | **Refuse visibly.** Keep learner, session id, and pick exactly unchanged. |
+| **D4** | A card tapped mid-story | **Refuse visibly.** Keep learner, session id, pick, and playback attribution exactly unchanged, so completion cannot expire underneath the story. |
 | **D5** | A book tapped mid-story | **Mode-dependent.** Assignment: refuse — finish this one first. Browsing: do not claim; the existing queue applies. |
 | **D6** | Nobody picks a book | **~2 minutes quiet → `TEARDOWN` → TV off.** Same teardown as a finished session. The TV never stays on unattended and the next tap always lands in a fresh session. |
-| **D7** | A tap racing `CELEBRATE` or `TEARDOWN` | **Any tap cancels teardown.** Powering off under a child who just tapped is the worst failure available; being wrong the other way costs one extra timeout. |
+| **D7** | A card racing `CELEBRATE` or `RETURNING` | **Refuse visibly.** The next learner may enter after the launch face has returned and its rendered ACK commits `PROMPT`. |
 | **D8** | Does the TV always power off? | The session **suppresses the location's `end: tv-off`** while open and owns teardown timing, so the ceremony can render first. Not optional — see §3. |
 | **D9** | An unregistered book tag inside a session | Say it on screen — "I don't know that book yet" — **and** still write the observed-registry entry and send the phone push so it can be enrolled. |
 | **D10** | The same book tapped again during the countdown | **Confirm immediately**, skipping the rest of the countdown. A child tapping twice is expressing certainty, and the 3 s dedup window would otherwise swallow it. |
 | **Repeats** | Re-reading a book already finished today | **Counts every time.** Simplest rule to explain, and no screen has to deliver bad news. Accepted trade-off: the target can be met by re-reading one short book. |
-| **Completion** | The target is met mid-session | Ceremony, then teardown, then TV off. To read more, re-tap the card — which reopens in browsing mode. |
+| **Completion** | The target is met mid-session | Ceremony, then the visibly acknowledged launch card returns in browsing mode. The ordinary idle timeout owns later teardown. |
 
 ---
 
@@ -296,16 +304,18 @@ Identical, except:
 
 Everything the screen knows arrives on **one WebSocket topic per reader**,
 `reading:<location>` (`reading:livingroom`). Everything the backend cannot see
-goes back over **three HTTP routes**. There is no other channel.
+goes back over the HTTP routes below. There is no other channel.
 
 ### Events on `reading:<location>`
 
 | Event | Sent by | Payload | The screen does |
 |---|---|---|---|
-| `session-open` | `ReadingSessionService.open` | `learnerId, location, target, state, openedAt` | render the prompt for that child, fetch their summary, clear the screensaver |
+| `session-present` | `ReadingSessionService` | `learnerId, location, sessionId, presentationId, revision, serverEpoch, reason` | render that face immediately; ACK only after the launch card is painted and no fullscreen overlay covers it |
+| `session-open` | `ReadingSessionService.acknowledge` | committed session plus presentation identity | confirm the authoritative prompt; reconnects may safely re-ACK it |
 | `session-update` | `ReadingSessionService.update` | the whole session | **nothing** — the screen owns its own view; the session's mirror is not an instruction |
 | `session-close` | `ReadingSessionService.close` | the session, plus `reason` (`timeout`, …) | back to `idle`, unless a story is still playing — that outlives the session |
 | `session-refused` | the `reading-session` learner action | `learnerId, location, target, reason: 'content-playing'` | one notice over the running content, and **nothing else moves** (**D2**) |
+| `session-switch-refused` | the `reading-session` learner action | requested/current learner, current session id/state, reason | keep all session state unchanged; show a toast above Player when necessary |
 | `book-selected` | `ReadingSessionInterceptor.claim` | `learnerId, contentId, target, at` | cover, title, countdown. The same `contentId` twice confirms immediately (**D10**) |
 | `book-refused` | `ReadingSessionInterceptor.claim` | `learnerId, contentId, reason: 'finish-this-one'` | "Finish this one first" (**D5**, assignment mode) |
 | `book-unknown` | `ReadingSessionInterceptor.noteUnknownTag` | `learnerId, tagUid, location, at` | "I don't know that book yet" (**D9**) |
@@ -342,32 +352,34 @@ mid-assignment child's hardening off with nothing anywhere to say so.
 
 | Route | Body / query | Why it exists |
 |---|---|---|
-| `GET /session`, `POST /session/ack` | `location`, then `location, sessionId` | Snapshot/revision recovery for a TV that booted or reloaded after the broadcast. ACK is delivery proof, not merely a WebSocket connection. |
+| `GET /session`, `POST /session/ack` | `location`, then `location, learnerId, sessionId, presentationId, revision, serverEpoch` | Snapshot/revision recovery and an exact compare-and-swap. The screen sends the ACK after two paint opportunities, only with the launch card unobscured. A stale proof is `409 stale-presentation`. |
 | `GET /events` | `?location=&limit=` | Bounded, restart-safe timeline in `school/runtime/reading-sessions/events.yml`: opening age, ACK/progress ages, server-observed visible state and `displayedSince`, plus timestamped transitions. This is the operator answer to “what has the TV been doing?” |
-| `POST /progress` | `location, sessionId, pickId, positionSec, durationSec, paused` | Liveness heartbeat. A stalled player, long pause, or terminal media without Player's completion callback returns to the prompt without granting credit. |
+| `POST /progress` | `location, sessionId, pickId, positionSec, durationSec, paused` | Liveness heartbeat. A stalled player, long pause, or terminal media without Player's completion callback enters `RETURNING` without granting credit. |
 | `POST /playing` | `location, learnerId, contentId, pickId` | **Nothing else moves a session to `reading`.** The backend cannot see the first frame; without this, `state` never leaves `confirm`, D5 never fires in the field, and every book tapped during a story is claimed as a fresh prompt. It reports PLAYBACK START, not countdown expiry — they differ by however long the content takes to load, and that gap is exactly when a stray tap misbehaves. |
-| `POST /read` | `learnerId, contentId, title, tagUid, location, pickId` | The only path that writes evidence. `pickId` is the idempotency key. It also performs `READING → PROMPT`: a session left at `reading` refuses the next book while nothing plays (D5) and never expires (D6), so the TV stays on all night. |
+| `POST /read` | `learnerId, contentId, title, tagUid, location, sessionId, pickId` | The only path that writes evidence. `pickId` is the idempotency key. It performs `READING → RETURNING`; rendered-face ACK performs `RETURNING → PROMPT`. Session/pick conflicts remain `409` and are logged with both request and current identities. |
 | `GET /read-status` | `learnerId, studyDay, pickId` | Resolves an ambiguous completion response from the durable idempotency key, without guessing or double-counting. |
-| `GET /summary` | `?learnerId=` | What the prompt puts in front of the child: display name, today's count, target, and yesterday's books. Every part degrades on its own — the one thing that must never happen is a blank TV in front of a four-year-old. |
+| `GET /summary` | `?learnerId=` | What the prompt puts in front of the child: display name, today's count/target, and the six newest reads across today plus the prior six study days. Every day degrades independently. |
 
 **Attribution is minted and owned by the server at pick time.** The client carries
 `sessionId` and `pickId` back as a capability, but the router takes learner,
-content, and study day from the stored pick. A sibling card can still swap the
-prompt context during a story without stealing its credit (**D4**).
+content, and study day from the stored pick. No card may change `sessionId`
+while that pick is confirming, loading, playing, celebrating, or returning.
 
 ### Delivery and recovery loops
 
 The wake is helpful, but it is not the delivery contract. A cold Android/Fully
 Kiosk resume may be slow, may reconnect its socket late, or may reload the page
 after the command returns. The in-process session snapshot is the authority,
-and the screen's ACK of that exact `sessionId` is the proof.
+and the screen's ACK of the exact presentation identity is the proof. Receipt
+of a WebSocket message is not proof: the face must be committed to the DOM, the
+fullscreen overlay slot must be empty, and two animation frames must pass.
 
 For an already-mounted widget, device preparation uses the `broadcast` profile:
 `screenOn` plus `toForeground`, with no audio-bridge, microphone, camera, or
 `getDeviceInfo` work. Those checks belong to media/call preparation. In the
 2026-08-30 incident `getDeviceInfo` alone consumed its full 10-second transport
 timeout and full preparation took 29.7 seconds; none of that work could prove
-that the Story Time intent had rendered. The application ACK can.
+that the Story Time intent had rendered. The rendered-presentation ACK can.
 
 The scheduler and School realtime gateway are required production dependencies.
 The scheduler contract is fail-fast: it bounds each ACK wait and advances the
@@ -379,13 +391,12 @@ those publications.
 flowchart TD
   A[Card or Portal launch] --> B[Reserve STARTING session]
   B --> C[Wake / foreground reader]
-  C --> D[Activate PROMPT and publish revision]
-  D --> E{Screen subscribed, hydrated snapshot, ACKed?}
-  E -->|yes| F[Closed delivery loop]
-  E -->|no, attempt less than 3| G[Re-foreground, then replay current revision]
+  C --> D[Publish PRESENTING face and revision]
+  D --> E{Launch face visibly rendered and exact ACK received?}
+  E -->|yes| F[Commit authoritative PROMPT]
+  E -->|no, attempt less than 2| G[Re-foreground, then replay presentation]
   G --> E
-  E -->|no, attempt 3| H[One adult HA alert]
-  H --> I[Open session remains recoverable by snapshot]
+  E -->|no, attempt 2| H[Close unseen initial session; alert adult]
 ```
 
 ```mermaid
@@ -393,7 +404,7 @@ flowchart TD
   A[Player timeupdate] --> B[POST progress: server session and pick match]
   B --> C{Observed liveness}
   C -->|advancing| D[Keep READING]
-  C -->|paused over 10 min| E[Reset PROMPT, no credit]
+  C -->|paused over 10 min| E[Enter RETURNING, no credit]
   C -->|no heartbeat over 90 sec| E
   C -->|near end but no completion over 20 sec| E
   F[Player natural-end callback] --> G[POST read with sessionId and pickId]
@@ -431,7 +442,8 @@ Not state transitions, but each must land somewhere visible.
 |---|---|
 | Content lookup fails | The player bails today. In a session: back to `PROMPT` with "that one didn't work" |
 | No book is picked | After two minutes, close the session. `end: tv-off` turns the configured display off; otherwise the widget returns to its idle/art surface. |
-| TV wakes slowly, fails to wake, reloads, or misses the event | Reserve before wake; activate after the bounded wake result; a client that hydrated during `STARTING` polls until activation, applies the authoritative snapshot, and ACKs the `sessionId`. Until ACK, re-foreground then replay the current revision for up to three attempts, then send one adult HA alert. The open session remains available to a later snapshot. |
+| TV wakes slowly, fails to wake, reloads, or misses the event | Reserve before wake; publish `PRESENTING` after the bounded wake result; a client hydrated during `STARTING` polls until the presentation exists. Replay twice. If no rendered ACK arrives, close the unseen initial session and alert an adult. |
+| Candidate learner face is not acknowledged | Never commit it. Replay once, then present the prior learner again and alert an adult; all inputs remain blocked until a face is acknowledged. |
 | Reading log write fails | The story still played. Surface it; never claim a read that was not recorded |
 | Backend restart mid-session | Session state is in-memory and is lost — correct; nobody is at the reader after a restart |
 | Player remounts or completion response is lost | Must not double-count. Player suppresses duplicate terminal notifications; `pickId` dedup plus one retry and `read-status` recover transport ambiguity. |
@@ -450,6 +462,8 @@ Not state transitions, but each must land somewhere visible.
    A child who taps and sees nothing taps harder.
 6. **A reading session never seizes the TV** from content already playing.
 7. **In assignment mode: one story at a time.** No queue, no on-deck, nothing silent.
+8. **Only a visibly acknowledged launch card may hand off learners.** Every
+   other state refuses cards without changing learner, session id, pick, or playback.
 
 ---
 

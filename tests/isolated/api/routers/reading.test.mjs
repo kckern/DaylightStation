@@ -79,15 +79,16 @@ function build({
 describe('GET /events — live reading-session observability', () => {
   it('reports the open session, its ages, and its bounded transition timeline', async () => {
     const { app, sessions } = build();
-    const session = sessions.open({ location: 'livingroom', learnerId: 'user_5' });
-    sessions.acknowledge('livingroom', session.sessionId);
+    const session = sessions.open({ location: 'livingroom', learnerId: 'user_5', state: 'starting' });
+    const presenting = sessions.activate('livingroom', session.sessionId);
+    sessions.acknowledge('livingroom', presenting.pendingPresentation);
     const res = await request(app).get('/api/v1/school/reading/events?location=livingroom&limit=2');
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ location: 'livingroom', session: { sessionId: session.sessionId, learnerId: 'user_5' } });
     expect(res.body.ageMs).toEqual(expect.any(Number));
     expect(res.body.ackAgeMs).toEqual(expect.any(Number));
     expect(res.body.events).toHaveLength(2);
-    expect(res.body.events.at(-1)).toMatchObject({ type: 'acknowledged', sessionId: session.sessionId });
+    expect(res.body.events.at(-1)).toMatchObject({ type: 'presentation-acknowledged', sessionId: session.sessionId });
   });
 
   it('prefers the durable observation capability and preserves age/state fields', async () => {
@@ -99,7 +100,7 @@ describe('GET /events — live reading-session observability', () => {
     const res = await request(app).get('/api/v1/school/reading/events?location=livingroom&limit=1');
     expect(res.body).toMatchObject({ visibleState: 'prompt', displayedSince: '2026-08-26T17:59:59.000Z' });
     expect(res.body).toHaveProperty('ageMs');
-    expect(res.body).toHaveProperty('ackAgeMs', null);
+    expect(res.body.ackAgeMs).toEqual(expect.any(Number));
     expect(res.body).toHaveProperty('progressAgeMs', null);
   });
 });
@@ -113,6 +114,26 @@ describe('session, acknowledgement, progress, and read-status routes', () => {
     const ack = await request(app).post('/api/v1/school/reading/session/ack')
       .send({ location: ' livingroom ', sessionId: ` ${opened.sessionId} ` });
     expect(ack.body).toMatchObject({ ok: true, session: { sessionId: opened.sessionId } });
+  });
+
+  it('commits only an exact rendered-presentation acknowledgement', async () => {
+    const { app, sessions } = build();
+    const reserved = sessions.open({ location: 'livingroom', learnerId: 'user_5', state: 'starting' });
+    const presenting = sessions.activate('livingroom', reserved.sessionId);
+    const proof = presenting.pendingPresentation;
+
+    await request(app).post('/api/v1/school/reading/session/ack')
+      .send({ location: 'livingroom', ...proof, revision: proof.revision - 1 })
+      .expect(409, { ok: false, reason: 'stale-presentation' });
+    expect(sessions.current('livingroom').state).toBe('presenting');
+
+    const ack = await request(app).post('/api/v1/school/reading/session/ack')
+      .send({ location: 'livingroom', ...proof })
+      .expect(200);
+    expect(ack.body).toMatchObject({
+      ok: true,
+      session: { learnerId: 'user_5', sessionId: proof.sessionId, state: 'prompt' },
+    });
   });
 
   it('updates progress and preserves numeric coercion and timestamp fields', async () => {
@@ -170,10 +191,34 @@ describe('POST /read — the read is recorded on completion', () => {
     expect(await readingLog.listForDay('user_5', '2026-08-26')).toHaveLength(2);
   });
 
+  it('records the incident-shaped learner-a/Three Little Pigs completion against its frozen server pick', async () => {
+    const { app, readingLog, sessions } = build();
+    const opened = sessions.open({ location: 'livingroom', learnerId: 'learner-a' });
+    sessions.update('livingroom', {
+      state: 'reading',
+      pick: {
+        learnerId: 'learner-a', contentId: 'plex:620707', pickId: 'pick_mtku4ebd_2',
+        studyDay: '2026-09-02',
+      },
+      playing: { learnerId: 'learner-a', contentId: 'plex:620707', pickId: 'pick_mtku4ebd_2' },
+    });
+
+    const response = await request(app).post('/api/v1/school/reading/read').send({
+      learnerId: 'learner-a', contentId: 'plex:620707', title: 'The Three Little Pigs',
+      location: 'livingroom', sessionId: opened.sessionId, pickId: 'pick_mtku4ebd_2',
+    }).expect(200);
+
+    expect(response.body).toMatchObject({ recorded: true, read: { learnerId: 'learner-a', pickId: 'pick_mtku4ebd_2' } });
+    expect(await readingLog.listForDay('learner-a', '2026-09-02')).toEqual([
+      expect.objectContaining({
+        learnerId: 'learner-a', contentId: 'plex:620707', pickId: 'pick_mtku4ebd_2',
+      }),
+    ]);
+  });
+
   it('credits the learner the CALLER names, not whoever is at the reader now', async () => {
-    // D4: a card tapped mid-story swaps the context; the story keeps the credit
-    // it was picked with. The screen carries that attribution, so the route must
-    // take it from the body and never re-read the session.
+    // Legacy/repair callers may not carry a server-side pick. Their explicit
+    // learner remains the evidence owner; an unrelated prompt cannot steal it.
     const { app, readingLog, sessions } = build();
     sessions.open({ location: 'livingroom', learnerId: 'user_3' });
     await request(app).post('/api/v1/school/reading/read')
@@ -215,7 +260,8 @@ describe('POST /playing — nothing else moves a session to READING', () => {
   it('does NOT rewrite who the session belongs to — attribution was settled at pick time', async () => {
     const { app, sessions } = build();
     sessions.open({ location: 'livingroom', learnerId: 'user_5' });
-    // A sibling wandered past between the pick and the first frame (D4).
+    // The card workflow now forbids this transition. Keep the API defensive
+    // against a legacy or direct caller that bypasses that workflow.
     sessions.open({ location: 'livingroom', learnerId: 'user_3' });
     await request(app).post('/api/v1/school/reading/playing').send({
       location: 'livingroom', learnerId: 'user_5', contentId: 'plex:620681', pickId: 'p',
@@ -241,7 +287,7 @@ describe('POST /playing — nothing else moves a session to READING', () => {
 });
 
 describe('GET /summary — what the screen puts in front of the child', () => {
-  it('answers the count and target for today, and what they read yesterday', async () => {
+  it('answers the count, yesterday, and recent history newest first', async () => {
     const readingLog = memoryReadingLog({
       'user_5 2026-08-25': [
         { learnerId: 'user_5', studyDay: '2026-08-25', title: 'Corduroy', contentId: 'plex:1', at: 'x' },
@@ -256,6 +302,8 @@ describe('GET /summary — what the screen puts in front of the child', () => {
       enrolled: true, error: false, count: 1, target: 2, progressLabel: '1 of 2 stories',
     });
     expect(res.body.yesterday.map((r) => r.title)).toEqual(['Corduroy', 'Blueberries']);
+    expect(res.body.recent.map((r) => r.title)).toEqual(['Blueberries', 'Corduroy']);
+    expect(res.body.recent[0]).toMatchObject({ studyDay: '2026-08-25' });
   });
 
   it('is still an answer when the obligation cannot be read — the child still gets to pick a book', async () => {
@@ -288,6 +336,7 @@ describe('GET /summary — what the screen puts in front of the child', () => {
     const res = await request(app).get('/api/v1/school/reading/summary?learnerId=user_5');
     expect(res.status).toBe(200);
     expect(res.body.yesterday).toEqual([]);
+    expect(res.body.recent).toEqual([]);
   });
 
   it('refuses a summary for nobody', async () => {
@@ -297,9 +346,9 @@ describe('GET /summary — what the screen puts in front of the child', () => {
 });
 
 /**
- * `READING --ended--> PROMPT` (§5). The state machine has this transition and
- * nothing was performing it: `POST /playing` moved the session to `reading`,
- * and there it stayed for the rest of the evening.
+ * `READING --ended--> RETURNING --rendered face--> PROMPT` (§5). Completion
+ * clears the pick immediately, but the launch card is not switchable until the
+ * TV proves the learner's face is visible again.
  *
  * Two things break while a finished session sits at `reading`. The next book
  * tapped is evaluated by D5's mid-story branch, so in assignment mode it is
@@ -315,14 +364,17 @@ describe('POST /read — and the session it leaves behind', () => {
     location: 'livingroom', pickId: 'pick_1', ...over,
   });
 
-  it('takes the session back to the prompt, so the next book gets a countdown', async () => {
+  it('waits in returning until the launch face is acknowledged', async () => {
     const { app, sessions } = build();
     sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     sessions.update('livingroom', { state: 'reading', playing: { learnerId: 'user_5', pickId: 'pick_1' } });
 
-    await finish(app).expect(200);
+    const response = await finish(app).expect(200);
 
-    expect(sessions.current('livingroom')).toMatchObject({ state: 'prompt', pick: null, playing: null });
+    expect(sessions.current('livingroom')).toMatchObject({ state: 'returning', pick: null, playing: null });
+    expect(response.body.presentation).toMatchObject({ learnerId: 'user_5', reason: 'return' });
+    sessions.acknowledge('livingroom', response.body.presentation);
+    expect(sessions.current('livingroom')).toMatchObject({ state: 'prompt', learnerId: 'user_5' });
   });
 
   it('and that is what lets an abandoned session time out at all (D6)', async () => {
@@ -330,14 +382,14 @@ describe('POST /read — and the session it leaves behind', () => {
     sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     sessions.update('livingroom', { state: 'reading' });
     await finish(app).expect(200);
-    // `sweep` exempts `reading`; only a session back at `prompt` can expire.
-    expect(sessions.current('livingroom').state).toBe('prompt');
+    // `sweep` exempts `reading`; returning is bounded and may expire.
+    expect(sessions.current('livingroom').state).toBe('returning');
   });
 
   it('does NOT re-credit the read to whoever the session belongs to now (D4)', async () => {
-    // The story was picked by user_5; a sibling tapped in mid-story, so the
-    // session belongs to user_3. The read is the SCREEN's pick-time
-    // snapshot and nothing here may second-guess it.
+    // The card workflow now forbids a mid-story switch. This remains defense
+    // in depth for legacy/direct callers: the screen's pick-time snapshot is
+    // still evidence and nothing here may second-guess it.
     const { app, sessions, readingLog } = build();
     sessions.open({ location: 'livingroom', learnerId: 'user_3' });
     sessions.update('livingroom', { state: 'reading' });

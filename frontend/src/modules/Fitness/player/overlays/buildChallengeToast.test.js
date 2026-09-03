@@ -210,3 +210,25 @@ describe('buildChallengeToast — cycle success', () => {
     expect(toast.title).toBe('User_2 rode 1 phase');
   });
 });
+
+describe('buildChallengeToast — step and stomp', () => {
+  it('describes the physical target and timer at start', () => {
+    expect(buildChallengeToast('start', {
+      type: 'step', metric: 'steps', requiredCount: 40, totalSeconds: 60,
+    })).toEqual({
+      icon: '👟', title: '40 steps challenge', subtitle: '60 seconds', variant: 'info',
+    });
+  });
+
+  it('credits the completion-time assignee without changing the physical count', () => {
+    const toast = buildChallengeToast('end', {
+      type: 'step', metric: 'stomps', requiredCount: 8, actualCount: 8,
+      metUsers: ['user_2'], totalSeconds: 30, remainingSeconds: 5,
+    }, { resolveUserName: () => 'User_2' });
+    expect(toast.title).toBe('User_2 completed 8 stomps');
+    expect(toast.subtitle).toBe('in 25s');
+    expect(toast.contributors).toEqual([
+      { id: 'user_2', name: 'User_2', avatarUrl: '/api/v1/static/img/users/user_2' },
+    ]);
+  });
+});

@@ -51,7 +51,12 @@ export async function createStateGatesModule({
   configService, eventBus, householdId, clock = { now: () => Date.now() }, logger = console,
   roleIds = [], producerPrincipals = {},
   installedPolicy = INSTALLED_STATE_GATES_POLICY,
-  journalRetention = { maxEntries: 5000, maxAgeMs: 30 * 24 * 60 * 60 * 1000 },
+  // Journal + projection share current.yml and every commit dumps the whole
+  // file, so journal size is the cost of every write. 5000 entries / 30 days
+  // let it reach 2.6 MB and never compact; 500 / 7d keeps a commit cheap while
+  // still exceeding what replay (limit <= 500) or delivery recovery consumes.
+  // Cursors older than compactedThrough get the 410 the design already handles.
+  journalRetention = { maxEntries: 500, maxAgeMs: 7 * 24 * 60 * 60 * 1000 },
   retryPolicy: retryPolicyInput = {},
 }) {
   const moduleLogger = logger.child?.({ module: 'state-gates' }) ?? logger;
@@ -61,6 +66,7 @@ export async function createStateGatesModule({
   const engine = new YamlStateGatesStateEngine({
     resolveFilePath: id => `${configService.getHouseholdPath('state-gates/current', id)}.yml`,
     ...journalRetention,
+    logger: moduleLogger,
   });
   const projectionRepository = new YamlStateGatesProjectionRepository({ engine });
   const transitionRepository = new YamlStateGatesTransitionRepository({ engine });

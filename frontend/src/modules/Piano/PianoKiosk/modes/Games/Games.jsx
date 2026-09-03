@@ -40,7 +40,16 @@ import useBoardGameDay from './useBoardGameDay.js';
  */
 export function Games() {
   const pianoUser = useContext(PianoUserContext);
-  const gameAccess = useSchoolGameAccess(pianoUser?.currentUser ?? null);
+  // MUST pass `schoolLearner` — same idiom as PianoMenu.jsx and
+  // PianoVisualizer.jsx. Without it, `undefined` reads as "gated", so a
+  // grown-up School does not track (schoolLearner: false on the roster)
+  // queries an entitlement that has no `piano.games` item for them at all,
+  // gets back `indeterminate`, and is told to finish schoolwork they never
+  // had (2026-09-02 incident, repeated here because this one call site
+  // omitted the option the hook was already built to consume).
+  const gameAccess = useSchoolGameAccess(pianoUser?.currentUser ?? null, {
+    schoolLearner: (pianoUser?.users || []).find((u) => u.id === pianoUser?.currentUser)?.schoolLearner,
+  });
 
   if (!gameAccess.unlocked) {
     const message = gameAccess.status === 'error'

@@ -30,7 +30,7 @@ describe('ReadingSessionService', () => {
     expect(s.current('livingroom').openedAt).toBe('2026-08-26T18:00:00.000Z');
   });
 
-  it('a second card REPLACES the first — last tap wins', () => {
+  it('the trusted open seam may replace a fixture/session directly', () => {
     const s = new ReadingSessionService({ logger: silent });
     s.open({ location: 'livingroom', learnerId: 'user_5' });
     s.open({ location: 'livingroom', learnerId: 'user_3' });
@@ -52,14 +52,14 @@ describe('ReadingSessionService', () => {
 
   it('keeps a bounded, timestamped transition timeline for diagnosis', () => {
     const s = new ReadingSessionService({ clock: () => new Date('2026-08-28T19:00:00Z'), logger: silent });
-    const opened = s.open({ location: 'livingroom', learnerId: 'user_5' });
-    s.activate('livingroom', opened.sessionId);
+    const opened = s.open({ location: 'livingroom', learnerId: 'user_5', state: 'starting' });
+    const presenting = s.activate('livingroom', opened.sessionId);
     s.acknowledge('livingroom', opened.sessionId);
     s.update('livingroom', { state: 'confirm' });
     expect(s.observations('livingroom')).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'opened', sessionId: opened.sessionId, at: '2026-08-28T19:00:00.000Z' }),
-      expect.objectContaining({ type: 'activated' }),
-      expect.objectContaining({ type: 'acknowledged' }),
+      expect.objectContaining({ type: 'reserved', sessionId: opened.sessionId, at: '2026-08-28T19:00:00.000Z' }),
+      expect.objectContaining({ type: 'presentation-requested', presentationId: presenting.pendingPresentation.presentationId }),
+      expect.objectContaining({ type: 'presentation-acknowledged' }),
       expect.objectContaining({ type: 'updated', state: 'confirm' }),
     ]));
   });
@@ -75,20 +75,62 @@ describe('ReadingSessionService', () => {
       wait: async () => {},
     };
     const s = new ProductionReadingSessionService({ scheduler, logger: silent });
-    const opened = s.open({ location: 'livingroom', learnerId: 'user_5' });
+    const opened = s.open({ location: 'livingroom', learnerId: 'user_5', state: 'starting' });
+    const presenting = s.activate('livingroom', opened.sessionId);
 
-    await expect(s.waitForAcknowledgement(opened.sessionId, 321)).resolves.toBe(false);
+    await expect(s.waitForAcknowledgement(presenting.pendingPresentation.presentationId, 321)).resolves.toBe(false);
     expect(deadline).toMatchObject({ milliseconds: 321 });
   });
 
   it('resolves a pending delivery wait when the mounted screen acknowledges it', async () => {
     const s = new ReadingSessionService({ logger: silent });
-    const opened = s.open({ location: 'livingroom', learnerId: 'user_5' });
-    const acknowledgement = s.waitForAcknowledgement(opened.sessionId, 8_000);
+    const opened = s.open({ location: 'livingroom', learnerId: 'user_5', state: 'starting' });
+    const presenting = s.activate('livingroom', opened.sessionId);
+    const acknowledgement = s.waitForAcknowledgement(presenting.pendingPresentation.presentationId, 8_000);
 
     s.acknowledge('livingroom', opened.sessionId);
 
     await expect(acknowledgement).resolves.toBe(true);
+  });
+
+  it('does not mint a second presentation if activation is replayed', () => {
+    const s = new ReadingSessionService({ logger: silent });
+    const opened = s.open({ location: 'livingroom', learnerId: 'user_5', state: 'starting' });
+    const presenting = s.activate('livingroom', opened.sessionId);
+
+    expect(s.activate('livingroom', opened.sessionId)).toBeNull();
+    expect(s.current('livingroom')).toBe(presenting);
+  });
+
+  it('keeps the old learner authoritative until the exact presented face is acknowledged', () => {
+    const s = new ReadingSessionService({ logger: silent });
+    const old = s.open({ location: 'livingroom', learnerId: 'user_5' });
+    const requested = s.beginSwitch({ location: 'livingroom', learnerId: 'user_3' });
+
+    expect(s.current('livingroom')).toMatchObject({
+      learnerId: 'user_5', sessionId: old.sessionId, state: 'presenting',
+      pendingPresentation: { learnerId: 'user_3' },
+    });
+    expect(s.acknowledge('livingroom', { ...requested.presentation, revision: requested.presentation.revision - 1 })).toBeNull();
+    expect(s.current('livingroom').learnerId).toBe('user_5');
+
+    const committed = s.acknowledge('livingroom', requested.presentation);
+    expect(committed).toMatchObject({
+      learnerId: 'user_3', sessionId: requested.presentation.sessionId,
+      state: 'prompt', presentedAt: expect.any(String),
+    });
+  });
+
+  it('makes a finished story non-switchable until the returning face is rendered', () => {
+    const s = new ReadingSessionService({ logger: silent });
+    const opened = s.open({ location: 'livingroom', learnerId: 'user_5' });
+    s.update('livingroom', { state: 'reading', pick: { pickId: 'p' }, playing: { pickId: 'p' } });
+    const returning = s.beginReturn('livingroom');
+    expect(s.isSwitchable('livingroom')).toBe(false);
+    expect(s.current('livingroom')).toMatchObject({ state: 'returning', pick: null, playing: null });
+    s.acknowledge('livingroom', returning.presentation);
+    expect(s.isSwitchable('livingroom')).toBe(true);
+    expect(s.current('livingroom')).toMatchObject({ learnerId: 'user_5', sessionId: opened.sessionId });
   });
 
   it('broadcasts the open so the screen can render it', () => {

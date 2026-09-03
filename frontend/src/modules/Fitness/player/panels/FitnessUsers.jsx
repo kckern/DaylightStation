@@ -7,6 +7,7 @@ import '../FitnessSidebar.scss';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import RpmDeviceAvatar from '@/modules/Fitness/components/RpmDeviceAvatar.jsx';
 import { VibrationCard } from './RealtimeCards/VibrationCard.jsx';
+import { StepMatCard } from './RealtimeCards/StepMatCard.jsx';
 import { useZoneProfiles } from '@/hooks/useZoneProfiles.js';
 import { heartEmojiForColor, cssColorForStrap, hashColorForDevice, strapLabel } from '../../lib/strapColors.js';
 import { lookupZoneProgress as lookupZoneProgressFromIndex } from '@/modules/Fitness/domain/zoneProgressIndex.js';
@@ -133,6 +134,9 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     userCollections,
     deviceOwnership,
     getDisplayName, // Phase 4 SSOT: Use this instead of hrDisplayNameMap
+    pressureMatActivities = {},
+    assignEquipmentUser,
+    disengagePressureMat,
   } = fitnessContext;
 
   // Use context-provided arrays if available, fallback to derivation for backward compat
@@ -614,11 +618,18 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     if (rpmDevicesCopy.length > 0) {
       combined.push({ type: 'rpm-group', devices: rpmDevicesCopy });
     }
+    Object.values(pressureMatActivities)
+      .filter((snapshot) => snapshot?.seenThisSession)
+      .forEach((snapshot) => {
+        const equipmentEntry = (Array.isArray(equipment) ? equipment : [])
+          .find((entry) => String(entry?.id) === String(snapshot.equipmentId));
+        combined.push({ type: 'pressure-mat-activity', snapshot, equipment: equipmentEntry || { id: snapshot.equipmentId, name: 'Step Mat' } });
+      });
     combined.push(...otherDevices);
     setSortedDevices(combined);
     // resolveCanonicalUserName/lookupZoneProgress dropped from deps with the HR
     // comparator that used them. equipmentMap was already unused here.
-  }, [equipmentMap, activeHeartRateParticipants, contextRpmDevices, contextEquipmentDevices]);
+  }, [equipmentMap, equipment, activeHeartRateParticipants, contextRpmDevices, contextEquipmentDevices, pressureMatActivities]);
 
   // Decide vertical vs horizontal layout for user (heart_rate) cards
   useLayoutEffect(() => {
@@ -791,6 +802,22 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                       })}
                     </div>
                   </div>
+                );
+              }
+
+              if (device.type === 'pressure-mat-activity') {
+                const equipmentId = device.snapshot.equipmentId;
+                const assignedUserId = fitnessContext.fitnessSessionInstance?.getEquipmentUser?.(equipmentId) || null;
+                return (
+                  <StepMatCard
+                    key={`step-mat-${equipmentId}`}
+                    equipment={device.equipment}
+                    snapshot={device.snapshot}
+                    participants={activeHeartRateParticipants || []}
+                    assignedUserId={assignedUserId}
+                    onAssign={(userId) => assignEquipmentUser?.(equipmentId, userId)}
+                    onDisengage={() => disengagePressureMat?.(equipmentId)}
+                  />
                 );
               }
 

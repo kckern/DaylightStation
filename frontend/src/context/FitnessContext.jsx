@@ -256,11 +256,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, []);
 
   // App event bus
-  const emitAppEvent = React.useCallback((eventType, payload, sourceAppId) => {
+  const emitAppEvent = React.useCallback((eventType, payload, sourceAppId, options = {}) => {
     const event = { type: eventType, payload, source: sourceAppId, timestamp: Date.now() };
     const listeners = appEventListeners.current.get(eventType) || [];
     listeners.forEach(cb => { try { cb(event); } catch (e) { console.error(e); } });
-    fitnessSessionRef.current?.logEvent?.('app_event', event);
+    if (options.persist !== false) fitnessSessionRef.current?.logEvent?.('app_event', event);
   }, []);
 
   const subscribeToAppEvent = React.useCallback((eventType, callback) => {
@@ -1336,13 +1336,28 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       ...pressureMatStateRef.current,
       [reading.id]: reading,
     };
+    fitnessSessionRef.current?.ingestPressureMat?.(reading, { timestamp: Date.now() });
     batchedForceUpdate();
 
     const fitnessEvent = pressureMatFitnessEvent(reading);
     if (!fitnessEvent) return;
-    emitAppEvent('pressure-mat', reading, reading.id);
-    emitAppEvent(fitnessEvent.type, fitnessEvent.payload, reading.id);
+    // High-rate footfall edges are transient notifications. Canonical raw
+    // history is persisted by the backend pressure-mat relay; the workout
+    // timeline stores sampled totals and challenge milestones instead.
+    emitAppEvent('pressure-mat', reading, reading.id, { persist: false });
+    emitAppEvent(fitnessEvent.type, fitnessEvent.payload, reading.id, { persist: false });
   }, [batchedForceUpdate, emitAppEvent]);
+
+  const assignEquipmentUser = React.useCallback((equipmentId, userId) => {
+    fitnessSessionRef.current?.setEquipmentUser?.(equipmentId, userId || null);
+    batchedForceUpdate();
+  }, [batchedForceUpdate]);
+
+  const disengagePressureMat = React.useCallback((equipmentId) => {
+    const changed = fitnessSessionRef.current?.disengagePressureMat?.(equipmentId, { reason: 'touchscreen' }) || false;
+    if (changed) batchedForceUpdate();
+    return changed;
+  }, [batchedForceUpdate]);
 
   const pushFitnessToast = useCallback((toast) => {
     toastIdRef.current += 1;
@@ -2633,6 +2648,15 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, [govChallengeId, govChallengeStatus]);
 
   const treasureBox = session?.treasureBox ? session.treasureBox.summary : null;
+  // Snapshot identity must be stable between sensor/version updates. FitnessUsers
+  // derives its card list in an effect; returning a new object on every render
+  // would make that effect set state forever.
+  const pressureMatActivities = React.useMemo(
+    () => session?.getPressureMatSnapshots?.() || {},
+    // `version` is the mutation clock for the session-owned tracker Map.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [session, version]
+  );
 
   // TreasureBox instance and helpers for chart live edge and responsive UI
   const treasureBoxInstance = session?.treasureBox || null;
@@ -2664,6 +2688,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     connected,
     vibrationState: vibrationStateRef.current,
     pressureMatState: pressureMatStateRef.current,
+    pressureMatActivities,
     // Bluetooth game-controller management (Task 3.3)
     btInventory,
     controllerPairing,
@@ -2787,6 +2812,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     emitAppEvent,
     subscribeToAppEvent,
     reportGovernanceMetric,
+    assignEquipmentUser,
+    disengagePressureMat,
 
     // Legacy / Compatibility
     fitnessSession: session?.summary,

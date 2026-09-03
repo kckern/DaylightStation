@@ -10,7 +10,9 @@ import { ZONE_COLOR_MAP } from '@/modules/Fitness/lib/chartHelpers.js';
  */
 const REGISTRY = {
   cycle: { label: 'Cycle', color: '#f59e0b', icon: '🚴' },
-  zone:  { label: 'Zone',  color: '#3ba776', icon: '🎯' }
+  zone:  { label: 'Zone',  color: '#3ba776', icon: '🎯' },
+  vibration: { label: 'Impact', color: '#a855f7', icon: '💥' },
+  step: { label: 'Step', color: '#38bdf8', icon: '👟' }
 };
 
 const FALLBACK = { label: 'Challenge', color: '#94a3b8', icon: '🏆' };

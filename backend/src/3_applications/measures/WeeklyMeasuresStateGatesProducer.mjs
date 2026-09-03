@@ -7,12 +7,13 @@ function addDays(day, count) {
 
 /** Translate the roster-wide weekly measures projection into State Gates evidence. */
 export class WeeklyMeasuresStateGatesProducer {
-  #weekly; #publish; #timezone; #clock; #scheduler; #logger; #debounceMs; #refreshMs;
-  #cancelRefresh = null; #cancelPoll = null; #cancelRollover = null; #stopped = false; #last = new Map(); #revisions = new Map(); #running = null;
+  #weekly; #publish; #timezone; #clock; #scheduler; #logger; #debounceMs; #savedDebounceMs; #refreshMs;
+  #pending = null; #cancelPoll = null; #cancelRollover = null; #stopped = false; #last = new Map(); #revisions = new Map(); #running = null; #rerun = false;
 
   constructor({
     weeklyMeasures, publishAssertion, timezone = 'UTC', clock = () => new Date(),
-    debounceMs = 500, refreshMs = 5 * 60 * 1000, scheduler, logger = console,
+    debounceMs = 500, // prompt path; savedDebounceMs is the coalescing path
+    savedDebounceMs = 60 * 1000, refreshMs = 5 * 60 * 1000, scheduler, logger = console,
   } = {}) {
     if (!weeklyMeasures?.execute || typeof publishAssertion !== 'function'
       || typeof scheduler?.schedule !== 'function') {
@@ -24,6 +25,7 @@ export class WeeklyMeasuresStateGatesProducer {
     this.#clock = clock;
     this.#scheduler = scheduler;
     this.#debounceMs = debounceMs;
+    this.#savedDebounceMs = savedDebounceMs;
     this.#refreshMs = refreshMs;
     this.#logger = logger;
   }
@@ -37,27 +39,77 @@ export class WeeklyMeasuresStateGatesProducer {
 
   stop() {
     this.#stopped = true;
-    this.#cancelRefresh?.();
+    this.#rerun = false; // a stopped producer must not fire a trailing re-run
+    this.#pending?.cancel();
     this.#cancelPoll?.();
     this.#cancelRollover?.();
-    this.#cancelRefresh = null;
+    this.#pending = null;
     this.#cancelPoll = null;
     this.#cancelRollover = null;
   }
 
-  /** Coalesce chatty session saves into one roster-wide projection refresh. */
-  requestReconcile() {
+  /**
+   * Coalesce session changes into one roster-wide projection refresh.
+   *
+   * Only a plain autosave (`operation: 'saved'` — every 15 s from every open
+   * session) takes the slow `savedDebounceMs` path: the rings only need to
+   * catch up eventually. Everything else takes the prompt `debounceMs` path
+   * — ended, deleted, an unrecognised operation, or no change object at all.
+   * That denylist is deliberate: a new operation must opt IN to being
+   * delayed, so it can never be demoted to a minute-late reconcile by
+   * someone adding a case elsewhere.
+   *
+   * An already-pending request wins if it is at least as prompt; otherwise
+   * the prompt request cancels and replaces it. So repeated saves ride one
+   * window rather than pushing it back, and an ending session upgrades a
+   * pending save. Before this, every 15 s save drove a full per-learner
+   * publish against a multi-megabyte YAML re-parse — the 2026-09-02
+   * event-loop stall.
+   *
+   * The pending delay and its cancel handle live in ONE object so they
+   * cannot drift apart: a half-updated pair would make the guard compare
+   * against null, which reads as "always at least as prompt" and would wedge
+   * every later request silently. For the same reason the struct is dropped
+   * again if `schedule` throws — a pending record with no armed timer would
+   * absorb every later request forever — and a scheduler that hands back a
+   * non-function is left with the no-op cancel rather than breaking `stop()`.
+   */
+  requestReconcile(change = {}) {
     if (this.#stopped) return;
-    if (this.#cancelRefresh) return;
-    this.#cancelRefresh = this.#scheduler.schedule(this.#debounceMs, () => {
-      this.#cancelRefresh = null;
-      this.reconcile().catch((error) => this.#warn('reconcile-failed', error));
-    });
+    const delayMs = change?.operation === 'saved' ? this.#savedDebounceMs : this.#debounceMs;
+    if (this.#pending) {
+      if (delayMs >= this.#pending.delayMs) return;
+      this.#pending.cancel();
+    }
+    const pending = { delayMs, cancel: () => {} };
+    this.#pending = pending;
+    let cancel;
+    try {
+      cancel = this.#scheduler.schedule(delayMs, () => {
+        if (this.#pending === pending) this.#pending = null;
+        this.reconcile().catch((error) => this.#warn('reconcile-failed', error));
+      });
+    } catch (error) {
+      if (this.#pending === pending) this.#pending = null;
+      this.#warn('schedule-failed', error);
+      return;
+    }
+    if (this.#pending === pending && typeof cancel === 'function') pending.cancel = cancel;
   }
 
   async reconcile() {
-    if (this.#running) return this.#running;
-    this.#running = this.#reconcile().finally(() => { this.#running = null; });
+    if (this.#running) { this.#rerun = true; return this.#running; }
+    this.#running = this.#reconcile().finally(() => {
+      this.#running = null;
+      if (this.#rerun) {
+        this.#rerun = false;
+        // A request arrived after the in-flight run had already read the
+        // projection, so its data was never seen. Re-run once rather than
+        // dropping it — otherwise an end-of-session reconcile lands behind a
+        // 60s autosave reconcile and the final rings wait for the 5-min poll.
+        this.reconcile().catch((error) => this.#warn('reconcile-failed', error));
+      }
+    });
     return this.#running;
   }
 
@@ -96,13 +148,19 @@ export class WeeklyMeasuresStateGatesProducer {
     const now = this.#nowMs();
     if (!period || now < period.startsAt || now >= period.endsAt) return;
 
-    await Promise.all((projection.learners ?? []).map(async (row) => {
+    // Sequential on purpose. Every publish is a compare-and-swap on ONE
+    // household revision with a 3-attempt cap; in parallel the last learner
+    // in roster order lost every cycle ("State Gates state changed
+    // concurrently") and never had rings published at all, while the wasted
+    // retries re-parsed the whole state file 18x per cycle.
+    for (const row of projection.learners ?? []) {
       const rings = (row.measures ?? []).find((measure) => measure.id === 'fitness.rings');
-      if (!row.learnerId || !Number.isFinite(rings?.value)) return;
+      if (!row.learnerId || !Number.isFinite(rings?.value)) continue;
       const assertionId = `fitness:weekly-rings:${row.learnerId}:${projection.window.from}:${projection.window.to}`;
       const signature = String(rings.value);
-      if (this.#last.get(assertionId) === signature) return;
+      if (this.#last.get(assertionId) === signature) continue;
       try {
+        // eslint-disable-next-line no-await-in-loop
         await this.#publish({
           assertionId,
           claimTypeId: 'fitness.weekly.rings',
@@ -119,7 +177,7 @@ export class WeeklyMeasuresStateGatesProducer {
       } catch (error) {
         this.#warn('publish-failed', error, row.learnerId);
       }
-    }));
+    }
   }
 
   #armPoll() {

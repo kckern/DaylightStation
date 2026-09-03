@@ -267,3 +267,53 @@ describe('report cards (Task 6)', () => {
     expect(() => ds.writeReportCard(USER, '../../etc/passwd', CARD)).toThrow(/unsafe periodId/);
   });
 });
+
+describe('readAllBankRaws', () => {
+  const bank = (id) => `schema: school.question-bank/v1\nid: ${id}\nitems: []\n`;
+  let work;
+  beforeEach(() => {
+    work = path.join(tmp, 'content', 'school', 'math', 'algebra');
+    fs.mkdirSync(path.join(work, 'lessons'), { recursive: true });
+    fs.writeFileSync(path.join(work, '_index.yml'), 'schema: school.course/v2\ntitle: Algebra\n');
+    for (const n of ['l1', 'l2', 'l3', 'l4', 'l5']) {
+      fs.writeFileSync(path.join(work, 'lessons', `${n}.yml`), bank(`math/algebra/${n}`));
+    }
+  });
+
+  it('returns every v2 bank with its parsed raw, sorted by id', async () => {
+    const raws = await ds.readAllBankRaws();
+    expect(raws.map((r) => r.id)).toEqual([
+      'math/algebra/l1', 'math/algebra/l2', 'math/algebra/l3', 'math/algebra/l4', 'math/algebra/l5',
+    ]);
+    expect(raws.every((r) => r.raw?.schema === 'school.question-bank/v1')).toBe(true);
+  });
+
+  // The bulk read and the single read MUST agree on which ids exist. #bankFile
+  // gates on BANK_ID_RE; a bulk read that does not would summarise an
+  // unreachable bank into the /banks catalog — visible in the picker, null on
+  // open. Both id sources here (the legacy quizzes walk and the v2 bank ids)
+  // are filtered.
+  it('excludes ids failing BANK_ID_RE from the bulk read, matching readBankRaw', async () => {
+    fs.writeFileSync(path.join(work, 'lessons', '_hidden.yml'), bank('math/algebra/_hidden'));
+    fs.mkdirSync(path.join(work, 'quizzes'), { recursive: true });
+    fs.writeFileSync(path.join(work, 'quizzes', '_secret.yml'), bank('math/algebra/_secret'));
+
+    const ids = (await ds.readAllBankRaws()).map((r) => r.id);
+    expect(ids).toEqual([
+      'math/algebra/l1', 'math/algebra/l2', 'math/algebra/l3', 'math/algebra/l4', 'math/algebra/l5',
+    ]);
+    expect(ds.readBankRaw('math/algebra/_hidden')).toBeNull();
+    expect(ds.readBankRaw('math/algebra/_secret')).toBeNull();
+  });
+
+  it('walks a v2 course directory once, not once per bank id', async () => {
+    const spy = vi.spyOn(fs, 'readdirSync');
+    await ds.readAllBankRaws();
+    const workWalks = spy.mock.calls.filter(([dir]) => String(dir) === work).length;
+    spy.mockRestore();
+    // Was 6: one from listBankIds, plus one re-walk per bank id via
+    // #bankFile -> #v2BankEntries. O(N^2) sync YAML blocked the loop ~8s
+    // every 4-minute prewarm. See the 2026-09-02 bug report.
+    expect(workWalks).toBe(1);
+  });
+});

@@ -12,6 +12,11 @@ describe('getChallengeTypeDisplay', () => {
   it('returns the zone descriptor', () => {
     expect(getChallengeTypeDisplay('zone').label).toBe('Zone');
   });
+  it('returns a distinct step descriptor', () => {
+    const d = getChallengeTypeDisplay('step');
+    expect(d).toEqual(expect.objectContaining({ label: 'Step', icon: '👟' }));
+    expect(d.color).not.toBe(getChallengeTypeDisplay('cycle').color);
+  });
   it('falls back to a generic descriptor for unknown types', () => {
     const d = getChallengeTypeDisplay('mystery');
     expect(d).toBeTruthy();

@@ -280,6 +280,30 @@ describe('school ops', () => {
     const out = await runRead(['read', 'user_5', '--title', 'One', '--pick=pick_abc'], fakeConfig(dir));
     expect(out.write.row.pickId).toBe('pick_abc');
   });
+
+  it('preserves an explicit historical study day and completion instant', async () => {
+    const dir = readingTree();
+    const args = [
+      'read', 'user_5', '--title', 'The Three Little Pigs', '--content', 'plex:620707',
+      '--pick', 'pick_mtku4ebd_2', '--day', '2026-09-02', '--at', '2026-09-03T01:26:42.729Z',
+    ];
+    const dry = await runRead(args, fakeConfig(dir));
+    expect(dry.write.row).toMatchObject({
+      learnerId: 'user_5', studyDay: '2026-09-02',
+      at: '2026-09-03T01:26:42.729Z', pickId: 'pick_mtku4ebd_2',
+    });
+
+    await runRead([...args, '--apply'], fakeConfig(dir));
+    await runRead([...args, '--apply'], fakeConfig(dir));
+    const shard = fs.readFileSync(path.join(dir, 'school/records/reading/user_5/2026-09-02.yml'), 'utf8');
+    expect(shard.match(/pick_mtku4ebd_2/g)).toHaveLength(1);
+  });
+
+  it('rejects malformed historical dates and instants', async () => {
+    const config = fakeConfig(readingTree());
+    await expect(runRead(['read', 'user_5', '--day', '2026-02-30'], config)).rejects.toThrow(/real calendar date/);
+    await expect(runRead(['read', 'user_5', '--at', 'not-a-time'], config)).rejects.toThrow(/valid ISO instant/);
+  });
 });
 
 describe('school ops option parsing', () => {

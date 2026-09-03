@@ -132,6 +132,21 @@ describe('resolveGovernanceDisplay — non-governed', () => {
   });
 });
 
+describe('resolveGovernanceDisplay — activity rate', () => {
+  it('surfaces an unsatisfied step-rate requirement without inventing an HR row', () => {
+    const requirement = {
+      id: 'keep-stepping', type: 'activity_rate', equipment: 'step_mat',
+      currentRate: 12, targetRate: 30, satisfied: false, missingUsers: [], metUsers: [],
+    };
+    const result = resolveGovernanceDisplay(makeGovState({
+      status: 'locked', requirements: [requirement], activeUserCount: 0,
+    }), emptyDisplayMap, emptyZoneMeta);
+    expect(result.show).toBe(true);
+    expect(result.rows).toEqual([]);
+    expect(result.activityRequirements).toEqual([requirement]);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // metRows: participants who HAVE satisfied their requirement.
 // `rows` is missing-only by construction, so without metRows a rider who

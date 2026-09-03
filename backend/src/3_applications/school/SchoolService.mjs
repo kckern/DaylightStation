@@ -237,10 +237,10 @@ export class SchoolService {
     return this.#bankSummaries && (this.#now() - this.#bankSummaries.at) < BANK_SUMMARY_TTL_MS;
   }
 
-  // Populate the summary cache via the datastore's ASYNC bulk read — off the
-  // main thread, so warming (boot pre-warm, background refresh, or a cold
-  // /banks request) never freezes the event loop like the old sync scan did.
-  // Deduped: concurrent callers share one scan.
+  // Populate the summary cache via the datastore's bulk read. Legacy files
+  // read async; v2 courses are one sync walk each with a macrotask yield
+  // between works (see YamlSchoolDatastore.readAllBankRaws). Deduped:
+  // concurrent callers share one scan.
   async warmBanks({ force = false } = {}) {
     if (!force && this.#bankSummariesFresh()) return this.#bankSummaries.list;
     if (this.#warming) return this.#warming;
