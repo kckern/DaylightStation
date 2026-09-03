@@ -119,9 +119,14 @@ export function createHealthApiRouter(config) {
     logger,
   });
 
-  // Same PhotoStore instance the nutribot image use case persists through
-  // (see createNutribotServices) — both resolve the same
-  // users/{userId}/lifelog/nutrition/photos directory via dataService.
+  // A SEPARATE PhotoStore instance from the one createNutribotServices
+  // builds for the image use case (bootstrap.mjs) — same pattern this file
+  // already uses for goals/savedMeals/medical datastores: each composition
+  // path constructs its own adapter instance off the shared `dataService`,
+  // rather than threading one instance across composition boundaries. Both
+  // instances resolve the identical on-disk
+  // users/{userId}/lifelog/nutrition/photos directory, so this is
+  // operationally equivalent to a singleton without actually being one.
   const photoStore = new PhotoStore({ dataService, logger });
 
   return createHealthRouter({

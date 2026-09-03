@@ -846,10 +846,19 @@ export function createHealthRouter(config) {
    * path, a percent-encoded traversal form, or simply the wrong shape — is
    * refused with 404 before touching the filesystem.
    *
-   * Content-Type is never taken from the client; PhotoStore always stores
-   * (and this always serves) a `.jpg`-named file, so the type is fixed to
-   * image/jpeg — derived from what was actually stored, not asserted by the
-   * request.
+   * `userId` is intentionally NOT read from the request. This program is
+   * single-user (household head only); a client-supplied userId would (a)
+   * defeat PhotoStore's containment check, because the check validates
+   * against a base directory built from that same untrusted value, and
+   * (b) have no legitimate caller — nothing in the frontend sends this
+   * parameter. Always resolve to the household default.
+   *
+   * Content-Type is set explicitly from the fixed on-disk naming
+   * PhotoStore always writes (`.jpg`/`.thumb.jpg`) — never taken from the
+   * client, and never inferred by Express from the resolved file's
+   * extension (see streamFile.mjs: sendFile derives type from the path,
+   * which happens to agree here, but explicit is the actual guarantee).
+   * `X-Content-Type-Options: nosniff` pins that against client sniffing.
    *
    * Query: size=thumb (optional) - serves the thumbnail variant, falling
    * back to the original photo if no thumbnail exists.
@@ -865,13 +874,16 @@ export function createHealthRouter(config) {
       return res.status(404).json({ error: 'Photo not found' });
     }
 
-    const userId = req.query.userId || getDefaultUsername();
+    // Never read userId from the request — see security note above.
+    const userId = getDefaultUsername();
     const size = req.query.size === 'thumb' ? 'thumb' : undefined;
     const absolutePath = photoStore.resolvePath(userId, photoRef, { size });
     if (!absolutePath) {
       return res.status(404).json({ error: 'Photo not found' });
     }
 
+    res.set('Content-Type', 'image/jpeg');
+    res.set('X-Content-Type-Options', 'nosniff');
     const resource = createLocalFileResource(absolutePath, { mimeType: 'image/jpeg' });
     return sendLocalFileResource(req, res, resource, (err) => {
       if (err && !res.headersSent) {

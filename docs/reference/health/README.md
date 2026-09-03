@@ -191,6 +191,44 @@ renders like any other row: tapping it opens `EntryEditSheet` to edit or delete,
 `TodayView`, when the result isn't `unknownUpc`) submit through the identical
 `/nutrition/input` call and follow the same reload-or-notice handling.
 
+### Photo persistence
+
+A photo capture that produces at least one food item is persisted, not thrown away after
+the AI call. `PhotoStore` (`backend/src/1_adapters/persistence/PhotoStore.mjs`) writes the
+original under the capturing user's own data tree —
+`users/{userId}/lifelog/nutrition/photos/{photoRef}.jpg` — plus a best-effort
+`{photoRef}.thumb.jpg` thumbnail (via `jimp`; a decode failure there is logged and
+swallowed, never blocking the save). `photoRef` is a short opaque id (`ph_` + base62) minted
+fresh per photo, written exclusively (a collision throws rather than silently overwriting).
+
+**Where the ref lands.** A grouped (multi-dish) parse stamps `photoRef` on each synthesized
+GROUP row, not on its members — one photo can produce two sibling groups (two plates in
+one frame) plus a standalone item, and all three top-level rows share the same ref. A
+single ungrouped item gets the ref directly. A group's members never carry their own
+`photoRef`; the row above them already does.
+
+**Failure posture.** Photo persistence can never block food logging. A `PhotoStore`
+failure (disk error, an undecodable buffer, no store configured at all) is caught, logged
+as a warning, and the entry is saved exactly as if no photo had been supplied — no
+`photoRef`, nothing else different.
+
+**Serving.** `GET /nutrition/photos/:photoRef` streams the file back, resolved through the
+same `PhotoStore`. The route always resolves the photo under the household's own user —
+there is no `userId` query parameter, deliberately: this program is single-user, nothing
+sends one, and honoring a client-supplied value would let it point the containment check
+at an attacker-chosen base directory. `photoRef` is checked against a strict `ph_`+base62
+allowlist before it touches any path, and the resolved path is independently confirmed to
+stay inside the user's photo directory after the join. Content-Type is always set
+explicitly to `image/jpeg` (plus `X-Content-Type-Options: nosniff`) from the fixed
+`.jpg`/`.thumb.jpg` naming PhotoStore always writes — never taken from the client, and
+never left to Express's extension-sniffing to get right on its own. `save()` does not
+inspect magic bytes, so "the stored file is actually a JPEG" is an assumption the fixed
+extension makes true in practice, not something enforced at write time.
+
+**Retention.** Photos are kept indefinitely alongside the log — there is no deletion path
+and no garbage collection. A photo may be referenced by more than one entry, so deleting a
+log entry never deletes its photo file.
+
 ### Barcode → unknown UPC → custom food
 
 `BarcodeCapture` decodes via the native `BarcodeDetector` API, falling back to
@@ -383,6 +421,7 @@ All under `/api/v1/health/`, from `backend/src/4_api/v1/routers/health.mjs`:
 | `POST /nutrition/input` | unified capture entry point (`type: text\|image\|voice\|barcode`) |
 | `POST /nutrition/callback` | resolve a capture's Undo/Edit/portion choice, or a scale-pending Accept/Discard |
 | `GET /nutrition/pending?date=` | pending NutriLogs for a date (the scale's NEEDS REVIEW banner) |
+| `GET /nutrition/photos/:photoRef` | serve a captured photo (see [Photo persistence](#photo-persistence) below) |
 | `GET /medical`, `POST /medical`, `DELETE /medical/:id` | medical readings |
 | `GET /dashboard` | aggregate summary (weight/nutrition/sessions/goals) consumed by `TodayView`'s coach-line footer |
 | `GET /mentions/all` (separate router, `health-mentions.mjs`) | `@`-mention autocomplete for the coach chat composer (periods, recent days, metrics) |
