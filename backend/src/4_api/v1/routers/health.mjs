@@ -20,6 +20,11 @@ import { presentPendingNutritionLog } from '../presenters/PendingNutritionLogPre
 // applied BEFORE the ref is handed to photoStore.resolvePath() at all.
 const PHOTO_REF_PATTERN = /^ph_[A-Za-z0-9]+$/;
 
+// Same four ids as MealTimes (2_domains/nutrition/entities/schemas.mjs) —
+// duplicated here, not imported, for the same reason as PHOTO_REF_PATTERN
+// above: the API layer may not import domains directly (api-no-domains).
+const NUTRITION_MEAL_BUCKETS = ['morning', 'afternoon', 'evening', 'night'];
+
 /** Local (not UTC) YYYY-MM-DD from a Date instance. */
 function localDateISO(d) {
   const y = d.getFullYear();
@@ -766,15 +771,28 @@ export function createHealthRouter(config) {
      * Body:
      *   - type: "text" | "voice" | "image" | "barcode" (required)
      *   - content: text string or barcode/UPC value (for text/barcode types)
+     *   - bucket: "morning" | "afternoon" | "evening" | "night" (optional) — the
+     *     meal-time row the capture was launched from (Task 4.1). An explicit
+     *     meal named in the utterance/caption still beats this; this beats the
+     *     clock default. Omit entirely for existing behavior — Telegram, the
+     *     coach, and the scale path never send it.
      */
     router.post('/nutrition/input', asyncHandler(async (req, res) => {
       const userId = getDefaultUsername();
-      const { type, content } = req.body;
+      const { type, content, bucket } = req.body;
       if (!type) {
         return res.status(400).json({ error: 'type is required (text, voice, image, barcode)' });
       }
+      // A bad bucket must be rejected here, never passed downstream — a phantom
+      // meal id silently landing food in the wrong bucket is worse than a 400.
+      // `bucket == null` (absent or explicit null) is treated as "not provided".
+      if (bucket != null && !NUTRITION_MEAL_BUCKETS.includes(bucket)) {
+        return res.status(400).json({
+          error: `Invalid bucket: ${bucket}. Must be one of: ${NUTRITION_MEAL_BUCKETS.join(', ')}`,
+        });
+      }
       try {
-        const result = await healthOperations.processNutritionInput({ type, content, userId });
+        const result = await healthOperations.processNutritionInput({ type, content, userId, bucket });
         return res.json(result);
       } catch (err) {
         logger.error?.('health.nutrition.input.error', { type, error: err.message });

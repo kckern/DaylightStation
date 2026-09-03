@@ -27,6 +27,7 @@ import { AcceptFoodLog } from '../usecases/AcceptFoodLog.mjs';
 import { DiscardFoodLog } from '../usecases/DiscardFoodLog.mjs';
 import { SelectUPCPortion } from '../usecases/SelectUPCPortion.mjs';
 import { LogFoodFromText } from '../usecases/LogFoodFromText.mjs';
+import { LogFoodFromVoice } from '../usecases/LogFoodFromVoice.mjs';
 import { createNutriLog } from '../nutriLogRecords.mjs';
 
 const silentLogger = { debug() {}, info() {}, warn() {}, error() {} };
@@ -74,8 +75,14 @@ function makeResponseContext() {
   };
 }
 
-/** A stand-in for LogFoodFromText: creates a PENDING log and sends the Accept row itself. */
-function makeCaptureUseCase(foodLogStore, { items } = {}) {
+/**
+ * A stand-in for LogFoodFromText: creates a PENDING log (meal.time: 'morning',
+ * simulating the clock default `getMealTimeFromHour` bakes in at creation) and
+ * sends the Accept row itself. `mealTime`/`mealTimeExplicit` simulate what the
+ * AI parse reported (Task 4.1) — omitted by default, matching every existing
+ * caller (Telegram, coach, scale) that predates the mealTimeExplicit prompt field.
+ */
+function makeCaptureUseCase(foodLogStore, { items, mealTime, mealTimeExplicit } = {}) {
   return {
     execute: vi.fn(async ({ userId, conversationId, responseContext }) => {
       const log = createNutriLog({
@@ -94,12 +101,17 @@ function makeCaptureUseCase(foodLogStore, { items } = {}) {
         choices: acceptRow(log.id),
         inline: true,
       });
-      return { success: true, nutrilogUuid: log.id };
+      return {
+        success: true,
+        nutrilogUuid: log.id,
+        ...(mealTime !== undefined ? { mealTime } : {}),
+        ...(mealTimeExplicit !== undefined ? { mealTimeExplicit } : {}),
+      };
     }),
   };
 }
 
-function makeHarness({ conversationState = null, captureUseCase, scaleUseCase, foodLogStore } = {}) {
+function makeHarness({ conversationState = null, captureUseCase, scaleUseCase, foodLogStore, voiceUseCase } = {}) {
   foodLogStore = foodLogStore || makeFoodLogStore();
   const nutriListStore = { saveMany: vi.fn(async () => {}), removeByLogId: vi.fn(async () => 2) };
   const messagingGateway = {
@@ -128,6 +140,7 @@ function makeHarness({ conversationState = null, captureUseCase, scaleUseCase, f
     getLogFoodFromText: () => logFoodFromText,
     getLogFoodFromUPC: () => logFoodFromText,
     getLogScaleFoodFromText: () => logScaleFoodFromText,
+    ...(voiceUseCase ? { getLogFoodFromVoice: () => voiceUseCase } : {}),
   };
 
   const router = new NutribotInputRouter(container, { logger: silentLogger });
@@ -396,5 +409,107 @@ describe('Undo (discard) of a committed log', () => {
     expect(result.success).toBe(true);
     expect(foodLogStore.logs.get(log.id).status).toBe('deleted');
     expect(nutriListStore.removeByLogId).toHaveBeenCalledWith('kc', log.id);
+  });
+});
+
+describe('meal-time precedence (Task 4.1) — explicit-in-utterance > bucket > clock', () => {
+  it('no bucket, no explicit meal: clock default survives untouched (backward compatibility)', async () => {
+    // No `bucket` key in payload at all — exactly what Telegram, the coach, and
+    // the scale path send today. The use case's own clock-derived meal.time
+    // ('morning', baked in by makeCaptureUseCase) must be the final answer.
+    const { router, foodLogStore } = makeHarness();
+    const rc = makeResponseContext();
+
+    const out = await router.handleText(textEvent, rc);
+
+    expect(out.mealTime).toBe('morning');
+    expect(out.moved).toBe(false);
+    expect(foodLogStore.logs.get(out.logId).meal.time).toBe('morning');
+  });
+
+  it('bucket given, no explicit meal: the bucket wins over the clock default', async () => {
+    const { router, foodLogStore } = makeHarness();
+    const rc = makeResponseContext();
+    const event = { ...textEvent, payload: { text: 'apple and toast', bucket: 'evening' } };
+
+    const out = await router.handleText(event, rc);
+
+    expect(out.mealTime).toBe('evening');
+    expect(out.moved).toBe(false);
+    expect(foodLogStore.logs.get(out.logId).meal.time).toBe('evening');
+  });
+
+  it('bucket given, explicit meal DIFFERENT: the explicit meal wins and the response reports the move', async () => {
+    // Simulates tapping the mic on the Breakfast row and saying "chicken wrap
+    // for lunch" — the AI parse reports mealTimeExplicit:true, mealTime:'afternoon'.
+    const foodLogStore = makeFoodLogStore();
+    const captureUseCase = makeCaptureUseCase(foodLogStore, { mealTime: 'afternoon', mealTimeExplicit: true });
+    const { router } = makeHarness({ captureUseCase, foodLogStore });
+    const rc = makeResponseContext();
+    const event = { ...textEvent, payload: { text: 'chicken wrap for lunch', bucket: 'morning' } };
+
+    const out = await router.handleText(event, rc);
+
+    expect(out.mealTime).toBe('afternoon');
+    expect(out.moved).toBe(true);
+    expect(foodLogStore.logs.get(out.logId).meal.time).toBe('afternoon');
+  });
+
+  it('bucket given, explicit meal SAME: no spurious "moved" report', async () => {
+    const foodLogStore = makeFoodLogStore();
+    const captureUseCase = makeCaptureUseCase(foodLogStore, { mealTime: 'afternoon', mealTimeExplicit: true });
+    const { router } = makeHarness({ captureUseCase, foodLogStore });
+    const rc = makeResponseContext();
+    const event = { ...textEvent, payload: { text: 'chicken wrap for lunch', bucket: 'afternoon' } };
+
+    const out = await router.handleText(event, rc);
+
+    expect(out.mealTime).toBe('afternoon');
+    expect(out.moved).toBe(false);
+    expect(foodLogStore.logs.get(out.logId).meal.time).toBe('afternoon');
+  });
+
+  it('voice genuinely inherits the precedence: LogFoodFromVoice delegates verbatim to LogFoodFromText', async () => {
+    // Real LogFoodFromVoice wrapping a real LogFoodFromText (not stand-ins) —
+    // this is the actual delegation path (LogFoodFromVoice.execute() calls
+    // `this.#logFoodFromText.execute(...)` and returns its result unchanged),
+    // so if the precedence machinery works through handleText it must also
+    // work through handleVoice, with no extra wiring anywhere.
+    const foodLogStore = makeFoodLogStore();
+    const aiGateway = {
+      chat: vi.fn(async () => JSON.stringify({
+        items: [{ name: 'Chicken Wrap', grams: 250, calories: 450, noom_color: 'yellow' }],
+        date: '2026-09-02',
+        time: 'afternoon',
+        mealTimeExplicit: true,
+      })),
+    };
+    const realLogFoodFromText = new LogFoodFromText({
+      messagingGateway: { sendMessage: vi.fn(), updateMessage: vi.fn(), deleteMessage: vi.fn() },
+      aiGateway,
+      foodLogStore,
+      logger: silentLogger,
+    });
+    const voiceMessagingGateway = {
+      transcribeVoice: vi.fn(async () => 'chicken wrap for lunch'),
+      sendMessage: vi.fn(async () => ({ messageId: 'm' })),
+      deleteMessage: vi.fn(async () => {}),
+    };
+    const voiceUseCase = new LogFoodFromVoice({
+      messagingGateway: voiceMessagingGateway,
+      logFoodFromText: realLogFoodFromText,
+      logger: silentLogger,
+    });
+
+    const { router } = makeHarness({ foodLogStore, voiceUseCase });
+    const rc = makeResponseContext();
+    const event = { ...textEvent, type: 'voice', payload: { fileId: 'voice-1', bucket: 'morning' } };
+
+    const out = await router.handleVoice(event, rc);
+
+    expect(voiceMessagingGateway.transcribeVoice).toHaveBeenCalledWith('voice-1');
+    expect(out.mealTime).toBe('afternoon');
+    expect(out.moved).toBe(true);
+    expect(foodLogStore.logs.get(out.logId).meal.time).toBe('afternoon');
   });
 });

@@ -5,6 +5,7 @@ import { decodeCallback, CallbackActions } from '../lib/callback.mjs';
 import { buildCommittedChoices, withCommittedChoices } from '../lib/committedChoices.mjs';
 import { serializeFoodItem } from '../nutriLogRecords.mjs';
 import { NutribotScaleRefusal } from '../ports/NutribotScaleRefusal.mjs';
+import { MealTimes } from '#domains/nutrition/entities/schemas.mjs';
 
 /**
  * Nutribot Input Router
@@ -76,15 +77,23 @@ export class NutribotInputRouter extends BaseInputRouter {
 
     if (!logId) {
       this.logger.debug?.('nutribot.capture.noLog', { source, conversationId: event.conversationId });
-      return { ok: true, result, committed: false, logId: null, items: [] };
+      return { ok: true, result, committed: false, logId: null, items: [], mealTime: null, moved: false };
     }
 
     const userId = this.#resolveUserId(event);
     const items = await this.#stampUnsettled(userId, logId, source);
+    const { mealTime, moved } = await this.#resolveMealTime({
+      userId,
+      logId,
+      source,
+      bucket: event.payload?.bucket || null,
+      parsedMealTime: result?.mealTime ?? null,
+      parsedMealTimeExplicit: result?.mealTimeExplicit === true,
+    });
 
     if (!commit) {
       this.logger.debug?.('nutribot.capture.stampedOnly', { source, logId, itemCount: items.length });
-      return { ok: true, result, committed: false, logId, items };
+      return { ok: true, result, committed: false, logId, items, mealTime, moved };
     }
 
     const committed = await this.#commitCapture({
@@ -95,7 +104,77 @@ export class NutribotInputRouter extends BaseInputRouter {
       source,
     });
 
-    return { ok: true, result, committed, logId, items };
+    return { ok: true, result, committed, logId, items, mealTime, moved };
+  }
+
+  /**
+   * Meal-time precedence — the ONE place this decision is made.
+   *
+   * Precedence: explicit-in-utterance/caption > bucket param > clock (the
+   * clock default is already baked into the log's meal.time by the use case
+   * that created it, via `getMealTimeFromHour` — untouched here means "keep
+   * the clock default", which is what preserves backward compatibility for
+   * every caller that never sends a `bucket`: Telegram, the coach, the scale).
+   *
+   * `moved` reports the ONLY case worth surfacing to the UI: the user asked
+   * for one bucket (by launching the capture from it) but named a DIFFERENT
+   * meal out loud, and that named meal won. Overriding a clock default with a
+   * bucket, or matching the requested bucket, is not a "move" — it's just the
+   * capture landing where it was asked to.
+   *
+   * @private
+   * @param {Object} opts
+   * @param {string} opts.userId
+   * @param {string} opts.logId
+   * @param {string} opts.source - capture kind, for logs
+   * @param {string|null} opts.bucket - validated bucket id from the request, or null
+   * @param {string|null} opts.parsedMealTime - the meal time the AI parse reported
+   * @param {boolean} opts.parsedMealTimeExplicit - true only when the AI parse says the
+   *   user named/implied a meal explicitly
+   * @returns {Promise<{ mealTime: string|null, moved: boolean }>}
+   */
+  async #resolveMealTime({ userId, logId, source, bucket, parsedMealTime, parsedMealTimeExplicit }) {
+    let store = null;
+    try {
+      store = this.container.getFoodLogStore?.();
+    } catch {
+      store = null;
+    }
+    if (!store?.findByUuid || !store?.save) return { mealTime: null, moved: false };
+
+    let log;
+    try {
+      log = await store.findByUuid(logId, userId);
+    } catch (e) {
+      this.logger.warn?.('nutribot.capture.mealTime.fetchFailed', { source, logId, error: e.message });
+      return { mealTime: null, moved: false };
+    }
+    if (!log) return { mealTime: null, moved: false };
+
+    const currentMealTime = log.meal?.time || null;
+    const validBucket = MealTimes.includes(bucket) ? bucket : null;
+    const explicit = parsedMealTimeExplicit === true && MealTimes.includes(parsedMealTime);
+
+    const resolvedMealTime = explicit ? parsedMealTime : (validBucket || currentMealTime);
+    const moved = explicit && !!validBucket && parsedMealTime !== validBucket;
+
+    if (resolvedMealTime && resolvedMealTime !== currentMealTime) {
+      try {
+        const mealDate = log.meal?.date;
+        await store.save(log.updateDate(mealDate, resolvedMealTime, new Date()));
+      } catch (e) {
+        this.logger.warn?.('nutribot.capture.mealTime.saveFailed', { source, logId, error: e.message });
+        return { mealTime: currentMealTime, moved: false };
+      }
+    }
+
+    if (moved) {
+      this.logger.info?.('nutribot.capture.mealMoved', {
+        source, logId, requestedBucket: validBucket, resolvedMealTime,
+      });
+    }
+
+    return { mealTime: resolvedMealTime, moved };
   }
 
   /**

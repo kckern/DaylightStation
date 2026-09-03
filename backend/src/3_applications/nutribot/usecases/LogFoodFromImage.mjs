@@ -95,6 +95,7 @@ export class LogFoodFromImage {
    */
   async execute(input) {
     const { userId, conversationId, imageData, messageId: userMessageId, responseContext } = input;
+    const userCaption = imageData?.caption || null;
 
     this.#logger.info?.('logImage.start', {
       conversationId,
@@ -200,7 +201,7 @@ export class LogFoodFromImage {
         }
       }
 
-      const prompt = this.#buildDetectionPrompt(portionBoost);
+      const prompt = this.#buildDetectionPrompt(portionBoost, userCaption);
       const response = await this.#aiGateway.chatWithImage(prompt, imageForAI, { maxTokens: 4096 });
 
       this.#logger.info?.('logImage.aiResponse', {
@@ -210,7 +211,7 @@ export class LogFoodFromImage {
       });
 
       // 6. Parse response into food items
-      const foodItems = this.#parseFoodResponse(response);
+      const { items: foodItems, time: aiTime, mealTimeExplicit } = this.#parseFoodResponse(response);
 
       if (foodItems.length === 0) {
         this.#logger.warn?.('logImage.noFoodDetected', {
@@ -311,6 +312,13 @@ export class LogFoodFromImage {
         nutrilogUuid: nutriLog.id,
         messageId: photoMsgId,
         itemCount: foodItems.length,
+        // Task 4.1 — meal-time precedence seam (NutribotInputRouter#capture).
+        // The log itself always stores the CLOCK-derived meal.time above (unchanged,
+        // for backward compatibility); mealTime/mealTimeExplicit here just report what
+        // the AI parsed from the caption, so the router seam can override the stored
+        // log when the caption named a meal explicitly or a bucket param was supplied.
+        mealTime: aiTime,
+        mealTimeExplicit: mealTimeExplicit === true,
       };
     } catch (error) {
       this.#logger.error?.('logImage.error', {
@@ -369,7 +377,7 @@ export class LogFoodFromImage {
    * Build detection prompt
    * @private
    */
-  #buildDetectionPrompt(portionBoost = '') {
+  #buildDetectionPrompt(portionBoost = '', caption = null) {
     const conservativeNote = portionBoost
       ? 'Use the portion adjustment factor above to calibrate your gram estimates.'
       : 'Be conservative with estimates.';
@@ -386,9 +394,12 @@ export class LogFoodFromImage {
 6. Select the best matching icon from this list: ${this.#foodIconsString}
 7. Use Title Case for all food names.
 8. If a food is a composite dish (e.g. a sandwich, a smoothie, a burger) that you broke down into ingredient items per instruction 2, give every one of those ingredient items the SAME "dish" string (the dish's name). Standalone foods that were not broken down OMIT "dish" entirely. If the photo shows two separate dishes or plates, use a DIFFERENT "dish" value for each plate's items.
+9. If a caption is provided with the photo, determine whether it explicitly names or clearly implies a specific meal (e.g. "for lunch", "breakfast", "a midnight snack"). If so, set "mealTimeExplicit" to true and set "time" to that meal: "morning", "afternoon", "evening", or "night". If there is no caption, or it does not name a meal, omit "mealTimeExplicit" (or set it to false) and omit "time".
 
 Respond in JSON format:
 {
+  "time": "afternoon",
+  "mealTimeExplicit": false,
   "items": [
     {
       "name": "Food Name In Title Case",
@@ -410,12 +421,15 @@ Respond in JSON format:
   ]
 }
 ("dish" is OPTIONAL — omit it for a standalone item; include it only on items that are part of a named composite or a specific plate.)
+("time" and "mealTimeExplicit" are OPTIONAL — set mealTimeExplicit true and time to the named meal only when the caption explicitly names or implies one; omit both otherwise.)
 
 ${conservativeNote}${portionBoost}`,
       },
       {
         role: 'user',
-        content: 'What food do you see in this image? Provide nutrition estimates.',
+        content: caption
+          ? `What food do you see in this image? Provide nutrition estimates. The user captioned this photo: "${caption}"`
+          : 'What food do you see in this image? Provide nutrition estimates.',
       },
     ];
   }
@@ -425,6 +439,7 @@ ${conservativeNote}${portionBoost}`,
    * @private
    */
   #parseFoodResponse(response) {
+    const empty = { items: [], time: null, mealTimeExplicit: false };
     try {
       const jsonMatch = response.match(/\{[\s\S]*\}?/);
       if (!jsonMatch) {
@@ -432,7 +447,7 @@ ${conservativeNote}${portionBoost}`,
           responseLength: response?.length || 0,
           responsePreview: response?.substring(0, 300),
         });
-        return [];
+        return empty;
       }
       let data;
       try {
@@ -443,7 +458,7 @@ ${conservativeNote}${portionBoost}`,
           this.#logger.warn?.('logImage.parseRepaired', { itemCount: data.items?.length || 0 });
         }
       }
-      if (!data) return [];
+      if (!data) return empty;
       const rawItems = data.items || [];
       this.#logger.info?.('logImage.parse.success', { itemCount: rawItems.length });
 
@@ -466,13 +481,17 @@ ${conservativeNote}${portionBoost}`,
         ...(item.dish ? { dish: item.dish } : {}),
       }));
 
-      return groupParsedItems(items, { makeId: uuidv4 });
+      return {
+        items: groupParsedItems(items, { makeId: uuidv4 }),
+        time: data.time || null,
+        mealTimeExplicit: data.mealTimeExplicit === true,
+      };
     } catch (e) {
       this.#logger.warn?.('logImage.parse.error', {
         error: e.message,
         responsePreview: response?.substring(0, 300),
       });
-      return [];
+      return empty;
     }
   }
 
