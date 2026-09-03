@@ -101,7 +101,18 @@ describe('health HTTP contract through application operations', () => {
     const response = await request(app).put('/health/nutrilist/n1').send({ calories: 90, forbidden: true });
     expect(response.status).toBe(200);
     expect(response.body.message).toBe('Nutrilist item updated successfully');
-    expect(nutritionItems.update).toHaveBeenCalledWith('alex', 'n1', { calories: 90 });
+    // Any successful edit ratifies (settles) the row, so the update call carries
+    // the settle stamp alongside the edited field — pin that intended contract
+    // rather than ignoring it.
+    expect(nutritionItems.update).toHaveBeenCalledWith('alex', 'n1', expect.objectContaining({
+      calories: 90,
+      settled: true,
+      settledBy: 'user',
+    }));
+    // The field whitelist must still reject unknown fields — `forbidden` was
+    // never sent to the store, stamp or no stamp.
+    const [, , updateArgs] = nutritionItems.update.mock.calls[0];
+    expect(updateArgs).not.toHaveProperty('forbidden');
   });
 
   it('retains nutrition-input validation ahead of the capability call', async () => {
