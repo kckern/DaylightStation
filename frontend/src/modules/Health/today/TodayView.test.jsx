@@ -8,12 +8,29 @@ vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => apiMock(...a) })
 // Bypass the real file-picker/FileReader and MediaRecorder plumbing — the
 // thing under test is TodayView's handling of the /nutrition/input response,
 // not the capture widgets themselves (those have their own tests).
+//
+// LogTable now mounts one PhotoCapture/VoiceCapture PER MEAL BUCKET (Task
+// 4.2) in addition to the footer's single global instance, and this mock
+// applies to ALL of them (module-level vi.mock, whole file's import graph).
+// The mock label carries the received `bucket` prop so each instance stays
+// individually clickable/assertable — the footer's instance (no bucket
+// prop) keeps the original unsuffixed 'MockPhotoCapture'/'MockVoiceCapture'
+// text so every pre-existing assertion in this file keeps matching exactly
+// one element.
 vi.mock('../capture/PhotoCapture.jsx', () => ({
-  PhotoCapture: ({ onCapture }) => (
-    <button onClick={() => onCapture('data:image/png;base64,zzz')}>MockPhotoCapture</button>
+  PhotoCapture: ({ onCapture, bucket }) => (
+    <button onClick={() => onCapture('data:image/png;base64,zzz', bucket)}>
+      {bucket ? `MockPhotoCapture-${bucket}` : 'MockPhotoCapture'}
+    </button>
   ),
 }));
-vi.mock('../capture/VoiceCapture.jsx', () => ({ VoiceCapture: () => null }));
+vi.mock('../capture/VoiceCapture.jsx', () => ({
+  VoiceCapture: ({ onCapture, bucket }) => (
+    <button onClick={() => onCapture('data:audio/webm;base64,zzz', bucket)}>
+      {bucket ? `MockVoiceCapture-${bucket}` : 'MockVoiceCapture'}
+    </button>
+  ),
+}));
 vi.mock('../capture/BarcodeCapture.jsx', () => ({ BarcodeCapture: () => null }));
 vi.mock('../capture/CustomFoodSheet.jsx', () => ({ CustomFoodSheet: () => null }));
 
@@ -244,5 +261,77 @@ describe('TodayView — Task 3.2: permanent chrome, SWR day data, in-place captu
 
     resolveInput({ messages: [] });
     await waitFor(() => expect(screen.queryByText('Analyzing…')).toBeNull());
+  });
+});
+
+describe('TodayView — Task 4.2: per-meal capture buttons + the moved cue', () => {
+  beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); });
+
+  it('tapping the mic on a given meal section submits with THAT bucket, not the clock guess', async () => {
+    apiMock.mockImplementation(baseApi({ nutritionInput: { messages: [] } }));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    // LogTable mounts one VoiceCapture per bucket — Lunch's is labeled
+    // 'MockVoiceCapture-afternoon' by the mock above.
+    await waitFor(() => screen.getByText('MockVoiceCapture-afternoon'));
+    fireEvent.click(screen.getByText('MockVoiceCapture-afternoon'));
+
+    await waitFor(() => {
+      const call = apiMock.mock.calls.find(([path]) => String(path).includes('nutrition/input'));
+      expect(call).toBeTruthy();
+      expect(call[1]).toEqual(expect.objectContaining({ bucket: 'afternoon' }));
+    });
+  });
+
+  it('tapping the camera on a DIFFERENT meal section submits with that section\'s own bucket', async () => {
+    apiMock.mockImplementation(baseApi({ nutritionInput: { messages: [] } }));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => screen.getByText('MockPhotoCapture-evening')); // Dinner
+    fireEvent.click(screen.getByText('MockPhotoCapture-evening'));
+
+    await waitFor(() => {
+      const call = apiMock.mock.calls.find(([path]) => String(path).includes('nutrition/input'));
+      expect(call).toBeTruthy();
+      expect(call[1]).toEqual(expect.objectContaining({ bucket: 'evening' }));
+    });
+  });
+
+  it('the footer\'s global capture instance still omits bucket — the backward-compat/clock path is untouched', async () => {
+    apiMock.mockImplementation(baseApi({ nutritionInput: { messages: [] } }));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => screen.getByText('MockPhotoCapture')); // footer's unsuffixed instance
+    fireEvent.click(screen.getByText('MockPhotoCapture'));
+
+    await waitFor(() => {
+      const call = apiMock.mock.calls.find(([path]) => String(path).includes('nutrition/input'));
+      expect(call).toBeTruthy();
+      expect(call[1]).not.toHaveProperty('bucket');
+    });
+  });
+
+  it('a response with moved:true shows the moved-to cue naming the RESOLVED meal, reusing the existing captureNotice banner', async () => {
+    apiMock.mockImplementation(baseApi({
+      nutritionInput: { moved: true, mealTime: 'afternoon', messages: [] },
+    }));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => screen.getByText('MockPhotoCapture'));
+    fireEvent.click(screen.getByText('MockPhotoCapture'));
+
+    await waitFor(() => expect(screen.getByText('Moved to Lunch')).toBeTruthy());
+    // Reuses the SAME banner element captureNotice already renders elsewhere
+    // in this file (health-pending), not a second bespoke notice mechanism.
+    expect(document.querySelector('.health-pending')).toBeTruthy();
+  });
+
+  it('a response WITHOUT moved shows no moved-to cue', async () => {
+    apiMock.mockImplementation(baseApi({
+      nutritionInput: { messages: [{ text: 'Eggs — 140 kcal', choices: [[{ text: 'Undo', callback_data: '{}' }]] }] },
+    }));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => screen.getByText('MockPhotoCapture'));
+    const callsBefore = apiMock.mock.calls.length;
+    fireEvent.click(screen.getByText('MockPhotoCapture'));
+
+    await waitFor(() => expect(apiMock.mock.calls.length).toBeGreaterThan(callsBefore));
+    expect(screen.queryByText(/^Moved to/)).toBeNull();
   });
 });
