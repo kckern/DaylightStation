@@ -107,6 +107,11 @@ export class AcceptFoodLog {
           chatId: conversationId,
           logUuid: logUuid,
           date: logDate,
+          // Mirrors YamlNutriListDatastore.syncFromLog's stamping — this path
+          // (AcceptFoodLog -> nutriListStore.saveMany) is a separate write
+          // from syncFromLog and was dropping meal.time, landing rows as
+          // mealTime:null (UNGROUPED) instead of their bucket.
+          mealTime: nutriLog.meal?.time ?? null,
         }));
         await this.#nutriListStore.saveMany(listItems);
       }

@@ -9,6 +9,7 @@ import { MacroFooter } from './MacroFooter.jsx';
 import { LogTable } from './LogTable.jsx';
 import { AddCombobox } from './AddCombobox.jsx';
 import { PendingConfirmCard } from './PendingConfirmCard.jsx';
+import { NeedsReviewSection } from './NeedsReviewSection.jsx';
 import { EntryEditSheet } from './EntryEditSheet.jsx';
 import { SavedMealsSheet } from './SavedMealsSheet.jsx';
 import { localTodayISO as todayISO } from './mealBuckets.js';
@@ -45,6 +46,12 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   const [captureNotice, setCaptureNotice] = useState(null); // string | null — e.g. "no food detected"
   const nutrition = useNutritionInput();
   const dash = useApiResource('api/v1/health/dashboard', { label: 'dashboard' });
+  // Pending-review NutriLogs for the viewed date — created off-surface
+  // (Telegram, the scale bridge, a failed AI call) and otherwise invisible
+  // here, since a pending log never syncs into the nutrilist that day.byBucket
+  // is built from. Root-cause fix, live incident 2026-09-02.
+  const pendingReview = useApiResource(`api/v1/health/nutrition/pending?date=${date}`,
+    { deps: [date], label: 'pending-review' });
   // dashboard.today.coaching is an array of {type, text, timestamp} — text is
   // multi-line HTML-flavored copy (a full "morning brief"), not a one-liner.
   // Take the first line of the most recent entry and strip markup for the
@@ -117,6 +124,8 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
           </div>
         </div>
       ) : null}
+      <NeedsReviewSection pending={pendingReview.data?.pending}
+        onChanged={() => { pendingReview.reload(); day.reload(); }} />
       {!day.loading && !day.error ? (
         <LogTable byBucket={day.byBucket} sessions={day.budget?.sessions || []}
           onAddTo={setAddingTo} onRowTap={setEditingRow} addingTo={addingTo}

@@ -4,11 +4,12 @@
 // grouping, this can.
 import { test, expect } from '@playwright/test';
 
-// Random-suffixed name: the catalog has no delete route, so a fixed name
-// accumulates duplicate suggestion rows across repeated runs and breaks
+// Random-suffixed name: keeps repeated runs' suggestion rows unambiguous for
 // strict-mode single-match selectors (getByText/toBeVisible require exactly
-// one match). A unique name per run keeps every match unambiguous.
+// one match) even though the catalog entry itself is now cleaned up below.
 const FOOD_NAME = `Playwright Chicken ${Date.now()}`;
+
+let catalogEntryId = null;
 
 test.afterEach(async ({ request }) => {
   // Belt-and-suspenders: if the in-test UI delete didn't run (e.g. an
@@ -22,13 +23,20 @@ test.afterEach(async ({ request }) => {
       await request.delete(`/api/v1/health/nutrilist/${row.uuid}`).catch(() => {});
     }
   }
+  // The catalog itself has no soft-delete/expiry — the DELETE route exists
+  // specifically so this seeded entry doesn't accrete permanently across runs.
+  if (catalogEntryId) {
+    await request.delete(`/api/v1/health/nutrition/catalog/${catalogEntryId}`).catch(() => {});
+    catalogEntryId = null;
+  }
 });
 
 test('per-meal add → suggest pick → row lands in the section, equation updates', async ({ page, request }) => {
   // Seed a distinctive catalog food via the API.
-  await request.post('/api/v1/health/nutrition/catalog', {
+  const seeded = await request.post('/api/v1/health/nutrition/catalog', {
     data: { name: FOOD_NAME, calories: 231, protein: 43, carbs: 0, fat: 5 },
   });
+  catalogEntryId = (await seeded.json().catch(() => ({})))?.entry?.id || null;
 
   await page.goto('/health');
   // Generous timeout: this suite runs its specs in parallel workers against

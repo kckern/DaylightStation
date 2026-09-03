@@ -11,6 +11,7 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { presentFoodCatalogEntry } from '../presenters/FoodCatalogPresenter.mjs';
+import { presentPendingNutritionLog } from '../presenters/PendingNutritionLogPresenter.mjs';
 
 /** Local (not UTC) YYYY-MM-DD from a Date instance. */
 function localDateISO(d) {
@@ -603,6 +604,24 @@ export function createHealthRouter(config) {
       return res.json({ entry });
     }));
 
+    /**
+     * DELETE /api/v1/health/nutrition/catalog/:id - Permanently remove a catalog entry
+     */
+    router.delete('/nutrition/catalog/:id', asyncHandler(async (req, res) => {
+      const userId = getDefaultUsername();
+      try {
+        await catalogService.remove(req.params.id, userId);
+        return res.json({ ok: true });
+      } catch (err) {
+        if (err.code === 'NOT_FOUND') return res.status(404).json({ error: err.message });
+        if (err.code === 'CATALOG_WRITE_FAILED') {
+          logger.error?.('health.catalog.remove.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        throw err;
+      }
+    }));
+
   }
 
   // ==========================================================================
@@ -770,6 +789,35 @@ export function createHealthRouter(config) {
         return res.json(result);
       } catch (err) {
         logger.error?.('health.nutrition.callback.error', { error: err.message });
+        return sendInternalError(res, { error: err.message });
+      }
+    }));
+
+    /**
+     * GET /api/v1/health/nutrition/pending - Pending-review NutriLogs for a date
+     *
+     * Root-cause fix: a pending NutriLog (created via Telegram, the scale
+     * bridge, or a failed AI call) never syncs into the nutrilist — it was
+     * invisible in the web Today view until accepted/discarded from
+     * Telegram. This surfaces it so the web UI can review it directly.
+     *
+     * Query: date (YYYY-MM-DD, default local today)
+     */
+    router.get('/nutrition/pending', asyncHandler(async (req, res) => {
+      const userId = getDefaultUsername();
+      const { date: rawDate } = req.query;
+      if (rawDate && !/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+        return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
+      }
+      const date = rawDate || getToday();
+      if (!healthOperations.pendingNutritionAvailable) {
+        return res.json({ pending: [] });
+      }
+      try {
+        const logs = await healthOperations.listPendingNutrition(userId, date);
+        return res.json({ pending: logs.map(presentPendingNutritionLog) });
+      } catch (err) {
+        logger.error?.('health.nutrition.pending.error', { date, error: err.message });
         return sendInternalError(res, { error: err.message });
       }
     }));

@@ -65,7 +65,11 @@ export function createNutribotApiRouter(config) {
   // handleText/handleVoice/handleImage/handleUpc/handleCallback, which only
   // exist on NutribotInputRouter itself — LegacyNutribotInputRouter exposes
   // only route() (for the Telegram webhook's NutribotScaleRefusal mapping).
-  const webNutribotAdapter = new WebNutribotAdapter({ inputRouter: applicationInputRouter, logger });
+  const webNutribotAdapter = new WebNutribotAdapter({
+    inputRouter: applicationInputRouter,
+    foodLogStore: nutribotServices.foodLogStore,
+    logger,
+  });
 
   const unavailableAiOperation = {
     execute() {

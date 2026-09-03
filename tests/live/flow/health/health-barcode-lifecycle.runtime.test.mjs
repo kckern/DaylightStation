@@ -15,6 +15,14 @@ function randomUpc() {
   return `999999${suffix}`;
 }
 
+const todayLocalISO = () => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
 test.afterEach(async ({ request }) => {
   const res = await request.get('/api/v1/health/nutrilist');
   const body = await res.json().catch(() => ({}));
@@ -22,6 +30,30 @@ test.afterEach(async ({ request }) => {
     const name = row.name || row.item || '';
     if (name.includes('Playwright Granola')) {
       await request.delete(`/api/v1/health/nutrilist/${row.uuid}`).catch(() => {});
+    }
+  }
+  // The custom food this test creates via CustomFoodSheet also lands a
+  // permanent catalog entry (createCustom) — DELETE it too, or every run
+  // accretes another "Playwright Granola …" row in the live food catalog.
+  const catalogRes = await request.get('/api/v1/health/nutrition/catalog?q=Playwright%20Granola');
+  const catalogBody = await catalogRes.json().catch(() => ({}));
+  for (const item of catalogBody?.items || []) {
+    if ((item.name || '').includes('Playwright Granola')) {
+      await request.delete(`/api/v1/health/nutrition/catalog/${item.id}`).catch(() => {});
+    }
+  }
+  // The RESCAN step hits the now-known catalog entry via LogFoodFromUPC,
+  // which always creates a pending NutriLog (never auto-accepted) — the test
+  // never opens/acts on that PendingConfirmCard, so it was silently
+  // accreting a pending log per run (exactly the "invisible pending" failure
+  // mode the Needs-review surface exists to catch). Discard it here.
+  const pendingRes = await request.get(`/api/v1/health/nutrition/pending?date=${todayLocalISO()}`);
+  const pendingBody = await pendingRes.json().catch(() => ({}));
+  for (const log of pendingBody?.pending || []) {
+    const hasGranola = (log.items || []).some((it) => (it.label || '').includes('Playwright Granola'));
+    if (hasGranola) {
+      const callbackData = JSON.stringify({ cmd: 'x', id: log.id });
+      await request.post('/api/v1/health/nutrition/callback', { data: { callbackData } }).catch(() => {});
     }
   }
 });

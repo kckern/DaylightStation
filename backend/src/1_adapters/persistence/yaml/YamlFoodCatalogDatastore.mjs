@@ -58,7 +58,7 @@ export class YamlFoodCatalogDatastore extends IFoodCatalogDatastore {
 
   async #saveCatalog(entries, userId) {
     const data = entries.map(e => this.#dehydrate(e));
-    this.#dataService.user.write?.(YamlFoodCatalogDatastore.CATALOG_PATH, data, userId);
+    return this.#dataService.user.write?.(YamlFoodCatalogDatastore.CATALOG_PATH, data, userId);
   }
 
   async findByNormalizedName(name, userId) {
@@ -106,5 +106,26 @@ export class YamlFoodCatalogDatastore extends IFoodCatalogDatastore {
     if (!upc) return null;
     const catalog = await this.#loadCatalog(userId);
     return catalog.find(e => e.barcodeUpc === upc) || null;
+  }
+
+  /**
+   * Permanently remove a catalog entry. Returns false when the id doesn't
+   * exist (caller maps that to 404) rather than throwing — a missing entry
+   * isn't a write failure. A write that DOES fail throws CATALOG_WRITE_FAILED,
+   * mirroring the honest-write pattern in the other health datastores
+   * (e.g. YamlMedicalReadingsDatastore).
+   */
+  async removeById(id, userId) {
+    const catalog = await this.#loadCatalog(userId);
+    const idx = catalog.findIndex(e => e.id === id);
+    if (idx < 0) return false;
+    catalog.splice(idx, 1);
+    const result = await this.#saveCatalog(catalog, userId);
+    if (result === false) {
+      const err = new Error(`CATALOG_WRITE_FAILED: could not write food catalog to ${YamlFoodCatalogDatastore.CATALOG_PATH} for user ${userId}`);
+      err.code = 'CATALOG_WRITE_FAILED';
+      throw err;
+    }
+    return true;
   }
 }
