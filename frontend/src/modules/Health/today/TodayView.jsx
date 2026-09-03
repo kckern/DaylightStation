@@ -10,7 +10,6 @@ import { WeekStrip } from './WeekStrip.jsx';
 import { MacroFooter } from './MacroFooter.jsx';
 import { LogTable } from './LogTable.jsx';
 import { AddCombobox } from './AddCombobox.jsx';
-import { PendingConfirmCard } from './PendingConfirmCard.jsx';
 import { NeedsReviewSection } from './NeedsReviewSection.jsx';
 import { EntryEditSheet } from './EntryEditSheet.jsx';
 import { SavedMealsSheet } from './SavedMealsSheet.jsx';
@@ -46,16 +45,20 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   const [captureMode, setCaptureMode] = useState(null); // 'barcode' | null
   const [unknownUpc, setUnknownUpc] = useState(null);
   const [savedMealsFor, setSavedMealsFor] = useState(null); // bucketId | null — F8's saved-meals picker
-  const [pendingCapture, setPendingCapture] = useState(null); // { messages } | null — photo/voice review card (I-4)
   const [captureNotice, setCaptureNotice] = useState(null); // string | null — e.g. "no food detected"
   const nutrition = useNutritionInput();
   const dash = useApiResource('api/v1/health/dashboard', { label: 'dashboard', logger });
-  // Pending-review NutriLogs for the viewed date — created off-surface
-  // (Telegram, the scale bridge, a failed AI call) and otherwise invisible
-  // here, since a pending log never syncs into the nutrilist that day.byBucket
-  // is built from. Root-cause fix, live incident 2026-09-02.
+  // Pending NutriLogs for the viewed date. Text/image/voice/barcode captures
+  // now land immediately as accepted+unsettled rows in the nutrilist (Task 1.1),
+  // so they no longer show up here. The scale bridge's multi-step composition
+  // flow still mints status:'pending' logs (not replaced until a later phase)
+  // and a pending log never syncs into the nutrilist that day.byBucket is
+  // built from — so this stays as the scale's off-surface visibility fix.
   const pendingReview = useApiResource(`api/v1/health/nutrition/pending?date=${date}`,
     { deps: [date], label: 'pending-review', logger });
+  // Only surface scale-origin pending logs — the other sources (telegram,
+  // web) no longer mint pending rows now that captures commit on arrival.
+  const scalePending = (pendingReview.data?.pending || []).filter((p) => p.source === 'scale');
   // dashboard.today.coaching is an array of {type, text, timestamp} — text is
   // multi-line HTML-flavored copy (a full "morning brief"), not a one-liner.
   // Take the first line of the most recent entry and strip markup for the
@@ -97,20 +100,21 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
     }
   };
 
-  // Photo/voice submissions can come back either as an already-logged (unsettled)
-  // NutriLog with Undo/Edit choices (food detected) or as a plain status
-  // message (e.g. "no food detected") with no choices at all. Either way the
-  // response must be shown — silently discarding it is exactly the "no
-  // visible result" failure the spec forbids (I-4, final review 2026-09-02).
+  // Photo/voice submissions land immediately as an already-logged (unsettled)
+  // NutriLog (food detected — the day reload shows it in place with the
+  // unsettled cue) or as a plain status message (e.g. "no food detected")
+  // with no choices at all. The no-food-detected case must still be shown —
+  // silently discarding it is exactly the "no visible result" failure the
+  // spec forbids (I-4, final review 2026-09-02).
   const handleCaptureResult = (result) => {
     const messages = result?.messages || [];
     const hasChoices = messages.some((m) => (m.choices || []).flat().length > 0);
-    if (hasChoices) {
-      setPendingCapture({ messages });
-    } else {
+    if (!hasChoices) {
       const text = messages[0]?.text;
       if (text) setCaptureNotice(text);
+      return;
     }
+    day.reload();
   };
 
   const bucketHeaderAction = (bucketId, rows, label) => {
@@ -128,13 +132,6 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
       <WeekStrip date={date} today={todayISO()} onDateChange={setDate} />
       {day.loading ? <LoadingState label="food log" rows={6} /> : null}
       {day.error ? <ErrorState error={day.error} onRetry={day.reload} label="Food log" /> : null}
-      {pendingCapture ? (
-        <PendingConfirmCard messages={pendingCapture.messages}
-          onDone={() => { setPendingCapture(null); day.reload(); }}
-          // Undo DELETES a counting entry — reload or the row lingers and the
-          // budget stays stale.
-          onDiscard={() => { setPendingCapture(null); day.reload(); }} />
-      ) : null}
       {captureNotice ? (
         <div className="health-pending" role="status">
           <p className="health-pending__line">{captureNotice}</p>
@@ -143,11 +140,11 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
           </div>
         </div>
       ) : null}
-      <NeedsReviewSection pending={pendingReview.data?.pending}
+      <NeedsReviewSection pending={scalePending}
         onChanged={() => { pendingReview.reload(); day.reload(); }} />
       {!day.loading && !day.error ? (
         <LogTable byBucket={day.byBucket} sessions={day.budget?.sessions || []}
-          onAddTo={setAddingTo} onRowTap={setEditingRow} addingTo={addingTo}
+          onAddTo={setAddingTo} onRowTap={setEditingRow} onConfirm={day.reload} addingTo={addingTo}
           bucketHeaderAction={bucketHeaderAction}
           addSlot={addingTo ? (
             <AddCombobox bucketId={addingTo}

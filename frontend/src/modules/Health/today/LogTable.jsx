@@ -4,7 +4,7 @@ import { EntryRow } from './EntryRow.jsx';
 
 const kcal = (rows) => Math.round(rows.reduce((s, r) => s + (Number(r.calories) || 0), 0));
 
-function Section({ label, rows, onAdd, onRowTap, headerAction }) {
+function Section({ label, rows, onAdd, onRowTap, onConfirm, headerAction }) {
   return (
     <section className="health-meal">
       <header className="health-meal__header">
@@ -14,7 +14,7 @@ function Section({ label, rows, onAdd, onRowTap, headerAction }) {
           {headerAction || null}
         </span>
       </header>
-      {rows.map((row) => <EntryRow key={row.uuid} row={row} onTap={onRowTap} />)}
+      {rows.map((row) => <EntryRow key={row.uuid} row={row} onTap={onRowTap} onConfirm={onConfirm} />)}
       {onAdd ? (
         <UnstyledButton className="health-meal__add" onClick={onAdd}>+ Add food…</UnstyledButton>
       ) : null}
@@ -22,7 +22,7 @@ function Section({ label, rows, onAdd, onRowTap, headerAction }) {
   );
 }
 
-export function LogTable({ byBucket, sessions = [], onAddTo, onRowTap, addSlot, addingTo, bucketHeaderAction }) {
+export function LogTable({ byBucket, sessions = [], onAddTo, onRowTap, onConfirm, addSlot, addingTo, bucketHeaderAction }) {
   const orphans = byBucket.get(null) || [];
   return (
     <div className="health-log">
@@ -31,7 +31,7 @@ export function LogTable({ byBucket, sessions = [], onAddTo, onRowTap, addSlot, 
         return (
           <div key={b.id}>
             <Section label={b.label} rows={rows}
-              onAdd={() => onAddTo(b.id)} onRowTap={onRowTap}
+              onAdd={() => onAddTo(b.id)} onRowTap={onRowTap} onConfirm={onConfirm}
               headerAction={bucketHeaderAction ? bucketHeaderAction(b.id, rows, b.label) : null} />
             {addingTo === b.id && addSlot ? addSlot : null}
           </div>
@@ -53,7 +53,7 @@ export function LogTable({ byBucket, sessions = [], onAddTo, onRowTap, addSlot, 
         </section>
       ) : null}
       {orphans.length ? (
-        <Section label={UNGROUPED.label} rows={orphans} onRowTap={onRowTap} />
+        <Section label={UNGROUPED.label} rows={orphans} onRowTap={onRowTap} onConfirm={onConfirm} />
       ) : null}
     </div>
   );
