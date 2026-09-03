@@ -30,10 +30,15 @@ export function PendingConfirmCard({ messages, onDone, onDiscard }) {
   const submitRevision = async () => {
     if (!revision.trim()) return;
     setBusy(true); setError(null);
+    logger.info('revision.submit', {});
     try {
       await DaylightAPI('api/v1/health/nutrition/input', { type: 'text', content: revision.trim() }, 'POST');
+      logger.info('revision.success', {});
       onDone();
-    } catch (err) { setError(err); } finally { setBusy(false); }
+    } catch (err) {
+      logger.error('revision.failed', { error: err?.message });
+      setError(err);
+    } finally { setBusy(false); }
   };
 
   return (
