@@ -25,7 +25,7 @@
 
 import path from 'node:path';
 import { Jimp } from 'jimp';
-import { ensureDir, writeBinary, fileExists } from '#system/utils/FileIO.mjs';
+import { ensureDir, writeBinaryExclusive, fileExists } from '#system/utils/FileIO.mjs';
 import { shortId } from '#system/utils/id.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
@@ -86,9 +86,15 @@ export class PhotoStore {
     const dir = this.#getDir(userId);
     ensureDir(dir);
 
+    // Write-once artifact: `photoRef` is freshly minted every call, so this
+    // should never collide with an existing file. `writeBinaryExclusive`
+    // (flag 'wx') makes that an enforced invariant rather than an assumption
+    // — a collision throws EEXIST instead of silently overwriting someone
+    // else's photo, and callers (LogFoodFromImage's #persistPhoto) already
+    // treat any save() throw as a non-fatal, logged failure.
     const photoRef = `ph_${shortId(16)}`;
     const originalPath = path.join(dir, `${photoRef}.jpg`);
-    writeBinary(originalPath, buffer);
+    writeBinaryExclusive(originalPath, buffer);
 
     // Best-effort thumbnail via jimp. A failure here is logged and swallowed:
     // the original photo is already safely on disk, and that alone must be
@@ -97,7 +103,7 @@ export class PhotoStore {
       const image = await Jimp.read(buffer);
       image.resize({ w: THUMBNAIL_WIDTH });
       const thumbBuffer = await image.getBuffer('image/jpeg');
-      writeBinary(path.join(dir, `${photoRef}.thumb.jpg`), thumbBuffer);
+      writeBinaryExclusive(path.join(dir, `${photoRef}.thumb.jpg`), thumbBuffer);
     } catch (e) {
       this.#logger.warn?.('PhotoStore.thumbnail.failed', { userId, photoRef, error: e.message });
     }

@@ -116,6 +116,48 @@ describe('LogFoodFromImage + PhotoStore wiring', () => {
     expect(warnCalls.some(([event]) => event === 'logImage.photoStore.save.failed')).toBe(true);
   });
 
+  it('TWO-PLATE case: one photo producing two sibling groups + a standalone item all get the SAME ref, and save() is called exactly once', async () => {
+    const photoStore = { save: vi.fn(async () => 'ph_twoplate789') };
+    const { uc, foodLogStore } = makeUseCase({
+      photoStore,
+      aiItems: [
+        { name: 'Bun', icon: 'bread', quantity: 1, grams: 50, calories: 120, dish: 'Burger' },
+        { name: 'Patty', icon: 'chicken', quantity: 1, grams: 100, calories: 250, dish: 'Burger' },
+        { name: 'Rice', icon: 'default', quantity: 1, grams: 150, calories: 200, dish: 'Side Bowl' },
+        { name: 'Beans', icon: 'default', quantity: 1, grams: 100, calories: 130, dish: 'Side Bowl' },
+        { name: 'Apple', icon: 'apple', quantity: 1, grams: 150, calories: 95 }, // standalone, no dish
+      ],
+    });
+
+    const result = await uc.execute({
+      userId: 'alice',
+      conversationId: 'web:alice',
+      imageData: { url: DATA_URL },
+    });
+
+    expect(result.success).toBe(true);
+    expect(photoStore.save).toHaveBeenCalledTimes(1); // one photo, one save — not once per dish
+
+    const savedLog = foodLogStore.save.mock.calls.at(-1)[0];
+    const items = savedLog.items;
+    expect(items).toHaveLength(7); // 2 groups + 4 members + 1 standalone item
+
+    const groups = items.filter((i) => i.kind === 'group');
+    const standalone = items.find((i) => i.kind === 'item' && !i.parentId);
+    const members = items.filter((i) => i.kind === 'item' && i.parentId);
+
+    expect(groups).toHaveLength(2);
+    for (const group of groups) {
+      expect(group.photoRef).toBe('ph_twoplate789');
+    }
+    expect(standalone).toBeTruthy();
+    expect(standalone.photoRef).toBe('ph_twoplate789');
+    expect(members).toHaveLength(4);
+    for (const member of members) {
+      expect(member.photoRef).toBeNull();
+    }
+  });
+
   it('no photoStore configured at all: logging still succeeds, with no photoRef stamped', async () => {
     const { uc, foodLogStore } = makeUseCase({
       photoStore: null,
