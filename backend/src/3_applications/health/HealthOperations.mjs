@@ -121,7 +121,8 @@ export class HealthOperations {
   }
 
   async updateNutritionItem(username, id, changes) {
-    if (!await this.nutritionItems.findByUuid(username, id)) return null;
+    const existing = await this.nutritionItems.findByUuid(username, id);
+    if (!existing) return null;
     // Any successful edit is a human touch ratifying the machine's estimate —
     // settle the row. A body of just `{ settled: true }` (the one-tap
     // confirm) flows through this same stamp. Never conditional/defaulted:
@@ -138,10 +139,48 @@ export class HealthOperations {
     const allowedChanges = Object.fromEntries(
       Object.entries(stampedChanges).filter(([field]) => NUTRITION_UPDATE_FIELDS.has(field)),
     );
+    const item = await this.nutritionItems.update(username, id, allowedChanges);
+    const cascadedIds = await this.#cascadeMealTimeToChildren(username, existing, allowedChanges);
     return {
-      item: await this.nutritionItems.update(username, id, allowedChanges),
+      item,
       changedFields: Object.keys(allowedChanges),
+      cascadedIds,
     };
+  }
+
+  /**
+   * A `mealTime` move on a GROUP row ("move this dish to Dinner") must carry
+   * its children with it — the UI shows a group as one collapsed unit, so a
+   * child left behind in the old bucket would be a silent, confusing
+   * regression. Gated deliberately narrow:
+   *  - only when `mealTime` is actually one of the fields this edit touched
+   *    (a rename or a portion edit on a group must NOT go move its children);
+   *  - only when the EDITED row's own `kind` is `'group'` — never inferred
+   *    from "does anything reference this row as a parent", so an ordinary
+   *    item update can never accidentally cascade even if some unrelated
+   *    row happens to carry a matching parentId.
+   * Runs client-of-one call at a time is not required here (this is one
+   * server-side operation, not N client PUTs) — a client-side loop is
+   * exactly what this method exists to replace, so a mid-way failure here
+   * cannot leave the day half-moved from the browser's point of view.
+   * @private
+   */
+  async #cascadeMealTimeToChildren(username, groupRow, allowedChanges) {
+    if (groupRow.kind !== 'group') return [];
+    if (!Object.prototype.hasOwnProperty.call(allowedChanges, 'mealTime')) return [];
+    if (groupRow.date == null) return [];
+
+    const siblings = await this.nutritionItems.findByDate(username, groupRow.date);
+    const children = (siblings || []).filter((row) => {
+      if (row.parentId == null) return false;
+      return row.parentId === groupRow.id || row.parentId === groupRow.uuid;
+    });
+
+    await Promise.all(children.map((child) => (
+      this.nutritionItems.update(username, child.uuid ?? child.id, { mealTime: allowedChanges.mealTime })
+    )));
+
+    return children.map((child) => child.uuid ?? child.id);
   }
 
   async deleteNutritionItem(username, id) {
