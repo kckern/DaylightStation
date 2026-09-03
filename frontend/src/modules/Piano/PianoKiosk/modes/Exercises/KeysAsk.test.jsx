@@ -30,7 +30,7 @@ vi.mock('../../../../MusicNotation/renderers/SvgSequenceStaff.jsx', async (impor
       <div
         data-testid="sequence-staff"
         data-cursor={props.cursorIndex}
-        data-wrong={props.wrongMidi ?? ''}
+        data-active={[...(props.activeNotes ?? [])].map(([midi]) => midi).sort((a, b) => a - b).join(',')}
         data-accidental={props.accidental}
         data-clef={props.clef ?? ''}
         data-notes={JSON.stringify(props.notes)}
@@ -87,17 +87,22 @@ describe('KeysAsk', () => {
     ]);
   });
 
-  it('showStaff toggles the presence of SvgSequenceStaff and passes it the same cursor/wrong/accidental', () => {
+  it('showStaff toggles the presence of SvgSequenceStaff and passes it the same cursor/activeNotes/accidental', () => {
+    // `wrongMidi` is deliberately NOT among these — it stops at the keyboard's
+    // `wrongNotes` below; the staff now derives its own hit/miss/ghost state
+    // straight from `activeNotes`, never from a flag (see the test below this
+    // one, on the keyboard, for `wrongMidi`'s one remaining consumer).
     const events = [event(60), event(64)];
+    const active = new Map([[61, { velocity: 80 }]]);
     const { rerender } = render(
-      <KeysAsk events={events} cursorIndex={1} wrongMidi={61} showStaff={false} accidental="flat" />
+      <KeysAsk events={events} cursorIndex={1} activeNotes={active} showStaff={false} accidental="flat" />
     );
     expect(screen.queryByTestId('sequence-staff')).not.toBeInTheDocument();
 
-    rerender(<KeysAsk events={events} cursorIndex={1} wrongMidi={61} showStaff accidental="flat" />);
+    rerender(<KeysAsk events={events} cursorIndex={1} activeNotes={active} showStaff accidental="flat" />);
     const staff = screen.getByTestId('sequence-staff');
     expect(staff).toHaveAttribute('data-cursor', '1');
-    expect(staff).toHaveAttribute('data-wrong', '61');
+    expect(staff).toHaveAttribute('data-active', '61');
     expect(staff).toHaveAttribute('data-accidental', 'flat');
     expect(JSON.parse(staff.getAttribute('data-notes'))).toEqual([{ midi: 60 }, { midi: 64 }]);
   });
