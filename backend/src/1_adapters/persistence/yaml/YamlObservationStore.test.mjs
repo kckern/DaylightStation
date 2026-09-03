@@ -2,18 +2,20 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import yaml from 'js-yaml';
 import { YamlObservationStore } from './YamlObservationStore.mjs';
 
 // Temp-dir pattern lifted from YamlNutriListDatastore.newfields.test.mjs (Task 0.2):
 // a stub dataService whose `user.resolveDir` returns paths inside an mkdtemp'd
 // directory, so every test gets a clean, isolated filesystem.
 
-let dir, store, filePath;
+let dir, store, filePath, warnLog;
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'observation-store-'));
+  warnLog = [];
   store = new YamlObservationStore({
     dataService: { user: { resolveDir: (rel, userId) => path.join(dir, userId, rel) } },
-    logger: { error: () => {}, warn: () => {} },
+    logger: { error: () => {}, warn: (event, data) => warnLog.push({ event, data }) },
   });
   filePath = (userId) => path.join(dir, userId, 'lifelog/nutrition/observations.yml');
 });
@@ -206,5 +208,148 @@ describe('YamlObservationStore.openForScale', () => {
 
   it('an empty/missing file reads as no open observations, not an error', () => {
     expect(store.openForScale('fresh-user', 'kitchen-1')).toEqual([]);
+  });
+});
+
+describe('YamlObservationStore.updateMany (all-or-nothing batch)', () => {
+  it('applies a set of per-id patches in one write', () => {
+    const w = store.append('u1', { kind: 'weight', value: 214, unit: 'g', scaleId: 'kitchen-1', at: '2026-09-02 18:00:00' });
+    const d = store.append('u1', { kind: 'density', value: 4, scaleId: 'kitchen-1', at: '2026-09-02 18:00:05' });
+    const c = store.append('u1', { kind: 'container', value: 'bowl', scaleId: 'kitchen-1', at: '2026-09-02 18:00:10' });
+
+    const updated = store.updateMany('u1', [
+      { id: w.id, status: 'consumed', pairedEntryUuid: 'entry-1' },
+      { id: d.id, status: 'consumed', pairedEntryUuid: 'entry-1' },
+      { id: c.id, status: 'consumed', pairedEntryUuid: 'entry-1' },
+    ]);
+
+    expect(updated).toHaveLength(3);
+    expect(updated.every((r) => r.status === 'consumed' && r.pairedEntryUuid === 'entry-1')).toBe(true);
+
+    const rows = store.listByDate('u1', '2026-09-02');
+    expect(rows.every((r) => r.status === 'consumed' && r.pairedEntryUuid === 'entry-1')).toBe(true);
+  });
+
+  it('is all-or-nothing: one missing id rejects the WHOLE batch and writes nothing', () => {
+    const w = store.append('u1', { kind: 'weight', value: 100, unit: 'g', scaleId: 'kitchen-1', at: '2026-09-02 18:00:00' });
+    const d = store.append('u1', { kind: 'density', value: 4, scaleId: 'kitchen-1', at: '2026-09-02 18:00:05' });
+
+    let caught = null;
+    try {
+      store.updateMany('u1', [
+        { id: w.id, status: 'consumed', pairedEntryUuid: 'entry-1' },
+        { id: 'does-not-exist', status: 'consumed', pairedEntryUuid: 'entry-1' },
+        { id: d.id, status: 'consumed', pairedEntryUuid: 'entry-1' },
+      ]);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).not.toBeNull();
+    expect(caught.code).toBe('NOT_FOUND');
+    expect(caught.context.ids).toEqual(['does-not-exist']);
+
+    // Neither w NOR d was touched — not even the ones that existed.
+    const rows = store.listByDate('u1', '2026-09-02');
+    expect(rows.every((r) => r.status === 'open' && r.pairedEntryUuid === null)).toBe(true);
+  });
+
+  it('rejects a duplicate id within one batch before writing anything', () => {
+    const w = store.append('u1', { kind: 'weight', value: 100, unit: 'g', scaleId: 'kitchen-1', at: '2026-09-02 18:00:00' });
+    expect(() => store.updateMany('u1', [
+      { id: w.id, status: 'consumed' },
+      { id: w.id, status: 'dismissed' },
+    ])).toThrow(/DUPLICATE_PATCH_ID|more than once/);
+    expect(store.listByDate('u1', '2026-09-02')[0].status).toBe('open');
+  });
+
+  it('rejects an invalid patch entry in the batch before writing anything', () => {
+    const w = store.append('u1', { kind: 'weight', value: 100, unit: 'g', scaleId: 'kitchen-1', at: '2026-09-02 18:00:00' });
+    const d = store.append('u1', { kind: 'density', value: 4, scaleId: 'kitchen-1', at: '2026-09-02 18:00:05' });
+    expect(() => store.updateMany('u1', [
+      { id: w.id, status: 'consumed' },
+      { id: d.id, status: 'archived' }, // invalid status
+    ])).toThrow(/status must be one of/);
+    const rows = store.listByDate('u1', '2026-09-02');
+    expect(rows.every((r) => r.status === 'open')).toBe(true);
+  });
+
+  it('an empty batch is a no-op', () => {
+    expect(store.updateMany('u1', [])).toEqual([]);
+  });
+});
+
+describe('YamlObservationStore.findByPairedEntry', () => {
+  it('finds every observation currently paired to an entry (weight + density + container)', () => {
+    const w = store.append('u1', { kind: 'weight', value: 100, unit: 'g', scaleId: 'kitchen-1', at: '2026-09-02 18:00:00' });
+    const d = store.append('u1', { kind: 'density', value: 4, scaleId: 'kitchen-1', at: '2026-09-02 18:00:05' });
+    store.append('u1', { kind: 'container', value: 'bowl', scaleId: 'kitchen-1', at: '2026-09-02 18:00:10' }); // stays open, not paired
+
+    store.updateMany('u1', [
+      { id: w.id, status: 'consumed', pairedEntryUuid: 'entry-9' },
+      { id: d.id, status: 'consumed', pairedEntryUuid: 'entry-9' },
+    ]);
+
+    const found = store.findByPairedEntry('u1', 'entry-9');
+    expect(found.map((r) => r.id).sort()).toEqual([w.id, d.id].sort());
+  });
+
+  it('is not date-scoped: a pairing from a different date than the entry still surfaces', () => {
+    const yesterday = store.append('u1', { kind: 'container', value: 'bowl', scaleId: 'kitchen-1', at: '2026-09-01 23:59:00' });
+    store.update('u1', yesterday.id, { status: 'consumed', pairedEntryUuid: 'entry-cross-midnight' });
+
+    const found = store.findByPairedEntry('u1', 'entry-cross-midnight');
+    expect(found.map((r) => r.id)).toEqual([yesterday.id]);
+  });
+
+  it('returns [] when nothing is paired, including for a user with no observations at all', () => {
+    expect(store.findByPairedEntry('fresh-user', 'entry-1')).toEqual([]);
+    const w = store.append('u1', { kind: 'weight', value: 1, unit: 'g', scaleId: 'kitchen-1', at: '2026-09-02 18:00:00' });
+    expect(store.findByPairedEntry('u1', 'nobody-points-here')).toEqual([]);
+    expect(w.pairedEntryUuid).toBeNull();
+  });
+});
+
+describe('YamlObservationStore malformed INDIVIDUAL record (rest of the day still reads)', () => {
+  it('skips a garbage row with a matching date instead of returning it or throwing', () => {
+    const good = store.append('u1', { kind: 'weight', value: 100, unit: 'g', scaleId: 'kitchen-1', at: '2026-09-02 08:00:00' });
+
+    // Hand-corrupt the file: inject a row with a VALID date (so it would pass the date
+    // filter) but missing/garbage everything else — no `kind`, no `at`, wrong `status`.
+    const raw = yaml.load(fs.readFileSync(filePath('u1'), 'utf8'));
+    raw.push({ id: 'garbage-row', date: '2026-09-02', status: 'not-a-real-status' });
+    fs.writeFileSync(filePath('u1'), yaml.dump(raw), 'utf8');
+
+    const rows = store.listByDate('u1', '2026-09-02');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(good.id);
+    expect(rows.find((r) => r.id === 'garbage-row')).toBeUndefined();
+
+    // It was logged, not silently dropped from awareness.
+    expect(warnLog.some((w) => w.event === 'observationStore.read.invalidRecordSkipped' && w.data.id === 'garbage-row')).toBe(true);
+  });
+
+  it('does not throw for one bad row — the rest of the day still reads', () => {
+    store.append('u1', { kind: 'weight', value: 1, unit: 'g', scaleId: 'kitchen-1', at: '2026-09-02 08:00:00' });
+    const raw = yaml.load(fs.readFileSync(filePath('u1'), 'utf8'));
+    raw.push({ garbage: true });
+    fs.writeFileSync(filePath('u1'), yaml.dump(raw), 'utf8');
+
+    expect(() => store.listByDate('u1', '2026-09-02')).not.toThrow();
+    expect(() => store.openForScale('u1', 'kitchen-1')).not.toThrow();
+  });
+
+  it('the malformed row is preserved on disk (not silently dropped) after an unrelated write', () => {
+    store.append('u1', { kind: 'weight', value: 1, unit: 'g', scaleId: 'kitchen-1', at: '2026-09-02 08:00:00' });
+    const raw = yaml.load(fs.readFileSync(filePath('u1'), 'utf8'));
+    raw.push({ id: 'garbage-row', date: '2026-09-02' });
+    fs.writeFileSync(filePath('u1'), yaml.dump(raw), 'utf8');
+
+    // An unrelated append does a read-modify-write; the garbage row must survive it,
+    // since #readAll (used for writes) is never filtered — only #readAllValid (used for
+    // reads returned to callers) drops it.
+    store.append('u1', { kind: 'weight', value: 2, unit: 'g', scaleId: 'kitchen-1', at: '2026-09-02 09:00:00' });
+
+    const onDisk = yaml.load(fs.readFileSync(filePath('u1'), 'utf8'));
+    expect(onDisk.some((r) => r.id === 'garbage-row')).toBe(true);
   });
 });
