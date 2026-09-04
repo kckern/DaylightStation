@@ -1173,10 +1173,11 @@ export function createHealthRouter(config) {
    * no legitimate caller here either.
    *
    * Content-Type comes from the store (derived from the manifest entry's
-   * extension against a closed allowlist), never from the client and never
-   * from Express's inference; `nosniff` pins it. The cache is long and
-   * immutable because a slug's bytes never change — a corrected icon is a
-   * manifest edit pointing the slug at a different file.
+   * extension against a closed allowlist, or `image/png` for a rendered
+   * derivative), never from the client and never from Express's inference;
+   * `nosniff` pins it. The cache is long and immutable because a slug's bytes
+   * never change — a corrected icon is a manifest edit pointing the slug at a
+   * different file, and the store's own cache key changes with it.
    */
   /**
    * GET /api/v1/health/nutrition/icons - the offered icon vocabulary
@@ -1204,7 +1205,11 @@ export function createHealthRouter(config) {
       return res.status(404).json({ error: 'Icon not found' });
     }
 
-    const hit = iconManifestStore.resolve(slug);
+    // The RENDERED derivative, not the source: the hi-res art averages ~3 MB a
+    // file, and a day's log plus one open picker would otherwise cost hundreds
+    // of megabytes. Falls back to the source on any rendering failure, so this
+    // can degrade in size but never in availability.
+    const hit = await iconManifestStore.resolveRendered(slug);
     if (!hit) {
       return res.status(404).json({ error: 'Icon not found' });
     }

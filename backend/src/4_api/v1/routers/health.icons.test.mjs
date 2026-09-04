@@ -64,8 +64,42 @@ describe('GET /api/v1/health/nutrition/icons/:slug', () => {
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/^image\/png/);
     expect(res.headers['x-content-type-options']).toBe('nosniff');
+    // These fixtures are not decodable images, so the store's downscale fails
+    // and falls back to the source — which is the behaviour under test here:
+    // an icon that cannot be rendered is still served.
     const expected = fs.readFileSync(path.join(mediaRoot, 'img/nutrition/icons/vegetables/carrot.png'));
     expect(Buffer.compare(res.body, expected)).toBe(0);
+  });
+
+  // The hi-res source art averages ~3 MB a file. A row shows one at 24 CSS px
+  // and the picker up to 60 at once, so the route must never hand back the
+  // source when it can hand back a downscale.
+  it('serves a DOWNSCALED derivative for a real image, not the multi-megabyte source', async () => {
+    const { Jimp } = await import('jimp');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'health-icons-render-'));
+    const mediaRoot = path.join(root, 'media');
+    const rel = 'img/nutrition/icons/vegetables/carrot.png';
+    fs.mkdirSync(path.dirname(path.join(mediaRoot, rel)), { recursive: true });
+    const source = await new Jimp({ width: 512, height: 512, color: 0xff0000ff }).getBuffer('image/png');
+    fs.writeFileSync(path.join(mediaRoot, rel), source);
+    const store = new IconManifestStore({
+      dataService: {
+        household: {
+          read: () => ({ icons: { carrot: { path: rel } }, aliases: {} }),
+          resolveDir: (p) => path.join(root, 'data/household', p),
+        },
+      },
+      mediaRoot,
+      logger: silent,
+    });
+
+    const res = await request(makeApp({ iconManifestStore: store }))
+      .get('/api/v1/health/nutrition/icons/carrot');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/^image\/png/);
+    expect(res.body.length).toBeLessThan(source.length);
+    expect((await Jimp.fromBuffer(res.body)).bitmap.width).toBe(96);
   });
 
   it('serves a legacy alias slug, so stored FoodItem.icon values keep working', async () => {
