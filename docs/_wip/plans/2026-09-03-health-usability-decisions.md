@@ -376,6 +376,54 @@ would make every portion tweak a catalog write, and the failure mode here is one
 default that the person can edit again — not wrong data. Recorded so it reads as a
 decision rather than an oversight.
 
+**2.31 The group header a template writes carries zero nutrition, and the guard is an
+invariant rather than a case list (Task 10.1).**
+`instantiate` writes one `kind: 'group'` row plus core (and chosen variant) children. The
+header's `calories/protein/carbs/fat` are spelled out as `0` rather than omitted, and the
+test is a ROW-CONSERVATION assertion — every chosen component appears in exactly one row,
+the row count is `components + 1`, and `sumCounted` over the whole set equals the component
+sum — not an enumeration of shapes (process finding 5.3). Make the header carry the meal's
+kcal and three tests fail, including the one that reads the numbers back off YAML through
+`BudgetService`.
+
+**2.32 `MIN_CORE_COMPONENTS = 2` is ours, not the PRD's (Task 10.3).**
+The PRD names the window, the occurrence threshold and the two presence bands, but not a
+minimum core size. Without one, "coffee, and whatever I ate with it" mines a proposal whose
+core is a single food — which the quick-add list already offers, with an approval prompt
+attached. Two is the floor, asserted as a literal and falsified in both directions.
+
+**2.33 A component's numbers are the most recent REAL portion, never an average (Task 10.3).**
+Averaging the observed rows produces a portion nobody ate. The miner carries the values from
+the latest row it saw for that name inside the combo's occurrences, so an approved template
+logs a quantity that actually happened.
+
+**2.34 Mining anchors on frequent foods; the key is CORE-ONLY (Task 10.3).**
+Each food occurring ≥6 times anchors a candidate, and the occurrences containing it are the
+combo's occurrences. Two anchors inside one stack produce the same core set and therefore
+the same key, so candidates dedup themselves without a clustering pass. The key excludes
+variants deliberately: a smoothie whose fruit rotates must stay ONE combo, or the week the
+rotation changes it would be proposed again — and a dismissal would stop matching, which is
+the one thing a permanent dismissal cannot be allowed to do.
+
+**2.35 Retiring `SavedMealsSheet` required moving two WRITE paths, which only driving it
+found (Task 10.4).**
+Parity was established by rendering both components side by side over the same meal and
+asserting all five of the sheet's observables against the picker (process finding 5.4).
+That much a careful reading might have predicted. What it would not have: `TodayView`'s
+"Save as meal" (US-2.2) and `EntryEditSheet`'s "Save as meal" both **wrote saved meals** —
+so with the sheet gone they would have kept writing to a file nothing lists, silently, with
+a success toast. Both now write templates. The `copy-day-to-today` round trip keeps the
+meals endpoints, because it creates, logs and deletes in one breath and nothing ever lists
+what it makes. **The surface was replaceable; the things feeding it were not, and the
+deletion was only safe once they moved.**
+
+**2.36 Instantiating a template is NOT a quick-add (Task 10.4).**
+A template picked from the combobox hands off to the picker rather than logging
+immediately. PRD F6.1 says instantiating offers the variants, and quick-adding one would
+silently log a single arrangement of a meal whose whole point is that part of it rotates. A
+template with nothing to choose still logs on the first tap, so the one-tap path the saved
+meals sheet had is preserved exactly where it applies.
+
 ---
 
 ## 3. Known divergences from the PRD (true only after later phases)
