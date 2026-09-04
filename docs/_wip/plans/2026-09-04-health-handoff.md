@@ -12,8 +12,8 @@ recalled.
 |---|---|---|
 | `main` | `c21ba38b0` | in sync with `origin/main` |
 | **Deployed (prod)** | `c21ba38b0` | `build.txt` 2026-09-04 09:17 PDT — matches main |
-| `feat/health-usability` | `60c7e2f18` | **not merged**, not deployed |
-| `feat/catalog-density` | `dff385f79` | **not merged**, not deployed |
+| `feat/health-usability` | `4e3970a62` | **not merged**, not deployed |
+| `feat/catalog-density` | `b76c35ea5` | **not merged**, not deployed |
 
 Worktrees: `.claude/worktrees/health-usability`, `.claude/worktrees/catalog-density`.
 Both were live when this ended — **check for running agents before touching either**
@@ -75,19 +75,64 @@ unless noted. The `claude` user cannot read the data volume — use
 
 ---
 
-## 4. IN FLIGHT — confirm before trusting
+## 4. Both agents finished — final status
 
-Two agents were still running. **Do not assume their work is complete or correct.**
-For each: read the branch log, check the tree is clean, and re-run the suites
-yourself capturing the command's own exit code.
+Both stopped cleanly, committed through the full pre-commit chain, and needed no
+`--no-verify`. Trees are clean.
 
-- **health-usability**: defect 1 (capture date) committed. Defect 2 — *persist the
-  voice recording before transcribing, widen the retry budget, stop surfacing
-  `HTTP 500: socket hang up` to the user* — status unknown.
-- **catalog-density**: one commit exists. The six-item brief is in the session; the
-  report should be at `docs/_wip/plans/catalog-density-report.md` (uncommitted).
+### `feat/health-usability` — `60c7e2f18`, `4e3970a62`
+- **Defect 1, capture date: DONE.** The viewed day travels with quick add, typed
+  sentence, voice, photo, barcode, the unknown-UPC custom-food branch, and
+  template instantiation. Absent still means today. Text/voice take the day as an
+  *anchor* on the existing `asOfDate` seam, so "this morning" resolves against the
+  viewed day while a date the model computes still wins — passing it as
+  `LogFoodFromText`'s `date` override would have flattened "yesterday".
+  `createdAt`/`settledAt` stay wall-clock. Bucket rule: the clock speaks only for
+  today; on any other day the target is that day's first meal (decision 2.41).
+- **Defect 2, voice: code complete, NOT gated.** Persist-before-transcribe
+  (`VoiceMemoStore`, sibling of `PhotoStore`), 5-attempt/90s retry budget with
+  jitter, a human error sentence instead of `HTTP 500: socket hang up`, and a
+  retry endpoint + "Try again" so nothing is re-recorded. **Missing: a full-repo
+  verdict.**
+- **My feed-harvest hypothesis was WRONG.** It is an hourly `:25` cron, not a
+  post-boot job, and ran 23 more times that day at identical volume with
+  concurrency hard-capped at 3. Two ECONNRESETs at ~15.1 s against our own 60 s
+  timeout point upstream. The agent correctly refused to throttle it on a story.
+- 33 mutations, all produced the matching failure — after it repaired **two of its
+  own tests caught passing for the wrong reason**.
 
----
+### `feat/catalog-density` — `dff385f79`, `b76c35ea5`
+All six items DONE. `nutrients` is now a getter over `deriveCanonical`; "latest
+wins" is deleted; the capture guard runs *before* the catalog donation and
+corrects nothing; UPC provenance fills-never-renames and weights 3 in the
+derivation.
+- **Deliberate deviation:** drift proposals do **not** go through
+  `TemplateService.saveProposals` — that mints a meal template with `components`
+  that appears in the meal picker, so Approve would create a meal rather than fix
+  a food. The **dismissal ledger** is reused via a new `dismissKey`, namespaced
+  `catalog-density:<name>`.
+- **Reconcile proven idempotent on a COPY** — 560/0/0, one identical SHA-256
+  across three runs, `useCount` untouched. **Nothing was written to the data
+  volume.**
+- Premier Protein Shake, against the pre-fix catalog: 610 kcal → derived
+  **192 kcal / 36.1 g** at the household's median 415 g portion (density 0.4638
+  kcal/g). Quick-add at the remembered 385 g yields **178**, not 610. A fresh
+  610/385 parse is flagged at **3.42×, "~179 expected"**.
+- 23 mutations, all fail their named test — after closing one genuinely vacuous
+  guard stub that never inspected its arguments.
+
+### THE STEP THAT MAKES IT REAL
+**The reconcile has no route and no scheduled task.** It is reachable only one
+entry at a time via `POST /nutrition/catalog/audit/approve`. Existing entries keep
+their old numbers until someone deliberately seeds all 560 rings. That was
+intentional — it rewrites a lot at once — but it is the step that makes the fix
+take effect on live data, and it **needs a backup of `food_catalog.yml` first**.
+
+### Known-failing test, caused by a live data change, not by either branch
+`backend/src/1_adapters/persistence/IconManifestStore.media.test.mjs` fails on
+both branches and on a pristine tree. It reads the real media mount, and §2.3's
+hi-res-only manifest rewrite is what changed under it. **Fix the test or revert
+the manifest — do not baseline it blindly.**
 
 ## 5. Deploy sequence (do not shortcut)
 
