@@ -13,6 +13,12 @@ const NUTRITION_UPDATE_FIELDS = new Set([
   // Without these in the whitelist, updateNutritionItem's stamp below is
   // silently dropped before it ever reaches the store.
   'settled', 'settledBy', 'settledAt',
+  // Task 5.5: a kitchen-scale re-pair recomputes macros from a density level and
+  // explicitly nulls `microsSource` (a density estimate is not AI/catalog
+  // micronutrient data) — without it here, `ObservationPairingService.recomputeEntry`'s
+  // `changes.microsSource = null` is silently dropped and a stale 'ai'/'catalog'
+  // provenance can outlive the AI/catalog numbers it described.
+  'microsSource',
 ]);
 
 /**

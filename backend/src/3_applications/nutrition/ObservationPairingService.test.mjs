@@ -4,6 +4,8 @@ import os from 'os';
 import path from 'path';
 import { YamlObservationStore } from '#adapters/persistence/yaml/YamlObservationStore.mjs';
 import { createObservationPairingService } from './ObservationPairingService.mjs';
+import { SelectScaleDensity } from '#apps/nutribot/usecases/SelectScaleDensity.mjs';
+import { createNutriLog } from '#apps/nutribot/nutriLogRecords.mjs';
 
 // The REAL store against a temp dir, not a fake: the cross-file behaviour this task had
 // to decide about is a property of the hot-file/archive split, and a hand-written double
@@ -537,5 +539,83 @@ describe('ObservationPairingService.dismiss', () => {
     let caught = null;
     try { service.dismiss('u1', '11111111-2222-3333-4444-555555555555'); } catch (err) { caught = err; }
     expect(caught?.code).toBe('NOT_FOUND');
+  });
+});
+
+describe('Task 5.5 — the commit path (SelectScaleDensity) and the re-pair path agree', () => {
+  // Both paths reach the SAME `computeNutrition` for the SAME 500 g gross / 180 g small-bowl
+  // tare / density-L4 placement (320 g net, 1.4 kcal/g) that
+  // 'ObservationPairingService.pair — a measurement is a PLACEMENT' above reproduces. If the
+  // two ever compute different numbers for identical evidence, this is the test that catches
+  // it — that is its entire purpose, not incidental coverage.
+
+  const runCommitPath = async () => {
+    const nutriLog = createNutriLog({
+      userId: 'u1',
+      conversationId: 'u1',
+      items: [{ label: 'Unknown', grams: 320, calories: 0, unit: 'g', amount: 1, color: 'yellow' }],
+      metadata: { source: 'scale', scaleId: 'kitchen-1' },
+      timezone: 'America/Los_Angeles',
+      timestamp: new Date(),
+    });
+    const byId = new Map([[nutriLog.id, nutriLog]]);
+    const foodLogStore = {
+      findByUuid: async (id) => byId.get(id) || null,
+      save: async (log) => { byId.set(log.id, log); return log; },
+    };
+    const uc = new SelectScaleDensity({
+      messagingGateway: { updateMessage: async () => {} },
+      foodLogStore,
+      scaleConfig: SCALE_CONFIG(),
+      logger: { info: () => {}, warn: () => {}, debug: () => {} },
+    });
+    await uc.execute({ userId: 'u1', conversationId: 'u1', logUuid: nutriLog.id, level: 4 });
+    return byId.get(nutriLog.id).items[0];
+  };
+
+  const runRepairPath = async () => {
+    const weight = appendWeight(500, '2026-09-02 18:04:12');
+    store.append('u1', { kind: 'container', value: 'small-bowl', scaleId: 'kitchen-1', at: '2026-09-02 18:04:20' });
+    store.append('u1', { kind: 'density', value: 4, scaleId: 'kitchen-1', at: '2026-09-02 18:04:40' });
+    await service.pair('u1', weight.id, 'entry-a');
+    return entriesById.get('entry-a');
+  };
+
+  it('produce identical grams, calories, fat, carbs and protein for the same placement', async () => {
+    const committed = await runCommitPath();
+    const repaired = await runRepairPath();
+
+    expect(committed.grams).toBe(320);
+    expect(repaired.grams).toBe(320);
+    expect(committed.calories).toBe(repaired.calories);
+    expect(committed.fat).toBe(repaired.fat);
+    expect(committed.carbs).toBe(repaired.carbs);
+    expect(committed.protein).toBe(repaired.protein);
+
+    // Pinned values, not just cross-path equality — a shared bug that moved both paths
+    // together would still pass an equality-only assertion.
+    expect(committed.calories).toBe(448);
+    expect(committed.fat).toBe(12.4);
+    expect(committed.carbs).toBe(56);
+    expect(committed.protein).toBe(28);
+  });
+
+  it('both paths null out microsSource for a density-derived estimate', async () => {
+    const committed = await runCommitPath();
+    expect(committed.microsSource).toBeNull();
+
+    // The re-pair path writes `changes.microsSource = null` through
+    // `HealthOperations.updateNutritionItem`'s field whitelist in production; this harness's
+    // `entries.update` fake applies `changes` directly, so asserting on the CHANGES themselves
+    // is what actually exercises the wiring under test — the whitelist membership itself is
+    // covered by `HealthOperations`'s own suite.
+    const weight = appendWeight(500, '2026-09-02 18:04:12');
+    store.append('u1', { kind: 'container', value: 'small-bowl', scaleId: 'kitchen-1', at: '2026-09-02 18:04:20' });
+    store.append('u1', { kind: 'density', value: 4, scaleId: 'kitchen-1', at: '2026-09-02 18:04:40' });
+    entriesById.set('entry-b', { uuid: 'entry-b', name: 'Stew', grams: 0, calories: 400, microsSource: 'ai' });
+    await service.pair('u1', weight.id, 'entry-b');
+
+    expect(updates.at(-1).changes.microsSource).toBeNull();
+    expect(entriesById.get('entry-b').microsSource).toBeNull();
   });
 });

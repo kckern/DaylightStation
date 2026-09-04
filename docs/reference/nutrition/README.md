@@ -356,7 +356,7 @@ restart before it takes effect.
 | Refusal ACK (`swallowNotice`) | **shipped** — a swallowed scan paints a `⚠️` line on the live prompt instead of producing no visible change |
 | Quiet-commit (`ScaleNutribotBridge` commit timer) | **shipped** — see [Quiet-commit](#quiet-commit) |
 | `rs:done` immediate commit (`commitNowFor`) | **shipped** — the snapshot is read before `endPlacement` consumes the slots and committed against |
-| **Macros persisted on a logged entry** | **NOT shipped.** `SelectScaleDensity` writes `label` + `calories` only, and `computeNutrition` (`ScanNutritionService`, 58 tests) still has NO production caller. The `macros:` table is validated, printed and tested, and nothing reads it into history — a scan-enriched entry carries calories but no fat/carb/protein split |
+| **Macros persisted on a logged entry** | **shipped (Task 5.5).** `SelectScaleDensity` calls `computeNutrition` and writes fat/carb/protein onto the item's existing `protein`/`carbs`/`fat` fields, with `microsSource: null` (a density estimate is not AI/catalog micronutrient data). `ObservationPairingService.recomputeEntry` was already calling `computeNutrition` for a re-pair; the two now share identical rounding (one decimal place) and both null `microsSource`. With no density observation, neither path fabricates calories or macros — grams are corrected and the entry's existing calorie/macro figures (0, for a brand-new scale entry) are left alone |
 | Memo (voice flow-state branch, Memo button) | not started |
 | Food grammar (`fd:` prefix) | not started — sheet prints foods as inert labels, if at all |
 
@@ -404,11 +404,6 @@ than the grams — see [Known gaps](#known-gaps--deliberate-do-not-silently-fix)
   the prompt so the next quiet lull retries — but a *persistent* cause (`'unknown level'`,
   `'log not found'`) fails identically forever, and only a `scaleNutribot.commit.skipped` warn
   log explains why. The entry just never finalises, with no notice on the prompt.
-- **Macros never reach the food log.** `ScanNutritionService.computeNutrition` derives fat/carb/
-  protein grams from a density row's `macros`, is fully tested, and has no production caller:
-  the commit path applies the density through `SelectScaleDensity`, which writes only the label
-  and the calorie total. Every scan-enriched entry in history is therefore macro-less. Wiring it
-  means deciding where macros live on a `NutriLog` item, which is a separate change.
 - **Print legibility is untested.** Nothing verifies a QR printed 25-to-a-page scans off a
   fridge door in kitchen lighting. Print one and try it before laminating.
 

@@ -230,6 +230,13 @@ export function createObservationPairingService({
         changes.fiber = round1(n.fiber_g);
         changes.sugar = round1(n.sugar_g);
         changes.sodium = round1(n.sodium_mg);
+        // Task 5.5: explicit, not left to whatever the entry already held. A
+        // density-derived estimate is not AI or catalog micronutrient data, and this
+        // recompute may be overwriting macros an earlier capture attributed to one of
+        // those sources — leaving the old value would misstate where these numbers
+        // came from. Matches `SelectScaleDensity`, the commit path for the same
+        // computation.
+        changes.microsSource = null;
       } catch (err) {
         // A malformed density row in config must not cost the grams correction.
         logger.warn?.('observation.repair.nutrition_skipped', {
