@@ -225,7 +225,7 @@ describe('branch order in the composition root', () => {
       triggerDispatchService: { handleEvent: async () => {} },
       relayInstances: {}, relayConfig: {},
       applyScanToComposition: null,
-      getScaleNutribotBridge: () => null,
+      getObservationService: () => null,
       getLogFoodFromUPC: () => null,
       nutribotIdentity: { defaultUserId: () => null, conversationIdFor: () => null },
       screenNames: [],

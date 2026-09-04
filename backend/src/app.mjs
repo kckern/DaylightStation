@@ -212,7 +212,6 @@ import { createAutomotiveApi } from '#composition/modules/automotiveApi.mjs';
 import { createQuizScanRecorder } from '#apps/quizzes/quizScanRecorder.mjs';
 import { EventBusEventInputSource } from '#adapters/scan/EventBusEventInputSource.mjs';
 import { YamlDecodedQuizScanStore } from '#adapters/persistence/yaml/YamlDecodedQuizScanStore.mjs';
-import { CompositionStore } from '#apps/nutribot/CompositionStore.mjs';
 import { createObservationService } from '#apps/nutrition/ObservationService.mjs';
 import { YamlObservationStore } from '#adapters/persistence/yaml/YamlObservationStore.mjs';
 import { ApplyScanToComposition } from '#apps/nutribot/usecases/ApplyScanToComposition.mjs';
@@ -4539,45 +4538,37 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const barcodeRelayConfig = configService.getHouseholdAppConfig(householdId, 'barcode-relay') || {};
   const barcodeRelayInstances = barcodeRelayConfig.relays || {};
 
-  // Scan-enriched food logging: ONE buffer, shared by the scale bridge (which writes
-  // weights) and the fridge-sheet scan handler (which writes density/tare). Constructed
-  // here because both call sites are below and both must hold the SAME instance — two
-  // stores means a scanned density never meets its weight, the entry never completes,
-  // and nothing anywhere reports an error. Window is the store's own default; the
-  // scales config carries no composition-window knob today.
-  const compositionStore = new CompositionStore({ now: () => Date.now() });
-
-  // PHASE 5: the DURABLE observation ledger. Every scale signal — a settled weight, a
-  // scanned density, a scanned tare — is a row in this store, so it survives a restart,
-  // is visible on the day it happened, and can be re-paired to an entry after the fact.
-  // It is what `ObservationService` recomputes the in-progress composition from, in place
-  // of the in-memory Map above.
+  // Scan-enriched food logging: the DURABLE observation ledger. Every scale signal — a
+  // settled weight, a scanned density, a scanned tare — is a row in this store, so it
+  // survives a restart, is visible on the day it happened, and can be re-paired to an
+  // entry after the fact. It is what the scale observation service recomputes the
+  // in-progress composition from on every read.
   const observationStore = new YamlObservationStore({
     dataService,
     logger: rootLogger.child({ module: 'observation-store' }),
   });
 
-  // LATE-BOUND composition surface, for the same reason `scaleNutribotBridge` below is
-  // late-bound: `ApplyScanToComposition` has to exist HERE (the scan router takes it),
-  // while `ObservationService` cannot be built until the nutribot container, the head of
-  // household and the bot id have all resolved, much further down this function. The scan
-  // use case therefore holds this delegating surface instead of either store directly and
-  // resolves on every call — long after startup, never captured.
+  // LATE-BOUND composition surface. `ApplyScanToComposition` has to exist HERE (the scan
+  // router takes it), while the observation service cannot be built until the nutribot
+  // container, the head of household and the bot id have all resolved, much further down
+  // this function. The scan use case therefore holds this delegating surface and resolves
+  // on every call — long after startup, never captured.
   //
-  // The fall back to the in-memory `CompositionStore` is the revert path: if the service
-  // fails to wire (no head of household, no bot id), fridge scans still accumulate exactly
-  // as they did before and nothing about the sheet changes. Task 5.6 removes both the
-  // fallback and the old store.
+  // ONE surface, shared by the scale signals (which write weights) and the fridge-sheet
+  // scan handler (which writes density/tare). Two of them would mean a scanned density
+  // never meets its weight, the entry never completes, and nothing anywhere reports an
+  // error. While the service is unwired (no head of household, no bot id) the surface is
+  // inert: a fridge scan is accepted by the grammar and recorded nowhere, which is the
+  // same thing the sheet does when the scale itself is unplugged.
   let observationService = null;
-  const liveCompositionSurface = () => observationService ?? compositionStore;
   const scaleCompositionSurface = {
-    setWeight: (...args) => liveCompositionSurface().setWeight(...args),
-    setDensity: (...args) => liveCompositionSurface().setDensity(...args),
-    setContainer: (...args) => liveCompositionSurface().setContainer(...args),
-    endPlacement: (...args) => liveCompositionSurface().endPlacement(...args),
-    clear: (...args) => liveCompositionSurface().clear(...args),
-    undo: (...args) => liveCompositionSurface().undo(...args),
-    read: (...args) => liveCompositionSurface().read(...args),
+    setWeight: (...args) => observationService?.setWeight(...args),
+    setDensity: (...args) => observationService?.setDensity(...args),
+    setContainer: (...args) => observationService?.setContainer(...args),
+    endPlacement: (...args) => observationService?.endPlacement(...args),
+    clear: (...args) => observationService?.clear(...args),
+    undo: (...args) => observationService?.undo(...args),
+    read: (...args) => observationService?.read(...args) ?? null,
   };
 
   const scanVocabConfig = normalizeScaleNutribotConfig(
@@ -4602,12 +4593,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
   }
 
-  // Late-bound: the scan handler below needs the scale bridge to ACK a tare on the
-  // live prompt, but the bridge is constructed much further down, conditionally on
-  // the head-of-household and bot id resolving. Hoisting that block would change
-  // startup ordering for a dependency the closure only touches on a scan — long
-  // after startup — so we bind the reference instead.
-  let scaleNutribotBridge = null;
 
   // ==========================================================================
   // Living-room reading sessions.
@@ -5031,7 +5016,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     applyScanToComposition,
     // Both LATE-BOUND: constructed further down this function, long before any
     // scan arrives but well after this line. Read at scan time, never captured.
-    getScaleNutribotBridge: () => scaleNutribotBridge,
+    getObservationService: () => observationService,
     getLogFoodFromUPC: () => nutribotServices.nutribotContainer.getLogFoodFromUPC(),
     nutribotIdentity: new TelegramNutribotIdentity({ configService, userIdentityService }),
     screenNames: barcodeScreenNames,
@@ -5261,10 +5246,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         commitQuietMs: (nutribotServices.scaleConfig?.commitQuietSec ?? 25) * 1000,
         logger: rootLogger.child({ module: 'observation-service' }),
       });
-      // `scanDispatch` reads this through a late-bound getter on every scan. The service
-      // exposes the same three methods the bridge did — `refreshPrompt`, `armCommitFor`,
-      // `commitNowFor` — so the fridge-sheet path is unchanged by the swap.
-      scaleNutribotBridge = observationService;
     } else {
       rootLogger.warn?.('scaleNutribot.bridge.skipped', { hasPlatformId: !!scaleHeadPlatformId, hasBotId: !!scaleBotId });
     }

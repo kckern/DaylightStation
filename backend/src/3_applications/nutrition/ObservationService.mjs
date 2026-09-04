@@ -1,27 +1,21 @@
 // backend/src/3_applications/nutrition/ObservationService.mjs
 //
-// THE DURABLE REPLACEMENT FOR `ScaleNutribotBridge` + `CompositionStore`.
+// THE KITCHEN SCALE HALF of scan-enriched food logging, on a durable ledger.
 //
-// The kitchen scale half of scan-enriched food logging, rebuilt on a durable ledger.
-// Everything the shipped bridge did is here — the gated prompt flow, the quiet commit,
-// the control verbs, slot consumption, re-prompt dedup, the non-gram refusal — with one
-// structural change: the in-progress composition is no longer a
-// `Map<scaleId, {composition, touchedAt}>` that dies with the process. Every signal is
-// APPENDED to an `IObservationStore` row and the composition is RECOMPUTED from those
-// rows on every read, by the pure `matchObservations` rules.
+// The gated prompt flow, the quiet commit, the control verbs, slot consumption, re-prompt
+// dedup and the non-gram refusal all live here. The in-progress composition is NOT held
+// in memory: every signal is APPENDED to an `IObservationStore` row and the composition
+// is RECOMPUTED from those rows on every read, by the pure `matchObservations` rules.
 //
-// That is the whole point of the phase. Under the old design a backend restart silently
-// lost the buffer and the bridge relearned whatever was on the pan as its baseline, so
-// food already sitting on the scale never posted and a density scanned thirty seconds
-// before the deploy simply evaporated (`docs/reference/nutrition/README.md`, "Known gaps
-// — Backend restart loses the buffer"). A fresh service constructed over the same store
-// contents now recovers the in-progress composition exactly, because the state is on
-// disk rather than in a closure.
+// That is what makes a restart survivable. A composition held in a closure is lost when
+// the process goes away — the service relearns whatever is on the pan as its baseline, so
+// food already sitting on the scale never posts, and a density scanned thirty seconds
+// earlier evaporates. A fresh service constructed over the same store contents recovers
+// the in-progress composition exactly, because the state is on disk.
 //
-// ## Behaviour inherited from the bridge, deliberately and completely
+// ## The rules, and the failures that taught them
 //
-// This is a port, not a redesign. Every rule below was learned from a real failure in a
-// real kitchen and is reproduced here with the incident intact:
+// Every rule below was learned from a real failure in a real kitchen:
 //
 //   • SINGLE LIVE PROMPT per scale. A settled rise above the learned resting baseline
 //     posts ONE prompt; further settles EDIT it in place. Answering it frees it.
@@ -57,32 +51,30 @@
 //   matcher  — "may this weight attach itself to an entry that already exists?"
 //   service  — "may this composition finalise itself into a NEW entry, unattended?"
 //
-// The shipped bridge enforced it at commit time and this service keeps it there, under
-// the SAME log event (`scaleNutribot.commit.skipped`, `reason: 'non-gram-unit'`), because
-// the commit path is the only place where a mislabelled unit becomes a wrong number in
-// history with nobody watching. Deliberately NOT hoisted onto "is the composition
-// complete", which stays a structural claim about which slots are filled — the same split
-// the codebase's own reference doc describes.
+// It is enforced at commit time (`scaleNutribot.commit.skipped`,
+// `reason: 'non-gram-unit'`) because the commit path is the only place where a
+// mislabelled unit becomes a wrong number in history with nobody watching. Deliberately
+// NOT hoisted onto "is the composition complete", which stays a structural claim about
+// which slots are filled — the same split the reference doc describes.
 //
 // ## Composition semantics, expressed in observation rows
 //
-// `CompositionStore` had three overwritable SLOTS. Here every signal is an append-only
-// row and `matchObservations` merges the still-`open`, still-in-window rows for one scale
-// into the same snapshot shape, last-writer-wins per slot. That falls out correctly:
+// A composition reads as three overwritable SLOTS — weight, density, container — but the
+// storage underneath is append-only: every signal is a row, and `matchObservations`
+// merges the still-`open`, still-in-window rows for one scale into the snapshot,
+// last-writer-wins per slot. The verbs fall out of that:
 //
 //   • rescanning `dl:7` over `dl:4` leaves both rows open, and the later one wins;
 //   • `rs:undo` DISMISSES the most recently appended row, so the one it superseded wins
-//     again — which is exactly `CompositionStore`'s "restore the previous value";
-//   • undo is still ONE DEEP: the id is consumed by the undo that used it, so a second
+//     again — "restore the previous value", without a second copy of the state;
+//   • undo is ONE DEEP: the id is consumed by the undo that used it, so a second
 //     consecutive `rs:undo` is a safe no-op rather than a deeper rewind nobody can see.
 //
-// The one honest difference: `CompositionStore`'s 900 s window was ROLLING (any activity
-// refreshed the whole entry), while `matchObservations` ages each observation
-// independently against `nowTs`. A signal older than the window drops out of the
-// composition on its own rather than being kept alive by a later scan. That is the
-// reviewed rule for this phase and it fails in the safe direction — an aged-out weight
-// leaves the entry incomplete and answerable by hand, rather than finalising against a
-// measurement from a quarter of an hour ago.
+// Each observation ages INDEPENDENTLY against `nowTs` — the window is per-row, not a
+// rolling one that any activity refreshes. A signal older than the window drops out of
+// the composition on its own rather than being kept alive by a later scan. That fails in
+// the safe direction: an aged-out weight leaves the entry incomplete and answerable by
+// hand, rather than finalising against a measurement from a quarter of an hour ago.
 //
 // ## The commit REUSES the Phase-1 capture seam
 //
@@ -101,10 +93,10 @@ import { matchObservations } from '#domains/nutrition/services/ObservationMatche
 import { formatLocalTimestamp } from '#domains/core/utils/time.mjs';
 import { stampUnsettled } from '#apps/nutribot/lib/unsettledStamp.mjs';
 
-/** Matches the shipped bridge's default and `commit_quiet_sec`'s documented default. */
+/** Matches `commit_quiet_sec`'s documented default. */
 const DEFAULT_COMMIT_QUIET_MS = 25_000;
 
-/** An empty composition read, in `CompositionStore.read`'s shape. */
+/** An empty composition read — the shape every `read()` answers with. */
 const EMPTY_SNAPSHOT = Object.freeze({
   grams: null, unit: null, density: null, container: null,
   complete: false, active: false, observationIds: Object.freeze([]),
@@ -128,7 +120,7 @@ const EMPTY_SNAPSHOT = Object.freeze({
  *   observation pairs to — not the log's).
  * @param {string} deps.userId Whose observation ledger this is.
  * @param {string} [deps.conversationId] Where prompts go.
- * @param {object} [deps.scaleConfig] Thresholds; same keys the bridge read.
+ * @param {object} [deps.scaleConfig] Placement/suspicion thresholds, from `scales.yml`.
  * @param {string} [deps.timezone] IANA tz for the observation's LOCAL `at` timestamp.
  * @param {() => Date} deps.clock REQUIRED. One injected clock serves both the millisecond
  *   window math and the local timestamp, so the two can never disagree, and neither reads
@@ -225,7 +217,7 @@ export function createObservationService({
   // ==================== The durable ledger ====================
 
   /**
-   * Append one signal. Best-effort in exactly the way the bridge's buffer writes were: a
+   * Append one signal. Best-effort on purpose: a
    * store failure must never break the prompt flow, which works on its own and is what
    * the person is looking at.
    *
@@ -272,9 +264,9 @@ export function createObservationService({
   };
 
   /**
-   * The composition snapshot, in `CompositionStore.read`'s shape so every existing
-   * consumer (`ApplyScanToComposition`, `LogFoodFromScale`'s `resolveScaleNet`, the prompt
-   * renderer) reads it unchanged. `observationIds` rides along as an extra field: the
+   * The composition snapshot every consumer reads — `ApplyScanToComposition`,
+   * `LogFoodFromScale`'s `resolveScaleNet`, the prompt renderer.
+   * `observationIds` rides along as an extra field: the
    * commit needs to know which rows it is consuming, and a snapshot that named its own
    * evidence is the only way `rs:done` — which reads BEFORE the slots are consumed — can
    * hand that evidence forward.
@@ -308,9 +300,8 @@ export function createObservationService({
 
   // ==================== The composition surface ====================
   //
-  // Shaped exactly like `CompositionStore` so `ApplyScanToComposition` — which owns the
-  // fridge grammar, the config lookups and the ack payloads — is reused verbatim rather
-  // than reimplemented against a new interface.
+  // The interface `ApplyScanToComposition` writes through — that use case owns the fridge
+  // grammar, the config lookups and the ack payloads, and knows nothing about storage.
 
   const setWeight = (scaleId, payload) => {
     appendObservation(scaleId, 'weight', payload?.grams, payload?.unit ?? null);
@@ -328,8 +319,8 @@ export function createObservationService({
   };
 
   /**
-   * Consume the composition at the end of a placement — the bridge's session-end
-   * crossing, and the store half of `rs:done`.
+   * Consume the composition at the end of a placement — the session-end crossing, and
+   * the ledger half of `rs:done`.
    *
    * The rows become `dismissed` rather than vanishing: an observation that arrived and
    * was judged not to matter is evidence, and it is what someone debugging "why didn't my
@@ -347,8 +338,8 @@ export function createObservationService({
   };
 
   /** `rs:clear` — discard the in-progress composition. Mechanically endPlacement; a
-   * different statement about the world, kept separate for the same reason the store
-   * keeps them separate. */
+   * different statement about the world, kept separate because the ack the person reads
+   * must not conflate "forget it" with "process it". */
   const clear = (scaleId) => {
     const c = compositionFor(scaleId);
     stateFor(scaleId).lastObservationId = null;
@@ -538,9 +529,8 @@ export function createObservationService({
     }
 
     // CONSUME the observations INTO the entry, and record the pairing. This is the
-    // durable replacement for `bufferEndPlacement`: the rows do not vanish, they point at
-    // what they became. AFTER the accept and on no refusal path — an entry that did not
-    // commit still needs its signals.
+    // rows do not vanish, they point at what they became. AFTER the accept and on no
+    // refusal path — an entry that did not commit still needs its signals.
     if (!entryUuid) {
       logger.warn?.('observation.commit.unpaired', { id, logUuid: live.logUuid });
     }
@@ -774,9 +764,9 @@ export function createObservationService({
   });
 
   return {
-    // Composition surface (drop-in for CompositionStore).
+    // Composition surface — what the fridge-sheet scan path writes through.
     setWeight, setDensity, setContainer, endPlacement, clear, undo, read,
-    // Prompt surface (drop-in for ScaleNutribotBridge).
+    // Prompt surface — what the scan dispatcher acks and re-arms through.
     refreshPrompt, armCommitFor, commitNowFor,
     dispose: () => {
       // Disarm FIRST: an unsubscribed service that still holds a pending timer would fire
