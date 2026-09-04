@@ -151,4 +151,23 @@ describe('EntryRow', () => {
       expect(img.getAttribute('src')).toContain('ph_group1');
     });
   });
+  // Task 5.4 — scale-measured badge.
+  describe('scale-measured badge', () => {
+    it('renders the caller-supplied measurement summary as TEXT, not colour alone', () => {
+      r(<EntryRow row={{ ...baseRow }} onTap={() => {}} onConfirm={() => {}} measured="82 g · scale ✓" />);
+      expect(screen.getByText('82 g · scale ✓')).toBeTruthy();
+    });
+
+    it('renders no badge when the row has no consumed observation', () => {
+      r(<EntryRow row={{ ...baseRow }} onTap={() => {}} onConfirm={() => {}} />);
+      expect(document.querySelector('.health-row__scale')).toBeFalsy();
+    });
+
+    it('coexists with the unsettled cue — an entry can be scale-measured AND unconfirmed', () => {
+      r(<EntryRow row={{ ...baseRow, settled: false }} onTap={() => {}} onConfirm={() => {}} measured="82 g · scale ✓" />);
+      expect(screen.getByText(/unconfirmed/i)).toBeTruthy();
+      expect(screen.getByText('82 g · scale ✓')).toBeTruthy();
+      expect(screen.getByRole('button', { name: /confirm entry/i })).toBeTruthy();
+    });
+  });
 });

@@ -518,6 +518,37 @@ section (read-only rows, `LogTable.jsx`) renders.
 
 ---
 
+## Scale measurements
+
+Every raw kitchen-scale signal — a settled weight, a scanned caloric-density level, a
+scanned container tare, a scanned barcode — is a durable row in the OBSERVATION ledger
+(`users/{id}/lifelog/nutrition/observations.yml`, plus monthly archives). Those rows are
+what the automatic scale path composes food-log entries from; the day view is where a
+person sees and corrects them.
+
+- **Unmatched signals appear at the top of the day** ("82 g on the kitchen scale at
+  18:04"), each with a **Dismiss** action. Nothing in the automatic path resolves a signal
+  that aged out of the 900 s composition window, and an unresolved row is never archived —
+  so dismissing is also what keeps the ledger's hot file, which sits on the scale's own
+  frame path, from growing without bound.
+- **An entry backed by a measurement shows it** — `82 g · scale ✓` next to the row. One
+  entry can carry several observations (a placement appends a new weight row per ≥5 g
+  change, plus a container and a density), so the badge reports the LATEST weight.
+- **The edit sheet's Measurements section re-pairs** a measurement to the entry being
+  edited. The entry's grams are recomputed from the measurement's own net weight (gross
+  minus a scanned container's tare, via the same domain arithmetic the automatic path
+  uses); calories are recomputed too, but ONLY when a density scan is part of the
+  evidence — without a measured kcal/g the grams are corrected and the calories are left
+  as the person entered them. Whatever the measurement pointed at before is released back
+  to unmatched, so the ledger never has two entries claiming one placement.
+
+A re-pair that would require rewriting the hot file and a monthly archive together is
+REFUSED with a `409` and nothing written: the store writes one file atomically and has no
+rollback across two, so a clean refusal is preferred over a half-repaired ledger. Act on
+such rows one at a time.
+
+---
+
 ## API surface
 
 All under `/api/v1/health/`, from `backend/src/4_api/v1/routers/health.mjs`:
@@ -538,6 +569,9 @@ All under `/api/v1/health/`, from `backend/src/4_api/v1/routers/health.mjs`:
 | `POST /nutrition/callback` | resolve a capture's Undo/Edit/portion choice, or a scale-pending Accept/Discard |
 | `GET /nutrition/pending?date=` | pending NutriLogs for a date (the scale's NEEDS REVIEW banner) |
 | `GET /nutrition/photos/:photoRef` | serve a captured photo (see [Photo persistence](#photo-persistence) below) |
+| `GET /nutrition/observations?date=` | the day's kitchen-scale signals (see [Scale measurements](#scale-measurements) below) |
+| `POST /nutrition/observations/:id/pair` | attach a measurement to a log row (`{ entryUuid }`) and recompute that row |
+| `POST /nutrition/observations/:id/dismiss` | resolve a measurement nobody is logging |
 | `GET /medical`, `POST /medical`, `DELETE /medical/:id` | medical readings |
 | `GET /dashboard` | aggregate summary (weight/nutrition/sessions/goals) consumed by `TodayView`'s coach-line footer |
 | `GET /mentions/all` (separate router, `health-mentions.mjs`) | `@`-mention autocomplete for the coach chat composer (periods, recent days, metrics) |

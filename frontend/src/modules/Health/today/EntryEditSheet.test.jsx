@@ -275,3 +275,66 @@ describe('EntryEditSheet — group mode', () => {
     expect(c2Call).toBeTruthy();
   });
 });
+
+// Task 5.4 — the Measurements section: re-pair a scale measurement to this entry.
+describe('EntryEditSheet — Measurements', () => {
+  const OBS = {
+    id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+    kind: 'weight', value: 82, unit: 'g', scaleId: 'kitchen-1',
+    at: '2026-09-02 18:04:12', date: '2026-09-02', status: 'open', pairedEntryUuid: null,
+  };
+
+  // Reset the IMPLEMENTATION, not just the call log: a rejection queued by one test
+  // would otherwise stay armed for the next one (and surface as an unhandled rejection).
+  beforeEach(() => { apiMock.mockReset(); apiMock.mockImplementation(async () => ({})); });
+
+  it('is absent entirely when the day has no observations — no empty heading', () => {
+    mount({ observations: [] });
+    expect(screen.queryByText('Measurements')).toBeNull();
+  });
+
+  it('lists the day\'s measurements with a pair action named after each row', () => {
+    mount({ observations: [OBS] });
+    expect(screen.getByText('Measurements')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Pair 82 g on the kitchen scale at 18:04 to this entry' })).toBeTruthy();
+  });
+
+  it('pairing POSTs the entry uuid to the pair endpoint and reloads both sides', async () => {
+    apiMock.mockImplementation(async () => ({ observation: { ...OBS, status: 'consumed', pairedEntryUuid: 'r1' } }));
+    const onChanged = vi.fn();
+    const onPaired = vi.fn();
+    mount({ observations: [OBS], onChanged, onPaired });
+
+    fireEvent.click(screen.getByRole('button', { name: /Pair .* to this entry/ }));
+
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    expect(apiMock).toHaveBeenCalledWith(
+      `api/v1/health/nutrition/observations/${OBS.id}/pair`,
+      { entryUuid: 'r1' },
+      'POST',
+    );
+    expect(onPaired).toHaveBeenCalledWith(null);
+  });
+
+  it('a refused re-pair surfaces the reason and does NOT close on a lie', async () => {
+    apiMock.mockImplementation(async () => {
+      throw new Error('Nothing was changed — dismiss or re-pair them one at a time.');
+    });
+    const onClose = vi.fn();
+    const onPaired = vi.fn();
+    mount({ observations: [OBS], onClose, onPaired });
+
+    fireEvent.click(screen.getByRole('button', { name: /Pair .* to this entry/ }));
+
+    await waitFor(() => expect(screen.getByText(/Nothing was changed/)).toBeTruthy());
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onPaired).toHaveBeenCalledWith(expect.any(Error));
+  });
+
+  it('a measurement already attached to THIS entry is shown as Attached, not re-pairable', () => {
+    mount({ observations: [{ ...OBS, status: 'consumed', pairedEntryUuid: 'r1' }] });
+    const btn = screen.getByRole('button', { name: /Pair .* to this entry/ });
+    expect(btn.textContent).toContain('Attached');
+    expect(btn).toBeDisabled();
+  });
+});

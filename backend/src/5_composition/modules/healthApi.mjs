@@ -17,6 +17,9 @@ import { SavedMealsService } from '#apps/health/SavedMealsService.mjs';
 import { YamlMedicalReadingsDatastore } from '#adapters/persistence/yaml/YamlMedicalReadingsDatastore.mjs';
 import { MedicalReadingsService } from '#apps/health/MedicalReadingsService.mjs';
 import { PhotoStore } from '#adapters/persistence/PhotoStore.mjs';
+import { YamlObservationStore } from '#adapters/persistence/yaml/YamlObservationStore.mjs';
+import { createObservationPairingService } from '#apps/nutrition/ObservationPairingService.mjs';
+import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 import { dataService } from '../runtimePersistence.mjs';
 import { nowDate } from '#system/utils/time.mjs';
 import { v4 as uuidv4 } from 'uuid';
@@ -129,6 +132,32 @@ export function createHealthApiRouter(config) {
   // operationally equivalent to a singleton without actually being one.
   const photoStore = new PhotoStore({ dataService, logger });
 
+  // The kitchen-scale observation ledger, for the day view's read / re-pair / dismiss
+  // surface. Its OWN adapter instance off the shared `dataService`, exactly as
+  // goals/savedMeals/medical/photos above — the live scale path (app.mjs) builds a second
+  // instance for the frame path, and both resolve the identical
+  // users/{userId}/lifelog/nutrition/observations.yml, so this is operationally a
+  // singleton without threading one across composition boundaries.
+  //
+  // `scaleConfig` is a THUNK: the household config is cached in memory at boot and a
+  // reload must be picked up without rebuilding the router. Normalized here (containers +
+  // density levels with their defaults) so the service is handed the same shape the
+  // nutribot scale path uses.
+  const observationPairing = createObservationPairingService({
+    observationStore: new YamlObservationStore({ dataService, logger }),
+    entries: {
+      find: (userId, uuid) => healthOperations.findNutritionItem(userId, uuid),
+      update: (userId, uuid, changes) => healthOperations.updateNutritionItem(userId, uuid, changes),
+    },
+    // `normalizeScaleNutribotConfig` takes the WHOLE scales config and reads its own
+    // `nutribot` block — passing that block directly would find no `nutribot` key inside
+    // it and silently fall back to the default container/density tables.
+    scaleConfig: () => normalizeScaleNutribotConfig(
+      configService?.getHouseholdAppConfig?.(null, 'scales') || {},
+    ),
+    logger,
+  });
+
   return createHealthRouter({
     healthService: healthServices.healthService,
     healthOperations,
@@ -139,6 +168,7 @@ export function createHealthApiRouter(config) {
     savedMealsService,
     medicalService,
     photoStore,
+    observationPairing,
     logger
   });
 }

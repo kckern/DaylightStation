@@ -25,6 +25,39 @@ const PHOTO_REF_PATTERN = /^ph_[A-Za-z0-9]+$/;
 // above: the API layer may not import domains directly (api-no-domains).
 const NUTRITION_MEAL_BUCKETS = ['morning', 'afternoon', 'evening', 'night'];
 
+// Observation ids are exactly what `YamlObservationStore.append` mints (uuid v4), so
+// the allowlist can be the UUID shape itself. Checked BEFORE the id reaches any store
+// call, same defense-in-depth posture as PHOTO_REF_PATTERN above — a malformed id is a
+// 400, never a lookup.
+const OBSERVATION_ID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+// Food-log entry ids are not all uuids (short ids exist too), so this is a
+// safe-characters allowlist rather than a shape: no slash, dot, whitespace or null byte
+// can reach a datastore lookup. Existence is then checked by the lookup itself.
+const ENTRY_UUID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+// The one date shape every health route accepts.
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Wire shape for one kitchen-scale observation. Explicit field list, never a spread of
+ * the stored row: the day view reads these names, and a storage-side field added later
+ * must not silently start crossing the HTTP boundary.
+ */
+function serializeObservation(o) {
+  return {
+    id: o.id,
+    kind: o.kind,
+    value: o.value,
+    unit: o.unit ?? null,
+    scaleId: o.scaleId,
+    at: o.at,
+    date: o.date,
+    status: o.status,
+    pairedEntryUuid: o.pairedEntryUuid ?? null,
+  };
+}
+
 /** Local (not UTC) YYYY-MM-DD from a Date instance. */
 function localDateISO(d) {
   const y = d.getFullYear();
@@ -74,11 +107,14 @@ function serializeHealthMetric(metric) {
  * @param {Object} config
  * @param {Object} config.healthService - AggregateHealthUseCase instance
  * @param {Object} config.healthOperations - Cohesive health data queries and commands
+ * @param {Object} [config.observationPairing] - ObservationPairingService: read/re-pair/
+ *   dismiss kitchen-scale observations. Absent = the three observation routes are not
+ *   mounted at all (same gating style as catalogService/photoStore above).
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createHealthRouter(config) {
-  const { healthService, healthOperations, dashboardService, catalogService, longitudinalService, budgetService, savedMealsService, medicalService, photoStore = null, logger = console } = config;
+  const { healthService, healthOperations, dashboardService, catalogService, longitudinalService, budgetService, savedMealsService, medicalService, photoStore = null, observationPairing = null, logger = console } = config;
   const router = express.Router();
 
   // JSON parsing middleware
@@ -850,6 +886,119 @@ export function createHealthRouter(config) {
         return res.json({ pending: logs.map(presentPendingNutritionLog) });
       } catch (err) {
         logger.error?.('health.nutrition.pending.error', { date, error: err.message });
+        return sendInternalError(res, { error: err.message });
+      }
+    }));
+  }
+
+  // ==========================================================================
+  // Kitchen-scale Observations (Task 5.4 — surfacing, re-pairing, dismissal)
+  // ==========================================================================
+
+  if (observationPairing) {
+    /**
+     * GET /api/v1/health/nutrition/observations?date=YYYY-MM-DD
+     *
+     * Every scale signal recorded on one calendar date — open (unmatched), consumed
+     * (attached to a food-log entry) and dismissed alike. The day view splits them:
+     * open rows render as unmatched rows with a Dismiss affordance, consumed rows
+     * become the "scale-measured" badge on the entry they point at.
+     *
+     * `userId` is NEVER read from the request — same rule, same reason, as the photo
+     * route below: this program is single-user (household head only), a client-supplied
+     * user would read another household member's ledger, and nothing in the frontend
+     * sends one. Always the household default.
+     */
+    router.get('/nutrition/observations', asyncHandler(async (req, res) => {
+      const { date: rawDate } = req.query;
+      if (rawDate !== undefined && !DATE_PATTERN.test(String(rawDate))) {
+        return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
+      }
+      const date = rawDate ? String(rawDate) : getToday();
+      const userId = getDefaultUsername();
+      try {
+        const observations = observationPairing.listByDate(userId, date);
+        return res.json({ observations: observations.map(serializeObservation), date, count: observations.length });
+      } catch (err) {
+        logger.error?.('health.nutrition.observations.error', { date, error: err.message, code: err.code ?? null });
+        return sendInternalError(res, { error: err.message });
+      }
+    }));
+
+    /**
+     * POST /api/v1/health/nutrition/observations/:id/pair  { entryUuid }
+     *
+     * Attach (or re-attach) one observation to a food-log entry. The entry's grams —
+     * and its calories, when a density observation is part of the evidence — are
+     * recomputed from the measurement by the application service, which borrows the
+     * scale path's own net-weight math rather than re-deriving it. Whatever the
+     * observation pointed at before is released back to `open`.
+     *
+     * Both ids are checked against an allowlist BEFORE anything reaches a store call:
+     * `:id` must be exactly the UUID shape `YamlObservationStore.append` mints, and
+     * `entryUuid` must be plain id characters (no slash, dot, or null byte can reach a
+     * lookup). Same posture as the photo route's `PHOTO_REF_PATTERN`.
+     */
+    router.post('/nutrition/observations/:id/pair', asyncHandler(async (req, res) => {
+      const { id } = req.params;
+      if (!OBSERVATION_ID_PATTERN.test(id || '')) {
+        logger.debug?.('health.nutrition.observations.invalidId', { id });
+        return res.status(400).json({ error: 'Invalid observation id' });
+      }
+      const entryUuid = req.body?.entryUuid;
+      if (typeof entryUuid !== 'string' || !ENTRY_UUID_PATTERN.test(entryUuid)) {
+        return res.status(400).json({ error: 'entryUuid is required' });
+      }
+
+      const userId = getDefaultUsername();
+      try {
+        const result = await observationPairing.pair(userId, id, entryUuid);
+        logger.info?.('health.nutrition.observations.paired', {
+          id, entryUuid, released: result.released.length,
+        });
+        return res.json({
+          observation: serializeObservation(result.observation),
+          released: result.released,
+          recomputed: result.recomputed,
+        });
+      } catch (err) {
+        if (err.code === 'NOT_FOUND') return res.status(404).json({ error: 'Observation not found' });
+        if (err.code === 'ENTRY_NOT_FOUND') return res.status(404).json({ error: 'Food-log entry not found' });
+        // The store cannot write the hot file and an archive atomically, so it refuses
+        // such a batch outright rather than half-applying it. Nothing was written.
+        if (err.code === 'CROSS_FILE_BATCH') {
+          return res.status(409).json({
+            error: 'This observation and the one it is currently attached to are stored in different months, which cannot be re-paired together. Nothing was changed — dismiss or re-pair them one at a time.',
+            code: 'CROSS_FILE_BATCH',
+          });
+        }
+        logger.error?.('health.nutrition.observations.pair.error', { id, entryUuid, error: err.message, code: err.code ?? null });
+        return sendInternalError(res, { error: err.message });
+      }
+    }));
+
+    /**
+     * POST /api/v1/health/nutrition/observations/:id/dismiss
+     *
+     * Mark one observation as "not food I am logging". This is the only thing in the
+     * system that resolves a row which aged out of the composition window, and an
+     * unresolved row is never archived — so this is also what keeps the hot file (on
+     * the scale's own frame path) from growing without bound.
+     */
+    router.post('/nutrition/observations/:id/dismiss', asyncHandler(async (req, res) => {
+      const { id } = req.params;
+      if (!OBSERVATION_ID_PATTERN.test(id || '')) {
+        logger.debug?.('health.nutrition.observations.invalidId', { id });
+        return res.status(400).json({ error: 'Invalid observation id' });
+      }
+      const userId = getDefaultUsername();
+      try {
+        const result = observationPairing.dismiss(userId, id);
+        logger.info?.('health.nutrition.observations.dismissed', { id });
+        return res.json({ observation: serializeObservation(result.observation) });
+      } catch (err) {
+        if (err.code === 'NOT_FOUND') return res.status(404).json({ error: 'Observation not found' });
+        logger.error?.('health.nutrition.observations.dismiss.error', { id, error: err.message, code: err.code ?? null });
         return sendInternalError(res, { error: err.message });
       }
     }));

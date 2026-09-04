@@ -5,6 +5,7 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { BUCKETS } from './mealBuckets.js';
 import { nutritionPhotoUrl } from './photoUrl.js';
+import { ObservationRow } from './ObservationRow.jsx';
 
 const logger = createAppLogger('health').child('entry-edit');
 const FACTORS = [0.25, 0.33, 0.5, 0.75, 1.5, 2, 3, 4];
@@ -22,11 +23,12 @@ const scale = (row, f) => ({
 });
 const displayName = (row) => row?.name || row?.item || row?.label || '';
 
-export function EntryEditSheet({ row, open, onClose, onChanged }) {
+export function EntryEditSheet({ row, open, onClose, onChanged, observations = [], onPaired }) {
   const [busy, setBusy] = useState(false);
   const [starred, setStarred] = useState(false);
   const [error, setError] = useState(null);
   const [name, setName] = useState(displayName(row));
+  const [pairingId, setPairingId] = useState(null);
 
   // Keep the rename field in sync whenever a DIFFERENT row is opened — this
   // component instance persists across opens (TodayView holds it mounted),
@@ -122,6 +124,32 @@ export function EntryEditSheet({ row, open, onClose, onChanged }) {
     }
     logger.info(event, { uuid: row.uuid, count: ids.length });
     onClose();
+  };
+
+  // Attach one of the day's scale measurements to THIS entry. The backend does the
+  // recompute (grams from the measurement's own net weight; calories too when a density
+  // scan is part of the evidence) and releases whatever the measurement pointed at
+  // before, so this handler only has to report the outcome.
+  //
+  // A refusal is surfaced, never swallowed: the ledger stores a bounded hot file plus
+  // monthly archives and cannot rewrite two of them atomically, so a re-pair that would
+  // span them is rejected with nothing written (409). Showing that is the difference
+  // between "I could not do it" and a half-applied change nobody can see.
+  const pairObservation = async (observation) => {
+    setPairingId(observation.id);
+    setError(null);
+    try {
+      await DaylightAPI(`api/v1/health/nutrition/observations/${observation.id}/pair`,
+        { entryUuid: row.uuid }, 'POST');
+      logger.info('measurement.paired', { uuid: row.uuid, observationId: observation.id });
+      onPaired?.(null);
+      onChanged();
+      onClose();
+    } catch (err) {
+      logger.error('measurement.pair_failed', { uuid: row.uuid, observationId: observation.id, error: err?.message });
+      setError(err);
+      onPaired?.(err);
+    } finally { setPairingId(null); }
   };
 
   const saveName = () => {
@@ -221,6 +249,20 @@ export function EntryEditSheet({ row, open, onClose, onChanged }) {
                 onChange={(e) => setName(e.currentTarget.value)} style={{ flex: 1 }} />
               <Button className="health-edit__control" size="xs" disabled={busy || !name.trim()} onClick={saveName}>Save</Button>
             </Group>
+          </>
+        ) : null}
+
+        {observations.length > 0 ? (
+          <>
+            <Text size="xs" fw={600} tt="uppercase">Measurements</Text>
+            <div className="health-obs health-obs--sheet">
+              {observations.map((o) => (
+                <ObservationRow key={o.id} observation={o}
+                  onPair={pairObservation}
+                  pairing={pairingId === o.id}
+                  attached={o.status === 'consumed' && o.pairedEntryUuid === row.uuid} />
+              ))}
+            </div>
           </>
         ) : null}
 
