@@ -428,3 +428,105 @@ describe('YamlObservationStore.get (read-only bare-id lookup)', () => {
     expect(caught.code).toBe('NOT_FOUND');
   });
 });
+
+// ===========================================================================
+// Hot file + monthly archives.
+//
+// This store sits on a hardware frame path — `ObservationService.setWeight` reads,
+// appends and re-reads on every qualifying placement — so an unbounded file is a
+// latency bug, not merely untidy. Archiving is RELOCATION: the no-deletion contract
+// stands, and every read path still finds an archived row.
+// ===========================================================================
+
+/** Seed the hot file directly with n resolved rows, one an hour apart from `start`. */
+function seedResolved(store, userId, n, start = Date.UTC(2026, 0, 1, 8, 0, 0)) {
+  const ids = [];
+  for (let i = 0; i < n; i += 1) {
+    const at = new Date(start + i * 3600_000).toISOString().replace('T', ' ').slice(0, 19);
+    const row = store.append(userId, { kind: 'weight', value: 100 + i, unit: 'g', scaleId: 'kitchen-1', at });
+    ids.push(row.id);
+  }
+  // Resolve them all so they become archive-eligible.
+  store.updateMany(userId, ids.map((id) => ({ id, status: 'consumed', pairedEntryUuid: 'e1' })));
+  return ids;
+}
+
+describe('YamlObservationStore archiving', () => {
+  it('leaves a small file entirely hot — no archive directory at all', () => {
+    seedResolved(store, 'u1', 40);
+    expect(fs.existsSync(path.join(dir, 'u1', 'lifelog/nutrition/archives/observations'))).toBe(false);
+  });
+
+  it('rolls resolved, aged rows into a per-month archive once the hot file is big enough', () => {
+    seedResolved(store, 'u1', 300);
+    // The roll fires on the NEXT append.
+    store.append('u1', { kind: 'weight', value: 999, unit: 'g', scaleId: 'kitchen-1', at: '2026-01-20 12:00:00' });
+
+    const hot = yaml.load(fs.readFileSync(filePath('u1'), 'utf8'));
+    expect(hot.length).toBeLessThan(300);
+    const archiveDir = path.join(dir, 'u1', 'lifelog/nutrition/archives/observations');
+    expect(fs.existsSync(archiveDir)).toBe(true);
+    expect(fs.readdirSync(archiveDir)).toContain('2026-01.yml');
+  });
+
+  it('NEVER archives an open row, however old — openForScale stays correct from the hot file alone', () => {
+    const stale = store.append('u1', { kind: 'density', value: 4, scaleId: 'kitchen-1', at: '2026-01-01 08:00:00' });
+    seedResolved(store, 'u1', 300, Date.UTC(2026, 0, 1, 9, 0, 0));
+    store.append('u1', { kind: 'weight', value: 999, unit: 'g', scaleId: 'kitchen-1', at: '2026-01-20 12:00:00' });
+
+    const hot = yaml.load(fs.readFileSync(filePath('u1'), 'utf8'));
+    expect(hot.some((r) => r.id === stale.id)).toBe(true);
+    expect(store.openForScale('u1', 'kitchen-1').map((r) => r.id)).toContain(stale.id);
+  });
+
+  it('an archived row is still found by listByDate, get and findByPairedEntry', () => {
+    const ids = seedResolved(store, 'u1', 300);
+    store.append('u1', { kind: 'weight', value: 999, unit: 'g', scaleId: 'kitchen-1', at: '2026-01-20 12:00:00' });
+
+    const first = ids[0];
+    const hot = yaml.load(fs.readFileSync(filePath('u1'), 'utf8'));
+    expect(hot.some((r) => r.id === first)).toBe(false);   // it really did leave the hot file
+
+    expect(store.get('u1', first).id).toBe(first);
+    expect(store.listByDate('u1', '2026-01-01').map((r) => r.id)).toContain(first);
+    expect(store.findByPairedEntry('u1', 'e1').map((r) => r.id)).toContain(first);
+  });
+
+  it('an archived row can still be patched by update and by updateMany', () => {
+    const ids = seedResolved(store, 'u1', 300);
+    store.append('u1', { kind: 'weight', value: 999, unit: 'g', scaleId: 'kitchen-1', at: '2026-01-20 12:00:00' });
+
+    const updated = store.update('u1', ids[0], { status: 'open', pairedEntryUuid: null });
+    expect(updated).toMatchObject({ id: ids[0], status: 'open', pairedEntryUuid: null });
+    expect(store.get('u1', ids[0]).status).toBe('open');
+
+    const batch = store.updateMany('u1', [{ id: ids[1], pairedEntryUuid: 'e2' }, { id: ids[2], pairedEntryUuid: 'e2' }]);
+    expect(batch.map((r) => r.pairedEntryUuid)).toEqual(['e2', 'e2']);
+    expect(store.findByPairedEntry('u1', 'e2')).toHaveLength(2);
+  });
+
+  it('updateMany still refuses the whole batch when an id exists nowhere', () => {
+    const ids = seedResolved(store, 'u1', 300);
+    store.append('u1', { kind: 'weight', value: 999, unit: 'g', scaleId: 'kitchen-1', at: '2026-01-20 12:00:00' });
+    let caught = null;
+    try {
+      store.updateMany('u1', [{ id: ids[0], pairedEntryUuid: 'x' }, { id: 'nope', pairedEntryUuid: 'x' }]);
+    } catch (err) { caught = err; }
+    expect(caught?.code).toBe('NOT_FOUND');
+    expect(store.get('u1', ids[0]).pairedEntryUuid).toBe('e1');   // untouched
+  });
+
+  it('bounds the hot file no matter how much history accumulates', () => {
+    seedResolved(store, 'u1', 300);
+    store.append('u1', { kind: 'weight', value: 1, unit: 'g', scaleId: 'kitchen-1', at: '2026-01-20 12:00:00' });
+    const afterFirst = yaml.load(fs.readFileSync(filePath('u1'), 'utf8')).length;
+    seedResolved(store, 'u1', 300, Date.UTC(2026, 1, 1, 8, 0, 0));
+    store.append('u1', { kind: 'weight', value: 2, unit: 'g', scaleId: 'kitchen-1', at: '2026-02-20 12:00:00' });
+    const afterSecond = yaml.load(fs.readFileSync(filePath('u1'), 'utf8')).length;
+
+    expect(afterFirst).toBeLessThanOrEqual(300);
+    expect(afterSecond).toBeLessThanOrEqual(300);
+    // …and nothing was lost: every row is still reachable.
+    expect(store.findByPairedEntry('u1', 'e1')).toHaveLength(600);
+  });
+});

@@ -118,10 +118,11 @@ const EMPTY_SNAPSHOT = Object.freeze({
  *   gateway for settled scale frames and button presses. NOT a generic event bus — the
  *   application layer describes capabilities, and the composition root owns the transport.
  * @param {object} deps.observationStore An `IObservationStore`.
- * @param {object} deps.nutribotContainer Supplies `getLogFoodFromScale`,
- *   `getAcceptFoodLog`, `getSelectScaleDensity`, `getRetractScaleLog`. Optional: with no
- *   container the service still records observations durably, it just cannot prompt or
- *   commit.
+ * @param {object} deps.nutribotContainer REQUIRED. Supplies `getLogFoodFromScale`,
+ *   `getAcceptFoodLog`, `getSelectScaleDensity`, `getRetractScaleLog`. There is no
+ *   "ledger only, no prompts" mode: `onPayload` cannot post, edit or commit without it,
+ *   so a service built without one would record nothing and hear nothing while looking
+ *   perfectly healthy — see the constructor guards.
  * @param {{findByUuid: Function, save: Function}|null} [deps.foodLogStore] For the
  *   `settled: false` stamp and for resolving the committed ITEM's uuid (which is what an
  *   observation pairs to — not the log's).
@@ -142,7 +143,7 @@ const EMPTY_SNAPSHOT = Object.freeze({
 export function createObservationService({
   scaleGateway,
   observationStore,
-  nutribotContainer = null,
+  nutribotContainer,
   foodLogStore = null,
   userId,
   conversationId = null,
@@ -153,6 +154,13 @@ export function createObservationService({
   commitQuietMs = DEFAULT_COMMIT_QUIET_MS,
   logger = console,
 }) {
+  // GUARD, do not degrade. The bridge threw on a missing event bus or container and that
+  // was right: this is the kitchen scale's only path into the food log, and the failure a
+  // permissive constructor produces is a service that starts, logs `ready`, and is
+  // silently deaf — nobody notices until they wonder why a week of weighing never logged.
+  // A boot-time throw is the cheap version of that discovery.
+  if (typeof scaleGateway?.subscribe !== 'function') throw new Error('createObservationService: scaleGateway with subscribe required');
+  if (!nutribotContainer?.getLogFoodFromScale) throw new Error('createObservationService: nutribotContainer required');
   if (!observationStore?.append) throw new Error('createObservationService: observationStore required');
   if (typeof userId !== 'string' || !userId) throw new Error('createObservationService: userId required');
   if (typeof clock !== 'function') throw new Error('createObservationService: clock required');
@@ -408,7 +416,7 @@ export function createObservationService({
     });
 
   const retract = async (live) => {
-    const uc = nutribotContainer?.getRetractScaleLog?.();
+    const uc = nutribotContainer.getRetractScaleLog?.();
     if (!uc || !live) return;
     try { await uc.execute({ userId, conversationId, logUuid: live.logUuid, messageId: live.messageId }); }
     catch (err) { logger.warn?.('scaleNutribot.retract.failed', { error: err.message }); }
@@ -445,7 +453,7 @@ export function createObservationService({
       return false;
     }
 
-    const uc = nutribotContainer?.getAcceptFoodLog?.();
+    const uc = nutribotContainer.getAcceptFoodLog?.();
     if (!uc) return false;
 
     // CLAIM the prompt before awaiting, and give it back if anything fails. The accept is
@@ -455,7 +463,7 @@ export function createObservationService({
     const live = s.live;
     s.live = null;
 
-    const applyDensity = nutribotContainer?.getSelectScaleDensity?.();
+    const applyDensity = nutribotContainer.getSelectScaleDensity?.();
     if (!applyDensity) {
       s.live = live;
       logger.warn?.('scaleNutribot.commit.skipped', { id, reason: 'no-density-usecase' });
@@ -587,7 +595,6 @@ export function createObservationService({
 
   const onPayload = async (payload) => {
     if (!payload || typeof payload !== 'object') return;
-    if (!nutribotContainer?.getLogFoodFromScale) return;   // no prompt half wired
     const id = payload.id || 'unknown';
     // Reported by the relay on every frame; a missing unit stays grams — the existing
     // contract, which must not change.
@@ -710,7 +717,6 @@ export function createObservationService({
   const refreshPrompt = async (scaleId, notice = null) => {
     const s = scales.get(scaleId);
     if (!s?.live) return false;
-    if (!nutribotContainer?.getLogFoodFromScale) return false;
     if (inflight.has(scaleId)) {
       logger.debug?.('scaleNutribot.refresh.dropped', { scaleId, reason: 'inflight' });
       return false;
@@ -760,12 +766,11 @@ export function createObservationService({
     }
   };
 
-  const unsubscribe = scaleGateway?.subscribe ? scaleGateway.subscribe(onPayload) : null;
+  const unsubscribe = scaleGateway.subscribe(onPayload);
 
   logger.info?.('observation.service.ready', {
     conversationId, userId, minGrams, baselineTolG, placementDeltaG, dedupDeltaG,
     storageWeightG, storageTolG, stormMinPushes, heavyG, forceTolG, commitQuietMs,
-    prompts: Boolean(nutribotContainer?.getLogFoodFromScale),
   });
 
   return {

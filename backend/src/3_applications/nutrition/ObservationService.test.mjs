@@ -83,7 +83,7 @@ function makeLog(items) {
 
 let dir;
 
-function makeWorld({ scaleConfig = { minGrams: 5 } } = {}) {
+function makeWorld({ scaleConfig = { minGrams: 5 }, timezone = 'UTC' } = {}) {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'observation-service-'));
   const logs = [];
   const store = new YamlObservationStore({
@@ -134,7 +134,7 @@ function makeWorld({ scaleConfig = { minGrams: 5 } } = {}) {
     userId: USER,
     conversationId: CONVO,
     scaleConfig,
-    timezone: 'UTC',
+    timezone,
     clock,
     scheduler,
     logger: { info: (e, d) => logs.push({ level: 'info', e, d }), warn: (e, d) => logs.push({ level: 'warn', e, d }), debug: (e, d) => logs.push({ level: 'debug', e, d }) },
@@ -829,13 +829,114 @@ describe('ObservationService — durability across a restart', () => {
     expect(w.rows().every((r) => r.status === 'consumed')).toBe(true);
   });
 
-  it('an observation older than the window drops out of the composition on its own', async () => {
+  it('an aged observation drops out of the composition, and a later scan does NOT resurrect it', async () => {
     const w = makeWorld();
     w.emit(480); await flush();
     w.emit(600); await flush();
     w.tick(901_000);                            // past the 900 s match window
     expect(w.service.read(SCALE).active).toBe(false);
     expect(w.open()).toHaveLength(1);           // the row is still there, just not live
+
+    // THE CASE THAT MATTERS. `CompositionStore`'s window was ROLLING — any activity
+    // refreshed the whole entry — so a density scanned now would have re-admitted a
+    // fifteen-minute-old weight and quiet-committed against it. Each row is aged
+    // independently here, so the scan brings only itself.
+    w.apply.execute({ scaleId: SCALE, code: DL_MEDIUM });
+    const after = w.service.read(SCALE);
+    expect(after.density).toBe(4);
+    expect(after.grams).toBeNull();
+    expect(after.complete).toBe(false);
+    expect(after.observationIds).toHaveLength(1);   // the density only — NOT the old weight
+    expect(w.open()).toHaveLength(2);              // both rows still on disk
+  });
+});
+
+// ===========================================================================
+// 8b. NON-UTC TIMEZONE — the local-vs-epoch trap
+//
+// `ObservationMatcher` parses a LOCAL `YYYY-MM-DD HH:mm:ss` through `Date.UTC(...)` as a
+// pure combinator over the digits. `nowTs` therefore has to be in that same space, which
+// is why `ObservationService` derives `matchNowMs()` from the very string it writes rows
+// with rather than from `clock().getTime()`.
+//
+// Every other test in this file runs at `timezone: 'UTC'`, where the two are numerically
+// IDENTICAL — so none of them can tell the difference, and "simplify matchNowMs() to
+// nowMs()" would pass the whole suite while killing the feature outright at the
+// household's real timezone. These tests exist to make that substitution fail.
+// ===========================================================================
+
+describe('ObservationService — at a non-UTC household timezone', () => {
+  const LA = 'America/Los_Angeles';
+
+  it('forms a composition at America/Los_Angeles, where local time and the epoch differ by hours', async () => {
+    const w = makeWorld({ timezone: LA });
+    w.emit(480); await flush();
+    w.emit(600); await flush();
+    w.apply.execute({ scaleId: SCALE, code: DL_MEDIUM });
+    w.apply.execute({ scaleId: SCALE, code: CT_TUPPERWARE });
+
+    // With `nowTs` taken from the epoch instead, every one of these rows reads as ~7 hours
+    // old against a 900 s window and this is `{grams: null, complete: false, active: false}`.
+    expect(w.service.read(SCALE)).toMatchObject({
+      grams: 600, unit: 'g', density: 4, container: 'tupperware', complete: true, active: true,
+    });
+    expect(w.service.read(SCALE).observationIds).toHaveLength(3);
+  });
+
+  it('rows are stamped with LOCAL digits, and the composition still ages correctly against them', async () => {
+    const w = makeWorld({ timezone: LA });
+    w.emit(480); await flush();
+    w.emit(600); await flush();
+    // 18:00 UTC on 2026-09-02 is 11:00 PDT the same day.
+    expect(w.store.listByDate(USER, '2026-09-02')[0].at).toBe('2026-09-02 11:00:00');
+    expect(w.service.read(SCALE).active).toBe(true);
+    w.tick(901_000);
+    expect(w.service.read(SCALE).active).toBe(false);
+  });
+
+  it('commits end to end at America/Los_Angeles', async () => {
+    const w = makeWorld({ timezone: LA });
+    w.emit(480); await flush();
+    w.emit(600); await flush();
+    w.apply.execute({ scaleId: SCALE, code: DL_MEDIUM });
+    w.service.armCommitFor(SCALE);
+    w.scheduler.fire(); await flush();
+    expect(w.accept.execute).toHaveBeenCalledTimes(1);
+    expect(w.store.listByDate(USER, '2026-09-02').every((r) => r.status === 'consumed')).toBe(true);
+  });
+});
+
+// ===========================================================================
+// 8c. Constructor guards — a mis-wired service must not start deaf
+// ===========================================================================
+
+describe('ObservationService — constructor guards', () => {
+  const base = () => ({
+    scaleGateway: { subscribe: () => () => {} },
+    observationStore: { append() {} },
+    nutribotContainer: { getLogFoodFromScale: () => ({}) },
+    userId: USER,
+    clock: () => new Date(),
+    scheduler: { setTimeout: () => 1, clearTimeout: () => {} },
+    logger: silent,
+  });
+
+  it('refuses a missing scale gateway rather than starting deaf', () => {
+    expect(() => createObservationService({ ...base(), scaleGateway: null }))
+      .toThrow(/scaleGateway/);
+    expect(() => createObservationService({ ...base(), scaleGateway: {} }))
+      .toThrow(/scaleGateway/);
+  });
+
+  it('refuses a missing nutribot container rather than recording into a void', () => {
+    expect(() => createObservationService({ ...base(), nutribotContainer: null }))
+      .toThrow(/nutribotContainer/);
+  });
+
+  it('refuses a missing store, clock or scheduler', () => {
+    expect(() => createObservationService({ ...base(), observationStore: null })).toThrow(/observationStore/);
+    expect(() => createObservationService({ ...base(), clock: null })).toThrow(/clock/);
+    expect(() => createObservationService({ ...base(), scheduler: null })).toThrow(/scheduler/);
   });
 });
 
