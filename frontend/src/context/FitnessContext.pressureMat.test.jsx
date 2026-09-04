@@ -55,4 +55,33 @@ describe('FitnessProvider pressure-mat websocket contract', () => {
     expect(events.map((event) => event.type)).toEqual(['pressure-mat:step', 'pressure-mat:stomp']);
     expect(latestContext.pressureMatState['garage-step-mat']).toMatchObject({ steps: 8, stomps: 2, event: 'stomped' });
   });
+
+  it('publishes an unconfigured mat activity during an active session', async () => {
+    let latestContext = null;
+    function Probe() {
+      latestContext = useFitnessContext();
+      return null;
+    }
+
+    await act(async () => {
+      render(<FitnessProvider fitnessConfiguration={MINIMAL_CONFIG}><Probe /></FitnessProvider>);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    latestContext.fitnessSessionInstance.sessionId = '20260903140000';
+
+    await act(async () => {
+      messageHandler({
+        topic: 'pressure-mat', id: 'garage-step-mat', type: 'presence', event: 'pressed',
+        occupied: true, steps: 9, stomps: 7, deltaV: .3,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+
+    expect(latestContext.pressureMatActivities['garage-step-mat']).toMatchObject({
+      equipmentId: 'garage-step-mat',
+      seenThisSession: true,
+      sessionSteps: 1,
+    });
+  });
 });

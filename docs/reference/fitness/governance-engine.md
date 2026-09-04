@@ -228,6 +228,15 @@ placed beside the RPM equipment and shows rolling SPM, session steps, and sessio
 stomps. Tap it to assign an active HR participant; hold and confirm to disengage
 continuous mat governance.
 
+The realtime card is resilient to a stale fitness equipment catalog. Because the
+backend pressure-mat adapter has already validated relay events, `FitnessSession`
+registers an unknown mat on its first event using the hardware id as a fallback
+equipment id. It still waits for the first classified in-session step before the
+card appears. Configured entries remain necessary for friendly naming, custom
+timeouts, `activity_rate` governance, and step-challenge targeting. A fallback
+registration emits `fitness.pressure_mat.tracker_discovered` with reason
+`missing_equipment_config` so the configuration gap remains observable.
+
 Assignment is resolved at each repetition, so session history retains honest
 physical totals plus per-user attributed totals. A stomp is one step with an
 additional stomp classification; it never increments steps twice.
