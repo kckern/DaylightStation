@@ -1496,12 +1496,14 @@ behaviour before this feature existed**, pinned by a characterisation test.
 
 The locked panel's resting state is a split home: the keypad in one pane
 and the read-only **AgendaStatusBoard** in the other — every student with
-their agenda-lesson pills, a done count, and Not started / In progress /
-Done for the day. The board accepts no taps (codes and printed agendas stay
-the only entry path), never blocks the keypad (a failed status fetch just
-hides the board), does not count as keypad activity for screen-off, and the
-two panes swap sides every 90 seconds for burn-in without losing a
-half-typed code. The board component lives at
+one circle per assigned item, a done count, and Not started / In progress /
+Done for the day. Separate assignments in the same subject keep separate
+circles; extra completed work owned by one assignment appears as a `+N` badge
+on that circle and does not enlarge the day's denominator. The board accepts
+no taps (codes and printed agendas stay the only entry path), never blocks the
+keypad (a failed status fetch just hides the board), does not count as keypad
+activity for screen-off, and the two panes swap sides every 90 seconds for
+burn-in without losing a half-typed code. The board component lives at
 `frontend/src/modules/School/status/AgendaStatusBoard.jsx` and reads the
 same agenda-preview + teacher-day models the teacher console uses.
 

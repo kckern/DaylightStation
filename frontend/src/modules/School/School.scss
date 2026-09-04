@@ -2696,7 +2696,7 @@
     border-color: var(--school-board-done);
     background: color-mix(in srgb, var(--school-board-done) 22%, var(--school-surface));
   }
-  // Discs, one per SUBJECT, each wearing that subject's icon off the wall.
+  // Discs, one per ASSIGNMENT, each wearing its subject's icon off the wall.
   //
   // This was a stretched meter — segments sharing the card's width, so every
   // learner's strip was the same length and only the fill differed. That made
@@ -2747,6 +2747,7 @@
       calc((100% - (var(--count, 1) - 1) * var(--disc-gap)) / var(--count, 1))
     );
     flex: 0 0 auto;
+    position: relative;
     width: var(--disc); aspect-ratio: 1;
     display: flex; align-items: center; justify-content: center;
     border-radius: 50%;
@@ -2788,6 +2789,27 @@
       background-size: 300% 100%;
       animation: school-board-shimmer 1.4s ease-in-out infinite;
     }
+  }
+  // Completed work beyond the assignment stays visible without becoming a
+  // second disc. The badge is absolutely positioned so it never enters the
+  // flex count, changes `--disc`, or makes the row wrap.
+  &__extra {
+    position: absolute;
+    top: -0.35em; right: 0;
+    z-index: 1;
+    min-width: 1.55em; height: 1.55em;
+    padding: 0 0.32em;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 2px solid var(--school-surface);
+    border-radius: 999px;
+    background: var(--school-fg);
+    color: var(--school-surface);
+    box-shadow: 0 1px 3px rgb(0 0 0 / 35%);
+    font-size: clamp(0.65rem, 1.6vh, 0.9rem);
+    font-weight: 900; line-height: 1;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    pointer-events: none;
   }
   // The name is real from the first paint (the roster is known synchronously);
   // only the day's own facts shimmer.

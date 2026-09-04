@@ -67,9 +67,11 @@ function validatePianoCourseEnrollment(raw) {
   }
   const subject = raw?.subject ?? 'arts';
   if (typeof subject !== 'string' || !subject) return { errors: ['piano-course subject must be a string'] };
+  const videosLockedAfter = raw?.videosLockedAfter;
   return { errors: [], enrollment: {
     programId: 'piano-course', corpusId: courseId, courseId, subject,
     ...(raw?.title ? { title: String(raw.title) } : {}),
+    ...(Number.isInteger(videosLockedAfter) && videosLockedAfter > 0 ? { videosLockedAfter } : {}),
   } };
 }
 

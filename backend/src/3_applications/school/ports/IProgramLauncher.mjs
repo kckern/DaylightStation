@@ -95,6 +95,8 @@ export class IProgramLauncher {
    * @param {{userId: string, programInstance?: string|null}} args
    * @returns {Promise<{doneToday: boolean, progressLabel: string|null, score: number|null,
    *   obligationProgress?: {completed: number, total: number}|null, servedWork?: object[]}>}
+   * `planDailyAgenda` enriches each returned served-work row with the owning
+   * program entry's `assignmentUnitId`; launchers report only the actual work.
    */
   // eslint-disable-next-line no-unused-vars
   status({ userId, programInstance = null }) {

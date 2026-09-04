@@ -1,9 +1,10 @@
 /**
  * AgendaStatusBoard — a read-only, at-a-glance board of every student's school
  * day: WHICH subjects are on the plan and which of them are done. The
- * per-subject discs carry the subject wall's own icons, so a kid walking past
- * reads their day as pictures rather than as a bar chart; one "x of y" in the
- * card's top corner carries the count, which is the one thing icons cannot say.
+ * per-assignment discs carry the subject wall's own icons, so a kid walking
+ * past reads their day as pictures rather than as a bar chart. Extra completed
+ * work owned by one assignment rides on that disc as a `+N` badge instead of
+ * inflating the assigned day; one "x of y" carries the assignment count.
  *
  * A CLEARED DAY IS A STATE, NOT A SENTENCE. When every disc is filled the card
  * itself goes green — the child should be able to see they are finished from
@@ -70,6 +71,17 @@ function iconFor(subject) {
     schoolLog.surface('subject-icon-missing', { subject: subject ?? null });
   }
   return FALLBACK_ICON;
+}
+
+function labelForSegment(segment) {
+  const state = segment.state === 'passed' ? 'done'
+    : segment.state === 'needs-retry' ? 'try again'
+      : segment.state === 'in-progress' ? 'in progress'
+        : 'not done';
+  const extra = segment.extraCount > 0
+    ? `, ${segment.extraCount} extra ${segment.extraCount === 1 ? 'item' : 'items'} completed`
+    : '';
+  return `${segment.label}: ${state}${extra}`;
 }
 
 export default function AgendaStatusBoard({ kids = [], day }) {
@@ -322,13 +334,13 @@ export default function AgendaStatusBoard({ kids = [], day }) {
                       >
                         <Icon
                           name={iconFor(segment.subject)}
-                          label={`${segment.label}: ${
-                            segment.state === 'passed' ? 'done'
-                              : segment.state === 'needs-retry' ? 'try again'
-                                : segment.state === 'in-progress' ? 'in progress'
-                                : 'not done'
-                          }`}
+                          label={labelForSegment(segment)}
                         />
+                        {segment.extraCount > 0 && (
+                          <span className="school-status-board__extra" aria-hidden="true">
+                            +{segment.extraCount}
+                          </span>
+                        )}
                       </li>
                     ))}
                   </ul>

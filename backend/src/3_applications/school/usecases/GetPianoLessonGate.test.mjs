@@ -184,7 +184,8 @@ describe('GetPianoLessonGate', () => {
  * lesson at a learner it is trying to stop. It is its own field.
  *
  * The counter is `completedLessonsToday`, which is the same array the launcher
- * maps into `servedWork` and the agenda board draws as discs. Counting anything
+ * maps into `servedWork`. The agenda board shows its first item as the assigned
+ * program disc and the remainder in that disc's `+N` badge. Counting anything
  * else would let the board and the cap disagree about the same day.
  */
 const cappedAt = (cap, courseId = 'plex:1') => [{ programId: 'piano-course', courseId, videosLockedAfter: cap }];

@@ -411,12 +411,24 @@ export function planDailyAgenda({
       // `list` — it comes from the program's own status, which knows exactly
       // which lesson it credited today. Without that second source a served
       // program subject named nothing at all, and a presenter had only the
-      // pre-formatted `progressLabel` to fall back on.
+      // pre-formatted `progressLabel` to fall back on. Every row also names its
+      // assignment anchor: curriculum owns itself, while a program launcher can
+      // report several actual lessons owned by one synthetic program entry.
       servedWork: [
         ...list
           .filter((entry) => passedTodayIds.has(entry.unitId))
-          .map((entry) => ({ unitId: entry.unitId, title: entry.title ?? null })),
-        ...statuses.flatMap((status) => (status?.error ? [] : (status.servedWork ?? []))),
+          .map((entry) => ({
+            unitId: entry.unitId,
+            assignmentUnitId: entry.unitId,
+            title: entry.title ?? null,
+          })),
+        ...programs.flatMap((entry) => {
+          const status = programStatusFor(programStatuses, entry);
+          if (status?.error || !Array.isArray(status?.servedWork)) return [];
+          return status.servedWork
+            .filter((work) => work && typeof work === 'object')
+            .map((work) => ({ ...work, assignmentUnitId: entry.unitId }));
+        }),
       ],
       programUnavailable,
       focus: next && isFocus ? {
