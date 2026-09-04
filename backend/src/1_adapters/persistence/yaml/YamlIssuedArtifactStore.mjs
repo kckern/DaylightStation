@@ -11,6 +11,17 @@ const WORKSHEET_KINDS = new Set(['worksheet', 'worksheet-composition']);
 const renderInputDigest = (value) => digest(Buffer.from(yaml.dump(value, {
   sortKeys: true, lineWidth: -1, noRefs: true,
 })));
+const durableAllocation = (allocation) => allocation ? {
+  cardId: allocation.cardId ?? null,
+  recordId: allocation.recordId ?? null,
+  rowRange: allocation.rowRange ?? null,
+} : null;
+const renderInputs = ({ sourceDocument, renderContext, allocation, worksheetInstanceId }) => ({
+  sourceDocument,
+  renderContext: renderContext ?? null,
+  allocation: durableAllocation(allocation),
+  worksheetInstanceId: worksheetInstanceId ?? null,
+});
 const validId = (id) => typeof id === 'string' && id.trim() && id.length <= 240
   && !id.includes('\0') && !id.includes('\\') && !id.startsWith('/')
   && id.split('/').every((segment) => segment && segment !== '.' && segment !== '..');
@@ -79,13 +90,17 @@ export class YamlIssuedArtifactStore {
       );
       const manifest = yaml.load(raw);
       if (manifest?.representation?.generated === true) {
-        const expected = renderInputDigest({
-          sourceDocument: manifest.sourceDocument,
-          renderContext: manifest.renderContext ?? null,
-          allocation: manifest.allocation ?? null,
-          worksheetInstanceId: manifest.worksheetInstanceId ?? null,
-        });
-        if (manifest.renderInputSha256 !== expected) {
+        const inputs = renderInputs(manifest);
+        const expected = renderInputDigest(inputs);
+        // v4 briefly hashed RenderPrintDocument's transient `status: live`
+        // allocation field, then persisted only the durable card coordinates.
+        // Accept that exact historical encoding so those immutable recipes stay
+        // readable; all new writes hash the same normalized shape they retain.
+        const statusHashedExpected = inputs.allocation ? renderInputDigest({
+          ...inputs, allocation: { ...inputs.allocation, status: 'live' },
+        }) : null;
+        if (manifest.renderInputSha256 !== expected
+            && manifest.renderInputSha256 !== statusHashedExpected) {
           throw new DomainInvariantError(`issued artifact ${artifactId} failed input integrity verification`, { code: 'ARTIFACT_CORRUPT' });
         }
         return { manifest, bytes: null };
@@ -140,13 +155,14 @@ export class YamlIssuedArtifactStore {
     const run = async () => {
       const existing = await this.get(artifactId);
       const sha256 = Buffer.isBuffer(bytes) ? digest(bytes) : null;
-      const renderInputSha256 = generatedPdf ? renderInputDigest({
-        sourceDocument, renderContext: renderContext ?? null, allocation: allocation ?? null,
-        worksheetInstanceId: worksheetInstanceId ?? null,
-      }) : null;
+      const normalizedInputs = renderInputs({
+        sourceDocument, renderContext, allocation, worksheetInstanceId,
+      });
+      const renderInputSha256 = generatedPdf ? renderInputDigest(normalizedInputs) : null;
       if (existing) {
         const same = generatedPdf
-          ? existing.manifest.renderInputSha256 === renderInputSha256
+          ? existing.manifest.renderInputSha256 != null
+            && renderInputDigest(renderInputs(existing.manifest)) === renderInputSha256
           : existing.manifest.sha256 === sha256;
         // Legacy byte archives remain readable and are never overwritten in
         // place. A later migration can promote their YAML after verification.
@@ -183,10 +199,7 @@ export class YamlIssuedArtifactStore {
         pageCount, issuedAt,
         sessionId: linkedSessionIds[0] ?? null, sessionIds: linkedSessionIds,
         learnerId, unitId,
-        worksheetInstanceId, allocation: allocation ? {
-          cardId: allocation.cardId ?? null, recordId: allocation.recordId ?? null,
-          rowRange: allocation.rowRange ?? null,
-        } : null,
+        worksheetInstanceId, allocation: normalizedInputs.allocation,
         document: document ? {
           id: document.id ?? null, revision: document.rev ?? document.revision ?? null,
           title: document.title ?? null,
