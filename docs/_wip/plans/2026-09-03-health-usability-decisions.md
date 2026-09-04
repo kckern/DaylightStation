@@ -80,6 +80,29 @@ later phase adds a sidebar that can show the same day's data beside the main col
 exact double-mount scenario. A known silent-data-corruption path should not be left open as
 consumers start adopting it.
 
+**2.8 An unwired scale refuses at the surface; it does not kill the boot (Task 5.6).**
+When no head-of-household bot id resolves, the observation service is null. The considered
+alternative was failing hard at boot, on the grounds that a silent no-op is worse than a
+crash. Rejected: a fatal boot would take media, fitness and school down over a *nutrition*
+configuration value, against the fail-soft posture everything adjacent to it uses. Instead
+the surface declares `available()` and the use case returns `{ handled: true, ok: false,
+error: 'SCALE_UNAVAILABLE' }`, so a scan is never acknowledged as applied. `available()` is
+optional, so a store owning its own state is unaffected.
+**Known limitation, deliberately accepted:** the refusal notice is *structurally
+undeliverable*. It is painted by editing the live prompt, and there is no prompt when there
+is no bot to have posted one. A person at the fridge gets a scanner beep; the only record is
+in the logs. The words are kept so a future fridge-reachable surface has them.
+
+**2.9 The observation read path validates `value`/`unit`, despite "no backfill" (Task 5.6).**
+This program's migration rule is to default rather than backfill, so tightening a read path
+normally risks rejecting rows already on disk. Here it does not: the data volume contains no
+observation ledger at all — the scale path has never written a row in production — so there
+was nothing to migrate and the fix was free. Without it a `value: NaN` row read back as
+`complete: true` (because `NaN !== null`) and could drive the *unattended* commit. A row that
+cannot satisfy its own `kind` is now skipped and warned, never thrown over and never removed
+from the file. Consequence worth knowing: such a row also fails the archive partition, so it
+stays a permanent hot-file resident — visible rather than swept away, which is the intent.
+
 ---
 
 ## 3. Known divergences from the PRD (true only after later phases)
