@@ -77,6 +77,12 @@ $health-bar-box: 34px;
     display: block; width: 100%; border-radius: 3px 3px 0 0;
     background: var(--ds-success);
     &--over { background: var(--ds-danger); }
+    // A day that ate PAST budget and still came in under, because exercise
+    // covered it. Without this the cell is just "a green bar above the
+    // reference line", which reads as a mistake; the capped top edge says the
+    // overshoot is real and something offset it. Non-colour cue, and the
+    // accessible name states the same thing in words (barCellLabel).
+    &--offset { border-top: 2px solid var(--ds-warning); }
   }
 }
 
@@ -298,6 +304,8 @@ $health-aside-gap: 1.5rem;
   &__fill {
     display: block; width: 100%; border-radius: 2px 2px 0 0; background: var(--ds-success);
     &--over { background: var(--ds-danger); }
+    // Same encoding at a month's zoom — see the week strip's note.
+    &--offset { border-top: 2px solid var(--ds-warning); }
   }
   &__caption { margin: 0; font-size: 0.65rem; color: var(--ds-text-low); font-variant-numeric: tabular-nums; }
 }

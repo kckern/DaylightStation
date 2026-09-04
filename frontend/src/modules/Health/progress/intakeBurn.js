@@ -44,7 +44,11 @@ export function buildIntakeBurn(days) {
     scaleMaxKcal: total,
     foodAreaPct: round(foodAreaPct),
     exerciseAreaPct: round(exerciseAreaPct),
-    bars: list.map((d) => (d?.error || !d ? { date: d?.date, kind: 'gap', foodPct: 0, exercisePct: 0, food: 0, exercise: 0 } : {
+    // `date` is always a usable identity: an entry that arrives without one
+    // still occupies a slot, and every gap sharing `undefined` collapses into
+    // one React key — the chart then renders a single gap column for however
+    // many holes there were. Positional fallback, so identity is never absent.
+    bars: list.map((d, i) => (d?.error || !d ? { date: d?.date ?? `gap-${i}`, kind: 'gap', foodPct: 0, exercisePct: 0, food: 0, exercise: 0 } : {
       date: d.date,
       kind: 'day',
       food: num(d.food),

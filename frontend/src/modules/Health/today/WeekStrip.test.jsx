@@ -18,9 +18,19 @@ function r(ui) { return render(<MantineProvider>{ui}</MantineProvider>); }
 const GAP_DATE = '2026-08-29';
 const ZERO_DATE = '2026-08-30';
 const OVER_DATE = '2026-09-01';
+// A day that ate PAST budget (2040 / 1791 = 114%) and still finished UNDER,
+// because 530 kcal of exercise covered it. Taken from live data (Jul 25).
+const OFFSET_DATE = '2026-07-25';
+const OFFSET_TODAY = '2026-07-25';
 
 const dayFor = (date) => {
   if (date === GAP_DATE) return { date, error: 'NO_WEIGHT_DATA' };
+  if (date === OFFSET_DATE) {
+    return {
+      date, budget: 1791, food: 2040, exercise: 530, net: 1510,
+      remaining: 281, status: 'under', stale: false, macros: {},
+    };
+  }
   const food = date === ZERO_DATE ? 0 : (date === OVER_DATE ? 2800 : 1000);
   return {
     date, budget: 2000, food, exercise: 0, net: food,
@@ -65,13 +75,39 @@ describe('WeekStrip', () => {
     expect(screen.getByTestId(`weekbar-fill-${OVER_DATE}`).style.height).toBe('100%');
   });
 
-  it('hues the bar by status — under vs over, never by macro segments', async () => {
+  it('hues the bar by status — under vs over', async () => {
     strip();
     await screen.findByTestId('weekbar-fill-2026-08-28');
     expect(screen.getByTestId('weekbar-fill-2026-08-28').className).toMatch(/fill--under/);
     expect(screen.getByTestId(`weekbar-fill-${OVER_DATE}`).className).toMatch(/fill--over/);
-    // PRD F7.1: no stacked macro segments in the strip. One bar per cell.
-    expect(document.querySelectorAll('.health-weekstrip__fill').length).toBe(6); // 7 cells minus the gap
+  });
+
+  // PRD F7.1, the phase's stated Critical risk: no stacked macro segments in the
+  // strip. The previous guard counted `.health-weekstrip__fill` elements and
+  // asserted six — which a reviewer defeated in one line by adding segments
+  // under a DIFFERENT class name and watching the suite stay green. Counting one
+  // class cannot express "nothing is stacked"; the assertion has to be
+  // STRUCTURAL, about how many things live inside a bar, whatever they are called.
+  it('stacks NOTHING inside a bar — exactly one child, whatever its class', async () => {
+    strip();
+    await screen.findByTestId('weekbar-fill-2026-08-28');
+
+    const bars = [...document.querySelectorAll('.health-weekstrip__bar')];
+    expect(bars).toHaveLength(7);           // one per cell, gap included
+    for (const bar of bars) {
+      const isGap = bar.classList.contains('health-weekstrip__bar--gap');
+      // A gap holds nothing at all; a computed day holds exactly ONE fill. A
+      // second child of any name is a stacked segment.
+      expect(bar.children.length).toBe(isGap ? 0 : 1);
+    }
+
+    // And no cell smuggles extra marks in beside the bar: a cell's bar box holds
+    // the reference line and the bar, and nothing else.
+    for (const box of document.querySelectorAll('.health-weekstrip__barbox')) {
+      expect(box.children.length).toBe(2);
+      expect(box.children[0].className).toMatch(/goalline/);
+      expect(box.children[1].className).toMatch(/health-weekstrip__bar/);
+    }
   });
 
   // THE honesty pin. A hole in the data and a day someone genuinely logged
@@ -99,17 +135,40 @@ describe('WeekStrip', () => {
     const zeroCell = cells[3];
     expect(gapCell.getAttribute('aria-label')).toMatch(/no data/);
     expect(gapCell.textContent).toContain('—');
-    expect(zeroCell.getAttribute('aria-label')).toMatch(/0 of 2000 kcal/);
+    expect(zeroCell.getAttribute('aria-label')).toMatch(/ate 0 of 2000 kcal/);
     expect(zeroCell.getAttribute('aria-label')).not.toMatch(/no data/);
   });
 
-  it('announces the TRUE percentage even when the paint is clamped', async () => {
+  it('announces the TRUE percentage even when the paint is clamped, and reconciles it with exercise', async () => {
     strip();
     await screen.findByTestId(`weekbar-fill-${OVER_DATE}`);
     const overCell = [...document.querySelectorAll('.health-weekstrip__cell')]
       .find((c) => c.getAttribute('aria-label')?.includes('2800'));
-    expect(overCell.getAttribute('aria-label')).toMatch(/140% of budget/);
-    expect(overCell.getAttribute('aria-label')).toMatch(/over budget/);
+    const label = overCell.getAttribute('aria-label');
+    expect(label).toMatch(/140% of budget/);
+    expect(label).toMatch(/over budget/);
+    // The reconciling term is always present — the height's denominator and the
+    // hue's are different, and a sentence must not assert both without it.
+    expect(label).toMatch(/exercise/);
+  });
+
+  // I1. The bar's height says food/budget; its hue says the outcome after
+  // exercise. A day that ate 114% and still came in under is GREEN above the
+  // reference line, which reads as a mistake unless something says otherwise.
+  it('marks a cell whose overshoot was offset by exercise, in the cue AND the words', async () => {
+    strip({ date: OFFSET_TODAY, today: OFFSET_TODAY });
+    const fill = await screen.findByTestId(`weekbar-fill-${OFFSET_DATE}`);
+    expect(fill.className).toMatch(/fill--under/);
+    expect(fill.className).toMatch(/fill--offset/);
+
+    const cell = fill.closest('.health-weekstrip__cell');
+    const label = cell.getAttribute('aria-label');
+    expect(label).toMatch(/114% of budget/);
+    expect(label).toMatch(/530 kcal exercise/);
+    expect(label).toMatch(/281 kcal left/);
+
+    // An ordinary under day in the SAME strip carries no offset cue.
+    expect(screen.getByTestId('weekbar-fill-2026-07-24').className).not.toMatch(/fill--offset/);
   });
 
   // The window always ENDS at the viewed date, so today is in the strip only

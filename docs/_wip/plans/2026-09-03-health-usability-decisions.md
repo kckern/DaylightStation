@@ -214,6 +214,66 @@ that counted gaps into the intake/burn scale was a no-op, because a gap row carr
 numbers at all); the real risk — holes diluting the AVERAGES — is now its own test. Both
 were found only by falsifying, which is §5.2 earning its keep for the third phase running.
 
+**2.22 `findByDate` was archive-blind — fixed at the STORE, not at five call sites (Phase 8 review, C1).**
+A live production bug this program did not introduce but did surface. `findByDate`
+read only the hot nutrilist file and matched `item.date` exactly; `findByDateRange`
+also loads monthly archives and dates a row by `date ?? createdAt`. Once a day aged
+past the 30-day retention window, the two disagreed about that same day. Verified on
+the running container: `2026-07-30` answered `food: 0` and `count: 0` while the archive
+held seven rows — 27 of 62 days divergent. The week strip (range) drew a real bar
+beside an equation and a meal list that both said the person had eaten nothing, which
+is precisely the F7.1 lie this phase exists to prevent, and the DAY was the wrong half.
+
+**The root cause is that one store had two different day-resolution rules.**
+`archiveOldItems` files a row by `date ?? createdAt` — so `findByDateRange` agreed with
+the archiver and `findByDate` did not. A row filed by one predicate and looked up by a
+narrower one is a row nobody can find. That is a defect in the primitive, not in its
+callers, so the fix is a single private `#itemsInDayWindow` that both reads share.
+Fixing five callers instead would have left the next caller to rediscover it.
+
+Judged per call site before choosing the seam, because a blanket replace is not a
+decision:
+| Site | Verdict |
+|---|---|
+| `HealthOperations:98` day-view rows | Must be archive-aware — it is the other half of the user-visible bug. A correct `1,740 kcal` headline above an empty meal list is a *worse* lie than a consistent zero. |
+| `HealthOperations:214` group siblings | Must match whatever the day view does, or editing a group on an archived day half-works. |
+| `BudgetService:279` day equation | Must match the range. |
+| `FoodCatalogService.backfill` | Its own contract says `daysBack = 90` while retention is 30, so it has always silently seen only the last 30 days. Archive-aware makes it do what it says. Costs more (it now parses archive months on days 31–90), accepted: it is a rare manual POST and correctness beats speed there. |
+| `CoachingOrchestrator:32` | One date, in practice today. Inside retention no archive is touched at all, so this is free, and correct if the coach is ever asked about an old day. |
+
+Nobody depended on the hot-file-only behaviour: the **write** path (`update`,
+`findByUuid`, `remove*`, `updatePortion`) is separately hot-file-only and is unchanged.
+Two consequences worth knowing. Archived rows are now **visible but not editable** — an
+edit throws `NOT_FOUND` rather than silently succeeding, which is honest but is a new
+reachable error; before, the row was invisible so nobody could try. And a lookup inside
+the retention window still touches no archive, so the common case costs exactly what it
+did (pinned by a test that spies on `readdirSync`).
+
+**2.23 The bar keeps two denominators; the SENTENCE was the bug (Phase 8 review, I1).**
+Bar height is `food / budget`; hue and status come from `budget − food + exercise`. On
+live data Jul 24 at 115.5% is red and Jul 25 at 113.9% is green — near-identical heights,
+opposite colours — and the accessible name read `"2040 of 1791 kcal, 114% of budget,
+under budget"`, which contradicts itself. The product owner's ruling, adopted: **keep
+both encodings, fix the words.** Collapsing hue onto the food-only denominator would
+throw away exercise offset, which is a headline PRD theme — a day you ate 114% of budget
+and trained off really is under. What is indefensible is asserting both halves with the
+reconciling term absent. `barCellLabel` now always states intake against budget, the
+exercise, and the outcome as one claim ("ate 2040 of 1791 kcal, 114% of budget, with 530
+kcal exercise, 281 kcal left"), and says "with no exercise logged" rather than omitting
+the term. The visible half gets a non-colour cue: a cell that ate past budget and still
+finished under carries a capped top edge (`--offset`), so "a green bar above the
+reference line" reads as a reconciled overshoot rather than a mistake.
+
+**2.24 The F7.1 guard was vacuous and a reviewer broke it in one line (Phase 8 review, I2).**
+`WeekStrip.test.jsx` asserted `querySelectorAll('.health-weekstrip__fill').length === 6`.
+Counting ONE class cannot express "nothing is stacked": adding two segments under a
+different class name left the suite green, and the phase's own F11 falsification passed
+only because the break happened to reuse `__fill`. The guard is now structural — a bar
+holds exactly one child whatever it is called, a gap holds none, and a bar box holds
+exactly the reference line and the bar — and the reviewer's exact break now fails. The
+same guard is applied to the month block. **The lesson generalises: a test for "X does
+not exist" must not be written as a count of the things that do.**
+
 ---
 
 ## 3. Known divergences from the PRD (true only after later phases)
@@ -349,7 +409,18 @@ Recorded rather than silently dropped. None block their task; several are cheap.
     the single flag is what the stored shape can support today. **Now also documented in
     the endstate doc (§2.13) — it was wrong to leave a reachable dishonesty recorded only
     here while the reference doc implied the opposite.**
-15. Catalog entries created before the per-key gate landed may hold donated structural
+15. On the ACTIVE week-strip cell, the zero-day track colour equals the active-cell
+    background, so the "a real track exists" cue that separates a zero day from a gap
+    disappears on the most-looked-at cell. The `0` vs `—` readout and the dashed gap
+    border still carry the distinction, so this is a weakened cue rather than a lie.
+    Deferred deliberately (Phase 8 review, M2).
+16. Archived nutrilist rows are readable but not editable: the write path is hot-file
+    only, so an edit of a row older than 30 days throws `NOT_FOUND`. Honest, but a
+    newly reachable error now that those rows are visible (see §2.22).
+17. `/api/v1/health/weight` and `/api/v1/lifelog/weight` are **confirmed byte-identical**
+    (same file, same rounding, 249 keys) — the only divergence mechanism is user
+    resolution, inert while single-user. Recorded as a note, not an open risk.
+18. Catalog entries created before the per-key gate landed may hold donated structural
     zeros (`fiber: 0` etc.) that quick-adds will keep inheriting as `'catalog'`. Nothing
     sweeps them; a fresh provenanced capture of the same food overwrites the keys it
     answers, but never clears one it does not.

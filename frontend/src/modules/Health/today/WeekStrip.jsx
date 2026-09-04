@@ -1,7 +1,7 @@
 import { UnstyledButton } from '@mantine/core';
 import { localTodayISO } from './mealBuckets.js';
 import { useBudgetRange } from './useBudgetRange.js';
-import { barModel, fmtKcal } from './dayBars.js';
+import { barModel, barCellLabel, fmtKcal } from './dayBars.js';
 
 export const addDays = (iso, n) => {
   const d = new Date(`${iso}T12:00:00`); // noon anchor avoids DST edge shifts
@@ -45,10 +45,11 @@ export function WeekStrip({ date, today, onDateChange }) {
         const isToday = d === today;
         const dayName = dt.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
         // The accessible name announces the TRUE percentage, never the clamped
-        // paint — a spoken "100%" for a 140% day would be a false statement.
-        const label = bar.kind === 'gap'
-          ? `${dayName}, no data`
-          : `${dayName}, ${Math.round(Number(day.food))} of ${Math.round(Number(day.budget))} kcal, ${Math.round(bar.ratio * 100)}% of budget, ${bar.status} budget`;
+        // paint — a spoken "100%" for a 140% day would be a false statement —
+        // and it names exercise, because the height's denominator (food/budget)
+        // and the hue's (budget − food + exercise) are different and a sentence
+        // asserting both without the reconciling term contradicts itself.
+        const label = barCellLabel(day, bar, dayName);
 
         return (
           <UnstyledButton key={d}
@@ -69,7 +70,7 @@ export function WeekStrip({ date, today, onDateChange }) {
               ) : (
                 <span className="health-weekstrip__bar">
                   <span
-                    className={`health-weekstrip__fill health-weekstrip__fill--${bar.status}`}
+                    className={`health-weekstrip__fill health-weekstrip__fill--${bar.status}${bar.offsetByExercise ? ' health-weekstrip__fill--offset' : ''}`}
                     data-testid={`weekbar-fill-${d}`}
                     data-height-pct={bar.heightPct}
                     style={{ height: `${bar.heightPct}%` }} />

@@ -44,6 +44,16 @@ describe('buildIntakeBurn', () => {
     expect(m.bars[1].foodPct).toBe(0);
   });
 
+  // M4. A gap entry can arrive without a `date`; two of them sharing `undefined`
+  // collapse into one React key, and the chart draws ONE gap column where there
+  // were several.
+  it('gives every slot a distinct identity, even gaps with no date', () => {
+    const m = buildIntakeBurn([{ error: 'NO_WEIGHT_DATA' }, { error: 'NO_WEIGHT_DATA' }, day(iso(2), 2000, 300)]);
+    const keys = m.bars.map((b) => b.date);
+    expect(new Set(keys).size).toBe(3);
+    expect(keys.every(Boolean)).toBe(true);
+  });
+
   it('never divides by zero on an empty or all-zero range', () => {
     for (const input of [[], null, undefined, [day(iso(0), 0, 0)]]) {
       const m = buildIntakeBurn(input);
