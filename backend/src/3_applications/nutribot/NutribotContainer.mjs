@@ -414,6 +414,7 @@ export class NutribotContainer {
       this.#processRevisionInput = new ProcessRevisionInput({
         messagingGateway: this.getMessagingGateway(),
         aiGateway: this.getAIGateway(),
+        foodIconsString: this.#foodIconsString,
         foodLogStore: this.#foodLogStore,
         nutriListStore: this.#nutriListStore,
         conversationStateStore: this.#conversationStateStore,
