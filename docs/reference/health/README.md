@@ -17,8 +17,8 @@ point.
 
 | Tab | Component | Shows |
 |-----|-----------|-------|
-| Today | `modules/Health/today/TodayView.jsx` | the day log — equation strip, macro/watch-micro bars, meal-bucketed rows with per-meal `P · C · F` subtotals, capture affordances |
-| Progress | `modules/Health/progress/ProgressView.jsx` | weight trend chart, 14-day budget-adherence bars, goals editor (including macro targets and watch micros) |
+| Today | `modules/Health/today/TodayView.jsx` | the day log — equation strip, macro/watch-micro bars, the weight chip, the week strip, meal-bucketed rows with per-meal `P · C · F` subtotals, capture affordances |
+| Progress | `modules/Health/progress/ProgressView.jsx` | weight trend chart, 14-day budget-adherence bars, 30-day intake-vs-burn chart, goals editor (including macro targets and watch micros) |
 | Health | `modules/Health/medical/MedicalView.jsx` | medical readings (blood pressure, labs, etc.), grouped by metric |
 | Coach | `modules/Health/CoachChat/index.jsx` | the health-coach agent chat, full height |
 
@@ -210,6 +210,122 @@ The Exercise section's header follows the same discipline for a different
 reason: it appears once the day's budget has loaded, whether or not any
 workout is logged, so a workout-free day gets a stable header rather than one
 that pops in and out as sessions come and go.
+
+---
+
+## Viz and layout
+
+Every bar on the Today and Progress tabs is plain CSS or inline SVG. There is no
+chart library outside the Progress weight chart, and nothing animates the CSS
+`filter` property — it is a known paint-cost trap in this codebase (low frame
+rates with zero long tasks).
+
+### One shared range endpoint
+
+`GET /budget/range?from=&to=` returns one entry per day for an inclusive range,
+in a single request. Every multi-day surface reads it through one client hook,
+`today/useBudgetRange.js`:
+
+| Surface | Window |
+|---|---|
+| Week strip (`today/WeekStrip.jsx`) | the viewed date and the six days before it |
+| Month block (`today/MonthBlock.jsx`), desktop sidebar | last 30 days |
+| Intake vs burn (`progress/IntakeBurnChart.jsx`), desktop sidebar | the same 30 days |
+| Adherence bars, Progress tab | last 14 days |
+| Intake vs burn, Progress tab | last 30 days |
+
+The endpoint exists because each of those surfaces previously fired one request
+per day — seven from the week strip and fourteen from Progress, in parallel, on
+mount. The service loads goals once, the weight history once, the range's
+nutrilist rows in a single `findByDateRange` folded into per-day buckets, and
+the workout ledger once through `getWorkoutsForRange`. That last one is separate
+from the per-date `getWorkoutsForDate` because the per-date call re-reads both
+whole lifelog files every time: a 62-day range through it would be 124
+whole-file reads on one request. Range length changes the size of the response,
+never the number of times storage is touched.
+
+The range is capped at 62 days and the dates must be real calendar dates;
+anything else is `400 { code: 'RANGE_INVALID' }`. Unset goals are a property of
+the account rather than of a day, so they fail the whole range with
+`409 { code: 'GOALS_NOT_CONFIGURED' }`, matching `GET /budget`.
+
+A surface shown more than once on a page does **not** fetch more than once. The
+shared fetch hook's cache dedupes a second page *load*, not two simultaneous
+mounts, so a range that several widgets need is fetched once high in the tree
+and handed down as `days`. The desktop sidebar's month block and its
+intake-vs-burn chart share one 30-day request this way.
+
+### A hole is not a zero
+
+Every bar surface distinguishes three states, not two:
+
+- **a computed day** — a real track with a fill sized from the data;
+- **a computed day where nothing was logged** — the same real track, with a
+  zero-height fill and a real `0` in the readout;
+- **a gap** — a day the server could not compute (no usable weight at or before
+  it, returned as `{ date, error: 'NO_WEIGHT_DATA' }`) — drawn hollow: a dashed
+  outline with no track and no fill, `—` instead of a number, and "no data" in
+  the accessible name.
+
+Rendering a gap as a zero-height bar would say "you ate nothing" about a day
+nobody has any information about. It is the same class of statement as a
+confident `0 / 30 g` fibre bar, which the [micro coverage](#micro-coverage--why-a-stored-0-is-not-a-zero)
+rules exist to prevent. Counts of gaps are stated in each block's caption rather
+than left to be read as good days, and gaps are excluded from every average.
+
+### Encodings
+
+**Week strip and month block.** Bar height is the day's food as a fraction of
+that day's budget, clamped at 1.25×; the reference line sits at 1/1.25 of the
+box, so a day exactly on budget lands on the line and the space above it is
+overshoot headroom. Hue is under/over. The accessible name announces the *true*
+percentage — 140%, not the clamped paint — because a spoken clamped number is a
+false statement. There are deliberately **no macro segments** in these bars:
+four pixels of colour in a 34px cell is not a composition readout, and macros
+have an honest home in the tapped day. The arithmetic lives in
+`today/dayBars.js`, as a function rather than inline, because jsdom cannot
+measure a rendered bar — what a test can assert is the number the component
+computes and sets.
+
+**Weight chip** (`today/WeightChip.jsx`). The latest adjusted average, a 7-day
+delta, and a 30-day sparkline of two inline-SVG polylines — the raw daily
+readings and the smoothed `lbs_adjusted_average` the budget is computed from —
+on one shared vertical scale, so they cross where they really cross. The delta
+compares adjusted average to adjusted average; raw-to-raw would report a day of
+salt as progress. A history too short to have a 7-day delta says so rather than
+printing `±0.0`, and a single reading draws no line rather than a flat segment
+implying a month of stability. Direction carries an arrow as well as a hue —
+never colour alone.
+
+**Intake vs burn** (`progress/IntakeBurnChart.jsx`). Food hangs down from a
+baseline, exercise stands up from it, on ONE shared kcal scale: the two halves
+of the box are sized in proportion to their maxima, so a kcal is worth the same
+number of pixels above the line as below. Separate scales would draw a 300 kcal
+walk as tall as a 2,400 kcal day and make burn look like it cancels intake. A
+quiet exercise month therefore shows a thin strip of up-bars, which is the truth
+about it.
+
+### Column and sidebar
+
+The Today column is capped at 720px and centred — every measurement in this app
+was tuned against a phone-width column, and log rows spanning a 2560px monitor
+are unreadable. At 1100px the page becomes a grid of that column plus a 320px
+sticky aside holding the weight chip, the month block and the intake-vs-burn
+chart.
+
+There is **one** instance of each of those widgets in the markup. On a narrow
+viewport the aside is simply the next block in the stack, which is what puts the
+weight chip directly under the macro bars; the wide layout moves that same
+element into the second column. Nothing is rendered twice and hidden.
+
+The 30-day widgets' *mount* is gated on the breakpoint, not merely their
+visibility: CSS alone cannot stop a phone fetching a month of budgets for a
+column it will never draw. That puts the breakpoint in JavaScript
+(`today/layout.js`) as well as in the stylesheet, and
+`today/layout.contract.test.js` reads the compiled stylesheet and fails if the
+two ever disagree. Layout itself is verified with real Playwright screenshots at
+390px and 1440px — jsdom cannot see layout, and an assertion about widths or
+grid placement made under it is vacuous.
 
 ---
 
@@ -825,6 +941,7 @@ All under `/api/v1/health/`, from `backend/src/4_api/v1/routers/health.mjs`:
 | Endpoint | Purpose |
 |---|---|
 | `GET /budget?date=` | the equation, the day's macro/micro sums, and micro coverage (see above) |
+| `GET /budget/range?from=&to=` | the same equation per day over an inclusive range, in one request — `{ days: [...] }`, a day that cannot be computed appearing as `{ date, error }` rather than failing the range. 62-day cap; a bad range is `400 { code: 'RANGE_INVALID' }` (see [Viz and layout](#viz-and-layout)) |
 | `GET /goals`, `PUT /goals` | goals document; a malformed `macroGoals`/`watchMicros` shape is `400 { code: 'GOALS_INVALID' }` |
 | `GET /nutrilist/:date`, `POST /nutrilist`, `PUT /nutrilist/:uuid`, `DELETE /nutrilist/:uuid` | day-log rows (legacy-parity NutriList CRUD) |
 | `GET /nutrition/catalog?q=`, `GET /nutrition/catalog/recent` | plain catalog search/recents |
