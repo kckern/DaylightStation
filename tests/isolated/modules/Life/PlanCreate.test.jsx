@@ -18,10 +18,16 @@ const renderAt = (element, initial = '/life/plan') => render(
   </MantineProvider>
 );
 
+// `text` as well as `json`: the non-2xx path in lib/api.mjs reads the body with
+// response.text() to build its message, so a fake Response with only json()
+// threw "response.text is not a function" and the component dutifully rendered
+// THAT as the alert — a passing-looking red box with the wrong words in it.
 const jsonResponse = (status, body) => ({
   ok: status >= 200 && status < 300,
   status,
+  statusText: status >= 400 ? 'Error' : 'OK',
   json: async () => body,
+  text: async () => JSON.stringify(body),
 });
 
 /** Returns the [url, options] of the first POST fetch call, or null. */
@@ -95,7 +101,15 @@ describe('GoalsView create-goal flow', () => {
     fireEvent.change(within(dialog).getByLabelText(/Goal/i), { target: { value: 'Nope' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create goal' }));
 
-    await waitFor(() => expect(within(dialog).getByText('disk full')).toBeInTheDocument());
+    // A substring match, because lib/api.mjs wraps every non-2xx body into
+    // `HTTP <status>: <statusText> - <body>` and several callers (the queue
+    // controller, the feed) parse that exact shape, so it is not ours to
+    // change here. What this test is actually for still holds: the server's
+    // reason reaches the user rather than being swallowed, and the modal stays
+    // open so the typing is not lost.
+    await waitFor(() => expect(
+      within(dialog).getByText((_, el) => /disk full/.test(el?.textContent || ''), { selector: '[class*="Alert-message"]' })
+    ).toBeInTheDocument());
     // Modal is still open
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });

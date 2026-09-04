@@ -7,7 +7,8 @@ This file records **decisions and their reasoning** — the things a diff cannot
 It exists because the execution ledger lives in a git-ignored scratch directory and would
 otherwise be lost. Written during execution; entries are append-only.
 
-Branch: `feat/health-usability`. Phases 0–6 complete at time of writing (28 of 40 tasks).
+Branch: `feat/health-usability`. Phases 0–6 complete at time of writing (32 of 40 tasks);
+Phases 0–4 are merged to `main` and deployed.
 
 ---
 
@@ -21,7 +22,7 @@ future reader will otherwise read them as regressions.
 | Unsettled entries **count** in the calorie equation immediately | The pending queue's "doesn't count until accepted" rule made the equation lie between capture and review. The unsettled cue plus one-tap editing is the safety valve instead. |
 | "Coach never auto-accepts" retired | Coach-logged food now lands unsettled and counting like every other capture. Editability replaces the gate. |
 | The pending Accept/Revise/Discard queue retired **across all transports** | Web, Telegram and the coach share one lifecycle. Two review models over one data set was the underlying defect. |
-| Discard = delete; `rejected` becomes unreachable *(pending Phase 5)* | See §3 — the scale sweep still writes `rejected`, so this is true only after the bridge is replaced. |
+| Discard = delete; `rejected` survives as a **scale-only** status | Originally recorded as "`rejected` becomes unreachable pending Phase 5". Phase 5 falsified that: see §3. Discard still deletes; `rejected` is simply never written by a discard. |
 | Groups are dishes/courses **inside** a meal, not meals themselves | A casserole, a smoothie, or appetizer/main/dessert as siblings in one dinner. Meal buckets are unchanged. |
 | A meal named out loud beats the row the capture was launched from, which beats the clock | Silently overriding what a person said is worse than being wrong; when the explicit meal wins, the UI says so. |
 | Single-user this wave | Everything resolves to the head of household. Attribution is deliberately out of scope. |
@@ -38,7 +39,13 @@ The plan said to delete it. That contradicts the plan's own rule that off-surfac
 must reach the day view: the scale path still mints `pending` logs, and pending logs never
 sync into the rows the day view reads. Deleting it would have hidden kitchen-scale entries —
 re-creating the live incident the component was built for. Kept, rescoped to scale-origin
-pending only. **Phase 5 (Task 5.6) retires it properly.**
+pending only. **Phase 5 (Task 5.6) verified this override was correct and made it permanent.**
+The retirement was attempted and refused with proof: `LogFoodFromScale` still writes
+`status: 'pending'`, and the quiet commit that would clear it gates on a composition being
+*complete* (`grams !== null && density !== null`), so a weight placed with no density never
+completes and its row waits indefinitely for a human. Retiring the section would have made
+those rows unreachable — the original incident, restored. The heading text ("NEEDS REVIEW")
+is still generic though the section is scale-only; see §6.
 
 **2.2 The AI response was NOT restructured (Task 2.1).**
 The plan proposed `{ dishes: [...], loose: [...] }`. The flat `items` array is consumed by
@@ -73,21 +80,44 @@ later phase adds a sidebar that can show the same day's data beside the main col
 exact double-mount scenario. A known silent-data-corruption path should not be left open as
 consumers start adopting it.
 
-**2.8 Group rows are excluded from micro coverage on BOTH sides (Task 6.1).**
+**2.8 An unwired scale refuses at the surface; it does not kill the boot (Task 5.6).**
+When no head-of-household bot id resolves, the observation service is null. The considered
+alternative was failing hard at boot, on the grounds that a silent no-op is worse than a
+crash. Rejected: a fatal boot would take media, fitness and school down over a *nutrition*
+configuration value, against the fail-soft posture everything adjacent to it uses. Instead
+the surface declares `available()` and the use case returns `{ handled: true, ok: false,
+error: 'SCALE_UNAVAILABLE' }`, so a scan is never acknowledged as applied. `available()` is
+optional, so a store owning its own state is unaffected.
+**Known limitation, deliberately accepted:** the refusal notice is *structurally
+undeliverable*. It is painted by editing the live prompt, and there is no prompt when there
+is no bot to have posted one. A person at the fridge gets a scanner beep; the only record is
+in the logs. The words are kept so a future fridge-reachable surface has them.
+
+**2.9 The observation read path validates `value`/`unit`, despite "no backfill" (Task 5.6).**
+This program's migration rule is to default rather than backfill, so tightening a read path
+normally risks rejecting rows already on disk. Here it does not: the data volume contains no
+observation ledger at all — the scale path has never written a row in production — so there
+was nothing to migrate and the fix was free. Without it a `value: NaN` row read back as
+`complete: true` (because `NaN !== null`) and could drive the *unattended* commit. A row that
+cannot satisfy its own `kind` is now skipped and warned, never thrown over and never removed
+from the file. Consequence worth knowing: such a row also fails the archive partition, so it
+stays a permanent hot-file resident — visible rather than swept away, which is the intent.
+
+**2.10 Group rows are excluded from micro coverage on BOTH sides (Task 6.1).**
 The plan specified `covered` = counted items carrying `microsSource`, `total` = counted
 items. Taken literally, a dish header — which carries zero nutrition by design (2.4) and
 can never carry provenance — would sit in the denominator forever, so a fully-covered day
 of three dishes and nine children would report "based on 9 of 12 items" and imply missing
 data that does not exist. Groups are filtered out of both counts. Pinned by a test.
 
-**2.9 `microsSource: 'ai'` is conditional, not unconditional (Task 6.2).**
+**2.11 `microsSource: 'ai'` is conditional, not unconditional (Task 6.2).**
 The plan said the mapper sets `'ai'`. It sets `'ai'` only when the model actually returned
 micronutrient numbers. The stored shape defaults every micro to `0`, so stamping provenance
 on a macros-only parse would assert a measurement that never happened — the exact
 dishonesty the coverage caption exists to prevent. A measured `0` does count as data;
 absence does not. The same rule governs what the catalog will accept as micro data.
 
-**2.10 Two of the plan's Task 6.2 premises were already satisfied.**
+**2.12 Two of the plan's Task 6.2 premises were already satisfied.**
 The AI prompt already asks for `fiber/sugar/sodium/cholesterol` by name (shipped with Task
 2.1), so no second prompt site was created. And `microsSource` was already threaded through
 all four field whitelists (`validateFoodItem`, `dehydrateNutriListItem`, `saveMany`,
@@ -95,7 +125,7 @@ all four field whitelists (`validateFoodItem`, `dehydrateNutriListItem`, `saveMa
 round-trip test now walks catalog entry → quickAdd → saveMany → YAML on disk → findByDate →
 `getBudget().microCoverage`; deleting the field from the `saveMany` whitelist fails it.
 
-**2.11 No goal tick and no over-goal segment on the macro bars (Task 6.3) — accepted.**
+**2.13 No goal tick and no over-goal segment on the macro bars (Task 6.3) — accepted.**
 The plan asked for a tick marking the goal and a distinct over-goal segment. Neither was
 built: the fill clamps at 100 %, so 300 / 150 g is visually identical to 151 / 150 g, and
 only the recolour, the numbers beside the bar and the "over goal" in the accessible name
@@ -105,7 +135,7 @@ surface this late in the program. Recorded so it reads as a decision, not an ove
 because a clamped spoken number is a false statement, which is a different question from
 how much bar to paint.)
 
-**2.12 One fold for the whole day, in a shared contract (Task 6.3 review, Q1).**
+**2.14 One fold for the whole day, in a shared contract (Task 6.3 review, Q1).**
 Task 6.3 shipped a COUNTED-folded macro bar row directly above `MacroFooter`, which summed
 `day.items` unfiltered, and a new per-meal `P · C · F` that folded raw rows too — three
 folds over the same data on one screen. Latent only because every live nutrilist row is
@@ -115,7 +145,7 @@ lives in `shared/contracts/nutrition/countedRows.mjs` and is imported verbatim b
 copies that can drift. Pinned by `today/sharedFold.test.jsx`, which builds a day holding one
 row of every uncounted status and asserts all three surfaces report the same numbers.
 
-**2.13 Micro provenance is per ROW, and the docs say so (Task 6.3 review, C1).**
+**2.15 Micro provenance is per ROW, and the docs say so (Task 6.3 review, C1).**
 `microsSource` is one flag for four micros. A capture answering `sodium` alone yields a row
 that is fully "covered", so a watched fiber bar can render a confident `0 / 30 g` with the
 caption correctly suppressed. The limit is now stated in the endstate doc rather than only
@@ -123,7 +153,7 @@ in this scratch file, and the caption reads "items with any micro data" so it st
 a per-micro count. Per-key provenance (four fields where there is one) is the real fix and
 is not in this program's scope.
 
-**2.14 The catalog gate is per KEY, not just per row (Task 6.3 review, C2).**
+**2.16 The catalog gate is per KEY, not just per row (Task 6.3 review, C2).**
 The original donation gate checked only that a row carried provenance — but the capture
 mappers had already applied `?? 0`, so a partially-answered capture donated its structural
 zeros as catalog readings, which every later quick-add of that food then inherited as
@@ -136,9 +166,14 @@ and `backfill` donates no micros at all because a stored row's per-key provenanc
 
 ## 3. Known divergences from the PRD (true only after later phases)
 
-- **`rejected` is not yet unreachable.** The scale's session-end sweep still writes it when
-  an unanswered composition prompt is superseded. Documented accurately rather than
-  aspirationally; Phase 5 must verify and update.
+- **`rejected` is reachable, permanently — this is now settled, not pending.** Phase 5 was
+  supposed to make it unreachable and instead proved the opposite by driving the path: put
+  300g on the scale (a live prompt opens), answer nothing, put 500g on, and the first prompt
+  is superseded with `status: 'rejected'`. It is written by the observation service, not by
+  any discard, so the "discard = delete" decision above stands unchanged. The PRD's
+  "`rejected` becomes unreachable" line was an assumption about a subsystem the PRD had not
+  read; the code, not the PRD, is right. Treat `rejected` as a scale-only status meaning
+  "a placement nobody answered, replaced by the next one".
 - **Two hour→meal mappings coexist.** The quick-capture UI uses one (`<11/<15/<20`); a
   second (`5-12/12-17/17-21`) is used elsewhere. They do not conflict in practice *because
   every UI capture path sends an explicit meal*, so the server's precedence decides. They
@@ -166,6 +201,32 @@ one call site with a comment naming the incident, plus a regression test that fa
 the fix and two guard tests proving a real learner with unfinished work is still locked and
 an unloaded roster still locks.
 
+**4.3 The vitest gate was red on `main`, from four stale tests** — `11090ca6e`, `3286bcfa6`.
+Found while checking a Phase 6 report that the gate "printed NEW failing file(s) and still
+exited 0". The gate does no such thing (`scripts/gate-vitest.mjs:344-347` is an unconditional
+`process.exit(1)`); the reading came from a *pipeline's* exit code. The failures were
+therefore real and blocking, and none was a product defect:
+- Two `PianoApp` suites mocked `../lib/api.mjs` without `DaylightMediaPath`, which `SoundPanel`
+  calls at render time. The mock threw *during render*, the app mounted as an empty `<div />`,
+  and it surfaced as nine "unable to find text" failures pointing at the queries — which is
+  why it read as a routing bug.
+- `fitness-timeline-pruning` restated `MAX_SERIES_LENGTH` as a literal `2000`; the real cap is
+  `8640`. Pruning worked; the copy of the constant was wrong. Now imported, not restated.
+- `PlanCreate`'s fake `Response` implemented only `json()` while the error path reads `text()`,
+  so the component rendered `response.text is not a function` as its own alert.
+Gate verified green afterwards: exit 0, "no new failures vs baseline", 12 failing files all in
+the 12-entry baseline.
+
+**4.4 A Dropbox conflicted copy had silently emptied a media folder.**
+`voiceArt.test.js` asserts every instrument basename the module can name exists as a file, and
+57 were missing. Cause: Dropbox resolved a directory conflict by creating
+`instruments (KC Kern's conflicted copy 2026-09-03)` and leaving the canonical folder present
+but **empty** — so the piano SoundPanel illustrations were broken in production with nothing
+logging an error anywhere. Restored by copy (the conflicted copy left intact), ownership
+corrected because `docker exec` writes as root into a user-owned tree.
+**The point worth keeping:** an asset-existence test was the only thing in the entire pipeline
+that could catch this. Every other gate was green over it, exactly as in §5.1.
+
 ---
 
 ## 5. Process findings worth keeping
@@ -188,7 +249,16 @@ regression it guarded, and a boundary that no test exercised.
 Row rendering is guarded by "every input row appears exactly once in the output" rather than
 by enumerated cases. It caught cycle handling that individually-written tests missed.
 
-**5.4 Worktree environment gaps masquerade as repo defects.**
+**5.4 A planned deletion is a hypothesis, not an instruction.**
+Phase 5 was written to retire three things. Two of the three retirements were refused by the
+implementer with proof and independently confirmed by driving the code — `rejected` is still
+written, and the scale still mints `pending` rows the retired component was the only reader
+for. Only the third (`CompositionStore`) was genuinely dead. A plan authored before the code
+was read cannot know what is reachable; requiring a *driven* demonstration before any
+deletion — not a call-graph trace, not an argument — is what caught both. Two of three
+planned deletions in this phase would have removed live behaviour.
+
+**5.5 Worktree environment gaps masquerade as repo defects.**
 Test failures reported all run as "pre-existing missing packages" were an absent
 `frontend/node_modules` in the worktree. Verify the environment before recording a repo-level
 defect.
