@@ -63,6 +63,15 @@
  * entry already said — would be exactly the confident-looking wrong number this phase
  * exists to eliminate. Grams are still corrected; the calories stay the human's.
  *
+ * ## A GROUP row is never a target
+ *
+ * Group rows carry zero nutrition by design, which is what lets the day view sum every row
+ * unconditionally and still count each gram once. A measurement attached to a group would
+ * put real calories on the header while its children keep theirs — the same food counted
+ * twice inside one entry tree, under a "measured" badge. `pair` refuses a group before
+ * writing anything, and `recomputeEntry` refuses one again at the point of the write, so
+ * neither the API nor some later caller can get nutrition onto a group row.
+ *
  * ## The ratification stamp is NOT ours to write
  *
  * The entry write goes through `HealthOperations.updateNutritionItem` with
@@ -115,6 +124,30 @@ function latestOfKind(observations, kind) {
   return latest;
 }
 
+/**
+ * A GROUP row can never carry a measurement's numbers.
+ *
+ * A group ("Curry") is a header whose children ("Rice", "Sauce") hold the real nutrition,
+ * and it carries ZERO nutrition BY DESIGN — that is exactly what lets the day view sum
+ * every row unconditionally and still count each gram once (`LogTable.jsx`'s `kcal`).
+ * Writing a recomputed 448 kcal onto the group would make the bucket count the same food
+ * twice inside one entry tree (330 -> 778 in the reproduced case), under a "measured"
+ * badge. So a group is refused, not written to.
+ *
+ * Gated on `kind === 'group'` — the SAME field `EntryEditSheet`'s group mode and
+ * `HealthOperations#cascadeMealTimeToChildren` gate on. If that ever stops being how a
+ * group is identified, change it here too.
+ */
+function requireNotGroup(entry, entryUuid) {
+  if (entry?.kind !== 'group') return entry;
+  const name = entry.name || entry.item || entry.label || 'this dish';
+  throw new ApplicationError(
+    `"${name}" is a dish, not an item — its own row holds no nutrition, so a measurement `
+    + 'attached here would be counted twice. Attach it to one of its items instead.',
+    { code: 'ENTRY_IS_GROUP', entryUuid, entryName: name },
+  );
+}
+
 /** One decimal, and never `NaN`/`Infinity` — nutrilist rows are read by arithmetic. */
 function round1(n) {
   const v = Number(n);
@@ -154,6 +187,11 @@ export function createObservationPairingService({
    *   a person paired a density card to it).
    */
   const recomputeEntry = async (userId, entryUuid) => {
+    // Refused HERE as well as in `pair`, because this is the function that would do the
+    // writing: a future caller reaching it by another route must not be able to put
+    // nutrition on a group row either.
+    requireNotGroup(await entries.find(userId, entryUuid), entryUuid);
+
     const evidence = observationStore.findByPairedEntry(userId, entryUuid);
     const weight = latestOfKind(evidence, 'weight');
     const gross = Number(weight?.value);
@@ -273,6 +311,7 @@ export function createObservationPairingService({
    *
    * @throws {InfrastructureError} `NOT_FOUND` when the observation does not exist.
    * @throws {ApplicationError} `ENTRY_NOT_FOUND` when the target entry does not exist;
+   *   `ENTRY_IS_GROUP` when the target is a dish header rather than an item;
    *   `PRIOR_ENTRY_EXISTS` when the measurement still backs another, living entry.
    * @throws {ValidationError} `CROSS_FILE_BATCH` when the placement cannot be rewritten in
    *   one atomic file write — nothing is written.
@@ -286,6 +325,9 @@ export function createObservationPairingService({
         code: 'ENTRY_NOT_FOUND', entryUuid,
       });
     }
+    // Before ANY write: a refused target must leave the ledger untouched, not attached to
+    // a row the recompute will then decline to update.
+    requireNotGroup(entry, entryUuid);
 
     const prior = observation.pairedEntryUuid ?? null;
     if (prior && prior !== entryUuid) {

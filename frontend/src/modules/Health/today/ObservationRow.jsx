@@ -45,8 +45,12 @@ export function observationLabel(o) {
  *
  * Both actions carry the row's own description in their accessible name: a screenful of
  * buttons all called "Dismiss" is unusable without sight of the row they sit on.
+ *
+ * `blocked` is a reason this measurement cannot be attached here (it already backs another
+ * entry). It disables the action AND renders the reason, so the person reads why before
+ * tapping instead of collecting a refusal afterwards.
  */
-export function ObservationRow({ observation, onDismissed, onPair, pairing = false, attached = false }) {
+export function ObservationRow({ observation, onDismissed, onPair, pairing = false, attached = false, blocked = null }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const label = observationLabel(observation);
@@ -67,11 +71,14 @@ export function ObservationRow({ observation, onDismissed, onPair, pairing = fal
     <div className="health-obs__row">
       <span className="health-obs__label">{label}</span>
       {onPair ? null : <span className="health-obs__tag">Unmatched</span>}
+      {/* Why this one cannot be attached, shown BEFORE the tap rather than as a refusal
+          afterwards. Plain text, so it is perceivable without seeing the disabled state. */}
+      {blocked ? <span className="health-obs__tag">{blocked}</span> : null}
       {error ? <p className="health-obs__error">{error.message} — try again.</p> : null}
       <div className="health-obs__actions">
         {onPair ? (
           <Button className="health-obs__btn" size="xs" variant="light"
-            loading={pairing} disabled={pairing || attached}
+            loading={pairing} disabled={pairing || attached || Boolean(blocked)}
             aria-label={`Pair ${label} to this entry`}
             onClick={() => onPair(observation)}>
             {attached ? 'Attached' : 'Pair to this entry'}

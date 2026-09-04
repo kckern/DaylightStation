@@ -556,6 +556,14 @@ its calories — *"delete or correct “Soup” first, then attach the measureme
 writes nothing. Once that entry is gone the same action succeeds. Attaching an UNMATCHED
 measurement is unaffected: an open row backs nothing.
 
+**A dish header is never a target.** A group row ("Curry") carries zero nutrition by design —
+its children hold the real values, which is what lets the day view sum every row and still
+count each gram once. Attaching a measurement there would count the same food twice inside
+one dish, so the edit sheet offers no Measurements section for a group and the API refuses it
+(`409`, *"“Curry” is a dish, not an item … attach it to one of its items instead"*). A
+measurement that another entry was already calculated from is likewise shown disabled, with
+the reason, instead of offering a button that only refuses.
+
 **A re-pair never certifies the entry.** The write goes through
 `HealthOperations.updateNutritionItem` with `ratify: false`: correcting which meal a
 measurement belongs to is not a review of that meal's calorie estimate, so an unreviewed row

@@ -153,6 +153,23 @@ describe('POST /api/v1/health/nutrition/observations/:id/pair', () => {
     expect(res.body.error).not.toMatch(/different months/i);
   });
 
+  it('a group row target is a 409 naming the dish — never nutrition written onto a header', async () => {
+    const err = typedError(
+      '"Curry" is a dish, not an item — its own row holds no nutrition, so a measurement '
+      + 'attached here would be counted twice. Attach it to one of its items instead.',
+      'ENTRY_IS_GROUP',
+    );
+    const { app } = makeApp({ pairThrows: err });
+    const res = await request(app)
+      .post(`/api/v1/health/nutrition/observations/${OBS_ID}/pair`)
+      .send({ entryUuid: 'curry' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('ENTRY_IS_GROUP');
+    expect(res.body.error).toContain('Curry');
+    expect(res.body.error).toMatch(/counted twice/);
+  });
+
   it('a measurement that still backs a living entry is a 409 that names it — never a silent double count', async () => {
     const err = typedError(
       'This measurement is what "Soup" (210 kcal) was calculated from. Moving it would leave '

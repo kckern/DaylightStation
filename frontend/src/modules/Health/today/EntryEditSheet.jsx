@@ -73,7 +73,13 @@ export function EntryEditSheet({ row, open, onClose, onChanged, observations = [
   // Offering it an active "pair to this entry" button invites them to attach evidence
   // they explicitly threw away, so it is filtered out of this list entirely (it stays
   // readable in the ledger, and the day view still shows nothing for it).
-  const pairable = observations.filter((o) => o.status !== 'dismissed');
+  //
+  // A GROUP row gets NO measurements list at all. Its own row holds zero nutrition by
+  // design (the children carry it), so a measurement attached here would be counted twice
+  // inside one dish — the backend refuses it (`ENTRY_IS_GROUP`), and a button that always
+  // 409s is worse than no button. Gated on `row.kind === 'group'`, the same field this
+  // sheet's group mode and the backend both use.
+  const pairable = isGroup ? [] : observations.filter((o) => o.status !== 'dismissed');
 
   const run = async (fn, event) => {
     setBusy(true); setError(null);
@@ -282,12 +288,20 @@ export function EntryEditSheet({ row, open, onClose, onChanged, observations = [
           <>
             <Text size="xs" fw={600} tt="uppercase">Measurements</Text>
             <div className="health-obs health-obs--sheet">
-              {pairable.map((o) => (
-                <ObservationRow key={o.id} observation={o}
-                  onPair={pairObservation}
-                  pairing={pairingId === o.id}
-                  attached={o.status === 'consumed' && o.pairedEntryUuid === row.uuid} />
-              ))}
+              {pairable.map((o) => {
+                const attached = o.status === 'consumed' && o.pairedEntryUuid === row.uuid;
+                // Consumed by a DIFFERENT entry: the backend would refuse this
+                // (PRIOR_ENTRY_EXISTS — that entry's numbers were calculated from it), so
+                // say so up front instead of offering a button that only ever 409s.
+                const elsewhere = o.status === 'consumed' && o.pairedEntryUuid && !attached;
+                return (
+                  <ObservationRow key={o.id} observation={o}
+                    onPair={pairObservation}
+                    pairing={pairingId === o.id}
+                    attached={attached}
+                    blocked={elsewhere ? 'Another entry was calculated from this — correct that entry first' : null} />
+                );
+              })}
             </div>
           </>
         ) : null}
