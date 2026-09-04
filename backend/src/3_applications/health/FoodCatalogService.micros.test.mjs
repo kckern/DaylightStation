@@ -67,6 +67,33 @@ describe('FoodCatalogService.recordUsage — micro donation', () => {
     expect(map.get('e1').nutrients).toMatchObject({ sodium: 320, fiber: 2, calories: 150 });
   });
 
+  // C2 (review): the bug this pair exists to keep dead. A model that answers
+  // sodium and nothing else used to donate `fiber: 0, sugar: 0, cholesterol: 0`
+  // alongside it, because the capture mapper had already defaulted them —
+  // whereupon every later quick-add of that food inherited a hard `fiber: 0`
+  // stamped 'catalog', fully "covered", permanently, and self-propagating.
+  it('donates ONLY the micros the row actually carries — a partially answered capture leaks no zeros', async () => {
+    const { svc, map } = makeService();
+    await svc.recordUsage({
+      name: 'Ramen', calories: 400, protein: 10, carbs: 60, fat: 14,
+      sodium: 1900, microsSource: 'ai', // fiber/sugar/cholesterol were never answered
+    }, 'u');
+    const { nutrients } = [...map.values()][0];
+    expect(nutrients.sodium).toBe(1900);
+    for (const key of ['fiber', 'sugar', 'cholesterol']) {
+      expect(Object.prototype.hasOwnProperty.call(nutrients, key)).toBe(false);
+    }
+  });
+
+  it('accumulates micros across captures without clearing keys a later one omits', async () => {
+    const { svc, map } = makeService();
+    await svc.recordUsage({ name: 'Ramen', calories: 400, sodium: 1900, microsSource: 'ai' }, 'u');
+    await svc.recordUsage({ name: 'Ramen', calories: 400, fiber: 3, microsSource: 'ai' }, 'u');
+    const { nutrients } = [...map.values()][0];
+    expect(nutrients).toMatchObject({ sodium: 1900, fiber: 3 });
+    expect(Object.prototype.hasOwnProperty.call(nutrients, 'sugar')).toBe(false);
+  });
+
   it('a provenanced re-log updates the micros it carries', async () => {
     const existing = makeEntry({ calories: 140, protein: 12, carbs: 1, fat: 10, sodium: 320, fiber: 2 });
     const { svc, map } = makeService([existing]);
@@ -96,8 +123,50 @@ describe('FoodCatalogService.quickAdd — micro provenance', () => {
     expect(nutriList.saved[0].microsSource).toBeNull();
   });
 
+  it('inherits only the micros the entry holds — an unanswered one stays absent on the row', async () => {
+    const { svc, nutriList } = makeService([makeEntry({ calories: 400, protein: 10, carbs: 60, fat: 14, sodium: 1900 })]);
+    const item = await svc.quickAdd('e1', 'u');
+    expect(item.sodium).toBe(1900);
+    expect(item.fiber).toBeUndefined();
+    expect(nutriList.saved[0].fiber).toBeUndefined();
+    // Still provenanced: the entry does carry micro data, just not all four.
+    expect(item.microsSource).toBe('catalog');
+  });
+
   it('a MEASURED zero in the catalog still counts as micro data', async () => {
     const { svc } = makeService([makeEntry({ calories: 0, protein: 0, carbs: 0, fat: 0, sodium: 0 })]);
     expect((await svc.quickAdd('e1', 'u')).microsSource).toBe('catalog');
+  });
+});
+
+describe('FoodCatalogService.backfill — micros', () => {
+  it('donates NO micros from history — a stored row\'s zeros are already defaulted, so per-key provenance is gone', async () => {
+    const { svc, map } = makeService();
+    // Exactly what a stored row looks like: all four micros present as numbers,
+    // provenance saying only that the model answered about SOME micro.
+    // `backfill` walks dates off its own clock; with daysBack:1 there is exactly
+    // one call, so the stub answers unconditionally rather than guessing the ISO
+    // day the use case will ask for.
+    const nutriList = { findByDate: async () => ([
+      { label: 'Ramen', calories: 400, protein: 10, carbs: 60, fat: 14, fiber: 0, sugar: 0, sodium: 1900, cholesterol: 0, microsSource: 'ai' },
+    ]) };
+    const svcWithHistory = new FoodCatalogService({
+      catalogStore: {
+        getById: async () => null,
+        findByNormalizedName: async (name) => [...map.values()].find((e) => e.normalizedName === FoodCatalogEntry.normalize(name)) || null,
+        save: async (e) => { map.set(e.id, e); },
+      },
+      nutriListStore: nutriList,
+      clock: { now: () => NOW },
+      createId: () => 'bf-1',
+      logger: silent,
+    });
+    await svcWithHistory.backfill('u1', 1);
+    const entry = [...map.values()][0];
+    expect(entry.nutrients.calories).toBe(400);
+    for (const key of ['fiber', 'sugar', 'sodium', 'cholesterol']) {
+      expect(Object.prototype.hasOwnProperty.call(entry.nutrients, key)).toBe(false);
+    }
+    expect(svc).toBeTruthy();
   });
 });

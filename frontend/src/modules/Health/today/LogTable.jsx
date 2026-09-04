@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ActionIcon, UnstyledButton } from '@mantine/core';
 import { LoadingState } from '@/lib/ui';
+import { sumCounted } from '@shared-contracts/nutrition/countedRows.mjs';
 import { BUCKETS, UNGROUPED } from './mealBuckets.js';
 import { EntryRow } from './EntryRow.jsx';
 import { groupRows } from './groupRows.js';
@@ -25,21 +26,19 @@ function MealBarcodeButton({ label, onClick }) {
   );
 }
 
-// Numeric-tolerant bucket-total sum. A group row carries zero nutrition BY
-// DESIGN (its children carry the real values as siblings in this same flat
-// `rows` array), so summing every row — groups included — already counts
-// each gram of food exactly once. Do NOT filter `kind:'group'` out here:
-// that would change nothing (they're already zero) while inviting someone
-// to "fix" it into double-counting if a group ever did carry a value.
-const kcal = (rows) => Math.round(rows.reduce((s, r) => s + (Number(r.calories) || 0), 0));
+// Bucket totals fold through the SHARED counted-rows contract — the same file
+// BudgetService folds the day's equation and macros with. A group row carries
+// zero nutrition BY DESIGN (its children carry the real values as siblings in
+// this same flat `rows` array), so summing every counted row already counts
+// each gram of food exactly once; `sumCounted` says so once, for everyone.
+const kcal = (rows) => Math.round(sumCounted(rows, 'calories'));
 
-// Per-meal macro subtotal (Task 6.3). Same fold and the same reasoning as
-// `kcal` above — a group row's zeros mean summing every row counts each food
-// exactly once. Returns null when the meal has no macro data at all, so a day
-// of legacy rows shows "P 0 · C 0 · F 0" nowhere.
+// Per-meal macro subtotal (Task 6.3), on that same predicate. Returns null when
+// the meal has no macro data at all, so a day of legacy rows shows
+// "P 0 · C 0 · F 0" nowhere.
 const MACRO_SUBTOTAL = [['protein', 'P'], ['carbs', 'C'], ['fat', 'F']];
 const macroLine = (rows) => {
-  const totals = MACRO_SUBTOTAL.map(([key, letter]) => [letter, Math.round(rows.reduce((s, r) => s + (Number(r[key]) || 0), 0))]);
+  const totals = MACRO_SUBTOTAL.map(([key, letter]) => [letter, Math.round(sumCounted(rows, key))]);
   if (!totals.some(([, value]) => value > 0)) return null;
   return totals.map(([letter, value]) => `${letter} ${value}`).join(' · ');
 };

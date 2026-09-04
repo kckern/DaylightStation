@@ -20,14 +20,19 @@ const MICRO_LABELS = {
 
 const num = (v) => Math.round(Number(v) || 0);
 const fmt = (v) => num(v).toLocaleString();
-const pctOf = (value, target) => (target > 0 ? Math.min(100, Math.round((value / target) * 100)) : 0);
+// Two different numbers, deliberately. `fillPct` is how much bar to paint and
+// clamps at 100 — a bar cannot overflow its track. `truePct` is what the
+// accessible name says, and does NOT clamp: announcing "100 percent" for 300 of
+// 150 g is a false statement inside the accessibility layer.
+const fillPct = (value, target) => (target > 0 ? Math.min(100, Math.round((value / target) * 100)) : 0);
+const truePct = (value, target) => (target > 0 ? Math.round((value / target) * 100) : 0);
 
 /**
  * One bar. The fill is an inline width percentage because the value is data,
  * not design — everything else (colors, geometry, the track) is health.scss.
  */
 function Bar({ label, value, target, unit, tone, caption, ariaLabel }) {
-  const pct = pctOf(value, target);
+  const pct = fillPct(value, target);
   return (
     <div className={`health-macrobar__item health-macrobar__item--${tone}`}>
       <span className="health-macrobar__label">{label}</span>
@@ -49,8 +54,15 @@ function Bar({ label, value, target, unit, tone, caption, ariaLabel }) {
  * measured them, so a sodium bar summed over rows with no micro data reads as
  * "you had almost no sodium" when the truth is "we have no idea". The caption
  * is the only thing standing between that arithmetic and a false reassurance,
- * so it renders whenever any counted item on the day lacks micro provenance.
- * Never suppress it to tidy the layout.
+ * so it renders whenever any counted item on the day lacks micro provenance —
+ * and when coverage is not known at all. Never suppress it to tidy the layout.
+ *
+ * ITS PRECISION IS PER ROW, NOT PER MICRO. `microsSource` is one flag for all
+ * four micros, so a capture that answered sodium and nothing else marks its row
+ * covered for fiber too, and a fully "covered" day can still show a fiber bar
+ * built on nothing. The wording says "items with any micro data" rather than
+ * implying a per-micro count; closing the gap properly needs per-key provenance
+ * on the row, which the stored shape does not have.
  */
 export function MacroBarRow({ macros, goals, microCoverage }) {
   const macroGoals = goals?.macroGoals || null;
@@ -71,7 +83,7 @@ export function MacroBarRow({ macros, goals, microCoverage }) {
           // A macro goal is a floor you aim at; exceeding it is worth flagging
           // (var(--ds-warning)) but it is not a failure the way a ceiling is.
           tone: over ? 'over-goal' : 'goal',
-          ariaLabel: `${m.label} ${fmt(value)} of ${fmt(target)} ${m.unit} goal, ${pctOf(value, target)} percent${over ? ', over goal' : ''}`,
+          ariaLabel: `${m.label} ${fmt(value)} of ${fmt(target)} ${m.unit} goal, ${truePct(value, target)} percent${over ? ', over goal' : ''}`,
         };
       });
   }, [macros, macroGoals]);
@@ -86,9 +98,20 @@ export function MacroBarRow({ macros, goals, microCoverage }) {
         const target = Number(w.limit);
         const ceiling = w.direction !== 'floor';
         const over = value > target;
+        // COVERAGE DEFAULTS TO UNKNOWN, NOT TO COMPLETE. A payload without
+        // `microCoverage` — an older backend during a frontend-ahead deploy
+        // window, or a response shape that changes under us — must not resolve
+        // to "fully covered" and render a confident zero with no hedge. The
+        // absence of the answer is itself something to say out loud.
         const coverage = microCoverage?.[w.key] || null;
-        const short = coverage && coverage.total > 0 && coverage.covered < coverage.total;
-        const caption = short ? `based on ${coverage.covered} of ${coverage.total} items` : null;
+        const unknown = !coverage || !Number.isFinite(coverage.total) || !Number.isFinite(coverage.covered);
+        // "items with any micro data": provenance is per ROW, not per micro, so
+        // a row that answered sodium and nothing else counts as covered for
+        // fiber too. The caption must not claim more precision than that.
+        const short = !unknown && coverage.total > 0 && coverage.covered < coverage.total;
+        const caption = unknown
+          ? 'micro coverage unknown — this may be missing data, not a low number'
+          : (short ? `based on ${coverage.covered} of ${coverage.total} items with any micro data` : null);
         return {
           key: w.key,
           label: meta.label,

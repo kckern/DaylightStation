@@ -53,6 +53,19 @@ describe('LogFoodFromImage — micro provenance', () => {
     expect(items.filter((i) => i.kind === 'item').every((i) => i.microsSource === 'ai')).toBe(true);
   });
 
+  it('donates only the micro the model answered, never the row\'s structural zeros (C2)', async () => {
+    const recordUsage = vi.fn(async () => {});
+    const { uc, saved } = makeUseCase(
+      [{ name: 'Ramen', grams: 400, calories: 400, sodium: 1900 }],
+      { catalogService: { recordUsage } },
+    );
+    await run(uc);
+    expect(saved.at(-1).items[0].fiber).toBe(0); // stored shape unchanged
+    const donated = recordUsage.mock.calls[0][0];
+    expect(donated.sodium).toBe(1900);
+    expect(Object.prototype.hasOwnProperty.call(donated, 'fiber')).toBe(false);
+  });
+
   it('forwards micros and provenance to the catalog', async () => {
     const recordUsage = vi.fn(async () => {});
     const { uc } = makeUseCase(

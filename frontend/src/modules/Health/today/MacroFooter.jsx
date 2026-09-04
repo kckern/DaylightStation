@@ -1,6 +1,12 @@
 import { UnstyledButton } from '@mantine/core';
+import { sumCounted } from '@shared-contracts/nutrition/countedRows.mjs';
 
-const sum = (items, key) => Math.round(items.reduce((s, i) => s + (Number(i[key]) || 0), 0));
+// The SAME fold BudgetService uses for the equation and the macro bars, and the
+// same one LogTable uses for per-meal subtotals. This summed `day.items`
+// unfiltered until Task 6.3's review: harmless only while every live row is
+// `accepted`, and a silent disagreement with the bars directly above it the
+// moment one is not.
+const sum = (items, key) => Math.round(sumCounted(items, key));
 
 /**
  * Macro summary + coach one-liner for Today. Used to also host the

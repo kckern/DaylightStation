@@ -96,7 +96,7 @@ with no micro data reads as "you barely had any sodium" when the truth is "we ha
 
 | Value | Meaning |
 |---|---|
-| `'ai'` | an AI capture returned micronutrient numbers for this row |
+| `'ai'` | an AI capture returned at least one micronutrient number for this row |
 | `'catalog'` | the row was quick-added from a catalog entry that carries micros |
 | `null` / absent | nothing measured this row's micros; its numbers are structural zeros |
 
@@ -110,11 +110,37 @@ The rules that keep it honest:
   with macros alone leaves its structural zeros unclaimed rather than asserting a
   measurement that never happened. A measured `0` does count as data.
 - **The catalog is never laundered.** `FoodCatalogService.recordUsage` copies micros onto a
-  catalog entry only from a row that carries provenance, so structural zeros can never
-  become "catalog micro data" that every later quick-add inherits.
-- **The UI says so out loud.** `MacroBarRow` renders "based on {covered} of {total} items"
-  under any watch-micro bar whose day is not fully covered, and the text is in the bar's
-  accessible name as well. That caption is the honesty mechanism, not decoration.
+  catalog entry per key, and only off a row that carries provenance — so a capture that
+  answered sodium alone donates sodium alone. Both gates are needed: the capture use cases
+  therefore hand `recordUsage` the model's own micros rather than `?? 0`-defaulted ones
+  (the storage default is applied later, at the persistence boundary, where it belongs).
+  Without the per-key half, one partially-answered capture writes a hard `fiber: 0` into
+  the catalog that every later quick-add of that food inherits as a `'catalog'` reading —
+  permanently, and self-propagating. `backfill` donates **no** micros at all: a stored row's
+  micros have already been defaulted, so per-key provenance is gone by the time history can
+  be read.
+- **The UI says so out loud.** `MacroBarRow` renders "based on {covered} of {total} items
+  with any micro data" under any watch-micro bar whose day is not fully covered, and the
+  text is in the bar's accessible name as well. That caption is the honesty mechanism, not
+  decoration. Coverage that is *unknown* — a payload with no `microCoverage` at all, as in
+  a frontend-ahead-of-backend deploy window — is captioned too, and says so; it never
+  resolves to "fully covered".
+
+**Coverage is per ROW, not per micro — and this is a real limit, not a nicety.**
+`microsSource` is one flag for all four micronutrients. A model that answers `sodium: 1900`
+and says nothing about fiber produces a row that is *covered*, so a day made only of such
+rows reports `fiber: { covered: 1, total: 1 }`, the caption is correctly suppressed, and a
+watched fiber bar renders a confident `0 / 30 g`. The numbers are honest about the row and
+silent about the micro. This is why the caption reads "items with any micro data" rather
+than implying a per-micro count. Closing it properly needs per-key provenance on the row —
+four fields where there is now one — which the stored shape does not have; until then, treat
+a fully-covered micro bar as "every row was measured for *something*", not "every row was
+measured for this".
+
+A second, narrower edge: provenance means the model *emitted the key*, not that it knew the
+answer. An LLM returning `0` for a micro it is unsure of is the likeliest failure mode here,
+and it is indistinguishable from a genuine zero — by design, because a measured zero must
+count as data. The guarantee `'ai'` carries is "the model answered", nothing stronger.
 
 Macros (`protein`/`carbs`/`fat`) are not coverage-gated: every capture path writes them,
 and the per-meal `P · C · F` subtotals and macro-goal bars show them unqualified.

@@ -63,12 +63,17 @@ export class FoodCatalogService {
           protein: foodItem.protein || existing.nutrients.protein,
           carbs: foodItem.carbs || existing.nutrients.carbs,
           fat: foodItem.fat || existing.nutrients.fat,
-          // Micros are copied ONLY off a row that carries provenance. A row
-          // with no `microsSource` is carrying structural zeros, and writing
-          // those into the catalog would manufacture "catalog micro data" out
-          // of nothing — every future quick-add off this entry would then
-          // claim coverage it never had. An unprovenanced row leaves whatever
-          // micros the entry already holds untouched.
+          // Micros are copied PER KEY, and only off a row that carries
+          // provenance. Two gates, because either one alone leaks:
+          //   - no `microsSource` at all -> the row's micros are structural
+          //     zeros, and donating them manufactures "catalog micro data";
+          //   - provenance but an ABSENT key -> the model answered about some
+          //     micros and not others, and only the keys it answered may be
+          //     donated. Callers must therefore pass the model's own micros,
+          //     not `?? 0`-defaulted ones (see the capture use cases).
+          // A donation never clears a key it does not carry: an entry can
+          // accumulate micros across captures, and nothing here writes a 0 it
+          // was not given.
           ...(foodItem.microsSource ? pickMicros(foodItem) : {}),
         };
       }
@@ -209,13 +214,14 @@ export class FoodCatalogService {
           protein: item.protein,
           carbs: item.carbs,
           fat: item.fat,
-          fiber: item.fiber,
-          sugar: item.sugar,
-          sodium: item.sodium,
-          cholesterol: item.cholesterol,
-          // Historical rows mostly carry no provenance, so a backfill donates
-          // micros only from the ones that do.
-          microsSource: item.microsSource,
+          // NO micros, deliberately. A stored row's fiber/sugar/sodium/
+          // cholesterol have already been defaulted to 0 at the persistence
+          // boundary, so per-key provenance is gone by the time a backfill can
+          // read them — `microsSource: 'ai'` only says the model answered about
+          // SOME micro, never which. Donating those numbers would write hard
+          // zeros into the catalog that every later quick-add inherits as a
+          // 'catalog' reading, permanently. Micros enter the catalog from a
+          // live capture, where the model's own answer is still intact.
         }, userId);
         processed++;
       }

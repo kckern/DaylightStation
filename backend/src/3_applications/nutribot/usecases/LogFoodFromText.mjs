@@ -11,7 +11,7 @@ import { repairTruncatedJson } from '../lib/repairJson.mjs';
 import { deriveLogDate } from '../lib/deriveLogDate.mjs';
 import { createNutriLog, serializeNutriLog } from '../nutriLogRecords.mjs';
 import { groupParsedItems } from '#domains/nutrition/services/groupParsedItems.mjs';
-import { aiMicrosSource } from '#domains/nutrition/services/micros.mjs';
+import { aiMicrosSource, pickMicros } from '#domains/nutrition/services/micros.mjs';
 
 /**
  * Get current time details for date context in prompts
@@ -315,11 +315,11 @@ export class LogFoodFromText {
               protein: item.protein,
               carbs: item.carbs,
               fat: item.fat,
-              fiber: item.fiber,
-              sugar: item.sugar,
-              sodium: item.sodium,
-              cholesterol: item.cholesterol,
-              // Only a provenanced row donates its micros to the catalog —
+              // Spread, not four named fields: an unanswered micro is ABSENT
+              // on `item` (see the mapper), and naming it here would
+              // resurrect it as `undefined` -> a donated structural zero.
+              ...pickMicros(item),
+              // Only a provenanced row donates its micros at all —
               // see FoodCatalogService.recordUsage.
               microsSource: item.microsSource,
               source: 'nutritionix',
@@ -541,10 +541,14 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
             protein: item.protein ?? 0,
             carbs: item.carbs ?? 0,
             fat: item.fat ?? 0,
-            fiber: item.fiber ?? 0,
-            sugar: item.sugar ?? 0,
-            sodium: item.sodium ?? 0,
-            cholesterol: item.cholesterol ?? 0,
+            // ONLY the micros the model actually answered. Defaulting them to 0
+            // here would erase which ones it answered before anything downstream
+            // could tell — and the catalog donation below reads exactly this
+            // object, so an unanswered micro must not arrive as a 0 that later
+            // quick-adds inherit as a 'catalog' reading, permanently. The stored
+            // row still gets its 0: FoodItem/validateFoodItem apply that default
+            // at the persistence boundary, which is where it belongs.
+            ...pickMicros(item),
             // Provenance for the micros above. The `?? 0` defaults make a
             // never-measured micro indistinguishable from a measured zero, so
             // this field — set only when the model ACTUALLY returned micro

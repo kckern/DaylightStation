@@ -4,14 +4,17 @@
 // The UI and the coach both read this — budget math is never computed
 // client-side (spec, Data model §1).
 import { computeDailyBudget } from '#domains/health/services/BudgetMath.mjs';
+import { isCountedRow } from '#shared/contracts/nutrition/countedRows.mjs';
 
 const STALE_WEIGHT_DAYS = 7;
-const COUNTED = (item) => item?.status !== 'pending' && item?.status !== 'rejected' && item?.status !== 'deleted';
+// THE one predicate, shared verbatim with the Today view's per-meal subtotals
+// and footer (shared/contracts/nutrition/countedRows.mjs). The kcal fold and
+// the macro fold are the same fold, applied once to one filtered list; two
+// subtly different folds are how the bars and the number end up disagreeing on
+// one screen. Keeping the client on this same file is what stops the frontend
+// growing a second one.
+const COUNTED = isCountedRow;
 
-// The day's macro fold and the kcal fold are the SAME fold: `COUNTED` above is
-// the one predicate, applied once to one filtered list. Two subtly different
-// folds would put the macro bars and the kcal number into disagreement on
-// screen, which is worse than not showing the bars at all.
 const MACRO_KEYS = ['protein', 'carbs', 'fat'];
 const MICRO_KEYS = ['fiber', 'sugar', 'sodium', 'cholesterol'];
 
