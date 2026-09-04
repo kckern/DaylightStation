@@ -39,4 +39,37 @@ describe('FitnessSession pressure-mat routing', () => {
     expect(session.getPressureMatTracker('step_mat').snapshot(1_000).seenThisSession).toBe(false);
     session.destroy();
   });
+
+  it('discovers an unconfigured relay mat so its first session step can surface the sidebar card', () => {
+    const session = new FitnessSession();
+    session.setEquipmentCatalog([]);
+    session.sessionId = '20260903140000';
+
+    const snapshot = session.ingestPressureMat({
+      id: 'garage-step-mat', type: 'presence', event: 'pressed', steps: 9, stomps: 7,
+    }, { timestamp: 1_000 });
+
+    expect(snapshot).toMatchObject({
+      equipmentId: 'garage-step-mat',
+      matId: 'garage-step-mat',
+      seenThisSession: true,
+      engaged: true,
+      sessionSteps: 1,
+    });
+    expect(session.getPressureMatSnapshots(1_000)['garage-step-mat']).toEqual(snapshot);
+    session.destroy();
+  });
+
+  it('keeps a discovered mat hidden until a session step is classified', () => {
+    const session = new FitnessSession();
+    session.setEquipmentCatalog([]);
+
+    const snapshot = session.ingestPressureMat({
+      id: 'garage-step-mat', type: 'presence', event: 'pressed', steps: 9, stomps: 7,
+    }, { timestamp: 1_000 });
+
+    expect(snapshot.seenThisSession).toBe(false);
+    expect(snapshot.sessionSteps).toBe(0);
+    session.destroy();
+  });
 });

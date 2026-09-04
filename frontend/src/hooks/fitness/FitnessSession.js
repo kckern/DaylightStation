@@ -1025,14 +1025,31 @@ export class FitnessSession {
     this._timelineRecorder?.setPressureMatTrackers?.(this._pressureMatTrackers);
   }
 
-  /** Route one normalized relay message into the configured session tracker. */
+  /** Route one normalized relay message into its configured or discovered session tracker. */
   ingestPressureMat(reading, { timestamp = Date.now() } = {}) {
     const matId = reading?.id != null ? String(reading.id) : null;
     if (!matId) return null;
-    const equipmentId = this._pressureMatEquipmentByHardwareId.get(matId);
-    if (!equipmentId) return null;
-    const tracker = this._pressureMatTrackers.get(equipmentId);
-    if (!tracker) return null;
+    let equipmentId = this._pressureMatEquipmentByHardwareId.get(matId);
+    let tracker = equipmentId ? this._pressureMatTrackers.get(equipmentId) : null;
+
+    // The relay adapter has already validated and normalized this hardware
+    // event. Do not throw the event away merely because the independently
+    // loaded fitness equipment catalog is stale: that made a healthy mat
+    // invisible in the sidebar. A discovered mat uses its hardware id as the
+    // stable fallback equipment id; configured mats still use their friendly
+    // equipment id and activity settings from initPressureMatTrackers().
+    if (!tracker) {
+      equipmentId = matId;
+      tracker = new PressureMatActivityTracker(equipmentId, matId);
+      this._pressureMatTrackers.set(equipmentId, tracker);
+      this._pressureMatEquipmentByHardwareId.set(matId, equipmentId);
+      this._timelineRecorder?.setPressureMatTrackers?.(this._pressureMatTrackers);
+      getLogger().warn('fitness.pressure_mat.tracker_discovered', {
+        equipmentId,
+        matId,
+        reason: 'missing_equipment_config',
+      });
+    }
     const assignedUserId = this.getEquipmentRider(equipmentId);
     const before = tracker.snapshot(timestamp);
     const snapshot = tracker.ingest(reading, {
