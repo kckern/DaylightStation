@@ -7,6 +7,7 @@ import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { localTodayISO } from '../today/mealBuckets.js';
+import { MACRO_GOAL_FIELDS, WATCH_MICRO_FIELDS, setMacroGoal, setWatchMicro, watchFor } from './goalFields.js';
 
 const logger = createAppLogger('health').child('progress');
 
@@ -226,6 +227,36 @@ export function ProgressView() {
               onChange={(v) => setForm({ ...form, heightIn: v })} />
             <NumberInput label="Birth year" hideControls={false} value={form.birthYear}
               onChange={(v) => setForm({ ...form, birthYear: v })} />
+
+            {/* Macro targets (Task 6.1). Leave one blank and it is CLEARED, not
+                zero — the bar row draws nothing for a macro with no target
+                rather than drawing a bar against a goal of 0. */}
+            <Text size="xs" c="dimmed">Macro goals — blank means no target</Text>
+            {MACRO_GOAL_FIELDS.map((f) => (
+              <NumberInput key={f.key} label={f.label} suffix=" g" min={0}
+                value={form.macroGoals?.[f.key] ?? ''}
+                onChange={(v) => setForm(setMacroGoal(form, f.key, v))} />
+            ))}
+
+            {/* Watch micros. Clearing a limit stops watching that micro
+                outright — there is no "watched with no limit" state. */}
+            <Text size="xs" c="dimmed">Watch micros — blank means not watched</Text>
+            {WATCH_MICRO_FIELDS.map((f) => {
+              const watch = watchFor(form, f.key);
+              return (
+                <div key={f.key} className="health-goals__watch">
+                  <NumberInput label={`${f.label} limit`} suffix={` ${f.unit}`} min={0}
+                    value={watch?.limit ?? ''}
+                    onChange={(v) => setForm(setWatchMicro(form, f.key, { limit: v }))} />
+                  {watch ? (
+                    <SegmentedControl size="xs" value={watch.direction}
+                      onChange={(v) => setForm(setWatchMicro(form, f.key, { direction: v }))}
+                      data={[{ label: 'Stay under', value: 'ceiling' }, { label: 'Reach', value: 'floor' }]} />
+                  ) : null}
+                </div>
+              );
+            })}
+
             <Button onClick={saveGoals} loading={saving}>Save goals</Button>
           </Stack>
         )}

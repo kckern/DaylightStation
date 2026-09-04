@@ -8,6 +8,78 @@ import { computeDailyBudget } from '#domains/health/services/BudgetMath.mjs';
 const STALE_WEIGHT_DAYS = 7;
 const COUNTED = (item) => item?.status !== 'pending' && item?.status !== 'rejected' && item?.status !== 'deleted';
 
+// The day's macro fold and the kcal fold are the SAME fold: `COUNTED` above is
+// the one predicate, applied once to one filtered list. Two subtly different
+// folds would put the macro bars and the kcal number into disagreement on
+// screen, which is worse than not showing the bars at all.
+const MACRO_KEYS = ['protein', 'carbs', 'fat'];
+const MICRO_KEYS = ['fiber', 'sugar', 'sodium', 'cholesterol'];
+
+// Goal-shape vocabulary. `macroGoals` targets are grams; a watch micro's
+// `limit` is in that micro's own stored unit (g for fiber/sugar, mg for
+// sodium/cholesterol).
+const MACRO_GOAL_KEYS = ['proteinG', 'carbsG', 'fatG'];
+const WATCH_DIRECTIONS = ['ceiling', 'floor'];
+
+const goalsInvalid = (message) => {
+  const err = new Error(`GOALS_INVALID: ${message}`);
+  err.code = 'GOALS_INVALID';
+  throw err;
+};
+
+// Storage is a raw pass-through (YamlHealthGoalsDatastore writes whatever it is
+// given), so this is the ONLY gate between a client payload and the goals file.
+// It validates shape and never rewrites it: an ABSENT `macroGoals`/`watchMicros`
+// stays absent — every goals file written before this phase omits both keys, and
+// backfilling them (`?? null`, `?? {}`) would invent configuration the person
+// never set.
+function assertGoalsShape(goals) {
+  if (!goals || typeof goals !== 'object' || Array.isArray(goals)) {
+    goalsInvalid('goals must be an object');
+  }
+
+  const macroGoals = goals.macroGoals;
+  if (macroGoals !== undefined && macroGoals !== null) {
+    if (typeof macroGoals !== 'object' || Array.isArray(macroGoals)) {
+      goalsInvalid('macroGoals must be an object of { proteinG, carbsG, fatG }');
+    }
+    for (const key of Object.keys(macroGoals)) {
+      if (!MACRO_GOAL_KEYS.includes(key)) {
+        goalsInvalid(`macroGoals has unknown key "${key}" (expected ${MACRO_GOAL_KEYS.join(', ')})`);
+      }
+      const value = macroGoals[key];
+      // null is a CLEARED target, not a zero target — a zero protein goal and
+      // "no protein goal" render differently and must stay distinguishable.
+      if (value === null || value === undefined) continue;
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+        goalsInvalid(`macroGoals.${key} must be a non-negative number or null`);
+      }
+    }
+  }
+
+  const watchMicros = goals.watchMicros;
+  if (watchMicros !== undefined && watchMicros !== null) {
+    if (!Array.isArray(watchMicros)) goalsInvalid('watchMicros must be an array');
+    const seen = new Set();
+    for (const watch of watchMicros) {
+      if (!watch || typeof watch !== 'object' || Array.isArray(watch)) {
+        goalsInvalid('each watchMicros entry must be an object of { key, limit, direction }');
+      }
+      if (!MICRO_KEYS.includes(watch.key)) {
+        goalsInvalid(`watchMicros.key must be one of ${MICRO_KEYS.join(', ')}`);
+      }
+      if (seen.has(watch.key)) goalsInvalid(`watchMicros has duplicate key "${watch.key}"`);
+      seen.add(watch.key);
+      if (typeof watch.limit !== 'number' || !Number.isFinite(watch.limit) || watch.limit <= 0) {
+        goalsInvalid(`watchMicros.${watch.key}.limit must be a positive number`);
+      }
+      if (!WATCH_DIRECTIONS.includes(watch.direction)) {
+        goalsInvalid(`watchMicros.${watch.key}.direction must be one of ${WATCH_DIRECTIONS.join(', ')}`);
+      }
+    }
+  }
+}
+
 // Tolerant list normalizer: a workout group arrives as an array of session
 // objects (or any nesting thereof) — deep-flatten to a single list, filtering
 // out anything that isn't a plain session object.
@@ -60,6 +132,7 @@ export class BudgetService {
   }
 
   async setGoals(userId, goals) {
+    assertGoalsShape(goals);
     await this.#goalsStore.save(goals, userId);
     this.#logger.info?.('health.budget.goals_saved', { userId });
     return goals;
@@ -100,11 +173,32 @@ export class BudgetService {
     });
 
     const items = await this.#nutriListStore.findByDate(userId, date) || [];
-    const rawFood = items.filter(COUNTED).reduce((sum, i) => {
-      const c = Number(i?.calories);
-      return sum + (Number.isFinite(c) ? c : 0);
-    }, 0);
-    const food = Math.round(rawFood);
+    const counted = items.filter(COUNTED);
+    const sumOf = (key) => Math.round(counted.reduce((sum, i) => {
+      const v = Number(i?.[key]);
+      return sum + (Number.isFinite(v) ? v : 0);
+    }, 0));
+    const food = sumOf('calories');
+
+    // Group rows carry ZERO nutrition by design (groupParsedItems.mjs); their
+    // children carry the real values as siblings in this same flat list. So an
+    // unconditional sum counts each food exactly once — no group special-casing.
+    const macros = Object.fromEntries([...MACRO_KEYS, ...MICRO_KEYS].map((k) => [k, sumOf(k)]));
+
+    // Micro coverage keys off PROVENANCE, never off the values. Every row on
+    // disk stores `sodium: 0` when nothing measured it (validateFoodItem
+    // defaults each micro `?? 0`), so a zero is indistinguishable from a
+    // measured zero — only `microsSource` can tell them apart, and the UI
+    // needs that to avoid reading an all-zero sodium bar as reassurance.
+    //
+    // A group row is a dish header, not a food: it carries no nutrition and no
+    // provenance, so counting it in the denominator would report missing data
+    // that does not exist. It is excluded from BOTH sides.
+    const foodRows = counted.filter((i) => i?.kind !== 'group');
+    const covered = foodRows.filter((i) => Boolean(i?.microsSource)).length;
+    const microCoverage = Object.fromEntries(
+      MICRO_KEYS.map((k) => [k, { covered, total: foodRows.length }]),
+    );
 
     const workouts = await this.#healthStore.getWorkoutsForDate(userId, date);
     const sessions = flattenWorkoutSessions(workouts);
@@ -114,6 +208,7 @@ export class BudgetService {
     return {
       date, budget, food, exercise, net: food - exercise,
       remaining, status: remaining >= 0 ? 'under' : 'over', stale, sessions, goals,
+      macros, microCoverage,
     };
   }
 }

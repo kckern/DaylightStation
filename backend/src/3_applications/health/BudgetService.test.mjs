@@ -123,3 +123,204 @@ describe('BudgetService.setGoals', () => {
     await expect(svc.setGoals('kckern', GOALS)).rejects.toMatchObject({ code: 'GOALS_WRITE_FAILED' });
   });
 });
+
+// ============================================================================
+// Task 6.1 — day macros + micro coverage + goal-shape validation
+// ============================================================================
+
+describe('BudgetService.getBudget — macros (Task 6.1)', () => {
+  it('sums protein/carbs/fat and the four micros over the SAME COUNTED fold as food', async () => {
+    const svc = makeService({
+      nutriListStore: {
+        findByDate: async () => ([
+          { calories: 400, protein: 30, carbs: 40, fat: 10, fiber: 5, sugar: 8, sodium: 300, cholesterol: 40, microsSource: 'ai' },
+          { calories: 880, protein: 20, carbs: 100, fat: 30, fiber: 3, sugar: 12, sodium: 700, cholesterol: 60, microsSource: 'ai' },
+          // pending/rejected/deleted must be excluded from macros exactly as
+          // they are from `food` — a second, subtly different fold is the bug
+          // this test exists to prevent.
+          { calories: 999, protein: 99, carbs: 99, fat: 99, fiber: 99, sugar: 99, sodium: 9999, cholesterol: 999, status: 'pending', microsSource: 'ai' },
+          { calories: 999, protein: 99, carbs: 99, fat: 99, status: 'rejected' },
+          { calories: 999, protein: 99, carbs: 99, fat: 99, status: 'deleted' },
+        ]),
+      },
+    });
+    const b = await svc.getBudget('kckern', '2026-09-02');
+    expect(b.food).toBe(1280);
+    expect(b.macros).toEqual({
+      protein: 50, carbs: 140, fat: 40,
+      fiber: 8, sugar: 20, sodium: 1000, cholesterol: 100,
+    });
+  });
+
+  it('counts a group and its children ONCE — a group row carries zero nutrition by design', async () => {
+    const svc = makeService({
+      nutriListStore: {
+        findByDate: async () => ([
+          // The dish header: zero nutrition (groupParsedItems.mjs writes it this way).
+          { uuid: 'g1', kind: 'group', calories: 0, protein: 0, carbs: 0, fat: 0 },
+          { uuid: 'c1', kind: 'item', parentId: 'g1', calories: 200, protein: 12, carbs: 20, fat: 5 },
+          { uuid: 'c2', kind: 'item', parentId: 'g1', calories: 300, protein: 18, carbs: 30, fat: 9 },
+        ]),
+      },
+    });
+    const b = await svc.getBudget('kckern', '2026-09-02');
+    expect(b.food).toBe(500);
+    expect(b.macros.protein).toBe(30);
+    expect(b.macros.carbs).toBe(50);
+    expect(b.macros.fat).toBe(14);
+  });
+
+  it('tolerates missing/garbage macro fields without producing NaN', async () => {
+    const svc = makeService({
+      nutriListStore: {
+        findByDate: async () => ([
+          { calories: 100 },                                  // no macros at all
+          { calories: 100, protein: 'lots', carbs: null, fat: undefined },
+          { calories: 100, protein: 10, carbs: 10, fat: 10 },
+        ]),
+      },
+    });
+    const b = await svc.getBudget('kckern', '2026-09-02');
+    expect(b.macros.protein).toBe(10);
+    expect(b.macros.carbs).toBe(10);
+    expect(b.macros.fat).toBe(10);
+    expect(Number.isNaN(b.macros.sodium)).toBe(false);
+  });
+});
+
+describe('BudgetService.getBudget — microCoverage (Task 6.1)', () => {
+  it('keys coverage off microsSource, NEVER off the values — a stored 0 means "not measured"', async () => {
+    const svc = makeService({
+      nutriListStore: {
+        findByDate: async () => ([
+          // Real measured zero-ish micros, provenance present -> covered.
+          { calories: 100, sodium: 0, fiber: 0, sugar: 0, cholesterol: 0, microsSource: 'ai' },
+          // Structural zeros with NO provenance -> NOT covered, even though
+          // every micro field is present and numeric.
+          { calories: 100, sodium: 0, fiber: 0, sugar: 0, cholesterol: 0, microsSource: null },
+          { calories: 100, sodium: 0, fiber: 0, sugar: 0, cholesterol: 0 },
+        ]),
+      },
+    });
+    const b = await svc.getBudget('kckern', '2026-09-02');
+    for (const key of ['fiber', 'sugar', 'sodium', 'cholesterol']) {
+      expect(b.microCoverage[key]).toEqual({ covered: 1, total: 3 });
+    }
+  });
+
+  it('counts a catalog-sourced row as covered too', async () => {
+    const svc = makeService({
+      nutriListStore: {
+        findByDate: async () => ([
+          { calories: 100, microsSource: 'catalog' },
+          { calories: 100, microsSource: 'ai' },
+        ]),
+      },
+    });
+    const b = await svc.getBudget('kckern', '2026-09-02');
+    expect(b.microCoverage.sodium).toEqual({ covered: 2, total: 2 });
+  });
+
+  it('excludes pending/rejected/deleted rows from the coverage denominator', async () => {
+    const svc = makeService({
+      nutriListStore: {
+        findByDate: async () => ([
+          { calories: 100, microsSource: 'ai' },
+          { calories: 100, status: 'pending' },
+          { calories: 100, status: 'deleted' },
+        ]),
+      },
+    });
+    const b = await svc.getBudget('kckern', '2026-09-02');
+    expect(b.microCoverage.fiber).toEqual({ covered: 1, total: 1 });
+  });
+
+  it('excludes group rows from BOTH sides — a dish header is not a food that could carry micros', async () => {
+    const svc = makeService({
+      nutriListStore: {
+        findByDate: async () => ([
+          { uuid: 'g1', kind: 'group', calories: 0 },
+          { uuid: 'c1', kind: 'item', parentId: 'g1', calories: 200, microsSource: 'ai' },
+          { uuid: 'c2', kind: 'item', parentId: 'g1', calories: 300, microsSource: 'ai' },
+        ]),
+      },
+    });
+    const b = await svc.getBudget('kckern', '2026-09-02');
+    // 2 of 2, not 2 of 3 — the header would otherwise report missing data
+    // that does not exist.
+    expect(b.microCoverage.sugar).toEqual({ covered: 2, total: 2 });
+  });
+});
+
+describe('BudgetService.setGoals — macro/watch-micro shape (Task 6.1)', () => {
+  const saveSpy = () => {
+    const calls = [];
+    return { calls, save: async (goals) => { calls.push(goals); } };
+  };
+
+  it('accepts and round-trips macroGoals + watchMicros verbatim', async () => {
+    const spy = saveSpy();
+    const svc = makeService({ goalsStore: { save: spy.save } });
+    const goals = {
+      ...GOALS,
+      macroGoals: { proteinG: 150, carbsG: 200, fatG: 60 },
+      watchMicros: [
+        { key: 'sodium', limit: 2300, direction: 'ceiling' },
+        { key: 'fiber', limit: 30, direction: 'floor' },
+      ],
+    };
+    await svc.setGoals('kckern', goals);
+    expect(spy.calls[0].macroGoals).toEqual({ proteinG: 150, carbsG: 200, fatG: 60 });
+    expect(spy.calls[0].watchMicros).toEqual(goals.watchMicros);
+  });
+
+  it('accepts null macro targets (a cleared goal is not a zero goal)', async () => {
+    const spy = saveSpy();
+    const svc = makeService({ goalsStore: { save: spy.save } });
+    await svc.setGoals('kckern', { ...GOALS, macroGoals: { proteinG: 150, carbsG: null, fatG: null } });
+    expect(spy.calls[0].macroGoals).toEqual({ proteinG: 150, carbsG: null, fatG: null });
+  });
+
+  it('leaves an absent macroGoals/watchMicros ABSENT — never backfilled to null or {}', async () => {
+    const spy = saveSpy();
+    const svc = makeService({ goalsStore: { save: spy.save } });
+    // GOALS deliberately OMITS both keys — the pre-existing on-disk shape.
+    await svc.setGoals('kckern', { ...GOALS });
+    expect(Object.prototype.hasOwnProperty.call(spy.calls[0], 'macroGoals')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(spy.calls[0], 'watchMicros')).toBe(false);
+  });
+
+  it.each([
+    ['macroGoals is an array', { macroGoals: [] }],
+    ['macroGoals is a string', { macroGoals: 'lots' }],
+    ['macroGoals has an unknown key', { macroGoals: { proteinGrams: 150 } }],
+    ['a macro target is a string', { macroGoals: { proteinG: '150' } }],
+    ['a macro target is negative', { macroGoals: { proteinG: -1 } }],
+    ['a macro target is NaN', { macroGoals: { proteinG: Number.NaN } }],
+    ['watchMicros is not an array', { watchMicros: { sodium: 2300 } }],
+    ['a watch entry is not an object', { watchMicros: ['sodium'] }],
+    ['a watch key is not a known micro', { watchMicros: [{ key: 'potassium', limit: 1, direction: 'ceiling' }] }],
+    ['a watch key is a macro', { watchMicros: [{ key: 'protein', limit: 1, direction: 'floor' }] }],
+    ['a watch limit is missing', { watchMicros: [{ key: 'sodium', direction: 'ceiling' }] }],
+    ['a watch limit is zero', { watchMicros: [{ key: 'sodium', limit: 0, direction: 'ceiling' }] }],
+    ['a watch limit is a string', { watchMicros: [{ key: 'sodium', limit: '2300', direction: 'ceiling' }] }],
+    ['a watch direction is missing', { watchMicros: [{ key: 'sodium', limit: 2300 }] }],
+    ['a watch direction is nonsense', { watchMicros: [{ key: 'sodium', limit: 2300, direction: 'up' }] }],
+    ['a watch key is duplicated', { watchMicros: [
+      { key: 'sodium', limit: 2300, direction: 'ceiling' },
+      { key: 'sodium', limit: 1800, direction: 'ceiling' },
+    ] }],
+  ])('rejects with GOALS_INVALID when %s', async (_label, bad) => {
+    const spy = saveSpy();
+    const svc = makeService({ goalsStore: { save: spy.save } });
+    await expect(svc.setGoals('kckern', { ...GOALS, ...bad })).rejects.toMatchObject({ code: 'GOALS_INVALID' });
+    // A refusal must not have written anything.
+    expect(spy.calls).toHaveLength(0);
+  });
+
+  it('rejects a non-object goals payload', async () => {
+    const svc = makeService();
+    await expect(svc.setGoals('kckern', null)).rejects.toMatchObject({ code: 'GOALS_INVALID' });
+    await expect(svc.setGoals('kckern', [GOALS])).rejects.toMatchObject({ code: 'GOALS_INVALID' });
+  });
+});
