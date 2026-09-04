@@ -10,6 +10,7 @@ import { formatFoodList, formatDateHeader, formatLoggedSummary } from '#domains/
 import { repairTruncatedJson } from '../lib/repairJson.mjs';
 import { createNutriLog } from '../nutriLogRecords.mjs';
 import { groupParsedItems } from '#domains/nutrition/services/groupParsedItems.mjs';
+import { aiMicrosSource } from '#domains/nutrition/services/micros.mjs';
 
 /**
  * Log food from image use case
@@ -275,6 +276,13 @@ export class LogFoodFromImage {
               protein: item.protein,
               carbs: item.carbs,
               fat: item.fat,
+              fiber: item.fiber,
+              sugar: item.sugar,
+              sodium: item.sodium,
+              cholesterol: item.cholesterol,
+              // Only a provenanced row donates its micros to the catalog —
+              // see FoodCatalogService.recordUsage.
+              microsSource: item.microsSource,
               source: 'nutritionix',
             }, userId);
           } catch (err) {
@@ -478,6 +486,10 @@ ${conservativeNote}${portionBoost}`,
         sugar: item.sugar ?? 0,
         sodium: item.sodium ?? 0,
         cholesterol: item.cholesterol ?? 0,
+        // See LogFoodFromText's mapper: 'ai' only when the model actually
+        // returned micro numbers, because the `?? 0` defaults above erase the
+        // difference between "not measured" and "measured zero".
+        microsSource: aiMicrosSource(item),
         ...(item.dish ? { dish: item.dish } : {}),
       }));
 

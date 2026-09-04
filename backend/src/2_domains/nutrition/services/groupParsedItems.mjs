@@ -78,6 +78,10 @@ export function groupParsedItems(items, { makeId } = {}) {
         sugar: 0,
         sodium: 0,
         cholesterol: 0,
+        // A dish header measured nothing: its zeros are structural, and its
+        // children carry the real micros. Never 'ai' — a group that claimed
+        // provenance would be counted as a covered item it is not.
+        microsSource: null,
         kind: 'group',
       },
     });

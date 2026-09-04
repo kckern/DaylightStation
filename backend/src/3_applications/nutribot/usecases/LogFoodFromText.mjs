@@ -11,6 +11,7 @@ import { repairTruncatedJson } from '../lib/repairJson.mjs';
 import { deriveLogDate } from '../lib/deriveLogDate.mjs';
 import { createNutriLog, serializeNutriLog } from '../nutriLogRecords.mjs';
 import { groupParsedItems } from '#domains/nutrition/services/groupParsedItems.mjs';
+import { aiMicrosSource } from '#domains/nutrition/services/micros.mjs';
 
 /**
  * Get current time details for date context in prompts
@@ -314,6 +315,13 @@ export class LogFoodFromText {
               protein: item.protein,
               carbs: item.carbs,
               fat: item.fat,
+              fiber: item.fiber,
+              sugar: item.sugar,
+              sodium: item.sodium,
+              cholesterol: item.cholesterol,
+              // Only a provenanced row donates its micros to the catalog —
+              // see FoodCatalogService.recordUsage.
+              microsSource: item.microsSource,
               source: 'nutritionix',
             }, userId);
           } catch (err) {
@@ -537,6 +545,12 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
             sugar: item.sugar ?? 0,
             sodium: item.sodium ?? 0,
             cholesterol: item.cholesterol ?? 0,
+            // Provenance for the micros above. The `?? 0` defaults make a
+            // never-measured micro indistinguishable from a measured zero, so
+            // this field — set only when the model ACTUALLY returned micro
+            // numbers — is the only thing that can tell them apart downstream
+            // (BudgetService.microCoverage, the Today bar row).
+            microsSource: aiMicrosSource(item),
             ...(item.dish ? { dish: item.dish } : {}),
           };
         });
