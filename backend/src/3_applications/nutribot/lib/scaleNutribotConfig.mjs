@@ -10,7 +10,7 @@ export const DEFAULT_MIN_GRAMS = 5;
 // The floor exists because `num()` accepts ANY finite number, and the two values
 // it happily let through were both destructive: a negative `commit_quiet_sec`
 // yields a timer that fires immediately — commit-on-sufficiency, the design this
-// feature explicitly rejects — and `0` is falsy, so the bridge's
+// feature explicitly rejects — and `0` is falsy, so the commit path's
 // `if (!commitQuietMs) return` silently disabled the whole feature with nothing
 // anywhere saying so. Clamping turns a typo into a short wait instead of a
 // different product.
@@ -150,7 +150,7 @@ export function normalizeScaleNutribotConfig(raw = {}, { logger = null } = {}) {
     stormMinPushes: num(nb.storm_min_pushes, 2),
     heavyG: num(nb.heavy_g, 300),
     forceToleranceG: num(nb.force_tolerance_g, 10),
-    // How long the bridge waits for the composition to stop growing before it
+    // How long the scale path waits for the composition to stop growing before it
     // finalises the entry. Weight, density and container arrive as separate
     // events with no payload boundary, so completeness is an absence rather than
     // an event and the lull is the only signal there is. CLAMPED to

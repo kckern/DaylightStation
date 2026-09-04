@@ -175,7 +175,7 @@ function isPlausibleWeightPairing(observation, entry) {
   if (observation.kind !== 'weight') return true;
   const grams = observation.value;
   if (typeof grams !== 'number' || !Number.isFinite(grams) || grams <= 0) return false;
-  // A weight observation not measured in grams is exactly the case the shipped bridge's
+  // A weight observation not measured in grams is exactly the case the commit path's
   // commit path refuses outright ("A non-gram unit refuses to commit outright" —
   // docs/reference/nutrition/README.md). The unit is not a `null` narrower than 'g' by
   // default per `YamlObservationStore.append`, but a caller could still hand this module

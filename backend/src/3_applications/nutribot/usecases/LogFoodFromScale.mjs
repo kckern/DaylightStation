@@ -4,9 +4,9 @@
 // is a button on the prompt, not a leading question. No responseContext (not a
 // user-initiated event) — uses the raw messagingGateway.
 //
-// Create-or-edit: when the bridge passes existingLogUuid + messageId and that log is an
+// Create-or-edit: when the caller passes existingLogUuid + messageId and that log is an
 // untouched pending scale log, we edit the grams in place instead of posting a new
-// message. If it's already touched/gone/non-pending, we no-op (the bridge's committed
+// message. If it's already touched/gone/non-pending, we no-op (the scale path's committed
 // flag owns that case) — posting a fresh prompt would duplicate.
 
 import { computeNet } from '#domains/nutrition/index.mjs';
@@ -83,7 +83,7 @@ export function resolveScaleNet({ gross, composition = {} }, containers = { item
  *     one that didn't.
  *   • DENSITY — a `dl:` scan used to render nothing at all, so the edit produced
  *     byte-identical text, Telegram answered 400 "message is not modified", and
- *     the bridge logged that as a successful edit. Density gates auto-accept; it
+ *     the caller logged that as a successful edit. Density gates auto-accept; it
  *     is the last thing that should be invisible.
  *   • NOTICE — a transient, caller-supplied warning for a scan that was REFUSED
  *     and therefore never reached the buffer (`ct:teapot`). There is nothing in
@@ -207,7 +207,7 @@ export class LogFoodFromScale {
         this.#logger.info?.('logScale.edited', { conversationId, logUuid: existingLogUuid, gross, net });
         return { success: true, logUuid: existingLogUuid, messageId: String(messageId), stage: 'density', edited: true };
       }
-      // Touched / missing / non-pending: the user owns it now. The bridge's committed
+      // Touched / missing / non-pending: the user owns it now. The scale path's committed
       // flag handles the still-loaded food; posting a fresh prompt would duplicate. No-op.
       return { success: true, logUuid: existingLogUuid, edited: false, touched: true };
     }

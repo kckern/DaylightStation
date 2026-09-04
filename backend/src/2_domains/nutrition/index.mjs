@@ -3,9 +3,6 @@
  * @module nutrition
  */
 
-// Value Objects
-export { Composition } from './value-objects/index.mjs';
-
 // Entities
 export { NutriLog } from './entities/NutriLog.mjs';
 export { FoodItem } from './entities/FoodItem.mjs';
@@ -49,6 +46,16 @@ export {
   MAX_DENSITY_CODE,
   MAX_DENSITY_LEVEL,
 } from './services/ScanVocabularyService.mjs';
+
+// Services — what a scale observation's value may be, per kind
+export {
+  validateObservationValue,
+  validateWeightValue,
+  validateWeightUnit,
+  validateDensityValue,
+  validateContainerValue,
+  validateUpcValue,
+} from './services/ObservationValue.mjs';
 
 // Services — scan nutrition math (net weight, calories, macro split)
 export {

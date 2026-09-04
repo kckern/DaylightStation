@@ -228,6 +228,13 @@ Two flows are deliberately exempt from the accept half of the seam:
   with its own Accept/Discard. That endpoint returns pending rows regardless of origin, but
   every other capture commits on arrival (above), so Today filters the banner to
   scale-origin rows.
+
+  **A NEEDS REVIEW row is not permanent.** The prompt behind it is still the scale's live
+  one, and the next thing put on that pan supersedes it — the row is marked `rejected`, its
+  message is deleted, and the banner entry disappears with nobody having acted on it. This
+  is the one place the value below is written. So the banner is a "before the next meal"
+  affordance, not a queue that waits: answer it, or it goes. An entry somebody has already
+  engaged with is never superseded.
 - **Barcode** has no Accept gate to retire — it commits at its portion-selection step
   (`SelectUPCPortion`). The seam still stamps its items unsettled so the rows that step
   writes land the same way.

@@ -232,7 +232,12 @@ export function createObservationService({
       logger.debug?.('observation.appended', { scaleId, kind, value, unit, id: record.id });
       return record;
     } catch (err) {
-      logger.warn?.('observation.append.failed', { scaleId, kind, value, unit, error: err.message });
+      // The store refuses a malformed value per kind, so this is also where a bad signal
+      // surfaces: `code` names WHICH rule refused it. Swallowed on purpose — the prompt
+      // flow works without the ledger and is what the person is looking at.
+      logger.warn?.('observation.append.failed', {
+        scaleId, kind, value, unit, error: err.message, code: err.code ?? null,
+      });
       return null;
     }
   };

@@ -174,6 +174,9 @@ import {
 } from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
+// The per-kind value rules. Explicit module path, not the `#domains/nutrition` barrel —
+// same reason as the other `#domains/*` imports here (see "Explicit `/index.mjs`" below).
+import { validateObservationValue } from '#domains/nutrition/services/ObservationValue.mjs';
 // The application-facing contract this adapter satisfies. D7: an adapter that imports
 // an application port must EXTEND it rather than duck-type it, so the interface a
 // service depends on and the class the composition root injects cannot drift apart.
@@ -303,13 +306,22 @@ function requireKind(kind) {
   return kind;
 }
 
-function requireValue(value) {
-  if (value === undefined) {
-    throw new ValidationError('value is required (received: undefined)', {
-      code: 'INVALID_OBSERVATION_VALUE', field: 'value', value,
-    });
-  }
-  return value;
+/**
+ * The value and unit an observation may carry, PER KIND, checked before the row is
+ * written rather than when something later tries to use it.
+ *
+ * A weight must be a finite number: `NaN` is the value that matters most here, because
+ * `NaN !== null` means a composition built over such a row reads `complete` and reaches
+ * the unattended commit before anything notices. A density must be a level the printed
+ * grammar can produce; a container id and a product code must be non-empty strings.
+ *
+ * The rules themselves live in the DOMAIN (`ObservationValue`) — what a gram figure or a
+ * density level is allowed to be is not a storage decision, and the same rules must hold
+ * for a row that arrives by any other route. This layer decides only WHEN they run, which
+ * is: before the file is touched.
+ */
+function requireValueForKind(kind, value, unit) {
+  return validateObservationValue({ kind, value, unit });
 }
 
 /**
@@ -348,9 +360,9 @@ function isStructurallyValid(r) {
  * @property {string} id UUID, assigned by `append`.
  * @property {ObservationKind} kind
  * @property {number|string} value Grams for `weight`, the level for `density`, the
- *   scanned code for `upc`/`container`. This store does not constrain the type further —
- *   that is a domain concern one layer up, the same division of labor the composition path
- *   draws with `Composition`.
+ *   scanned code for `upc`/`container`. Constrained per kind by
+ *   `#domains/nutrition/services/ObservationValue.mjs`, which is checked on the way IN —
+ *   this store decides when the rules run, the domain decides what they are.
  * @property {string|null} unit E.g. `'g'` for a weight. `null` where not applicable.
  * @property {string} scaleId Which physical scale produced the signal.
  * @property {string} at Local timestamp, `YYYY-MM-DD HH:mm:ss`. NEVER a UTC ISO string —
@@ -621,10 +633,12 @@ export class YamlObservationStore extends IObservationStore {
   append(userId, obs) {
     requireUserId(userId);
     const kind = requireKind(obs?.kind);
-    const value = requireValue(obs?.value);
+    // Kind first, then the value rule that kind implies. A malformed value is refused
+    // BEFORE the read-modify-write cycle below, so a bad row never reaches the file and
+    // never has to be recognised as garbage on the way back out.
+    const { value, unit } = requireValueForKind(kind, obs?.value, obs?.unit);
     const scaleId = requireScaleId(obs?.scaleId);
     const at = requireAt(obs?.at);
-    const unit = obs?.unit ?? null;
 
     /** @type {Observation} */
     const record = {

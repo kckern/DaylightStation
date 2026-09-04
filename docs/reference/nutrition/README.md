@@ -230,10 +230,10 @@ macro split *can* produce a plausible-looking wrong entry.
 
 ## The composition
 
-`2_domains/nutrition/value-objects/Composition.mjs` (immutable value object) plus
-`2_domains/nutrition/services/ObservationMatcher.mjs` (the merge rules and the window). Three
-slots — `grams` / `density` / `container` — filled by whichever event arrives, **in any order**,
-within a 900 s window.
+`2_domains/nutrition/services/ObservationMatcher.mjs` owns the merge rules and the window;
+`2_domains/nutrition/services/ObservationValue.mjs` owns what each signal's value may be.
+Three slots — `grams` / `density` / `container` — filled by whichever event arrives, **in any
+order**, within a 900 s window.
 
 **A composition is not stored; it is recomputed.** There is no per-scale buffer in memory.
 Every signal is an append-only row on the observation ledger, and reading the composition means
@@ -288,6 +288,15 @@ from a food-log entry's `status`. Nothing conflates them.
   person dismissing it in the day view). Dismissed rows are kept: an observation that arrived
   and was set aside is the evidence someone needs when asking why a weight never showed up.
 
+**A value is checked against its kind before the row is written.** A weight must be a
+finite number, a density level one the printed grammar can produce, a container id and a
+product code non-empty strings. `NaN` is the case that matters: it is not `null`, so a
+stored `NaN` weight would make a composition read `complete`, reach the unattended commit,
+and file an entry whose grams serialise to `null` with nothing flagged. A malformed signal
+is refused before the file is touched and reported as `observation.append.failed` with the
+rule's code; the prompt flow carries on, because it works without the ledger and is what
+the person is looking at.
+
 **An open row is never archived, at any age.** That is what lets the composition be recomputed
 from the hot file alone, and it is why the hot file stays small enough to rewrite on a hardware
 path. Multi-row updates are all-or-nothing — a completed composition consumes up to three rows
@@ -300,6 +309,26 @@ the in-progress composition exactly, because the state is on disk rather than in
 **These rows are also the day view's raw material** — surfacing an unmatched signal, pairing a
 measurement to an entry after the fact, and moving a whole placement from one entry to another.
 See [`docs/reference/health/README.md`](../health/README.md), "Scale measurements".
+
+### Log events
+
+Two prefixes, and the split is not historical. `scaleNutribot.*` is the PROMPT — what the
+person sees on Telegram — and `observation.*` is the LEDGER underneath it. A commit writes
+both, because it is one event in each story.
+
+| Event | Says |
+|---|---|
+| `observation.service.ready` | the scale path is wired and listening |
+| `observation.service.skipped` / `.wireFailed` | it is NOT wired: no head of household, no bot id, or the wiring threw. A fridge scan is refused rather than acknowledged while this holds |
+| `observation.appended` | a signal became a row |
+| `observation.append.failed` | it did not — the value broke its kind's rule, or the file could not be written |
+| `observation.read.failed` | the ledger could not be read. See the corrupt-file trap in [Known gaps](#known-gaps--deliberate-do-not-silently-fix) |
+| `observation.resolve.failed` | rows could not be flipped to `consumed`/`dismissed` |
+| `observation.commit.committed` / `.refused` / `.unpaired` | the ledger's view of a commit, including which rows it consumed |
+| `observation.paired` / `.dismissed` | a person acted on a signal in the day view |
+| `scaleNutribot.pushed` / `.suppressed` | a prompt was posted, or a placement was judged not to be food |
+| `scaleNutribot.commit.committed` / `.skipped` / `.failed` | the prompt's view of the same commit |
+| `applyScan.unavailable` | a fridge-sheet code was refused because there is nowhere to record it |
 
 ---
 
@@ -398,7 +427,7 @@ restart before it takes effect.
 |-----------|-------|
 | `services/ScanVocabularyService.mjs` — grammar, encoders | **shipped**, reviewed, 24 tests |
 | `services/ScanNutritionService.mjs` — net weight, calories, macros | **shipped**, reviewed, 58 tests |
-| `value-objects/Composition.mjs` — immutable slots | **shipped**, 62 tests |
+| `services/ObservationValue.mjs` — what a signal's value may be, per kind | **shipped**, 22 tests |
 | `2_domains/nutrition/services/ObservationMatcher.mjs` — merge rules, window | **shipped** |
 | `1_adapters/persistence/yaml/YamlObservationStore.mjs` — durable ledger, hot file + monthly archives | **shipped** |
 | `3_applications/nutrition/ObservationService.mjs` — prompt flow, composition surface, quiet commit | **shipped** |
@@ -458,10 +487,15 @@ than the grams — see [Known gaps](#known-gaps--deliberate-do-not-silently-fix)
   frame after a restart is taken as the new resting load, so **food already sitting on the pan
   becomes the baseline and never posts a prompt** until it is lifted and set down again.
   `rs:undo` reports "nothing to undo" rather than guessing which row a person meant.
-- **A composition that never completes stays pending forever.** A weight with no density scan
-  leaves a `pending` entry the quiet commit refuses (`reason: 'incomplete'`). It does not
-  count toward the budget and it is not deleted; the Health app's NEEDS REVIEW banner is where
-  a person finds it.
+- **A composition that never completes leaves a `pending` entry, and the NEXT PLACEMENT
+  takes it away.** A weight with no density scan is refused by the quiet commit
+  (`reason: 'incomplete'`), so its prompt stays `pending`: uncounted, not in the day's
+  buckets, and surfaced only by the Health app's NEEDS REVIEW banner. That row is **not
+  permanent**. The prompt stays live-but-closed on the scale, and the next thing put on
+  the pan supersedes it — the entry is marked `rejected` and its message deleted, so the
+  NEEDS REVIEW row disappears without anyone acting on it. Answer it before the next meal
+  goes on the scale, or it is gone. (An entry somebody has already engaged with — a
+  container or density picked — is never superseded.)
 - **A product's own UPC does not work at the fridge.** `LogFoodFromUPC` exists and works, but
   the scanner is `route: content`, so a real barcode falls through to content dispatch. Wiring
   it is a separate feature.
@@ -471,8 +505,9 @@ than the grams — see [Known gaps](#known-gaps--deliberate-do-not-silently-fix)
 - **A density-application failure at commit time is silent to the user.** `commitNow` applies
   the scanned density through `SelectScaleDensity` before accepting, and on refusal it restores
   the prompt so the next quiet lull retries — but a *persistent* cause (`'unknown level'`,
-  `'log not found'`) fails identically forever, and only a `scaleNutribot.commit.skipped` warn
-  log explains why. The entry just never finalises, with no notice on the prompt.
+  `'log not found'`) fails identically every time, and only a `scaleNutribot.commit.skipped`
+  warn log explains why. The entry never finalises, with no notice on the prompt, until the
+  next placement supersedes it.
 - **A corrupt ledger reads at commit time as a benign skip.** A file the parser cannot read
   degrades to "no composition" so it cannot take the prompt down — which means the commit then
   logs `scaleNutribot.commit.skipped` with `reason: 'incomplete'`, the same line a genuinely

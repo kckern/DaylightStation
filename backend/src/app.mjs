@@ -4557,11 +4557,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // ONE surface, shared by the scale signals (which write weights) and the fridge-sheet
   // scan handler (which writes density/tare). Two of them would mean a scanned density
   // never meets its weight, the entry never completes, and nothing anywhere reports an
-  // error. While the service is unwired (no head of household, no bot id) the surface is
-  // inert: a fridge scan is accepted by the grammar and recorded nowhere, which is the
-  // same thing the sheet does when the scale itself is unplugged.
+  // error.
+  //
+  // `available()` is the honest half. The service only exists once the head of household
+  // and the bot id resolve; until then there is nowhere to record a scan. A surface that
+  // quietly swallowed the write would still let the scan use case answer `ok: true` with a
+  // resolved level and label, so the fridge sheet would ACKNOWLEDGE a scan that went
+  // nowhere — the exact silent failure the ⚠️ ack exists to prevent. Saying "unavailable"
+  // instead turns it into a visible refusal, and keeps the station booting.
   let observationService = null;
   const scaleCompositionSurface = {
+    available: () => observationService !== null,
     setWeight: (...args) => observationService?.setWeight(...args),
     setDensity: (...args) => observationService?.setDensity(...args),
     setContainer: (...args) => observationService?.setContainer(...args),
@@ -4592,7 +4598,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       error: err.message, code: err.code, hint: 'fix the nutribot block in scales.yml',
     });
   }
-
 
   // ==========================================================================
   // Living-room reading sessions.
@@ -5247,10 +5252,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         logger: rootLogger.child({ module: 'observation-service' }),
       });
     } else {
-      rootLogger.warn?.('scaleNutribot.bridge.skipped', { hasPlatformId: !!scaleHeadPlatformId, hasBotId: !!scaleBotId });
+      rootLogger.warn?.('observation.service.skipped', { hasPlatformId: !!scaleHeadPlatformId, hasBotId: !!scaleBotId });
     }
   } catch (e) {
-    rootLogger.warn?.('scaleNutribot.bridge.wireFailed', { error: e.message });
+    rootLogger.warn?.('observation.service.wireFailed', { error: e.message });
   }
 
   const nutribotApiResult = createNutribotApiRouter({
