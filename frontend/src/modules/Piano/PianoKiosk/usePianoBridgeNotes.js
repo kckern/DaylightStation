@@ -16,6 +16,18 @@ const DEFAULT_URL = 'ws://localhost:8770';
 // once, then falls back — imperceptible behind the "connecting" gate.
 const UNAVAILABLE_GRACE_MS = 8000;
 
+// Reconnect ceiling once a client has been judged bridge-less. A browser that
+// has NEVER opened the socket and is past the grace window almost certainly has
+// no bridge at all (a laptop with the piano page open), and nothing it can do
+// will conjure one — the APK is not going to appear on that machine. Retrying
+// such a client every 5s forever produced 1,018 `bridge.socket-error` rows an
+// hour in production, at ERROR level, from roughly one open tab: enough to
+// crowd real errors out of the log store's retention window.
+// A client that HAS connected keeps the fast ceiling, because that is the
+// kiosk-tablet case where the APK restarts and must be picked straight back up.
+const RECONNECT_CEILING_MS = 5000;
+const RECONNECT_CEILING_BRIDGELESS_MS = 60000;
+
 // Consecutive speakerOk:false heartbeats (each ~1s, per the bridge APK) required
 // before flipping speakerConnected to false. A single true instantly recovers —
 // only the disconnected direction needs debouncing against a transient blip.
@@ -51,6 +63,11 @@ export function usePianoBridgeNotes({ url = DEFAULT_URL, enabled = true, onNote 
   // so an early burst of connect failures (APK WS server still starting after a
   // tablet reboot) can't prematurely flip the client into Web-MIDI fallback.
   const [graceExpired, setGraceExpired] = useState(false);
+  // Mirrored as a ref because the socket callbacks below are created once per
+  // `open()` and would otherwise close over the value as it was when that
+  // socket was created — which is always `false` for the very first socket,
+  // i.e. exactly the retries we need to quieten.
+  const graceExpiredRef = useRef(false);
   // speakerConnected: whether the Bluetooth speaker the bridge APK talks to is
   // up, per the last few status heartbeats. Defaults true (non-kiosk clients
   // with no bridge never receive status frames, so they never flip it).
@@ -105,7 +122,17 @@ export function usePianoBridgeNotes({ url = DEFAULT_URL, enabled = true, onNote 
       };
 
       ws.onerror = () => {
-        logger().error('bridge.socket-error', { url });
+        // `error` only while a bridge is still plausibly there: either it has
+        // worked before (a real drop worth alerting on) or we are inside the
+        // grace window. A client already judged bridge-less is not failing —
+        // it is correctly using Web MIDI, and its socket error is the expected
+        // steady state, so it drops to debug and is sampled rather than
+        // reported once per retry forever.
+        if (everConnectedRef.current || !graceExpiredRef.current) {
+          logger().error('bridge.socket-error', { url });
+        } else {
+          logger().sampled('bridge.socket-error.bridgeless', { url }, { maxPerMinute: 1, aggregate: true });
+        }
       };
 
       ws.onclose = (e) => {
@@ -115,11 +142,22 @@ export function usePianoBridgeNotes({ url = DEFAULT_URL, enabled = true, onNote 
         // close after a successful open is a normal drop (bridge exists), so
         // don't let it push the client into Web-MIDI fallback.
         if (!everConnectedRef.current) setFailCount((n) => n + 1);
-        logger().warn('bridge.closed', { url, code: e?.code, reason: e?.reason, willReconnect });
+        if (everConnectedRef.current || !graceExpiredRef.current) {
+          logger().warn('bridge.closed', { url, code: e?.code, reason: e?.reason, willReconnect });
+        } else {
+          logger().sampled('bridge.closed.bridgeless', { url, code: e?.code, willReconnect }, { maxPerMinute: 1, aggregate: true });
+        }
         if (closed) { setLink('closed'); return; }
         setLink('reconnecting');
-        const delay = Math.min(5000, 250 * 2 ** retryRef.current++);
-        logger().info('bridge.reconnect-scheduled', { url, attempt: retryRef.current, delayMs: delay });
+        const ceiling = (everConnectedRef.current || !graceExpiredRef.current)
+          ? RECONNECT_CEILING_MS
+          : RECONNECT_CEILING_BRIDGELESS_MS;
+        const delay = Math.min(ceiling, 250 * 2 ** retryRef.current++);
+        if (everConnectedRef.current || !graceExpiredRef.current) {
+          logger().info('bridge.reconnect-scheduled', { url, attempt: retryRef.current, delayMs: delay });
+        } else {
+          logger().sampled('bridge.reconnect-scheduled.bridgeless', { url, delayMs: delay }, { maxPerMinute: 1, aggregate: true });
+        }
         timer = setTimeout(open, delay);
       };
     };
@@ -137,7 +175,7 @@ export function usePianoBridgeNotes({ url = DEFAULT_URL, enabled = true, onNote 
   // the window, everConnected short-circuits `unavailable` regardless.
   useEffect(() => {
     if (!enabled) return undefined;
-    const t = setTimeout(() => setGraceExpired(true), UNAVAILABLE_GRACE_MS);
+    const t = setTimeout(() => { graceExpiredRef.current = true; setGraceExpired(true); }, UNAVAILABLE_GRACE_MS);
     return () => clearTimeout(t);
   }, [enabled]);
 
