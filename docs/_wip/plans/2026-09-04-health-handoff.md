@@ -1,5 +1,11 @@
 # Health App — Handoff, 2026-09-04
 
+> Historical handoff: the branch/deployment checklist below is superseded.
+> The [audit remediation](2026-09-04-health-audit-remediation.md) is implemented
+> and deployed at application commit `292251b1b`. See the
+> [audit's implementation/deployment record](../audits/2026-09-04-health-top-to-bottom-audit.md)
+> for current verification, the backed-up historical conversion, and remaining limits.
+
 State of the `/health` work at the point this session ended. Written for whoever
 picks it up next. Everything below was verified against the running system, not
 recalled.

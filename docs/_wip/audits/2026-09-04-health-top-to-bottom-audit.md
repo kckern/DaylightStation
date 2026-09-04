@@ -39,7 +39,8 @@ Verification before deployment:
 
 - 1,999 scoped Vitest tests passed with zero failed suites. Seven files using
   `node:test` were run under their own runner: 31 additional tests passed, none skipped.
-  Subsequent transport changes have their own focused regression run.
+  Subsequent transport changes passed seven focused regressions and a broader
+  358-test Health/nutribot/HTTP run, with no failed suites.
 - Eight Chromium journeys passed against the **built** frontend, covering desktop
   and mobile. Dev-module boot telemetry was investigated; the built app has no
   unexpected mutation/boot-error requests in these journeys.
@@ -48,7 +49,27 @@ Verification before deployment:
   regression exposed the mount-already-open lifecycle.
 - A copy of actual nutrition history was repaired: 4,653 entries, 562 unresolved
   masses retained as unknown, verified backup, zero changes on the second dry run.
-  Production apply/deployment are recorded below when completed.
+  Production apply/deployment are recorded below.
+
+### Deployment and production conversion
+
+- Deployed application commit: `292251b1b6d0f834b5b4cbc897858205754adb41`.
+  `/build.txt` matched; the container and `/api/v1/ping` are healthy.
+- Both pre-build and pre-restart activity gates were clear. Production was stopped
+  and no dev backend was running before the repair. The source manifest still
+  matched, and a complete private backup was hash-verified before any mutation.
+- Production conversion completed: **4,653 entries**, **562 unknown masses**.
+  Row count and per-entry nutrient digest matched before/after. A fresh inspection
+  proposed **zero** further changes. The backup and before/after manifests are
+  retained outside the repository in the operator's private state directory.
+- Read-only live checks passed for identity, historical `/day`, suggestions,
+  templates, medical, goals and range. The historical day contained ten rows;
+  its computed budget matched the consumed ledger.
+- **All eight browser journeys passed again against the deployed frontend**, with
+  fixture-owned API mutations. No real food was created by those tests.
+- Commit gates passed: filesystem/layer rules, UI tokens, ESM links, parsing,
+  SCSS production compilation, and nine composition contracts. The post-deploy
+  log-store query found no backend Health/nutrition errors in the checked window.
 
 Intentional boundaries and follow-up work:
 
