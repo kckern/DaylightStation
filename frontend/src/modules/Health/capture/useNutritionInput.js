@@ -12,14 +12,24 @@ export function useNutritionInput() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
-  const submit = useCallback(async (type, content, { bucket } = {}) => {
+  const submit = useCallback(async (type, content, { bucket, date, audioRef } = {}) => {
     setBusy(true); setError(null);
-    // `bucket` is only added to the body when a caller actually names one —
-    // omitting the key entirely (not sending `bucket: undefined`) keeps the
-    // request byte-identical to the pre-Task-4.2 shape for every existing
-    // caller that doesn't pass one.
-    const body = bucket ? { type, content, bucket } : { type, content };
-    logger.info('capture.submit', { type, size: String(content || '').length, bucket: bucket || undefined });
+    // `bucket` and `date` are only added to the body when a caller actually
+    // names one — omitting the key entirely (not sending `undefined`) keeps
+    // the request byte-identical for every caller that doesn't, and ABSENT
+    // still means "today" / "the clock's meal" on the server.
+    // `audioRef` is a RETRY over a recording already in the user's store —
+    // sent instead of `content`, so nothing has to be recorded again.
+    const body = {
+      type, content,
+      ...(bucket ? { bucket } : {}),
+      ...(date ? { date } : {}),
+      ...(audioRef ? { audioRef } : {}),
+    };
+    logger.info('capture.submit', {
+      type, size: String(content || '').length,
+      bucket: bucket || undefined, date: date || undefined, audioRef: audioRef || undefined,
+    });
     try {
       const result = await DaylightAPI('api/v1/health/nutrition/input', body, 'POST');
       logger.info('capture.result', { type, unknownUpc: result?.unknownUpc === true, moved: result?.moved === true });

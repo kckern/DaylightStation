@@ -320,6 +320,10 @@ export class NutribotInputRouter extends BaseInputRouter {
         conversationId: event.conversationId,
         text: event.payload.text,
         messageId: event.messageId,
+        // The day the person is LOOKING AT becomes the parse's "today", so a
+        // relative phrase ("this morning") resolves against that day. A date
+        // the utterance names still wins — same precedence as the meal.
+        asOfDate: event.payload.date || null,
         responseContext: rc,
       }));
   }
@@ -342,6 +346,7 @@ export class NutribotInputRouter extends BaseInputRouter {
           caption: event.payload.text,
         },
         messageId: event.messageId,
+        date: event.payload.date || null,
         responseContext: rc,
       }));
   }
@@ -357,8 +362,13 @@ export class NutribotInputRouter extends BaseInputRouter {
         conversationId: event.conversationId,
         voiceData: {
           fileId: event.payload.fileId,
+          // Set only on the web path, where the bytes were written to the
+          // user's store before this call. It is what lets a failed
+          // transcription say "your recording is saved" truthfully.
+          audioRef: event.payload.fileId?.audioRef || null,
         },
         messageId: event.messageId,
+        asOfDate: event.payload.date || null,
         responseContext: rc,
       }));
   }
@@ -373,6 +383,7 @@ export class NutribotInputRouter extends BaseInputRouter {
         conversationId: event.conversationId,
         upc: event.payload.text,
         messageId: event.messageId,
+        date: event.payload.date || null,
         responseContext: rc,
       }));
   }

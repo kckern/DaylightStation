@@ -11,6 +11,8 @@ import { createNutribotServices } from '../bootstrap.mjs';
 import { DailyReportImage } from '#apps/nutribot/DailyReportImage.mjs';
 import { NutribotApiService } from '#apps/nutribot/NutribotApiService.mjs';
 import { InMemoryRequestDeduplicationStore } from '#adapters/http/InMemoryRequestDeduplicationStore.mjs';
+import { VoiceMemoStore } from '#adapters/persistence/VoiceMemoStore.mjs';
+import { dataService } from '../runtimePersistence.mjs';
 
 /**
  * Create nutribot API router
@@ -65,9 +67,16 @@ export function createNutribotApiRouter(config) {
   // handleText/handleVoice/handleImage/handleUpc/handleCallback, which only
   // exist on NutribotInputRouter itself — LegacyNutribotInputRouter exposes
   // only route() (for the Telegram webhook's NutribotScaleRefusal mapping).
+  //
+  // The voice-memo store is built here, off the shared `dataService`, in the
+  // same style healthApi.mjs builds its own PhotoStore: each composition path
+  // constructs its adapter instance rather than threading one across
+  // boundaries. It writes the capture to disk BEFORE transcription, which is
+  // what makes a failed transcription recoverable instead of terminal.
   const webNutribotAdapter = new WebNutribotAdapter({
     inputRouter: applicationInputRouter,
     foodLogStore: nutribotServices.foodLogStore,
+    voiceMemoStore: new VoiceMemoStore({ dataService, logger }),
     logger,
   });
 

@@ -117,7 +117,16 @@ export class LogFoodFromText {
    * Execute the use case
    */
   async execute(input) {
-    const { userId, conversationId, text, messageId, date: overrideDate, existingMessageId, responseContext } = input;
+    const {
+      userId, conversationId, text, messageId, date: overrideDate,
+      // The day the CLIENT is looking at. It becomes the prompt's "today" and
+      // the parse's fallback date, so "this morning" resolves against the
+      // viewed day rather than the server's. A date the utterance names still
+      // wins (the model computes it FROM this anchor) — same precedence the
+      // meal bucket already uses. Absent means the wall clock, unchanged.
+      asOfDate: viewedDate = null,
+      existingMessageId, responseContext,
+    } = input;
 
     this.#logger.info?.('logText.start', { conversationId, text, textLength: text.length, hasResponseContext: !!responseContext });
 
@@ -217,14 +226,17 @@ export class LogFoodFromText {
         }
       }
 
-      const prompt = this.#buildDetectionPrompt(text, portionBoost, asOfDateForRevision);
-      this.#logger.debug?.('logText.aiPrompt', { conversationId, text, asOfDateForRevision });
+      // A revision is pinned to the ORIGINAL log's date and must stay pinned:
+      // it outranks the viewed day, which outranks the wall clock.
+      const asOfDate = asOfDateForRevision || viewedDate || null;
+      const prompt = this.#buildDetectionPrompt(text, portionBoost, asOfDate);
+      this.#logger.debug?.('logText.aiPrompt', { conversationId, text, asOfDate, asOfDateForRevision, viewedDate });
 
       const response = await this.#aiGateway.chat(prompt, { maxTokens: 4096 });
       this.#logger.debug?.('logText.aiResponse', { conversationId, response: response?.substring?.(0, 500) });
 
       // 3. Parse response into food items and date — same pin
-      const { items: foodItems, date: aiDate, time: aiTime, mealTimeExplicit } = this.#parseFoodResponse(response, asOfDateForRevision);
+      const { items: foodItems, date: aiDate, time: aiTime, mealTimeExplicit } = this.#parseFoodResponse(response, asOfDate);
 
       this.#logger.debug?.('logText.parsed', {
         conversationId,

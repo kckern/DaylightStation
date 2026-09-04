@@ -47,6 +47,10 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   // so the picker opens straight onto its variant step (PRD F8.2 → F6.1).
   const [focusTemplateId, setFocusTemplateId] = useState(null);
   const [captureNotice, setCaptureNotice] = useState(null); // string | null — e.g. "no food detected"
+  // { audioRef, bucket } | null — a voice capture whose transcription failed on
+  // the network. The recording is on the server, so the notice can offer a
+  // retry that re-uses it rather than asking for it again.
+  const [captureRetry, setCaptureRetry] = useState(null);
   // bucketId | null — set the instant an AI capture (photo/voice/barcode)
   // submit starts, cleared in a `finally` once the result (success OR
   // failure) comes back. LogTable renders the "Analyzing…" placeholder row
@@ -185,7 +189,12 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   // saying "log this for lunch" must not silently land the entry under
   // Breakfast with no explanation. Reuse the existing captureNotice banner
   // rather than inventing a second notice mechanism.
-  const handleCaptureResult = (result) => {
+  const handleCaptureResult = (result, bucket = null) => {
+    // Offer the retry BEFORE the message is rendered, so the sentence that
+    // says the recording is saved arrives with the button that uses it.
+    setCaptureRetry(result?.transcribeFailed && result?.audioRef
+      ? { audioRef: result.audioRef, bucket: bucket || currentMealBucketId() }
+      : null);
     if (result?.moved) {
       setCaptureNotice(`Moved to ${bucketLabel(result.mealTime)}`);
       day.reload();
@@ -210,11 +219,15 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   // fall back to the same currentMealBucketId() guess as before — this is
   // ONLY where the placeholder shows, never the backend's actual
   // resolution.
-  const submitWithPending = async (type, content, { bucket } = {}) => {
+  const submitWithPending = async (type, content, { bucket, audioRef } = {}) => {
     const bucketId = bucket || currentMealBucketId();
     setCapturePending(bucketId);
     try {
-      return await nutrition.submit(type, content, { bucket });
+      // THE VIEWED DAY TRAVELS WITH THE CAPTURE. Without it the row is dated by
+      // the server's clock, so food entered while looking at yesterday appeared
+      // on today — the defect this closes. Only the LOGICAL date follows the
+      // view; createdAt/settledAt stay real wall-clock instants.
+      return await nutrition.submit(type, content, { bucket, date, audioRef });
     } finally {
       setCapturePending(null);
     }
@@ -226,7 +239,25 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   // default for QuickCaptureBar's instances and the specific meal's id for
   // LogTable's.
   const handleVoiceOrPhotoCapture = async (type, dataUrl, bucket) => {
-    handleCaptureResult(await submitWithPending(type, dataUrl, { bucket }));
+    handleCaptureResult(await submitWithPending(type, dataUrl, { bucket }), bucket);
+  };
+
+  // A transcription that failed on the network left the RECORDING on the
+  // server (VoiceMemoStore). Retrying re-sends its ref, so the person never
+  // has to say it again — which is the only thing that makes persisting it
+  // worth doing. A ref the server can no longer find comes back as a 404 with
+  // a sentence, and the retry affordance retires with it.
+  const retryVoiceCapture = async () => {
+    if (!captureRetry) return;
+    const { audioRef, bucket } = captureRetry;
+    setCaptureRetry(null);
+    setCaptureNotice(null);
+    try {
+      handleCaptureResult(await submitWithPending('voice', null, { bucket, audioRef }), bucket);
+    } catch (err) {
+      logger.error('capture.retry.failed', { audioRef, error: err?.message });
+      setCaptureNotice("That recording is no longer available — please record it again.");
+    }
   };
   const onVoiceCapture = (dataUrl, bucket) => handleVoiceOrPhotoCapture('voice', dataUrl, bucket);
   const onPhotoCapture = (dataUrl, bucket) => handleVoiceOrPhotoCapture('image', dataUrl, bucket);
@@ -285,7 +316,12 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
         <div className="health-pending" role="status">
           <p className="health-pending__line">{captureNotice}</p>
           <div className="health-pending__actions">
-            <Button size="xs" variant="subtle" onClick={() => setCaptureNotice(null)}>Dismiss</Button>
+            {captureRetry ? (
+              <Button size="xs" loading={nutrition.busy} disabled={nutrition.busy}
+                onClick={retryVoiceCapture}>Try again</Button>
+            ) : null}
+            <Button size="xs" variant="subtle"
+              onClick={() => { setCaptureNotice(null); setCaptureRetry(null); }}>Dismiss</Button>
           </div>
         </div>
       ) : null}
@@ -301,7 +337,7 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
         onOpenBarcode={openBarcode} captureBusy={nutrition.busy}
         measuredByUuid={measuredByUuid}
         addSlot={addingTo ? (
-          <AddCombobox bucketId={addingTo}
+          <AddCombobox bucketId={addingTo} date={date}
             onDone={() => { setAddingTo(null); day.reload(); }}
             onCancel={() => setAddingTo(null)}
             onMeals={() => { setFocusTemplateId(null); setTemplatesFor(addingTo); }}
@@ -309,7 +345,7 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
         ) : null} />
       <MacroFooter items={day.items} coachLine={coachLine} onCoachTap={onCoachTap} />
       <QuickCaptureBar onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
-        onOpenBarcode={openBarcode} onAddTo={setAddingTo} busy={nutrition.busy} />
+        onOpenBarcode={openBarcode} onAddTo={setAddingTo} busy={nutrition.busy} date={date} />
       <BarcodeCapture open={captureMode === 'barcode'} busy={nutrition.busy} bucket={barcodeTargetBucket}
         onClose={() => { setCaptureMode(null); setBarcodeTargetBucket(null); }}
         onDecode={async (upc, bucket) => {
@@ -320,6 +356,7 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
           day.reload();
         }} />
       <CustomFoodSheet upc={unknownUpc} open={Boolean(unknownUpc)}
+        bucketId={barcodeTargetBucket} date={date}
         onClose={() => setUnknownUpc(null)}
         onCreated={() => { setUnknownUpc(null); day.reload(); }} />
       <EntryEditSheet row={editingRow} open={Boolean(editingRow)}
@@ -334,7 +371,7 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
           day.reload();
           if (err) setCaptureNotice(err.message);
         }} />
-      <TemplatePicker open={Boolean(templatesFor)} bucketId={templatesFor} focusTemplateId={focusTemplateId}
+      <TemplatePicker open={Boolean(templatesFor)} bucketId={templatesFor} date={date} focusTemplateId={focusTemplateId}
         onLogged={() => { setTemplatesFor(null); setFocusTemplateId(null); setAddingTo(null); day.reload(); }}
         onClose={() => { setTemplatesFor(null); setFocusTemplateId(null); }} />
     </div>

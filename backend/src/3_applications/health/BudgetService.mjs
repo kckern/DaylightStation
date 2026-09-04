@@ -4,6 +4,7 @@
 // The UI and the coach both read this — budget math is never computed
 // client-side (spec, Data model §1).
 import { computeDailyBudget } from '#domains/health/services/BudgetMath.mjs';
+import { isISODate } from '#shared/contracts/health/isoDate.mjs';
 import { isCountedRow } from '#shared/contracts/nutrition/countedRows.mjs';
 
 const STALE_WEIGHT_DAYS = 7;
@@ -127,16 +128,6 @@ const rangeInvalid = (message) => {
   const err = new Error(`RANGE_INVALID: ${message}`);
   err.code = 'RANGE_INVALID';
   throw err;
-};
-
-// Two distinct failure modes, both real: "2026-08-32" parses to Invalid Date
-// (toISOString would THROW a RangeError, which would surface as a 500 rather
-// than the 400 this is here to produce), while "2026-02-31" quietly normalizes
-// to March 3. The NaN guard covers the first, the round-trip the second.
-const isISODate = (value) => {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const d = new Date(`${value}T12:00:00Z`);
-  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
 };
 
 // Inclusive [from, to] as YYYY-MM-DD, walked at a noon-UTC anchor so no DST
