@@ -123,7 +123,7 @@ function serializeHealthMetric(metric) {
  * @returns {express.Router}
  */
 export function createHealthRouter(config) {
-  const { healthService, healthOperations, dashboardService, catalogService, longitudinalService, budgetService, savedMealsService, medicalService, photoStore = null, observationPairing = null, iconManifestStore = null, logger = console } = config;
+  const { healthService, healthOperations, dashboardService, catalogService, longitudinalService, budgetService, savedMealsService, templateService = null, medicalService, photoStore = null, observationPairing = null, iconManifestStore = null, logger = console } = config;
   const router = express.Router();
 
   // JSON parsing middleware
@@ -631,16 +631,28 @@ export function createHealthRouter(config) {
 
     /**
      * POST /api/v1/health/nutrition/catalog/quickadd - Quick-add a catalog entry
-     * Body: { catalogEntryId }
+     * Body: { catalogEntryId, mealTime? }
+     *
+     * `mealTime` is the bucket the add row was launched from (Task 9.2). It is
+     * applied by the quick-add itself, which is why the client no longer
+     * follow-up-PUTs the row to move it: that PUT raced the day reload and left
+     * the row in the clock's bucket whenever it failed.
      */
     router.post('/nutrition/catalog/quickadd', asyncHandler(async (req, res) => {
-      const { catalogEntryId } = req.body;
+      const { catalogEntryId, mealTime } = req.body;
       if (!catalogEntryId) {
         return res.status(400).json({ error: 'catalogEntryId is required' });
       }
+      // A phantom bucket must be refused, not passed downstream — the same rule
+      // /nutrition/input applies to its `bucket`.
+      if (mealTime != null && !NUTRITION_MEAL_BUCKETS.includes(mealTime)) {
+        return res.status(400).json({
+          error: `Invalid mealTime: ${mealTime}. Must be one of: ${NUTRITION_MEAL_BUCKETS.join(', ')}`,
+        });
+      }
       const userId = getDefaultUsername();
       try {
-        const item = await catalogService.quickAdd(catalogEntryId, userId);
+        const item = await catalogService.quickAdd(catalogEntryId, userId, { mealTime: mealTime ?? undefined });
         return res.json({ logged: true, item });
       } catch (err) {
         logger.error?.('health.catalog.quickadd.error', { catalogEntryId, error: err.message });
@@ -661,12 +673,28 @@ export function createHealthRouter(config) {
 
     /**
      * GET /api/v1/health/nutrition/catalog/suggest - Ranked suggestions for add-combobox
-     * Query: q (search string), limit (default 12)
+     * Query: q (search string), limit (default 12), bucket (meal bucket, optional)
+     *
+     * `bucket` makes the ranking bucket-aware (PRD F8.1): the Breakfast row's
+     * zero-keystroke list is that person's breakfast regulars. Omitted, the
+     * ranking is the shipped bucket-blind one.
      */
     router.get('/nutrition/catalog/suggest', asyncHandler(async (req, res) => {
       const userId = getDefaultUsername();
-      const { q = '', limit } = req.query;
-      const items = await catalogService.suggest(q, userId, parseInt(limit) || 12);
+      const { q = '', limit, bucket } = req.query;
+      if (bucket != null && !NUTRITION_MEAL_BUCKETS.includes(bucket)) {
+        return res.status(400).json({
+          error: `Invalid bucket: ${bucket}. Must be one of: ${NUTRITION_MEAL_BUCKETS.join(', ')}`,
+        });
+      }
+      const max = parseInt(limit) || 12;
+      const foods = await catalogService.suggest(q, userId, max, { bucket });
+      // Templates slot in behind favourites (PRD F6.4). The ORDER is the
+      // service's, not this route's: a ranking contract spelled out at an
+      // endpoint is a ranking contract nothing can unit-test.
+      const items = templateService
+        ? await templateService.mergeIntoSuggestions(foods, { query: q, userId, limit: max })
+        : foods;
       return res.json({ items });
     }));
 
@@ -858,6 +886,103 @@ export function createHealthRouter(config) {
       } catch (err) {
         if (err.code === 'MEALS_WRITE_FAILED') {
           logger.error?.('health.meals.remove.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        throw err;
+      }
+    }));
+  }
+
+  // ==========================================================================
+  // Meal Templates (TemplateService)
+  //
+  // Distinct from saved meals above, which stay as the copy-day-to-today
+  // transport (PRD F6.3): a template carries core/variant roles and lands as a
+  // dish GROUP, a saved meal is a flat snapshot list.
+  // ==========================================================================
+  if (templateService) {
+    router.get('/nutrition/templates', asyncHandler(async (req, res) => {
+      const includeProposed = req.query.includeProposed === '1' || req.query.includeProposed === 'true';
+      return res.json({ templates: await templateService.list(getDefaultUsername(), { includeProposed }) });
+    }));
+
+    router.post('/nutrition/templates', asyncHandler(async (req, res) => {
+      const { name, icon, components } = req.body || {};
+      try {
+        return res.json({ template: await templateService.create({ name, icon, components }, getDefaultUsername()) });
+      } catch (err) {
+        if (err.code === 'TEMPLATES_WRITE_FAILED') {
+          logger.error?.('health.templates.create.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        return res.status(400).json({ error: err.message, code: err.code });
+      }
+    }));
+
+    router.post('/nutrition/templates/:id/instantiate', asyncHandler(async (req, res) => {
+      const { date, mealTime, variantNames } = req.body || {};
+      if (date !== undefined && date !== null && !DATE_PATTERN.test(String(date))) {
+        return res.status(400).json({ error: 'Invalid date (expected YYYY-MM-DD)', code: 'DATE_INVALID' });
+      }
+      if (mealTime !== undefined && mealTime !== null && !NUTRITION_MEAL_BUCKETS.includes(mealTime)) {
+        return res.status(400).json({ error: `Invalid bucket: ${mealTime}`, code: 'BUCKET_INVALID' });
+      }
+      if (variantNames !== undefined && !Array.isArray(variantNames)) {
+        return res.status(400).json({ error: 'variantNames must be an array', code: 'VARIANTS_INVALID' });
+      }
+      try {
+        return res.json(await templateService.instantiate(req.params.id, getDefaultUsername(), { date, mealTime, variantNames }));
+      } catch (err) {
+        if (err.code === 'TEMPLATE_NOT_FOUND') return res.status(404).json({ error: err.message, code: err.code });
+        // A proposal is not a template yet. 409, not 400: the request is
+        // well-formed and the id is real — the resource is in the wrong state.
+        if (err.code === 'TEMPLATE_NOT_ACTIVE') return res.status(409).json({ error: err.message, code: err.code });
+        // Nothing would be written. 400: the caller chose an empty set.
+        if (err.code === 'TEMPLATE_NO_COMPONENTS') return res.status(400).json({ error: err.message, code: err.code });
+        if (err.code === 'TEMPLATES_WRITE_FAILED') {
+          logger.error?.('health.templates.instantiate.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        throw err;
+      }
+    }));
+
+    // Approve / dismiss a mined proposal (PRD F6.2). Nothing is auto-created:
+    // a proposal becomes a template only here, and a dismissal is permanent.
+    router.post('/nutrition/templates/:id/approve', asyncHandler(async (req, res) => {
+      const { name } = req.body || {};
+      try {
+        return res.json({ template: await templateService.approve(req.params.id, getDefaultUsername(), { name }) });
+      } catch (err) {
+        if (err.code === 'TEMPLATE_NOT_FOUND') return res.status(404).json({ error: err.message, code: err.code });
+        if (err.code === 'TEMPLATES_WRITE_FAILED') {
+          logger.error?.('health.templates.approve.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        throw err;
+      }
+    }));
+
+    router.post('/nutrition/templates/:id/dismiss', asyncHandler(async (req, res) => {
+      try {
+        return res.json(await templateService.dismiss(req.params.id, getDefaultUsername()));
+      } catch (err) {
+        if (err.code === 'TEMPLATE_NOT_FOUND') return res.status(404).json({ error: err.message, code: err.code });
+        if (err.code === 'TEMPLATES_WRITE_FAILED') {
+          logger.error?.('health.templates.dismiss.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        throw err;
+      }
+    }));
+
+    router.delete('/nutrition/templates/:id', asyncHandler(async (req, res) => {
+      try {
+        await templateService.remove(req.params.id, getDefaultUsername());
+        return res.json({ ok: true });
+      } catch (err) {
+        if (err.code === 'TEMPLATES_WRITE_FAILED') {
+          logger.error?.('health.templates.remove.write_failed', { error: err.message });
           return sendInternalError(res, { error: err.message, code: err.code });
         }
         throw err;

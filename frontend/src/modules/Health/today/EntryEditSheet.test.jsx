@@ -506,3 +506,21 @@ describe('EntryEditSheet — icon override', () => {
     expect(screen.queryByRole('button', { name: 'fried-eggs' })).toBeNull();
   });
 });
+
+describe('EntryEditSheet — "Save as meal" writes a TEMPLATE (PRD F6.3)', () => {
+  beforeEach(() => apiMock.mockClear());
+
+  it('POSTs a one-component all-core template, and never touches the saved-meals store', async () => {
+    mount({});
+    fireEvent.click(screen.getByRole('button', { name: 'Save as meal' }));
+    await waitFor(() => expect(apiMock.mock.calls.some(([p]) => p.endsWith('nutrition/templates'))).toBe(true));
+    const [path, body, method] = apiMock.mock.calls.find(([p]) => p.endsWith('nutrition/templates'));
+    expect(path).toBe('api/v1/health/nutrition/templates');
+    expect(method).toBe('POST');
+    expect(body.name).toBe('Eggs');
+    expect(body.components).toEqual([expect.objectContaining({ name: 'Eggs', role: 'core', calories: 140 })]);
+    // The template picker is the only surface that lists kept meals, so a
+    // saved meal written here would be invisible.
+    expect(apiMock.mock.calls.some(([p]) => p.endsWith('nutrition/meals'))).toBe(false);
+  });
+});

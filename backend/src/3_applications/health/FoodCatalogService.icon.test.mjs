@@ -129,4 +129,38 @@ describe('FoodCatalogService.backfill donates icons from stored rows', () => {
     const saved = await h.catalogStore.findByNormalizedName('Eggs', 'u');
     expect(saved.icon).toBeNull();
   });
+
+  // M-1. Every case above keys the name as `label` — the `syncFromLog` row
+  // shape. The nutrilist also holds `item`-shaped rows (the `saveMany` path:
+  // quick-adds, group children, AcceptFoodLog), and on the production hot file
+  // those are the MAJORITY. The backfill's name gate used to read `item.label`
+  // alone, so it silently skipped every one of them — and because this suite
+  // only ever handed it `label` rows, nothing here could see that. Phase 7's
+  // icon donation was 57% dead in production for exactly this reason. Pinned in
+  // BOTH shapes now, so the gate cannot narrow again without a test noticing.
+  it('donates the icon from an `item`-shaped row too — the shape that hid the defect', async () => {
+    const h = harness();
+    h.nutriListStore.findByDate = async (_u, date) => (date === '2026-09-03'
+      ? [{ item: 'Kale', calories: 45, protein: 3, carbs: 9, fat: 1, icon: 'kale' }]
+      : []);
+    await h.svc.backfill('u', 1);
+    const saved = await h.catalogStore.findByNormalizedName('Kale', 'u');
+    expect(saved).not.toBeNull();
+    expect(saved.icon).toBe('kale');
+  });
+
+  // The store's own resolved field wins where a row carries it, and a row that
+  // can supply no name at all is skipped rather than catalogued as 'Unknown'.
+  it('reads a `name`-resolved row, and skips a row with no usable name', async () => {
+    const h = harness();
+    h.nutriListStore.findByDate = async (_u, date) => (date === '2026-09-03'
+      ? [{ name: 'Sunflower Seeds', calories: 200, icon: 'seed' },
+         { name: 'Unknown', calories: 10, icon: 'mystery' },
+         { calories: 5, icon: 'ghost' }]
+      : []);
+    await h.svc.backfill('u', 1);
+    expect((await h.catalogStore.findByNormalizedName('Sunflower Seeds', 'u')).icon).toBe('seed');
+    expect(await h.catalogStore.findByNormalizedName('Unknown', 'u')).toBeNull();
+    expect((await h.catalogStore.getAll('u'))).toHaveLength(1);
+  });
 });

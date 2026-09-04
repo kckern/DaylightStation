@@ -21,8 +21,26 @@ export class FoodCatalogEntry {
     // It sticks to the FOOD, not to one entry (U5.2), which is why it lives
     // here and gets copied onto each quick-added row.
     this.icon = data.icon || null;
+    // Per-meal-bucket usage, keyed by bucket id (morning/afternoon/evening/
+    // night): `{ count, lastUsed, quantity }`. This is what makes the
+    // add-combobox's zero-query list bucket-aware (PRD F8.1) and what supplies
+    // the portion a one-tap quick-add defaults to (F8.3). An entry that has
+    // never been recorded against a bucket carries `{}` — never null, so every
+    // reader can index it without a guard.
+    this.usageByBucket = FoodCatalogEntry.#cloneUsageByBucket(data.usageByBucket);
     this.lastUsed = data.lastUsed;
     this.createdAt = data.createdAt;
+  }
+
+  /** Defensive per-bucket copy: stored records must not alias the caller's object. */
+  static #cloneUsageByBucket(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const out = {};
+    for (const [bucket, usage] of Object.entries(raw)) {
+      if (!usage || typeof usage !== 'object') continue;
+      out[bucket] = { ...usage };
+    }
+    return out;
   }
 
   /**
@@ -37,11 +55,31 @@ export class FoodCatalogEntry {
 
   /**
    * Record another usage of this entry.
+   *
+   * @param {string} lastUsed - YYYY-MM-DD
+   * @param {Object} [options]
+   * @param {string} [options.bucket] - meal bucket this usage landed in. Omitted
+   *   by callers that cannot say which bucket the food was eaten in; the entry's
+   *   bucket history is then simply not advanced (never reset, never guessed).
+   * @param {{grams?: number, unit?: string, amount?: number}} [options.quantity] -
+   *   the portion actually logged, so a later one-tap quick-add in the same
+   *   bucket can default to it (PRD F8.3). Absent leaves the last known portion
+   *   in place rather than clearing it — the same fill-never-clobber rule the
+   *   icon and micro donations follow.
    */
-  recordUsage(lastUsed) {
+  recordUsage(lastUsed, options = {}) {
     if (typeof lastUsed !== 'string' || !lastUsed) throw new Error('FoodCatalogEntry.recordUsage requires lastUsed');
     this.useCount++;
     this.lastUsed = lastUsed;
+
+    const bucket = options?.bucket;
+    if (typeof bucket !== 'string' || !bucket) return;
+    const prior = this.usageByBucket[bucket];
+    this.usageByBucket[bucket] = {
+      count: (prior?.count || 0) + 1,
+      lastUsed,
+      quantity: options?.quantity ?? prior?.quantity ?? null,
+    };
   }
 
   /**
