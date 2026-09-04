@@ -11,6 +11,7 @@ vi.mock('../modules/Health/progress/ProgressView.jsx', () => ({ ProgressView: ()
 vi.mock('../modules/Health/medical/MedicalView.jsx', () => ({ MedicalView: () => <div>MedicalStub</div> }));
 vi.mock('../modules/Health/CoachChat', () => ({ default: () => <div>CoachStub</div> }));
 vi.mock('../modules/Health/ChatOverlay/index.jsx', () => ({ ChatOverlay: () => null }));
+vi.mock('../lib/api.mjs', () => ({ DaylightAPI: vi.fn(async () => ({ userId: 'health-fixture' })) }));
 
 import HealthApp from './HealthApp.jsx';
 
@@ -46,10 +47,10 @@ describe('HealthApp routed tabs', () => {
     expect(document.querySelector('.ds-chrome__tab--active')?.textContent).toContain('Progress');
   });
 
-  it('/health/medical renders the Health (medical) tab directly (deep link)', async () => {
+  it('/health/medical renders the Medical tab directly (deep link)', async () => {
     renderApp('/health/medical');
     expect(await screen.findByText('MedicalStub')).toBeTruthy();
-    expect(document.querySelector('.ds-chrome__tab--active')?.textContent).toContain('Health');
+    expect(document.querySelector('.ds-chrome__tab--active')?.textContent).toContain('Medical');
   });
 
   it('/health/coach renders Coach directly (deep link)', async () => {

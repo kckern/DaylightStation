@@ -35,7 +35,8 @@ point.
 - **Corrections:** a centered desktop dialog / mobile bottom sheet leads with exact
   grams. Preview all nutrient scaling, make several changes, then Save once with
   `expectedVersion`. Delete offers Undo. Focus is contained and restored; scroll
-  locks are shared with Coach.
+  locks are shared with Coach. Replacing the entry dialog with Coach preserves
+  the original focus-return target; overlay Escape closes without clearing a draft.
 - **Context:** Today stays mounted across tabs to preserve drafts, capture retries
   and scroll. Hidden Today stops polling; leaving during a recording stops and
   submits that recording to its original target. Closing the app discards unsent
@@ -46,8 +47,11 @@ point.
 - **Reuse:** saved-food definitions support rename, explicit gram/nutrient basis,
   favorites and removal. Templates support component/role/portion editing.
   These edits affect future logging, never past snapshots. Capture resolves catalog
-  identity and explicit icon pins before writing.
-- **Coach:** the tab and overlay share one runtime and resolved Health user ID.
+  identity and explicit icon pins before writing. Entry favorite reads/writes use
+  stable `foodId`, so a catalog rename cannot redirect an old snapshot's action.
+- **Coach:** the tab and overlay share one runtime, persistent conversation
+  provider, and resolved Health user ID. The provider must stay mounted in the
+  shell: sharing a hook while remounting providers recreates the internal thread.
   It receives selected day/entry context and reads the authoritative ledger.
   Recent visible messages (last 80) survive remount/reload in this browser session;
   this is not cross-device history synchronization.
@@ -873,7 +877,10 @@ depending on origin; entries created via `createCustom` (the barcode-mapping flo
 direct `POST /nutrition/catalog`) are always `source: 'custom'`. `favorite` is a persisted
 boolean, toggled from `EntryEditSheet`'s star button via `PUT /nutrition/catalog/favorite {
 id?, name?, favorite }` (resolves by id or by normalized name), and is the top sort key in
-`suggest()`. The catalog lives at `lifelog/nutrition/food_catalog.yml` per user — the
+`suggest()`. Entries carrying `foodId` read current state with
+`GET /nutrition/catalog/:id` and always toggle by ID. Name fallback is for legacy
+entries without that identity; the historical display name is not a catalog key
+after a rename. The catalog lives at `lifelog/nutrition/food_catalog.yml` per user — the
 pre-existing nutribot path, not a new `apps/health/` file, since quick-add and Telegram
 logging already read from it.
 

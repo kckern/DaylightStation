@@ -291,6 +291,10 @@ export class FoodCatalogService {
     return this.#catalogStore.getRecent(userId, limit);
   }
 
+  async getById(id, userId) {
+    return this.#catalogStore.getById(id, userId);
+  }
+
   /**
    * Backfill catalog from existing nutriday data.
    * Reads nutrilist entries and records each as catalog usage.

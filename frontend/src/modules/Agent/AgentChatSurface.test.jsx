@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, fireEvent, screen, waitFor } from '@testing-library/react';
+import { useState } from 'react';
 import { MantineProvider } from '@mantine/core';
-import { AgentChatSurface } from './AgentChatSurface.jsx';
+import { AgentChatSurface, AgentConversationProvider, useAgentConversation } from './AgentChatSurface.jsx';
+import { Sheet } from '../../lib/ui/Sheet.jsx';
+import { DismissStackProvider } from '../../lib/ui/dismiss/DismissStackProvider.jsx';
 
 describe('AgentChatSurface — basic rendering', () => {
   let originalFetch;
@@ -37,6 +40,48 @@ describe('AgentChatSurface — basic rendering', () => {
       </MantineProvider>
     );
     expect(container.querySelector('.coach-chat--overlay')).toBeTruthy();
+  });
+
+  it.each([false, true])('lets overlay Escape dismiss without clearing the draft (mentions=%s)', withMentions => {
+    const onClose = vi.fn();
+    render(<MantineProvider><DismissStackProvider>
+      <Sheet open title="Coach" onClose={onClose}>
+        <AgentChatSurface agentId="health-coach" userId="fixture" variant="overlay"
+          mentions={withMentions ? { fetchUrl: '/fixture/mentions', categories: [], buildAttachment: item => item } : undefined} />
+      </Sheet>
+    </DismissStackProvider></MantineProvider>);
+    const input = screen.getByRole('textbox');
+    input.focus();
+    fireEvent.change(input, { target: { value: 'Keep this draft' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(input.value).toBe('Keep this draft');
+  });
+
+  it('preserves a real thread while its view is closed and replaced', async () => {
+    globalThis.fetch = vi.fn(async () => new Response(
+      'data: {"type":"text-delta","text":"Retained answer"}\n\ndata: {"type":"done"}\n\n',
+      { headers: { 'Content-Type': 'text/event-stream' } },
+    ));
+    function Flow() {
+      const conversation = useAgentConversation({ agentId: 'fixture', userId: 'fixture' });
+      const [surface, setSurface] = useState('overlay');
+      return <AgentConversationProvider conversation={conversation}>
+        <button onClick={() => setSurface(null)}>Close view</button>
+        <button onClick={() => setSurface('tab')}>Open tab</button>
+        {surface ? <AgentChatSurface key={surface} variant={surface === 'overlay' ? 'overlay' : 'light'} /> : null}
+      </AgentConversationProvider>;
+    }
+    render(<MantineProvider><Flow /></MantineProvider>);
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Remember this' } });
+    fireEvent.submit(input.closest('form'));
+    await screen.findByText('Retained answer');
+    fireEvent.click(screen.getByText('Close view'));
+    expect(screen.queryByText('Retained answer')).toBeNull();
+    fireEvent.click(screen.getByText('Open tab'));
+    await waitFor(() => expect(screen.getByText('Retained answer')).toBeTruthy());
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('does NOT apply coach-chat--overlay for the default (light) variant', () => {

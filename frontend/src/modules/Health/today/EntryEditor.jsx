@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Group, NumberInput, SegmentedControl, Stack, Text, TextInput, UnstyledButton } from '@mantine/core';
-import { Sheet } from '@/lib/ui';
+import { Sheet, ErrorState } from '@/lib/ui';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
+import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { foodGrams, NUTRIENT_KEYS, scaleFoodPortion } from '@shared-contracts/health/foodQuantity.mjs';
 import { BUCKETS } from './mealBuckets.js';
 import { FoodIcon } from './FoodIcon.jsx';
@@ -39,17 +40,18 @@ function Editor({ row, onClose, onChanged, onDeleted, onCoach, observations = []
   const [query, setQuery] = useState('');
   const [icons, setIcons] = useState([]);
   const pending = useRef(false);
+  const catalog = useApiResource(isGroup ? null : row.foodId
+    ? `api/v1/health/nutrition/catalog/${encodeURIComponent(row.foodId)}`
+    : `api/v1/health/nutrition/catalog/suggest?q=${encodeURIComponent(nameOf(row))}`, { label: 'Saved food', logger });
   const factor = originalGrams && Number(grams) > 0 ? Number(grams) / originalGrams : 1;
   const nutrients = { ...scaleFoodPortion(original, factor), ...overrides };
 
   useEffect(() => {
     if (isGroup) return;
-    let live = true;
-    DaylightAPI(`api/v1/health/nutrition/catalog/suggest?q=${encodeURIComponent(nameOf(row))}`)
-      .then(result => { if (live) setFavorite(Boolean(result?.items?.find(item => row.foodId ? item.id === row.foodId : item.name?.toLowerCase() === nameOf(row).toLowerCase())?.favorite)); })
-      .catch(err => { if (live) setError(err); });
-    return () => { live = false; };
-  }, [row, isGroup]);
+    const entry = row.foodId ? catalog.data?.entry
+      : catalog.data?.items?.find(item => item.name?.toLowerCase() === nameOf(row).toLowerCase());
+    setFavorite(Boolean(entry?.favorite));
+  }, [catalog.data, row, isGroup]);
 
   useEffect(() => {
     if (!picking) return;
@@ -129,10 +131,11 @@ function Editor({ row, onClose, onChanged, onDeleted, onCoach, observations = []
             })} />) : null}
         </Stack>
       </details>
+      {catalog.error ? <ErrorState error={catalog.error} onRetry={catalog.reload} label="Saved food" /> : null}
       <Group justify="space-between" gap="xs">
-        {!isGroup ? <Button size="compact-xs" variant="subtle" disabled={busy} aria-label="favorite" aria-pressed={favorite}
+        {!isGroup ? <Button size="compact-xs" variant="subtle" disabled={busy || catalog.loading || Boolean(catalog.error)} aria-label="favorite" aria-pressed={favorite}
           onClick={() => run(async () => {
-            await DaylightAPI('api/v1/health/nutrition/catalog/favorite', { name: nameOf(row), favorite: !favorite }, 'PUT');
+            await DaylightAPI('api/v1/health/nutrition/catalog/favorite', { ...(row.foodId ? { id: row.foodId } : { name: nameOf(row) }), favorite: !favorite }, 'PUT');
             setFavorite(value => !value);
           })}>{favorite ? '★ Favorited' : '☆ Favorite'}</Button> : <span />}
         <Button size="compact-xs" color="red" variant="subtle" disabled={busy} onClick={() => run(async () => {

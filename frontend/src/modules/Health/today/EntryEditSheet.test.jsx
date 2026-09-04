@@ -76,12 +76,13 @@ describe('entry correction dialog', () => {
   });
 
   it('loads existing favorite state and toggles it off', async () => {
-    apiMock.mockResolvedValue({ items: [{ id: 'f1', name: 'Eggs', favorite: true }] });
+    apiMock.mockResolvedValue({ entry: { id: 'f1', name: 'Renamed eggs', favorite: true } });
     mount();
     await waitFor(() => expect(screen.getByRole('button', { name: 'favorite' }).getAttribute('aria-pressed')).toBe('true'));
     fireEvent.click(screen.getByRole('button', { name: 'favorite' }));
     await waitFor(() => expect(writes()).toHaveLength(1));
-    expect(writes()[0][1]).toEqual({ name: 'Eggs', favorite: false });
+    expect(apiMock).toHaveBeenCalledWith('api/v1/health/nutrition/catalog/f1');
+    expect(writes()[0][1]).toEqual({ id: 'f1', favorite: false });
   });
 
   it('deletes immediately and exposes exactly the server-returned group IDs for Undo', async () => {
