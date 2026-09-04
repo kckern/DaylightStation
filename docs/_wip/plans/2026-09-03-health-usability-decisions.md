@@ -142,6 +142,32 @@ one call site with a comment naming the incident, plus a regression test that fa
 the fix and two guard tests proving a real learner with unfinished work is still locked and
 an unloaded roster still locks.
 
+**4.3 The vitest gate was red on `main`, from four stale tests** — `11090ca6e`, `3286bcfa6`.
+Found while checking a Phase 6 report that the gate "printed NEW failing file(s) and still
+exited 0". The gate does no such thing (`scripts/gate-vitest.mjs:344-347` is an unconditional
+`process.exit(1)`); the reading came from a *pipeline's* exit code. The failures were
+therefore real and blocking, and none was a product defect:
+- Two `PianoApp` suites mocked `../lib/api.mjs` without `DaylightMediaPath`, which `SoundPanel`
+  calls at render time. The mock threw *during render*, the app mounted as an empty `<div />`,
+  and it surfaced as nine "unable to find text" failures pointing at the queries — which is
+  why it read as a routing bug.
+- `fitness-timeline-pruning` restated `MAX_SERIES_LENGTH` as a literal `2000`; the real cap is
+  `8640`. Pruning worked; the copy of the constant was wrong. Now imported, not restated.
+- `PlanCreate`'s fake `Response` implemented only `json()` while the error path reads `text()`,
+  so the component rendered `response.text is not a function` as its own alert.
+Gate verified green afterwards: exit 0, "no new failures vs baseline", 12 failing files all in
+the 12-entry baseline.
+
+**4.4 A Dropbox conflicted copy had silently emptied a media folder.**
+`voiceArt.test.js` asserts every instrument basename the module can name exists as a file, and
+57 were missing. Cause: Dropbox resolved a directory conflict by creating
+`instruments (KC Kern's conflicted copy 2026-09-03)` and leaving the canonical folder present
+but **empty** — so the piano SoundPanel illustrations were broken in production with nothing
+logging an error anywhere. Restored by copy (the conflicted copy left intact), ownership
+corrected because `docker exec` writes as root into a user-owned tree.
+**The point worth keeping:** an asset-existence test was the only thing in the entire pipeline
+that could catch this. Every other gate was green over it, exactly as in §5.1.
+
 ---
 
 ## 5. Process findings worth keeping
