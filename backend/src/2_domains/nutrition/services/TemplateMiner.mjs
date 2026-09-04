@@ -10,6 +10,7 @@
  */
 
 import { isCountedRow } from '#shared/contracts/nutrition/countedRows.mjs';
+import { hasMicroData, pickMicros } from './micros.mjs';
 
 /** The rolling window mined, in days (PRD F6.2). */
 export const MINER_WINDOW_DAYS = 90;
@@ -196,7 +197,15 @@ export function mineTemplates({
       // The portion the person MOST RECENTLY logged, never an average: an
       // invented number is a number they never ate.
       const row = latestRow.get(entry.name) || {};
+      // A mined component inherits the observed row's micros, per key and only
+      // where that row carried provenance — the same rule everything else in
+      // this app follows. Dropping them would make a template built from a
+      // scanned food report as uncovered.
+      const claimed = typeof row.microsSource === 'string' && row.microsSource ? row.microsSource : null;
+      const micros = claimed ? pickMicros(row) : {};
       return {
+        ...micros,
+        microsSource: hasMicroData(micros) ? claimed : null,
         name: row.name || row.item || entry.name,
         role,
         calories: Number(row.calories) || 0,

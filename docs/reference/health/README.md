@@ -891,6 +891,14 @@ this path would change what every pre-existing row means.
 Components are **snapshots**, exactly as saved meals were: a later catalog edit never
 reaches back into a template, and never retroactively changes anything logged from one.
 
+**Micros travel with them.** A component carries `fiber/sugar/sodium/cholesterol` and
+`microsSource` under the same rules as everywhere else — *per key* (an unmeasured key is not
+written as a structural zero claiming to be a reading), *only from a provenanced source*,
+and *provenance without numbers is not provenance*. So a template built from a scanned food
+instantiates rows that still report **covered**: logging a meal from a template is never
+less rich than logging its foods one at a time. The group header carries none of it and is
+excluded from both sides of the coverage fraction, as every group header is.
+
 ### Creating one
 
 - **"Save as meal"** on a logged entry's edit sheet — a one-component all-core template.
@@ -906,7 +914,10 @@ All three are `POST /nutrition/templates { name, icon?, components }`.
 `POST /nutrition/templates/:id/instantiate { date?, mealTime?, variantNames? }` →
 `{ groupUuid, items }`. `date` defaults to the **local** day and `mealTime` to the clock;
 an unknown name in `variantNames` selects nothing rather than inventing a component. Core
-is never optional — omitting it from `variantNames` cannot drop it. The template's
+is never optional — omitting it from `variantNames` cannot drop it. A selection that would
+write nothing at all (an all-variant template with nothing toggled) is refused with
+`400 { code: 'TEMPLATE_NO_COMPONENTS' }` rather than filed as a lone empty group; the
+picker's Log button is dead until something is chosen. The template's
 `useCount`/`lastUsed` bump on each instantiation.
 
 A template with no variants logs on the first tap: there is no decision in it, so there is
@@ -1140,7 +1151,7 @@ All under `/api/v1/health/`, from `backend/src/4_api/v1/routers/health.mjs`:
 | `GET /nutrition/meals`, `POST /nutrition/meals`, `POST /nutrition/meals/:id/log`, `DELETE /nutrition/meals/:id` | saved meals — transport for copy-to-today only; no surface lists them |
 | `GET /nutrition/templates?includeProposed=` | meal templates; proposals are hidden unless asked for |
 | `POST /nutrition/templates` | create a template (`{ name, icon?, components }`), 400 on an invalid shape |
-| `POST /nutrition/templates/:id/instantiate` | log it as a dish group (`{ date?, mealTime?, variantNames? }`); 404 unknown, **409** for a proposal nobody approved |
+| `POST /nutrition/templates/:id/instantiate` | log it as a dish group (`{ date?, mealTime?, variantNames? }`); 404 unknown, **409** for a proposal nobody approved, **400** for a selection that would write nothing |
 | `POST /nutrition/templates/:id/approve` | turn a mined proposal into a template (`{ name? }`) |
 | `POST /nutrition/templates/:id/dismiss` | refuse a proposal; its key is remembered forever |
 | `DELETE /nutrition/templates/:id` | remove a template |

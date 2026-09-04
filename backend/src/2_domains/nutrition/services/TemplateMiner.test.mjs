@@ -256,3 +256,27 @@ describe('the proposal itself', () => {
     expect(mineTemplates({ rows: repeat(6, ['Chia', 'Whey']) })).toEqual([]);
   });
 });
+
+describe('mined components inherit micro provenance', () => {
+  const stackWithMicros = (count) => Array.from({ length: count }, (_, day) => ([
+    { uuid: `${day}-0`, name: 'Canned soup', date: daysAgo(day + 1), mealTime: 'afternoon',
+      calories: 200, protein: 8, carbs: 24, fat: 6, fiber: 3, sodium: 890, microsSource: 'catalog', kind: 'item' },
+    { uuid: `${day}-1`, name: 'Crackers', date: daysAgo(day + 1), mealTime: 'afternoon',
+      calories: 120, protein: 2, carbs: 20, fat: 4, fiber: 0, sodium: 0, kind: 'item' },
+  ])).flat();
+
+  it('carries micros and the source from a provenanced row, per key', () => {
+    const [proposal] = mine(stackWithMicros(6));
+    const soup = proposal.components.find((c) => c.name === 'Canned soup');
+    expect(soup).toMatchObject({ fiber: 3, sodium: 890, microsSource: 'catalog' });
+    expect(soup.sugar).toBeUndefined();
+  });
+
+  it('carries nothing from an unprovenanced row — those zeros are structure', () => {
+    const [proposal] = mine(stackWithMicros(6));
+    const crackers = proposal.components.find((c) => c.name === 'Crackers');
+    expect(crackers.microsSource).toBeNull();
+    expect(crackers.fiber).toBeUndefined();
+    expect(crackers.sodium).toBeUndefined();
+  });
+});

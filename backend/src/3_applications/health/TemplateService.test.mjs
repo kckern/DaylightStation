@@ -281,3 +281,75 @@ describe('TemplateService.mergeIntoSuggestions (PRD F6.4)', () => {
     expect(merged.map((e) => e.name)).toEqual(['Fav', 'Morning smoothie']);
   });
 });
+
+describe('TemplateService — micros and their provenance travel with a template', () => {
+  const PROVENANCED = {
+    name: 'Canned soup', role: 'core', calories: 200, protein: 8, carbs: 24, fat: 6,
+    fiber: 3, sodium: 890, microsSource: 'catalog',
+  };
+
+  it('a component built from a provenanced food keeps its micros AND its source', async () => {
+    const t = await svc.create({ name: 'Soup lunch', components: [PROVENANCED] }, 'u');
+    expect(t.components[0]).toMatchObject({ fiber: 3, sodium: 890, microsSource: 'catalog' });
+    // Per KEY: sugar and cholesterol were never measured, so they are not
+    // written as structural zeros claiming to be readings.
+    expect(t.components[0].sugar).toBeUndefined();
+    expect(t.components[0].cholesterol).toBeUndefined();
+  });
+
+  it('instantiated rows carry them too — a template is not a downgrade of the food it came from', async () => {
+    const t = await svc.create({ name: 'Soup lunch', components: [PROVENANCED] }, 'u');
+    await svc.instantiate(t.id, 'u', { date: '2026-09-04', mealTime: 'afternoon' });
+    const child = nutriList.saveMany.mock.calls[0][0].find((r) => r.kind === 'item');
+    expect(child).toMatchObject({ fiber: 3, sodium: 890, microsSource: 'catalog' });
+    // The GROUP header stays clean: it carries no nutrition at all, and groups
+    // are excluded from micro coverage on both sides (decision 2.10).
+    const group = nutriList.saveMany.mock.calls[0][0].find((r) => r.kind === 'group');
+    expect(group.microsSource ?? null).toBeNull();
+  });
+
+  it('an UNPROVENANCED component donates no micros — its zeros are structure, not measurement', async () => {
+    const t = await svc.create({
+      name: 'Toast', components: [{ name: 'Toast', calories: 90, fiber: 0, sodium: 0 }],
+    }, 'u');
+    expect(t.components[0].microsSource).toBeNull();
+    expect(t.components[0].fiber).toBeUndefined();
+    expect(t.components[0].sodium).toBeUndefined();
+  });
+
+  it('provenance WITHOUT numbers is not provenance', async () => {
+    const t = await svc.create({
+      name: 'Claim only', components: [{ name: 'Mystery', calories: 100, microsSource: 'catalog' }],
+    }, 'u');
+    expect(t.components[0].microsSource).toBeNull();
+  });
+
+  it('a measured ZERO is data and survives', async () => {
+    const t = await svc.create({
+      name: 'Water', components: [{ name: 'Water', calories: 0, sodium: 0, microsSource: 'ai' }],
+    }, 'u');
+    expect(t.components[0]).toMatchObject({ sodium: 0, microsSource: 'ai' });
+  });
+});
+
+describe('TemplateService — a template must log something', () => {
+  it('refuses an all-variant template with nothing toggled rather than writing a lone empty group', async () => {
+    const t = await svc.create({
+      name: 'Pick one', components: [
+        { name: 'Mango', role: 'variant', calories: 100 },
+        { name: 'Blueberries', role: 'variant', calories: 80 },
+      ],
+    }, 'u');
+    await expect(svc.instantiate(t.id, 'u', { date: '2026-09-04', mealTime: 'morning', variantNames: [] }))
+      .rejects.toMatchObject({ code: 'TEMPLATE_NO_COMPONENTS' });
+    expect(nutriList.saveMany).not.toHaveBeenCalled();
+  });
+
+  it('...and logs normally once one is chosen', async () => {
+    const t = await svc.create({
+      name: 'Pick one', components: [{ name: 'Mango', role: 'variant', calories: 100 }],
+    }, 'u');
+    await svc.instantiate(t.id, 'u', { date: '2026-09-04', mealTime: 'morning', variantNames: ['Mango'] });
+    expect(nutriList.saveMany.mock.calls[0][0]).toHaveLength(2);
+  });
+});
