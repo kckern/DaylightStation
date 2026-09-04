@@ -1,0 +1,56 @@
+import { describe, it, expect } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { MonthBlock } from './MonthBlock.jsx';
+
+const day = (date, food, status = 'under') => ({
+  date, budget: 2000, food, exercise: 0, remaining: 2000 - food, status, macros: {},
+});
+const gap = (date) => ({ date, error: 'NO_WEIGHT_DATA' });
+
+const iso = (i) => new Date(Date.UTC(2026, 7, 6 + i)).toISOString().slice(0, 10);
+
+describe('MonthBlock', () => {
+  it('renders one slot per day it is given, and fetches nothing itself', () => {
+    const days = Array.from({ length: 30 }, (_, i) => day(iso(i), 1000));
+    render(<MonthBlock days={days} />);
+    expect(document.querySelectorAll('.health-monthblock__slot').length).toBe(30);
+    expect(screen.getByText('Last 30 days')).toBeTruthy();
+  });
+
+  it('uses the SAME bar arithmetic as the week strip', () => {
+    render(<MonthBlock days={[day(iso(0), 1000), day(iso(1), 2000), day(iso(2), 4000, 'over')]} />);
+    expect(screen.getByTestId(`monthbar-fill-${iso(0)}`).style.height).toBe('40%');  // 50% of budget
+    expect(screen.getByTestId(`monthbar-fill-${iso(1)}`).style.height).toBe('80%');  // on budget
+    expect(screen.getByTestId(`monthbar-fill-${iso(2)}`).style.height).toBe('100%'); // clamped
+    expect(screen.getByTestId(`monthbar-fill-${iso(2)}`).className).toMatch(/fill--over/);
+  });
+
+  // The same honesty rule as the strip, at a month's zoom.
+  it('renders a hole hollow and a genuine zero day as a real empty bar', () => {
+    render(<MonthBlock days={[gap(iso(0)), day(iso(1), 0)]} />);
+    expect(screen.getByTestId(`monthbar-gap-${iso(0)}`)).toBeTruthy();
+    expect(screen.queryByTestId(`monthbar-fill-${iso(0)}`)).toBeNull();
+    expect(screen.getByTestId(`monthbar-fill-${iso(1)}`).style.height).toBe('0%');
+    expect(screen.queryByTestId(`monthbar-gap-${iso(1)}`)).toBeNull();
+  });
+
+  it('states the number of holes rather than letting them read as good days', () => {
+    render(<MonthBlock days={[gap(iso(0)), gap(iso(1)), day(iso(2), 1000), day(iso(3), 4000, 'over')]} />);
+    const caption = document.querySelector('.health-monthblock__caption').textContent;
+    expect(caption).toContain('1 over budget');
+    expect(caption).toContain('2 without data');
+    expect(document.querySelector('.health-monthblock__bars').getAttribute('aria-label'))
+      .toBe('2 days with data, 1 over budget, 2 without data');
+  });
+
+  it('says "no data yet" rather than "0 over budget" when the whole month is holes', () => {
+    render(<MonthBlock days={[gap(iso(0)), gap(iso(1))]} />);
+    expect(document.querySelector('.health-monthblock__caption').textContent).toContain('No data yet');
+  });
+
+  it('renders an empty, non-crashing block before anything has loaded', () => {
+    render(<MonthBlock days={[]} loading />);
+    expect(document.querySelector('.health-monthblock').getAttribute('aria-busy')).toBe('true');
+    expect(document.querySelectorAll('.health-monthblock__slot').length).toBe(0);
+  });
+});
