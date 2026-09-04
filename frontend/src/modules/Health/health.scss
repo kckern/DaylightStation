@@ -531,11 +531,18 @@ $health-aside-gap: 1.5rem;
   padding: 0.4rem 0.25rem;
   &__list { list-style: none; margin: 0.25rem 0 0; padding: 0; }
   &__item {
-    display: flex; gap: 0.4rem; align-items: baseline; width: 100%;
+    // `center`, not `baseline`: the row now carries a 24px image beside text,
+    // and a baseline-aligned image hangs its whole box off the text baseline.
+    display: flex; gap: 0.4rem; align-items: center; width: 100%;
     padding: 0.4rem 0.5rem; border-radius: 6px; color: var(--ds-text-high);
+    // A suggestion is a tap target on a phone (A2: >= 44px).
+    min-height: 44px;
     &--hi, &:hover { background: var(--ds-surface-alt); }
     &--fav .health-suggest__star { color: var(--ds-warning); }
   }
+  // Same 24px as the log row's icon — one picture size for the food, wherever
+  // it appears. `flex: none` so a wide glyph can never squeeze the name.
+  &__icon { width: 24px; height: 24px; object-fit: contain; flex: none; }
   &__kcal { margin-left: auto; color: var(--ds-text-low); font-variant-numeric: tabular-nums; font-size: 0.8rem; }
   &__error { color: var(--ds-danger); font-size: 0.8rem; margin: 0.25rem 0 0; }
   &__saved-meals {

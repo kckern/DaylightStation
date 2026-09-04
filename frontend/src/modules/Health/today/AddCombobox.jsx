@@ -2,8 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import { TextInput, UnstyledButton, Loader } from '@mantine/core';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
+import { nutritionIconUrl } from './iconUrl.js';
 
 const logger = createAppLogger('health').child('add-combobox');
+
+// The zero-keystroke list is a SHORTLIST of this bucket's regulars, not a
+// browse surface: it opens with no user intent behind it, and every row it
+// draws fires an icon request. Eight fits a phone screen without scrolling and
+// keeps that burst nowhere near the render-herd shape Phase 7 had to bound.
+// The TYPED list keeps the server default — there the user is steering, and a
+// filtered list is already short.
+const OPEN_SUGGEST_LIMIT = 8;
 
 export function AddCombobox({ bucketId, onDone, onCancel, onSavedMeals }) {
   const [text, setText] = useState('');
@@ -11,37 +20,58 @@ export function AddCombobox({ bucketId, onDone, onCancel, onSavedMeals }) {
   const [highlight, setHighlight] = useState(-1);
   const [phase, setPhase] = useState('typing'); // typing | parsing
   const [error, setError] = useState(null);
+  const [failedIcons, setFailedIcons] = useState(() => new Set());
   const debounceRef = useRef(null);
   const ridRef = useRef(0); // guards against a slow older suggest response overwriting a newer one
 
+  // One effect for both lists. With text, it is the query path exactly as
+  // before (debounced). Without, it is the bucket-aware zero-keystroke list
+  // (PRD F8.1) — fired immediately, because there is no keystroke to wait for
+  // and a debounce here would just be latency between the tap and the
+  // suggestions. Both share the `rid` guard, so a slow open cannot overwrite a
+  // fast first keystroke, or vice versa.
   useEffect(() => {
-    if (!text.trim()) { setItems([]); return undefined; }
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
+    const q = text.trim();
+    const path = q
+      ? `api/v1/health/nutrition/catalog/suggest?q=${encodeURIComponent(q)}`
+      : `api/v1/health/nutrition/catalog/suggest?${bucketId ? `bucket=${encodeURIComponent(bucketId)}&` : ''}limit=${OPEN_SUGGEST_LIMIT}`;
+    const fetchSuggestions = async () => {
       const rid = ++ridRef.current;
       try {
-        const res = await DaylightAPI(`api/v1/health/nutrition/catalog/suggest?q=${encodeURIComponent(text.trim())}`);
+        const res = await DaylightAPI(path);
         if (ridRef.current !== rid) return; // a newer keystroke's request already landed
-        setItems(res?.items || []);
+        const next = res?.items || [];
+        setItems(next);
         setHighlight(-1);
+        if (!q) logger.debug('suggest.opened', { bucket: bucketId ?? null, count: next.length });
       } catch (err) {
         if (ridRef.current !== rid) return;
-        logger.warn('suggest.failed', { error: err?.message });
+        logger.warn('suggest.failed', { error: err?.message, typed: q.length > 0 });
       }
-    }, 250);
+    };
+    if (!q) { fetchSuggestions(); return undefined; }
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(fetchSuggestions, 250);
     return () => clearTimeout(debounceRef.current);
-  }, [text]);
+  }, [text, bucketId]);
 
   const pick = async (entry) => {
     setPhase('parsing'); setError(null);
     try {
-      const row = await DaylightAPI('api/v1/health/nutrition/catalog/quickadd', { catalogEntryId: entry.id }, 'POST');
-      // The real endpoint responds { logged: true, item: { uuid, ... } } — uuid is
-      // never top-level. Tolerate both shapes defensively.
-      const uuid = row?.item?.uuid ?? row?.uuid;
-      if (uuid && bucketId) {
-        await DaylightAPI(`api/v1/health/nutrilist/${uuid}`, { mealTime: bucketId }, 'PUT');
-      }
+      // One request, not two. `mealTime` travels WITH the quick-add (Task 9.1),
+      // which retires the follow-up PUT this used to make. That PUT was doing
+      // exactly two things beyond moving the row — stamping settled/settledBy
+      // (the generic update path ratifies by default) and cascading a group's
+      // mealTime to its children — and quickAdd now writes the stamp itself
+      // (PRD F8.3), while a quick-added row is `kind: 'item'` with no children
+      // and never had anything to cascade. Deleting it also closes a real hole:
+      // when the PUT failed, the row was left in the CLOCK's bucket and
+      // unsettled, with the combobox already closed.
+      await DaylightAPI(
+        'api/v1/health/nutrition/catalog/quickadd',
+        { catalogEntryId: entry.id, ...(bucketId ? { mealTime: bucketId } : {}) },
+        'POST',
+      );
       logger.info('quickadd.done', { entry: entry.name, bucket: bucketId });
       onDone();
     } catch (err) {
@@ -85,18 +115,37 @@ export function AddCombobox({ bucketId, onDone, onCancel, onSavedMeals }) {
         rightSection={phase === 'parsing' ? <Loader size="xs" /> : null} />
       {error ? <p className="health-suggest__error">{error.message}</p> : null}
       <ul className="health-suggest__list" role="listbox">
-        {items.map((entry, i) => (
-          <li key={entry.id}>
-            <UnstyledButton
-              className={`health-suggest__item${entry.favorite ? ' health-suggest__item--fav' : ''}${i === highlight ? ' health-suggest__item--hi' : ''}`}
-              role="option" aria-selected={i === highlight}
-              onClick={() => pick(entry)}>
-              {entry.favorite ? <span className="health-suggest__star" aria-label="favorite">★</span> : null}
-              <span>{entry.name}</span>
-              <span className="health-suggest__kcal">{entry.nutrients?.calories ?? ''}</span>
-            </UnstyledButton>
-          </li>
-        ))}
+        {items.map((entry, i) => {
+          // The food's picture where it has one (PRD F5.3 asks for it here too).
+          // A slug whose image fails is retired by NAME, so a later suggestion of
+          // the same food does not re-request it — and the row simply loses the
+          // icon rather than showing a broken image.
+          const iconUrl = failedIcons.has(entry.icon) ? null : nutritionIconUrl(entry.icon);
+          return (
+            <li key={entry.id}>
+              <UnstyledButton
+                className={`health-suggest__item${entry.favorite ? ' health-suggest__item--fav' : ''}${i === highlight ? ' health-suggest__item--hi' : ''}`}
+                role="option" aria-selected={i === highlight}
+                onClick={() => pick(entry)}>
+                {entry.favorite ? <span className="health-suggest__star" aria-label="favorite">★</span> : null}
+                {iconUrl ? (
+                  <img
+                    className="health-suggest__icon"
+                    src={iconUrl}
+                    alt=""
+                    loading="lazy"
+                    onError={() => {
+                      logger.debug('suggest.icon_failed', { icon: entry.icon });
+                      setFailedIcons((prev) => new Set(prev).add(entry.icon));
+                    }}
+                  />
+                ) : null}
+                <span>{entry.name}</span>
+                <span className="health-suggest__kcal">{entry.nutrients?.calories ?? ''}</span>
+              </UnstyledButton>
+            </li>
+          );
+        })}
       </ul>
       {onSavedMeals ? (
         <UnstyledButton className="health-suggest__saved-meals" onClick={onSavedMeals}>
