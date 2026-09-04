@@ -15,6 +15,7 @@
 export class WebNutribotAdapter {
   #inputRouter;
   #foodLogStore;
+  #voiceMemoStore;
   #logger;
 
   /**
@@ -25,12 +26,17 @@ export class WebNutribotAdapter {
    *   no query-side methods of its own — this is the cleanest seam onto the
    *   store the nutribot container already holds, without threading a whole
    *   nutribot use case through the web adapter.
+   * @param {Object} [config.voiceMemoStore] - VoiceMemoStore. When present,
+   *   a voice capture's bytes are written to disk BEFORE transcription is
+   *   attempted, so a transient upstream failure costs a retry rather than
+   *   the recording. Absent, the behaviour is exactly as before.
    * @param {Object} [config.logger]
    */
   constructor(config) {
     if (!config.inputRouter) throw new Error('WebNutribotAdapter requires inputRouter');
     this.#inputRouter = config.inputRouter;
     this.#foodLogStore = config.foodLogStore || null;
+    this.#voiceMemoStore = config.voiceMemoStore || null;
     this.#logger = config.logger || null;
   }
 
@@ -77,6 +83,27 @@ export class WebNutribotAdapter {
   }
 
   /**
+   * Write a captured voice memo to the user's own store.
+   *
+   * NEVER throws: a store that is not configured, or a disk that refuses the
+   * write, must not stop the transcription that was about to happen anyway.
+   * Returns null when nothing was stored, which is what downstream reads as
+   * "there is no saved copy to point the person at".
+   *
+   * @private
+   * @returns {Promise<string|null>} audioRef
+   */
+  async #persistVoiceMemo(userId, buffer, mimeType) {
+    if (!this.#voiceMemoStore) return null;
+    try {
+      return await this.#voiceMemoStore.save(userId, buffer, { mimeType });
+    } catch (err) {
+      this.#getLogger().warn?.('web-nutribot.voice.persist_failed', { userId, error: err.message });
+      return null;
+    }
+  }
+
+  /**
    * Process a nutrition input from the web UI.
    *
    * @param {Object} input
@@ -89,6 +116,10 @@ export class WebNutribotAdapter {
    *   from. Validated by the HTTP boundary (health.mjs) before it ever reaches
    *   here — this adapter just threads it onto the event for the router's
    *   precedence seam (NutribotInputRouter#resolveMealTime).
+   * @param {string} [input.audioRef] - A `va_*` ref for a voice memo ALREADY in
+   *   this user's store. Supplied instead of `content` when a person retries a
+   *   capture whose transcription failed: the bytes are read back rather than
+   *   recorded again, which is the entire point of persisting them.
    * @param {string} [input.date] - Pre-validated `YYYY-MM-DD` day the client is
    *   LOOKING AT. Threaded onto the event the same way `bucket` is: the use
    *   cases date their rows by it, and the text parse treats it as "today" so
@@ -96,7 +127,7 @@ export class WebNutribotAdapter {
    * @returns {Promise<Object>} Captured response from the bot pipeline
    */
   async process(input) {
-    const { type, content, userId, bucket, date } = input;
+    const { type, content, userId, bucket, date, audioRef: retryAudioRef } = input;
     const conversationId = `web:${userId}`;
 
     const event = {
@@ -120,6 +151,18 @@ export class WebNutribotAdapter {
         routerType = 'upc';
         break;
       case 'voice': {
+        // A RETRY reads the memo back rather than asking for it again — the
+        // whole reason the bytes were written before the first attempt.
+        if (retryAudioRef) {
+          const stored = await this.#voiceMemoStore?.read(userId, retryAudioRef);
+          if (!stored) {
+            const err = new Error('That recording is no longer available');
+            err.code = 'AUDIO_NOT_FOUND';
+            throw err;
+          }
+          event.payload.fileId = { buffer: stored.buffer, mimeType: stored.mimeType, audioRef: retryAudioRef };
+          break;
+        }
         // handleVoice forwards event.payload.fileId straight through as
         // voiceData.fileId, which LogFoodFromVoice hands unchanged to
         // messagingGateway.transcribeVoice(fileId). Telegram passes a plain
@@ -127,7 +170,14 @@ export class WebNutribotAdapter {
         // this { buffer, mimeType } shape and transcribes the buffer
         // directly, skipping the Telegram file-download step entirely.
         const { buffer, mimeType } = this.#decodeDataUrl(content, 'voice');
-        event.payload.fileId = { buffer, mimeType };
+        // PERSIST FIRST, TRANSCRIBE SECOND. Until this landed the recording
+        // existed only as this Buffer: when Whisper failed (2026-09-04, three
+        // attempts, ETIMEDOUT then two socket hang-ups) the memo was gone and
+        // the person had to say it all again. Storage failures are logged and
+        // swallowed — losing the ability to RETRY is bad, but refusing to
+        // transcribe a memo we could have transcribed is worse.
+        const audioRef = await this.#persistVoiceMemo(userId, buffer, mimeType);
+        event.payload.fileId = { buffer, mimeType, audioRef };
         break;
       }
       case 'image':
@@ -195,6 +245,16 @@ export class WebNutribotAdapter {
     if (routerResult && (routerResult.mealTime !== undefined || routerResult.moved !== undefined)) {
       response.mealTime = routerResult.mealTime ?? null;
       response.moved = routerResult.moved === true;
+    }
+
+    // A transcription that never happened is reported as such, not as a
+    // silent empty result: the human-readable line is already in `messages`
+    // (the Today view renders it in its notice banner), and these two fields
+    // are what a client needs to offer a retry over the SAVED bytes rather
+    // than asking the person to record again.
+    if (routerType === 'voice' && routerResult?.result?.code === 'TRANSCRIBE_FAILED') {
+      response.transcribeFailed = true;
+      response.audioRef = routerResult.result.audioRef ?? null;
     }
 
     // Barcode lookups surface use-case-level fields (success, unknownUpc, upc,

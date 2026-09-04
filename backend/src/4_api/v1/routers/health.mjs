@@ -25,6 +25,12 @@ const PHOTO_REF_PATTERN = /^ph_[A-Za-z0-9]+$/;
 // duplicated here, not imported, for the same reason as PHOTO_REF_PATTERN
 // above: the API layer may not import domains directly (api-no-domains).
 const NUTRITION_MEAL_BUCKETS = ['morning', 'afternoon', 'evening', 'night'];
+// Duplicated from VoiceMemoStore's AUDIO_REF_PATTERN for the same reason
+// NUTRITION_MEAL_BUCKETS is duplicated from MealTimes: the API layer may not
+// import an adapter (`api-no-adapters`). The store re-checks it against its own
+// allowlist before the ref touches a path, so this is a shape gate, not the
+// security boundary.
+const AUDIO_REF_PATTERN = /^va_[A-Za-z0-9]+$/;
 
 // Observation ids are exactly what `YamlObservationStore.append` mints (uuid v4), so
 // the allowlist can be the UUID shape itself. Checked BEFORE the id reaches any store
@@ -1073,10 +1079,13 @@ export function createHealthRouter(config) {
      *     VIEWED day rather than the server's. A date the person names out loud
      *     still beats it, exactly as an explicitly named meal beats `bucket`.
      *     ABSENT MEANS TODAY; it is never coerced to null.
+     *   - audioRef: `va_*` (optional, voice only) — retry a capture whose
+     *     transcription failed, over the recording already in the user's store.
+     *     Sent INSTEAD of `content`; nothing is re-recorded.
      */
     router.post('/nutrition/input', asyncHandler(async (req, res) => {
       const userId = getDefaultUsername();
-      const { type, content, bucket, date } = req.body;
+      const { type, content, bucket, date, audioRef } = req.body;
       if (!type) {
         return res.status(400).json({ error: 'type is required (text, voice, image, barcode)' });
       }
@@ -1090,10 +1099,24 @@ export function createHealthRouter(config) {
       }
       const dateError = validateOptionalDate(date);
       if (dateError) return res.status(400).json(dateError);
+      if (audioRef != null && !AUDIO_REF_PATTERN.test(String(audioRef))) {
+        return res.status(400).json({ error: 'Invalid audioRef', code: 'AUDIO_REF_INVALID' });
+      }
       try {
-        const result = await healthOperations.processNutritionInput({ type, content, userId, bucket, date });
+        const result = await healthOperations.processNutritionInput({
+          type, content, userId, bucket, date, audioRef: audioRef ?? undefined,
+        });
         return res.json(result);
       } catch (err) {
+        // A retry pointed at a memo that is not there is the caller's problem
+        // and has an answer a person can act on. It is not a 500.
+        if (err.code === 'AUDIO_NOT_FOUND') {
+          logger.warn?.('health.nutrition.input.audio_missing', { audioRef });
+          return res.status(404).json({
+            error: "That recording is no longer available — please record it again.",
+            code: 'AUDIO_NOT_FOUND',
+          });
+        }
         logger.error?.('health.nutrition.input.error', { type, error: err.message });
         return sendInternalError(res, { error: err.message });
       }

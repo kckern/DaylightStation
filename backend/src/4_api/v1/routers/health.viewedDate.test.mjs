@@ -130,3 +130,55 @@ describe('POST /nutrition/templates/:id/instantiate — a REAL calendar day', ()
     expect(calls.instantiate).toHaveLength(0);
   });
 });
+
+// ── The retry over a saved recording (defect 2) ────────────────────────────
+describe('POST /nutrition/input — retrying a saved voice memo', () => {
+  it('threads a well-formed audioRef through to the pipeline', async () => {
+    const { app, healthOperations } = makeApp();
+    const res = await request(app)
+      .post('/api/v1/health/nutrition/input')
+      .send({ type: 'voice', audioRef: 'va_abc123', bucket: 'evening' });
+    expect(res.status).toBe(200);
+    const [input] = healthOperations.processNutritionInput.mock.calls[0];
+    expect(input.audioRef).toBe('va_abc123');
+  });
+
+  it('an absent audioRef reaches the pipeline as undefined, not null', async () => {
+    const { app, healthOperations } = makeApp();
+    await request(app).post('/api/v1/health/nutrition/input').send({ type: 'text', content: 'apple' });
+    expect(healthOperations.processNutritionInput.mock.calls[0][0].audioRef).toBeUndefined();
+  });
+
+  it.each(['../../etc/passwd', 'ph_abc', 'va_../x', 'va_', '', 'VA_abc'])(
+    '400s on a malformed audioRef (%s) and never reaches the pipeline', async (bad) => {
+      const { app, healthOperations } = makeApp();
+      const res = await request(app)
+        .post('/api/v1/health/nutrition/input')
+        .send({ type: 'voice', audioRef: bad });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('AUDIO_REF_INVALID');
+      expect(healthOperations.processNutritionInput).not.toHaveBeenCalled();
+    });
+
+  it('a ref the store cannot find is a 404 with a sentence, NOT a 500 with an error string', async () => {
+    const { app, healthOperations } = makeApp();
+    healthOperations.processNutritionInput.mockImplementation(async () => {
+      throw Object.assign(new Error('That recording is no longer available'), { code: 'AUDIO_NOT_FOUND' });
+    });
+    const res = await request(app)
+      .post('/api/v1/health/nutrition/input')
+      .send({ type: 'voice', audioRef: 'va_gone' });
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe('AUDIO_NOT_FOUND');
+    expect(res.body.error).toMatch(/record it again/i);
+  });
+
+  it('an unexpected failure is still a 500 — the 404 must not swallow real errors', async () => {
+    const { app, healthOperations } = makeApp();
+    healthOperations.processNutritionInput.mockImplementation(async () => { throw new Error('kaboom'); });
+    const res = await request(app)
+      .post('/api/v1/health/nutrition/input')
+      .send({ type: 'voice', audioRef: 'va_abc123' });
+    expect(res.status).toBe(500);
+  });
+});
