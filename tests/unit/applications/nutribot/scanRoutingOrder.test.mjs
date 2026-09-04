@@ -11,7 +11,6 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { CompositionStore } from '#apps/nutribot/CompositionStore.mjs';
 import { ApplyScanToComposition } from '#apps/nutribot/usecases/ApplyScanToComposition.mjs';
 
 const CONFIG = {
@@ -23,12 +22,21 @@ const CONFIG = {
 
 const SCALE = 'kitchen';
 
+// What these tests assert is the `handled` flag, never the composition — so the
+// surface only has to accept the writes without throwing. Where the SLOTS matter,
+// `ApplyScanToComposition.test.mjs` drives the real observation service instead.
+const inertSurface = () => ({
+  setWeight: () => {}, setDensity: () => {}, setContainer: () => {},
+  endPlacement: () => false, clear: () => false, undo: () => false,
+  read: () => null,
+});
+
 describe('scan routing order (namespace-first, UPC fallthrough)', () => {
   let apply;
 
   beforeEach(() => {
     apply = new ApplyScanToComposition({
-      store: new CompositionStore({ now: () => 1_000 }),
+      store: inertSurface(),
       config: CONFIG,
     });
   });

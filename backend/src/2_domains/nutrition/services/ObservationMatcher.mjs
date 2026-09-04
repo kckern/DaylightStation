@@ -1,7 +1,7 @@
 /**
  * Pure matching rules: which scale OBSERVATIONS belong to which food-log ENTRY.
  *
- * Phase 5 replaces `CompositionStore` (`3_applications/nutribot/CompositionStore.mjs`),
+ * This replaces an in-memory, per-scale composition buffer,
  * an in-memory `Map<scaleId, {composition, touchedAt}>`, with a durable, re-pairable
  * pipeline: raw scale signals persist as `Observation` rows
  * (`1_adapters/persistence/yaml/YamlObservationStore.mjs`) and THIS module recomputes,
@@ -24,10 +24,10 @@
  * single nearest eligible candidate.
  *
  * `composition` answers the other half: what does an observation do when NO entry exists
- * yet for it to enrich? That is what `CompositionStore` held per scale (grams / density /
+ * yet for it to enrich? That is the in-progress composition per scale (grams / density /
  * container slots, "is it complete"). Every OPEN weight/density/container observation
  * that did NOT resolve to an existing entry, and is still within the window of `nowTs`,
- * is merged into a `CompositionStore`-shaped snapshot the caller (Task 5.3's
+ * is merged into a composition snapshot the caller (the scale observation service
  * `ObservationService`) can use to decide whether a NEW entry should be created now. A
  * `upc` observation is never part of a composition — it names a product, not a scale
  * slot — so it can only ever appear in `pairings` or be left alone.
@@ -45,9 +45,9 @@
  * choice the matcher itself knows was contested — without having to re-derive "how many
  * other entries could this have been" itself.
  *
- * ## Why this is not just "port CompositionStore to be stateless"
+ * ## Why this is not just a stateless port of the old buffer
  *
- * `CompositionStore` never looked at food-log entries at all — every weight it saw became
+ * The old buffer never looked at food-log entries at all — every weight it saw became
  * (via `LogFoodFromScale`) a BRAND NEW entry. This module's `pairings` half is genuinely
  * new behavior: a durable observation can now attach itself to an entry that already
  * exists, which is the whole point of storing it durably instead of holding it only in
@@ -56,7 +56,7 @@
  * @module nutrition/services/ObservationMatcher
  */
 
-/** Parity with `CompositionStore`'s `DEFAULT_WINDOW_MS` / the shipped 900s composition window. */
+/** The shipped 900 s composition window. */
 export const MATCH_WINDOW_MS = 900_000;
 
 /** Sanity bound on weight-implied calorie density. No real food is 20 kcal/gram; pure fat is ~9. */
@@ -179,7 +179,7 @@ function isPlausibleWeightPairing(observation, entry) {
   // commit path refuses outright ("A non-gram unit refuses to commit outright" —
   // docs/reference/nutrition/README.md). The unit is not a `null` narrower than 'g' by
   // default per `YamlObservationStore.append`, but a caller could still hand this module
-  // an `'oz'`/`'ml'` weight; treat it the same way the bridge does — not a candidate for
+  // an `'oz'`/`'ml'` weight; treat it the same way the commit path does — not a candidate for
   // an entry whose calories were computed against net GRAMS.
   if (observation.unit != null && observation.unit !== 'g') return false;
   const calories = entry?.calories;
@@ -248,8 +248,8 @@ function findBestCandidate(observation, obsTs, entries) {
 
 /**
  * Merge the OPEN weight/density/container observations that found no entry to pair to
- * into a `CompositionStore`-shaped snapshot — the in-progress state a caller can use to
- * decide whether to quiet-commit a brand-new entry, exactly as `CompositionStore.read()`
+ * into a composition snapshot — the in-progress state a caller can use to
+ * decide whether to quiet-commit a brand-new entry, the same question `read()`
  * used to report for its in-memory Map. `upc` observations never contribute — they name a
  * product, not one of the three composition slots.
  *

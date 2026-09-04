@@ -1,12 +1,18 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { CompositionStore } from '#apps/nutribot/CompositionStore.mjs';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { YamlObservationStore } from '#adapters/persistence/yaml/YamlObservationStore.mjs';
+import { createObservationService } from '#apps/nutrition/ObservationService.mjs';
 import { ApplyScanToComposition } from '#apps/nutribot/usecases/ApplyScanToComposition.mjs';
 
 /**
  * Lets one test hand the use case a parse result the grammar cannot currently
  * produce, standing in for a FUTURE fourth kind. Nothing else is stubbed: when
  * `forcedParse.value` is undefined (every other test) the real `parseScan` runs,
- * so these stay integration tests against the real grammar and the real store.
+ * so these stay integration tests against the real grammar and the real
+ * composition surface — the durable one the fridge sheet actually writes to,
+ * over a real observation ledger on a temp directory.
  */
 const forcedParse = vi.hoisted(() => ({ value: undefined }));
 vi.mock('#domains/nutrition/index.mjs', async (importOriginal) => {
@@ -25,12 +31,35 @@ const CONFIG = {
   containers: { items: [{ id: 'mug', label: 'Mug', emoji: '☕', grams: 350 }] },
 };
 
+const silent = { info() {}, warn() {}, debug() {}, error() {} };
+
+/**
+ * The composition surface as the fridge sheet meets it in production: the scale
+ * observation service over a real ledger. The prompt half is stubbed out (no scale
+ * signals are published here, so nothing ever posts) — the scan half is entirely real.
+ */
+function makeSurface() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apply-scan-'));
+  return createObservationService({
+    scaleGateway: { subscribe: () => () => {} },
+    observationStore: new YamlObservationStore({
+      dataService: { user: { resolveDir: (rel, userId) => path.join(dir, userId, rel) } },
+      logger: silent,
+    }),
+    nutribotContainer: { getLogFoodFromScale: () => ({ execute: async () => ({ success: false }) }) },
+    userId: 'kckern',
+    timezone: 'UTC',
+    clock: () => new Date(Date.UTC(2026, 8, 2, 18, 0, 0)),
+    scheduler: { setTimeout: () => 1, clearTimeout: () => {} },
+    logger: silent,
+  });
+}
+
 describe('ApplyScanToComposition', () => {
-  let store; let apply; let clock;
+  let store; let apply;
 
   beforeEach(() => {
-    clock = 1_000;
-    store = new CompositionStore({ now: () => clock });
+    store = makeSurface();
     apply = new ApplyScanToComposition({ store, config: CONFIG });
   });
 

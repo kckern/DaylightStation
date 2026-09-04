@@ -35,7 +35,7 @@ export class ApplyScanToComposition {
 
   /**
    * @param {object} deps
-   * @param {import('../CompositionStore.mjs').CompositionStore} deps.store
+   * @param {{setDensity:Function,setContainer:Function,endPlacement:Function,clear:Function,undo:Function,read:Function}} deps.store
    * @param {{densityLevels: Array, containers: {items: Array}}} deps.config
    * @param {object} [deps.logger]
    */

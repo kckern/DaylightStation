@@ -35,7 +35,7 @@ function makeDispatcher({ barcodeLogger, nutriscanEnabled }) {
     // ApplyScanToComposition stays null, so every fridge-sheet code the
     // grammar claims dead-ends in the `swallow` branch under test.
     applyScanToComposition: nutriscanEnabled ? { execute: () => ({ handled: false }) } : null,
-    getScaleNutribotBridge: () => ({ refreshPrompt: async () => {}, armCommitFor: () => {} }),
+    getObservationService: () => ({ refreshPrompt: async () => {}, armCommitFor: () => {} }),
     getLogFoodFromUPC: () => ({ execute: async () => ({ ok: true }) }),
     nutribotIdentity: { defaultUserId: () => 'test-user', conversationIdFor: () => null },
     screenNames: [],

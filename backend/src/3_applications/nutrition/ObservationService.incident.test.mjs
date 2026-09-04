@@ -14,13 +14,14 @@
 //
 // ## What is REAL here and what is a double
 //
-// REAL: `CompositionStore`, `ApplyScanToComposition`, `createScanDispatch` (so a
-// scan travels the same route a fridge-sheet QR does and reaches `armCommitFor`
-// the way production wires it), `createScaleNutribotBridge`,
+// REAL: the observation ledger (`YamlObservationStore` over a temp directory) and
+// the service that recomputes the composition from it, `ApplyScanToComposition`,
+// `createScanDispatch` (so a scan travels the same route a fridge-sheet QR does
+// and reaches `armCommitFor` the way production wires it),
 // `normalizeScaleNutribotConfig`, and the derivation path
 // (`resolveScaleNet` -> `computeNet`, and `computeNutrition`). A harness that
-// stubs `compositionStore.read()` to answer `complete: true` proves nothing
-// about the arithmetic, so nothing on the composition path is stubbed.
+// stubs the composition read to answer `complete: true` proves nothing about the
+// arithmetic, so nothing on the composition path is stubbed.
 //
 // REAL, and deliberately so: `SelectScaleDensity`. It is the ONLY place
 // `calories = round(netGrams x kcal_per_g)` happens, and mocking it is exactly
@@ -35,13 +36,15 @@
 // exported `resolveScaleNet` so the tare is computed rather than typed. Message
 // rendering is the part that is stubbed out.
 //
-// TIME is driven by hand via an injected scheduler (same shape as
-// `scaleNutribotQuietCommit.test.mjs`); `vi.useFakeTimers()` interleaves badly
-// with the awaited AcceptFoodLog call.
+// TIME is driven by hand via an injected scheduler; `vi.useFakeTimers()`
+// interleaves badly with the awaited AcceptFoodLog call.
 
 import { describe, it, expect, vi } from 'vitest';
-import { createScaleNutribotBridge } from '#adapters/hardware/ScaleNutribotBridge.mjs';
-import { CompositionStore } from '#apps/nutribot/CompositionStore.mjs';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { YamlObservationStore } from '#adapters/persistence/yaml/YamlObservationStore.mjs';
+import { createObservationService } from './ObservationService.mjs';
 import { ApplyScanToComposition } from '#apps/nutribot/usecases/ApplyScanToComposition.mjs';
 import { resolveScaleNet } from '#apps/nutribot/usecases/LogFoodFromScale.mjs';
 import {
@@ -91,8 +94,7 @@ const CONFIG = normalizeScaleNutribotConfig({
   },
 });
 
-// A scheduler we drive by hand: no fake timers, no real waiting. Same shape as
-// `scaleNutribotQuietCommit.test.mjs`.
+// A scheduler we drive by hand: no fake timers, no real waiting.
 function manualScheduler() {
   let pending = null;
   const counts = { arms: 0, clears: 0 };
@@ -109,8 +111,8 @@ function makeIncidentHarness() {
   const noop = { debug() {}, info() {}, warn() {}, error() {} };
 
   // Telegram-facing doubles. A create is told from an edit by `existingLogUuid`,
-  // and an edit MUST answer `edited: true` or the bridge treats the dispatch as
-  // failed and bails before it buffers the weight (and so before it arms).
+  // and an edit MUST answer `edited: true` or the commit treats the dispatch as
+  // failed and bails before it records the weight (and so before it arms).
   // Order across the two commit-path use cases. `SelectScaleDensity` is what
   // writes the calories (`LogFoodFromScale` persists 0 kcal / 'Unknown', and
   // `AcceptFoodLog` never touches them), so a commit that accepted first would
@@ -131,8 +133,8 @@ function makeIncidentHarness() {
   };
 
   // A create is told from an edit by `existingLogUuid`, and an edit MUST answer
-  // `edited: true` or the bridge treats the dispatch as failed and bails before
-  // it buffers the weight (and so before it arms). The log id is pinned to LOG_ID
+  // `edited: true` or the flow treats the dispatch as failed and bails before it
+  // records the weight (and so before it arms). The log id is pinned to LOG_ID
   // rather than left to `shortId()` so the uuid assertions below stay readable.
   const logFromScale = {
     execute: vi.fn(async ({ grams, unit, scaleId, composition, existingLogUuid, messageId }) => {
@@ -182,41 +184,51 @@ function makeIncidentHarness() {
     execute: vi.fn(async (input) => { calls.push('density'); return realSelectDensity.execute(input); }),
   };
 
-  // What the bridge says it committed, straight off its own commit path.
+  // What the service says it committed, straight off its own commit path.
   const committed = [];
-  const bridgeLogger = {
+  const serviceLogger = {
     debug() {}, warn() {}, error() {},
     info(event, data) { if (event === 'scaleNutribot.commit.committed') committed.push(data); },
   };
 
-  // REAL store + REAL scan use case.
-  const compositionStore = new CompositionStore({ now: () => Date.now() });
-  const applyScanToComposition = new ApplyScanToComposition({
-    store: compositionStore, config: CONFIG, logger: noop,
+  // REAL ledger + REAL scan use case. The clock is fixed and the household is on UTC,
+  // so the local digits a row is stamped with and the window arithmetic the matcher
+  // does over them are the same numbers.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'observation-incident-'));
+  const observationStore = new YamlObservationStore({
+    dataService: { user: { resolveDir: (rel, userId) => path.join(dir, userId, rel) } },
+    logger: noop,
   });
 
   const handlers = {};
   const scheduler = manualScheduler();
-  const bridge = createScaleNutribotBridge({
-    eventBus: { subscribe: (t, fn) => { handlers[t] = fn; return () => {}; } },
+  const service = createObservationService({
+    scaleGateway: { subscribe: (fn) => { handlers['food-scale'] = fn; return () => {}; } },
+    observationStore,
     nutribotContainer: {
       getLogFoodFromScale: () => logFromScale,
       getAcceptFoodLog: () => accept,
       getSelectScaleDensity: () => selectDensity,
       getRetractScaleLog: () => retract,
     },
+    foodLogStore,
     userId: 'kckern',
     conversationId: 'telegram:b1_c2',
     scaleConfig: CONFIG,
-    compositionStore,
+    timezone: 'UTC',
+    clock: () => new Date(Date.UTC(2026, 7, 18, 19, 31, 0)),
     commitQuietMs: CONFIG.commitQuietSec * 1000,
     scheduler,
-    logger: bridgeLogger,
+    logger: serviceLogger,
+  });
+
+  const applyScanToComposition = new ApplyScanToComposition({
+    store: service, config: CONFIG, logger: noop,
   });
 
   // The REAL dispatcher, so a scan reaches `armCommitFor` (and `refreshPrompt`)
   // by the same route a fridge-sheet QR takes in production rather than by the
-  // test poking the bridge directly.
+  // test poking the service directly.
   const scanDispatch = createScanDispatch({
     schoolLifecycle: null,
     schoolCalcResultImporter: null,
@@ -224,7 +236,7 @@ function makeIncidentHarness() {
     relayInstances: { [DEVICE]: { route: 'nutribot', scale_id: SCALE } },
     relayConfig: {},
     applyScanToComposition,
-    getScaleNutribotBridge: () => bridge,
+    getObservationService: () => service,
     getLogFoodFromUPC: () => ({ execute: async () => ({ ok: true }) }),
     nutribotIdentity: {
       defaultUserId: () => 'kckern',
@@ -241,13 +253,13 @@ function makeIncidentHarness() {
   });
 
   return {
-    bridge, accept, selectDensity, calls, retract, logFromScale, compositionStore,
+    service, accept, selectDensity, calls, retract, logFromScale, observationStore,
     applyScanToComposition, scheduler, publish, scan, scanDispatch, committed,
     logs, foodLogStore,
   };
 }
 
-// The bridge SWALLOWS the first settled frame to learn its resting baseline
+// The service SWALLOWS the first settled frame to learn its resting baseline
 // (`if (s.baseline === null) { s.baseline = grams; return; }`), so a harness
 // whose first bus event is the placement asserts against nothing at all. Every
 // scenario below primes an at-rest frame first.
@@ -300,10 +312,9 @@ describe('the 12:31 incident', () => {
     expect(h.scheduler.counts.arms).toBe(4);
     expect(h.scheduler.counts.clears).toBe(3);
 
-    // Read BEFORE the fire: this is the object `commitNow` reads synchronously
-    // at the top of the timer callback, and the commit consumes the slots
-    // immediately afterwards.
-    const snapshot = h.compositionStore.read(SCALE);
+    // Read BEFORE the fire: this is the composition `commitNow` recomputes at the top
+    // of the timer callback, and the commit consumes its rows immediately afterwards.
+    const snapshot = h.service.read(SCALE);
     expect(snapshot.grams).toBe(473);
     expect(snapshot.unit).toBe('g');
     expect(snapshot.container).toBe('tupperware');
@@ -313,7 +324,7 @@ describe('the 12:31 incident', () => {
     h.scheduler.fire();
     await flush();
 
-    // ONE entry, and the bridge's own commit record agrees with the snapshot.
+    // ONE entry, and the service's own commit record agrees with the snapshot.
     expect(h.accept.execute).toHaveBeenCalledTimes(1);
     expect(h.accept.execute).toHaveBeenCalledWith(expect.objectContaining({
       userId: 'kckern', conversationId: 'telegram:b1_c2', logUuid: LOG_ID, messageId: 'm1',
@@ -343,11 +354,11 @@ describe('the 12:31 incident', () => {
     expect(item.label).toBe('Mixed');
     expect(metadata.densityLevel).toBe(4);
 
-    // And the placement is over: the slots are consumed, so the next food on the
+    // And the placement is over: the rows are consumed, so the next food on the
     // pan cannot inherit this tare and density.
-    expect(h.compositionStore.read(SCALE).active).toBe(false);
+    expect(h.service.read(SCALE).active).toBe(false);
 
-    h.bridge.dispose();
+    h.service.dispose();
   });
 
   // The numbers the incident should have produced, run through the SAME
@@ -363,7 +374,7 @@ describe('the 12:31 incident', () => {
     await h.scan('ct:60');
     await settle(h, 473);
 
-    const snapshot = h.compositionStore.read(SCALE);
+    const snapshot = h.service.read(SCALE);
     h.scheduler.fire();
     await flush();
     expect(h.accept.execute).toHaveBeenCalledTimes(1);
@@ -392,7 +403,7 @@ describe('the 12:31 incident', () => {
     expect(resolution.net).toBe(413);
     expect(nutrition.calories).toBe(578);
 
-    // The level the bridge handed SelectScaleDensity is the level this derivation
+    // The level the commit handed SelectScaleDensity is the level this derivation
     // used, so the 578 kcal above is the figure the commit path actually asks for
     // rather than a number this test computed beside it. SelectScaleDensity
     // performs `round(item0.grams x kcal_per_g)` on the stored NET grams — the
@@ -407,7 +418,7 @@ describe('the 12:31 incident', () => {
     expect(item.grams).toBe(resolution.net);
     expect(item.calories).toBe(nutrition.calories);
 
-    h.bridge.dispose();
+    h.service.dispose();
   });
 
   // The 4.4 s gap is the whole point. A commit-on-sufficiency rule fires the
@@ -418,28 +429,26 @@ describe('the 12:31 incident', () => {
     await settle(h, 639);
     await h.scan('dl:140');
 
-    // Weight AND density are both in the buffer — "complete" by the store's own
+    // Weight AND density are both on the ledger — "complete" by the matcher's own
     // rule — and still nothing has committed.
-    expect(h.compositionStore.read(SCALE)).toMatchObject({ complete: true, container: null });
+    expect(h.service.read(SCALE)).toMatchObject({ complete: true, container: null });
     expect(h.accept.execute).not.toHaveBeenCalled();
 
     await h.scan('ct:60');
-    expect(h.compositionStore.read(SCALE).container).toBe('tupperware');
+    expect(h.service.read(SCALE).container).toBe('tupperware');
 
     h.scheduler.fire();
     await flush();
     expect(h.accept.execute).toHaveBeenCalledTimes(1);
     expect(h.committed[0]).toMatchObject({ grams: 639, density: 4, container: 'tupperware' });
-    h.bridge.dispose();
+    h.service.dispose();
   });
 
   // `rs:done` is the card that says "the sequence is complete, process it now" —
-  // the one gesture that means the wait is over. It used to route to
-  // `endPlacement` alone, which WIPED the slots; `armCommitFor` then set a clock
-  // that fired 25 s later against an empty composition and skipped as incomplete.
-  // The explicit finish gesture therefore GUARANTEED a stranded entry with no
-  // density — the exact failure this branch exists to remove — while both the
-  // design and the reference doc claimed it committed immediately.
+  // the one gesture that means the wait is over. Routing it to `endPlacement` alone
+  // resolves the rows and leaves a clock to fire 25 s later against an empty
+  // composition, which skips as incomplete: the explicit finish gesture would be the
+  // one path that GUARANTEED a stranded entry with no density.
   it('commits immediately on rs:done, rather than stranding the entry it was meant to finish', async () => {
     const h = makeIncidentHarness();
     await prime(h);
@@ -464,16 +473,16 @@ describe('the 12:31 incident', () => {
     expect(item.label).toBe('Mixed');
     expect(metadata.densityLevel).toBe(4);
 
-    // The slots are consumed — `done` still MEANS endPlacement — and no clock is
+    // The rows are consumed — `done` still MEANS endPlacement — and no clock is
     // left armed behind the commit.
-    expect(h.compositionStore.read(SCALE).active).toBe(false);
+    expect(h.service.read(SCALE).active).toBe(false);
     expect(h.scheduler.pending).toBeNull();
 
     // And firing a stray timer afterwards cannot produce a second entry.
     h.scheduler.fire();
     await flush();
     expect(h.accept.execute).toHaveBeenCalledTimes(1);
-    h.bridge.dispose();
+    h.service.dispose();
   });
 
   // Each fridge-sheet scan must restart the clock through the real dispatcher.
@@ -494,14 +503,14 @@ describe('the 12:31 incident', () => {
     // A code the fridge grammar does not claim must NOT touch the clock.
     await h.scan('012345678905');
     expect(h.scheduler.counts.arms).toBe(3);
-    h.bridge.dispose();
+    h.service.dispose();
   });
 });
 
 // Order independence is the correctness claim the whole feature rests on, and
 // quiet-commit is the first thing that can break it: a timer armed by only SOME
-// inputs converges differently depending on arrival order. `CompositionStore`
-// already has this test for its own slots; this asserts it survives the timer.
+// inputs converges differently depending on arrival order. `ObservationMatcher`
+// already has this test for its own rules; this asserts it survives the timer.
 const INPUTS = [
   { kind: 'weight', apply: (h) => settle(h, 473) },
   { kind: 'density', apply: (h) => h.scan('dl:140') },
@@ -516,7 +525,7 @@ describe('every arrival order converges on the same entry', () => {
     'converges the same for %s',
     async (_label, order) => {
       const h = makeIncidentHarness();
-      // The at-rest frame only teaches the bridge its resting load; it is not one
+      // The at-rest frame only teaches the service its resting load; it is not one
       // of the three inputs and carries no composition state, so priming it first
       // leaves the ordering under test intact. The WEIGHT-LAST orders are the
       // ones that matter: a scan arriving before any food is on the pan must
@@ -524,7 +533,7 @@ describe('every arrival order converges on the same entry', () => {
       await prime(h);
       for (const step of order) await step.apply(h);
 
-      const snap = h.compositionStore.read(SCALE);
+      const snap = h.service.read(SCALE);
       expect(snap).toMatchObject({
         grams: 473, unit: 'g', density: 4, container: 'tupperware', complete: true, active: true,
       });
@@ -562,7 +571,7 @@ describe('every arrival order converges on the same entry', () => {
       expect(item.label).toBe('Mixed');
       expect(metadata.densityLevel).toBe(4);
 
-      h.bridge.dispose();
+      h.service.dispose();
     },
   );
 });

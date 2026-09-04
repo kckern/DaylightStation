@@ -216,14 +216,18 @@ web, Telegram, and the coach's `log_food` alike.
 
 Two flows are deliberately exempt from the accept half of the seam:
 
-- **Scale** captures keep their multi-step composition flow (tare → density → describe)
-  and still mint a `pending` NutriLog for the duration of that flow. A pending row never
-  syncs into the day's NutriList, so it doesn't appear among Today's normal rows and
-  doesn't count toward the budget; `GET /nutrition/pending?date=` surfaces it separately,
-  and Today renders it in a **NEEDS REVIEW** banner above the meal buckets, with its own
-  Accept/Discard. That endpoint returns pending rows regardless of origin, but every
-  other capture commits on arrival (above), so Today filters the banner to scale-origin
-  rows.
+- **Scale** captures keep their multi-step composition flow (weight → tare → density) and
+  mint a `pending` NutriLog for the duration of it. The composition completing is what
+  commits: the scale path applies the scanned density and then runs the same accept seam
+  every other funnel runs, so a finished placement lands `accepted` with `settled: false`
+  and is indistinguishable from a typed entry. What stays `pending` is a placement that
+  never completed — a weight with no density scanned, which nothing can price. A pending
+  row never syncs into the day's NutriList, so it doesn't appear among Today's normal rows
+  and doesn't count toward the budget; `GET /nutrition/pending?date=` surfaces it
+  separately, and Today renders it in a **NEEDS REVIEW** banner above the meal buckets,
+  with its own Accept/Discard. That endpoint returns pending rows regardless of origin, but
+  every other capture commits on arrival (above), so Today filters the banner to
+  scale-origin rows.
 - **Barcode** has no Accept gate to retire — it commits at its portion-selection step
   (`SelectUPCPortion`). The seam still stamps its items unsettled so the rows that step
   writes land the same way.
@@ -374,6 +378,13 @@ exists and counts toward the day's calories — `accepted` counts, `pending`/`re
 `deleted` don't (see [the budget equation](#the-budget-equation--one-server-side-home)
 above). `settled` decides whether a person has ratified the machine's estimate; it never
 affects whether a row counts.
+
+`rejected` is reachable from exactly **one** path: a fresh kitchen-scale placement
+superseding an earlier scale prompt nobody ever answered. Untouched means untouched — no
+container picked, no density picked — and the supersede deletes that prompt's message along
+with it. A prompt the person engaged with is left entirely alone, however stale. No user
+action produces the value: discarding a row marks it `deleted`, not `rejected`. It stays in
+the `status` enum because rows already carry it.
 
 A row reads as **settled** when `settled` is `true`, or when the field is **absent** — no
 write path ever defaults it in, so a row with no `settled` key at all (every row that

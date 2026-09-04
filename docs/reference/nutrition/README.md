@@ -5,9 +5,9 @@ entry, using a laminated QR sheet on the refrigerator instead of a tare button.
 
 **Status: wired end to end and live.** A code scanned on the fridge sheet reaches
 `barcode_relay.nutriscan`, is claimed by the nutrition grammar, and applies to the running
-composition. The domain layer, the composition store, the control grammar, the printable sheet
-and the scale bridge are all built and tested, and the config path that used to be able to
-disable the whole feature by omission no longer can: `normalizeScaleNutribotConfig` backfills a
+composition. The domain layer, the durable observation ledger, the control grammar, the
+printable sheet and the scale path are all built and tested, and the config path cannot
+disable the whole feature by omission: `normalizeScaleNutribotConfig` backfills a
 density row's `macros` from `DEFAULT_DENSITY_LEVELS` by level whenever an override supplies one
 without it, logging `nutriscan.macros.backfilled` when it substitutes. Attaching a cosmetic
 `icon:` to a density row can no longer drop the `macros` a validator requires and take the
@@ -57,17 +57,23 @@ a precise gram measurement, never survives to the entry.
          ▼                                 ▼
    createBarcodeRelay()             createFoodScaleRelay()   [3_applications/hardware/]
          │ parseScan(code)                 │
-         │  hit → route:'nutriscan'        └─▶ ScaleNutribotBridge
-         │  miss → content dispatch                    │
+         │  hit → route:'nutriscan'        └─▶ scale observation service
+         │  miss → content dispatch                    │      [3_applications/nutrition/]
          ▼                                             ▼
-   ApplyScanToComposition  ────────▶  CompositionStore   ◀──── setWeight()
-         setDensity() / setContainer() / clear()   │  (holds immutable Composition values)
-                                                   │ complete = grams && density
+   ApplyScanToComposition  ─────▶ append an observation row ◀──── setWeight()
+         setDensity() / setContainer() / clear()   │   observations.yml, per user
+                                                   │   [1_adapters/persistence/yaml/]
+                                                   ▼
+                                   matchObservations(open rows)   [2_domains/nutrition]
+                                                   │  merges the still-open, still-in-window
+                                                   │  rows for one scale into a composition
+                                                   │  complete = grams && density
                                                    ▼
                                         computeNet → computeNutrition   [2_domains/nutrition]
                                                    │
                                                    ▼
                               nutribot entry (quiet-commits 25s after complete)
+                              rows flip open → consumed, pointing at the entry
 ```
 
 **A parse miss is not a no-op.** The fridge scanner is configured `route: content`, so a code
@@ -119,16 +125,16 @@ paints a ⚠️ on the prompt, whereas a control scan that had no work still wor
 **`done` routes to `endPlacement`, not to `clear`.** The two store methods are mechanically
 identical today and kept separate because they mean different things: `clear` is "forget it",
 `endPlacement` is "that placement is over, consume the slots". `done` is the human saying
-"process it now", which is the same event the bridge raises when the scale returns to rest —
+"process it now", which is the same event the scale path raises when the pan returns to rest —
 so it belongs on the `endPlacement` side. The result still reports `kind: 'done'` so the ack
 never conflates it with a reset.
 
 **...and consuming the slots is only half of it.** `done` also has to FINALISE the entry, and
 that happens one layer up. `ApplyScanToComposition` reads the composition *before*
-`endPlacement` wipes it and returns it as `snapshot`; `scanDispatch` then calls the bridge's
-`commitNowFor(scaleId, snapshot)` instead of `armCommitFor`. Without that the card wiped the
-composition and left an armed clock to fire 25 s later against nothing and skip as incomplete —
-the explicit finish gesture was the one path that *guaranteed* a stranded entry with no
+`endPlacement` resolves its rows and returns it as `snapshot`; `scanDispatch` then calls
+`commitNowFor(scaleId, snapshot)` instead of `armCommitFor`. Without that the card consumes the
+composition and leaves an armed clock to fire 25 s later against nothing and skip as incomplete
+— the explicit finish gesture would be the one path that *guarantees* a stranded entry with no
 density.
 
 `done` deliberately skips the prompt ACK that every other claimed scan fires. `refreshPrompt`
@@ -194,13 +200,13 @@ exceed the gross by a few grams legitimately. A negative net clamps to zero and 
 
 **Strict finite numbers, no coercion.** Every numeric input must be a finite `number` or
 `ValidationError` is thrown — numeric strings included. Both upstream layers already coerce
-(`ScaleNutribotBridge` guards with `Number.isFinite`, `scaleNutribotConfig` coerces at config
+(the scale path guards with `Number.isFinite`, `scaleNutribotConfig` coerces at config
 load), so a string arriving in the domain genuinely is a defect. The rejected alternative,
 `Number(x) || 0`, let `computeNet(NaN, …)` return `netG: NaN` — which JSON-serializes to
 `null` with `clamped: false`, asserting the entry is fine.
 
-A throw **fails safe**: `barcodeRelay.mjs` and `ScaleNutribotBridge.mjs` both catch, log, drop
-the entry and release the mutex. A dropped scan, not a crash.
+A throw **fails safe**: the relay and the scale path both catch, log, drop the entry and
+release the mutex. A dropped scan, not a crash.
 
 ### Error codes
 
@@ -225,16 +231,28 @@ macro split *can* produce a plausible-looking wrong entry.
 ## The composition
 
 `2_domains/nutrition/value-objects/Composition.mjs` (immutable value object) plus
-`3_applications/nutribot/CompositionStore.mjs` (the per-scale map and the window). Three slots —
-`grams` / `density` / `container` — filled by whichever event arrives, **in any order**,
-within a rolling window (default 900 s).
+`2_domains/nutrition/services/ObservationMatcher.mjs` (the merge rules and the window). Three
+slots — `grams` / `density` / `container` — filled by whichever event arrives, **in any order**,
+within a 900 s window.
+
+**A composition is not stored; it is recomputed.** There is no per-scale buffer in memory.
+Every signal is an append-only row on the observation ledger, and reading the composition means
+merging that scale's still-`open`, still-in-window rows, last-writer-wins per slot. Rescanning
+`dl:7` over `dl:4` leaves both rows and the later one wins; `rs:undo` dismisses the most
+recently appended row so the one it superseded wins again, one deep. See
+[The observation ledger](#the-observation-ledger).
+
+Each observation ages **independently** against now — a later scan does not refresh an older
+signal's clock. A signal past the window drops out of the composition on its own, which fails
+in the safe direction: an aged-out weight leaves the entry incomplete and answerable by hand
+rather than finalising against a measurement from a quarter of an hour ago.
 
 `complete` = grams present AND density present (`Composition.isComplete`). That is a
 **structural** claim about which slots are filled — not gated on `unit`, deliberately: a
 volumetric `ml` reading is carried faithfully and counts as "grams present" for this purpose.
 The narrower question, *may this actually finalise on its own*, is answered downstream by the
-commit path (see [Quiet-commit](#quiet-commit)), not here. A complete buffer is what quiet-commit
-waits to see before it finalises; a bare weight stays `pending` on nutribot's existing
+commit path (see [Quiet-commit](#quiet-commit)), not here. A complete composition is what
+quiet-commit waits to see before it finalises; a bare weight stays `pending` on nutribot's existing
 density/container keyboard until either a scan completes it or the human answers by hand.
 
 **Slots are consumed at placement end.** Without this, the second food weighed inside one
@@ -243,18 +261,51 @@ eat it, weigh pasta six minutes later without scanning, and the pasta logs as le
 250 g bowl that isn't there — and quiet-commit would file it. That is an ordinary evening, not
 an edge case.
 
-**The window refresh set excludes raw scale frames.** The firmware heartbeats at 0.5 Hz
-(`emit.heartbeat_hz`) while the scale rests on its shelf, so frame-driven refresh would mean
-the buffer never expires. Only scans and qualifying placements refresh it.
+**Raw scale frames write nothing.** The firmware heartbeats at 0.5 Hz
+(`emit.heartbeat_hz`) while the scale rests on its shelf. Only a qualifying placement appends
+a weight row; a frame at the learned resting load, or one inside the dedup delta of the live
+prompt, is read and discarded.
 
-`now` is injected; the module never reads the wall clock, so window math is deterministic
-under test.
+The clock is injected everywhere, and an observation's timestamp is written in **local** wall
+digits; the window arithmetic is done in that same space, so the two can never disagree by a
+timezone offset. Nothing on this path reads the wall clock directly.
+
+---
+
+## The observation ledger
+
+Every scale signal is a durable row: `lifelog/nutrition/observations.yml` under the user's
+data directory, with per-month cold archives beside it. A row carries its kind
+(`weight` / `density` / `container`), its value and unit, the scale it came from, a local
+timestamp, and a lifecycle status.
+
+That lifecycle — `open | consumed | dismissed` — is a **separate field on a separate record**
+from a food-log entry's `status`. Nothing conflates them.
+
+- `open` — in progress, and a candidate for the composition and for pairing.
+- `consumed` — folded into a food-log entry, and pointing at it by that entry's item uuid.
+- `dismissed` — judged not to matter (a placement that ended, `rs:clear`, `rs:undo`, or a
+  person dismissing it in the day view). Dismissed rows are kept: an observation that arrived
+  and was set aside is the evidence someone needs when asking why a weight never showed up.
+
+**An open row is never archived, at any age.** That is what lets the composition be recomputed
+from the hot file alone, and it is why the hot file stays small enough to rewrite on a hardware
+path. Multi-row updates are all-or-nothing — a completed composition consumes up to three rows
+into one entry, and two of them flipping while a third stayed open is exactly the mismatch
+nothing downstream could detect.
+
+**This is what survives a restart.** A service constructed fresh over the same ledger recovers
+the in-progress composition exactly, because the state is on disk rather than in a closure.
+
+**These rows are also the day view's raw material** — surfacing an unmatched signal, pairing a
+measurement to an entry after the fact, and moving a whole placement from one entry to another.
+See [`docs/reference/health/README.md`](../health/README.md), "Scale measurements".
 
 ---
 
 ## Quiet-commit
 
-`ScaleNutribotBridge` finalises an entry on its own after **25 seconds** with no new *applied*
+The scale path finalises an entry on its own after **25 seconds** with no new *applied*
 input — configurable per scale as `commit_quiet_sec` in the `nutribot` block of `scales.yml`
 (surfaced to code as `commitQuietSec`, default `25`, **clamped to a floor of 5 seconds**).
 This is the mechanism that turns a complete composition into a saved food-log entry; nothing
@@ -268,14 +319,13 @@ container scan landed 4.4 s behind its density, and anything shorter cannot span
 **What arms and re-arms the timer.** Only inputs that actually changed the composition: a
 qualifying weight placement (`setWeight`), an applied `dl:`/`ct:` scan (`armCommitFor`, called
 from `scanDispatch.mjs`'s `nutriscan` branch — including on a *refused* scan, since the person
-is mid-gesture and about to rescan), and `rs:undo`. **Raw scale frames never arm it** — the same
-reasoning `CompositionStore` already applies to its own window refresh: the scale heartbeats at
-rest, so a frame-driven timer would never fire. Reading the composition (`compositionOf`,
-`refreshPrompt`) never arms it either.
+is mid-gesture and about to rescan), and `rs:undo`. **Raw scale frames never arm it** — the
+scale heartbeats at rest, so a frame-driven timer would never fire. Reading the composition
+never arms it either.
 
 **On expiry**, if the composition is not `complete`, the timer simply drops the entry — it stays
 live, answerable by hand, and window expiry eventually forgets it. If it is complete, the
-commit applies the buffered density through `SelectScaleDensity` — the same use case behind the
+commit applies the scanned density through `SelectScaleDensity` — the same use case behind the
 Telegram density button — using the NET grams `LogFoodFromScale` already persisted at post time
 (the tare is not subtracted a second time). `SelectScaleDensity` is reused rather than
 reimplemented so the calorie arithmetic has exactly one home; `LogFoodFromScale`'s own entry
@@ -289,12 +339,19 @@ Only once the density applies successfully does the commit accept the log entry.
 the density fails**, the commit stands down without accepting: the prompt stays live for the
 next lull to retry, or for the human to answer directly.
 
-**A successful commit consumes the composition** (`bufferEndPlacement`, called only after the
-accept succeeds) so the next food placed on the scale cannot inherit this one's density or tare.
+**A successful commit consumes the observations** — only after the accept succeeds — so the
+next food placed on the scale cannot inherit this one's density or tare. The rows do not
+vanish: they flip to `consumed` and point at the item they became.
+
+**A committed scale entry is indistinguishable from a typed one.** The commit runs the same
+capture seam every other funnel runs: `status: 'accepted'` with `settled: false` stamped on
+every item, so the day view offers to ratify it. `settled: false` is written verbatim; an
+absent `settled` key means "legacy row, already settled" and is never manufactured by a
+default.
 
 `rs:done` bypasses the wait entirely and commits immediately — see
 [What each control code does](#what-each-control-code-does) for how the pre-consumption
-snapshot gets from the scan use case to the bridge.
+snapshot gets from the scan use case to the commit.
 
 **A commit marks the placement, so it cannot re-prompt itself.** A commit only ever happens
 with the food still on the pan (any lift-off disarms the clock) and the relay broadcasts every
@@ -342,19 +399,23 @@ restart before it takes effect.
 | `services/ScanVocabularyService.mjs` — grammar, encoders | **shipped**, reviewed, 24 tests |
 | `services/ScanNutritionService.mjs` — net weight, calories, macros | **shipped**, reviewed, 58 tests |
 | `value-objects/Composition.mjs` — immutable slots | **shipped**, 62 tests |
-| `3_applications/nutribot/CompositionStore.mjs` — per-scale state, window | **shipped**, 70 tests |
+| `2_domains/nutrition/services/ObservationMatcher.mjs` — merge rules, window | **shipped** |
+| `1_adapters/persistence/yaml/YamlObservationStore.mjs` — durable ledger, hot file + monthly archives | **shipped** |
+| `3_applications/nutrition/ObservationService.mjs` — prompt flow, composition surface, quiet commit | **shipped** |
+| `3_applications/nutrition/ObservationPairingService.mjs` — pair / re-pair / dismiss from the day view | **shipped** |
 | `ApplyScanToComposition` use case | **shipped**, handles density/container/reset/undo/done |
 | `nutriscan` route wiring (`5_composition/modules/scanDispatch.mjs`) | **shipped** |
 | Control grammar `rs:clear|undo|done` + one-deep undo | **shipped** |
 | `SheetLayout` / `QRSheetRenderer` / `SheetService` + `GET /api/v1/sheets/:id.pdf` | **shipped** |
 | `npm run sheet` local generator | **shipped** |
 | Config: real container table | **shipped** — weighed 2026-07-29, 13 vessels → 9 cards |
-| Bridge integration — session end | **shipped** — `endPlacement` fires on the placed→at-rest crossing (`s.placed`) |
-| Bridge integration — mutex | **shipped** — a per-scale `inflight` lock guards the payload, force and refresh paths |
-| Bridge integration — unit passthrough | **shipped** — `ScaleNutribotBridge` reads `payload.unit`, defaulting to `'g'` only when absent, and threads it through `setWeight` and both `LogFoodFromScale` calls |
+| Session end | **shipped** — `endPlacement` fires on the placed→at-rest crossing |
+| Per-scale mutex | **shipped** — an `inflight` lock guards the payload, force and refresh paths |
+| Unit passthrough | **shipped** — `payload.unit` is read and defaulted to `'g'` only when absent, then threaded through the weight row and both `LogFoodFromScale` calls |
+| Durability across a restart | **shipped** — a service built fresh over the same ledger recovers the in-progress composition |
 | Config — macros backfill by level | **shipped** — an override that omits `macros` borrows `DEFAULT_DENSITY_LEVELS`' for its level rather than disabling the feature; `nutriscan.macros.backfilled` logs the substitution |
 | Refusal ACK (`swallowNotice`) | **shipped** — a swallowed scan paints a `⚠️` line on the live prompt instead of producing no visible change |
-| Quiet-commit (`ScaleNutribotBridge` commit timer) | **shipped** — see [Quiet-commit](#quiet-commit) |
+| Quiet-commit timer | **shipped** — see [Quiet-commit](#quiet-commit) |
 | `rs:done` immediate commit (`commitNowFor`) | **shipped** — the snapshot is read before `endPlacement` consumes the slots and committed against |
 | **Macros persisted on a logged entry** | **shipped (Task 5.5).** `SelectScaleDensity` calls `computeNutrition` and writes fat/carb/protein onto the item's existing `protein`/`carbs`/`fat` fields, with `microsSource: null` (a density estimate is not AI/catalog micronutrient data). `ObservationPairingService.recomputeEntry` was already calling `computeNutrition` for a re-pair; the two now share identical rounding (one decimal place) and both null `microsSource`. With no density observation, neither path fabricates calories or macros — grams are corrected and the entry's existing calorie/macro figures (0, for a brand-new scale entry) are left alone |
 | Memo (voice flow-state branch, Memo button) | not started |
@@ -389,10 +450,18 @@ than the grams — see [Known gaps](#known-gaps--deliberate-do-not-silently-fix)
 
 ## Known gaps — deliberate, do not silently "fix"
 
-- **Backend restart loses the buffer** with no signal, and the bridge relearns the current load
-  as baseline, so food already on the scale never posts.
-- **Single-user attribution** — the bridge is wired to the head of household; every
+- **Single-user attribution** — the scale path is wired to the head of household; every
   scan-enriched entry attributes to them regardless of who is cooking.
+- **A restart loses the prompt state, not the composition.** The in-progress composition is
+  recovered from the ledger, but the per-scale prompt state is in memory: which message was on
+  screen, which row `rs:undo` would take back, and the learned resting load. The first settled
+  frame after a restart is taken as the new resting load, so **food already sitting on the pan
+  becomes the baseline and never posts a prompt** until it is lifted and set down again.
+  `rs:undo` reports "nothing to undo" rather than guessing which row a person meant.
+- **A composition that never completes stays pending forever.** A weight with no density scan
+  leaves a `pending` entry the quiet commit refuses (`reason: 'incomplete'`). It does not
+  count toward the budget and it is not deleted; the Health app's NEEDS REVIEW banner is where
+  a person finds it.
 - **A product's own UPC does not work at the fridge.** `LogFoodFromUPC` exists and works, but
   the scanner is `route: content`, so a real barcode falls through to content dispatch. Wiring
   it is a separate feature.
@@ -400,10 +469,15 @@ than the grams — see [Known gaps](#known-gaps--deliberate-do-not-silently-fix)
   absent container as "no tare." The lookup layer that would reject an orphaned id is not built
   yet, so a renamed container id orphans a laminated code without a visible error.
 - **A density-application failure at commit time is silent to the user.** `commitNow` applies
-  the buffered density through `SelectScaleDensity` before accepting, and on refusal it restores
+  the scanned density through `SelectScaleDensity` before accepting, and on refusal it restores
   the prompt so the next quiet lull retries — but a *persistent* cause (`'unknown level'`,
   `'log not found'`) fails identically forever, and only a `scaleNutribot.commit.skipped` warn
   log explains why. The entry just never finalises, with no notice on the prompt.
+- **A corrupt ledger reads at commit time as a benign skip.** A file the parser cannot read
+  degrades to "no composition" so it cannot take the prompt down — which means the commit then
+  logs `scaleNutribot.commit.skipped` with `reason: 'incomplete'`, the same line a genuinely
+  half-finished placement writes. The distinguishing evidence is one line earlier:
+  `observation.read.failed`, carrying the parse error. Read the pair, never the skip alone.
 - **Print legibility is untested.** Nothing verifies a QR printed 25-to-a-page scans off a
   fridge door in kitchen lighting. Print one and try it before laminating.
 
@@ -430,4 +504,4 @@ window, and quiet-commit timing are unaffected and unrelated to it.
 - [`docs/plans/2026-07-10-food-scale-relay-design.md`](../../plans/2026-07-10-food-scale-relay-design.md)
   — scale protocol and frame decoding.
 - [`_extensions/kitchen-relay/README.md`](../../../_extensions/kitchen-relay/README.md)
-  — firmware, flashing, and the existing nutribot bridge.
+  — firmware, flashing, and the scale-to-nutribot link.

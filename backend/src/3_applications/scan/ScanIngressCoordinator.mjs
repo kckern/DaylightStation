@@ -292,7 +292,7 @@ const DEP_CONTRACT = Object.freeze({
   relayInstances:         { ok: isNotNull, want: 'non-null (indexed by reader id)' },
   relayConfig:            { ok: isNotNull, want: 'non-null' },
   applyScanToComposition: { ok: () => true, want: 'present (may be null when nutriscan is disabled)' },
-  getScaleNutribotBridge: { ok: isFunction, want: 'a function (late-bound getter)' },
+  getObservationService:  { ok: isFunction, want: 'a function (late-bound getter)' },
   getLogFoodFromUPC:      { ok: isFunction, want: 'a function (late-bound getter)' },
   nutribotIdentity:       { ok: (v) => typeof v?.defaultUserId === 'function' && typeof v?.conversationIdFor === 'function', want: 'a semantic NutriBot identity resolver' },
   screenNames:            { ok: Array.isArray, want: 'an array of configured screen names' },
@@ -429,9 +429,9 @@ function reportLeadingSegmentCollisions(screenNames, commandNames, logger) {
  * @param {Record<string, object>} deps.relayInstances  `relays:` block from barcode-relay.yml
  * @param {object} deps.relayConfig                     the whole barcode-relay app config
  * @param {{execute: Function}|null} deps.applyScanToComposition  null when nutriscan is disabled
- * @param {() => ({refreshPrompt?: Function}|null)} deps.getScaleNutribotBridge  LATE-BOUND — the
- *   bridge is constructed long after this module and only exists if the head of household and bot
- *   id resolve, so it is read at scan time, never captured.
+ * @param {() => ({refreshPrompt?: Function}|null)} deps.getObservationService  LATE-BOUND — the
+ *   scale observation service is constructed long after this module and only exists if the head of
+ *   household and bot id resolve, so it is read at scan time, never captured.
  * @param {() => ({execute: Function})} deps.getLogFoodFromUPC  late-bound for the same reason:
  *   `nutribotServices` is built further down `app.mjs` than the relay wiring.
  * @param {{defaultUserId:Function,conversationIdFor:Function}} deps.nutribotIdentity
@@ -458,7 +458,7 @@ export function createScanDispatch(deps = {}) {
     relayInstances,
     relayConfig,
     applyScanToComposition,
-    getScaleNutribotBridge,
+    getObservationService,
     getLogFoodFromUPC,
     nutribotIdentity,
     screenNames,
@@ -536,7 +536,7 @@ export function createScanDispatch(deps = {}) {
       emit(barcodeLogger, 'info', 'barcode_relay.nutriscan', {
         device, scaleId, kind: outcome.kind, ok: !refused, error: outcome.error || null,
       });
-      const bridge = getScaleNutribotBridge();
+      const scale = getObservationService();
 
       // `rs:done` COMMITS; it does not arm, and it does not ACK.
       //
@@ -556,9 +556,9 @@ export function createScanDispatch(deps = {}) {
       // applies, which is the ack the user is waiting for anyway.
       //
       // Fire-and-forget like the ACK it replaces: `commitNowFor` never rejects,
-      // and the `.catch` covers a bridge older than it.
+      // and the `.catch` covers a service that predates it.
       if (outcome.kind === 'done') {
-        bridge?.commitNowFor?.(scaleId, outcome.snapshot)?.catch?.(() => {});
+        scale?.commitNowFor?.(scaleId, outcome.snapshot)?.catch?.(() => {});
         return { status: 'applied', ok: true, effect: outcome };
       }
 
@@ -569,8 +569,8 @@ export function createScanDispatch(deps = {}) {
       // Fire-and-forget: a failed edit must not swallow a scan that already
       // landed in the buffer.
       const notice = refused ? nutriscanRefusalNotice(outcome) : null;
-      bridge?.refreshPrompt?.(scaleId, notice)?.catch?.(() => {});
-      // A fridge-sheet scan restarts the bridge's quiet-commit clock. Without
+      scale?.refreshPrompt?.(scaleId, notice)?.catch?.(() => {});
+      // A fridge-sheet scan restarts the quiet-commit clock. Without
       // this the entry finalises 25s after the last WEIGHT, and a density or
       // tare scanned in the meantime lands on a log that is already closed —
       // the 12:31 incident, where a container arrived 4.4s behind its density.
@@ -583,7 +583,7 @@ export function createScanDispatch(deps = {}) {
       //
       // Fire-and-forget like the ACK: synchronous, optional, and never allowed
       // to swallow a scan that already reached the buffer.
-      bridge?.armCommitFor?.(scaleId);
+      scale?.armCommitFor?.(scaleId);
       return { status: refused ? 'refused' : 'applied', ok: !refused, effect: outcome };
     }
 
@@ -598,7 +598,7 @@ export function createScanDispatch(deps = {}) {
       // on the prompt, and no way to tell a dead feature from a bad code.
       // Fire-and-forget, exactly like the nutriscan branch — a failed edit must
       // not turn a silent refusal into a thrown one.
-      getScaleNutribotBridge()?.refreshPrompt?.(scaleId, swallowNotice(decision.reason))?.catch?.(() => {});
+      getObservationService()?.refreshPrompt?.(scaleId, swallowNotice(decision.reason))?.catch?.(() => {});
       return { status: 'swallowed', ok: false, message: decision.reason };
     }
 
@@ -621,7 +621,7 @@ export function createScanDispatch(deps = {}) {
       return { status: 'refused', ok: false, message: 'no nutribot user' };
     }
 
-    // Derive the Telegram address the same way the scale->nutribot bridge does:
+    // Derive the Telegram address the same way the scale->nutribot path does:
     // telegram:b<botId>_c<chatId>. The old fallback built "nutribot-upc:<userId>",
     // which TelegramAdapter.extractChatId() cannot parse — it was handed to the
     // Telegram API verbatim and rejected with 400, so scans reached UPCGateway and

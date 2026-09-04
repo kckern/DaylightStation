@@ -14,7 +14,7 @@
  * density tapped on a Telegram button and a `dl:4` fridge scan both produce the
  * same `composition.withDensity(4)`. Where a composition lives, how long it
  * lives, and what ends it are the application layer's concerns — see
- * `CompositionStore` in `3_applications/nutribot/`. There is deliberately no
+ * the scale observation service in `3_applications/nutrition/`. There is deliberately no
  * clock, no window, and no keyed collection here.
  *
  * ## Why the setters refuse input instead of coercing it

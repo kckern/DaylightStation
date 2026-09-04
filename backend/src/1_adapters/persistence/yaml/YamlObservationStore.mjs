@@ -1,13 +1,11 @@
 /**
  * YamlObservationStore - durable per-user store for kitchen-scale observations.
  *
- * Replaces the in-memory `CompositionStore` (`3_applications/nutribot/CompositionStore.mjs`)
- * as the durability layer for scale signals — a weight, a scanned barcode, a container
- * tare, a scanned caloric-density level. `CompositionStore` still owns the ROLLING WINDOW
- * and slot-merge logic in memory; this store is the ledger underneath it, so a signal
- * survives a backend restart, is visible on the day it happened, and can be re-paired to
- * the right food-log entry after the fact. It does not replace `CompositionStore`'s window
- * math — that is a separate, later task.
+ * The durable home for every scale signal — a settled weight, a scanned barcode, a
+ * container tare, a scanned caloric-density level — so a signal survives a backend
+ * restart, is visible on the day it happened, and can be re-paired to the right food-log
+ * entry after the fact. The composition window and the slot merge are NOT here: they are
+ * pure rules a layer up, over the rows this store hands back.
  *
  * ## Storage shape: ONE file per user, not one per day
  *
@@ -100,9 +98,8 @@
  * — the observation is never written and never silently discarded. This mirrors
  * `YamlNutriListDatastore.saveMany`'s date-integrity guard ("accepting undefined or
  * malformed dates silently has caused real data to be bucketed to the wrong day. Fail
- * loudly.") and `CompositionStore`'s `requireScaleId` — both fail the call outright rather
- * than defaulting. The caller (the scale bridge, in a later task) decides what "no
- * plausible day" means for a raw scale frame — that is a clock-skew / retry policy
+ * loudly.") — a missing scale id fails the call outright rather
+ * than defaulting. The caller decides what "no plausible day" means for a raw scale frame — that is a clock-skew / retry policy
  * decision this storage layer has no basis to make on its own, so it declines to guess a
  * wrong day rather than picking one silently.
  *
@@ -110,8 +107,7 @@
  *
  * `#domains/*` maps to a literal path with no directory resolution, so the bare barrel
  * form throws `ERR_UNSUPPORTED_DIR_IMPORT` under plain Node even though Vitest resolves
- * it — this file is loaded at boot, so it uses the explicit form. Same reasoning as
- * `CompositionStore.mjs`.
+ * it — this file is loaded at boot, so it uses the explicit form.
  *
  * ## `updateMany` is ALL-OR-NOTHING
  *
@@ -143,7 +139,7 @@
  * verified to exist BEFORE any write happens; if one is missing, `InfrastructureError`
  * `NOT_FOUND` is thrown (naming every missing id) and the file is untouched. Patch shape
  * (unknown fields, invalid `status`) is likewise validated for the whole batch before
- * touching the file — the same "build first, write second" discipline `CompositionStore`
+ * touching the file — the same "build first, write second" discipline the composition path
  * documents for its own setters.
  *
  * ## `findByPairedEntry` is NOT date-scoped
@@ -353,7 +349,7 @@ function isStructurallyValid(r) {
  * @property {ObservationKind} kind
  * @property {number|string} value Grams for `weight`, the level for `density`, the
  *   scanned code for `upc`/`container`. This store does not constrain the type further —
- *   that is a domain concern one layer up, same division of labor `CompositionStore`
+ *   that is a domain concern one layer up, the same division of labor the composition path
  *   draws with `Composition`.
  * @property {string|null} unit E.g. `'g'` for a weight. `null` where not applicable.
  * @property {string} scaleId Which physical scale produced the signal.
@@ -369,7 +365,7 @@ function isStructurallyValid(r) {
 /**
  * Durable per-user observation ledger for kitchen-scale signals.
  *
- * @implements durable replacement for the in-memory half of `CompositionStore`'s state
+ * @implements the durable home for in-progress and historical scale signals
  */
 export class YamlObservationStore extends IObservationStore {
   #dataService;

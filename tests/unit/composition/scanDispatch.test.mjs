@@ -61,7 +61,7 @@ function makeDeps(over = {}) {
     },
     relayConfig: {},
     applyScanToComposition: { execute: vi.fn(() => ({ handled: false })) },
-    getScaleNutribotBridge: () => ({ refreshPrompt, armCommitFor, commitNowFor }),
+    getObservationService: () => ({ refreshPrompt, armCommitFor, commitNowFor }),
     getLogFoodFromUPC: () => ({ execute }),
     nutribotIdentity: {
       defaultUserId: () => 'test-user',
@@ -210,7 +210,7 @@ describe('createScanDispatch — the composition seam', () => {
    */
   const REQUIRED = [
     'schoolLifecycle', 'schoolCalcResultImporter', 'triggerDispatchService', 'relayInstances', 'relayConfig',
-    'applyScanToComposition', 'getScaleNutribotBridge', 'getLogFoodFromUPC',
+    'applyScanToComposition', 'getObservationService', 'getLogFoodFromUPC',
     'nutribotIdentity', 'screenNames', 'logger', 'barcodeLogger',
   ];
 
@@ -315,8 +315,8 @@ describe('createScanDispatch — the composition seam', () => {
     // logs away from the line that is actually wrong.
     expect(() => createScanDispatch(depsWith({ getLogFoodFromUPC: { execute() {} } })))
       .toThrow(/malformed: [^;]*getLogFoodFromUPC/);
-    expect(() => createScanDispatch(depsWith({ getScaleNutribotBridge: null })))
-      .toThrow(/malformed: [^;]*getScaleNutribotBridge/);
+    expect(() => createScanDispatch(depsWith({ getObservationService: null })))
+      .toThrow(/malformed: [^;]*getObservationService/);
   });
 
   it('refuses a NULL reader map, and tolerates a badly-typed one', () => {
@@ -579,8 +579,8 @@ describe('nutrition — the nutriscan path', () => {
       () => ({ refreshPrompt: async () => {} }),
       () => ({ refreshPrompt: async () => {}, commitNowFor: () => Promise.reject(new Error('nope')) }),
     ];
-    for (const getScaleNutribotBridge of bridges) {
-      const h = harness({ applyScanToComposition, getScaleNutribotBridge });
+    for (const getObservationService of bridges) {
+      const h = harness({ applyScanToComposition, getObservationService });
       const out = await h.scanDispatch.handleScan(relayScan({
         device: 'nutribot-upc', route: 'nutribot', code: 'rs:done',
       }));
@@ -596,8 +596,8 @@ describe('nutrition — the nutriscan path', () => {
     const applyScanToComposition = {
       execute: vi.fn(() => ({ handled: true, ok: true, kind: 'density', level: 4 })),
     };
-    for (const getScaleNutribotBridge of [() => null, () => ({ refreshPrompt: async () => {} })]) {
-      const h = harness({ applyScanToComposition, getScaleNutribotBridge });
+    for (const getObservationService of [() => null, () => ({ refreshPrompt: async () => {} })]) {
+      const h = harness({ applyScanToComposition, getObservationService });
       const out = await h.scanDispatch.handleScan(relayScan({
         device: 'nutribot-upc', route: 'nutribot', code: 'dl:4',
       }));
@@ -717,7 +717,7 @@ describe('nutrition — the nutriscan path', () => {
     const refreshPrompt = vi.fn(() => Promise.reject(new Error('telegram down')));
     const h = harness({
       applyScanToComposition: null,
-      getScaleNutribotBridge: () => ({ refreshPrompt }),
+      getObservationService: () => ({ refreshPrompt }),
     });
     const scan = relayScan({ device: 'nutribot-upc', route: 'nutribot', code: 'dl:140' });
 
