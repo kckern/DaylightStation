@@ -268,3 +268,21 @@ Left running deliberately, none belonging to this work:
 **Do not clear them with `pkill -f`** — a pattern kill during this session
 clipped a live gate and, separately, another agent's test run. Kill by PID or
 `setsid` PGID, after checking what each one is.
+
+---
+
+## 11. Closing notes from the session that wrote this
+
+- **The archived-day bug** — browsing back five weeks and being told you'd eaten
+  nothing — was real, live, and predated this program by months. It's fixed and
+  deployed.
+- **Three of my own conclusions were overturned by evidence during this session:**
+  the catalog root cause (a second opinion showed it was a modelling problem, not
+  corruption), my post-boot feed-harvest theory for the voice failure (an agent
+  checked and it was an hourly cron), and my sibling-outlier detector (16%
+  coverage, and it conflated portion variance with corruption). Each correction is
+  recorded with the numbers that overturned it.
+- **I introduced a bug in the gate** while trying to make gate failures more
+  legible, and an agent found it. That's in §6 with the fix.
+- **`main` is 3 commits ahead of origin and unpushed** — handoff docs and the gate
+  fix. Push when you're ready.
