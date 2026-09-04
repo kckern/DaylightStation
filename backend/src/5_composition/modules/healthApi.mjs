@@ -14,6 +14,8 @@ import { YamlHealthGoalsDatastore } from '#adapters/persistence/yaml/YamlHealthG
 import { BudgetService } from '#apps/health/BudgetService.mjs';
 import { YamlSavedMealsDatastore } from '#adapters/persistence/yaml/YamlSavedMealsDatastore.mjs';
 import { SavedMealsService } from '#apps/health/SavedMealsService.mjs';
+import { YamlMealTemplateDatastore } from '#adapters/persistence/yaml/YamlMealTemplateDatastore.mjs';
+import { TemplateService } from '#apps/health/TemplateService.mjs';
 import { YamlMedicalReadingsDatastore } from '#adapters/persistence/yaml/YamlMedicalReadingsDatastore.mjs';
 import { MedicalReadingsService } from '#apps/health/MedicalReadingsService.mjs';
 import { PhotoStore } from '#adapters/persistence/PhotoStore.mjs';
@@ -117,6 +119,18 @@ export function createHealthApiRouter(config) {
     logger,
   });
 
+  // Meal templates (PRD Theme 6). Its OWN adapter instance off the shared
+  // `dataService`, exactly as goals/savedMeals/medical above. Saved meals are
+  // NOT retired underneath it — they remain the copy-day-to-today transport
+  // (F6.3); a template is the durable, core/variant-aware thing.
+  const templateService = new TemplateService({
+    templateStore: new YamlMealTemplateDatastore({ dataService }),
+    nutriListStore: healthServices.nutriListStore,
+    clock: { now: () => Date.now() },
+    createId: uuidv4,
+    logger,
+  });
+
   const medicalService = new MedicalReadingsService({
     store: new YamlMedicalReadingsDatastore({ dataService }),
     createId: uuidv4,
@@ -193,6 +207,7 @@ export function createHealthApiRouter(config) {
     catalogService,
     budgetService,
     savedMealsService,
+    templateService,
     medicalService,
     photoStore,
     observationPairing,

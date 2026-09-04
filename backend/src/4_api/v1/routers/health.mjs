@@ -123,7 +123,7 @@ function serializeHealthMetric(metric) {
  * @returns {express.Router}
  */
 export function createHealthRouter(config) {
-  const { healthService, healthOperations, dashboardService, catalogService, longitudinalService, budgetService, savedMealsService, medicalService, photoStore = null, observationPairing = null, iconManifestStore = null, logger = console } = config;
+  const { healthService, healthOperations, dashboardService, catalogService, longitudinalService, budgetService, savedMealsService, templateService = null, medicalService, photoStore = null, observationPairing = null, iconManifestStore = null, logger = console } = config;
   const router = express.Router();
 
   // JSON parsing middleware
@@ -879,6 +879,72 @@ export function createHealthRouter(config) {
       } catch (err) {
         if (err.code === 'MEALS_WRITE_FAILED') {
           logger.error?.('health.meals.remove.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        throw err;
+      }
+    }));
+  }
+
+  // ==========================================================================
+  // Meal Templates (TemplateService)
+  //
+  // Distinct from saved meals above, which stay as the copy-day-to-today
+  // transport (PRD F6.3): a template carries core/variant roles and lands as a
+  // dish GROUP, a saved meal is a flat snapshot list.
+  // ==========================================================================
+  if (templateService) {
+    router.get('/nutrition/templates', asyncHandler(async (req, res) => {
+      const includeProposed = req.query.includeProposed === '1' || req.query.includeProposed === 'true';
+      return res.json({ templates: await templateService.list(getDefaultUsername(), { includeProposed }) });
+    }));
+
+    router.post('/nutrition/templates', asyncHandler(async (req, res) => {
+      const { name, icon, components } = req.body || {};
+      try {
+        return res.json({ template: await templateService.create({ name, icon, components }, getDefaultUsername()) });
+      } catch (err) {
+        if (err.code === 'TEMPLATES_WRITE_FAILED') {
+          logger.error?.('health.templates.create.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        return res.status(400).json({ error: err.message, code: err.code });
+      }
+    }));
+
+    router.post('/nutrition/templates/:id/instantiate', asyncHandler(async (req, res) => {
+      const { date, mealTime, variantNames } = req.body || {};
+      if (date !== undefined && date !== null && !DATE_PATTERN.test(String(date))) {
+        return res.status(400).json({ error: 'Invalid date (expected YYYY-MM-DD)', code: 'DATE_INVALID' });
+      }
+      if (mealTime !== undefined && mealTime !== null && !NUTRITION_MEAL_BUCKETS.includes(mealTime)) {
+        return res.status(400).json({ error: `Invalid bucket: ${mealTime}`, code: 'BUCKET_INVALID' });
+      }
+      if (variantNames !== undefined && !Array.isArray(variantNames)) {
+        return res.status(400).json({ error: 'variantNames must be an array', code: 'VARIANTS_INVALID' });
+      }
+      try {
+        return res.json(await templateService.instantiate(req.params.id, getDefaultUsername(), { date, mealTime, variantNames }));
+      } catch (err) {
+        if (err.code === 'TEMPLATE_NOT_FOUND') return res.status(404).json({ error: err.message, code: err.code });
+        // A proposal is not a template yet. 409, not 400: the request is
+        // well-formed and the id is real — the resource is in the wrong state.
+        if (err.code === 'TEMPLATE_NOT_ACTIVE') return res.status(409).json({ error: err.message, code: err.code });
+        if (err.code === 'TEMPLATES_WRITE_FAILED') {
+          logger.error?.('health.templates.instantiate.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        throw err;
+      }
+    }));
+
+    router.delete('/nutrition/templates/:id', asyncHandler(async (req, res) => {
+      try {
+        await templateService.remove(req.params.id, getDefaultUsername());
+        return res.json({ ok: true });
+      } catch (err) {
+        if (err.code === 'TEMPLATES_WRITE_FAILED') {
+          logger.error?.('health.templates.remove.write_failed', { error: err.message });
           return sendInternalError(res, { error: err.message, code: err.code });
         }
         throw err;
