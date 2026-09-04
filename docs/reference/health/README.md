@@ -383,28 +383,94 @@ whichever meal the current time of day implies (the hour mapping in
 [Meal buckets](#meal-buckets) above). This is the day view's only such affordance: the
 footer below the log carries the macro summary and coach line, never capture controls.
 
-### Type-ahead suggest (`AddCombobox`)
+### Quick add — suggestions before the first keystroke (`AddCombobox`)
 
-Typing debounces 250 ms into `GET /nutrition/catalog/suggest?q=`
-(`FoodCatalogService.suggest`) — the ranked list behind every combobox:
+Opening the add row shows a list immediately: the combobox fetches
+`GET /nutrition/catalog/suggest?bucket={bucketId}&limit=8` on mount, undebounced, so
+Breakfast's regulars are one tap away with nothing typed. Typing switches to
+`?q=` on a 250 ms debounce; clearing the text returns to the bucket list. Both share one
+request-id guard, so a slow response can never overwrite a newer one.
 
-1. Filter to entries whose normalized name contains the query (empty query = everything).
-2. Sort: **favorites first** (`favorite === true` descending), then by a recency-weighted
-   frequency score `useCount / (1 + daysSinceLastUsed / 30)` descending, then alphabetically
-   as a final tiebreak.
+The opening list is capped at **8** deliberately. It is the only fetch that happens with
+no user intent behind it, and every row it draws fires an icon request — a short list keeps
+that burst nowhere near the render-herd shape the icon route had to be bounded against.
+The typed list keeps the server default of 12; there the person is steering.
 
 Arrow keys move a `highlight` index over the results; **Enter with a suggestion
-highlighted** or a click both call `pick(entry)`.
+highlighted** or a click both call `pick(entry)`. Rows show the food's icon (where the
+catalog entry has one), its name, and its calories, with the same `<img>` + `onError`
+fallback the log rows use. A row that is a **meal** rather than a food carries its item
+count as a badge (see [Meal templates](#meal-templates)).
+
+#### The ranking
+
+`FoodCatalogService.suggest(query, userId, limit, { bucket })` filters by the query, then
+hands the candidates to `bucketSuggestRanking.mjs` — a pure domain module that takes the
+clock as an argument, because the domain layer forbids an ambient one. Three tiers:
+
+| Tier | Who | Ordered by |
+|---|---|---|
+| 0 | **Favorites** | blended bucket score, then global score |
+| 1 | Entries with history **in this bucket** | blended bucket score |
+| 2 | Everything else — *the backfill* | global score |
+
+The blended bucket score is
+
+```
+0.6 * min(1, countInBucket / 90)  +  0.4 * 0.5 ** (daysSinceLastUsedInBucket / 14)
+```
+
+— frequency normalised over a 90-day window (a food eaten every day for 90 days scores
+1.0, and more uses cannot score higher), recency decaying by half every 14 days. The
+global score is the older bucket-blind one, `useCount / (1 + daysSinceLastUsed / 30)`,
+kept verbatim. Ties break on normalized name, so the order is total and the same input
+always yields the same list.
+
+**Tier 2 is admitted only while fewer than five catalog entries have any history in the
+bucket.** Once a bucket knows five foods, the list is that bucket's foods plus favorites —
+a global list wearing a bucket label is what the tier exists to stop. Favorites are never
+what the threshold cuts. With no `bucket` supplied, no entry has bucket history, so tier 2
+is always admitted and the result is exactly the shipped favorites → global-score → name
+ordering.
+
+#### Where bucket history comes from
+
+`FoodCatalogEntry.usageByBucket` maps a bucket id to `{ count, lastUsed, quantity }` and is
+persisted with the entry. Two writers, both of which know the *resolved* meal:
+
+- **A quick-add** records against the bucket it was logged into.
+- **`POST /nutrition/catalog/backfill`** replays stored nutrilist rows, whose `mealTime` is
+  the resolved meal — an explicit "for lunch", or the row a capture was launched from,
+  having already beaten the clock upstream.
+
+The three Telegram/coach capture use-cases deliberately do **not** record a bucket. At the
+point where they record catalog usage, the meal they hold is the *clock's* guess; the
+precedence that lets a spoken meal or a launch row override it is applied downstream, in
+the input router. Donating the pre-override value would write a wrong bucket that no later
+correction can undo, so those callers record a use with no bucket at all and the backfill
+picks the history up from the finished rows. A caller that cannot name a bucket never
+advances bucket history and never guesses one.
+
+`quantity` is the portion the food was last logged with in that bucket, which is what a
+one-tap quick-add defaults to. A bucket the food has never been eaten in falls back to the
+catalog default of one serving.
 
 ### Deterministic paths — skip the funnel entirely
 
-`pick(entry)` is the fast path: `POST /nutrition/catalog/quickadd { catalogEntryId }`
-followed by a `PUT` to set the bucket, then done — no pending state, no confirmation step.
+`pick(entry)` is the fast path: **one** request, `POST /nutrition/catalog/quickadd
+{ catalogEntryId, mealTime }`, then done — no pending state, no confirmation step. The
+meal travels with the quick-add; there is no follow-up `PUT` to move the row afterwards.
+The row lands `settled: true, settledBy: 'user'`, because a one-tap pick of a known food is
+a deliberate choice, not a machine estimate. Its portion is the last one logged for that
+food in that bucket, else one serving.
+
 The same shape repeats everywhere a value is already known and doesn't need interpreting:
 
 - **Custom-food creation** (`CustomFoodSheet`, below) — create, then quickadd.
-- **Saved-meal logging** (`SavedMealsSheet`, "Copy to today", below) — `POST
-  /nutrition/meals/:id/log` writes NutriList rows directly.
+- **Template instantiation** (`TemplatePicker`, below) — `POST
+  /nutrition/templates/:id/instantiate` writes a dish group and its children directly.
+- **Copy-to-today** ("Copy to today", below) — `POST /nutrition/meals/:id/log` writes
+  NutriList rows directly.
 
 None of these touch the AI parsing pipeline.
 
@@ -777,10 +843,12 @@ presents as settled even though the stored value is still `false`. This is compu
 time the day is read, not written back — nothing ever mutates the row to auto-settle it,
 and no scheduled job runs the check.
 
-A person settles a row two ways: any successful edit (a `PUT` on the row, from
+A person settles a row three ways: any successful edit (a `PUT` on the row, from
 `EntryEditSheet` or elsewhere) stamps `settled: true, settledBy: 'user'` alongside
-whatever else changed, and an unsettled row's "Unconfirmed" badge carries its own
-one-tap confirm button that sends that same stamp with no other field changed.
+whatever else changed; an unsettled row's "Unconfirmed" badge carries its own one-tap
+confirm button that sends that same stamp with no other field changed; and a **quick-add**
+writes the stamp at creation, since picking a known food off the suggestion list is itself
+the ratification.
 
 ---
 
@@ -788,8 +856,9 @@ one-tap confirm button that sends that same stamp with no other field changed.
 
 A `FoodCatalogEntry` (`backend/src/2_domains/health/entities/FoodCatalogEntry.mjs`) carries
 `id, name, normalizedName, nutrients{calories,protein,carbs,fat}, source, barcodeUpc,
-useCount, favorite, icon, lastUsed, createdAt`. `icon` is a manifest slug or null — see
-[Food icons](#food-icons). `source` is `'manual' | 'nutritionix' | 'custom'`
+useCount, usageByBucket, favorite, icon, lastUsed, createdAt`. `icon` is a manifest slug or
+null — see [Food icons](#food-icons). `usageByBucket` is per-meal-bucket history —
+see [the quick-add ranking](#the-ranking) — and defaults to `{}`, never null. `source` is `'manual' | 'nutritionix' | 'custom'`
 depending on origin; entries created via `createCustom` (the barcode-mapping flow, or any
 direct `POST /nutrition/catalog`) are always `source: 'custom'`. `favorite` is a persisted
 boolean, toggled from `EntryEditSheet`'s star button via `PUT /nutrition/catalog/favorite {
@@ -800,32 +869,122 @@ logging already read from it.
 
 ---
 
-## Saved meals
+## Meal templates
 
-A saved meal is a named, multi-item template. Two ways to create one, both `POST
-/nutrition/meals { name, items }`:
+A **template** is a named set of component foods, each marked **core** (always there) or
+**variant** (rotates). Instantiating one drops a *dish group* into a bucket: one
+`kind: 'group'` header plus the core components as `parentId` children, plus whichever
+variants were toggled on. The picker (`TemplatePicker`, opened from the combobox's
+"Meals & templates ▸" link) is the **only** surface that lists kept meals.
 
-- **"Save as meal"** on a single logged entry's edit sheet (`EntryEditSheet`).
-- **"Save as meal"** on a whole bucket, from `LogTable`'s per-bucket header action (today's
-  buckets only) — prompts for a name, snapshots every row currently in that bucket.
+**The group header carries zero nutrition.** Rollups are computed on read, so a header that
+also held the meal's calories would make every bucket count the meal twice. Every fold in
+the app — the equation, the macro bars, the per-meal subtotals, the footer — sums the flat
+row list through `shared/contracts/nutrition/countedRows.mjs`, and the header contributes
+nothing to it.
 
-`SavedMealsService.create` snapshots each item's `name/calories/protein/carbs/fat/color` at
-save time — **items are immutable snapshots**; a later edit to a `FoodCatalogEntry`'s
-nutrients never mutates a saved meal or retroactively changes anything already logged from
-it. New meals start `useCount: 0, lastUsed: null`.
+Template rows are born `settled: true, settledBy: 'user'`: picking a template is a
+deliberate human choice, not a machine estimate. `settled` is written **verbatim** on every
+row — an absent `settled` means "legacy row, treat as settled", so a default anywhere on
+this path would change what every pre-existing row means.
 
-**Logging a saved meal** — `POST /nutrition/meals/:id/log { date?, mealTime? }` — builds
-fresh NutriList rows from the snapshot (`log_uuid: 'SAVEDMEAL'`, the same direct-write
-mechanism quick-add uses, no pending step), defaults `date` to today and `mealTime` from
-the current hour when not passed, and bumps the meal's `useCount`/`lastUsed`. `list()`
-sorts by `lastUsed` descending. `SavedMealsSheet` is the picker UI, opened from the
-combobox's "Saved meals ▸" link.
+Components are **snapshots**, exactly as saved meals were: a later catalog edit never
+reaches back into a template, and never retroactively changes anything logged from one.
 
-**Copy-to-today** (viewing a past date, per-bucket header action) reuses this same
-create→log→delete sequence purely as transport: it creates a throwaway saved meal from
-that bucket's rows, immediately logs it to today, then `DELETE`s the template — there is no
-dedicated "copy" endpoint. It only ever targets today; there's no "copy to another specific
-day" affordance.
+**Micros travel with them.** A component carries `fiber/sugar/sodium/cholesterol` and
+`microsSource` under the same rules as everywhere else — *per key* (an unmeasured key is not
+written as a structural zero claiming to be a reading), *only from a provenanced source*,
+and *provenance without numbers is not provenance*. So a template built from a scanned food
+instantiates rows that still report **covered**: logging a meal from a template is never
+less rich than logging its foods one at a time. The group header carries none of it and is
+excluded from both sides of the coverage fraction, as every group header is.
+
+### Creating one
+
+- **"Save as meal"** on a logged entry's edit sheet — a one-component all-core template.
+- **"Save as meal"** on a whole bucket, from `LogTable`'s per-bucket header action (today
+  only) — prompts for a name, snapshots every row in that bucket, all core. Nothing here
+  knows which parts rotate, and guessing would drop food out of the meal next time.
+- **Approving a mined proposal** (below).
+
+All three are `POST /nutrition/templates { name, icon?, components }`.
+
+### Logging one
+
+`POST /nutrition/templates/:id/instantiate { date?, mealTime?, variantNames? }` →
+`{ groupUuid, items }`. `date` defaults to the **local** day and `mealTime` to the clock;
+an unknown name in `variantNames` selects nothing rather than inventing a component. Core
+is never optional — omitting it from `variantNames` cannot drop it. A selection that would
+write nothing at all (an all-variant template with nothing toggled) is refused with
+`400 { code: 'TEMPLATE_NO_COMPONENTS' }` rather than filed as a lone empty group; the
+picker's Log button is dead until something is chosen. The template's
+`useCount`/`lastUsed` bump on each instantiation.
+
+A template with no variants logs on the first tap: there is no decision in it, so there is
+no step asking for one. A template with variants shows its toggles first, and the Log
+button states the kcal the current selection adds up to.
+
+### Mining — proposals, never auto-created templates
+
+`TemplateMiner` (pure, `2_domains/nutrition/services/`, takes `today` as an argument
+because the domain layer forbids an ambient clock) reads a rolling window of day-log rows
+and returns proposals. `TemplateCurationJob` runs it weekly (Sundays 04:10) and files the
+results with `status: 'proposed'`.
+
+| Parameter | Value | Meaning |
+|---|---|---|
+| window | **90 days** | rows older than this contribute nothing |
+| occurrence | same `parentId`, else same bucket **on the same day** | one eating event |
+| threshold | **≥ 6 occurrences** | how often a combo must have happened |
+| core | present in **≥ 70 %** of the combo's occurrences | always logged |
+| variant | present in **20–70 %** | offered as a toggle |
+| dropped | below **20 %** | omitted entirely |
+| minimum core | **2 components** | a one-item "combo" is just a frequent food |
+
+Every food occurring at least six times **anchors** a candidate: the occurrences containing
+it *are* the combo's occurrences, and the presence rates are measured against them. Two
+anchors inside one stack land on the same core set, so candidates dedup themselves without
+a clustering pass.
+
+A component's numbers are the **most recent portion actually logged** for that food, never
+an average — an averaged portion is one nobody ate. The suggested name is the dominant
+bucket plus the highest-presence, then most substantial, core food ("Morning oatmeal").
+
+**Identity is the sorted, normalized CORE names** — variants are excluded, so a smoothie
+whose fruit rotates stays one combo, and a dismissal keeps matching it. Dedup is against
+the keys of existing templates, of live proposals, and of the permanent dismissal ledger,
+plus against the names already in the picker.
+
+`POST /nutrition/templates/:id/approve { name? }` turns a proposal into a template;
+`POST /nutrition/templates/:id/dismiss` deletes it and records its key **forever**, so it
+can never be proposed again. Nothing is auto-created without approval.
+
+The job is **safe to re-run**: a key already held by a template, a live proposal, or the
+dismissal ledger is skipped, so a second run over the same history is a no-op. (This is
+explicitly *unlike* `POST /nutrition/catalog/backfill`, which increments a usage counter
+per row per run and is a one-shot seeding tool.)
+
+### Suggestions
+
+`GET /nutrition/catalog/suggest` merges templates into the combobox list per **favorites →
+templates → the rest**. Every entry carries `type: 'food' | 'template'`; a template also
+carries `itemCount`, `variantCount` and its core `calories`, and renders with the item
+count as a non-colour cue. Picking one opens the picker on that template so its variants
+are still offered, rather than logging one silent arrangement of the meal. The
+zero-keystroke list shows at most **three** templates; a typed query shows every match.
+
+## Saved meals — transport only
+
+The saved-meals store and its four endpoints remain, but **nothing lists them**. They exist
+purely as the transport behind **copy-to-today**: viewing a past date, the per-bucket header
+action creates a throwaway saved meal from that bucket's rows, immediately logs it to today
+(`log_uuid: 'SAVEDMEAL'`), then `DELETE`s it. There is no dedicated copy endpoint, and it
+only ever targets today.
+
+Any saved meal that predates the template picker is converted by
+`node cli/migrate-saved-meals-to-templates.mjs [--user <id>] [--dry-run]` into an all-core
+template, carrying its `useCount`/`lastUsed` across. It is idempotent by name and deletes
+nothing.
 
 ---
 
@@ -983,13 +1142,19 @@ All under `/api/v1/health/`, from `backend/src/4_api/v1/routers/health.mjs`:
 | `GET /goals`, `PUT /goals` | goals document; a malformed `macroGoals`/`watchMicros` shape is `400 { code: 'GOALS_INVALID' }` |
 | `GET /nutrilist/:date`, `POST /nutrilist`, `PUT /nutrilist/:uuid`, `DELETE /nutrilist/:uuid` | day-log rows (legacy-parity NutriList CRUD) |
 | `GET /nutrition/catalog?q=`, `GET /nutrition/catalog/recent` | plain catalog search/recents |
-| `GET /nutrition/catalog/suggest?q=` | ranked combobox suggestions |
-| `POST /nutrition/catalog/quickadd` | deterministic log from a catalog entry |
+| `GET /nutrition/catalog/suggest?q=&bucket=&limit=` | ranked combobox suggestions; `bucket` makes the ranking per-meal (400 on a bucket outside the four) |
+| `POST /nutrition/catalog/quickadd` | deterministic log from a catalog entry; body `{ catalogEntryId, mealTime? }`, 400 on a `mealTime` outside the four |
 | `POST /nutrition/catalog` | create a custom food (optionally `barcodeUpc`-mapped) |
 | `PUT /nutrition/catalog/favorite` | toggle favorite by id or name |
 | `PUT /nutrition/catalog/icon` | pin a food's icon by id or name — the "always for this food" override |
 | `POST /nutrition/catalog/backfill` | seed the catalog from existing log history |
-| `GET /nutrition/meals`, `POST /nutrition/meals`, `POST /nutrition/meals/:id/log`, `DELETE /nutrition/meals/:id` | saved meals |
+| `GET /nutrition/meals`, `POST /nutrition/meals`, `POST /nutrition/meals/:id/log`, `DELETE /nutrition/meals/:id` | saved meals — transport for copy-to-today only; no surface lists them |
+| `GET /nutrition/templates?includeProposed=` | meal templates; proposals are hidden unless asked for |
+| `POST /nutrition/templates` | create a template (`{ name, icon?, components }`), 400 on an invalid shape |
+| `POST /nutrition/templates/:id/instantiate` | log it as a dish group (`{ date?, mealTime?, variantNames? }`); 404 unknown, **409** for a proposal nobody approved, **400** for a selection that would write nothing |
+| `POST /nutrition/templates/:id/approve` | turn a mined proposal into a template (`{ name? }`) |
+| `POST /nutrition/templates/:id/dismiss` | refuse a proposal; its key is remembered forever |
+| `DELETE /nutrition/templates/:id` | remove a template |
 | `POST /nutrition/input` | unified capture entry point (`type: text\|image\|voice\|barcode`) |
 | `POST /nutrition/callback` | resolve a capture's Undo/Edit/portion choice, or a scale-pending Accept/Discard |
 | `GET /nutrition/pending?date=` | pending NutriLogs for a date (the scale's NEEDS REVIEW banner) |

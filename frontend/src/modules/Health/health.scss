@@ -531,11 +531,18 @@ $health-aside-gap: 1.5rem;
   padding: 0.4rem 0.25rem;
   &__list { list-style: none; margin: 0.25rem 0 0; padding: 0; }
   &__item {
-    display: flex; gap: 0.4rem; align-items: baseline; width: 100%;
+    // `center`, not `baseline`: the row now carries a 24px image beside text,
+    // and a baseline-aligned image hangs its whole box off the text baseline.
+    display: flex; gap: 0.4rem; align-items: center; width: 100%;
     padding: 0.4rem 0.5rem; border-radius: 6px; color: var(--ds-text-high);
+    // A suggestion is a tap target on a phone (A2: >= 44px).
+    min-height: 44px;
     &--hi, &:hover { background: var(--ds-surface-alt); }
     &--fav .health-suggest__star { color: var(--ds-warning); }
   }
+  // Same 24px as the log row's icon — one picture size for the food, wherever
+  // it appears. `flex: none` so a wide glyph can never squeeze the name.
+  &__icon { width: 24px; height: 24px; object-fit: contain; flex: none; }
   &__kcal { margin-left: auto; color: var(--ds-text-low); font-variant-numeric: tabular-nums; font-size: 0.8rem; }
   &__error { color: var(--ds-danger); font-size: 0.8rem; margin: 0.25rem 0 0; }
   &__saved-meals {
@@ -638,4 +645,43 @@ $health-aside-gap: 1.5rem;
   &__date { color: var(--ds-text-mid); min-width: 5.5rem; }
   &__value { font-variant-numeric: tabular-nums; color: var(--ds-text-high); }
   &__note { color: var(--ds-text-low); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+
+// The meal/template picker (PRD Theme 6). It reuses `.health-suggest__item`
+// for its rows so a template reads like every other pickable food; only the
+// variant toggles and the proposal block are its own.
+.health-templates {
+  &__list { list-style: none; margin: 0.25rem 0 0; padding: 0; }
+  &__hint { margin: 0 0 0.5rem; font-size: 0.85rem; color: var(--ds-text-mid); }
+  &__toggle {
+    display: flex; gap: 0.4rem; align-items: center; width: 100%;
+    padding: 0.4rem 0.5rem; border-radius: 6px; color: var(--ds-text-high);
+    // A2: a variant toggle is a phone tap target.
+    min-height: 44px;
+    border: 1px solid var(--ds-border);
+    margin-bottom: 0.3rem;
+    &:hover, &:focus-visible { background: var(--ds-surface-alt); }
+    &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
+    // A1: the chosen state is not carried by colour alone — the glyph changes
+    // from + to ✓ and the border thickens.
+    &--on { border-color: var(--ds-accent); background: var(--ds-surface-alt); }
+  }
+  &__check { width: 1.1rem; text-align: center; color: var(--ds-text-mid); }
+  &__toggle--on &__check { color: var(--ds-accent); }
+  &__actions { display: flex; gap: 0.4rem; align-items: center; margin-top: 0.4rem; }
+  &__proposals { margin-bottom: 0.6rem; }
+  &__proposal {
+    display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; justify-content: space-between;
+    padding: 0.4rem 0; border-top: 1px solid var(--ds-border);
+    &:first-of-type { border-top: none; padding-top: 0; }
+  }
+  &__proposal-info { display: flex; flex-direction: column; gap: 0.1rem; }
+}
+
+// A meal-level suggestion in the add-combobox (PRD F8.2). The item count is
+// the distinguishing cue, not a colour — a template and a food must be
+// tellable apart without seeing hue (A1).
+.health-suggest__badge {
+  padding: 0.05rem 0.4rem; border-radius: 999px; font-size: 0.7rem;
+  background: var(--ds-surface-alt); color: var(--ds-text-mid); white-space: nowrap;
 }

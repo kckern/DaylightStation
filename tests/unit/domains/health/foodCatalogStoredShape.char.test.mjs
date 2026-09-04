@@ -69,6 +69,11 @@ describe('food catalog stored YAML shape (characterization)', () => {
       source: 'manual',
       barcodeUpc: '012345678905',
       useCount: 3,
+      // Task 9.1: per-bucket usage — what makes the add-combobox's
+      // zero-keystroke list bucket-aware. An entry never recorded against a
+      // bucket stores `{}`; the stored shape changed deliberately, like
+      // `favorite` and `icon` before it.
+      usageByBucket: {},
       favorite: false,
       icon: null,
       lastUsed: '2026-07-08',

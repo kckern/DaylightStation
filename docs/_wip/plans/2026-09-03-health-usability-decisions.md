@@ -274,6 +274,187 @@ exactly the reference line and the bar — and the reviewer's exact break now fa
 same guard is applied to the month block. **The lesson generalises: a test for "X does
 not exist" must not be written as a count of the things that do.**
 
+**2.25 The capture use cases deliberately do NOT record a bucket (Task 9.1).**
+`usageByBucket` needs the *resolved* meal. At the point where `LogFoodFromText`,
+`LogFoodFromImage` and `LogFoodFromUPC` record catalog usage, the meal they hold is the
+CLOCK's guess: each builds `meal.time` from `#getMealTimeFromHour` and then RETURNS
+`mealTime`/`mealTimeExplicit` for `NutribotInputRouter#capture` to apply the precedence
+(a spoken "for lunch", or the row the capture was launched from, beats the clock). Adding
+`mealTime: nutriLog.meal.time` at those three call sites is a one-line change that looks
+obviously right and would have written the pre-override bucket — permanently, as a count
+on disk that no later correction can undo, in exactly the case §1 says matters most.
+Refused. `FoodCatalogService.recordUsage` honours `foodItem.mealTime` when a caller can
+supply one, and a caller that cannot advances no bucket history at all rather than
+guessing. The seam where this *could* be done correctly is the input router, which is
+where the precedence is applied; that is a bigger change than Task 9.1's scope.
+
+**2.26 `backfill` was reading almost nothing, and this is what made 2.25 affordable.**
+Backfill is the path that seeds bucket history from finished rows, whose `mealTime` IS the
+resolved meal. It gated on `if (!item?.label) continue`, but the nutrilist has two row
+shapes: `syncFromLog` rows key the name as `label`, `saveMany` rows as `item` — and on the
+production file the `item`-shaped rows are the MAJORITY (39 vs 29, verified on the running
+container). So the backfill silently skipped most of the history its own contract claims to
+read, and — worth knowing — Phase 7's icon donation was riding on the same gate. Widened to
+the name the store itself resolves (`name || item || label`, 'Unknown' excluded, which is
+`#normalizeItem`'s own sentinel). Found only by the falsification pass: deleting the new
+`mealTime` donation left every test green, which is what a decorative addition looks like.
+**Consequence to know — and an earlier draft of this entry got it WRONG, so read this
+rather than the git history.** It said `dehydrateNutriListItem` writes no `mealTime`, and
+concluded the AI capture path could never contribute bucket history. That is false. The
+capture path persists the RESOLVED meal:
+
+- `NutribotInputRouter#resolveMealTime` (`services/NutribotInputRouter.mjs:136`) applies
+  the precedence — explicit utterance > `bucket` param > clock — and saves it onto the log
+  at `:85`, *before* `#commitCapture` at `:99`.
+- `YamlNutriListDatastore.mjs:180` stamps `mealTime: nutriLog.meal?.time ?? null` in the
+  `.map()` that consumes `dehydrateNutriListItem`'s output.
+- `AcceptFoodLog.mjs:121` does the same on the `saveMany` path, with a comment naming the
+  bug it fixed.
+
+Both shipped 2026-09-02 (`c04603c73`, `ed128c05c`) and are ancestors of the deployed image.
+**`mealTime` is absent from `dehydrateNutriListItem` BY DESIGN** — the `.map()` immediately
+overrides it, and `saveMany` already carries `mealTime: item.mealTime ?? null` at `:257`.
+Adding it there would be dead code that reads like a fix. Do not.
+
+The 8-of-68 count is therefore a **history artifact, not a structural gap**. Measured on
+the production hot file, per record:
+
+| shape | carries `mealTime` | count | date range |
+|---|---|---|---|
+| `item` | yes | 8 | 2026-09-02 → 2026-09-03 |
+| `item` | no | 31 | 2026-08-12 → 2026-08-31 |
+| `label` | no | 29 | 2026-08-07 → 2026-08-27 |
+
+A clean cutoff at the 2026-09-02 change: every row logged since carries its bucket, and
+every row without one predates the fix. Bucket history accrues from every capture from now
+on, which is what makes 2.25's refusal affordable — the conclusion of this entry is
+unchanged, only the reasoning behind it is corrected.
+
+**2.27 The retired PUT was checked by reading what it did, not by assuming it was dead.**
+`AddCombobox` used to follow every quick-add with `PUT /nutrilist/{uuid} { mealTime }`.
+Two things rode on it beyond moving the row: `updateNutritionItem` ratifies by DEFAULT
+(`options.ratify !== false`), so the PUT was also what stamped `settled/settledBy/settledAt`
+on a quick-added row; and it cascades a group's `mealTime` to its children. `quickAdd` now
+writes the stamp itself (PRD F8.3), and a quick-added row is `kind: 'item'` with no
+children, so the cascade had nothing to do. Deleting it also closes a live hole: when that
+PUT failed, the combobox had already closed and the row was left in the CLOCK's bucket AND
+unsettled. Per §5.4, the deletion was demonstrated rather than argued — the regression test
+asserts that no request of ANY kind reaches the nutrilist endpoint, because counting
+quickadd calls could not express "the second request is gone" (§2.24's lesson).
+
+**2.28 `recordUsage` dates in UTC while `quickAdd` dates locally — flagged, not fixed.**
+`FoodCatalogService.recordUsage` stamps `lastUsed` with `new Date(clock.now()).toISOString().slice(0,10)`;
+`quickAdd` uses the local-date helper, because a naive ISO slice reads as tomorrow every
+evening in this household's timezone (that fix, and its test, predate this phase). Both now
+write `usageByBucket[bucket].lastUsed` too, so the same instant can be recorded a day apart
+depending on which path ran. The effect is bounded — one day of recency decay at the
+margin, on a 14-day half-life — and the divergence already applies to `entry.lastUsed`,
+which the shipped global score reads. Changing it would alter ranking for every existing
+entry on a path outside this task. Recorded for the whole-branch review.
+
+**2.29 `backfill` is NOT idempotent — running it twice inflates every entry's score.**
+Stated here rather than in a report's concerns list because learning that bucket history
+seeds from `POST /nutrition/catalog/backfill` makes running it the obvious next move, and
+this is what someone needs to know *before* they do. `backfill` calls `recordUsage` once
+per stored row, and `recordUsage` unconditionally increments `useCount` and now also
+`usageByBucket[bucket].count`. A second run over the same window therefore counts every
+row again: the global score (`useCount / (1 + daysSince/30)`) and the per-bucket frequency
+both inflate, and nothing detects or corrects it. It is a deliberate one-shot seeding
+tool, not a reconcile. Widening its name gate (2.26) makes each run process ~2.3× as many
+rows as before, so the inflation per accidental re-run is correspondingly larger. If it is
+ever to become safe to re-run, it needs to reconcile against a per-row marker rather than
+increment blindly — that is a real change, not a tweak, and it is not in this program.
+
+**2.30 Editing a row's portion does not update the bucket's remembered quantity.**
+`usageByBucket[bucket].quantity` is written at log time by `quickAdd` and by `backfill`.
+`PUT /nutrilist/:uuid` — the edit sheet's grams/amount change — writes the row and never
+touches the catalog entry, so correcting a portion after logging does not teach the
+catalog anything. The next quick-add of that food in that bucket re-offers the OLD portion
+until a backfill replays the corrected row. Accepted deliberately: the alternative is for
+a row edit to reach back into the catalog, which coupling the edit path to the catalog
+would make every portion tweak a catalog write, and the failure mode here is one stale
+default that the person can edit again — not wrong data. Recorded so it reads as a
+decision rather than an oversight.
+
+**2.31 The group header a template writes carries zero nutrition, and the guard is an
+invariant rather than a case list (Task 10.1).**
+`instantiate` writes one `kind: 'group'` row plus core (and chosen variant) children. The
+header's `calories/protein/carbs/fat` are spelled out as `0` rather than omitted, and the
+test is a ROW-CONSERVATION assertion — every chosen component appears in exactly one row,
+the row count is `components + 1`, and `sumCounted` over the whole set equals the component
+sum — not an enumeration of shapes (process finding 5.3). Make the header carry the meal's
+kcal and three tests fail, including the one that reads the numbers back off YAML through
+`BudgetService`.
+
+**2.32 `MIN_CORE_COMPONENTS = 2` is ours, not the PRD's (Task 10.3).**
+The PRD names the window, the occurrence threshold and the two presence bands, but not a
+minimum core size. Without one, "coffee, and whatever I ate with it" mines a proposal whose
+core is a single food — which the quick-add list already offers, with an approval prompt
+attached. Two is the floor, asserted as a literal and falsified in both directions.
+
+**2.33 A component's numbers are the most recent REAL portion, never an average (Task 10.3).**
+Averaging the observed rows produces a portion nobody ate. The miner carries the values from
+the latest row it saw for that name inside the combo's occurrences, so an approved template
+logs a quantity that actually happened.
+
+**2.34 Mining anchors on frequent foods; the key is CORE-ONLY (Task 10.3).**
+Each food occurring ≥6 times anchors a candidate, and the occurrences containing it are the
+combo's occurrences. Two anchors inside one stack produce the same core set and therefore
+the same key, so candidates dedup themselves without a clustering pass. The key excludes
+variants deliberately: a smoothie whose fruit rotates must stay ONE combo, or the week the
+rotation changes it would be proposed again — and a dismissal would stop matching, which is
+the one thing a permanent dismissal cannot be allowed to do.
+
+**2.35 Retiring `SavedMealsSheet` required moving two WRITE paths, which only driving it
+found (Task 10.4).**
+Parity was established by rendering both components side by side over the same meal and
+asserting all five of the sheet's observables against the picker (process finding 5.4).
+That much a careful reading might have predicted. What it would not have: `TodayView`'s
+"Save as meal" (US-2.2) and `EntryEditSheet`'s "Save as meal" both **wrote saved meals** —
+so with the sheet gone they would have kept writing to a file nothing lists, silently, with
+a success toast. Both now write templates. The `copy-day-to-today` round trip keeps the
+meals endpoints, because it creates, logs and deletes in one breath and nothing ever lists
+what it makes. **The surface was replaceable; the things feeding it were not, and the
+deletion was only safe once they moved.**
+
+**2.36 Instantiating a template is NOT a quick-add (Task 10.4).**
+A template picked from the combobox hands off to the picker rather than logging
+immediately. PRD F6.1 says instantiating offers the variants, and quick-adding one would
+silently log a single arrangement of a meal whose whole point is that part of it rotates. A
+template with nothing to choose still logs on the first tap, so the one-tap path the saved
+meals sheet had is preserved exactly where it applies.
+
+**2.37 `TEMPLATE_SUGGEST_CAP = 3` is ours, like the core floor (Task 10.4).**
+The zero-keystroke combobox list is capped at eight rows (Task 9.2's reasoning: it is the
+only fetch with no user intent behind it). An unbounded template block inside that would
+push a person's actual regulars off the list, so at most three templates are offered there.
+A TYPED query is steered, so every match is shown. Written down here rather than only in a
+task report because it is a user-visible behaviour constant, and this is the file that
+travels.
+
+**2.38 Micros and their provenance travel with a template (Task 10.4 review).**
+The first cut of `snapshotComponent` carried only `calories/protein/carbs/fat`, so a meal
+logged from a template came off disk with `fiber/sugar/sodium/cholesterol` at 0 and
+`microsSource: null` — meaning **the same meal logged via a template was strictly less rich
+than logging its foods one at a time**, and `BudgetService` counted every template row as
+uncovered. That is not neutral honesty: it degrades the data Theme 4 had just spent a phase
+collecting, and it would have lowered the coverage caption in the same commit that marked
+Theme 4 delivered. Fixed rather than documented. Phase 6's rules are preserved exactly:
+per KEY (`pickMicros`, so an unmeasured key is never written as a structural zero claiming
+to be a reading), only from a **provenanced** source (no `microsSource` means the zeros are
+structure and nothing is carried), and provenance without numbers is not provenance
+(§2.11). The same rule is applied at all three producers — manual save, the miner, and the
+instantiated child rows — and the end-to-end guard reads a template-logged row's coverage
+back through the real YAML and `BudgetService`. Group headers stay clean and excluded from
+both sides of the coverage fraction (§2.10).
+
+**2.39 A template must log something (Task 10.4 review, M-2).**
+An all-variant template with nothing toggled wrote a lone empty group row — zero calories,
+no children — which every fold counts as nothing and every reader has to explain. No UI
+*create* path can build such a template today, which is exactly why it needed a guard
+rather than a note: the refusal belongs in the service (`TEMPLATE_NO_COMPONENTS` → 400),
+and the picker's Log button is dead until the selection is non-empty.
+
 ---
 
 ## 3. Known divergences from the PRD (true only after later phases)

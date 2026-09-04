@@ -1,7 +1,9 @@
 # Health App — Usability, Capture & Data-Richness PRD
 
 **Date:** 2026-09-02 (rev 2, post adversarial review)
-**Status:** Draft for review
+**Status:** **Delivered** (2026-09-04, branch `feat/health-usability`). Every theme is built; the
+build-order table below records what landed where. Deviations and the reasoning behind them
+are in `docs/_wip/plans/2026-09-03-health-usability-decisions.md`.
 **Builds on:** `2026-09-02-health-loseit-revamp-design.md` (shipped). This PRD defines the
 next program of work for `/health`, focused on accessibility, input friction, a richer
 entry taxonomy, and data surfacing.
@@ -390,19 +392,24 @@ The program's stated theme is accessibility; these are requirements, not polish:
 ## Priorities & build order
 
 All themes are approved as one program (single wave). Recommended build order, driven
-by dependency, not preference:
+by dependency, not preference — **all four steps delivered**:
 
-1. **Foundation — Theme 3 + Theme 2** (lifecycle + groups), starting with the schema
-   whitelist threading (F2.2) everything else depends on. **Theme 9** lands here too —
-   it reshapes how the day view reads and reconciles data, which every later theme
-   renders through.
-2. **Theme 1** (capture affordances) — bucket plumbing + re-servicing capture
-   components onto the new lifecycle.
-3. **Themes 4, 5, 7, 8** (macros, icons, viz/layout, quick add) — display-layer work
-   over the new model; parallelizable. Quick add's meal-level suggestions ship reduced
-   (items + migrated saved meals) until Theme 6 templates exist.
-4. **Theme 6** (templates) — depends on groups (instantiates them) and benefits from
-   accumulated grouped history.
+| # | Themes | Phases | Status |
+|---|---|---|---|
+| 1 | **Foundation** — Theme 3 (lifecycle) + Theme 2 (groups) + Theme 9 (loading), starting with the schema whitelist threading (F2.2) everything else depends on | 0–3 | **delivered** |
+| 2 | **Theme 1** — capture affordances: bucket plumbing + capture components on the new lifecycle | 4–5 | **delivered** |
+| 3 | **Themes 4, 5, 7, 8** — macros/micros, icons, viz & layout, quick add | 6–9 | **delivered** |
+| 4 | **Theme 6** — templates: mining, picker, saved-meal migration | 10 | **delivered** |
+
+Step 3's caveat ("quick add's meal-level suggestions ship reduced until Theme 6 templates
+exist") is closed: the suggest endpoint now merges templates per F6.4, and saved meals are
+migrated rather than surfaced.
+
+**Requirement coverage:** F1.1–F9.3 are all built. Where the shipped behaviour differs from
+what this document assumed, the difference is recorded and reasoned in the decision log —
+notably `rejected` remaining reachable as a scale-only status (§3), `NeedsReviewSection`
+being kept for scale-origin rows rather than deleted (§2.1), and the macro bars shipping
+without a goal tick (§2.13).
 
 ## Non-goals
 
