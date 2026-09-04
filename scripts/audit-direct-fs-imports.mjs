@@ -73,10 +73,29 @@ export function scanDirectFsImports(file, source) {
   return findings;
 }
 
+// A gate that crashes on a race is a gate people learn to re-run rather than
+// trust. Listing a tree and then stat/reading it is inherently racy: a file can
+// vanish between the two, which happens for real when a commit runs while
+// something else is writing (a test harness cleaning up its own temp probes did
+// exactly this). ENOENT is the one error that is safe to swallow here, because
+// a file that no longer exists cannot contain a forbidden import. Every other
+// error — EACCES above all — still throws, since "I could not read it" is not
+// "it is clean".
+function ignoreMissing(fn, fallback) {
+  try {
+    return fn();
+  } catch (err) {
+    if (err?.code === 'ENOENT') return fallback;
+    throw err;
+  }
+}
+
 function walk(dir, files = []) {
-  for (const entry of readdirSync(dir)) {
+  for (const entry of ignoreMissing(() => readdirSync(dir), [])) {
     const file = join(dir, entry);
-    if (statSync(file).isDirectory()) walk(file, files);
+    const stat = ignoreMissing(() => statSync(file), null);
+    if (stat === null) continue;
+    if (stat.isDirectory()) walk(file, files);
     else if (isScannedRuntimeFile(file)) files.push(file);
   }
   return files;
@@ -123,14 +142,16 @@ function run({ staged = false, files: suppliedFiles = null, quiet = false } = {}
     ? stagedFiles()
     : [
         ...SOURCE_ROOTS.flatMap((root) => walk(root)),
-        ...[...RUNTIME_ENTRYPOINTS].filter((file) => statSync(file).isFile()),
+        ...[...RUNTIME_ENTRYPOINTS].filter((file) => ignoreMissing(() => statSync(file).isFile(), false)),
       ]);
 
   const sources = staged ? stagedSources(files) : null;
   const findings = [];
   for (let index = 0; index < files.length; index += 1) {
     const file = files[index];
-    findings.push(...scanDirectFsImports(file, staged ? sources[index] : readFileSync(file, 'utf8')));
+    const source = staged ? sources[index] : ignoreMissing(() => readFileSync(file, 'utf8'), null);
+    if (source === null) continue;  // vanished after the walk listed it
+    findings.push(...scanDirectFsImports(file, source));
   }
 
   for (const finding of findings) {
