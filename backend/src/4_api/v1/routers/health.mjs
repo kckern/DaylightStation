@@ -937,6 +937,8 @@ export function createHealthRouter(config) {
         // A proposal is not a template yet. 409, not 400: the request is
         // well-formed and the id is real — the resource is in the wrong state.
         if (err.code === 'TEMPLATE_NOT_ACTIVE') return res.status(409).json({ error: err.message, code: err.code });
+        // Nothing would be written. 400: the caller chose an empty set.
+        if (err.code === 'TEMPLATE_NO_COMPONENTS') return res.status(400).json({ error: err.message, code: err.code });
         if (err.code === 'TEMPLATES_WRITE_FAILED') {
           logger.error?.('health.templates.instantiate.write_failed', { error: err.message });
           return sendInternalError(res, { error: err.message, code: err.code });

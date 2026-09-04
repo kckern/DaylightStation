@@ -70,6 +70,13 @@ export function TemplatePicker({ open, onClose, onLogged, bucketId, focusTemplat
     return next;
   });
 
+  // What "Log" would actually write. An all-variant template with nothing
+  // toggled would otherwise offer a button that writes a lone empty group; the
+  // service refuses it too, but the button should never have been live.
+  const selection = chosen
+    ? [...coreOf(chosen), ...variantsOf(chosen).filter((c) => variants.has(c.name))]
+    : [];
+
   const log = async (template, variantNames) => {
     setBusy(true); setError(null);
     try {
@@ -109,7 +116,9 @@ export function TemplatePicker({ open, onClose, onLogged, bucketId, focusTemplat
       {chosen ? (
         <div className="health-templates__variants">
           <p className="health-templates__hint">
-            {coreOf(chosen).length} always included. Add anything else you want today.
+            {coreOf(chosen).length > 0
+              ? `${coreOf(chosen).length} always included. Add anything else you want today.`
+              : 'Nothing is always included — pick at least one.'}
           </p>
           <ul className="health-templates__list">
             {variantsOf(chosen).map((component) => {
@@ -128,9 +137,9 @@ export function TemplatePicker({ open, onClose, onLogged, bucketId, focusTemplat
             })}
           </ul>
           <div className="health-templates__actions">
-            <Button size="sm" disabled={busy}
+            <Button size="sm" disabled={busy || selection.length === 0}
               onClick={() => log(chosen, [...variants])}>
-              {`Log ${kcal([...coreOf(chosen), ...variantsOf(chosen).filter((c) => variants.has(c.name))])} kcal`}
+              {`Log ${kcal(selection)} kcal`}
             </Button>
             <Button size="sm" variant="subtle" disabled={busy} onClick={() => { setChosen(null); setVariants(new Set()); }}>
               Back

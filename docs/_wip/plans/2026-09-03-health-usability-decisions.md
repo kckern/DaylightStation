@@ -424,6 +424,37 @@ silently log a single arrangement of a meal whose whole point is that part of it
 template with nothing to choose still logs on the first tap, so the one-tap path the saved
 meals sheet had is preserved exactly where it applies.
 
+**2.37 `TEMPLATE_SUGGEST_CAP = 3` is ours, like the core floor (Task 10.4).**
+The zero-keystroke combobox list is capped at eight rows (Task 9.2's reasoning: it is the
+only fetch with no user intent behind it). An unbounded template block inside that would
+push a person's actual regulars off the list, so at most three templates are offered there.
+A TYPED query is steered, so every match is shown. Written down here rather than only in a
+task report because it is a user-visible behaviour constant, and this is the file that
+travels.
+
+**2.38 Micros and their provenance travel with a template (Task 10.4 review).**
+The first cut of `snapshotComponent` carried only `calories/protein/carbs/fat`, so a meal
+logged from a template came off disk with `fiber/sugar/sodium/cholesterol` at 0 and
+`microsSource: null` — meaning **the same meal logged via a template was strictly less rich
+than logging its foods one at a time**, and `BudgetService` counted every template row as
+uncovered. That is not neutral honesty: it degrades the data Theme 4 had just spent a phase
+collecting, and it would have lowered the coverage caption in the same commit that marked
+Theme 4 delivered. Fixed rather than documented. Phase 6's rules are preserved exactly:
+per KEY (`pickMicros`, so an unmeasured key is never written as a structural zero claiming
+to be a reading), only from a **provenanced** source (no `microsSource` means the zeros are
+structure and nothing is carried), and provenance without numbers is not provenance
+(§2.11). The same rule is applied at all three producers — manual save, the miner, and the
+instantiated child rows — and the end-to-end guard reads a template-logged row's coverage
+back through the real YAML and `BudgetService`. Group headers stay clean and excluded from
+both sides of the coverage fraction (§2.10).
+
+**2.39 A template must log something (Task 10.4 review, M-2).**
+An all-variant template with nothing toggled wrote a lone empty group row — zero calories,
+no children — which every fold counts as nothing and every reader has to explain. No UI
+*create* path can build such a template today, which is exactly why it needed a guard
+rather than a note: the refusal belongs in the service (`TEMPLATE_NO_COMPONENTS` → 400),
+and the picker's Log button is dead until the selection is non-empty.
+
 ---
 
 ## 3. Known divergences from the PRD (true only after later phases)

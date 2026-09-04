@@ -20,6 +20,7 @@
  */
 
 import { formatLocalTimestamp } from '#system/utils/time.mjs';
+import { hasMicroData, pickMicros } from '#domains/nutrition/services/micros.mjs';
 
 /** Local (not UTC) YYYY-MM-DD. The UTC form reads as tomorrow every evening here. */
 function localDateISO(d) {
@@ -50,8 +51,29 @@ const coded = (message, code) => {
 /**
  * One stored component. A SNAPSHOT, exactly as saved meals are: a later catalog
  * edit never reaches back into a template.
+ *
+ * MICROS TRAVEL WITH IT, under Phase 6's rules. Without this a meal logged from
+ * a template is strictly LESS rich than logging the same foods one at a time —
+ * a catalog quick-add carries `fiber/sugar/sodium/cholesterol` plus
+ * `microsSource: 'catalog'`, and a template that dropped them would report
+ * every one of its rows as uncovered, dragging down the very coverage caption
+ * Theme 4 exists to earn. The rules are unchanged:
+ *
+ *  - **Per key.** `pickMicros` carries only the keys the source actually holds;
+ *    a key it does not carry is not written as a structural `0` claiming to be
+ *    a reading (the persistence boundary applies the storage default).
+ *  - **Only from a provenanced source.** No `microsSource` on the component
+ *    means its zeros are structure, not measurement, and nothing is carried.
+ *  - **Provenance without numbers is not provenance** — a source claiming
+ *    `'catalog'` while holding no micro number lands `microsSource: null`,
+ *    the same rule the AI mapper follows (decision 2.11).
  */
-const snapshotComponent = (c) => ({
+const snapshotComponent = (c) => {
+  const claimed = typeof c?.microsSource === 'string' && c.microsSource ? c.microsSource : null;
+  const micros = claimed ? pickMicros(c) : {};
+  return ({
+  ...micros,
+  microsSource: hasMicroData(micros) ? claimed : null,
   name: String(c?.name ?? '').trim(),
   // An unroled component is CORE. A template written by hand, or migrated from
   // a saved meal, is an all-core template — the safe reading, because a
@@ -68,7 +90,8 @@ const snapshotComponent = (c) => ({
   amount: Number.isFinite(Number(c?.amount)) && c?.amount !== null && c?.amount !== undefined
     ? Number(c.amount)
     : 1,
-});
+  });
+};
 
 export class TemplateService {
   #templateStore; #nutriListStore; #clock; #createId; #logger;
@@ -209,6 +232,14 @@ export class TemplateService {
       .map(snapshotComponent)
       .filter((c) => c.role === 'core' || wanted.has(c.name));
 
+    // An all-variant template with nothing toggled would otherwise write a lone
+    // header: a zero-calorie row with no children, which every fold counts as
+    // nothing and every reader has to explain. No UI create path can build such
+    // a template today, but the service is the place that must refuse it.
+    if (chosen.length === 0) {
+      throw coded(`Template ${id} would log nothing — choose at least one component`, 'TEMPLATE_NO_COMPONENTS');
+    }
+
     const groupUuid = this.#createId();
     const groupRow = {
       uuid: groupUuid,
@@ -239,6 +270,9 @@ export class TemplateService {
       protein: c.protein,
       carbs: c.carbs,
       fat: c.fat,
+      // Per key, and only where the snapshot actually carries one.
+      ...pickMicros(c),
+      microsSource: c.microsSource ?? null,
       grams: c.grams,
       unit: c.unit,
       amount: c.amount,

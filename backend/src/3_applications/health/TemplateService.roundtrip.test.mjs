@@ -139,3 +139,36 @@ describe('a template survives the real persistence path', () => {
     expect(await reopened.listDismissedKeys('u1')).toEqual(['k9']);
   });
 });
+
+describe('micro provenance survives the template path (the whole point of Theme 4)', () => {
+  it('a template built from a provenanced food instantiates rows that still report COVERED', async () => {
+    const t = await svc.create({
+      name: 'Soup lunch',
+      components: [
+        { name: 'Canned soup', role: 'core', calories: 200, protein: 8, carbs: 24, fat: 6,
+          fiber: 3, sodium: 890, microsSource: 'catalog' },
+        { name: 'Crackers', role: 'core', calories: 120, protein: 2, carbs: 20, fat: 4 },
+      ],
+    }, 'u1');
+    await svc.instantiate(t.id, 'u1', { date: '2026-09-04', mealTime: 'afternoon' });
+
+    // Straight off the YAML text: the micro keys and the provenance flag both
+    // landed. A whitelist that dropped either would leave this file silent.
+    const text = fs.readFileSync(yamlPath(), 'utf8');
+    expect(text).toContain('microsSource: catalog');
+    expect(text).toContain('sodium: 890');
+
+    const rows = await nutriListStore.findByDate('u1', '2026-09-04');
+    const soup = rows.find((r) => r.name === 'Canned soup');
+    expect(soup.microsSource).toBe('catalog');
+    expect(soup.sodium).toBe(890);
+    expect(soup.fiber).toBe(3);
+    // The unprovenanced sibling is honestly uncovered, not falsely claimed.
+    expect(rows.find((r) => r.name === 'Crackers').microsSource).toBeNull();
+
+    // And the day's coverage caption agrees: 1 of 2 FOODS, the group header
+    // counted on neither side.
+    const budget = await makeBudgetService().getBudget('u1', '2026-09-04');
+    expect(budget.microCoverage.sodium).toEqual({ covered: 1, total: 2 });
+  });
+})

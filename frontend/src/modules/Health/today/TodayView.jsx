@@ -151,9 +151,14 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
     if (!name) return;
     // All-core: nothing here knows which parts rotate, and guessing would drop
     // food out of the meal the next time it is logged.
+    // Micros and their provenance travel with the snapshot: a template built
+    // from provenanced rows must instantiate rows that still report covered,
+    // or saving a meal would quietly downgrade the day's micro coverage.
     const components = rows.map((r) => ({
       name: r.name || r.item, role: 'core',
       calories: r.calories, protein: r.protein, carbs: r.carbs, fat: r.fat,
+      fiber: r.fiber, sugar: r.sugar, sodium: r.sodium, cholesterol: r.cholesterol,
+      microsSource: r.microsSource ?? null,
       color: r.color, icon: r.icon ?? null, grams: r.grams, unit: r.unit, amount: r.amount,
     }));
     try {

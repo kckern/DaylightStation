@@ -466,6 +466,10 @@ export function EntryEditSheet({ row, open, onClose, onChanged, observations = [
                   components: [{
                     name: displayName(row), role: 'core',
                     calories: row.calories, protein: row.protein, carbs: row.carbs, fat: row.fat,
+                    // Micros + provenance travel with the snapshot (PRD F4.x):
+                    // a template must not be a downgrade of the row it came from.
+                    fiber: row.fiber, sugar: row.sugar, sodium: row.sodium, cholesterol: row.cholesterol,
+                    microsSource: row.microsSource ?? null,
                     color: row.color, icon: row.icon ?? null, grams: row.grams, unit: row.unit, amount: row.amount,
                   }],
                 }, 'POST'), 'save-as-meal')}>

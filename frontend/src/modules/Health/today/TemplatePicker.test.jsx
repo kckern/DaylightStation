@@ -221,3 +221,89 @@ describe('parity: the picker does everything SavedMealsSheet did', () => {
     expect(onLogged).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// `focusTemplateId` — the add-combobox picked a MEAL suggestion (PRD F8.2), so
+// the picker opens onto that template and still offers its variants (F6.1,
+// decision §2.36). It shipped with NO test: gutting the effect left the whole
+// health frontend suite green, which is what an unguarded behaviour looks like.
+// ---------------------------------------------------------------------------
+describe('TemplatePicker opened onto one template (PRD F8.2 → F6.1)', () => {
+  beforeEach(() => { apiMock.mockReset(); respondWith([SMOOTHIE, FLAT]); });
+
+  it('a focused template WITH variants opens its toggles with no click, and logs nothing yet', async () => {
+    r(<TemplatePicker open onClose={() => {}} onLogged={() => {}} bucketId="morning" focusTemplateId="t1" />);
+    await waitFor(() => expect(screen.getByText(/3 always included/)).toBeTruthy());
+    expect(screen.getAllByRole('switch')).toHaveLength(2);
+    expect(screen.getByText('Log 260 kcal')).toBeTruthy();
+    // Not logged — the whole point is that the variants are offered first.
+    expect(apiMock.mock.calls.some(([p]) => p.includes('/instantiate'))).toBe(false);
+    // ...and it is NOT sitting on the generic list the person just left.
+    expect(screen.queryByText('Protein breakfast')).toBeNull();
+  });
+
+  it('a focused ALL-CORE template logs on open — nothing to choose, so nothing to ask', async () => {
+    const onLogged = vi.fn();
+    r(<TemplatePicker open onClose={() => {}} onLogged={onLogged} bucketId="morning" focusTemplateId="t2" />);
+    await waitFor(() => expect(onLogged).toHaveBeenCalled());
+    const call = apiMock.mock.calls.find(([p]) => p.includes('/t2/instantiate'));
+    expect(call[1]).toEqual({ mealTime: 'morning', variantNames: [] });
+  });
+
+  it('toggling from the focused view sends the variant, exactly as the list route does', async () => {
+    const onLogged = vi.fn();
+    r(<TemplatePicker open onClose={() => {}} onLogged={onLogged} bucketId="evening" focusTemplateId="t1" />);
+    await waitFor(() => screen.getAllByRole('switch'));
+    fireEvent.click(screen.getAllByRole('switch').find((t) => t.textContent.includes('Mango')));
+    await waitFor(() => screen.getByText('Log 360 kcal'));
+    fireEvent.click(screen.getByText('Log 360 kcal'));
+    await waitFor(() => expect(onLogged).toHaveBeenCalled());
+    expect(apiMock.mock.calls.find(([p]) => p.includes('/t1/instantiate'))[1])
+      .toEqual({ mealTime: 'evening', variantNames: ['Mango'] });
+  });
+
+  it('a focused PROPOSAL is never auto-logged — approval comes first', async () => {
+    respondWith([PROPOSAL]);
+    const onLogged = vi.fn();
+    r(<TemplatePicker open onClose={() => {}} onLogged={onLogged} bucketId="morning" focusTemplateId="p1" />);
+    await waitFor(() => expect(screen.getByText('Suggested')).toBeTruthy());
+    expect(onLogged).not.toHaveBeenCalled();
+    expect(apiMock.mock.calls.some(([p]) => p.includes('/instantiate'))).toBe(false);
+  });
+
+  it('Back returns to the list and does not re-focus the same template', async () => {
+    r(<TemplatePicker open onClose={() => {}} onLogged={() => {}} bucketId="morning" focusTemplateId="t1" />);
+    await waitFor(() => screen.getByText('Back'));
+    fireEvent.click(screen.getByText('Back'));
+    await waitFor(() => expect(screen.getByText('Protein breakfast')).toBeTruthy());
+    expect(screen.queryByText('Back')).toBeNull();
+  });
+
+  it('no focus id leaves the picker on the list, however many templates there are', async () => {
+    r(<TemplatePicker open onClose={() => {}} onLogged={() => {}} bucketId="morning" />);
+    await waitFor(() => expect(screen.getByText('Morning smoothie')).toBeTruthy());
+    expect(screen.getByText('Protein breakfast')).toBeTruthy();
+    expect(screen.queryByRole('switch')).toBeNull();
+  });
+});
+
+describe('TemplatePicker — an all-variant template cannot log nothing', () => {
+  const ALL_VARIANT = {
+    id: 't3', name: 'Pick one', status: 'active', source: 'manual',
+    components: [component('Mango', 100, 'variant'), component('Blueberries', 80, 'variant')],
+  };
+
+  beforeEach(() => { apiMock.mockReset(); respondWith([ALL_VARIANT]); });
+
+  it('the Log button is dead until something is chosen, and alive once it is', async () => {
+    r(<TemplatePicker open onClose={() => {}} onLogged={() => {}} bucketId="morning" />);
+    await waitFor(() => screen.getByText('Pick one'));
+    fireEvent.click(screen.getByText('Pick one'));
+    await waitFor(() => screen.getByText('Log 0 kcal'));
+    expect(screen.getByText('Log 0 kcal').closest('button').disabled).toBe(true);
+    expect(screen.getByText(/Nothing is always included/)).toBeTruthy();
+
+    fireEvent.click(screen.getAllByRole('switch').find((t) => t.textContent.includes('Mango')));
+    await waitFor(() => expect(screen.getByText('Log 100 kcal').closest('button').disabled).toBe(false));
+  });
+})
