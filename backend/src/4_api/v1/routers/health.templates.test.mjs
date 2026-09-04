@@ -97,6 +97,28 @@ describe('meal template endpoints (Task 10.1)', () => {
     expect(calls.remove[0]).toEqual({ id: 't1', userId: 'testuser' });
   });
 
+  it('POST /:id/approve names the proposal', async () => {
+    const { app, calls } = makeApp();
+    const res = await request(app).post('/api/v1/health/nutrition/templates/t1/approve').send({ name: 'Morning smoothie' });
+    expect(res.status).toBe(200);
+    expect(calls.approve[0]).toEqual({ id: 't1', userId: 'testuser', options: { name: 'Morning smoothie' } });
+  });
+
+  it('POST /:id/dismiss returns the key it will remember', async () => {
+    const { app, calls } = makeApp();
+    const res = await request(app).post('/api/v1/health/nutrition/templates/t1/dismiss').send({});
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, key: 'k1' });
+    expect(calls.dismiss[0]).toEqual({ id: 't1', userId: 'testuser' });
+  });
+
+  it('approve and dismiss answer 404 for an id that is not there', async () => {
+    const notFound = () => { const e = new Error('nope'); e.code = 'TEMPLATE_NOT_FOUND'; throw e; };
+    const { app } = makeApp({ approve: async () => notFound(), dismiss: async () => notFound() });
+    expect((await request(app).post('/api/v1/health/nutrition/templates/x/approve').send({})).status).toBe(404);
+    expect((await request(app).post('/api/v1/health/nutrition/templates/x/dismiss').send({})).status).toBe(404);
+  });
+
   it('the routes do not exist at all when no template service is composed', async () => {
     const router = createHealthRouter({
       healthOperations: { defaultUsername: () => 'testuser', currentDate: () => '2026-09-04' },
