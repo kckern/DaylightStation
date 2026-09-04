@@ -4,6 +4,16 @@
   box-sizing: border-box;
   min-height: 100vh;
   background: #ece5d6;   // a darkened sibling of the console cream — never raw #000 gutters
+  --ds-background: #f6f2e9;
+  --ds-surface: #fffdf8;
+  --ds-surface-alt: #f3eee5;
+  --ds-border: #d4c6af;
+  --ds-text-high: #30291f;
+  --ds-text-mid: #5f584c;
+  --ds-text-low: #6b6255;
+  --ds-accent: #6e4b20;
+  --ds-motion-base: 200ms;
+  --ds-motion-easing: cubic-bezier(0.4, 0, 0.2, 1);
 
   *, *::before, *::after { box-sizing: inherit; }
 }
@@ -251,7 +261,7 @@
   li:first-child { border-top: 0; } span { color: #696052; }
 }
 .teacher-action-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px;
-  button, a { border: 1px solid #d4c6af; border-radius: 7px; padding: 7px 11px; background: white; color: #59462f; cursor: pointer; font: inherit; text-decoration: none; }
+  button, a { display: inline-flex; align-items: center; min-height: 44px; border: 1px solid #bbaa8f; border-radius: 8px; padding: 9px 13px; background: white; color: #4b3822; cursor: pointer; font: inherit; text-decoration: none; }
   button:disabled { cursor: not-allowed; opacity: .5; }
 }
 .teacher-agenda-preview { display: block; max-width: min(100%, 680px); max-height: 72vh; margin: 14px auto 0; border: 1px solid #d9d0c0; background: white; object-fit: contain; box-shadow: 0 8px 25px rgba(45, 36, 22, .12); }
@@ -423,10 +433,11 @@
 // Square tap targets (touch UI: discrete, ≥40px).
 .teacher-lesson-card__artifacts { display: flex; gap: 5px; flex: none; }
 .teacher-artifact-btn {
-  display: grid; place-items: center; width: 40px; height: 40px;
+  display: grid; place-items: center; width: 44px; height: 44px;
   border: 1px solid #ddd2bd; border-radius: 8px; background: #fcfaf5; color: #66543c; cursor: pointer;
   svg { width: 20px; height: 20px; }
   &:hover { border-color: #ae8d5a; background: #fffdf8; }
+  &:focus-visible { outline: 3px solid rgba(110, 75, 32, .32); outline-offset: 2px; }
 }
 // The mark is muted by its COLOUR, not by near-total transparency. At 18px and
 // 25% opacity it was invisible — while the same glyph inside a day dot was
@@ -469,9 +480,34 @@
 .teacher-status--passed, .teacher-status--complete, .teacher-status--closed { background: #e2efdc; color: #396034; }
 .teacher-status--failed, .teacher-status--needs_remediation { background: #f8dfd8; color: #813927; }
 .teacher-status--pending_review, .teacher-status--awaiting_review { background: #faedc8; color: #6f5419; }
-.teacher-back { align-self: flex-start; border: 0; background: transparent; color: #745326; cursor: pointer; font-weight: 700; }
-.teacher-session-summary dl { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 10px; margin: 0;
-  div { padding: 10px; border-radius: 8px; background: #f7f2e8; } dt { color: #877d6c; font-size: 11px; text-transform: uppercase; } dd { margin: 3px 0 0; font-weight: 700; }
+.teacher-back { align-self: flex-start; min-height: 44px; border: 0; background: transparent; color: #654318; cursor: pointer; font-weight: 750; }
+.teacher-session-inspector { max-width: 1040px; margin: 0 auto; }
+.teacher-session-heading {
+  display: flex; align-items: center; justify-content: space-between; gap: 24px;
+  padding: 2px 2px 8px;
+  > p { margin: 0; color: #5f584c; font-size: 13px; text-align: right; }
+}
+.teacher-session-summary { border-left: 4px solid #c1b299; }
+.teacher-session-summary--success { border-left-color: #668052; }
+.teacher-session-summary--attention { border-left-color: #b86c35; }
+.teacher-session-summary--active { border-left-color: #a37a32; }
+.teacher-session-status { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px 16px; align-items: center;
+  > p { margin: 0; color: #4f493f; line-height: 1.45; }
+  &__label { align-self: start; border-radius: 999px; padding: 5px 10px; background: #eee8dc; color: #5b5347; font-size: 12px; font-weight: 800; white-space: nowrap;
+    &.is-success { background: #e2eddc; color: #35562c; }
+    &.is-attention { background: #f6e4d4; color: #7c3d22; }
+    &.is-active { background: #f3e8c9; color: #6b521c; }
+  }
+  &__facts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px 18px;
+    > span { display: grid; gap: 1px; }
+    small { color: #6b6255; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+    strong { color: #30291f; font-size: 14px; }
+    em { color: #6b6255; font-size: 11px; font-style: normal; }
+  }
+}
+.teacher-session-more-actions { margin-top: 10px;
+  summary { min-height: 44px; color: #654318; cursor: pointer; font-size: 13px; font-weight: 700; }
+  a { display: inline-flex; min-height: 44px; align-items: center; color: #5a3d18; font-weight: 700; }
 }
 .teacher-session-materials { > .teacher-muted { margin: -3px 0 10px; } &__cards { display: grid; gap: 10px; } &__card { display: grid; gap: 7px; } &__print { display: flex; justify-content: flex-end; } &__print > button { border: 1px solid #d4c6af; border-radius: 6px; padding: 5px 8px; background: white; color: #604521; font: inherit; font-size: 12px; font-weight: 700; } }
 .teacher-curriculum__preview { display: inline-block; margin-top: 8px; color: #604521; font-size: 12px; font-weight: 700; text-decoration: none; }
@@ -1592,8 +1628,10 @@
    primary = the thing you came here to do; default = a peer action;
    quiet = navigation wearing a button's clothes. */
 .teacher-btn {
-  border: 1px solid #d4c6af; border-radius: 7px; padding: 7px 11px;
-  background: white; color: #59462f; cursor: pointer; font: inherit; text-decoration: none; white-space: nowrap;
+  display: inline-flex; align-items: center; justify-content: center; min-height: 44px;
+  border: 1px solid #bbaa8f; border-radius: 8px; padding: 9px 13px;
+  background: white; color: #4b3822; cursor: pointer; font: inherit; text-decoration: none; white-space: nowrap;
+  &:focus-visible { outline: 3px solid rgba(110, 75, 32, .32); outline-offset: 2px; }
   &:disabled { cursor: not-allowed; opacity: .5; }
   &--primary { border-color: #6e4b20; background: #6e4b20; color: white; font-weight: 700; }
   &--quiet { border-color: transparent; background: transparent; color: #745326; font-weight: 700; padding-left: 4px; padding-right: 4px; }
@@ -1603,28 +1641,28 @@
 .teacher-day { display: flex; flex-direction: column; gap: 12px; }
 .teacher-day-nav {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  padding: 8px 10px; border: 1px solid #e5dccb; border-radius: 10px; background: #fffdf8;
-  &__label { display: flex; align-items: baseline; gap: 8px;
-    strong { font: 700 19px/1.2 Georgia, serif; color: #30291f; } }
-  &__today { padding: 2px 7px; border-radius: 20px; background: #e8dfc9; color: #6b5a33; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+  padding: 10px 14px; border: 1px solid #ddd2bf; border-radius: 12px; background: #fffdf8;
+  h3 { margin: 0; font: 700 24px/1.2 Georgia, serif; color: #30291f; }
+  .ds-datestepper { margin-left: 8px; }
+  .ds-datestepper__arrow, .ds-datestepper__label { min-height: 44px; color: #4b3822; }
   &__pick { display: flex; align-items: center; gap: 6px; margin-left: auto; color: #7d7466; font-size: 12px;
-    input { min-height: 34px; border: 1px solid #d8cfbe; border-radius: 7px; padding: 0 8px; background: white; color: #30291f; font: inherit; } }
+    input { min-height: 44px; border: 1px solid #d8cfbe; border-radius: 7px; padding: 0 8px; background: white; color: #30291f; font: inherit; } }
 }
 .teacher-day__summary { margin: 0 0 10px; color: #6b6255; font-size: 13px; font-weight: 700; }
 .teacher-day-rows { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .teacher-day-row {
-  display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; gap: 12px; align-items: start;
-  padding: 10px; border: 1px solid #e9e1d2; border-radius: 9px; background: white;
+  display: grid; grid-template-columns: 100px minmax(0, 1fr) auto; gap: 12px; align-items: center;
+  min-height: 82px; padding: 10px 12px; border: 1px solid #ded4c3; border-radius: 10px; background: white;
   &__body { display: grid; gap: 4px; min-width: 0; }
-  &__open { display: block; width: 100%; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; font: inherit; color: inherit; }
   &__unstarted { display: flex; flex-direction: column; gap: 3px;
     strong { color: #4a4335; font-weight: 700; } }
   &__detail { color: #857b6b; font-size: 12px; }
   &__right { display: grid; justify-items: end; gap: 6px; }
+  &__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
   &__score { color: #5f6b4f; font-size: 13px; font-weight: 700; white-space: nowrap; }
   /* Not-yet-done work is quieter than done work — the eye should land on
      what happened, then on what is outstanding. */
-  &--planned, &--deferred, &--blocked { background: #fdfcf8; }
+  &--planned, &--deferred, &--blocked, &--unassigned { background: #fdfcf8; }
   &--blocked { border-color: #e6cfc4; }
 }
 // PROVENANCE, NOT PROGRESS. `extra` used to be a chip tone competing with
@@ -1646,17 +1684,28 @@
   &--planned { background: #f2ece0; color: #7a6f5c; }
   &--deferred { background: #f4e9d6; color: #866526; }
   &--blocked { background: #f7e2da; color: #8d452c; }
+  &--unassigned { background: #eeeae2; color: #625b50; text-transform: none; letter-spacing: 0; }
   &--processed { background: #eae6f0; color: #57457a; }
 }
 /* The dry-run printout. Constrained so a tall receipt-format PNG cannot
    run away with the page, and given paper-white ground + a drop shadow so
    it reads as a physical artifact rather than as page furniture. */
 .teacher-printed-agenda {
-  margin-top: 4px; padding: 10px; border: 1px solid #e5dccb; border-radius: 10px; background: #fffdf8;
   &__promise { margin: 10px 0 0; padding: 8px 11px; border-radius: 8px; background: #f4ecdb; color: #6f5c33; font-size: 12px; line-height: 1.45; }
   &__image { display: block; max-width: min(100%, 420px); max-height: 70vh; margin: 10px auto 2px;
     border: 1px solid #d9d0c0; background: white; object-fit: contain;
     box-shadow: 0 8px 25px rgba(45, 36, 22, .12); }
+}
+.teacher-day-print-tools {
+  display: flex; align-items: center; justify-content: space-between; gap: 18px;
+  padding: 14px 16px; border: 1px solid #d9cdb8; border-radius: 12px; background: #fffdf8;
+  h2 { margin: 0; color: #3f372c; font-size: 15px; }
+  p { margin: 4px 0 0; color: #5f584c; font-size: 12px; }
+  .teacher-action-row { margin: 0; }
+  .teacher-agenda-dispatch { margin: 0; }
+}
+.teacher-launch-preview-action { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  &__fallback { color: #7c2f23; font-size: 12px; font-weight: 700; }
 }
 /* The one console path that prints for real. Deliberately NOT sharing the
    preview's box, action row, or neutral beige — a teacher who only glances
@@ -1681,6 +1730,10 @@
   .teacher-day-row { grid-template-columns: 1fr; gap: 6px;
     &__right { justify-items: start; } }
   .teacher-day-nav__pick { margin-left: 0; }
+  .teacher-day-print-tools { align-items: stretch; flex-direction: column; }
+  .teacher-session-heading { align-items: flex-start; flex-direction: column; > p { text-align: left; } }
+  .teacher-session-status { grid-template-columns: 1fr; }
+  .teacher-session-status__facts { justify-content: flex-start; }
 }
 
 .teacher-history-day { margin-top: 14px;

@@ -42,7 +42,7 @@ import { teacherWorkspaceApi } from './teacherWorkspaceApi.js';
 const KIDS = [{ id: 'user_2', name: 'User_2' }];
 
 const SESSION = {
-  schema: 'school.teacher-session/v4',
+  schema: 'school.teacher-session/v5',
   sessionId: 'ses_1',
   revision: 4,
   state: { learnerId: 'user_2', state: 'closed', outcome: { result: 'passed' } },
@@ -69,6 +69,28 @@ describe('SessionInspector detail coherence', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: SESSION });
+  });
+
+  it('presents a created session as not started and withholds impossible controls', async () => {
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: {
+      schema: 'school.teacher-session/v5', sessionId: 'ses_created', revision: 1,
+      state: { learnerId: 'user_2', state: 'created', terminal: false },
+      taxonomy: { subject: 'science', lessonTitle: 'Fishing Cat' },
+      scores: { machine: null, effective: null }, artifacts: [], events: [],
+      capabilities: {
+        gradeCorrection: false, launchPreview: true, companionRecovery: false,
+        offerRetake: false, manualSettlement: false,
+      },
+    } });
+    render(<SessionInspector learnerId="user_2" sessionId="ses_created" kids={KIDS} onBack={vi.fn()} />);
+
+    expect(await screen.findByText('Not started')).toBeInTheDocument();
+    expect(screen.getByText(/nothing has been launched or printed/i)).toBeInTheDocument();
+    expect(screen.queryByText(/completed this lesson/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Fix a marked answer' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Issued materials and results')).not.toBeInTheDocument();
+    expect(screen.queryByText('Read-along code')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /preview launch card/i })).toBeInTheDocument();
   });
 
   it('numbers answers with worksheet-local numbers, not bank-global ones', async () => {
@@ -126,7 +148,7 @@ describe('SessionInspector detail coherence', () => {
     render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('Answer card')).toBeInTheDocument());
     expect(screen.getByText('Answer card').closest('details')).not.toHaveAttribute('open');
-    expect(screen.getByText('Event history').closest('details')).not.toHaveAttribute('open');
+    expect(screen.getByText('Activity history').closest('details')).not.toHaveAttribute('open');
   });
 
   it('offers repair options in the teacher’s words, weighted by importance', async () => {
@@ -134,7 +156,7 @@ describe('SessionInspector detail coherence', () => {
     render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
     const fix = await screen.findByRole('button', { name: 'Fix a marked answer' });
     expect(fix).toHaveClass('teacher-btn--primary');
-    const credit = screen.getByRole('link', { name: /Give credit for work you saw/ });
+    const credit = screen.getByRole('link', { name: /Give credit for work completed offline/ });
     expect(credit).toHaveAttribute('href', '/school/teacher/students/user_2/operations');
     expect(credit).not.toHaveClass('teacher-back');
   });
@@ -182,7 +204,7 @@ describe('SessionInspector detail coherence', () => {
  */
 describe('SessionInspector — offering a retake', () => {
   const needsRemediation = (extra = {}) => ({
-    schema: 'school.teacher-session/v4',
+    schema: 'school.teacher-session/v5',
     sessionId: 'ses_1',
     revision: 1,
     state: { learnerId: 'user_2', state: 'outcome_recorded', outcome: { result: 'needs_remediation' }, ...extra },
@@ -192,7 +214,7 @@ describe('SessionInspector — offering a retake', () => {
     events: [],
   });
   const remediationChild = (sessionId, terminal) => ({
-    schema: 'school.teacher-session/v4', sessionId, state: { terminal },
+    schema: 'school.teacher-session/v5', sessionId, state: { terminal },
   });
 
   beforeEach(() => vi.clearAllMocks());
@@ -208,7 +230,7 @@ describe('SessionInspector — offering a retake', () => {
       ? { ok: true, status: 200, data: needsRemediation({ remediation: { newSessionId: 'ses_2', variant: 'retry' } }) }
       : { ok: true, status: 200, data: remediationChild('ses_2', true) }));
     render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
-    await waitFor(() => expect(screen.getByText('Outcome')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Status')).toBeInTheDocument());
     // A terminal retake is exactly the abandoned case, and it is exactly the
     // case the server refuses. Offering it here is the defect.
     expect(screen.queryByRole('button', { name: 'Offer another try' })).not.toBeInTheDocument();
@@ -219,7 +241,7 @@ describe('SessionInspector — offering a retake', () => {
       ? { ok: true, status: 200, data: needsRemediation({ remediation: { newSessionId: 'ses_3', variant: 'retry' } }) }
       : { ok: true, status: 200, data: remediationChild('ses_3', false) }));
     render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
-    await waitFor(() => expect(screen.getByText('Outcome')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Status')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Offer another try' })).not.toBeInTheDocument();
   });
 
@@ -228,7 +250,7 @@ describe('SessionInspector — offering a retake', () => {
       ? { ok: true, status: 200, data: needsRemediation({ remediation: { newSessionId: 'ses_4', variant: 'retry' } }) }
       : { ok: true, status: 200, data: remediationChild('ses_4', true) }));
     render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
-    await waitFor(() => expect(screen.getByText('Outcome')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Status')).toBeInTheDocument());
     expect(teacherWorkspaceApi.session).not.toHaveBeenCalledWith('ses_4');
   });
 });

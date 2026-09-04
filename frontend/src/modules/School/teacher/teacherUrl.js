@@ -96,11 +96,14 @@ export function teacherDayPath(learnerId, studyDay = null, base = TEACHER_BASE) 
   return `${base}/students/${encodeURIComponent(learnerId)}/day${suffix}`;
 }
 
-export function teacherSessionPath(learnerId, sessionId, base = TEACHER_BASE, { from = null } = {}) {
+export function teacherSessionPath(learnerId, sessionId, base = TEACHER_BASE, { from = null, studyDay = null } = {}) {
   const path = learnerId
     ? `${teacherLearnerPath(learnerId, 'history', null, base)}/sessions/${encodeURIComponent(sessionId)}`
     : `${base}/sessions/${encodeURIComponent(sessionId)}`;
   // `from` records the view that opened the session, so Back can return
   // there instead of always landing on History.
-  return from ? `${path}?from=${encodeURIComponent(from)}` : path;
+  const query = new URLSearchParams();
+  if (from) query.set('from', from);
+  if (studyDay && STUDY_DAY.test(studyDay)) query.set('studyDay', studyDay);
+  return query.size ? `${path}?${query}` : path;
 }

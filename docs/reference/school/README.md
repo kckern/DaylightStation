@@ -2161,8 +2161,9 @@ math shared with `GetTeacherToday`.
 one child on one school day. It joins two side-effect-free reads —
 `GET /lifecycle/learners/:id/agenda/preview?format=json&studyDay=…` (the plan)
 and `GET /teacher/day?studyDay=…` (the record) — through the pure function
-`learnerDay.js#joinLearnerDay`, which classifies each subject as done, not
-started, deferred, or blocked. Provenance is a flag beside that status
+`learnerDay.js#joinLearnerDay`, which classifies each subject as done, in
+progress, not started, deferred, blocked, or unassigned. An unassigned subject
+does not inflate the unfinished count. Provenance is a flag beside that status
 (`unplanned`, `carriedOver`), never a status value — so a row can say both
 "unplanned" and "finished". Previewing a day never writes.
 
@@ -2175,8 +2176,15 @@ started, deferred, or blocked. Provenance is a flag beside that status
 - The dashboard and the History tab both LINK here; neither re-renders it.
 - `/students/:id` is the canonical short form for the day record;
   `/students/:id/overview` is a retired alias the shell redirects there.
-- Paper records (worksheet PDF, result receipt) are fetched lazily per lesson
-  via `SessionPaperRecord`, never eagerly for a whole day.
+- Paper records (worksheet PDF, result receipt) appear as direct row actions
+  only when the joined day projection already contains a real artifact URL;
+  empty paper-record accordions are not rendered.
+- Every launchable row has a teacher **Preview** action. It synchronously opens
+  a named popup through the teacher launch-preview route, which redirects to a
+  five-minute signed `/school?preview=…` scope. The real launch card is shown
+  with inert controls; no session, token, cooldown, or artifact is created.
+- Session links preserve their origin. A session opened from this page returns
+  to the exact `studyDay`; one opened from History returns to History.
 - Repair tooling is indexed in `interventions.js`; each tool has exactly one
   home, and `InterventionsIndex` is the only thing that lists them.
 - The plan-to-record match is by **unit id**, not subject: the planner buckets

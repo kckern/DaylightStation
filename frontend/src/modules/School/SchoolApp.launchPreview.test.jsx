@@ -68,9 +68,11 @@ vi.mock('../../hooks/useShutdownLock.js', () => ({
   ShutdownBlackout: () => null,
 }));
 vi.mock('../../lib/fkb.js', () => ({ screenOff: vi.fn(() => true) }));
+const { schoolApi } = await import('./schoolApi.js');
 
 describe('a launch-card preview on a locked panel', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ presence: { devices: [] } }) }));
     window.history.replaceState({}, '', '/school/launch-preview/cGF5bG9hZA');
   });
@@ -89,6 +91,15 @@ describe('a launch-card preview on a locked panel', () => {
     // was exactly what the floating button contradicted.
     expect(screen.getByTestId('selfservice-action-program')).toBeDisabled();
     expect(screen.getByTestId('selfservice-action-exit')).toBeDisabled();
+  });
+
+  it('accepts the five-minute signed token from /school?preview= without showing the keypad', async () => {
+    window.history.replaceState({}, '', '/school?preview=header.signature');
+    render(<SchoolApp mode="locked" />);
+
+    await waitFor(() => expect(screen.getByText('Teacher preview')).toBeInTheDocument());
+    expect(schoolApi.selfServicePreview).toHaveBeenCalledWith('header.signature');
+    expect(screen.queryByText(/enter your code/i)).not.toBeInTheDocument();
   });
 
   it('leaves the locked-shell exit in place for a real mounted section', async () => {

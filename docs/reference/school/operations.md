@@ -129,13 +129,20 @@ the output, which answers most artwork and breadcrumb questions without opening
 a browser at all. `--continue` previews the "one more?" card the result receipt
 offers, which is otherwise unreachable when the subject is already served.
 
-**The route.** `GET {app}/launch-preview/<payload>` in the browser;
-`GET /api/v1/school/self-service/preview/<payload>` for the card as JSON. The
-payload is base64url of `{"learnerId": "...", "subject": "..."}`, optionally
-with `"continueToday": true`. Learner plus subject is the whole payload because
-that is exactly what a live panel token carries — the unit comes from the
-learner's plan, so a payload naming one would describe a card the plan does not
-actually offer.
+**The routes.** The operations CLI continues to emit the backwards-compatible
+`GET {app}/launch-preview/<payload>` browser link and
+`GET /api/v1/school/self-service/preview/<payload>` JSON read. Its payload is
+base64url of `{"learnerId": "...", "subject": "..."}`, optionally with
+`"continueToday": true`.
+
+The teacher workspace does not emit that durable payload. Its **Preview**
+control opens
+`GET /api/v1/school/teacher/learners/:learnerId/launch-preview?subject=...`
+synchronously in a named popup. The route signs a purpose-bound learner and
+subject scope, redirects to `/school?preview=<token>`, and sets `no-store`.
+That token can be reloaded for five minutes, then fails with an expired-preview
+sentence and a way back. A malformed signed token never falls through to the
+legacy unsigned decoder.
 
 Generating a link by hand is a one-liner when the CLI is out of reach:
 
@@ -150,11 +157,12 @@ reduction, the card builder — is the code a typed panel code runs. A preview
 that assembled a card any other way would answer questions about a surface the
 house does not run.
 
-**It mints nothing and it grants nothing.** No token is looked up or created,
-no session opens, no cooldown arms, no artifact is issued, nothing prints. The
-link is not a credential: it carries less than the paper a child is already
-holding, expires never because there is nothing in it to expire, and restores
-no learner identity on the panel.
+**It mints no school work and grants no action authority.** No panel token is
+looked up or created, no session opens, no cooldown arms, no artifact is
+issued, and nothing prints. A CLI link carries no authority and does not
+expire. A teacher-workspace link is an HMAC-signed, five-minute read scope used
+only by the preview resolver; no learner action endpoint accepts it, and it
+restores no learner identity on the panel.
 
 **Nothing on it can be pressed.** The card shows the real buttons a child would
 see — that is the point of looking at it — rendered disabled beneath a band

@@ -30,12 +30,14 @@ import StaleSessions from './panels/StaleSessions.jsx';
 import InterventionsIndex from './panels/InterventionsIndex.jsx';
 import IssuedArtifactCard from './panels/IssuedArtifactCard.jsx';
 import CompanionFinishCode from './panels/CompanionFinishCode.jsx';
+import LaunchPreviewAction from './panels/LaunchPreviewAction.jsx';
 import GradedWorksheet from './panels/GradedWorksheet.jsx';
 import LearnerDayView from './panels/LearnerDayView.jsx';
 import { LessonIdentity, SubjectIdentity } from './CurriculumIdentity.jsx';
 import { teacherBaseFor, teacherDayPath } from './teacherUrl.js';
 import { curriculumTitles } from './curriculumTitles.js';
 import { localDay, humanDate, humanDateTime } from './teacherDates.js';
+import { presentSessionState } from './sessionPresentation.js';
 
 const sessionIdOf = (session) => session?.sessionId ?? session?.id ?? null;
 const dateOf = (session) => session?.updatedAt ?? session?.closedAt ?? session?.createdAt ?? session?.issuedAt ?? null;
@@ -49,13 +51,6 @@ const scoreLine = (session) => {
   }
   return `${score.correctCount} of ${score.totalCount} correct${score.percent == null ? '' : ` · ${score.percent}%`}`;
 };
-const outcomeLabel = (sessionState) => {
-  const outcome = sessionState?.outcome?.result;
-  if (outcome === 'passed' || ['closed', 'completed'].includes(sessionState?.state)) return 'Completed';
-  if (outcome === 'needs_remediation') return 'Needs review';
-  return labelize(sessionState?.state ?? outcome ?? 'Recorded');
-};
-
 function CapabilityNotice({ children }) {
   return <p className="teacher-capability-notice">{children}</p>;
 }
@@ -655,7 +650,7 @@ function ArtifactReprint({ artifactId, kind = 'worksheet', onPrinted }) {
   return <>{!preview ? <button type="button" disabled={busy === key} onClick={prepare}>Print another copy…</button> : <span className="teacher-reprint-confirm"><span>{label} ready to print</span><button type="button" disabled={busy === key} onClick={print}>Print now</button><button type="button" onClick={() => { setPreview(null); setIdempotencyKey(null); }}>Cancel</button></span>}{errors[key] && <span className="teacher-panel__error">{errors[key]}</span>}</>;
 }
 
-export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
+export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel = 'Back' }) {
   const [result, setResult] = useState({ state: 'loading', session: null, ownerId: learnerId });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -688,6 +683,8 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
   const machineGrade = session?.scores?.machine?.percent ?? sessionState?.machineGrade?.percent ?? sessionState?.gradedPercent ?? sessionState?.percent ?? null;
   const effectiveGrade = session?.scores?.effective?.percent ?? sessionState?.effectiveGrade?.percent ?? sessionState?.gradedPercent ?? sessionState?.percent ?? null;
   const gradeAdjustments = sessionState?.gradeAdjustments ?? [];
+  const presentation = presentSessionState(sessionState);
+  const capabilities = session?.capabilities ?? {};
   // OFFERED ONLY WHILE THE SERVER CAN HONOUR IT — once, and never again.
   //
   // `OpenRemediation` returns `already_opened` for any session that has one,
@@ -704,13 +701,18 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
   // it means changing the transition table and deciding how `variant` cycles
   // across a second one. Neither is this component's call. Until then the
   // console does not offer a move the domain refuses.
-  const canOfferRetake = sessionState?.outcome?.result === 'needs_remediation'
-    && !sessionState?.remediation;
+  const canOfferRetake = capabilities.offerRetake
+    ?? (sessionState?.outcome?.result === 'needs_remediation' && !sessionState?.remediation);
+  const canCorrectGrade = capabilities.gradeCorrection
+    ?? Boolean(session?.scores?.machine ?? sessionState?.machineGrade);
+  const canPreviewLaunch = capabilities.launchPreview
+    ?? Boolean((session?.taxonomy?.subject ?? sessionState?.subject) && sessionState?.terminal !== true);
+  const hasCompanionRecovery = capabilities.companionRecovery ?? false;
   // No learner, no settle: the reason is delivered TO a child by name, and a
   // form that cannot name one would write a note nobody receives.
   const settleLearnerId = result.ownerId ?? learnerId ?? null;
-  const canSettleByHand = Boolean(settleLearnerId)
-    && SETTLEABLE_STATES.has(sessionState?.state) && sessionState?.terminal !== true;
+  const canSettleByHand = Boolean(settleLearnerId) && (capabilities.manualSettlement
+    ?? (SETTLEABLE_STATES.has(sessionState?.state) && sessionState?.terminal !== true));
   const { run, busy, errors } = useTeacherWrite({ panel: 'session-retake' });
   const offerRetake = () => run(sessionId, ({ actorId, pin }) => schoolApi.offerRetake(sessionId, {
     openedBy: actorId, pin,
@@ -718,47 +720,47 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
   const ownerName = kids.find((kid) => kid.id === result.ownerId)?.name ?? result.ownerId;
   const events = useMemo(() => session?.events ?? sessionState?.events ?? sessionState?.history ?? [], [session, sessionState]);
   const updatedAt = dateOf(session) ?? session?.updatedAt ?? events.at(-1)?.at ?? null;
+  const previewSubject = session?.taxonomy?.subject ?? sessionState?.subject ?? null;
 
   return (
     <div className="teacher-view teacher-session-inspector">
-      <button type="button" className="teacher-back" onClick={onBack}>← Back</button>
-      <div className="teacher-session-heading"><LessonIdentity subject={session?.taxonomy?.subject} courseTitle={session?.taxonomy?.courseTitle} moduleTitle={session?.taxonomy?.moduleTitle} lessonTitle={session?.taxonomy?.lessonTitle ?? sessionState?.title} posterUrl={session?.taxonomy?.posterUrl} heading /><p>{ownerName ? `${ownerName} completed this lesson${humanDateTime(updatedAt) ? ` · ${humanDateTime(updatedAt)}` : ''}` : ''}</p></div>
+      <button type="button" className="teacher-back" onClick={onBack}>← {backLabel}</button>
+      <div className="teacher-session-heading"><LessonIdentity subject={session?.taxonomy?.subject} courseTitle={session?.taxonomy?.courseTitle} moduleTitle={session?.taxonomy?.moduleTitle} lessonTitle={session?.taxonomy?.lessonTitle ?? sessionState?.title} posterUrl={session?.taxonomy?.posterUrl} heading /><p>{ownerName ? `${ownerName}’s lesson record` : ''}</p></div>
       {result.state === 'loading' && <div className="teacher-panel__skeleton" aria-label="Loading session" />}
       {result.state === 'error' && <p className="teacher-panel__error">Couldn’t load this session. <button type="button" onClick={() => setAttempt((n) => n + 1)}>Retry</button></p>}
       {result.state === 'empty' && <CapabilityNotice>This session is not present in the available learner-history window. A dedicated session read endpoint is required to inspect older records.</CapabilityNotice>}
       {result.state === 'unavailable' && <CapabilityNotice>Session inspection is not enabled on this install.</CapabilityNotice>}
       {session && (
         <>
-          <section className="teacher-panel teacher-session-summary">
-            <h3 className="teacher-panel__title">Outcome</h3>
-            <dl>
-              <div><dt>Lesson status</dt><dd>{outcomeLabel(sessionState)}</dd></div>
-              {/* One score, stated once. "Marked" and "current" are the same
-                  number unless a teacher corrected it — and when they differ,
-                  the correction is provenance on the one score, not a rival
-                  score beside it (UX audit IA1). */}
-              <div><dt>Score</dt><dd>
-                {typeof effectiveGrade === 'number' ? `${Math.round(effectiveGrade)}%` : 'Not graded'}
-                {typeof machineGrade === 'number' && typeof effectiveGrade === 'number'
-                  && Math.round(machineGrade) !== Math.round(effectiveGrade)
-                  && <small className="teacher-score-provenance">corrected from {Math.round(machineGrade)}% as marked</small>}
-              </dd></div>
-              <div><dt>Last recorded</dt><dd>{humanDateTime(updatedAt) ?? 'Unknown'}</dd></div>
-            </dl>
+          <section className={`teacher-panel teacher-session-summary teacher-session-summary--${presentation.tone}`}>
+            <h3 className="teacher-panel__title">Status</h3>
+            <div className="teacher-session-status">
+              <span className={`teacher-session-status__label is-${presentation.tone}`}>{presentation.label}</span>
+              <p>{presentation.description}</p>
+              <div className="teacher-session-status__facts">
+                {typeof effectiveGrade === 'number' && <span><small>Score</small><strong>{Math.round(effectiveGrade)}%</strong>
+                  {typeof machineGrade === 'number' && Math.round(machineGrade) !== Math.round(effectiveGrade)
+                    && <em>corrected from {Math.round(machineGrade)}%</em>}</span>}
+                {humanDateTime(updatedAt) && <span><small>Last activity</small><strong>{humanDateTime(updatedAt)}</strong></span>}
+              </div>
+            </div>
             {/* One button vocabulary (UX audit IA4/IA5): the repair you came
                 here for is primary, the conditional retake is a peer, and the
                 cross-page tool is navigation — not a back link, and not a
                 noun-dash-noun label that reads as a form caption. */}
             <div className="teacher-action-row">
-              <GradeCorrection sessionId={sessionId} revision={session?.revision} currentPercent={effectiveGrade}
-                items={session?.reviewEvidence ?? []} onApplied={() => setAttempt((n) => n + 1)} />
+              {canPreviewLaunch && <LaunchPreviewAction learnerId={settleLearnerId} subject={previewSubject} />}
+              {canCorrectGrade && <GradeCorrection sessionId={sessionId} revision={session?.revision} currentPercent={effectiveGrade}
+                items={session?.reviewEvidence ?? []} onApplied={() => setAttempt((n) => n + 1)} />}
               {canOfferRetake && <button type="button" className="teacher-btn" disabled={busy === sessionId}
                 onClick={offerRetake}>Offer another try</button>}
-              <a className="teacher-btn teacher-btn--quiet"
-                 href={`${teacherBaseFor(globalThis.location?.pathname ?? '')}/students/${encodeURIComponent(result.ownerId ?? learnerId ?? '')}/operations`}>
-                Give credit for work you saw →
-              </a>
             </div>
+            <details className="teacher-session-more-actions">
+              <summary>More actions</summary>
+              <a href={`${teacherBaseFor(globalThis.location?.pathname ?? '')}/students/${encodeURIComponent(result.ownerId ?? learnerId ?? '')}/operations`}>
+                Give credit for work completed offline →
+              </a>
+            </details>
             {errors[sessionId] && <p className="teacher-panel__error">{errors[sessionId]}</p>}
           </section>
           {/* Below the repair a teacher came for, never above it: settling
@@ -772,12 +774,17 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
               learnerName={ownerName} currentPercent={effectiveGrade}
               onSettled={() => setAttempt((n) => n + 1)} />
           )}
-          {/* The escape hatch for a read-along that will not play. Offered on
-              every session rather than gated on a companion flag: whether this
-              lesson has one is exactly what the panel asks the server, and
-              pre-loading that would mean shipping the answer to a screen no
-              grown-up has confirmed at. It shows nothing until asked. */}
-          <CompanionFinishCode sessionId={sessionId} />
+          {/* The escape hatch for a required read-along that will not play.
+              The read model exposes the capability only for lessons whose
+              companion is required, so unrelated sessions do not advertise
+              a recovery tool that cannot help them. It shows nothing until
+              the teacher opens the fold. */}
+          {hasCompanionRecovery && (
+            <details className="teacher-panel teacher-fold teacher-troubleshoot">
+              <summary><h3 className="teacher-panel__title">Troubleshoot this lesson</h3><span>Read-along recovery</span></summary>
+              <CompanionFinishCode sessionId={sessionId} embedded />
+            </details>
+          )}
           {(session?.assignment || session?.assessment?.items?.length > 0) && (
             <section className="teacher-panel">
               <h3 className="teacher-panel__title">Questions and answers</h3>
@@ -793,10 +800,10 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
               {session.answerSheets.map((card) => <dl className="teacher-answer-sheet" key={card.cardId}><div><dt>Student No.</dt><dd>{card.studentNumber}</dd></div><div><dt>Mapped learner</dt><dd>{card.mappedLearnerId ?? 'Unmapped'}</dd></div><div><dt>Capacity</dt><dd>{card.usedRows} of {card.capacity} rows used</dd></div><div><dt>Remaining</dt><dd>{card.remainingContiguousSlots} contiguous slots · next row {card.nextRow ?? 'full'}</dd></div>{card.warnings?.map((warning) => <p role="alert" key={warning}>{warning}</p>)}</dl>)}
             </details>
           )}
-          <section className="teacher-panel teacher-session-materials">
+          {session?.artifacts?.length > 0 && <section className="teacher-panel teacher-session-materials">
             <h3 className="teacher-panel__title">Issued materials and results</h3>
             <p className="teacher-muted">These are the paper records from this lesson.</p>
-            {session?.artifacts?.length ? <div className="teacher-session-materials__cards">{session.artifacts.map((artifact) => (
+            <div className="teacher-session-materials__cards">{session.artifacts.map((artifact) => (
               <IssuedArtifactCard
                 key={artifact.artifactId}
                 artifact={artifact}
@@ -805,11 +812,11 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
                   ? <ArtifactReprint artifactId={artifact.artifactId} kind={artifact.kind} onPrinted={() => setAttempt((n) => n + 1)} />
                   : null}
               />
-            ))}</div> : <CapabilityNotice>No issued worksheet or result receipt is linked to this session.</CapabilityNotice>}
-          </section>
+            ))}</div>
+          </section>}
           {gradeAdjustments.length > 0 && <section className="teacher-panel"><h3 className="teacher-panel__title">Grade corrections</h3><ol className="teacher-event-list">{gradeAdjustments.map((adjustment) => <li key={adjustment.adjustmentId}><strong>{adjustment.percent == null ? 'Evidence correction' : `${adjustment.percent}% correction`}</strong><span>{adjustment.reason}</span><small>{adjustment.adjustedBy}{adjustment.at ? ` · ${humanDateTime(adjustment.at)}` : ''}</small><GradeAdjustmentRetraction sessionId={sessionId} adjustment={adjustment} revision={session.revision} onApplied={() => setAttempt((n) => n + 1)} /></li>)}</ol></section>}
           <details className="teacher-panel teacher-fold">
-            <summary><h3 className="teacher-panel__title">Event history</h3><span>{events.length} recorded step{events.length === 1 ? '' : 's'}</span></summary>
+            <summary><h3 className="teacher-panel__title">Activity history</h3><span>{events.length} recorded step{events.length === 1 ? '' : 's'}</span></summary>
             {events.length ? <ol className="teacher-event-list">{events.map((event, index) => <li key={event.id ?? `${event.type}:${index}`}><strong>{labelize(event.type ?? event.kind)}</strong><span>{humanDateTime(event.at) ?? ''}</span><small>{event.by ?? event.actorId ?? event.gradedBy ?? ''}</small></li>)}</ol> : <p className="teacher-panel__empty">Detailed lifecycle events require the session-detail read model.</p>}
           </details>
         </>
