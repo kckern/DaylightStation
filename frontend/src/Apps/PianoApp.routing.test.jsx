@@ -5,6 +5,12 @@ import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 // Hermetic: config + mode lists fetch on mount. A single-piano household has no
 // `pianos` map, so derivePianos synthesizes one default piano.
 vi.mock('../lib/api.mjs', () => ({
+  // Passthrough, not omitted: SoundPanel resolves instrument illustration
+  // URLs through this at render time, and a mock missing it throws
+  // "No 'DaylightMediaPath' export is defined" DURING render — which
+  // surfaces as an empty <div /> and a testing-library "unable to find
+  // text" failure pointing at the query, not at the mock.
+  DaylightMediaPath: (path) => path,
   DaylightAPI: vi.fn(() => Promise.resolve({ takes: [], items: [], parsed: {} })),
 }));
 import { DaylightAPI } from '../lib/api.mjs';
