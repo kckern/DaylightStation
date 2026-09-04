@@ -23,6 +23,21 @@ const scale = (row, f) => ({
 });
 const displayName = (row) => row?.name || row?.item || row?.label || '';
 
+/**
+ * The server's own sentence out of a DaylightAPI error, whose message is
+ * `HTTP <status>: <statusText> - <raw body>`. Returns null when there is no JSON body
+ * with an `error` field, so the caller falls back to the original message.
+ */
+function serverMessage(err) {
+  const raw = typeof err?.message === 'string' ? err.message : '';
+  const start = raw.indexOf('{');
+  if (start === -1) return null;
+  try {
+    const body = JSON.parse(raw.slice(start));
+    return typeof body?.error === 'string' && body.error ? body.error : null;
+  } catch { return null; }
+}
+
 export function EntryEditSheet({ row, open, onClose, onChanged, observations = [], onPaired }) {
   const [busy, setBusy] = useState(false);
   const [starred, setStarred] = useState(false);
@@ -53,6 +68,12 @@ export function EntryEditSheet({ row, open, onClose, onChanged, observations = [
   // same way.
   const isGroup = row.kind === 'group';
   const children = Array.isArray(row.children) ? row.children : [];
+
+  // A DISMISSED measurement is a signal the person has already judged not to matter.
+  // Offering it an active "pair to this entry" button invites them to attach evidence
+  // they explicitly threw away, so it is filtered out of this list entirely (it stays
+  // readable in the ledger, and the day view still shows nothing for it).
+  const pairable = observations.filter((o) => o.status !== 'dismissed');
 
   const run = async (fn, event) => {
     setBusy(true); setError(null);
@@ -147,8 +168,13 @@ export function EntryEditSheet({ row, open, onClose, onChanged, observations = [
       onClose();
     } catch (err) {
       logger.error('measurement.pair_failed', { uuid: row.uuid, observationId: observation.id, error: err?.message });
-      setError(err);
-      onPaired?.(err);
+      // DaylightAPI wraps a non-2xx as `HTTP 409: Conflict - {json body}`. The body's
+      // `error` is a sentence written for this exact situation ("… would leave that entry
+      // counting the same food a second time. Delete or correct … first"); showing the
+      // raw wrapper instead would bury it behind a status line.
+      const shown = new Error(serverMessage(err) || err?.message || 'Could not attach this measurement.');
+      setError(shown);
+      onPaired?.(shown);
     } finally { setPairingId(null); }
   };
 
@@ -252,11 +278,11 @@ export function EntryEditSheet({ row, open, onClose, onChanged, observations = [
           </>
         ) : null}
 
-        {observations.length > 0 ? (
+        {pairable.length > 0 ? (
           <>
             <Text size="xs" fw={600} tt="uppercase">Measurements</Text>
             <div className="health-obs health-obs--sheet">
-              {observations.map((o) => (
+              {pairable.map((o) => (
                 <ObservationRow key={o.id} observation={o}
                   onPair={pairObservation}
                   pairing={pairingId === o.id}

@@ -147,7 +147,11 @@ export function createHealthApiRouter(config) {
     observationStore: new YamlObservationStore({ dataService, logger }),
     entries: {
       find: (userId, uuid) => healthOperations.findNutritionItem(userId, uuid),
-      update: (userId, uuid, changes) => healthOperations.updateNutritionItem(userId, uuid, changes),
+      // `ratify: false` — a re-pair corrects an entry's grams from a measurement, and
+      // (with no density scan) leaves its calories as the machine estimated them.
+      // Stamping settled:true would certify a calorie figure nobody reviewed and hide
+      // the very badge asking them to.
+      update: (userId, uuid, changes) => healthOperations.updateNutritionItem(userId, uuid, changes, { ratify: false }),
     },
     // `normalizeScaleNutribotConfig` takes the WHOLE scales config and reads its own
     // `nutribot` block — passing that block directly would find no `nutribot` key inside

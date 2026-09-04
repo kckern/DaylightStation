@@ -12,9 +12,16 @@ import { createObservationPairingService } from './ObservationPairingService.mjs
 let dir, store, entriesById, service, updates;
 
 const SCALE_CONFIG = () => ({
-  containers: { thresholdG: 150, items: [{ id: 'mug', label: 'Mug', emoji: '☕', grams: 350 }] },
+  containers: {
+    thresholdG: 150,
+    items: [
+      { id: 'mug', label: 'Mug', emoji: '☕', grams: 350 },
+      { id: 'small-bowl', label: 'Small bowl', emoji: '🍚', grams: 180 },
+    ],
+  },
   densityLevels: [
     { level: 3, label: 'Lean', emoji: '🍲', kcal_per_g: 1.0, macros: { fat_pct: 20, carb_pct: 45, protein_pct: 35 } },
+    { level: 4, label: 'Mixed', emoji: '🍛', kcal_per_g: 1.4, macros: { fat_pct: 25, carb_pct: 50, protein_pct: 25 } },
   ],
 });
 
@@ -141,22 +148,134 @@ describe('ObservationPairingService.pair — recompute', () => {
   });
 });
 
-describe('ObservationPairingService.pair — the prior pairing is reopened', () => {
-  it('re-pairing to a different entry marks the prior entry\'s other observations back to open', async () => {
-    const weight = appendWeight(82, '2026-09-02 18:04:12');
-    const density = store.append('u1', { kind: 'density', value: 3, scaleId: 'kitchen-1', at: '2026-09-02 18:04:40' });
-    await service.pair('u1', density.id, 'entry-a');
-    await service.pair('u1', weight.id, 'entry-a');
-    expect(store.findByPairedEntry('u1', 'entry-a')).toHaveLength(2);
+describe('ObservationPairingService.pair — a measurement is a PLACEMENT, moved whole', () => {
+  /** A real placement: 500 g gross in a 180 g small bowl, density level 4 (1.4 kcal/g). */
+  const seedPlacement = () => ({
+    weight: appendWeight(500, '2026-09-02 18:04:12'),
+    container: store.append('u1', { kind: 'container', value: 'small-bowl', scaleId: 'kitchen-1', at: '2026-09-02 18:04:20' }),
+    density: store.append('u1', { kind: 'density', value: 4, scaleId: 'kitchen-1', at: '2026-09-02 18:04:40' }),
+  });
+
+  it('pairing the WEIGHT of an open placement brings its container and density with it', async () => {
+    const { weight, container, density } = seedPlacement();
 
     const result = await service.pair('u1', weight.id, 'entry-b');
 
-    expect(result.released).toEqual([density.id]);
-    expect(store.get('u1', density.id).status).toBe('open');
-    expect(store.get('u1', density.id).pairedEntryUuid).toBeNull();
-    expect(store.get('u1', weight.id).pairedEntryUuid).toBe('entry-b');
+    expect(result.moved.sort()).toEqual([weight.id, container.id, density.id].sort());
+    for (const id of [weight.id, container.id, density.id]) {
+      expect(store.get('u1', id).status).toBe('consumed');
+      expect(store.get('u1', id).pairedEntryUuid).toBe('entry-b');
+    }
+    // TARED grams and REAL calories — never the untared gross with ~no kcal.
+    expect(entriesById.get('entry-b').grams).toBe(320);   // 500 − 180
+    expect(entriesById.get('entry-b').calories).toBe(448); // 320 × 1.4
+  });
+
+  it('leaves no fragment behind: nothing from the placement stays open or points elsewhere', async () => {
+    const { weight } = seedPlacement();
+    await service.pair('u1', weight.id, 'entry-b');
+    expect(store.openForScale('u1', 'kitchen-1')).toHaveLength(0);
+  });
+
+  it('a signal from a DIFFERENT scale, or outside the window, is not swept into the placement', async () => {
+    const { weight } = seedPlacement();
+    const other = store.append('u1', { kind: 'density', value: 3, scaleId: 'kitchen-2', at: '2026-09-02 18:04:30' });
+    const later = store.append('u1', { kind: 'density', value: 3, scaleId: 'kitchen-1', at: '2026-09-02 18:30:00' });
+
+    const result = await service.pair('u1', weight.id, 'entry-b');
+
+    expect(result.moved).not.toContain(other.id);
+    expect(result.moved).not.toContain(later.id);
+    expect(store.get('u1', other.id).status).toBe('open');
+    expect(store.get('u1', later.id).status).toBe('open');
+  });
+
+  it('a upc row moves alone — it names a product, not a scale slot', async () => {
+    const { weight } = seedPlacement();
+    const upc = store.append('u1', { kind: 'upc', value: '049000028911', scaleId: 'kitchen-1', at: '2026-09-02 18:04:25' });
+
+    const result = await service.pair('u1', upc.id, 'entry-b');
+
+    expect(result.moved).toEqual([upc.id]);
+    expect(store.get('u1', weight.id).status).toBe('open');
+  });
+});
+
+describe('ObservationPairingService.pair — moving a measurement off a LIVING entry is refused', () => {
+  const seedConsumed = async (entryUuid) => {
+    const weight = appendWeight(500, '2026-09-02 18:04:12');
+    store.append('u1', { kind: 'container', value: 'small-bowl', scaleId: 'kitchen-1', at: '2026-09-02 18:04:20' });
+    store.append('u1', { kind: 'density', value: 4, scaleId: 'kitchen-1', at: '2026-09-02 18:04:40' });
+    await service.pair('u1', weight.id, entryUuid);
+    return weight;
+  };
+
+  it('refuses with PRIOR_ENTRY_EXISTS, naming the entry — the day must not count the food twice', async () => {
+    const weight = await seedConsumed('entry-a');
+    expect(entriesById.get('entry-a').grams).toBe(320);
+
+    let caught = null;
+    try { await service.pair('u1', weight.id, 'entry-b'); } catch (err) { caught = err; }
+
+    expect(caught?.code).toBe('PRIOR_ENTRY_EXISTS');
+    expect(caught.message).toContain('Soup');       // the prior entry, by name
+    expect(caught.message).toMatch(/second time/);  // and why
+  });
+
+  it('writes NOTHING when it refuses — the evidence still backs the entry it computed', async () => {
+    const weight = await seedConsumed('entry-a');
+    const before = entriesById.get('entry-a');
+    const updatesBefore = updates.length;
+
+    try { await service.pair('u1', weight.id, 'entry-b'); } catch { /* expected */ }
+
+    expect(store.findByPairedEntry('u1', 'entry-a')).toHaveLength(3);
+    expect(store.findByPairedEntry('u1', 'entry-b')).toHaveLength(0);
+    expect(entriesById.get('entry-a')).toEqual(before);
+    expect(updates).toHaveLength(updatesBefore);
+    // The badge invariant: entry-a's number is still backed by the evidence that made it.
+    expect(store.get('u1', weight.id).pairedEntryUuid).toBe('entry-a');
+  });
+
+  it('once the prior entry is gone the SAME request succeeds, moving the whole placement', async () => {
+    const weight = await seedConsumed('entry-a');
+    entriesById.delete('entry-a'); // the person deleted or corrected it, as the message asked
+
+    const result = await service.pair('u1', weight.id, 'entry-b');
+
+    expect(result.moved).toHaveLength(3);
     expect(store.findByPairedEntry('u1', 'entry-a')).toHaveLength(0);
-    expect(entriesById.get('entry-b').grams).toBe(82);
+    expect(store.findByPairedEntry('u1', 'entry-b')).toHaveLength(3);
+    // Still TARED and density-backed — moving a whole placement recomputes it in full.
+    expect(entriesById.get('entry-b').grams).toBe(320);
+    expect(entriesById.get('entry-b').calories).toBe(448);
+  });
+
+  // END-TO-END INVARIANT — the failure the fix round exists to close.
+  it('INVARIANT: a tared, density-backed placement moved A -> B leaves the food counted ONCE, B correct, and no badge without evidence', async () => {
+    const weight = await seedConsumed('entry-a');
+    // A is backed and correct to begin with.
+    expect(entriesById.get('entry-a')).toMatchObject({ grams: 320, calories: 448 });
+
+    // Moving while A lives is refused (no double count is even possible)…
+    let caught = null;
+    try { await service.pair('u1', weight.id, 'entry-b'); } catch (err) { caught = err; }
+    expect(caught?.code).toBe('PRIOR_ENTRY_EXISTS');
+    const dayTotalWhileRefused = [...entriesById.values()].reduce((sum, e) => sum + (e.calories || 0), 0);
+    expect(dayTotalWhileRefused).toBe(448 + 400); // A's measured 448 + B's own untouched 400
+
+    // …and after resolving A, the food is counted exactly once, on B.
+    entriesById.delete('entry-a');
+    await service.pair('u1', weight.id, 'entry-b');
+
+    const dayTotalAfter = [...entriesById.values()].reduce((sum, e) => sum + (e.calories || 0), 0);
+    expect(dayTotalAfter).toBe(448);                      // counted ONCE, not twice
+    expect(entriesById.get('entry-b').grams).toBe(320);   // tared, not the 500 g gross
+    // No entry carries a badge without the evidence that produced it: every consumed row
+    // points at B, and B is exactly what they computed.
+    expect(store.findByPairedEntry('u1', 'entry-b').map((o) => o.kind).sort())
+      .toEqual(['container', 'density', 'weight']);
+    expect(store.findByPairedEntry('u1', 'entry-a')).toHaveLength(0);
   });
 
   it('re-pairing to the SAME entry is idempotent on the ledger and still recomputes (the retry story)', async () => {
@@ -166,7 +285,7 @@ describe('ObservationPairingService.pair — the prior pairing is reopened', () 
 
     const result = await service.pair('u1', obs.id, 'entry-a');
 
-    expect(result.released).toEqual([]);
+    expect(result.moved).toEqual([obs.id]);
     expect(store.findByPairedEntry('u1', 'entry-a')).toHaveLength(1);
     expect(entriesById.get('entry-a').grams).toBe(82);
   });
@@ -189,6 +308,13 @@ describe('ObservationPairingService.pair — the prior pairing is reopened', () 
     expect(caught?.code).toBe('ENTRY_NOT_FOUND');
     expect(store.get('u1', obs.id).status).toBe('open');
     expect(store.get('u1', obs.id).pairedEntryUuid).toBeNull();
+  });
+
+  it('never writes the ratification stamp — correcting which meal a measurement belongs to is not a calorie review', async () => {
+    const obs = appendWeight(82);
+    await service.pair('u1', obs.id, 'entry-a');
+    expect(updates.at(-1).changes).not.toHaveProperty('settled');
+    expect(updates.at(-1).changes).not.toHaveProperty('settledBy');
   });
 });
 
@@ -234,14 +360,16 @@ function seedArchived(userId, n, pairedEntryUuid, start = Date.UTC(2026, 0, 1, 8
 }
 
 describe('ObservationPairingService — cross-file batches are refused, never half-applied', () => {
-  it('a re-pair whose release set spans an archive and the hot file is refused with CROSS_FILE_BATCH and writes NOTHING', async () => {
+  it('a placement spanning an archive and the hot file is refused with CROSS_FILE_BATCH and writes NOTHING', async () => {
     // entry-a's evidence: many archived rows...
     const archived = seedArchived('u1', 300, 'entry-a');
-    // ...plus one HOT row, also paired to entry-a.
+    // ...plus one HOT row, also paired to entry-a. (A real straddling case: an entry whose
+    // evidence rows fell either side of a roll.)
     const hot = appendWeight(82, '2026-02-01 09:00:00');
     expect(fs.readFileSync(path.join(dir, 'u1', 'lifelog/nutrition/observations.yml'), 'utf8')
       .includes(archived[0])).toBe(false); // the seed really is cold
     store.update('u1', hot.id, { status: 'consumed', pairedEntryUuid: 'entry-a' });
+    entriesById.delete('entry-a'); // resolved, so PRIOR_ENTRY_EXISTS is not what refuses
 
     const before = {
       archived0: store.get('u1', archived[0]).pairedEntryUuid,
@@ -250,8 +378,7 @@ describe('ObservationPairingService — cross-file batches are refused, never ha
 
     let caught = null;
     try {
-      // Moving the hot row to entry-b must release entry-a's archived rows too —
-      // one hot patch + archived patches = two files.
+      // The whole placement moves together — archived rows + the hot row = two files.
       await service.pair('u1', hot.id, 'entry-b');
     } catch (err) { caught = err; }
 
@@ -266,12 +393,14 @@ describe('ObservationPairingService — cross-file batches are refused, never ha
 
   it('a re-pair confined to ONE file still succeeds — the refusal is narrow, not a blanket ban on old rows', async () => {
     const archived = seedArchived('u1', 300, 'entry-a');
-    // Every patch (the moved row + the released siblings) lives in the same archive month.
+    entriesById.delete('entry-a');
+    // Every patch (the whole placement) lives in the same archive month.
     const result = await service.pair('u1', archived[0], 'entry-b');
 
     expect(result.observation.pairedEntryUuid).toBe('entry-b');
-    expect(store.get('u1', archived[1]).status).toBe('open');
-    expect(entriesById.get('entry-b').grams).toBe(100 + 0);
+    expect(store.findByPairedEntry('u1', 'entry-b')).toHaveLength(archived.length);
+    // Latest weight of the moved set — a placement's rows are many, the newest wins.
+    expect(entriesById.get('entry-b').grams).toBe(100 + archived.length - 1);
   });
 });
 

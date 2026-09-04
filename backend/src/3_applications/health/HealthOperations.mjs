@@ -120,9 +120,23 @@ export class HealthOperations {
     return item;
   }
 
-  async updateNutritionItem(username, id, changes) {
+  /**
+   * @param {string} username
+   * @param {string} id
+   * @param {object} changes
+   * @param {{ratify?: boolean}} [options] `ratify: false` writes the fields WITHOUT the
+   *   human-review stamp. Exactly one caller needs it: the kitchen-scale re-pair, which
+   *   corrects an entry's GRAMS from a measurement and — when no density was scanned —
+   *   deliberately leaves the CALORIES as the machine estimated them. Stamping that row
+   *   `settled: true` would certify a calorie figure nobody looked at, and would remove
+   *   the "Unconfirmed" badge and the Confirm affordance that ask them to. A person
+   *   correcting which meal a measurement belongs to has not reviewed that meal's
+   *   estimate.
+   */
+  async updateNutritionItem(username, id, changes, options = {}) {
     const existing = await this.nutritionItems.findByUuid(username, id);
     if (!existing) return null;
+    const ratify = options.ratify !== false;
     // Any successful edit is a human touch ratifying the machine's estimate —
     // settle the row. A body of just `{ settled: true }` (the one-tap
     // confirm) flows through this same stamp. Never conditional/defaulted:
@@ -130,12 +144,20 @@ export class HealthOperations {
     // the whitelist filter (not after) so NUTRITION_UPDATE_FIELDS stays the
     // single real gate on what reaches the store — settled/settledBy/settledAt
     // must be present in that Set or this stamp is silently dropped too.
-    const stampedChanges = {
-      ...changes,
-      settled: true,
-      settledBy: 'user',
-      settledAt: nowTs24(),
-    };
+    //
+    // `ratify: false` omits the stamp entirely rather than writing `settled: false`:
+    // an ABSENT `settled` key means "legacy row, treat as settled", so writing a value
+    // here would change the meaning of rows that never carried one. Omitting leaves
+    // whatever the row already said — an unreviewed estimate stays unreviewed, a
+    // confirmed row stays confirmed.
+    const stampedChanges = ratify
+      ? {
+        ...changes,
+        settled: true,
+        settledBy: 'user',
+        settledAt: nowTs24(),
+      }
+      : { ...changes };
     const allowedChanges = Object.fromEntries(
       Object.entries(stampedChanges).filter(([field]) => NUTRITION_UPDATE_FIELDS.has(field)),
     );

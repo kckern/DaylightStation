@@ -32,6 +32,23 @@
  * therefore produces exactly the numbers the automatic path would have produced from the
  * same evidence — the two cannot drift, because there is one implementation.
  *
+ * ## A measurement is a PLACEMENT, and it moves whole
+ *
+ * A weight, the container it sat in and the density card that described it are ONE piece
+ * of evidence. Re-pairing used to move the named row alone and release its siblings, which
+ * produced exactly the failure this phase exists to eliminate: the target was recomputed
+ * from the weight ALONE — the untared 500 g gross with essentially no calories — and shown
+ * under a "measured" badge, while the entry it came from kept the full numbers, so the day
+ * counted the same food twice. `pair` now moves the whole placement or nothing.
+ *
+ * The other half of that failure is the entry left behind. Its numbers came from this
+ * placement; with the evidence gone there is nothing left to recompute it from and no
+ * honest number to write, and zeroing or deleting it would be an invention. So moving a
+ * measurement that still backs a LIVING entry is REFUSED (`PRIOR_ENTRY_EXISTS`), naming
+ * that entry and asking the person to delete or correct it first. The ordinary case —
+ * attaching an unmatched measurement — is untouched: an open row backs nothing, so nothing
+ * can be double-counted by moving it.
+ *
  * ## What "the evidence" is
  *
  * An entry's evidence is every observation currently paired to it — an ARRAY, because one
@@ -46,24 +63,47 @@
  * entry already said — would be exactly the confident-looking wrong number this phase
  * exists to eliminate. Grams are still corrected; the calories stay the human's.
  *
+ * ## The ratification stamp is NOT ours to write
+ *
+ * The entry write goes through `HealthOperations.updateNutritionItem` with
+ * `ratify: false`. A re-pair corrects an entry's GRAMS and — with no density scan — leaves
+ * its CALORIES exactly as the machine estimated them; stamping `settled: true` would
+ * certify a calorie figure nobody looked at and would remove the "Unconfirmed" badge and
+ * the Confirm affordance that ask them to. Correcting which meal a measurement belongs to
+ * is not a review of that meal's estimate.
+ *
  * ## Cross-file batches are REFUSED, not partially applied
  *
  * `updateMany` is atomic within ONE file. `YamlObservationStore` stores a bounded hot file
  * plus monthly archives, and a re-pair is the only operation in the system that can touch
  * both at once (its patches come from `findByPairedEntry`, which reads archives too —
  * unlike the composition consume path, whose patches come from `openForScale` and so are
- * always hot). The store now refuses such a batch outright (`CROSS_FILE_BATCH`) before
- * writing a byte; this service lets that error through so the route can report it. The
- * failure mode is explicit and total: nothing is written, the ledger is exactly as it was,
- * and the person is told to act on one observation at a time.
+ * always hot). The store refuses such a batch outright (`CROSS_FILE_BATCH`) before writing
+ * a byte; this service lets that error through so the route can report it. The failure
+ * mode is explicit and total: nothing is written, the ledger is exactly as it was, and the
+ * person is told to act on one measurement at a time.
  *
  * @module nutrition/ObservationPairingService
  */
 
 import { computeNutrition } from '#domains/nutrition/index.mjs';
+import { MATCH_WINDOW_MS } from '#domains/nutrition/services/ObservationMatcher.mjs';
 import { resolveScaleNet } from '#apps/nutribot/usecases/LogFoodFromScale.mjs';
 import { densityForLevel } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 import { ApplicationError } from '#apps/common/errors/index.mjs';
+
+/**
+ * The codebase's local timestamp (`YYYY-MM-DD HH:mm:ss`) as comparable milliseconds.
+ * `Date.UTC` is used purely as an arithmetic combinator over the digits — never as an
+ * instant — exactly as `ObservationMatcher` does, so the two agree by construction.
+ */
+function parseLocalTimestamp(ts) {
+  if (typeof ts !== 'string') return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(ts);
+  if (!m) return null;
+  const [, y, mo, d, h, mi, sec] = m;
+  return Date.UTC(+y, +mo - 1, +d, +h, +mi, +sec);
+}
 
 /** The last row of a kind wins: a placement appends a new row per >=5 g change. */
 function latestOfKind(observations, kind) {
@@ -170,20 +210,72 @@ export function createObservationPairingService({
   };
 
   /**
-   * Point one observation at a food-log entry, releasing whatever it pointed at before.
+   * The PLACEMENT one observation belongs to — the unit this service moves.
    *
-   * ORDER: the ledger is written FIRST, the entry recomputed second. The ledger is the
-   * evidence trail — the thing the day view reads to say "this entry was scale-measured" —
-   * so a failure after it lands leaves an entry that is visibly paired but not yet
-   * recomputed, which the person can see and simply repeat. The reverse order would leave
-   * an entry silently rewritten from evidence it does not own. Repeating is safe: pairing
-   * an observation to the entry it already points at is a no-op on the ledger and still
-   * recomputes, which is exactly the retry story.
+   * A measurement is not a row, it is an event: a weight, the container it sat in and the
+   * density card that described it are ONE piece of evidence, and an entry computed from
+   * any fragment of it is a confident wrong number (an untared gross with no calories,
+   * under a "measured" badge). So the placement moves together or not at all.
+   *
+   * Two ways to know what belongs together, matching how the rows got there:
+   *  - a CONSUMED row was attached to its entry as a set, so that entry's whole evidence
+   *    set IS the placement;
+   *  - an OPEN row has not been grouped yet, so the placement is what the matcher itself
+   *    would compose: the open rows on the SAME scale inside the same 900 s window, which
+   *    is the exact rule `ObservationMatcher` uses to decide a composition.
+   *
+   * A `upc` row is never part of a placement — it names a product, not a scale slot (same
+   * exclusion `ObservationMatcher` makes) — so pairing one moves only itself.
+   */
+  const placementFor = (userId, observation) => {
+    if (observation.pairedEntryUuid) {
+      const set = observationStore.findByPairedEntry(userId, observation.pairedEntryUuid);
+      return set.length > 0 ? set : [observation];
+    }
+    if (observation.kind === 'upc') return [observation];
+    const anchor = parseLocalTimestamp(observation.at);
+    const siblings = observationStore.openForScale(userId, observation.scaleId)
+      .filter((o) => o.kind !== 'upc')
+      .filter((o) => {
+        const t = parseLocalTimestamp(o.at);
+        return anchor !== null && t !== null && Math.abs(t - anchor) <= MATCH_WINDOW_MS;
+      });
+    return siblings.some((o) => o.id === observation.id) ? siblings : [observation, ...siblings];
+  };
+
+  /**
+   * Attach a measurement — the WHOLE placement it belongs to — to a food-log entry.
+   *
+   * ## Moving a measurement that already backs an entry is REFUSED while that entry lives
+   *
+   * The prior entry's numbers came from this placement. Move the placement away and one of
+   * two things has to be untrue: either the prior entry keeps numbers nothing measured any
+   * more (and the day counts that food twice, once there and once on the target), or this
+   * service silently rewrites an entry the person did not name. There is no third option
+   * that invents nothing — with its evidence gone there is no measurement left to
+   * recompute the prior entry from, and zeroing it would be a fabricated number.
+   *
+   * So the collision is SURFACED rather than resolved by guesswork:
+   * `PRIOR_ENTRY_EXISTS`, naming the entry and its numbers, telling the person to delete
+   * or correct it first. Once that entry is gone the same request succeeds. Nothing is
+   * written when it refuses.
+   *
+   * The ordinary case — attaching an UNMATCHED measurement to an entry — is untouched by
+   * this: an open row backs nothing, so nothing can be double-counted by moving it.
+   *
+   * ## Order and idempotency
+   *
+   * The ledger is written FIRST, the entry recomputed second. The ledger is the evidence
+   * trail the day view reads, so a failure after it lands leaves an entry visibly attached
+   * but not yet recomputed — visible, and fixed by simply repeating. Repeating is safe:
+   * re-pairing a placement to the entry it already backs patches nothing and still
+   * recomputes.
    *
    * @throws {InfrastructureError} `NOT_FOUND` when the observation does not exist.
-   * @throws {ApplicationError} `ENTRY_NOT_FOUND` when the target entry does not exist.
-   * @throws {ValidationError} `CROSS_FILE_BATCH` when releasing the prior pairing would
-   *   require writing two files — nothing is written.
+   * @throws {ApplicationError} `ENTRY_NOT_FOUND` when the target entry does not exist;
+   *   `PRIOR_ENTRY_EXISTS` when the measurement still backs another, living entry.
+   * @throws {ValidationError} `CROSS_FILE_BATCH` when the placement cannot be rewritten in
+   *   one atomic file write — nothing is written.
    */
   const pair = async (userId, observationId, entryUuid) => {
     const observation = observationStore.get(userId, observationId);
@@ -196,36 +288,36 @@ export function createObservationPairingService({
     }
 
     const prior = observation.pairedEntryUuid ?? null;
-    const patches = [];
-    let released = [];
     if (prior && prior !== entryUuid) {
-      // Every row that pointed at the PRIOR entry goes back to `open`. Leaving them would
-      // have that entry still claiming a placement whose weight has just been attributed
-      // elsewhere; releasing them puts each one back in the unmatched list where it is
-      // visible, re-pairable and dismissible. The prior entry's own logged numbers are
-      // deliberately left alone — this service never rewrites an entry the person did not
-      // name — but nothing in the ledger claims them any more.
-      released = observationStore.findByPairedEntry(userId, prior)
-        .filter((o) => o.id !== observation.id)
-        .map((o) => o.id);
-      for (const id of released) patches.push({ id, status: 'open', pairedEntryUuid: null });
+      const priorEntry = await entries.find(userId, prior);
+      if (priorEntry) {
+        const name = priorEntry.name || priorEntry.item || priorEntry.label || 'another entry';
+        const kcal = Math.round(Number(priorEntry.calories) || 0);
+        throw new ApplicationError(
+          `This measurement is what "${name}" (${kcal} kcal) was calculated from. `
+          + 'Moving it would leave that entry counting the same food a second time. '
+          + `Delete or correct "${name}" first, then attach the measurement here.`,
+          { code: 'PRIOR_ENTRY_EXISTS', priorEntryUuid: prior, priorEntryName: name, priorEntryCalories: kcal },
+        );
+      }
     }
-    // Also patched when the pairing already points here but the row is not `consumed` —
-    // a dismissed row being pointed at an entry is a re-pair, not a no-op.
-    if (prior !== entryUuid || observation.status !== 'consumed') {
-      patches.push({ id: observation.id, status: 'consumed', pairedEntryUuid: entryUuid });
-    }
+
+    const placement = placementFor(userId, observation);
+    const patches = placement
+      .filter((o) => !(o.status === 'consumed' && o.pairedEntryUuid === entryUuid))
+      .map((o) => ({ id: o.id, status: 'consumed', pairedEntryUuid: entryUuid }));
 
     if (patches.length > 0) observationStore.updateMany(userId, patches);
 
     const recomputed = await recomputeEntry(userId, entryUuid);
     logger.info?.('observation.paired', {
-      observationId, entryUuid, prior, released: released.length, recomputed: Boolean(recomputed),
+      observationId, entryUuid, prior,
+      moved: placement.length, recomputed: Boolean(recomputed),
     });
 
     return {
       observation: observationStore.get(userId, observationId),
-      released,
+      moved: placement.map((o) => o.id),
       recomputed,
     };
   };

@@ -41,7 +41,7 @@ function makeApp(overrides = {}) {
       if (overrides.pairThrows) throw overrides.pairThrows;
       return {
         observation: { ...OBSERVATION, status: 'consumed', pairedEntryUuid: entryUuid },
-        released: overrides.released ?? [],
+        moved: overrides.moved ?? [OBS_ID],
         recomputed: { grams: 82, amount: 82, unit: 'g' },
       };
     }),
@@ -110,15 +110,15 @@ describe('GET /api/v1/health/nutrition/observations', () => {
 });
 
 describe('POST /api/v1/health/nutrition/observations/:id/pair', () => {
-  it('re-pairs and reports what was released', async () => {
-    const { app, calls } = makeApp({ released: ['some-other-id'] });
+  it('re-pairs and reports the whole placement it moved', async () => {
+    const { app, calls } = makeApp({ moved: [OBS_ID, 'container-id', 'density-id'] });
     const res = await request(app)
       .post(`/api/v1/health/nutrition/observations/${OBS_ID}/pair`)
       .send({ entryUuid: 'entry-b' });
 
     expect(res.status).toBe(200);
     expect(res.body.observation.pairedEntryUuid).toBe('entry-b');
-    expect(res.body.released).toEqual(['some-other-id']);
+    expect(res.body.moved).toEqual([OBS_ID, 'container-id', 'density-id']);
     expect(res.body.recomputed).toEqual({ grams: 82, amount: 82, unit: 'g' });
     expect(calls.pair).toEqual([['testuser', OBS_ID, 'entry-b']]);
   });
@@ -147,6 +147,28 @@ describe('POST /api/v1/health/nutrition/observations/:id/pair', () => {
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('CROSS_FILE_BATCH');
     expect(res.body.error).toMatch(/nothing was changed/i);
+    // MINOR 3: the copy must describe what actually happened. Hot-vs-archive within the
+    // SAME month is the common case, so "different months" was simply untrue.
+    expect(res.body.error).toMatch(/archived/i);
+    expect(res.body.error).not.toMatch(/different months/i);
+  });
+
+  it('a measurement that still backs a living entry is a 409 that names it — never a silent double count', async () => {
+    const err = typedError(
+      'This measurement is what "Soup" (210 kcal) was calculated from. Moving it would leave '
+      + 'that entry counting the same food a second time. Delete or correct "Soup" first, '
+      + 'then attach the measurement here.',
+      'PRIOR_ENTRY_EXISTS',
+    );
+    const { app } = makeApp({ pairThrows: err });
+    const res = await request(app)
+      .post(`/api/v1/health/nutrition/observations/${OBS_ID}/pair`)
+      .send({ entryUuid: 'entry-b' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('PRIOR_ENTRY_EXISTS');
+    expect(res.body.error).toContain('Soup');       // the entry, by name
+    expect(res.body.error).toMatch(/second time/);  // and why it was refused
   });
 
   describe('ids are validated against an allowlist before any store call', () => {

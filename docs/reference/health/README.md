@@ -534,13 +534,32 @@ person sees and corrects them.
 - **An entry backed by a measurement shows it** — `82 g · scale ✓` next to the row. One
   entry can carry several observations (a placement appends a new weight row per ≥5 g
   change, plus a container and a density), so the badge reports the LATEST weight.
-- **The edit sheet's Measurements section re-pairs** a measurement to the entry being
-  edited. The entry's grams are recomputed from the measurement's own net weight (gross
-  minus a scanned container's tare, via the same domain arithmetic the automatic path
-  uses); calories are recomputed too, but ONLY when a density scan is part of the
-  evidence — without a measured kcal/g the grams are corrected and the calories are left
-  as the person entered them. Whatever the measurement pointed at before is released back
-  to unmatched, so the ledger never has two entries claiming one placement.
+- **The edit sheet's Measurements section attaches** a measurement to the entry being
+  edited. Dismissed measurements are not offered. The entry's grams are recomputed from the
+  measurement's own net weight (gross minus a scanned container's tare, via the same domain
+  arithmetic the automatic path uses); calories are recomputed too, but ONLY when a density
+  scan is part of the evidence — without a measured kcal/g the grams are corrected and the
+  calories are left as the person entered them.
+
+**A measurement is a PLACEMENT, and it moves whole.** A weight, the container it sat in and
+the density card that described it are one piece of evidence; attaching any of them attaches
+all of them (its open siblings on the same scale inside the same 900 s window, or — for a
+measurement that already backs an entry — that entry's whole evidence set). An entry is
+never recomputed from a fragment, so it can never show an untared gross with no calories
+under a "measured" badge.
+
+**Moving a measurement that still backs a living entry is refused.** Its numbers came from
+this placement; move it away and either that entry keeps numbers nothing measured (and the
+day counts the food twice) or the app silently rewrites an entry the person did not name.
+There is no third option that invents nothing. So the app answers `409` naming the entry and
+its calories — *"delete or correct “Soup” first, then attach the measurement here"* — and
+writes nothing. Once that entry is gone the same action succeeds. Attaching an UNMATCHED
+measurement is unaffected: an open row backs nothing.
+
+**A re-pair never certifies the entry.** The write goes through
+`HealthOperations.updateNutritionItem` with `ratify: false`: correcting which meal a
+measurement belongs to is not a review of that meal's calorie estimate, so an unreviewed row
+keeps its `settled: false`, its "Unconfirmed" badge and its Confirm affordance.
 
 A re-pair that would require rewriting the hot file and a monthly archive together is
 REFUSED with a `409` and nothing written: the store writes one file atomically and has no

@@ -251,3 +251,46 @@ describe('HealthOperations deleteNutritionItem is the discard replacement', () =
     expect(result).toEqual({ found: false, deleted: false });
   });
 });
+
+// Task 5.4 fix round — the ratification stamp is a claim about REVIEW, not about writes.
+describe('HealthOperations.updateNutritionItem ratification stamp', () => {
+  function buildOps(existing) {
+    const update = vi.fn(async (_u, _id, changes) => ({ ...existing, ...changes }));
+    const ops = new HealthOperations({
+      healthData: {},
+      nutritionItems: { findByUuid: async () => existing, update, findByDate: async () => [] },
+      today: () => '2026-09-02',
+    });
+    return { ops, update };
+  }
+
+  const unreviewed = { uuid: 'r1', name: 'Guessed dish', calories: 999, settled: false, kind: 'item' };
+
+  it('an ordinary edit still ratifies the row — a human touched these numbers', async () => {
+    const { ops, update } = buildOps(unreviewed);
+    await ops.updateNutritionItem('kc', 'r1', { calories: 400 });
+    const [, , changes] = update.mock.calls[0];
+    expect(changes.settled).toBe(true);
+    expect(changes.settledBy).toBe('user');
+  });
+
+  it('ratify:false writes the corrected fields WITHOUT certifying the rest', async () => {
+    const { ops, update } = buildOps(unreviewed);
+    await ops.updateNutritionItem('kc', 'r1', { grams: 150, amount: 150 }, { ratify: false });
+    const [, , changes] = update.mock.calls[0];
+    expect(changes).toEqual({ grams: 150, amount: 150 });
+    // Critically: the unreviewed 999 kcal estimate is neither rewritten nor certified,
+    // so the row keeps its Unconfirmed badge and its Confirm affordance.
+    expect(changes).not.toHaveProperty('settled');
+    expect(changes).not.toHaveProperty('settledBy');
+    expect(changes).not.toHaveProperty('settledAt');
+  });
+
+  it('ratify:false never writes settled:false either — an absent key means "legacy, settled"', async () => {
+    const legacy = { uuid: 'r2', name: 'Legacy', calories: 100, kind: 'item' }; // no settled key
+    const { ops, update } = buildOps(legacy);
+    await ops.updateNutritionItem('kc', 'r2', { grams: 82 }, { ratify: false });
+    const [, , changes] = update.mock.calls[0];
+    expect('settled' in changes).toBe(false);
+  });
+});
