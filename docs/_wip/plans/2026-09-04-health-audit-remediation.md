@@ -29,10 +29,12 @@ No production data repair or deployment is considered complete merely because un
 
 ## Implementation checkpoint
 
-Phases 1–4 are implemented. Phase 5 has passed built-app browser journeys and
-an actual copied-history rehearsal: 4,653 entries converted, 562 masses retained
-as unknown, zero follow-up changes. Deployment and production conversion are
-tracked in the audit. See the [repair runbook](../../runbooks/health-ledger-repair.md)
+Phases 1–5 are implemented and deployed at application commit `292251b1b`.
+The copied-history rehearsal and offline production conversion both preserved
+4,653 entries and all nutrient values, with 562 masses retained as unknown and
+zero follow-up changes. All eight browser journeys passed on the deployed build.
+Detailed verification and intentional limits are tracked in the audit.
+See the [repair runbook](../../runbooks/health-ledger-repair.md)
 for writer isolation, backup verification and recovery.
 
 Intentional limits: older creation clients without operation IDs are compatible
