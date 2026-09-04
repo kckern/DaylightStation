@@ -8,6 +8,7 @@ export function presentFoodCatalogEntry(entry) {
     source: entry.source,
     barcodeUpc: entry.barcodeUpc,
     useCount: entry.useCount,
+    icon: entry.icon ?? null,
     lastUsed: entry.lastUsed,
     createdAt: entry.createdAt,
   };

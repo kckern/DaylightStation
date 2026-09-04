@@ -12,6 +12,7 @@ import { deriveLogDate } from '../lib/deriveLogDate.mjs';
 import { createNutriLog, serializeNutriLog } from '../nutriLogRecords.mjs';
 import { groupParsedItems } from '#domains/nutrition/services/groupParsedItems.mjs';
 import { aiMicrosSource, pickMicros } from '#domains/nutrition/services/micros.mjs';
+import { confineIcon, iconVocabulary } from '#domains/nutrition/services/icons.mjs';
 
 /**
  * Get current time details for date context in prompts
@@ -61,6 +62,7 @@ export class LogFoodFromText {
   #logger;
   #encodeCallback;
   #foodIconsString;
+  #iconVocabulary;
   #reconciliationReader;
   #catalogService;
   #pause;
@@ -77,6 +79,7 @@ export class LogFoodFromText {
     this.#logger = deps.logger || console;
     this.#encodeCallback = deps.encodeCallback || ((cmd, data) => JSON.stringify({ cmd, ...data }));
     this.#foodIconsString = deps.foodIconsString || 'apple banana bread cheese chicken default';
+    this.#iconVocabulary = iconVocabulary(this.#foodIconsString);
     this.#reconciliationReader = deps.reconciliationReader || null;
     this.#catalogService = deps.catalogService || null;
     this.#pause = deps.pause || (async () => {});
@@ -536,7 +539,7 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
             unit: gramsRounded ? 'g' : item.unit || 'serving',
             amount: item.quantity || item.amount || gramsRounded || 1,
             color: this.#normalizeNoomColor(item.noom_color || item.color),
-            icon: item.icon || 'default',
+            icon: confineIcon(item.icon, this.#iconVocabulary),
             calories: item.calories ?? 0,
             protein: item.protein ?? 0,
             carbs: item.carbs ?? 0,
