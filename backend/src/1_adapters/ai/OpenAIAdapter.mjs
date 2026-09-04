@@ -615,9 +615,22 @@ export class OpenAIAdapter extends IAIGateway {
           `${OPENAI_API_BASE}/audio/transcriptions`,
           form
         ),
+        // TUNED AGAINST A REAL FAILURE (2026-09-04). The shipped policy —
+        // 3 attempts, 2s/4s backoff — spent its whole budget in ~58s and gave
+        // up while the upstream was still resetting connections at a
+        // suspiciously exact 15s. A person's spoken memo is not a request
+        // worth abandoning that eagerly, so the retrying now rides out roughly
+        // a minute and a half: 5 attempts, 2s/4s/8s/16s with jitter, capped by
+        // an overall budget so it cannot become unbounded. Jitter matters
+        // because several captures can fail together and must not come back in
+        // lockstep. The budget is what stops this, not the attempt count —
+        // with 15s hangs the 5th attempt starts around 74s and the whole thing
+        // ends near 90s.
         {
-          maxAttempts: 3,
+          maxAttempts: 5,
           baseDelay: 2000,
+          maxElapsedMs: 90_000,
+          jitter: 0.25,
           onRetry: (attempt, error) => {
             this.metrics.retryCount++;
             this.logger.warn?.('openai.transcribe.retry', {
@@ -626,7 +639,12 @@ export class OpenAIAdapter extends IAIGateway {
               code: error.code || error.cause?.code,
               audioSize: audioBuffer.length
             });
-          }
+          },
+          onBudgetExhausted: ({ attempts, elapsedMs }) => {
+            this.logger.warn?.('openai.transcribe.budget_exhausted', {
+              attempts, elapsedMs, audioSize: audioBuffer.length,
+            });
+          },
         }
       );
 

@@ -98,7 +98,14 @@ export class LogFoodFromImage {
    * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { userId, conversationId, imageData, messageId: userMessageId, responseContext } = input;
+    const {
+      userId, conversationId, imageData, messageId: userMessageId,
+      // The day the client is LOOKING AT (`YYYY-MM-DD`). ABSENT MEANS TODAY.
+      // A photo has no words for the model to date it from, so unlike the text
+      // path this is simply the day the row is written to.
+      date: viewedDate = null,
+      responseContext,
+    } = input;
     const userCaption = imageData?.caption || null;
 
     this.#logger.info?.('logImage.start', {
@@ -242,18 +249,26 @@ export class LogFoodFromImage {
       const now = new Date();
       const localDate = now.toLocaleDateString('en-CA', { timeZone: timezone });
       const localHour = parseInt(now.toLocaleTimeString('en-US', { timeZone: timezone, hour: 'numeric', hour12: false }));
+      const targetDate = viewedDate || localDate;
 
+      // Decision 2.24: the clock's hour describes a meal only on the day the
+      // clock is on. On any other day it describes nothing, so the day is
+      // filled from its first meal. (In practice the web UI always sends an
+      // explicit bucket alongside a date, and that bucket wins downstream in
+      // NutribotInputRouter#resolveMealTime — this is the honest floor.)
       let mealTime = 'morning';
-      if (localHour >= 11 && localHour < 14) mealTime = 'afternoon';
-      else if (localHour >= 14 && localHour < 20) mealTime = 'evening';
-      else if (localHour >= 20 || localHour < 5) mealTime = 'night';
+      if (targetDate === localDate) {
+        if (localHour >= 11 && localHour < 14) mealTime = 'afternoon';
+        else if (localHour >= 14 && localHour < 20) mealTime = 'evening';
+        else if (localHour >= 20 || localHour < 5) mealTime = 'night';
+      }
 
       const nutriLog = createNutriLog({
         userId: effectiveUserId,
         conversationId,
         items: foodItems,
         meal: {
-          date: localDate,
+          date: targetDate,
           time: mealTime,
         },
         metadata: {
@@ -295,7 +310,7 @@ export class LogFoodFromImage {
       }
 
       // 9. Update photo caption with food list + action buttons
-      const caption = this.#formatFoodCaption(foodItems, nutriLog.date || localDate);
+      const caption = this.#formatFoodCaption(foodItems, nutriLog.date || targetDate);
       const buttons = this.#buildActionButtons(nutriLog.id);
 
       await messaging.updateMessage(photoMsgId, {

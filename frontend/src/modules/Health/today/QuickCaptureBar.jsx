@@ -2,7 +2,7 @@ import { ActionIcon, UnstyledButton } from '@mantine/core';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { VoiceCapture } from '../capture/VoiceCapture.jsx';
 import { PhotoCapture } from '../capture/PhotoCapture.jsx';
-import { bucketForHour, bucketLabel } from './mealBuckets.js';
+import { bucketForHour, bucketLabel, localTodayISO } from './mealBuckets.js';
 
 const logger = createAppLogger('health').child('quick-capture-bar');
 
@@ -37,23 +37,34 @@ const PlusIcon = () => (
  * if the content itself names a different meal, the backend's own
  * resolution (explicit-in-utterance > bucket > clock) still wins, and
  * TodayView's "Moved to X" cue covers that case.
+ *
+ * ON A DAY THAT IS NOT TODAY THE CLOCK IS SILENT (decision 2.24). A day that
+ * has already ended has no "current hour", so `bucketForHour(now)` describes
+ * no meal on it; the bar targets that day's FIRST meal instead, and says so in
+ * its labels rather than guessing invisibly. Every per-meal header in LogTable
+ * still offers an exact target, and a row is one tap to move.
  */
-export function QuickCaptureBar({ onVoiceCapture, onPhotoCapture, onOpenBarcode, onAddTo, busy }) {
-  const bucket = bucketForHour(new Date().getHours());
+const FIRST_BUCKET = 'morning';
+export function QuickCaptureBar({ onVoiceCapture, onPhotoCapture, onOpenBarcode, onAddTo, busy, date = null }) {
+  const isToday = !date || date === localTodayISO();
+  const bucket = isToday ? bucketForHour(new Date().getHours()) : FIRST_BUCKET;
   const label = bucketLabel(bucket);
+  // The label carries the day whenever it is not today, so the target of a
+  // one-tap capture is visible BEFORE the tap rather than inferred after it.
+  const target = isToday ? label : `${label} on ${date}`;
 
   return (
     <div className="health-quickbar">
-      <UnstyledButton className="health-quickbar__btn" aria-label={`Quick add to ${label}`}
-        onClick={() => { logger.info('quickbar.add', { bucket }); onAddTo(bucket); }}>
+      <UnstyledButton className="health-quickbar__btn" aria-label={`Quick add to ${target}`}
+        onClick={() => { logger.info('quickbar.add', { bucket, date: date || undefined }); onAddTo(bucket); }}>
         <PlusIcon />
       </UnstyledButton>
-      <VoiceCapture bucket={bucket} mealLabel={label} labelPrefix="Quick voice log"
+      <VoiceCapture bucket={bucket} mealLabel={target} labelPrefix="Quick voice log"
         busy={busy} className="health-quickbar__btn" onCapture={onVoiceCapture} />
-      <PhotoCapture bucket={bucket} mealLabel={label} labelPrefix="Quick photo log"
+      <PhotoCapture bucket={bucket} mealLabel={target} labelPrefix="Quick photo log"
         busy={busy} className="health-quickbar__btn" onCapture={onPhotoCapture} />
-      <ActionIcon aria-label={`Quick scan barcode to ${label}`} className="health-quickbar__btn"
-        onClick={() => { logger.info('quickbar.barcode', { bucket }); onOpenBarcode(bucket); }}>
+      <ActionIcon aria-label={`Quick scan barcode to ${target}`} className="health-quickbar__btn"
+        onClick={() => { logger.info('quickbar.barcode', { bucket, date: date || undefined }); onOpenBarcode(bucket); }}>
         <BarcodeIcon />
       </ActionIcon>
     </div>

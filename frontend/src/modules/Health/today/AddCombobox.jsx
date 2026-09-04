@@ -14,7 +14,7 @@ const logger = createAppLogger('health').child('add-combobox');
 // filtered list is already short.
 const OPEN_SUGGEST_LIMIT = 8;
 
-export function AddCombobox({ bucketId, onDone, onCancel, onMeals, onTemplate }) {
+export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, onTemplate }) {
   const [text, setText] = useState('');
   const [items, setItems] = useState([]);
   const [highlight, setHighlight] = useState(-1);
@@ -77,7 +77,10 @@ export function AddCombobox({ bucketId, onDone, onCancel, onMeals, onTemplate })
       // unsettled, with the combobox already closed.
       await DaylightAPI(
         'api/v1/health/nutrition/catalog/quickadd',
-        { catalogEntryId: entry.id, ...(bucketId ? { mealTime: bucketId } : {}) },
+        // The row lands on the day being VIEWED, in the meal row it was
+      // launched from. Both keys are omitted when absent — absent still means
+      // "today" / "the clock's meal" on the server.
+      { catalogEntryId: entry.id, ...(bucketId ? { mealTime: bucketId } : {}), ...(date ? { date } : {}) },
         'POST',
       );
       logger.info('quickadd.done', { entry: entry.name, bucket: bucketId });
@@ -96,7 +99,15 @@ export function AddCombobox({ bucketId, onDone, onCancel, onMeals, onTemplate })
       // POST /nutrition/input now commits immediately ({ committed: true, ... }) —
       // no review phase. The rows are already logged (unsettled); the day
       // reload picks them up and shows the unsettled cue in place.
-      await DaylightAPI('api/v1/health/nutrition/input', { type: 'text', content: text.trim() }, 'POST');
+      await DaylightAPI(
+      'api/v1/health/nutrition/input',
+      // The sentence is parsed against the VIEWED day ("this morning" means
+      // that day's morning), and it lands in the meal row it was typed into —
+      // the bucket was previously dropped here, so a sentence typed into
+      // Breakfast was filed by the clock.
+      { type: 'text', content: text.trim(), ...(bucketId ? { bucket: bucketId } : {}), ...(date ? { date } : {}) },
+      'POST',
+    );
       logger.info('sentence.committed', {});
       onDone();
     } catch (err) {

@@ -6,6 +6,8 @@
  */
 
 import { createNutriLog } from '../nutriLogRecords.mjs';
+import { getMealTimeFromHour } from '#domains/nutrition/entities/schemas.mjs';
+import { formatLocalTimestamp } from '#domains/core/utils/time.mjs';
 
 /**
  * Log food from UPC use case
@@ -63,7 +65,15 @@ export class LogFoodFromUPC {
    * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { userId, conversationId, upc, messageId, responseContext } = input;
+    const {
+      userId, conversationId, upc, messageId,
+      // The day the client is LOOKING AT (`YYYY-MM-DD`). ABSENT MEANS TODAY,
+      // and absent is the ONLY thing Telegram/the scale ever send — which is
+      // why `meal` is passed only when a date arrives, leaving NutriLog's own
+      // clock default byte-identical for every existing caller.
+      date: viewedDate = null,
+      responseContext,
+    } = input;
 
     this.#logger.debug?.('logUPC.start', { conversationId, upc, hasResponseContext: !!responseContext });
 
@@ -182,10 +192,21 @@ export class LogFoodFromUPC {
       // 6. Create NutriLog entity
       const timezone = this.#config?.getUserTimezone?.(userId) || 'America/Los_Angeles';
       const now = new Date();
+      // Decision 2.24: on a day that is not today the clock's hour names no
+      // meal on that day, so the day is filled from its first one.
+      const meal = viewedDate
+        ? {
+          date: viewedDate,
+          time: viewedDate === formatLocalTimestamp(now, timezone).split(' ')[0]
+            ? getMealTimeFromHour(now.getHours())
+            : 'morning',
+        }
+        : undefined;
       const nutriLog = createNutriLog({
         userId,
         conversationId,
         items: [foodItem],
+        ...(meal ? { meal } : {}),
         metadata: {
           source: 'upc',
           sourceUpc: upc,
