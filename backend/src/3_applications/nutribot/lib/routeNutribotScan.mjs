@@ -61,6 +61,7 @@ export function routeNutribotScan({ scaleId, code, apply }) {
 export function nutriscanRefusalNotice(outcome = {}) {
   if (outcome.error === 'UNKNOWN_CONTAINER') return `unknown container "${outcome.id}" — not tared`;
   if (outcome.error === 'UNKNOWN_DENSITY_LEVEL') return `unknown density level ${outcome.level} — not set`;
+  if (outcome.error === 'SCALE_UNAVAILABLE') return 'the scale is not wired up — nothing recorded';
   return `scan not applied (${outcome.error || 'refused'})`;
 }
 

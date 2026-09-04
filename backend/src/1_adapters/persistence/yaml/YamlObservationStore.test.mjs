@@ -89,6 +89,76 @@ describe('YamlObservationStore.append / listByDate', () => {
   });
 });
 
+// A malformed value must be refused BEFORE the file is touched, not recognised as garbage
+// on the way back out. The rules themselves are the domain's (`ObservationValue`, pinned
+// there); what these pin is that this boundary RUNS them, per kind, on the way in — and
+// that nothing is written when one fails.
+describe('YamlObservationStore.append — per-kind value rules run before any write', () => {
+  const AT = '2026-09-02 18:00:00';
+  const DAY = '2026-09-02';
+  const row = (over) => ({ kind: 'weight', value: 1, unit: 'g', scaleId: 'k1', at: AT, ...over });
+
+  /** Refused AND nothing on disk — a rejected append must leave no trace. */
+  const refusedAndUnwritten = (obs, pattern) => {
+    expect(() => store.append('u1', obs)).toThrow(pattern);
+    expect(store.listByDate('u1', DAY)).toEqual([]);
+    expect(fs.existsSync(filePath('u1'))).toBe(false);
+  };
+
+  // THE one. `NaN !== null`, so a stored NaN weight makes the composition read
+  // `complete: true` and reach the unattended commit; the entry's grams then serialise to
+  // null with nothing flagged anywhere.
+  it('refuses a NaN weight, which would otherwise read as a COMPLETE composition', () => {
+    refusedAndUnwritten(row({ value: NaN }), /grams must be a finite number/);
+  });
+
+  it('refuses a numeric-string weight rather than coercing it', () => {
+    refusedAndUnwritten(row({ value: '500' }), /grams must be a finite number/);
+  });
+
+  it('refuses Infinity, null and a missing weight', () => {
+    refusedAndUnwritten(row({ value: Infinity }), /grams must be a finite number/);
+    refusedAndUnwritten(row({ value: null }), /grams must be a finite number/);
+    refusedAndUnwritten(row({ value: undefined }), /grams must be a finite number/);
+  });
+
+  it('refuses a present-but-unusable weight unit instead of defaulting it to grams', () => {
+    refusedAndUnwritten(row({ unit: 42 }), /unit must be a non-empty string/);
+    refusedAndUnwritten(row({ unit: '' }), /unit must be a non-empty string/);
+  });
+
+  it('refuses a density level outside the printed grammar, and a fractional one', () => {
+    refusedAndUnwritten(row({ kind: 'density', value: 99, unit: null }), /density level must be an integer/);
+    refusedAndUnwritten(row({ kind: 'density', value: 2.5, unit: null }), /density level must be an integer/);
+    refusedAndUnwritten(row({ kind: 'density', value: 0, unit: null }), /density level must be an integer/);
+  });
+
+  it('refuses an empty or non-string container id', () => {
+    refusedAndUnwritten(row({ kind: 'container', value: '', unit: null }), /container must be a non-empty string/);
+    refusedAndUnwritten(row({ kind: 'container', value: 42, unit: null }), /container must be a non-empty string/);
+  });
+
+  it('still accepts a NEGATIVE weight — computeNet owns the clamp, not this layer', () => {
+    const rec = store.append('u1', row({ value: -3 }));
+    expect(rec.value).toBe(-3);
+    expect(store.listByDate('u1', DAY)).toHaveLength(1);
+  });
+
+  it('nulls the unit on a kind that cannot carry one, however the caller passed it', () => {
+    const rec = store.append('u1', row({ kind: 'density', value: 4, unit: 'g' }));
+    expect(rec.unit).toBeNull();
+    expect(store.listByDate('u1', DAY)[0].unit).toBeNull();
+  });
+
+  it('a refusal leaves an EXISTING ledger untouched, not just an empty one', () => {
+    store.append('u1', row({ value: 480 }));
+    expect(() => store.append('u1', row({ value: NaN }))).toThrow();
+    const rows = store.listByDate('u1', DAY);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].value).toBe(480);
+  });
+});
+
 describe('YamlObservationStore malformed-file posture', () => {
   it('throws a typed, catchable error rather than an empty array when the file is corrupt YAML', () => {
     fs.mkdirSync(path.dirname(filePath('u1')), { recursive: true });

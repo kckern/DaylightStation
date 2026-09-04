@@ -5,6 +5,7 @@ import path from 'path';
 import { YamlObservationStore } from '#adapters/persistence/yaml/YamlObservationStore.mjs';
 import { createObservationService } from '#apps/nutrition/ObservationService.mjs';
 import { ApplyScanToComposition } from '#apps/nutribot/usecases/ApplyScanToComposition.mjs';
+import { nutriscanRefusalNotice } from '#apps/nutribot/lib/routeNutribotScan.mjs';
 
 /**
  * Lets one test hand the use case a parse result the grammar cannot currently
@@ -195,6 +196,78 @@ describe('ApplyScanToComposition', () => {
     it('reports a null-slotted snapshot when there was nothing live', () => {
       const r = apply.execute({ scaleId: 'kitchen', code: 'rs:done' });
       expect(r.snapshot).toMatchObject({ density: null, container: null, complete: false, active: false });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // An UNWIRED composition surface. The scan router holds a delegating surface that
+  // resolves the scale observation service on every call, and that service only exists
+  // once the head of household and the bot id resolve. Until then every write would
+  // succeed vacuously — so the grammar would claim the code, the branch would resolve a
+  // level and a label, and the fridge sheet would ACKNOWLEDGE a scan recorded nowhere.
+  // Control verbs are worse: `hadState`/`undone` come back `undefined`, which the ack
+  // renders as "nothing to clear" — indistinguishable from the truth.
+  // ---------------------------------------------------------------------------
+
+  describe('an unavailable composition surface', () => {
+    /** The shape `app.mjs` builds: every method a no-op, `available()` telling the truth. */
+    const unwired = () => ({
+      available: () => false,
+      setWeight: () => {}, setDensity: () => {}, setContainer: () => {},
+      endPlacement: () => undefined, clear: () => undefined, undo: () => undefined,
+      read: () => null,
+    });
+
+    let offline;
+    beforeEach(() => {
+      offline = new ApplyScanToComposition({ store: unwired(), config: CONFIG, logger: silent });
+    });
+
+    it.each([
+      ['density', 'dl:140'],
+      ['container', 'ct:350'],
+      ['reset', 'rs:clear'],
+      ['undo', 'rs:undo'],
+      ['done', 'rs:done'],
+    ])('refuses a %s scan instead of acknowledging one that went nowhere', (kind, code) => {
+      expect(offline.execute({ scaleId: 'kitchen', code }))
+        .toEqual({ handled: true, ok: false, kind, error: 'SCALE_UNAVAILABLE' });
+    });
+
+    // `ok: false` is what puts the ⚠️ on the prompt. The old behaviour answered
+    // `ok: true, level: 4, label: 'Mixed'` for a density that reached nothing at all.
+    it('never reports a resolved level or label for a scan that reached nothing', () => {
+      const r = offline.execute({ scaleId: 'kitchen', code: 'dl:140' });
+      expect(r.ok).toBe(false);
+      expect(r).not.toHaveProperty('level');
+      expect(r).not.toHaveProperty('label');
+    });
+
+    // `handled: false` routes the code onward to the product lookup, which would answer a
+    // fridge-sheet code with a nonsense food. A refusal is still a claim.
+    it('still CLAIMS the code, so it cannot fall through to the UPC path', () => {
+      for (const code of ['dl:140', 'ct:350', 'rs:done']) {
+        expect(offline.execute({ scaleId: 'kitchen', code }).handled).toBe(true);
+      }
+    });
+
+    it('leaves a code the grammar does not claim alone, so UPC still runs', () => {
+      expect(offline.execute({ scaleId: 'kitchen', code: '012345678905' })).toEqual({ handled: false });
+    });
+
+    // The refusal reads on the prompt rather than as a bare code.
+    it('renders a reason a person at the fridge can act on', () => {
+      const r = offline.execute({ scaleId: 'kitchen', code: 'dl:140' });
+      expect(nutriscanRefusalNotice(r)).toBe('the scale is not wired up — nothing recorded');
+    });
+
+    // `available()` is optional precisely so every store that owns its own state — and
+    // every existing caller — is unaffected by its introduction.
+    it('treats a store that does not declare available() as available', () => {
+      const { available, ...noPredicate } = unwired();
+      expect(available()).toBe(false);   // the fixture really did have one
+      const s = new ApplyScanToComposition({ store: noPredicate, config: CONFIG, logger: silent });
+      expect(s.execute({ scaleId: 'kitchen', code: 'dl:140' }).ok).toBe(true);
     });
   });
 

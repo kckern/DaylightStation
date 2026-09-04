@@ -7,8 +7,13 @@
  * Captures land immediately as `accepted` + `settled: false`, so the button
  * this use case backs reads "Undo" — it must remove a log that already has
  * rows in the nutrilist and is already counted by BudgetService. It therefore
- * marks the log `deleted` (not `rejected` — that status is unreachable now)
- * and removes the log's nutrilist rows.
+ * marks the log `deleted` and removes the log's nutrilist rows.
+ *
+ * `deleted`, never `rejected`. The two are not synonyms: `rejected` belongs to
+ * the kitchen scale, where a fresh placement supersedes a prompt nobody
+ * answered, and it means "the machine withdrew a question". `deleted` means a
+ * person took the food back. No user action writes `rejected` — see
+ * `docs/reference/health/README.md`, "Unsettled vs. settled".
  */
 
 /**

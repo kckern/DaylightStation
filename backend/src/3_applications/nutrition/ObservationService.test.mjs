@@ -1,8 +1,8 @@
-// ObservationService — the durable replacement for ScaleNutribotBridge + CompositionStore.
+// ObservationService — the kitchen scale's prompt flow over the durable ledger.
 //
-// Every behaviour the shipped bridge had is pinned here against the NEW service before the
-// old one is retired (Task 5.6). Where the bridge suite asserted a rule from two angles the
-// two assertions are folded into one test; no RULE is dropped.
+// Every rule the scale path enforces is pinned here, each one traceable to a real failure
+// in a real kitchen. Where a rule is worth asserting from two angles the two assertions are
+// folded into one test; no RULE is left unpinned.
 //
 // Three deliberate choices in this harness:
 //
@@ -10,9 +10,10 @@
 //    durability, and a hand-rolled in-memory fake would prove the service works against a
 //    fake. It also means the `IObservationStore` contract is exercised for real, including
 //    the all-or-nothing `updateMany`.
-//  • THE REAL `ApplyScanToComposition`. The service is a drop-in for `CompositionStore`, and
-//    the only way to prove that is to let the shipped scan use case drive it unmodified —
-//    the same grammar, the same config lookups, the same ack payloads.
+//  • THE REAL `ApplyScanToComposition`. The fridge sheet writes through the service's
+//    composition surface, and the only way to prove that surface is right is to let the
+//    shipped scan use case drive it unmodified — the same grammar, the same config
+//    lookups, the same ack payloads.
 //  • A HAND-DRIVEN scheduler and clock. The commit path awaits two use cases, and fake
 //    timers interleave badly with awaited promises; the lull is an explicit step instead.
 //    The clock runs in UTC so the local timestamp written into a row and the matcher's
@@ -192,6 +193,10 @@ describe('ObservationService — placement and the single live prompt', () => {
     w.logFromScale.execute.mockImplementationOnce(async () => ({ success: true, touched: true, edited: false }));
     w.emit(760); await flush();
     expect(w.calls.filter((c) => c === 'create')).toHaveLength(2);
+    // ...and the ANSWERED one is never retracted. A prompt the person engaged with is
+    // theirs; withdrawing it would delete a message they are mid-conversation with, and
+    // mark an entry they own `rejected`. Only an UNANSWERED prompt is superseded.
+    expect(w.retractScaleLog.execute).not.toHaveBeenCalled();
   });
 
   it('KEEPS an unanswered prompt when the pan empties, superseding it on the next placement', async () => {
@@ -243,6 +248,21 @@ describe('ObservationService — placement and the single live prompt', () => {
     w.tick(1000); w.emit(400); await flush();         // rise >= heavy, 2 posts in window
     expect(w.calls.filter((c) => c === 'create')).toHaveLength(2);
     expect(w.event('scaleNutribot.suppressed').map((l) => l.d.why)).toContain('jump-after-storm');
+  });
+
+  it('a button force overrides a storm suppression too, not just the storage band', async () => {
+    const w = makeWorld({ scaleConfig: { minGrams: 5, stormMinPushes: 2, heavyG: 300 } });
+    w.emit(0); await flush();
+    w.tick(1000); w.emit(50); await flush();          // post #1
+    w.tick(1000); w.emit(0); await flush();
+    w.tick(1000); w.emit(60); await flush();          // post #2
+    w.tick(1000); w.emit(0); await flush();
+    w.tick(1000); w.emit(400); await flush();         // suppressed: jump-after-storm
+    expect(w.calls.filter((c) => c === 'create')).toHaveLength(2);
+    // The button means "I am telling you this is food". Suspicion is a guess about intent
+    // and must never outrank a stated one.
+    w.press(); await flush();
+    expect(w.calls.filter((c) => c === 'create')).toHaveLength(3);
   });
 
   it('trusts a lone heavy placement with no recent storm', async () => {
@@ -357,8 +377,8 @@ describe('ObservationService — the durable ledger', () => {
     expect(create.composition).toMatchObject({ container: 'tupperware', grams: null });
     // The composition is read BEFORE the new weight is recorded (the weight is only
     // buffered once the edit is known to have landed), so each render carries the state
-    // as it stood when the frame arrived — exactly as the bridge's `bufferWeight`-after-
-    // `editInPlace` ordering did.
+    // as it stood when the frame arrived — the weight row is appended only AFTER the
+    // edit is known to have landed.
     expect(edit.composition).toMatchObject({ container: 'tupperware', grams: 600 });
     expect(edit2.composition).toMatchObject({ container: 'tupperware', grams: 650 });
   });
@@ -369,6 +389,14 @@ describe('ObservationService — the durable ledger', () => {
     w.emit(600, true, 'ml'); await flush();
     expect(w.rows()[0]).toMatchObject({ kind: 'weight', unit: 'ml' });
     expect(w.logFromScale.execute.mock.calls[0][0].unit).toBe('ml');
+    // The CLIMB carries it too — the edit-in-place is a separate call site from the
+    // create, and a unit that survived only the first is a mislabelled entry the moment
+    // more food goes on the pan.
+    w.emit(700, true, 'ml'); await flush();
+    const edit = w.logFromScale.execute.mock.calls.at(-1)[0];
+    expect(edit.existingLogUuid).toBe('L1');
+    expect(edit.unit).toBe('ml');
+    expect(w.rows().at(-1)).toMatchObject({ kind: 'weight', value: 700, unit: 'ml' });
   });
 
   it('falls back to grams only when the payload omits a unit', async () => {
@@ -573,6 +601,17 @@ describe('ObservationService — quiet commit', () => {
     expect(w.scheduler.counts.clears).toBeGreaterThanOrEqual(2);
   });
 
+  it('armCommitFor on a scale with no prompt is a safe no-op, not a timer against nothing', async () => {
+    const w = makeWorld();
+    // A fridge scan can arrive before any food is on the pan — the scan-first flow this
+    // whole feature supports — and for a scale id nobody has published a frame for.
+    // Arming there would set a clock that fires against an empty composition.
+    w.service.armCommitFor('a-scale-nobody-has-used');
+    w.service.armCommitFor(SCALE);
+    expect(w.scheduler.pending).toBeNull();
+    expect(w.scheduler.counts.arms).toBe(0);
+  });
+
   it('does not restart the interval from a repeated or unsettled frame', async () => {
     const w = makeWorld();
     w.emit(480); await flush();
@@ -650,6 +689,21 @@ describe('ObservationService — quiet commit', () => {
     w.selectDensity.execute.mockResolvedValueOnce({ success: false, error: 'unknown level' });
     w.scheduler.fire(); await flush();
     expect(w.rows().every((r) => r.status === 'open')).toBe(true);
+  });
+
+  // Every refusal shape, not just the density one. An entry that did not commit still
+  // needs its signals: consuming them on a refusal would strand the evidence with nothing
+  // to point at, and the retry would then find an incomplete composition.
+  it('leaves them open when the human answered first, and when the accept throws', async () => {
+    const answered = await primed();
+    answered.logFromScale.execute.mockResolvedValueOnce({ success: true, logUuid: 'L1', edited: false, touched: true });
+    answered.scheduler.fire(); await flush();
+    expect(answered.rows().every((r) => r.status === 'open')).toBe(true);
+
+    const failed = await primed();
+    failed.accept.execute.mockRejectedValueOnce(new Error('telegram down'));
+    failed.scheduler.fire(); await flush();
+    expect(failed.rows().every((r) => r.status === 'open')).toBe(true);
   });
 
   it('stamps every item settled:false through the Phase-1 seam before accepting', async () => {
@@ -837,10 +891,9 @@ describe('ObservationService — durability across a restart', () => {
     expect(w.service.read(SCALE).active).toBe(false);
     expect(w.open()).toHaveLength(1);           // the row is still there, just not live
 
-    // THE CASE THAT MATTERS. `CompositionStore`'s window was ROLLING — any activity
-    // refreshed the whole entry — so a density scanned now would have re-admitted a
-    // fifteen-minute-old weight and quiet-committed against it. Each row is aged
-    // independently here, so the scan brings only itself.
+    // THE CASE THAT MATTERS. Under a ROLLING window — one that any activity refreshes
+    // whole — a density scanned now would re-admit a fifteen-minute-old weight and
+    // quiet-commit against it. Each row ages independently, so the scan brings only itself.
     w.apply.execute({ scaleId: SCALE, code: DL_MEDIUM });
     const after = w.service.read(SCALE);
     expect(after.density).toBe(4);

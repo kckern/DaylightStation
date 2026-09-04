@@ -35,7 +35,11 @@ export class ApplyScanToComposition {
 
   /**
    * @param {object} deps
-   * @param {{setDensity:Function,setContainer:Function,endPlacement:Function,clear:Function,undo:Function,read:Function}} deps.store
+   * @param {{setDensity:Function,setContainer:Function,endPlacement:Function,clear:Function,undo:Function,read:Function,available?:Function}} deps.store
+   *   `available()` is OPTIONAL: a store that does not declare it is always available,
+   *   which is every store that owns its own state. A DELEGATING surface — one standing in
+   *   for a service built later, or not at all — declares it so a scan is refused rather
+   *   than acknowledged into a void.
    * @param {{densityLevels: Array, containers: {items: Array}}} deps.config
    * @param {object} [deps.logger]
    */
@@ -55,6 +59,18 @@ export class ApplyScanToComposition {
   execute({ scaleId, code }) {
     const parsed = parseScan(code);
     if (!parsed) return notHandled();
+
+    // CLAIMED, then refused — never silently accepted. Every write below is a
+    // fire-and-forget call into the store; against an unavailable surface they all
+    // succeed vacuously, and the branches would go on to answer `ok: true` with a
+    // resolved level and label for a scan that reached nothing. A control verb is worse
+    // still: it would report `hadState: undefined`, which renders as "nothing to clear"
+    // — indistinguishable from the truth. `handled: true` because the code is
+    // unmistakably off the fridge sheet and must not fall through to a product lookup.
+    if (this.#store.available?.() === false) {
+      this.#logger.warn?.('applyScan.unavailable', { scaleId, kind: parsed.kind });
+      return { handled: true, ok: false, kind: parsed.kind, error: 'SCALE_UNAVAILABLE' };
+    }
 
     if (parsed.kind === 'reset') {
       const hadState = this.#store.clear(scaleId);
@@ -83,14 +99,13 @@ export class ApplyScanToComposition {
       //
       // The SNAPSHOT is read first and travels back with the result. Consuming
       // the slots is only half of what "done" asks for — the other half is that
-      // the entry gets FINALISED, and that happens in the bridge, one layer up,
-      // after this returns. Routing to `endPlacement` alone meant the card wiped
+      // the entry gets FINALISED, and that happens one layer up, after this returns. Routing to `endPlacement` alone meant the card wiped
       // the composition and the quiet-commit timer then fired against nothing and
       // skipped as incomplete: the explicit "process it now" gesture guaranteed a
       // stranded entry with no density, which is the exact failure this whole
       // feature exists to remove. Handing the pre-consumption snapshot back is
       // what lets the caller commit against what was actually scanned without
-      // this use case reaching into the bridge or reordering `endPlacement`.
+      // this use case reaching into the commit path or reordering `endPlacement`.
       const snapshot = this.#store.read?.(scaleId) ?? null;
       const hadState = this.#store.endPlacement(scaleId);
       this.#logger.info?.('applyScan.done', { scaleId, hadState });
