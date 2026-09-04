@@ -17,8 +17,8 @@ point.
 
 | Tab | Component | Shows |
 |-----|-----------|-------|
-| Today | `modules/Health/today/TodayView.jsx` | the day log — equation strip, meal-bucketed rows, capture affordances |
-| Progress | `modules/Health/progress/ProgressView.jsx` | weight trend chart, 14-day budget-adherence bars, goals editor |
+| Today | `modules/Health/today/TodayView.jsx` | the day log — equation strip, macro/watch-micro bars, meal-bucketed rows with per-meal `P · C · F` subtotals, capture affordances |
+| Progress | `modules/Health/progress/ProgressView.jsx` | weight trend chart, 14-day budget-adherence bars, goals editor (including macro targets and watch micros) |
 | Health | `modules/Health/medical/MedicalView.jsx` | medical readings (blood pressure, labs, etc.), grouped by metric |
 | Coach | `modules/Health/CoachChat/index.jsx` | the health-coach agent chat, full height |
 
@@ -60,16 +60,64 @@ sign and `.toLocaleString()` for grouping.
    `accepted` the moment they are parsed (see [Capture funnels](#capture-funnels)),
    so they count immediately; `settled` is an orthogonal review axis and never
    affects the total.
-5. Sums `exercise` from that date's workout sessions (`calories`, tolerant of an array or a
+5. Sums `macros` over that same filtered list — `protein`, `carbs`, `fat`, and the four
+   micronutrients `fiber`, `sugar`, `sodium`, `cholesterol`. One predicate, one filtered
+   list: the macro bars and the kcal number are folded together, so they cannot disagree
+   on screen. Group rows carry zero nutrition by design, so an unconditional sum counts
+   each food exactly once with no special-casing.
+6. Builds `microCoverage` — `{ [micro]: { covered, total } }` — over the counted non-group
+   rows. See [Micro coverage](#micro-coverage--why-a-stored-0-is-not-a-zero) below.
+7. Sums `exercise` from that date's workout sessions (`calories`, tolerant of an array or a
    keyed object).
-6. Returns `{ date, budget, food, exercise, net, remaining, status, stale, sessions, goals }`
-   — `status` is `'under'` when `remaining >= 0`, else `'over'`.
+8. Returns `{ date, budget, food, exercise, net, remaining, status, stale, sessions, goals,
+   macros, microCoverage }` — `status` is `'under'` when `remaining >= 0`, else `'over'`.
 
 Both 409 codes are UI signal, not failure: `EquationStrip` shows a "Set up goals" button
 on `GOALS_NOT_CONFIGURED`/`NO_WEIGHT_DATA` rather than an error state.
 
 `GET/PUT /api/v1/health/goals` round-trip the goals document unmodified — `PUT` replaces
-the whole object and echoes it back.
+the whole object and echoes it back. The goals datastore is a raw pass-through, so
+`BudgetService.setGoals` is the only gate on what reaches the file: it validates the shape
+of `macroGoals` and `watchMicros` and refuses anything off-shape with
+`400 { code: 'GOALS_INVALID' }`. It never rewrites what it accepts — a document without
+those keys is saved without them.
+
+---
+
+## Micro coverage — why a stored `0` is not a zero
+
+Every stored food row carries `fiber`, `sugar`, `sodium` and `cholesterol` as numbers.
+`validateFoodItem` defaults each one to `0`, which means **a micronutrient nobody ever
+measured is stored as a real `0`, indistinguishable from a measured zero.** Summing those
+numbers produces arithmetic over ignorance: a sodium total of 40 mg across a day of rows
+with no micro data reads as "you barely had any sodium" when the truth is "we have no idea".
+
+`microsSource` is the field that tells the two apart, and it is the only one that can:
+
+| Value | Meaning |
+|---|---|
+| `'ai'` | an AI capture returned micronutrient numbers for this row |
+| `'catalog'` | the row was quick-added from a catalog entry that carries micros |
+| `null` / absent | nothing measured this row's micros; its numbers are structural zeros |
+
+The rules that keep it honest:
+
+- **Coverage keys off `microsSource`, never off the values.** `getBudget` counts a row as
+  covered when it carries provenance, full stop. `covered` and `total` both exclude
+  `kind: 'group'` rows — a dish header carries no nutrition and no provenance, so counting
+  it would report missing data that does not exist.
+- **A capture claims provenance only when it actually has micros.** A parse that answered
+  with macros alone leaves its structural zeros unclaimed rather than asserting a
+  measurement that never happened. A measured `0` does count as data.
+- **The catalog is never laundered.** `FoodCatalogService.recordUsage` copies micros onto a
+  catalog entry only from a row that carries provenance, so structural zeros can never
+  become "catalog micro data" that every later quick-add inherits.
+- **The UI says so out loud.** `MacroBarRow` renders "based on {covered} of {total} items"
+  under any watch-micro bar whose day is not fully covered, and the text is in the bar's
+  accessible name as well. That caption is the honesty mechanism, not decoration.
+
+Macros (`protein`/`carbs`/`fat`) are not coverage-gated: every capture path writes them,
+and the per-meal `P · C · F` subtotals and macro-goal bars show them unqualified.
 
 ---
 
@@ -519,6 +567,8 @@ A goals document (`apps/health/goals.yml`, `GET`/`PUT /api/v1/health/goals`) hol
 | `weeklyRateLbs` | the deficit subtracted from TDEE |
 | `budgetFloor` | the hard minimum |
 | `targetWeightLbs` | **display only** — the Progress weight chart's goal line; `BudgetService` never reads it |
+| `macroGoals` | **display only** — `{ proteinG, carbsG, fatG }`, grams, each a number or `null`. `null` is a *cleared* target, not a zero one: a macro with no target draws no bar. Optional; a document without the key is valid and is never backfilled |
+| `watchMicros` | **display only** — a list of `{ key, limit, direction }`, where `key` is one of `fiber`/`sugar`/`sodium`/`cholesterol`, `limit` is a positive number in that micro's stored unit (g for fiber and sugar, mg for sodium and cholesterol), and `direction` is `'ceiling'` (stay under) or `'floor'` (reach). One entry per key. Optional, on the same absent-stays-absent terms |
 
 Weight itself is never part of the goals document — `getBudget` reads the latest
 adjusted-average weight from weight history, so the number the equation uses moves with
@@ -532,7 +582,10 @@ section (read-only rows, `LogTable.jsx`) renders.
 
 `ProgressView.jsx` is the goals-editing surface — a form seeded from `GET /goals`, `PUT
 /goals` on save — alongside the weight-trend chart and a 14-day adherence strip built from
-14 parallel `GET /budget?date=` calls.
+14 parallel `GET /budget?date=` calls. Its macro-goal and watch-micro fields build their
+payload through `progress/goalFields.js`, which enforces the same absence rules the server
+does: clearing every macro target removes `macroGoals` outright, and clearing a watch
+micro's limit removes that watch (there is no "watched with no limit" state).
 
 ---
 
@@ -600,8 +653,8 @@ All under `/api/v1/health/`, from `backend/src/4_api/v1/routers/health.mjs`:
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /budget?date=` | the equation (see above) |
-| `GET /goals`, `PUT /goals` | goals document |
+| `GET /budget?date=` | the equation, the day's macro/micro sums, and micro coverage (see above) |
+| `GET /goals`, `PUT /goals` | goals document; a malformed `macroGoals`/`watchMicros` shape is `400 { code: 'GOALS_INVALID' }` |
 | `GET /nutrilist/:date`, `POST /nutrilist`, `PUT /nutrilist/:uuid`, `DELETE /nutrilist/:uuid` | day-log rows (legacy-parity NutriList CRUD) |
 | `GET /nutrition/catalog?q=`, `GET /nutrition/catalog/recent` | plain catalog search/recents |
 | `GET /nutrition/catalog/suggest?q=` | ranked combobox suggestions |
