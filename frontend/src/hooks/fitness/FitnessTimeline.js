@@ -15,7 +15,7 @@ const DEFAULT_INTERVAL_MS = 5000;
 // 12 hours is past any workout while still bounding the array (~8.6k numbers
 // per series). Crossing it is now RECORDED rather than silent — see
 // _pruneSeriesWindow.
-const MAX_SERIES_LENGTH = 8640;
+export const MAX_SERIES_LENGTH = 8640;
 
 const isPlainObject = (value) => value != null && typeof value === 'object' && !Array.isArray(value);
 
