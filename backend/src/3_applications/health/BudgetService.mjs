@@ -164,6 +164,13 @@ export class BudgetService {
     if (!goalsStore || !healthStore || !nutriListStore || !clock?.now) {
       throw new Error('BudgetService requires goalsStore, healthStore, nutriListStore, clock');
     }
+    // getBudgetRange reads the workout ledger once for the whole range rather
+    // than re-reading both whole lifelog files per day. Checked HERE so a store
+    // missing it fails at construction with a name, not at call time inside a
+    // range request.
+    if (typeof healthStore.getWorkoutsForRange !== 'function') {
+      throw new Error('BudgetService requires healthStore.getWorkoutsForRange');
+    }
     this.#goalsStore = goalsStore;
     this.#healthStore = healthStore;
     this.#nutriListStore = nutriListStore;
@@ -276,6 +283,10 @@ export class BudgetService {
       goals, weightData, sortedWeightDates: Object.keys(weightData).sort(), date,
     });
 
+    // findByDate, not a hand-rolled filter: the store owns which rows belong to
+    // a day (hot file AND archives), and getBudgetRange goes through the same
+    // store rule via findByDateRange. Two different day-resolution rules is how
+    // the equation and the week strip came to disagree about the same date.
     const items = await this.#nutriListStore.findByDate(userId, date) || [];
     const { food, macros, microCoverage } = this.#foldItems(items);
 

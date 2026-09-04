@@ -86,6 +86,14 @@ describe('week strip stylesheet', () => {
     expect(rule('.health-weekstrip__goalline')).toMatch(/bottom: 80%/);
   });
 
+  it('marks an exercise-offset day with a non-colour cue, not hue alone', () => {
+    // A day that ate past budget and still came in under is GREEN above the
+    // reference line. The capped top edge is what says the overshoot was real
+    // and something offset it — the accessible name says the same in words.
+    expect(rule('.health-weekstrip__fill--offset')).toMatch(/border-top: 2px solid var\(--ds-warning\)/);
+    expect(rule('.health-monthblock__fill--offset')).toMatch(/border-top: 2px solid var\(--ds-warning\)/);
+  });
+
   it('renders a gap hollow and a computed day with a real track', () => {
     expect(rule('.health-weekstrip__bar')).toMatch(/background: var\(--ds-surface-alt\)/);
     expect(rule('.health-weekstrip__bar--gap')).toMatch(/background: none/);

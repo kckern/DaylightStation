@@ -33,6 +33,8 @@ export function barModel(day) {
   const ratio = (Number.isFinite(food) ? Math.max(0, food) : 0) / Number(day.budget);
   const clamped = ratio > OVERSHOOT_CAP;
   const heightPct = (Math.min(ratio, OVERSHOOT_CAP) / OVERSHOOT_CAP) * 100;
+  const status = day.status === 'over' ? 'over' : 'under';
+  const exercise = Number.isFinite(Number(day.exercise)) ? Math.max(0, Number(day.exercise)) : 0;
   return {
     kind: 'day',
     ratio,
@@ -40,8 +42,44 @@ export function barModel(day) {
     // Rounded to 0.1% so an inline style string is stable and comparable in a
     // test; the eye cannot resolve finer than that on a 40px bar anyway.
     heightPct: Math.round(heightPct * 10) / 10,
-    status: day.status === 'over' ? 'over' : 'under',
+    status,
+    exercise,
+    // The bar deliberately carries TWO denominators: its HEIGHT is food against
+    // budget, its HUE is the day's outcome after exercise. That is informative —
+    // eating 114% of budget and training it off really is an under day, and
+    // collapsing the hue onto the food-only denominator would throw the offset
+    // away. What it must never do is present the two as one unexplained claim,
+    // so a cell where exercise is the whole difference is FLAGGED, and both the
+    // accessible name and a visual cue name the reconciling term.
+    offsetByExercise: ratio > 1 && status === 'under',
   };
+}
+
+const int = (n) => Math.round(Number(n) || 0);
+
+/**
+ * The one accessible sentence for a bar cell.
+ *
+ * It must not assert "114% of budget" and "under budget" side by side with
+ * nothing to reconcile them — that reads as a contradiction, and a reader has
+ * no way to discover that exercise is the missing term. So the sentence always
+ * states the intake against budget, the exercise, and the outcome, in that
+ * order, as one claim.
+ *
+ * @param {object|null} day - a GET /budget/range entry
+ * @param {{kind: string, ratio?: number, status?: string, exercise?: number}} bar
+ * @param {string} dayName - the spoken date
+ */
+export function barCellLabel(day, bar, dayName) {
+  if (bar.kind === 'gap') return `${dayName}, no data`;
+  const eaten = `ate ${int(day.food)} of ${int(day.budget)} kcal, ${Math.round(bar.ratio * 100)}% of budget`;
+  const burned = bar.exercise > 0
+    ? `with ${int(bar.exercise)} kcal exercise`
+    : 'with no exercise logged';
+  const outcome = bar.status === 'over'
+    ? `${Math.abs(int(day.remaining))} kcal over budget`
+    : `${Math.abs(int(day.remaining))} kcal left`;
+  return `${dayName}, ${eaten}, ${burned}, ${outcome}`;
 }
 
 /** Compact kcal: 1234 -> "1.2k", 940 -> "940", a gap -> "—". */

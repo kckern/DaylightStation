@@ -48,6 +48,31 @@ describe('MonthBlock', () => {
     expect(document.querySelector('.health-monthblock__caption').textContent).toContain('No data yet');
   });
 
+  // M4, the month block's half: undated gaps must not collapse into one slot.
+  it('renders one slot per entry even when gaps carry no date', () => {
+    render(<MonthBlock days={[{ error: 'NO_WEIGHT_DATA' }, { error: 'NO_WEIGHT_DATA' }, day(iso(2), 1000)]} />);
+    expect(document.querySelectorAll('.health-monthblock__slot').length).toBe(3);
+    expect(document.querySelectorAll('.health-monthblock__bar--gap').length).toBe(2);
+  });
+
+  // PRD F7.1 at a month's zoom — structural, not a count of one class name.
+  it('stacks NOTHING inside a bar — exactly one child, whatever its class', () => {
+    render(<MonthBlock days={[day(iso(0), 1000), gap(iso(1)), day(iso(2), 0)]} />);
+    for (const bar of document.querySelectorAll('.health-monthblock__bar')) {
+      const isGap = bar.classList.contains('health-monthblock__bar--gap');
+      expect(bar.children.length).toBe(isGap ? 0 : 1);
+    }
+  });
+
+  it('carries the exercise-offset cue, same encoding as the week strip', () => {
+    render(<MonthBlock days={[
+      { date: iso(0), budget: 1791, food: 2040, exercise: 530, remaining: 281, status: 'under' },
+      day(iso(1), 1000),
+    ]} />);
+    expect(screen.getByTestId(`monthbar-fill-${iso(0)}`).className).toMatch(/fill--offset/);
+    expect(screen.getByTestId(`monthbar-fill-${iso(1)}`).className).not.toMatch(/fill--offset/);
+  });
+
   it('renders an empty, non-crashing block before anything has loaded', () => {
     render(<MonthBlock days={[]} loading />);
     expect(document.querySelector('.health-monthblock').getAttribute('aria-busy')).toBe('true');

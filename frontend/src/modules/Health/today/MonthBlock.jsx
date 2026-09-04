@@ -15,7 +15,9 @@ import { barModel } from './dayBars.js';
  * (A2), and the week strip below already owns day navigation.
  */
 export function MonthBlock({ days = [], loading = false, title }) {
-  const models = days.map((d) => ({ day: d, bar: barModel(d) }));
+  // Positional key fallback: a gap entry can arrive without a `date`, and two
+  // undefined keys collapse into one rendered slot.
+  const models = days.map((d, i) => ({ day: d, bar: barModel(d), key: d?.date ?? `gap-${i}` }));
   const over = models.filter((m) => m.bar.kind === 'day' && m.bar.status === 'over').length;
   const gaps = models.filter((m) => m.bar.kind === 'gap').length;
   const known = models.length - gaps;
@@ -31,14 +33,14 @@ export function MonthBlock({ days = [], loading = false, title }) {
         aria-label={known
           ? `${known} days with data, ${over} over budget, ${gaps} without data`
           : 'No budget data for the last 30 days'}>
-        {models.map(({ day, bar }) => (
-          <span key={day.date} className="health-monthblock__slot">
+        {models.map(({ day, bar, key }) => (
+          <span key={key} className="health-monthblock__slot">
             {bar.kind === 'gap' ? (
               <span className="health-monthblock__bar health-monthblock__bar--gap"
-                data-testid={`monthbar-gap-${day.date}`} />
+                data-testid={`monthbar-gap-${day?.date ?? 'unknown'}`} />
             ) : (
               <span className="health-monthblock__bar">
-                <span className={`health-monthblock__fill health-monthblock__fill--${bar.status}`}
+                <span className={`health-monthblock__fill health-monthblock__fill--${bar.status}${bar.offsetByExercise ? ' health-monthblock__fill--offset' : ''}`}
                   data-testid={`monthbar-fill-${day.date}`}
                   data-height-pct={bar.heightPct}
                   style={{ height: `${bar.heightPct}%` }} />

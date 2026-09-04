@@ -255,6 +255,29 @@ mounts, so a range that several widgets need is fetched once high in the tree
 and handed down as `days`. The desktop sidebar's month block and its
 intake-vs-burn chart share one 30-day request this way.
 
+### One rule for which day a row belongs to
+
+`findByDate` and `findByDateRange` are the same lookup at two widths, and they
+resolve a row's day identically: by `date`, falling back to `createdAt`'s day,
+across the hot log **and** the monthly archives. That is the same predicate the
+archiver uses to decide where a row is stored, and it has to be — a row filed
+into an archive by one rule and looked up by a narrower one is a row nobody can
+find.
+
+This was a live defect, not a hypothetical. `findByDate` used to read only the
+hot file and match `item.date` exactly, so once a day passed the 30-day
+retention window the week strip drew a real bar for it while the equation and
+the meal list both reported that nothing had been eaten — the day view being the
+wrong half. A row carrying only `createdAt` diverged the same way without any
+archive involved. Both reads now go through one private window helper, so the
+fix is in the store rather than in each of its five callers.
+
+Two consequences worth knowing. Archived rows are **readable but not editable**:
+the write path is hot-file only, so editing a row older than the retention
+window fails with `NOT_FOUND` rather than silently succeeding. And a lookup for
+a date inside the retention window still touches no archive at all, so the
+common case costs exactly what it always did.
+
 ### A hole is not a zero
 
 Every bar surface distinguishes three states, not two:
@@ -278,7 +301,22 @@ than left to be read as good days, and gaps are excluded from every average.
 **Week strip and month block.** Bar height is the day's food as a fraction of
 that day's budget, clamped at 1.25×; the reference line sits at 1/1.25 of the
 box, so a day exactly on budget lands on the line and the space above it is
-overshoot headroom. Hue is under/over. The accessible name announces the *true*
+overshoot headroom. Hue is under/over.
+
+These are **two different denominators, deliberately**: the height is
+`food / budget`, the hue is the outcome of `budget − food + exercise`. That is
+informative — a day you ate 114% of budget and trained off really is an under
+day, and collapsing the hue onto the food-only denominator would throw the
+exercise offset away — but it means a cell can sit above the reference line and
+still be green. Two things therefore always name the reconciling term. The
+accessible name states intake, exercise and outcome as one claim ("ate 2040 of
+1791 kcal, 114% of budget, with 530 kcal exercise, 281 kcal left"), saying "with
+no exercise logged" rather than dropping the term; and such a cell carries a
+capped top edge, a non-colour cue that the overshoot is real and something
+offset it. A sentence asserting "114% of budget" and "under budget" with nothing
+between them is a self-contradiction, not a summary.
+
+The accessible name announces the *true*
 percentage — 140%, not the clamped paint — because a spoken clamped number is a
 false statement. There are deliberately **no macro segments** in these bars:
 four pixels of colour in a 34px cell is not a composition readout, and macros
