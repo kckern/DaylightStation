@@ -46,7 +46,7 @@
  * not in the baseline = regression (exit 1). A baseline file that now passes is
  * fine; run --update to drop it so it is protected going forward.
  */
-import { readFileSync, writeFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync, rmSync, renameSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
@@ -121,6 +121,17 @@ function runVitest(files) {
   // "gate-vitest: OK" lines came straight off a report from an earlier run
   // that predated the tests being verified. A gate that can pass without
   // running is worse than no gate.
+  // Keep ONE generation before deleting. The delete itself is not negotiable —
+  // see the incident above — but wiping the previous report means the evidence
+  // for a red run is destroyed by the next run, and triaging a failure days or
+  // even minutes later then depends on reproducing it. That cost real time
+  // twice: the log names failing FILES only, so the assertion message, the
+  // stack and which tests inside the file failed were all gone by the time
+  // anyone looked. `.prev` is never read by the gate, so a stale report still
+  // cannot be mistaken for a fresh one.
+  try {
+    if (existsSync(outFile)) renameSync(outFile, `${outFile}.prev`);
+  } catch { /* best effort — never let archiving block the run */ }
   try { rmSync(outFile, { force: true }); } catch { /* first run, or already gone */ }
   // Parallelism is CAPPED, not default. Default workers were fine while the
   // population was ~600 files; folding backend/ in took it past 1200 and the
@@ -343,7 +354,27 @@ const baseline = readBaseline();
 const regressions = failed.filter((f) => !baseline.has(f));
 if (regressions.length) {
   console.error(`\ngate-vitest: ${regressions.length} NEW failing file(s) (not in baseline):`);
-  regressions.forEach((f) => console.error('  ✗ ' + f));
+  // The failing TEST and its message, not just the file. A bare file name sends
+  // the reader off to reproduce a failure that may depend on how the run was
+  // sharded, what else was writing to the tree at the time, or which chunk it
+  // landed in — none of which they can recover afterwards. Printing the first
+  // failure per file puts the actual assertion in the log, which outlives every
+  // report file.
+  const byFile = new Map();
+  for (const t of report.testResults || []) byFile.set(t.name, t);
+  for (const f of regressions) {
+    console.error('  ✗ ' + f);
+    const detail = byFile.get(f) || byFile.get(path.join(ROOT, f));
+    const firstFail = (detail?.assertionResults || []).find((a) => a.status === 'failed');
+    if (firstFail) {
+      console.error(`      ${firstFail.fullName || firstFail.title || '(unnamed test)'}`);
+      const msg = (firstFail.failureMessages || [])[0];
+      if (msg) console.error(msg.split('\n').slice(0, 4).map((l) => '      ' + l).join('\n'));
+    } else if (detail?.message) {
+      console.error(detail.message.split('\n').slice(0, 4).map((l) => '      ' + l).join('\n'));
+    }
+  }
+  console.error(`\ngate-vitest: full report kept at ${path.relative(ROOT, outFile)} (previous run at the same path + .prev)`);
   process.exit(1);
 }
 const fixed = [...baseline].filter((f) => !failed.includes(f));
