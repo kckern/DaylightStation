@@ -36,6 +36,15 @@ const OBSERVATION_ID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0
 // can reach a datastore lookup. Existence is then checked by the lookup itself.
 const ENTRY_UUID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
+// Food-icon slugs are manifest KEYS, checked at the HTTP boundary before the
+// value reaches the store at all. Same allowlist IconManifestStore enforces
+// internally (1_adapters/persistence/IconManifestStore.mjs) — duplicated here,
+// not imported, for the same reason as PHOTO_REF_PATTERN above: the API layer
+// may not import adapters directly. The slug is never concatenated onto a path
+// by anything: it can only select a manifest entry, whose own path the store
+// validates independently.
+const ICON_SLUG_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
+
 // The one date shape every health route accepts.
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -114,7 +123,7 @@ function serializeHealthMetric(metric) {
  * @returns {express.Router}
  */
 export function createHealthRouter(config) {
-  const { healthService, healthOperations, dashboardService, catalogService, longitudinalService, budgetService, savedMealsService, medicalService, photoStore = null, observationPairing = null, logger = console } = config;
+  const { healthService, healthOperations, dashboardService, catalogService, longitudinalService, budgetService, savedMealsService, medicalService, photoStore = null, observationPairing = null, iconManifestStore = null, logger = console } = config;
   const router = express.Router();
 
   // JSON parsing middleware
@@ -1081,6 +1090,58 @@ export function createHealthRouter(config) {
       if (err && !res.headersSent) {
         logger.warn?.('health.nutrition.photos.sendFailed', { photoRef, error: err.message });
         res.status(404).json({ error: 'Photo not found' });
+      }
+    });
+  }));
+
+  // ==========================================================================
+  // Food Icons (IconManifestStore)
+  // ==========================================================================
+
+  /**
+   * GET /api/v1/health/nutrition/icons/:slug
+   *
+   * Streams one food icon from the media mount. `:slug` is user-controllable
+   * and is being used to reach the filesystem, so it is gated exactly the way
+   * the photo route above gates `photoRef`: allowlist FIRST, at this boundary,
+   * before the value is handed to the store; the store then re-checks it,
+   * refuses to build a path out of it (a slug only ever SELECTS a manifest
+   * entry), validates the entry's own path, and containment-checks the result.
+   * `..`, an encoded traversal and an absolute path are all simply not slugs.
+   *
+   * There is no user parameter, deliberately — see the photo route's note.
+   * The manifest is household-wide, and a client-supplied identity would have
+   * no legitimate caller here either.
+   *
+   * Content-Type comes from the store (derived from the manifest entry's
+   * extension against a closed allowlist), never from the client and never
+   * from Express's inference; `nosniff` pins it. The cache is long and
+   * immutable because a slug's bytes never change — a corrected icon is a
+   * manifest edit pointing the slug at a different file.
+   */
+  router.get('/nutrition/icons/:slug', asyncHandler(async (req, res) => {
+    if (!iconManifestStore) {
+      return res.status(404).json({ error: 'Icon not found' });
+    }
+    const { slug } = req.params;
+    if (!ICON_SLUG_PATTERN.test(slug || '')) {
+      logger.debug?.('health.nutrition.icons.invalidSlug', { slug });
+      return res.status(404).json({ error: 'Icon not found' });
+    }
+
+    const hit = iconManifestStore.resolve(slug);
+    if (!hit) {
+      return res.status(404).json({ error: 'Icon not found' });
+    }
+
+    res.set('Content-Type', hit.contentType);
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('Cache-Control', 'public, max-age=31536000, immutable');
+    const resource = createLocalFileResource(hit.absolutePath, { mimeType: hit.contentType });
+    return sendLocalFileResource(req, res, resource, (err) => {
+      if (err && !res.headersSent) {
+        logger.warn?.('health.nutrition.icons.sendFailed', { slug, error: err.message });
+        res.status(404).json({ error: 'Icon not found' });
       }
     });
   }));
