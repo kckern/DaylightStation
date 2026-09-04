@@ -10,6 +10,7 @@ import { WeekStrip, addDays } from './WeekStrip.jsx';
 import { MacroBarRow } from './MacroBarRow.jsx';
 import { WeightChip } from './WeightChip.jsx';
 import { MonthBlock } from './MonthBlock.jsx';
+import { IntakeBurnChart } from '../progress/IntakeBurnChart.jsx';
 import { useBudgetRange } from './useBudgetRange.js';
 import { useIsWideViewport } from './layout.js';
 import { MacroFooter } from './MacroFooter.jsx';
@@ -251,6 +252,9 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
       <aside className="health-today__aside">
         <WeightChip />
         {wideViewport ? <MonthBlock days={monthRange.days} loading={monthRange.loading} /> : null}
+        {/* Same `days` the month block just used — a second useBudgetRange here
+            would be a second identical request on every desktop page load. */}
+        {wideViewport ? <IntakeBurnChart days={monthRange.days} loading={monthRange.loading} /> : null}
       </aside>
       <WeekStrip date={date} today={todayISO()} onDateChange={setDate} />
       {day.error ? <ErrorState error={day.error} onRetry={day.reload} label="Food log" /> : null}

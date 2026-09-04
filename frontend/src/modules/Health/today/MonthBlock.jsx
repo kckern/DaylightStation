@@ -14,7 +14,7 @@ import { barModel } from './dayBars.js';
  * Not interactive: 30 targets across 320px cannot be honest 44px tap targets
  * (A2), and the week strip below already owns day navigation.
  */
-export function MonthBlock({ days = [], loading = false }) {
+export function MonthBlock({ days = [], loading = false, title }) {
   const models = days.map((d) => ({ day: d, bar: barModel(d) }));
   const over = models.filter((m) => m.bar.kind === 'day' && m.bar.status === 'over').length;
   const gaps = models.filter((m) => m.bar.kind === 'gap').length;
@@ -22,7 +22,11 @@ export function MonthBlock({ days = [], loading = false }) {
 
   return (
     <section className="health-monthblock" aria-busy={loading}>
-      <h3 className="health-monthblock__title">Last {days.length || 30} days</h3>
+      {/* `title={null}` suppresses the heading for a caller (a SectionCard)
+          that already names the block; omitting the prop keeps the default. */}
+      {title === null ? null : (
+        <h3 className="health-monthblock__title">{title || `Last ${days.length || 30} days`}</h3>
+      )}
       <div className="health-monthblock__bars" role="img"
         aria-label={known
           ? `${known} days with data, ${over} over budget, ${gaps} without data`
