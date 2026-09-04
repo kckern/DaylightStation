@@ -133,11 +133,12 @@ have the menu launching a lesson at the learner it is trying to stop. A capped
 learner is by definition **not** gated — they have done today's work.
 
 **The counter is `completedLessonsToday`**, which is the same array the launcher
-maps into `servedWork` and the agenda status board draws as one disc per
-finished lesson. So the number a parent counts on the wall panel and the number
-the cap enforces are the same by construction. Counting watch events, sessions
-or launches instead would let the board and the cap disagree about one day, and
-the board is what the rule was described in terms of.
+maps into `servedWork`. The agenda attaches those rows to the assigned program
+entry: the first distinct completion fills its subject circle and further
+distinct completions appear as a `+N` badge on that same circle. The assigned
+day therefore stays one piano item while the full credited count remains
+visible and agrees with the cap. Counting watch events, sessions or launches
+instead would let the board and the cap disagree about one day.
 
 Optional and off by default: only a positive whole `videosLockedAfter` caps
 anything. A zero, a negative, a fraction or a string is ignored rather than
@@ -145,6 +146,9 @@ guessed at — a mistyped cap silently becoming `0` would lock a child out of
 video permanently, the worst reading of an ambiguous config. It **fails open**
 at every unknown, like everything else in this gate: an unavailable launcher
 read, a payload with no `videos` block, and a guest all leave video open.
+`SetAssignments` applies the same positive-integer rule while normalizing the
+enrollment and preserves a valid value, so a later Teacher Console save cannot
+silently remove the cap.
 
 Unlike `gated`, the cap is enforced at **all three Videos routes** — grid,
 course, and lecture. For `gated` the deep-link routes below are residual escapes

@@ -60,12 +60,11 @@ function sampledWarning(logger, event, data) {
  * Videos mode is its only subject.
  *
  * THE COUNTER IS `completedLessonsToday`, deliberately. That is the same array
- * the launcher maps into `servedWork`, which the agenda status board draws as
- * one disc per finished lesson — so what a parent counts on the wall panel and
- * what the cap counts are the same number by construction. Counting watch
- * events, sessions, or launches instead would let the board and the cap
- * disagree about the same day, and the board is the thing the rule was
- * described in terms of.
+ * the launcher maps into `servedWork`. The agenda status board draws the first
+ * completion as the assigned program disc and the remainder as its `+N` badge,
+ * so the completed count remains visible without pretending every extra lesson
+ * was another assignment. Counting watch events, sessions, or launches instead
+ * would let the board and the cap disagree about the same day.
  *
  * OPTIONAL AND OFF BY DEFAULT: only an enrollment carrying a positive whole
  * `videosLockedAfter` is capped. A zero, a negative, a fraction or a string is

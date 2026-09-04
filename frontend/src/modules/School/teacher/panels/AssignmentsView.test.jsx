@@ -200,4 +200,29 @@ describe('AssignmentsView — the rendered component preserves enrollments on sa
     expect(callArgs.courses[0].enrollment).toBeDefined();
     expect(callArgs.courses[0].enrollment.lessonOrder.midwest).toEqual(['atlas-us-p012-midwest']);
   });
+
+  it('round-trips a piano video cap when another assignment is saved', async () => {
+    const piano = {
+      programId: 'piano-course', corpusId: 'plex:123', courseId: 'plex:123',
+      subject: 'arts', videosLockedAfter: 2,
+    };
+    schoolApi.assignments.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: {
+        courses: [], units: [], programs: [piano], updatedAt: '2026-09-03T00:00:00Z',
+      },
+    });
+    schoolApi.curriculumUnits.mockResolvedValue({
+      ok: true, status: 200, data: { units: [{ unitId: 'math-1', subject: 'math' }] },
+    });
+    schoolApi.putAssignments.mockResolvedValue({ ok: true, status: 200, data: null });
+
+    render(<AssignmentsView learnerId="user_4" learnerName="User_4" />);
+    fireEvent.click(await screen.findByRole('button', { name: /Edit assignments/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Save/i }));
+    await waitFor(() => expect(schoolApi.putAssignments).toHaveBeenCalled());
+
+    expect(schoolApi.putAssignments.mock.calls[0][1].programs).toEqual([piano]);
+  });
 });

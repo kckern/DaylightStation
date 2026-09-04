@@ -133,14 +133,72 @@ describe('AgendaStatusBoard model', () => {
     // only `servedWork` ever records it. User_4 was served four things that day
     // and the board could see three, reading "2 OF 3" for a 3-of-4 day.
     const sections = [
-      { subject: 'civilization', servedToday: true, servedWork: [{ unitId: 'atlas.ohio' }] },
-      { subject: 'arts', servedToday: true, servedWork: [{ unitId: 'plex:676040' }] },
+      {
+        subject: 'civilization', servedToday: true,
+        servedWork: [{ unitId: 'atlas.ohio', assignmentUnitId: 'atlas.ohio' }],
+      },
+      {
+        subject: 'arts', servedToday: true,
+        servedWork: [{ unitId: 'plex:676040', assignmentUnitId: 'piano-course:plex:675689' }],
+      },
     ];
     const sessions = [{ unitId: 'atlas.ohio', subject: 'civilization', outcome: { result: 'passed' } }];
     const summary = summarize(sections, sessions);
-    expect(summary.segments.map((s) => s.unitId).sort()).toEqual(['atlas.ohio', 'plex:676040']);
+    expect(summary.segments.map((s) => s.unitId).sort()).toEqual(['atlas.ohio', 'piano-course:plex:675689']);
     expect(summary.total).toBe(2);
     expect(summary.done).toBe(2);
+  });
+
+  it('keeps one assigned piano disc and badges seven extra lessons', () => {
+    const assignmentUnitId = 'piano-course:plex:675689';
+    const servedWork = Array.from({ length: 8 }, (_, index) => ({
+      unitId: `plex:lesson-${index + 1}`, assignmentUnitId,
+    }));
+    const summary = summarize([{ subject: 'arts', servedToday: true, servedWork }], []);
+
+    expect(summary).toEqual({
+      total: 1,
+      done: 1,
+      segments: [{
+        unitId: assignmentUnitId,
+        subject: 'arts',
+        label: 'Arts & Culture',
+        state: 'passed',
+        extraCount: 7,
+      }],
+    });
+  });
+
+  it('keeps same-subject program assignments separate and counts their own overflow', () => {
+    const summary = summarize([{
+      subject: 'arts', servedToday: true, servedWork: [
+        { unitId: 'lesson-a1', assignmentUnitId: 'piano-course:a' },
+        { unitId: 'lesson-b1', assignmentUnitId: 'piano-course:b' },
+        { unitId: 'lesson-b2', assignmentUnitId: 'piano-course:b' },
+        { unitId: 'lesson-b3', assignmentUnitId: 'piano-course:b' },
+      ],
+    }], []);
+
+    expect(summary.total).toBe(2);
+    expect(summary.done).toBe(2);
+    expect(summary.segments.map(({ unitId, extraCount }) => ({ unitId, extraCount }))).toEqual([
+      { unitId: 'piano-course:a', extraCount: undefined },
+      { unitId: 'piano-course:b', extraCount: 2 },
+    ]);
+  });
+
+  it('deduplicates repeated completion rows before calculating the badge', () => {
+    const assignmentUnitId = 'piano-course:plex:675689';
+    const summary = summarize([{
+      subject: 'arts', servedToday: true, servedWork: [
+        { unitId: 'lesson-1', assignmentUnitId },
+        { unitId: 'lesson-1', assignmentUnitId },
+        { unitId: 'lesson-2', assignmentUnitId },
+      ],
+    }], []);
+
+    expect(summary.segments).toHaveLength(1);
+    expect(summary.segments[0].extraCount).toBe(1);
   });
 
   it('lets an open sheet stay pending even though the planner calls it served', () => {
@@ -332,6 +390,31 @@ describe('AgendaStatusBoard render', () => {
     expect(screen.getByLabelText('English & Literature: in progress')).toBeTruthy();
   });
 
+  it('renders program overflow as one accessible assignment disc with a badge', async () => {
+    const assignmentUnitId = 'piano-course:plex:675689';
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: {
+      sections: [{
+        subject: 'arts', servedToday: true,
+        servedWork: Array.from({ length: 8 }, (_, index) => ({
+          unitId: `plex:lesson-${index + 1}`, assignmentUnitId,
+        })),
+      }],
+      entries: [{ unitId: assignmentUnitId, subject: 'arts', program: 'piano-course' }],
+    } });
+
+    render(<AgendaStatusBoard kids={[{ id: 'learner1', name: 'Learner One' }]} day="2026-08-24" />);
+    await waitFor(() => expect(screen.getByText('+7')).toBeTruthy());
+
+    const board = screen.getByTestId('agenda-status-board');
+    const pills = board.querySelector('.school-status-board__pills');
+    expect(pills.querySelectorAll('.school-status-board__pill')).toHaveLength(1);
+    expect(pills.style.getPropertyValue('--count')).toBe('1');
+    expect(screen.getByLabelText('Arts & Culture: done, 7 extra items completed')).toBeTruthy();
+    expect(board.querySelector('.school-status-board__extra').getAttribute('aria-hidden')).toBe('true');
+    expect(screen.getByText('Done for the day')).toBeTruthy();
+  });
+
   it('every segment draws a subject icon and states its subject and state by name', async () => {
     schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [
       { learnerId: 'learner1', sessions: [
@@ -366,6 +449,7 @@ describe('AgendaStatusBoard render', () => {
     expect(screen.getByLabelText('Civilization: done')).toBeTruthy();
     expect(screen.getByLabelText('Math & Money: not done')).toBeTruthy();
     expect(screen.getByLabelText('Reading: not done')).toBeTruthy();
+    expect(screen.getByTestId('agenda-status-board').querySelector('.school-status-board__extra')).toBeNull();
   });
 
   it('returns null when every agenda fetch fails — the keypad is never blocked by a broken board', async () => {

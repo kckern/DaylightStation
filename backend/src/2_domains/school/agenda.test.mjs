@@ -55,7 +55,49 @@ describe('served work from a program subject', () => {
     });
     expect(agenda.sections[0].servedToday).toBe(true);
     expect(agenda.sections[0].servedWork).toEqual([
-      { unitId: 'piano-l35', title: 'Rhythm Improvisation with Chords' },
+      {
+        unitId: 'piano-l35',
+        assignmentUnitId: 'language-reel-10',
+        title: 'Rhythm Improvisation with Chords',
+      },
+    ]);
+  });
+
+  it('keeps served work attached to the exact program assignment in a shared subject', () => {
+    const secondReel = {
+      ...reel, unitId: 'language-reel-11', programInstance: '11', timingRank: 1,
+    };
+    const agenda = planDailyAgenda({
+      plan: { entries: [reel, secondReel] }, now: '2026-08-25T18:00:00.000Z',
+      programStatuses: {
+        'language-reels::10': {
+          doneToday: true, score: null, servedWork: [{ unitId: 'watched-10', title: 'First reel' }],
+        },
+        'language-reels::11': {
+          doneToday: true, score: null, servedWork: [{ unitId: 'watched-11', title: 'Second reel' }],
+        },
+      },
+    });
+
+    expect(agenda.sections[0].servedWork).toEqual([
+      { unitId: 'watched-10', assignmentUnitId: 'language-reel-10', title: 'First reel' },
+      { unitId: 'watched-11', assignmentUnitId: 'language-reel-11', title: 'Second reel' },
+    ]);
+  });
+
+  it('uses the curriculum unit itself as the assignment anchor', () => {
+    const agenda = planDailyAgenda({
+      plan: { entries: [{
+        unitId: 'math-1', title: 'Fractions', subject: 'math', status: 'completed', elective: false,
+      }] },
+      sessions: [{
+        unitId: 'math-1', outcome: { result: 'passed', at: '2026-08-25T17:00:00.000Z' },
+      }],
+      now: '2026-08-25T18:00:00.000Z',
+    });
+
+    expect(agenda.sections[0].servedWork).toEqual([
+      { unitId: 'math-1', assignmentUnitId: 'math-1', title: 'Fractions' },
     ]);
   });
 
