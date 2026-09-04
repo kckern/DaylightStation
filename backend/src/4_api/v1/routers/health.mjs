@@ -954,21 +954,29 @@ export function createHealthRouter(config) {
       try {
         const result = await observationPairing.pair(userId, id, entryUuid);
         logger.info?.('health.nutrition.observations.paired', {
-          id, entryUuid, released: result.released.length,
+          id, entryUuid, moved: result.moved.length,
         });
         return res.json({
           observation: serializeObservation(result.observation),
-          released: result.released,
+          moved: result.moved,
           recomputed: result.recomputed,
         });
       } catch (err) {
         if (err.code === 'NOT_FOUND') return res.status(404).json({ error: 'Observation not found' });
         if (err.code === 'ENTRY_NOT_FOUND') return res.status(404).json({ error: 'Food-log entry not found' });
-        // The store cannot write the hot file and an archive atomically, so it refuses
-        // such a batch outright rather than half-applying it. Nothing was written.
+        // The measurement still backs a living entry. Moving it would leave that entry
+        // counting the same food a second time, and there is no measurement left to
+        // recompute it from — so the collision is reported, with the entry named, rather
+        // than resolved by guesswork. Nothing was written.
+        if (err.code === 'PRIOR_ENTRY_EXISTS') {
+          return res.status(409).json({ error: err.message, code: 'PRIOR_ENTRY_EXISTS' });
+        }
+        // The store writes one file atomically and has no rollback across two, so a
+        // placement it cannot rewrite in a single write is refused rather than
+        // half-applied. Nothing was written.
         if (err.code === 'CROSS_FILE_BATCH') {
           return res.status(409).json({
-            error: 'This observation and the one it is currently attached to are stored in different months, which cannot be re-paired together. Nothing was changed — dismiss or re-pair them one at a time.',
+            error: 'One of these measurements has already been archived, and archived rows cannot be re-paired in the same step as current ones. Nothing was changed — dismiss or re-pair them one at a time.',
             code: 'CROSS_FILE_BATCH',
           });
         }

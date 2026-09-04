@@ -316,6 +316,30 @@ describe('EntryEditSheet — Measurements', () => {
     expect(onPaired).toHaveBeenCalledWith(null);
   });
 
+  it('a DISMISSED measurement is not re-offered — the person already threw it away', () => {
+    mount({ observations: [{ ...OBS, status: 'dismissed' }] });
+    expect(screen.queryByText('Measurements')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Pair .* to this entry/ })).toBeNull();
+  });
+
+  it('a refusal shows the SERVER\'s sentence, not the raw HTTP wrapper', async () => {
+    // DaylightAPI wraps a non-2xx as `HTTP 409: Conflict - {json}`; the body's `error` is
+    // the sentence written for this situation and is what the person must read.
+    apiMock.mockImplementation(async () => {
+      const err = new Error('HTTP 409: Conflict - {"error":"This measurement is what \\"Soup\\" (210 kcal) was calculated from. Delete or correct \\"Soup\\" first.","code":"PRIOR_ENTRY_EXISTS"}');
+      err.status = 409;
+      throw err;
+    });
+    const onClose = vi.fn();
+    mount({ observations: [OBS], onClose });
+
+    fireEvent.click(screen.getByRole('button', { name: /Pair .* to this entry/ }));
+
+    await waitFor(() => expect(screen.getByText(/Delete or correct "Soup" first/)).toBeTruthy());
+    expect(screen.queryByText(/HTTP 409/)).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('a refused re-pair surfaces the reason and does NOT close on a lie', async () => {
     apiMock.mockImplementation(async () => {
       throw new Error('Nothing was changed — dismiss or re-pair them one at a time.');
