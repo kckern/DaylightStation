@@ -99,7 +99,7 @@ import { createEconomyApi } from '#composition/modules/economyApi.mjs';
 import { createJournalistApiRouter } from '#composition/modules/journalistApi.mjs';
 import { createHomebotApiRouter } from '#composition/modules/homebotApi.mjs';
 import { createNutribotApiRouter } from '#composition/modules/nutribotApi.mjs';
-import { createHealthApiRouter, createHealthDashboardApiRouter } from '#composition/modules/healthApi.mjs';
+import { createHealthApiRouter, createHealthDashboardApiRouter, createTemplateCurationJob } from '#composition/modules/healthApi.mjs';
 import { createEntropyApiRouter } from '#composition/modules/entropyApi.mjs';
 import { createLifelogApiRouter } from '#composition/modules/lifelogApi.mjs';
 import { createStaticApiRouter } from '#composition/modules/staticApi.mjs';
@@ -5579,6 +5579,41 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         await sweep.execute();
       } catch (err) {
         rootLogger.warn('school.retention.failed', { error: err.message });
+      }
+    });
+  }
+
+  // Weekly meal-template curation (PRD F6.2): mines the last 90 days for
+  // repeated combos and files them as PROPOSALS. It creates no template — the
+  // person approves or dismisses each one in the picker, and a dismissal is
+  // remembered forever. Safe to re-run: every proposal is keyed by its core
+  // set and an already-known key is skipped, so a double tick is a no-op.
+  // Sunday 04:10 — after the nightly archive rotation, before anyone is up.
+  //
+  // Composed inside a guard, and NOT allowed to be fatal: a wiring error in a
+  // nutrition convenience must not take media, fitness and school down at boot
+  // (the same posture as the unwired-scale decision). It fails loudly in the
+  // log and the weekly task simply never registers.
+  let templateCuration = null;
+  try {
+    templateCuration = createTemplateCurationJob({
+      healthServices,
+      logger: rootLogger.child({ module: 'health-template-curation' }),
+    });
+  } catch (err) {
+    rootLogger.error('health.templates.curation.compose_failed', { error: err.message });
+  }
+  if (agentsServices.scheduler && templateCuration) {
+    agentsServices.scheduler.registerTask('health:template-curation', '10 4 * * 0', async () => {
+      const username = configService.getHeadOfHousehold?.() || configService.getDefaultUsername?.();
+      if (!username) {
+        rootLogger.warn('health.templates.curation.no_user', {});
+        return;
+      }
+      try {
+        await templateCuration.run(username);
+      } catch (err) {
+        rootLogger.warn('health.templates.curation.failed', { error: err.message });
       }
     });
   }

@@ -938,6 +938,35 @@ export function createHealthRouter(config) {
       }
     }));
 
+    // Approve / dismiss a mined proposal (PRD F6.2). Nothing is auto-created:
+    // a proposal becomes a template only here, and a dismissal is permanent.
+    router.post('/nutrition/templates/:id/approve', asyncHandler(async (req, res) => {
+      const { name } = req.body || {};
+      try {
+        return res.json({ template: await templateService.approve(req.params.id, getDefaultUsername(), { name }) });
+      } catch (err) {
+        if (err.code === 'TEMPLATE_NOT_FOUND') return res.status(404).json({ error: err.message, code: err.code });
+        if (err.code === 'TEMPLATES_WRITE_FAILED') {
+          logger.error?.('health.templates.approve.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        throw err;
+      }
+    }));
+
+    router.post('/nutrition/templates/:id/dismiss', asyncHandler(async (req, res) => {
+      try {
+        return res.json(await templateService.dismiss(req.params.id, getDefaultUsername()));
+      } catch (err) {
+        if (err.code === 'TEMPLATE_NOT_FOUND') return res.status(404).json({ error: err.message, code: err.code });
+        if (err.code === 'TEMPLATES_WRITE_FAILED') {
+          logger.error?.('health.templates.dismiss.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        throw err;
+      }
+    }));
+
     router.delete('/nutrition/templates/:id', asyncHandler(async (req, res) => {
       try {
         await templateService.remove(req.params.id, getDefaultUsername());
