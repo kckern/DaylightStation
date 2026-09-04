@@ -149,7 +149,7 @@ test.describe('Teacher workspace route contracts', () => {
 
     await expect(page.getByRole('heading', { name: 'Illinois' })).toBeVisible();
     await expect(page.getByText('Civilization', { exact: true })).toBeVisible();
-    await expect(page.getByText('User_2 completed this lesson', { exact: false })).toBeVisible();
+    await expect(page.getByText('User_2’s lesson record', { exact: false })).toBeVisible();
     await expect(page.getByText('United States Regions and States', { exact: true })).toBeVisible();
     await expect(page.getByText('Midwest', { exact: true })).toBeVisible();
     await expect(page.locator('.teacher-subject-identity .teacher-subject-identity__icon')).toHaveCount(1);
@@ -187,11 +187,10 @@ test.describe('Teacher workspace route contracts', () => {
     await expect(dayLink).toHaveAttribute('href', /\/students\/user_2\/day$/);
     await dayLink.click();
 
-    // One route, and the paper record is one fold away on the lesson's own row.
+    // One route, and real artifacts are directly available on the lesson row.
     await expect(page.getByRole('heading', { name: 'User_2’s day' })).toBeVisible();
-    await page.getByText('Paper record', { exact: true }).click();
-    await expect(page.getByRole('link', { name: 'Open worksheet' })).toHaveAttribute('href', /artifacts\/worksheet-illinois\/original\.pdf$/);
-    await expect(page.getByRole('link', { name: 'Open receipt' })).toHaveAttribute('href', /receipt-illinois\/original$/);
+    await expect(page.getByRole('link', { name: 'Open the worksheet' })).toHaveAttribute('href', /artifacts\/worksheet-illinois\/original\.pdf$/);
+    await expect(page.getByRole('button', { name: 'Open the result receipt' })).toBeVisible();
     await expect(page.getByText(/No printable lessons/i)).toHaveCount(0);
     await expect(page.getByText(/^assessment$/i)).toHaveCount(0);
     await expect(page.getByText(/P044/i)).toHaveCount(0);
@@ -214,8 +213,7 @@ test.describe('Teacher workspace route contracts', () => {
     // The study day is stated once for the page, never repeated per row (IA2).
     await expect(page.getByText('Monday, Aug 24')).toHaveCount(1);
 
-    await page.getByText('Paper record', { exact: true }).first().click();
-    await expect(page.getByRole('link', { name: 'Open worksheet' }))
+    await expect(page.getByRole('link', { name: 'Open the worksheet' }))
       .toHaveAttribute('href', /artifacts\/worksheet-illinois\/original\.pdf$/);
 
     await page.getByRole('button', { name: /previous day/i }).click();
@@ -236,7 +234,7 @@ test.describe('Teacher workspace route contracts', () => {
     await installTeacherReadModel(page);
     await page.goto('/school/teacher/students/user_2/day/2026-08-24');
 
-    await page.getByRole('button', { name: /show the printed agenda/i }).click();
+    await page.getByRole('button', { name: /preview printable agenda/i }).click();
     const printed = page.getByAltText(/printed agenda/i);
     await expect(printed).toBeVisible();
     await expect(printed).toHaveAttribute('src', /agenda\/preview\?.*studyDay=2026-08-24/);
@@ -265,7 +263,7 @@ test.describe('Teacher workspace route contracts', () => {
     await expect(page).toHaveURL(/\/students\/user_2\/day\/2099-01-01$/);
     await expect(page.locator('.teacher-day-nav__label')).toContainText('Thursday, Jan 1');
     // The dry-run promise now rides the printed agenda it describes.
-    await page.getByRole('button', { name: 'Show the printed agenda' }).click();
+    await page.getByRole('button', { name: 'Preview printable agenda' }).click();
     await expect(page.getByText('This is the paper as it would print — but the codes on this copy don’t work. Nothing here starts a lesson.', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Print User_2’s agenda' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /print .* agenda/i })).toHaveCount(0);

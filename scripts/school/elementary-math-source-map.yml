@@ -9,10 +9,6 @@ materials:
     title: Beast Academy 2A Guide
     pages: [24, 25, 26, 27, 28, 29]
     section: Ones, Tens, Hundreds
-  ba-place-practice:
-    title: Beast Academy 2A Practice
-    pages: [14, 15, 16, 17]
-    section: Place-value practice
   ba-number-line:
     title: Beast Academy 2A Guide
     pages: [42, 43, 44, 45, 46, 47]
@@ -25,10 +21,6 @@ materials:
     title: Beast Academy 2A Guide
     pages: [60, 61, 62, 63, 64, 65, 66, 67]
     section: Ordering
-  ba-comparing-practice:
-    title: Beast Academy 2A Practice
-    pages: [54, 55, 56, 57]
-    section: Comparing and ordering practice
   ba-sums:
     title: Beast Academy 2A Guide
     pages: [70, 71, 72, 73, 74, 75]
@@ -289,19 +281,19 @@ materials:
     section: Fractions and time review
 
 lessons:
-  em23-01-01-place-value-to-1-000: [ba-place-guide, ba-place-practice]
-  em23-01-02-base-ten-models: [ba-place-practice, ba-place-guide]
-  em23-01-03-number-forms: [ba-place-practice, ultimate-place-value]
+  em23-01-01-place-value-to-1-000: [ba-place-guide, ultimate-place-value]
+  em23-01-02-base-ten-models: [ba-place-guide, ultimate-place-value]
+  em23-01-03-number-forms: [ultimate-place-value, ba-place-guide]
   em23-01-04-skip-counting-patterns: [ultimate-skip-counting]
   em23-01-90-four-digit-place-value: [ultimate-place-value]
-  em23-01-99-mastery: [ba-place-guide, ba-place-practice, ultimate-place-value]
+  em23-01-99-mastery: [ba-place-guide, ultimate-place-value]
 
-  em23-02-01-greatest-numbers: [ba-comparing, ba-comparing-practice]
-  em23-02-02-least-numbers: [ba-ordering, ba-comparing-practice]
+  em23-02-01-greatest-numbers: [ba-comparing, ultimate-number-order-round]
+  em23-02-02-least-numbers: [ba-ordering, ultimate-number-order-round]
   em23-02-03-read-a-number-line: [ba-number-line]
   em23-02-04-round-numbers: [ultimate-number-order-round]
   em23-02-90-round-to-hundreds: [ultimate-number-order-round]
-  em23-02-99-mastery: [ba-number-line, ba-comparing-practice, ultimate-number-order-round]
+  em23-02-99-mastery: [ba-number-line, ba-comparing, ultimate-number-order-round]
 
   em23-03-01-addition-facts-through-20: [boosters-addition-facts, ultimate-addition-facts]
   em23-03-02-ten-frame-addition: [ba-sums, ultimate-addition-facts]

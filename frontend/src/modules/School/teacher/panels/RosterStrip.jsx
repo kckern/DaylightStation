@@ -725,7 +725,7 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
       {/* THE AGENDA BELONGS ON THE CARD, not behind the disclosure. It is
           the child's paper for the day — the thing a parent reaches for
           before deciding whether to open anything at all — and it used to
-          cost an accordion open plus a "Show the printed agenda" toggle to
+          cost an accordion open plus a printable-agenda preview toggle to
           reach. One tap, straight to the sheet. */}
       <a className="teacher-artifact-btn teacher-roster__agenda-link"
         href={agendaPreviewSrc(learnerId, studyDay)}

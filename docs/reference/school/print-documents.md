@@ -265,7 +265,11 @@ YAML records the linked session or sessions, complete source document, frozen
 render context, OMR mapping, parent lineage, and an integrity hash over those
 semantic inputs. No PDF is retained. A composed worksheet is one shared recipe
 linked to every included session; it is never reconstructed as several
-individual worksheets.
+individual worksheets. The hash uses the same durable OMR allocation shape the
+manifest stores (`cardId`, `recordId`, and `rowRange`); transient allocation
+status is not part of the recipe. Readers retain compatibility with the brief
+v4 writer bug that hashed an issuance-time `status: live` field without storing
+it, so those immutable artifacts remain readable without rewriting history.
 
 Settlement result receipts use `school.session-artifact/v3`. Before the
 thermal job is sent, the rendered PNG and the complete result-document input

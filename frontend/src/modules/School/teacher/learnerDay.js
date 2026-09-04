@@ -38,6 +38,8 @@
  * The view owns the reads.
  */
 
+import { presentSessionState, SESSION_PROGRESS_STATES } from './sessionPresentation.js';
+
 const NO_SUBJECT = '__no-subject__';
 const subjectKey = (subject) => subject ?? NO_SUBJECT;
 
@@ -57,6 +59,7 @@ export const DAY_STATUS_LABEL = {
   planned: 'Not started',
   deferred: 'Deferred',
   blocked: 'Blocked',
+  unassigned: 'No assignment',
 };
 
 /**
@@ -68,15 +71,7 @@ export const DAY_STATUS_LABEL = {
  * the frontend has no path into `backend/src` — so a drift test pins them; if
  * the backend grows a state, that test names this file.
  */
-const DONE_STATES = new Set([
-  'graded', 'outcome_recorded', 'rewarded', 'media_completed', 'external_activity_assessed',
-]);
-/** The work is out in the world: paper printed, media playing, or awaiting a mark. */
-const IN_FLIGHT_STATES = new Set([
-  'issued', 'reprinted', 'media_dispatched', 'media_stalled',
-  'launch_dispatched', 'program_dispatched', 'external_activity_dispatched', 'submitted',
-]);
-export const SESSION_PROGRESS_STATES = { DONE_STATES, IN_FLIGHT_STATES };
+export { SESSION_PROGRESS_STATES };
 
 /**
  * How far along one session is — the ONLY thing that may produce 'done'.
@@ -96,9 +91,7 @@ function statusForSession(session, section) {
   // exists to kill: the untouched session that used to read "Done" has no
   // score at all.
   if (session?.effectiveScore?.totalCount != null) return 'done';
-  if (DONE_STATES.has(session?.state)) return 'done';
-  if (IN_FLIGHT_STATES.has(session?.state)) return 'in-progress';
-  return 'planned';                                   // created / abandoned / failed / unknown
+  return presentSessionState(session).dayStatus;
 }
 
 /**
@@ -299,9 +292,14 @@ export function joinLearnerDay({
       });
       return;
     }
+    const unassigned = !offer && !planned;
+    const unassignedDetail = obligation?.reason === 'caught_up' ? 'Caught up'
+      : obligation?.reason === 'awaiting_grown_up' ? 'Needs a teacher assignment'
+        : null;
     rows.push({
-      key: rowKey('planned'), subject, status: 'planned', planned, offer, served, session: null, obligation,
-      detail: section?.timingNotice ?? null,
+      key: rowKey(unassigned ? 'unassigned' : 'planned'), subject,
+      status: unassigned ? 'unassigned' : 'planned', planned, offer, served, session: null, obligation,
+      detail: unassigned ? unassignedDetail : (section?.timingNotice ?? null),
     });
   });
 

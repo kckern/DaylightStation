@@ -78,7 +78,7 @@ export class GetTeacherSession {
       module: candidate.module ?? null,
       status: progressStatus(candidate.unitId, state.learnerId, completedIds, exceptions) }));
     return {
-      schema: 'school.teacher-session/v4',
+      schema: 'school.teacher-session/v5',
       sessionId,
       revision: events.reduce((max, event) => Math.max(max, Number(event?.seq) || 0), 0),
       state,
@@ -91,6 +91,15 @@ export class GetTeacherSession {
         moduleId: unit?.module ?? null, moduleTitle: module?.title ?? 'Unit title unavailable',
         lessonId: state.unitId, lessonTitle: unit?.title ?? 'Lesson title unavailable',
         posterUrl: courseId ? curriculumPosterRef('teacher', courseId) : null,
+      },
+      capabilities: {
+        gradeCorrection: Boolean(state.machineGrade),
+        launchPreview: Boolean(state.learnerId && (unit?.subject ?? course?.subject) && state.terminal !== true),
+        companionRecovery: Boolean(unit?.companion?.enabled !== false
+          && unit?.companion?.participation === 'required'),
+        offerRetake: state.outcome?.result === 'needs_remediation' && !state.remediation,
+        manualSettlement: ['submitted', 'graded', 'outcome_recorded'].includes(state.state)
+          && state.terminal !== true,
       },
       scores: {
         machine: state.machineGrade,

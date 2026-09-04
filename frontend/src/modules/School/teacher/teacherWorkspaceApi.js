@@ -44,6 +44,11 @@ export const teacherWorkspaceApi = {
     if (unitId) query.set('unitId', unitId);
     return request(`/learners/${encodeURIComponent(learnerId)}/timeline?${query}`);
   },
+  launchPreviewUrl: (learnerId, subject, { continueToday = false } = {}) => {
+    const query = new URLSearchParams({ subject });
+    if (continueToday) query.set('continueToday', '1');
+    return `${BASE}/learners/${encodeURIComponent(learnerId)}/launch-preview?${query}`;
+  },
   session: (sessionId) => request(`/sessions/${encodeURIComponent(sessionId)}`),
   course: (courseId) => request(`/curriculum/${encodeURIComponent(courseId)}`),
   lesson: (courseId, lessonId) => request(`/curriculum/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(lessonId)}`),

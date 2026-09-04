@@ -21,6 +21,14 @@ const line = (x1, y1, x2, y2, extra = '') => `<line x1="${x1}" y1="${y1}" x2="${
 const text = (x, y, value, extra = '') => `<text x="${x}" y="${y}" ${extra}>${esc(value)}</text>`;
 const circle = (cx, cy, r, extra = '') => `<circle cx="${cx}" cy="${cy}" r="${r}" ${extra}/>`;
 const rect = (x, y, width, height, extra = '') => `<rect x="${x}" y="${y}" width="${width}" height="${height}" ${extra}/>`;
+const polygon = (points, extra = '') => `<polygon points="${points.map(([x, y]) => `${x},${y}`).join(' ')}" ${extra}/>`;
+
+function regularPolygon(cx, cy, radius, sides, rotation = -Math.PI / 2) {
+  return Array.from({ length: sides }, (_, index) => {
+    const angle = rotation + index * 2 * Math.PI / sides;
+    return [Number((cx + Math.cos(angle) * radius).toFixed(2)), Number((cy + Math.sin(angle) * radius).toFixed(2))];
+  });
+}
 
 function numberLine(params) {
   const min = num(params.min, 0); const max = num(params.max, 20); const step = num(params.step, 1);
@@ -150,10 +158,19 @@ function shapeSet(params) {
   const width = 540; const height = 170; const slot = width / shapes.length; const nodes = [];
   shapes.forEach((shape, index) => {
     const cx = slot * index + slot / 2; const cy = 78; const label = shape.label ?? String.fromCharCode(65 + index); const type = shape.type ?? 'rectangle';
-    if (type === 'triangle') nodes.push(`<polygon points="${cx},25 ${cx - 45},120 ${cx + 45},120" fill="white" stroke="#111" stroke-width="2"/>`);
+    const outline = 'fill="white" stroke="#111" stroke-width="2"';
+    if (type === 'triangle') nodes.push(polygon([[cx, 25], [cx - 45, 120], [cx + 45, 120]], outline));
+    else if (type === 'right-triangle') nodes.push(polygon([[cx - 45, 25], [cx - 45, 120], [cx + 50, 120]], outline));
     else if (type === 'circle') nodes.push(circle(cx, cy, 44, 'fill="white" stroke="#111" stroke-width="2"'));
     else if (type === 'square') nodes.push(rect(cx - 43, 35, 86, 86, 'fill="white" stroke="#111" stroke-width="2"'));
-    else nodes.push(rect(cx - 52, 48, 104, 60, 'fill="white" stroke="#111" stroke-width="2"'));
+    else if (type === 'rotated-square') nodes.push(polygon([[cx, 24], [cx + 54, cy], [cx, 132], [cx - 54, cy]], outline));
+    else if (type === 'pentagon') nodes.push(polygon(regularPolygon(cx, cy + 4, 52, 5), outline));
+    else if (type === 'hexagon') nodes.push(polygon(regularPolygon(cx, cy, 52, 6, 0), outline));
+    else if (type === 'octagon') nodes.push(polygon(regularPolygon(cx, cy, 52, 8, Math.PI / 8), outline));
+    else if (type === 'rhombus') nodes.push(polygon([[cx, 34], [cx + 58, cy], [cx, 122], [cx - 58, cy]], outline));
+    else if (type === 'trapezoid') nodes.push(polygon([[cx - 34, 35], [cx + 34, 35], [cx + 58, 120], [cx - 58, 120]], outline));
+    else if (type === 'parallelogram') nodes.push(polygon([[cx - 35, 38], [cx + 58, 38], [cx + 35, 118], [cx - 58, 118]], outline));
+    else nodes.push(rect(cx - 52, 48, 104, 60, outline));
     nodes.push(text(cx, 151, label, 'text-anchor="middle" font-weight="700"'));
   });
   return { width, height, body: nodes.join('') };

@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 import { ResolveAccessCode } from './ResolveAccessCode.mjs';
 import { encodeLaunchPreviewLink } from '#apps/school/services/launchPreviewLink.mjs';
 import { mintToken } from '#domains/school/sessions/tokens.mjs';
+import { HmacSchoolLaunchPreviewTokenIssuer } from '#adapters/school/actions/HmacSchoolLaunchPreviewTokenIssuer.mjs';
 
 const LEARNER_ID = 'learner4';
 const SUBJECT = 'scripture';
@@ -64,12 +65,13 @@ function spyStores({ served = false } = {}) {
   return { writes, reads, sessions, tokens };
 }
 
-const resolverWith = ({ sessions, tokens, planProjection = null, roster = null }) => new ResolveAccessCode({
+const resolverWith = ({ sessions, tokens, planProjection = null, roster = null, launchPreviewTokens = null }) => new ResolveAccessCode({
   tokens,
   curriculum: curriculum(),
   assignments: assignments(),
   sessions,
   roster,
+  launchPreviewTokens,
   ...(planProjection ? { planProjection } : {}),
   clock: () => new Date(NOW_ISO),
   logger: noopLogger,
@@ -176,6 +178,40 @@ describe('ResolveAccessCode.preview — it mints nothing', () => {
 });
 
 describe('ResolveAccessCode.preview — a bad link says so', () => {
+  it('accepts a signed teacher token repeatedly until it expires', async () => {
+    let now = Date.parse(NOW_ISO);
+    const launchPreviewTokens = new HmacSchoolLaunchPreviewTokenIssuer({
+      key: 'a-test-key-that-is-deliberately-longer-than-thirty-two-bytes',
+      clock: () => now,
+    });
+    const stores = spyStores();
+    const resolver = resolverWith({ sessions: stores.sessions, tokens: stores.tokens, launchPreviewTokens });
+    const link = launchPreviewTokens.issue({ learnerId: LEARNER_ID, subject: SUBJECT });
+
+    expect((await resolver.preview({ link })).ok).toBe(true);
+    expect((await resolver.preview({ link })).ok).toBe(true);
+    now += 5 * 60 * 1000;
+    const expired = await resolver.preview({ link });
+    expect(expired).toMatchObject({ ok: false, preview: true, reason: 'expired' });
+    expect(expired.sentence).toMatch(/expired/i);
+    expect(stores.writes).toEqual([]);
+    expect(stores.tokens.lookups).toEqual([]);
+  });
+
+  it('never treats a tampered signed token as a legacy link', async () => {
+    const launchPreviewTokens = new HmacSchoolLaunchPreviewTokenIssuer({
+      key: 'a-test-key-that-is-deliberately-longer-than-thirty-two-bytes',
+      clock: () => Date.parse(NOW_ISO),
+    });
+    const stores = spyStores();
+    const resolver = resolverWith({ sessions: stores.sessions, tokens: stores.tokens, launchPreviewTokens });
+    const link = launchPreviewTokens.issue({ learnerId: LEARNER_ID, subject: SUBJECT });
+
+    const card = await resolver.preview({ link: `${link}x` });
+    expect(card).toMatchObject({ ok: false, preview: true, reason: 'tampered' });
+    expect(card.sentence).toMatch(/new one from the teacher workspace/i);
+  });
+
   it('junk in the segment answers a readable sentence, not a crash', async () => {
     const stores = spyStores();
     const resolver = resolverWith({ sessions: stores.sessions, tokens: stores.tokens });

@@ -113,7 +113,7 @@ export class ResolveAccessCode {
   // read at all; `sessions` stays because reading events read-only is the one
   // step this resolver deliberately does differently from the scan path.
   #tokens; #curriculum; #sessions; #assignments;
-  #issueDocument; #companions; #roster; #mediaSurface; #timezone; #clock; #logger; #planProjection;
+  #issueDocument; #companions; #roster; #mediaSurface; #timezone; #clock; #logger; #planProjection; #launchPreviewTokens;
 
   /**
    * @param {object} deps
@@ -139,7 +139,7 @@ export class ResolveAccessCode {
     attestations = null, curriculumExceptions = null, issueDocument = null, companions = null, roster = null, selfService = null,
     // Shared with `BuildAgenda` and `ResolveSubjectNext` in composition: the
     // digits printed beside the QR must mean what the QR means.
-    planProjection = null,
+    planProjection = null, launchPreviewTokens = null,
     timezone = null, clock = () => new Date(), logger = console,
   } = {}) {
     if (!tokens || !curriculum || !assignments || !sessions) {
@@ -163,6 +163,7 @@ export class ResolveAccessCode {
     this.#timezone = timezone;
     this.#clock = clock;
     this.#logger = logger;
+    this.#launchPreviewTokens = launchPreviewTokens;
   }
 
   /**
@@ -338,7 +339,29 @@ export class ResolveAccessCode {
    *   the link cannot be read. Never throws — same rule as `resolve`.
    */
   async preview({ link } = {}) {
-    const decoded = decodeLaunchPreviewLink(link);
+    // Teacher-workspace links are signed, expire after five minutes, and are
+    // safe to reload during that window. The legacy path payload remains
+    // readable for existing CLI output and old bookmarks, but the teacher UI
+    // never emits it. A malformed signed token must never fall back to the
+    // unsigned decoder.
+    const signed = typeof link === 'string' && link.includes('.');
+    const verified = signed
+      ? this.#launchPreviewTokens?.verify?.(link) ?? { ok: false, reason: 'malformed' }
+      : decodeLaunchPreviewLink(link);
+    const decoded = verified.ok ? {
+      ok: true,
+      payload: {
+        learnerId: verified.payload.learnerId,
+        subject: verified.payload.subject,
+        continueToday: verified.payload.continueToday === true,
+      },
+    } : {
+      ok: false,
+      reason: verified.reason,
+      sentence: verified.reason === 'expired'
+        ? 'This teacher preview expired. Return to the teacher workspace and open it again.'
+        : (verified.sentence ?? 'That preview link could not be read. Open a new one from the teacher workspace.'),
+    };
     if (!decoded.ok) {
       this.#logger.info?.('school.selfservice.preview.rejected', { reason: decoded.reason });
       return {

@@ -21,15 +21,15 @@ const Arrow = ({ flip }) => (
   </svg>
 );
 
-export function DateStepper({ date, onChange, max }) {
+export function DateStepper({ date, onChange, max, today = max, label = null }) {
   const atMax = max != null && date >= max;
   return (
     <div className="ds-datestepper">
       <button type="button" className="ds-datestepper__arrow" aria-label="Previous day"
         onClick={() => onChange(addDays(date, -1))}><Arrow /></button>
       <button type="button" className="ds-datestepper__label"
-        onClick={() => { if (max && date !== max) onChange(max); }}>
-        {labelFor(date, max)}
+        onClick={() => { if (today && date !== today) onChange(today); }}>
+        {label ?? labelFor(date, today)}
       </button>
       <button type="button" className="ds-datestepper__arrow" aria-label="Next day"
         disabled={atMax} onClick={() => onChange(addDays(date, 1))}><Arrow flip /></button>
