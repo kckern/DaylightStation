@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import React, { useEffect } from 'react';
 
 let messageHandler = null;
@@ -18,6 +18,7 @@ vi.mock('../lib/logging/Logger.js', () => {
 });
 
 import { FitnessProvider, useFitnessContext } from './FitnessContext.jsx';
+import FitnessUsersList from '../modules/Fitness/player/panels/FitnessUsers.jsx';
 
 const MINIMAL_CONFIG = { users: { primary: [] }, plex: {}, sensors: {} };
 
@@ -83,5 +84,30 @@ describe('FitnessProvider pressure-mat websocket contract', () => {
       seenThisSession: true,
       sessionSteps: 1,
     });
+  });
+
+  it('shows exactly one real card from websocket events without a tap or assignment', async () => {
+    let context;
+    function LiveSidebar() { context = useFitnessContext(); return <FitnessUsersList />; }
+    const { rerender } = render(<FitnessProvider fitnessConfiguration={MINIMAL_CONFIG}><LiveSidebar /></FitnessProvider>);
+    await waitFor(() => expect(messageHandler).toBeTypeOf('function'));
+    expect(screen.queryByRole('button', { name: /step mat:/i })).toBeNull();
+    context.fitnessSessionInstance.sessionId = '20260904144124';
+    await act(async () => {
+      messageHandler({ topic: 'pressure-mat', id: 'mat-1', type: 'presence', event: 'pressed', steps: 101, stomps: 8 });
+      messageHandler({ topic: 'pressure-mat', id: 'mat-1', type: 'presence', event: 'stomped', steps: 101, stomps: 9 });
+      await new Promise(resolve => setTimeout(resolve, 300));
+    });
+    expect(screen.getAllByRole('button', { name: /step mat: 4 steps per minute, 1 steps, 1 stomps/i })).toHaveLength(1);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await act(async () => {
+      rerender(<FitnessProvider fitnessConfiguration={{ ...MINIMAL_CONFIG, equipment: [{ id: 'step_mat', type: 'pressure_mat', pressure_mat: 'mat-1' }] }}><LiveSidebar /></FitnessProvider>);
+    });
+    await act(async () => {
+      messageHandler({ topic: 'pressure-mat', id: 'mat-1', type: 'presence', event: 'pressed', steps: 102, stomps: 9 });
+      await new Promise(resolve => setTimeout(resolve, 300));
+    });
+    expect(screen.getAllByRole('button', { name: /step mat: 8 steps per minute, 2 steps, 1 stomps/i })).toHaveLength(1);
+    expect(context.pressureMatActivities.step_mat.sessionSteps).toBe(2);
   });
 });

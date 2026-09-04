@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FitnessSession } from './FitnessSession.js';
+import { FitnessTimeline } from './FitnessTimeline.js';
 
 describe('FitnessSession pressure-mat routing', () => {
   it('routes by hardware id and attributes every recovered rep to the assignee at ingest time', () => {
@@ -71,5 +72,82 @@ describe('FitnessSession pressure-mat routing', () => {
     expect(snapshot.seenThisSession).toBe(false);
     expect(snapshot.sessionSteps).toBe(0);
     session.destroy();
+  });
+
+  it('retains the same tracker, counts, visibility, and assignee across identical or missing config', () => {
+    const session = new FitnessSession();
+    const catalog = [{ id: 'step_mat', type: 'pressure_mat', pressure_mat: 'mat-1' }];
+    session.setEquipmentCatalog(catalog);
+    session.sessionId = 'fs_20260904144124';
+    session.setEquipmentUser('step_mat', 'alex');
+    session.ingestPressureMat({ id: 'mat-1', type: 'presence', event: 'pressed', steps: 100, stomps: 8 }, { timestamp: 1000 });
+    const tracker = session.getPressureMatTracker('step_mat');
+    session.setEquipmentCatalog(catalog.map(item => ({ ...item })));
+    session.setEquipmentCatalog([]);
+    expect(session.getPressureMatTracker('step_mat')).toBe(tracker);
+    session.ingestPressureMat({ id: 'mat-1', type: 'presence', event: 'pressed', steps: 101, stomps: 8 }, { timestamp: 2000 });
+    expect(tracker.snapshot(2000)).toMatchObject({ sessionSteps: 2, seenThisSession: true, users: { alex: { steps: 2 } } });
+    expect(session.getEquipmentRider('step_mat')).toBe('alex');
+    session.destroy();
+  });
+
+  it('promotes a discovered mat without splitting its timeline, counts, or assignment', () => {
+    const session = new FitnessSession();
+    session.sessionId = 'fs_20260904144124';
+    session.timeline = new FitnessTimeline(0, 5000);
+    session.ingestPressureMat({ id: 'mat-1', type: 'presence', event: 'pressed', steps: 100, stomps: 8 }, { timestamp: 1000 });
+    session.setEquipmentUser('mat-1', 'alex');
+    session.timeline.series['device:mat-1:steps_total'] = [1];
+    session.setEquipmentCatalog([{ id: 'step_mat', type: 'pressure_mat', pressure_mat: 'mat-1' }]);
+    expect(Object.keys(session.getPressureMatSnapshots(1000))).toEqual(['step_mat']);
+    expect(session.getPressureMatTracker('step_mat').snapshot(1000).sessionSteps).toBe(1);
+    expect(session.getEquipmentRider('step_mat')).toBe('alex');
+    expect(session.timeline.series['device:step_mat:steps_total']).toEqual([1]);
+    expect(session.timeline.series).not.toHaveProperty('device:mat-1:steps_total');
+    session.destroy();
+  });
+
+  it('restores legacy sampled totals and binds the recorder to the resumed timeline', () => {
+    const session = new FitnessSession();
+    const now = Date.now();
+    session.setEquipmentCatalog([{ id: 'step_mat', type: 'pressure_mat', pressure_mat: 'mat-1' }]);
+    session._hydrateFromSession({ sessionId: 'fs_20260904144124', startTime: now - 5000, endTime: now,
+      timeline: { tick_count: 1, series: { 'device:step_mat:steps_total': [40], 'device:step_mat:stomps_total': [8], 'user:alex:steps_total': [30] } } });
+    expect(session.getPressureMatSnapshots(now).step_mat).toMatchObject({ sessionSteps: 40, seenThisSession: true, stepsPerMinute: 0 });
+    expect(session._timelineRecorder._timeline).toBe(session.timeline);
+    session.ingestPressureMat({ id: 'mat-1', type: 'presence', event: 'pressed', steps: 101, stomps: 8 }, { timestamp: now + 1000 });
+    expect(session.getPressureMatSnapshots(now + 1000).step_mat).toMatchObject({ sessionSteps: 41, sessionStomps: 8, users: { alex: { steps: 30 } } });
+    session._timelineRecorder.recordTick({ timestamp: now + 5000, sessionId: session.sessionId });
+    expect(session.timeline.series['device:step_mat:steps_total']).toEqual([40, 41]);
+    session.destroy();
+  });
+
+  it('preserves the complete canonical series when merging a discovered identity', () => {
+    const session = new FitnessSession();
+    session.timeline = new FitnessTimeline(0, 5000);
+    session.timeline.series['device:mat-1:steps_total'] = [1, null];
+    session.timeline.series['device:step_mat:steps_total'] = [null, 2, 3];
+    session._renamePressureMatSeries('mat-1', 'step_mat');
+    expect(session.timeline.series['device:step_mat:steps_total']).toEqual([1, 2, 3]);
+    expect(session.timeline.series).not.toHaveProperty('device:mat-1:steps_total');
+    session.destroy();
+  });
+
+  it('round-trips durable mat identities, assignments, and user totals through session metadata', () => {
+    const first = new FitnessSession();
+    const now = Date.now();
+    first.sessionId = 'fs_20260904144124';
+    first.startTime = now - 5000;
+    first.setEquipmentUser('mat-1', 'alex');
+    first.ingestPressureMat({ id: 'mat-1', type: 'presence', event: 'pressed', steps: 100, stomps: 8 }, { timestamp: now });
+    const saved = JSON.parse(JSON.stringify(first.summary));
+    const second = new FitnessSession();
+    second.setEquipmentCatalog([{ id: 'step_mat', type: 'pressure_mat', pressure_mat: 'mat-1' }]);
+    second._hydrateFromSession(saved);
+    second.ingestPressureMat({ id: 'mat-1', type: 'presence', event: 'pressed', steps: 101, stomps: 8 }, { timestamp: now + 1000 });
+    expect(second.getPressureMatSnapshots(now + 1000).step_mat).toMatchObject({ sessionSteps: 2, users: { alex: { steps: 2 } } });
+    expect(second.getEquipmentRider('step_mat')).toBe('alex');
+    first.destroy();
+    second.destroy();
   });
 });

@@ -451,7 +451,11 @@ const FitnessApp = () => {
     logProfile();
     updateInterval();
 
-    logger.info('fitness-profile-started', { intervalSec: 30, adaptiveWarningIntervalSec: 5 });
+    logger.info('fitness-profile-started', {
+      intervalSec: 30, adaptiveWarningIntervalSec: 5,
+      // The script this tab actually loaded, not a freshly fetched server version.
+      entryAsset: document.querySelector('script[type="module"][src]')?.getAttribute('src') || null,
+    });
 
     return () => {
       if (currentIntervalId) {

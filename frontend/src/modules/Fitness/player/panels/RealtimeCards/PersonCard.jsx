@@ -8,16 +8,7 @@ import React from 'react';
 import { Badge } from '@mantine/core';
 import { BaseRealtimeCard, StatsRow } from './BaseRealtimeCard.jsx';
 import { DaylightMediaPath } from '@/lib/api.mjs';
-
-// Heart icons by color
-const HEART_ICONS = {
-  red: '❤️',
-  yellow: '💛',
-  green: '💚',
-  blue: '💙',
-  watch: '⌚',
-  default: '🤍'
-};
+import HeartIcon from '../../../shared/HeartIcon.jsx';
 
 /**
  * Pick contrasting text color for zone badge
@@ -39,6 +30,7 @@ export function PersonCard({
   profileId,
   heartRate,
   heartIcon,
+  strapColor,
   layoutMode = 'horizontal',
   zoneClass = '',
   isInactive = false,
@@ -114,7 +106,7 @@ export function PersonCard({
       progressBar={progressBar}
     >
       <StatsRow
-        icon={heartIcon || HEART_ICONS.default}
+        icon={React.isValidElement(heartIcon) ? heartIcon : <HeartIcon color={strapColor} deviceId={device?.deviceId} />}
         value={hrValue}
         unit="BPM"
       />

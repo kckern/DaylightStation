@@ -1,0 +1,34 @@
+.fitness-heart-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  line-height: 1;
+  vertical-align: middle;
+
+  > svg {
+    display: block;
+    flex: none;
+    width: 18px;
+    height: 18px;
+  }
+}
+
+// Override old generic emoji baseline/pulse rules only for the live HR row.
+.fitness-device.heart-rate .device-stats {
+  align-items: center;
+
+  > .device-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 22px;
+    width: 22px;
+    height: 22px;
+    line-height: 1;
+    animation: none;
+    filter: none;
+  }
+}

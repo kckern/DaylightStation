@@ -1,4 +1,8 @@
 .step-mat-card {
+  &:focus-visible {
+    outline: 2px solid #6ab8ff;
+    outline-offset: -2px;
+  }
   border-color: rgba(56, 189, 248, .65);
   background: linear-gradient(135deg, rgba(14, 116, 144, .26), rgba(15, 23, 42, .9));
   cursor: pointer;

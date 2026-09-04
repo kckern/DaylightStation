@@ -1,4 +1,5 @@
 const finiteNonNegative = (value) => {
+  if (value == null || value === '') return null;
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : null;
 };
@@ -19,10 +20,15 @@ export class PressureMatActivityTracker {
   constructor(equipmentId, matId, config = {}) {
     this.equipmentId = String(equipmentId);
     this.matId = String(matId);
+    this.configure(config);
+    this.reset();
+  }
+
+  // Updating presentation/rate settings must not reset physical activity.
+  configure(config = {}) {
     this.activeTimeoutMs = positiveSeconds(config.active_timeout_seconds, 10) * 1000;
     this.onlineTimeoutMs = positiveSeconds(config.online_timeout_seconds, 5) * 1000;
     this.spmWindowMs = positiveSeconds(config.spm_window_seconds, 15) * 1000;
-    this.reset();
   }
 
   reset() {
@@ -36,9 +42,40 @@ export class PressureMatActivityTracker {
     this.lastDeviceSteps = null;
     this.lastDeviceStomps = null;
     this.lastBootCount = null;
+    this.lastDeviceTs = null;
     this.engaged = false;
     this.seenThisSession = false;
     this.latest = null;
+  }
+
+  /** Durable workout state only: never replay device-boot counters across a browser gap. */
+  checkpoint() {
+    return {
+      equipmentId: this.equipmentId,
+      matId: this.matId,
+      sessionSteps: this.sessionSteps,
+      sessionStomps: this.sessionStomps,
+      users: Object.fromEntries([...this.userTotals].map(([id, totals]) => [id, { ...totals }])),
+      engaged: this.engaged,
+      seenThisSession: this.seenThisSession,
+    };
+  }
+
+  restore(state = {}, { preserveLive = false } = {}) {
+    const live = preserveLive ? this.checkpoint() : null;
+    if (!preserveLive) this.reset();
+    this.sessionSteps = (finiteNonNegative(state.sessionSteps) ?? 0) + (live?.sessionSteps || 0);
+    this.sessionStomps = (finiteNonNegative(state.sessionStomps) ?? 0) + (live?.sessionStomps || 0);
+    this.userTotals.clear();
+    Object.entries(state.users || {}).forEach(([id, totals]) => {
+      this.userTotals.set(id, {
+        steps: finiteNonNegative(totals?.steps) ?? 0,
+        stomps: finiteNonNegative(totals?.stomps) ?? 0,
+      });
+    });
+    Object.entries(live?.users || {}).forEach(([id, totals]) => this._attribute(id, totals.steps, totals.stomps));
+    this.seenThisSession = Boolean(state.seenThisSession || this.sessionSteps || this.sessionStomps);
+    this.engaged = Boolean(live?.engaged || (state.engaged ?? this.seenThisSession));
   }
 
   disengage() {
@@ -65,18 +102,32 @@ export class PressureMatActivityTracker {
     }
   }
 
-  _rebaseIfRestarted(reading) {
+  _acceptCounterEpoch(reading) {
     const bootCount = finiteNonNegative(reading.bootCount);
+    const deviceTs = finiteNonNegative(reading.deviceTs);
     const steps = finiteNonNegative(reading.steps);
     const stomps = finiteNonNegative(reading.stomps);
-    const bootChanged = bootCount != null && this.lastBootCount != null && bootCount !== this.lastBootCount;
+    const comparableBoot = bootCount != null && this.lastBootCount != null;
+    // Old frames must not resurrect a previous device boot.
+    if (comparableBoot && bootCount < this.lastBootCount) return false;
+    const bootChanged = comparableBoot && bootCount > this.lastBootCount;
     const countersDecreased = (steps != null && this.lastDeviceSteps != null && steps < this.lastDeviceSteps)
       || (stomps != null && this.lastDeviceStomps != null && stomps < this.lastDeviceStomps);
-    if (bootChanged || countersDecreased) {
+    const clockRewound = deviceTs != null && this.lastDeviceTs != null && deviceTs < this.lastDeviceTs;
+    // Legacy firmware without boot/clock identity can only signal reset by its
+    // counters. With identity available, a regressing reading is stale, not a
+    // new boot; wait for an authoritative hello/new boot instead of overcounting.
+    const legacyRestart = !comparableBoot && countersDecreased
+      && (reading.type === 'hello' || (deviceTs == null && this.lastDeviceTs == null));
+    if (!bootChanged && !legacyRestart && (clockRewound || countersDecreased)) return false;
+    if (bootChanged || legacyRestart) {
       this.lastDeviceSteps = null;
       this.lastDeviceStomps = null;
+      this.lastDeviceTs = null;
     }
     if (bootCount != null) this.lastBootCount = bootCount;
+    if (deviceTs != null) this.lastDeviceTs = deviceTs;
+    return true;
   }
 
   /**
@@ -86,9 +137,9 @@ export class PressureMatActivityTracker {
   ingest(reading, { timestamp = Date.now(), assignedUserId = null, countSession = true } = {}) {
     if (!reading || String(reading.id || '') !== this.matId) return this.snapshot(timestamp);
     const now = Number.isFinite(timestamp) ? timestamp : Date.now();
+    if (!this._acceptCounterEpoch(reading)) return this.snapshot(now);
     this.lastSeenAt = now;
     this.latest = { ...reading, receivedAt: now };
-    this._rebaseIfRestarted(reading);
 
     const rawSteps = finiteNonNegative(reading.steps);
     const rawStomps = finiteNonNegative(reading.stomps);

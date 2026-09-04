@@ -9,7 +9,8 @@ import RpmDeviceAvatar from '@/modules/Fitness/components/RpmDeviceAvatar.jsx';
 import { VibrationCard } from './RealtimeCards/VibrationCard.jsx';
 import { StepMatCard } from './RealtimeCards/StepMatCard.jsx';
 import { useZoneProfiles } from '@/hooks/useZoneProfiles.js';
-import { heartEmojiForColor, cssColorForStrap, hashColorForDevice, strapLabel } from '../../lib/strapColors.js';
+import { cssColorForStrap, hashColorForDevice, strapLabel } from '../../lib/strapColors.js';
+import HeartIcon from '../../shared/HeartIcon.jsx';
 import { lookupZoneProgress as lookupZoneProgressFromIndex } from '@/modules/Fitness/domain/zoneProgressIndex.js';
 import { genericGuestImageId, isGenericGuestProfileId } from '../../lib/guestPlaceholders.js';
 
@@ -34,7 +35,7 @@ const CONFIG = {
     TIME_HOURS_SUFFIX: 'h ago'
   },
   devices: {
-    heart_rate: { unit: 'BPM', colorClass: 'heart-rate', icon: '❤️' }, // HR icon overridden per-device color
+    heart_rate: { unit: 'BPM', colorClass: 'heart-rate' }, // Shared SVG resolved per-device
     power: { unit: 'W', colorClass: 'power', icon: '⚡' },
     cadence: { unit: 'RPM', colorClass: 'cadence', icon: '⚙️' },
     speed: { unit: 'km/h', colorClass: 'speed', icon: '🚴' },
@@ -441,7 +442,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return map;
   }, [equipment]);
 
-  const heartColorIcon = (deviceId) => heartEmojiForColor(hrColorMap[String(deviceId)]);
+  const heartColorIcon = (deviceId) => <HeartIcon color={hrColorMap[String(deviceId)]} deviceId={deviceId} />;
 
   const formatTimeAgo = (timestamp) => {
     if (!timestamp) return UI_LABELS.TIME_NEVER;
@@ -809,15 +810,16 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                 const equipmentId = device.snapshot.equipmentId;
                 const assignedUserId = fitnessContext.fitnessSessionInstance?.getEquipmentUser?.(equipmentId) || null;
                 return (
-                  <StepMatCard
-                    key={`step-mat-${equipmentId}`}
-                    equipment={device.equipment}
-                    snapshot={device.snapshot}
-                    participants={activeHeartRateParticipants || []}
-                    assignedUserId={assignedUserId}
-                    onAssign={(userId) => assignEquipmentUser?.(equipmentId, userId)}
-                    onDisengage={() => disengagePressureMat?.(equipmentId)}
-                  />
+                  <div key={`step-mat-${equipmentId}`} className="step-mat-list-item">
+                    <StepMatCard
+                      equipment={device.equipment}
+                      snapshot={device.snapshot}
+                      participants={activeHeartRateParticipants || []}
+                      assignedUserId={assignedUserId}
+                      onAssign={(userId) => assignEquipmentUser?.(equipmentId, userId)}
+                      onDisengage={() => disengagePressureMat?.(equipmentId)}
+                    />
+                  </div>
                 );
               }
 
