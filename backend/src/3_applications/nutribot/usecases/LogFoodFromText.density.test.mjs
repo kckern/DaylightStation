@@ -63,6 +63,19 @@ describe('LogFoodFromText — the density guard', () => {
     expect(flagged.sent.at(-1)).toBe(`${quiet.sent.at(-1)}\n\n${'⚠️ Premier Protein Shake: 610 kcal for 385 g is 3.3× your usual for this food (~187 kcal expected, from 57 past logs).\nTap Revise if the portion is wrong.'}`);
   });
 
+  it('hands the guard the PARSED ITEMS, not an empty list', async () => {
+    // Without this the guard could be called with anything at all and every
+    // other assertion in this file would still pass: the stub answers from a
+    // fixture and never looks at its arguments. Verified by mutation — passing
+    // `[]` here left the whole file green until this test existed.
+    const { uc, catalogService } = makeUseCase({ aiPayload: SHAKE });
+    await run(uc);
+    const [items, userId] = catalogService.assessDensity.mock.calls[0];
+    expect(userId).toBe('alice');
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ label: 'Premier Protein Shake', calories: 610, grams: 385 });
+  });
+
   it('asks the catalog BEFORE donating the row — a row must not move the median it is judged against', async () => {
     const order = [];
     const { uc, catalogService } = makeUseCase({ aiPayload: SHAKE });

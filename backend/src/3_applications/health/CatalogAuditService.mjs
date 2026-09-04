@@ -43,6 +43,18 @@ export const DRIFT_KEY_PREFIX = 'catalog-density:';
  */
 export const MIN_HISTORY_ROWS = 3;
 
+/**
+ * How wrong a serving has to be, in absolute calories, before it is worth
+ * anyone's attention.
+ *
+ * The ratio alone is useless at the bottom of the scale: on the real catalog it
+ * flagged "Lettuce: 1 kcal vs 8 kcal" at 8x and "Seasoning: 3 vs 12" at 4x.
+ * Both are true and neither is worth a decision, and a report full of them is a
+ * report nobody opens. 50 kcal is roughly the smallest correction that moves a
+ * day's total visibly.
+ */
+export const MIN_ABSOLUTE_DELTA_KCAL = 50;
+
 const coded = (message, code) => {
   const err = new Error(message);
   err.code = code;
@@ -94,6 +106,8 @@ export class CatalogAuditService {
       const current = entry.nutrients?.calories;
       const ratio = ratioApart(current, history.nutrients.calories);
       if (ratio === null || ratio < this.#threshold) continue;
+      // BOTH gates. A big ratio between two small numbers is not a finding.
+      if (Math.abs(current - history.nutrients.calories) < MIN_ABSOLUTE_DELTA_KCAL) continue;
       const key = CatalogAuditService.keyFor(entry.normalizedName);
       if (dismissed.has(key)) { dismissedCount += 1; continue; }
       entries.push({

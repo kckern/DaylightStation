@@ -127,6 +127,26 @@ export function sortObservations(observations) {
   });
 }
 
+/**
+ * The canonical form of an observation ring: at most one observation per
+ * `logId`, in a total order, trimmed to the newest OBSERVATION_LIMIT.
+ *
+ * ONE function, used by both the entity's `setObservations` and the reconcile's
+ * change check, because they have to agree. When they did not, an entry whose
+ * history carried two rows under one id was re-written on every reconcile run
+ * — the file content was identical, so the hash still matched, but the job
+ * reported `seeded: 1` forever and no longer proved anything.
+ */
+export function normalizeRing(observations) {
+  const byId = new Map();
+  const anonymous = [];
+  for (const obs of Array.isArray(observations) ? observations : []) {
+    if (!obs || typeof obs !== 'object') continue;
+    if (obs.logId) byId.set(obs.logId, { ...obs }); else anonymous.push({ ...obs });
+  }
+  return sortObservations([...byId.values(), ...anonymous]).slice(-OBSERVATION_LIMIT);
+}
+
 /** Weighted median. `values` and `weights` are index-aligned and non-empty. */
 export function weightedMedian(values, weights) {
   const pairs = values
@@ -205,6 +225,7 @@ export function ratioApart(a, b) {
 
 export default {
   OBSERVATION_LIMIT,
+  normalizeRing,
   DRIFT_RATIO,
   MIN_MASS_G,
   usableGrams,
