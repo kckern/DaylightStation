@@ -499,6 +499,24 @@ since a slug's bytes never change (a correction repoints the slug). A miss — u
 no manifest installed, or a file that is not there — is a 404, and the row falls back to
 the dot.
 
+**Never the source file.** The hi-res art averages ~3 MB per PNG (median 3.0 MB; 528 of
+the 534 offered icons exceed 1 MB) while a row renders one at 24 CSS px and the picker
+shows up to 60 at 40 CSS px. Serving the sources verbatim would cost tens of megabytes for
+one day's log and well over a hundred for one open picker, so every request serves a 96px
+downscale — enough for both consumers at 2× device pixel ratio. Derivatives are generated
+once with `jimp` and cached on disk under the **data** mount
+(`data/household/apps/health/icon-cache/`), never written back into `media/`, which is
+Dropbox-synced and read-only as far as this app is concerned. Measured on the installed
+manifest: five representative icons totalling 13.4 MB serve as 44 KB.
+
+The cache key is a hash of the resolved source path, its size and its mtime, so repointing
+a slug in the manifest — or editing the file under it — produces a new key rather than
+serving stale art from behind the year-long immutable header. Superseded entries are
+orphaned; at a few KB each, nothing sweeps them. Rendering fails **soft** in every
+direction (no cache directory, unreadable source, undecodable bytes, unwritable cache): the
+original file is served instead. An icon is decoration and must never be the reason a row
+cannot render.
+
 **When the file is not there.** A Dropbox conflicted copy once emptied a media directory
 while leaving it in place, and the illustrations 404'd in production with nothing logging
 an error anywhere. The only thing that could catch it was a test asserting every basename

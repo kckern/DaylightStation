@@ -186,3 +186,115 @@ describe('IconManifestStore over the real installed manifest shape', () => {
     expect(store.resolve('matcha').absolutePath).toBe(path.join(mediaRoot, 'img/nutrition/icons/tea/matcha.png'));
   });
 });
+
+// The hi-res source art averages ~3 MB a file. A day's log renders one icon per
+// row at 24 CSS px and the picker shows up to 60 at 40 CSS px, so serving the
+// sources verbatim costs tens of megabytes per day view and well over a hundred
+// for one open picker. Every request serves a cached downscale instead.
+describe('IconManifestStore.resolveRendered', () => {
+  // A real 512px PNG, so jimp has something genuine to decode and shrink.
+  async function bigPng() {
+    const { Jimp } = await import('jimp');
+    const image = new Jimp({ width: 512, height: 512, color: 0xff0000ff });
+    return image.getBuffer('image/png');
+  }
+
+  async function renderFixture() {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'icon-render-'));
+    const mediaRoot = path.join(root, 'media');
+    const cacheDir = path.join(root, 'data/household/apps/health/icon-cache');
+    const rel = 'img/nutrition/icons/vegetables/carrot.png';
+    fs.mkdirSync(path.dirname(path.join(mediaRoot, rel)), { recursive: true });
+    fs.writeFileSync(path.join(mediaRoot, rel), await bigPng());
+    const doc = { icons: { carrot: { path: rel } }, aliases: {} };
+    const dataService = {
+      household: { read: () => doc, resolveDir: (p) => path.join(root, 'data/household', p) },
+    };
+    return {
+      root, mediaRoot, cacheDir, rel, doc,
+      store: new IconManifestStore({ dataService, mediaRoot, logger: silent }),
+      sourceBytes: fs.statSync(path.join(mediaRoot, rel)).size,
+    };
+  }
+
+  it('serves a downscaled derivative, not the source file', async () => {
+    const f = await renderFixture();
+    const hit = await f.store.resolveRendered('carrot');
+    expect(hit.absolutePath).not.toBe(path.join(f.mediaRoot, f.rel));
+    expect(hit.absolutePath.startsWith(f.cacheDir)).toBe(true);
+    expect(hit.contentType).toBe('image/png');
+    expect(fs.statSync(hit.absolutePath).size).toBeLessThan(f.sourceBytes);
+  });
+
+  it('the derivative is a real decodable image at the render width', async () => {
+    const f = await renderFixture();
+    const hit = await f.store.resolveRendered('carrot');
+    const { Jimp } = await import('jimp');
+    const out = await Jimp.read(hit.absolutePath);
+    expect(out.bitmap.width).toBe(96);
+  });
+
+  it('generates once: a second call reuses the cached file untouched', async () => {
+    const f = await renderFixture();
+    const first = await f.store.resolveRendered('carrot');
+    const mtime = fs.statSync(first.absolutePath).mtimeMs;
+    const second = await f.store.resolveRendered('carrot');
+    expect(second.absolutePath).toBe(first.absolutePath);
+    expect(fs.statSync(second.absolutePath).mtimeMs).toBe(mtime);
+  });
+
+  // Otherwise a manifest correction would keep serving the old picture forever,
+  // behind an immutable year-long cache header.
+  it('repointing the slug at a different file yields a different cache entry', async () => {
+    const f = await renderFixture();
+    const first = await f.store.resolveRendered('carrot');
+    const other = 'img/nutrition/icons/vegetables/other.png';
+    const { Jimp } = await import('jimp');
+    fs.writeFileSync(
+      path.join(f.mediaRoot, other),
+      await new Jimp({ width: 300, height: 300, color: 0x00ff00ff }).getBuffer('image/png'),
+    );
+    f.doc.icons.carrot.path = other;
+    f.store.reload();
+    const second = await f.store.resolveRendered('carrot');
+    expect(second.absolutePath).not.toBe(first.absolutePath);
+  });
+
+  // This one has to reach the RENDER path to mean anything: a fixture with no
+  // cache directory returns the original before jimp is ever called, which
+  // would make this a duplicate of the test below rather than a test of the
+  // decode-failure fallback. So it is given a real cache directory and a
+  // source that is not an image.
+  it('an undecodable source falls back to serving the original, never a 404', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'icon-render-bad-'));
+    const mediaRoot = path.join(root, 'media');
+    const rel = 'img/nutrition/icons/vegetables/carrot.png';
+    fs.mkdirSync(path.dirname(path.join(mediaRoot, rel)), { recursive: true });
+    fs.writeFileSync(path.join(mediaRoot, rel), 'this is emphatically not a PNG');
+    const store = new IconManifestStore({
+      dataService: {
+        household: {
+          read: () => ({ icons: { carrot: { path: rel } }, aliases: {} }),
+          resolveDir: (p) => path.join(root, 'data/household', p),
+        },
+      },
+      mediaRoot,
+      logger: silent,
+    });
+    const hit = await store.resolveRendered('carrot');
+    expect(hit).not.toBeNull();
+    expect(hit.absolutePath).toBe(path.join(mediaRoot, rel));
+  });
+
+  it('no cache directory (a dataService without resolveDir) falls back to the original', async () => {
+    const { store, mediaRoot } = fixture(BASE_MANIFEST);
+    const hit = await store.resolveRendered('carrot');
+    expect(hit.absolutePath).toBe(path.join(mediaRoot, 'img/nutrition/icons/vegetables/carrot.png'));
+  });
+
+  it('an unknown slug is still null — rendering never invents a hit', async () => {
+    const f = await renderFixture();
+    expect(await f.store.resolveRendered('nosuchicon')).toBeNull();
+    expect(await f.store.resolveRendered('../../../etc/passwd')).toBeNull();
+  });
+});

@@ -32,7 +32,9 @@
  */
 
 import path from 'node:path';
-import { fileExists } from '#system/utils/FileIO.mjs';
+import { createHash } from 'node:crypto';
+import { Jimp } from 'jimp';
+import { ensureDir, fileExists, getFileStats, writeFileAtomic } from '#system/utils/FileIO.mjs';
 
 /** The ONLY shape a requestable icon slug may take. Never loosened. */
 export const ICON_SLUG_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
@@ -41,6 +43,21 @@ export const ICON_SLUG_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 const CONTENT_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg' };
 
 const MANIFEST_ADDRESS = 'apps/health/icon-manifest';
+
+/**
+ * The hi-res source art averages ~3 MB per file (median 3.0 MB; 528 of 534
+ * offered icons exceed 1 MB). A row renders one at 24 CSS px and the edit
+ * sheet's picker shows up to 60 at once, so serving the sources verbatim would
+ * cost tens of megabytes for a day's log and well over a hundred for one open
+ * picker. Every request therefore serves a downscaled derivative, cached on
+ * disk under the DATA mount — never written back into `media/`, which is
+ * Dropbox-synced and is read-only as far as this app is concerned.
+ *
+ * 96px covers both consumers at 2x device pixel ratio (24 CSS px row icon,
+ * 40 CSS px picker cell).
+ */
+const RENDER_WIDTH_PX = 96;
+const RENDER_CACHE_DIR = 'apps/health/icon-cache';
 
 export function isValidIconSlug(slug) {
   return typeof slug === 'string' && ICON_SLUG_PATTERN.test(slug);
@@ -53,6 +70,8 @@ export class IconManifestStore {
   #loaded = false;
   #icons = {};
   #aliases = {};
+  #cacheDir = null;
+  #cacheDirResolved = false;
 
   /**
    * @param {Object} options
@@ -170,6 +189,80 @@ export class IconManifestStore {
 
     if (!fileExists(candidate)) return null;
     return { slug, absolutePath: candidate, contentType };
+  }
+
+  /** Where derivatives live, under the DATA mount. Never inside `media/`. */
+  #renderCacheDir() {
+    if (this.#cacheDirResolved) return this.#cacheDir;
+    this.#cacheDirResolved = true;
+    try {
+      this.#cacheDir = this.#dataService.household?.resolveDir?.(RENDER_CACHE_DIR) ?? null;
+    } catch (e) {
+      this.#logger.warn?.('health.icons.cache.unresolvable', { error: e.message });
+      this.#cacheDir = null;
+    }
+    return this.#cacheDir;
+  }
+
+  /**
+   * Resolve a slug to a SERVABLE file: the downscaled derivative, generated once
+   * and cached on disk.
+   *
+   * The cache key carries the source's resolved path, its size and its mtime, so
+   * repointing a slug in the manifest — or editing the file under it — produces a
+   * new key rather than serving a stale picture. Old entries are simply orphaned;
+   * nothing sweeps them, and at ~4 KB each that is not worth a reaper.
+   *
+   * Fails SOFT in every direction: no cache directory, an unreadable source, a
+   * jimp decode failure, or an unwritable cache all fall back to serving the
+   * original file. An icon is decoration — it must never be the reason a row
+   * cannot render — and the caller still gets a real image.
+   *
+   * @param {string} slug
+   * @returns {Promise<{ slug: string, absolutePath: string, contentType: string }|null>}
+   */
+  async resolveRendered(slug) {
+    const hit = this.resolve(slug);
+    if (!hit) return null;
+
+    const dir = this.#renderCacheDir();
+    if (!dir) return hit;
+
+    let stats;
+    try {
+      stats = getFileStats(hit.absolutePath);
+    } catch {
+      return hit;
+    }
+    if (!stats) return hit;
+
+    const fingerprint = createHash('sha256')
+      .update(`${hit.absolutePath}:${stats.size}:${Math.round(stats.mtimeMs)}:${RENDER_WIDTH_PX}`)
+      .digest('hex')
+      .slice(0, 12);
+    // The slug is already through the allowlist by this point (`resolve` returned),
+    // so it cannot contain a separator; the fingerprint is hex. The join is
+    // therefore over two known-safe segments.
+    const cached = path.join(dir, `${slug}.${fingerprint}.png`);
+    if (fileExists(cached)) return { slug, absolutePath: cached, contentType: 'image/png' };
+
+    try {
+      ensureDir(dir);
+      const image = await Jimp.read(hit.absolutePath);
+      if (image.bitmap.width > RENDER_WIDTH_PX) image.resize({ w: RENDER_WIDTH_PX });
+      const buffer = await image.getBuffer('image/png');
+      // Atomic: two concurrent requests for the same icon race here, and both
+      // write byte-identical output, so last-writer-wins is correct — but a
+      // half-written file being served is not.
+      writeFileAtomic(cached, buffer);
+      this.#logger.debug?.('health.icons.render.cached', {
+        slug, sourceBytes: stats.size, renderedBytes: buffer.length,
+      });
+      return { slug, absolutePath: cached, contentType: 'image/png' };
+    } catch (e) {
+      this.#logger.warn?.('health.icons.render.failed', { slug, error: e.message });
+      return hit;
+    }
   }
 }
 
