@@ -455,6 +455,82 @@ no children — which every fold counts as nothing and every reader has to expla
 rather than a note: the refusal belongs in the service (`TEMPLATE_NO_COMPONENTS` → 400),
 and the picker's Log button is dead until the selection is non-empty.
 
+**2.40 The viewed day travels with every capture (production defect, 2026-09-04).**
+Reported: food added while looking at YESTERDAY appeared on TODAY. It was not a bug in one
+route — *no* capture route accepted a date at all, and every service downstream computed
+one from the server clock. The fix is the same shape as the meal-bucket seam already
+shipped in Task 4.1: an optional `date` on the wire, threaded to the service, with **absent
+meaning today** (§2.6 — never coerced to `null`, because a defaulted value would change
+what an absent one means for Telegram, the coach and the scale, none of which send one).
+Covered: quick-add, the typed sentence, voice, photo, barcode, the unknown-UPC custom-food
+branch, and template instantiation. `createdAt`/`settledAt` stay real wall-clock instants —
+only the LOGICAL date follows the view; backdating a row must not backdate the moment it
+was entered.
+
+Two details worth keeping:
+- **Text and voice get an ANCHOR, not an override.** They already had an `asOfDate` seam
+  (built for revisions, so a revision's prompt stays pinned to the original log's day). The
+  viewed day reuses it, which makes "this morning" resolve against the day being looked at
+  while a date the model computes *from* that anchor still wins. Passing the viewed day as
+  `LogFoodFromText`'s existing `date` override would have done the opposite — flattened
+  "yesterday" onto the viewed day. Image and barcode have no words to date anything from,
+  so they take a plain `date`. Precedence order is unchanged and now uniform: what the
+  person said > what the surface asked for > the clock.
+- **The date validator is now shared and is not a regex.** Three routes regex-tested a date
+  independently. A regex accepts `2026-02-31` (silently becomes March 3 — food on a day
+  nobody named) and `2026-08-32` (Invalid Date, whose later `toISOString()` throws a
+  RangeError and surfaces as a 500). `BudgetService` already had the correct check from
+  Phase 8; it moved to `#domains/health/services/isoDate.mjs` and every date on the health
+  router now goes through it. `DATE_PATTERN` is gone.
+
+**2.41 A day that has already ended has no "current hour" (the bucket-default question).**
+The quick bar defaulted its meal to `bucketForHour(new Date().getHours())` — the CURRENT
+hour — on every day, including days that ended hours ago. Once the date follows the view,
+keeping that is incoherent: it is the same "the app used now instead of where I am" mistake
+the defect above is about, one field over.
+
+Decided: **the clock speaks only for today. On any other day the target is that day's FIRST
+meal, and the affordance says which day and meal it will hit** ("Quick add to Breakfast on
+2026-09-03") so the guess is visible before the tap rather than inferred after it. Applied
+at all four services that own this fallback — `FoodCatalogService.quickAdd`,
+`TemplateService.instantiate`, `LogFoodFromImage`, `LogFoodFromUPC` — and in
+`QuickCaptureBar`, via one shared `defaultBucketForDate`.
+
+Why this and not the alternatives:
+- *Keep the clock.* Rejected: 8:30pm names no meal on a day that ended at midnight. It is
+  a guess dressed as a derivation, and it is the guess the user just complained about.
+- *Infer from the day's existing rows* (land in the last bucket already filled). Rejected:
+  genuinely better on average and impossible to predict — the same tap lands somewhere
+  different depending on data the person cannot see. Predictability beats cleverness on a
+  one-tap control.
+- *Refuse to guess and force a picker.* Rejected as redundant: every meal row in `LogTable`
+  already offers an exact target, so the quick bar is the convenience path. A visible,
+  stable default plus one-tap move is cheaper than an extra step on every past-day capture.
+
+A day is filled from the top, so its first meal is where catching up starts; and because
+the web UI always sends an explicit bucket alongside a date, this floor is only ever
+reached by a caller that sends a date without one.
+
+**2.42 The post-boot feed-harvest hypothesis was FALSIFIED, so nothing was throttled.**
+A lost voice memo (2026-09-04 16:25) was attributed to a post-boot readable-content harvest
+saturating outbound HTTP: the container had restarted at 16:23:09 and 461
+`webcontent.readable.upstream-error` events landed in 16:25–16:27, wrapped around all three
+transcription attempts. Checked before acting on it, and it does not hold:
+- The harvest is an **hourly `:25` cron**, not a boot job. It ran 23 more times in the same
+  24h at the same volume (~230 errors per run, 6,953 total). `bootstrap.mjs` does define a
+  `headlineHarvestJob`, but nothing invokes it.
+- Its outbound concurrency is hard-capped at **3** in-flight fetches
+  (`HeadlineService.mjs`, `CONCURRENCY = 3`), serial across sources. Three sockets do not
+  saturate a household egress link.
+- Process impact was real but small: event-loop **p99 rose from ~80–130 ms to 436–538 ms**
+  across exactly those windows, while p50 stayed at the 20 ms idle floor.
+- The failure signature points **upstream**: two ECONNRESETs at 15055 ms and 15142 ms — a
+  near-identical 15 s cut, when our own timeout is 60 s — plus a 1226 ms ETIMEDOUT.
+  Something in the path reset the connection; a starved local loop does not do that on a
+  clock that precise.
+Overlap is real and the cap is worth knowing about, but the evidence does not implicate the
+harvest, so throttling it would have been a change made on a story. Deliberately not done.
+
 ---
 
 ## 3. Known divergences from the PRD (true only after later phases)

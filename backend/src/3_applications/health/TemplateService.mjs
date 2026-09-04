@@ -20,6 +20,7 @@
  */
 
 import { formatLocalTimestamp } from '#system/utils/time.mjs';
+import { defaultBucketForDate } from '#shared/contracts/health/isoDate.mjs';
 import { hasMicroData, pickMicros } from '#domains/nutrition/services/micros.mjs';
 
 /** Local (not UTC) YYYY-MM-DD. The UTC form reads as tomorrow every evening here. */
@@ -221,7 +222,9 @@ export class TemplateService {
 
     const now = new Date(this.#clock.now());
     const targetDate = date || localDateISO(now);
-    const targetMealTime = mealTime || bucketForHour(now.getHours());
+    // Decision 2.24: on a day that is not today the wall clock's hour describes
+    // no meal on that day, so the day is filled from its first one instead.
+    const targetMealTime = mealTime || defaultBucketForDate(targetDate, now, bucketForHour);
     const settledAt = formatLocalTimestamp(now);
     const wanted = new Set((Array.isArray(variantNames) ? variantNames : []).map((n) => String(n)));
 

@@ -89,10 +89,14 @@ export class WebNutribotAdapter {
    *   from. Validated by the HTTP boundary (health.mjs) before it ever reaches
    *   here — this adapter just threads it onto the event for the router's
    *   precedence seam (NutribotInputRouter#resolveMealTime).
+   * @param {string} [input.date] - Pre-validated `YYYY-MM-DD` day the client is
+   *   LOOKING AT. Threaded onto the event the same way `bucket` is: the use
+   *   cases date their rows by it, and the text parse treats it as "today" so
+   *   "this morning" resolves against the viewed day. ABSENT MEANS TODAY.
    * @returns {Promise<Object>} Captured response from the bot pipeline
    */
   async process(input) {
-    const { type, content, userId, bucket } = input;
+    const { type, content, userId, bucket, date } = input;
     const conversationId = `web:${userId}`;
 
     const event = {
@@ -101,7 +105,7 @@ export class WebNutribotAdapter {
       platform: 'web',
       platformUserId: userId,
       messageId: null,
-      payload: { bucket: bucket || null },
+      payload: { bucket: bucket || null, date: date || null },
     };
 
     // Map input type to router event type and payload shape

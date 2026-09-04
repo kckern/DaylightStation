@@ -7,7 +7,7 @@ import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 const logger = createAppLogger('health').child('custom-food');
 
 /** Unknown barcode → create a catalog food mapped to it → quick-add it. */
-export function CustomFoodSheet({ upc, open, onClose, onCreated }) {
+export function CustomFoodSheet({ upc, open, onClose, onCreated, bucketId = null, date = null }) {
   const [form, setForm] = useState({ name: '', calories: 0, protein: 0, carbs: 0, fat: 0 });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -18,8 +18,15 @@ export function CustomFoodSheet({ upc, open, onClose, onCreated }) {
     try {
       const { entry } = await DaylightAPI('api/v1/health/nutrition/catalog',
         { ...form, barcodeUpc: upc }, 'POST');
-      await DaylightAPI('api/v1/health/nutrition/catalog/quickadd', { catalogEntryId: entry.id }, 'POST');
-      logger.info('custom.created', { name: form.name, upc });
+      // The scan that reached this sheet was launched from a specific meal on
+      // a specific day; both were previously dropped on this branch, so a
+      // custom food always landed in the clock's meal on the server's today.
+      await DaylightAPI('api/v1/health/nutrition/catalog/quickadd', {
+        catalogEntryId: entry.id,
+        ...(bucketId ? { mealTime: bucketId } : {}),
+        ...(date ? { date } : {}),
+      }, 'POST');
+      logger.info('custom.created', { name: form.name, upc, bucket: bucketId || undefined, date: date || undefined });
       onCreated();
     } catch (err) {
       logger.error('custom.failed', { error: err?.message });

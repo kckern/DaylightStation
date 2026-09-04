@@ -24,6 +24,8 @@ vi.mock('../capture/PhotoCapture.jsx', () => ({
 }));
 
 import { QuickCaptureBar } from './QuickCaptureBar.jsx';
+import { localTodayISO } from './mealBuckets.js';
+import { addDays } from './WeekStrip.jsx';
 
 function r(ui) { return render(<MantineProvider>{ui}</MantineProvider>); }
 
@@ -92,5 +94,66 @@ describe('QuickCaptureBar', () => {
     r(<QuickCaptureBar onVoiceCapture={() => {}} onPhotoCapture={() => {}} onOpenBarcode={() => {}} onAddTo={() => {}} />);
     expect(screen.getByRole('button', { name: 'Quick add to Lunch' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Quick add to Breakfast' })).toBeNull();
+  });
+});
+
+// ── The viewed day (decision 2.24) ──────────────────────────────────────────
+// A day that has already ended has no "current hour", so `bucketForHour(now)`
+// names no meal on it. The bar targets that day's FIRST meal instead, and says
+// which day and meal it will hit — a guess the person can see beats a guess
+// they cannot.
+describe('QuickCaptureBar — the viewed day', () => {
+  const TODAY = localTodayISO();
+  const YESTERDAY = addDays(TODAY, -1);
+
+  it('on TODAY the clock still names the meal', () => {
+    setHour(13); // afternoon
+    const onAddTo = vi.fn();
+    r(<QuickCaptureBar onAddTo={onAddTo} onVoiceCapture={() => {}} onPhotoCapture={() => {}}
+      onOpenBarcode={() => {}} date={localTodayISO()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Quick add to Lunch' }));
+    expect(onAddTo).toHaveBeenCalledWith('afternoon');
+  });
+
+  it('with NO date at all, behaviour is unchanged — the clock decides', () => {
+    setHour(13);
+    const onAddTo = vi.fn();
+    r(<QuickCaptureBar onAddTo={onAddTo} onVoiceCapture={() => {}} onPhotoCapture={() => {}}
+      onOpenBarcode={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Quick add to Lunch' }));
+    expect(onAddTo).toHaveBeenCalledWith('afternoon');
+  });
+
+  it('on a PAST day the bar targets that day\'s FIRST meal, not the current hour\'s', () => {
+    setHour(13); // the clock would say 'afternoon'
+    const onAddTo = vi.fn();
+    r(<QuickCaptureBar onAddTo={onAddTo} onVoiceCapture={() => {}} onPhotoCapture={() => {}}
+      onOpenBarcode={() => {}} date={YESTERDAY} />);
+    fireEvent.click(screen.getByRole('button', { name: `Quick add to Breakfast on ${YESTERDAY}` }));
+    expect(onAddTo).toHaveBeenCalledWith('morning');
+    expect(screen.queryByRole('button', { name: 'Quick add to Lunch' })).toBeNull();
+  });
+
+  it('names the day on every affordance, so the target is visible before the tap', () => {
+    setHour(13);
+    r(<QuickCaptureBar onAddTo={() => {}} onVoiceCapture={() => {}} onPhotoCapture={() => {}}
+      onOpenBarcode={() => {}} date={YESTERDAY} />);
+    for (const name of [
+      `Quick add to Breakfast on ${YESTERDAY}`,
+      `Quick voice log to Breakfast on ${YESTERDAY}`,
+      `Quick photo log to Breakfast on ${YESTERDAY}`,
+      `Quick scan barcode to Breakfast on ${YESTERDAY}`,
+    ]) {
+      expect(screen.getByRole('button', { name })).toBeTruthy();
+    }
+  });
+
+  it('the bucket it forwards to a barcode scan follows the same rule', () => {
+    setHour(13);
+    const onOpenBarcode = vi.fn();
+    r(<QuickCaptureBar onAddTo={() => {}} onVoiceCapture={() => {}} onPhotoCapture={() => {}}
+      onOpenBarcode={onOpenBarcode} date={YESTERDAY} />);
+    fireEvent.click(screen.getByRole('button', { name: `Quick scan barcode to Breakfast on ${YESTERDAY}` }));
+    expect(onOpenBarcode).toHaveBeenCalledWith('morning');
   });
 });

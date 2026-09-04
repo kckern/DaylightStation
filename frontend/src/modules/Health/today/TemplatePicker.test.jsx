@@ -306,4 +306,30 @@ describe('TemplatePicker — an all-variant template cannot log nothing', () => 
     fireEvent.click(screen.getAllByRole('switch').find((t) => t.textContent.includes('Mango')));
     await waitFor(() => expect(screen.getByText('Log 100 kcal').closest('button').disabled).toBe(false));
   });
-})
+});
+
+// ── The viewed day ─────────────────────────────────────────────────────────
+// The instantiate route has always accepted a `date`; nothing was sending one,
+// so a template logged while looking at yesterday landed on today.
+describe('TemplatePicker — the viewed day', () => {
+  beforeEach(() => { apiMock.mockReset(); respondWith([FLAT]); });
+
+  it('sends the viewed day alongside the launch bucket', async () => {
+    r(<TemplatePicker open onClose={() => {}} onLogged={() => {}} bucketId="morning" date="2026-09-03" />);
+    await waitFor(() => screen.getByText('Protein breakfast'));
+    fireEvent.click(screen.getByText('Protein breakfast'));
+    await waitFor(() => expect(apiMock.mock.calls.some(([p]) => p.includes('/t2/instantiate'))).toBe(true));
+    const call = apiMock.mock.calls.find(([p]) => p.includes('/t2/instantiate'));
+    expect(call[1].date).toBe('2026-09-03');
+    expect(call[1].mealTime).toBe('morning');
+  });
+
+  it('with no viewed day the body is unchanged — absent still means today', async () => {
+    r(<TemplatePicker open onClose={() => {}} onLogged={() => {}} bucketId="morning" />);
+    await waitFor(() => screen.getByText('Protein breakfast'));
+    fireEvent.click(screen.getByText('Protein breakfast'));
+    await waitFor(() => expect(apiMock.mock.calls.some(([p]) => p.includes('/t2/instantiate'))).toBe(true));
+    const call = apiMock.mock.calls.find(([p]) => p.includes('/t2/instantiate'));
+    expect('date' in call[1]).toBe(false);
+  });
+});
