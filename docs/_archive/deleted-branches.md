@@ -5,6 +5,7 @@ Branches deleted after merge. Recorded here for potential restoration.
 To restore: `git checkout -b branch-name <commit-hash>`
 
 | Date | Branch | Commit | Description |
+| 2026-09-04 | fix/fitness-mat-hearts | e28724f0876560ac1cb10bd8c628211c6590e8f8 | Mat config-refresh/resume persistence, animation-safe card, keyboard access, shared SVG strap hearts, and isolated browser checks. Fast-forwarded into main and deployed; physical garage acceptance remains tracked in the Fitness investigation. |
 | 2026-08-29 | codex/backend-ddd-compliance | 84602866f | DDD remediation and frontend consolidation. The newer DDD refactor is on main; call lifecycle regressions discovered during reconciliation were fixed on main in 3afc9df04 (67 focused frontend tests green), with layer, ESM-link, parse, and direct-filesystem gates clean. Superseded ref retired. |
 | 2026-08-29 | piano/gatt-client-fix | 4304b632b | Browser GATT-client fix. Patch-equivalent to main (verified with `git cherry`). |
 | 2026-08-29 | port/surround-containers | 1fd6b94eb | Bulk-print port reconciliation. Superseded by main's newer re-seat at 95fac31b6, which also preserves the DDD-safe renderer boundary. |

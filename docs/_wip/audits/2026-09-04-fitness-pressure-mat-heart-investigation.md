@@ -2,10 +2,49 @@
 
 Date: 2026-09-04
 
-Status: implementation and regression verification in progress. The equipment
-entry is selectively recovered on disk, preserving all other settings. Code is
-implemented in an isolated worktree; deployment and physical garage acceptance
-are still pending. The investigation evidence below describes the original state.
+Status: implemented, merged, deployed, and kiosk-loaded build/config verified.
+Physical garage acceptance remains pending. The equipment entry was selectively
+recovered without changing any other settings. The investigation evidence below
+describes the original state; the rollout evidence records the current state.
+
+## Rollout evidence and remaining physical check
+
+- Application commit `e28724f0876560ac1cb10bd8c628211c6590e8f8` built successfully
+  on September 4 at 16:27:39 PDT. Standalone gates passed before build, before
+  container replacement, and before the idle kiosk refresh. Production reports
+  the matching build metadata and a healthy container.
+- `GET /api/v1/fitness` now includes exactly one pressure-mat equipment entry,
+  `step_mat` bound to `garage-step-mat`. Comparing the live YAML with the backup
+  after removing only that entry confirms every other parsed setting is intact.
+- At 23:32:42 UTC, the actual garage Firefox logged
+  `fitness-profile-started.entryAsset=/assets/index-_R2ouf-m.js`, matching the
+  served page. It logged `fitness.pressure_mat.tracker_created` for the binding
+  and catalog identity `equipment-e87140e6` with ten equipment entries.
+- The generic Firefox window search also matched a helper window; its first
+  refresh command finished without new app-start logs. Read-only window title,
+  class, and focus checks resolved the actual Fitness browser window. An explicit
+  refresh of that verified target produced the startup evidence above. Do not
+  treat a successful key command as proof that the correct page reloaded.
+- The garage screenshot after reload shows the idle Fitness home screen. It does
+  **not** contain an active HR/mat sidebar, so it cannot prove physical card
+  appearance or uncropped hearts on that display.
+- A separate read-only firmware check found `occupied:true` for more than
+  82 minutes, boot count 24, physical counters 84 steps / 46 stomps, and healthy
+  Wi-Fi/WebSocket. The backend's normalized status agrees. The last press is
+  approximately 0.14 V below its captured baseline. Whether someone/an object is
+  loading the mat, or a release was missed, cannot be established remotely.
+  No recalibration, threshold change, firmware update, or synthetic production
+  telemetry was performed.
+- Before physical acceptance, confirm the mat is empty. If it still reports
+  pressed, use the supported recalibration operation only after confirming that
+  condition, then verify released state and stable counters. The firmware's
+  release path requires an upward edge; a held-pressed state can suppress a new
+  press regardless of the frontend repair.
+- During a real active Fitness session, observe a gentle step creating one card
+  with zero assignment taps, then a separate stomp adding one step and one stomp.
+  Confirm the card/totals remain when inactive and inspect hearts on the actual
+  sidebar. This is still required; do not mark the goal complete from automated
+  tests or startup logs alone.
 
 ## Implementation progress
 
@@ -13,8 +52,8 @@ are still pending. The investigation evidence below describes the original state
   `fitness/config.yml.bak-20260904-mat-recovery`, then added only the missing
   equipment entry through the admin config API. A parsed comparison after
   removing that entry matches the backup exactly. The conflicted copy is intact;
-  no requirements/challenges were activated. Runtime config caching still needs
-  the supported deployment/reload path before the public catalog reflects it.
+  no requirements/challenges were activated. Deployment refreshed runtime config
+  caching; the public catalog and kiosk now both reflect the recovered entry.
 - Reconciled mat trackers by physical identity; preserved assignment and renamed
   timeline series on discovery promotion without dropping a longer canonical
   series. Config refresh/removal no longer hides a used mat or resets counts.
@@ -38,7 +77,7 @@ are still pending. The investigation evidence below describes the original state
   inactive states, zoom, and reduced motion. Dynamic mat insertion and keyboard
   interaction pass without browser errors or animation ref warnings. The fixture
   uses viewport-coordinate painted-path bounds for zoom equivalence between
-  engines. Deployment and the physical garage check remain pending.
+  engines. The physical garage check remains pending.
 
 Implementation reference: [step-mat lifecycle and heart rendering](../../reference/fitness/governance-engine.md#step-mat-lifecycle).
 
