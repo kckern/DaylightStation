@@ -9,7 +9,7 @@ import {
 } from '@assistant-ui/react';
 import { useMemo, useEffect, useRef, useState } from 'react';
 import './AgentChatSurface.scss';
-import { createAgentRuntime } from './runtime.js';
+import { createAgentRuntime, getOrCreateThreadId } from './runtime.js';
 import { MarkdownText } from './MarkdownText.jsx';
 import { ToolCallAttribution } from './ToolCallAttribution.jsx';
 
@@ -27,9 +27,17 @@ import { ToolCallAttribution } from './ToolCallAttribution.jsx';
  *   When present, wraps the composer in Unstable_TriggerPopoverRoot and
  *   fetches suggestions on mount. When absent, the bare composer renders.
  */
-export function AgentChatSurface({ agentId, userId, variant = 'light', style, mentions }) {
+export function useAgentConversation({ agentId, userId, onComplete, context = null, persistSession = false }) {
   const agentRuntime = useMemo(() => createAgentRuntime(agentId), [agentId]);
   const pendingMentionsRef = useRef([]);
+  const contextRef = useRef(context);
+  contextRef.current = context;
+  const sessionKey = persistSession ? `agent-session:${agentId}:${userId}:${getOrCreateThreadId(agentId, userId)}` : null;
+  const initialMessages = useMemo(() => {
+    if (!sessionKey) return undefined;
+    try { const messages = JSON.parse(sessionStorage.getItem(sessionKey) || '[]'); return Array.isArray(messages) ? messages : []; }
+    catch { return []; }
+  }, [sessionKey]);
 
   const adapter = useMemo(() => ({
     async *run({ messages, abortSignal }) {
@@ -38,7 +46,7 @@ export function AgentChatSurface({ agentId, userId, variant = 'light', style, me
         ...pendingMentionsRef.current,
       ];
       pendingMentionsRef.current = [];
-      for await (const chunk of agentRuntime.runStream({ messages, userId, attachments, abortSignal })) {
+      try { for await (const chunk of agentRuntime.runStream({ messages, userId, attachments, abortSignal, context: contextRef.current })) {
         yield {
           content: chunk.content,
           metadata: {
@@ -47,11 +55,35 @@ export function AgentChatSurface({ agentId, userId, variant = 'light', style, me
             },
           },
         };
-      }
+      } } finally { onComplete?.(); }
     },
-  }), [agentRuntime, userId]);
+  }), [agentRuntime, userId, onComplete]);
 
-  const runtime = useLocalRuntime(adapter);
+  const runtime = useLocalRuntime(adapter, { initialMessages });
+  useEffect(() => {
+    if (!sessionKey) return;
+    return runtime.thread.subscribe(() => {
+      if (runtime.thread.getState().isRunning) return;
+      const messages = runtime.thread.getState().messages.slice(-80).map(message => ({
+        id: message.id, role: message.role, content: message.content, metadata: message.metadata,
+      }));
+      try { sessionStorage.setItem(sessionKey, JSON.stringify(messages)); } catch { /* Session continuity remains in memory if storage is unavailable. */ }
+    });
+  }, [runtime, sessionKey]);
+  return { runtime, pendingMentionsRef };
+}
+
+export function AgentChatSurface(props) {
+  return props.conversation ? <AgentChatView {...props} /> : <OwnedAgentChatSurface {...props} />;
+}
+
+function OwnedAgentChatSurface(props) {
+  const conversation = useAgentConversation(props);
+  return <AgentChatView {...props} conversation={conversation} />;
+}
+
+function AgentChatView({ conversation, variant = 'light', style, mentions }) {
+  const { runtime, pendingMentionsRef } = conversation;
 
   return (
     <div

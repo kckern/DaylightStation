@@ -1,4 +1,6 @@
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { isISODate } from '@shared-contracts/health/isoDate.mjs';
 import { Button } from '@mantine/core';
 import { ErrorState } from '@/lib/ui';
 import { DaylightAPI } from '../../../lib/api.mjs';
@@ -6,11 +8,10 @@ import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { useHealthDay } from './useHealthDay.js';
 import { EquationStrip } from './EquationStrip.jsx';
-import { WeekStrip, addDays } from './WeekStrip.jsx';
+import { WeekStrip, addDays, weekEnd } from './WeekStrip.jsx';
 import { MacroBarRow } from './MacroBarRow.jsx';
 import { WeightChip } from './WeightChip.jsx';
 import { MonthBlock } from './MonthBlock.jsx';
-import { IntakeBurnChart } from '../progress/IntakeBurnChart.jsx';
 import { useBudgetRange } from './useBudgetRange.js';
 import { useIsWideViewport } from './layout.js';
 import { MacroFooter } from './MacroFooter.jsx';
@@ -18,8 +19,9 @@ import { LogTable } from './LogTable.jsx';
 import { AddCombobox } from './AddCombobox.jsx';
 import { NeedsReviewSection } from './NeedsReviewSection.jsx';
 import { ObservationsSection } from './ObservationRow.jsx';
-import { EntryEditSheet } from './EntryEditSheet.jsx';
+import { EntryEditor } from './EntryEditor.jsx';
 import { TemplatePicker } from './TemplatePicker.jsx';
+import { FoodCatalogManager } from './FoodCatalogManager.jsx';
 import { QuickCaptureBar } from './QuickCaptureBar.jsx';
 import { localTodayISO as todayISO, currentMealBucketId, bucketLabel } from './mealBuckets.js';
 import { useNutritionInput } from '../capture/useNutritionInput.js';
@@ -27,10 +29,16 @@ import { BarcodeCapture } from '../capture/BarcodeCapture.jsx';
 import { CustomFoodSheet } from '../capture/CustomFoodSheet.jsx';
 
 const logger = createAppLogger('health').child('today');
+const IntakeBurnChart = lazy(() => import('../progress/IntakeBurnChart.jsx').then(module => ({ default: module.IntakeBurnChart })));
 
-export function TodayView({ onSetupGoals, onCoachTap }) {
-  const [date, setDate] = useState(todayISO());
-  const day = useHealthDay(date);
+export function TodayView({ active = true, onSetupGoals, onCoachTap }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const dateParam = searchParams.get('date');
+  const date = isISODate(dateParam) && dateParam <= todayISO() ? dateParam : todayISO();
+  const setDate = (value) => setSearchParams(previous => { const next = new URLSearchParams(previous); next.set('date', value); next.set('week', weekEnd(value)); return next; });
+  const weekParam = searchParams.get('week');
+  const viewportEnd = isISODate(weekParam) && weekParam <= weekEnd(todayISO()) ? weekEnd(weekParam) : weekEnd(date);
+  const day = useHealthDay(date, { enabled: active });
   const [addingTo, setAddingTo] = useState(null);   // bucketId | null — F5 renders the combobox here
   const [editingRow, setEditingRow] = useState(null); // row | null — F6 renders the edit sheet
   const [captureMode, setCaptureMode] = useState(null); // 'barcode' | null
@@ -43,10 +51,15 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   // bucketId | null — which meal's add row opened the template picker
   // (PRD F6.3: one meals surface, and this is it).
   const [templatesFor, setTemplatesFor] = useState(null);
+  const [manageFoods, setManageFoods] = useState(false);
   // template id | null — set when the add-combobox picked a MEAL suggestion,
   // so the picker opens straight onto its variant step (PRD F8.2 → F6.1).
   const [focusTemplateId, setFocusTemplateId] = useState(null);
   const [captureNotice, setCaptureNotice] = useState(null); // string | null — e.g. "no food detected"
+  const [undoDelete, setUndoDelete] = useState(null);
+  const [undoBusy, setUndoBusy] = useState(false);
+  const undoPending = useRef(false);
+  const [barcodeDate, setBarcodeDate] = useState(date);
   // { audioRef, bucket } | null — a voice capture whose transcription failed on
   // the network. The recording is on the server, so the notice can offer a
   // retry that re-uses it rather than asking for it again.
@@ -56,7 +69,8 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   // failure) comes back. LogTable renders the "Analyzing…" placeholder row
   // in this exact bucket — the wait is shown where the result will land,
   // never as a page-level spinner.
-  const [capturePending, setCapturePending] = useState(null);
+  const [capturePending, setCapturePending] = useState(new Map());
+  const copyOperations = useRef(new Map());
   const nutrition = useNutritionInput();
   // The desktop sidebar's widgets are 30-day surfaces. Gating the MOUNT on the
   // breakpoint (not just hiding them in CSS) is what stops a phone fetching a
@@ -67,8 +81,8 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   // request twice on one page load — the hook's cache dedupes the SECOND load,
   // not two simultaneous mounts.
   const monthEnd = date < todayISO() ? date : todayISO();
-  const monthRange = useBudgetRange(addDays(monthEnd, -29), monthEnd, { enabled: wideViewport });
-  const dash = useApiResource('api/v1/health/dashboard', { label: 'dashboard', logger });
+  const monthRange = useBudgetRange(addDays(monthEnd, -29), monthEnd, { enabled: active && wideViewport });
+  const dash = useApiResource('api/v1/health/dashboard', { enabled: active, label: 'dashboard', logger });
   // Pending NutriLogs for the viewed date. Text/image/voice/barcode captures
   // now land immediately as accepted+unsettled rows in the nutrilist (Task 1.1),
   // so they no longer show up here. The scale bridge's multi-step composition
@@ -76,7 +90,7 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   // and a pending log never syncs into the nutrilist that day.byBucket is
   // built from — so this stays as the scale's off-surface visibility fix.
   const pendingReview = useApiResource(`api/v1/health/nutrition/pending?date=${date}`,
-    { deps: [date], label: 'pending-review', logger });
+    { deps: [date], enabled: active, label: 'pending-review', logger });
   // Only surface scale-origin pending logs — the other sources (telegram,
   // web) no longer mint pending rows now that captures commit on arrival.
   const scalePending = (pendingReview.data?.pending || []).filter((p) => p.source === 'scale');
@@ -87,7 +101,7 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   // them. `swr:true` for the same reason the day itself uses it: a reload
   // after a dismiss/pair revalidates quietly instead of blanking the section.
   const observations = useApiResource(`api/v1/health/nutrition/observations?date=${date}`,
-    { deps: [date], label: 'observations', logger, swr: true });
+    { deps: [date], enabled: active, label: 'observations', logger, swr: true });
   const observationRows = useMemo(() => observations.data?.observations || [], [observations.data]);
   // Signals nobody has attached to anything — rendered at the top of the day
   // with a Dismiss affordance. Dismissing is the ONLY thing that resolves a
@@ -126,20 +140,24 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
     return firstLine || null;
   }, [dash.data]);
 
-  // Past-day bucket → today, via a saved-meal template used purely as
-  // transport (created, immediately logged to today, then discarded).
+  // Copy snapshots in one idempotent command, without temporary templates.
   const copyMealToToday = async (rows, bucketId, label) => {
-    const items = rows.map((r) => ({ name: r.name || r.item, calories: r.calories, protein: r.protein, carbs: r.carbs, fat: r.fat, color: r.color }));
+    const entryIds = rows.map(row => row.uuid || row.id);
+    const key = JSON.stringify([entryIds, bucketId, todayISO()]);
+    const prior = copyOperations.current.get(key);
+    if (prior?.pending) return;
+    const operation = prior || { id: crypto.randomUUID() };
+    operation.pending = true; copyOperations.current.set(key, operation);
     try {
-      const { meal } = await DaylightAPI('api/v1/health/nutrition/meals', { name: `Copied ${label}`, items }, 'POST');
-      await DaylightAPI(`api/v1/health/nutrition/meals/${meal.id}/log`, { date: todayISO(), mealTime: bucketId }, 'POST');
-      await DaylightAPI(`api/v1/health/nutrition/meals/${meal.id}`, {}, 'DELETE');
-      logger.info('copy-to-today', { bucketId, count: items.length });
+      await DaylightAPI('api/v1/health/nutrition/copy', { entryIds, date: todayISO(), mealTime: bucketId, operationId: operation.id }, 'POST');
+      logger.info('copy-to-today', { bucketId, count: rows.length });
+      setCaptureNotice(`${label} copied to today.`);
+      copyOperations.current.delete(key);
       day.reload();
     } catch (err) {
       logger.error('copy-to-today.failed', { bucketId, error: err?.message });
       setCaptureNotice(`Couldn't copy ${label.toLowerCase()} to today — try again.`);
-    }
+    } finally { operation.pending = false; }
   };
 
   // Today's bucket → a named, kept TEMPLATE (US-2.2, US-6.3).
@@ -148,8 +166,7 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   // the only surface that lists kept meals (PRD F6.3). A meal saved to the
   // meals store from here would be written to a file nothing renders — the
   // exact stranding the parity check for retiring `SavedMealsSheet` had to
-  // rule out. Copy-day-to-today still uses the meals endpoints as ephemeral
-  // transport; that is a create-log-delete round trip nothing ever lists.
+  // rule out. Copy-day-to-today uses the dedicated snapshot-copy command.
   const saveBucketAsMeal = async (rows, label) => {
     const name = window.prompt('Name this meal:', `My ${label.toLowerCase()}`);
     if (!name) return;
@@ -158,7 +175,8 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
     // Micros and their provenance travel with the snapshot: a template built
     // from provenanced rows must instantiate rows that still report covered,
     // or saving a meal would quietly downgrade the day's micro coverage.
-    const components = rows.map((r) => ({
+    const components = rows.filter(row => row.kind !== 'group').map((r) => ({
+      ...r,
       name: r.name || r.item, role: 'core',
       calories: r.calories, protein: r.protein, carbs: r.carbs, fat: r.fat,
       fiber: r.fiber, sugar: r.sugar, sodium: r.sodium, cholesterol: r.cholesterol,
@@ -189,12 +207,13 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   // saying "log this for lunch" must not silently land the entry under
   // Breakfast with no explanation. Reuse the existing captureNotice banner
   // rather than inventing a second notice mechanism.
-  const handleCaptureResult = (result, bucket = null) => {
+  const handleCaptureResult = (result, bucket = null, targetDate = date) => {
     // Offer the retry BEFORE the message is rendered, so the sentence that
     // says the recording is saved arrives with the button that uses it.
     setCaptureRetry(result?.transcribeFailed && result?.audioRef
-      ? { audioRef: result.audioRef, bucket: bucket || currentMealBucketId() }
+      ? { audioRef: result.audioRef, bucket: bucket || currentMealBucketId(), date: targetDate }
       : null);
+    if (result?.committed) day.reload();
     if (result?.moved) {
       setCaptureNotice(`Moved to ${bucketLabel(result.mealTime)}`);
       day.reload();
@@ -219,17 +238,21 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   // fall back to the same currentMealBucketId() guess as before — this is
   // ONLY where the placeholder shows, never the backend's actual
   // resolution.
-  const submitWithPending = async (type, content, { bucket, audioRef } = {}) => {
+  const submitWithPending = async (type, content, { bucket, audioRef, date: targetDate = date } = {}) => {
     const bucketId = bucket || currentMealBucketId();
-    setCapturePending(bucketId);
+    const pendingId = crypto.randomUUID();
+    setCapturePending(previous => new Map(previous).set(pendingId, { bucket: bucketId, date: targetDate }));
     try {
       // THE VIEWED DAY TRAVELS WITH THE CAPTURE. Without it the row is dated by
       // the server's clock, so food entered while looking at yesterday appeared
       // on today — the defect this closes. Only the LOGICAL date follows the
       // view; createdAt/settledAt stay real wall-clock instants.
-      return await nutrition.submit(type, content, { bucket, date, audioRef });
+      return await nutrition.submit(type, content, { bucket, date: targetDate, audioRef });
+    } catch (err) {
+      setCaptureNotice(err?.message || 'Capture interrupted. Retry to check its result.');
+      throw err;
     } finally {
-      setCapturePending(null);
+      setCapturePending(previous => { const next = new Map(previous); next.delete(pendingId); return next; });
     }
   };
 
@@ -249,14 +272,13 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   // a sentence, and the retry affordance retires with it.
   const retryVoiceCapture = async () => {
     if (!captureRetry) return;
-    const { audioRef, bucket } = captureRetry;
-    setCaptureRetry(null);
+    const { audioRef, bucket, date: targetDate } = captureRetry;
     setCaptureNotice(null);
     try {
-      handleCaptureResult(await submitWithPending('voice', null, { bucket, audioRef }), bucket);
+      handleCaptureResult(await submitWithPending('voice', null, { bucket, audioRef, date: targetDate }), bucket, targetDate);
     } catch (err) {
       logger.error('capture.retry.failed', { audioRef, error: err?.message });
-      setCaptureNotice("That recording is no longer available — please record it again.");
+      setCaptureNotice('Retry failed. The saved recording is still selected; try again when connected.');
     }
   };
   const onVoiceCapture = (dataUrl, bucket) => handleVoiceOrPhotoCapture('voice', dataUrl, bucket);
@@ -267,6 +289,7 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   // clock-derived default.
   const openBarcode = (bucketId = null) => {
     setBarcodeTargetBucket(bucketId);
+    setBarcodeDate(date);
     setCaptureMode('barcode');
   };
 
@@ -304,14 +327,32 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
           $health-aside-breakpoint the same element becomes the right column.
           Nothing is rendered twice and hidden. */}
       <aside className="health-today__aside">
-        <WeightChip />
+        {active ? <WeightChip /> : null}
         {wideViewport ? <MonthBlock days={monthRange.days} loading={monthRange.loading} /> : null}
         {/* Same `days` the month block just used — a second useBudgetRange here
             would be a second identical request on every desktop page load. */}
-        {wideViewport ? <IntakeBurnChart days={monthRange.days} loading={monthRange.loading} /> : null}
+        {wideViewport ? <Suspense fallback={null}><IntakeBurnChart days={monthRange.days} loading={monthRange.loading} /></Suspense> : null}
       </aside>
-      <WeekStrip date={date} today={todayISO()} onDateChange={setDate} />
+      <WeekStrip enabled={active} date={date} today={todayISO()} onDateChange={setDate} viewportEnd={viewportEnd}
+        onViewportChange={value => setSearchParams(previous => { const next = new URLSearchParams(previous); next.set('week', value); return next; })} />
+      <QuickCaptureBar active={active} onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
+        onOpenBarcode={openBarcode} onAddTo={setAddingTo} busy={nutrition.busy} date={date} />
+      {undoDelete ? <div className="health-pending" role="status">
+        <span>{undoDelete.label} deleted.</span>
+        <Button size="compact-xs" loading={undoBusy} onClick={async () => {
+          if (undoPending.current) return;
+          undoPending.current = true; setUndoBusy(true);
+          try {
+            await DaylightAPI('api/v1/health/nutrition/restore', { entryIds: undoDelete.entryIds }, 'POST');
+            setUndoDelete(null); day.reload();
+          } catch (err) { setCaptureNotice(err.message); }
+          finally { undoPending.current = false; setUndoBusy(false); }
+        }}>Undo</Button>
+        <Button size="compact-xs" variant="subtle" disabled={undoBusy} onClick={() => setUndoDelete(null)}>Dismiss</Button>
+      </div> : null}
       {day.error ? <ErrorState error={day.error} onRetry={day.reload} label="Food log" /> : null}
+      {pendingReview.error ? <ErrorState error={pendingReview.error} onRetry={pendingReview.reload} label="Scale review unavailable" /> : null}
+      {observations.error ? <ErrorState error={observations.error} onRetry={observations.reload} label="Measurements unavailable" /> : null}
       {captureNotice ? (
         <div className="health-pending" role="status">
           <p className="health-pending__line">{captureNotice}</p>
@@ -329,8 +370,9 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
         onChanged={() => { pendingReview.reload(); day.reload(); }} />
       <ObservationsSection observations={unmatched} onChanged={() => observations.reload()} />
       <LogTable byBucket={day.byBucket} sessions={day.budget?.sessions || []}
+        active={active}
         exerciseAvailable={Boolean(day.budget)}
-        coldLoading={coldLoading} capturePendingBucket={capturePending}
+        coldLoading={coldLoading} capturePendingBuckets={[...capturePending.values()].filter(pending => pending.date === date).map(pending => pending.bucket)}
         onAddTo={setAddingTo} onRowTap={setEditingRow} onConfirm={day.reload} addingTo={addingTo}
         bucketHeaderAction={bucketHeaderAction}
         onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
@@ -340,27 +382,28 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
           <AddCombobox bucketId={addingTo} date={date}
             onDone={() => { setAddingTo(null); day.reload(); }}
             onCancel={() => setAddingTo(null)}
+            onManageFoods={() => setManageFoods(true)}
             onMeals={() => { setFocusTemplateId(null); setTemplatesFor(addingTo); }}
             onTemplate={(entry) => { setFocusTemplateId(entry.id); setTemplatesFor(addingTo); }} />
         ) : null} />
       <MacroFooter items={day.items} coachLine={coachLine} onCoachTap={onCoachTap} />
-      <QuickCaptureBar onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
-        onOpenBarcode={openBarcode} onAddTo={setAddingTo} busy={nutrition.busy} date={date} />
-      <BarcodeCapture open={captureMode === 'barcode'} busy={nutrition.busy} bucket={barcodeTargetBucket}
+      <BarcodeCapture open={active && captureMode === 'barcode'} busy={nutrition.busy} bucket={barcodeTargetBucket}
         onClose={() => { setCaptureMode(null); setBarcodeTargetBucket(null); }}
         onDecode={async (upc, bucket) => {
-          const result = await submitWithPending('barcode', upc, { bucket });
+          const result = await submitWithPending('barcode', upc, { bucket, date: barcodeDate });
           if (result?.unknownUpc) { setCaptureMode(null); setUnknownUpc(result.upc); return; }
           setCaptureMode(null);
           if (result?.moved) setCaptureNotice(`Moved to ${bucketLabel(result.mealTime)}`);
           day.reload();
         }} />
-      <CustomFoodSheet upc={unknownUpc} open={Boolean(unknownUpc)}
-        bucketId={barcodeTargetBucket} date={date}
+      <CustomFoodSheet upc={unknownUpc} open={active && Boolean(unknownUpc)}
+        bucketId={barcodeTargetBucket} date={barcodeDate}
         onClose={() => setUnknownUpc(null)}
         onCreated={() => { setUnknownUpc(null); day.reload(); }} />
-      <EntryEditSheet row={editingRow} open={Boolean(editingRow)}
+      <EntryEditor row={editingRow} open={active && Boolean(editingRow)}
         onClose={() => setEditingRow(null)} onChanged={day.reload}
+        onDeleted={setUndoDelete}
+        onCoach={() => { onCoachTap(editingRow); setEditingRow(null); }}
         observations={observationRows}
         onPaired={(err) => {
           // Re-pairing rewrites BOTH sides — the ledger and the entry's grams —
@@ -371,7 +414,8 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
           day.reload();
           if (err) setCaptureNotice(err.message);
         }} />
-      <TemplatePicker open={Boolean(templatesFor)} bucketId={templatesFor} date={date} focusTemplateId={focusTemplateId}
+      <FoodCatalogManager open={active && manageFoods} onClose={() => setManageFoods(false)} onChanged={day.reload} />
+      <TemplatePicker open={active && Boolean(templatesFor)} bucketId={templatesFor} date={date} focusTemplateId={focusTemplateId}
         onLogged={() => { setTemplatesFor(null); setFocusTemplateId(null); setAddingTo(null); day.reload(); }}
         onClose={() => { setTemplatesFor(null); setFocusTemplateId(null); }} />
     </div>

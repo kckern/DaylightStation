@@ -165,6 +165,36 @@ export function createHealthRouter(config) {
   const getToday = () => {
     return healthOperations.currentDate();
   };
+  const runNutritionOperation = (userId, id, payload, action) => healthOperations.runNutritionOperation
+    ? healthOperations.runNutritionOperation(userId, id, payload, action) : action();
+
+  router.get('/context', (req, res) => res.json({ userId: getDefaultUsername() }));
+
+  router.get('/day', asyncHandler(async (req, res) => {
+    const date = req.query.date || getToday();
+    const error = validateOptionalDate(date);
+    if (error) return res.status(400).json(error);
+    const userId = getDefaultUsername();
+    const snapshot = await healthOperations.readNutritionDay(userId, date);
+    try {
+      const budget = await budgetService.getBudget(userId, date, { items: snapshot.items });
+      return res.json({ ...snapshot, budget });
+    } catch (err) {
+      // Budget setup/availability must never conceal a valid food ledger.
+      return res.json({ ...snapshot, budget: null, budgetError: { message: err.message, code: err.code || 'BUDGET_UNAVAILABLE' } });
+    }
+  }));
+
+  router.post('/nutrition/copy', asyncHandler(async (req, res) => {
+    const { operationId, ...payload } = req.body || {};
+    const userId = getDefaultUsername();
+    return res.json(await runNutritionOperation(userId, operationId, { operation: 'copy', ...payload },
+      () => healthOperations.copyNutritionItems(userId, { operationId, ...payload })));
+  }));
+
+  router.post('/nutrition/restore', asyncHandler(async (req, res) => {
+    return res.json(await healthOperations.restoreNutritionItems(getDefaultUsername(), req.body?.entryIds));
+  }));
 
   /**
    * Validate an `icon` a client wants written to a row or a catalog entry.
@@ -547,19 +577,23 @@ export function createHealthRouter(config) {
      */
     router.post('/nutrilist', asyncHandler(async (req, res) => {
       const userId = getDefaultUsername();
-      const itemData = req.body;
+      const { operationId, ...itemData } = req.body;
 
       if (!itemData.item && !itemData.name) {
         return res.status(400).json({ error: 'Item name is required' });
       }
 
-      const newItem = await healthOperations.createNutritionItem(userId, itemData);
+      const outcome = await runNutritionOperation(userId, operationId, { operation: 'manual-entry', ...itemData }, async () => {
+        const item = await healthOperations.createNutritionItem(userId, itemData);
+        return { committed: true, data: item, entryIds: [item.uuid || item.id] };
+      });
+      const newItem = outcome.data;
 
-      logger.info?.('health.nutrilist.create', { userId, uuid: newItem.uuid, name: newItem.name });
+      logger.info?.('health.nutrilist.create', { userId, uuid: newItem?.uuid, recovered: !newItem });
 
       res.status(201).json({
         message: 'Nutrilist item created successfully',
-        data: newItem
+        ...outcome
       });
     }));
 
@@ -590,7 +624,10 @@ export function createHealthRouter(config) {
 
       res.json({
         message: 'Nutrilist item updated successfully',
-        data: update.item
+        data: update.item,
+        cascadedIds: update.cascadedIds || [],
+        affectedIds: [update.item.uuid ?? update.item.id, ...(update.cascadedIds || [])],
+        affectedDates: update.affectedDates
       });
     }));
 
@@ -612,7 +649,9 @@ export function createHealthRouter(config) {
         logger.info?.('health.nutrilist.delete', { userId, uuid });
         res.json({
           message: 'Nutrilist item deleted successfully',
-          uuid
+          uuid,
+          affectedIds: result.affectedIds || [uuid],
+          affectedDates: result.affectedDates || []
         });
       } else {
         logger.error?.('health.nutrilist.delete.write_failed', { userId, uuid });
@@ -682,14 +721,17 @@ export function createHealthRouter(config) {
       }
       const userId = getDefaultUsername();
       try {
-        const item = await catalogService.quickAdd(catalogEntryId, userId, {
+        const outcome = await runNutritionOperation(userId, req.body.operationId, { type: 'quickadd', catalogEntryId, mealTime, date }, async () => {
+          const item = await catalogService.quickAdd(catalogEntryId, userId, {
           mealTime: mealTime ?? undefined,
           date: date ?? undefined,
+          });
+          return { logged: true, committed: true, item };
         });
-        return res.json({ logged: true, item });
+        return res.json(outcome);
       } catch (err) {
         logger.error?.('health.catalog.quickadd.error', { catalogEntryId, error: err.message });
-        return res.status(404).json({ error: err.message });
+        return res.status(err.status || 404).json({ error: err.message });
       }
     }));
 
@@ -782,15 +824,24 @@ export function createHealthRouter(config) {
      */
     router.post('/nutrition/catalog', asyncHandler(async (req, res) => {
       const userId = getDefaultUsername();
-      const { name, calories, protein, carbs, fat, barcodeUpc } = req.body;
+      const { name, calories, protein, carbs, fat, grams, barcodeUpc } = req.body;
       if (!name) return res.status(400).json({ error: 'name is required' });
-      const entry = await catalogService.createCustom({ name, calories, protein, carbs, fat, barcodeUpc }, userId);
-      return res.json({ entry });
+      if (!(typeof grams === 'number' && Number.isFinite(grams) && grams > 0)) return res.status(400).json({ error: 'A positive gram weight is required' });
+      return res.json(await runNutritionOperation(userId, req.body.operationId,
+        { operation: 'custom-food', name, calories, protein, carbs, fat, grams, barcodeUpc }, async () => {
+          const entry = await catalogService.createCustom({ name, calories, protein, carbs, fat, grams, barcodeUpc, operationId: req.body.operationId }, userId);
+          return { entry: presentFoodCatalogEntry(entry) };
+        }));
     }));
 
     /**
      * DELETE /api/v1/health/nutrition/catalog/:id - Permanently remove a catalog entry
      */
+    router.put('/nutrition/catalog/:id', asyncHandler(async (req, res) => {
+      const entry = await catalogService.updateDefinition(req.params.id, getDefaultUsername(), req.body || {});
+      return res.json({ entry: presentFoodCatalogEntry(entry) });
+    }));
+
     router.delete('/nutrition/catalog/:id', asyncHandler(async (req, res) => {
       const userId = getDefaultUsername();
       try {
@@ -934,6 +985,10 @@ export function createHealthRouter(config) {
   // dish GROUP, a saved meal is a flat snapshot list.
   // ==========================================================================
   if (templateService) {
+    router.put('/nutrition/templates/:id', asyncHandler(async (req, res) => {
+      try { return res.json({ template: await templateService.update(req.params.id, getDefaultUsername(), req.body || {}) }); }
+      catch (err) { return res.status(err.code === 'TEMPLATE_NOT_FOUND' ? 404 : err.code === 'TEMPLATE_INVALID' ? 400 : 500).json({ error: err.message, code: err.code }); }
+    }));
     router.get('/nutrition/templates', asyncHandler(async (req, res) => {
       const includeProposed = req.query.includeProposed === '1' || req.query.includeProposed === 'true';
       return res.json({ templates: await templateService.list(getDefaultUsername(), { includeProposed }) });
@@ -963,7 +1018,10 @@ export function createHealthRouter(config) {
         return res.status(400).json({ error: 'variantNames must be an array', code: 'VARIANTS_INVALID' });
       }
       try {
-        return res.json(await templateService.instantiate(req.params.id, getDefaultUsername(), { date, mealTime, variantNames }));
+        const userId = getDefaultUsername();
+        return res.json(await runNutritionOperation(userId, req.body.operationId,
+          { operation: 'template', id: req.params.id, date, mealTime, variantNames },
+          async () => ({ committed: true, ...await templateService.instantiate(req.params.id, userId, { date, mealTime, variantNames }) })));
       } catch (err) {
         if (err.code === 'TEMPLATE_NOT_FOUND') return res.status(404).json({ error: err.message, code: err.code });
         // A proposal is not a template yet. 409, not 400: the request is
@@ -1153,9 +1211,9 @@ export function createHealthRouter(config) {
         return res.status(400).json({ error: 'Invalid audioRef', code: 'AUDIO_REF_INVALID' });
       }
       try {
-        const result = await healthOperations.processNutritionInput({
+        const result = await runNutritionOperation(userId, req.body.operationId, { type, content, bucket, date, audioRef }, () => healthOperations.processNutritionInput({
           type, content, userId, bucket, date, audioRef: audioRef ?? undefined,
-        });
+        }));
         return res.json(result);
       } catch (err) {
         // A retry pointed at a memo that is not there is the caller's problem
@@ -1168,6 +1226,7 @@ export function createHealthRouter(config) {
           });
         }
         logger.error?.('health.nutrition.input.error', { type, error: err.message });
+        if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
         return sendInternalError(res, { error: err.message });
       }
     }));
@@ -1487,6 +1546,10 @@ export function createHealthRouter(config) {
   // ==========================================================================
 
   router.use((err, req, res, next) => {
+    if ([400, 404, 409, 422].includes(err.status)) {
+      logger.warn?.('health.command.rejected', { code: err.code, status: err.status, url: req.url });
+      return res.status(err.status).json({ error: err.message, code: err.code });
+    }
     logger.error?.('health.router.error', {
       error: err.message,
       stack: err.stack,

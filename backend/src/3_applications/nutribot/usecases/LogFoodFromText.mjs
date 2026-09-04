@@ -1,3 +1,4 @@
+import { capturedFoodGrams, capturedNutrientProvenance } from '#shared/contracts/health/foodQuantity.mjs';
 /**
  * Log Food From Text Use Case
  * @module nutribot/usecases/LogFoodFromText
@@ -237,6 +238,9 @@ export class LogFoodFromText {
 
       // 3. Parse response into food items and date — same pin
       const { items: foodItems, date: aiDate, time: aiTime, mealTimeExplicit } = this.#parseFoodResponse(response, asOfDate);
+      if (this.#catalogService?.resolveIdentity) {
+        for (let index = 0; index < foodItems.length; index++) foodItems[index] = await this.#catalogService.resolveIdentity(foodItems[index], userId);
+      }
 
       this.#logger.debug?.('logText.parsed', {
         conversationId,
@@ -342,6 +346,7 @@ export class LogFoodFromText {
         for (const item of foodItems) {
           try {
             await this.#catalogService.recordUsage({
+              foodId: item.foodId,
               name: item.label,
               calories: item.calories,
               protein: item.protein,
@@ -570,13 +575,14 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
         const rawItems = data.items || [];
 
         const items = rawItems.map((item) => {
-          const estimatedGrams = item.grams || this.#estimateGrams(item);
+          const estimatedGrams = capturedFoodGrams(item);
           const gramsRounded = estimatedGrams ? Math.max(1, Math.round(estimatedGrams / 5) * 5) : null;
 
           return {
             id: uuidv4(),
             label: item.name || item.label || 'Unknown',
             grams: gramsRounded,
+            originalQuantity: { grams: item.grams ?? null, amount: item.quantity ?? item.amount ?? null, unit: item.unit ?? null },
             unit: gramsRounded ? 'g' : item.unit || 'serving',
             amount: item.quantity || item.amount || gramsRounded || 1,
             color: this.#normalizeNoomColor(item.noom_color || item.color),
@@ -599,6 +605,7 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
             // numbers — is the only thing that can tell them apart downstream
             // (BudgetService.microCoverage, the Today bar row).
             microsSource: aiMicrosSource(item),
+            nutrientProvenance: capturedNutrientProvenance(item, 'ai', capturedFoodGrams(item)),
             ...(item.dish ? { dish: item.dish } : {}),
           };
         });
@@ -621,24 +628,6 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
    * Estimate grams from item data
    * @private
    */
-  #estimateGrams(item) {
-    if (item.grams) return item.grams;
-    if (item.calories) return Math.round(item.calories / 1.5);
-
-    const unitDefaults = {
-      cup: 240,
-      piece: 50,
-      slice: 30,
-      oz: 28,
-      tbsp: 15,
-      tsp: 5,
-      serving: 100,
-    };
-
-    const unit = (item.unit || 'serving').toLowerCase();
-    const amount = item.quantity || item.amount || 1;
-    return (unitDefaults[unit] || 100) * amount;
-  }
 
   /**
    * Normalize Noom color

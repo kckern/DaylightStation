@@ -16,6 +16,7 @@ export function presentFoodCatalogEntry(entry) {
     barcodeUpc: entry.barcodeUpc,
     useCount: entry.useCount,
     icon: entry.icon ?? null,
+    favorite: entry.favorite === true,
     lastUsed: entry.lastUsed,
     createdAt: entry.createdAt,
   };

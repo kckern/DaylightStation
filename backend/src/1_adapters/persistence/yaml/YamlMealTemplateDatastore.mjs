@@ -5,6 +5,7 @@
 // rather than thrown over — the same fail-soft posture the saved-meals store
 // has, and it means a hand-written list of templates still loads.
 import { IMealTemplateDatastore } from '#apps/health/ports/IMealTemplateDatastore.mjs';
+import { readHealthYaml, writeHealthYaml } from './healthYaml.mjs';
 
 export class YamlMealTemplateDatastore extends IMealTemplateDatastore {
   #dataService;
@@ -17,8 +18,11 @@ export class YamlMealTemplateDatastore extends IMealTemplateDatastore {
   }
 
   #load(userId) {
-    const raw = this.#dataService.user.read?.(YamlMealTemplateDatastore.TEMPLATES_PATH, userId);
+    const raw = readHealthYaml(this.#dataService, YamlMealTemplateDatastore.TEMPLATES_PATH, userId);
     if (Array.isArray(raw)) return { templates: raw, dismissedKeys: [] };
+    if (raw != null && (!Array.isArray(raw.templates) || (raw.dismissedKeys != null && !Array.isArray(raw.dismissedKeys)))) {
+      throw new Error('Saved meals could not be read: invalid template format.');
+    }
     return {
       templates: Array.isArray(raw?.templates) ? raw.templates : [],
       dismissedKeys: Array.isArray(raw?.dismissedKeys) ? raw.dismissedKeys : [],
@@ -26,12 +30,7 @@ export class YamlMealTemplateDatastore extends IMealTemplateDatastore {
   }
 
   #write(file, userId) {
-    const result = this.#dataService.user.write?.(YamlMealTemplateDatastore.TEMPLATES_PATH, file, userId);
-    if (result === false) {
-      const err = new Error(`TEMPLATES_WRITE_FAILED: could not write meal templates to ${YamlMealTemplateDatastore.TEMPLATES_PATH} for user ${userId}`);
-      err.code = 'TEMPLATES_WRITE_FAILED';
-      throw err;
-    }
+    writeHealthYaml(this.#dataService, YamlMealTemplateDatastore.TEMPLATES_PATH, userId, file, 'TEMPLATES_WRITE_FAILED');
   }
 
   async list(userId) { return this.#load(userId).templates; }

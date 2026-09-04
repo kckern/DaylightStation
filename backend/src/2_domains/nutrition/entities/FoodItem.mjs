@@ -9,6 +9,7 @@
 import { validateFoodItem } from './schemas.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { shortIdFromUuid } from '#domains/core/utils/id.mjs';
+import { foodGrams } from '#shared/contracts/health/foodQuantity.mjs';
 
 /**
  * FoodItem value object
@@ -102,6 +103,9 @@ export class FoodItem {
     this.#settledBy = data.settledBy;
     this.#settledAt = data.settledAt;
     this.#microsSource = data.microsSource;
+    this.foodId = data.foodId;
+    this.nutrientProvenance = data.nutrientProvenance;
+    this.originalQuantity = data.originalQuantity;
 
     Object.freeze(this);
   }
@@ -198,6 +202,9 @@ export class FoodItem {
       settledBy: this.#settledBy,
       settledAt: this.#settledAt,
       microsSource: this.#microsSource,
+      foodId: this.foodId,
+      nutrientProvenance: this.nutrientProvenance,
+      originalQuantity: this.originalQuantity,
       ...updates,
     });
   }
@@ -247,7 +254,7 @@ export class FoodItem {
       uuid: itemUuid,
       label: legacy.item,
       icon: legacy.icon || 'default',
-      grams: legacy.amount, // Assume same as amount for now
+      grams: foodGrams(legacy),
       unit: legacy.unit,
       amount: legacy.amount,
       color: legacy.noom_color,

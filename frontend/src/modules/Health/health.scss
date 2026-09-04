@@ -59,15 +59,15 @@ $health-bar-box: 34px;
     &:hover { background: var(--ds-surface-alt); }
     &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
     &--active {
-      background: var(--ds-surface-alt); border-color: var(--ds-accent);
+      background: color-mix(in srgb, var(--ds-accent) 25%, var(--ds-surface)); border-color: var(--ds-accent);
       color: var(--ds-text-high); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
     }
     // Today is RINGED, which is a different statement from "the day you are
     // looking at" (the fill above) — both can be true, and on a past date only
     // one is.
-    &--today { box-shadow: inset 0 0 0 1px var(--ds-accent); }
+    &--today .health-weekstrip__num { text-decoration: underline; text-underline-offset: 4px; }
     &--today.health-weekstrip__cell--active {
-      box-shadow: inset 0 0 0 1px var(--ds-accent), 0 2px 8px rgba(0, 0, 0, 0.16);
+      box-shadow: none;
     }
     &--month-start { border-left-color: var(--ds-border); border-radius: 0 8px 8px 0; }
   }
@@ -279,7 +279,7 @@ $health-aside-gap: 1.5rem;
   // touch floor, but take the surrounding type down one step so more of the
   // day remains visible without scrolling.
   font-size: 0.9rem;
-  padding-bottom: calc(#{$health-quickbar-offset} + #{$health-quickbar-btn-pad} * 2 + #{$health-quickbar-btn-size} + #{$health-quickbar-margin});
+  padding-bottom: 0.75rem;
 }
 
 // Narrow: the aside is simply the next block in the stack, landing directly
@@ -350,9 +350,7 @@ $health-aside-gap: 1.5rem;
 // (the "mobile: always visible; desktop: same, unobtrusive" interface
 // note) — no breakpoint-specific rule needed.
 .health-quickbar {
-  position: fixed; z-index: 30;
-  right: max(1rem, env(safe-area-inset-right));
-  bottom: max($health-quickbar-offset, calc(env(safe-area-inset-bottom) + #{$health-quickbar-offset}));
+  position: relative; justify-self: end; width: max-content;
   display: flex; align-items: center; gap: 0.4rem;
   padding: $health-quickbar-btn-pad; border-radius: 999px;
   background: var(--ds-surface); border: 1px solid var(--ds-border);
@@ -370,6 +368,9 @@ $health-aside-gap: 1.5rem;
     &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
   }
 }
+
+.health-capture-error { color: var(--ds-danger); font-size: 0.75rem; max-width: 14rem; }
+.health-edit__advanced summary { cursor: pointer; color: var(--ds-text-mid); font-size: 0.8rem; padding: 0.5rem 0; }
 
 .health-barcode {
   &__manual { display: flex; gap: 0.4rem; margin-top: 0.5rem; }

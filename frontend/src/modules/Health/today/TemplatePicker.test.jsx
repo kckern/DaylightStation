@@ -99,7 +99,7 @@ describe('TemplatePicker', () => {
     fireEvent.click(screen.getByText('Log 360 kcal'));
     await waitFor(() => expect(onLogged).toHaveBeenCalled());
     const call = apiMock.mock.calls.find(([p]) => p.includes('/t1/instantiate'));
-    expect(call[1]).toEqual({ mealTime: 'morning', variantNames: ['Mango'] });
+    expect(call[1]).toEqual({ mealTime: 'morning', variantNames: ['Mango'], operationId: expect.any(String), templateId: expect.any(String) });
     expect(call[2]).toBe('POST');
   });
 
@@ -114,7 +114,7 @@ describe('TemplatePicker', () => {
     fireEvent.click(screen.getByText('Log 260 kcal'));
     await waitFor(() => expect(apiMock.mock.calls.some(([p]) => p.includes('/instantiate'))).toBe(true));
     const call = apiMock.mock.calls.find(([p]) => p.includes('/instantiate'));
-    expect(call[1]).toEqual({ mealTime: 'evening', variantNames: [] });
+    expect(call[1]).toEqual({ mealTime: 'evening', variantNames: [], operationId: expect.any(String), templateId: expect.any(String) });
   });
 
   it('surfaces a failed log instead of closing over it', async () => {
@@ -247,7 +247,7 @@ describe('TemplatePicker opened onto one template (PRD F8.2 → F6.1)', () => {
     r(<TemplatePicker open onClose={() => {}} onLogged={onLogged} bucketId="morning" focusTemplateId="t2" />);
     await waitFor(() => expect(onLogged).toHaveBeenCalled());
     const call = apiMock.mock.calls.find(([p]) => p.includes('/t2/instantiate'));
-    expect(call[1]).toEqual({ mealTime: 'morning', variantNames: [] });
+    expect(call[1]).toEqual({ mealTime: 'morning', variantNames: [], operationId: expect.any(String), templateId: expect.any(String) });
   });
 
   it('toggling from the focused view sends the variant, exactly as the list route does', async () => {
@@ -259,7 +259,7 @@ describe('TemplatePicker opened onto one template (PRD F8.2 → F6.1)', () => {
     fireEvent.click(screen.getByText('Log 360 kcal'));
     await waitFor(() => expect(onLogged).toHaveBeenCalled());
     expect(apiMock.mock.calls.find(([p]) => p.includes('/t1/instantiate'))[1])
-      .toEqual({ mealTime: 'evening', variantNames: ['Mango'] });
+      .toEqual({ mealTime: 'evening', variantNames: ['Mango'], operationId: expect.any(String), templateId: expect.any(String) });
   });
 
   it('a focused PROPOSAL is never auto-logged — approval comes first', async () => {

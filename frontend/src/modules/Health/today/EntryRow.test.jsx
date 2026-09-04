@@ -79,7 +79,7 @@ describe('EntryRow', () => {
   it('shows no portion when grams are unavailable', () => {
     r(<EntryRow row={{ ...baseRow, grams: null, amount: 2, unit: 'cups' }} onTap={() => {}} />);
     expect(screen.queryByText(/cups/i)).toBeNull();
-    expect(document.querySelector('.health-row__portion').textContent).toBe('');
+    expect(document.querySelector('.health-row__portion').textContent).toBe('Weight unknown');
   });
 
   describe('group presentation', () => {
@@ -187,7 +187,7 @@ describe('EntryRow', () => {
   // assertion here is a pair: what appears AND what it replaced.
   describe('food icon', () => {
     const icon = () => document.querySelector('img.health-row__icon');
-    const dot = () => document.querySelector('.health-row__dot');
+    const dot = () => document.querySelector('svg.health-row__icon');
 
     it('a row with an icon renders the picture instead of the dot', () => {
       r(<EntryRow row={{ ...baseRow, icon: 'fried-eggs' }} onTap={() => {}} onConfirm={() => {}} />);
@@ -196,19 +196,19 @@ describe('EntryRow', () => {
       expect(dot()).toBeFalsy();
     });
 
-    it('a row with no icon renders the dot, exactly as before', () => {
+    it('a row with no icon renders a semantic food fallback', () => {
       r(<EntryRow row={{ ...baseRow }} onTap={() => {}} onConfirm={() => {}} />);
       expect(icon()).toBeFalsy();
       expect(dot()).toBeTruthy();
     });
 
-    it("the capture pipeline's neutral sentinel is NOT a picture — the dot stands", () => {
+    it("the capture pipeline's neutral sentinel is NOT a picture — uses a semantic fallback", () => {
       r(<EntryRow row={{ ...baseRow, icon: 'default' }} onTap={() => {}} onConfirm={() => {}} />);
       expect(icon()).toBeFalsy();
       expect(dot()).toBeTruthy();
     });
 
-    it('a failed icon load falls back to the dot rather than a broken-image glyph', () => {
+    it('a failed icon load falls back to a food glyph rather than a broken-image glyph', () => {
       r(<EntryRow row={{ ...baseRow, icon: 'fried-eggs' }} onTap={() => {}} onConfirm={() => {}} />);
       expect(dot()).toBeFalsy();
       fireEvent.error(icon());
@@ -237,17 +237,17 @@ describe('EntryRow', () => {
       expect(icon().getAttribute('alt')).toBe('');
     });
 
-    it('the row declares the wider icon column only when an icon actually renders', () => {
+    it('the row keeps the same icon column for real and fallback food artwork', () => {
       // jsdom cannot see layout, so this asserts the CLASS the component sets;
       // the column widths themselves live in health.scss and are compiled by
       // the stylesheet gate.
       const { unmount } = r(<EntryRow row={{ ...baseRow, icon: 'fried-eggs' }} onTap={() => {}} onConfirm={() => {}} />);
       expect(document.querySelector('.health-row--icon')).toBeTruthy();
       fireEvent.error(icon());
-      expect(document.querySelector('.health-row--icon')).toBeFalsy();
+      expect(document.querySelector('.health-row--icon')).toBeTruthy();
       unmount();
       r(<EntryRow row={{ ...baseRow }} onTap={() => {}} onConfirm={() => {}} />);
-      expect(document.querySelector('.health-row--icon')).toBeFalsy();
+      expect(document.querySelector('.health-row--icon')).toBeTruthy();
     });
 
     describe('group rows', () => {
@@ -266,10 +266,10 @@ describe('EntryRow', () => {
         expect(icon().getAttribute('src')).toContain('fried-eggs');
       });
 
-      it('a dish whose children have no icons renders none, and no dot either (a group has never had one)', () => {
+      it('a dish whose children have no icons uses the shared food fallback', () => {
         renderGroup(group({ children: [{ uuid: 'c1' }, { uuid: 'c2' }] }));
         expect(icon()).toBeFalsy();
-        expect(dot()).toBeFalsy();
+        expect(dot()).toBeTruthy();
       });
     });
   });

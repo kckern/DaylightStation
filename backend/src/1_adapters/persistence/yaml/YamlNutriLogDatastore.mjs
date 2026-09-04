@@ -22,6 +22,7 @@ function hydrateNutriLog(data) {
 
 function dehydrateFoodItem(item) {
   return {
+    foodId: item.foodId, originalQuantity: item.originalQuantity, nutrientProvenance: item.nutrientProvenance,
     id: item.id,
     uuid: item.uuid,
     label: item.label,

@@ -64,20 +64,20 @@ describe('FoodCatalogService.quickAdd — mealTime, settlement and per-bucket us
   beforeEach(() => build());
 
   it('writes the row into the bucket the caller named, not the clock\'s bucket', async () => {
-    // EVENING is 20:30 local -> the clock would say 'night'.
+    // EVENING is 20:30 local -> the clock would say 'evening'.
     const item = await svc.quickAdd('e1', 'u', { mealTime: 'morning' });
     expect(item.mealTime).toBe('morning');
     expect(nutriList.saved[0].mealTime).toBe('morning');
   });
 
   it('falls back to the clock when no mealTime is supplied (Telegram / coach / scale)', async () => {
-    expect((await svc.quickAdd('e1', 'u')).mealTime).toBe('night');
+    expect((await svc.quickAdd('e1', 'u')).mealTime).toBe('evening');
     build();
-    expect((await svc.quickAdd('e1', 'u', {})).mealTime).toBe('night');
+    expect((await svc.quickAdd('e1', 'u', {})).mealTime).toBe('evening');
   });
 
   it('ignores a mealTime that is not one of the four buckets', async () => {
-    expect((await svc.quickAdd('e1', 'u', { mealTime: 'brunch' })).mealTime).toBe('night');
+    expect((await svc.quickAdd('e1', 'u', { mealTime: 'brunch' })).mealTime).toBe('evening');
   });
 
   it('lands SETTLED — a one-tap pick of a known food is a deliberate choice (PRD F8.3)', async () => {
@@ -107,7 +107,7 @@ describe('FoodCatalogService.quickAdd — mealTime, settlement and per-bucket us
       morning: { count: 4, lastUsed: '2026-09-01', quantity: { grams: 120, unit: 'g', amount: 120 } },
     } });
     const evening = await svc.quickAdd('e1', 'u', { mealTime: 'evening' });
-    expect([evening.grams, evening.unit, evening.amount]).toEqual([0, 'serving', 1]);
+    expect([evening.grams, evening.unit, evening.amount]).toEqual([null, 'g', null]);
   });
 
   it('carries the whole Phase 6/7 payload through unchanged — micros with provenance, and the icon', async () => {

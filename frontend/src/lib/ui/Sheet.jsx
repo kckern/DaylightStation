@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { ActionIcon } from '@mantine/core';
+import { useEffect, useLayoutEffect } from 'react';
+import { ActionIcon, FocusTrap } from '@mantine/core';
 import { useDismissLayer } from './dismiss/useDismissLayer.js';
 import './ds.scss';
 
@@ -10,33 +10,52 @@ const CloseIcon = () => (
 );
 
 /**
- * The house overlay: bottom sheet on mobile, right panel on desktop (CSS).
+ * The house overlay: bottom sheet on mobile, centered dialog on desktop (CSS).
  * Registers on the dismiss stack (Escape), closes on scrim click, locks
  * body scroll while open.
  */
 export function Sheet({ open, onClose, title, children }) {
   useDismissLayer(open, onClose);
+  // Also handle sheets mounted already open and removed on close. A hook
+  // listening only for opened -> false misses that common lifecycle.
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+    const opener = document.activeElement;
+    return () => queueMicrotask(() => {
+      if (opener?.isConnected) opener.focus?.({ preventScroll: true });
+    });
+  }, [open]);
 
   useEffect(() => {
     if (!open) return undefined;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
+    return lockSheetScroll();
   }, [open]);
 
   if (!open) return null;
   return (
     <div className="ds-sheet" role="dialog" aria-modal="true" aria-label={title}>
       <div className="ds-sheet__scrim" onClick={onClose} />
-      <div className="ds-sheet__panel">
+      <FocusTrap active={open}><div className="ds-sheet__panel" tabIndex={-1}>
         <header className="ds-sheet__header">
           <h3 className="ds-sheet__title">{title}</h3>
           <ActionIcon onClick={onClose} aria-label="Close"><CloseIcon /></ActionIcon>
         </header>
         <div className="ds-sheet__body">{children}</div>
-      </div>
+      </div></FocusTrap>
     </div>
   );
+}
+
+let locks = 0;
+let restoreScroll = () => {};
+function lockSheetScroll() {
+  if (locks++ === 0) {
+    const elements = [document.body, ...document.querySelectorAll('.ds-chrome__main')];
+    const previous = elements.map(element => element.style.overflow);
+    elements.forEach(element => { element.style.overflow = 'hidden'; });
+    restoreScroll = () => elements.forEach((element, index) => { element.style.overflow = previous[index]; });
+  }
+  return () => { if (--locks === 0) restoreScroll(); };
 }
 
 export default Sheet;

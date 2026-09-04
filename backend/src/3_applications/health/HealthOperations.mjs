@@ -1,5 +1,8 @@
 import { presentSettlement } from '#domains/nutrition/services/settlement.mjs';
 import { nowTs24 } from '#system/utils/time.mjs';
+import { foodGrams, scaleFoodPortion, NUTRIENT_KEYS } from '#shared/contracts/health/foodQuantity.mjs';
+import { v5 as uuidv5 } from 'uuid';
+import { isISODate } from '#shared/contracts/health/isoDate.mjs';
 
 const NUTRITION_UPDATE_FIELDS = new Set([
   'item', 'name', 'unit', 'amount', 'grams', 'noom_color', 'color',
@@ -100,6 +103,13 @@ export class HealthOperations {
     return rows.map((row) => ({ ...row, ...presentSettlement(row, today) }));
   }
 
+  async readNutritionDay(username, date) {
+    const snapshot = this.nutritionItems.readDaySnapshot
+      ? this.nutritionItems.readDaySnapshot(username, date)
+      : { date, items: await this.nutritionItems.findByDate(username, date), revision: null };
+    return { ...snapshot, items: snapshot.items.map(row => ({ ...row, ...presentSettlement(row, this.today()) })) };
+  }
+
   findNutritionItem(username, id) {
     return this.nutritionItems.findByUuid(username, id);
   }
@@ -112,7 +122,7 @@ export class HealthOperations {
       name: itemData.name || itemData.item,
       unit: itemData.unit || 'g',
       amount: itemData.amount || itemData.grams || 0,
-      grams: itemData.grams || itemData.amount || 0,
+      grams: foodGrams(itemData),
       noom_color: itemData.noom_color || itemData.color || 'yellow',
       color: itemData.color || itemData.noom_color || 'yellow',
       calories: itemData.calories || 0,
@@ -144,6 +154,14 @@ export class HealthOperations {
    *   estimate.
    */
   async updateNutritionItem(username, id, changes, options = {}) {
+    for (const key of [...NUTRIENT_KEYS, 'grams']) {
+      if (changes[key] != null && (typeof changes[key] !== 'number' || !Number.isFinite(changes[key]) || changes[key] < 0)) {
+        throw Object.assign(new Error(`${key} must be a non-negative number`), { status: 400 });
+      }
+    }
+    if (Object.hasOwn(changes, 'mealTime') && changes.mealTime != null && !['morning', 'afternoon', 'evening', 'night'].includes(changes.mealTime)) {
+      throw Object.assign(new Error('Invalid meal'), { status: 400 });
+    }
     const existing = await this.nutritionItems.findByUuid(username, id);
     if (!existing) return null;
     const ratify = options.ratify !== false;
@@ -171,6 +189,35 @@ export class HealthOperations {
     const allowedChanges = Object.fromEntries(
       Object.entries(stampedChanges).filter(([field]) => NUTRITION_UPDATE_FIELDS.has(field)),
     );
+    if (changes.factor != null) Object.assign(allowedChanges, scaleFoodPortion(existing, changes.factor));
+    if (changes.grams != null && existing.kind !== 'group' && foodGrams(existing)) {
+      // Exact mass changes and multipliers share the same extensive arithmetic.
+      Object.assign(allowedChanges, scaleFoodPortion(existing, changes.grams / foodGrams(existing)),
+        Object.fromEntries(Object.entries(changes).filter(([field]) => NUTRITION_UPDATE_FIELDS.has(field))));
+    }
+    if (Array.isArray(changes.correctedNutrients)) {
+      allowedChanges.nutrientProvenance = { ...existing.nutrientProvenance };
+      for (const key of changes.correctedNutrients.filter(key => NUTRIENT_KEYS.includes(key))) {
+        if (!Object.hasOwn(allowedChanges, key)) continue;
+        if (allowedChanges[key] === null) delete allowedChanges.nutrientProvenance[key];
+        else allowedChanges.nutrientProvenance[key] = { source: 'user', grams: allowedChanges.grams ?? foodGrams(existing), at: nowTs24() };
+      }
+    }
+    if (typeof this.nutritionItems.mutateEntries === 'function') {
+      const siblings = existing.kind === 'group' ? await this.nutritionItems.findByDate(username, existing.date) : [];
+      const children = siblings.filter(child => child.parentId != null && (child.parentId === existing.id || child.parentId === existing.uuid));
+      const updates = [{ id, changes: allowedChanges, expectedVersion: changes.expectedVersion ?? existing.version ?? 1 }];
+      for (const child of children) {
+        const childChanges = {};
+        for (const key of ['mealTime', 'date']) if (Object.hasOwn(allowedChanges, key)) childChanges[key] = allowedChanges[key];
+        if (changes.factor != null) Object.assign(childChanges, scaleFoodPortion(child, changes.factor));
+        if (Object.keys(childChanges).length) updates.push({ id: child.uuid ?? child.id, changes: childChanges, expectedVersion: child.version ?? 1 });
+      }
+      const result = await this.nutritionItems.mutateEntries(username, { updates });
+      return { item: result.items[0], changedFields: Object.keys(allowedChanges),
+        cascadedIds: result.affectedIds.filter(value => value !== (existing.uuid ?? existing.id)),
+        affectedDates: result.affectedDates };
+    }
     const item = await this.nutritionItems.update(username, id, allowedChanges);
     const cascadedIds = await this.#cascadeMealTimeToChildren(username, existing, allowedChanges);
     return {
@@ -225,8 +272,50 @@ export class HealthOperations {
   }
 
   async deleteNutritionItem(username, id) {
-    if (!await this.nutritionItems.findByUuid(username, id)) return { found: false, deleted: false };
+    const existing = await this.nutritionItems.findByUuid(username, id);
+    if (!existing) return { found: false, deleted: false };
+    if (typeof this.nutritionItems.mutateEntries === 'function') {
+      const siblings = existing.kind === 'group' ? await this.nutritionItems.findByDate(username, existing.date) : [];
+      const children = siblings.filter(child => child.parentId != null && (child.parentId === existing.id || child.parentId === existing.uuid));
+      const result = await this.nutritionItems.mutateEntries(username, { deleteIds: [id, ...children.map(child => child.uuid ?? child.id)] });
+      return { found: true, deleted: true, ...result };
+    }
     return { found: true, deleted: await this.nutritionItems.deleteById(username, id) };
+  }
+
+  async copyNutritionItems(username, { entryIds, date, mealTime, operationId }) {
+    if (!Array.isArray(entryIds) || !entryIds.length || !isISODate(date) || typeof operationId !== 'string' || operationId.length > 128) {
+      throw Object.assign(new Error('Copy requires entry IDs, destination date and operation ID'), { status: 400 });
+    }
+    if (!['morning', 'afternoon', 'evening', 'night'].includes(mealTime)) throw Object.assign(new Error('Invalid meal'), { status: 400 });
+    const sources = new Map();
+    for (const id of entryIds) {
+      const row = await this.nutritionItems.findByUuid(username, id);
+      if (!row) throw Object.assign(new Error('An entry to copy is no longer available'), { status: 404 });
+      sources.set(row.uuid || row.id, row);
+      if (row.kind === 'group') {
+        for (const child of await this.nutritionItems.findByDate(username, row.date)) {
+          if (child.parentId != null && (child.parentId === row.id || child.parentId === row.uuid)) sources.set(child.uuid || child.id, child);
+        }
+      }
+    }
+    const ids = new Map();
+    for (const row of sources.values()) {
+      const next = uuidv5(`${username}:${operationId}:${row.uuid || row.id}`, uuidv5.URL);
+      ids.set(row.uuid, next); ids.set(row.id, next);
+    }
+    const rows = [...sources.values()].map(row => ({ ...row,
+      id: ids.get(row.uuid || row.id), uuid: ids.get(row.uuid || row.id), version: 1,
+      userId: username, date, mealTime, parentId: row.parentId ? ids.get(row.parentId) || null : null,
+      copiedFrom: row.uuid || row.id, logId: 'COPY', log_uuid: 'COPY',
+      settled: true, settledBy: 'user', settledAt: nowTs24(),
+    }));
+    await this.nutritionItems.saveMany(rows);
+    return { committed: true, items: rows, affectedIds: rows.map(row => row.uuid), affectedDates: [date] };
+  }
+
+  restoreNutritionItems(username, entryIds) {
+    return this.nutritionItems.restoreEntries(username, entryIds);
   }
 
   get nutritionInputAvailable() {
@@ -246,6 +335,10 @@ export class HealthOperations {
    */
   processNutritionInput({ type, content, userId, bucket, date, audioRef }) {
     return this.nutritionInput.process({ type, content, userId, bucket, date, audioRef });
+  }
+
+  runNutritionOperation(userId, operationId, payload, action) {
+    return this.nutritionItems?.runOperation ? this.nutritionItems.runOperation(userId, operationId, payload, action) : action();
   }
 
   processNutritionCallback(input) {

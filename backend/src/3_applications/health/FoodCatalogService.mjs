@@ -10,6 +10,9 @@ import { rankSuggestions } from '#domains/health/services/bucketSuggestRanking.m
 import { observationFromRow, DRIFT_RATIO, ratioApart } from '#domains/health/services/catalogDensity.mjs';
 import { formatLocalTimestamp } from '#system/utils/time.mjs';
 import { defaultBucketForDate } from '#shared/contracts/health/isoDate.mjs';
+import { foodGrams, NUTRIENT_KEYS } from '#shared/contracts/health/foodQuantity.mjs';
+import { bucketForHour } from '#shared/contracts/health/mealBuckets.mjs';
+import { v5 as uuidv5 } from 'uuid';
 
 /** Local (not UTC) YYYY-MM-DD from a Date instance. */
 function localDateISO(d) {
@@ -35,7 +38,6 @@ const MEAL_BUCKETS = ['morning', 'afternoon', 'evening', 'night'];
 const asBucket = (value) => (MEAL_BUCKETS.includes(value) ? value : null);
 
 /** The clock's opinion when nothing more authoritative is supplied. */
-const bucketForHour = (h) => (h < 11 ? 'morning' : h < 15 ? 'afternoon' : h < 20 ? 'evening' : 'night');
 
 /**
  * A portion worth remembering, or null. All-empty quantities are dropped so a
@@ -86,7 +88,8 @@ export class FoodCatalogService {
     if (!foodItem?.name) return;
 
     const normalized = FoodCatalogEntry.normalize(foodItem.name);
-    const existing = await this.#catalogStore.findByNormalizedName(foodItem.name, userId);
+    const existing = (foodItem.foodId && await this.#catalogStore.getById(foodItem.foodId, userId))
+      || await this.#catalogStore.findByNormalizedName(foodItem.name, userId);
     const today = new Date(this.#clock.now()).toISOString().slice(0, 10);
     // Bucket history advances only when the CALLER knows the bucket. Nothing
     // here derives one from the clock: a caller that cannot say which meal this
@@ -119,7 +122,7 @@ export class FoodCatalogService {
       // A donation never clears a key it does not carry: an entry can
       // accumulate micros across captures, and nothing here writes a 0 it
       // was not given.
-      if (foodItem.microsSource) existing.donateMicros(pickMicros(foodItem));
+      if (foodItem.microsSource) existing.donateMicros(pickMicros(foodItem), foodGrams(foodItem), foodItem.microsSource);
       // Provenance FILLS, like the icon. A barcode scan is the strongest thing
       // that ever names this food, so it may claim an entry that has no UPC —
       // but it never renames one that already carries a different code.
@@ -138,7 +141,7 @@ export class FoodCatalogService {
       this.#logger.debug?.('health.catalog.usage_recorded', { name: foodItem.name, useCount: existing.useCount });
     } else {
       const entry = new FoodCatalogEntry({
-        id: this.#createId(),
+        id: foodItem.foodId || this.#createId(),
         name: foodItem.name,
         nutrients: {
           calories: foodItem.calories || 0,
@@ -164,6 +167,7 @@ export class FoodCatalogService {
       // The first capture is also the first observation, when it carries a mass.
       const firstObservation = observationFromRow({ ...foodItem, date: today }, { source: foodItem.source || null });
       if (firstObservation) entry.addObservation(firstObservation);
+      if (foodItem.microsSource) entry.donateMicros(pickMicros(foodItem), foodGrams(foodItem), foodItem.microsSource);
       await this.#catalogStore.save(entry, userId);
       this.#logger.debug?.('health.catalog.entry_created', { name: foodItem.name, id: entry.id });
     }
@@ -203,7 +207,6 @@ export class FoodCatalogService {
     // numbers and the provenance; when it does not, the row is written with no
     // micros and `microsSource: null` — honestly uncovered, rather than
     // carrying structural zeros under a 'catalog' claim.
-    const micros = pickMicros(entry.nutrients);
     // Decision 2.24: a day that is not today has no "current hour", so the
     // clock cannot speak for it — such a day is filled from its first meal.
     const mealTime = asBucket(options?.mealTime) || defaultBucketForDate(targetDate, now, bucketForHour);
@@ -211,10 +214,9 @@ export class FoodCatalogService {
     // THIS BUCKET. Absent (a food never eaten at this meal), the catalog default
     // stands — one serving, which is the portion the entry's own numbers
     // describe. Per field, so a remembered `grams` is not lost to a missing `unit`.
-    const priorQuantity = entry.usageByBucket?.[mealTime]?.quantity || null;
-    const grams = priorQuantity?.grams ?? 0;
-    const unit = priorQuantity?.unit ?? 'serving';
-    const amount = priorQuantity?.amount ?? 1;
+    const { grams, nutrients } = entry.proposedPortion(mealTime);
+    const unit = 'g';
+    const amount = grams;
     // The row's numbers are DENSITY x THIS PORTION, not a copy of a stored
     // total. That is what makes the fix self-correcting: a food whose ring
     // still holds a doubled row derives its serving from the median density,
@@ -225,19 +227,20 @@ export class FoodCatalogService {
     // no portion is remembered): the canonical view then stands exactly as it
     // did, because an unscalable food must keep working rather than become a
     // written zero.
-    const scaled = entry.nutrientsForGrams(grams);
-    const nutrients = scaled || entry.nutrients;
+    const micros = pickMicros(nutrients);
     const item = {
       uuid: this.#createId(),
       userId,
       item: entry.name,
       name: entry.name,
+      foodId: entry.id,
       calories: nutrients.calories,
       protein: nutrients.protein,
       carbs: nutrients.carbs,
       fat: nutrients.fat,
       ...micros,
-      microsSource: hasMicroData(entry.nutrients) ? 'catalog' : null,
+      microsSource: hasMicroData(micros) ? 'catalog' : null,
+      nutrientProvenance: Object.fromEntries(Object.keys(micros).map(key => [key, { source: 'catalog', grams }])),
       grams,
       unit,
       amount,
@@ -394,7 +397,36 @@ export class FoodCatalogService {
       bucket: asBucket(options?.bucket),
       nowMs: this.#clock.now(),
       limit,
-    });
+    }).map(entry => ({ ...entry, ...entry.proposedPortion(options.bucket), canonicalGrams: entry.canonicalGrams }));
+  }
+
+  /** Explicit future-food definition; historical entries and observation evidence stay untouched. */
+  async updateDefinition(id, userId, { name, grams, nutrients }) {
+    const existing = await this.#catalogStore.getById(id, userId);
+    if (!existing) throw Object.assign(new Error('Food not found'), { status: 404 });
+    if (typeof name !== 'string' || !name.trim() || typeof grams !== 'number' || !Number.isFinite(grams) || grams <= 0) throw Object.assign(new Error('Name and positive gram weight required'), { status: 400 });
+    const known = Object.fromEntries(NUTRIENT_KEYS.filter(key => nutrients?.[key] != null).map(key => [key, nutrients[key]]));
+    if (!Number.isFinite(known.calories) || Object.values(known).some(value => typeof value !== 'number' || !Number.isFinite(value) || value < 0)) throw Object.assign(new Error('Nutrition must contain non-negative numbers'), { status: 400 });
+    const duplicate = await this.#catalogStore.findByNormalizedName(name, userId);
+    if (duplicate && duplicate.id !== id) throw Object.assign(new Error('Another food already has that name; choose a distinct name'), { status: 409 });
+    const entry = new FoodCatalogEntry({ ...existing, name: name.trim(), normalizedName: FoodCatalogEntry.normalize(name), nutrients: existing.baseNutrients,
+      manualPortion: { grams, nutrients: known, source: 'user', at: new Date(this.#clock.now()).toISOString() } });
+    await this.#catalogStore.save(entry, userId);
+    this.#logger.info?.('health.catalog.definition_updated', { id });
+    return entry;
+  }
+
+  async resolveIdentity(item, userId) {
+    if (item.kind === 'group') return item;
+    const foodId = item.foodId || uuidv5(`${userId}:food:${FoodCatalogEntry.normalize(item.name || item.label)}`, uuidv5.URL);
+    try {
+      const entry = item.foodId ? await this.#catalogStore.getById(item.foodId, userId)
+        : await this.#catalogStore.findByNormalizedName(item.name || item.label, userId);
+      return entry ? { ...item, foodId: entry.id, icon: entry.icon || item.icon } : { ...item, foodId };
+    } catch (err) {
+      this.#logger.warn?.('health.catalog.identity_unavailable', { error: err.message });
+      return { ...item, foodId };
+    }
   }
 
   async setFavorite(id, userId, favorite) {
@@ -536,11 +568,13 @@ export class FoodCatalogService {
   }
 
   /** Create a user-authored food, optionally mapped to a barcode. */
-  async createCustom({ name, calories, protein, carbs, fat, barcodeUpc = null }, userId) {
+  async createCustom({ name, calories, protein, carbs, fat, grams, barcodeUpc = null, operationId }, userId) {
     if (!name) throw new Error('createCustom requires name');
+    if (typeof grams !== 'number' || !Number.isFinite(grams) || grams <= 0) throw Object.assign(new Error('A positive gram weight is required'), { status: 400 });
     const entry = new FoodCatalogEntry({
-      id: this.#createId(),
+      id: operationId ? uuidv5(`${userId}:custom:${operationId}`, uuidv5.URL) : this.#createId(),
       name,
+      baseGrams: grams,
       nutrients: {
         calories: Number(calories) || 0,
         protein: Number(protein) || 0,

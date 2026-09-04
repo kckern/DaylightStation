@@ -264,6 +264,12 @@ export class WebNutribotAdapter {
       Object.assign(response, routerResult.result, { messages: captured.messages });
     }
 
+    const outcome = routerResult?.result || {};
+    response.committed = Boolean(routerResult?.committed || (routerType === 'upc' && outcome.success && outcome.nutrilogUuid));
+    response.outcome = response.committed ? 'committed' : response.transcribeFailed ? 'retryable-failure' : response.unknownUpc ? 'unknown-food' : 'no-food';
+    response.logId = outcome.nutrilogUuid || null;
+    response.entryIds = (routerResult?.items || []).map(item => item.uuid || item.id).filter(Boolean);
+    response.message = responseText;
     return response;
   }
 

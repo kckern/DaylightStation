@@ -65,14 +65,15 @@ export class HealthCoachAgent extends BaseAgent {
    * @param {{ sessionService?, foodLogStore?, healthService?, householdId?, defaultUserId? }} [deps]
    * @returns {{ workout, meal, weigh_in }}
    */
-  static getDomainAdapters({ sessionService, foodLogStore, healthService, householdId, defaultUserId } = {}) {
+  static getDomainAdapters({ sessionService, foodLogStore, nutriListStore, healthService, householdId, defaultUserId } = {}) {
     return {
       workout:  sessionService
         ? new FitnessEventAdapter({ sessionService, householdId })
         : null,
-      meal:     foodLogStore
+      meal:     (foodLogStore || nutriListStore)
         ? new NutritionEventAdapter({
-            foodLogService: new FoodLogService({ foodLogStore }),
+            foodLogService: foodLogStore ? new FoodLogService({ foodLogStore }) : null,
+            nutritionItems: nutriListStore,
             userId: defaultUserId,
           })
         : null,

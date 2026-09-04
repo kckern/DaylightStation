@@ -1,6 +1,6 @@
 # Health — log-first food logging, budget, medical
 
-A daily food log in the LoseIt mold: four tabs (Today, Progress, Health, Coach), one
+A daily food log in the LoseIt mold: four tabs (Today, Progress, Medical, Coach), one
 calorie equation computed exactly once on the server, and a set of capture funnels — type,
 speak, photograph, or scan a barcode — that all converge on the same day log. Existing
 NutriLog/NutriList machinery (built for the Telegram nutrition bot) is reused, not
@@ -8,6 +8,55 @@ rebuilt; the web app is a second transport onto the same pipeline.
 
 **Status: shipped and live at `/health`.** `frontend/src/Apps/HealthApp.jsx` is the entry
 point.
+
+---
+
+## Current ledger and interaction contract
+
+- **Minimize actions:** direct text/voice/photo/barcode controls; clear captures log
+  immediately. Known foods and all-core meals are one-tap. Ambiguous variants are
+  preselected from the last choice for that bucket, then tweak/confirm.
+- **One consumed-food authority:** NutriList hot and archive files are the editable
+  ledger. NutriLogs are capture evidence. Ordinary replay imports unseen IDs only;
+  it cannot overwrite a correction or resurrect a tombstoned deletion. An explicit
+  full-capture revision conflicts if its entries have since been corrected.
+- **Truthful portions:** `grams: number | null`, `schemaVersion: 2`, row `version`,
+  preserved `originalQuantity`, optional stable `foodId`, and per-key provenance.
+  Legacy counts/volumes are never treated as grams.
+- **Durable commands:** group edits, moves, deletes, copies and restores validate all
+  targets before a journaled, fsynced multi-file commit. Source and destination
+  summaries are rebuilt, including empty days. Recovery replays a prepared journal.
+  This is a **single-writer-process** contract; never run dev and production writers
+  against the same nutrition directory.
+- **Retry identity:** modern web creation requests carry an `operationId`.
+  Identical retries coalesce and recover committed rows after a lost response.
+  Reusing an ID for a different payload returns 409. Older clients without IDs
+  remain compatible but do not receive that duplicate-submission guarantee.
+- **Corrections:** a centered desktop dialog / mobile bottom sheet leads with exact
+  grams. Preview all nutrient scaling, make several changes, then Save once with
+  `expectedVersion`. Delete offers Undo. Focus is contained and restored; scroll
+  locks are shared with Coach.
+- **Context:** Today stays mounted across tabs to preserve drafts, capture retries
+  and scroll. Hidden Today stops polling; leaving during a recording stops and
+  submits that recording to its original target. Closing the app discards unsent
+  local drafts. Date and viewport are in the URL.
+- **Freshness:** mutations revalidate mounted health resources together. Visible
+  Today also refreshes on focus/visibility and every 30 seconds for external writes.
+  Different date keys never expose the previous day's rows as actionable.
+- **Reuse:** saved-food definitions support rename, explicit gram/nutrient basis,
+  favorites and removal. Templates support component/role/portion editing.
+  These edits affect future logging, never past snapshots. Capture resolves catalog
+  identity and explicit icon pins before writing.
+- **Coach:** the tab and overlay share one runtime and resolved Health user ID.
+  It receives selected day/entry context and reads the authoritative ledger.
+  Recent visible messages (last 80) survive remount/reload in this browser session;
+  this is not cross-device history synchronization.
+- **Analytics:** unlogged days are gaps, not claims of zero consumption. Historical
+  budgets are explicitly evaluated using current goals. Weight axes use calendar
+  spacing and sparse trends label their actual comparison interval.
+
+Historical conversion requires the [repair runbook](../../runbooks/health-ledger-repair.md);
+it is never an implicit startup migration.
 
 ---
 
@@ -19,7 +68,7 @@ point.
 |-----|-----------|-------|
 | Today | `modules/Health/today/TodayView.jsx` | the day log — equation strip, macro/watch-micro bars, the weight chip, the week strip, meal-bucketed rows with per-meal `P · C · F` subtotals, capture affordances |
 | Progress | `modules/Health/progress/ProgressView.jsx` | weight trend chart, 14-day budget-adherence bars, 30-day intake-vs-burn chart, goals editor (including macro targets and watch micros) |
-| Health | `modules/Health/medical/MedicalView.jsx` | medical readings (blood pressure, labs, etc.), grouped by metric |
+| Medical | `modules/Health/medical/MedicalView.jsx` | medical readings (blood pressure, labs, etc.), grouped by metric |
 | Coach | `modules/Health/CoachChat/index.jsx` | the health-coach agent chat, full height |
 
 `⌘K` (`useHotkey('mod+k', …)`) opens `ChatOverlay` — a scrim + panel that mounts a second
@@ -38,11 +87,10 @@ weight data.
 remaining = budget − food + exercise
 ```
 
-`GET /api/v1/health/budget?date=YYYY-MM-DD` is the **only** place this is computed —
-`backend/src/3_applications/health/BudgetService.mjs`. Every surface that shows the
-equation (`EquationStrip` on Today, the adherence bars on Progress, the `log_food` coach
-tool indirectly) reads this endpoint; none of them do arithmetic on the result beyond
-formatting. `EquationStrip.jsx` is proof by absence: it destructures `budget.budget`,
+`backend/src/3_applications/health/BudgetService.mjs` is the only calculation owner.
+It serves `/budget`, `/budget/range`, and the budget portion of `/day`. Today reads
+one `/day?date=` snapshot containing entries, their ledger revision, and a budget
+computed from those exact entries. A budget setup error does not hide the food log. `EquationStrip.jsx` is proof by absence: it destructures `budget.budget`,
 `budget.food`, `budget.exercise`, `budget.remaining`, `budget.status`, `budget.stale` and
 renders them verbatim — the only computation left client-side is `Math.abs()` for display
 sign and `.toLocaleString()` for grouping.
@@ -86,102 +134,41 @@ those keys is saved without them.
 
 ## Micro coverage — why a stored `0` is not a zero
 
-Every stored food row carries `fiber`, `sugar`, `sodium` and `cholesterol` as numbers.
-`validateFoodItem` defaults each one to `0`, which means **a micronutrient nobody ever
-measured is stored as a real `0`, indistinguishable from a measured zero.** Summing those
-numbers produces arithmetic over ignorance: a sodium total of 40 mg across a day of rows
-with no micro data reads as "you barely had any sodium" when the truth is "we have no idea".
+`nutrientProvenance` records availability per key, with source and gram basis.
+A supplied zero is known; a storage-default zero without provenance is unknown.
+Legacy `microsSource` is only a compatibility hint: an old nonzero numeric
+value with that hint counts as covered, but an ambiguous old zero does not.
 
-`microsSource` is the field that tells the two apart, and it is the only one that can:
+`BudgetService` counts coverage separately for fiber, sugar, sodium and
+cholesterol, excluding group headers. Each watch bar names its coverage.
+Provenance means the source supplied a value, not independent verification
+that the estimate is correct.
 
-| Value | Meaning |
-|---|---|
-| `'ai'` | an AI capture returned at least one micronutrient number for this row |
-| `'catalog'` | the row was quick-added from a catalog entry that carries micros |
-| `null` / absent | nothing measured this row's micros; its numbers are structural zeros |
-
-The rules that keep it honest:
-
-- **Coverage keys off `microsSource`, never off the values.** `getBudget` counts a row as
-  covered when it carries provenance, full stop. `covered` and `total` both exclude
-  `kind: 'group'` rows — a dish header carries no nutrition and no provenance, so counting
-  it would report missing data that does not exist.
-- **A capture claims provenance only when it actually has micros.** A parse that answered
-  with macros alone leaves its structural zeros unclaimed rather than asserting a
-  measurement that never happened. A measured `0` does count as data.
-- **The catalog is never laundered.** `FoodCatalogService.recordUsage` copies micros onto a
-  catalog entry per key, and only off a row that carries provenance — so a capture that
-  answered sodium alone donates sodium alone. Both gates are needed: the capture use cases
-  therefore hand `recordUsage` the model's own micros rather than `?? 0`-defaulted ones
-  (the storage default is applied later, at the persistence boundary, where it belongs).
-  Without the per-key half, one partially-answered capture writes a hard `fiber: 0` into
-  the catalog that every later quick-add of that food inherits as a `'catalog'` reading —
-  permanently, and self-propagating. `backfill` donates **no** micros at all: a stored row's
-  micros have already been defaulted, so per-key provenance is gone by the time history can
-  be read.
-- **The UI says so out loud.** `MacroBarRow` renders "based on {covered} of {total} items
-  with any micro data" under any watch-micro bar whose day is not fully covered, and the
-  text is in the bar's accessible name as well. That caption is the honesty mechanism, not
-  decoration. Coverage that is *unknown* — a payload with no `microCoverage` at all, as in
-  a frontend-ahead-of-backend deploy window — is captioned too, and says so; it never
-  resolves to "fully covered".
-
-**Coverage is per ROW, not per micro — and this is a real limit, not a nicety.**
-`microsSource` is one flag for all four micronutrients. A model that answers `sodium: 1900`
-and says nothing about fiber produces a row that is *covered*, so a day made only of such
-rows reports `fiber: { covered: 1, total: 1 }`, the caption is correctly suppressed, and a
-watched fiber bar renders a confident `0 / 30 g`. The numbers are honest about the row and
-silent about the micro. This is why the caption reads "items with any micro data" rather
-than implying a per-micro count. Closing it properly needs per-key provenance on the row —
-four fields where there is now one — which the stored shape does not have; until then, treat
-a fully-covered micro bar as "every row was measured for *something*", not "every row was
-measured for this".
-
-A second, narrower edge: provenance means the model *emitted the key*, not that it knew the
-answer. An LLM returning `0` for a micro it is unsure of is the likeliest failure mode here,
-and it is indistinguishable from a genuine zero — by design, because a measured zero must
-count as data. The guarantee `'ai'` carries is "the model answered", nothing stronger.
-
-Macros (`protein`/`carbs`/`fat`) are not coverage-gated: every capture path writes them,
-and the per-meal `P · C · F` subtotals and macro-goal bars show them unqualified.
+All extensive nutrients scale through
+`shared/contracts/health/foodQuantity.mjs`. Catalog micronutrients have
+independent `microBasis` records; a micro is reused at another portion only
+when its own mass basis is known. Catalog serialization retains base values
+and observations separately, rather than feeding a derived serving back into
+the source record. Explicit corrections are stamped as user-supplied per key.
 
 ---
 
 ## Meal buckets
 
-Internal values and UI labels are declared once, in `today/mealBuckets.js`, and reused by
-`LogTable`, `useHealthDay`, and `EntryEditSheet` so they can never drift:
+`shared/contracts/health/mealBuckets.mjs` owns both labels and clock defaults.
+The frontend's `today/mealBuckets.js` re-exports that contract.
 
-| Data value (`mealTime`) | UI label |
-|---|---|
-| `morning` | Breakfast |
-| `afternoon` | Lunch |
-| `evening` | Dinner |
-| `night` | Snacks |
-| *(missing / unrecognized)* | Ungrouped |
+| Stored value | Label | Clock default |
+|---|---|---|
+| `morning` | Breakfast | 05:00–11:59 |
+| `afternoon` | Lunch | 12:00–16:59 |
+| `evening` | Dinner | 17:00–20:59 |
+| `night` | Snacks | Otherwise |
+| Missing/unrecognized | Ungrouped | Never inferred on read |
 
-`useHealthDay`'s `byBucket` grouping falls any row whose `mealTime` isn't one of the four
-known ids into the `null` key; `LogTable` renders that as a fifth section labeled
-"Ungrouped," shown only when non-empty and — unlike the four named buckets — with no
-"+ Add food…" affordance (there's no bucket to add into).
-
-**`mealTime` is denormalized directly onto the NutriList row**, not derived on read. It's
-set at write time from the current hour (`h < 11 → morning`, `h < 15 → afternoon`,
-`h < 20 → evening`, else `night`) in quick-add (`FoodCatalogService.quickAdd`) and in
-saved-meal logging (`SavedMealsService.logToDate`, when no explicit `mealTime` is passed);
-either path accepts an explicit override — the bucket the user tapped "+ Add food…" in, or
-a `mealTime` chosen when moving a saved meal to a specific meal. Moving an already-logged
-row to a different bucket is a plain `PUT /nutrilist/{uuid} { mealTime }` from
-`EntryEditSheet`'s "Move to" row. The Today view's quick-capture bar (below) defaults to
-this exact same hour mapping when it has no other meal to target.
-
-A second, disagreeing hour→meal split exists elsewhere in the pipeline: 5–11 morning,
-12–16 afternoon, 17–20 evening, else night. That mapping backs the clock default an AI
-capture's own parse is stamped with before any declared bucket or explicitly named meal
-is applied (see [Capture funnels](#capture-funnels) below), and the client-side guess used
-only to position an in-flight capture's loading placeholder before a result is known. The
-two mappings are deliberately independent; a future change to one is not a bug in the
-other, and a third one is never the fix for a mismatch between them.
+Explicitly named meals take precedence over the selected capture bucket;
+the clock is only a fallback. On a historical date, the default is Breakfast,
+not the current hour. The resolved bucket is stored on each entry.
 
 ---
 
@@ -236,7 +223,8 @@ truthful.
 
 The week strip separates its seven-day viewport from the selected day. Picking
 a visible day changes only the selection; explicit 44 px previous/next-week
-controls move the window and select the corresponding date. It names weekdays
+controls page contiguous Monday–Sunday weeks without changing the selected date.
+The `date` and `week` query parameters preserve both selection and viewport through Back and tab navigation. It names weekdays
 with three letters, labels the visible date range, marks month boundaries, and
 uses a bordered accent state for the selected day (distinct from today's inset
 ring). Future navigation stops at today.
@@ -398,8 +386,8 @@ header, scoped to that meal — one tap from Breakfast's row starts a capture th
 Breakfast — alongside the "+ Add food…" row underneath for a typed sentence or type-ahead
 pick against the same meal.
 
-A single quick-capture bar (`QuickCaptureBar.jsx`) is fixed on Today independent of scroll
-position, offering the same four capture types with no meal of its own — it defaults to
+A single compact quick-capture bar (`QuickCaptureBar.jsx`) sits in normal document flow
+below the week strip, offering the same four capture types with no meal of its own — it defaults to
 whichever meal the current time of day implies (the hour mapping in
 [Meal buckets](#meal-buckets) above). This is the day view's only such affordance: the
 footer below the log carries the macro summary and coach line, never capture controls.
@@ -483,14 +471,15 @@ catalog default of one serving.
 meal travels with the quick-add; there is no follow-up `PUT` to move the row afterwards.
 The row lands `settled: true, settledBy: 'user'`, because a one-tap pick of a known food is
 a deliberate choice, not a machine estimate. Its portion is the last one logged for that
-food in that bucket, else one serving.
+food in that bucket, else its canonical gram portion. The suggestion shows the
+same proposed grams and scaled calories that the command will log. Unknown mass stays unknown.
 
 The same shape repeats everywhere a value is already known and doesn't need interpreting:
 
 - **Custom-food creation** (`CustomFoodSheet`, below) — create, then quickadd.
 - **Template instantiation** (`TemplatePicker`, below) — `POST
   /nutrition/templates/:id/instantiate` writes a dish group and its children directly.
-- **Copy-to-today** ("Copy to today", below) — `POST /nutrition/meals/:id/log` writes
+- **Copy-to-today** ("Copy to today", below) — `POST /nutrition/copy` writes
   NutriList rows directly.
 
 None of these touch the AI parsing pipeline.
@@ -994,37 +983,30 @@ count as a non-colour cue. Picking one opens the picker on that template so its 
 are still offered, rather than logging one silent arrangement of the meal. The
 zero-keystroke list shows at most **three** templates; a typed query shows every match.
 
-## Saved meals — transport only
+## Saved meals — compatibility only
 
-The saved-meals store and its four endpoints remain, but **nothing lists them**. They exist
-purely as the transport behind **copy-to-today**: viewing a past date, the per-bucket header
-action creates a throwaway saved meal from that bucket's rows, immediately logs it to today
-(`log_uuid: 'SAVEDMEAL'`), then `DELETE`s it. There is no dedicated copy endpoint, and it
-only ever targets today.
+The old saved-meal endpoints remain for existing integrations. Today no longer
+creates temporary saved meals to copy food: `POST /nutrition/copy` accepts
+entry IDs, destination date/bucket, and an operation ID, then copies complete
+snapshots in one ledger command. Children retain their hierarchy under new IDs;
+mass, micronutrients, provenance, icons and evidence references travel with them.
 
-Any saved meal that predates the template picker is converted by
-`node cli/migrate-saved-meals-to-templates.mjs [--user <id>] [--dry-run]` into an all-core
-template, carrying its `useCount`/`lastUsed` across. It is idempotent by name and deletes
-nothing.
+Kept meals are templates. Existing saved meals can be migrated with
+`cli/migrate-saved-meals-to-templates.mjs` using its dry-run option first.
 
 ---
 
 ## Medical readings
 
-A deliberately dumb store — validation only, no interpretation
-(`backend/src/3_applications/health/MedicalReadingsService.mjs`,
-`apps/health/medical.yml`, `{ readings: [{ id, metric, value, value2, unit, date, note }] }`).
-`metric` is a free-form string, not an enum; `MedicalView.jsx` suggests a fixed set (`bp`,
-`resting_hr`, `glucose`, `a1c`, `cholesterol_total`, `ldl`, `hdl`, `triglycerides`) via an
-`Autocomplete`, but any string is accepted. `value2` exists specifically for blood
-pressure's diastolic reading — the "Diastolic" field only appears in the add-reading sheet
-when `metric === 'bp'`.
+`MedicalReadingsService` validates records against
+`shared/contracts/health/medicalMetrics.mjs`: supported metrics, allowed
+units, finite values, real dates, and paired systolic/diastolic values.
+No medical interpretation is performed. Each history row displays its own unit;
+the app never relabels an older reading with the newest reading's unit.
 
-Endpoints: `GET /api/v1/health/medical` (`listGrouped` — one entry per metric, each with its
-sorted reading history and `latest`), `POST /api/v1/health/medical` (add), `DELETE
-/api/v1/health/medical/:id` (remove). **There is no update endpoint** — a reading is
-corrected by deleting and re-adding, never edited in place; `MedicalView.jsx` offers no
-edit UI to match.
+Endpoints remain `GET/POST /medical` and `DELETE /medical/:id`.
+There is no medical update endpoint; correction is delete then add.
+Failures remain visible rather than appearing as empty history.
 
 ---
 
@@ -1086,8 +1068,9 @@ The `sessions` array returned alongside the equation is what the Today view's "E
 section (read-only rows, `LogTable.jsx`) renders.
 
 `ProgressView.jsx` is the goals-editing surface — a form seeded from `GET /goals`, `PUT
-/goals` on save — alongside the weight-trend chart and a 14-day adherence strip built from
-14 parallel `GET /budget?date=` calls. Its macro-goal and watch-micro fields build their
+/goals` on save — alongside the calendar-spaced weight-trend chart and a 14-day logged-intake strip
+built from one `/budget/range` request. An absent goals document opens an initial
+form; a failed request shows Retry. Its macro-goal and watch-micro fields build their
 payload through `progress/goalFields.js`, which enforces the same absence rules the server
 does: clearing every macro target removes `macroGoals` outright, and clearing a watch
 micro's limit removes that watch (there is no "watched with no limit" state).
@@ -1158,6 +1141,11 @@ All under `/api/v1/health/`, from `backend/src/4_api/v1/routers/health.mjs`:
 
 | Endpoint | Purpose |
 |---|---|
+| `GET /context` | resolved Health user identity |
+| `GET /day?date=` | coherent ledger snapshot and budget, with revision |
+| `POST /nutrition/copy`, `POST /nutrition/restore` | lossless copy and deletion Undo |
+| `PUT /nutrition/catalog/:id` | update a future food definition, not history |
+| `PUT /nutrition/templates/:id` | edit a future meal definition |
 | `GET /budget?date=` | the equation, the day's macro/micro sums, and micro coverage (see above) |
 | `GET /budget/range?from=&to=` | the same equation per day over an inclusive range, in one request — `{ days: [...] }`, a day that cannot be computed appearing as `{ date, error }` rather than failing the range. 62-day cap; a bad range is `400 { code: 'RANGE_INVALID' }` (see [Viz and layout](#viz-and-layout)) |
 | `GET /goals`, `PUT /goals` | goals document; a malformed `macroGoals`/`watchMicros` shape is `400 { code: 'GOALS_INVALID' }` |
@@ -1169,7 +1157,7 @@ All under `/api/v1/health/`, from `backend/src/4_api/v1/routers/health.mjs`:
 | `PUT /nutrition/catalog/favorite` | toggle favorite by id or name |
 | `PUT /nutrition/catalog/icon` | pin a food's icon by id or name — the "always for this food" override |
 | `POST /nutrition/catalog/backfill` | seed the catalog from existing log history |
-| `GET /nutrition/meals`, `POST /nutrition/meals`, `POST /nutrition/meals/:id/log`, `DELETE /nutrition/meals/:id` | saved meals — transport for copy-to-today only; no surface lists them |
+| `GET /nutrition/meals`, `POST /nutrition/meals`, `POST /nutrition/meals/:id/log`, `DELETE /nutrition/meals/:id` | legacy saved-meal compatibility; no surface lists them |
 | `GET /nutrition/templates?includeProposed=` | meal templates; proposals are hidden unless asked for |
 | `POST /nutrition/templates` | create a template (`{ name, icon?, components }`), 400 on an invalid shape |
 | `POST /nutrition/templates/:id/instantiate` | log it as a dish group (`{ date?, mealTime?, variantNames? }`); 404 unknown, **409** for a proposal nobody approved, **400** for a selection that would write nothing |

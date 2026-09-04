@@ -26,7 +26,7 @@ export const OVERSHOOT_CAP = 1.25;
  *   clamps (the same rule the macro bars follow).
  */
 export function barModel(day) {
-  if (!day || day.error || !Number.isFinite(Number(day.budget)) || Number(day.budget) <= 0) {
+  if (!day || day.error || day.loggingStatus === 'unlogged' || !Number.isFinite(Number(day.budget)) || Number(day.budget) <= 0) {
     return { kind: 'gap' };
   }
   const food = Number(day.food);

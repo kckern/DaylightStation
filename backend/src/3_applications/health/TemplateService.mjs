@@ -20,19 +20,12 @@
  */
 
 import { formatLocalTimestamp } from '#system/utils/time.mjs';
-import { defaultBucketForDate } from '#shared/contracts/health/isoDate.mjs';
+import { defaultBucketForDate, localDateISO } from '#shared/contracts/health/isoDate.mjs';
+import { foodGrams, MICRO_KEYS, NUTRIENT_KEYS } from '#shared/contracts/health/foodQuantity.mjs';
+import { bucketForHour } from '#shared/contracts/health/mealBuckets.mjs';
 import { hasMicroData, pickMicros } from '#domains/nutrition/services/micros.mjs';
 
-/** Local (not UTC) YYYY-MM-DD. The UTC form reads as tomorrow every evening here. */
-function localDateISO(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
 /** The clock's opinion when the caller supplies no bucket. */
-const bucketForHour = (h) => (h < 11 ? 'morning' : h < 15 ? 'afternoon' : h < 20 ? 'evening' : 'night');
 
 const ROLES = ['core', 'variant'];
 
@@ -71,9 +64,13 @@ const coded = (message, code) => {
  */
 const snapshotComponent = (c) => {
   const claimed = typeof c?.microsSource === 'string' && c.microsSource ? c.microsSource : null;
-  const micros = claimed ? pickMicros(c) : {};
+  const micros = c?.nutrientProvenance ? Object.fromEntries(MICRO_KEYS.filter(key => c.nutrientProvenance[key] && typeof c[key] === 'number').map(key => [key, c[key]]))
+    : claimed ? pickMicros(c) : {};
   return ({
   ...micros,
+  foodId: c?.foodId ?? null,
+  nutrientProvenance: c?.nutrientProvenance ? structuredClone(c.nutrientProvenance) : null,
+  originalQuantity: c?.originalQuantity ?? { amount: c?.amount ?? null, unit: c?.unit ?? null },
   microsSource: hasMicroData(micros) ? claimed : null,
   name: String(c?.name ?? '').trim(),
   // An unroled component is CORE. A template written by hand, or migrated from
@@ -86,11 +83,9 @@ const snapshotComponent = (c) => {
   fat: Number(c?.fat) || 0,
   color: c?.color || 'yellow',
   icon: c?.icon ?? null,
-  grams: Number(c?.grams) || 0,
-  unit: c?.unit || 'serving',
-  amount: Number.isFinite(Number(c?.amount)) && c?.amount !== null && c?.amount !== undefined
-    ? Number(c.amount)
-    : 1,
+  grams: foodGrams(c),
+  unit: 'g',
+  amount: foodGrams(c),
   });
 };
 
@@ -227,6 +222,29 @@ export class TemplateService {
     this.#logger.info?.('health.templates.removed', { id });
   }
 
+  async update(id, userId, { name, components }) {
+    const existing = await this.#templateStore.getById(id, userId);
+    if (!existing) throw coded('Template not found', 'TEMPLATE_NOT_FOUND');
+    if (typeof name !== 'string' || !name.trim() || !Array.isArray(components) || !components.length) throw coded('Name and components required', 'TEMPLATE_INVALID');
+    if (components.some(component => !component.name?.trim() || (component.grams != null && component.grams !== '' && !(Number(component.grams) > 0)))) throw coded('Each component needs a name and a positive or unknown gram weight', 'TEMPLATE_INVALID');
+    if (components.some(component => NUTRIENT_KEYS.some(key => component[key] != null &&
+      (typeof component[key] !== 'number' || !Number.isFinite(component[key]) || component[key] < 0)))) {
+      throw coded('Nutrition values must be non-negative numbers or unknown', 'TEMPLATE_INVALID');
+    }
+    const template = { ...existing, name: name.trim(), components: components.map(component => {
+      const nutrientProvenance = { ...component.nutrientProvenance };
+      for (const key of component.correctedNutrients || []) {
+        if (!MICRO_KEYS.includes(key)) continue;
+        if (component[key] == null) delete nutrientProvenance[key];
+        else nutrientProvenance[key] = { source: 'user', grams: foodGrams(component), at: new Date(this.#clock.now()).toISOString() };
+      }
+      return snapshotComponent({ ...component, nutrientProvenance: Object.keys(nutrientProvenance).length ? nutrientProvenance : null });
+    }) };
+    await this.#templateStore.save(template, userId);
+    this.#logger.info?.('health.templates.updated', { id, components: components.length });
+    return template;
+  }
+
   /**
    * Write the template into a day as a dish group.
    *
@@ -295,6 +313,9 @@ export class TemplateService {
       // Per key, and only where the snapshot actually carries one.
       ...pickMicros(c),
       microsSource: c.microsSource ?? null,
+      nutrientProvenance: c.nutrientProvenance,
+      foodId: c.foodId,
+      originalQuantity: c.originalQuantity,
       grams: c.grams,
       unit: c.unit,
       amount: c.amount,
@@ -315,6 +336,8 @@ export class TemplateService {
 
     template.useCount = (template.useCount || 0) + 1;
     template.lastUsed = targetDate;
+    template.variantsByBucket = { ...template.variantsByBucket,
+      [targetMealTime]: chosen.filter(component => component.role === 'variant').map(component => component.name) };
     await this.#templateStore.save(template, userId);
 
     this.#logger.info?.('health.templates.instantiated', {

@@ -12,14 +12,10 @@ import { useBudgetRange } from '../today/useBudgetRange.js';
 import { MonthBlock } from '../today/MonthBlock.jsx';
 import { IntakeBurnChart } from './IntakeBurnChart.jsx';
 import { goalSaveMessage } from './goalSaveError.js';
+import { addDays } from '../today/WeekStrip.jsx';
+import { normalizeWeightEntries } from '../today/weightSeries.js';
 
 const logger = createAppLogger('health').child('progress');
-
-const addDays = (iso, n) => {
-  const d = new Date(`${iso}T12:00:00`); // noon anchor avoids DST edge shifts
-  d.setDate(d.getDate() + n);
-  return localTodayISO(d);
-};
 
 // Reads the --ds-* custom properties off a mounted DS-themed element — the
 // chart config is ported from Weight.jsx's Highcharts usage, but hardcoded
@@ -62,7 +58,10 @@ export function ProgressView() {
   // Seed the form once goals load; a later reload (after save) must not
   // clobber in-progress edits, so only seed while form is still null.
   useEffect(() => {
-    if (goalsRes.data?.goals && !form) setForm(goalsRes.data.goals);
+    if (goalsRes.data && !form) setForm(goalsRes.data.goals || {
+      sex: 'male', targetWeightLbs: '', weeklyRateLbs: 0,
+      activityBaseline: 1.2, budgetFloor: '', heightIn: '', birthYear: '',
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [goalsRes.data]);
 
@@ -74,21 +73,16 @@ export function ProgressView() {
   // 30 days of intake vs burn, its own range because it is a different window.
   const intakeBurn = useBudgetRange(addDays(today, -29), today);
 
-  const entries = useMemo(() => {
-    if (!weightRes.data) return [];
-    return Object.values(weightRes.data)
-      .filter((e) => e && e.date)
-      .sort((a, b) => new Date(a.date) - new Date(b.date));
-  }, [weightRes.data]);
+  const entries = useMemo(() => normalizeWeightEntries(weightRes.data), [weightRes.data]);
 
   const latest = entries[entries.length - 1] || null;
 
   const chartOptions = useMemo(() => {
     if (!tokens || !entries.length) return null;
-    const windowed = entries.slice(-84); // ~12 weeks, matches Weight.jsx's precedent
-    const categories = windowed.map((e) => new Date(`${e.date}T12:00:00`)
-      .toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
-    const avgData = windowed.map((e) => (e.lbs_adjusted_average != null ? e.lbs_adjusted_average : null));
+    const from = addDays(entries.at(-1).date, -83);
+    const windowed = entries.filter(entry => entry.date >= from);
+    const at = entry => Date.parse(`${entry.date}T12:00:00Z`);
+    const avgData = windowed.map((e) => e.avg);
     const goalLbs = form?.targetWeightLbs ?? goalsRes.data?.goals?.targetWeightLbs ?? null;
     const goalData = goalLbs ? windowed.map(() => goalLbs) : null;
     const values = avgData.filter((v) => v != null).concat(goalData || []);
@@ -113,8 +107,8 @@ export function ProgressView() {
         labels: { style: { color: tokens.textMid, fontSize: '0.85rem' }, format: '{value} lbs' },
       },
       xAxis: {
-        categories,
-        tickInterval: 7,
+        type: 'datetime',
+        tickInterval: 7 * 86400000,
         gridLineColor: tokens.border,
         gridLineWidth: 1,
         lineColor: tokens.border,
@@ -124,7 +118,7 @@ export function ProgressView() {
         // cadence as the weekly tickInterval above).
         plotLines: windowed.map((e, index) => (
           new Date(`${e.date}T12:00:00`).getDay() === 1
-            ? { color: tokens.border, width: 1, value: index, zIndex: 1 }
+            ? { color: tokens.border, width: 1, value: at(e), zIndex: 1 }
             : null
         )).filter(Boolean),
       },
@@ -138,14 +132,14 @@ export function ProgressView() {
           fillOpacity: 0.15,
           tooltip: {
             headerFormat: '',
-            pointFormatter() { return `<b>${this.category}</b>: ${this.y.toFixed(1)} lbs`; },
+            pointFormatter() { return `<b>${Highcharts.dateFormat('%b %e', this.x)}</b>: ${this.y.toFixed(1)} lbs`; },
           },
         },
         line: { marker: { enabled: false } },
       },
       series: [
-        { type: 'areaspline', name: 'Weight (adjusted avg)', data: avgData, color: tokens.accent },
-        ...(goalData ? [{ type: 'line', name: 'Goal', data: goalData, color: tokens.success, lineWidth: 1.5, dashStyle: 'Dash' }] : []),
+        { type: 'areaspline', name: 'Weight (adjusted avg)', data: windowed.map((entry, index) => [at(entry), avgData[index]]), color: tokens.accent },
+        ...(goalData ? [{ type: 'line', name: 'Goal', data: windowed.map((entry, index) => [at(entry), goalData[index]]), color: tokens.success, lineWidth: 1.5, dashStyle: 'Dash' }] : []),
       ],
     };
   }, [tokens, entries, form?.targetWeightLbs, goalsRes.data]);
@@ -154,7 +148,8 @@ export function ProgressView() {
     setSaving(true);
     setSaveError(null);
     try {
-      await DaylightAPI('api/v1/health/goals', form, 'PUT');
+      const payload = Object.fromEntries(Object.entries(form).filter(([, value]) => value !== ''));
+      await DaylightAPI('api/v1/health/goals', payload, 'PUT');
       logger.info('goals.saved', {});
       goalsRes.reload();
     } catch (err) {
@@ -175,7 +170,7 @@ export function ProgressView() {
           {latest ? (
             <div className="health-progress__stats">
               <StatCard label="Current weight"
-                value={Math.round((latest.lbs_adjusted_average || 0) * 10) / 10} unit="lbs" emphasis />
+                value={latest.avg != null || latest.lbs != null ? Math.round((latest.avg ?? latest.lbs) * 10) / 10 : '—'} unit="lbs" emphasis />
               <StatCard label="7-day trend" value={fmtTrend(latest.lbs_adjusted_average_7day_trend)} unit="lbs/wk" />
               <StatCard label="Body fat"
                 value={latest.fat_percent_adjusted_average != null ? Math.round(latest.fat_percent_adjusted_average * 10) / 10 : '—'}
@@ -188,20 +183,20 @@ export function ProgressView() {
       {/* MonthBlock is the same bar block the Today sidebar draws — one
           component, one arithmetic, one honesty rule (a hole is hollow), rather
           than a second local copy that can drift from it. */}
-      <SectionCard title="Adherence — last 14 days">
-        {adherence.loading ? <LoadingState label="adherence" rows={2} /> : (
+      <SectionCard title="Logged intake — last 14 days · current goals">
+        {adherence.error ? <ErrorState error={adherence.error} onRetry={adherence.reload} label="Logged intake" /> : adherence.loading ? <LoadingState label="adherence" rows={2} /> : (
           <MonthBlock days={adherence.days} loading={adherence.loading} title={null} />
         )}
       </SectionCard>
 
       <SectionCard title="Intake vs burn — last 30 days">
-        {intakeBurn.loading ? <LoadingState label="intake vs burn" rows={2} /> : (
+        {intakeBurn.error ? <ErrorState error={intakeBurn.error} onRetry={intakeBurn.reload} label="Intake vs burn" /> : intakeBurn.loading ? <LoadingState label="intake vs burn" rows={2} /> : (
           <IntakeBurnChart days={intakeBurn.days} loading={intakeBurn.loading} title={null} />
         )}
       </SectionCard>
 
       <SectionCard title="Goals">
-        {!form ? <LoadingState label="goals" rows={4} /> : (
+        {goalsRes.error ? <ErrorState error={goalsRes.error} onRetry={goalsRes.reload} label="Goals" /> : !form ? <LoadingState label="goals" rows={4} /> : (
           <Stack gap="sm">
             {saveError ? <Text size="sm" c="red">{goalSaveMessage(saveError)}</Text> : null}
             <SegmentedControl value={form.sex || 'male'} onChange={(v) => setForm({ ...form, sex: v })}

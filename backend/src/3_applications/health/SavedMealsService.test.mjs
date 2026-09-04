@@ -71,6 +71,6 @@ describe('SavedMealsService', () => {
     await evening.logToDate(meal.id, 'u', {});
     const rows = nutriList.saveMany.mock.calls.at(-1)[0];
     expect(rows[0].date).toBe('2026-09-02');
-    expect(rows[0].mealTime).toBe('night');
+    expect(rows[0].mealTime).toBe('evening');
   });
 });

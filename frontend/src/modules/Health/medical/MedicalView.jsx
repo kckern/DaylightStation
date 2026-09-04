@@ -5,21 +5,12 @@ import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { localTodayISO } from '../today/mealBuckets.js';
+import { MEDICAL_METRICS } from '@shared-contracts/health/medicalMetrics.mjs';
 
 const logger = createAppLogger('health').child('medical');
 
-const METRIC_SUGGESTIONS = ['bp', 'resting_hr', 'glucose', 'a1c', 'cholesterol_total', 'ldl', 'hdl', 'triglycerides'];
-const METRIC_LABELS = {
-  bp: 'Blood Pressure',
-  resting_hr: 'Resting Heart Rate',
-  glucose: 'Glucose',
-  a1c: 'A1C',
-  cholesterol_total: 'Total Cholesterol',
-  ldl: 'LDL',
-  hdl: 'HDL',
-  triglycerides: 'Triglycerides',
-};
-const labelFor = (metric) => METRIC_LABELS[metric] || metric;
+const METRIC_SUGGESTIONS = Object.keys(MEDICAL_METRICS);
+const labelFor = (metric) => MEDICAL_METRICS[metric]?.label || metric;
 const formatValue = (r) => (r?.value2 != null ? `${r.value}/${r.value2}` : r?.value ?? '—');
 const emptyForm = () => ({ metric: '', value: '', value2: '', unit: '', date: localTodayISO(), note: '' });
 
@@ -66,6 +57,7 @@ export function MedicalView() {
       med.reload();
     } catch (err) {
       logger.error('reading.remove.failed', { id, error: err?.message });
+      setError(err);
     }
   };
 
@@ -80,6 +72,7 @@ export function MedicalView() {
 
       {med.loading ? <LoadingState label="medical readings" rows={4} /> : null}
       {med.error ? <ErrorState error={med.error} onRetry={med.reload} label="Medical readings" /> : null}
+      {!open && error ? <ErrorState error={error} label="Reading could not be deleted" /> : null}
       {!med.loading && !med.error && !metrics.length ? (
         <EmptyState title="No medical readings yet"
           hint="Add a blood pressure, glucose, or lab reading to start tracking."
@@ -92,7 +85,7 @@ export function MedicalView() {
             {group.readings.map((r) => (
               <div key={r.id} className="health-medical__row">
                 <span className="health-medical__date">{r.date}</span>
-                <span className="health-medical__value">{formatValue(r)}{group.unit ? ` ${group.unit}` : ''}</span>
+                <span className="health-medical__value">{formatValue(r)}{r.unit ? ` ${r.unit}` : ''}</span>
                 {r.note ? <span className="health-medical__note">{r.note}</span> : null}
                 <Button size="compact-xs" variant="subtle" color="red" onClick={() => remove(r.id, group.metric)}>Delete</Button>
               </div>
@@ -106,7 +99,7 @@ export function MedicalView() {
           {error ? <Text size="sm" c="red">{error.message}</Text> : null}
           <Autocomplete label="Metric" placeholder="e.g. bp, glucose, resting_hr"
             data={METRIC_SUGGESTIONS} value={form.metric}
-            onChange={(v) => setForm({ ...form, metric: v })} />
+            onChange={(v) => setForm({ ...form, metric: v, unit: MEDICAL_METRICS[v]?.units[0] || form.unit })} />
           <NumberInput label={isBp ? 'Systolic' : 'Value'} value={form.value}
             onChange={(v) => setForm({ ...form, value: v })} />
           {isBp ? (

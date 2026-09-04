@@ -24,7 +24,7 @@ describe('useHealthDay', () => {
     // would read false when the test expects a true cold start).
     resetApiResourceCache();
     apiMock.mockImplementation(async (path) =>
-      path.includes('/budget') ? BUDGET : NUTRILIST_ENVELOPE);
+      ({ items: ROWS, budget: BUDGET, revision: 1 }));
   });
 
   it('groups rows by mealTime with null → ungrouped', async () => {
@@ -38,14 +38,13 @@ describe('useHealthDay', () => {
 
   it('a failing budget endpoint leaves the log usable', async () => {
     apiMock.mockImplementation(async (path) => {
-      if (path.includes('/budget')) { const e = new Error('409'); e.status = 409; throw e; }
-      return NUTRILIST_ENVELOPE;
+      return { items: ROWS, budget: null, budgetError: { code: 'GOALS_NOT_CONFIGURED' } };
     });
     const { result } = renderHook(() => useHealthDay('2026-09-02'));
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.items).toHaveLength(3);
     expect(result.current.budget).toBeNull();
-    expect(result.current.budgetError.status).toBe(409);
+    expect(result.current.budgetError.code).toBe('GOALS_NOT_CONFIGURED');
   });
 
   it('unwraps bare array for backward compatibility', async () => {

@@ -2678,6 +2678,7 @@ export async function createAgentsServices(config) {
       // Domain services
       sessionService,
       foodLogStore,
+      nutriListStore,
       healthService,
       healthStore,
       dataService,

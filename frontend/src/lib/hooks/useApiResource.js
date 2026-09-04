@@ -49,6 +49,12 @@ const swrCache = new Map();
 // and low-severity one: it costs one Map entry per distinct never-succeeding
 // path, not per request.
 const pathGenerations = new Map();
+const invalidationListeners = new Set();
+
+/** Revalidate mounted readers together without blanking same-key snapshots. */
+export function invalidateApiResources(matches = () => true) {
+  for (const notify of invalidationListeners) notify(matches);
+}
 
 function cacheGet(path) {
   if (!swrCache.has(path)) return { hit: false };
@@ -104,6 +110,7 @@ export function useApiResource(path, { deps = [], enabled = true, label, logger 
     const { hit, value } = getInitialCache();
     return hit ? value : null;
   });
+  const [resultPath, setResultPath] = useState(path);
   const [loading, setLoading] = useState(() => {
     if (!(enabled && path)) return false;
     return !getInitialCache().hit;
@@ -115,16 +122,26 @@ export function useApiResource(path, { deps = [], enabled = true, label, logger 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
 
   useEffect(() => {
+    const notify = matches => { if (enabled && path && matches(path)) reload(); };
+    invalidationListeners.add(notify);
+    return () => invalidationListeners.delete(notify);
+  }, [path, enabled, reload]);
+
+  useEffect(() => {
     if (!enabled || !path) { setLoading(false); return undefined; }
     let live = true;
 
     const { hit: cacheHit, value: cachedValue } = swr ? cacheGet(path) : { hit: false };
     if (cacheHit) {
       setData(cachedValue);
+      setResultPath(path);
       setRevalidating(true);
       setLoading(false);
       setError(null);
     } else {
+      if (resultPath !== path) setData(null);
+      setResultPath(path);
+      setRevalidating(false);
       setLoading(true);
       setError(null);
     }
@@ -154,6 +171,7 @@ export function useApiResource(path, { deps = [], enabled = true, label, logger 
         if (!live) return;
         if (swr && isNewestGeneration(path, myGeneration)) cacheSet(path, result);
         setData(result);
+        setResultPath(path);
         setLoading(false);
         if (swr) setRevalidating(false);
         logger.debug(cacheHit ? 'api.revalidated' : 'api.loaded', { resource: label || path, ms: Math.round(performance.now() - startedAt) });
@@ -170,7 +188,12 @@ export function useApiResource(path, { deps = [], enabled = true, label, logger 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, enabled, nonce, swr, ...deps]);
 
-  return { data, loading, error, revalidating, reload };
+  // Effects run after render: conceal the previous key synchronously, not
+  // just after the new request starts, so stale rows are never actionable.
+  const matches = resultPath === path;
+  return { data: matches ? data : null, resourceKey: path,
+    loading: matches ? loading : Boolean(enabled && path),
+    error: matches ? error : null, revalidating: matches && revalidating, reload };
 }
 
 export default useApiResource;

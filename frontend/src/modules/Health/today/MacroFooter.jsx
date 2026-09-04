@@ -18,7 +18,7 @@ export function MacroFooter({ items = [], coachLine, onCoachTap }) {
   return (
     <div className="health-footer">
       {coachLine ? (
-        <UnstyledButton className="health-footer__coach" onClick={onCoachTap}>💬 {coachLine}</UnstyledButton>
+        <UnstyledButton className="health-footer__coach" onClick={() => onCoachTap()}>💬 {coachLine}</UnstyledButton>
       ) : null}
       <div className="health-footer__row">
         <span className="health-footer__macros">

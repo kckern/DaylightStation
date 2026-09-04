@@ -111,7 +111,7 @@ describe('quickAdd — density x the remembered portion, not a copied total', ()
     const { svc } = makeService([entry]);
     const item = await svc.quickAdd('e1', 'u', { mealTime: 'evening' });
     expect(item.calories).toBe(160);
-    expect(item.grams).toBe(0);
+    expect(item.grams).toBe(330);
   });
 
   it('an entry with no derivation keeps working on what it holds — never a zero', async () => {

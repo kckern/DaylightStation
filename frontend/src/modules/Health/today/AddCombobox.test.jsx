@@ -20,7 +20,7 @@ describe('AddCombobox', () => {
   it('typing fetches suggestions; favorites are marked', async () => {
     apiMock.mockResolvedValue(SUGGEST);
     r(<AddCombobox bucketId="afternoon" onDone={() => {}} onCancel={() => {}} />);
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'chick' } });
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'chick' } });
     // The combobox now also fetches on MOUNT (Task 9.2), and this mock answers
     // every path with the same payload — so waiting on the rendered row would
     // pass on the mount response alone. Wait for the QUERY request itself.
@@ -38,12 +38,12 @@ describe('AddCombobox', () => {
     });
     const onDone = vi.fn();
     r(<AddCombobox bucketId="afternoon" onDone={onDone} onCancel={() => {}} />);
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'chick' } });
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'chick' } });
     await waitFor(() => screen.getByText('Chicken breast'));
     fireEvent.click(screen.getByText('Chicken breast'));
     await waitFor(() => expect(onDone).toHaveBeenCalled());
     const quickaddCall = apiMock.mock.calls.find(([p]) => p.includes('quickadd'));
-    expect(quickaddCall[1]).toEqual({ catalogEntryId: 'a', mealTime: 'afternoon' });
+    expect(quickaddCall[1]).toEqual({ catalogEntryId: 'a', mealTime: 'afternoon', operationId: expect.any(String) });
   });
 
   // Task 9.2. The retired PUT was doing two things beyond moving the row, and
@@ -61,7 +61,7 @@ describe('AddCombobox', () => {
     });
     const onDone = vi.fn();
     r(<AddCombobox bucketId="afternoon" onDone={onDone} onCancel={() => {}} />);
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'chick' } });
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'chick' } });
     await waitFor(() => screen.getByText('Chicken breast'));
     fireEvent.click(screen.getByText('Chicken breast'));
     await waitFor(() => expect(onDone).toHaveBeenCalled());
@@ -80,12 +80,12 @@ describe('AddCombobox', () => {
     });
     const onDone = vi.fn();
     r(<AddCombobox bucketId="morning" onDone={onDone} onCancel={() => {}} />);
-    const input = screen.getByRole('textbox');
+    const input = screen.getByRole('combobox');
     fireEvent.change(input, { target: { value: '2 eggs and toast' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(onDone).toHaveBeenCalled());
     const inputCall = apiMock.mock.calls.find(([p]) => p.includes('nutrition/input'));
-    expect(inputCall[1]).toMatchObject({ type: 'text', content: '2 eggs and toast' });
+    expect(inputCall[1]).toMatchObject({ type: 'text', content: '2 eggs and toast', operationId: expect.any(String) });
     // No review card of any kind — no Undo/Accept/Done affordance rendered here.
     expect(screen.queryByRole('button', { name: /undo/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /accept/i })).toBeNull();
@@ -99,7 +99,7 @@ describe('AddCombobox', () => {
     });
     const onDone = vi.fn();
     r(<AddCombobox bucketId="morning" onDone={onDone} onCancel={() => {}} />);
-    const input = screen.getByRole('textbox');
+    const input = screen.getByRole('combobox');
     fireEvent.change(input, { target: { value: '2 eggs and toast' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(screen.getByText(/network down/)).toBeTruthy());
@@ -114,13 +114,13 @@ describe('AddCombobox', () => {
     const olderPromise = new Promise((res) => { resolveOlder = res; });
     const newerPromise = new Promise((res) => { resolveNewer = res; });
     apiMock.mockImplementation((path) => {
-      if (path.endsWith('q=c')) return olderPromise;
-      if (path.endsWith('q=ch')) return newerPromise;
+      if (new URL(path, 'http://fixture').searchParams.get('q') === 'c') return olderPromise;
+      if (new URL(path, 'http://fixture').searchParams.get('q') === 'ch') return newerPromise;
       return Promise.resolve({ items: [] });
     });
 
     r(<AddCombobox bucketId="afternoon" onDone={() => {}} onCancel={() => {}} />);
-    const input = screen.getByRole('textbox');
+    const input = screen.getByRole('combobox');
 
     fireEvent.change(input, { target: { value: 'c' } });
     // Real debounce delay — let the first ('c') request fire and stay in flight.
@@ -177,7 +177,7 @@ describe('AddCombobox — zero-keystroke suggestions', () => {
     const imgs = [...container.querySelectorAll('.health-suggest__list img')];
     expect(imgs).toHaveLength(1);
     expect(imgs[0].getAttribute('src')).toBe('/api/v1/health/nutrition/icons/oatmeal');
-    expect(container.querySelectorAll('.health-suggest__dot')).toHaveLength(1);
+    expect(container.querySelectorAll('svg.health-suggest__icon')).toHaveLength(1);
   });
 
   it('the neutral sentinel is not a picture — it draws no icon and no request', async () => {
@@ -187,7 +187,7 @@ describe('AddCombobox — zero-keystroke suggestions', () => {
     const { container } = r(<AddCombobox bucketId="morning" onDone={() => {}} onCancel={() => {}} />);
     await waitFor(() => expect(screen.getByText('Something')).toBeTruthy());
     expect(container.querySelectorAll('.health-suggest__list img')).toHaveLength(0);
-    expect(container.querySelector('.health-suggest__dot')).toBeTruthy();
+    expect(container.querySelector('svg.health-suggest__icon')).toBeTruthy();
   });
 
   it('a broken icon retires that slug — the row keeps its name and kcal, and no image is left behind', async () => {
@@ -197,7 +197,7 @@ describe('AddCombobox — zero-keystroke suggestions', () => {
     fireEvent.error(container.querySelector('.health-suggest__icon'));
     await waitFor(() => expect(container.querySelectorAll('.health-suggest__list img')).toHaveLength(0));
     expect(screen.getByText('Oatmeal')).toBeTruthy();
-    expect(screen.getByText('150')).toBeTruthy();
+    expect(screen.getByText('150 kcal')).toBeTruthy();
   });
 
   it('typing switches to the query path, and clearing the text goes back to the bucket list', async () => {
@@ -205,12 +205,12 @@ describe('AddCombobox — zero-keystroke suggestions', () => {
     r(<AddCombobox bucketId="morning" onDone={() => {}} onCancel={() => {}} />);
     await waitFor(() => expect(screen.getByText('Oatmeal')).toBeTruthy());
 
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'chick' } });
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'chick' } });
     await waitFor(() => expect(screen.getByText('Chicken breast')).toBeTruthy());
     expect(screen.queryByText('Oatmeal')).toBeNull();
-    expect(apiMock.mock.calls.some(([p]) => p.includes('q=chick') && !p.includes('bucket='))).toBe(true);
+    expect(apiMock.mock.calls.some(([p]) => p.includes('q=chick') && p.includes('bucket=morning'))).toBe(true);
 
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: '' } });
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '' } });
     await waitFor(() => expect(screen.getByText('Oatmeal')).toBeTruthy());
   });
 
@@ -225,7 +225,7 @@ describe('AddCombobox — zero-keystroke suggestions', () => {
     fireEvent.click(screen.getByText('Oatmeal'));
     await waitFor(() => expect(onDone).toHaveBeenCalled());
     const [path, body, method] = apiMock.mock.calls.find(([p]) => p.includes('quickadd'));
-    expect(body).toEqual({ catalogEntryId: 'oat', mealTime: 'morning' });
+    expect(body).toEqual({ catalogEntryId: 'oat', mealTime: 'morning', operationId: expect.any(String) });
     expect(method).toBe('POST');
   });
 
@@ -251,7 +251,7 @@ describe('AddCombobox — meal-level suggestions (PRD F8.2 / F6.4)', () => {
     r(<AddCombobox bucketId="morning" onDone={() => {}} onCancel={() => {}} />);
     await waitFor(() => expect(screen.getByText('Morning smoothie')).toBeTruthy());
     expect(screen.getByText('3 items')).toBeTruthy();
-    expect(screen.getByText('260')).toBeTruthy();
+    expect(screen.getByText('260 kcal')).toBeTruthy();
   });
 
   it('picking a template hands it to the picker instead of quick-adding it', async () => {

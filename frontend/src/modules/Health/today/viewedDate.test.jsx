@@ -27,20 +27,21 @@ vi.mock('../capture/BarcodeCapture.jsx', () => ({ BarcodeCapture: () => null }))
 vi.mock('../capture/CustomFoodSheet.jsx', () => ({ CustomFoodSheet: () => null }));
 vi.mock('./QuickCaptureBar.jsx', () => ({ QuickCaptureBar: () => null }));
 
+import { MemoryRouter } from 'react-router-dom';
 import { TodayView } from './TodayView.jsx';
 import { AddCombobox } from './AddCombobox.jsx';
 import { localTodayISO } from './mealBuckets.js';
 import { addDays } from './WeekStrip.jsx';
 import { resetApiResourceCache } from '../../../lib/hooks/useApiResource.js';
 
-function r(ui) { return render(<MantineProvider>{ui}</MantineProvider>); }
+function r(ui) { return render(<MemoryRouter><MantineProvider>{ui}</MantineProvider></MemoryRouter>); }
 
 const NUTRILIST = { data: [] };
 const BUDGET = { budget: 2000, food: 0, exercise: 0, remaining: 2000, status: 'under', sessions: [] };
 
 const baseApi = () => async (path) => {
   if (path.includes('nutrition/observations')) return { observations: [] };
-  if (path.includes('nutrilist/')) return NUTRILIST;
+  if (path.includes('health/day?')) return { items: NUTRILIST.data, budget: BUDGET };
   if (path.includes('budget')) return BUDGET;
   if (path.includes('dashboard')) return { today: { coaching: [] } };
   if (path.includes('nutrition/pending')) return { pending: [] };
@@ -69,10 +70,9 @@ describe('TodayView — the viewed day rides along with a capture', () => {
     await waitFor(() => screen.getByText('MockVoiceCapture-morning'));
 
     // The week strip is how a person gets to another day.
-    const cells = document.querySelectorAll('.health-weekstrip__cell');
-    const yesterdayCell = cells[cells.length - 2];
+    const yesterdayCell = document.querySelector(`[data-date="${YESTERDAY}"]`);
     fireEvent.click(yesterdayCell);
-    await waitFor(() => expect(apiMock.mock.calls.some(([p]) => p.includes(`nutrilist/${YESTERDAY}`))).toBe(true));
+    await waitFor(() => expect(apiMock.mock.calls.some(([p]) => p.includes(`health/day?date=${YESTERDAY}`))).toBe(true));
 
     fireEvent.click(screen.getByText('MockVoiceCapture-morning'));
     await waitFor(() => expect(apiMock.mock.calls.some(([p]) => p.includes('nutrition/input'))).toBe(true));
@@ -92,12 +92,12 @@ describe('AddCombobox — the viewed day rides along', () => {
       return {};
     });
     r(<AddCombobox bucketId="afternoon" date={YESTERDAY} onDone={() => {}} onCancel={() => {}} />);
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'chick' } });
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'chick' } });
     await waitFor(() => screen.getByText('Chicken breast'));
     fireEvent.click(screen.getByText('Chicken breast'));
     await waitFor(() => expect(apiMock.mock.calls.some(([p]) => p.includes('quickadd'))).toBe(true));
     const [, body] = apiMock.mock.calls.find(([p]) => p.includes('quickadd'));
-    expect(body).toEqual({ catalogEntryId: 'a', mealTime: 'afternoon', date: YESTERDAY });
+    expect(body).toEqual({ catalogEntryId: 'a', mealTime: 'afternoon', date: YESTERDAY, operationId: expect.any(String) });
   });
 
   it('a typed sentence sends BOTH the viewed day and the bucket — the bucket used to be dropped here', async () => {
@@ -106,12 +106,12 @@ describe('AddCombobox — the viewed day rides along', () => {
       return {};
     });
     r(<AddCombobox bucketId="afternoon" date={YESTERDAY} onDone={() => {}} onCancel={() => {}} />);
-    const box = screen.getByRole('textbox');
+    const box = screen.getByRole('combobox');
     fireEvent.change(box, { target: { value: 'two eggs and toast' } });
     fireEvent.keyDown(box, { key: 'Enter' });
     await waitFor(() => expect(apiMock.mock.calls.some(([p]) => p.includes('nutrition/input'))).toBe(true));
     const [, body] = apiMock.mock.calls.find(([p]) => p.includes('nutrition/input'));
-    expect(body).toEqual({ type: 'text', content: 'two eggs and toast', bucket: 'afternoon', date: YESTERDAY });
+    expect(body).toEqual({ type: 'text', content: 'two eggs and toast', bucket: 'afternoon', date: YESTERDAY, operationId: expect.any(String) });
   });
 
   it('with no viewed day the body is unchanged — absent still means today', async () => {
@@ -121,12 +121,12 @@ describe('AddCombobox — the viewed day rides along', () => {
       return {};
     });
     r(<AddCombobox bucketId="afternoon" onDone={() => {}} onCancel={() => {}} />);
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'chick' } });
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'chick' } });
     await waitFor(() => screen.getByText('Chicken breast'));
     fireEvent.click(screen.getByText('Chicken breast'));
     await waitFor(() => expect(apiMock.mock.calls.some(([p]) => p.includes('quickadd'))).toBe(true));
     const [, body] = apiMock.mock.calls.find(([p]) => p.includes('quickadd'));
-    expect(body).toEqual({ catalogEntryId: 'a', mealTime: 'afternoon' });
+    expect(body).toEqual({ catalogEntryId: 'a', mealTime: 'afternoon', operationId: expect.any(String) });
     expect('date' in body).toBe(false);
   });
 });

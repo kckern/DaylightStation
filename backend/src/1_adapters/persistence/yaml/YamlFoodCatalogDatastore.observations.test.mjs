@@ -44,7 +44,7 @@ describe('YamlFoodCatalogDatastore — the observation ring survives a restart',
     expect(reloaded.nutrients.calories).toBe(160);
   });
 
-  it('writes the DERIVED serving under `nutrients`, so the file agrees with the app', async () => {
+  it('keeps base nutrition separate from the derived serving across repeated saves', async () => {
     const { store, disk } = makeStore();
     await store.save(new FoodCatalogEntry({
       id: 'e1', name: 'Premier Protein Shake',
@@ -52,7 +52,11 @@ describe('YamlFoodCatalogDatastore — the observation ring survives a restart',
       observations: [obs(1), obs(2), obs(3)],
       lastUsed: '2026-08-25', createdAt: '2026-01-01T00:00:00.000Z',
     }), 'u');
-    expect(disk.rows[0].nutrients).toMatchObject({ calories: 160, protein: 30, sodium: 320 });
+    expect(disk.rows[0].nutrients).toMatchObject({ calories: 610, protein: 66, sodium: 320 });
+    const [entry] = await store.getAll('u');
+    expect(entry.nutrients.calories).toBe(160);
+    await store.save(entry, 'u');
+    expect(disk.rows[0].nutrients).toMatchObject({ calories: 610, protein: 66, sodium: 320 });
   });
 
   it('a legacy row with no observations hydrates to an empty ring and keeps its stored numbers', async () => {

@@ -67,31 +67,9 @@ export class DeleteListItem {
 
       let itemLabel = listItem?.label || listItem?.name || 'item';
 
-      // Load log if available
-      const log = logId ? await this.#foodLogStore.findById(userId, logId) : null;
-
-      if (log) {
-        const item = log.items.find((i) => i.id === entryId || i.uuid === entryId);
-        if (item) {
-          itemLabel = item.label || item.name || itemLabel;
-          const removeId = item.id || item.uuid || entryId;
-          const updatedLog = log.removeItem(removeId, new Date());
-
-          if (updatedLog.items.length === 0) {
-            await this.#foodLogStore.hardDelete(userId, logId);
-          } else {
-            await this.#foodLogStore.save(updatedLog);
-          }
-
-          await this.#nutriListStore.syncFromLog(updatedLog);
-        } else {
-          this.#logger.debug?.('adjustment.delete.itemNotInLog', { userId, entryId, logId });
-          await this.#nutriListStore.deleteById(userId, entryId);
-        }
-      } else {
-        this.#logger.debug?.('adjustment.delete.noLog', { userId, entryId, logId });
-        await this.#nutriListStore.deleteById(userId, entryId);
-      }
+      // Capture logs remain evidence. Delete the consumed entry, not a stale
+      // source snapshot that could overwrite unrelated corrections on replay.
+      await this.#nutriListStore.deleteById(userId, entryId);
 
       // Update message with confirmation (use caption for photo messages)
       const confirmationText = `🗑️ <b>${itemLabel}</b> deleted`;

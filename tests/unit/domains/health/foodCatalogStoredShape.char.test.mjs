@@ -72,6 +72,9 @@ describe('food catalog stored YAML shape (characterization)', () => {
       name: 'Greek Yogurt',
       normalizedName: 'greek yogurt',
       nutrients: { calories: 120, protein: 17, carbs: 7, fat: 0 },
+      baseGrams: null,
+      microBasis: {},
+      manualPortion: null,
       // catalog-density fix: the OBSERVATION RING is part of the stored shape.
       // `nutrients` above is now a materialized view of it — the derived
       // serving — and an entry with an empty ring writes the record it was

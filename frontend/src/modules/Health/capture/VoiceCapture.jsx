@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react';
-import { ActionIcon } from '@mantine/core';
+import { useEffect, useRef, useState } from 'react';
+import { ActionIcon, Button } from '@mantine/core';
+import { useCaptureTask } from './useCaptureTask.js';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 
 const logger = createAppLogger('health').child('voice-capture');
@@ -31,22 +32,62 @@ const MicIcon = ({ active }) => (
  * reachable from anywhere). `className` similarly lets QuickCaptureBar apply
  * its own sizing class instead of the meal-row default.
  */
-export function VoiceCapture({ onCapture, busy, bucket, mealLabel, labelPrefix, className }) {
+export function VoiceCapture({ active = true, onCapture, busy, bucket, mealLabel, labelPrefix, className }) {
   const recRef = useRef(null);
   const [recording, setRecording] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState(null);
+  const acquiring = useRef(false);
+  const live = useRef(true);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const task = useCaptureTask();
+
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+      const rec = recRef.current;
+      if (rec) {
+        rec.onstop = null;
+        if (rec.state !== 'inactive') rec.stop();
+        rec.stream?.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
+
+  // Leaving Today completes the current recording; no hidden microphone is
+  // left running. The captured submit closure still owns its original date.
+  useEffect(() => {
+    if (!active && recRef.current?.state === 'recording') recRef.current.stop();
+  }, [active]);
 
   const toggle = async () => {
-    if (recording) { recRef.current?.stop(); return; }
+    if (recording) { if (recRef.current?.state !== 'inactive') recRef.current?.stop(); return; }
+    if (!active || acquiring.current || pending || task.pending) return;
+    acquiring.current = true; setError(null);
+    let stream;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!live.current || !activeRef.current) { stream.getTracks().forEach(track => track.stop()); return; }
       const rec = new MediaRecorder(stream);
       const chunks = [];
       rec.ondataavailable = (e) => chunks.push(e.data);
+      rec.onerror = () => {
+        rec.onstop = null;
+        stream.getTracks().forEach(track => track.stop());
+        if (live.current) { setRecording(false); setError('Recording interrupted. Check microphone permission.'); }
+      };
       rec.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
         setRecording(false);
         const reader = new FileReader();
-        reader.onload = () => onCapture(reader.result, bucket);
+        setPending(true);
+        reader.onerror = () => { setPending(false); setError('Recording could not be read.'); };
+        reader.onload = async () => {
+          try { await task.run(() => onCapture(reader.result, bucket)); }
+          finally { if (live.current) setPending(false); }
+        };
         reader.readAsDataURL(new Blob(chunks, { type: rec.mimeType }));
       };
       recRef.current = rec;
@@ -54,8 +95,10 @@ export function VoiceCapture({ onCapture, busy, bucket, mealLabel, labelPrefix, 
       setRecording(true);
       logger.info('voice.start', { bucket: bucket || undefined });
     } catch (err) {
+      stream?.getTracks().forEach(track => track.stop());
+      if (live.current) setError('Microphone unavailable. Check permission or type your food.');
       logger.warn('voice.mic_unavailable', { error: err?.message });
-    }
+    } finally { acquiring.current = false; }
   };
 
   const idleLabel = labelPrefix
@@ -64,11 +107,12 @@ export function VoiceCapture({ onCapture, busy, bucket, mealLabel, labelPrefix, 
   const activeLabel = mealLabel ? `Stop recording — ${mealLabel}` : 'Stop recording';
 
   return (
-    <ActionIcon aria-label={recording ? activeLabel : idleLabel} loading={busy}
+    <><ActionIcon aria-label={recording ? activeLabel : idleLabel} loading={pending || task.pending}
       className={className || (mealLabel ? 'health-meal__capture-btn' : undefined)}
       color={recording ? 'red' : undefined} onClick={toggle}>
       <MicIcon active={recording} />
-    </ActionIcon>
+    </ActionIcon>{error || task.error ? <span role="alert" className="health-capture-error">{error || task.error}</span> : null}
+      {task.retry ? <Button size="compact-xs" disabled={task.pending} onClick={task.retry}>Retry recording</Button> : null}</>
   );
 }
 export default VoiceCapture;

@@ -8,6 +8,7 @@
 import { IFoodCatalogDatastore } from '#apps/health/ports/IFoodCatalogDatastore.mjs';
 import { FoodCatalogEntry } from '#domains/health/entities/FoodCatalogEntry.mjs';
 import { randomUUID } from 'node:crypto';
+import { readHealthYaml, writeHealthYaml } from './healthYaml.mjs';
 
 export class YamlFoodCatalogDatastore extends IFoodCatalogDatastore {
   #dataService;
@@ -40,14 +41,12 @@ export class YamlFoodCatalogDatastore extends IFoodCatalogDatastore {
       id: entry.id,
       name: entry.name,
       normalizedName: entry.normalizedName,
-      // The DERIVED view is what goes on disk, so anything reading the YAML
-      // directly (a report, a human, an export) sees the same serving the app
-      // shows. It is a materialized view of `observations`, never the input to
-      // the derivation — `#hydrate` hands it back as `nutrients`, which the
-      // entity keeps only as the fallback for an entry whose ring cannot
-      // answer. Micros ride along because the derived view layers over the
-      // base record.
-      nutrients: { ...entry.nutrients },
+      // Preserve source values and their portion basis; never feed a derived
+      // serving back into the evidence on the next hydration.
+      nutrients: { ...entry.baseNutrients },
+      baseGrams: entry.baseGrams,
+      microBasis: entry.microBasis,
+      manualPortion: entry.manualPortion,
       // The evidence. A field missing from this dehydrator is a field that
       // silently does not survive a restart — the trap this program has now
       // hit four times — so the ring is written whole, per observation copied.
@@ -69,15 +68,16 @@ export class YamlFoodCatalogDatastore extends IFoodCatalogDatastore {
     };
   }
 
-  async #loadCatalog(userId) {
-    const raw = this.#dataService.user.read?.(YamlFoodCatalogDatastore.CATALOG_PATH, userId);
-    if (!Array.isArray(raw)) return [];
+  #loadCatalog(userId) {
+    const raw = readHealthYaml(this.#dataService, YamlFoodCatalogDatastore.CATALOG_PATH, userId);
+    if (raw == null) return [];
+    if (!Array.isArray(raw)) throw new Error('Saved foods could not be read: invalid catalog format.');
     return raw.map(item => this.#hydrate(item));
   }
 
   async #saveCatalog(entries, userId) {
     const data = entries.map(e => this.#dehydrate(e));
-    return this.#dataService.user.write?.(YamlFoodCatalogDatastore.CATALOG_PATH, data, userId);
+    return writeHealthYaml(this.#dataService, YamlFoodCatalogDatastore.CATALOG_PATH, userId, data, 'CATALOG_WRITE_FAILED');
   }
 
   async findByNormalizedName(name, userId) {
@@ -102,7 +102,7 @@ export class YamlFoodCatalogDatastore extends IFoodCatalogDatastore {
   }
 
   async save(entry, userId) {
-    const catalog = await this.#loadCatalog(userId);
+    const catalog = this.#loadCatalog(userId);
     const idx = catalog.findIndex(e => e.id === entry.id);
     if (idx >= 0) {
       catalog[idx] = entry;
@@ -135,16 +135,11 @@ export class YamlFoodCatalogDatastore extends IFoodCatalogDatastore {
    * (e.g. YamlMedicalReadingsDatastore).
    */
   async removeById(id, userId) {
-    const catalog = await this.#loadCatalog(userId);
+    const catalog = this.#loadCatalog(userId);
     const idx = catalog.findIndex(e => e.id === id);
     if (idx < 0) return false;
     catalog.splice(idx, 1);
-    const result = await this.#saveCatalog(catalog, userId);
-    if (result === false) {
-      const err = new Error(`CATALOG_WRITE_FAILED: could not write food catalog to ${YamlFoodCatalogDatastore.CATALOG_PATH} for user ${userId}`);
-      err.code = 'CATALOG_WRITE_FAILED';
-      throw err;
-    }
+    await this.#saveCatalog(catalog, userId);
     return true;
   }
 }

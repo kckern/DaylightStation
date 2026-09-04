@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { buildWeightSeries, fmtLbs, fmtDelta, VIEW_W, VIEW_H } from './weightSeries.js';
+import { ErrorState } from '@/lib/ui';
 
 const logger = createAppLogger('health').child('weight-chip');
 
@@ -22,12 +23,13 @@ const ARROWS = { up: '▲', down: '▼', flat: '■' };
 export function WeightChip() {
   const res = useApiResource('api/v1/health/weight', { label: 'weight-chip', logger, swr: true });
   const series = useMemo(() => buildWeightSeries(res.data), [res.data]);
-  const { latestLbs, deltaLbs, direction, rawPoints, avgPoints, entries, latest } = series;
+  const { latestLbs, deltaLbs, direction, rawPoints, avgPoints, entries, latest, trendDays } = series;
+  if (res.error) return <ErrorState error={res.error} onRetry={res.reload} label="Weight unavailable" />;
 
   const deltaText = fmtDelta(deltaLbs);
   const label = latestLbs == null
     ? 'Weight, no readings yet'
-    : `Weight ${fmtLbs(latestLbs)} pounds${deltaText ? `, ${deltaText.replace('−', 'minus ').replace('+', 'plus ').replace('±', 'no change, ')} pounds over 7 days` : ', no 7-day trend yet'}`;
+    : `Weight ${fmtLbs(latestLbs)} pounds${deltaText ? `, ${deltaText.replace('−', 'minus ').replace('+', 'plus ').replace('±', 'no change, ')} pounds over ${trendDays} days` : ', no 7-day trend yet'}`;
 
   return (
     <div className="health-weightchip" role="group" aria-label={label} aria-busy={res.loading}>
@@ -38,7 +40,7 @@ export function WeightChip() {
           <span className={`health-weightchip__delta health-weightchip__delta--${direction}`} data-testid="weight-delta">
             <span className="health-weightchip__arrow" aria-hidden="true">{ARROWS[direction]}</span>
             {deltaText}
-            <span className="health-weightchip__window"> / 7d</span>
+            <span className="health-weightchip__window"> / {trendDays}d</span>
           </span>
         ) : (
           <span className="health-weightchip__delta health-weightchip__delta--none" data-testid="weight-delta-none">

@@ -5,6 +5,7 @@
  */
 
 import { deriveCanonical, sortObservations, normalizeRing, OBSERVATION_LIMIT } from '#domains/health/services/catalogDensity.mjs';
+import { MICRO_KEYS, foodGrams } from '#shared/contracts/health/foodQuantity.mjs';
 
 export class FoodCatalogEntry {
   /**
@@ -21,6 +22,8 @@ export class FoodCatalogEntry {
     this.name = data.name;
     this.normalizedName = data.normalizedName || FoodCatalogEntry.normalize(data.name);
     this.#baseNutrients = data.nutrients || { calories: 0, protein: 0, carbs: 0, fat: 0 };
+    this.baseGrams = typeof data.baseGrams === 'number' && data.baseGrams > 0 ? data.baseGrams : null;
+    this.microBasis = structuredClone(data.microBasis || {});
     // The last ~20 things actually logged under this name: `{date, kcal,
     // protein, carbs, fat, grams, logId, source}`. This is the entry's
     // evidence, and the canonical nutrition is a function of it.
@@ -44,6 +47,7 @@ export class FoodCatalogEntry {
     this.usageByBucket = FoodCatalogEntry.#cloneUsageByBucket(data.usageByBucket);
     this.lastUsed = data.lastUsed;
     this.createdAt = data.createdAt;
+    this.manualPortion = data.manualPortion ? structuredClone(data.manualPortion) : null;
   }
 
   /**
@@ -60,6 +64,7 @@ export class FoodCatalogEntry {
    * whatever the entry already knew rather than becoming a written 0.
    */
   get nutrients() {
+    if (this.manualPortion) return this.manualPortion.nutrients;
     const derived = deriveCanonical(this.observations);
     if (!derived) return this.#baseNutrients;
     return { ...this.#baseNutrients, ...derived.nutrients };
@@ -80,11 +85,12 @@ export class FoodCatalogEntry {
 
   /** The portion (in grams) the canonical numbers describe, or null. */
   get canonicalGrams() {
-    return deriveCanonical(this.observations)?.grams ?? null;
+    return this.manualPortion?.grams ?? deriveCanonical(this.observations)?.grams ?? this.baseGrams;
   }
 
   /** The entry's own median kcal/g, or null when nothing observed carries a mass. */
   get densityKcalPerGram() {
+    if (this.manualPortion) return this.manualPortion.nutrients.calories / this.manualPortion.grams;
     return deriveCanonical(this.observations)?.density ?? null;
   }
 
@@ -102,7 +108,7 @@ export class FoodCatalogEntry {
   nutrientsForGrams(grams) {
     const mass = Number(grams);
     if (!Number.isFinite(mass) || mass <= 0) return null;
-    const derived = deriveCanonical(this.observations);
+    const derived = this.manualPortion || deriveCanonical(this.observations) || (this.baseGrams ? { grams: this.baseGrams, nutrients: this.#baseNutrients } : null);
     if (!derived || !(derived.grams > 0)) return null;
     const factor = mass / derived.grams;
     const out = { ...this.#baseNutrients, ...derived.nutrients };
@@ -112,7 +118,19 @@ export class FoodCatalogEntry {
         out[key] = Math.round(derived.nutrients[key] * factor * 10) / 10;
       }
     }
+    for (const key of MICRO_KEYS) {
+      const basis = this.manualPortion ? { grams: this.manualPortion.grams, value: this.manualPortion.nutrients[key] } : this.microBasis[key];
+      // Old donated micro totals have no known mass basis. They cannot be
+      // copied unchanged onto a newly sized portion and called measurements.
+      if (basis?.grams > 0 && typeof basis.value === 'number') out[key] = Math.round(basis.value * mass / basis.grams * 100) / 100;
+      else delete out[key];
+    }
     return out;
+  }
+
+  proposedPortion(bucket) {
+    const grams = foodGrams(this.usageByBucket?.[bucket]?.quantity) ?? this.canonicalGrams;
+    return { grams, nutrients: this.nutrientsForGrams(grams) || this.nutrients };
   }
 
   /**
@@ -120,9 +138,12 @@ export class FoodCatalogEntry {
    * macros. This is what a provenanced capture donates — the two-gate rule
    * lives in FoodCatalogService; this only writes what it is handed.
    */
-  donateMicros(micros) {
+  donateMicros(micros, grams = null, source = null) {
     if (!micros || typeof micros !== 'object') return;
     this.#baseNutrients = { ...this.#baseNutrients, ...micros };
+    for (const key of MICRO_KEYS) {
+      if (typeof micros[key] === 'number') this.microBasis[key] = { value: micros[key], grams, source };
+    }
   }
 
   /**

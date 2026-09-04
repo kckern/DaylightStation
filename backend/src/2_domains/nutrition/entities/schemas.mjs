@@ -159,8 +159,8 @@ export function validateFoodItem(item) {
   }
 
   // Grams validation
-  if (typeof item.grams !== 'number' || item.grams <= 0 || item.grams > 10000) {
-    errors.push('grams must be a positive number up to 10000');
+  if (item.grams !== null && (typeof item.grams !== 'number' || !Number.isFinite(item.grams) || item.grams <= 0 || item.grams > 10000)) {
+    errors.push('grams must be a positive number up to 10000, or null when unknown');
   }
 
   // Unit validation
@@ -231,6 +231,9 @@ export function validateFoodItem(item) {
       settledBy: item.settledBy ?? null,
       settledAt: item.settledAt ?? null,
       microsSource: item.microsSource ?? null,
+      foodId: item.foodId ?? null,
+      originalQuantity: item.originalQuantity ?? null,
+      nutrientProvenance: item.nutrientProvenance ?? null,
     },
   };
 }

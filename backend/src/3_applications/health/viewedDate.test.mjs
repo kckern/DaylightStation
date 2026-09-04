@@ -14,7 +14,7 @@ import { FoodCatalogService } from './FoodCatalogService.mjs';
 import { TemplateService } from './TemplateService.mjs';
 import { FoodCatalogEntry } from '#domains/health/entities/FoodCatalogEntry.mjs';
 
-// Local 8:30pm on 2026-09-04 -> the clock's bucket is 'night'.
+// Local 8:30pm on 2026-09-04 -> the clock's bucket is 'evening'.
 const EVENING = new Date(2026, 8, 4, 20, 30).getTime();
 const YESTERDAY = '2026-09-03';
 const silent = { debug() {}, info() {}, warn() {}, error() {} };
@@ -62,14 +62,14 @@ describe('FoodCatalogService.quickAdd — the viewed day', () => {
   });
 
   it('on a PAST day with no meal named, the clock is silent and the day starts at its first meal', async () => {
-    // The clock would say 'night'. On a day that has already ended, 8:30pm
+    // The clock would say 'evening'. On a day that has already ended, 8:30pm
     // names no meal on that day (decision 2.24).
     expect((await svc.quickAdd('e1', 'u', { date: YESTERDAY })).mealTime).toBe('morning');
   });
 
   it('on TODAY with no meal named, the clock still speaks', async () => {
-    expect((await svc.quickAdd('e1', 'u', { date: '2026-09-04' })).mealTime).toBe('night');
-    expect((await svc.quickAdd('e1', 'u')).mealTime).toBe('night');
+    expect((await svc.quickAdd('e1', 'u', { date: '2026-09-04' })).mealTime).toBe('evening');
+    expect((await svc.quickAdd('e1', 'u')).mealTime).toBe('evening');
   });
 });
 
@@ -99,7 +99,7 @@ describe('TemplateService.instantiate — the viewed day', () => {
   it('on TODAY with no meal named, the clock still speaks', async () => {
     await svc.instantiate('t1', 'u', {});
     expect(saved.every((r) => r.date === '2026-09-04')).toBe(true);
-    expect(saved.every((r) => r.mealTime === 'night')).toBe(true);
+    expect(saved.every((r) => r.mealTime === 'evening')).toBe(true);
   });
 
   it('an explicitly named meal always wins, on any day', async () => {

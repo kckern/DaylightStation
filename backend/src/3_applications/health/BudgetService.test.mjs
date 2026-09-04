@@ -214,7 +214,7 @@ describe('BudgetService.getBudget — microCoverage (Task 6.1)', () => {
       nutriListStore: {
         findByDate: async () => ([
           // Real measured zero-ish micros, provenance present -> covered.
-          { calories: 100, sodium: 0, fiber: 0, sugar: 0, cholesterol: 0, microsSource: 'ai' },
+          { calories: 100, sodium: 0, fiber: 0, sugar: 0, cholesterol: 0, microsSource: 'ai', nutrientProvenance: { sodium: 'ai', fiber: 'ai', sugar: 'ai', cholesterol: 'ai' } },
           // Structural zeros with NO provenance -> NOT covered, even though
           // every micro field is present and numeric.
           { calories: 100, sodium: 0, fiber: 0, sugar: 0, cholesterol: 0, microsSource: null },
@@ -232,8 +232,8 @@ describe('BudgetService.getBudget — microCoverage (Task 6.1)', () => {
     const svc = makeService({
       nutriListStore: {
         findByDate: async () => ([
-          { calories: 100, microsSource: 'catalog' },
-          { calories: 100, microsSource: 'ai' },
+          { calories: 100, sodium: 0, microsSource: 'catalog', nutrientProvenance: { sodium: 'catalog' } },
+          { calories: 100, sodium: 5, microsSource: 'ai', nutrientProvenance: { sodium: 'ai' } },
         ]),
       },
     });
@@ -245,7 +245,7 @@ describe('BudgetService.getBudget — microCoverage (Task 6.1)', () => {
     const svc = makeService({
       nutriListStore: {
         findByDate: async () => ([
-          { calories: 100, microsSource: 'ai' },
+          { calories: 100, fiber: 5, microsSource: 'ai', nutrientProvenance: { fiber: 'ai' } },
           { calories: 100, status: 'pending' },
           { calories: 100, status: 'deleted' },
         ]),
@@ -260,8 +260,8 @@ describe('BudgetService.getBudget — microCoverage (Task 6.1)', () => {
       nutriListStore: {
         findByDate: async () => ([
           { uuid: 'g1', kind: 'group', calories: 0 },
-          { uuid: 'c1', kind: 'item', parentId: 'g1', calories: 200, microsSource: 'ai' },
-          { uuid: 'c2', kind: 'item', parentId: 'g1', calories: 300, microsSource: 'ai' },
+          { uuid: 'c1', kind: 'item', parentId: 'g1', calories: 200, sugar: 0, microsSource: 'ai', nutrientProvenance: { sugar: 'ai' } },
+          { uuid: 'c2', kind: 'item', parentId: 'g1', calories: 300, sugar: 5, microsSource: 'ai', nutrientProvenance: { sugar: 'ai' } },
         ]),
       },
     });

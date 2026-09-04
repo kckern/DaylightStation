@@ -52,10 +52,11 @@ vi.mock('./mealBuckets.js', async (importOriginal) => {
   return { ...actual, currentMealBucketId: () => 'afternoon' };
 });
 
+import { MemoryRouter } from 'react-router-dom';
 import { TodayView } from './TodayView.jsx';
 import { resetApiResourceCache } from '../../../lib/hooks/useApiResource.js';
 
-function r(ui) { return render(<MantineProvider>{ui}</MantineProvider>); }
+function r(ui) { return render(<MemoryRouter><MantineProvider>{ui}</MantineProvider></MemoryRouter>); }
 
 const NUTRILIST = { data: [] };
 const BUDGET = { budget: 2000, food: 0, exercise: 0, remaining: 2000, status: 'under', sessions: [] };
@@ -63,7 +64,7 @@ const DASHBOARD = { today: { coaching: [] } };
 
 const baseApi = (overrides = {}) => async (path) => {
   if (path.includes('nutrition/observations')) return overrides.observations ?? { observations: [] };
-  if (path.includes('nutrilist/')) return NUTRILIST;
+  if (path.includes('health/day?')) return { items: NUTRILIST.data, budget: BUDGET };
   if (path.includes('budget')) return BUDGET;
   if (path.includes('dashboard')) return DASHBOARD;
   if (path.includes('nutrition/pending')) return overrides.pending ?? { pending: [] };
@@ -153,7 +154,7 @@ describe('TodayView — Task 3.2: permanent chrome, SWR day data, in-place captu
 
   it('renders every meal heading during a true cold load, with the shimmer confined to section bodies', async () => {
     apiMock.mockImplementation(async (path) => {
-      if (path.includes('nutrilist/')) return new Promise(() => {}); // never resolves — stay cold
+      if (path.includes('health/day?')) return new Promise(() => {}); // never resolves — stay cold
       if (path.includes('budget')) return BUDGET;
       if (path.includes('dashboard')) return DASHBOARD;
       if (path.includes('nutrition/pending')) return { pending: [] };
@@ -176,7 +177,7 @@ describe('TodayView — Task 3.2: permanent chrome, SWR day data, in-place captu
 
   it('a cached day renders immediately on mount with no shimmer and rows already present (SWR cache hit)', async () => {
     apiMock.mockImplementation(async (path) => {
-      if (path.includes('nutrilist/')) return NUTRILIST_WITH_ROW;
+      if (path.includes('health/day?')) return { items: NUTRILIST_WITH_ROW.data, budget: BUDGET };
       if (path.includes('budget')) return BUDGET;
       if (path.includes('dashboard')) return DASHBOARD;
       if (path.includes('nutrition/pending')) return { pending: [] };
@@ -205,9 +206,9 @@ describe('TodayView — Task 3.2: permanent chrome, SWR day data, in-place captu
           ? { pending: [{ id: 'log-9', source: 'scale', items: [{ label: 'Chicken breast', calories: 231 }] }] }
           : { pending: [] };
       }
-      if (path.includes('nutrilist/')) {
-        if (phase === 'initial') return NUTRILIST_WITH_ROW;
-        return new Promise((res) => { resolveReload = () => res(NUTRILIST_WITH_TWO_ROWS); });
+      if (path.includes('health/day?')) {
+        if (phase === 'initial') return { items: NUTRILIST_WITH_ROW.data, budget: BUDGET };
+        return new Promise((res) => { resolveReload = () => res({ items: NUTRILIST_WITH_TWO_ROWS.data, budget: BUDGET }); });
       }
       return {};
     });
@@ -234,7 +235,7 @@ describe('TodayView — Task 3.2: permanent chrome, SWR day data, in-place captu
 
   it('the Exercise header renders with zero sessions once budget data has loaded', async () => {
     apiMock.mockImplementation(async (path) => {
-      if (path.includes('nutrilist/')) return NUTRILIST;
+      if (path.includes('health/day?')) return { items: NUTRILIST.data, budget: BUDGET };
       if (path.includes('budget')) return BUDGET; // sessions: []
       if (path.includes('dashboard')) return DASHBOARD;
       if (path.includes('nutrition/pending')) return { pending: [] };
@@ -248,7 +249,7 @@ describe('TodayView — Task 3.2: permanent chrome, SWR day data, in-place captu
   it('shows an in-place "Analyzing…" placeholder in the target bucket while a capture is in flight, cleared once the result lands', async () => {
     let resolveInput;
     apiMock.mockImplementation(async (path) => {
-      if (path.includes('nutrilist/')) return NUTRILIST;
+      if (path.includes('health/day?')) return { items: NUTRILIST.data, budget: BUDGET };
       if (path.includes('budget')) return BUDGET;
       if (path.includes('dashboard')) return DASHBOARD;
       if (path.includes('nutrition/pending')) return { pending: [] };
@@ -381,7 +382,7 @@ describe('TodayView — scale observations', () => {
 
   const withRows = (rows, observations) => async (path) => {
     if (String(path).includes('nutrition/observations')) return { observations };
-    if (String(path).includes('nutrilist/')) return { data: rows };
+    if (String(path).includes('health/day?')) return { items: rows, budget: BUDGET };
     if (String(path).includes('budget')) return BUDGET;
     if (String(path).includes('dashboard')) return DASHBOARD;
     if (String(path).includes('nutrition/pending')) return { pending: [] };
@@ -509,7 +510,7 @@ describe('TodayView — saving a meal writes a template, and the picker is the o
       date: '2026-09-04', mealTime: 'morning', kind: 'item', color: 'green', grams: 100, unit: 'g', amount: 100 },
   ] };
   const dayApi = (overrides = {}) => async (path, body, method) => {
-    if (path.includes('nutrilist/')) return ROWS;
+    if (path.includes('health/day?')) return { items: ROWS.data, budget: BUDGET };
     return baseApi(overrides)(path, body, method);
   };
 
