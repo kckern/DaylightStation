@@ -493,29 +493,77 @@ and reaches the filesystem, so it is gated the way `photoRef` is: a strict allow
 the store. Critically the slug is **never concatenated onto a path** — it can only select a
 manifest entry — and the entry's own path is then validated independently (no absolute
 paths, no `..` segments, a closed extension allowlist) and containment-checked after the
-join. `..`, encoded traversal and absolute paths are simply not slugs. Content-Type comes
+join. `..`, encoded traversal and absolute paths are simply not slugs.
+
+Containment is checked on the **real** path, not the lexical one: `path.resolve` collapses
+`..` but knows nothing about symlinks, so a link planted inside the media root pointing
+outside it used to pass and content from outside the root was served (found in review,
+through both a symlinked file and a symlinked directory). Both ends are realpath'd before
+comparison, which also subsumes the existence check — a dangling link reads as a miss. A
+symlink that stays inside the root is still served; the rule is containment, not a ban on
+links. **The honest limit:** that hole required write access to the media mount, which no
+request can obtain. These checks defend against a hostile manifest entry and a hostile
+slug; nothing here defends against someone who can already write into the media tree.
+
+Content-Type comes
 from the manifest entry's extension with `nosniff`; the cache is a year and `immutable`,
 since a slug's bytes never change (a correction repoints the slug). A miss — unknown slug,
 no manifest installed, or a file that is not there — is a 404, and the row falls back to
 the dot.
 
 **Never the source file.** The hi-res art averages ~3 MB per PNG (median 3.0 MB; 528 of
-the 534 offered icons exceed 1 MB) while a row renders one at 24 CSS px and the picker
-shows up to 60 at 40 CSS px. Serving the sources verbatim would cost tens of megabytes for
-one day's log and well over a hundred for one open picker, so every request serves a 96px
-downscale — enough for both consumers at 2× device pixel ratio. Derivatives are generated
-once with `jimp` and cached on disk under the **data** mount
-(`data/household/apps/health/icon-cache/`), never written back into `media/`, which is
+the 534 offered icons exceed 1 MB, largest 6.7 MB) while a row renders one at 24 CSS px and
+the picker shows up to 60 at 40 CSS px. Serving the sources verbatim would cost tens of
+megabytes for one day's log and well over a hundred for one open picker, so every request
+serves a **96 px** downscale — enough for both consumers at 2× device pixel ratio.
+Derivatives are generated once with `jimp` and cached on disk under the **data** mount at
+`data/household/apps/health/icon-cache/`, never written back into `media/`, which is
 Dropbox-synced and read-only as far as this app is concerned. Measured on the installed
-manifest: five representative icons totalling 13.4 MB serve as 44 KB.
+manifest: five representative icons totalling 13.4 MB serve as 44 KB; a full warm cache is
+~12 KB per icon.
 
-The cache key is a hash of the resolved source path, its size and its mtime, so repointing
-a slug in the manifest — or editing the file under it — produces a new key rather than
-serving stale art from behind the year-long immutable header. Superseded entries are
-orphaned; at a few KB each, nothing sweeps them. Rendering fails **soft** in every
-direction (no cache directory, unreadable source, undecodable bytes, unwritable cache): the
-original file is served instead. An icon is decoration and must never be the reason a row
-cannot render.
+**Cache keying.** The filename is `{slug}.{hash}.png`, where the hash covers the resolved
+source path, its size and its **mtime**. Repointing a slug in the manifest — or editing the
+file under it — therefore produces a new key rather than serving stale art from behind the
+year-long immutable header. Superseded entries are orphaned; at ~12 KB each, nothing sweeps
+them.
+
+**Rendering is bounded, because it is loop-bound work.** `jimp` is pure JavaScript: one
+render is ~250–500 ms of *synchronous* CPU on the event loop. The picker asks for 60 icons
+at once, and before this was bounded, 60 cold renders took 16.3 s wall and dragged an
+unrelated lightweight endpoint from 2.1 ms to 3.35 s — the whole backend, since school,
+media and fitness share that loop. Three things bound it now:
+
+- **One render at a time.** Raising the limit buys no parallelism (there is one loop) and
+  only lets more synchronous work queue back-to-back.
+- **A yield between renders**, so everything queued behind one gets a turn before the next
+  seizes the loop. Without it the gate merely reorders one long stall.
+- **In-flight de-duplication**, keyed by cache path: N simultaneous requests for the same
+  icon share one decode.
+
+Measured after: the unrelated endpoint's worst case fell from 3,353 ms to 540 ms and its
+p95 from 3,353 ms to 262 ms. The burst's own wall time is unchanged — the CPU cost is the
+same however it is spread — which is why the cache is also **pre-warmed**.
+
+**Pre-warming.** The composition root kicks off `warmCache()` once at boot,
+fire-and-forget: it renders every offered icon that is not already cached, one at a time,
+pausing between each for roughly a 50 % duty cycle, giving up on a budget, swallowing every
+error. Nothing waits for it; it exists so the picker never discovers a cold cache. It
+matters because the cache key includes source mtime — a Dropbox re-sync that only touches
+timestamps invalidates all 534 at once and re-arms exactly that herd. Warm versus cold, 60
+concurrent requests: **13.14 s → 0.01 s** (2,074×), and over HTTP a warm picker is 0.21 s
+wall with the unrelated endpoint unaffected at 9 ms.
+
+**When rendering is impossible, large sources are REFUSED, not shipped.** Falling back to
+the original looked like the safe choice — an icon is decoration, so serve something — and
+it is not: it silently re-creates the multi-megabyte payload the renderer exists to
+prevent. Observed for real during this work: an ACL on the data mount made the cache
+unwritable and 124 consecutive renders each quietly served their source, one of them
+6.7 MB, announced only by a `warn` among 124 identical ones. So a source over **64 KB** is
+now refused with a `health.icons.render.unavailable` **error** naming the reason and the
+size, and the row shows its neutral dot. Smaller sources are still served unrendered, which
+keeps the ~4 KB legacy vocabulary working when only the hi-res half is affected. A missing
+picture is a far smaller harm than a 3 MB one, and it is loud.
 
 **When the file is not there.** A Dropbox conflicted copy once emptied a media directory
 while leaving it in place, and the illustrations 404'd in production with nothing logging

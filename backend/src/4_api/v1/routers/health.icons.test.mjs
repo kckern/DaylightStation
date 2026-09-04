@@ -165,30 +165,43 @@ describe('GET /api/v1/health/nutrition/icons/:slug', () => {
 
     // The route's OWN allowlist, proven independently of the adapter's. Every
     // test above would still pass if the route check were deleted, because the
-    // real store refuses the same slugs — so those tests cannot tell whether
-    // the HTTP boundary is guarded at all. This one can: it hands the route a
-    // deliberately naive store that joins whatever it is given onto a
-    // directory, which is exactly what the boundary check exists to protect
-    // against when a future store is written or an existing one is loosened.
-    it('the ROUTE refuses a traversal slug before any store sees it, even a store that would happily serve it', async () => {
+    // real store refuses the same slugs — so those tests cannot tell whether the
+    // HTTP boundary is guarded at all.
+    //
+    // What this proves, exactly: that the store is NEVER CONSULTED for a
+    // traversal slug. It does NOT prove that an unguarded route would have
+    // served the decoy — the double below is deliberately minimal and would
+    // have to be a full store to demonstrate that. The narrow claim is the one
+    // that matters: the boundary check runs before anything downstream gets a
+    // say, so a future store, or a loosened existing one, is never reached.
+    it('the ROUTE refuses a traversal slug before the store is consulted at all', async () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'health-icons-naive-'));
       fs.writeFileSync(path.join(path.dirname(dir), 'naive-secret.png'), 'NAIVE SECRET BYTES');
-      let sawSlug = null;
-      const naiveStore = {
-        resolve(slug) {
-          sawSlug = slug;
-          const p = path.join(dir, `${slug}.png`);
-          return fs.existsSync(p) ? { slug, absolutePath: p, contentType: 'image/png' } : null;
-        },
+      const seen = [];
+      const recordingStore = {
+        resolve(slug) { seen.push(slug); return null; },
+        resolveRendered(slug) { seen.push(slug); return Promise.resolve(null); },
       };
-      const app = makeApp({ iconManifestStore: naiveStore });
+      const app = makeApp({ iconManifestStore: recordingStore });
       const res = await request(app).get(
         `/api/v1/health/nutrition/icons/${encodeURIComponent('../' + path.basename(dir) + '/../naive-secret')}`,
       );
       expect(res.status).toBe(404);
       expect(String(res.text || res.body || '')).not.toMatch(/NAIVE SECRET BYTES/);
-      // The decisive assertion: the store was never consulted at all.
-      expect(sawSlug).toBeNull();
+      // The decisive assertion: neither entry point on the store was called.
+      expect(seen).toEqual([]);
+    });
+
+    it('a LEGITIMATE slug does reach the store, so the assertion above is not vacuous', async () => {
+      const seen = [];
+      const app = makeApp({
+        iconManifestStore: {
+          resolve(slug) { seen.push(slug); return null; },
+          resolveRendered(slug) { seen.push(slug); return Promise.resolve(null); },
+        },
+      });
+      await request(app).get('/api/v1/health/nutrition/icons/carrot');
+      expect(seen).toContain('carrot');
     });
 
     it('a doubly-encoded traversal is refused too', async () => {

@@ -101,6 +101,12 @@ describe('installed icon manifest', () => {
     const legacy = readdirSync(flatDir)
       .filter((f) => /\.(png|jpe?g)$/i.test(f))
       .map((f) => f.replace(/\.[^.]+$/, ''));
+    // Without this the test passes VACUOUSLY on an exists-but-empty directory —
+    // legacy=[] gives dark=[] and a green tick over the exact condition it
+    // exists to detect. An emptied-but-present folder IS the incident shape
+    // (a Dropbox conflicted copy), so the emptiness has to be asserted, not
+    // just the directory's existence.
+    expect(legacy.length).toBeGreaterThan(0);
     const dark = legacy.filter((slug) => ICON_SLUG_PATTERN.test(slug) && store.resolve(slug) === null);
     expect(dark).toEqual([]);
   });
