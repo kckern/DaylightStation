@@ -7,6 +7,13 @@ import { computeDailyBudget } from '#domains/health/services/BudgetMath.mjs';
 import { isCountedRow } from '#shared/contracts/nutrition/countedRows.mjs';
 
 const STALE_WEIGHT_DAYS = 7;
+
+// A range request folds one findByDateRange result and one weight/goal load,
+// so its cost is flat in the number of days — but the response is not, and an
+// unbounded `from` would happily ask the nutrilist adapter to walk every
+// archive month on disk. 62 days covers the longest thing any surface asks for
+// (a 30-day block, a 14-day adherence strip) with room to spare.
+const MAX_RANGE_DAYS = 62;
 // THE one predicate, shared verbatim with the Today view's per-meal subtotals
 // and footer (shared/contracts/nutrition/countedRows.mjs). The kcal fold and
 // the macro fold are the same fold, applied once to one filtered list; two
@@ -116,6 +123,36 @@ const sumExerciseCalories = (sessions) => sessions.reduce((sum, w) => {
   return sum + (Number.isFinite(c) ? c : 0);
 }, 0);
 
+const rangeInvalid = (message) => {
+  const err = new Error(`RANGE_INVALID: ${message}`);
+  err.code = 'RANGE_INVALID';
+  throw err;
+};
+
+const isISODate = (value) => typeof value === 'string'
+  && /^\d{4}-\d{2}-\d{2}$/.test(value)
+  // Rejects 2026-02-31 and friends: Date normalizes them to the next month, so
+  // a round-trip through toISOString is what actually tests calendar validity.
+  && new Date(`${value}T12:00:00Z`).toISOString().slice(0, 10) === value;
+
+// Inclusive [from, to] as YYYY-MM-DD, walked at a noon-UTC anchor so no DST
+// transition can drop or duplicate a day.
+const eachDate = (from, to) => {
+  const out = [];
+  const cursor = new Date(`${from}T12:00:00Z`);
+  const end = new Date(`${to}T12:00:00Z`);
+  while (cursor <= end) {
+    out.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return out;
+};
+
+// The date a nutrilist row belongs to, spelled exactly as
+// YamlNutriListDatastore.findByDateRange's own filter spells it — a row whose
+// `date` is absent is dated by its createdAt, and one with neither is dropped.
+const rowDate = (row) => row?.date || row?.createdAt?.substring(0, 10) || null;
+
 export class BudgetService {
   #goalsStore; #healthStore; #nutriListStore; #clock; #logger;
 
@@ -141,18 +178,28 @@ export class BudgetService {
     return goals;
   }
 
-  async getBudget(userId, date) {
-    const goals = await this.#goalsStore.load(userId);
-    if (!goals) {
-      const err = new Error('GOALS_NOT_CONFIGURED: set goals before requesting a budget');
-      err.code = 'GOALS_NOT_CONFIGURED';
-      throw err;
-    }
+  // ---------------------------------------------------------------------
+  // The two pieces getBudget and getBudgetRange BOTH go through. They exist so
+  // there is exactly one weight resolution and exactly one COUNTED fold in this
+  // file: a "range-specific" copy of either is how the strip's bars and the
+  // day's kcal number come to disagree on one screen.
+  // ---------------------------------------------------------------------
 
-    // Latest known adjusted-average weight at or before `date`
-    const weightData = await this.#healthStore.loadWeightData(userId) || {};
-    const dates = Object.keys(weightData).filter((d) => d <= date).sort();
-    const latestDate = dates.at(-1) || null;
+  // Latest known adjusted-average weight at or before `date` -> the day's
+  // budget. Throws NO_WEIGHT_DATA when no usable reading exists; the range
+  // caller catches that per day and emits a gap rather than failing the range.
+  // `sortedWeightDates` is the ONE sort, hoisted so a 62-day range does not
+  // re-sort the whole weight history 62 times.
+  #budgetForDate({ goals, weightData, sortedWeightDates, date }) {
+    // Latest entry dated at or before `date`, whatever it holds. Deliberately
+    // NOT "latest entry that happens to carry a usable number": a malformed
+    // most-recent reading must surface as NO_WEIGHT_DATA rather than silently
+    // resolving to an older, wrong weight.
+    let latestDate = null;
+    for (const d of sortedWeightDates) {
+      if (d > date) break;
+      latestDate = d;
+    }
     const weightLbs = latestDate ? Number(weightData[latestDate]?.lbs_adjusted_average) : NaN;
     if (!Number.isFinite(weightLbs)) {
       const err = new Error('NO_WEIGHT_DATA: no usable weight reading for budget');
@@ -160,7 +207,6 @@ export class BudgetService {
       throw err;
     }
     const daysOld = (new Date(`${date}T12:00:00Z`) - new Date(`${latestDate}T12:00:00Z`)) / 86400000;
-    const stale = daysOld > STALE_WEIGHT_DAYS;
 
     const now = new Date(this.#clock.now());
     const ageYears = now.getUTCFullYear() - Number(goals.birthYear);
@@ -174,14 +220,17 @@ export class BudgetService {
       weeklyRateLbs: Number(goals.weeklyRateLbs ?? 1),
       budgetFloor: Number(goals.budgetFloor ?? 1200),
     });
+    return { budget, stale: daysOld > STALE_WEIGHT_DAYS };
+  }
 
-    const items = await this.#nutriListStore.findByDate(userId, date) || [];
-    const counted = items.filter(COUNTED);
+  // THE fold. One COUNTED filter, one pass, feeding kcal, macros, micros and
+  // coverage — see the COUNTED note at the top of this file.
+  #foldItems(items) {
+    const counted = (Array.isArray(items) ? items : []).filter(COUNTED);
     const sumOf = (key) => Math.round(counted.reduce((sum, i) => {
       const v = Number(i?.[key]);
       return sum + (Number.isFinite(v) ? v : 0);
     }, 0));
-    const food = sumOf('calories');
 
     // Group rows carry ZERO nutrition by design (groupParsedItems.mjs); their
     // children carry the real values as siblings in this same flat list. So an
@@ -203,6 +252,29 @@ export class BudgetService {
       MICRO_KEYS.map((k) => [k, { covered, total: foodRows.length }]),
     );
 
+    return { food: sumOf('calories'), macros, microCoverage };
+  }
+
+  async #loadGoalsOrThrow(userId) {
+    const goals = await this.#goalsStore.load(userId);
+    if (!goals) {
+      const err = new Error('GOALS_NOT_CONFIGURED: set goals before requesting a budget');
+      err.code = 'GOALS_NOT_CONFIGURED';
+      throw err;
+    }
+    return goals;
+  }
+
+  async getBudget(userId, date) {
+    const goals = await this.#loadGoalsOrThrow(userId);
+    const weightData = await this.#healthStore.loadWeightData(userId) || {};
+    const { budget, stale } = this.#budgetForDate({
+      goals, weightData, sortedWeightDates: Object.keys(weightData).sort(), date,
+    });
+
+    const items = await this.#nutriListStore.findByDate(userId, date) || [];
+    const { food, macros, microCoverage } = this.#foldItems(items);
+
     const workouts = await this.#healthStore.getWorkoutsForDate(userId, date);
     const sessions = flattenWorkoutSessions(workouts);
     const exercise = Math.round(sumExerciseCalories(sessions));
@@ -213,6 +285,64 @@ export class BudgetService {
       remaining, status: remaining >= 0 ? 'under' : 'over', stale, sessions, goals,
       macros, microCoverage,
     };
+  }
+
+  /**
+   * The same equation over an inclusive date range, in ONE pass over storage:
+   * goals once, weight history once, the whole range's nutrilist rows in a
+   * single findByDateRange, and the workout ledger once via getWorkoutsForRange
+   * (the per-date call re-reads the entire strava + fitness files every time —
+   * 62 days would be 124 whole-file loads on one request).
+   *
+   * A day the equation cannot be computed for is a GAP, not a failure: it comes
+   * back as `{ date, error: 'NO_WEIGHT_DATA' }` and the rest of the range is
+   * unaffected. Missing goals is different — it is a property of the account,
+   * not of a day, so it throws and the whole range 409s.
+   *
+   * @returns {Promise<Array<{date: string} & ({error: string} | object)>>}
+   */
+  async getBudgetRange(userId, from, to) {
+    if (!isISODate(from) || !isISODate(to)) rangeInvalid('from and to must be YYYY-MM-DD dates');
+    if (from > to) rangeInvalid('from must be on or before to');
+    const dates = eachDate(from, to);
+    if (dates.length > MAX_RANGE_DAYS) {
+      rangeInvalid(`range is ${dates.length} days; the maximum is ${MAX_RANGE_DAYS}`);
+    }
+
+    const goals = await this.#loadGoalsOrThrow(userId);
+    const [weightData, allItems, workoutsByDate] = await Promise.all([
+      this.#healthStore.loadWeightData(userId).then((w) => w || {}),
+      this.#nutriListStore.findByDateRange(userId, from, to).then((i) => i || []),
+      this.#healthStore.getWorkoutsForRange(userId, from, to).then((w) => w || {}),
+    ]);
+    const sortedWeightDates = Object.keys(weightData).sort();
+
+    // Fold the one range read into per-day buckets rather than re-filtering the
+    // whole list once per date (O(days x rows) for no reason).
+    const itemsByDate = new Map();
+    for (const row of allItems) {
+      const d = rowDate(row);
+      if (!d) continue;
+      const bucket = itemsByDate.get(d);
+      if (bucket) bucket.push(row); else itemsByDate.set(d, [row]);
+    }
+
+    return dates.map((date) => {
+      let budget; let stale;
+      try {
+        ({ budget, stale } = this.#budgetForDate({ goals, weightData, sortedWeightDates, date }));
+      } catch (err) {
+        if (err.code === 'NO_WEIGHT_DATA') return { date, error: 'NO_WEIGHT_DATA' };
+        throw err;
+      }
+      const { food, macros } = this.#foldItems(itemsByDate.get(date) || []);
+      const exercise = Math.round(sumExerciseCalories(flattenWorkoutSessions(workoutsByDate[date])));
+      const remaining = budget - food + exercise;
+      return {
+        date, budget, food, exercise, net: food - exercise,
+        remaining, status: remaining >= 0 ? 'under' : 'over', stale, macros,
+      };
+    });
   }
 }
 export default BudgetService;
