@@ -123,6 +123,18 @@
  * applies a whole batch of per-id patches inside ONE read-modify-write-rename cycle, so
  * the set lands atomically or not at all.
  *
+ * A batch is additionally refused OUTRIGHT when it spans more than ONE physical file —
+ * the hot file plus an archive, or two archive months (`ValidationError`, code
+ * `CROSS_FILE_BATCH`, thrown before any write). One file is the largest unit this store
+ * can write atomically; two files are two independent atomic renames with no compensating
+ * rollback between them, so a throw on the second leaves the first already applied. That
+ * was demonstrated, not theorised: a batch spanning one archived and one hot row, with the
+ * archive directory made unwritable, threw AND left the hot row rewritten. The composition
+ * consume path this method was built for cannot produce such a batch (its patches come
+ * from `openForScale`, which only yields OPEN rows, and an open row is never archived);
+ * only a manual re-pair of resolved history can, and for that a clean refusal the caller
+ * can report is strictly better than a silently half-repaired ledger.
+ *
  * "Not at all" is a deliberate choice over "apply what you can and report the rest":
  * this method exists specifically for a consume operation where a partial application
  * is not a lesser success, it is exactly the corruption this fix was written to prevent —
@@ -195,6 +207,13 @@ const HOT_RETENTION_DAYS = 7;
  * holds — so this constant, not the file's age, is what bounds the write cost.
  */
 const HOT_ROLL_THRESHOLD_ROWS = 250;
+
+/**
+ * Sentinel for "the hot file" in `updateMany`'s per-id location map, so the hot file and
+ * an archive month (`'2026-01'`) are comparable keys. Not a path and never written
+ * anywhere — a `YYYY-MM` archive name can never collide with it.
+ */
+const HOT_FILE_KEY = '\u0000hot';
 
 /** The four scale signal kinds this store persists. */
 const KNOWN_KINDS = Object.freeze(['weight', 'upc', 'container', 'density']);
@@ -741,7 +760,10 @@ export class YamlObservationStore extends IObservationStore {
    * @returns {Observation[]} The updated records, in the same order as `patches`.
    * @throws {ValidationError} `INVALID_OBSERVATION_ID` / `UNKNOWN_PATCH_FIELD` /
    *   `INVALID_OBSERVATION_STATUS` for a malformed entry; `DUPLICATE_PATCH_ID` if the same
-   *   `id` appears more than once in `patches`. Nothing is written when any of these throw.
+   *   `id` appears more than once in `patches`; `CROSS_FILE_BATCH` if the ids do not all
+   *   live in one file (hot, or one archive month) — this store cannot write two files
+   *   atomically, so such a batch is refused rather than half-applied. Nothing is written
+   *   when any of these throw.
    * @throws {InfrastructureError} `NOT_FOUND` if ANY id in `patches` does not exist —
    *   lists every missing id in `context.ids`, and nothing is written, not even for the
    *   ids that DID exist.
@@ -797,6 +819,27 @@ export class YamlObservationStore extends IObservationStore {
       throw new InfrastructureError(
         `Observation(s) not found: ${missing.join(', ')}`,
         { code: 'NOT_FOUND', entity: 'Observation', ids: missing },
+      );
+    }
+
+    // CROSS-FILE REFUSAL — see the module docstring. Every id in one batch must live in
+    // the SAME physical file, because that is the largest unit this store can write
+    // atomically (one `saveYamlToPathAtomic` rename). A batch spanning the hot file and an
+    // archive, or two archive months, has no single rename and no compensating rollback:
+    // the earlier file lands, the later one throws, and the ledger is left half-repaired
+    // with nothing able to detect it. Refusing BEFORE the first byte is written turns that
+    // latent half-state into an explicit, catchable error the caller can report.
+    const fileOf = (id) => (indexById.has(id) ? HOT_FILE_KEY : archiveLocation.get(id));
+    const files = [...new Set(patches.map(({ id }) => fileOf(id)))];
+    if (files.length > 1) {
+      throw new ValidationError(
+        `updateMany cannot span more than one file (this batch touches: ${files.map((f) => (f === HOT_FILE_KEY ? 'the hot file' : `archive ${f}`)).join(', ')}) — split it, or re-pair one observation at a time`,
+        {
+          code: 'CROSS_FILE_BATCH',
+          field: 'patches',
+          files,
+          ids: patches.map(({ id }) => id),
+        },
       );
     }
 

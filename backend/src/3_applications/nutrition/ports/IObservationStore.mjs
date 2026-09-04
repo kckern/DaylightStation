@@ -28,7 +28,14 @@
  * - **`updateMany` is ALL-OR-NOTHING**, in ONE read-modify-write cycle. A completed
  *   composition consumes up to three observations into one entry; a partial application
  *   is not a lesser success, it is the corruption the batch exists to prevent. A missing
- *   id throws `NOT_FOUND` naming every missing id, and nothing is written.
+ *   id throws `NOT_FOUND` naming every missing id, and nothing is written. An
+ *   implementation that cannot write its whole batch atomically must REFUSE the batch
+ *   (`CROSS_FILE_BATCH`) before writing anything rather than apply the part it can:
+ *   `YamlObservationStore` stores a bounded hot file plus monthly archives, and a batch
+ *   spanning two of them was measured leaving the hot half applied and the cold half not.
+ *   Only a manual re-pair of already-resolved history can produce such a batch — the
+ *   composition consume path this method exists for patches only OPEN rows, which are
+ *   never archived.
  * - **Rows are never deleted.** `status` moves `open -> consumed | dismissed`; the row
  *   stays. A dismissed observation is evidence that a signal arrived and was judged not
  *   to matter, which is what someone debugging "why didn't my weight show up" needs.
@@ -107,7 +114,9 @@ export class IObservationStore {
   }
 
   /**
-   * Apply a batch of per-id patches atomically — ALL-OR-NOTHING.
+   * Apply a batch of per-id patches atomically — ALL-OR-NOTHING. A batch the
+   * implementation cannot write atomically is refused outright (`ValidationError`,
+   * `CROSS_FILE_BATCH`) with nothing written — never partially applied.
    *
    * @param {string} userId
    * @param {Array<{id: string, status?: ObservationStatus, pairedEntryUuid?: string|null}>} patches

@@ -198,6 +198,17 @@ $health-quickbar-margin: 0.5rem; // deliberate slack over the exact footprint
     font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
     color: var(--ds-warning); padding-left: 24px;
   }
+
+  // "82 g · scale ✓" — this row's grams came off the kitchen scale. Same
+  // full-width badge slot as `&__badge` above (they can both be present: an
+  // entry can be scale-measured AND still unconfirmed), success-toned rather
+  // than warning-toned because it is a statement of confidence, not a
+  // request for attention.
+  &__scale {
+    grid-column: 1 / -1; justify-self: start;
+    font-size: 0.68rem; font-weight: 600; letter-spacing: 0.03em;
+    color: var(--ds-success); padding-left: 24px;
+  }
 }
 
 .health-row-line--child { padding-left: 1.5rem; }
@@ -284,6 +295,39 @@ $health-quickbar-margin: 0.5rem; // deliberate slack over the exact footprint
     padding: 0.05rem 0.4rem; border-radius: 999px; font-size: 0.7rem;
     background: var(--ds-surface-alt); color: var(--ds-text-mid);
   }
+}
+
+// Unmatched kitchen-scale signals, above the meal list — and the same rows
+// again inside the edit sheet's Measurements list (`--sheet`). Deliberately
+// quieter than `.health-pending`: an unmatched weight is information, not a
+// task, and the day view already has one warning-toned banner.
+.health-obs {
+  border: 1px solid var(--ds-border); border-left: 3px solid var(--ds-text-low);
+  border-radius: 9px; padding: 0.6rem 0.75rem; margin: 0.4rem 0;
+
+  &__heading {
+    margin: 0 0 0.5rem; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em;
+    color: var(--ds-text-mid); text-transform: uppercase;
+  }
+  &__row {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem;
+    padding: 0.3rem 0; border-top: 1px solid var(--ds-border);
+    &:first-of-type { border-top: none; padding-top: 0; }
+  }
+  &__label { font-size: 0.85rem; color: var(--ds-text-high); }
+  &__tag {
+    padding: 0.05rem 0.4rem; border-radius: 999px; font-size: 0.7rem;
+    background: var(--ds-surface-alt); color: var(--ds-text-mid);
+  }
+  &__error { flex: 1 0 100%; margin: 0; color: var(--ds-danger); font-size: 0.8rem; }
+  &__actions { margin-left: auto; display: flex; gap: 0.4rem; }
+  // Mantine's size="xs" button is ~30px tall and can be narrower than 44px on
+  // a short label, i.e. under the touch-target floor on BOTH axes — pinned
+  // explicitly, same pattern as `.health-row__confirm` / `.health-edit__control`.
+  &__btn { min-width: 44px; min-height: 44px; }
+
+  // Inside the edit sheet the surrounding Sheet already supplies the frame.
+  &--sheet { border: none; border-left: none; padding: 0; margin: 0; }
 }
 
 .health-progress {

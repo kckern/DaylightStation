@@ -35,7 +35,7 @@ const kcal = (rows) => Math.round(rows.reduce((s, r) => s + (Number(r.calories) 
 
 function Section({
   label, rows, onAdd, onRowTap, onConfirm, headerAction, coldLoading, pending,
-  bucketId, onVoiceCapture, onPhotoCapture, onOpenBarcode, captureBusy,
+  bucketId, onVoiceCapture, onPhotoCapture, onOpenBarcode, captureBusy, measuredByUuid,
 }) {
   const [expanded, setExpanded] = useState(() => new Set());
   const entries = groupRows(rows);
@@ -96,8 +96,11 @@ function Section({
         // item (no rename/scale-group/cascade) — keep both sites' logic in
         // sync if that invariant ever needs to change.
         const isGroup = children.length > 0;
+        // "This row's grams came off the scale." Looked up by uuid, falling back to
+        // `id` for the same reason `key` does: not every row shape carries both.
+        const measured = measuredByUuid?.get(row.uuid) ?? measuredByUuid?.get(row.id) ?? null;
         if (!isGroup) {
-          return <EntryRow key={key} row={row} onTap={onRowTap} onConfirm={onConfirm} />;
+          return <EntryRow key={key} row={row} onTap={onRowTap} onConfirm={onConfirm} measured={measured} />;
         }
         const isOpen = expanded.has(key);
         return (
@@ -108,11 +111,12 @@ function Section({
                 whatever opens next (EntryEditSheet's group mode needs the
                 full child list to scale/move/delete them together). */}
             <EntryRow
-              row={{ ...row, children }} onTap={onRowTap} onConfirm={onConfirm}
+              row={{ ...row, children }} onTap={onRowTap} onConfirm={onConfirm} measured={measured}
               isGroup expanded={isOpen} onToggle={() => toggle(key)} rollupKcal={rollup.calories}
             />
             {isOpen ? children.map((c) => (
-              <EntryRow key={c.uuid ?? c.id} row={c} onTap={onRowTap} onConfirm={onConfirm} child />
+              <EntryRow key={c.uuid ?? c.id} row={c} onTap={onRowTap} onConfirm={onConfirm} child
+                measured={measuredByUuid?.get(c.uuid) ?? measuredByUuid?.get(c.id) ?? null} />
             )) : null}
           </div>
         );
@@ -136,7 +140,7 @@ function Section({
 export function LogTable({
   byBucket, sessions = [], exerciseAvailable = false, onAddTo, onRowTap, onConfirm,
   addSlot, addingTo, bucketHeaderAction, coldLoading = false, capturePendingBucket = null,
-  onVoiceCapture, onPhotoCapture, onOpenBarcode, captureBusy = false,
+  onVoiceCapture, onPhotoCapture, onOpenBarcode, captureBusy = false, measuredByUuid = null,
 }) {
   const orphans = byBucket.get(null) || [];
   return (
@@ -150,7 +154,7 @@ export function LogTable({
               headerAction={bucketHeaderAction ? bucketHeaderAction(b.id, rows, b.label) : null}
               coldLoading={coldLoading} pending={capturePendingBucket === b.id}
               bucketId={b.id} onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
-              onOpenBarcode={onOpenBarcode} captureBusy={captureBusy} />
+              onOpenBarcode={onOpenBarcode} captureBusy={captureBusy} measuredByUuid={measuredByUuid} />
             {addingTo === b.id && addSlot ? addSlot : null}
           </div>
         );
@@ -176,7 +180,8 @@ export function LogTable({
         </section>
       ) : null}
       {orphans.length ? (
-        <Section label={UNGROUPED.label} rows={orphans} onRowTap={onRowTap} onConfirm={onConfirm} />
+        <Section label={UNGROUPED.label} rows={orphans} onRowTap={onRowTap} onConfirm={onConfirm}
+          measuredByUuid={measuredByUuid} />
       ) : null}
     </div>
   );

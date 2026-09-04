@@ -62,6 +62,7 @@ const BUDGET = { budget: 2000, food: 0, exercise: 0, remaining: 2000, status: 'u
 const DASHBOARD = { today: { coaching: [] } };
 
 const baseApi = (overrides = {}) => async (path) => {
+  if (path.includes('nutrition/observations')) return overrides.observations ?? { observations: [] };
   if (path.includes('nutrilist/')) return NUTRILIST;
   if (path.includes('budget')) return BUDGET;
   if (path.includes('dashboard')) return DASHBOARD;
@@ -355,5 +356,144 @@ describe('TodayView — Task 4.3: QuickCaptureBar wiring', () => {
     expect(screen.queryByText('MockPhotoCapture')).toBeNull();
     expect(screen.queryByText('MockVoiceCapture')).toBeNull();
     expect(document.querySelector('.health-footer__actions')).toBeFalsy();
+  });
+});
+
+// ===========================================================================
+// Task 5.4 — kitchen-scale observations on the day.
+// ===========================================================================
+describe('TodayView — scale observations', () => {
+  beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); });
+
+  const OPEN_WEIGHT = {
+    id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+    kind: 'weight', value: 82, unit: 'g', scaleId: 'kitchen-1',
+    at: '2026-09-02 18:04:12', date: '2026-09-02', status: 'open', pairedEntryUuid: null,
+  };
+  const CONSUMED_WEIGHT = {
+    ...OPEN_WEIGHT, id: 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff',
+    value: 213, at: '2026-09-02 18:06:00', status: 'consumed', pairedEntryUuid: 'row-1',
+  };
+  const EARLIER_CONSUMED = {
+    ...CONSUMED_WEIGHT, id: 'cccccccc-dddd-eeee-ffff-000000000000',
+    value: 82, at: '2026-09-02 18:04:12',
+  };
+
+  const withRows = (rows, observations) => async (path) => {
+    if (String(path).includes('nutrition/observations')) return { observations };
+    if (String(path).includes('nutrilist/')) return { data: rows };
+    if (String(path).includes('budget')) return BUDGET;
+    if (String(path).includes('dashboard')) return DASHBOARD;
+    if (String(path).includes('nutrition/pending')) return { pending: [] };
+    return {};
+  };
+
+  it('an unmatched observation renders as a compact row with a dismiss affordance', async () => {
+    apiMock.mockImplementation(baseApi({ observations: { observations: [OPEN_WEIGHT] } }));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+
+    await waitFor(() => expect(screen.getByText('82 g on the kitchen scale at 18:04')).toBeTruthy());
+    expect(screen.getByRole('region', { name: 'Unmatched scale measurements' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Dismiss 82 g on the kitchen scale/ })).toBeTruthy();
+  });
+
+  it('a CONSUMED observation is not in the unmatched list — it became the entry\'s badge instead', async () => {
+    apiMock.mockImplementation(withRows(
+      [{ uuid: 'row-1', name: 'Chili', calories: 300, mealTime: 'evening' }],
+      [CONSUMED_WEIGHT],
+    ));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+
+    await waitFor(() => expect(screen.getByText('213 g · scale ✓')).toBeTruthy());
+    expect(document.querySelector('.health-obs')).toBeFalsy();
+  });
+
+  it('an entry with SEVERAL consumed weights badges the LATEST one, not the first or a sum', async () => {
+    apiMock.mockImplementation(withRows(
+      [{ uuid: 'row-1', name: 'Chili', calories: 300, mealTime: 'evening' }],
+      [EARLIER_CONSUMED, CONSUMED_WEIGHT],
+    ));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+
+    await waitFor(() => expect(screen.getByText('213 g · scale ✓')).toBeTruthy());
+    expect(screen.queryByText('82 g · scale ✓')).toBeNull();
+    expect(screen.queryByText('295 g · scale ✓')).toBeNull();
+  });
+
+  it('dismissing an unmatched row POSTs the dismiss endpoint and reloads the observations', async () => {
+    apiMock.mockImplementation(baseApi({ observations: { observations: [OPEN_WEIGHT] } }));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => screen.getByRole('button', { name: /^Dismiss 82 g/ }));
+
+    fireEvent.click(screen.getByRole('button', { name: /^Dismiss 82 g/ }));
+
+    await waitFor(() => expect(apiMock.mock.calls.some(
+      ([path, , method]) => String(path).endsWith(`observations/${OPEN_WEIGHT.id}/dismiss`) && method === 'POST',
+    )).toBe(true));
+  });
+
+  it('a day with no observations renders no section at all', async () => {
+    apiMock.mockImplementation(baseApi());
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => screen.getByText('Breakfast'));
+    expect(document.querySelector('.health-obs')).toBeFalsy();
+  });
+
+  // ---- No-regression guards for the day-view behaviours this task edits ----
+
+  it('REGRESSION: NeedsReviewSection is still mounted and still filtered to source==="scale"', async () => {
+    apiMock.mockImplementation(baseApi({
+      observations: { observations: [OPEN_WEIGHT] },
+      pending: {
+        pending: [
+          { id: 'log-1', source: 'telegram', items: [{ label: 'Oatmeal', calories: 210 }] },
+          { id: 'log-2', source: 'scale', items: [{ label: 'Chicken breast', calories: 231 }] },
+        ],
+      },
+    }));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+
+    await waitFor(() => expect(screen.getByText('NEEDS REVIEW')).toBeTruthy());
+    expect(screen.getByText('Chicken breast')).toBeTruthy();
+    expect(screen.queryByText('Oatmeal')).toBeNull();
+  });
+
+  it('REGRESSION: the unsettled cue stays gated strictly on settled === false', async () => {
+    apiMock.mockImplementation(withRows([
+      { uuid: 'row-1', name: 'Legacy', calories: 100, mealTime: 'morning' },                  // key absent
+      { uuid: 'row-2', name: 'Confirmed', calories: 100, mealTime: 'morning', settled: true },
+      { uuid: 'row-3', name: 'Guessed', calories: 100, mealTime: 'morning', settled: false },
+    ], []));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+
+    await waitFor(() => expect(screen.getByText('Guessed')).toBeTruthy());
+    expect(screen.getAllByText(/unconfirmed/i)).toHaveLength(1);
+    expect(document.querySelectorAll('.health-row--unsettled')).toHaveLength(1);
+  });
+
+  it('REGRESSION: bucket kcal totals still sum every row unconditionally (a group carries zero)', async () => {
+    apiMock.mockImplementation(withRows([
+      { uuid: 'g1', name: 'Curry', calories: 0, kind: 'group', mealTime: 'evening' },
+      { uuid: 'c1', name: 'Rice', calories: 200, parentId: 'g1', mealTime: 'evening' },
+      { uuid: 'c2', name: 'Sauce', calories: 130, parentId: 'g1', mealTime: 'evening' },
+    ], []));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+
+    await waitFor(() => expect(screen.getByText('Curry')).toBeTruthy());
+    expect(screen.getByText('330 kcal')).toBeTruthy();
+    // Group rendering intact: collapsed, with an expand control, children hidden.
+    expect(screen.getByRole('button', { name: 'Expand Curry' })).toBeTruthy();
+    expect(screen.queryByText('Rice')).toBeNull();
+  });
+
+  // QuickCaptureBar is stubbed out at the top of this file (it has its own suite), so
+  // this guards the PER-MEAL capture trio LogTable renders — the surface this task's
+  // new section sits directly above.
+  it('REGRESSION: the per-meal capture buttons still render alongside the new section', async () => {
+    apiMock.mockImplementation(baseApi({ observations: { observations: [OPEN_WEIGHT] } }));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => screen.getByText('MockPhotoCapture-morning'));
+    expect(screen.getByText('MockVoiceCapture-evening')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Scan barcode to Breakfast' })).toBeTruthy();
   });
 });

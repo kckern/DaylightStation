@@ -21,7 +21,7 @@ const NOOM = { green: 'var(--ds-success)', yellow: 'var(--ds-warning)', orange: 
  * one of that group's indented children. Both presentations keep the
  * unsettled cue and confirm affordance exactly as a plain item does.
  */
-export function EntryRow({ row, onTap, onConfirm, isGroup = false, expanded = false, onToggle, rollupKcal, child = false }) {
+export function EntryRow({ row, onTap, onConfirm, isGroup = false, expanded = false, onToggle, rollupKcal, child = false, measured = null }) {
   const portion = [row.amount, row.unit].filter(Boolean).join(' ') || (row.grams ? `${row.grams} g` : '');
   // The API serves an EFFECTIVE settled flag per row. Absent or `true` means
   // settled — only an explicit `false` means unsettled. Never treat a
@@ -98,6 +98,12 @@ export function EntryRow({ row, onTap, onConfirm, isGroup = false, expanded = fa
         {/* Text badge, not color alone — perceivable non-visually and in
             greyscale. Static text; no aria-live, so it never spams. */}
         {unsettled ? <span className="health-row__badge">Unconfirmed</span> : null}
+        {/* SCALE-MEASURED badge: this row's grams came off the kitchen scale, not
+            from a guess. `measured` is the caller's already-computed summary
+            ("82 g · scale ✓") — derived once per day from the observations that
+            name this row's uuid, never re-derived per row. Text, like the
+            unsettled badge above, so it survives greyscale and a screen reader. */}
+        {measured ? <span className="health-row__scale">{measured}</span> : null}
       </UnstyledButton>
       {unsettled ? (
         <UnstyledButton className="health-row__confirm" aria-label="Confirm entry" onClick={confirm}>

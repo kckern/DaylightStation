@@ -11,6 +11,7 @@ import { MacroFooter } from './MacroFooter.jsx';
 import { LogTable } from './LogTable.jsx';
 import { AddCombobox } from './AddCombobox.jsx';
 import { NeedsReviewSection } from './NeedsReviewSection.jsx';
+import { ObservationsSection } from './ObservationRow.jsx';
 import { EntryEditSheet } from './EntryEditSheet.jsx';
 import { SavedMealsSheet } from './SavedMealsSheet.jsx';
 import { QuickCaptureBar } from './QuickCaptureBar.jsx';
@@ -54,6 +55,41 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   // Only surface scale-origin pending logs — the other sources (telegram,
   // web) no longer mint pending rows now that captures commit on arrival.
   const scalePending = (pendingReview.data?.pending || []).filter((p) => p.source === 'scale');
+  // The DURABLE kitchen-scale ledger for this date (Task 5.4). Distinct from
+  // `pendingReview` above, which is about NutriLogs awaiting Accept/Discard:
+  // these are the raw signals underneath — a settled weight, a scanned
+  // density/tare — which exist whether or not any log was ever created from
+  // them. `swr:true` for the same reason the day itself uses it: a reload
+  // after a dismiss/pair revalidates quietly instead of blanking the section.
+  const observations = useApiResource(`api/v1/health/nutrition/observations?date=${date}`,
+    { deps: [date], label: 'observations', logger, swr: true });
+  const observationRows = useMemo(() => observations.data?.observations || [], [observations.data]);
+  // Signals nobody has attached to anything — rendered at the top of the day
+  // with a Dismiss affordance. Dismissing is the ONLY thing that resolves a
+  // row which aged out of the scale's 900 s composition window.
+  const unmatched = useMemo(() => observationRows.filter((o) => o.status === 'open'), [observationRows]);
+  // uuid -> "82 g · scale ✓". Built ONCE per day, not per row: one entry can
+  // carry SEVERAL observations (a placement appends a weight row per >=5 g
+  // change, plus a container and a density), so the badge reports the latest
+  // weight among them rather than assuming one row per entry.
+  const measuredByUuid = useMemo(() => {
+    const byEntry = new Map();
+    for (const o of observationRows) {
+      if (o.status !== 'consumed' || !o.pairedEntryUuid) continue;
+      const bucket = byEntry.get(o.pairedEntryUuid) || [];
+      bucket.push(o);
+      byEntry.set(o.pairedEntryUuid, bucket);
+    }
+    const out = new Map();
+    for (const [uuid, rows] of byEntry) {
+      const weights = rows.filter((o) => o.kind === 'weight');
+      const latest = weights.length
+        ? weights.reduce((a, b) => (String(b.at) >= String(a.at) ? b : a))
+        : null;
+      out.set(uuid, latest ? `${latest.value} ${latest.unit || 'g'} · scale ✓` : 'scale ✓');
+    }
+    return out;
+  }, [observationRows]);
   // dashboard.today.coaching is an array of {type, text, timestamp} — text is
   // multi-line HTML-flavored copy (a full "morning brief"), not a one-liner.
   // Take the first line of the most recent entry and strip markup for the
@@ -196,6 +232,7 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
       ) : null}
       <NeedsReviewSection pending={scalePending}
         onChanged={() => { pendingReview.reload(); day.reload(); }} />
+      <ObservationsSection observations={unmatched} onChanged={() => observations.reload()} />
       <LogTable byBucket={day.byBucket} sessions={day.budget?.sessions || []}
         exerciseAvailable={Boolean(day.budget)}
         coldLoading={coldLoading} capturePendingBucket={capturePending}
@@ -203,6 +240,7 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
         bucketHeaderAction={bucketHeaderAction}
         onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
         onOpenBarcode={openBarcode} captureBusy={nutrition.busy}
+        measuredByUuid={measuredByUuid}
         addSlot={addingTo ? (
           <AddCombobox bucketId={addingTo}
             onDone={() => { setAddingTo(null); day.reload(); }}
@@ -225,7 +263,17 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
         onClose={() => setUnknownUpc(null)}
         onCreated={() => { setUnknownUpc(null); day.reload(); }} />
       <EntryEditSheet row={editingRow} open={Boolean(editingRow)}
-        onClose={() => setEditingRow(null)} onChanged={day.reload} />
+        onClose={() => setEditingRow(null)} onChanged={day.reload}
+        observations={observationRows}
+        onPaired={(err) => {
+          // Re-pairing rewrites BOTH sides — the ledger and the entry's grams —
+          // so both resources reload. A refusal (the store cannot rewrite two
+          // months atomically) comes back as a message rather than silence:
+          // nothing was changed, and the person needs to know that.
+          observations.reload();
+          day.reload();
+          if (err) setCaptureNotice(err.message);
+        }} />
       <SavedMealsSheet open={Boolean(savedMealsFor)} bucketId={savedMealsFor}
         onLogged={() => { setSavedMealsFor(null); setAddingTo(null); day.reload(); }}
         onClose={() => setSavedMealsFor(null)} />

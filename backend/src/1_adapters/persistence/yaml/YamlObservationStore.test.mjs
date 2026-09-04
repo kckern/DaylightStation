@@ -505,6 +505,30 @@ describe('YamlObservationStore archiving', () => {
     expect(store.findByPairedEntry('u1', 'e2')).toHaveLength(2);
   });
 
+  // A batch spanning the hot file and an archive has TWO atomic renames and no rollback
+  // between them: the reviewer built exactly this, made the archive directory unwritable,
+  // and watched the hot row land anyway while the archived row kept its old pairing.
+  // The store now refuses such a batch before writing a byte.
+  it('updateMany REFUSES a batch spanning the hot file and an archive, and writes nothing', () => {
+    const ids = seedResolved(store, 'u1', 300);
+    const hot = store.append('u1', { kind: 'weight', value: 999, unit: 'g', scaleId: 'kitchen-1', at: '2026-01-20 12:00:00' });
+    const archivedId = ids.find((id) => !yaml.load(fs.readFileSync(filePath('u1'), 'utf8')).some((r) => r.id === id));
+    expect(archivedId).toBeTruthy();
+
+    let caught = null;
+    try {
+      store.updateMany('u1', [
+        { id: archivedId, pairedEntryUuid: 'e-new' },
+        { id: hot.id, pairedEntryUuid: 'e-new' },
+      ]);
+    } catch (err) { caught = err; }
+
+    expect(caught?.code).toBe('CROSS_FILE_BATCH');
+    expect(store.get('u1', archivedId).pairedEntryUuid).toBe('e1');
+    expect(store.get('u1', hot.id).pairedEntryUuid).toBeNull();
+    expect(store.findByPairedEntry('u1', 'e-new')).toHaveLength(0);
+  });
+
   it('updateMany still refuses the whole batch when an id exists nowhere', () => {
     const ids = seedResolved(store, 'u1', 300);
     store.append('u1', { kind: 'weight', value: 999, unit: 'g', scaleId: 'kitchen-1', at: '2026-01-20 12:00:00' });
