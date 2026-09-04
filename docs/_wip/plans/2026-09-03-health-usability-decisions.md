@@ -531,6 +531,59 @@ transcription attempts. Checked before acting on it, and it does not hold:
 Overlap is real and the cap is worth knowing about, but the evidence does not implicate the
 harvest, so throttling it would have been a change made on a story. Deliberately not done.
 
+**2.43 A voice memo is written to disk BEFORE it is transcribed.**
+Same incident, and this is the part that was actually broken regardless of what
+caused the network failure: the recording existed only as an in-memory Buffer
+(browser data URL → `WebNutribotAdapter.#decodeDataUrl` → Whisper), so when
+transcription failed there was nothing to retry. The person had said their food
+out loud and had to say it again. Three changes, in the order they matter:
+
+1. **Persist first.** A new `VoiceMemoStore` writes to
+   `users/{userId}/lifelog/nutrition/audio/{va_*}.{ext}` — a sibling of
+   `PhotoStore`'s photos directory, deliberately mirroring it rather than
+   inventing a second convention (same `dataService.user.resolveDir` seam, same
+   write-once `writeBinaryExclusive`, same allowlist-before-join /
+   containment-after-join rules, and like photos NO delete method: a failed
+   transcription's audio is exactly what a retry needs). Unlike a photo the
+   extension is not fixed — MediaRecorder's container is whatever the capturing
+   browser chose — so it comes from an allowlist of known audio mime types and
+   an unrecognised one stores as `.bin`. Saving is best-effort and never
+   throws: losing the ability to retry is bad, refusing a transcription that
+   would have worked is worse. Telegram is unaffected — its copy already lives
+   on Telegram's servers.
+2. **A longer, still-bounded retry budget.** `retryTransient` gained
+   `maxElapsedMs` (checked BEFORE the sleep is paid for, so a budget cannot
+   overrun by a whole backoff step) and `jitter`. Transcription went from 3
+   attempts / 2s-4s — which spent itself in ~58s — to 5 attempts / 2s-4s-8s-16s
+   with ±25% jitter under a 90s budget. It is the BUDGET that stops it, not the
+   attempt count. Jitter is there because several captures can fail together
+   and must not come back in lockstep. The Telegram URL path wraps the adapter's
+   own retry, so it got a budget too, or the two would nest into minutes.
+3. **The failure became a sentence.** It used to re-throw and reach the person
+   as `HTTP 500: {"error":"socket hang up"}`. It now exits the way "no food
+   detected" already exits — a plain message with no choices, which the Today
+   view renders in its notice banner — and says the recording is saved. "Saved"
+   is claimed ONLY when something actually was stored; a reassurance that turns
+   out to be false is worse than none. The two exits (missing config, network
+   failure) were merged into one return rather than added to, so the
+   `apps-success-false` ratchet did not move.
+
+4. **And the retry actually exists.** Persisting bytes nobody can reach is not
+   recovery, it is a bigger disk. `/nutrition/input` now takes an `audioRef`
+   INSTEAD of `content` for a voice capture: the adapter reads the memo back and
+   transcribes the same bytes. The Today notice grows a "Try again" button when
+   — and only when — the failure carried a ref, because a button that promised a
+   saved recording that was never stored would be a lie. It reuses
+   `health-pending__actions`, which already ships a two-button row in
+   `NeedsReviewSection`, so no new layout was invented. A ref the store cannot
+   find is a 404 with a sentence ("please record it again"), never a 500, and
+   the 404 is matched on the error CODE so it cannot swallow a real failure.
+
+One thing worth keeping: catching every error from the transcribe call would
+hide a genuine bug behind a friendly sentence. The message is the same either
+way, but the LOG is not — a transient code logs `warn`, anything else logs
+`error`, so a real defect stays findable.
+
 ---
 
 ## 3. Known divergences from the PRD (true only after later phases)

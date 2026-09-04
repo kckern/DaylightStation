@@ -244,8 +244,8 @@ export class HealthOperations {
    *   nutribot input pipeline, where the router seam applies the precedence:
    *   explicit-in-utterance/caption > bucket > clock default.
    */
-  processNutritionInput({ type, content, userId, bucket, date }) {
-    return this.nutritionInput.process({ type, content, userId, bucket, date });
+  processNutritionInput({ type, content, userId, bucket, date, audioRef }) {
+    return this.nutritionInput.process({ type, content, userId, bucket, date, audioRef });
   }
 
   processNutritionCallback(input) {

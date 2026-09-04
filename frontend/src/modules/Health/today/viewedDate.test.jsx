@@ -130,3 +130,81 @@ describe('AddCombobox — the viewed day rides along', () => {
     expect('date' in body).toBe(false);
   });
 });
+
+// ── Defect 2: a failed transcription offers a retry over the SAVED recording ──
+describe('TodayView — a voice capture whose transcription failed', () => {
+  beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); });
+
+  const failingThenOk = () => {
+    let voiceCalls = 0;
+    return async (path, body) => {
+      if (path.includes('nutrition/input')) {
+        voiceCalls += 1;
+        if (voiceCalls === 1) {
+          return {
+            transcribeFailed: true,
+            audioRef: 'va_saved1',
+            messages: [{ text: "🎤 I couldn't reach the transcriber just now — your recording is saved, so try again in a moment." }],
+          };
+        }
+        return { retryBody: body, messages: [{ text: 'Logged', choices: [[{ text: 'Undo' }]] }] };
+      }
+      return baseApi()(path);
+    };
+  };
+
+  it('shows the message and a Try again button instead of a raw HTTP error', async () => {
+    apiMock.mockImplementation(failingThenOk());
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => screen.getByText('MockVoiceCapture-morning'));
+    fireEvent.click(screen.getByText('MockVoiceCapture-morning'));
+
+    await waitFor(() => expect(screen.getByText(/your recording is saved/i)).toBeTruthy());
+    expect(screen.getByRole('button', { name: /try again/i })).toBeTruthy();
+    expect(screen.queryByText(/socket hang up|HTTP 500/i)).toBeNull();
+  });
+
+  it('Try again re-sends the SAVED ref, with no audio payload — nothing is re-recorded', async () => {
+    apiMock.mockImplementation(failingThenOk());
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => screen.getByText('MockVoiceCapture-morning'));
+    fireEvent.click(screen.getByText('MockVoiceCapture-morning'));
+    await waitFor(() => screen.getByRole('button', { name: /try again/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+    await waitFor(() => expect(apiMock.mock.calls.filter(([p]) => p.includes('nutrition/input'))).toHaveLength(2));
+
+    const [, body] = apiMock.mock.calls.filter(([p]) => p.includes('nutrition/input'))[1];
+    expect(body.audioRef).toBe('va_saved1');
+    expect(body.type).toBe('voice');
+    expect(body.content).toBeNull();
+    // The first attempt carried the audio; the retry must not.
+    const [, firstBody] = apiMock.mock.calls.filter(([p]) => p.includes('nutrition/input'))[0];
+    expect(firstBody.content).toMatch(/^data:audio/);
+    expect('audioRef' in firstBody).toBe(false);
+  });
+
+  it('a successful retry retires the button', async () => {
+    apiMock.mockImplementation(failingThenOk());
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => screen.getByText('MockVoiceCapture-morning'));
+    fireEvent.click(screen.getByText('MockVoiceCapture-morning'));
+    await waitFor(() => screen.getByRole('button', { name: /try again/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /try again/i })).toBeNull());
+  });
+
+  it('a plain failure with no saved recording offers no retry — the button would lie', async () => {
+    apiMock.mockImplementation(async (path) => (
+      path.includes('nutrition/input')
+        ? { messages: [{ text: "I couldn't identify any food in this image." }] }
+        : baseApi()(path)
+    ));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => screen.getByText('MockVoiceCapture-morning'));
+    fireEvent.click(screen.getByText('MockVoiceCapture-morning'));
+    await waitFor(() => expect(screen.getByText(/couldn't identify/i)).toBeTruthy());
+    expect(screen.queryByRole('button', { name: /try again/i })).toBeNull();
+  });
+});

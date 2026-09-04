@@ -93,9 +93,15 @@ export class TelegramVoiceTranscriptionService extends ITranscriptionService {
           language: options.language,
           prompt: options.prompt
         }),
+        // This wraps OpenAIAdapter.transcribe, which now retries for up to
+        // ~90s of its own. Without a budget here the two nest into a worst
+        // case measured in many minutes for a message nobody is waiting on
+        // synchronously. Two outer passes over a 90s inner one is the ceiling.
         {
           maxAttempts: 3,
           baseDelay: 2000,
+          maxElapsedMs: 200_000,
+          jitter: 0.25,
           onRetry: (attempt, error) => {
             this.#logger.warn?.('telegram-voice.transcribe.retry', {
               attempt,

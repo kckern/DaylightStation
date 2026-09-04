@@ -362,6 +362,10 @@ export class NutribotInputRouter extends BaseInputRouter {
         conversationId: event.conversationId,
         voiceData: {
           fileId: event.payload.fileId,
+          // Set only on the web path, where the bytes were written to the
+          // user's store before this call. It is what lets a failed
+          // transcription say "your recording is saved" truthfully.
+          audioRef: event.payload.fileId?.audioRef || null,
         },
         messageId: event.messageId,
         asOfDate: event.payload.date || null,
