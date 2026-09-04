@@ -44,6 +44,13 @@ export class YamlFoodCatalogDatastore extends IFoodCatalogDatastore {
       source: entry.source,
       barcodeUpc: entry.barcodeUpc,
       useCount: entry.useCount,
+      // Per-bucket usage (Task 9.1). This is the ONLY place the on-disk catalog
+      // shape is defined, so a field missing here is a field that silently does
+      // not survive a restart — the trap this program has now hit four times.
+      // Copied per bucket so the written object never aliases the entity's.
+      usageByBucket: Object.fromEntries(
+        Object.entries(entry.usageByBucket || {}).map(([bucket, usage]) => [bucket, { ...usage }]),
+      ),
       favorite: entry.favorite === true,
       icon: entry.icon ?? null,
       lastUsed: entry.lastUsed,

@@ -6,6 +6,8 @@
 
 import { FoodCatalogEntry } from '#domains/health/entities/FoodCatalogEntry.mjs';
 import { hasMicroData, pickMicros } from '#domains/nutrition/services/micros.mjs';
+import { rankSuggestions } from '#domains/health/services/bucketSuggestRanking.mjs';
+import { formatLocalTimestamp } from '#system/utils/time.mjs';
 
 /** Local (not UTC) YYYY-MM-DD from a Date instance. */
 function localDateISO(d) {
@@ -25,6 +27,26 @@ function localDateISO(d) {
  */
 const NEUTRAL_ICON = 'default';
 const isRealIcon = (icon) => typeof icon === 'string' && icon !== '' && icon !== NEUTRAL_ICON;
+
+/** The four meal buckets. A value outside this set is not recorded as one. */
+const MEAL_BUCKETS = ['morning', 'afternoon', 'evening', 'night'];
+const asBucket = (value) => (MEAL_BUCKETS.includes(value) ? value : null);
+
+/** The clock's opinion when nothing more authoritative is supplied. */
+const bucketForHour = (h) => (h < 11 ? 'morning' : h < 15 ? 'afternoon' : h < 20 ? 'evening' : 'night');
+
+/**
+ * A portion worth remembering, or null. All-empty quantities are dropped so a
+ * recorded `{}` cannot displace a real portion the entry already knew.
+ */
+function normalizeQuantity(quantity) {
+  if (!quantity) return null;
+  const grams = Number.isFinite(Number(quantity.grams)) ? Number(quantity.grams) : null;
+  const amount = Number.isFinite(Number(quantity.amount)) ? Number(quantity.amount) : null;
+  const unit = typeof quantity.unit === 'string' && quantity.unit ? quantity.unit : null;
+  if (grams === null && amount === null && unit === null) return null;
+  return { grams, unit, amount };
+}
 
 export class FoodCatalogService {
   #catalogStore;
@@ -55,7 +77,7 @@ export class FoodCatalogService {
    * Finds or creates a catalog entry, increments useCount.
    *
    * @param {Object} foodItem - { name, calories, protein, carbs, fat, source?, barcodeUpc?,
-   *   fiber?, sugar?, sodium?, cholesterol?, microsSource? }
+   *   fiber?, sugar?, sodium?, cholesterol?, microsSource?, icon?, mealTime?, grams?, unit?, amount? }
    * @param {string} userId
    */
   async recordUsage(foodItem, userId) {
@@ -63,9 +85,18 @@ export class FoodCatalogService {
 
     const normalized = FoodCatalogEntry.normalize(foodItem.name);
     const existing = await this.#catalogStore.findByNormalizedName(foodItem.name, userId);
+    const today = new Date(this.#clock.now()).toISOString().slice(0, 10);
+    // Bucket history advances only when the CALLER knows the bucket. Nothing
+    // here derives one from the clock: a caller that cannot say which meal this
+    // was would otherwise donate a guess, and a wrong bucket is unrecoverable
+    // once it is a count on disk.
+    const bucket = asBucket(foodItem.mealTime);
+    const bucketOptions = bucket
+      ? { bucket, quantity: normalizeQuantity(foodItem) ?? undefined }
+      : {};
 
     if (existing) {
-      existing.recordUsage(new Date(this.#clock.now()).toISOString().slice(0, 10));
+      existing.recordUsage(today, bucketOptions);
       // Update nutrients if the new data has them (latest wins)
       if (foodItem.calories != null) {
         existing.nutrients = {
@@ -114,7 +145,12 @@ export class FoodCatalogService {
         source: foodItem.source || 'nutritionix',
         barcodeUpc: foodItem.barcodeUpc || null,
         icon: isRealIcon(foodItem.icon) ? foodItem.icon : null,
-        lastUsed: new Date(this.#clock.now()).toISOString().slice(0, 10),
+        // A brand-new entry starts its bucket history at this first use, so the
+        // very first thing a food records is already bucket-aware.
+        usageByBucket: bucket
+          ? { [bucket]: { count: 1, lastUsed: today, quantity: normalizeQuantity(foodItem) } }
+          : {},
+        lastUsed: today,
         createdAt: new Date(this.#clock.now()).toISOString(),
       });
       await this.#catalogStore.save(entry, userId);
@@ -126,9 +162,14 @@ export class FoodCatalogService {
    * Quick-add a catalog entry as today's food log.
    * @param {string} catalogEntryId
    * @param {string} userId
+   * @param {Object} [options]
+   * @param {string} [options.mealTime] - the bucket the add-row was launched
+   *   from. Supplied directly by the client (Task 9.2), which retires the
+   *   follow-up PUT that used to move the row after the fact. Falls back to the
+   *   clock when absent — Telegram and the coach never send one.
    * @returns {Promise<Object>} The logged item
    */
-  async quickAdd(catalogEntryId, userId) {
+  async quickAdd(catalogEntryId, userId, options = {}) {
     const entry = await this.#catalogStore.getById(catalogEntryId, userId);
     if (!entry) throw new Error(`Catalog entry not found: ${catalogEntryId}`);
 
@@ -145,6 +186,15 @@ export class FoodCatalogService {
     // micros and `microsSource: null` — honestly uncovered, rather than
     // carrying structural zeros under a 'catalog' claim.
     const micros = pickMicros(entry.nutrients);
+    const mealTime = asBucket(options?.mealTime) || bucketForHour(now.getHours());
+    // PRD F8.3: the portion defaults to the last one logged for this food IN
+    // THIS BUCKET. Absent (a food never eaten at this meal), the catalog default
+    // stands — one serving, which is the portion the entry's own numbers
+    // describe. Per field, so a remembered `grams` is not lost to a missing `unit`.
+    const priorQuantity = entry.usageByBucket?.[mealTime]?.quantity || null;
+    const grams = priorQuantity?.grams ?? 0;
+    const unit = priorQuantity?.unit ?? 'serving';
+    const amount = priorQuantity?.amount ?? 1;
     const item = {
       uuid: this.#createId(),
       userId,
@@ -156,21 +206,31 @@ export class FoodCatalogService {
       fat: entry.nutrients.fat,
       ...micros,
       microsSource: hasMicroData(entry.nutrients) ? 'catalog' : null,
-      grams: 0,
-      unit: 'serving',
-      amount: 1,
+      grams,
+      unit,
+      amount,
       color: 'yellow',
       // The food's picture travels with it (PRD U5.2). Null when the catalog
       // entry has none — the row then renders the neutral dot, rather than a
       // filename this layer invented.
       icon: entry.icon ?? null,
       date: today,
-      mealTime: (() => { const h = now.getHours(); return h < 11 ? 'morning' : h < 15 ? 'afternoon' : h < 20 ? 'evening' : 'night'; })(),
+      mealTime,
+      // A one-tap pick of a known food is a DELIBERATE choice, not a machine
+      // estimate, so the row lands settled (PRD F8.3). Written verbatim,
+      // never `?? true`: an ABSENT `settled` means "legacy row, treat as
+      // settled" (decision 2.6), so a defaulted value anywhere on this path
+      // would change what every pre-existing row means.
+      settled: true,
+      settledBy: 'user',
+      settledAt: formatLocalTimestamp(now),
       log_uuid: 'QUICKADD',
     };
 
     await this.#nutriListStore.saveMany([item]);
-    entry.recordUsage(today);
+    // The bucket this actually landed in, and the portion it landed with —
+    // so the next pick of this food at this meal defaults to the same portion.
+    entry.recordUsage(today, { bucket: mealTime, quantity: normalizeQuantity({ grams, unit, amount }) ?? undefined });
     await this.#catalogStore.save(entry, userId);
 
     this.#logger.info?.('health.catalog.quickadd', { name: entry.name, id: entry.id });
@@ -224,15 +284,24 @@ export class FoodCatalogService {
       if (!Array.isArray(items) || items.length === 0) continue;
 
       for (const item of items) {
-        if (!item?.label) continue;
-        const existing = await this.#catalogStore.findByNormalizedName(item.label, userId);
+        // `label` is only ONE of the shapes on disk. `syncFromLog` rows key the
+        // name as `label`; `saveMany` rows (quick-adds, group children) key it
+        // as `item` — and on the production nutrilist the `item`-shaped rows
+        // are the MAJORITY, so gating on `label` alone silently skipped most of
+        // the history this backfill claims to read. `#normalizeItem` already
+        // resolves all three into `name`; the fallbacks keep this honest for a
+        // store that hands back raw rows. 'Unknown' is the store's sentinel for
+        // a row with no name at all, and is not a food.
+        const label = item?.name || item?.item || item?.label;
+        if (!label || label === 'Unknown') continue;
+        const existing = await this.#catalogStore.findByNormalizedName(label, userId);
         if (existing) {
           updated++;
         } else {
           created++;
         }
         await this.recordUsage({
-          name: item.label,
+          name: label,
           calories: item.calories,
           protein: item.protein,
           carbs: item.carbs,
@@ -243,6 +312,16 @@ export class FoodCatalogService {
           // reads it — and recordUsage only fills an ABSENT icon, so a
           // backfill can never overwrite a human choice.
           icon: item.icon,
+          // The bucket and portion DO backfill, for the same reason icons do:
+          // a stored row's `mealTime` is the RESOLVED meal (an explicit "for
+          // lunch", or the row the capture was launched from, having already
+          // beaten the clock upstream), so it is the one trustworthy source of
+          // bucket history in the system. This is what seeds the bucket-aware
+          // suggest list from real history rather than only from quick-adds.
+          mealTime: item.mealTime,
+          grams: item.grams,
+          unit: item.unit,
+          amount: item.amount,
           // NO micros, deliberately. A stored row's fiber/sugar/sodium/
           // cholesterol have already been defaulted to 0 at the persistence
           // boundary, so per-key provenance is gone by the time a backfill can
@@ -261,25 +340,29 @@ export class FoodCatalogService {
   }
 
   /**
-   * One ranked suggestion list for the add-combobox: favorites first, then
-   * recency-weighted frequency, then name matches. Empty query = favorites
-   * plus recent/frequent entries.
+   * One ranked suggestion list for the add-combobox.
+   *
+   * Without a bucket this is exactly what it always was: favorites first, then
+   * recency-weighted frequency, then name. With a bucket (PRD F8.1) the middle
+   * tier becomes the per-bucket blend and the global ranking backfills only
+   * while the bucket's history is thin — see `bucketSuggestRanking.mjs`, which
+   * owns the maths and takes the clock as an argument.
+   *
+   * @param {string} query - '' for the zero-keystroke list
+   * @param {string} userId
+   * @param {number} [limit=12]
+   * @param {Object} [options]
+   * @param {string} [options.bucket] - meal bucket the add row was launched from
    */
-  async suggest(query, userId, limit = 12) {
+  async suggest(query, userId, limit = 12, options = {}) {
     const all = await this.#catalogStore.getAll(userId);
     const q = (query || '').toLowerCase().trim();
-    const nowDay = new Date(this.#clock.now());
-    const score = (e) => {
-      const daysSince = Math.max(0, (nowDay - new Date(`${e.lastUsed}T12:00:00Z`)) / 86400000);
-      return e.useCount / (1 + daysSince / 30);
-    };
-    return all
-      .filter((e) => (q ? e.matchesSearch(q) : true))
-      .sort((a, b) =>
-        (b.favorite === true) - (a.favorite === true)
-        || score(b) - score(a)
-        || a.normalizedName.localeCompare(b.normalizedName))
-      .slice(0, limit);
+    const candidates = all.filter((e) => (q ? e.matchesSearch(q) : true));
+    return rankSuggestions(candidates, {
+      bucket: asBucket(options?.bucket),
+      nowMs: this.#clock.now(),
+      limit,
+    });
   }
 
   async setFavorite(id, userId, favorite) {

@@ -68,3 +68,64 @@ describe('FoodCatalogService.suggest', () => {
     expect((await svc.getByUpc('012345678905', 'u')).name).toBe('Local Granola');
   });
 });
+
+// ── Task 9.1: bucket-aware, zero-keystroke suggestions (PRD F8.1) ───────────
+// The ranking maths itself is pinned in
+// `#domains/health/services/bucketSuggestRanking.test.mjs`. These cases pin the
+// SERVICE's half of the contract: that a bucket reaches the ranker at all, that
+// the query filter still runs first, and that omitting the bucket leaves the
+// shipped behaviour exactly as it was.
+describe('FoodCatalogService.suggest — bucket-aware (Task 9.1)', () => {
+  const bucketed = (over) => {
+    const e = entry(over);
+    e.usageByBucket = over.usageByBucket || {};
+    return e;
+  };
+  const silent = { debug() {}, info() {}, warn() {}, error() {} };
+  const svcOver = (entries) => new FoodCatalogService({
+    catalogStore: makeStore(entries), clock: { now: () => NOW }, createId: () => 'new-id', logger: silent,
+  });
+
+  it('surfaces this bucket\'s regulars ahead of a globally more popular food', async () => {
+    const svc = svcOver([
+      bucketed({ id: 'burrito', name: 'burrito', useCount: 200, lastUsed: '2026-09-02' }),
+      bucketed({ id: 'oatmeal', name: 'oatmeal', useCount: 20, lastUsed: '2026-09-01',
+        usageByBucket: { morning: { count: 18, lastUsed: '2026-09-01' } } }),
+    ]);
+    expect((await svc.suggest('', 'u', 12, { bucket: 'morning' })).map((e) => e.id))
+      .toEqual(['oatmeal', 'burrito']);
+    // Same catalog, different bucket: no history there, so the global order stands.
+    expect((await svc.suggest('', 'u', 12, { bucket: 'evening' })).map((e) => e.id))
+      .toEqual(['burrito', 'oatmeal']);
+  });
+
+  it('an unknown bucket id is ignored, not passed through as a phantom bucket', async () => {
+    const svc = svcOver([
+      bucketed({ id: 'burrito', name: 'burrito', useCount: 200, lastUsed: '2026-09-02' }),
+      bucketed({ id: 'oatmeal', name: 'oatmeal', useCount: 20, lastUsed: '2026-09-01',
+        usageByBucket: { morning: { count: 18, lastUsed: '2026-09-01' } } }),
+    ]);
+    expect((await svc.suggest('', 'u', 12, { bucket: 'brunch' })).map((e) => e.id))
+      .toEqual(['burrito', 'oatmeal']);
+  });
+
+  it('the query still filters first — a bucket regular that does not match is not shown', async () => {
+    const svc = svcOver([
+      bucketed({ id: 'oatmeal', name: 'oatmeal', useCount: 20, lastUsed: '2026-09-01',
+        usageByBucket: { morning: { count: 18, lastUsed: '2026-09-01' } } }),
+      bucketed({ id: 'omelette', name: 'omelette', useCount: 2, lastUsed: '2026-09-01',
+        usageByBucket: { morning: { count: 2, lastUsed: '2026-09-01' } } }),
+    ]);
+    const out = await svc.suggest('omel', 'u', 12, { bucket: 'morning' });
+    expect(out.map((e) => e.id)).toEqual(['omelette']);
+  });
+
+  it('with no bucket asked for, the shipped ordering is byte-for-byte unchanged', async () => {
+    const svc = svcOver([
+      bucketed({ id: 'a', name: 'chicken breast', useCount: 40, lastUsed: '2026-06-01' }),
+      bucketed({ id: 'b', name: 'chicken thigh', useCount: 3, lastUsed: '2026-09-01', favorite: true }),
+      bucketed({ id: 'c', name: 'chickpeas', useCount: 8, lastUsed: '2026-09-01' }),
+    ]);
+    expect((await svc.suggest('chick', 'u')).map((e) => e.id)).toEqual(['b', 'a', 'c']);
+  });
+});

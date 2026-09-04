@@ -631,16 +631,28 @@ export function createHealthRouter(config) {
 
     /**
      * POST /api/v1/health/nutrition/catalog/quickadd - Quick-add a catalog entry
-     * Body: { catalogEntryId }
+     * Body: { catalogEntryId, mealTime? }
+     *
+     * `mealTime` is the bucket the add row was launched from (Task 9.2). It is
+     * applied by the quick-add itself, which is why the client no longer
+     * follow-up-PUTs the row to move it: that PUT raced the day reload and left
+     * the row in the clock's bucket whenever it failed.
      */
     router.post('/nutrition/catalog/quickadd', asyncHandler(async (req, res) => {
-      const { catalogEntryId } = req.body;
+      const { catalogEntryId, mealTime } = req.body;
       if (!catalogEntryId) {
         return res.status(400).json({ error: 'catalogEntryId is required' });
       }
+      // A phantom bucket must be refused, not passed downstream — the same rule
+      // /nutrition/input applies to its `bucket`.
+      if (mealTime != null && !NUTRITION_MEAL_BUCKETS.includes(mealTime)) {
+        return res.status(400).json({
+          error: `Invalid mealTime: ${mealTime}. Must be one of: ${NUTRITION_MEAL_BUCKETS.join(', ')}`,
+        });
+      }
       const userId = getDefaultUsername();
       try {
-        const item = await catalogService.quickAdd(catalogEntryId, userId);
+        const item = await catalogService.quickAdd(catalogEntryId, userId, { mealTime: mealTime ?? undefined });
         return res.json({ logged: true, item });
       } catch (err) {
         logger.error?.('health.catalog.quickadd.error', { catalogEntryId, error: err.message });
@@ -661,12 +673,21 @@ export function createHealthRouter(config) {
 
     /**
      * GET /api/v1/health/nutrition/catalog/suggest - Ranked suggestions for add-combobox
-     * Query: q (search string), limit (default 12)
+     * Query: q (search string), limit (default 12), bucket (meal bucket, optional)
+     *
+     * `bucket` makes the ranking bucket-aware (PRD F8.1): the Breakfast row's
+     * zero-keystroke list is that person's breakfast regulars. Omitted, the
+     * ranking is the shipped bucket-blind one.
      */
     router.get('/nutrition/catalog/suggest', asyncHandler(async (req, res) => {
       const userId = getDefaultUsername();
-      const { q = '', limit } = req.query;
-      const items = await catalogService.suggest(q, userId, parseInt(limit) || 12);
+      const { q = '', limit, bucket } = req.query;
+      if (bucket != null && !NUTRITION_MEAL_BUCKETS.includes(bucket)) {
+        return res.status(400).json({
+          error: `Invalid bucket: ${bucket}. Must be one of: ${NUTRITION_MEAL_BUCKETS.join(', ')}`,
+        });
+      }
+      const items = await catalogService.suggest(q, userId, parseInt(limit) || 12, { bucket });
       return res.json({ items });
     }));
 
