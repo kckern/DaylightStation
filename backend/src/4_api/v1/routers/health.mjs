@@ -709,6 +709,12 @@ export function createHealthRouter(config) {
         const goals = await budgetService.setGoals(getDefaultUsername(), req.body);
         return res.json({ goals });
       } catch (err) {
+        // A malformed macroGoals/watchMicros shape is the caller's fault, not
+        // ours — 400, with the coded reason, so the goals form can say what is
+        // wrong instead of reporting a server failure.
+        if (err.code === 'GOALS_INVALID') {
+          return res.status(400).json({ error: err.message, code: err.code });
+        }
         if (err.code === 'GOALS_WRITE_FAILED') {
           logger.error?.('health.goals.put.write_failed', { error: err.message });
           return sendInternalError(res, { error: err.message, code: err.code });

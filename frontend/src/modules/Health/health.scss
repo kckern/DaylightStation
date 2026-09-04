@@ -347,6 +347,13 @@ $health-quickbar-margin: 0.5rem; // deliberate slack over the exact footprint
   }
 }
 
+// One watch-micro row in the goals form: the limit input, and — only once a
+// limit exists — the ceiling/floor choice beside it.
+.health-goals__watch {
+  display: flex; align-items: flex-end; flex-wrap: wrap; gap: 0.5rem;
+  > * { flex: 1 1 8rem; }
+}
+
 .health-medical {
   display: flex; flex-direction: column; gap: 0.75rem;
 
