@@ -7,7 +7,7 @@ This file records **decisions and their reasoning** — the things a diff cannot
 It exists because the execution ledger lives in a git-ignored scratch directory and would
 otherwise be lost. Written during execution; entries are append-only.
 
-Branch: `feat/health-usability`. Phases 0–4 complete at time of writing (20 of 40 tasks).
+Branch: `feat/health-usability`. Phases 0–6 complete at time of writing (28 of 40 tasks).
 
 ---
 
@@ -72,6 +72,28 @@ pre-existing. It was closed anyway: the next task wired the day view to that cac
 later phase adds a sidebar that can show the same day's data beside the main column — the
 exact double-mount scenario. A known silent-data-corruption path should not be left open as
 consumers start adopting it.
+
+**2.8 Group rows are excluded from micro coverage on BOTH sides (Task 6.1).**
+The plan specified `covered` = counted items carrying `microsSource`, `total` = counted
+items. Taken literally, a dish header — which carries zero nutrition by design (2.4) and
+can never carry provenance — would sit in the denominator forever, so a fully-covered day
+of three dishes and nine children would report "based on 9 of 12 items" and imply missing
+data that does not exist. Groups are filtered out of both counts. Pinned by a test.
+
+**2.9 `microsSource: 'ai'` is conditional, not unconditional (Task 6.2).**
+The plan said the mapper sets `'ai'`. It sets `'ai'` only when the model actually returned
+micronutrient numbers. The stored shape defaults every micro to `0`, so stamping provenance
+on a macros-only parse would assert a measurement that never happened — the exact
+dishonesty the coverage caption exists to prevent. A measured `0` does count as data;
+absence does not. The same rule governs what the catalog will accept as micro data.
+
+**2.10 Two of the plan's Task 6.2 premises were already satisfied.**
+The AI prompt already asks for `fiber/sugar/sodium/cholesterol` by name (shipped with Task
+2.1), so no second prompt site was created. And `microsSource` was already threaded through
+all four field whitelists (`validateFoodItem`, `dehydrateNutriListItem`, `saveMany`,
+`NUTRITION_UPDATE_FIELDS`) by Tasks 0.1/0.2/5.5. Rather than assume that, an end-to-end
+round-trip test now walks catalog entry → quickAdd → saveMany → YAML on disk → findByDate →
+`getBudget().microCoverage`; deleting the field from the `saveMany` whitelist fails it.
 
 ---
 
@@ -160,6 +182,12 @@ Recorded rather than silently dropped. None block their task; several are cheap.
 11. An empty group row can survive if only the group's own delete fails; it renders as a
     plain zero-nutrition row and the error tells the user to retry.
 12. Two pre-existing changelog-voiced sentences remain in the Health reference doc.
+13. `ProgressView.jsx` has no test file (it mounts Highcharts). Its new macro/watch-micro
+    fields are covered indirectly: the shape rules they depend on live in the pure
+    `progress/goalFields.js`, which is tested. The rendering itself is unpinned.
+14. `microsSource` is one flag for all four micros. A model that returns sodium but omits
+    fiber marks the row covered for both. Per-key provenance would need per-key fields;
+    the single flag is what the stored shape can support today.
 
 ---
 
