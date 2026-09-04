@@ -6,8 +6,13 @@ import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { useHealthDay } from './useHealthDay.js';
 import { EquationStrip } from './EquationStrip.jsx';
-import { WeekStrip } from './WeekStrip.jsx';
+import { WeekStrip, addDays } from './WeekStrip.jsx';
 import { MacroBarRow } from './MacroBarRow.jsx';
+import { WeightChip } from './WeightChip.jsx';
+import { MonthBlock } from './MonthBlock.jsx';
+import { IntakeBurnChart } from '../progress/IntakeBurnChart.jsx';
+import { useBudgetRange } from './useBudgetRange.js';
+import { useIsWideViewport } from './layout.js';
 import { MacroFooter } from './MacroFooter.jsx';
 import { LogTable } from './LogTable.jsx';
 import { AddCombobox } from './AddCombobox.jsx';
@@ -44,6 +49,16 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   // never as a page-level spinner.
   const [capturePending, setCapturePending] = useState(null);
   const nutrition = useNutritionInput();
+  // The desktop sidebar's widgets are 30-day surfaces. Gating the MOUNT on the
+  // breakpoint (not just hiding them in CSS) is what stops a phone fetching a
+  // month of budgets for a column it will never show.
+  const wideViewport = useIsWideViewport();
+  // ONE 30-day request, fetched here and handed to every sidebar widget that
+  // needs it. Each widget owning its own useBudgetRange would make the same
+  // request twice on one page load — the hook's cache dedupes the SECOND load,
+  // not two simultaneous mounts.
+  const monthEnd = date < todayISO() ? date : todayISO();
+  const monthRange = useBudgetRange(addDays(monthEnd, -29), monthEnd, { enabled: wideViewport });
   const dash = useApiResource('api/v1/health/dashboard', { label: 'dashboard', logger });
   // Pending NutriLogs for the viewed date. Text/image/voice/barcode captures
   // now land immediately as accepted+unsettled rows in the nutrilist (Task 1.1),
@@ -226,6 +241,21 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
           over one fold — so the bars and the kcal number can never disagree. */}
       <MacroBarRow macros={day.budget?.macros} goals={day.budget?.goals}
         microCoverage={day.budget?.microCoverage} />
+      {/* Weight sits between the macro bars and the week strip: it is the other
+          number the budget is computed FROM, so it belongs beside the equation
+          rather than buried in the Progress tab. */}
+      {/* ONE instance of each of these in the JSX. On a phone this element is
+          simply the next block in the stack — which puts the weight chip
+          directly under the macro bars, where Task 8.3 wants it; at
+          $health-aside-breakpoint the same element becomes the right column.
+          Nothing is rendered twice and hidden. */}
+      <aside className="health-today__aside">
+        <WeightChip />
+        {wideViewport ? <MonthBlock days={monthRange.days} loading={monthRange.loading} /> : null}
+        {/* Same `days` the month block just used — a second useBudgetRange here
+            would be a second identical request on every desktop page load. */}
+        {wideViewport ? <IntakeBurnChart days={monthRange.days} loading={monthRange.loading} /> : null}
+      </aside>
       <WeekStrip date={date} today={todayISO()} onDateChange={setDate} />
       {day.error ? <ErrorState error={day.error} onRetry={day.reload} label="Food log" /> : null}
       {captureNotice ? (

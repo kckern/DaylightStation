@@ -363,27 +363,25 @@ export class YamlNutriListDatastore extends INutriListDatastore {
   }
 
   /**
-   * Find items by date
-   * @param {string} userId
-   * @param {string} date
-   * @returns {Promise<Object[]>}
+   * Every row belonging to an inclusive day window, from wherever it lives.
+   *
+   * THE one place this store decides which day a row belongs to, and it uses
+   * the same rule `archiveOldItems` uses to decide where a row is STORED:
+   * `date`, falling back to `createdAt`'s day. Those two rules have to be the
+   * same rule — a row filed into an archive by one predicate and looked up by
+   * a narrower one is a row nobody can find. That is exactly what happened:
+   * `findByDate` used to read only the hot file and match `item.date` exactly,
+   * so a day older than the 30-day retention window came back EMPTY, and a
+   * hot row carrying only `createdAt` came back empty on its own day while
+   * counting in every range.
+   *
+   * Archives are touched only when the window actually reaches past the
+   * retention cutoff, so a lookup for today costs exactly what it always did.
+   * @private
    */
-  async findByDate(userId, date) {
-    const items = await this.findAll(userId);
-    return items.filter(item => item.date === date);
-  }
+  #itemsInDayWindow(userId, startDate, endDate) {
+    let items = this.#readFile(this.#getPath(userId));
 
-  /**
-   * Find items by date range (includes archives if needed)
-   * @param {string} userId
-   * @param {string} startDate
-   * @param {string} endDate
-   * @returns {Promise<Object[]>}
-   */
-  async findByDateRange(userId, startDate, endDate) {
-    let items = await this.findAll(userId);
-
-    // Check if we need archives
     const now = new Date();
     const cutoffDate = new Date(now.setDate(now.getDate() - ARCHIVE_RETENTION_DAYS))
       .toISOString()
@@ -399,26 +397,53 @@ export class YamlNutriListDatastore extends INutriListDatastore {
           .filter(ym => ym >= startMonth && ym <= endMonth);
 
         for (const yearMonth of archiveFiles) {
-          const archiveItems = this.#loadArchive(userId, yearMonth);
-          items = [...items, ...archiveItems];
+          items = [...items, ...this.#loadArchive(userId, yearMonth)];
         }
       }
     }
 
-    // Filter by date range
     items = items.filter(item => {
       const itemDate = item?.date || item?.createdAt?.substring(0, 10);
       return itemDate && itemDate >= startDate && itemDate <= endDate;
     });
 
-    // Dedupe by uuid
+    // A row merged in from an archive that was never pruned from the hot file
+    // must not be counted twice.
     const seen = new Set();
-    items = items.filter(item => {
+    return items.filter(item => {
       const key = item.uuid || item.id;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
+  }
+
+  /**
+   * Find items by date — archive-aware, exactly like findByDateRange.
+   *
+   * Deliberately NOT re-sorted: a day's rows come back in file order (hot rows
+   * first, then any archived ones), which is the chronological order the day
+   * view has always rendered. `findByDateRange` sorts date-descending because a
+   * multi-day list needs an order; imposing that on a single day would reshuffle
+   * rows whose `date` is absent against rows that have one.
+   *
+   * @param {string} userId
+   * @param {string} date
+   * @returns {Promise<Object[]>}
+   */
+  async findByDate(userId, date) {
+    return this.#itemsInDayWindow(userId, date, date).map(item => this.#normalizeItem(item));
+  }
+
+  /**
+   * Find items by date range (includes archives if needed)
+   * @param {string} userId
+   * @param {string} startDate
+   * @param {string} endDate
+   * @returns {Promise<Object[]>}
+   */
+  async findByDateRange(userId, startDate, endDate) {
+    const items = this.#itemsInDayWindow(userId, startDate, endDate);
 
     // Sort by date descending
     items.sort((a, b) =>

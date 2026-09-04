@@ -767,6 +767,31 @@ export function createHealthRouter(config) {
       }
     }));
 
+    // The batched cousin of GET /budget: one request for a whole strip/block
+    // instead of one per day (the 7-cell week strip and the 30-day sidebar
+    // block each used to fan out into that many parallel /budget calls).
+    //
+    // A day the equation cannot be computed for comes back INSIDE the array as
+    // `{ date, error: 'NO_WEIGHT_DATA' }`. It is a gap in a chart, not a failed
+    // request — a 500 for the whole range because one day predates the scale
+    // would make the strip unusable for anyone with a short weight history.
+    router.get('/budget/range', asyncHandler(async (req, res) => {
+      const userId = getDefaultUsername();
+      const { from, to } = req.query;
+      try {
+        return res.json({ days: await budgetService.getBudgetRange(userId, from, to) });
+      } catch (err) {
+        if (err.code === 'RANGE_INVALID') {
+          return res.status(400).json({ error: err.message, code: err.code });
+        }
+        if (err.code === 'GOALS_NOT_CONFIGURED') {
+          return res.status(409).json({ error: err.message, code: err.code });
+        }
+        logger.error?.('health.budget.range.error', { from, to, error: err.message });
+        return sendInternalError(res, { error: err.message });
+      }
+    }));
+
     router.get('/goals', asyncHandler(async (req, res) => {
       const goals = await budgetService.getGoals(getDefaultUsername());
       return res.json({ goals });

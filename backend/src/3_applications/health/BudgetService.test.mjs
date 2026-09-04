@@ -6,6 +6,24 @@ const GOALS = {
   budgetFloor: 1200, heightIn: 70, birthYear: 1986, sex: 'male',
 };
 
+// A nutrilist fake that behaves like the REAL store: ONE row set and ONE
+// day-resolution rule (`date`, falling back to `createdAt`'s day — the rule the
+// store uses to decide where a row is archived), with both read methods derived
+// from it. Hand-feeding each service its own row list is what let a fold-equality
+// test "prove" agreement between two paths that were in fact reading different
+// rows on the same day.
+export const nutriListFake = (rows) => {
+  const dayOf = (r) => r?.date || r?.createdAt?.substring(0, 10) || null;
+  const inWindow = (from, to) => rows.filter((r) => {
+    const d = dayOf(r);
+    return d && d >= from && d <= to;
+  });
+  return {
+    findByDate: async (_userId, date) => inWindow(date, date),
+    findByDateRange: async (_userId, from, to) => inWindow(from, to),
+  };
+};
+
 const makeService = (over = {}) => new BudgetService({
   goalsStore: { load: async () => GOALS, save: async () => {}, ...over.goalsStore },
   healthStore: {
@@ -14,13 +32,14 @@ const makeService = (over = {}) => new BudgetService({
       '2026-08-30': { lbs_adjusted_average: 201 },
     }),
     getWorkoutsForDate: async () => ([{ type: 'cycling', calories: 320, duration_min: 42 }]),
+    getWorkoutsForRange: async () => ({}),
     ...over.healthStore,
   },
   nutriListStore: {
-    findByDate: async () => ([
-      { calories: 400, status: 'accepted' },
-      { calories: 880 },
-      { calories: 999, status: 'pending' }, // pending never counts
+    ...nutriListFake([
+      { date: '2026-09-02', calories: 400, status: 'accepted' },
+      { date: '2026-09-02', calories: 880 },
+      { date: '2026-09-02', calories: 999, status: 'pending' }, // pending never counts
     ]),
     ...over.nutriListStore,
   },
@@ -75,6 +94,7 @@ describe('BudgetService.getBudget', () => {
           activity: [{ id: 1, title: 'Lunch Run', calories: 517, minutes: 42.47 }],
           fitness: [{ title: 'Running', calories: 518, minutes: 87.18 }],
         }),
+        getWorkoutsForRange: async () => ({}),
       },
     });
     const b = await svc.getBudget('kckern', '2026-09-02');
@@ -322,5 +342,200 @@ describe('BudgetService.setGoals — macro/watch-micro shape (Task 6.1)', () => 
     const svc = makeService();
     await expect(svc.setGoals('kckern', null)).rejects.toMatchObject({ code: 'GOALS_INVALID' });
     await expect(svc.setGoals('kckern', [GOALS])).rejects.toMatchObject({ code: 'GOALS_INVALID' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getBudgetRange (Task 8.1) — the batched cousin of getBudget.
+//
+// Two properties matter beyond "the numbers are right":
+//   1. A day with no usable weight is a GAP INSIDE the array, never a thrown
+//      range. A short weight history must not make the week strip unusable.
+//   2. Storage is touched a FIXED number of times regardless of range length.
+//      The whole point of this endpoint is to stop the 7-parallel-request
+//      fan-out; a per-day loop inside the service would just move it.
+// ---------------------------------------------------------------------------
+
+const rangeGoals = { ...GOALS };
+
+// Weight starts 2026-08-31 — anything before that is a NO_WEIGHT_DATA gap.
+const RANGE_WEIGHT = {
+  '2026-08-31': { lbs_adjusted_average: 200 },
+  '2026-09-01': { lbs_adjusted_average: 200 },
+};
+
+function makeRangeService(over = {}) {
+  const calls = { goals: 0, weight: 0, byRange: 0, workoutsRange: 0, workoutsDate: 0 };
+  const rows = over.rows ?? [
+    { date: '2026-08-31', calories: 500, protein: 30 },
+    { date: '2026-09-01', calories: 400, protein: 20, status: 'accepted' },
+    { date: '2026-09-01', calories: 900, protein: 10 },
+    { date: '2026-09-01', calories: 777, status: 'pending' },   // never counts
+    { date: '2026-09-01', calories: 666, status: 'rejected' },  // never counts
+    { date: '2026-09-01', calories: 555, status: 'deleted' },   // never counts
+  ];
+  const workouts = () => over.workouts ?? { '2026-09-01': { activity: [{ calories: 300 }], fitness: [] } };
+  const svc = new BudgetService({
+    goalsStore: { load: async () => { calls.goals += 1; return over.goals === undefined ? rangeGoals : over.goals; }, save: async () => {} },
+    healthStore: {
+      loadWeightData: async () => { calls.weight += 1; return over.weight ?? RANGE_WEIGHT; },
+      // ONE workout ledger behind BOTH reads, for the same reason the nutrilist
+      // fake has one row set: a fake that feeds the per-day path and the range
+      // path different numbers can only ever prove they agree with themselves.
+      getWorkoutsForDate: async (_u, date) => {
+        calls.workoutsDate += 1;
+        return workouts()[date] ?? { activity: [], fitness: [] };
+      },
+      getWorkoutsForRange: async () => { calls.workoutsRange += 1; return workouts(); },
+    },
+    // ONE row set, BOTH reads — the same store fake serves getBudget and
+    // getBudgetRange, so neither can be quietly fed different rows (M1).
+    nutriListStore: (() => {
+      const fake = nutriListFake(rows);
+      return {
+        findByDate: fake.findByDate,
+        findByDateRange: async (...a) => { calls.byRange += 1; return fake.findByDateRange(...a); },
+      };
+    })(),
+    clock: { now: () => new Date('2026-09-02T12:00:00Z').getTime() },
+    logger: { debug() {}, info() {}, warn() {}, error() {} },
+  });
+  return { svc, calls };
+}
+
+describe('BudgetService construction', () => {
+  // M5. getBudgetRange reads the workout ledger once for the whole range. A
+  // store missing that method used to be discovered at CALL time, inside a
+  // request; it is a wiring mistake and belongs at construction, named.
+  it('refuses a health store that cannot serve a workout RANGE', () => {
+    const build = (healthStore) => () => new BudgetService({
+      goalsStore: { load: async () => GOALS, save: async () => {} },
+      healthStore,
+      nutriListStore: nutriListFake([]),
+      clock: { now: () => Date.now() },
+      logger: { debug() {}, info() {}, warn() {}, error() {} },
+    });
+    expect(build({ loadWeightData: async () => ({}), getWorkoutsForDate: async () => [] }))
+      .toThrow(/getWorkoutsForRange/);
+    expect(build({
+      loadWeightData: async () => ({}),
+      getWorkoutsForDate: async () => [],
+      getWorkoutsForRange: async () => ({}),
+    })).not.toThrow();
+  });
+});
+
+describe('BudgetService.getBudgetRange', () => {
+  it('returns one entry per day, with a no-weight day as a gap object rather than failing the range', async () => {
+    const { svc } = makeRangeService();
+    const days = await svc.getBudgetRange('kckern', '2026-08-30', '2026-09-01');
+
+    expect(days.map((d) => d.date)).toEqual(['2026-08-30', '2026-08-31', '2026-09-01']);
+    // 08-30 predates every weight reading.
+    expect(days[0]).toEqual({ date: '2026-08-30', error: 'NO_WEIGHT_DATA' });
+    expect(days[0].budget).toBeUndefined();
+    // The days around it are unaffected.
+    expect(days[1].food).toBe(500);
+    expect(days[2].food).toBe(1300);        // 400 + 900; pending/rejected/deleted excluded
+    expect(days[2].exercise).toBe(300);
+    expect(days[2].budget).toBe(1962);
+    expect(days[2].remaining).toBe(1962 - 1300 + 300);
+    expect(days[2].status).toBe('under');
+    expect(days[2].macros.protein).toBe(30);
+  });
+
+  it('touches storage a FIXED number of times — not once per day', async () => {
+    const { svc, calls } = makeRangeService();
+    await svc.getBudgetRange('kckern', '2026-07-15', '2026-09-01'); // 49 days
+    expect(calls.goals).toBe(1);
+    expect(calls.weight).toBe(1);
+    expect(calls.byRange).toBe(1);
+    expect(calls.workoutsRange).toBe(1);
+    // The per-DATE workout call re-reads both whole lifelog files; a range must
+    // never reach for it.
+    expect(calls.workoutsDate).toBe(0);
+  });
+
+  // M1. This used to build a SECOND service and hand it a hand-typed copy of the
+  // same rows, which made it structurally incapable of noticing that the two
+  // paths read different rows for the same day — the exact defect that shipped.
+  // One service, one store fake, one row set: if getBudget and getBudgetRange
+  // ever disagree about a day, the numbers cannot match.
+  it('folds exactly the rows getBudget folds — ONE service, ONE store, same day', async () => {
+    const { svc } = makeRangeService();
+    const [day] = await svc.getBudgetRange('kckern', '2026-09-01', '2026-09-01');
+    const single = await svc.getBudget('kckern', '2026-09-01');
+
+    expect(day.food).toBe(single.food);
+    expect(day.budget).toBe(single.budget);
+    expect(day.exercise).toBe(single.exercise);
+    expect(day.remaining).toBe(single.remaining);
+    expect(day.macros).toEqual(single.macros);
+    // And it is a real number, not two matching zeros.
+    expect(single.food).toBe(1300);
+  });
+
+  it('agrees with getBudget on a day whose rows are dated only by createdAt', async () => {
+    // The second, independent divergence mechanism: a row with no `date`. The
+    // store dates it by createdAt in BOTH reads, so both paths must see it.
+    const { svc } = makeRangeService({
+      rows: [
+        { createdAt: '2026-09-01T18:00:00Z', calories: 600 },
+        { date: '2026-09-01', calories: 400 },
+      ],
+    });
+    const [day] = await svc.getBudgetRange('kckern', '2026-09-01', '2026-09-01');
+    const single = await svc.getBudget('kckern', '2026-09-01');
+    expect(single.food).toBe(1000);
+    expect(day.food).toBe(single.food);
+  });
+
+  it('buckets rows by their own date — a neighbouring day never leaks into a total', async () => {
+    const { svc } = makeRangeService({
+      rows: [
+        { date: '2026-08-31', calories: 1000 },
+        { date: '2026-09-01', calories: 25 },
+        // No `date`, dated by createdAt exactly as findByDateRange's filter does.
+        { createdAt: '2026-09-01T18:00:00Z', calories: 75 },
+        { calories: 9999 }, // undatable — belongs to no day
+      ],
+    });
+    const days = await svc.getBudgetRange('kckern', '2026-08-31', '2026-09-01');
+    expect(days[0].food).toBe(1000);
+    expect(days[1].food).toBe(100);
+  });
+
+  it('a day with rows but no exercise still reports exercise 0, not a gap', async () => {
+    const { svc } = makeRangeService({ workouts: {} });
+    const days = await svc.getBudgetRange('kckern', '2026-09-01', '2026-09-01');
+    expect(days[0].exercise).toBe(0);
+    expect(days[0].error).toBeUndefined();
+  });
+
+  it.each([
+    ['from is not a date', '2026-9-1', '2026-09-01'],
+    ['to is not a date', '2026-09-01', 'yesterday'],
+    ['from is a calendar impossibility that Date silently normalizes', '2026-02-31', '2026-03-01'],
+    ['from is a calendar impossibility that Date rejects outright', '2026-08-32', '2026-09-01'],
+    ['to is out of range', '2026-09-01', '2026-13-01'],
+    ['from is after to', '2026-09-02', '2026-09-01'],
+    ['the range exceeds 62 days', '2026-01-01', '2026-06-01'],
+  ])('refuses with RANGE_INVALID when %s', async (_label, from, to) => {
+    const { svc, calls } = makeRangeService();
+    await expect(svc.getBudgetRange('kckern', from, to)).rejects.toMatchObject({ code: 'RANGE_INVALID' });
+    // A refusal must not have gone near storage.
+    expect(calls.byRange).toBe(0);
+  });
+
+  it('accepts exactly 62 days and refuses 63', async () => {
+    const { svc } = makeRangeService();
+    await expect(svc.getBudgetRange('kckern', '2026-07-02', '2026-09-01')).resolves.toHaveLength(62);
+    await expect(svc.getBudgetRange('kckern', '2026-07-01', '2026-09-01')).rejects.toMatchObject({ code: 'RANGE_INVALID' });
+  });
+
+  it('missing goals fails the whole range — it is a property of the account, not of a day', async () => {
+    const { svc } = makeRangeService({ goals: null });
+    await expect(svc.getBudgetRange('kckern', '2026-09-01', '2026-09-01'))
+      .rejects.toMatchObject({ code: 'GOALS_NOT_CONFIGURED' });
   });
 });

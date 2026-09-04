@@ -52,6 +52,7 @@ const makeBudgetService = () => new BudgetService({
   healthStore: {
     loadWeightData: async () => ({ '2026-09-01': { lbs_adjusted_average: 200 } }),
     getWorkoutsForDate: async () => [],
+    getWorkoutsForRange: async () => ({}),
   },
   nutriListStore,
   clock: { now: () => NOW },

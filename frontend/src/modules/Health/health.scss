@@ -1,3 +1,4 @@
+@use "sass:math";
 // frontend/src/modules/Health/health.scss
 // Health app styling — DS pack shell (Task F1). var(--ds-*) tokens only
 // (audit:ui gate rejects raw colors). Styles accrete as later Part F tasks
@@ -17,6 +18,18 @@
   &__stale { font-size: 0.7rem; color: var(--ds-warning); }
 }
 
+// Week strip (Task 8.2) — seven per-day budget bars, plain CSS, no chart
+// library for seven rectangles. The box is `$health-bar-cap` tall and the
+// budget reference line sits at 1/cap of it (80% for a 1.25 cap), so a day
+// exactly on budget lands ON the line and the space above it is the overshoot
+// headroom. The 80% is derived from the cap in one place — the JS half of the
+// same arithmetic is dayBars.js's OVERSHOOT_CAP.
+//
+// NOTHING here animates `filter`: it is a known paint-cost trap in this repo
+// (low fps with zero long tasks). Hue changes are flat background swaps.
+$health-bar-cap: 1.25;
+$health-bar-box: 34px;
+
 .health-weekstrip {
   display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.3rem;
   padding: 0.4rem 0 0.3rem; border-bottom: 1px solid var(--ds-border);
@@ -27,15 +40,49 @@
     &:hover { background: var(--ds-surface-alt); }
     &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
     &--active { background: var(--ds-surface-alt); color: var(--ds-text-high); }
+    // Today is RINGED, which is a different statement from "the day you are
+    // looking at" (the fill above) — both can be true, and on a past date only
+    // one is.
+    &--today { box-shadow: inset 0 0 0 1px var(--ds-accent); }
   }
   &__dow { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.04em; }
   &__num { font-size: 0.95rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ds-text-high); }
   &__kcal { font-size: 0.62rem; font-variant-numeric: tabular-nums; color: var(--ds-text-low); }
-  &__dot {
-    width: 6px; height: 6px; border-radius: 50%; margin-top: 0.1rem; background: var(--ds-border);
-    &--under { background: var(--ds-success); }
+
+  // Capped width, centred: a cell is ~50px wide on a phone and ~100px on the
+  // desktop column, and a bar stretched to that reads as a block, not a bar.
+  &__barbox {
+    position: relative; display: block; width: min(100%, 26px); height: $health-bar-box;
+    margin: 0.15rem auto 0;
+  }
+  // Above the track (z-index), not behind it: both are positioned siblings, so
+  // without this the track — which comes later in the DOM — paints over the
+  // line and the budget reference disappears.
+  &__goalline {
+    position: absolute; left: 0; right: 0; bottom: math.percentage(math.div(1, $health-bar-cap));
+    height: 1px; background: var(--ds-text-low); opacity: 0.5; z-index: 2;
+  }
+  // The track: present only for a day the server COULD compute. Its mere
+  // existence is what separates "0 kcal logged" from "no data".
+  &__bar {
+    position: absolute; inset: 0; display: flex; align-items: flex-end;
+    border-radius: 3px; background: var(--ds-surface-alt); overflow: hidden;
+  }
+  // A hole in the data: hollow, outlined, no track and no fill. It must not be
+  // mistakable for a zero-height bar (PRD F7.1).
+  &__bar--gap {
+    background: none; border: 1px dashed var(--ds-border); opacity: 0.7;
+  }
+  &__fill {
+    display: block; width: 100%; border-radius: 3px 3px 0 0;
+    background: var(--ds-success);
     &--over { background: var(--ds-danger); }
-    &--gap { background: var(--ds-border); opacity: 0.5; }
+    // A day that ate PAST budget and still came in under, because exercise
+    // covered it. Without this the cell is just "a green bar above the
+    // reference line", which reads as a mistake; the capped top edge says the
+    // overshoot is real and something offset it. Non-colour cue, and the
+    // accessible name states the same thing in words (barCellLabel).
+    &--offset { border-top: 2px solid var(--ds-warning); }
   }
 }
 
@@ -86,6 +133,71 @@
   &__item--floor &__fill { background: var(--ds-text-low); }
 }
 
+// Weight chip (Task 8.3) — readout + 7-day delta + a two-polyline sparkline.
+// Inline SVG, no chart library, and NOTHING animates `filter`.
+.health-weightchip {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  padding: 0.4rem 0; border-bottom: 1px solid var(--ds-border);
+
+  &__readout { display: flex; align-items: baseline; gap: 0.3rem; }
+  &__value { font-size: 1.15rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ds-text-high); }
+  &__unit { font-size: 0.7rem; color: var(--ds-text-low); }
+  &__delta {
+    display: inline-flex; align-items: baseline; gap: 0.2rem;
+    font-size: 0.75rem; font-variant-numeric: tabular-nums; color: var(--ds-text-mid);
+    // Direction is spoken by the arrow first; hue only reinforces it (A1 —
+    // never colour alone).
+    &--down { color: var(--ds-success); }
+    &--up { color: var(--ds-warning); }
+    &--none { color: var(--ds-text-low); font-style: italic; }
+  }
+  &__arrow { font-size: 0.6rem; }
+  &__window { color: var(--ds-text-low); }
+
+  &__spark {
+    display: block; width: 7rem; height: 28px; flex: 0 0 auto;
+    &--empty { border-bottom: 1px dashed var(--ds-border); height: 28px; }
+  }
+  &__line {
+    stroke-linejoin: round; stroke-linecap: round;
+    &--raw { stroke: var(--ds-border); stroke-width: 1; }
+    &--avg { stroke: var(--ds-accent); stroke-width: 1.5; }
+  }
+}
+
+// Intake vs burn (Task 8.5) — food down, exercise up, ONE shared kcal scale.
+// The two halves' heights are set inline from the data (intakeBurn.js), which
+// is what makes a pixel worth the same number of kcal above and below the line.
+.health-intakeburn {
+  display: flex; flex-direction: column; gap: 0.35rem;
+  padding: 0.5rem 0; border-bottom: 1px solid var(--ds-border);
+
+  &__title {
+    margin: 0; font-size: 0.65rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--ds-text-mid);
+  }
+  &__plot { display: flex; flex-direction: column; height: 76px; overflow: hidden; }
+  // The two halves are sized INLINE from the data. They must stretch their
+  // columns to full height — a column that shrink-wraps its bar gives that bar
+  // a percentage height against an auto-height parent, which resolves to zero
+  // and paints nothing.
+  &__burn, &__intake {
+    display: flex; align-items: stretch; gap: 1px; min-height: 0; flex: 0 1 auto;
+  }
+  &__baseline { height: 1px; background: var(--ds-border); flex: 0 0 1px; }
+  &__col { flex: 1 1 0; min-width: 0; display: flex; height: 100%; }
+  &__burn &__col { align-items: flex-end; }
+  &__intake &__col { align-items: flex-start; }
+  &__bar {
+    display: block; width: 100%;
+    &--intake { background: var(--ds-accent); border-radius: 0 0 2px 2px; }
+    &--burn { background: var(--ds-success); border-radius: 2px 2px 0 0; }
+    // A hole, on the baseline: a dashed stub, not a pair of zero-height bars.
+    &--gap { height: 4px; border: 1px dashed var(--ds-border); background: none; opacity: 0.7; }
+  }
+  &__caption { margin: 0; font-size: 0.65rem; color: var(--ds-text-low); font-variant-numeric: tabular-nums; }
+}
+
 .health-footer {
   display: flex; flex-direction: column; gap: 0.25rem;
   &__coach { background: none; border: none; text-align: left; cursor: pointer; color: var(--ds-text-mid); font-size: 0.8rem; padding: 0; }
@@ -113,13 +225,89 @@ $health-quickbar-btn-pad: 0.35rem;
 $health-quickbar-btn-size: 44px;
 $health-quickbar-margin: 0.5rem; // deliberate slack over the exact footprint
 
+// Task 8.4 layout. `$health-aside-breakpoint` is the SCSS half of a value that
+// also exists in JS (today/layout.js's ASIDE_MIN_WIDTH_PX) — the sidebar's
+// widgets are 30-day surfaces and must not FETCH on a phone, which the CSS
+// alone cannot decide. layout.contract.test.js reads this compiled rule and
+// fails if the two ever drift.
+$health-aside-breakpoint: 1100px;
+$health-aside-width: 320px;
+$health-today-column: 720px;
+$health-aside-gap: 1.5rem;
+
 // The Today page's scroll root. Bottom padding derived from the bar's own
 // geometry above (never a hand-picked guess) — Task 4.3's layout
 // requirement: a fixed/floating element must never end up covering the
 // last log row or an open add-combobox when the page is scrolled all the
 // way down.
+//
+// The column is capped and centred: a 2560px monitor rendering one-line log
+// rows edge to edge is unreadable, and every measurement in this app (macro
+// bar tracks, the week strip's seven cells) was tuned against a phone-width
+// column.
 .health-today {
+  max-width: $health-today-column;
+  margin-inline: auto;
   padding-bottom: calc(#{$health-quickbar-offset} + #{$health-quickbar-btn-pad} * 2 + #{$health-quickbar-btn-size} + #{$health-quickbar-margin});
+}
+
+// Narrow: the aside is simply the next block in the stack, landing directly
+// under the macro bars — which is exactly where the weight chip belongs on a
+// phone. There is ONE instance of each widget in the JSX; the wide layout below
+// moves this same element into a column rather than rendering a second copy.
+.health-today__aside {
+  display: flex; flex-direction: column; gap: 0.6rem;
+}
+
+@media (min-width: $health-aside-breakpoint) {
+  .health-today {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) $health-aside-width;
+    column-gap: $health-aside-gap;
+    align-items: start;
+    max-width: calc(#{$health-today-column} + #{$health-aside-width} + #{$health-aside-gap});
+
+    // Everything else stays in the capped main column...
+    > * { grid-column: 1; min-width: 0; }
+    // ...and the aside takes the second column, pinned to the top of the page
+    // and sticky so it stays useful while the log scrolls.
+    // Spanning the rows rather than sitting in row 1: an aside pinned to row 1
+    // alone STRETCHES that row to its own height, which pushes a 150px hole
+    // between the equation strip and everything under it in the main column.
+    // The span is generous (Today renders ~20 children) and costs nothing —
+    // empty implicit rows are zero-height and `row-gap` is 0.
+    row-gap: 0;
+    > .health-today__aside {
+      grid-column: 2; grid-row: 1 / span 50;
+      align-self: start; position: sticky; top: 0.5rem;
+    }
+  }
+}
+
+// The 30-day block (Task 8.4) — the week strip at a month's zoom, same
+// encoding, same honesty rule: a hole is hollow, never a zero-height bar.
+.health-monthblock {
+  display: flex; flex-direction: column; gap: 0.35rem;
+  padding: 0.5rem 0; border-bottom: 1px solid var(--ds-border);
+
+  &__title {
+    margin: 0; font-size: 0.65rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--ds-text-mid);
+  }
+  &__bars { display: flex; align-items: flex-end; gap: 2px; height: 44px; }
+  &__slot { position: relative; flex: 1 1 0; height: 100%; min-width: 0; }
+  &__bar {
+    position: absolute; inset: 0; display: flex; align-items: flex-end;
+    border-radius: 2px; background: var(--ds-surface-alt); overflow: hidden;
+  }
+  &__bar--gap { background: none; border: 1px dashed var(--ds-border); opacity: 0.7; }
+  &__fill {
+    display: block; width: 100%; border-radius: 2px 2px 0 0; background: var(--ds-success);
+    &--over { background: var(--ds-danger); }
+    // Same encoding at a month's zoom — see the week strip's note.
+    &--offset { border-top: 2px solid var(--ds-warning); }
+  }
+  &__caption { margin: 0; font-size: 0.65rem; color: var(--ds-text-low); font-variant-numeric: tabular-nums; }
 }
 
 // The global quick-capture surface (Task 4.3) — text/mic/camera/barcode,
