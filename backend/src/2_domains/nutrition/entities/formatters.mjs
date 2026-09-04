@@ -161,3 +161,25 @@ export default {
   formatFoodList,
   formatLoggedSummary,
 };
+
+/**
+ * The line that goes under a capture's confirmation when a parsed row sits far
+ * off that food's own history.
+ *
+ * It STATES, it does not correct. The numbers above it are the ones that were
+ * logged; this only says what the history would have expected, so the person
+ * can revise or accept. Returns '' when there is nothing to say, so callers
+ * can concatenate it unconditionally.
+ *
+ * @param {Array<{name, calories, grams, ratio, expectedCalories, sampleCount}>} findings
+ * @returns {string}
+ */
+export function formatDensityWarnings(findings) {
+  const list = Array.isArray(findings) ? findings : [];
+  if (list.length === 0) return '';
+  const lines = list.map((f) => {
+    const times = f.ratio >= 10 ? Math.round(f.ratio) : Math.round(f.ratio * 10) / 10;
+    return `⚠️ ${f.name}: ${Math.round(f.calories)} kcal for ${Math.round(f.grams)} g is ${times}× your usual for this food (~${Math.round(f.expectedCalories)} kcal expected, from ${f.sampleCount} past ${f.sampleCount === 1 ? 'log' : 'logs'}).`;
+  });
+  return `${lines.join('\n')}\nTap Revise if the portion is wrong.`;
+}

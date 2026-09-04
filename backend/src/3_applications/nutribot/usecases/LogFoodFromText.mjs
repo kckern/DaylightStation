@@ -6,7 +6,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { formatFoodList, formatDateHeader, formatLoggedSummary } from '#domains/nutrition/entities/formatters.mjs';
+import { formatFoodList, formatDateHeader, formatLoggedSummary, formatDensityWarnings } from '#domains/nutrition/entities/formatters.mjs';
 import { repairTruncatedJson } from '../lib/repairJson.mjs';
 import { deriveLogDate } from '../lib/deriveLogDate.mjs';
 import { createNutriLog, serializeNutriLog } from '../nutriLogRecords.mjs';
@@ -320,6 +320,23 @@ export class LogFoodFromText {
         await this.#foodLogStore.save(nutriLog);
       }
 
+      // 5a-bis. Density guard (catalog-density fix, step 2). Runs BEFORE the
+      // catalog donation below, because a donation adds this very row to the
+      // history the guard compares against — judging a row against a median it
+      // has already moved is not a check. It never corrects a number: the row
+      // is logged exactly as parsed and lands UNSETTLED like every capture
+      // (NutribotInputRouter stamps `settled: false`), so a flagged item simply
+      // arrives on the pending-review surface with a reason attached.
+      let densityWarning = '';
+      if (this.#catalogService?.assessDensity) {
+        try {
+          const findings = await this.#catalogService.assessDensity(foodItems, userId);
+          densityWarning = formatDensityWarnings(findings);
+        } catch (err) {
+          this.#logger.warn?.('nutribot.density.assess_failed', { conversationId, error: err.message });
+        }
+      }
+
       // 5b. Record food items in catalog for quick-add
       if (this.#catalogService) {
         for (const item of foodItems) {
@@ -330,6 +347,14 @@ export class LogFoodFromText {
               protein: item.protein,
               carbs: item.carbs,
               fat: item.fat,
+              // The MASS, and the id that makes this row's observation
+              // idempotent. Without these the catalog can only remember a
+              // total, which is the portion-multiple problem it just stopped
+              // having.
+              grams: item.grams,
+              unit: item.unit,
+              amount: item.amount,
+              logId: item.id,
               // Spread, not four named fields: an unanswered micro is ABSENT
               // on `item` (see the mapper), and naming it here would
               // resurrect it as `undefined` -> a donated structural zero.
@@ -350,18 +375,21 @@ export class LogFoodFromText {
       const foodList = formatFoodList(foodItems);
       const loggedSummary = formatLoggedSummary(foodItems);
       const buttons = this.#buildActionButtons(nutriLog.id);
+      // '' when nothing was flagged, so the message is byte-identical to what
+      // it has always been for the overwhelming majority of captures.
+      const warningBlock = densityWarning ? `\n\n${densityWarning}` : '';
 
       try {
         if (status) {
           // Use status indicator's finish (stops animation, updates in place)
-          await status.finish(`${loggedSummary}\n${dateHeader}\n\n${foodList}`, {
+          await status.finish(`${loggedSummary}\n${dateHeader}\n\n${foodList}${warningBlock}`, {
             choices: buttons,
             inline: true,
           });
         } else {
           // Fallback: direct update
           await messaging.updateMessage(statusMsgId, {
-            text: `${loggedSummary}\n${dateHeader}\n\n${foodList}`,
+            text: `${loggedSummary}\n${dateHeader}\n\n${foodList}${warningBlock}`,
             choices: buttons,
             inline: true,
           });
@@ -369,7 +397,7 @@ export class LogFoodFromText {
       } catch (updateError) {
         this.#logger.warn?.('logText.updateMessage.failed', { conversationId, error: updateError.message });
         try {
-          await messaging.sendMessage(`✅ Food logged! (message update failed)\n\n${dateHeader}\n\n${foodList}`, { reply_markup: { inline_keyboard: buttons } });
+          await messaging.sendMessage(`✅ Food logged! (message update failed)\n\n${dateHeader}\n\n${foodList}${warningBlock}`, { reply_markup: { inline_keyboard: buttons } });
         } catch (recoveryError) {
           this.#logger.error?.('logText.recovery.failed', { conversationId, error: recoveryError.message });
         }
@@ -473,6 +501,7 @@ export class LogFoodFromText {
 6. Determine the date - today is ${dayOfWeek}, ${today} at ${timeAMPM} (TZ: ${timezone}, unix: ${unix}).
    If user mentions "yesterday", "last night", "on wednesday", etc., calculate the actual date.
 7. Use Title Case for all food names (e.g., "Grilled Chicken Breast", "Mashed Potatoes")
+7b. The "name" is the FOOD, and only the food. The PORTION lives in "grams"/"quantity"/"unit" and must never appear in the name — no counts, no container, no size, no parenthetical: write "Premier Protein Shake", never "Premier Protein Shake (Bottle)", "2 Premier Protein Shakes", "Premier Protein Shake (335ml)" or "Almonds (Handful)". The same food eaten in a different amount must come back with the SAME name, because that name is the key the food is remembered under.
 8. Prefer grams (g) or ml as the unit; only use other units (cup, tbsp, oz, piece) if the user explicitly says so.
 9. Round grams to sensible whole numbers (nearest 5g).
 10. If the description is a composite dish whose parts are listed separately (e.g. a smoothie and its ingredients, or spaghetti with noodles/sauce/cheese listed out), give every part item the SAME "dish" string (the dish's name). Standalone foods that are not part of a listed composite OMIT "dish" entirely.

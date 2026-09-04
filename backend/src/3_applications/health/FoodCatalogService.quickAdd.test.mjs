@@ -170,7 +170,11 @@ describe('FoodCatalogService.recordUsage — bucket history without clobbering m
     expect(existing.icon).toBe('chili-bowl');          // Phase 7: fill, never overwrite
     expect(existing.nutrients.sodium).toBe(640);       // donated, per key
     expect(existing.nutrients.fiber).toBe(8);          // NOT cleared by a donation that omits it
-    expect(existing.nutrients.calories).toBe(310);
+    // NOT 310. The catalog no longer takes the last row's total as the
+    // definition of a serving (catalog-density fix, step 1); this donation
+    // carries no mass, so it is not even an observation, and the entry's
+    // canonical 300 stands.
+    expect(existing.nutrients.calories).toBe(300);
   });
 
   it('a donation with no provenance still records the bucket but donates no micros', async () => {

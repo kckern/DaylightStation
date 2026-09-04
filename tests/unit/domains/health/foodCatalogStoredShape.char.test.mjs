@@ -43,6 +43,12 @@ describe('food catalog stored YAML shape (characterization)', () => {
       id: 'fc-1',
       name: 'Greek Yogurt',
       nutrients: { calories: 120, protein: 17, carbs: 7, fat: 0 },
+      // catalog-density fix: the OBSERVATION RING is part of the stored shape.
+      // `nutrients` above is now a materialized view of it — the derived
+      // serving — and an entry with an empty ring writes the record it was
+      // built with, unchanged. A field missing from #dehydrate is a field that
+      // does not survive a restart, which is why it is pinned here.
+      observations: [],
       source: 'manual',
       barcodeUpc: '012345678905',
       useCount: 3,
@@ -66,6 +72,12 @@ describe('food catalog stored YAML shape (characterization)', () => {
       name: 'Greek Yogurt',
       normalizedName: 'greek yogurt',
       nutrients: { calories: 120, protein: 17, carbs: 7, fat: 0 },
+      // catalog-density fix: the OBSERVATION RING is part of the stored shape.
+      // `nutrients` above is now a materialized view of it — the derived
+      // serving — and an entry with an empty ring writes the record it was
+      // built with, unchanged. A field missing from #dehydrate is a field that
+      // does not survive a restart, which is why it is pinned here.
+      observations: [],
       source: 'manual',
       barcodeUpc: '012345678905',
       useCount: 3,

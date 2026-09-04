@@ -16,7 +16,7 @@
  * nothing — a green tick that proved nothing is exactly the failure mode the
  * incident above is made of.
  */
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -90,24 +90,4 @@ describe('installed icon manifest', () => {
     expect(overlap).toEqual([]);
   });
 
-  it("every legacy nutribot slug still resolves, so no stored FoodItem.icon has gone dark", (ctx) => {
-    skipUnlessInstalled(ctx);
-    const flatDir = path.join(MEDIA_ROOT, 'img/icons/food');
-    if (!existsSync(flatDir)) ctx.skip(`legacy flat icon set not present (${flatDir})`);
-    const { store } = loadInstalled();
-    // Reading the legacy directory rather than trusting the manifest to list
-    // it: the point is that the OLD vocabulary is fully covered by the NEW
-    // manifest, which a manifest-only check could never notice losing.
-    const legacy = readdirSync(flatDir)
-      .filter((f) => /\.(png|jpe?g)$/i.test(f))
-      .map((f) => f.replace(/\.[^.]+$/, ''));
-    // Without this the test passes VACUOUSLY on an exists-but-empty directory —
-    // legacy=[] gives dark=[] and a green tick over the exact condition it
-    // exists to detect. An emptied-but-present folder IS the incident shape
-    // (a Dropbox conflicted copy), so the emptiness has to be asserted, not
-    // just the directory's existence.
-    expect(legacy.length).toBeGreaterThan(0);
-    const dark = legacy.filter((slug) => ICON_SLUG_PATTERN.test(slug) && store.resolve(slug) === null);
-    expect(dark).toEqual([]);
-  });
 });

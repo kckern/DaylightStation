@@ -4,13 +4,27 @@
  * Built passively from logged foods. Tracks usage frequency for quick-add.
  */
 
+import { deriveCanonical, sortObservations, normalizeRing, OBSERVATION_LIMIT } from '#domains/health/services/catalogDensity.mjs';
+
 export class FoodCatalogEntry {
+  /**
+   * What the entry holds on disk under `nutrients`. It is NOT the canonical
+   * value any more — it is the fallback the derived view falls through to when
+   * the observation ring cannot answer (a food never logged with a mass, an
+   * entry created by hand). See the `nutrients` accessor below.
+   */
+  #baseNutrients;
+
   constructor(data) {
     if (!data.id || !data.lastUsed || !data.createdAt) throw new Error('FoodCatalogEntry requires id, lastUsed, and createdAt');
     this.id = data.id;
     this.name = data.name;
     this.normalizedName = data.normalizedName || FoodCatalogEntry.normalize(data.name);
-    this.nutrients = data.nutrients || { calories: 0, protein: 0, carbs: 0, fat: 0 };
+    this.#baseNutrients = data.nutrients || { calories: 0, protein: 0, carbs: 0, fat: 0 };
+    // The last ~20 things actually logged under this name: `{date, kcal,
+    // protein, carbs, fat, grams, logId, source}`. This is the entry's
+    // evidence, and the canonical nutrition is a function of it.
+    this.observations = FoodCatalogEntry.#cloneObservations(data.observations);
     this.source = data.source || 'manual';
     this.barcodeUpc = data.barcodeUpc || null;
     this.useCount = data.useCount || 1;
@@ -30,6 +44,120 @@ export class FoodCatalogEntry {
     this.usageByBucket = FoodCatalogEntry.#cloneUsageByBucket(data.usageByBucket);
     this.lastUsed = data.lastUsed;
     this.createdAt = data.createdAt;
+  }
+
+  /**
+   * The canonical nutrition for ONE serving of this food.
+   *
+   * DERIVED, not stored: the observation nearest the ring's median density,
+   * scaled to its median mass (`catalogDensity.deriveCanonical`). The shape is
+   * exactly what it always was — `{calories, protein, carbs, fat, ...micros}`
+   * — so every existing reader (presenter, suggest, quick-add) is unchanged.
+   *
+   * Micros are NOT derived. They arrive per key from provenanced captures and
+   * live on the base record; the derived macros are layered over them, so a
+   * donation is never lost and a missing observation macro falls through to
+   * whatever the entry already knew rather than becoming a written 0.
+   */
+  get nutrients() {
+    const derived = deriveCanonical(this.observations);
+    if (!derived) return this.#baseNutrients;
+    return { ...this.#baseNutrients, ...derived.nutrients };
+  }
+
+  /**
+   * Replace the fallback record. Kept so the historical
+   * `entry.nutrients = {...}` assignment still means something, but the
+   * capture path should prefer `donateMicros` — writing macros here does not
+   * override the derivation and never did what "latest wins" claimed.
+   */
+  set nutrients(value) {
+    this.#baseNutrients = value || { calories: 0, protein: 0, carbs: 0, fat: 0 };
+  }
+
+  /** What is actually on disk, before derivation. For the dehydrator. */
+  get baseNutrients() { return this.#baseNutrients; }
+
+  /** The portion (in grams) the canonical numbers describe, or null. */
+  get canonicalGrams() {
+    return deriveCanonical(this.observations)?.grams ?? null;
+  }
+
+  /** The entry's own median kcal/g, or null when nothing observed carries a mass. */
+  get densityKcalPerGram() {
+    return deriveCanonical(this.observations)?.density ?? null;
+  }
+
+  /** How many observations actually contribute to the derivation. */
+  get observationSampleCount() {
+    return deriveCanonical(this.observations)?.sampleCount ?? 0;
+  }
+
+  /**
+   * The nutrition of `grams` of this food, scaled off the canonical serving.
+   *
+   * Null when the entry cannot say — the caller then keeps whatever it would
+   * have used, because an unscalable food must not silently become zero.
+   */
+  nutrientsForGrams(grams) {
+    const mass = Number(grams);
+    if (!Number.isFinite(mass) || mass <= 0) return null;
+    const derived = deriveCanonical(this.observations);
+    if (!derived || !(derived.grams > 0)) return null;
+    const factor = mass / derived.grams;
+    const out = { ...this.#baseNutrients, ...derived.nutrients };
+    out.calories = Math.round(derived.nutrients.calories * factor);
+    for (const key of ['protein', 'carbs', 'fat']) {
+      if (typeof derived.nutrients[key] === 'number') {
+        out[key] = Math.round(derived.nutrients[key] * factor * 10) / 10;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Merge micronutrients into the base record, per key, without touching
+   * macros. This is what a provenanced capture donates — the two-gate rule
+   * lives in FoodCatalogService; this only writes what it is handed.
+   */
+  donateMicros(micros) {
+    if (!micros || typeof micros !== 'object') return;
+    this.#baseNutrients = { ...this.#baseNutrients, ...micros };
+  }
+
+  /**
+   * Add one observation to the ring, or replace the one with the same
+   * `logId`.
+   *
+   * Replacing rather than appending is what makes a re-run harmless: the row
+   * id is the identity, so recording the same logged row twice leaves the ring
+   * with one copy of it. The ring is then trimmed OLDEST-FIRST by
+   * (date, logId), which is a total order, so the survivors are a function of
+   * the input set and not of the order it arrived in.
+   */
+  addObservation(observation) {
+    if (!observation || typeof observation !== 'object') return;
+    const kept = observation.logId
+      ? this.observations.filter((o) => o.logId !== observation.logId)
+      : [...this.observations];
+    kept.push({ ...observation });
+    this.observations = sortObservations(kept).slice(-OBSERVATION_LIMIT);
+  }
+
+  /**
+   * Replace the whole ring with a deterministic window over `observations`.
+   * The reconcile uses this rather than repeated `addObservation` so that a
+   * second run over the same history produces the identical ring — the
+   * property `backfill` does not have (decision 2.29).
+   */
+  setObservations(observations) {
+    this.observations = normalizeRing(observations);
+  }
+
+  /** Defensive copy: stored observations must not alias the caller's array. */
+  static #cloneObservations(raw) {
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((o) => o && typeof o === 'object').map((o) => ({ ...o }));
   }
 
   /** Defensive per-bucket copy: stored records must not alias the caller's object. */
