@@ -7,7 +7,8 @@ This file records **decisions and their reasoning** — the things a diff cannot
 It exists because the execution ledger lives in a git-ignored scratch directory and would
 otherwise be lost. Written during execution; entries are append-only.
 
-Branch: `feat/health-usability`. Phases 0–4 complete at time of writing (20 of 40 tasks).
+Branch: `feat/health-usability`. Phases 0–5 complete at time of writing (28 of 40 tasks);
+Phases 0–4 are merged to `main` and deployed.
 
 ---
 
@@ -21,7 +22,7 @@ future reader will otherwise read them as regressions.
 | Unsettled entries **count** in the calorie equation immediately | The pending queue's "doesn't count until accepted" rule made the equation lie between capture and review. The unsettled cue plus one-tap editing is the safety valve instead. |
 | "Coach never auto-accepts" retired | Coach-logged food now lands unsettled and counting like every other capture. Editability replaces the gate. |
 | The pending Accept/Revise/Discard queue retired **across all transports** | Web, Telegram and the coach share one lifecycle. Two review models over one data set was the underlying defect. |
-| Discard = delete; `rejected` becomes unreachable *(pending Phase 5)* | See §3 — the scale sweep still writes `rejected`, so this is true only after the bridge is replaced. |
+| Discard = delete; `rejected` survives as a **scale-only** status | Originally recorded as "`rejected` becomes unreachable pending Phase 5". Phase 5 falsified that: see §3. Discard still deletes; `rejected` is simply never written by a discard. |
 | Groups are dishes/courses **inside** a meal, not meals themselves | A casserole, a smoothie, or appetizer/main/dessert as siblings in one dinner. Meal buckets are unchanged. |
 | A meal named out loud beats the row the capture was launched from, which beats the clock | Silently overriding what a person said is worse than being wrong; when the explicit meal wins, the UI says so. |
 | Single-user this wave | Everything resolves to the head of household. Attribution is deliberately out of scope. |
@@ -38,7 +39,13 @@ The plan said to delete it. That contradicts the plan's own rule that off-surfac
 must reach the day view: the scale path still mints `pending` logs, and pending logs never
 sync into the rows the day view reads. Deleting it would have hidden kitchen-scale entries —
 re-creating the live incident the component was built for. Kept, rescoped to scale-origin
-pending only. **Phase 5 (Task 5.6) retires it properly.**
+pending only. **Phase 5 (Task 5.6) verified this override was correct and made it permanent.**
+The retirement was attempted and refused with proof: `LogFoodFromScale` still writes
+`status: 'pending'`, and the quiet commit that would clear it gates on a composition being
+*complete* (`grams !== null && density !== null`), so a weight placed with no density never
+completes and its row waits indefinitely for a human. Retiring the section would have made
+those rows unreachable — the original incident, restored. The heading text ("NEEDS REVIEW")
+is still generic though the section is scale-only; see §6.
 
 **2.2 The AI response was NOT restructured (Task 2.1).**
 The plan proposed `{ dishes: [...], loose: [...] }`. The flat `items` array is consumed by
@@ -77,9 +84,14 @@ consumers start adopting it.
 
 ## 3. Known divergences from the PRD (true only after later phases)
 
-- **`rejected` is not yet unreachable.** The scale's session-end sweep still writes it when
-  an unanswered composition prompt is superseded. Documented accurately rather than
-  aspirationally; Phase 5 must verify and update.
+- **`rejected` is reachable, permanently — this is now settled, not pending.** Phase 5 was
+  supposed to make it unreachable and instead proved the opposite by driving the path: put
+  300g on the scale (a live prompt opens), answer nothing, put 500g on, and the first prompt
+  is superseded with `status: 'rejected'`. It is written by the observation service, not by
+  any discard, so the "discard = delete" decision above stands unchanged. The PRD's
+  "`rejected` becomes unreachable" line was an assumption about a subsystem the PRD had not
+  read; the code, not the PRD, is right. Treat `rejected` as a scale-only status meaning
+  "a placement nobody answered, replaced by the next one".
 - **Two hour→meal mappings coexist.** The quick-capture UI uses one (`<11/<15/<20`); a
   second (`5-12/12-17/17-21`) is used elsewhere. They do not conflict in practice *because
   every UI capture path sends an explicit meal*, so the server's precedence decides. They
@@ -129,7 +141,16 @@ regression it guarded, and a boundary that no test exercised.
 Row rendering is guarded by "every input row appears exactly once in the output" rather than
 by enumerated cases. It caught cycle handling that individually-written tests missed.
 
-**5.4 Worktree environment gaps masquerade as repo defects.**
+**5.4 A planned deletion is a hypothesis, not an instruction.**
+Phase 5 was written to retire three things. Two of the three retirements were refused by the
+implementer with proof and independently confirmed by driving the code — `rejected` is still
+written, and the scale still mints `pending` rows the retired component was the only reader
+for. Only the third (`CompositionStore`) was genuinely dead. A plan authored before the code
+was read cannot know what is reachable; requiring a *driven* demonstration before any
+deletion — not a call-graph trace, not an argument — is what caught both. Two of three
+planned deletions in this phase would have removed live behaviour.
+
+**5.5 Worktree environment gaps masquerade as repo defects.**
 Test failures reported all run as "pre-existing missing packages" were an absent
 `frontend/node_modules` in the worktree. Verify the environment before recording a repo-level
 defect.
