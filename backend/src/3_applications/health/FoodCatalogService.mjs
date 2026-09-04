@@ -5,6 +5,7 @@
  */
 
 import { FoodCatalogEntry } from '#domains/health/entities/FoodCatalogEntry.mjs';
+import { hasMicroData, pickMicros } from '#domains/nutrition/services/micros.mjs';
 
 /** Local (not UTC) YYYY-MM-DD from a Date instance. */
 function localDateISO(d) {
@@ -42,7 +43,8 @@ export class FoodCatalogService {
    * Called after every successful food log.
    * Finds or creates a catalog entry, increments useCount.
    *
-   * @param {Object} foodItem - { name, calories, protein, carbs, fat, source?, barcodeUpc? }
+   * @param {Object} foodItem - { name, calories, protein, carbs, fat, source?, barcodeUpc?,
+   *   fiber?, sugar?, sodium?, cholesterol?, microsSource? }
    * @param {string} userId
    */
   async recordUsage(foodItem, userId) {
@@ -56,10 +58,18 @@ export class FoodCatalogService {
       // Update nutrients if the new data has them (latest wins)
       if (foodItem.calories != null) {
         existing.nutrients = {
+          ...existing.nutrients,
           calories: foodItem.calories || existing.nutrients.calories,
           protein: foodItem.protein || existing.nutrients.protein,
           carbs: foodItem.carbs || existing.nutrients.carbs,
           fat: foodItem.fat || existing.nutrients.fat,
+          // Micros are copied ONLY off a row that carries provenance. A row
+          // with no `microsSource` is carrying structural zeros, and writing
+          // those into the catalog would manufacture "catalog micro data" out
+          // of nothing — every future quick-add off this entry would then
+          // claim coverage it never had. An unprovenanced row leaves whatever
+          // micros the entry already holds untouched.
+          ...(foodItem.microsSource ? pickMicros(foodItem) : {}),
         };
       }
       await this.#catalogStore.save(existing, userId);
@@ -73,6 +83,10 @@ export class FoodCatalogService {
           protein: foodItem.protein || 0,
           carbs: foodItem.carbs || 0,
           fat: foodItem.fat || 0,
+          // Same rule as the update path above: no provenance, no micros. The
+          // absence of these keys is what "we don't know" looks like in the
+          // catalog — a stored 0 would be a claim.
+          ...(foodItem.microsSource ? pickMicros(foodItem) : {}),
         },
         source: foodItem.source || 'nutritionix',
         barcodeUpc: foodItem.barcodeUpc || null,
@@ -101,6 +115,12 @@ export class FoodCatalogService {
     // evening after ~5pm in this household's timezone (UTC-7/8), which
     // silently misfiles the quick-add onto the wrong day.
     const today = localDateISO(now);
+    // A catalog entry only holds micros if a provenanced row donated them
+    // (recordUsage). When it does, the quick-added row inherits BOTH the
+    // numbers and the provenance; when it does not, the row is written with no
+    // micros and `microsSource: null` — honestly uncovered, rather than
+    // carrying structural zeros under a 'catalog' claim.
+    const micros = pickMicros(entry.nutrients);
     const item = {
       uuid: this.#createId(),
       userId,
@@ -110,6 +130,8 @@ export class FoodCatalogService {
       protein: entry.nutrients.protein,
       carbs: entry.nutrients.carbs,
       fat: entry.nutrients.fat,
+      ...micros,
+      microsSource: hasMicroData(entry.nutrients) ? 'catalog' : null,
       grams: 0,
       unit: 'serving',
       amount: 1,
@@ -187,6 +209,13 @@ export class FoodCatalogService {
           protein: item.protein,
           carbs: item.carbs,
           fat: item.fat,
+          fiber: item.fiber,
+          sugar: item.sugar,
+          sodium: item.sodium,
+          cholesterol: item.cholesterol,
+          // Historical rows mostly carry no provenance, so a backfill donates
+          // micros only from the ones that do.
+          microsSource: item.microsSource,
         }, userId);
         processed++;
       }
