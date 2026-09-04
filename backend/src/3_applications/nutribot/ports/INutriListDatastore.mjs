@@ -68,7 +68,14 @@ export class INutriListDatastore {
   }
 
   /**
-   * Find items by date
+   * Find items by date.
+   *
+   * Must see EVERY row belonging to that day, wherever an implementation
+   * chooses to store it — including rows moved out of a hot file into an
+   * archive, and rows dated only by `createdAt`. A `findByDate` narrower than
+   * `findByDateRange` means the day view and the week strip disagree about the
+   * same day; that was a live production bug, not a hypothetical.
+   *
    * @param {string} userId - User identifier
    * @param {string} date - Date (YYYY-MM-DD)
    * @returns {Promise<Object[]>}

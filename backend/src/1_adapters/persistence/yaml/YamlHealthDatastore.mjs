@@ -301,6 +301,42 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
   }
 
   /**
+   * Workouts for every date in an inclusive range, in ONE pass over storage.
+   *
+   * `getWorkoutsForDate` re-reads BOTH whole lifelog files on every call, so a
+   * 62-day budget range through it would be 124 whole-file loads on a single
+   * request. Same shape per day as `getWorkoutsForDate`; dates with nothing
+   * logged are simply absent from the result.
+   *
+   * @param {string} userId
+   * @param {string} startDate - YYYY-MM-DD (inclusive)
+   * @param {string} endDate - YYYY-MM-DD (inclusive)
+   * @returns {Promise<Object>} { [date]: { activity: [], fitness: [] } }
+   */
+  async getWorkoutsForRange(userId, startDate, endDate) {
+    const [activity, fitness] = await Promise.all([
+      this.loadActivityData(userId),
+      this.loadFitnessData(userId)
+    ]);
+
+    const out = {};
+    const slot = (date) => {
+      if (date < startDate || date > endDate) return null;
+      if (!out[date]) out[date] = { activity: [], fitness: [] };
+      return out[date];
+    };
+    for (const [date, list] of Object.entries(activity || {})) {
+      const bucket = slot(date);
+      if (bucket) bucket.activity = list || [];
+    }
+    for (const [date, data] of Object.entries(fitness || {})) {
+      const bucket = slot(date);
+      if (bucket) bucket.fitness = data?.activities || [];
+    }
+    return out;
+  }
+
+  /**
    * Get aggregated health for a date range
    * @param {string} userId
    * @param {string} startDate - YYYY-MM-DD
