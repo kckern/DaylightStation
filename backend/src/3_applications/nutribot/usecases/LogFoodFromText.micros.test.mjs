@@ -94,6 +94,43 @@ describe('LogFoodFromText — micro provenance', () => {
   });
 });
 
+describe('LogFoodFromText — partial micro answers (C2)', () => {
+  it('the stored row still gets its structural zeros — that is the schema', async () => {
+    const { uc, saved } = makeUseCase({
+      items: [{ name: 'Ramen', grams: 400, calories: 400, sodium: 1900 }],
+      date: '2026-09-02', time: 'evening',
+    });
+    await run(uc);
+    const item = saved.at(-1).items[0];
+    expect(item.sodium).toBe(1900);
+    expect(item.fiber).toBe(0);
+    expect(item.microsSource).toBe('ai');
+  });
+
+  it('but the CATALOG is offered only the micro the model answered — the zeros never leave the row', async () => {
+    const recordUsage = vi.fn(async () => {});
+    const uc = new LogFoodFromText({
+      messagingGateway: { sendMessage: vi.fn(async () => ({ messageId: 'm1' })), updateMessage: vi.fn(), deleteMessage: vi.fn() },
+      aiGateway: { chat: vi.fn(async () => JSON.stringify({
+        items: [{ name: 'Ramen', grams: 400, calories: 400, sodium: 1900 }],
+        date: '2026-09-02', time: 'evening',
+      })) },
+      foodLogStore: { save: vi.fn(async () => {}) },
+      catalogService: { recordUsage },
+      logger: silent,
+    });
+    await run(uc);
+    const donated = recordUsage.mock.calls[0][0];
+    expect(donated.sodium).toBe(1900);
+    expect(donated.microsSource).toBe('ai');
+    // The bug: `fiber: 0` reaching the catalog here becomes a permanent,
+    // self-propagating 'catalog' reading on every future quick-add.
+    for (const key of ['fiber', 'sugar', 'cholesterol']) {
+      expect(Object.prototype.hasOwnProperty.call(donated, key)).toBe(false);
+    }
+  });
+});
+
 describe('LogFoodFromText — catalog donation', () => {
   it('forwards micros AND provenance to the catalog, so a later quick-add can inherit them', async () => {
     const recordUsage = vi.fn(async () => {});

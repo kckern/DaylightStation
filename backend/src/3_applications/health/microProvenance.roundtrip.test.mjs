@@ -99,6 +99,35 @@ describe('microsSource survives the real persistence path (Task 6.2)', () => {
     expect(budget.microCoverage.cholesterol).toEqual({ covered: 1, total: 1 });
   });
 
+  // FINDING 3 (review): the quickAdd cases above only walk `saveMany`. A real AI
+  // capture reaches the nutrilist through `syncFromLog`, which dehydrates through
+  // a DIFFERENT whitelist (`dehydrateNutriListItem`). Deleting `microsSource`
+  // from that one left 28 files / 324 tests green — this case is what closes it.
+  it('a NutriLog synced through syncFromLog keeps provenance — the path a real AI capture takes', async () => {
+    const item = (over) => ({
+      id: 'aAaAaAaAaA', uuid: '33333333-3333-4333-8333-333333333333',
+      label: 'Chili', icon: 'default', grams: 300, unit: 'g', amount: 300, color: 'orange',
+      calories: 400, protein: 25, carbs: 30, fat: 15,
+      fiber: 9, sugar: 6, sodium: 980, cholesterol: 55, kind: 'item', ...over,
+    });
+    await nutriListStore.syncFromLog({
+      id: 'lLlLlLlLlL', userId: 'u1', isAccepted: true, status: 'accepted',
+      items: [
+        item({ microsSource: 'ai' }),
+        item({ id: 'bBbBbBbBbB', uuid: '44444444-4444-4444-8444-444444444444', label: 'Rice', microsSource: null }),
+      ],
+      meal: { date: '2026-09-02', time: 'evening' },
+      createdAt: '2026-09-02 18:00:00', acceptedAt: '2026-09-02 18:00:00',
+    });
+
+    const rows = await nutriListStore.findByDate('u1', '2026-09-02');
+    expect(rows.find((r) => r.label === 'Chili').microsSource).toBe('ai');
+    expect(rows.find((r) => r.label === 'Rice').microsSource).toBeNull();
+
+    const budget = await makeBudgetService().getBudget('u1', '2026-09-02');
+    expect(budget.microCoverage.sodium).toEqual({ covered: 1, total: 2 });
+  });
+
   it('a legacy row with no microsSource key at all reads as uncovered, not as a crash', async () => {
     await nutriListStore.saveMany([{
       uuid: '22222222-2222-4222-8222-222222222222', userId: 'u1', label: 'Legacy Rice',

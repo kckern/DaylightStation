@@ -49,8 +49,13 @@
   // what keeps every bar's left edge on one line down the row. Wide enough for
   // "Cholesterol", with an ellipsis so a longer label can never widen the
   // column and knock one bar out of alignment with the rest.
+  // BOTH outer columns are fixed. `auto` on the value column sized it to its own
+  // text, so every bar ended at a different x (238/232/244/204/250/222px at
+  // 390px) — the tracks shared a left edge and nothing else, which makes two
+  // bars of the same percentage look like different lengths. Wide enough for
+  // "2,480 / 2,300 mg"; the value is right-aligned inside it.
   &__item {
-    display: grid; grid-template-columns: 5.5rem 1fr auto; align-items: center;
+    display: grid; grid-template-columns: 5.5rem 1fr 8.5rem; align-items: center;
     gap: 0 0.5rem;
   }
   &__label {
@@ -62,7 +67,7 @@
     background: var(--ds-surface-alt);
   }
   &__fill { display: block; height: 100%; border-radius: 4px; background: var(--ds-accent); }
-  &__value { font-size: 0.75rem; font-variant-numeric: tabular-nums; color: var(--ds-text-high); white-space: nowrap; }
+  &__value { font-size: 0.75rem; font-variant-numeric: tabular-nums; color: var(--ds-text-high); white-space: nowrap; text-align: right; overflow: hidden; text-overflow: ellipsis; }
   &__target { color: var(--ds-text-low); }
   // The honesty line. It sits under its own bar, spanning the full row, and is
   // dim but never hidden — see MacroBarRow.jsx on why it must not be trimmed.

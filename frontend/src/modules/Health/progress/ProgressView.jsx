@@ -8,6 +8,7 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { localTodayISO } from '../today/mealBuckets.js';
 import { MACRO_GOAL_FIELDS, WATCH_MICRO_FIELDS, setMacroGoal, setWatchMicro, watchFor } from './goalFields.js';
+import { goalSaveMessage } from './goalSaveError.js';
 
 const logger = createAppLogger('health').child('progress');
 
@@ -212,7 +213,7 @@ export function ProgressView() {
       <SectionCard title="Goals">
         {!form ? <LoadingState label="goals" rows={4} /> : (
           <Stack gap="sm">
-            {saveError ? <Text size="sm" c="red">{saveError.message}</Text> : null}
+            {saveError ? <Text size="sm" c="red">{goalSaveMessage(saveError)}</Text> : null}
             <SegmentedControl value={form.sex || 'male'} onChange={(v) => setForm({ ...form, sex: v })}
               data={[{ label: 'Male', value: 'male' }, { label: 'Female', value: 'female' }]} />
             <NumberInput label="Target weight" suffix=" lbs" value={form.targetWeightLbs}

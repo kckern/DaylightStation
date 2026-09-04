@@ -40,17 +40,29 @@ describe('MacroBarRow — macro bars', () => {
     expect(item('Protein').className).toContain('health-macrobar__item--goal');
   });
 
-  it('marks an over-GOAL macro as a warning, not a danger, and clamps the fill at 100%', () => {
+  it('marks an over-GOAL macro as a warning, not a danger, and clamps the FILL at 100%', () => {
     render(<MacroBarRow macros={MACROS} goals={{ macroGoals: { proteinG: 50 } }} microCoverage={{}} />);
     expect(item('Protein').className).toContain('--over-goal');
     expect(item('Protein').className).not.toContain('--over-limit');
     expect(fill('Protein').style.width).toBe('100%');
     expect(screen.getByLabelText(/^Protein /).getAttribute('aria-label')).toMatch(/over goal$/);
   });
+
+  it('announces the TRUE percentage past the goal — the bar clamps, the spoken number must not', () => {
+    // 300 of 150 g. A clamped "100 percent" here is a false statement inside
+    // the accessibility layer, beside numbers that say otherwise.
+    render(<MacroBarRow macros={{ ...MACROS, protein: 300 }} goals={{ macroGoals: { proteinG: 150 } }} microCoverage={{}} />);
+    expect(screen.getByLabelText(/^Protein /).getAttribute('aria-label'))
+      .toBe('Protein 300 of 150 g goal, 200 percent, over goal');
+    expect(fill('Protein').style.width).toBe('100%');
+  });
 });
 
 describe('MacroBarRow — watch micros', () => {
-  const withWatch = (watchMicros, microCoverage = {}) => render(
+  // Full coverage by default: these tests are about TONE, and an unspecified
+  // coverage now (correctly) renders the unknown-coverage hedge instead.
+  const FULL = { covered: 4, total: 4 };
+  const withWatch = (watchMicros, microCoverage = { sodium: FULL, fiber: FULL, sugar: FULL, cholesterol: FULL }) => render(
     <MacroBarRow macros={MACROS} goals={{ watchMicros }} microCoverage={microCoverage} />,
   );
 
@@ -97,14 +109,14 @@ describe('MacroBarRow — coverage honesty', () => {
   it('captions the bar when some counted items lack micro data', () => {
     render(<MacroBarRow macros={MACROS} goals={{ watchMicros: watch }}
       microCoverage={{ sodium: { covered: 3, total: 7 } }} />);
-    expect(screen.getByText('based on 3 of 7 items')).toBeTruthy();
-    expect(screen.getByLabelText(/^Sodium /).getAttribute('aria-label')).toMatch(/based on 3 of 7 items$/);
+    expect(screen.getByText('based on 3 of 7 items with any micro data')).toBeTruthy();
+    expect(screen.getByLabelText(/^Sodium /).getAttribute('aria-label')).toMatch(/based on 3 of 7 items with any micro data$/);
   });
 
   it('captions a bar with ZERO coverage — the most misleading case of all', () => {
     render(<MacroBarRow macros={{ ...MACROS, sodium: 0 }} goals={{ watchMicros: watch }}
       microCoverage={{ sodium: { covered: 0, total: 5 } }} />);
-    expect(screen.getByText('based on 0 of 5 items')).toBeTruthy();
+    expect(screen.getByText('based on 0 of 5 items with any micro data')).toBeTruthy();
   });
 
   it('drops the caption only when EVERY counted item carries micro data', () => {
@@ -117,6 +129,33 @@ describe('MacroBarRow — coverage honesty', () => {
     render(<MacroBarRow macros={{ ...MACROS, sodium: 0 }} goals={{ watchMicros: watch }}
       microCoverage={{ sodium: { covered: 0, total: 0 } }} />);
     expect(screen.queryByText(/based on/)).toBeNull();
+  });
+
+  // C4 — an honesty mechanism must fail LOUD. A frontend deployed ahead of its
+  // backend gets no `microCoverage` at all; resolving that to "fully covered"
+  // would render exactly the confident zero this component exists to prevent.
+  it('hedges out loud when coverage is UNKNOWN rather than assuming complete', () => {
+    render(<MacroBarRow macros={{ ...MACROS, fiber: 0 }} goals={{ watchMicros: watch }} microCoverage={undefined} />);
+    expect(screen.getByText(/micro coverage unknown/)).toBeTruthy();
+    expect(screen.getByLabelText(/^Sodium /).getAttribute('aria-label')).toMatch(/micro coverage unknown/);
+  });
+
+  it('hedges when the payload has microCoverage but not for THIS micro', () => {
+    render(<MacroBarRow macros={MACROS} goals={{ watchMicros: watch }} microCoverage={{ fiber: { covered: 2, total: 2 } }} />);
+    expect(screen.getByText(/micro coverage unknown/)).toBeTruthy();
+  });
+
+  it('hedges when the coverage numbers are not numbers', () => {
+    render(<MacroBarRow macros={MACROS} goals={{ watchMicros: watch }} microCoverage={{ sodium: { covered: null, total: 7 } }} />);
+    expect(screen.getByText(/micro coverage unknown/)).toBeTruthy();
+  });
+
+  // C1 — the caption must not claim per-micro precision it does not have.
+  // `microsSource` is one flag for all four micros.
+  it('words the caption as "items with any micro data", never as a per-micro count', () => {
+    render(<MacroBarRow macros={MACROS} goals={{ watchMicros: watch }}
+      microCoverage={{ sodium: { covered: 3, total: 7 } }} />);
+    expect(screen.getByText(/with any micro data$/)).toBeTruthy();
   });
 
   it('never captions a MACRO bar — macros are stored on every row and are not coverage-gated', () => {

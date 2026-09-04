@@ -40,6 +40,19 @@ describe('macro bar stylesheet', () => {
     expect(caption).toContain('var(--ds-text-low)');
   });
 
+  // Q3 (review): with an `auto` value column every bar ended at a different x,
+  // so two bars of the same percentage looked like different lengths. BOTH
+  // outer columns must be fixed for the tracks to share a right edge.
+  it('fixes both outer columns so every track shares a left AND a right edge', () => {
+    const item = rule('.health-macrobar__item');
+    expect(item).toMatch(/grid-template-columns: 5\.5rem 1fr 8\.5rem/);
+    expect(item).not.toMatch(/grid-template-columns:[^;]*auto/);
+  });
+
+  it('right-aligns the value so the fixed column reads as one number stack', () => {
+    expect(rule('.health-macrobar__value')).toMatch(/text-align: right/);
+  });
+
   it('gives the per-meal macro subtotal its own line, not a slot in the crowded header-right', () => {
     expect(rule('.health-meal__macros')).toBeTruthy();
     expect(rule('.health-meal__header-right')).toContain('flex-wrap: wrap');

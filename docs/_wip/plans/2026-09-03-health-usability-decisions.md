@@ -95,6 +95,43 @@ all four field whitelists (`validateFoodItem`, `dehydrateNutriListItem`, `saveMa
 round-trip test now walks catalog entry → quickAdd → saveMany → YAML on disk → findByDate →
 `getBudget().microCoverage`; deleting the field from the `saveMany` whitelist fails it.
 
+**2.11 No goal tick and no over-goal segment on the macro bars (Task 6.3) — accepted.**
+The plan asked for a tick marking the goal and a distinct over-goal segment. Neither was
+built: the fill clamps at 100 %, so 300 / 150 g is visually identical to 151 / 150 g, and
+only the recolour, the numbers beside the bar and the "over goal" in the accessible name
+carry the overshoot. The product owner accepted the deviation rather than open design
+surface this late in the program. Recorded so it reads as a decision, not an oversight.
+(The accessible name does announce the true percentage — 200 %, not a clamped 100 % —
+because a clamped spoken number is a false statement, which is a different question from
+how much bar to paint.)
+
+**2.12 One fold for the whole day, in a shared contract (Task 6.3 review, Q1).**
+Task 6.3 shipped a COUNTED-folded macro bar row directly above `MacroFooter`, which summed
+`day.items` unfiltered, and a new per-meal `P · C · F` that folded raw rows too — three
+folds over the same data on one screen. Latent only because every live nutrilist row is
+`accepted`, which is exactly the assumption `COUNTED` exists to not make. The predicate now
+lives in `shared/contracts/nutrition/countedRows.mjs` and is imported verbatim by
+`BudgetService` and by both Today components, so there is one definition rather than three
+copies that can drift. Pinned by `today/sharedFold.test.jsx`, which builds a day holding one
+row of every uncounted status and asserts all three surfaces report the same numbers.
+
+**2.13 Micro provenance is per ROW, and the docs say so (Task 6.3 review, C1).**
+`microsSource` is one flag for four micros. A capture answering `sodium` alone yields a row
+that is fully "covered", so a watched fiber bar can render a confident `0 / 30 g` with the
+caption correctly suppressed. The limit is now stated in the endstate doc rather than only
+in this scratch file, and the caption reads "items with any micro data" so it stops implying
+a per-micro count. Per-key provenance (four fields where there is one) is the real fix and
+is not in this program's scope.
+
+**2.14 The catalog gate is per KEY, not just per row (Task 6.3 review, C2).**
+The original donation gate checked only that a row carried provenance — but the capture
+mappers had already applied `?? 0`, so a partially-answered capture donated its structural
+zeros as catalog readings, which every later quick-add of that food then inherited as
+`'catalog'`, permanently and self-propagating. The mappers now carry only the micros the
+model actually answered (`pickMicros` on the model's own item; the storage default moves to
+the persistence boundary, where `FoodItem`/`validateFoodItem` already applied it anyway),
+and `backfill` donates no micros at all because a stored row's per-key provenance is gone.
+
 ---
 
 ## 3. Known divergences from the PRD (true only after later phases)
@@ -187,7 +224,13 @@ Recorded rather than silently dropped. None block their task; several are cheap.
     `progress/goalFields.js`, which is tested. The rendering itself is unpinned.
 14. `microsSource` is one flag for all four micros. A model that returns sodium but omits
     fiber marks the row covered for both. Per-key provenance would need per-key fields;
-    the single flag is what the stored shape can support today.
+    the single flag is what the stored shape can support today. **Now also documented in
+    the endstate doc (§2.13) — it was wrong to leave a reachable dishonesty recorded only
+    here while the reference doc implied the opposite.**
+15. Catalog entries created before the per-key gate landed may hold donated structural
+    zeros (`fiber: 0` etc.) that quick-adds will keep inheriting as `'catalog'`. Nothing
+    sweeps them; a fresh provenanced capture of the same food overwrites the keys it
+    answers, but never clears one it does not.
 
 ---
 
