@@ -162,6 +162,58 @@ model actually answered (`pickMicros` on the model's own item; the storage defau
 the persistence boundary, where `FoodItem`/`validateFoodItem` already applied it anyway),
 and `backfill` donates no micros at all because a stored row's per-key provenance is gone.
 
+**2.17 A range reads the workout ledger ONCE, not once per day (Task 8.1).**
+The plan said "workouts per day via the existing store call". `getWorkoutsForDate`
+re-reads BOTH whole lifelog files (`lifelog/strava`, `lifelog/fitness`) on every call, so a
+62-day range through it is 124 whole-file loads on a single request — the shape of the
+defect that stalled the backend in Phase 7. `YamlHealthDatastore.getWorkoutsForRange` reads
+each file once and returns the same per-day shape. `getBudget`'s per-date path is untouched.
+Consequence: `getBudgetRange` requires that method on the injected health store and the
+constructor does not check for it, so a fake that omits it fails at call time.
+
+**2.18 Range validation lives in the service, not the route (Task 8.1).**
+The plan put "validate dates, cap 62 days" at the endpoint. It is in
+`BudgetService.getBudgetRange`, which makes it unit-testable and keeps one owner; the route
+maps `RANGE_INVALID` → 400. The user-visible contract is unchanged. While writing it, a
+latent `RangeError` surfaced on BOTH sides of the wire: `2026-08-32` parses to Invalid Date,
+so the `toISOString()` round-trip these validators use *throws* rather than rejecting —
+a 500 where a 400 was the entire point, and a crashed weight chip over one bad row on disk.
+Both now guard `Number.isNaN(getTime())` first.
+
+**2.19 The desktop sidebar's widgets are gated in JS, not hidden in CSS (Task 8.4).**
+The plan said "on narrow viewports the aside contents that duplicate main-column widgets
+are hidden via CSS, single source in JSX". Hiding still mounts, and mounting still fetches:
+a phone would pull a month of budgets for a column it never draws. The JSX stays
+single-source — one `<aside>`, one instance of each widget — and the CSS repositions that
+same element into the second column at 1100px; the 30-day widgets' MOUNT is gated on a
+`matchMedia` hook. That puts the breakpoint in two languages, so
+`today/layout.contract.test.js` reads the COMPILED stylesheet and fails if the SCSS and JS
+values ever disagree. Measured: 390px makes one `budget/range` request, 1440px makes two.
+Also decided here: `MacroBarRow` is NOT duplicated into the aside. A second macro surface on
+one screen is a second thing to keep in sync, and the bars already sit under the equation on
+both viewports.
+
+**2.20 One 30-day request feeds every sidebar widget (Task 8.4/8.5).**
+`useApiResource`'s per-path generation cache dedupes a second page LOAD; it has no in-flight
+registry, so two components mounting the same path in one render both issue a request. The
+sidebar shows two 30-day surfaces, so `TodayView` owns the single fetch and hands `days`
+down. Measured: adding the intake-vs-burn chart to the aside changed the Today page's
+request count by zero. **This is a workaround, not a fix** — the next person who drops a
+second `useBudgetRange` for the same window into a subtree gets a duplicate request with no
+warning. The hook is where the real fix belongs.
+
+**2.21 Progress's adherence bars ARE the sidebar's month block (Task 8.5).**
+The plan only asked to move the 14-day effect onto the range endpoint. Reusing `MonthBlock`
+also deleted `barHeightPx` — a fourth local copy of the bar arithmetic — leaving one
+geometry module (`today/dayBars.js`) behind the week strip, the month block and the
+adherence bars. And `ProgressView` finally has a test: it had none (see §6.13), which meant
+the headline refactor of this task was initially **unfalsifiable** — breaking it back to the
+14-parallel-request fan-out kept every test green. Highcharts is now stubbed and the network
+shape is pinned. The same falsification pass caught a second inert assertion (a mutation
+that counted gaps into the intake/burn scale was a no-op, because a gap row carries no
+numbers at all); the real risk — holes diluting the AVERAGES — is now its own test. Both
+were found only by falsifying, which is §5.2 earning its keep for the third phase running.
+
 ---
 
 ## 3. Known divergences from the PRD (true only after later phases)
