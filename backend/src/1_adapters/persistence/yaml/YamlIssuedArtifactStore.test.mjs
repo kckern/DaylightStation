@@ -6,6 +6,10 @@ import path from 'node:path';
 import os from 'node:os';
 import { YamlIssuedArtifactStore } from './YamlIssuedArtifactStore.mjs';
 
+const digestRenderInputs = (value) => createHash('sha256').update(Buffer.from(yaml.dump(value, {
+  sortKeys: true, lineWidth: -1, noRefs: true,
+}))).digest('hex');
+
 let root;
 let store;
 beforeEach(async () => {
@@ -27,6 +31,63 @@ describe('YamlIssuedArtifactStore', () => {
     expect(saved.manifest.renderInputSha256).toMatch(/^[a-f0-9]{64}$/);
     expect((await store.get('math/course/ws-ses_1')).bytes).toBeNull();
     await expect(stat(path.join(root, 'school/artifacts/issued/math/course/ws-ses_1.pdf'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('hashes the durable allocation shape rather than transient renderer status', async () => {
+    const artifactId = 'science/mammals/ws-ses_1';
+    const sourceDocument = { schema: 'school.document/v2', id: artifactId, rev: 'rev1', blocks: [] };
+    const allocation = {
+      cardId: '8424408', recordId: `${artifactId}@rev1:v0:25-30`,
+      rowRange: { start: 25, end: 30 }, status: 'live',
+    };
+    const saved = await store.put({
+      artifactId, bytes: Buffer.from('%PDF disposable'), sourceDocument, allocation,
+      worksheetInstanceId: artifactId, renderContext: { learnerId: 'kid' },
+    });
+
+    expect(saved.manifest.allocation).toEqual({
+      cardId: '8424408', recordId: `${artifactId}@rev1:v0:25-30`,
+      rowRange: { start: 25, end: 30 },
+    });
+    expect(saved.manifest.renderInputSha256).toBe(digestRenderInputs({
+      sourceDocument, renderContext: { learnerId: 'kid' }, allocation: saved.manifest.allocation,
+      worksheetInstanceId: artifactId,
+    }));
+    await expect(store.get(artifactId)).resolves.toMatchObject({
+      manifest: { artifactId }, bytes: null,
+    });
+  });
+
+  it('reads and idempotently reuses v4 recipes that hashed the dropped live status', async () => {
+    const artifactId = 'science/mammals/ws-status-hashed';
+    const sourceDocument = { schema: 'school.document/v2', id: artifactId, rev: 'rev1', blocks: [] };
+    const renderContext = { learnerId: 'kid' };
+    const allocation = {
+      cardId: '8424408', recordId: `${artifactId}@rev1:v0:25-30`, rowRange: { start: 25, end: 30 },
+    };
+    const worksheetInstanceId = artifactId;
+    const statusHashedInputs = {
+      sourceDocument, renderContext, allocation: { ...allocation, status: 'live' }, worksheetInstanceId,
+    };
+    const renderInputSha256 = digestRenderInputs(statusHashedInputs);
+    const manifestPath = path.join(root, 'school/artifacts/issued/science/mammals/ws-status-hashed.yml');
+    await mkdir(path.dirname(manifestPath), { recursive: true });
+    await writeFile(manifestPath, yaml.dump({
+      schema: 'school.session-artifact/v4', artifactId, kind: 'worksheet', renderInputSha256,
+      sourceDocument, renderContext, allocation, worksheetInstanceId,
+      representation: { mediaType: 'application/pdf', extension: 'pdf', generated: true },
+    }));
+
+    await expect(store.get(artifactId)).resolves.toMatchObject({ manifest: { artifactId }, bytes: null });
+    await expect(store.put({
+      artifactId, bytes: Buffer.from('%PDF disposable'), sourceDocument, renderContext,
+      allocation: { ...allocation, status: 'live' }, worksheetInstanceId,
+    })).resolves.toMatchObject({ manifest: { artifactId }, bytes: null });
+    await expect(store.put({
+      artifactId, bytes: Buffer.from('%PDF disposable'),
+      sourceDocument: { ...sourceDocument, rev: 'changed' }, renderContext,
+      allocation: { ...allocation, status: 'live' }, worksheetInstanceId,
+    })).rejects.toMatchObject({ code: 'ARTIFACT_IMMUTABLE' });
   });
 
   it('is first-wins by semantic render input, not disposable PDF bytes', async () => {
