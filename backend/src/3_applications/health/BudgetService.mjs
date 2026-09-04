@@ -129,11 +129,15 @@ const rangeInvalid = (message) => {
   throw err;
 };
 
-const isISODate = (value) => typeof value === 'string'
-  && /^\d{4}-\d{2}-\d{2}$/.test(value)
-  // Rejects 2026-02-31 and friends: Date normalizes them to the next month, so
-  // a round-trip through toISOString is what actually tests calendar validity.
-  && new Date(`${value}T12:00:00Z`).toISOString().slice(0, 10) === value;
+// Two distinct failure modes, both real: "2026-08-32" parses to Invalid Date
+// (toISOString would THROW a RangeError, which would surface as a 500 rather
+// than the 400 this is here to produce), while "2026-02-31" quietly normalizes
+// to March 3. The NaN guard covers the first, the round-trip the second.
+const isISODate = (value) => {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = new Date(`${value}T12:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
+};
 
 // Inclusive [from, to] as YYYY-MM-DD, walked at a noon-UTC anchor so no DST
 // transition can drop or duplicate a day.
