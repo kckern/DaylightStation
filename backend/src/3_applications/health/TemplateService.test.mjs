@@ -221,3 +221,63 @@ describe('TemplateService proposals', () => {
     expect(await svc.listDismissedKeys('u')).toEqual([]);
   });
 });
+
+describe('TemplateService.mergeIntoSuggestions (PRD F6.4)', () => {
+  const food = (id, name, favorite = false) => ({ id, name, favorite, nutrients: { calories: 100 } });
+
+  it('orders favorites → templates → the rest, and stamps a type on EVERY entry', async () => {
+    await svc.create(SMOOTHIE, 'u');
+    const merged = await svc.mergeIntoSuggestions(
+      [food('f1', 'Fav apple', true), food('f2', 'Oatmeal'), food('f3', 'Rice')],
+      { userId: 'u', limit: 12 },
+    );
+    expect(merged.map((e) => e.name)).toEqual(['Fav apple', 'Morning smoothie', 'Oatmeal', 'Rice']);
+    expect(merged.map((e) => e.type)).toEqual(['food', 'template', 'food', 'food']);
+  });
+
+  it('a template entry carries its core item count and core calories', async () => {
+    await svc.create(SMOOTHIE, 'u');
+    const [template] = (await svc.mergeIntoSuggestions([], { userId: 'u' })).filter((e) => e.type === 'template');
+    expect(template.itemCount).toBe(3);
+    expect(template.variantCount).toBe(2);
+    // 60 + 160 + 40 — the CORE only; a variant is not logged unless chosen.
+    expect(template.nutrients.calories).toBe(260);
+  });
+
+  it('a typed query filters templates by name', async () => {
+    await svc.create(SMOOTHIE, 'u');
+    await svc.create({ name: 'Taco night', components: [{ name: 'Tortilla', calories: 100 }] }, 'u');
+    const smoothie = await svc.mergeIntoSuggestions([], { userId: 'u', query: 'smoo' });
+    expect(smoothie.map((e) => e.name)).toEqual(['Morning smoothie']);
+    expect(await svc.mergeIntoSuggestions([], { userId: 'u', query: 'zzz' })).toEqual([]);
+  });
+
+  it('the zero-keystroke list shows at most three templates; a typed query shows every match', async () => {
+    for (const n of ['Meal a', 'Meal b', 'Meal c', 'Meal d', 'Meal e']) {
+      await svc.create({ name: n, components: [{ name: 'X', calories: 10 }] }, 'u');
+    }
+    expect((await svc.mergeIntoSuggestions([], { userId: 'u' })).length).toBe(3);
+    expect((await svc.mergeIntoSuggestions([], { userId: 'u', query: 'meal' })).length).toBe(5);
+  });
+
+  it('never offers a PROPOSAL as a suggestion — it has not been approved', async () => {
+    await svc.saveProposals([{ key: 'k1', suggestedName: 'Morning chia', components: [{ name: 'Chia', calories: 60 }] }], 'u');
+    expect(await svc.mergeIntoSuggestions([food('f1', 'Oatmeal')], { userId: 'u' }))
+      .toEqual([{ id: 'f1', name: 'Oatmeal', favorite: false, nutrients: { calories: 100 }, type: 'food' }]);
+  });
+
+  it('with no templates at all, the food list passes through untouched but typed', async () => {
+    const merged = await svc.mergeIntoSuggestions([food('f1', 'Oatmeal')], { userId: 'u' });
+    expect(merged).toHaveLength(1);
+    expect(merged[0].type).toBe('food');
+  });
+
+  it('respects the limit, keeping favourites and templates over the tail', async () => {
+    await svc.create(SMOOTHIE, 'u');
+    const merged = await svc.mergeIntoSuggestions(
+      [food('f1', 'Fav', true), food('f2', 'A'), food('f3', 'B')],
+      { userId: 'u', limit: 2 },
+    );
+    expect(merged.map((e) => e.name)).toEqual(['Fav', 'Morning smoothie']);
+  });
+});

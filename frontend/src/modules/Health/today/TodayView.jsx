@@ -19,7 +19,7 @@ import { AddCombobox } from './AddCombobox.jsx';
 import { NeedsReviewSection } from './NeedsReviewSection.jsx';
 import { ObservationsSection } from './ObservationRow.jsx';
 import { EntryEditSheet } from './EntryEditSheet.jsx';
-import { SavedMealsSheet } from './SavedMealsSheet.jsx';
+import { TemplatePicker } from './TemplatePicker.jsx';
 import { QuickCaptureBar } from './QuickCaptureBar.jsx';
 import { localTodayISO as todayISO, currentMealBucketId, bucketLabel } from './mealBuckets.js';
 import { useNutritionInput } from '../capture/useNutritionInput.js';
@@ -40,7 +40,12 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
   // it can hand the same id back on decode.
   const [barcodeTargetBucket, setBarcodeTargetBucket] = useState(null);
   const [unknownUpc, setUnknownUpc] = useState(null);
-  const [savedMealsFor, setSavedMealsFor] = useState(null); // bucketId | null — F8's saved-meals picker
+  // bucketId | null — which meal's add row opened the template picker
+  // (PRD F6.3: one meals surface, and this is it).
+  const [templatesFor, setTemplatesFor] = useState(null);
+  // template id | null — set when the add-combobox picked a MEAL suggestion,
+  // so the picker opens straight onto its variant step (PRD F8.2 → F6.1).
+  const [focusTemplateId, setFocusTemplateId] = useState(null);
   const [captureNotice, setCaptureNotice] = useState(null); // string | null — e.g. "no food detected"
   // bucketId | null — set the instant an AI capture (photo/voice/barcode)
   // submit starts, cleared in a `finally` once the result (success OR
@@ -133,16 +138,29 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
     }
   };
 
-  // Today's bucket → a named, kept saved meal (US-2.2).
+  // Today's bucket → a named, kept TEMPLATE (US-2.2, US-6.3).
+  //
+  // It writes a template, not a saved meal, because the template picker is now
+  // the only surface that lists kept meals (PRD F6.3). A meal saved to the
+  // meals store from here would be written to a file nothing renders — the
+  // exact stranding the parity check for retiring `SavedMealsSheet` had to
+  // rule out. Copy-day-to-today still uses the meals endpoints as ephemeral
+  // transport; that is a create-log-delete round trip nothing ever lists.
   const saveBucketAsMeal = async (rows, label) => {
     const name = window.prompt('Name this meal:', `My ${label.toLowerCase()}`);
     if (!name) return;
-    const items = rows.map((r) => ({ name: r.name || r.item, calories: r.calories, protein: r.protein, carbs: r.carbs, fat: r.fat, color: r.color }));
+    // All-core: nothing here knows which parts rotate, and guessing would drop
+    // food out of the meal the next time it is logged.
+    const components = rows.map((r) => ({
+      name: r.name || r.item, role: 'core',
+      calories: r.calories, protein: r.protein, carbs: r.carbs, fat: r.fat,
+      color: r.color, icon: r.icon ?? null, grams: r.grams, unit: r.unit, amount: r.amount,
+    }));
     try {
-      await DaylightAPI('api/v1/health/nutrition/meals', { name, items }, 'POST');
-      logger.info('save-bucket-as-meal', { name, count: items.length });
+      await DaylightAPI('api/v1/health/nutrition/templates', { name, components }, 'POST');
+      logger.info('save-bucket-as-template', { name, count: components.length });
     } catch (err) {
-      logger.error('save-bucket-as-meal.failed', { name, error: err?.message });
+      logger.error('save-bucket-as-template.failed', { name, error: err?.message });
       setCaptureNotice(`Couldn't save "${name}" as a meal — try again.`);
     }
   };
@@ -281,7 +299,8 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
           <AddCombobox bucketId={addingTo}
             onDone={() => { setAddingTo(null); day.reload(); }}
             onCancel={() => setAddingTo(null)}
-            onSavedMeals={() => setSavedMealsFor(addingTo)} />
+            onMeals={() => { setFocusTemplateId(null); setTemplatesFor(addingTo); }}
+            onTemplate={(entry) => { setFocusTemplateId(entry.id); setTemplatesFor(addingTo); }} />
         ) : null} />
       <MacroFooter items={day.items} coachLine={coachLine} onCoachTap={onCoachTap} />
       <QuickCaptureBar onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
@@ -310,9 +329,9 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
           day.reload();
           if (err) setCaptureNotice(err.message);
         }} />
-      <SavedMealsSheet open={Boolean(savedMealsFor)} bucketId={savedMealsFor}
-        onLogged={() => { setSavedMealsFor(null); setAddingTo(null); day.reload(); }}
-        onClose={() => setSavedMealsFor(null)} />
+      <TemplatePicker open={Boolean(templatesFor)} bucketId={templatesFor} focusTemplateId={focusTemplateId}
+        onLogged={() => { setTemplatesFor(null); setFocusTemplateId(null); setAddingTo(null); day.reload(); }}
+        onClose={() => { setTemplatesFor(null); setFocusTemplateId(null); }} />
     </div>
   );
 }

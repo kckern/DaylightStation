@@ -122,3 +122,26 @@ describe('intake-vs-burn stylesheet', () => {
     expect(gap).toMatch(/background: none/);
   });
 });
+
+// The template picker's own layout facts (Task 10.4). jsdom renders the
+// toggles and reports nothing about their size, so the tap-target rule and the
+// non-colour selected cue are asserted against the COMPILED stylesheet.
+describe('Template picker stylesheet', () => {
+  it('makes a variant toggle a real phone tap target (A2: >= 44px)', () => {
+    expect(rule('.health-templates__toggle')).toMatch(/min-height: 44px/);
+  });
+
+  it('carries the selected state on the BORDER, not on colour alone (A1)', () => {
+    // The glyph swap (+ / ✓) is the primary non-colour cue and lives in the
+    // component; the border change is the one the stylesheet owns. A rule that
+    // only changed `background` would leave the state colour-only.
+    const on = rule('.health-templates__toggle--on');
+    expect(on).toMatch(/border-color/);
+  });
+
+  it('gives the meal-level suggestion badge a shape of its own, not just a hue', () => {
+    const badge = rule('.health-suggest__badge');
+    expect(badge).toMatch(/border-radius: 999px/);
+    expect(badge).toMatch(/white-space: nowrap/);
+  });
+});

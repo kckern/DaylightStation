@@ -234,3 +234,59 @@ describe('AddCombobox — zero-keystroke suggestions', () => {
     expect(apiMock.mock.calls[0][0]).not.toContain('bucket=');
   });
 });
+
+describe('AddCombobox — meal-level suggestions (PRD F8.2 / F6.4)', () => {
+  const MIXED = { items: [
+    { id: 'a', type: 'food', name: 'Chicken breast', favorite: true, nutrients: { calories: 231 } },
+    { id: 't1', type: 'template', name: 'Morning smoothie', itemCount: 3, variantCount: 2, nutrients: { calories: 260 } },
+    { id: 'b', type: 'food', name: 'Chicken thigh', favorite: false, nutrients: { calories: 280 } },
+  ] };
+
+  beforeEach(() => { apiMock.mockReset(); });
+
+  it('renders a template with a NON-COLOUR cue — its item count — beside the kcal', async () => {
+    apiMock.mockResolvedValue(MIXED);
+    r(<AddCombobox bucketId="morning" onDone={() => {}} onCancel={() => {}} />);
+    await waitFor(() => expect(screen.getByText('Morning smoothie')).toBeTruthy());
+    expect(screen.getByText('3 items')).toBeTruthy();
+    expect(screen.getByText('260')).toBeTruthy();
+  });
+
+  it('picking a template hands it to the picker instead of quick-adding it', async () => {
+    apiMock.mockResolvedValue(MIXED);
+    const onTemplate = vi.fn();
+    const onDone = vi.fn();
+    r(<AddCombobox bucketId="morning" onDone={onDone} onCancel={() => {}} onTemplate={onTemplate} />);
+    await waitFor(() => screen.getByText('Morning smoothie'));
+    fireEvent.click(screen.getByText('Morning smoothie'));
+    await waitFor(() => expect(onTemplate).toHaveBeenCalledWith(expect.objectContaining({ id: 't1', type: 'template' })));
+    // A quick-add would log ONE arrangement of the meal with no variant step —
+    // the thing PRD F6.1 says instantiating must not do.
+    expect(apiMock.mock.calls.some(([p]) => p.includes('quickadd'))).toBe(false);
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it('picking a FOOD in the same list still quick-adds', async () => {
+    apiMock.mockImplementation(async (path) => {
+      if (path.includes('suggest')) return MIXED;
+      return { logged: true, item: { uuid: 'row-1' } };
+    });
+    const onTemplate = vi.fn();
+    const onDone = vi.fn();
+    r(<AddCombobox bucketId="morning" onDone={onDone} onCancel={() => {}} onTemplate={onTemplate} />);
+    await waitFor(() => screen.getByText('Chicken thigh'));
+    fireEvent.click(screen.getByText('Chicken thigh'));
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(apiMock.mock.calls.some(([p]) => p.includes('quickadd'))).toBe(true);
+    expect(onTemplate).not.toHaveBeenCalled();
+  });
+
+  it('the footer affordance opens the one meals surface', async () => {
+    apiMock.mockResolvedValue({ items: [] });
+    const onMeals = vi.fn();
+    r(<AddCombobox bucketId="morning" onDone={() => {}} onCancel={() => {}} onMeals={onMeals} />);
+    const button = await screen.findByText(/Meals & templates/);
+    fireEvent.click(button);
+    expect(onMeals).toHaveBeenCalled();
+  });
+})
