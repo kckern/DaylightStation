@@ -143,6 +143,31 @@ export function createHealthRouter(config) {
     return healthOperations.currentDate();
   };
 
+  /**
+   * Validate an `icon` a client wants written to a row or a catalog entry.
+   *
+   * Returns `{ ok: true, icon }` (icon normalized to null when cleared), or
+   * `{ ok: false, error }`. Refusing an unknown slug HERE is what stops a
+   * client pinning a food to a picture that will 404 forever afterwards while
+   * the row silently shows its fallback glyph — the failure mode is invisible
+   * once it is stored, so it has to be caught on the way in.
+   *
+   * With no manifest store configured the shape check still applies but
+   * membership cannot be checked; the value is accepted and the row simply
+   * falls back at render time. That is the same fail-soft posture the icon
+   * route takes when no manifest is installed.
+   */
+  const validateIcon = (icon) => {
+    if (icon === null || icon === undefined || icon === '') return { ok: true, icon: null };
+    if (typeof icon !== 'string' || !ICON_SLUG_PATTERN.test(icon)) {
+      return { ok: false, error: 'icon must be a manifest slug' };
+    }
+    if (iconManifestStore && !iconManifestStore.has(icon)) {
+      return { ok: false, error: `Unknown icon: ${icon}` };
+    }
+    return { ok: true, icon };
+  };
+
   // ==========================================================================
   // Aggregate Health Endpoints
   // ==========================================================================
@@ -524,6 +549,14 @@ export function createHealthRouter(config) {
       const userId = getDefaultUsername();
       const updateData = req.body;
 
+      // "Just this entry" (PRD F5.4) travels through this generic PUT, so the
+      // icon is checked here rather than trusted from the client.
+      if (updateData && Object.hasOwn(updateData, 'icon')) {
+        const verdict = validateIcon(updateData.icon);
+        if (!verdict.ok) return res.status(400).json({ error: verdict.error });
+        updateData.icon = verdict.icon;
+      }
+
       // Check if item exists
       const update = await healthOperations.updateNutritionItem(userId, uuid, updateData);
       if (!update) {
@@ -652,6 +685,32 @@ export function createHealthRouter(config) {
         return res.json({ entry });
       } catch (err) {
         logger.warn?.('health.catalog.favorite.error', { id, name, error: err.message });
+        return res.status(404).json({ error: err.message });
+      }
+    }));
+
+    /**
+     * PUT /api/v1/health/nutrition/catalog/icon - Pin a food's icon by id or name
+     * Body: { id?, name?, icon }
+     *
+     * This is the "always for this food" half of the edit sheet's override
+     * (PRD F5.4). Past rows follow on their next render, because a row's icon
+     * is only a copy taken at log time — nothing rewrites history here.
+     * `icon: null` clears back to the neutral fallback.
+     */
+    router.put('/nutrition/catalog/icon', asyncHandler(async (req, res) => {
+      const userId = getDefaultUsername();
+      const { id, name, icon } = req.body || {};
+      if (!id && !name) return res.status(400).json({ error: 'id or name is required' });
+      const verdict = validateIcon(icon);
+      if (!verdict.ok) return res.status(400).json({ error: verdict.error });
+      try {
+        const entry = id
+          ? await catalogService.setIcon(id, userId, verdict.icon)
+          : await catalogService.setIconByName(name, userId, verdict.icon);
+        return res.json({ entry: presentFoodCatalogEntry(entry) });
+      } catch (err) {
+        logger.warn?.('health.catalog.icon.error', { id, name, error: err.message });
         return res.status(404).json({ error: err.message });
       }
     }));
@@ -1119,6 +1178,22 @@ export function createHealthRouter(config) {
    * immutable because a slug's bytes never change — a corrected icon is a
    * manifest edit pointing the slug at a different file.
    */
+  /**
+   * GET /api/v1/health/nutrition/icons - the offered icon vocabulary
+   * Query: q (substring filter), limit (default 60)
+   *
+   * Feeds the edit sheet's picker. Returns slugs only — the picker builds each
+   * URL from the slug through the route above, so filenames stay in the
+   * manifest and never travel to the client.
+   */
+  router.get('/nutrition/icons', asyncHandler(async (req, res) => {
+    if (!iconManifestStore) return res.json({ icons: [], count: 0 });
+    const { q = '', limit } = req.query;
+    const parsed = parseInt(limit, 10);
+    const icons = iconManifestStore.search(String(q), Number.isFinite(parsed) ? parsed : 60);
+    return res.json({ icons, count: icons.length });
+  }));
+
   router.get('/nutrition/icons/:slug', asyncHandler(async (req, res) => {
     if (!iconManifestStore) {
       return res.status(404).json({ error: 'Icon not found' });

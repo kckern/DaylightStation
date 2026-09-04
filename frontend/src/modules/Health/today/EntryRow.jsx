@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { UnstyledButton } from '@mantine/core';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { nutritionPhotoUrl } from './photoUrl.js';
+import { nutritionIconUrl } from './iconUrl.js';
 
 const logger = createAppLogger('health').child('entry-row');
 
@@ -22,6 +24,12 @@ const NOOM = { green: 'var(--ds-success)', yellow: 'var(--ds-warning)', orange: 
  * unsettled cue and confirm affordance exactly as a plain item does.
  */
 export function EntryRow({ row, onTap, onConfirm, isGroup = false, expanded = false, onToggle, rollupKcal, child = false, measured = null }) {
+  // Which SLUG failed, not a boolean: the row's icon can change under a live
+  // component (the edit sheet's override rewrites it and the day reloads in
+  // place), and a boolean would keep hiding the new picture because the old
+  // one broke. No reset effect either — that is a race, and there is nothing
+  // to reset when the state names what it is about.
+  const [failedIcon, setFailedIcon] = useState(null);
   const portion = [row.amount, row.unit].filter(Boolean).join(' ') || (row.grams ? `${row.grams} g` : '');
   // The API serves an EFFECTIVE settled flag per row. Absent or `true` means
   // settled — only an explicit `false` means unsettled. Never treat a
@@ -54,12 +62,21 @@ export function EntryRow({ row, onTap, onConfirm, isGroup = false, expanded = fa
 
   const hasThumb = Boolean(row.photoRef);
 
+  // A dish's own picture, else the first thing in it (PRD F5.3). A group row
+  // is handed its children by LogTable precisely so this can be decided here
+  // rather than at every call site.
+  const iconSlug = row.icon || (isGroup ? row.children?.find((c) => c.icon)?.icon : null) || null;
+  const iconUrl = failedIcon === iconSlug ? null : nutritionIconUrl(iconSlug);
+
   const rowClass = [
     'health-row',
     unsettled && 'health-row--unsettled',
     isGroup && 'health-row--group',
     child && 'health-row--child',
     hasThumb && 'health-row--thumb',
+    // The icon occupies the dot's grid column at a larger size, so the column
+    // width is a function of which of the two is actually rendered.
+    iconUrl && 'health-row--icon',
   ].filter(Boolean).join(' ');
 
   return (
@@ -89,7 +106,24 @@ export function EntryRow({ row, onTap, onConfirm, isGroup = false, expanded = fa
             onError={hideBrokenThumb}
           />
         ) : null}
-        {!isGroup ? (
+        {/* The food's picture where there is one, the Noom dot where there is
+            not. The dot remains the fallback glyph (PRD F5.3): a group row
+            has no dot of its own, so a group whose icon fails simply loses
+            the column — the same shape it had before icons existed.
+            `onError` names the slug it is retiring, so a later override of
+            the same row shows its new picture immediately. */}
+        {iconUrl ? (
+          <img
+            className="health-row__icon"
+            src={iconUrl}
+            alt=""
+            loading="lazy"
+            onError={() => {
+              logger.debug('entry.icon_failed', { uuid: row.uuid, icon: iconSlug });
+              setFailedIcon(iconSlug);
+            }}
+          />
+        ) : !isGroup ? (
           <span className="health-row__dot" style={{ background: NOOM[row.color] || 'var(--ds-text-low)' }} />
         ) : null}
         <span className="health-row__name">{name}</span>
