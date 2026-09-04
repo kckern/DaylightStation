@@ -40,6 +40,13 @@ describe('Today layout stylesheet', () => {
     expect(rule('.health-today')).toMatch(/padding-bottom: calc\(/);
   });
 
+  it('keeps the day ledger at its compact type and row rhythm', () => {
+    expect(rule('.health-today')).toMatch(/font-size: 0.9rem/);
+    expect(rule('.health-meal')).toMatch(/margin-top: 0.4rem/);
+    expect(rule('.health-row')).toMatch(/padding: 0.25rem 0.2rem/);
+    expect(rule('.health-row')).toMatch(/font-size: 0.86rem/);
+  });
+
   it('gives the wide layout a main column and a fixed-width aside', () => {
     const wide = css.match(/@media \(min-width: 1100px\) \{ \.health-today \{([^}]*)\}/)?.[1] ?? '';
     expect(wide).toMatch(/display: grid/);
@@ -59,6 +66,21 @@ describe('Today layout stylesheet', () => {
   it('never animates `filter` — a known paint-cost trap in this repo', () => {
     expect(css).not.toMatch(/transition:[^;]*filter/);
     expect(css).not.toMatch(/animation:[^;]*filter/);
+  });
+});
+
+describe('add-food suggestion panel', () => {
+  it('is a bounded surface rather than floating text', () => {
+    const panel = rule('.health-suggest');
+    expect(panel).toMatch(/border: 1px solid var\(--ds-border\)/);
+    expect(panel).toMatch(/background: var\(--ds-surface\)/);
+    expect(rule('.health-suggest__list')).toMatch(/max-height:/);
+    expect(rule('.health-suggest__list')).toMatch(/overflow-y: auto/);
+  });
+
+  it('uses two compact columns when the viewport can hold them', () => {
+    expect(css).toContain('@media (min-width: 480px)');
+    expect(css).toMatch(/\.health-suggest__list \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
   });
 });
 

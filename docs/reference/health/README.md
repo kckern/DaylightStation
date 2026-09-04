@@ -220,6 +220,13 @@ chart library outside the Progress weight chart, and nothing animates the CSS
 `filter` property — it is a known paint-cost trap in this codebase (low frame
 rates with zero long tasks).
 
+The Today tab is deliberately ledger-dense: its type is one step below the app
+default, meal and row whitespace is compact, and the 44 px capture controls keep
+their touch-target floor even though the surrounding chrome is tighter. The
+inline Add food surface is a bordered, height-capped panel rather than loose
+text; suggestions use one column on the narrowest screens and two from 480 px,
+with a real catalog icon or a reserved Noom-dot fallback on every row.
+
 ### One shared range endpoint
 
 `GET /budget/range?from=&to=` returns one entry per day for an inclusive range,

@@ -158,8 +158,14 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
                       setFailedIcons((prev) => new Set(prev).add(entry.icon));
                     }}
                   />
-                ) : null}
-                <span>{entry.name}</span>
+                ) : (
+                  // Keep one bounded visual slot even when the catalog has no
+                  // honest picture. The neutral Noom dot is information (food
+                  // colour), and prevents icon-less rows becoming loose text.
+                  <span className="health-suggest__dot" aria-hidden="true"
+                    data-color={entry.color || entry.noom_color || 'neutral'} />
+                )}
+                <span className="health-suggest__name">{entry.name}</span>
                 {entry.type === 'template' ? (
                   // A meal-level suggestion is visually distinguished from a
                   // single food (PRD F8.2) by a NON-COLOUR cue: the item count.
