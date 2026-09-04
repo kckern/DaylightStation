@@ -383,23 +383,86 @@ whichever meal the current time of day implies (the hour mapping in
 [Meal buckets](#meal-buckets) above). This is the day view's only such affordance: the
 footer below the log carries the macro summary and coach line, never capture controls.
 
-### Type-ahead suggest (`AddCombobox`)
+### Quick add — suggestions before the first keystroke (`AddCombobox`)
 
-Typing debounces 250 ms into `GET /nutrition/catalog/suggest?q=`
-(`FoodCatalogService.suggest`) — the ranked list behind every combobox:
+Opening the add row shows a list immediately: the combobox fetches
+`GET /nutrition/catalog/suggest?bucket={bucketId}&limit=8` on mount, undebounced, so
+Breakfast's regulars are one tap away with nothing typed. Typing switches to
+`?q=` on a 250 ms debounce; clearing the text returns to the bucket list. Both share one
+request-id guard, so a slow response can never overwrite a newer one.
 
-1. Filter to entries whose normalized name contains the query (empty query = everything).
-2. Sort: **favorites first** (`favorite === true` descending), then by a recency-weighted
-   frequency score `useCount / (1 + daysSinceLastUsed / 30)` descending, then alphabetically
-   as a final tiebreak.
+The opening list is capped at **8** deliberately. It is the only fetch that happens with
+no user intent behind it, and every row it draws fires an icon request — a short list keeps
+that burst nowhere near the render-herd shape the icon route had to be bounded against.
+The typed list keeps the server default of 12; there the person is steering.
 
 Arrow keys move a `highlight` index over the results; **Enter with a suggestion
-highlighted** or a click both call `pick(entry)`.
+highlighted** or a click both call `pick(entry)`. Rows show the food's icon (where the
+catalog entry has one), its name, and its calories, with the same `<img>` + `onError`
+fallback the log rows use.
+
+#### The ranking
+
+`FoodCatalogService.suggest(query, userId, limit, { bucket })` filters by the query, then
+hands the candidates to `bucketSuggestRanking.mjs` — a pure domain module that takes the
+clock as an argument, because the domain layer forbids an ambient one. Three tiers:
+
+| Tier | Who | Ordered by |
+|---|---|---|
+| 0 | **Favorites** | blended bucket score, then global score |
+| 1 | Entries with history **in this bucket** | blended bucket score |
+| 2 | Everything else — *the backfill* | global score |
+
+The blended bucket score is
+
+```
+0.6 * min(1, countInBucket / 90)  +  0.4 * 0.5 ** (daysSinceLastUsedInBucket / 14)
+```
+
+— frequency normalised over a 90-day window (a food eaten every day for 90 days scores
+1.0, and more uses cannot score higher), recency decaying by half every 14 days. The
+global score is the older bucket-blind one, `useCount / (1 + daysSinceLastUsed / 30)`,
+kept verbatim. Ties break on normalized name, so the order is total and the same input
+always yields the same list.
+
+**Tier 2 is admitted only while fewer than five catalog entries have any history in the
+bucket.** Once a bucket knows five foods, the list is that bucket's foods plus favorites —
+a global list wearing a bucket label is what the tier exists to stop. Favorites are never
+what the threshold cuts. With no `bucket` supplied, no entry has bucket history, so tier 2
+is always admitted and the result is exactly the shipped favorites → global-score → name
+ordering.
+
+#### Where bucket history comes from
+
+`FoodCatalogEntry.usageByBucket` maps a bucket id to `{ count, lastUsed, quantity }` and is
+persisted with the entry. Two writers, both of which know the *resolved* meal:
+
+- **A quick-add** records against the bucket it was logged into.
+- **`POST /nutrition/catalog/backfill`** replays stored nutrilist rows, whose `mealTime` is
+  the resolved meal — an explicit "for lunch", or the row a capture was launched from,
+  having already beaten the clock upstream.
+
+The three Telegram/coach capture use-cases deliberately do **not** record a bucket. At the
+point where they record catalog usage, the meal they hold is the *clock's* guess; the
+precedence that lets a spoken meal or a launch row override it is applied downstream, in
+the input router. Donating the pre-override value would write a wrong bucket that no later
+correction can undo, so those callers record a use with no bucket at all and the backfill
+picks the history up from the finished rows. A caller that cannot name a bucket never
+advances bucket history and never guesses one.
+
+`quantity` is the portion the food was last logged with in that bucket, which is what a
+one-tap quick-add defaults to. A bucket the food has never been eaten in falls back to the
+catalog default of one serving.
 
 ### Deterministic paths — skip the funnel entirely
 
-`pick(entry)` is the fast path: `POST /nutrition/catalog/quickadd { catalogEntryId }`
-followed by a `PUT` to set the bucket, then done — no pending state, no confirmation step.
+`pick(entry)` is the fast path: **one** request, `POST /nutrition/catalog/quickadd
+{ catalogEntryId, mealTime }`, then done — no pending state, no confirmation step. The
+meal travels with the quick-add; there is no follow-up `PUT` to move the row afterwards.
+The row lands `settled: true, settledBy: 'user'`, because a one-tap pick of a known food is
+a deliberate choice, not a machine estimate. Its portion is the last one logged for that
+food in that bucket, else one serving.
+
 The same shape repeats everywhere a value is already known and doesn't need interpreting:
 
 - **Custom-food creation** (`CustomFoodSheet`, below) — create, then quickadd.
@@ -777,10 +840,12 @@ presents as settled even though the stored value is still `false`. This is compu
 time the day is read, not written back — nothing ever mutates the row to auto-settle it,
 and no scheduled job runs the check.
 
-A person settles a row two ways: any successful edit (a `PUT` on the row, from
+A person settles a row three ways: any successful edit (a `PUT` on the row, from
 `EntryEditSheet` or elsewhere) stamps `settled: true, settledBy: 'user'` alongside
-whatever else changed, and an unsettled row's "Unconfirmed" badge carries its own
-one-tap confirm button that sends that same stamp with no other field changed.
+whatever else changed; an unsettled row's "Unconfirmed" badge carries its own one-tap
+confirm button that sends that same stamp with no other field changed; and a **quick-add**
+writes the stamp at creation, since picking a known food off the suggestion list is itself
+the ratification.
 
 ---
 
@@ -788,8 +853,9 @@ one-tap confirm button that sends that same stamp with no other field changed.
 
 A `FoodCatalogEntry` (`backend/src/2_domains/health/entities/FoodCatalogEntry.mjs`) carries
 `id, name, normalizedName, nutrients{calories,protein,carbs,fat}, source, barcodeUpc,
-useCount, favorite, icon, lastUsed, createdAt`. `icon` is a manifest slug or null — see
-[Food icons](#food-icons). `source` is `'manual' | 'nutritionix' | 'custom'`
+useCount, usageByBucket, favorite, icon, lastUsed, createdAt`. `icon` is a manifest slug or
+null — see [Food icons](#food-icons). `usageByBucket` is per-meal-bucket history —
+see [the quick-add ranking](#the-ranking) — and defaults to `{}`, never null. `source` is `'manual' | 'nutritionix' | 'custom'`
 depending on origin; entries created via `createCustom` (the barcode-mapping flow, or any
 direct `POST /nutrition/catalog`) are always `source: 'custom'`. `favorite` is a persisted
 boolean, toggled from `EntryEditSheet`'s star button via `PUT /nutrition/catalog/favorite {
@@ -983,8 +1049,8 @@ All under `/api/v1/health/`, from `backend/src/4_api/v1/routers/health.mjs`:
 | `GET /goals`, `PUT /goals` | goals document; a malformed `macroGoals`/`watchMicros` shape is `400 { code: 'GOALS_INVALID' }` |
 | `GET /nutrilist/:date`, `POST /nutrilist`, `PUT /nutrilist/:uuid`, `DELETE /nutrilist/:uuid` | day-log rows (legacy-parity NutriList CRUD) |
 | `GET /nutrition/catalog?q=`, `GET /nutrition/catalog/recent` | plain catalog search/recents |
-| `GET /nutrition/catalog/suggest?q=` | ranked combobox suggestions |
-| `POST /nutrition/catalog/quickadd` | deterministic log from a catalog entry |
+| `GET /nutrition/catalog/suggest?q=&bucket=&limit=` | ranked combobox suggestions; `bucket` makes the ranking per-meal (400 on a bucket outside the four) |
+| `POST /nutrition/catalog/quickadd` | deterministic log from a catalog entry; body `{ catalogEntryId, mealTime? }`, 400 on a `mealTime` outside the four |
 | `POST /nutrition/catalog` | create a custom food (optionally `barcodeUpc`-mapped) |
 | `PUT /nutrition/catalog/favorite` | toggle favorite by id or name |
 | `PUT /nutrition/catalog/icon` | pin a food's icon by id or name — the "always for this food" override |

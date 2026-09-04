@@ -274,6 +274,58 @@ exactly the reference line and the bar — and the reviewer's exact break now fa
 same guard is applied to the month block. **The lesson generalises: a test for "X does
 not exist" must not be written as a count of the things that do.**
 
+**2.25 The capture use cases deliberately do NOT record a bucket (Task 9.1).**
+`usageByBucket` needs the *resolved* meal. At the point where `LogFoodFromText`,
+`LogFoodFromImage` and `LogFoodFromUPC` record catalog usage, the meal they hold is the
+CLOCK's guess: each builds `meal.time` from `#getMealTimeFromHour` and then RETURNS
+`mealTime`/`mealTimeExplicit` for `NutribotInputRouter#capture` to apply the precedence
+(a spoken "for lunch", or the row the capture was launched from, beats the clock). Adding
+`mealTime: nutriLog.meal.time` at those three call sites is a one-line change that looks
+obviously right and would have written the pre-override bucket — permanently, as a count
+on disk that no later correction can undo, in exactly the case §1 says matters most.
+Refused. `FoodCatalogService.recordUsage` honours `foodItem.mealTime` when a caller can
+supply one, and a caller that cannot advances no bucket history at all rather than
+guessing. The seam where this *could* be done correctly is the input router, which is
+where the precedence is applied; that is a bigger change than Task 9.1's scope.
+
+**2.26 `backfill` was reading almost nothing, and this is what made 2.25 affordable.**
+Backfill is the path that seeds bucket history from finished rows, whose `mealTime` IS the
+resolved meal. It gated on `if (!item?.label) continue`, but the nutrilist has two row
+shapes: `syncFromLog` rows key the name as `label`, `saveMany` rows as `item` — and on the
+production file the `item`-shaped rows are the MAJORITY (39 vs 29, verified on the running
+container). So the backfill silently skipped most of the history its own contract claims to
+read, and — worth knowing — Phase 7's icon donation was riding on the same gate. Widened to
+the name the store itself resolves (`name || item || label`, 'Unknown' excluded, which is
+`#normalizeItem`'s own sentinel). Found only by the falsification pass: deleting the new
+`mealTime` donation left every test green, which is what a decorative addition looks like.
+**Consequence to know:** the two shapes are asymmetric in the other direction too —
+`dehydrateNutriListItem` writes no `mealTime` at all, so `label`-shaped rows carry a name
+and no bucket while `item`-shaped rows carry a bucket. Backfill therefore seeds buckets
+only from the latter. That is a pre-existing gap in the capture write path, not something
+this task introduced, and it is not fixed here.
+
+**2.27 The retired PUT was checked by reading what it did, not by assuming it was dead.**
+`AddCombobox` used to follow every quick-add with `PUT /nutrilist/{uuid} { mealTime }`.
+Two things rode on it beyond moving the row: `updateNutritionItem` ratifies by DEFAULT
+(`options.ratify !== false`), so the PUT was also what stamped `settled/settledBy/settledAt`
+on a quick-added row; and it cascades a group's `mealTime` to its children. `quickAdd` now
+writes the stamp itself (PRD F8.3), and a quick-added row is `kind: 'item'` with no
+children, so the cascade had nothing to do. Deleting it also closes a live hole: when that
+PUT failed, the combobox had already closed and the row was left in the CLOCK's bucket AND
+unsettled. Per §5.4, the deletion was demonstrated rather than argued — the regression test
+asserts that no request of ANY kind reaches the nutrilist endpoint, because counting
+quickadd calls could not express "the second request is gone" (§2.24's lesson).
+
+**2.28 `recordUsage` dates in UTC while `quickAdd` dates locally — flagged, not fixed.**
+`FoodCatalogService.recordUsage` stamps `lastUsed` with `new Date(clock.now()).toISOString().slice(0,10)`;
+`quickAdd` uses the local-date helper, because a naive ISO slice reads as tomorrow every
+evening in this household's timezone (that fix, and its test, predate this phase). Both now
+write `usageByBucket[bucket].lastUsed` too, so the same instant can be recorded a day apart
+depending on which path ran. The effect is bounded — one day of recency decay at the
+margin, on a 14-day half-life — and the divergence already applies to `entry.lastUsed`,
+which the shipped global score reads. Changing it would alter ranking for every existing
+entry on a path outside this task. Recorded for the whole-branch review.
+
 ---
 
 ## 3. Known divergences from the PRD (true only after later phases)
