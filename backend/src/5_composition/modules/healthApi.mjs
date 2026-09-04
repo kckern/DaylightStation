@@ -146,6 +146,15 @@ export function createHealthApiRouter(config) {
     ? new IconManifestStore({ dataService, mediaRoot: configService.getMediaDir(), logger })
     : null;
 
+  // Warm the render cache in the background, unhurried, so the edit sheet's
+  // picker (60 icons at once) is never the thing that discovers a cold cache.
+  // Fire-and-forget by design: nothing waits for it, a failure is logged and
+  // dropped, and it paces itself so it never becomes the reason a request is
+  // slow. See IconManifestStore.warmCache for why the cache goes cold at all.
+  iconManifestStore?.warmCache().catch((error) => {
+    logger.warn?.('health.icons.warm.failed', { error: error.message });
+  });
+
   // The kitchen-scale observation ledger, for the day view's read / re-pair / dismiss
   // surface. Its OWN adapter instance off the shared `dataService`, exactly as
   // goals/savedMeals/medical/photos above — the live scale path (app.mjs) builds a second
