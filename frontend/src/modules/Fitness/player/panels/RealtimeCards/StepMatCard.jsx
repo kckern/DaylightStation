@@ -10,17 +10,28 @@ const avatarFor = (userId) => userId
   ? `/api/v1/static/img/users/${userId}`
   : '/api/v1/static/img/equipment/equipment';
 
-function UserPicker({ open, participants, currentUserId, onAssign, onClose }) {
+function UserPicker({ open, participants, currentUserId, onAssign, onClose, onRelease }) {
+  const panelRef = useRef(null);
   useEffect(() => {
     if (!open) return undefined;
-    const onKey = (event) => { if (event.key === 'Escape') onClose(); };
+    const previousFocus = document.activeElement;
+    panelRef.current?.querySelector('button')?.focus();
+    const onKey = (event) => {
+      if (event.key === 'Escape') { event.stopPropagation(); onClose(); }
+      if (event.key === 'Tab') {
+        const buttons = [...(panelRef.current?.querySelectorAll('button:not(:disabled)') || [])];
+        const first = buttons[0], last = buttons.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    };
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    return () => { document.removeEventListener('keydown', onKey); previousFocus?.focus?.(); };
   }, [open, onClose]);
   if (!open || typeof document === 'undefined') return null;
   return ReactDOM.createPortal(
     <div className="cycle-swap-modal" role="dialog" aria-modal="true" aria-label="Choose who is stepping" onClick={onClose}>
-      <div className="cycle-swap-modal__panel" onClick={(event) => event.stopPropagation()}>
+      <div ref={panelRef} className="cycle-swap-modal__panel" onClick={(event) => event.stopPropagation()}>
         <div className="cycle-swap-modal__header">
           <h2 className="cycle-swap-modal__title">Who is stepping?</h2>
           <button type="button" className="cycle-swap-modal__close" onClick={onClose} aria-label="Close">✕</button>
@@ -48,6 +59,7 @@ function UserPicker({ open, participants, currentUserId, onAssign, onClose }) {
           </ul>
         </div>
         <div className="cycle-swap-modal__footer">
+          {onRelease ? <button type="button" className="cycle-swap-modal__cancel" onClick={() => { onRelease(); onClose(); }}>Release mat</button> : null}
           {currentUserId ? <button type="button" className="cycle-swap-modal__cancel" onClick={() => { onAssign(null); onClose(); }}>Unassign</button> : null}
           <button type="button" className="cycle-swap-modal__cancel" onClick={onClose}>Cancel</button>
         </div>
@@ -79,25 +91,30 @@ export function StepMatCard({ equipment, snapshot, participants = [], assignedUs
   };
   useEffect(() => clearHold, []);
 
+  const releaseMat = () => {
+    const confirmed = snapshot.engaged && typeof window !== 'undefined'
+      && window.confirm('Release the step mat? Your totals stay saved. Stepping again resumes activity.');
+    logger.info('disengage-request', { confirmed: Boolean(confirmed) });
+    if (confirmed) onDisengage?.();
+  };
+
   const beginHold = () => {
     held.current = false;
     clearHold();
     holdTimer.current = setTimeout(() => {
       held.current = true;
-      const confirmed = snapshot.engaged
-        && typeof window !== 'undefined'
-        && window.confirm('Stop using the step mat for this session?');
-      logger.info('disengage-request', { confirmed: Boolean(confirmed) });
-      if (confirmed) onDisengage?.();
+      releaseMat();
     }, 700);
   };
-  const finishHold = () => {
+  const openPicker = () => {
     clearHold();
     if (!held.current) {
       logger.debug('assignment-picker-opened', { assignedUserId: assignedUserId || null });
       setPickerOpen(true);
     }
+    held.current = false;
   };
+  const closePicker = React.useCallback(() => setPickerOpen(false), []);
 
   const status = !snapshot.online ? 'Sensor unavailable'
     : snapshot.active ? 'Stepping'
@@ -105,16 +122,18 @@ export function StepMatCard({ equipment, snapshot, participants = [], assignedUs
 
   return (
     <>
-      <div onPointerDown={beginHold} onPointerUp={finishHold} onPointerCancel={clearHold} onPointerLeave={clearHold}>
+      <div onPointerDown={beginHold} onPointerUp={clearHold} onPointerCancel={clearHold} onPointerLeave={clearHold}>
         <BaseRealtimeCard
           device={device}
           deviceName={name}
           className="step-mat-card"
           isInactive={!snapshot.active}
+          isClickable
+          onClick={openPicker}
           imageSrc={avatarFor(assignedUserId)}
           imageAlt={assignedUserId || name}
           imageFallback="/api/v1/static/img/equipment/equipment"
-          ariaLabel={`${name}: ${Math.round(snapshot.stepsPerMinute)} steps per minute, ${snapshot.sessionSteps} steps, ${snapshot.sessionStomps} stomps. Tap to assign; hold to stop using mat.`}
+          ariaLabel={`${name}: ${Math.round(snapshot.stepsPerMinute)} steps per minute, ${snapshot.sessionSteps} steps, ${snapshot.sessionStomps} stomps. Tap to assign; hold to release mat.`}
         >
           <div className="step-mat-card__rate"><strong>{Math.round(snapshot.stepsPerMinute)}</strong> SPM <span>{status}</span></div>
           <div className="step-mat-card__totals">
@@ -131,7 +150,8 @@ export function StepMatCard({ equipment, snapshot, participants = [], assignedUs
           logger.info('assignment-changed', { fromUserId: assignedUserId || null, toUserId: userId || null });
           onAssign?.(userId);
         }}
-        onClose={() => setPickerOpen(false)}
+        onClose={closePicker}
+        onRelease={snapshot.engaged ? releaseMat : null}
       />
     </>
   );

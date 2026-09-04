@@ -4,6 +4,23 @@ import { PressureMatActivityTracker } from './PressureMatActivityTracker.js';
 import { TimelineRecorder } from './TimelineRecorder.js';
 
 describe('TimelineRecorder pressure-mat observability', () => {
+  it('sums user attribution across mats rather than keeping only the last mat', () => {
+    const first = new PressureMatActivityTracker('first', 'mat-1');
+    const second = new PressureMatActivityTracker('second', 'mat-2');
+    first.restore({ sessionSteps: 5, sessionStomps: 1, users: { alex: { steps: 5, stomps: 1 } } });
+    second.restore({ sessionSteps: 7, sessionStomps: 2, users: { alex: { steps: 7, stomps: 2 } } });
+    const timeline = new FitnessTimeline(0, 5000);
+    const recorder = new TimelineRecorder({ intervalMs: 5000 });
+    recorder.configure({ deviceManager: { getAllDevices: () => [] }, userManager: {}, timeline,
+      activityMonitor: { getPreviousTickActive: () => new Set(), recordTick: vi.fn() }, eventJournal: { log: vi.fn() } });
+    recorder.setPressureMatTrackers(new Map([['first', first], ['second', second]]));
+    recorder.recordTick({ timestamp: 5000, sessionId: 'session-1' });
+    expect(timeline.series['user:alex:steps_total']).toEqual([12]);
+    expect(timeline.series['user:alex:stomps_total']).toEqual([3]);
+    expect(timeline.series['device:first:steps_total']).toEqual([5]);
+    expect(timeline.series['device:second:steps_total']).toEqual([7]);
+  });
+
   it('samples canonical totals/SPM and per-user totals without raw edge events', () => {
     const timestamp = 20_000;
     const tracker = new PressureMatActivityTracker('step_mat', 'garage-step-mat', { spm_window_seconds: 15 });

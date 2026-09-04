@@ -225,8 +225,11 @@ The pressure mat is dormant until the first classified session step. That first
 step latches the activity as engaged, makes the realtime card visible for the rest
 of the session, and activates any enabled `activity_rate` requirement. The card is
 placed beside the RPM equipment and shows rolling SPM, session steps, and session
-stomps. Tap it to assign an active HR participant; hold and confirm to disengage
-continuous mat governance.
+stomps. Assignment is optional: no tap is required for tracking or visibility.
+Tap (or Enter/Space) to assign an active HR participant. The picker also exposes
+“Release mat”; holding the card is a shortcut to the same confirmation. Release
+preserves all totals and temporarily disengages continuous mat governance. The
+next physical step re-engages it; this is not a whole-session opt-out.
 
 The realtime card is resilient to a stale fitness equipment catalog. Because the
 backend pressure-mat adapter has already validated relay events, `FitnessSession`
@@ -240,6 +243,35 @@ registration emits `fitness.pressure_mat.tracker_discovered` with reason
 Assignment is resolved at each repetition, so session history retains honest
 physical totals plus per-user attributed totals. A stomp is one step with an
 additional stomp classification; it never increments steps twice.
+
+Trackers are reconciled by stable hardware identity, not recreated on config
+refresh. Promotion from a discovered hardware id to a configured equipment id
+preserves the tracker, assignment, and timeline. Conflicting hardware bindings
+during an active workout are rejected with `fitness.pressure_mat.config_conflict`.
+
+New session records carry `metadata.pressure_mats` (`version: 1`, `mats` array):
+hardware/equipment identities, physical totals, per-user totals, engagement,
+visibility, and current assignment. Firmware baselines, live SPM, and timestamps
+are deliberately not durable. Resume restores saved totals plus any fresh
+activity already received, then binds the recorder to the resumed timeline.
+Older records restore the last sampled device totals; global user totals are
+attributed to a mat only when there is exactly one, avoiding invented attribution.
+Per-user timeline totals sum across all mats.
+
+Boot identity and device timestamps distinguish a restart from stale/regressing
+frames. Same-boot regressions and prior-boot frames are ignored. For legacy
+firmware with no comparable boot identity, counter regression rebases only on a
+hello or when device-clock identity is also absent. Missing optional numeric
+diagnostics remain null rather than becoming a false zero identity.
+
+Basic tracking does not enable any workout rules. Recovering an equipment entry
+from a config conflict must not also enable continuous requirements or challenges.
+
+Startup diagnostics include `fitness-profile-started.entryAsset` (the script
+actually loaded by the client) and `fitness.equipment.catalog_applied` (effective
+catalog identity and mat bindings). First activity emits
+`fitness.pressure_mat.first_step`; the card logs `mounted` with its mat/equipment
+identity. Compare the loaded asset to the served page after an idle kiosk reload.
 
 Continuous mat governance defaults to 30 SPM over a 15-second rolling window. On
 first engagement it uses the ordinary 30-second governance grace, then follows the
@@ -257,6 +289,20 @@ an assigned participant has a current HR zone at completion, `TreasureBox` award
 an idempotent bonus equal to that zone's configured `rings` multiplied by the
 challenge's `reward_multiplier`. The completion-time assignee and completion-time
 zone determine the reward; the physical count itself is never multiplied.
+
+### Heart rendering
+
+Live HR rows and `PersonCard` use `shared/HeartIcon.jsx`: an 18-pixel Tabler SVG
+inside a non-shrinking, centered 22-pixel wrapper. Strap colors come from
+`shared/contracts/fitness/strapColors.mjs`, shared with backend recaps; exertion
+zone colors remain separate. Decorative hearts are hidden from screen readers;
+an optional label gives the component image semantics. The live HR stats row
+centers the icon independently of text baselines and disables legacy emoji pulse.
+
+Run `node tests/_infrastructure/harnesses/fitness-mat-hearts.mjs chromium` and
+the same command with `firefox` for isolated real-component layout, insertion,
+and keyboard checks. This fixture cannot replace the physical garage acceptance
+test; it deliberately never connects to hardware or the application backend.
 
 ---
 

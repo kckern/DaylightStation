@@ -382,6 +382,7 @@ export class TimelineRecorder {
     // Mat metrics use the canonical device/user namespaces. Raw step edges are
     // retained by the hardware log, not duplicated into the fitness timeline.
     if (this._pressureMatTrackers) {
+      const matUserTotals = new Map();
       this._pressureMatTrackers.forEach((tracker, equipmentId) => {
         const snap = tracker.snapshot(timestamp);
         if (!snap.seenThisSession) return;
@@ -390,9 +391,15 @@ export class TimelineRecorder {
         assignMetric(`device:${equipmentId}:stomps_total`, snap.sessionStomps);
         assignMetric(`device:${equipmentId}:steps_per_minute`, Math.round(snap.stepsPerMinute));
         Object.entries(snap.users || {}).forEach(([userId, totals]) => {
-          assignMetric(`user:${userId}:steps_total`, totals.steps || 0);
-          assignMetric(`user:${userId}:stomps_total`, totals.stomps || 0);
+          const combined = matUserTotals.get(userId) || { steps: 0, stomps: 0 };
+          combined.steps += totals.steps || 0;
+          combined.stomps += totals.stomps || 0;
+          matUserTotals.set(userId, combined);
         });
+      });
+      matUserTotals.forEach((totals, userId) => {
+        assignMetric(`user:${userId}:steps_total`, totals.steps);
+        assignMetric(`user:${userId}:stomps_total`, totals.stomps);
       });
     }
 

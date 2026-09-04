@@ -1,6 +1,6 @@
 import React from 'react';
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const testState = vi.hoisted(() => ({ context: null }));
 
@@ -37,6 +37,8 @@ const baseContext = (pressureMatActivities) => ({
   getDisplayName: (deviceId) => ({ displayName: String(deviceId), source: 'fallback' }),
   fitnessSessionInstance: { getEquipmentUser: () => null },
 });
+
+afterEach(() => vi.restoreAllMocks());
 
 describe('FitnessUsers pressure-mat composition', () => {
   it('mounts the step card for a discovered in-session mat without equipment config', async () => {
@@ -84,5 +86,25 @@ describe('FitnessUsers pressure-mat composition', () => {
       expect(screen.queryByLabelText(/step mat:/i)).toBeNull();
       expect(screen.getByText('Ready for Users')).toBeTruthy();
     });
+  });
+
+  it('inserts beside an existing device and removes cleanly without animation ref warnings', async () => {
+    const errors = vi.spyOn(console, 'error');
+    testState.context = { ...baseContext({}), equipmentDevices: [{ deviceId: 'power-1', type: 'power', power: 50, lastSeen: Date.now(), isActive: true }] };
+    const { rerender, container } = render(<FitnessUsersList />);
+    await waitFor(() => expect(container.querySelector('.fitness-device.power')).toBeTruthy());
+    testState.context = { ...testState.context, pressureMatActivities: {
+      mat: { equipmentId: 'mat', matId: 'mat', seenThisSession: true, online: true, active: true, engaged: true, sessionSteps: 1, sessionStomps: 0, stepsPerMinute: 4 },
+    } };
+    rerender(<FitnessUsersList />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /step mat:/i })).toBeTruthy());
+    expect(container.querySelector('.step-mat-list-item')).toBeTruthy();
+    testState.context = { ...testState.context, pressureMatActivities: {} };
+    rerender(<FitnessUsersList />);
+    // Finish the leave transition in jsdom, which has no browser animation clock.
+    await waitFor(() => expect(container.querySelector('.step-mat-list-item')?.style.opacity).toBe('0'));
+    fireEvent.transitionEnd(container.querySelector('.step-mat-list-item'));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /step mat:/i })).toBeNull());
+    expect(errors.mock.calls.flat().join(' ')).not.toMatch(/stateless|cannot be given refs/i);
   });
 });

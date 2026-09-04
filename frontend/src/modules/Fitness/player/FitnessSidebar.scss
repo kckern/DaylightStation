@@ -695,7 +695,7 @@
           .device-stats {
             display: flex;
             justify-content: flex-start;
-            align-items: baseline;
+            align-items: center;
             gap: 6px;
             
             .device-icon { font-size: 14px; }
@@ -1545,7 +1545,7 @@
     .fitness-device.card-vertical .device-info .device-stats {
       display: flex;
       justify-content: center;
-      align-items: baseline;
+      align-items: center;
       gap: 6px;
     }
 
@@ -1602,7 +1602,7 @@
       .device-stats { 
         display: flex;
         justify-content: flex-start;
-        align-items: baseline;
+        align-items: center;
         gap: 6px;
         
         .device-icon { font-size: 14px; }

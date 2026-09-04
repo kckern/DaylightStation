@@ -190,6 +190,7 @@ export class FitnessSession {
     this._vibrationTrackers = new Map(); // equipmentId -> VibrationActivityTracker
     this._pressureMatTrackers = new Map(); // equipmentId -> PressureMatActivityTracker
     this._pressureMatEquipmentByHardwareId = new Map(); // relay mat id -> equipment id
+    this._sessionMetadata = {};
     this._equipmentRider = new Map(); // equipmentId -> userId (current claimed rider; null/absent = unclaimed)
     this._equipmentById = new Map(); // equipmentId -> equipment config entry (cycle challenge reverse lookup)
     this._deviceHrSampleCount = new Map(); // deviceId -> count for startup discard
@@ -1005,22 +1006,105 @@ export class FitnessSession {
     return this._vibrationTrackers.get(String(equipmentId)) || null;
   }
 
-  /** Build pressure-mat trackers from the public fitness equipment catalog. */
+  /** Reconcile by physical identity; a config refresh is not a new workout. */
   initPressureMatTrackers(equipmentList = []) {
-    this._pressureMatTrackers.clear();
-    this._pressureMatEquipmentByHardwareId.clear();
+    const existingByHardware = new Map([...this._pressureMatTrackers.values()].map(t => [t.matId, t]));
+    const configuredHardware = new Set();
     equipmentList.forEach((item) => {
       const matId = item?.pressure_mat || item?.pressureMat || item?.sensor?.pressure_mat;
       const isPressureMat = item?.type === 'pressure_mat'
         || item?.type === 'step_mat'
         || item?.sensor?.type === 'pressure_mat';
       if (!item?.id || !matId || !isPressureMat) return;
-      const equipmentId = String(item.id);
-      const hardwareId = String(matId);
-      const tracker = new PressureMatActivityTracker(equipmentId, hardwareId, item.activity || {});
+      const equipmentId = String(item.id).trim();
+      const hardwareId = String(matId).trim();
+      if (!equipmentId || !hardwareId) return;
+      const collision = this._pressureMatTrackers.get(equipmentId);
+      if (configuredHardware.has(hardwareId) || (collision && collision.matId !== hardwareId && this.sessionId)) {
+        getLogger().warn('fitness.pressure_mat.config_conflict', { equipmentId, matId: hardwareId, sessionId: this.sessionId });
+        return;
+      }
+      configuredHardware.add(hardwareId);
+      const existing = existingByHardware.get(hardwareId);
+      const tracker = existing || new PressureMatActivityTracker(equipmentId, hardwareId, item.activity || {});
+      if (existing && existing.equipmentId !== equipmentId) {
+        const previousId = existing.equipmentId;
+        this._pressureMatTrackers.delete(previousId);
+        if (this._equipmentRider.has(previousId)) {
+          if (!this._equipmentRider.has(equipmentId)) this._equipmentRider.set(equipmentId, this._equipmentRider.get(previousId));
+          this._equipmentRider.delete(previousId);
+        }
+        this._renamePressureMatSeries(previousId, equipmentId);
+        tracker.equipmentId = equipmentId;
+        getLogger().info('fitness.pressure_mat.tracker_rebound', { previousId, equipmentId, matId: hardwareId, sessionId: this.sessionId });
+      }
+      tracker.configure(item.activity || {});
       this._pressureMatTrackers.set(equipmentId, tracker);
-      this._pressureMatEquipmentByHardwareId.set(hardwareId, equipmentId);
-      getLogger().info('fitness.pressure_mat.tracker_created', { equipmentId, matId: hardwareId });
+      if (!existing) getLogger().info('fitness.pressure_mat.tracker_created', { equipmentId, matId: hardwareId });
+    });
+    // Keep discovered/removed mats for the current session. Missing metadata
+    // must not erase physical totals or hide a card already used this workout.
+    this._pressureMatEquipmentByHardwareId.clear();
+    this._pressureMatTrackers.forEach((tracker, id) => this._pressureMatEquipmentByHardwareId.set(tracker.matId, id));
+    this._timelineRecorder?.setPressureMatTrackers?.(this._pressureMatTrackers);
+  }
+
+  _renamePressureMatSeries(previousId, equipmentId) {
+    const series = this.timeline?.series;
+    if (!series) return;
+    const prefix = `device:${previousId}:`;
+    Object.keys(series).filter(key => key.startsWith(prefix)).forEach(key => {
+      const nextKey = `device:${equipmentId}:${key.slice(prefix.length)}`;
+      const previous = series[key];
+      const next = series[nextKey];
+      series[nextKey] = next ? Array.from({ length: Math.max(previous.length, next.length) }, (_, i) => {
+        const value = previous[i];
+        return value == null ? (next[i] ?? null)
+          : next[i] == null ? value : Math.max(value, next[i]);
+      }) : previous;
+      delete series[key];
+    });
+  }
+
+  _restorePressureMats(sessionData) {
+    const saved = sessionData.metadata?.pressure_mats;
+    const series = this.timeline?.series || {};
+    const lastNumber = (values) => Array.isArray(values)
+      ? [...values].reverse().find(value => Number.isFinite(value) && value >= 0) ?? 0 : 0;
+    let records = saved?.version === 1 && Array.isArray(saved.mats) ? saved.mats : null;
+    if (!records) {
+      // Older sessions only have sampled totals. Restore physical counts;
+      // only a single mat permits unambiguous attribution of global user totals.
+      records = Object.keys(series).filter(key => /^device:[^:]+:steps_total$/.test(key)).map(key => {
+        const equipmentId = key.split(':')[1];
+        const tracker = this._pressureMatTrackers.get(equipmentId)
+          || [...this._pressureMatTrackers.values()].find(t => t.matId === equipmentId);
+        return { equipmentId, matId: tracker?.matId || equipmentId,
+          sessionSteps: lastNumber(series[key]),
+          sessionStomps: lastNumber(series[`device:${equipmentId}:stomps_total`]), users: {} };
+      });
+      if (records.length === 1) {
+        Object.keys(series).filter(key => /^user:[^:]+:steps_total$/.test(key)).forEach(key => {
+          const userId = key.split(':')[1];
+          records[0].users[userId] = { steps: lastNumber(series[key]), stomps: lastNumber(series[`user:${userId}:stomps_total`]) };
+        });
+      }
+    }
+    records.forEach(record => {
+      if (!record?.matId || !record?.equipmentId) return;
+      const matId = String(record.matId);
+      const equipmentId = this._pressureMatEquipmentByHardwareId.get(matId) || String(record.equipmentId);
+      let tracker = this._pressureMatTrackers.get(equipmentId);
+      if (tracker && tracker.matId !== matId) return;
+      if (!tracker) {
+        tracker = new PressureMatActivityTracker(equipmentId, matId);
+        this._pressureMatTrackers.set(equipmentId, tracker);
+        this._pressureMatEquipmentByHardwareId.set(matId, equipmentId);
+      }
+      tracker.restore(record, { preserveLive: true });
+      if (record.assignedUserId && !this._equipmentRider.has(equipmentId)) this._equipmentRider.set(equipmentId, String(record.assignedUserId));
+      if (equipmentId !== record.equipmentId) this._renamePressureMatSeries(record.equipmentId, equipmentId);
+      getLogger().info('fitness.pressure_mat.restored', { equipmentId, matId, sessionId: this.sessionId, steps: tracker.sessionSteps, stomps: tracker.sessionStomps });
     });
     this._timelineRecorder?.setPressureMatTrackers?.(this._pressureMatTrackers);
   }
@@ -1059,6 +1143,9 @@ export class FitnessSession {
     });
     if (!before.engaged && snapshot.engaged) {
       this.logEvent('activity_engaged', { type: 'pressure_mat', equipmentId, matId });
+    }
+    if (!before.seenThisSession && snapshot.seenThisSession) {
+      getLogger().info('fitness.pressure_mat.first_step', { equipmentId, matId, sessionId: this.sessionId, steps: snapshot.sessionSteps, stomps: snapshot.sessionStomps });
     }
     if (snapshot.sessionSteps > before.sessionSteps) this.lastActivityTime = timestamp;
     return snapshot;
@@ -1583,6 +1670,10 @@ export class FitnessSession {
     if (gapTicks > 0) {
       this.timeline.padWithNulls(gapTicks);
     }
+
+    this._sessionMetadata = { ...(sessionData.metadata || {}) };
+    this._timelineRecorder?.setTimeline(this.timeline);
+    this._restorePressureMats(sessionData);
 
     // Restore treasureBox
     if (sessionData.treasureBox) {
@@ -2597,6 +2688,7 @@ export class FitnessSession {
     this.governanceEngine.reset();
     this._vibrationTrackers.forEach(t => t.reset());
     this._pressureMatTrackers.forEach(t => t.reset());
+    this._sessionMetadata = {};
     this._equipmentRider?.clear();
     if (this.timeline) {
       this.timeline.reset(Date.now(), this.timeline.timebase?.intervalMs || 5000);
@@ -3260,6 +3352,12 @@ export class FitnessSession {
           roster: this.roster.length > 0 ? this.roster : (this._lastKnownGoodRoster || []),
           deviceAssignments,
           entities,
+          metadata: {
+            ...this._sessionMetadata,
+            pressure_mats: { version: 1, mats: [...this._pressureMatTrackers.values()]
+              .filter(tracker => tracker.seenThisSession)
+              .map(tracker => ({ ...tracker.checkpoint(), assignedUserId: this.getEquipmentRider(tracker.equipmentId) })) },
+          },
           voiceMemos: this.voiceMemoManager.summary,
           treasureBox: this.treasureBox ? this.treasureBox.summary : null,
           timeline: timelineSummary,

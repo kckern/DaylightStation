@@ -37,9 +37,10 @@ export function pressureMatFitnessEvent(reading) {
   return null;
 }
 
-const finiteOr = (value, fallback = null) => Number.isFinite(Number(value)) ? Number(value) : (fallback ?? null);
-const nonnegative = (value, fallback = 0) => Math.max(0, Number.isFinite(Number(value)) ? Number(value) : (fallback ?? 0));
+const numeric = (value) => value != null && value !== '' && Number.isFinite(Number(value));
+const finiteOr = (value, fallback = null) => numeric(value) ? Number(value) : (fallback ?? null);
+const nonnegative = (value, fallback = 0) => Math.max(0, numeric(value) ? Number(value) : (fallback ?? 0));
 const optionalNonnegative = (value, fallback = null) => {
-  if (Number.isFinite(Number(value))) return Math.max(0, Number(value));
-  return Number.isFinite(Number(fallback)) ? Math.max(0, Number(fallback)) : null;
+  if (numeric(value)) return Math.max(0, Number(value));
+  return numeric(fallback) ? Math.max(0, Number(fallback)) : null;
 };

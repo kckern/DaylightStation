@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { normalizePressureMatMessage, pressureMatFitnessEvent } from './fitnessPressureMat.js';
 
 describe('fitness pressure mat', () => {
+  it('does not invent a zero boot identity when optional diagnostics are missing', () => {
+    const reading = normalizePressureMatMessage({ topic: 'pressure-mat', id: 'mat1', type: 'presence', event: 'pressed', bootCount: null });
+    expect(reading.bootCount).toBeNull();
+    expect(reading.deviceTs).toBeNull();
+  });
+
   it('normalizes a live step count and analog diagnostics', () => {
     expect(normalizePressureMatMessage({
       topic: 'pressure-mat', id: 'mat1', type: 'presence', event: 'pressed',
