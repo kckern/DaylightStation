@@ -12,10 +12,11 @@
  *     apple_sauce: { path: img/icons/food/apple_sauce.png }
  *
  * `icons` is what the parse agent chooses from and what the picker lists.
- * `aliases` exist because nutribot's original flat slugs are ALREADY STORED on
- * rows as `FoodItem.icon`; dropping one would silently break a stored row
- * (it renders its fallback glyph, and nothing logs). Renames happen by editing
- * a path here, never by moving files and hoping the code follows.
+ * `aliases` keep reviewed alternate names requestable without offering them in
+ * the picker. They may preserve a legacy nutribot slug when the new vocabulary
+ * has an honest equivalent; an unmapped legacy slug deliberately renders the
+ * neutral fallback rather than being pointed at a misleading image. Renames
+ * happen by editing a path here, never by moving files and hoping the code follows.
  *
  * Filenames live in the manifest, never in code (household rule: no hardcoded
  * asset paths). An unmapped id resolves to null and the caller renders the

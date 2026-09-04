@@ -7,6 +7,7 @@
 import { FoodCatalogEntry } from '#domains/health/entities/FoodCatalogEntry.mjs';
 import { hasMicroData, pickMicros } from '#domains/nutrition/services/micros.mjs';
 import { rankSuggestions } from '#domains/health/services/bucketSuggestRanking.mjs';
+import { observationFromRow, DRIFT_RATIO, ratioApart } from '#domains/health/services/catalogDensity.mjs';
 import { formatLocalTimestamp } from '#system/utils/time.mjs';
 import { defaultBucketForDate } from '#shared/contracts/health/isoDate.mjs';
 
@@ -98,27 +99,33 @@ export class FoodCatalogService {
 
     if (existing) {
       existing.recordUsage(today, bucketOptions);
-      // Update nutrients if the new data has them (latest wins)
-      if (foodItem.calories != null) {
-        existing.nutrients = {
-          ...existing.nutrients,
-          calories: foodItem.calories || existing.nutrients.calories,
-          protein: foodItem.protein || existing.nutrients.protein,
-          carbs: foodItem.carbs || existing.nutrients.carbs,
-          fat: foodItem.fat || existing.nutrients.fat,
-          // Micros are copied PER KEY, and only off a row that carries
-          // provenance. Two gates, because either one alone leaks:
-          //   - no `microsSource` at all -> the row's micros are structural
-          //     zeros, and donating them manufactures "catalog micro data";
-          //   - provenance but an ABSENT key -> the model answered about some
-          //     micros and not others, and only the keys it answered may be
-          //     donated. Callers must therefore pass the model's own micros,
-          //     not `?? 0`-defaulted ones (see the capture use cases).
-          // A donation never clears a key it does not carry: an entry can
-          // accumulate micros across captures, and nothing here writes a 0 it
-          // was not given.
-          ...(foodItem.microsSource ? pickMicros(foodItem) : {}),
-        };
+      // NOT "latest wins". The catalog's canonical nutrition is DERIVED from
+      // the observation ring (FoodCatalogEntry.nutrients), so a capture
+      // CONTRIBUTES evidence rather than overwriting the answer. Overwriting is
+      // what made a two-bottle log the permanent definition of one bottle.
+      // A row with no usable mass contributes nothing: it carries a total with
+      // nothing to divide by, and adding it would put a portion multiple back
+      // into the thing that is supposed to be portion-independent.
+      const observation = observationFromRow({ ...foodItem, date: today }, { source: foodItem.source || null });
+      if (observation) existing.addObservation(observation);
+      // Micros are copied PER KEY, and only off a row that carries
+      // provenance. Two gates, because either one alone leaks:
+      //   - no `microsSource` at all -> the row's micros are structural
+      //     zeros, and donating them manufactures "catalog micro data";
+      //   - provenance but an ABSENT key -> the model answered about some
+      //     micros and not others, and only the keys it answered may be
+      //     donated. Callers must therefore pass the model's own micros,
+      //     not `?? 0`-defaulted ones (see the capture use cases).
+      // A donation never clears a key it does not carry: an entry can
+      // accumulate micros across captures, and nothing here writes a 0 it
+      // was not given.
+      if (foodItem.microsSource) existing.donateMicros(pickMicros(foodItem));
+      // Provenance FILLS, like the icon. A barcode scan is the strongest thing
+      // that ever names this food, so it may claim an entry that has no UPC —
+      // but it never renames one that already carries a different code.
+      if (!existing.barcodeUpc && foodItem.barcodeUpc) {
+        existing.barcodeUpc = foodItem.barcodeUpc;
+        existing.source = foodItem.source || existing.source;
       }
       // Icons FILL, they never overwrite. `setIcon` (the edit sheet's "always
       // for this food") is a deliberate human choice, and a later parse of the
@@ -154,6 +161,9 @@ export class FoodCatalogService {
         lastUsed: today,
         createdAt: new Date(this.#clock.now()).toISOString(),
       });
+      // The first capture is also the first observation, when it carries a mass.
+      const firstObservation = observationFromRow({ ...foodItem, date: today }, { source: foodItem.source || null });
+      if (firstObservation) entry.addObservation(firstObservation);
       await this.#catalogStore.save(entry, userId);
       this.#logger.debug?.('health.catalog.entry_created', { name: foodItem.name, id: entry.id });
     }
@@ -205,15 +215,27 @@ export class FoodCatalogService {
     const grams = priorQuantity?.grams ?? 0;
     const unit = priorQuantity?.unit ?? 'serving';
     const amount = priorQuantity?.amount ?? 1;
+    // The row's numbers are DENSITY x THIS PORTION, not a copy of a stored
+    // total. That is what makes the fix self-correcting: a food whose ring
+    // still holds a doubled row derives its serving from the median density,
+    // and a remembered 385 g portion of a 0.485 kcal/g shake yields 187 kcal
+    // rather than the 610 the old copy-the-total path produced.
+    //
+    // Null when the entry cannot be scaled (no observation carries a mass, or
+    // no portion is remembered): the canonical view then stands exactly as it
+    // did, because an unscalable food must keep working rather than become a
+    // written zero.
+    const scaled = entry.nutrientsForGrams(grams);
+    const nutrients = scaled || entry.nutrients;
     const item = {
       uuid: this.#createId(),
       userId,
       item: entry.name,
       name: entry.name,
-      calories: entry.nutrients.calories,
-      protein: entry.nutrients.protein,
-      carbs: entry.nutrients.carbs,
-      fat: entry.nutrients.fat,
+      calories: nutrients.calories,
+      protein: nutrients.protein,
+      carbs: nutrients.carbs,
+      fat: nutrients.fat,
       ...micros,
       microsSource: hasMicroData(entry.nutrients) ? 'catalog' : null,
       grams,
@@ -418,6 +440,81 @@ export class FoodCatalogService {
 
   async getByUpc(upc, userId) {
     return this.#catalogStore.findByUpc(upc, userId);
+  }
+
+  /**
+   * The catalog's own opinion about how dense this food is (kcal per gram),
+   * or null when it has never seen this food logged with a usable mass.
+   *
+   * Null is a real answer and callers must treat it as one: "I have no
+   * history for this" is not "this looks fine".
+   *
+   * @param {string} name
+   * @param {string} userId
+   * @returns {Promise<{density: number, sampleCount: number, canonicalGrams: number|null}|null>}
+   */
+  async densityForName(name, userId) {
+    if (!name) return null;
+    const entry = await this.#catalogStore.findByNormalizedName(name, userId);
+    if (!entry) return null;
+    const density = entry.densityKcalPerGram;
+    if (density === null) return null;
+    return { density, sampleCount: entry.observationSampleCount, canonicalGrams: entry.canonicalGrams };
+  }
+
+  /**
+   * Judge freshly parsed capture items against each food's own history.
+   *
+   * Returns one finding per item that sits more than DRIFT_RATIO away from the
+   * catalog's median density for that name. It CHANGES NOTHING — the numbers
+   * the model produced are the numbers that get logged, and the person decides
+   * on the confirmation message. Auto-correcting here would replace a visible
+   * wrong number with an invisible one.
+   *
+   * An item with no usable mass, or a food with no history, produces no
+   * finding: there is nothing to compare, and a guard that fires on absence is
+   * a guard nobody reads.
+   *
+   * @param {Array<Object>} items - parsed items ({label, calories, grams, unit, amount})
+   * @param {string} userId
+   * @param {number} [threshold=DRIFT_RATIO]
+   * @returns {Promise<Array<{name, calories, grams, ratio, expectedCalories, density, sampleCount}>>}
+   */
+  async assessDensity(items, userId, threshold = DRIFT_RATIO) {
+    const findings = [];
+    for (const item of Array.isArray(items) ? items : []) {
+      const name = item?.label || item?.name;
+      const observation = observationFromRow({ ...item, calories: item?.calories });
+      if (!name || !observation) continue;
+      let known;
+      try {
+        known = await this.densityForName(name, userId);
+      } catch (err) {
+        this.#logger.warn?.('health.catalog.density_lookup_failed', { name, error: err.message });
+        continue;
+      }
+      if (!known) continue;
+      const rowDensity = observation.kcal / observation.grams;
+      const ratio = ratioApart(rowDensity, known.density);
+      if (ratio === null || ratio < threshold) continue;
+      findings.push({
+        name,
+        calories: observation.kcal,
+        grams: observation.grams,
+        ratio,
+        expectedCalories: Math.round(known.density * observation.grams),
+        density: known.density,
+        sampleCount: known.sampleCount,
+      });
+    }
+    if (findings.length > 0) {
+      this.#logger.info?.('health.catalog.density_flagged', {
+        userId,
+        count: findings.length,
+        names: findings.map((f) => f.name),
+      });
+    }
+    return findings;
   }
 
   /**
