@@ -92,3 +92,25 @@ describe('week strip stylesheet', () => {
     expect(rule('.health-weekstrip__bar--gap')).toMatch(/dashed/);
   });
 });
+
+describe('intake-vs-burn stylesheet', () => {
+  // The bug this pins: a column that shrink-wraps its bar gives that bar a
+  // percentage height against an auto-height parent, which resolves to zero and
+  // paints an empty chart. Caught by a real screenshot; jsdom cannot see it, so
+  // the compiled rule is what guards it.
+  it('stretches each column to full height so a percentage bar height resolves', () => {
+    expect(rule('.health-intakeburn__burn, .health-intakeburn__intake')).toMatch(/align-items: stretch/);
+    expect(rule('.health-intakeburn__col')).toMatch(/height: 100%/);
+  });
+
+  it('hangs intake down from the baseline and stands burn up from it', () => {
+    expect(rule('.health-intakeburn__burn .health-intakeburn__col')).toMatch(/align-items: flex-end/);
+    expect(rule('.health-intakeburn__intake .health-intakeburn__col')).toMatch(/align-items: flex-start/);
+  });
+
+  it('draws a hole as a hollow stub on the baseline, not a filled bar', () => {
+    const gap = rule('.health-intakeburn__bar--gap');
+    expect(gap).toMatch(/dashed/);
+    expect(gap).toMatch(/background: none/);
+  });
+});

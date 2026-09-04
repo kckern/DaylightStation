@@ -54,3 +54,14 @@ describe('MonthBlock', () => {
     expect(document.querySelectorAll('.health-monthblock__slot').length).toBe(0);
   });
 });
+
+describe('MonthBlock title', () => {
+  it('names itself by default, and stays silent when a SectionCard already names it', () => {
+    const { rerender } = render(<MonthBlock days={[day(iso(0), 100)]} />);
+    expect(document.querySelector('.health-monthblock__title')).toBeTruthy();
+    rerender(<MonthBlock days={[day(iso(0), 100)]} title={null} />);
+    expect(document.querySelector('.health-monthblock__title')).toBeNull();
+    rerender(<MonthBlock days={[day(iso(0), 100)]} title="Last 14 days" />);
+    expect(document.querySelector('.health-monthblock__title').textContent).toBe('Last 14 days');
+  });
+});

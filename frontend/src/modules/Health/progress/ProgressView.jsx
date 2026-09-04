@@ -8,6 +8,9 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { localTodayISO } from '../today/mealBuckets.js';
 import { MACRO_GOAL_FIELDS, WATCH_MICRO_FIELDS, setMacroGoal, setWatchMicro, watchFor } from './goalFields.js';
+import { useBudgetRange } from '../today/useBudgetRange.js';
+import { MonthBlock } from '../today/MonthBlock.jsx';
+import { IntakeBurnChart } from './IntakeBurnChart.jsx';
 import { goalSaveMessage } from './goalSaveError.js';
 
 const logger = createAppLogger('health').child('progress');
@@ -40,12 +43,6 @@ const fmtTrend = (dailyTrend) => {
   return perWeek > 0 ? `+${perWeek}` : `${perWeek}`;
 };
 
-const barHeightPx = (budget) => {
-  if (!budget || !(budget.budget > 0)) return 4;
-  const pct = Math.min(1, budget.food / budget.budget);
-  return Math.max(4, Math.round(pct * 60));
-};
-
 /** Weight trend + goal editor + 14-day adherence bars — absorbs Weight.jsx's
  * chart and goal-setting UX for the new Health app (Weight.jsx itself stays,
  * unchanged, as the `health` screen-framework panel widget). */
@@ -69,22 +66,13 @@ export function ProgressView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [goalsRes.data]);
 
-  const [adherence, setAdherence] = useState([]);
-  const [adherenceLoading, setAdherenceLoading] = useState(true);
-  useEffect(() => {
-    let live = true;
-    setAdherenceLoading(true);
-    const today = localTodayISO();
-    const days = Array.from({ length: 14 }, (_, i) => addDays(today, -13 + i));
-    Promise.all(days.map((date) => DaylightAPI(`api/v1/health/budget?date=${date}`)
-      .then((budget) => ({ date, budget }))
-      .catch((err) => {
-        logger.debug('adherence.day.gap', { date, status: err?.status });
-        return { date, budget: null };
-      })))
-      .then((results) => { if (live) { setAdherence(results); setAdherenceLoading(false); } });
-    return () => { live = false; };
-  }, []);
+  // ONE request for the whole window. This used to be 14 parallel
+  // `GET /budget?date=` calls fired from an effect — the same fan-out the week
+  // strip had, on a page that is often opened right after Today.
+  const today = localTodayISO();
+  const adherence = useBudgetRange(addDays(today, -13), today);
+  // 30 days of intake vs burn, its own range because it is a different window.
+  const intakeBurn = useBudgetRange(addDays(today, -29), today);
 
   const entries = useMemo(() => {
     if (!weightRes.data) return [];
@@ -197,16 +185,18 @@ export function ProgressView() {
         </SectionCard>
       ) : null}
 
+      {/* MonthBlock is the same bar block the Today sidebar draws — one
+          component, one arithmetic, one honesty rule (a hole is hollow), rather
+          than a second local copy that can drift from it. */}
       <SectionCard title="Adherence — last 14 days">
-        {adherenceLoading ? <LoadingState label="adherence" rows={2} /> : (
-          <div className="health-progress__bars">
-            {adherence.map(({ date, budget }) => (
-              <div key={date}
-                className={`health-progress__bar health-progress__bar--${budget ? budget.status : 'gap'}`}
-                style={{ height: `${barHeightPx(budget)}px` }}
-                title={budget ? `${date}: ${budget.food} / ${budget.budget} kcal (${budget.status})` : `${date}: no data`} />
-            ))}
-          </div>
+        {adherence.loading ? <LoadingState label="adherence" rows={2} /> : (
+          <MonthBlock days={adherence.days} loading={adherence.loading} title={null} />
+        )}
+      </SectionCard>
+
+      <SectionCard title="Intake vs burn — last 30 days">
+        {intakeBurn.loading ? <LoadingState label="intake vs burn" rows={2} /> : (
+          <IntakeBurnChart days={intakeBurn.days} loading={intakeBurn.loading} title={null} />
         )}
       </SectionCard>
 
