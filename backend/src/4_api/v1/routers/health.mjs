@@ -968,6 +968,11 @@ export function createHealthRouter(config) {
         // counting the same food a second time, and there is no measurement left to
         // recompute it from — so the collision is reported, with the entry named, rather
         // than resolved by guesswork. Nothing was written.
+        // A group row holds no nutrition by design (its children do), so attaching a
+        // measurement there would count the same food twice inside one dish.
+        if (err.code === 'ENTRY_IS_GROUP') {
+          return res.status(409).json({ error: err.message, code: 'ENTRY_IS_GROUP' });
+        }
         if (err.code === 'PRIOR_ENTRY_EXISTS') {
           return res.status(409).json({ error: err.message, code: 'PRIOR_ENTRY_EXISTS' });
         }

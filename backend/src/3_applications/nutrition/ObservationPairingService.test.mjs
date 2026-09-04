@@ -359,6 +359,99 @@ function seedArchived(userId, n, pairedEntryUuid, start = Date.UTC(2026, 0, 1, 8
   return ids;
 }
 
+// ===========================================================================
+// A GROUP row is never a measurement target. Group rows carry ZERO nutrition by
+// design — that is exactly what lets the day view sum every row unconditionally
+// and still count each gram once — so writing a recomputed figure onto one makes
+// the bucket count the same food twice inside a single dish.
+// ===========================================================================
+describe('ObservationPairingService.pair — a group row is refused', () => {
+  /** The day view's own bucket sum: every row, unconditionally (LogTable.jsx's `kcal`). */
+  const bucketTotal = () => Math.round(
+    [...entriesById.values()].reduce((sum, r) => sum + (Number(r.calories) || 0), 0),
+  );
+
+  beforeEach(() => {
+    entriesById = new Map([
+      ['curry', { uuid: 'curry', name: 'Curry', kind: 'group', calories: 0, grams: 0 }],
+      ['rice', { uuid: 'rice', name: 'Rice', kind: 'item', parentId: 'curry', calories: 200 }],
+      ['sauce', { uuid: 'sauce', name: 'Sauce', kind: 'item', parentId: 'curry', calories: 130 }],
+    ]);
+  });
+
+  const seedPlacement = () => {
+    const weight = appendWeight(500, '2026-09-02 18:04:12');
+    store.append('u1', { kind: 'container', value: 'small-bowl', scaleId: 'kitchen-1', at: '2026-09-02 18:04:20' });
+    store.append('u1', { kind: 'density', value: 4, scaleId: 'kitchen-1', at: '2026-09-02 18:04:40' });
+    return weight;
+  };
+
+  it('refuses with ENTRY_IS_GROUP, naming the dish and saying where the measurement belongs', async () => {
+    const weight = seedPlacement();
+
+    let caught = null;
+    try { await service.pair('u1', weight.id, 'curry'); } catch (err) { caught = err; }
+
+    expect(caught?.code).toBe('ENTRY_IS_GROUP');
+    expect(caught.message).toContain('Curry');
+    expect(caught.message).toMatch(/one of its items/);
+  });
+
+  it('writes NOTHING — not to the entry, and not to the ledger', async () => {
+    const weight = seedPlacement();
+
+    try { await service.pair('u1', weight.id, 'curry'); } catch { /* expected */ }
+
+    expect(updates).toHaveLength(0);
+    expect(entriesById.get('curry')).toEqual({ uuid: 'curry', name: 'Curry', kind: 'group', calories: 0, grams: 0 });
+    expect(store.get('u1', weight.id).status).toBe('open');
+    expect(store.get('u1', weight.id).pairedEntryUuid).toBeNull();
+    expect(store.findByPairedEntry('u1', 'curry')).toHaveLength(0);
+  });
+
+  it('END TO END: the bucket total is unchanged by an attempted group pair — 330, never 778', async () => {
+    const weight = seedPlacement();
+    expect(bucketTotal()).toBe(330); // Curry 0 + Rice 200 + Sauce 130
+
+    try { await service.pair('u1', weight.id, 'curry'); } catch { /* expected */ }
+
+    // The reproduced bug wrote 448 kcal onto the group row, taking the bucket to 778 —
+    // the same food counted twice inside one dish, under a "measured" badge.
+    expect(bucketTotal()).toBe(330);
+  });
+
+  it('the same measurement attaches fine to one of the dish\'s ITEMS', async () => {
+    const weight = seedPlacement();
+
+    await service.pair('u1', weight.id, 'rice');
+
+    expect(entriesById.get('rice').grams).toBe(320);
+    expect(entriesById.get('rice').calories).toBe(448);
+    expect(entriesById.get('curry').calories).toBe(0); // the header still holds nothing
+  });
+
+  // The guard exists TWICE — once in `pair` before any write, once in `recomputeEntry` at
+  // the point of the write. Through `pair` the first one always fires first, so this pins
+  // the reachable behaviour: even a ledger already pointing at a group never gets the group
+  // written. (The write-time copy is defence in depth for a future caller that reaches
+  // `recomputeEntry` by another route.)
+  it('a ledger already pointing at a group is still refused, and the group is never written', async () => {
+    const weight = seedPlacement();
+    // Attach to an ITEM first so real evidence exists, then point the ledger at the group.
+    await service.pair('u1', weight.id, 'rice');
+    for (const o of store.findByPairedEntry('u1', 'rice')) {
+      store.update('u1', o.id, { status: 'consumed', pairedEntryUuid: 'curry' });
+    }
+    const before = { ...entriesById.get('curry') };
+
+    let caught = null;
+    try { await service.pair('u1', weight.id, 'curry'); } catch (err) { caught = err; }
+
+    expect(caught?.code).toBe('ENTRY_IS_GROUP');
+    expect(entriesById.get('curry')).toEqual(before);
+  });
+});
+
 describe('ObservationPairingService — cross-file batches are refused, never half-applied', () => {
   it('a placement spanning an archive and the hot file is refused with CROSS_FILE_BATCH and writes NOTHING', async () => {
     // entry-a's evidence: many archived rows...

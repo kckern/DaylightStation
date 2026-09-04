@@ -316,6 +316,31 @@ describe('EntryEditSheet — Measurements', () => {
     expect(onPaired).toHaveBeenCalledWith(null);
   });
 
+  it('a GROUP row is offered NO measurements list — its own row holds no nutrition', () => {
+    // Attaching here would put real calories on the dish header while its children keep
+    // theirs, so the bucket would count the same food twice. The backend refuses it; the
+    // sheet must not dangle a button that only ever 409s.
+    const group = { uuid: 'g1', name: 'Curry', kind: 'group', calories: 0, children: [] };
+    render(
+      <MantineProvider>
+        <DismissStackProvider>
+          <EntryEditSheet row={group} open onClose={() => {}} onChanged={() => {}} observations={[OBS]} />
+        </DismissStackProvider>
+      </MantineProvider>
+    );
+    expect(screen.queryByText('Measurements')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Pair .* to this entry/ })).toBeNull();
+    // …and the group's own controls are still there, so nothing else was gated by mistake.
+    expect(screen.getByRole('textbox', { name: 'Group name' })).toBeTruthy();
+  });
+
+  it('a measurement another entry was calculated from is disabled, with the reason shown up front', () => {
+    mount({ observations: [{ ...OBS, status: 'consumed', pairedEntryUuid: 'someone-else' }] });
+    const btn = screen.getByRole('button', { name: /Pair .* to this entry/ });
+    expect(btn).toBeDisabled();
+    expect(screen.getByText(/Another entry was calculated from this/)).toBeTruthy();
+  });
+
   it('a DISMISSED measurement is not re-offered — the person already threw it away', () => {
     mount({ observations: [{ ...OBS, status: 'dismissed' }] });
     expect(screen.queryByText('Measurements')).toBeNull();
