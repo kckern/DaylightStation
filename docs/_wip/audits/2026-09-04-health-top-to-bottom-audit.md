@@ -71,6 +71,37 @@ Verification before deployment:
   SCSS production compilation, and nine composition contracts. The post-deploy
   log-store query found no backend Health/nutrition errors in the checked window.
 
+### Completion recheck — follow-up not yet deployed
+
+Boundary/browser checks found additional gaps after the initial deployment:
+
+- **F14/F19:** an old entry's snapshot name no longer finds its saved food after
+  a rename. The editor now reads and toggles favorites by `foodId`; only legacy
+  rows without an ID use name lookup. A real HTTP/YAML regression covers rename,
+  reuse of the old name by another food, favorite isolation, and retained history
+  after catalog removal.
+- **F15:** entry → coach now transfers the original focus-return target. The
+  overlay composer lets Escape dismiss its dialog without clearing its draft;
+  mention popovers still handle Escape first.
+- **F21:** the shell must own the **mounted conversation provider**, not just
+  the runtime hook. Remounting the provider recreated the library's internal
+  thread. `AgentConversationProvider` now stays mounted across both presentations.
+  Real-runtime tests and the browser verify thread continuity and session reload.
+- The final scoped regression run passed **2,012 tests**, with zero failed suites,
+  including provider/Escape and repaired shell-routing fixtures.
+  Four new browser journeys cover favorites, coach continuity, duplicate taps,
+  and scanner teardown/reopen. Development runs also exposed intermittent
+  `net::ERR_NETWORK_CHANGED` while loading Vite source modules; boot-error
+  assertions remain enabled. The final development run passed nine journeys;
+  three failed their boot-error assertion after passing the interaction checks.
+  A clean built-frontend browser verdict is pending.
+
+**Still required:** build the follow-up, run all twelve browser journeys against
+the built frontend, deploy, and verify the deployed revision. The activity gate
+currently reports active fitness/video and Portal use. No follow-up production
+build or restart has been attempted over that activity. Production remains on
+`292251b1b`, healthy. Do not repeat the completed historical conversion.
+
 Intentional boundaries and follow-up work:
 
 - YAML transactions are synchronous, durable and recoverable **within one writer

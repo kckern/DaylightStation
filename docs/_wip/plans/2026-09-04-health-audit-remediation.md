@@ -34,6 +34,10 @@ The copied-history rehearsal and offline production conversion both preserved
 4,653 entries and all nutrient values, with 562 masses retained as unknown and
 zero follow-up changes. All eight browser journeys passed on the deployed build.
 Detailed verification and intentional limits are tracked in the audit.
+The subsequent completion recheck found favorite-ID and coach-provider/focus
+integration gaps. Their follow-up is implemented locally; clean built-browser
+verification and deployment remain pending the activity gate. See the audit's
+completion-recheck section before declaring the plan complete.
 See the [repair runbook](../../runbooks/health-ledger-repair.md)
 for writer isolation, backup verification and recovery.
 

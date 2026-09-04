@@ -7,7 +7,7 @@ import {
   MessagePrimitive,
   unstable_useMentionAdapter,
 } from '@assistant-ui/react';
-import { useMemo, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useMemo, useEffect, useRef, useState } from 'react';
 import './AgentChatSurface.scss';
 import { createAgentRuntime, getOrCreateThreadId } from './runtime.js';
 import { MarkdownText } from './MarkdownText.jsx';
@@ -73,51 +73,69 @@ export function useAgentConversation({ agentId, userId, onComplete, context = nu
   return { runtime, pendingMentionsRef };
 }
 
+const ConversationContext = createContext(null);
+
+// The runtime's internal thread is mounted by its provider. Sharing the hook
+// alone is insufficient: replacing the provider replaces that thread, too.
+export function AgentConversationProvider({ conversation, children }) {
+  return <ConversationContext.Provider value={conversation}>
+    <AssistantRuntimeProvider runtime={conversation.runtime}>{children}</AssistantRuntimeProvider>
+  </ConversationContext.Provider>;
+}
+
 export function AgentChatSurface(props) {
-  return props.conversation ? <AgentChatView {...props} /> : <OwnedAgentChatSurface {...props} />;
+  const inherited = useContext(ConversationContext);
+  const conversation = props.conversation || inherited;
+  if (!conversation) return <OwnedAgentChatSurface {...props} />;
+  const view = <AgentChatView {...props} conversation={conversation} />;
+  return inherited === conversation ? view
+    : <AgentConversationProvider conversation={conversation}>{view}</AgentConversationProvider>;
 }
 
 function OwnedAgentChatSurface(props) {
   const conversation = useAgentConversation(props);
-  return <AgentChatView {...props} conversation={conversation} />;
+  return <AgentConversationProvider conversation={conversation}>
+    <AgentChatView {...props} conversation={conversation} />
+  </AgentConversationProvider>;
 }
 
 function AgentChatView({ conversation, variant = 'light', style, mentions }) {
-  const { runtime, pendingMentionsRef } = conversation;
+  const { pendingMentionsRef } = conversation;
 
   return (
     <div
       className={`coach-chat${variant === 'overlay' ? ' coach-chat--overlay' : ''}`}
       style={style}
     >
-      <AssistantRuntimeProvider runtime={runtime}>
-        <ThreadPrimitive.Root className="coach-chat__thread">
-          <ThreadPrimitive.Viewport className="coach-chat__viewport">
-            <ThreadPrimitive.Messages
-              components={{
-                UserMessage: UserMessage,
-                AssistantMessage: AssistantMessage,
-              }}
-            />
-          </ThreadPrimitive.Viewport>
-        </ThreadPrimitive.Root>
+      <ThreadPrimitive.Root className="coach-chat__thread">
+        <ThreadPrimitive.Viewport className="coach-chat__viewport">
+          <ThreadPrimitive.Messages
+            components={{
+              UserMessage: UserMessage,
+              AssistantMessage: AssistantMessage,
+            }}
+          />
+        </ThreadPrimitive.Viewport>
+      </ThreadPrimitive.Root>
 
-        {mentions
-          ? <ComposerWithMentions mentions={mentions} pendingMentionsRef={pendingMentionsRef} />
-          : <ComposerPlain />}
-      </AssistantRuntimeProvider>
+      {/* The overlay owns Escape; do not consume it to cancel/clear the
+          shared composer. Mention popovers still get first refusal. */}
+      {mentions
+        ? <ComposerWithMentions mentions={mentions} pendingMentionsRef={pendingMentionsRef} cancelOnEscape={variant !== 'overlay'} />
+        : <ComposerPlain cancelOnEscape={variant !== 'overlay'} />}
     </div>
   );
 }
 
 // ── Plain composer (no mention popover) ──────────────────────────────────────
 
-function ComposerPlain() {
+function ComposerPlain({ cancelOnEscape }) {
   return (
     <ComposerPrimitive.Root className="coach-chat__composer">
       <ComposerPrimitive.Input
         className="coach-chat__input"
         placeholder="Ask…"
+        cancelOnEscape={cancelOnEscape}
       />
       <ComposerPrimitive.Send className="coach-chat__send" />
     </ComposerPrimitive.Root>
@@ -126,7 +144,7 @@ function ComposerPlain() {
 
 // ── Composer with @-mention trigger popover ───────────────────────────────────
 
-function ComposerWithMentions({ mentions, pendingMentionsRef }) {
+function ComposerWithMentions({ mentions, pendingMentionsRef, cancelOnEscape }) {
   const { fetchUrl, categories, buildAttachment } = mentions;
   const [mentionCategories, setMentionCategories] = useState([]);
 
@@ -240,6 +258,7 @@ function ComposerWithMentions({ mentions, pendingMentionsRef }) {
         <ComposerPrimitive.Input
           className="coach-chat__input"
           placeholder="Ask… (type @ to mention)"
+          cancelOnEscape={cancelOnEscape}
         />
         <ComposerPrimitive.Send className="coach-chat__send" />
       </ComposerPrimitive.Root>

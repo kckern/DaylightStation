@@ -834,9 +834,14 @@ export function createHealthRouter(config) {
         }));
     }));
 
-    /**
-     * DELETE /api/v1/health/nutrition/catalog/:id - Permanently remove a catalog entry
-     */
+    // Snapshot names can outlive a catalog rename. Read by stable identity so
+    // favorite state and pinned-food actions still refer to the original food.
+    router.get('/nutrition/catalog/:id', asyncHandler(async (req, res) => {
+      const entry = await catalogService.getById(req.params.id, getDefaultUsername());
+      if (!entry) return res.status(404).json({ error: 'Saved food no longer exists' });
+      return res.json({ entry: presentFoodCatalogEntry(entry) });
+    }));
+
     router.put('/nutrition/catalog/:id', asyncHandler(async (req, res) => {
       const entry = await catalogService.updateDefinition(req.params.id, getDefaultUsername(), req.body || {});
       return res.json({ entry: presentFoodCatalogEntry(entry) });

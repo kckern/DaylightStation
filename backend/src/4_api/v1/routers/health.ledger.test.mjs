@@ -7,6 +7,9 @@ import path from 'node:path';
 import { createHealthRouter } from './health.mjs';
 import { HealthOperations } from '#apps/health/HealthOperations.mjs';
 import { YamlNutriListDatastore } from '#adapters/persistence/yaml/YamlNutriListDatastore.mjs';
+import { YamlFoodCatalogDatastore } from '#adapters/persistence/yaml/YamlFoodCatalogDatastore.mjs';
+import { FoodCatalogService } from '#apps/health/FoodCatalogService.mjs';
+import { randomUUID } from 'node:crypto';
 
 const logger = { info() {}, warn() {}, error() {}, debug() {} };
 let app, store;
@@ -16,15 +19,44 @@ const food = extra => ({ uuid: 'a', userId: 'fixture', name: 'Food', date: '2020
 beforeEach(() => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'health-http-'));
   store = new YamlNutriListDatastore({ dataService: { user: { resolveDir: rel => path.join(root, rel) } }, logger });
+  const catalogStore = new YamlFoodCatalogDatastore({ dataService: { user: { resolvePath: rel => path.join(root, `${rel}.yml`) } }, logger });
+  const catalogService = new FoodCatalogService({ catalogStore, nutriListStore: store, logger,
+    clock: { now: () => Date.parse('2026-09-04T12:00:00Z') }, createId: randomUUID });
   const operations = new HealthOperations({ nutritionItems: store, resolveDefaultUsername: () => 'fixture', today: () => '2026-09-04' });
   app = express();
-  app.use('/api/v1/health', createHealthRouter({ healthOperations: operations, logger,
+  app.use('/api/v1/health', createHealthRouter({ healthOperations: operations, catalogService, logger,
     budgetService: { getBudget: async (user, date, { items }) => ({ food: items.reduce((sum, row) => sum + row.calories, 0) }) },
   }));
   app.use((err, req, res, next) => res.status(err.status || 500).json({ error: err.message, code: err.code }));
 });
 
 describe('HTTP → real health ledger contracts', () => {
+  it('keeps favorite identity after a rename without rewriting historical snapshots or affecting a reused name', async () => {
+    const original = await request(app).post('/api/v1/health/nutrition/catalog').send({ name: 'Oats', grams: 80, calories: 300 });
+    expect(original.status).toBe(200);
+    const id = original.body.entry.id;
+    const logged = await request(app).post('/api/v1/health/nutrition/catalog/quickadd').send({ catalogEntryId: id, date: '2026-09-04', mealTime: 'morning', operationId: 'oats-first' });
+    expect(logged.status).toBe(200);
+    const renamed = await request(app).put(`/api/v1/health/nutrition/catalog/${id}`).send({ name: 'Rolled oats', grams: 80, nutrients: { calories: 300 } });
+    expect(renamed.status).toBe(200);
+    const reused = await request(app).post('/api/v1/health/nutrition/catalog').send({ name: 'Oats', grams: 50, calories: 200 });
+    expect(reused.status).toBe(200);
+    expect(reused.body.entry.id).not.toBe(id);
+    const favorite = await request(app).put('/api/v1/health/nutrition/catalog/favorite').send({ id, favorite: true });
+    expect(favorite.status).toBe(200);
+    const saved = await request(app).get(`/api/v1/health/nutrition/catalog/${id}`);
+    expect(saved.status).toBe(200);
+    expect(saved.body.entry).toMatchObject({ id, name: 'Rolled oats', favorite: true });
+    const other = await request(app).get(`/api/v1/health/nutrition/catalog/${reused.body.entry.id}`);
+    expect(other.status).toBe(200);
+    expect(other.body.entry.favorite).toBe(false);
+    expect(await store.findByDate('fixture', '2026-09-04')).toEqual([expect.objectContaining({ foodId: id, name: 'Oats', grams: 80, calories: 300 })]);
+    const removed = await request(app).delete(`/api/v1/health/nutrition/catalog/${id}`);
+    expect(removed.status).toBe(200);
+    expect((await request(app).get(`/api/v1/health/nutrition/catalog/${id}`)).status).toBe(404);
+    expect(await store.findByDate('fixture', '2026-09-04')).toHaveLength(1);
+  });
+
   it('edits archived groups atomically and returns all affected IDs and dates', async () => {
     await store.saveMany([food({ uuid: 'group', kind: 'group', calories: 0 }), food({ parentId: 'group' })]);
     await store.archiveOldItems('fixture');

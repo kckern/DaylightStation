@@ -14,7 +14,9 @@ export async function installHealthFixtures(page, { items = [], foods = [] } = {
   await page.route('**/api/**', route => {
     // Vite also serves source modules from directories named /api/.
     if (!new URL(route.request().url()).pathname.startsWith('/api/')) return route.fallback();
-    if (route.request().method() !== 'GET') state.unexpected.push(route.request().url());
+    if (route.request().method() !== 'GET') state.unexpected.push({
+      url: route.request().url(), method: route.request().method(), body: route.request().postData(),
+    });
     return route.fulfill({ json: {} });
   });
   await page.route('**/api/v1/health/**', async route => {
@@ -29,11 +31,21 @@ export async function installHealthFixtures(page, { items = [], foods = [] } = {
       if (endpoint === '/day') return reply({ date: url.searchParams.get('date'), items: state.items.filter(row => row.date === url.searchParams.get('date')), budget: budget(url.searchParams.get('date')), revision: state.requests.length });
       if (endpoint === '/budget/range') return reply({ days: [] });
       if (endpoint === '/nutrition/catalog/suggest') return reply({ items: state.foods.map(food => ({ ...food, nutrients: food })) });
+      if (endpoint.startsWith('/nutrition/catalog/')) {
+        const food = state.foods.find(food => food.id === endpoint.split('/').at(-1));
+        return food ? reply({ entry: food }) : route.fulfill({ status: 404, json: { error: 'Saved food no longer exists' } });
+      }
       if (endpoint === '/nutrition/pending') return reply({ pending: [] });
       if (endpoint === '/nutrition/observations') return reply({ observations: [] });
       if (endpoint === '/nutrition/templates') return reply({ templates: [] });
       if (endpoint === '/medical') return reply({ metrics: [] });
       return reply({});
+    }
+    if (method === 'PUT' && endpoint === '/nutrition/catalog/favorite') {
+      const food = state.foods.find(food => body.id ? food.id === body.id : food.name === body.name);
+      if (!food) return route.fulfill({ status: 404, json: { error: 'Fixture food not found' } });
+      food.favorite = body.favorite;
+      return reply({ entry: food });
     }
     if (method === 'POST' && endpoint === '/nutrition/catalog') {
       const food = { ...body, id: 'fixture-food', upc: body.barcodeUpc, grams: body.grams };
