@@ -21,11 +21,50 @@
  * reason called out in the design brief: the composition matcher's 900s window can
  * straddle midnight. Sharded-by-day storage would force `openForScale` to open two files
  * (today's and yesterday's) and reconcile scaleId matches across both; one file makes that
- * a single in-memory filter with no day-boundary logic anywhere in this class. The
- * tradeoff is unbounded file growth over the life of a user — scale observations are a
- * handful of rows per day, not a per-request log, so this is not expected to reach the
- * sizes that make `YamlNutriListDatastore` need hot/cold archiving. If it ever does, that
- * is a follow-up, not a reason to complicate this file today.
+ * a single in-memory filter with no day-boundary logic anywhere in this class.
+ *
+ * ## HOT file + monthly archives — because this file is written on a hardware path
+ *
+ * The original version of this store left the file unbounded, on the reasoning that scale
+ * observations are a handful of rows per day. That reasoning was wrong about the COST, not
+ * about the volume. `ObservationService.setWeight` reads, appends and re-reads on every
+ * qualifying placement frame, and both halves are linear in the file. Measured on the prod
+ * host, before archiving:
+ *
+ * ```
+ *      0 rows            setWeight  11 ms
+ *    900 rows  (146 KB)  setWeight  83 ms      one month at ~30 rows/day
+ *  10 000 rows (1.6 MB)  setWeight 705 ms      one year
+ *  20 000 rows (3.3 MB)  setWeight 1413 ms     two years
+ * ```
+ *
+ * That is the shared single-threaded event loop which also serves the Player, Fitness and
+ * the school Portal — one this repo already alerts on at 1 s (`system.event-loop.lag`).
+ * The in-memory `Map` this store replaced was O(1), so this was the one place the durable
+ * design was materially worse than what it replaced.
+ *
+ * The fix is `YamlNutriListDatastore`'s shape, not a new one: a bounded HOT file plus
+ * per-month COLD archives at `lifelog/nutrition/archives/observations/{YYYY-MM}.yml`.
+ * After archiving, on the same measurements:
+ *
+ * ```
+ *  10 000 rows of history   setWeight  18 ms   (hot file ~200 rows)
+ *  20 000 rows of history   setWeight  14 ms   (hot file ~195 rows)
+ * ```
+ *
+ * — flat in total history, because the hot file is bounded by `HOT_ROLL_THRESHOLD_ROWS`
+ * rather than by age.
+ *
+ * Three rules make it safe:
+ *
+ *  1. **Nothing is deleted.** Archiving is RELOCATION. The no-deletion contract below is
+ *     unchanged: every row that was ever written is still readable, through `listByDate`,
+ *     `findByPairedEntry`, `get` and `update`, which all consult archives.
+ *  2. **An OPEN row is never archived, at any age.** That is what keeps `openForScale` —
+ *     the one method on the frame path — correct while reading a single file.
+ *  3. **The roll rides `append`.** No scheduler, no operator step, no window in which the
+ *     file is unbounded because a job did not run. It is gated on row count, so the
+ *     ordinary append never pays for the partition scan.
  *
  * ## Observations are never deleted, only marked
  *
@@ -120,14 +159,42 @@
  * @module persistence/yaml/YamlObservationStore
  */
 
+import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import { readYamlFromPath, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
+import {
+  readYamlFromPath, saveYamlToPathAtomic, dirExists, ensureDir, listYamlFiles,
+} from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 // The application-facing contract this adapter satisfies. D7: an adapter that imports
 // an application port must EXTEND it rather than duck-type it, so the interface a
 // service depends on and the class the composition root injects cannot drift apart.
 import { IObservationStore } from '#apps/nutrition/ports/IObservationStore.mjs';
+
+/**
+ * A RESOLVED row older than this many days (measured from the newest row in the file, not
+ * from a wall clock this store deliberately does not have) is eligible to roll into a
+ * monthly archive.
+ *
+ * SEVEN, where `YamlNutriListDatastore` uses thirty, and the difference is the whole point:
+ * nutrilist is written when a person logs a meal, this file is written on a hardware frame
+ * path. `ObservationService.setWeight` reads, appends and re-reads on every qualifying
+ * placement frame, and the cost of that is linear in the file. Measured on the prod host:
+ * a 900-row hot file (one month at this household's ~30 rows/day) costs 83 ms per
+ * `setWeight`, on the single shared event loop that also serves the Player, Fitness and
+ * the school Portal — a loop this repo already alerts on at 1 s. Seven days keeps the
+ * whole "this week" range of the day view in hot storage while holding the steady state
+ * to a couple of hundred rows.
+ */
+const HOT_RETENTION_DAYS = 7;
+
+/**
+ * The roll is only CONSIDERED when the hot file is bigger than this, so the ordinary
+ * append never pays for the partition scan or an archive read. Between rolls the hot file
+ * grows to roughly this many rows and then drops back to whatever the retention window
+ * holds — so this constant, not the file's age, is what bounds the write cost.
+ */
+const HOT_ROLL_THRESHOLD_ROWS = 250;
 
 /** The four scale signal kinds this store persists. */
 const KNOWN_KINDS = Object.freeze(['weight', 'upc', 'container', 'density']);
@@ -142,6 +209,22 @@ const PATCHABLE_FIELDS = Object.freeze(['status', 'pairedEntryUuid']);
 const LOCAL_TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Shift a `YYYY-MM-DD` by whole days. `Date.UTC` is used purely as arithmetic over the
+ * digits — this module has no clock and must not acquire one; the reference date always
+ * comes from the data (the newest row in the file), never from `Date.now()`.
+ *
+ * @param {string} date
+ * @param {number} days
+ * @returns {string}
+ */
+function shiftDateByDays(date, days) {
+  const [y, m, d] = date.split('-').map(Number);
+  const shifted = new Date(Date.UTC(y, m - 1, d) + days * 86_400_000);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`;
+}
 
 function describeValue(value) {
   if (typeof value === 'string') return JSON.stringify(value);
@@ -302,6 +385,50 @@ export class YamlObservationStore extends IObservationStore {
     return `${this.#basePath(userId)}.yml`;
   }
 
+  #archiveDir(userId) {
+    return this.#dataService.user.resolveDir('lifelog/nutrition/archives/observations', userId);
+  }
+
+  #archivePath(userId, yearMonth) {
+    return path.join(this.#archiveDir(userId), `${yearMonth}.yml`);
+  }
+
+  /** The `YYYY-MM` archives that exist for a user, oldest first. */
+  #archiveMonths(userId) {
+    const dir = this.#archiveDir(userId);
+    if (!dirExists(dir)) return [];
+    return listYamlFiles(dir, { stripExtension: true }).sort();
+  }
+
+  #readArchive(userId, yearMonth) {
+    const filePath = this.#archivePath(userId, yearMonth);
+    let raw;
+    try {
+      raw = readYamlFromPath(filePath);
+    } catch (err) {
+      if (err?.code === 'ENOENT') return [];
+      this.#logger.error?.('observationStore.archive.corrupt', { userId, filePath, error: err?.message });
+      throw new InfrastructureError(
+        `Observation archive is corrupt and could not be parsed: ${filePath}`,
+        { code: 'CORRUPT_OBSERVATIONS_FILE', filePath, userId, cause: err?.message },
+      );
+    }
+    if (raw === null || raw === undefined) return [];
+    if (!Array.isArray(raw)) {
+      this.#logger.error?.('observationStore.archive.malformedShape', { userId, filePath, typeOf: typeof raw });
+      throw new InfrastructureError(
+        `Observation archive has an unexpected shape (expected an array): ${filePath}`,
+        { code: 'CORRUPT_OBSERVATIONS_FILE', filePath, userId },
+      );
+    }
+    return raw;
+  }
+
+  #writeArchive(userId, yearMonth, records) {
+    ensureDir(this.#archiveDir(userId));
+    saveYamlToPathAtomic(this.#archivePath(userId, yearMonth), records, { noRefs: true, lineWidth: -1 });
+  }
+
   // ==================== File I/O ====================
 
   /**
@@ -348,6 +475,84 @@ export class YamlObservationStore extends IObservationStore {
 
   #writeAll(userId, records) {
     saveYamlToPathAtomic(this.#filePath(userId), records, { noRefs: true, lineWidth: -1 });
+  }
+
+  /**
+   * Roll RESOLVED, aged rows out of the hot file into per-month archives — the same
+   * hot/cold shape `YamlNutriListDatastore` uses (`archiveOldItems` + monthly
+   * `archives/…/{YYYY-MM}.yml`), with two deliberate differences.
+   *
+   * **It is triggered by `append`, not by a scheduled job.** `append` is already a
+   * read-modify-write of the whole file, so the roll rides a cycle that has to happen
+   * anyway and needs no cron, no wiring and no operator step. The alternative — a
+   * maintenance job — leaves the file unbounded until someone remembers to run it, which
+   * on a path that a household uses daily is the same as not fixing it.
+   *
+   * **An OPEN row is NEVER archived, at any age.** That is the invariant that keeps
+   * `openForScale` — which is deliberately not date-scoped, because the composition window
+   * can straddle midnight — complete from the hot file alone, and therefore keeps the
+   * frame path down to one file. An observation nobody ever resolved stays hot and stays
+   * visible; it is exactly the row the day view exists to surface.
+   *
+   * **Archives are written BEFORE the hot file.** A crash between the two leaves a row in
+   * both places, never in neither; every read path dedupes by id, so a duplicate is
+   * invisible and a loss would not have been.
+   *
+   * The cutoff is derived from the newest row IN THE FILE, not from a wall clock: this
+   * store has no clock by design (`at` is always caller-supplied), and giving it one to
+   * decide what to archive would make the layout depend on when a write happened rather
+   * than on what the data says.
+   *
+   * @param {string} userId
+   * @param {object[]} records The raw hot array, as read.
+   * @returns {object[]} The rows that remain hot.
+   */
+  #rollToArchives(userId, records) {
+    if (records.length <= HOT_ROLL_THRESHOLD_ROWS) return records;
+
+    let newest = '';
+    for (const r of records) {
+      if (typeof r?.date === 'string' && DATE_RE.test(r.date) && r.date > newest) newest = r.date;
+    }
+    if (!newest) return records;
+    const cutoff = shiftDateByDays(newest, -HOT_RETENTION_DAYS);
+
+    const hot = [];
+    const byMonth = new Map();
+    for (const r of records) {
+      const archivable = isStructurallyValid(r) && r.status !== 'open' && r.date < cutoff;
+      if (!archivable) { hot.push(r); continue; }
+      const yearMonth = r.date.slice(0, 7);
+      if (!byMonth.has(yearMonth)) byMonth.set(yearMonth, []);
+      byMonth.get(yearMonth).push(r);
+    }
+    if (byMonth.size === 0) return records;
+
+    for (const [yearMonth, rows] of byMonth) {
+      const existing = this.#readArchive(userId, yearMonth);
+      const seen = new Set(existing.map((r) => r?.id));
+      const merged = existing.concat(rows.filter((r) => !seen.has(r.id)));
+      merged.sort((a, b) => String(a?.at).localeCompare(String(b?.at)));
+      this.#writeArchive(userId, yearMonth, merged);
+    }
+
+    this.#logger.info?.('observationStore.archive.rolled', {
+      userId, archived: records.length - hot.length, kept: hot.length,
+      months: [...byMonth.keys()], cutoff,
+    });
+    return hot;
+  }
+
+  /** Hot rows plus the named archives, deduped by id (hot wins) and structurally filtered. */
+  #readValidWithArchives(userId, yearMonths) {
+    const rows = this.#readAllValid(userId);
+    const seen = new Set(rows.map((r) => r.id));
+    for (const yearMonth of yearMonths) {
+      for (const r of this.#readArchive(userId, yearMonth)) {
+        if (isStructurallyValid(r) && !seen.has(r.id)) { seen.add(r.id); rows.push(r); }
+      }
+    }
+    return rows;
   }
 
   /**
@@ -419,7 +624,9 @@ export class YamlObservationStore extends IObservationStore {
       pairedEntryUuid: null,
     };
 
-    const records = this.#readAll(userId);
+    // The roll rides this cycle: `append` already reads and rewrites the whole file, so
+    // bounding it here costs nothing extra and needs no scheduler.
+    const records = this.#rollToArchives(userId, this.#readAll(userId));
     records.push(record);
     this.#writeAll(userId, records);
 
@@ -438,7 +645,12 @@ export class YamlObservationStore extends IObservationStore {
   listByDate(userId, date) {
     requireUserId(userId);
     requireDate(date);
-    return this.#readAllValid(userId)
+    // One extra file read, and only when that month has actually been archived. Simpler
+    // and always correct compared with reasoning about a retention cutoff here: the month
+    // a date belongs to is the only archive that can hold it.
+    const yearMonth = date.slice(0, 7);
+    const months = this.#archiveMonths(userId).includes(yearMonth) ? [yearMonth] : [];
+    return this.#readValidWithArchives(userId, months)
       .filter((r) => r.date === date)
       .sort((a, b) => a.at.localeCompare(b.at))
       .map((r) => ({ ...r }));
@@ -466,16 +678,27 @@ export class YamlObservationStore extends IObservationStore {
 
     const records = this.#readAll(userId);
     const index = records.findIndex((r) => r.id === id);
-    if (index === -1) {
-      throw new InfrastructureError(`Observation not found: ${id}`, {
-        code: 'NOT_FOUND', entity: 'Observation', id,
-      });
+    if (index !== -1) {
+      records[index] = { ...records[index], ...patch };
+      this.#writeAll(userId, records);
+      return { ...records[index] };
     }
 
-    records[index] = { ...records[index], ...patch };
-    this.#writeAll(userId, records);
+    // The row may have been rolled into an archive. It is patched WHERE IT LIES rather
+    // than promoted back to hot: promotion would grow the file this archiving exists to
+    // bound, and a re-pair of an old observation is a UI action, not a frame.
+    for (const yearMonth of this.#archiveMonths(userId).reverse()) {
+      const rows = this.#readArchive(userId, yearMonth);
+      const i = rows.findIndex((r) => r?.id === id);
+      if (i === -1) continue;
+      rows[i] = { ...rows[i], ...patch };
+      this.#writeArchive(userId, yearMonth, rows);
+      return { ...rows[i] };
+    }
 
-    return { ...records[index] };
+    throw new InfrastructureError(`Observation not found: ${id}`, {
+      code: 'NOT_FOUND', entity: 'Observation', id,
+    });
   }
 
   #requirePatchId(id) {
@@ -549,7 +772,27 @@ export class YamlObservationStore extends IObservationStore {
     const records = this.#readAll(userId);
     const indexById = new Map(records.map((r, i) => [r.id, i]));
 
-    const missing = patches.map((p) => p.id).filter((id) => !indexById.has(id));
+    // Locate anything not in the hot file among the archives, BEFORE writing anything.
+    //
+    // The all-or-nothing guarantee is unchanged for the case it was written for: a
+    // composition consume only ever touches OPEN rows, an open row is never archived, so
+    // that batch is still one read-modify-write-rename of one file. A batch that spans the
+    // hot file and an archive can only come from a manual re-pair of already-resolved
+    // history, and it still validates every id before touching a byte — what it cannot
+    // offer is a single rename across two files.
+    const archiveLocation = new Map();
+    const unresolved = patches.map((p) => p.id).filter((id) => !indexById.has(id));
+    if (unresolved.length > 0) {
+      for (const yearMonth of this.#archiveMonths(userId)) {
+        const ids = new Set(this.#readArchive(userId, yearMonth).map((r) => r?.id));
+        for (const id of unresolved) {
+          if (!archiveLocation.has(id) && ids.has(id)) archiveLocation.set(id, yearMonth);
+        }
+      }
+    }
+
+    const missing = patches.map((p) => p.id)
+      .filter((id) => !indexById.has(id) && !archiveLocation.has(id));
     if (missing.length > 0) {
       throw new InfrastructureError(
         `Observation(s) not found: ${missing.join(', ')}`,
@@ -557,13 +800,37 @@ export class YamlObservationStore extends IObservationStore {
       );
     }
 
-    for (const { id, ...patch } of patches) {
-      const index = indexById.get(id);
-      records[index] = { ...records[index], ...patch };
-    }
-    this.#writeAll(userId, records);
+    const updated = new Map();
 
-    return patches.map(({ id }) => ({ ...records[indexById.get(id)] }));
+    const hotPatches = patches.filter(({ id }) => indexById.has(id));
+    if (hotPatches.length > 0) {
+      for (const { id, ...patch } of hotPatches) {
+        const index = indexById.get(id);
+        records[index] = { ...records[index], ...patch };
+        updated.set(id, records[index]);
+      }
+      this.#writeAll(userId, records);
+    }
+
+    const byMonth = new Map();
+    for (const entry of patches) {
+      const yearMonth = archiveLocation.get(entry.id);
+      if (!yearMonth) continue;
+      if (!byMonth.has(yearMonth)) byMonth.set(yearMonth, []);
+      byMonth.get(yearMonth).push(entry);
+    }
+    for (const [yearMonth, monthPatches] of byMonth) {
+      const rows = this.#readArchive(userId, yearMonth);
+      const rowIndex = new Map(rows.map((r, i) => [r?.id, i]));
+      for (const { id, ...patch } of monthPatches) {
+        const i = rowIndex.get(id);
+        rows[i] = { ...rows[i], ...patch };
+        updated.set(id, rows[i]);
+      }
+      this.#writeArchive(userId, yearMonth, rows);
+    }
+
+    return patches.map(({ id }) => ({ ...updated.get(id) }));
   }
 
   /**
@@ -609,7 +876,10 @@ export class YamlObservationStore extends IObservationStore {
         { code: 'INVALID_ENTRY_UUID', field: 'entryUuid', value: entryUuid },
       );
     }
-    return this.#readAllValid(userId)
+    // Every archive, because an entry's observations carry no index. This is a pairing /
+    // day-view call, never the frame path, so a linear scan across a handful of month
+    // files is the right trade against maintaining a second index that could disagree.
+    return this.#readValidWithArchives(userId, this.#archiveMonths(userId))
       .filter((r) => r.pairedEntryUuid === entryUuid)
       .sort((a, b) => a.at.localeCompare(b.at))
       .map((r) => ({ ...r }));
@@ -642,7 +912,14 @@ export class YamlObservationStore extends IObservationStore {
     requireUserId(userId);
     this.#requirePatchId(id);
 
-    const record = this.#readAllValid(userId).find((r) => r.id === id);
+    let record = this.#readAllValid(userId).find((r) => r.id === id);
+    if (!record) {
+      // Newest archive first: a bare id most often belongs to something recent.
+      for (const yearMonth of this.#archiveMonths(userId).reverse()) {
+        record = this.#readArchive(userId, yearMonth).find((r) => isStructurallyValid(r) && r.id === id);
+        if (record) break;
+      }
+    }
     if (!record) {
       throw new InfrastructureError(`Observation not found: ${id}`, {
         code: 'NOT_FOUND', entity: 'Observation', id,
