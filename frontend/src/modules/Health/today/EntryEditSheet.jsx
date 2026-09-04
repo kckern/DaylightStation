@@ -17,6 +17,9 @@ const GROUP_FACTORS = [0.5, 0.75, 1.5, 2];
 const factorLabel = (f) => (f === 0.25 ? '×¼' : f === 0.33 ? '×⅓' : f === 0.5 ? '×½' : f === 0.75 ? '×¾' : f === 1.5 ? '×1½' : `×${f}`);
 const scale = (row, f) => ({
   amount: Math.round((Number(row.amount) || 1) * f * 100) / 100,
+  ...(Number.isFinite(Number(row.grams)) && Number(row.grams) > 0
+    ? { grams: Math.round(Number(row.grams) * f * 10) / 10 }
+    : {}),
   calories: Math.round((Number(row.calories) || 0) * f),
   protein: Math.round((Number(row.protein) || 0) * f),
   carbs: Math.round((Number(row.carbs) || 0) * f),

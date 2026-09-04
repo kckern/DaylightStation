@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { useState } from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
@@ -203,5 +204,37 @@ describe('WeekStrip', () => {
     await waitFor(() => expect(document.querySelectorAll('.health-weekstrip__cell').length).toBe(7));
     fireEvent.click(document.querySelectorAll('.health-weekstrip__cell')[0]);
     expect(onDateChange).toHaveBeenCalledWith('2026-08-27');
+  });
+
+  it('uses readable weekday names and marks the month boundary', async () => {
+    strip();
+    await screen.findByText('Thu');
+    expect(screen.getByText('Fri')).toBeTruthy();
+    expect(screen.getByText('Aug')).toBeTruthy();
+    expect(screen.getByText('Sep')).toBeTruthy();
+    expect(document.querySelectorAll('.health-weekstrip__cell--month-start')).toHaveLength(1);
+  });
+
+  it('selecting a visible day does not move the seven-day window', async () => {
+    function Harness() {
+      const [date, setDate] = useState('2026-09-02');
+      return <WeekStrip date={date} today="2026-09-02" onDateChange={setDate} />;
+    }
+    r(<Harness />);
+    await waitFor(() => expect(document.querySelectorAll('.health-weekstrip__cell')).toHaveLength(7));
+    const before = [...document.querySelectorAll('.health-weekstrip__cell')].map((cell) => cell.getAttribute('aria-label'));
+    fireEvent.click(document.querySelectorAll('.health-weekstrip__cell')[2]);
+    await waitFor(() => expect(document.querySelector('.health-weekstrip__cell--active')).toBe(document.querySelectorAll('.health-weekstrip__cell')[2]));
+    const after = [...document.querySelectorAll('.health-weekstrip__cell')].map((cell) => cell.getAttribute('aria-label'));
+    expect(after).toEqual(before);
+  });
+
+  it('moves by an explicit week and disables forward navigation at today', async () => {
+    const onDateChange = vi.fn();
+    strip({ onDateChange });
+    await screen.findByRole('button', { name: 'Previous week' });
+    expect(screen.getByRole('button', { name: 'Next week' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Previous week' }));
+    expect(onDateChange).toHaveBeenCalledWith('2026-08-26');
   });
 });

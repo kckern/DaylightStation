@@ -8,7 +8,7 @@ vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => apiMock(...a) })
 import { DismissStackProvider } from '@/lib/ui';
 import { EntryEditSheet } from './EntryEditSheet.jsx';
 
-const row = { uuid: 'r1', name: 'Eggs', calories: 140, protein: 12, carbs: 1, fat: 10, amount: 2, unit: 'lg', mealTime: 'morning' };
+const row = { uuid: 'r1', name: 'Eggs', calories: 140, protein: 12, carbs: 1, fat: 10, grams: 100, amount: 2, unit: 'lg', mealTime: 'morning' };
 const mount = (props) => render(
   <MantineProvider>
     <DismissStackProvider>

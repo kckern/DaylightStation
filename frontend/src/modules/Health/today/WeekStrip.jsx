@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { UnstyledButton } from '@mantine/core';
 import { localTodayISO } from './mealBuckets.js';
 import { useBudgetRange } from './useBudgetRange.js';
@@ -9,7 +10,20 @@ export const addDays = (iso, n) => {
   return localTodayISO(d);
 };
 
-const WEEKDAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+const earlier = (a, b) => (a < b ? a : b);
+const monthKey = (iso) => iso.slice(0, 7);
+const monthShort = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, { month: 'short' });
+const rangeLabel = (from, to) => {
+  const a = new Date(`${from}T12:00:00`);
+  const b = new Date(`${to}T12:00:00`);
+  const left = a.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const right = b.toLocaleDateString(undefined, {
+    month: a.getMonth() === b.getMonth() ? undefined : 'short', day: 'numeric', year: 'numeric',
+  });
+  return `${left} – ${right}`;
+};
 
 /**
  * A 7-cell day navigator under the macro bars: the 6 days before the viewed
@@ -30,14 +44,37 @@ const WEEKDAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
  * seven parallel `GET /budget?date=` calls from an effect.
  */
 export function WeekStrip({ date, today, onDateChange }) {
-  const end = date < today ? date : today;
+  // Selection and viewport are separate state. The old strip used `date` as
+  // its right edge, so selecting Tuesday made the entire week jump left and
+  // looked like an accidental scroll. A click inside this window now changes
+  // only the selection; the arrow controls are the only things that move it.
+  const [end, setEnd] = useState(() => earlier(date, today));
   const from = addDays(end, -6);
   const { byDate, loading } = useBudgetRange(from, end);
   const dates = Array.from({ length: 7 }, (_, i) => addDays(end, -6 + i));
 
+  useEffect(() => {
+    const capped = earlier(date, today);
+    if (capped < from || capped > end) setEnd(capped);
+  }, [date, today, from, end]);
+
+  const moveWeek = (days) => {
+    const target = earlier(addDays(date, days), today);
+    setEnd(target);
+    onDateChange(target);
+  };
+
   return (
     <div className="health-weekstrip" role="group" aria-label="Week navigator" aria-busy={loading}>
-      {dates.map((d) => {
+      <div className="health-weekstrip__nav">
+        <UnstyledButton className="health-weekstrip__week-btn" aria-label="Previous week"
+          onClick={() => moveWeek(-7)}>‹</UnstyledButton>
+        <span className="health-weekstrip__range">{rangeLabel(from, end)}</span>
+        <UnstyledButton className="health-weekstrip__week-btn" aria-label="Next week"
+          disabled={date >= today} onClick={() => moveWeek(7)}>›</UnstyledButton>
+      </div>
+      <div className="health-weekstrip__days">
+      {dates.map((d, i) => {
         const dt = new Date(`${d}T12:00:00`);
         const day = byDate.get(d) || null;
         const bar = barModel(day);
@@ -50,6 +87,8 @@ export function WeekStrip({ date, today, onDateChange }) {
         // and the hue's (budget − food + exercise) are different and a sentence
         // asserting both without the reconciling term contradicts itself.
         const label = barCellLabel(day, bar, dayName);
+        const startsMonth = i === 0 || monthKey(d) !== monthKey(dates[i - 1]);
+        const crossesMonth = i > 0 && startsMonth;
 
         return (
           <UnstyledButton key={d}
@@ -57,11 +96,13 @@ export function WeekStrip({ date, today, onDateChange }) {
               'health-weekstrip__cell',
               isActive ? 'health-weekstrip__cell--active' : '',
               isToday ? 'health-weekstrip__cell--today' : '',
+              crossesMonth ? 'health-weekstrip__cell--month-start' : '',
             ].filter(Boolean).join(' ')}
             aria-current={isActive ? 'date' : undefined}
             aria-label={label}
             onClick={() => onDateChange(d)}>
-            <span className="health-weekstrip__dow">{WEEKDAY_LETTERS[dt.getDay()]}</span>
+            <span className="health-weekstrip__month">{startsMonth ? monthShort(d) : ''}</span>
+            <span className="health-weekstrip__dow">{WEEKDAY_SHORT[dt.getDay()]}</span>
             <span className="health-weekstrip__num">{dt.getDate()}</span>
             <span className="health-weekstrip__barbox" aria-hidden="true">
               <span className="health-weekstrip__goalline" />
@@ -81,6 +122,7 @@ export function WeekStrip({ date, today, onDateChange }) {
           </UnstyledButton>
         );
       })}
+      </div>
     </div>
   );
 }
