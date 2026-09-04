@@ -13,7 +13,7 @@ Ship the piano cap and the status-board correction as one coherent change:
 3. Multiple completed items credited to one assignment fill that assignment's circle once. Further distinct completions appear as a `+N` badge on that circle instead of creating more circles.
 4. Extra completions remain visible and continue to count in their underlying course/program progress, but they do not enlarge the day's assigned-work denominator.
 
-The concrete acceptance example is Alan's current piano day: one assigned piano-course slot and eight credited lessons renders one completed Arts circle with `+7`, not eight Arts circles. The daily cap remains two; today's already-recorded work is not rewritten.
+The concrete acceptance example is a learner's current piano day: one assigned piano-course slot and eight credited lessons renders one completed Arts circle with `+7`, not eight Arts circles. The daily cap remains two; today's already-recorded work is not rewritten.
 
 ## Confirmed bugs and current contracts
 
@@ -170,7 +170,7 @@ Do not start the backend for verification; it has live household side effects. I
 - two same-subject assignment circles remaining separate;
 - badge legibility with the largest realistic count and no overlap/wrap.
 
-Before rollout, read back Alan's stored enrollment and confirm `videosLockedAfter: 2` is still present. After rollout, make one no-op Teacher Console assignment save and verify the cap remains in storage and the lesson-gate response still reports `cap: 2`. Do not alter or delete today's eight historical completion records.
+Before rollout, read back the target learner's stored enrollment and confirm `videosLockedAfter: 2` is still present. After rollout, make one no-op Teacher Console assignment save and verify the cap remains in storage and the lesson-gate response still reports `cap: 2`. Do not alter or delete today's eight historical completion records.
 
 ## Suggested commit sequence
 

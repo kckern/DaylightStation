@@ -65,7 +65,7 @@ describe('Piano course daily video cap', () => {
     });
 
     await useCase.execute({
-      learnerId: 'alan', assignedBy: 'parent',
+      learnerId: 'learner-1', assignedBy: 'parent',
       programs: [{ programId: 'piano-course', courseId: 'plex:123', videosLockedAfter: 2 }],
     });
 
