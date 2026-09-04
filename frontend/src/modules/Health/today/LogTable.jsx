@@ -33,12 +33,24 @@ function MealBarcodeButton({ label, onClick }) {
 // to "fix" it into double-counting if a group ever did carry a value.
 const kcal = (rows) => Math.round(rows.reduce((s, r) => s + (Number(r.calories) || 0), 0));
 
+// Per-meal macro subtotal (Task 6.3). Same fold and the same reasoning as
+// `kcal` above — a group row's zeros mean summing every row counts each food
+// exactly once. Returns null when the meal has no macro data at all, so a day
+// of legacy rows shows "P 0 · C 0 · F 0" nowhere.
+const MACRO_SUBTOTAL = [['protein', 'P'], ['carbs', 'C'], ['fat', 'F']];
+const macroLine = (rows) => {
+  const totals = MACRO_SUBTOTAL.map(([key, letter]) => [letter, Math.round(rows.reduce((s, r) => s + (Number(r[key]) || 0), 0))]);
+  if (!totals.some(([, value]) => value > 0)) return null;
+  return totals.map(([letter, value]) => `${letter} ${value}`).join(' · ');
+};
+
 function Section({
   label, rows, onAdd, onRowTap, onConfirm, headerAction, coldLoading, pending,
   bucketId, onVoiceCapture, onPhotoCapture, onOpenBarcode, captureBusy, measuredByUuid,
 }) {
   const [expanded, setExpanded] = useState(() => new Set());
   const entries = groupRows(rows);
+  const macros = macroLine(rows);
   // The section frame (heading + kcal + add row) is PERMANENT structure —
   // it never depends on whether data has arrived yet. Only the entry list
   // itself swaps for a shimmer, and only on a true cold start (this bucket
@@ -74,6 +86,7 @@ function Section({
           {headerAction || null}
         </span>
       </header>
+      {macros ? <div className="health-meal__macros">{macros}</div> : null}
       {showShimmer ? <LoadingState label={`${label} entries`} rows={2} /> : null}
       {!showShimmer && entries.map(({ row, children, rollup }) => {
         const key = row.uuid ?? row.id;

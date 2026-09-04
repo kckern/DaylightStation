@@ -39,6 +39,48 @@
   }
 }
 
+// Macro / watch-micro bars (Task 6.3), directly under the equation strip.
+// Pure CSS bars — no chart library for three rows of arithmetic.
+.health-macrobar {
+  display: flex; flex-direction: column; gap: 0.3rem;
+  padding: 0.45rem 0; border-bottom: 1px solid var(--ds-border);
+
+  // Each item is its own grid, so the label column is a FIXED width — that is
+  // what keeps every bar's left edge on one line down the row. Wide enough for
+  // "Cholesterol", with an ellipsis so a longer label can never widen the
+  // column and knock one bar out of alignment with the rest.
+  &__item {
+    display: grid; grid-template-columns: 5.5rem 1fr auto; align-items: center;
+    gap: 0 0.5rem;
+  }
+  &__label {
+    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ds-text-mid);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  &__track {
+    display: block; height: 8px; border-radius: 4px; overflow: hidden;
+    background: var(--ds-surface-alt);
+  }
+  &__fill { display: block; height: 100%; border-radius: 4px; background: var(--ds-accent); }
+  &__value { font-size: 0.75rem; font-variant-numeric: tabular-nums; color: var(--ds-text-high); white-space: nowrap; }
+  &__target { color: var(--ds-text-low); }
+  // The honesty line. It sits under its own bar, spanning the full row, and is
+  // dim but never hidden — see MacroBarRow.jsx on why it must not be trimmed.
+  &__caption {
+    grid-column: 2 / -1; font-size: 0.65rem; color: var(--ds-text-low);
+    font-variant-numeric: tabular-nums;
+  }
+
+  // A macro past its goal: worth noticing, not an error.
+  &__item--over-goal &__fill { background: var(--ds-warning); }
+  // A watch micro past its ceiling: the one state that earns danger.
+  &__item--over-limit &__fill { background: var(--ds-danger); }
+  &__item--over-limit &__value { color: var(--ds-danger); }
+  // A floor micro (fiber) that has reached its target.
+  &__item--reached &__fill { background: var(--ds-success); }
+  &__item--floor &__fill { background: var(--ds-text-low); }
+}
+
 .health-footer {
   display: flex; flex-direction: column; gap: 0.25rem;
   &__coach { background: none; border: none; text-align: left; cursor: pointer; color: var(--ds-text-mid); font-size: 0.8rem; padding: 0; }
@@ -124,6 +166,13 @@ $health-quickbar-margin: 0.5rem; // deliberate slack over the exact footprint
   // that's the narrow-width regression this rule guards against. The
   // header-right cluster wraps around it instead; see that rule above.
   &__kcal { font-size: 0.8rem; color: var(--ds-text-low); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  // Per-meal macro subtotal (Task 6.3) — its own line under the header rather
+  // than another chip crammed into `__header-right`, which already carries the
+  // kcal, three 44px capture buttons and an optional action button.
+  &__macros {
+    font-size: 0.7rem; color: var(--ds-text-low); font-variant-numeric: tabular-nums;
+    padding: 0.15rem 0.25rem 0;
+  }
   &__add { display: block; width: 100%; text-align: left; padding: 0.5rem 0.25rem; color: var(--ds-text-low); font-size: 0.85rem; border-radius: 6px;
     &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; } }
   &--exercise .health-row__kcal { color: var(--ds-success); }
