@@ -298,11 +298,37 @@ read, and — worth knowing — Phase 7's icon donation was riding on the same g
 the name the store itself resolves (`name || item || label`, 'Unknown' excluded, which is
 `#normalizeItem`'s own sentinel). Found only by the falsification pass: deleting the new
 `mealTime` donation left every test green, which is what a decorative addition looks like.
-**Consequence to know:** the two shapes are asymmetric in the other direction too —
-`dehydrateNutriListItem` writes no `mealTime` at all, so `label`-shaped rows carry a name
-and no bucket while `item`-shaped rows carry a bucket. Backfill therefore seeds buckets
-only from the latter. That is a pre-existing gap in the capture write path, not something
-this task introduced, and it is not fixed here.
+**Consequence to know — and an earlier draft of this entry got it WRONG, so read this
+rather than the git history.** It said `dehydrateNutriListItem` writes no `mealTime`, and
+concluded the AI capture path could never contribute bucket history. That is false. The
+capture path persists the RESOLVED meal:
+
+- `NutribotInputRouter#resolveMealTime` (`services/NutribotInputRouter.mjs:136`) applies
+  the precedence — explicit utterance > `bucket` param > clock — and saves it onto the log
+  at `:85`, *before* `#commitCapture` at `:99`.
+- `YamlNutriListDatastore.mjs:180` stamps `mealTime: nutriLog.meal?.time ?? null` in the
+  `.map()` that consumes `dehydrateNutriListItem`'s output.
+- `AcceptFoodLog.mjs:121` does the same on the `saveMany` path, with a comment naming the
+  bug it fixed.
+
+Both shipped 2026-09-02 (`c04603c73`, `ed128c05c`) and are ancestors of the deployed image.
+**`mealTime` is absent from `dehydrateNutriListItem` BY DESIGN** — the `.map()` immediately
+overrides it, and `saveMany` already carries `mealTime: item.mealTime ?? null` at `:257`.
+Adding it there would be dead code that reads like a fix. Do not.
+
+The 8-of-68 count is therefore a **history artifact, not a structural gap**. Measured on
+the production hot file, per record:
+
+| shape | carries `mealTime` | count | date range |
+|---|---|---|---|
+| `item` | yes | 8 | 2026-09-02 → 2026-09-03 |
+| `item` | no | 31 | 2026-08-12 → 2026-08-31 |
+| `label` | no | 29 | 2026-08-07 → 2026-08-27 |
+
+A clean cutoff at the 2026-09-02 change: every row logged since carries its bucket, and
+every row without one predates the fix. Bucket history accrues from every capture from now
+on, which is what makes 2.25's refusal affordable — the conclusion of this entry is
+unchanged, only the reasoning behind it is corrected.
 
 **2.27 The retired PUT was checked by reading what it did, not by assuming it was dead.**
 `AddCombobox` used to follow every quick-add with `PUT /nutrilist/{uuid} { mealTime }`.
@@ -325,6 +351,30 @@ depending on which path ran. The effect is bounded — one day of recency decay 
 margin, on a 14-day half-life — and the divergence already applies to `entry.lastUsed`,
 which the shipped global score reads. Changing it would alter ranking for every existing
 entry on a path outside this task. Recorded for the whole-branch review.
+
+**2.29 `backfill` is NOT idempotent — running it twice inflates every entry's score.**
+Stated here rather than in a report's concerns list because learning that bucket history
+seeds from `POST /nutrition/catalog/backfill` makes running it the obvious next move, and
+this is what someone needs to know *before* they do. `backfill` calls `recordUsage` once
+per stored row, and `recordUsage` unconditionally increments `useCount` and now also
+`usageByBucket[bucket].count`. A second run over the same window therefore counts every
+row again: the global score (`useCount / (1 + daysSince/30)`) and the per-bucket frequency
+both inflate, and nothing detects or corrects it. It is a deliberate one-shot seeding
+tool, not a reconcile. Widening its name gate (2.26) makes each run process ~2.3× as many
+rows as before, so the inflation per accidental re-run is correspondingly larger. If it is
+ever to become safe to re-run, it needs to reconcile against a per-row marker rather than
+increment blindly — that is a real change, not a tweak, and it is not in this program.
+
+**2.30 Editing a row's portion does not update the bucket's remembered quantity.**
+`usageByBucket[bucket].quantity` is written at log time by `quickAdd` and by `backfill`.
+`PUT /nutrilist/:uuid` — the edit sheet's grams/amount change — writes the row and never
+touches the catalog entry, so correcting a portion after logging does not teach the
+catalog anything. The next quick-add of that food in that bucket re-offers the OLD portion
+until a backfill replays the corrected row. Accepted deliberately: the alternative is for
+a row edit to reach back into the catalog, which coupling the edit path to the catalog
+would make every portion tweak a catalog write, and the failure mode here is one stale
+default that the person can edit again — not wrong data. Recorded so it reads as a
+decision rather than an oversight.
 
 ---
 
