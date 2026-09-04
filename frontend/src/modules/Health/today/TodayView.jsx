@@ -214,7 +214,11 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
     const bucketId = bucket || currentMealBucketId();
     setCapturePending(bucketId);
     try {
-      return await nutrition.submit(type, content, { bucket });
+      // THE VIEWED DAY TRAVELS WITH THE CAPTURE. Without it the row is dated by
+      // the server's clock, so food entered while looking at yesterday appeared
+      // on today — the defect this closes. Only the LOGICAL date follows the
+      // view; createdAt/settledAt stay real wall-clock instants.
+      return await nutrition.submit(type, content, { bucket, date });
     } finally {
       setCapturePending(null);
     }
@@ -301,7 +305,7 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
         onOpenBarcode={openBarcode} captureBusy={nutrition.busy}
         measuredByUuid={measuredByUuid}
         addSlot={addingTo ? (
-          <AddCombobox bucketId={addingTo}
+          <AddCombobox bucketId={addingTo} date={date}
             onDone={() => { setAddingTo(null); day.reload(); }}
             onCancel={() => setAddingTo(null)}
             onMeals={() => { setFocusTemplateId(null); setTemplatesFor(addingTo); }}
@@ -309,7 +313,7 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
         ) : null} />
       <MacroFooter items={day.items} coachLine={coachLine} onCoachTap={onCoachTap} />
       <QuickCaptureBar onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
-        onOpenBarcode={openBarcode} onAddTo={setAddingTo} busy={nutrition.busy} />
+        onOpenBarcode={openBarcode} onAddTo={setAddingTo} busy={nutrition.busy} date={date} />
       <BarcodeCapture open={captureMode === 'barcode'} busy={nutrition.busy} bucket={barcodeTargetBucket}
         onClose={() => { setCaptureMode(null); setBarcodeTargetBucket(null); }}
         onDecode={async (upc, bucket) => {
@@ -320,6 +324,7 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
           day.reload();
         }} />
       <CustomFoodSheet upc={unknownUpc} open={Boolean(unknownUpc)}
+        bucketId={barcodeTargetBucket} date={date}
         onClose={() => setUnknownUpc(null)}
         onCreated={() => { setUnknownUpc(null); day.reload(); }} />
       <EntryEditSheet row={editingRow} open={Boolean(editingRow)}
@@ -334,7 +339,7 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
           day.reload();
           if (err) setCaptureNotice(err.message);
         }} />
-      <TemplatePicker open={Boolean(templatesFor)} bucketId={templatesFor} focusTemplateId={focusTemplateId}
+      <TemplatePicker open={Boolean(templatesFor)} bucketId={templatesFor} date={date} focusTemplateId={focusTemplateId}
         onLogged={() => { setTemplatesFor(null); setFocusTemplateId(null); setAddingTo(null); day.reload(); }}
         onClose={() => { setTemplatesFor(null); setFocusTemplateId(null); }} />
     </div>

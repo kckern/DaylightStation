@@ -8,6 +8,7 @@ import { FoodCatalogEntry } from '#domains/health/entities/FoodCatalogEntry.mjs'
 import { hasMicroData, pickMicros } from '#domains/nutrition/services/micros.mjs';
 import { rankSuggestions } from '#domains/health/services/bucketSuggestRanking.mjs';
 import { formatLocalTimestamp } from '#system/utils/time.mjs';
+import { defaultBucketForDate } from '#shared/contracts/health/isoDate.mjs';
 
 /** Local (not UTC) YYYY-MM-DD from a Date instance. */
 function localDateISO(d) {
@@ -159,7 +160,7 @@ export class FoodCatalogService {
   }
 
   /**
-   * Quick-add a catalog entry as today's food log.
+   * Quick-add a catalog entry into the day the client is looking at.
    * @param {string} catalogEntryId
    * @param {string} userId
    * @param {Object} [options]
@@ -167,6 +168,9 @@ export class FoodCatalogService {
    *   from. Supplied directly by the client (Task 9.2), which retires the
    *   follow-up PUT that used to move the row after the fact. Falls back to the
    *   clock when absent — Telegram and the coach never send one.
+   * @param {string} [options.date] - the day the client is LOOKING AT
+   *   (`YYYY-MM-DD`). ABSENT MEANS TODAY. The row's logical `date` follows it;
+   *   `settledAt` does not — that is a real wall-clock instant and stays one.
    * @returns {Promise<Object>} The logged item
    */
   async quickAdd(catalogEntryId, userId, options = {}) {
@@ -179,14 +183,20 @@ export class FoodCatalogService {
     // LOCAL date, not UTC — new Date().toISOString() reads as tomorrow every
     // evening after ~5pm in this household's timezone (UTC-7/8), which
     // silently misfiles the quick-add onto the wrong day.
+    // The day this lands on is the day the CLIENT is looking at. `today` is
+    // only the fallback — the shipped bug was a quick-add made while viewing
+    // yesterday landing on the server's today.
     const today = localDateISO(now);
+    const targetDate = options?.date || today;
     // A catalog entry only holds micros if a provenanced row donated them
     // (recordUsage). When it does, the quick-added row inherits BOTH the
     // numbers and the provenance; when it does not, the row is written with no
     // micros and `microsSource: null` — honestly uncovered, rather than
     // carrying structural zeros under a 'catalog' claim.
     const micros = pickMicros(entry.nutrients);
-    const mealTime = asBucket(options?.mealTime) || bucketForHour(now.getHours());
+    // Decision 2.24: a day that is not today has no "current hour", so the
+    // clock cannot speak for it — such a day is filled from its first meal.
+    const mealTime = asBucket(options?.mealTime) || defaultBucketForDate(targetDate, now, bucketForHour);
     // PRD F8.3: the portion defaults to the last one logged for this food IN
     // THIS BUCKET. Absent (a food never eaten at this meal), the catalog default
     // stands — one serving, which is the portion the entry's own numbers
@@ -214,7 +224,7 @@ export class FoodCatalogService {
       // entry has none — the row then renders the neutral dot, rather than a
       // filename this layer invented.
       icon: entry.icon ?? null,
-      date: today,
+      date: targetDate,
       mealTime,
       // A one-tap pick of a known food is a DELIBERATE choice, not a machine
       // estimate, so the row lands settled (PRD F8.3). Written verbatim,
@@ -230,10 +240,10 @@ export class FoodCatalogService {
     await this.#nutriListStore.saveMany([item]);
     // The bucket this actually landed in, and the portion it landed with —
     // so the next pick of this food at this meal defaults to the same portion.
-    entry.recordUsage(today, { bucket: mealTime, quantity: normalizeQuantity({ grams, unit, amount }) ?? undefined });
+    entry.recordUsage(targetDate, { bucket: mealTime, quantity: normalizeQuantity({ grams, unit, amount }) ?? undefined });
     await this.#catalogStore.save(entry, userId);
 
-    this.#logger.info?.('health.catalog.quickadd', { name: entry.name, id: entry.id });
+    this.#logger.info?.('health.catalog.quickadd', { name: entry.name, id: entry.id, date: targetDate, mealTime });
     return item;
   }
 

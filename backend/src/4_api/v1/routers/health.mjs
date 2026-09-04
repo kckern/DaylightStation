@@ -12,6 +12,7 @@ import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { createLocalFileResource, sendLocalFileResource } from '#system/http/streamFile.mjs';
 import { presentFoodCatalogEntry } from '../presenters/FoodCatalogPresenter.mjs';
+import { isISODate } from '#shared/contracts/health/isoDate.mjs';
 import { presentPendingNutritionLog } from '../presenters/PendingNutritionLogPresenter.mjs';
 
 // Same allowlist PhotoStore enforces internally (1_adapters/persistence/PhotoStore.mjs).
@@ -46,7 +47,23 @@ const ENTRY_UUID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const ICON_SLUG_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 
 // The one date shape every health route accepts.
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+/**
+ * The one shape check every date on this router uses.
+ *
+ * `isISODate` (not a bare regex): a regex passes "2026-02-31", which Date
+ * silently normalizes to March 3, and "2026-08-32", whose later toISOString()
+ * throws a RangeError and surfaces as a 500. Both are 400s.
+ *
+ * Returns null when the value is absent — ABSENT MEANS TODAY everywhere on
+ * this router, which is why it is never coerced to null on the way through
+ * (decision 2.6: a defaulted value would change what an absent one means).
+ */
+const validateOptionalDate = (value) => {
+  if (value === undefined || value === null) return null;
+  return isISODate(String(value))
+    ? null
+    : { error: 'Invalid date format. Use YYYY-MM-DD', code: 'DATE_INVALID' };
+};
 
 /**
  * Wire shape for one kitchen-scale observation. Explicit field list, never a spread of
@@ -631,7 +648,12 @@ export function createHealthRouter(config) {
 
     /**
      * POST /api/v1/health/nutrition/catalog/quickadd - Quick-add a catalog entry
-     * Body: { catalogEntryId, mealTime? }
+     * Body: { catalogEntryId, mealTime?, date? }
+     *
+     * `date` is the day the client is LOOKING AT. A row must land on the day
+     * the person is looking at, not the day the server happens to be on — the
+     * shipped bug was food added while viewing yesterday appearing on today.
+     * ABSENT MEANS TODAY (decision 2.6), so it is never coerced to null.
      *
      * `mealTime` is the bucket the add row was launched from (Task 9.2). It is
      * applied by the quick-add itself, which is why the client no longer
@@ -639,10 +661,12 @@ export function createHealthRouter(config) {
      * the row in the clock's bucket whenever it failed.
      */
     router.post('/nutrition/catalog/quickadd', asyncHandler(async (req, res) => {
-      const { catalogEntryId, mealTime } = req.body;
+      const { catalogEntryId, mealTime, date } = req.body;
       if (!catalogEntryId) {
         return res.status(400).json({ error: 'catalogEntryId is required' });
       }
+      const dateError = validateOptionalDate(date);
+      if (dateError) return res.status(400).json(dateError);
       // A phantom bucket must be refused, not passed downstream — the same rule
       // /nutrition/input applies to its `bucket`.
       if (mealTime != null && !NUTRITION_MEAL_BUCKETS.includes(mealTime)) {
@@ -652,7 +676,10 @@ export function createHealthRouter(config) {
       }
       const userId = getDefaultUsername();
       try {
-        const item = await catalogService.quickAdd(catalogEntryId, userId, { mealTime: mealTime ?? undefined });
+        const item = await catalogService.quickAdd(catalogEntryId, userId, {
+          mealTime: mealTime ?? undefined,
+          date: date ?? undefined,
+        });
         return res.json({ logged: true, item });
       } catch (err) {
         logger.error?.('health.catalog.quickadd.error', { catalogEntryId, error: err.message });
@@ -921,9 +948,8 @@ export function createHealthRouter(config) {
 
     router.post('/nutrition/templates/:id/instantiate', asyncHandler(async (req, res) => {
       const { date, mealTime, variantNames } = req.body || {};
-      if (date !== undefined && date !== null && !DATE_PATTERN.test(String(date))) {
-        return res.status(400).json({ error: 'Invalid date (expected YYYY-MM-DD)', code: 'DATE_INVALID' });
-      }
+      const dateError = validateOptionalDate(date);
+      if (dateError) return res.status(400).json(dateError);
       if (mealTime !== undefined && mealTime !== null && !NUTRITION_MEAL_BUCKETS.includes(mealTime)) {
         return res.status(400).json({ error: `Invalid bucket: ${mealTime}`, code: 'BUCKET_INVALID' });
       }
@@ -1042,10 +1068,15 @@ export function createHealthRouter(config) {
      *     meal named in the utterance/caption still beats this; this beats the
      *     clock default. Omit entirely for existing behavior — Telegram, the
      *     coach, and the scale path never send it.
+     *   - date: "YYYY-MM-DD" (optional) — the day the client is LOOKING AT. It
+     *     becomes the parse's "today", so "this morning" resolves against the
+     *     VIEWED day rather than the server's. A date the person names out loud
+     *     still beats it, exactly as an explicitly named meal beats `bucket`.
+     *     ABSENT MEANS TODAY; it is never coerced to null.
      */
     router.post('/nutrition/input', asyncHandler(async (req, res) => {
       const userId = getDefaultUsername();
-      const { type, content, bucket } = req.body;
+      const { type, content, bucket, date } = req.body;
       if (!type) {
         return res.status(400).json({ error: 'type is required (text, voice, image, barcode)' });
       }
@@ -1057,8 +1088,10 @@ export function createHealthRouter(config) {
           error: `Invalid bucket: ${bucket}. Must be one of: ${NUTRITION_MEAL_BUCKETS.join(', ')}`,
         });
       }
+      const dateError = validateOptionalDate(date);
+      if (dateError) return res.status(400).json(dateError);
       try {
-        const result = await healthOperations.processNutritionInput({ type, content, userId, bucket });
+        const result = await healthOperations.processNutritionInput({ type, content, userId, bucket, date });
         return res.json(result);
       } catch (err) {
         logger.error?.('health.nutrition.input.error', { type, error: err.message });
@@ -1098,7 +1131,7 @@ export function createHealthRouter(config) {
     router.get('/nutrition/pending', asyncHandler(async (req, res) => {
       const userId = getDefaultUsername();
       const { date: rawDate } = req.query;
-      if (rawDate && !/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+      if (rawDate !== undefined && rawDate !== null && !isISODate(String(rawDate))) {
         return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
       }
       const date = rawDate || getToday();
@@ -1135,7 +1168,7 @@ export function createHealthRouter(config) {
      */
     router.get('/nutrition/observations', asyncHandler(async (req, res) => {
       const { date: rawDate } = req.query;
-      if (rawDate !== undefined && !DATE_PATTERN.test(String(rawDate))) {
+      if (rawDate !== undefined && !isISODate(String(rawDate))) {
         return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
       }
       const date = rawDate ? String(rawDate) : getToday();

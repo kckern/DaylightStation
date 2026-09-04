@@ -27,7 +27,7 @@ const kcal = (components) => Math.round(components.reduce((s, c) => s + (Number(
  *   (the add-combobox picked it), so a meal suggestion still gets its variant
  *   step rather than logging one silent arrangement of itself.
  */
-export function TemplatePicker({ open, onClose, onLogged, bucketId, focusTemplateId = null }) {
+export function TemplatePicker({ open, onClose, onLogged, bucketId, date = null, focusTemplateId = null }) {
   const { data, loading, reload } = useApiResource(
     open ? 'api/v1/health/nutrition/templates?includeProposed=1' : null,
     { deps: [open], label: 'meal-templates', logger },
@@ -81,7 +81,9 @@ export function TemplatePicker({ open, onClose, onLogged, bucketId, focusTemplat
     setBusy(true); setError(null);
     try {
       await DaylightAPI(`api/v1/health/nutrition/templates/${template.id}/instantiate`,
-        { ...(bucketId ? { mealTime: bucketId } : {}), variantNames }, 'POST');
+        // Instantiate onto the day being VIEWED. The route has always taken a
+      // `date`; nothing was sending one, so every template landed on today.
+      { ...(bucketId ? { mealTime: bucketId } : {}), ...(date ? { date } : {}), variantNames }, 'POST');
       logger.info('template.logged', { id: template.id, bucket: bucketId ?? null, variants: variantNames.length });
       setChosen(null); setVariants(new Set());
       onLogged();

@@ -55,7 +55,7 @@ export class LogFoodFromVoice {
    * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { userId, conversationId, voiceData, messageId, responseContext } = input;
+    const { userId, conversationId, voiceData, messageId, asOfDate = null, responseContext } = input;
 
     this.#logger.debug?.('logVoice.start', { conversationId, hasResponseContext: !!responseContext });
 
@@ -121,6 +121,10 @@ export class LogFoodFromVoice {
         userId,
         conversationId,
         text: transcription,
+        // The spoken words are parsed against the day the person is LOOKING
+        // AT, not the server's today — a memo recorded while viewing yesterday
+        // must land on yesterday.
+        asOfDate,
         responseContext,
       });
 
