@@ -1,10 +1,36 @@
 //
 // 'sd' callback handler: resolve a pending scale entry by tapping a density level.
-// calories = round(netGrams × kcal_per_g). Then show Accept/Revise/Discard.
-
+// calories = round(netGrams × kcal_per_g), and — Task 5.5 — fat/carb/protein grams
+// derived from the SAME density row via the domain's `computeNutrition`. Then show
+// Accept/Revise/Discard.
+//
+// ## Macros land on the item's existing protein/carbs/fat fields (Task 5.5)
+//
+// Before this task `computeNutrition` (`#domains/nutrition/services/ScanNutritionService`)
+// had no production caller: this handler re-implemented only the calorie half of its
+// arithmetic inline (`grams * kcal_per_g`) and left every scan-enriched entry
+// macro-less. This is the SAME computation `ObservationPairingService.recomputeEntry`
+// already uses for a re-pair — both now call `computeNutrition` with a net weight and a
+// resolved density level, and both round the returned grams to one decimal
+// (`round1`) so the two paths cannot drift apart the way `computeNutrition`'s own
+// arithmetic and this handler's hand-rolled calorie line already had.
+//
+// `microsSource` is written `null` explicitly (not left to whatever `item0` already
+// held): a density-derived estimate is percent-of-calories arithmetic over a
+// hand-authored table, not AI or catalog micronutrient data, and `'ai'`/`'catalog'`
+// are the only other values that field may legitimately hold.
 import { densityForLevel, buildConfirmButtons } from '../lib/scaleNutribotConfig.mjs';
 import { ApplicationError } from '#apps/common/errors/index.mjs';
 import { serializeFoodItem } from '../nutriLogRecords.mjs';
+import { computeNutrition } from '#domains/nutrition/index.mjs';
+
+/** One decimal, and never `NaN`/`Infinity` — matches `ObservationPairingService.round1`
+ *  exactly, so a commit and a later re-pair of the same placement produce the same
+ *  stored numbers. */
+function round1(n) {
+  const v = Number(n);
+  return Number.isFinite(v) ? Math.round(v * 10) / 10 : 0;
+}
 
 export class SelectScaleDensity {
   #messagingGateway; #foodLogStore; #conversationStateStore; #scaleConfig; #logger; #encodeCallback;
@@ -37,9 +63,28 @@ export class SelectScaleDensity {
 
     const item0 = serializeFoodItem(nutriLog.items[0]);
     const grams = Math.round(Number(item0.grams));
-    const calories = Math.round(grams * lvl.kcal_per_g);
 
-    const updatedItem = { ...item0, label: lvl.label, calories };
+    // SINGLE SOURCE for calories AND macros — the domain's `computeNutrition`, the same
+    // function `ObservationPairingService.recomputeEntry` calls for a re-pair. `calories`
+    // here is identical to the pre-Task-5.5 `Math.round(grams * lvl.kcal_per_g)` (macro
+    // grams are derived from that same rounded figure), so history already committed
+    // under the old arithmetic does not shift.
+    const nutrition = computeNutrition(grams, lvl);
+    const { calories } = nutrition;
+
+    const updatedItem = {
+      ...item0,
+      label: lvl.label,
+      calories,
+      protein: round1(nutrition.protein_g),
+      carbs: round1(nutrition.carb_g),
+      fat: round1(nutrition.fat_g),
+      fiber: round1(nutrition.fiber_g),
+      sugar: round1(nutrition.sugar_g),
+      sodium: round1(nutrition.sodium_mg),
+      // Never inherited from item0: a density estimate is not micronutrient data.
+      microsSource: null,
+    };
     const updatedLog = nutriLog.with({
       items: [updatedItem],
       metadata: { ...nutriLog.metadata, densityLevel: lvl.level },
