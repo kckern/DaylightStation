@@ -6,11 +6,32 @@ recalled.
 
 ---
 
+## 0. Resume here — the first four things to do
+
+1. **Merge and deploy the two branches.** They fix bugs the user hit in the first
+   five minutes of using the app, and neither is live. `feat/health-usability`
+   (`4e3970a62`) makes food land on the day you are viewing; `feat/catalog-density`
+   (`b76c35ea5`) stops the catalog being overwritten by the last row logged.
+   Sequence in §5. Deploying also brings the staged hi-res icon manifest live.
+2. **Get one clean full-gate verdict** on a tree nobody is editing. Neither branch
+   has one. `scripts/gate-vitest.mjs` prints its verdict; read that, not the exit
+   code, until you have confirmed §6.
+3. **Decide on `IconManifestStore.media.test.mjs`** — it fails because of the live
+   manifest rewrite in §2.3, not because of either branch. Fix the test or revert
+   the manifest. Do not baseline it blindly.
+4. **Then, deliberately: seed the catalog rings** (§4, "THE STEP THAT MAKES IT
+   REAL"). Back up `food_catalog.yml` first. Until this runs, the catalog fix is
+   inert for existing foods.
+
+Everything below is context for those four.
+
+---
+
 ## 1. Where things actually are
 
 | | Commit | Note |
 |---|---|---|
-| `main` | `c21ba38b0` | in sync with `origin/main` |
+| `main` | `43cb4fe6f` | **3 ahead of `origin/main`** — unpushed |
 | **Deployed (prod)** | `c21ba38b0` | `build.txt` 2026-09-04 09:17 PDT — matches main |
 | `feat/health-usability` | `4e3970a62` | **not merged**, not deployed |
 | `feat/catalog-density` | `b76c35ea5` | **not merged**, not deployed |
@@ -178,7 +199,11 @@ and, separately, an unrelated worktree's process. Kill by PID or `setsid` PGID.
 
 **`scripts/gate-vitest.mjs` was improved** (`c266035c6`): it now keeps one report
 generation at `.prev` and prints the failing test name plus its first failure
-lines, because the next run used to delete the evidence.
+lines, because the next run used to delete the evidence. That change shipped with
+a `ReferenceError: outFile is not defined` — it printed the failing files and
+*then* crashed, visible only on a red run. Repaired in `ece8b9bfd`; the path is
+now a module-scope `GATE_REPORT`. If you see a gate "crash" after listing
+failures, check you have that commit.
 
 ---
 
@@ -230,3 +255,16 @@ Archived-day regression check (this was broken in prod and is now fixed —
 ```bash
 curl -s "http://localhost:3111/api/v1/health/budget?date=2026-07-30"   # food must be 248, not 0
 ```
+
+---
+
+## 10. Stray processes, for whoever inherits this box
+
+Left running deliberately, none belonging to this work:
+- two ~19h `nodemon`/`concurrently` dev servers from the unrelated
+  `piano-board-status` worktree
+- a handful of orphaned `vitest` workers
+
+**Do not clear them with `pkill -f`** — a pattern kill during this session
+clipped a live gate and, separately, another agent's test run. Kill by PID or
+`setsid` PGID, after checking what each one is.
