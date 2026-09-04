@@ -244,3 +244,39 @@ describe('LogTable', () => {
     });
   });
 });
+
+// Task 6.3 — per-meal macro subtotal (PRD F4.3).
+describe('LogTable — per-meal macro subtotal', () => {
+  const bucketsWith = (morning) => new Map([
+    ['morning', morning], ['afternoon', []], ['evening', []], ['night', []], [null, []],
+  ]);
+
+  it('shows P · C · F under the meal header', () => {
+    render(<LogTable byBucket={bucketsWith([
+      { uuid: '1', name: 'Eggs', calories: 140, protein: 12, carbs: 1, fat: 10 },
+      { uuid: '2', name: 'Toast', calories: 90, protein: 3, carbs: 17, fat: 1 },
+    ])} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+    expect(screen.getByText('P 15 · C 18 · F 11')).toBeTruthy();
+  });
+
+  it('counts a group and its children ONCE — the group row carries zero macros by design', () => {
+    render(<LogTable byBucket={bucketsWith([
+      { uuid: 'g1', kind: 'group', name: 'Smoothie', calories: 0, protein: 0, carbs: 0, fat: 0 },
+      { uuid: 'c1', parentId: 'g1', name: 'Banana', calories: 105, protein: 1, carbs: 27, fat: 0 },
+      { uuid: 'c2', parentId: 'g1', name: 'Yogurt', calories: 100, protein: 10, carbs: 6, fat: 3 },
+    ])} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+    expect(screen.getByText('P 11 · C 33 · F 3')).toBeTruthy();
+  });
+
+  it('renders NO subtotal line for a meal of legacy rows with no macro data', () => {
+    render(<LogTable byBucket={bucketsWith([{ uuid: '1', name: 'Mystery', calories: 200 }])}
+      sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+    expect(screen.getByText('200 kcal')).toBeTruthy();
+    expect(screen.queryByText(/^P \d/)).toBeNull();
+  });
+
+  it('renders no subtotal line for an empty meal', () => {
+    render(<LogTable byBucket={bucketsWith([])} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+    expect(screen.queryByText(/^P \d/)).toBeNull();
+  });
+});

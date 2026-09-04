@@ -7,6 +7,7 @@ import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { useHealthDay } from './useHealthDay.js';
 import { EquationStrip } from './EquationStrip.jsx';
 import { WeekStrip } from './WeekStrip.jsx';
+import { MacroBarRow } from './MacroBarRow.jsx';
 import { MacroFooter } from './MacroFooter.jsx';
 import { LogTable } from './LogTable.jsx';
 import { AddCombobox } from './AddCombobox.jsx';
@@ -220,6 +221,11 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
     <div className="health-today">
       <EquationStrip budget={day.budget} budgetError={day.budgetError}
         date={date} today={todayISO()} onDateChange={setDate} onSetupGoals={onSetupGoals} />
+      {/* Macro / watch-micro bars sit directly under the equation (F4.1). They
+          read the SAME day sums the equation does — BudgetService computes both
+          over one fold — so the bars and the kcal number can never disagree. */}
+      <MacroBarRow macros={day.budget?.macros} goals={day.budget?.goals}
+        microCoverage={day.budget?.microCoverage} />
       <WeekStrip date={date} today={todayISO()} onDateChange={setDate} />
       {day.error ? <ErrorState error={day.error} onRetry={day.reload} label="Food log" /> : null}
       {captureNotice ? (
