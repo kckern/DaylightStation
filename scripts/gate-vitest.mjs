@@ -53,6 +53,11 @@ import os from 'node:os';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const BASELINE = path.join(ROOT, 'scripts/audit-baseline.vitest.txt');
+// Module scope, because BOTH the runner and the regression reporter name it.
+// It lived inside runVitest() and the reporter's reference to it threw
+// `ReferenceError: outFile is not defined` — after the failing files had
+// printed, so the gate looked like it worked and then died reporting.
+const GATE_REPORT = path.join(ROOT, 'tests/output/results.gate-vitest.json');
 const ROOTS = ['tests/unit', 'tests/isolated', 'backend', 'frontend'];
 const EXCLUDE = [/\/node_modules\//, /\/\.claude\//, /\/\.worktrees\//];
 
@@ -111,7 +116,7 @@ function vitestPopulation() {
 }
 
 function runVitest(files) {
-  const outFile = path.join(ROOT, 'tests/output/results.gate-vitest.json');
+  const outFile = GATE_REPORT;
   // DELETE THE PREVIOUS REPORT FIRST. The existence check below is the only
   // thing standing between a vitest that died before writing and a silently
   // STALE verdict: leave last run's file in place and the gate happily parses
@@ -374,7 +379,7 @@ if (regressions.length) {
       console.error(detail.message.split('\n').slice(0, 4).map((l) => '      ' + l).join('\n'));
     }
   }
-  console.error(`\ngate-vitest: full report kept at ${path.relative(ROOT, outFile)} (previous run at the same path + .prev)`);
+  console.error(`\ngate-vitest: full report kept at ${path.relative(ROOT, GATE_REPORT)} (previous run at the same path + .prev)`);
   process.exit(1);
 }
 const fixed = [...baseline].filter((f) => !failed.includes(f));
