@@ -30,7 +30,12 @@ export function EntryRow({ row, onTap, onConfirm, isGroup = false, expanded = fa
   // one broke. No reset effect either — that is a race, and there is nothing
   // to reset when the state names what it is about.
   const [failedIcon, setFailedIcon] = useState(null);
-  const portion = [row.amount, row.unit].filter(Boolean).join(' ') || (row.grams ? `${row.grams} g` : '');
+  // Grams are the one comparable quantity across captures. `amount + unit`
+  // is model prose (cup, tbsp, serving) and has produced nonsense such as
+  // "313 servings" when amount was actually the gram count. Show a valid
+  // mass in grams, or show nothing — never expose that mixed vocabulary.
+  const grams = Number(row.grams);
+  const portion = Number.isFinite(grams) && grams > 0 ? `${Math.round(grams * 10) / 10} g` : '';
   // The API serves an EFFECTIVE settled flag per row. Absent or `true` means
   // settled — only an explicit `false` means unsettled. Never treat a
   // missing key as unsettled (older/other row shapes lack the field).

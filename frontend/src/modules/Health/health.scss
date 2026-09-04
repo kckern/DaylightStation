@@ -31,21 +31,48 @@ $health-bar-cap: 1.25;
 $health-bar-box: 34px;
 
 .health-weekstrip {
-  display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.3rem;
+  display: flex; flex-direction: column; gap: 0.2rem;
   padding: 0.4rem 0 0.3rem; border-bottom: 1px solid var(--ds-border);
+
+  &__nav {
+    display: grid; grid-template-columns: 44px 1fr 44px; align-items: center;
+    min-height: 44px;
+  }
+  &__range {
+    text-align: center; font-size: 0.78rem; font-weight: 700;
+    color: var(--ds-text-high); font-variant-numeric: tabular-nums;
+  }
+  &__week-btn {
+    min-width: 44px; min-height: 44px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--ds-text-high); font-size: 1.35rem;
+    &:hover { background: var(--ds-surface-alt); }
+    &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
+    &:disabled { color: var(--ds-text-low); opacity: 0.35; }
+  }
+  &__days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.2rem; }
 
   &__cell {
     display: flex; flex-direction: column; align-items: center; gap: 0.15rem;
-    padding: 0.35rem 0.1rem; border-radius: 8px; color: var(--ds-text-mid);
+    min-width: 0; padding: 0.25rem 0.05rem; border: 2px solid transparent;
+    border-radius: 8px; color: var(--ds-text-mid);
     &:hover { background: var(--ds-surface-alt); }
     &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
-    &--active { background: var(--ds-surface-alt); color: var(--ds-text-high); }
+    &--active {
+      background: var(--ds-surface-alt); border-color: var(--ds-accent);
+      color: var(--ds-text-high); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+    }
     // Today is RINGED, which is a different statement from "the day you are
     // looking at" (the fill above) — both can be true, and on a past date only
     // one is.
     &--today { box-shadow: inset 0 0 0 1px var(--ds-accent); }
+    &--today.health-weekstrip__cell--active {
+      box-shadow: inset 0 0 0 1px var(--ds-accent), 0 2px 8px rgba(0, 0, 0, 0.16);
+    }
+    &--month-start { border-left-color: var(--ds-border); border-radius: 0 8px 8px 0; }
   }
-  &__dow { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  &__month { min-height: 0.75rem; font-size: 0.58rem; font-weight: 700; text-transform: uppercase; color: var(--ds-accent); }
+  &__dow { font-size: 0.64rem; font-weight: 600; letter-spacing: 0.01em; }
   &__num { font-size: 0.95rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ds-text-high); }
   &__kcal { font-size: 0.62rem; font-variant-numeric: tabular-nums; color: var(--ds-text-low); }
 

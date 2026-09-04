@@ -70,6 +70,18 @@ describe('EntryRow', () => {
     expect(onTap).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'row-1' }));
   });
 
+  it('shows grams only, never the capture model\'s mixed amount/unit prose', () => {
+    r(<EntryRow row={{ ...baseRow, grams: 313, amount: 313, unit: 'servings' }} onTap={() => {}} />);
+    expect(screen.getByText('313 g')).toBeTruthy();
+    expect(screen.queryByText(/servings/i)).toBeNull();
+  });
+
+  it('shows no portion when grams are unavailable', () => {
+    r(<EntryRow row={{ ...baseRow, grams: null, amount: 2, unit: 'cups' }} onTap={() => {}} />);
+    expect(screen.queryByText(/cups/i)).toBeNull();
+    expect(document.querySelector('.health-row__portion').textContent).toBe('');
+  });
+
   describe('group presentation', () => {
     const groupRow = { uuid: 'g1', name: 'Smoothie', calories: 0, kind: 'group' };
 

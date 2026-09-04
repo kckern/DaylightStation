@@ -102,6 +102,12 @@ describe('month block stylesheet', () => {
 });
 
 describe('week strip stylesheet', () => {
+  it('makes selection and week navigation visually explicit', () => {
+    expect(rule('.health-weekstrip__nav')).toMatch(/grid-template-columns: 44px 1fr 44px/);
+    expect(rule('.health-weekstrip__cell--active')).toMatch(/border-color: var\(--ds-accent\)/);
+    expect(rule('.health-weekstrip__cell--month-start')).toMatch(/border-left-color: var\(--ds-border\)/);
+  });
+
   it('places the budget reference line at 1/cap of the box, derived not guessed', () => {
     // dayBars.js's OVERSHOOT_CAP is 1.25, so a day exactly on budget must land
     // at 80% of the box. A hand-typed number here would drift from the JS.

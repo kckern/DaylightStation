@@ -227,6 +227,20 @@ inline Add food surface is a bordered, height-capped panel rather than loose
 text; suggestions use one column on the narrowest screens and two from 480 px,
 with a real catalog icon or a reserved Noom-dot fallback on every row.
 
+Food rows expose one portion vocabulary: a valid positive `grams` value is
+shown as `N g`, and no portion is shown when grams are absent. Capture-specific
+`amount`/`unit` prose (cups, tablespoons, servings, and similar) is retained in
+the data model but never mixed into the Today ledger. Scaling an entry in its
+edit sheet scales `grams` with its nutrient values so that displayed mass stays
+truthful.
+
+The week strip separates its seven-day viewport from the selected day. Picking
+a visible day changes only the selection; explicit 44 px previous/next-week
+controls move the window and select the corresponding date. It names weekdays
+with three letters, labels the visible date range, marks month boundaries, and
+uses a bordered accent state for the selected day (distinct from today's inset
+ring). Future navigation stops at today.
+
 ### One shared range endpoint
 
 `GET /budget/range?from=&to=` returns one entry per day for an inclusive range,
@@ -235,7 +249,7 @@ in a single request. Every multi-day surface reads it through one client hook,
 
 | Surface | Window |
 |---|---|
-| Week strip (`today/WeekStrip.jsx`) | the viewed date and the six days before it |
+| Week strip (`today/WeekStrip.jsx`) | the visible viewport's final day and the six days before it |
 | Month block (`today/MonthBlock.jsx`), desktop sidebar | last 30 days |
 | Intake vs burn (`progress/IntakeBurnChart.jsx`), desktop sidebar | the same 30 days |
 | Adherence bars, Progress tab | last 14 days |
