@@ -62,9 +62,9 @@ describe('LogFoodFromUPC catalog-first', () => {
       barcodeUpc: '012345678905',
       calories: 210,
     });
-    // The serving the panel describes — without a mass this is a total with
-    // nothing to divide by, and the catalog cannot hold it as an observation.
-    expect(donated.grams).toBeGreaterThan(0);
+    // This catalog fixture supplies no mass. Never invent one to make it
+    // eligible for density observations.
+    expect(donated.grams).toBeNull();
   });
 
   it('a double miss reports unknownUpc with the code', async () => {

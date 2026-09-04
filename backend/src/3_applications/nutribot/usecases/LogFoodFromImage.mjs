@@ -1,3 +1,4 @@
+import { capturedFoodGrams, capturedNutrientProvenance } from '#shared/contracts/health/foodQuantity.mjs';
 /**
  * Log Food From Image Use Case
  * @module nutribot/usecases/LogFoodFromImage
@@ -263,6 +264,9 @@ export class LogFoodFromImage {
         else if (localHour >= 20 || localHour < 5) mealTime = 'night';
       }
 
+      if (this.#catalogService?.resolveIdentity) {
+        for (let index = 0; index < foodItems.length; index++) foodItems[index] = await this.#catalogService.resolveIdentity(foodItems[index], effectiveUserId);
+      }
       const nutriLog = createNutriLog({
         userId: effectiveUserId,
         conversationId,
@@ -305,6 +309,7 @@ export class LogFoodFromImage {
         for (const item of foodItems) {
           try {
             await this.#catalogService.recordUsage({
+              foodId: item.foodId,
               name: item.label,
               calories: item.calories,
               protein: item.protein,
@@ -516,7 +521,8 @@ ${conservativeNote}${portionBoost}`,
       const items = rawItems.map((item) => ({
         id: uuidv4(),
         label: item.name || item.label || 'Unknown',
-        grams: item.grams || this.#estimateGrams(item),
+        grams: capturedFoodGrams(item),
+        originalQuantity: { grams: item.grams ?? null, amount: item.quantity ?? item.amount ?? null, unit: item.unit ?? null },
         unit: item.unit || 'serving',
         amount: item.quantity || item.amount || 1,
         color: this.#normalizeNoomColor(item.noom_color || item.color),
@@ -537,6 +543,7 @@ ${conservativeNote}${portionBoost}`,
         // returned micro numbers, because the `?? 0` defaults above erase the
         // difference between "not measured" and "measured zero".
         microsSource: aiMicrosSource(item),
+        nutrientProvenance: capturedNutrientProvenance(item, 'ai', capturedFoodGrams(item)),
         ...(item.dish ? { dish: item.dish } : {}),
       }));
 
@@ -622,24 +629,6 @@ ${conservativeNote}${portionBoost}`,
    * Estimate grams from item data
    * @private
    */
-  #estimateGrams(item) {
-    if (item.grams) return item.grams;
-    if (item.calories) return Math.round(item.calories / 1.5);
-
-    const unitDefaults = {
-      cup: 240,
-      piece: 50,
-      slice: 30,
-      oz: 28,
-      tbsp: 15,
-      tsp: 5,
-      serving: 100,
-    };
-
-    const unit = (item.unit || 'serving').toLowerCase();
-    const amount = item.quantity || item.amount || 1;
-    return (unitDefaults[unit] || 100) * amount;
-  }
 
   /**
    * Normalize Noom color

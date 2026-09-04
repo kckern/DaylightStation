@@ -19,10 +19,12 @@ const rangeLabel = (from, to) => {
   const a = new Date(`${from}T12:00:00`);
   const b = new Date(`${to}T12:00:00`);
   const left = a.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  const right = b.toLocaleDateString(undefined, {
-    month: a.getMonth() === b.getMonth() ? undefined : 'short', day: 'numeric', year: 'numeric',
-  });
+  const right = b.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   return `${left} – ${right}`;
+};
+export const weekEnd = (iso) => {
+  const day = new Date(`${iso}T12:00:00`).getDay();
+  return addDays(iso, (7 - day) % 7);
 };
 
 /**
@@ -43,25 +45,25 @@ const rangeLabel = (from, to) => {
  * ONE request for the whole strip, not seven: the old implementation fired
  * seven parallel `GET /budget?date=` calls from an effect.
  */
-export function WeekStrip({ date, today, onDateChange }) {
+export function WeekStrip({ date, today, onDateChange, viewportEnd, onViewportChange, enabled = true }) {
   // Selection and viewport are separate state. The old strip used `date` as
   // its right edge, so selecting Tuesday made the entire week jump left and
   // looked like an accidental scroll. A click inside this window now changes
   // only the selection; the arrow controls are the only things that move it.
-  const [end, setEnd] = useState(() => earlier(date, today));
+  const [localEnd, setEnd] = useState(() => weekEnd(earlier(date, today)));
+  const end = viewportEnd || localEnd;
   const from = addDays(end, -6);
-  const { byDate, loading } = useBudgetRange(from, end);
+  const { byDate, loading } = useBudgetRange(from, end, { enabled });
   const dates = Array.from({ length: 7 }, (_, i) => addDays(end, -6 + i));
 
   useEffect(() => {
     const capped = earlier(date, today);
-    if (capped < from || capped > end) setEnd(capped);
-  }, [date, today, from, end]);
+    setEnd(weekEnd(capped));
+  }, [date, today]);
 
   const moveWeek = (days) => {
-    const target = earlier(addDays(date, days), today);
-    setEnd(target);
-    onDateChange(target);
+    if (onViewportChange) onViewportChange(addDays(end, days));
+    else setEnd(current => addDays(current, days));
   };
 
   return (
@@ -71,7 +73,7 @@ export function WeekStrip({ date, today, onDateChange }) {
           onClick={() => moveWeek(-7)}>‹</UnstyledButton>
         <span className="health-weekstrip__range">{rangeLabel(from, end)}</span>
         <UnstyledButton className="health-weekstrip__week-btn" aria-label="Next week"
-          disabled={date >= today} onClick={() => moveWeek(7)}>›</UnstyledButton>
+          disabled={end >= today} onClick={() => moveWeek(7)}>›</UnstyledButton>
       </div>
       <div className="health-weekstrip__days">
       {dates.map((d, i) => {
@@ -92,6 +94,7 @@ export function WeekStrip({ date, today, onDateChange }) {
 
         return (
           <UnstyledButton key={d}
+            data-date={d}
             className={[
               'health-weekstrip__cell',
               isActive ? 'health-weekstrip__cell--active' : '',
@@ -99,6 +102,7 @@ export function WeekStrip({ date, today, onDateChange }) {
               crossesMonth ? 'health-weekstrip__cell--month-start' : '',
             ].filter(Boolean).join(' ')}
             aria-current={isActive ? 'date' : undefined}
+            disabled={d > today}
             aria-label={label}
             onClick={() => onDateChange(d)}>
             <span className="health-weekstrip__month">{startsMonth ? monthShort(d) : ''}</span>

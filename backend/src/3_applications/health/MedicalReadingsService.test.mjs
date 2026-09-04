@@ -49,4 +49,16 @@ describe('MedicalReadingsService', () => {
     await svc.remove(r.id, 'u');
     expect(saved.readings).toHaveLength(0);
   });
+
+  it('preserves each reading unit in a mixed-unit history', async () => {
+    await svc.add({ metric: 'glucose', value: 90, unit: 'mg/dL', date: '2026-09-01' }, 'u');
+    await svc.add({ metric: 'glucose', value: 5, unit: 'mmol/L', date: '2026-09-02' }, 'u');
+    const { metrics } = await svc.listGrouped('u');
+    expect(metrics[0].readings.map(reading => [reading.value, reading.unit])).toEqual([[5, 'mmol/L'], [90, 'mg/dL']]);
+  });
+
+  it('rejects impossible calendar dates and unsupported metric units', async () => {
+    await expect(svc.add({ metric: 'glucose', value: 90, unit: 'mg/dL', date: '2026-02-31' }, 'u')).rejects.toThrow();
+    await expect(svc.add({ metric: 'glucose', value: 90, unit: 'cups', date: '2026-09-02' }, 'u')).rejects.toThrow();
+  });
 });

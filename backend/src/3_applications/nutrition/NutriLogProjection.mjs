@@ -25,6 +25,9 @@ export function serializeFoodItem(item) {
     settledBy: item.settledBy,
     settledAt: item.settledAt,
     microsSource: item.microsSource,
+    foodId: item.foodId,
+    nutrientProvenance: item.nutrientProvenance,
+    originalQuantity: item.originalQuantity,
   };
 }
 

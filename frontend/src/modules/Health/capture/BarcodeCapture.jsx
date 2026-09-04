@@ -19,10 +19,30 @@ export function BarcodeCapture({ open, onClose, onDecode, busy, bucket }) {
   const videoRef = useRef(null);
   const [manualUpc, setManualUpc] = useState('');
   const [cameraState, setCameraState] = useState('starting'); // starting | live | denied
+  const callback = useRef(onDecode);
+  callback.current = onDecode;
+  const submitted = useRef(false);
+  const stopCamera = useRef(() => {});
+  const [error, setError] = useState(null);
+  const decode = async (upc, targetBucket) => {
+    if (submitted.current) return;
+    submitted.current = true;
+    stopCamera.current();
+    setError(null);
+    try { await callback.current(upc, targetBucket); }
+    catch (err) { setError(err?.message || 'Lookup failed. Try again.'); submitted.current = false; setManualUpc(upc); }
+  };
 
   useEffect(() => {
     if (!open) return undefined;
+    submitted.current = false;
+    setCameraState('starting'); setError(null); setManualUpc('');
     let stream, stopped = false, zxingControls = null;
+    stopCamera.current = () => {
+      stopped = true;
+      zxingControls?.stop?.();
+      stream?.getTracks?.().forEach(track => track.stop());
+    };
 
     (async () => {
       try {
@@ -39,7 +59,7 @@ export function BarcodeCapture({ open, onClose, onDecode, busy, bucket }) {
             try {
               const codes = await detector.detect(videoRef.current);
               if (stopped) return; // sheet closed while detect() was in flight — don't fire a spurious submit
-              if (codes.length) { logger.info('decode.native', {}); return onDecode(codes[0].rawValue, bucket); }
+              if (codes.length) { logger.info('decode.native', {}); return decode(codes[0].rawValue, bucket); }
             } catch { /* frame not ready */ }
             if (stopped) return;
             requestAnimationFrame(tick);
@@ -49,12 +69,13 @@ export function BarcodeCapture({ open, onClose, onDecode, busy, bucket }) {
           const { BrowserMultiFormatReader } = await import('@zxing/browser');
           const reader = new BrowserMultiFormatReader();
           zxingControls = await reader.decodeFromVideoElement(videoRef.current, (result) => {
-            if (result && !stopped) { logger.info('decode.zxing', {}); onDecode(result.getText(), bucket); }
+            if (result && !stopped) { logger.info('decode.zxing', {}); decode(result.getText(), bucket); }
           });
+          if (stopped) zxingControls?.stop?.();
         }
       } catch (err) {
         logger.warn('camera.unavailable', { error: err?.message });
-        setCameraState('denied');
+        if (!stopped) setCameraState('denied');
       }
     })();
 
@@ -63,10 +84,11 @@ export function BarcodeCapture({ open, onClose, onDecode, busy, bucket }) {
       zxingControls?.stop?.();
       stream?.getTracks?.().forEach((t) => t.stop());
     };
-  }, [open, onDecode]);
+  }, [open]);
 
   return (
     <Sheet open={open} onClose={onClose} title="Scan barcode">
+      {error ? <Text role="alert" c="red" size="sm">{error}</Text> : null}
       {cameraState !== 'denied' ? (
         <video ref={videoRef} muted playsInline style={{ width: '100%', borderRadius: 9 }} />
       ) : (
@@ -77,7 +99,7 @@ export function BarcodeCapture({ open, onClose, onDecode, busy, bucket }) {
           value={manualUpc} onChange={(e) => setManualUpc(e.target.value)}
           aria-label="Manual UPC entry" />
         <Button size="sm" loading={busy} disabled={!manualUpc.trim()}
-          onClick={() => onDecode(manualUpc.trim(), bucket)}>Look up</Button>
+          onClick={() => decode(manualUpc.trim(), bucket)}>Look up</Button>
       </div>
     </Sheet>
   );

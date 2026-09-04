@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
-import { TextInput, UnstyledButton, Loader } from '@mantine/core';
+import { useEffect, useId, useRef, useState } from 'react';
+import { TextInput, UnstyledButton, Loader, Button } from '@mantine/core';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
-import { nutritionIconUrl } from './iconUrl.js';
+import { operationRequest } from '../capture/operationRequest.js';
+import { FoodIcon } from './FoodIcon.jsx';
 
 const logger = createAppLogger('health').child('add-combobox');
 
@@ -14,15 +15,17 @@ const logger = createAppLogger('health').child('add-combobox');
 // filtered list is already short.
 const OPEN_SUGGEST_LIMIT = 8;
 
-export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, onTemplate }) {
+export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, onTemplate, onManageFoods }) {
   const [text, setText] = useState('');
   const [items, setItems] = useState([]);
   const [highlight, setHighlight] = useState(-1);
   const [phase, setPhase] = useState('typing'); // typing | parsing
   const [error, setError] = useState(null);
-  const [failedIcons, setFailedIcons] = useState(() => new Set());
   const debounceRef = useRef(null);
   const ridRef = useRef(0); // guards against a slow older suggest response overwriting a newer one
+  const submitting = useRef(false);
+  const requestRef = useRef(null);
+  const listId = useId();
 
   // One effect for both lists. With text, it is the query path exactly as
   // before (debounced). Without, it is the bucket-aware zero-keystroke list
@@ -33,7 +36,7 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
   useEffect(() => {
     const q = text.trim();
     const path = q
-      ? `api/v1/health/nutrition/catalog/suggest?q=${encodeURIComponent(q)}`
+      ? `api/v1/health/nutrition/catalog/suggest?q=${encodeURIComponent(q)}${bucketId ? `&bucket=${encodeURIComponent(bucketId)}` : ''}`
       : `api/v1/health/nutrition/catalog/suggest?${bucketId ? `bucket=${encodeURIComponent(bucketId)}&` : ''}limit=${OPEN_SUGGEST_LIMIT}`;
     const fetchSuggestions = async () => {
       const rid = ++ridRef.current;
@@ -56,6 +59,7 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
   }, [text, bucketId]);
 
   const pick = async (entry) => {
+    if (submitting.current) return;
     // A template is not a quick-add: it can carry variants, and PRD F6.1 says
     // instantiating OFFERS them. So the picker takes over from here rather
     // than this list silently logging one arrangement of the meal.
@@ -64,6 +68,7 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
       onTemplate?.(entry);
       return;
     }
+    submitting.current = true;
     setPhase('parsing'); setError(null);
     try {
       // One request, not two. `mealTime` travels WITH the quick-add (Task 9.1),
@@ -80,7 +85,7 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
         // The row lands on the day being VIEWED, in the meal row it was
       // launched from. Both keys are omitted when absent — absent still means
       // "today" / "the clock's meal" on the server.
-      { catalogEntryId: entry.id, ...(bucketId ? { mealTime: bucketId } : {}), ...(date ? { date } : {}) },
+      operationRequest(requestRef, { catalogEntryId: entry.id, ...(bucketId ? { mealTime: bucketId } : {}), ...(date ? { date } : {}) }),
         'POST',
       );
       logger.info('quickadd.done', { entry: entry.name, bucket: bucketId });
@@ -88,35 +93,40 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
     } catch (err) {
       logger.error('quickadd.failed', { error: err?.message });
       setError(err); setPhase('typing');
-    }
+    } finally { submitting.current = false; }
   };
 
   const submitSentence = async () => {
-    if (!text.trim()) return;
+    if (!text.trim() || submitting.current) return;
+    submitting.current = true;
     setPhase('parsing'); setError(null);
     logger.info('sentence.submit', { length: text.length });
     try {
       // POST /nutrition/input now commits immediately ({ committed: true, ... }) —
       // no review phase. The rows are already logged (unsettled); the day
       // reload picks them up and shows the unsettled cue in place.
-      await DaylightAPI(
+      const result = await DaylightAPI(
       'api/v1/health/nutrition/input',
       // The sentence is parsed against the VIEWED day ("this morning" means
       // that day's morning), and it lands in the meal row it was typed into —
       // the bucket was previously dropped here, so a sentence typed into
       // Breakfast was filed by the clock.
-      { type: 'text', content: text.trim(), ...(bucketId ? { bucket: bucketId } : {}), ...(date ? { date } : {}) },
+      operationRequest(requestRef, { type: 'text', content: text.trim(), ...(bucketId ? { bucket: bucketId } : {}), ...(date ? { date } : {}) }),
       'POST',
     );
       logger.info('sentence.committed', {});
-      onDone();
+      if (result?.noFood || result?.committed === false) {
+        setError(new Error(result?.message || 'No food was logged. Tweak the sentence and try again.'));
+        setPhase('typing');
+      } else onDone(result);
     } catch (err) {
       logger.error('sentence.failed', { error: err?.message });
       setError(err); setPhase('typing'); // text preserved — input never lost
-    }
+    } finally { submitting.current = false; }
   };
 
   const onKeyDown = (e) => {
+    if (submitting.current) { e.preventDefault(); return; }
     if (e.key === 'Escape') return onCancel();
     if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight((h) => Math.min(h + 1, items.length - 1)); }
     if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight((h) => Math.max(h - 1, -1)); }
@@ -130,58 +140,46 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
   return (
     <div className="health-suggest">
       <TextInput autoFocus size="sm" value={text} placeholder="Food name, or a sentence to parse…"
+        aria-label="Food name or sentence" role="combobox" aria-expanded="true" aria-controls={listId}
+        aria-activedescendant={highlight >= 0 ? `${listId}-${highlight}` : undefined}
+        disabled={phase === 'parsing'}
         onChange={(e) => setText(e.target.value)} onKeyDown={onKeyDown}
         rightSection={phase === 'parsing' ? <Loader size="xs" /> : null} />
       {error ? <p className="health-suggest__error">{error.message}</p> : null}
-      <ul className="health-suggest__list" role="listbox">
+      <ul id={listId} className="health-suggest__list" role="listbox" aria-label="Suggested foods">
         {items.map((entry, i) => {
           // The food's picture where it has one (PRD F5.3 asks for it here too).
           // A slug whose image fails is retired by NAME, so a later suggestion of
           // the same food does not re-request it — and the row simply loses the
           // icon rather than showing a broken image.
-          const iconUrl = failedIcons.has(entry.icon) ? null : nutritionIconUrl(entry.icon);
           return (
             <li key={`${entry.type ?? 'food'}:${entry.id}`}>
               <UnstyledButton
+                id={`${listId}-${i}`} disabled={phase === 'parsing'}
                 className={`health-suggest__item${entry.favorite ? ' health-suggest__item--fav' : ''}${i === highlight ? ' health-suggest__item--hi' : ''}`}
                 role="option" aria-selected={i === highlight}
                 onClick={() => pick(entry)}>
                 {entry.favorite ? <span className="health-suggest__star" aria-label="favorite">★</span> : null}
-                {iconUrl ? (
-                  <img
-                    className="health-suggest__icon"
-                    src={iconUrl}
-                    alt=""
-                    loading="lazy"
-                    onError={() => {
-                      logger.debug('suggest.icon_failed', { icon: entry.icon });
-                      setFailedIcons((prev) => new Set(prev).add(entry.icon));
-                    }}
-                  />
-                ) : (
-                  // Keep one bounded visual slot even when the catalog has no
-                  // honest picture. The neutral Noom dot is information (food
-                  // colour), and prevents icon-less rows becoming loose text.
-                  <span className="health-suggest__dot" aria-hidden="true"
-                    data-color={entry.color || entry.noom_color || 'neutral'} />
-                )}
+                <FoodIcon icon={entry.icon} className="health-suggest__icon" />
                 <span className="health-suggest__name">{entry.name}</span>
                 {entry.type === 'template' ? (
                   // A meal-level suggestion is visually distinguished from a
                   // single food (PRD F8.2) by a NON-COLOUR cue: the item count.
                   <span className="health-suggest__badge">{`${entry.itemCount ?? 0} items`}</span>
                 ) : null}
-                <span className="health-suggest__kcal">{entry.nutrients?.calories ?? ''}</span>
+                <span className="health-suggest__kcal">{entry.grams > 0 ? `${Math.round(entry.grams)} g · ` : ''}{entry.nutrients?.calories ?? ''} kcal</span>
               </UnstyledButton>
             </li>
           );
         })}
       </ul>
+      {text.trim() ? <Button size="compact-sm" disabled={phase === 'parsing'} onClick={submitSentence}>Log sentence</Button> : null}
       {onMeals ? (
         <UnstyledButton className="health-suggest__saved-meals" onClick={onMeals}>
           Meals &amp; templates ▸
         </UnstyledButton>
       ) : null}
+      {onManageFoods ? <UnstyledButton className="health-suggest__saved-meals" onClick={onManageFoods}>Manage saved foods ▸</UnstyledButton> : null}
     </div>
   );
 }

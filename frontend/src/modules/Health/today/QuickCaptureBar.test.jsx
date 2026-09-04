@@ -85,15 +85,11 @@ describe('QuickCaptureBar', () => {
     expect(onOpenBarcode).toHaveBeenCalledWith('morning');
   });
 
-  // DELIBERATE-BREAKAGE PIN: if QuickCaptureBar ever computed its bucket
-  // from something other than `bucketForHour` (e.g. reintroducing
-  // getMealTimeFromHour's thresholds), hour 11 would read "morning" instead
-  // of "afternoon" — this test exists specifically to catch that drift.
-  it('hour 11 resolves to afternoon/Lunch, matching bucketForHour (NOT getMealTimeFromHour, which would say morning)', () => {
+  it('hour 11 resolves to Breakfast using the shared hour policy', () => {
     setHour(11);
     r(<QuickCaptureBar onVoiceCapture={() => {}} onPhotoCapture={() => {}} onOpenBarcode={() => {}} onAddTo={() => {}} />);
-    expect(screen.getByRole('button', { name: 'Quick add to Lunch' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Quick add to Breakfast' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Quick add to Breakfast' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Quick add to Lunch' })).toBeNull();
   });
 });
 

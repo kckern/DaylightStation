@@ -52,7 +52,7 @@ export function MonthBlock({ days = [], loading = false, title }) {
       {/* The gap count is stated, never implied. A month with nine holes and a
           month with none must not look like the same month. */}
       <p className="health-monthblock__caption">
-        {known ? `${over} over budget` : 'No data yet'}
+        {known ? `${known}/${days.length} days logged · ${over} over current budget` : 'No logged days yet'}
         {gaps ? ` · ${gaps} without data` : ''}
       </p>
     </section>

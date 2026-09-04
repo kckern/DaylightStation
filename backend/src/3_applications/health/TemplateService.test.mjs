@@ -134,7 +134,7 @@ describe('TemplateService.instantiate', () => {
     const rows = nutriList.saveMany.mock.calls.at(-1)[0];
     // The UTC date here is 2026-09-05; the household's local date is the 4th.
     expect(rows.every((r) => r.date === '2026-09-04')).toBe(true);
-    expect(rows.every((r) => r.mealTime === 'night')).toBe(true);
+    expect(rows.every((r) => r.mealTime === 'evening')).toBe(true);
   });
 
   it('bumps useCount and lastUsed', async () => {

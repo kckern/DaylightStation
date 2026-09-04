@@ -48,6 +48,15 @@ function assertGoalsShape(goals) {
   if (!goals || typeof goals !== 'object' || Array.isArray(goals)) {
     goalsInvalid('goals must be an object');
   }
+  if (!['male', 'female'].includes(goals.sex)) goalsInvalid('sex must be male or female');
+  for (const key of ['heightIn', 'birthYear']) {
+    if (typeof goals[key] !== 'number' || !Number.isFinite(goals[key]) || goals[key] <= 0) goalsInvalid(`${key} must be a positive number`);
+  }
+  if (!Number.isInteger(goals.birthYear) || goals.birthYear < 1900 || goals.birthYear > new Date().getFullYear()) goalsInvalid('birthYear must be a valid year');
+  for (const key of ['targetWeightLbs', 'activityBaseline', 'budgetFloor']) {
+    if (goals[key] !== undefined && (typeof goals[key] !== 'number' || !Number.isFinite(goals[key]) || goals[key] <= 0)) goalsInvalid(`${key} must be positive`);
+  }
+  if (goals.weeklyRateLbs !== undefined && (typeof goals.weeklyRateLbs !== 'number' || !Number.isFinite(goals.weeklyRateLbs))) goalsInvalid('weeklyRateLbs must be numeric');
 
   const macroGoals = goals.macroGoals;
   if (macroGoals !== undefined && macroGoals !== null) {
@@ -249,12 +258,12 @@ export class BudgetService {
     // provenance, so counting it in the denominator would report missing data
     // that does not exist. It is excluded from BOTH sides.
     const foodRows = counted.filter((i) => i?.kind !== 'group');
-    const covered = foodRows.filter((i) => Boolean(i?.microsSource)).length;
     const microCoverage = Object.fromEntries(
-      MICRO_KEYS.map((k) => [k, { covered, total: foodRows.length }]),
+      MICRO_KEYS.map((k) => [k, { covered: foodRows.filter(i => (Boolean(i.nutrientProvenance?.[k]) && typeof i[k] === 'number' && Number.isFinite(i[k]))
+        || (i.nutrientProvenance == null && Boolean(i.microsSource) && typeof i[k] === 'number' && i[k] !== 0)).length, total: foodRows.length }]),
     );
 
-    return { food: sumOf('calories'), macros, microCoverage };
+    return { food: sumOf('calories'), macros, microCoverage, loggedEntries: foodRows.length, loggingStatus: foodRows.length ? 'logged' : 'unlogged', goalBasis: 'current' };
   }
 
   async #loadGoalsOrThrow(userId) {
@@ -267,7 +276,7 @@ export class BudgetService {
     return goals;
   }
 
-  async getBudget(userId, date) {
+  async getBudget(userId, date, { items: snapshotItems } = {}) {
     const goals = await this.#loadGoalsOrThrow(userId);
     const weightData = await this.#healthStore.loadWeightData(userId) || {};
     const { budget, stale } = this.#budgetForDate({
@@ -278,8 +287,8 @@ export class BudgetService {
     // a day (hot file AND archives), and getBudgetRange goes through the same
     // store rule via findByDateRange. Two different day-resolution rules is how
     // the equation and the week strip came to disagree about the same date.
-    const items = await this.#nutriListStore.findByDate(userId, date) || [];
-    const { food, macros, microCoverage } = this.#foldItems(items);
+    const items = snapshotItems ?? await this.#nutriListStore.findByDate(userId, date) ?? [];
+    const { food, macros, microCoverage, loggedEntries, loggingStatus, goalBasis } = this.#foldItems(items);
 
     const workouts = await this.#healthStore.getWorkoutsForDate(userId, date);
     const sessions = flattenWorkoutSessions(workouts);
@@ -289,7 +298,7 @@ export class BudgetService {
     return {
       date, budget, food, exercise, net: food - exercise,
       remaining, status: remaining >= 0 ? 'under' : 'over', stale, sessions, goals,
-      macros, microCoverage,
+      macros, microCoverage, loggedEntries, loggingStatus, goalBasis,
     };
   }
 
@@ -341,12 +350,12 @@ export class BudgetService {
         if (err.code === 'NO_WEIGHT_DATA') return { date, error: 'NO_WEIGHT_DATA' };
         throw err;
       }
-      const { food, macros } = this.#foldItems(itemsByDate.get(date) || []);
+      const { food, macros, loggedEntries, loggingStatus, goalBasis } = this.#foldItems(itemsByDate.get(date) || []);
       const exercise = Math.round(sumExerciseCalories(flattenWorkoutSessions(workoutsByDate[date])));
       const remaining = budget - food + exercise;
       return {
         date, budget, food, exercise, net: food - exercise,
-        remaining, status: remaining >= 0 ? 'under' : 'over', stale, macros,
+        remaining, status: remaining >= 0 ? 'under' : 'over', stale, macros, loggedEntries, loggingStatus, goalBasis,
       };
     });
   }

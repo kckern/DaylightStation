@@ -13,7 +13,7 @@ import { MENTION_CATEGORIES, buildAttachment } from './mentions/index.js';
  *
  * @param {{ userId: string, variant?: 'light'|'overlay', style?: object }} props
  */
-export function CoachChat({ userId, variant = 'light', style }) {
+export function CoachChat({ userId, variant = 'light', style, conversation }) {
   const mentions = userId
     ? {
         fetchUrl: `/api/v1/health/mentions/all?user=${encodeURIComponent(userId)}`,
@@ -29,6 +29,7 @@ export function CoachChat({ userId, variant = 'light', style }) {
       variant={variant}
       style={style}
       mentions={mentions}
+      conversation={conversation}
     />
   );
 }

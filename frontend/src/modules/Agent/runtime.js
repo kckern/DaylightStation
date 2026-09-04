@@ -86,7 +86,7 @@ export function createAgentRuntime(agentId) {
       };
     },
 
-    async *runStream({ messages, userId, attachments = [], abortSignal }) {
+    async *runStream({ messages, userId, attachments = [], abortSignal, context = null }) {
       const last = messages.at(-1);
       const text = extractText(last);
       const threadId = getOrCreateThreadId(agentId, userId);
@@ -94,7 +94,7 @@ export function createAgentRuntime(agentId) {
       const res = await fetch(streamUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: text, context: { userId, attachments }, messages: serializeMessages(messages), threadId }),
+        body: JSON.stringify({ input: text, context: { ...context, userId, attachments }, messages: serializeMessages(messages), threadId }),
         signal: abortSignal,
       });
 

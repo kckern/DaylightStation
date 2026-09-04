@@ -1,7 +1,8 @@
 //
 // Deliberately dumb store of manual medical readings (BP, labs). Validation
 // only — no interpretation. value2 exists for BP diastolic.
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+import { isISODate } from '#shared/contracts/health/isoDate.mjs';
+import { MEDICAL_METRICS } from '#shared/contracts/health/medicalMetrics.mjs';
 
 const invalid = (msg) => {
   const err = new Error(`INVALID_READING: ${msg}`);
@@ -26,7 +27,12 @@ export class MedicalReadingsService {
     if (typeof metric !== 'string' || !metric.trim()) throw invalid('metric required');
     if (typeof value !== 'number' || !Number.isFinite(value)) throw invalid('value must be a finite number');
     if (value2 !== null && (typeof value2 !== 'number' || !Number.isFinite(value2))) throw invalid('value2 must be a finite number or null');
-    if (typeof date !== 'string' || !DATE_RE.test(date)) throw invalid('date must be YYYY-MM-DD');
+    if (!isISODate(date)) throw invalid('date must be a real YYYY-MM-DD date');
+    const definition = MEDICAL_METRICS[metric.trim()];
+    if (typeof unit !== 'string' || !unit.trim()) throw invalid('unit required');
+    if (definition && !definition.units.includes(unit)) throw invalid(`unit must be ${definition.units.join(' or ')}`);
+    if (definition?.paired && value2 == null) throw invalid('both paired values are required');
+    if (definition && !definition.paired && value2 != null) throw invalid('this metric has one value');
 
     const doc = await this.#store.load(userId);
     const entry = { id: this.#createId(), metric: metric.trim(), value, value2, unit, date, note };

@@ -45,7 +45,7 @@ const PlusIcon = () => (
  * still offers an exact target, and a row is one tap to move.
  */
 const FIRST_BUCKET = 'morning';
-export function QuickCaptureBar({ onVoiceCapture, onPhotoCapture, onOpenBarcode, onAddTo, busy, date = null }) {
+export function QuickCaptureBar({ active = true, onVoiceCapture, onPhotoCapture, onOpenBarcode, onAddTo, busy, date = null }) {
   const isToday = !date || date === localTodayISO();
   const bucket = isToday ? bucketForHour(new Date().getHours()) : FIRST_BUCKET;
   const label = bucketLabel(bucket);
@@ -59,7 +59,7 @@ export function QuickCaptureBar({ onVoiceCapture, onPhotoCapture, onOpenBarcode,
         onClick={() => { logger.info('quickbar.add', { bucket, date: date || undefined }); onAddTo(bucket); }}>
         <PlusIcon />
       </UnstyledButton>
-      <VoiceCapture bucket={bucket} mealLabel={target} labelPrefix="Quick voice log"
+      <VoiceCapture active={active} bucket={bucket} mealLabel={target} labelPrefix="Quick voice log"
         busy={busy} className="health-quickbar__btn" onCapture={onVoiceCapture} />
       <PhotoCapture bucket={bucket} mealLabel={target} labelPrefix="Quick photo log"
         busy={busy} className="health-quickbar__btn" onCapture={onPhotoCapture} />

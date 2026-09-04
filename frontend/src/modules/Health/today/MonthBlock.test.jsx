@@ -37,7 +37,7 @@ describe('MonthBlock', () => {
   it('states the number of holes rather than letting them read as good days', () => {
     render(<MonthBlock days={[gap(iso(0)), gap(iso(1)), day(iso(2), 1000), day(iso(3), 4000, 'over')]} />);
     const caption = document.querySelector('.health-monthblock__caption').textContent;
-    expect(caption).toContain('1 over budget');
+    expect(caption).toContain('1 over current budget');
     expect(caption).toContain('2 without data');
     expect(document.querySelector('.health-monthblock__bars').getAttribute('aria-label'))
       .toBe('2 days with data, 1 over budget, 2 without data');
@@ -45,7 +45,7 @@ describe('MonthBlock', () => {
 
   it('says "no data yet" rather than "0 over budget" when the whole month is holes', () => {
     render(<MonthBlock days={[gap(iso(0)), gap(iso(1))]} />);
-    expect(document.querySelector('.health-monthblock__caption').textContent).toContain('No data yet');
+    expect(document.querySelector('.health-monthblock__caption').textContent).toContain('No logged days yet');
   });
 
   // M4, the month block's half: undated gaps must not collapse into one slot.

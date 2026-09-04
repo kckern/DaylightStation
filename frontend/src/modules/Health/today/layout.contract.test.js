@@ -33,11 +33,12 @@ describe('Today layout stylesheet', () => {
     expect(today).toMatch(/margin-inline: auto/);
   });
 
-  it('keeps the quick-capture clearance padding when the layout becomes a grid', () => {
+  it('keeps capture controls in layout rather than floating over food', () => {
     // Regression guard: the grid rule is a SECOND `.health-today` block, and
     // overwriting rather than extending it would silently drop the padding that
     // stops the floating capture bar covering the last log row.
-    expect(rule('.health-today')).toMatch(/padding-bottom: calc\(/);
+    expect(rule('.health-quickbar')).toMatch(/position: relative/);
+    expect(rule('.health-today')).toMatch(/padding-bottom: 0.75rem/);
   });
 
   it('keeps the day ledger at its compact type and row rhythm', () => {

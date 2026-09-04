@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { UnstyledButton, Button, Text } from '@mantine/core';
-import { Sheet, LoadingState, EmptyState } from '@/lib/ui';
+import { Sheet, LoadingState, EmptyState, ErrorState } from '@/lib/ui';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { nutritionIconUrl } from './iconUrl.js';
+import { TemplateEditor } from './TemplateEditor.jsx';
+import { operationRequest } from '../capture/operationRequest.js';
+import { FoodIcon } from './FoodIcon.jsx';
 
 const logger = createAppLogger('health').child('template-picker');
 
@@ -28,15 +31,18 @@ const kcal = (components) => Math.round(components.reduce((s, c) => s + (Number(
  *   step rather than logging one silent arrangement of itself.
  */
 export function TemplatePicker({ open, onClose, onLogged, bucketId, date = null, focusTemplateId = null }) {
-  const { data, loading, reload } = useApiResource(
+  const { data, loading, reload, error: loadError } = useApiResource(
     open ? 'api/v1/health/nutrition/templates?includeProposed=1' : null,
     { deps: [open], label: 'meal-templates', logger },
   );
   // template | null — the one whose variants are being chosen.
   const [chosen, setChosen] = useState(null);
+  const [editing, setEditing] = useState(null);
   const [variants, setVariants] = useState(() => new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const submitting = useRef(false);
+  const requestRef = useRef(null);
 
   const templates = data?.templates || [];
   // Honour `focusTemplateId` once per opening. A ref, not state derived from
@@ -53,7 +59,7 @@ export function TemplatePicker({ open, onClose, onLogged, bucketId, date = null,
   const proposals = templates.filter((t) => t.status === 'proposed');
   const active = templates.filter((t) => t.status !== 'proposed');
 
-  const close = () => { setChosen(null); setVariants(new Set()); setError(null); onClose(); };
+  const close = () => { setEditing(null); setChosen(null); setVariants(new Set()); setError(null); onClose(); };
 
   const openTemplate = (template) => {
     setError(null);
@@ -61,7 +67,8 @@ export function TemplatePicker({ open, onClose, onLogged, bucketId, date = null,
     // the first tap — the one-tap path the saved-meals sheet had.
     if (variantsOf(template).length === 0) { log(template, []); return; }
     setChosen(template);
-    setVariants(new Set());
+    const offered = new Set(variantsOf(template).map(component => component.name));
+    setVariants(new Set((template.variantsByBucket?.[bucketId] || []).filter(name => offered.has(name))));
   };
 
   const toggleVariant = (name) => setVariants((prev) => {
@@ -78,12 +85,15 @@ export function TemplatePicker({ open, onClose, onLogged, bucketId, date = null,
     : [];
 
   const log = async (template, variantNames) => {
+    if (submitting.current) return;
+    submitting.current = true;
     setBusy(true); setError(null);
     try {
       await DaylightAPI(`api/v1/health/nutrition/templates/${template.id}/instantiate`,
         // Instantiate onto the day being VIEWED. The route has always taken a
       // `date`; nothing was sending one, so every template landed on today.
-      { ...(bucketId ? { mealTime: bucketId } : {}), ...(date ? { date } : {}), variantNames }, 'POST');
+      operationRequest(requestRef, { ...(bucketId ? { mealTime: bucketId } : {}), ...(date ? { date } : {}), variantNames, templateId: template.id }), 'POST');
+      requestRef.current = null;
       logger.info('template.logged', { id: template.id, bucket: bucketId ?? null, variants: variantNames.length });
       setChosen(null); setVariants(new Set());
       onLogged();
@@ -91,6 +101,7 @@ export function TemplatePicker({ open, onClose, onLogged, bucketId, date = null,
       logger.error('template.log_failed', { id: template.id, error: err?.message });
       setError(err);
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   };
@@ -114,8 +125,9 @@ export function TemplatePicker({ open, onClose, onLogged, bucketId, date = null,
   return (
     <Sheet open={open} onClose={close} title={chosen ? chosen.name : 'Meals & templates'}>
       {error ? <p className="health-suggest__error">{error.message}</p> : null}
+      {loadError ? <ErrorState error={loadError} onRetry={reload} label="Meals unavailable" /> : null}
 
-      {chosen ? (
+      {editing ? <TemplateEditor key={editing.id} template={editing} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); reload(); }} /> : chosen ? (
         <div className="health-templates__variants">
           <p className="health-templates__hint">
             {coreOf(chosen).length > 0
@@ -151,7 +163,7 @@ export function TemplatePicker({ open, onClose, onLogged, bucketId, date = null,
       ) : (
         <>
           {loading ? <LoadingState label="meals" /> : null}
-          {!loading && templates.length === 0 ? (
+          {!loading && !loadError && templates.length === 0 ? (
             <EmptyState title="No meals or templates yet"
               hint="Save one from a meal's ⋯ menu, or wait for a suggestion." />
           ) : null}
@@ -179,14 +191,23 @@ export function TemplatePicker({ open, onClose, onLogged, bucketId, date = null,
           ) : null}
 
           {active.map((template) => (
-            <UnstyledButton key={template.id} className="health-suggest__item" disabled={busy}
+            <div key={template.id}>
+            <UnstyledButton className="health-suggest__item" disabled={busy}
               onClick={() => openTemplate(template)}>
-              {icon(template) ? <img className="health-suggest__icon" src={icon(template)} alt="" loading="lazy" /> : null}
+              <FoodIcon icon={template.icon} className="health-suggest__icon" />
               <span>{template.name}</span>
               <Text size="xs" c="dimmed" ml="auto">
                 {`${coreOf(template).length} items · ${kcal(coreOf(template))} kcal`}
               </Text>
             </UnstyledButton>
+            <Button size="compact-xs" variant="subtle" disabled={busy} onClick={() => setEditing(template)} aria-label={`Edit ${template.name}`}>Edit</Button>
+            <Button size="compact-xs" variant="subtle" color="red" disabled={busy} onClick={async () => {
+              if (!window.confirm(`Delete saved meal ${template.name}? Logged food will stay unchanged.`)) return;
+              setBusy(true);
+              try { await DaylightAPI(`api/v1/health/nutrition/templates/${template.id}`, {}, 'DELETE'); reload(); }
+              catch (err) { setError(err); } finally { setBusy(false); }
+            }} aria-label={`Delete ${template.name}`}>Delete</Button>
+            </div>
           ))}
         </>
       )}

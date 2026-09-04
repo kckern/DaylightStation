@@ -1,66 +1,28 @@
-// tests/live/flow/health/health-fast-log.runtime.test.mjs
-// Benchmark journey #1: per-meal "+ Add food…" → suggest pick → row lands in
-// the section, equation strip updates. jsdom cannot see layout/section
-// grouping, this can.
 import { test, expect } from '@playwright/test';
+import { installHealthFixtures } from './healthFixtures.mjs';
 
-// Random-suffixed name: keeps repeated runs' suggestion rows unambiguous for
-// strict-mode single-match selectors (getByText/toBeVisible require exactly
-// one match) even though the catalog entry itself is now cleaned up below.
-const FOOD_NAME = `Playwright Chicken ${Date.now()}`;
-
-let catalogEntryId = null;
-
-test.afterEach(async ({ request }) => {
-  // Belt-and-suspenders: if the in-test UI delete didn't run (e.g. an
-  // assertion failed mid-flow), sweep today's nutrilist for anything this
-  // test's distinctive name created.
-  const res = await request.get('/api/v1/health/nutrilist');
-  const body = await res.json().catch(() => ({}));
-  for (const row of body?.data || []) {
-    const name = row.name || row.item || '';
-    if (name.includes('Playwright Chicken')) {
-      await request.delete(`/api/v1/health/nutrilist/${row.uuid}`).catch(() => {});
-    }
-  }
-  // The catalog itself has no soft-delete/expiry — the DELETE route exists
-  // specifically so this seeded entry doesn't accrete permanently across runs.
-  if (catalogEntryId) {
-    await request.delete(`/api/v1/health/nutrition/catalog/${catalogEntryId}`).catch(() => {});
-    catalogEntryId = null;
-  }
-});
-
-test('per-meal add → suggest pick → row lands in the section, equation updates', async ({ page, request }) => {
-  // Seed a distinctive catalog food via the API.
-  const seeded = await request.post('/api/v1/health/nutrition/catalog', {
-    data: { name: FOOD_NAME, calories: 231, protein: 43, carbs: 0, fat: 5 },
-  });
-  catalogEntryId = (await seeded.json().catch(() => ({})))?.entry?.id || null;
-
+test('suggestion → food → centered correction → delete → Undo, without household writes', async ({ page }) => {
+  const state = await installHealthFixtures(page, { foods: [{ id: 'food-chicken', name: 'Fixture chicken', grams: 150, calories: 231, protein: 43, carbs: 0, fat: 5 }] });
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('/health');
-  // Generous timeout: this suite runs its specs in parallel workers against
-  // one dev server process, so first paint can lag under contention.
-  await expect(page.getByText('Breakfast')).toBeVisible({ timeout: 20_000 });
-
-  const equationBefore = await page.locator('.health-equation__math').textContent();
-
-  await page.getByText(/Add food/).first().click();
-  await page.getByPlaceholder(/Food name/).fill('playwright chick');
-  const suggestion = page.locator('.health-suggest__item', { hasText: FOOD_NAME }).first();
-  await expect(suggestion).toBeVisible();
-  await suggestion.click();
-
-  // The row appears inside the Breakfast section
-  const breakfast = page.locator('.health-meal', { hasText: 'Breakfast' });
-  await expect(breakfast.getByText(FOOD_NAME)).toBeVisible();
-
-  // Equation strip moved (food total changed)
-  await expect(page.locator('.health-equation__math')).not.toHaveText(equationBefore);
-
-  // Cleanup: delete the row via the edit sheet
-  page.on('dialog', (d) => d.accept());
-  await breakfast.getByText(FOOD_NAME).click();
-  await page.getByRole('button', { name: /^Delete$/ }).click();
-  await expect(breakfast.getByText(FOOD_NAME)).not.toBeVisible();
+  await page.getByText('+ Add food…', { exact: true }).first().click();
+  await page.getByRole('option', { name: /Fixture chicken/ }).click();
+  const row = page.locator('.health-row', { hasText: 'Fixture chicken' });
+  await expect(row).toBeVisible();
+  expect(state.requests.filter(request => request.method === 'POST')).toHaveLength(1);
+  await row.click();
+  const panel = page.locator('.ds-sheet__panel');
+  await expect(panel).toBeVisible();
+  const rect = await panel.boundingBox();
+  expect(Math.abs(rect.x + rect.width / 2 - 720)).toBeLessThan(3);
+  await expect(page.getByLabel('Weight in grams')).toBeFocused();
+  await page.getByLabel('Weight in grams').fill('75');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(row).toContainText('75 g');
+  await row.click();
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(row).toHaveCount(0);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(row).toContainText('75 g');
+  expect(state.unexpected).toEqual([]);
 });

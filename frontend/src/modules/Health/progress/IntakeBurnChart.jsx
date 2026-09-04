@@ -18,8 +18,9 @@ import { buildIntakeBurn } from './intakeBurn.js';
 export function IntakeBurnChart({ days = [], loading = false, title = 'Intake vs burn' }) {
   const { bars, foodAreaPct, exerciseAreaPct } = buildIntakeBurn(days);
   const known = bars.filter((b) => b.kind === 'day');
+  const logged = known.filter(bar => days.find(day => day.date === bar.date)?.loggingStatus !== 'unlogged');
   const gaps = bars.length - known.length;
-  const avgFood = known.length ? Math.round(known.reduce((s, b) => s + b.food, 0) / known.length) : null;
+  const avgFood = logged.length ? Math.round(logged.reduce((s, b) => s + b.food, 0) / logged.length) : null;
   const avgBurn = known.length ? Math.round(known.reduce((s, b) => s + b.exercise, 0) / known.length) : null;
 
   return (
@@ -59,7 +60,7 @@ export function IntakeBurnChart({ days = [], loading = false, title = 'Intake vs
         </div>
       </div>
       <p className="health-intakeburn__caption">
-        {known.length ? `avg ${avgFood} in · ${avgBurn} out` : 'No data yet'}
+        {known.length ? `avg ${avgFood ?? '—'} logged · ${avgBurn} exercise · ${logged.length}/${days.length} days logged` : 'No data yet'}
         {gaps ? ` · ${gaps} without data` : ''}
       </p>
     </section>

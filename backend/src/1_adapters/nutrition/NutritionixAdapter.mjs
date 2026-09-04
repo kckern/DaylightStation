@@ -90,7 +90,7 @@ export class NutritionixAdapter extends INutritionLookup {
     return {
       label: food.food_name,
       icon: this.#getFoodIcon(food.food_name),
-      grams: food.serving_weight_grams || 100,
+      grams: typeof food.serving_weight_grams === 'number' && food.serving_weight_grams > 0 ? food.serving_weight_grams : null,
       unit: food.serving_unit || 'g',
       amount: food.serving_qty || 1,
       calories: Math.round(food.nf_calories || 0),

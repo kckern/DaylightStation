@@ -619,13 +619,22 @@ export function saveYamlToPath(filePath, content, options = {}) {
  * observe either the old complete document or the new complete document.
  */
 export function saveYamlToPathAtomic(filePath, content, options = {}) {
+  const { durable = false, ...yamlOptions } = options;
   const dir = path.dirname(filePath);
   ensureDir(dir);
   const stagingPath = atomicStagingPath(filePath);
   try {
-    const yamlContent = yaml.dump(content, { lineWidth: -1, ...options });
+    const yamlContent = yaml.dump(content, { lineWidth: -1, ...yamlOptions });
     fs.writeFileSync(stagingPath, yamlContent, 'utf8');
+    if (durable) {
+      const fd = fs.openSync(stagingPath, 'r');
+      try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    }
     fs.renameSync(stagingPath, filePath);
+    if (durable) {
+      const fd = fs.openSync(dir, 'r');
+      try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    }
   } catch (err) {
     try { if (fs.existsSync(stagingPath)) fs.unlinkSync(stagingPath); } catch { /* preserve original error */ }
     logPermissionError(filePath, err);

@@ -60,6 +60,13 @@ const run = ({ uc, responseContext }) => uc.execute({
 });
 
 describe('ProcessRevisionInput on a committed log', () => {
+  it('does not rewrite evidence or claim success when the consumed ledger conflicts', async () => {
+    const h = makeHarness({ existingItems: unsettled });
+    h.nutriListStore.syncFromLog.mockRejectedValue(Object.assign(new Error('Entry corrected elsewhere'), { code: 'VERSION_CONFLICT' }));
+    await expect(run(h)).rejects.toMatchObject({ code: 'VERSION_CONFLICT' });
+    expect(h.foodLogStore.updateItems).not.toHaveBeenCalled();
+    expect(h.updates.every(update => !JSON.stringify(update.payload).includes('240'))).toBe(true);
+  });
   it('re-syncs the nutrilist so the revision reaches the day view', async () => {
     const h = makeHarness({ existingItems: unsettled });
     const result = await run(h);

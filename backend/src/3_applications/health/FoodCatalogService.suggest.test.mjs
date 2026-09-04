@@ -63,9 +63,28 @@ describe('FoodCatalogService.suggest', () => {
   });
 
   it('createCustom stores a custom-source entry with the barcode', async () => {
-    const e = await svc.createCustom({ name: 'Local Granola', calories: 210, protein: 5, carbs: 30, fat: 8, barcodeUpc: '012345678905' }, 'u');
+    const e = await svc.createCustom({ name: 'Local Granola', grams: 50, calories: 210, protein: 5, carbs: 30, fat: 8, barcodeUpc: '012345678905' }, 'u');
     expect(e.source).toBe('custom');
     expect((await svc.getByUpc('012345678905', 'u')).name).toBe('Local Granola');
+  });
+
+  it('explicit future definitions scale all supplied nutrients without deleting evidence', async () => {
+    const before = await store.getById('a');
+    before.observations = [{ date: '2026-09-01', grams: 100, kcal: 200, logId: 'old' }];
+    const edited = await svc.updateDefinition('a', 'u', { name: 'Roast chicken', grams: 100, nutrients: { calories: 150, protein: 20, sodium: 100, fiber: 0 } });
+    expect(edited.normalizedName).toBe('roast chicken');
+    expect(edited.observations).toEqual(before.observations);
+    expect(edited.nutrientsForGrams(200)).toMatchObject({ calories: 300, protein: 40, sodium: 200, fiber: 0 });
+    expect(edited.nutrientsForGrams(200).sugar).toBeUndefined();
+    expect(edited.canonicalGrams).toBe(100);
+  });
+
+  it('assigns a stable identity before the first capture is logged', async () => {
+    const first = await svc.resolveIdentity({ name: 'New food' }, 'u');
+    const repeat = await svc.resolveIdentity({ name: 'New food' }, 'u');
+    expect(first.foodId).toBe(repeat.foodId);
+    await svc.recordUsage({ ...first, calories: 100 }, 'u');
+    expect((await store.getById(first.foodId)).name).toBe('New food');
   });
 });
 

@@ -25,6 +25,7 @@ async function save(props) {
   ));
   r(<CustomFoodSheet upc="012345678905" open onClose={() => {}} onCreated={() => {}} {...props} />);
   fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'Trail mix' } });
+  fireEvent.change(screen.getByLabelText(/Weight in grams/i), { target: { value: '100' } });
   fireEvent.click(screen.getByRole('button', { name: /create & log/i }));
   await waitFor(() => expect(apiMock.mock.calls.some(([p]) => p.includes('quickadd'))).toBe(true));
 }
@@ -34,11 +35,11 @@ describe('CustomFoodSheet', () => {
 
   it('quick-adds into the meal the scan was launched from, on the day being viewed', async () => {
     await save({ bucketId: 'evening', date: '2026-09-03' });
-    expect(quickaddBody()).toEqual({ catalogEntryId: 'e9', mealTime: 'evening', date: '2026-09-03' });
+    expect(quickaddBody()).toEqual({ catalogEntryId: 'e9', mealTime: 'evening', date: '2026-09-03', operationId: expect.any(String) });
   });
 
   it('with neither, the body is unchanged — absent still means today and the clock\'s meal', async () => {
     await save({});
-    expect(quickaddBody()).toEqual({ catalogEntryId: 'e9' });
+    expect(quickaddBody()).toEqual({ catalogEntryId: 'e9', operationId: expect.any(String) });
   });
 });

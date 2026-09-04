@@ -10,6 +10,7 @@ import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/fo
 import { repairTruncatedJson } from '../lib/repairJson.mjs';
 import { buildCommittedChoices } from '../lib/committedChoices.mjs';
 import { confineIcon, iconVocabulary } from '#domains/nutrition/services/icons.mjs';
+import { capturedFoodGrams, capturedNutrientProvenance } from '#shared/contracts/health/foodQuantity.mjs';
 
 /**
  * Process revision input use case
@@ -131,21 +132,18 @@ export class ProcessRevisionInput {
         return { success: false, error: 'Could not parse revision' };
       }
 
-      // 7. Update log with revised items, then RE-SYNC the nutrilist.
-      // The log rows are written at capture time now, so without this re-sync a
-      // revision would change nothing the day view shows or BudgetService counts.
+      // 7. Commit to the authoritative ledger BEFORE updating capture evidence.
+      // A concurrent web correction must reject the revision, not silently keep
+      // the old ledger while the bot reports new totals as successfully saved.
+      if (this.#nutriListStore?.syncFromLog) {
+        await this.#nutriListStore.syncFromLog({
+          id: nutriLog.id, uuid: nutriLog.uuid, userId, meal: nutriLog.meal,
+          createdAt: nutriLog.createdAt, status: nutriLog.status,
+          isAccepted: nutriLog.isAccepted ?? nutriLog.status === 'accepted', items: revisedItems,
+        }, { revision: true });
+      }
       if (this.#foodLogStore) {
-        const revisedLog = await this.#foodLogStore.updateItems(userId, logUuid, revisedItems);
-        if (revisedLog && this.#nutriListStore?.syncFromLog) {
-          try {
-            await this.#nutriListStore.syncFromLog(revisedLog);
-            this.#logger.debug?.('processRevision.nutrilistSynced', {
-              logUuid, itemCount: revisedItems.length, status: revisedLog.status,
-            });
-          } catch (e) {
-            this.#logger.warn?.('processRevision.nutrilistSyncFailed', { logUuid, error: e.message });
-          }
-        }
+        await this.#foodLogStore.updateItems(userId, logUuid, revisedItems);
       }
 
       // 8. Update state back to confirmation
@@ -265,7 +263,9 @@ Noom colors:
         return rawItems.map((item) => ({
           id: uuidv4(),
           label: item.name || item.label || 'Unknown',
-          grams: item.grams || this.#estimateGrams(item),
+          grams: capturedFoodGrams(item),
+          originalQuantity: { grams: item.grams ?? null, amount: item.quantity ?? item.amount ?? null, unit: item.unit ?? null },
+          nutrientProvenance: capturedNutrientProvenance(item, 'ai', capturedFoodGrams(item)),
           unit: item.unit || 'serving',
           amount: item.quantity || item.amount || 1,
           color: this.#normalizeNoomColor(item.noom_color || item.color),
@@ -285,29 +285,6 @@ Noom colors:
       this.#logger.warn?.('processRevision.parseError', { error: e.message });
       return [];
     }
-  }
-
-  /**
-   * Estimate grams from item data
-   * @private
-   */
-  #estimateGrams(item) {
-    if (item.grams) return item.grams;
-    if (item.calories) return Math.round(item.calories / 1.5);
-
-    const unitDefaults = {
-      cup: 240,
-      piece: 50,
-      slice: 30,
-      oz: 28,
-      tbsp: 15,
-      tsp: 5,
-      serving: 100,
-    };
-
-    const unit = (item.unit || 'serving').toLowerCase();
-    const amount = item.quantity || item.amount || 1;
-    return (unitDefaults[unit] || 100) * amount;
   }
 
   /**

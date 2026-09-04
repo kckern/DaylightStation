@@ -6,7 +6,7 @@
  * If newDate is not provided, shows a date picker first.
  */
 
-import { createNutriLog } from '../nutriLogRecords.mjs';
+import { isISODate } from '#shared/contracts/health/isoDate.mjs';
 
 /**
  * Move item to date use case
@@ -66,74 +66,28 @@ export class MoveItemToDate {
 
       // If we don't have logId, look it up from nutrilist
       const listItem = await this.#nutriListStore.findByUuid(userId, entryId);
-      if (!logId) {
-        logId = listItem?.logId || listItem?.log_uuid;
-        oldDate = oldDate || listItem?.date;
-      }
-
-      // 2. If no newDate provided, show date picker
+      if (!listItem) throw new Error('Item not found');
+      oldDate = listItem.date || oldDate;
+      logId = listItem.logId || listItem.log_uuid || logId;
+      const item = { ...listItem, label: listItem.label || listItem.name || listItem.item };
       if (!newDate) {
-        // Save current state with entryId for when date is selected
-        const currentState = await this.#conversationStateStore.get(conversationId) || {};
-        await this.#conversationStateStore.set(conversationId, {
-          ...currentState,
-          activeFlow: 'move',
-          flowState: { entryId, logId, oldDate },
-        });
-
-        const itemLabel = listItem?.name || listItem?.label || 'item';
-        const keyboard = this.#buildDateKeyboard(entryId, oldDate);
+        const current = await this.#conversationStateStore.get(conversationId) || {};
+        await this.#conversationStateStore.set(conversationId, { ...current, activeFlow: 'move',
+          flowState: { entryId, logId, date: oldDate } });
         await this.#messagingGateway.updateMessage(conversationId, messageId, {
-          caption: `📅 Move <b>${itemLabel}</b> to which day?`,
-          parseMode: 'HTML',
-          choices: keyboard,
+          caption: `Move ${item.label} to which day?`, choices: this.#buildDateKeyboard(entryId, oldDate),
         });
-
         return { success: true, showingDatePicker: true };
       }
-
-      if (!logId) {
-        throw new Error('Log not found for item');
-      }
-
-      // 2. Load the original log
-      const originalLog = await this.#foodLogStore.findById(userId, logId);
-      if (!originalLog) {
-        throw new Error('Log not found');
-      }
-
-      // 3. Find the item
-      const item = originalLog.items.find((i) => i.id === entryId);
-      if (!item) {
-        throw new Error('Item not found in log');
-      }
-
-      // 4. Remove item from original log
-      const now = new Date();
-      const updatedOriginalLog = originalLog.removeItem(entryId, now);
-
-      // 5. Save or delete original log
-      if (updatedOriginalLog.items.length === 0) {
-        await this.#foodLogStore.hardDelete(userId, logId);
+      if (!isISODate(newDate)) throw Object.assign(new Error('A real destination date is required'), { status: 400 });
+      const siblings = item.kind === 'group' ? await this.#nutriListStore.findByDate(userId, oldDate) : [];
+      const parentIds = new Set([item.id, item.uuid].filter(Boolean));
+      const ids = [entryId, ...siblings.filter(child => parentIds.has(child.parentId)).map(child => child.uuid || child.id)];
+      if (this.#nutriListStore.mutateEntries) {
+        await this.#nutriListStore.mutateEntries(userId, { updates: ids.map(id => ({ id, changes: { date: newDate } })) });
       } else {
-        await this.#foodLogStore.save(updatedOriginalLog);
-        await this.#nutriListStore.syncFromLog(updatedOriginalLog);
+        await this.#nutriListStore.update(userId, entryId, { date: newDate });
       }
-
-      // 6. Create new log for the new date with the item
-      const timezone = this.#config?.getUserTimezone?.(userId) || 'America/Los_Angeles';
-      const newLog = createNutriLog({
-        userId,
-        conversationId,
-        text: `Moved: ${item.label}`,
-        meal: { date: newDate, time: originalLog.meal?.time || 'afternoon' },
-        items: [item],
-        timezone,
-        timestamp: now,
-      }).accept(now);
-
-      await this.#foodLogStore.save(newLog);
-      await this.#nutriListStore.syncFromLog(newLog);
 
       // 7. Clear adjustment state
       await this.#conversationStateStore.clear(conversationId);

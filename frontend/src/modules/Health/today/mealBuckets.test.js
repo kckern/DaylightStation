@@ -25,35 +25,13 @@ function beforeSystemTime(iso) {
   vi.setSystemTime(new Date(iso));
 }
 
-// Pins `bucketForHour` to SavedMealsService's thresholds
-// (<11 morning / <15 afternoon / <20 evening / else night) at every
-// boundary hour — this is the test that stops a THIRD hour->meal mapping
-// drifting in alongside `getMealTimeFromHour` (backend) and
-// `currentMealBucketId` (this file, mirrors getMealTimeFromHour). See the
-// divergence comment on `bucketForHour` in mealBuckets.js.
-describe('bucketForHour — matches SavedMealsService, NOT getMealTimeFromHour', () => {
-  it.each([
-    [0, 'morning'],
-    [10, 'morning'],  // last morning hour
-    [11, 'afternoon'], // first afternoon hour
-    [14, 'afternoon'], // last afternoon hour
-    [15, 'evening'],   // first evening hour
-    [19, 'evening'],   // last evening hour
-    [20, 'night'],     // first night hour
-    [23, 'night'],
-  ])('hour %i -> %s', (hour, expected) => {
-    expect(bucketForHour(hour)).toBe(expected);
-  });
-
-  it('diverges from currentMealBucketId (getMealTimeFromHour) at hour 11 and hour 20 by design', () => {
-    // Hour 11: getMealTimeFromHour says morning (5-12), SavedMealsService
-    // says afternoon (<11 is morning, so 11 is already afternoon).
-    expect(currentMealBucketId(new Date(2026, 0, 1, 11))).toBe('morning');
-    expect(bucketForHour(11)).toBe('afternoon');
-    // Hour 20: getMealTimeFromHour says evening (17-21), SavedMealsService
-    // says night (<20 is evening, so 20 is already night).
-    expect(currentMealBucketId(new Date(2026, 0, 1, 20))).toBe('evening');
-    expect(bucketForHour(20)).toBe('night');
+describe('one hour policy for every entry point', () => {
+  it.each([[0, 'night'], [4, 'night'], [5, 'morning'], [11, 'morning'], [12, 'afternoon'],
+    [16, 'afternoon'], [17, 'evening'], [20, 'evening'], [21, 'night'], [23, 'night']])(
+    'hour %i -> %s', (hour, expected) => expect(bucketForHour(hour)).toBe(expected),
+  );
+  it.each(Array.from({ length: 24 }, (_, i) => i))('current hour %i uses the shared policy', hour => {
+    expect(currentMealBucketId(new Date(2026, 0, 1, hour))).toBe(bucketForHour(hour));
   });
 });
 

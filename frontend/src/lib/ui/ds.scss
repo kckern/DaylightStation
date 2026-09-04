@@ -63,8 +63,10 @@
     animation: ds-sheet-up var(--ds-motion-base) var(--ds-motion-easing);
 
     @include bp.tablet-up {
-      left: auto; top: 0; bottom: 0; width: 420px;
-      border-radius: 0; border-left: 1px solid var(--ds-border);
+      left: 50%; right: auto; top: 50%; bottom: auto;
+      transform: translate(-50%, -50%); width: min(520px, calc(100vw - 3rem));
+      border-radius: 14px; border: 1px solid var(--ds-border);
+      animation: none;
     }
   }
   &__header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }

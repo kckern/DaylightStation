@@ -10,6 +10,8 @@
 // the input is; showing only the raw line invites reading noise as progress.
 
 /** Chart box in user units. preserveAspectRatio="none" stretches it to the CSS box. */
+import { isISODate } from '@shared-contracts/health/isoDate.mjs';
+
 export const VIEW_W = 100;
 export const VIEW_H = 28;
 
@@ -25,16 +27,19 @@ const MIN_SPAN_LBS = 0.5;
 // (toISOString would THROW), while "2026-02-31" quietly normalizes to March 3
 // (toISOString returns the wrong day). The NaN guard covers the first, the
 // round-trip the second.
-const isCalendarDate = (value) => {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const d = new Date(`${value}T12:00:00Z`);
-  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
-};
-
 const num = (v) => {
+  if (v == null || v === '') return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 };
+
+export function normalizeWeightEntries(weightData) {
+  return Object.entries(weightData || {})
+    .map(([key, entry]) => ({ ...entry, date: isISODate(key) ? key : entry?.date }))
+    .filter(entry => isISODate(entry.date))
+    .map(entry => ({ ...entry, lbs: num(entry.lbs ?? entry.measurement), avg: num(entry.lbs_adjusted_average) }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
 
 /**
  * @param {object} weightData - the /health/weight payload: { [date]: entry }
@@ -50,12 +55,12 @@ const num = (v) => {
  *   and the chip must say so rather than print a confident 0.0.
  */
 export function buildWeightSeries(weightData, { days = 30, trendDays = 7 } = {}) {
-  const all = Object.entries(weightData || {})
-    .filter(([date, e]) => isCalendarDate(date) && e && typeof e === 'object')
-    .map(([date, e]) => ({ date, lbs: num(e.lbs ?? e.measurement), avg: num(e.lbs_adjusted_average) }))
-    .sort((a, b) => (a.date < b.date ? -1 : 1));
+  const all = normalizeWeightEntries(weightData);
 
-  const entries = all.slice(-days);
+  const latestDate = all.at(-1)?.date;
+  const windowStart = latestDate ? new Date(`${latestDate}T12:00:00Z`) : null;
+  windowStart?.setUTCDate(windowStart.getUTCDate() - days + 1);
+  const entries = windowStart ? all.filter(entry => entry.date >= windowStart.toISOString().slice(0, 10)) : [];
   const latest = entries.length ? entries[entries.length - 1] : null;
   const latestLbs = latest ? (latest.avg ?? latest.lbs) : null;
 
@@ -89,7 +94,8 @@ export function buildWeightSeries(weightData, { days = 30, trendDays = 7 } = {})
   const mid = (hi + lo) / 2;
   const top = mid + span / 2;
 
-  const x = (i) => (entries.length < 2 ? VIEW_W / 2 : (i / (entries.length - 1)) * VIEW_W);
+  const instant = date => new Date(`${date}T12:00:00Z`).getTime();
+  const x = (i) => (entries.length < 2 ? VIEW_W / 2 : (instant(entries[i].date) - instant(entries[0].date)) / (instant(entries.at(-1).date) - instant(entries[0].date)) * VIEW_W);
   const y = (v) => ((top - v) / span) * VIEW_H;
   const round = (n) => Math.round(n * 100) / 100;
   const toPoints = (key) => entries
@@ -104,6 +110,7 @@ export function buildWeightSeries(weightData, { days = 30, trendDays = 7 } = {})
     deltaLbs,
     direction,
     trendFrom,
+    trendDays: trendFrom ? Math.round((instant(latest.date) - instant(trendFrom)) / 86400000) : null,
     // A single point is not a line: one reading draws nothing rather than a
     // horizontal bar implying a week of stability.
     rawPoints: entries.length >= 2 ? toPoints('lbs') : '',

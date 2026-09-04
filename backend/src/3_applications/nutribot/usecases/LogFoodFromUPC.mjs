@@ -127,7 +127,9 @@ export class LogFoodFromUPC {
               name: entry.name,
               brand: null,
               imageUrl: null,
-              serving: { size: 1, unit: 'serving' },
+              serving: { size: entry.canonicalGrams, unit: 'g' },
+              icon: entry.icon,
+              foodId: entry.id,
               nutrition: { ...entry.nutrients },
             };
             this.#logger.info?.('logUPC.catalogHit', { upc, name: entry.name });
@@ -171,11 +173,13 @@ export class LogFoodFromUPC {
       }
 
       // 5. Create food item from product
-      const grams = Number(product.serving?.size) || 100;
+      const grams = ['g', 'gram', 'grams'].includes(String(product.serving?.unit).toLowerCase())
+        && Number(product.serving?.size) > 0 ? Number(product.serving.size) : null;
       const foodItem = {
         label: product.name,
-        icon: classification.icon,
-        grams: grams > 0 ? grams : 100,
+        icon: product.icon || classification.icon,
+        foodId: product.foodId || null,
+        grams,
         unit: product.serving?.unit || 'serving',
         amount: 1,
         color: classification.noomColor,
@@ -188,6 +192,7 @@ export class LogFoodFromUPC {
         sodium: Number(product.nutrition?.sodium) || 0,
         cholesterol: Number(product.nutrition?.cholesterol) || 0,
       };
+      if (this.#catalogService?.resolveIdentity) Object.assign(foodItem, await this.#catalogService.resolveIdentity(foodItem, userId));
 
       // 6. Create NutriLog entity
       const timezone = this.#config?.getUserTimezone?.(userId) || 'America/Los_Angeles';
@@ -224,6 +229,7 @@ export class LogFoodFromUPC {
       if (this.#catalogService) {
         try {
           await this.#catalogService.recordUsage({
+            foodId: foodItem.foodId,
             name: foodItem.label,
             calories: foodItem.calories,
             protein: foodItem.protein,

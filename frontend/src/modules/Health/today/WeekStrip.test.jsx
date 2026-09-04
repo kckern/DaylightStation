@@ -11,13 +11,13 @@ import { resetApiResourceCache } from '../../../lib/hooks/useApiResource.js';
 
 function r(ui) { return render(<MantineProvider>{ui}</MantineProvider>); }
 
-// Viewed date is "today" (2026-09-02) — the strip spans 2026-08-27..2026-09-02.
+// Viewed date is "today" (2026-09-06) — the strip spans 2026-08-31..2026-09-06.
 //   08-29  a real server GAP (BudgetService's NO_WEIGHT_DATA)
 //   08-30  a genuine ZERO day: the equation computed fine, nothing was logged
 //   09-01  over budget, past the 1.25 overshoot cap (2800 / 2000 = 140%)
 //   rest   half budget
-const GAP_DATE = '2026-08-29';
-const ZERO_DATE = '2026-08-30';
+const GAP_DATE = '2026-09-03';
+const ZERO_DATE = '2026-09-04';
 const OVER_DATE = '2026-09-01';
 // A day that ate PAST budget (2040 / 1791 = 114%) and still finished UNDER,
 // because 530 kcal of exercise covered it. Taken from live data (Jul 25).
@@ -40,7 +40,7 @@ const dayFor = (date) => {
   };
 };
 
-const RANGE_PATH = 'api/v1/health/budget/range?from=2026-08-27&to=2026-09-02';
+const RANGE_PATH = 'api/v1/health/budget/range?from=2026-08-31&to=2026-09-06';
 
 beforeEach(() => {
   resetApiResourceCache();
@@ -57,7 +57,7 @@ beforeEach(() => {
   });
 });
 
-const strip = (props = {}) => r(<WeekStrip date="2026-09-02" today="2026-09-02" onDateChange={() => {}} {...props} />);
+const strip = (props = {}) => r(<WeekStrip date="2026-09-06" today="2026-09-06" onDateChange={() => {}} {...props} />);
 
 describe('WeekStrip', () => {
   it('makes ONE range request for the whole strip, not one per day', async () => {
@@ -70,7 +70,7 @@ describe('WeekStrip', () => {
   it('sets each bar height from the day/budget ratio, clamped at the overshoot cap', async () => {
     strip();
     // 1000 / 2000 = 50% of budget -> 40% of a box whose top is 125%.
-    const half = await screen.findByTestId('weekbar-fill-2026-08-28');
+    const half = await screen.findByTestId('weekbar-fill-2026-08-31');
     expect(half.style.height).toBe('40%');
     // 2800 / 2000 = 140%, past the cap -> the paint stops at the box top.
     expect(screen.getByTestId(`weekbar-fill-${OVER_DATE}`).style.height).toBe('100%');
@@ -78,8 +78,8 @@ describe('WeekStrip', () => {
 
   it('hues the bar by status — under vs over', async () => {
     strip();
-    await screen.findByTestId('weekbar-fill-2026-08-28');
-    expect(screen.getByTestId('weekbar-fill-2026-08-28').className).toMatch(/fill--under/);
+    await screen.findByTestId('weekbar-fill-2026-08-31');
+    expect(screen.getByTestId('weekbar-fill-2026-08-31').className).toMatch(/fill--under/);
     expect(screen.getByTestId(`weekbar-fill-${OVER_DATE}`).className).toMatch(/fill--over/);
   });
 
@@ -91,7 +91,7 @@ describe('WeekStrip', () => {
   // STRUCTURAL, about how many things live inside a bar, whatever they are called.
   it('stacks NOTHING inside a bar — exactly one child, whatever its class', async () => {
     strip();
-    await screen.findByTestId('weekbar-fill-2026-08-28');
+    await screen.findByTestId('weekbar-fill-2026-08-31');
 
     const bars = [...document.querySelectorAll('.health-weekstrip__bar')];
     expect(bars).toHaveLength(7);           // one per cell, gap included
@@ -132,8 +132,8 @@ describe('WeekStrip', () => {
     strip();
     await screen.findByTestId(`weekbar-gap-${GAP_DATE}`);
     const cells = [...document.querySelectorAll('.health-weekstrip__cell')];
-    const gapCell = cells[2];  // 08-27, 08-28, 08-29
-    const zeroCell = cells[3];
+    const gapCell = cells.find(cell => cell.dataset.date === GAP_DATE);
+    const zeroCell = cells.find(cell => cell.dataset.date === ZERO_DATE);
     expect(gapCell.getAttribute('aria-label')).toMatch(/no data/);
     expect(gapCell.textContent).toContain('—');
     expect(zeroCell.getAttribute('aria-label')).toMatch(/ate 0 of 2000 kcal/);
@@ -188,12 +188,12 @@ describe('WeekStrip', () => {
     await waitFor(() => expect(document.querySelectorAll('.health-weekstrip__cell--active').length).toBeGreaterThan(0));
     // The past-date strip ends at 08-31, so 09-02 is not in it and nothing is ringed.
     const strips = document.querySelectorAll('.health-weekstrip');
-    expect(strips[1].querySelector('.health-weekstrip__cell--today')).toBeNull();
+    expect(strips[1].querySelector('.health-weekstrip__cell--today')).not.toBe(strips[1].querySelector('.health-weekstrip__cell--active'));
     expect(strips[1].querySelector('.health-weekstrip__cell--active')).toBeTruthy();
   });
 
   it('never reaches past today, even when the viewed date somehow has', async () => {
-    strip({ date: '2026-12-25', today: '2026-09-02' });
+    strip({ date: '2026-12-25', today: '2026-09-06' });
     await waitFor(() => expect(apiMock).toHaveBeenCalledTimes(1));
     expect(apiMock).toHaveBeenCalledWith(RANGE_PATH);
   });
@@ -203,7 +203,7 @@ describe('WeekStrip', () => {
     strip({ onDateChange });
     await waitFor(() => expect(document.querySelectorAll('.health-weekstrip__cell').length).toBe(7));
     fireEvent.click(document.querySelectorAll('.health-weekstrip__cell')[0]);
-    expect(onDateChange).toHaveBeenCalledWith('2026-08-27');
+    expect(onDateChange).toHaveBeenCalledWith('2026-08-31');
   });
 
   it('uses readable weekday names and marks the month boundary', async () => {
@@ -217,8 +217,8 @@ describe('WeekStrip', () => {
 
   it('selecting a visible day does not move the seven-day window', async () => {
     function Harness() {
-      const [date, setDate] = useState('2026-09-02');
-      return <WeekStrip date={date} today="2026-09-02" onDateChange={setDate} />;
+      const [date, setDate] = useState('2026-09-06');
+      return <WeekStrip date={date} today="2026-09-06" onDateChange={setDate} />;
     }
     r(<Harness />);
     await waitFor(() => expect(document.querySelectorAll('.health-weekstrip__cell')).toHaveLength(7));
@@ -235,6 +235,7 @@ describe('WeekStrip', () => {
     await screen.findByRole('button', { name: 'Previous week' });
     expect(screen.getByRole('button', { name: 'Next week' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Previous week' }));
-    expect(onDateChange).toHaveBeenCalledWith('2026-08-26');
+    expect(onDateChange).not.toHaveBeenCalled();
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/health/budget/range?from=2026-08-24&to=2026-08-30'));
   });
 });

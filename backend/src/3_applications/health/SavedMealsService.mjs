@@ -3,18 +3,14 @@
 // edit never mutates a saved meal. Logging writes NutriList rows directly
 // (log_uuid 'SAVEDMEAL'), the same mechanism quick-add uses.
 
-const mealTimeFromHour = (h) => (h < 11 ? 'morning' : h < 15 ? 'afternoon' : h < 20 ? 'evening' : 'night');
-
-/** Local (not UTC) YYYY-MM-DD from a Date instance. */
-const localDateISO = (d) => {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-};
+import { bucketForHour as mealTimeFromHour } from '#shared/contracts/health/mealBuckets.mjs';
+import { localDateISO } from '#shared/contracts/health/isoDate.mjs';
+import { foodGrams } from '#shared/contracts/health/foodQuantity.mjs';
 
 const snapshotItem = (item) => ({
+  ...structuredClone(item),
   name: String(item.name),
+  grams: foodGrams(item),
   calories: Number(item.calories) || 0,
   protein: Number(item.protein) || 0,
   carbs: Number(item.carbs) || 0,
@@ -69,6 +65,8 @@ export class SavedMealsService {
     const targetMealTime = mealTime || mealTimeFromHour(now.getHours());
 
     const rows = meal.items.map((item) => ({
+      ...item,
+      id: undefined,
       uuid: this.#createId(),
       userId,
       item: item.name,
@@ -77,9 +75,9 @@ export class SavedMealsService {
       protein: item.protein,
       carbs: item.carbs,
       fat: item.fat,
-      grams: 0,
-      unit: 'serving',
-      amount: 1,
+      grams: foodGrams(item),
+      unit: 'g',
+      amount: foodGrams(item),
       color: item.color,
       date: targetDate,
       mealTime: targetMealTime,

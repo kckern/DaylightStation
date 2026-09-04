@@ -25,6 +25,7 @@ const ARCHIVE_RETENTION_DAYS = 30;
 
 function dehydrateFoodItem(item) {
   return {
+    foodId: item.foodId, originalQuantity: item.originalQuantity, nutrientProvenance: item.nutrientProvenance,
     id: item.id, uuid: item.uuid, label: item.label, icon: item.icon,
     grams: item.grams, unit: item.unit, amount: item.amount, color: item.color,
     calories: item.calories, protein: item.protein, carbs: item.carbs, fat: item.fat,

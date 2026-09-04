@@ -45,7 +45,7 @@ const macroLine = (rows) => {
 
 function Section({
   label, rows, onAdd, onRowTap, onConfirm, headerAction, coldLoading, pending,
-  bucketId, onVoiceCapture, onPhotoCapture, onOpenBarcode, captureBusy, measuredByUuid,
+  bucketId, onVoiceCapture, onPhotoCapture, onOpenBarcode, captureBusy, measuredByUuid, active,
 }) {
   const [expanded, setExpanded] = useState(() => new Set());
   const entries = groupRows(rows);
@@ -77,7 +77,7 @@ function Section({
               renders there. */}
           {bucketId ? (
             <span className="health-meal__capture">
-              <VoiceCapture bucket={bucketId} mealLabel={label} busy={captureBusy} onCapture={onVoiceCapture} />
+              <VoiceCapture active={active} bucket={bucketId} mealLabel={label} busy={captureBusy} onCapture={onVoiceCapture} />
               <PhotoCapture bucket={bucketId} mealLabel={label} busy={captureBusy} onCapture={onPhotoCapture} />
               <MealBarcodeButton label={label} onClick={() => onOpenBarcode(bucketId)} />
             </span>
@@ -150,8 +150,9 @@ function Section({
 }
 
 export function LogTable({
+  active = true,
   byBucket, sessions = [], exerciseAvailable = false, onAddTo, onRowTap, onConfirm,
-  addSlot, addingTo, bucketHeaderAction, coldLoading = false, capturePendingBucket = null,
+  addSlot, addingTo, bucketHeaderAction, coldLoading = false, capturePendingBucket = null, capturePendingBuckets = [],
   onVoiceCapture, onPhotoCapture, onOpenBarcode, captureBusy = false, measuredByUuid = null,
 }) {
   const orphans = byBucket.get(null) || [];
@@ -161,10 +162,10 @@ export function LogTable({
         const rows = byBucket.get(b.id) || [];
         return (
           <div key={b.id}>
-            <Section label={b.label} rows={rows}
+            <Section active={active} label={b.label} rows={rows}
               onAdd={() => onAddTo(b.id)} onRowTap={onRowTap} onConfirm={onConfirm}
               headerAction={bucketHeaderAction ? bucketHeaderAction(b.id, rows, b.label) : null}
-              coldLoading={coldLoading} pending={capturePendingBucket === b.id}
+              coldLoading={coldLoading} pending={capturePendingBucket === b.id || capturePendingBuckets.includes(b.id)}
               bucketId={b.id} onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
               onOpenBarcode={onOpenBarcode} captureBusy={captureBusy} measuredByUuid={measuredByUuid} />
             {addingTo === b.id && addSlot ? addSlot : null}
