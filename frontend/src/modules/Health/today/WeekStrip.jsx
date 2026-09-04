@@ -1,12 +1,9 @@
-import { useEffect, useState } from 'react';
 import { UnstyledButton } from '@mantine/core';
-import { DaylightAPI } from '../../../lib/api.mjs';
-import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { localTodayISO } from './mealBuckets.js';
+import { useBudgetRange } from './useBudgetRange.js';
+import { barModel, fmtKcal } from './dayBars.js';
 
-const logger = createAppLogger('health').child('week-strip');
-
-const addDays = (iso, n) => {
+export const addDays = (iso, n) => {
   const d = new Date(`${iso}T12:00:00`); // noon anchor avoids DST edge shifts
   d.setDate(d.getDate() + n);
   return localTodayISO(d);
@@ -14,61 +11,72 @@ const addDays = (iso, n) => {
 
 const WEEKDAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
-const fmtKcal = (n) => {
-  if (n == null) return '—';
-  if (n >= 1000) return `${Math.round(n / 100) / 10}k`;
-  return `${Math.round(n)}`;
-};
-
 /**
- * A 7-cell day navigator rendered directly under EquationStrip: the 6 days
- * before the viewed date plus the viewed date itself, capped at `today` (so
- * the strip never reaches past today even if `date` somehow did). Each cell
- * shows a weekday letter, day number, compact food-kcal total, and an
- * under/over/no-data status dot; tapping a cell jumps the viewed date.
+ * A 7-cell day navigator under the macro bars: the 6 days before the viewed
+ * date plus the viewed date itself, capped at `today` (so the strip never
+ * reaches past today even if `date` somehow did).
  *
- * Fetch shape mirrors ProgressView's 14-day adherence effect: one
- * `api/v1/health/budget?date=` request per day via Promise.all, 409 (no
- * weight data that day) tolerated as a gap rather than an error, and the
- * in-flight batch discarded if the component unmounts before it resolves.
+ * Each cell is a per-day BUDGET BAR — height is the day's food as a fraction of
+ * that day's budget, hue is under/over. That is the whole encoding, on purpose:
+ * NO macro segments here (PRD F7.1). A stacked bar in a 40px cell invites
+ * reading composition off four pixels of colour, and macros already have an
+ * honest home in the tapped day.
+ *
+ * A day the server could not compute renders HOLLOW — a dashed outline with no
+ * track and no fill — never a zero-height bar. "No data" and "ate nothing" are
+ * different statements and must not look the same (see dayBars.js).
+ *
+ * ONE request for the whole strip, not seven: the old implementation fired
+ * seven parallel `GET /budget?date=` calls from an effect.
  */
 export function WeekStrip({ date, today, onDateChange }) {
   const end = date < today ? date : today;
-  const [days, setDays] = useState(() => Array.from({ length: 7 }, (_, i) => ({ date: addDays(end, -6 + i), budget: null })));
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let live = true;
-    setLoading(true);
-    const dates = Array.from({ length: 7 }, (_, i) => addDays(end, -6 + i));
-    Promise.all(dates.map((d) => DaylightAPI(`api/v1/health/budget?date=${d}`)
-      .then((budget) => ({ date: d, budget }))
-      .catch((err) => {
-        const expectedGap = err?.status === 404 || err?.status === 409;
-        if (expectedGap) logger.debug('week.day.gap', { date: d, status: err?.status });
-        else logger.warn('week.day.failed', { date: d, status: err?.status, error: err?.message });
-        return { date: d, budget: null };
-      })))
-      .then((results) => { if (live) { setDays(results); setLoading(false); } });
-    return () => { live = false; };
-  }, [end]);
+  const from = addDays(end, -6);
+  const { byDate, loading } = useBudgetRange(from, end);
+  const dates = Array.from({ length: 7 }, (_, i) => addDays(end, -6 + i));
 
   return (
     <div className="health-weekstrip" role="group" aria-label="Week navigator" aria-busy={loading}>
-      {days.map(({ date: d, budget }) => {
+      {dates.map((d) => {
         const dt = new Date(`${d}T12:00:00`);
+        const day = byDate.get(d) || null;
+        const bar = barModel(day);
         const isActive = d === date;
-        const status = budget ? budget.status : 'gap';
+        const isToday = d === today;
+        const dayName = dt.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+        // The accessible name announces the TRUE percentage, never the clamped
+        // paint — a spoken "100%" for a 140% day would be a false statement.
+        const label = bar.kind === 'gap'
+          ? `${dayName}, no data`
+          : `${dayName}, ${Math.round(Number(day.food))} of ${Math.round(Number(day.budget))} kcal, ${Math.round(bar.ratio * 100)}% of budget, ${bar.status} budget`;
+
         return (
           <UnstyledButton key={d}
-            className={`health-weekstrip__cell${isActive ? ' health-weekstrip__cell--active' : ''}`}
+            className={[
+              'health-weekstrip__cell',
+              isActive ? 'health-weekstrip__cell--active' : '',
+              isToday ? 'health-weekstrip__cell--today' : '',
+            ].filter(Boolean).join(' ')}
             aria-current={isActive ? 'date' : undefined}
-            aria-label={dt.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+            aria-label={label}
             onClick={() => onDateChange(d)}>
             <span className="health-weekstrip__dow">{WEEKDAY_LETTERS[dt.getDay()]}</span>
             <span className="health-weekstrip__num">{dt.getDate()}</span>
-            <span className="health-weekstrip__kcal">{budget ? fmtKcal(budget.food) : '—'}</span>
-            <span className={`health-weekstrip__dot health-weekstrip__dot--${status}`} />
+            <span className="health-weekstrip__barbox" aria-hidden="true">
+              <span className="health-weekstrip__goalline" />
+              {bar.kind === 'gap' ? (
+                <span className="health-weekstrip__bar health-weekstrip__bar--gap" data-testid={`weekbar-gap-${d}`} />
+              ) : (
+                <span className="health-weekstrip__bar">
+                  <span
+                    className={`health-weekstrip__fill health-weekstrip__fill--${bar.status}`}
+                    data-testid={`weekbar-fill-${d}`}
+                    data-height-pct={bar.heightPct}
+                    style={{ height: `${bar.heightPct}%` }} />
+                </span>
+              )}
+            </span>
+            <span className="health-weekstrip__kcal">{bar.kind === 'gap' ? '—' : fmtKcal(day.food)}</span>
           </UnstyledButton>
         );
       })}

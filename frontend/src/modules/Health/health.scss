@@ -1,3 +1,4 @@
+@use "sass:math";
 // frontend/src/modules/Health/health.scss
 // Health app styling — DS pack shell (Task F1). var(--ds-*) tokens only
 // (audit:ui gate rejects raw colors). Styles accrete as later Part F tasks
@@ -17,6 +18,18 @@
   &__stale { font-size: 0.7rem; color: var(--ds-warning); }
 }
 
+// Week strip (Task 8.2) — seven per-day budget bars, plain CSS, no chart
+// library for seven rectangles. The box is `$health-bar-cap` tall and the
+// budget reference line sits at 1/cap of it (80% for a 1.25 cap), so a day
+// exactly on budget lands ON the line and the space above it is the overshoot
+// headroom. The 80% is derived from the cap in one place — the JS half of the
+// same arithmetic is dayBars.js's OVERSHOOT_CAP.
+//
+// NOTHING here animates `filter`: it is a known paint-cost trap in this repo
+// (low fps with zero long tasks). Hue changes are flat background swaps.
+$health-bar-cap: 1.25;
+$health-bar-box: 34px;
+
 .health-weekstrip {
   display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.3rem;
   padding: 0.4rem 0 0.3rem; border-bottom: 1px solid var(--ds-border);
@@ -27,15 +40,38 @@
     &:hover { background: var(--ds-surface-alt); }
     &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
     &--active { background: var(--ds-surface-alt); color: var(--ds-text-high); }
+    // Today is RINGED, which is a different statement from "the day you are
+    // looking at" (the fill above) — both can be true, and on a past date only
+    // one is.
+    &--today { box-shadow: inset 0 0 0 1px var(--ds-accent); }
   }
   &__dow { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.04em; }
   &__num { font-size: 0.95rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ds-text-high); }
   &__kcal { font-size: 0.62rem; font-variant-numeric: tabular-nums; color: var(--ds-text-low); }
-  &__dot {
-    width: 6px; height: 6px; border-radius: 50%; margin-top: 0.1rem; background: var(--ds-border);
-    &--under { background: var(--ds-success); }
+
+  &__barbox {
+    position: relative; display: block; width: 100%; height: $health-bar-box;
+    margin-top: 0.15rem;
+  }
+  &__goalline {
+    position: absolute; left: 0; right: 0; bottom: math.percentage(math.div(1, $health-bar-cap));
+    height: 1px; background: var(--ds-border);
+  }
+  // The track: present only for a day the server COULD compute. Its mere
+  // existence is what separates "0 kcal logged" from "no data".
+  &__bar {
+    position: absolute; inset: 0; display: flex; align-items: flex-end;
+    border-radius: 3px; background: var(--ds-surface-alt); overflow: hidden;
+  }
+  // A hole in the data: hollow, outlined, no track and no fill. It must not be
+  // mistakable for a zero-height bar (PRD F7.1).
+  &__bar--gap {
+    background: none; border: 1px dashed var(--ds-border); opacity: 0.7;
+  }
+  &__fill {
+    display: block; width: 100%; border-radius: 3px 3px 0 0;
+    background: var(--ds-success);
     &--over { background: var(--ds-danger); }
-    &--gap { background: var(--ds-border); opacity: 0.5; }
   }
 }
 
