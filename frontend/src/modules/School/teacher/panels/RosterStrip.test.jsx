@@ -91,7 +91,11 @@ describe('RosterStrip — obligation is a separate fact from status (plan 3.2/3.
   });
 
   it('shows a planned row’s status chip AND its excused obligation — two facts, not a merged badge', async () => {
-    const grid = await mountExpanded(section({ state: 'excused', reason: 'not_due_yet' }));
+    const grid = await mountExpanded({
+      subject: 'math',
+      next: { title: 'Place value practice' },
+      obligation: { state: 'excused', reason: 'not_due_yet' },
+    });
     const card = grid.getByTestId('lesson-card');
     expect(within(card).getByText('Not started')).toBeInTheDocument();
     expect(within(card).getByText('Offered, but not due yet.')).toBeInTheDocument();
