@@ -159,6 +159,85 @@ describe('YamlObservationStore.append — per-kind value rules run before any wr
   });
 });
 
+// The READ path holds a row to the same rules. A malformed row cannot get in through
+// `append` any more, but it can still ARRIVE — a hand edit, a restore from a backup
+// written by older code, disk corruption confined to one record. The one that matters is
+// `value: NaN`: read back, merged into a composition, it reads `complete` (because
+// `NaN !== null`) and that is enough to drive the UNATTENDED commit.
+describe('YamlObservationStore — a row on disk that cannot satisfy its own kind', () => {
+  const DAY = '2026-09-02';
+  const AT = '2026-09-02 18:00:00';
+
+  /** Write rows straight to the file, bypassing `append` — the only way in for these. */
+  const seed = (rows) => {
+    const p = filePath('u1');
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, yaml.dump(rows), 'utf8');
+  };
+
+  const good = {
+    id: 'ok-1', kind: 'weight', value: 480, unit: 'g', scaleId: 'k1',
+    at: AT, date: DAY, status: 'open', pairedEntryUuid: null,
+  };
+  const bad = (over) => ({ ...good, id: 'bad-1', ...over });
+
+  it('SKIPS a NaN weight rather than handing it back, and says so', () => {
+    // `.nan` is how js-yaml round-trips NaN; a hand-edited file really can hold it.
+    seed([good, bad({ value: Number.NaN })]);
+    const rows = store.listByDate('u1', DAY);
+    expect(rows.map((r) => r.id)).toEqual(['ok-1']);
+    expect(warnLog.map((w) => w.event)).toContain('observationStore.read.invalidRecordSkipped');
+  });
+
+  it('the skipped NaN row therefore cannot make a composition read COMPLETE', () => {
+    // With the bad weight skipped, a density alone leaves grams null — incomplete. If the
+    // row came back, `NaN !== null` would report a complete composition to the commit.
+    seed([
+      bad({ id: 'w-nan', value: Number.NaN }),
+      { ...good, id: 'd1', kind: 'density', value: 4, unit: null },
+    ]);
+    const open = store.openForScale('u1', 'k1');
+    expect(open.map((r) => r.id)).toEqual(['d1']);
+    expect(open.some((r) => r.kind === 'weight')).toBe(false);
+  });
+
+  it.each([
+    ['a numeric-string weight', bad({ value: '500' })],
+    ['an Infinity weight', bad({ value: Number.POSITIVE_INFINITY })],
+    ['a null weight', bad({ value: null })],
+    ['an unusable weight unit', bad({ unit: 42 })],
+    ['an out-of-range density', bad({ kind: 'density', value: 99, unit: null })],
+    ['a fractional density', bad({ kind: 'density', value: 2.5, unit: null })],
+    ['an empty container id', bad({ kind: 'container', value: '', unit: null })],
+    ['a numeric container id', bad({ kind: 'container', value: 42, unit: null })],
+  ])('skips %s while still returning the good row', (_label, malformed) => {
+    seed([good, malformed]);
+    expect(store.listByDate('u1', DAY).map((r) => r.id)).toEqual(['ok-1']);
+  });
+
+  // One bad row must not deny the rest of the day, and must not be confused with a
+  // corrupt FILE — that is a different, throwing failure.
+  it('does not throw, and does not remove the bad row from the file', () => {
+    seed([good, bad({ value: Number.NaN })]);
+    expect(() => store.listByDate('u1', DAY)).not.toThrow();
+    store.append('u1', { kind: 'weight', value: 600, unit: 'g', scaleId: 'k1', at: AT });
+    // The unreadable row is still on disk, untouched, for someone to look at.
+    const onDisk = yaml.load(fs.readFileSync(filePath('u1'), 'utf8'));
+    expect(onDisk.map((r) => r.id)).toContain('bad-1');
+    expect(onDisk).toHaveLength(3);
+  });
+
+  it('a legitimate ZERO-gram weight is NOT skipped — zero is a reading', () => {
+    seed([{ ...good, id: 'zero', value: 0 }]);
+    expect(store.listByDate('u1', DAY).map((r) => r.id)).toEqual(['zero']);
+  });
+
+  it('a NEGATIVE weight is not skipped either — computeNet owns the clamp', () => {
+    seed([{ ...good, id: 'neg', value: -3 }]);
+    expect(store.listByDate('u1', DAY).map((r) => r.id)).toEqual(['neg']);
+  });
+});
+
 describe('YamlObservationStore malformed-file posture', () => {
   it('throws a typed, catchable error rather than an empty array when the file is corrupt YAML', () => {
     fs.mkdirSync(path.dirname(filePath('u1')), { recursive: true });

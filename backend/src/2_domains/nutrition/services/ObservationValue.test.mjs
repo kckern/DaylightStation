@@ -7,6 +7,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { ValidationError } from '#domains/core/errors/index.mjs';
+import { MAX_DENSITY_LEVEL } from './ScanVocabularyService.mjs';
 import {
   validateObservationValue,
   validateWeightValue,
@@ -22,6 +23,7 @@ const refuses = (fn, code) => {
   try { fn(); } catch (e) { caught = e; }
   expect(caught).toBeInstanceOf(ValidationError);
   expect(caught.code).toBe(code);
+  return caught;
 };
 
 describe('weight values', () => {
@@ -67,6 +69,40 @@ describe('weight values', () => {
     try { validateWeightValue('500'); } catch (e) { caught = e; }
     expect(caught.message).toContain('"500"');
   });
+
+  // `null` and `undefined` are different mistakes — "the slot was cleared" versus "the
+  // field never arrived" — and the message is the only thing a person debugging at the
+  // fridge sees, because callers log `err.message` and drop the structured payload.
+  it('tells null, undefined, NaN and a wrong TYPE apart in the message', () => {
+    const msg = (v) => { try { validateWeightValue(v); return ''; } catch (e) { return e.message; } };
+    expect(msg(null)).toContain('null');
+    expect(msg(null)).not.toContain('undefined');
+    expect(msg(undefined)).toContain('undefined');
+    expect(msg(NaN)).toContain('NaN');
+    expect(msg({})).toContain('object');
+    expect(msg([])).toContain('an array');
+  });
+
+  // The row's column IS `value`, so that is what the structured error names — not the
+  // domain word for what the column happens to hold on this kind of row. Pinned so the
+  // next person to change it does so on purpose.
+  it('reports the ROW field, `value`, not the per-kind name', () => {
+    expect(refuses(() => validateWeightValue(NaN), 'INVALID_WEIGHT').field).toBe('value');
+    expect(refuses(() => validateDensityValue(99), 'INVALID_DENSITY_LEVEL').field).toBe('value');
+    expect(refuses(() => validateContainerValue(''), 'INVALID_CONTAINER_ID').field).toBe('value');
+    expect(refuses(() => validateUpcValue(42), 'INVALID_UPC_CODE').field).toBe('value');
+    // `unit` is its own column and keeps its own name.
+    expect(refuses(() => validateWeightUnit(42), 'INVALID_WEIGHT_UNIT').field).toBe('unit');
+  });
+
+  // ...while the MESSAGE still names what the value means to a person. `field` points at
+  // the column; the message is what someone reading a log line actually sees.
+  it('keeps the human label in the message even though the field is the column', () => {
+    let caught = null;
+    try { validateContainerValue(''); } catch (e) { caught = e; }
+    expect(caught.message).toMatch(/^container must be a non-empty string/);
+    expect(caught.field).toBe('value');
+  });
 });
 
 describe('weight units', () => {
@@ -88,14 +124,21 @@ describe('weight units', () => {
 });
 
 describe('density values', () => {
-  it('accepts every level the printed grammar can produce', () => {
-    for (let level = 1; level <= 9; level += 1) {
+  // Against the CONSTANT, never a hardcoded 9. Raising `MAX_DENSITY_LEVEL` must move the
+  // boundary these assert, not silently pass on both sides of an out-of-date literal.
+  it('accepts every level the printed grammar can produce, up to MAX_DENSITY_LEVEL', () => {
+    for (let level = 1; level <= MAX_DENSITY_LEVEL; level += 1) {
       expect(validateDensityValue(level)).toBe(level);
     }
+    expect(validateDensityValue(MAX_DENSITY_LEVEL)).toBe(MAX_DENSITY_LEVEL);
   });
 
   // An out-of-range level sails through to computeNutrition, misses the config table and
   // surfaces as MALFORMED_DENSITY_LEVEL — "fix the YAML" — when the truth is "rescan".
+  it('refuses the level ONE PAST the maximum — the boundary, not a distant number', () => {
+    refuses(() => validateDensityValue(MAX_DENSITY_LEVEL + 1), 'INVALID_DENSITY_LEVEL');
+  });
+
   it('refuses a level outside the grammar, so the diagnosis is not misattributed', () => {
     refuses(() => validateDensityValue(0), 'INVALID_DENSITY_LEVEL');
     refuses(() => validateDensityValue(99), 'INVALID_DENSITY_LEVEL');

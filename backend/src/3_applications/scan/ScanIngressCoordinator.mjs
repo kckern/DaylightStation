@@ -557,7 +557,15 @@ export function createScanDispatch(deps = {}) {
       //
       // Fire-and-forget like the ACK it replaces: `commitNowFor` never rejects,
       // and the `.catch` covers a service that predates it.
-      if (outcome.kind === 'done') {
+      //
+      // `!refused` FIRST, and the order is load-bearing. A refusal carries the parsed
+      // kind, so a refused `rs:done` — the whole scale being unwired, say — matches this
+      // branch on `kind` alone, commits nothing, and still returns `ok: true`. That is a
+      // refused scan reported as applied, in the one gesture that means "process it now":
+      // exactly the silent-success failure this subsystem exists to remove, and the last
+      // place anyone would look for it. A refusal falls through to the ACK path below and
+      // comes back `refused` like every other one.
+      if (!refused && outcome.kind === 'done') {
         scale?.commitNowFor?.(scaleId, outcome.snapshot)?.catch?.(() => {});
         return { status: 'applied', ok: true, effect: outcome };
       }

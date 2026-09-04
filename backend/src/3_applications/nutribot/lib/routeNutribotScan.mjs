@@ -61,6 +61,12 @@ export function routeNutribotScan({ scaleId, code, apply }) {
 export function nutriscanRefusalNotice(outcome = {}) {
   if (outcome.error === 'UNKNOWN_CONTAINER') return `unknown container "${outcome.id}" — not tared`;
   if (outcome.error === 'UNKNOWN_DENSITY_LEVEL') return `unknown density level ${outcome.level} — not set`;
+  // Defined for completeness, and today UNDELIVERABLE in the case that produces it: the
+  // notice is painted by editing the live Telegram prompt, and there is no prompt when
+  // the service is unwired because there is no chat to have posted one in. The person at
+  // the fridge gets a scanner beep; the record is `applyScan.unavailable` and
+  // `observation.service.skipped` in the logs. Kept so a future surface that CAN reach
+  // the fridge without the bot has the words, and so the refusal is never nameless.
   if (outcome.error === 'SCALE_UNAVAILABLE') return 'the scale is not wired up — nothing recorded';
   return `scan not applied (${outcome.error || 'refused'})`;
 }

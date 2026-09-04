@@ -15,6 +15,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createScanDispatch, SCAN_ROUTE_FALLBACK, errText } from '#composition/modules/scanDispatch.mjs';
 import { swallowNotice } from '#apps/nutribot/lib/routeNutribotScan.mjs';
+import { ApplyScanToComposition } from '#apps/nutribot/usecases/ApplyScanToComposition.mjs';
 
 const makeLogger = () => ({
   debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(),
@@ -603,6 +604,98 @@ describe('nutrition — the nutriscan path', () => {
       }));
       expect(out).toMatchObject({ domain: 'nutrition', ok: true });
     }
+  });
+
+  // THE WHOLE CHAIN, unwired. The scale observation service only exists once the head of
+  // household and the bot id resolve; until then the composition surface has nothing
+  // behind it and `getObservationService()` answers null. What must NOT happen is a scan
+  // reported as applied.
+  //
+  // Driven through the REAL `ApplyScanToComposition` over a real unwired surface, because
+  // the defect this pins was never in the use case — it returned the correct refusal all
+  // along — but in the ORDER the dispatcher read the result: `outcome.kind === 'done'` was
+  // tested before `outcome.ok`, and a refusal carries the parsed kind. A unit test of the
+  // use case cannot see that.
+  describe('with the scale observation service unwired', () => {
+    /** The shape `app.mjs` builds while `observationService` is still null. */
+    const unwiredSurface = {
+      available: () => false,
+      setWeight: () => {}, setDensity: () => {}, setContainer: () => {},
+      endPlacement: () => undefined, clear: () => undefined, undo: () => undefined,
+      read: () => null,
+    };
+    const SCAN_CONFIG = {
+      densityLevels: [{ level: 4, label: 'Mixed', emoji: '🍛', kcal_per_g: 1.4 }],
+      containers: { items: [{ id: 'mug', label: 'Mug', emoji: '☕', grams: 350 }] },
+    };
+    const offline = () => harness({
+      applyScanToComposition: new ApplyScanToComposition({
+        store: unwiredSurface,
+        config: SCAN_CONFIG,
+        logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+      }),
+      getObservationService: () => null,
+    });
+
+    // The one that shipped broken. `rs:done` parses to kind 'done', the refusal echoes
+    // that kind, and the commit short-circuit matched on kind alone — so the explicit
+    // "process it now" gesture committed nothing and reported success.
+    it('reports rs:done as REFUSED, not applied — the commit branch must not match a refusal', async () => {
+      const h = offline();
+      const out = await h.scanDispatch.handleScan(relayScan({
+        device: 'nutribot-upc', route: 'nutribot', code: 'rs:done',
+      }));
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(out).toMatchObject({ domain: 'nutrition', ok: false });
+      expect(h.commitNowFor).not.toHaveBeenCalled();
+      // The log line and the dispatcher result must agree. They did not before: the log
+      // said `ok: false, SCALE_UNAVAILABLE` while the result said applied.
+      expect(h.barcodeLogger.info).toHaveBeenCalledWith('barcode_relay.nutriscan', {
+        device: 'nutribot-upc', scaleId: 'kitchen-food-scale',
+        kind: 'done', ok: false, error: 'SCALE_UNAVAILABLE',
+      });
+    });
+
+    it.each([
+      ['density', 'dl:140'],
+      ['container', 'ct:350'],
+      ['reset', 'rs:clear'],
+      ['undo', 'rs:undo'],
+      ['done', 'rs:done'],
+    ])('reports a %s scan as refused, and commits nothing', async (kind, code) => {
+      const h = offline();
+      const out = await h.scanDispatch.handleScan(relayScan({
+        device: 'nutribot-upc', route: 'nutribot', code,
+      }));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(out).toMatchObject({ domain: 'nutrition', ok: false });
+      expect(h.commitNowFor).not.toHaveBeenCalled();
+      expect(h.barcodeLogger.info).toHaveBeenCalledWith('barcode_relay.nutriscan',
+        expect.objectContaining({ kind, ok: false, error: 'SCALE_UNAVAILABLE' }));
+    });
+
+    // A refusal is still a CLAIM: a fridge-sheet code must never be looked up as a
+    // product, which would answer it with a nonsense food.
+    it('never falls through to the UPC lookup for a code the sheet owns', async () => {
+      const h = offline();
+      for (const code of ['dl:140', 'ct:350', 'rs:done']) {
+        await h.scanDispatch.handleScan(relayScan({
+          device: 'nutribot-upc', route: 'nutribot', code,
+        }));
+      }
+      expect(h.execute).not.toHaveBeenCalled();
+    });
+
+    // ...while a genuine barcode still reaches it, so the unwired scale does not take
+    // product scanning down with it.
+    it('still routes a real product barcode to the UPC path', async () => {
+      const h = offline();
+      await h.scanDispatch.handleScan(relayScan({
+        device: 'nutribot-upc', route: 'nutribot', code: '012345678905',
+      }));
+      expect(h.execute).toHaveBeenCalled();
+    });
   });
 
   it('strips the `nut:` prefix before handing the body to the fridge grammar', async () => {

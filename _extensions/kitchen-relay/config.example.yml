@@ -69,17 +69,21 @@ scales:
 
 # ---------------------------------------------------------------------------
 # Nutribot integration: settled readings become density-logged food entries.
-# Consumed by ScaleNutribotBridge / LogFoodFromScale. All keys optional — the
+# Consumed by the scale observation service
+# (backend/src/3_applications/nutrition/ObservationService.mjs) and LogFoodFromScale.
+# All keys optional — the
 # backend supplies these same defaults (see
 # backend/src/3_applications/nutribot/lib/scaleNutribotConfig.mjs). The target
 # chat is NOT configured here; it is the household head (household.yml `head`).
 #
 # Two ways a weight reaches nutribot:
-#   AUTO  — the scale rests at a variable load on the shelf (never ~0), so the bridge
+#   AUTO  — the scale rests at a variable load on the shelf (never ~0), so the service
 #           learns that resting load as a baseline. A rise above it posts ONE prompt that
 #           then edits in place as the weight climbs (no message pile-up). Answering it
 #           frees it, so the next load starts fresh; returning near baseline ends the
-#           session and RETRACTS an unanswered prompt (no leftover slop). A placement is
+#           session and CLOSES an unanswered prompt WITHOUT withdrawing it — picking food
+#           up is the ordinary way to use a scale, so it stays answerable and the next
+#           placement supersedes it. A placement is
 #           SUPPRESSED when it looks like putting the scale away — it lands in the
 #           storage_weight_g band, or is a heavy_g+ jump right after a burst of recent
 #           posts. Weights NEVER expire — a prompt waits until you answer it.

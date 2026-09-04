@@ -255,8 +255,12 @@ describe('ApplyScanToComposition', () => {
       expect(offline.execute({ scaleId: 'kitchen', code: '012345678905' })).toEqual({ handled: false });
     });
 
-    // The refusal reads on the prompt rather than as a bare code.
-    it('renders a reason a person at the fridge can act on', () => {
+    // The refusal has WORDS, not just a code. Note that in the case that actually
+    // produces it the notice is undeliverable — it is painted by editing the live
+    // Telegram prompt, and an unwired service means there is no prompt and no chat. This
+    // pins the wording for a surface that can reach the fridge without the bot; the
+    // person at the fridge today gets a beep and a log line.
+    it('names the refusal in words rather than leaving it a bare code', () => {
       const r = offline.execute({ scaleId: 'kitchen', code: 'dl:140' });
       expect(nutriscanRefusalNotice(r)).toBe('the scale is not wired up — nothing recorded');
     });
