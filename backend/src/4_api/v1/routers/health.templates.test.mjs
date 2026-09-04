@@ -119,6 +119,42 @@ describe('meal template endpoints (Task 10.1)', () => {
     expect((await request(app).post('/api/v1/health/nutrition/templates/x/dismiss').send({})).status).toBe(404);
   });
 
+  it('the suggest endpoint routes its result through the template merge', async () => {
+    const calls = { merge: [] };
+    const router = createHealthRouter({
+      healthOperations: { defaultUsername: () => 'testuser', currentDate: () => '2026-09-04' },
+      catalogService: { suggest: async () => [{ id: 'f1', name: 'Oatmeal' }] },
+      templateService: {
+        list: async () => [],
+        mergeIntoSuggestions: async (foods, opts) => {
+          calls.merge.push({ foods, opts });
+          return [{ id: 't1', type: 'template', name: 'Morning smoothie' }, ...foods.map((f) => ({ ...f, type: 'food' }))];
+        },
+      },
+      logger: silent,
+    });
+    const app = express();
+    app.use(express.json());
+    app.use('/api/v1/health', router);
+    const res = await request(app).get('/api/v1/health/nutrition/catalog/suggest?q=oat&limit=8&bucket=morning');
+    expect(res.status).toBe(200);
+    expect(res.body.items.map((i) => i.type)).toEqual(['template', 'food']);
+    expect(calls.merge[0].opts).toEqual({ query: 'oat', userId: 'testuser', limit: 8 });
+  });
+
+  it('with no template service the suggest endpoint still answers with the plain catalog list', async () => {
+    const router = createHealthRouter({
+      healthOperations: { defaultUsername: () => 'testuser', currentDate: () => '2026-09-04' },
+      catalogService: { suggest: async () => [{ id: 'f1', name: 'Oatmeal' }] },
+      logger: silent,
+    });
+    const app = express();
+    app.use(express.json());
+    app.use('/api/v1/health', router);
+    const res = await request(app).get('/api/v1/health/nutrition/catalog/suggest');
+    expect(res.body.items).toEqual([{ id: 'f1', name: 'Oatmeal' }]);
+  });
+
   it('the routes do not exist at all when no template service is composed', async () => {
     const router = createHealthRouter({
       healthOperations: { defaultUsername: () => 'testuser', currentDate: () => '2026-09-04' },

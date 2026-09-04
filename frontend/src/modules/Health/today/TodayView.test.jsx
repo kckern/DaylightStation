@@ -497,3 +497,51 @@ describe('TodayView — scale observations', () => {
     expect(screen.getByRole('button', { name: 'Scan barcode to Breakfast' })).toBeTruthy();
   });
 });
+
+// PRD F6.3 makes the template picker the ONLY surface that lists kept meals.
+// Every path that saves one therefore has to write a TEMPLATE — a saved meal
+// written from here would land in a file nothing renders. That is the specific
+// stranding the parity check for retiring `SavedMealsSheet` had to rule out,
+// so it is pinned here rather than left to the review.
+describe('TodayView — saving a meal writes a template, and the picker is the one surface', () => {
+  const ROWS = { data: [
+    { uuid: 'r1', id: 'r1', item: 'Eggs', name: 'Eggs', calories: 140, protein: 12, carbs: 1, fat: 10,
+      date: '2026-09-04', mealTime: 'morning', kind: 'item', color: 'green', grams: 100, unit: 'g', amount: 100 },
+  ] };
+  const dayApi = (overrides = {}) => async (path, body, method) => {
+    if (path.includes('nutrilist/')) return ROWS;
+    return baseApi(overrides)(path, body, method);
+  };
+
+  beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); });
+
+  it('"Save as meal" POSTs a template with all-core components, not a saved meal', async () => {
+    const original = window.prompt;
+    window.prompt = vi.fn(() => 'My breakfast');
+    apiMock.mockImplementation(dayApi());
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => screen.getByText('Save as meal'));
+    fireEvent.click(screen.getByText('Save as meal'));
+
+    await waitFor(() => expect(apiMock.mock.calls.some(([p]) => p.endsWith('nutrition/templates'))).toBe(true));
+    const call = apiMock.mock.calls.find(([p]) => p.endsWith('nutrition/templates'));
+    expect(call[1].name).toBe('My breakfast');
+    expect(call[1].components).toEqual([expect.objectContaining({ name: 'Eggs', role: 'core', calories: 140 })]);
+    expect(call[2]).toBe('POST');
+    // The retired write path: nothing goes to the saved-meals store from here.
+    expect(apiMock.mock.calls.some(([p]) => p.endsWith('nutrition/meals'))).toBe(false);
+    window.prompt = original;
+  });
+
+  it('the add row opens the template picker, which asks for proposals too', async () => {
+    apiMock.mockImplementation(dayApi());
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await waitFor(() => screen.getAllByText('+ Add food…'));
+    fireEvent.click(screen.getAllByText('+ Add food…')[0]);
+    const meals = await screen.findByText(/Meals & templates/);
+    fireEvent.click(meals);
+    await waitFor(() => expect(
+      apiMock.mock.calls.some(([p]) => p.includes('nutrition/templates?includeProposed=1')),
+    ).toBe(true));
+  });
+});

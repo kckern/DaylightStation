@@ -34,6 +34,13 @@ const bucketForHour = (h) => (h < 11 ? 'morning' : h < 15 ? 'afternoon' : h < 20
 
 const ROLES = ['core', 'variant'];
 
+/**
+ * How many templates the zero-keystroke suggestion list may show. The combobox
+ * asks for eight rows; more than three templates would make the shortlist a
+ * template browser rather than "the regulars for this meal".
+ */
+export const TEMPLATE_SUGGEST_CAP = 3;
+
 const coded = (message, code) => {
   const err = new Error(message);
   err.code = code;
@@ -93,6 +100,53 @@ export class TemplateService {
       return String(b.lastUsed || '').localeCompare(String(a.lastUsed || ''))
         || String(a.name || '').localeCompare(String(b.name || ''));
     });
+  }
+
+  /**
+   * The add-combobox list, with templates in it (PRD F6.2 / F8.2).
+   *
+   * Order is PRD F6.4: **favorites → templates → the rest**. The favourites-first
+   * contract shipped in Task 9.1 holds — templates slot in behind it, never in
+   * front of it — and the catalog list arrives already ranked, so this only
+   * splices; it never re-sorts what the ranking module decided.
+   *
+   * Every entry is stamped with a `type`, foods included: a list where only
+   * some rows say what they are is a list the client has to guess about.
+   *
+   * @param {Object[]} foods - the ranked catalog suggestions
+   * @param {Object} opts
+   * @param {string} [opts.query] - '' for the zero-keystroke list
+   * @param {string} opts.userId
+   * @param {number} [opts.limit=12]
+   */
+  async mergeIntoSuggestions(foods, { query = '', userId, limit = 12 } = {}) {
+    const list = (Array.isArray(foods) ? foods : []).map((f) => ({ ...f, type: 'food' }));
+    const q = String(query || '').toLowerCase().trim();
+
+    const active = (await this.list(userId)).filter((t) => t.status !== 'proposed');
+    const matched = q ? active.filter((t) => String(t.name).toLowerCase().includes(q)) : active;
+
+    // The zero-keystroke list is a SHORTLIST (the combobox asks for 8), so an
+    // unbounded template block would push a person's actual regulars off it.
+    // A typed query is steered, so every match is offered.
+    const offered = (q ? matched : matched.slice(0, TEMPLATE_SUGGEST_CAP)).map((t) => {
+      const core = (t.components || []).filter((c) => c.role === 'core');
+      return {
+        id: t.id,
+        type: 'template',
+        name: t.name,
+        icon: t.icon ?? null,
+        itemCount: core.length,
+        variantCount: (t.components || []).length - core.length,
+        // The same shape a food carries, so one row renderer draws both.
+        nutrients: { calories: core.reduce((n, c) => n + (Number(c.calories) || 0), 0) },
+      };
+    });
+    if (offered.length === 0) return list.slice(0, limit);
+
+    const favorites = list.filter((f) => f.favorite === true);
+    const rest = list.filter((f) => f.favorite !== true);
+    return [...favorites, ...offered, ...rest].slice(0, limit);
   }
 
   async listDismissedKeys(userId) { return this.#templateStore.listDismissedKeys(userId); }

@@ -14,7 +14,7 @@ const logger = createAppLogger('health').child('add-combobox');
 // filtered list is already short.
 const OPEN_SUGGEST_LIMIT = 8;
 
-export function AddCombobox({ bucketId, onDone, onCancel, onSavedMeals }) {
+export function AddCombobox({ bucketId, onDone, onCancel, onMeals, onTemplate }) {
   const [text, setText] = useState('');
   const [items, setItems] = useState([]);
   const [highlight, setHighlight] = useState(-1);
@@ -56,6 +56,14 @@ export function AddCombobox({ bucketId, onDone, onCancel, onSavedMeals }) {
   }, [text, bucketId]);
 
   const pick = async (entry) => {
+    // A template is not a quick-add: it can carry variants, and PRD F6.1 says
+    // instantiating OFFERS them. So the picker takes over from here rather
+    // than this list silently logging one arrangement of the meal.
+    if (entry?.type === 'template') {
+      logger.info('template.picked', { id: entry.id, bucket: bucketId });
+      onTemplate?.(entry);
+      return;
+    }
     setPhase('parsing'); setError(null);
     try {
       // One request, not two. `mealTime` travels WITH the quick-add (Task 9.1),
@@ -122,7 +130,7 @@ export function AddCombobox({ bucketId, onDone, onCancel, onSavedMeals }) {
           // icon rather than showing a broken image.
           const iconUrl = failedIcons.has(entry.icon) ? null : nutritionIconUrl(entry.icon);
           return (
-            <li key={entry.id}>
+            <li key={`${entry.type ?? 'food'}:${entry.id}`}>
               <UnstyledButton
                 className={`health-suggest__item${entry.favorite ? ' health-suggest__item--fav' : ''}${i === highlight ? ' health-suggest__item--hi' : ''}`}
                 role="option" aria-selected={i === highlight}
@@ -141,15 +149,20 @@ export function AddCombobox({ bucketId, onDone, onCancel, onSavedMeals }) {
                   />
                 ) : null}
                 <span>{entry.name}</span>
+                {entry.type === 'template' ? (
+                  // A meal-level suggestion is visually distinguished from a
+                  // single food (PRD F8.2) by a NON-COLOUR cue: the item count.
+                  <span className="health-suggest__badge">{`${entry.itemCount ?? 0} items`}</span>
+                ) : null}
                 <span className="health-suggest__kcal">{entry.nutrients?.calories ?? ''}</span>
               </UnstyledButton>
             </li>
           );
         })}
       </ul>
-      {onSavedMeals ? (
-        <UnstyledButton className="health-suggest__saved-meals" onClick={onSavedMeals}>
-          Saved meals ▸
+      {onMeals ? (
+        <UnstyledButton className="health-suggest__saved-meals" onClick={onMeals}>
+          Meals &amp; templates ▸
         </UnstyledButton>
       ) : null}
     </div>

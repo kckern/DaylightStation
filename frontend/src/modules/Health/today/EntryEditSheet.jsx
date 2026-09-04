@@ -457,10 +457,17 @@ export function EntryEditSheet({ row, open, onClose, onChanged, observations = [
                 }}>
                 {starred ? '★ Favorited' : '☆ Favorite'}
               </Button>
+              {/* A one-item TEMPLATE, not a saved meal: the template picker is
+                  the only surface that lists kept meals (PRD F6.3), so a meal
+                  saved here into the meals store would be invisible. */}
               <Button size="xs" variant="light" disabled={busy}
-                onClick={() => run(() => DaylightAPI('api/v1/health/nutrition/meals', {
+                onClick={() => run(() => DaylightAPI('api/v1/health/nutrition/templates', {
                   name: displayName(row),
-                  items: [{ name: displayName(row), calories: row.calories, protein: row.protein, carbs: row.carbs, fat: row.fat, color: row.color }],
+                  components: [{
+                    name: displayName(row), role: 'core',
+                    calories: row.calories, protein: row.protein, carbs: row.carbs, fat: row.fat,
+                    color: row.color, icon: row.icon ?? null, grams: row.grams, unit: row.unit, amount: row.amount,
+                  }],
                 }, 'POST'), 'save-as-meal')}>
                 Save as meal
               </Button>

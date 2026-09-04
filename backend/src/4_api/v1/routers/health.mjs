@@ -687,7 +687,14 @@ export function createHealthRouter(config) {
           error: `Invalid bucket: ${bucket}. Must be one of: ${NUTRITION_MEAL_BUCKETS.join(', ')}`,
         });
       }
-      const items = await catalogService.suggest(q, userId, parseInt(limit) || 12, { bucket });
+      const max = parseInt(limit) || 12;
+      const foods = await catalogService.suggest(q, userId, max, { bucket });
+      // Templates slot in behind favourites (PRD F6.4). The ORDER is the
+      // service's, not this route's: a ranking contract spelled out at an
+      // endpoint is a ranking contract nothing can unit-test.
+      const items = templateService
+        ? await templateService.mergeIntoSuggestions(foods, { query: q, userId, limit: max })
+        : foods;
       return res.json({ items });
     }));
 
