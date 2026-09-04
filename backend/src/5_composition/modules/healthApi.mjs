@@ -17,6 +17,7 @@ import { SavedMealsService } from '#apps/health/SavedMealsService.mjs';
 import { YamlMedicalReadingsDatastore } from '#adapters/persistence/yaml/YamlMedicalReadingsDatastore.mjs';
 import { MedicalReadingsService } from '#apps/health/MedicalReadingsService.mjs';
 import { PhotoStore } from '#adapters/persistence/PhotoStore.mjs';
+import { IconManifestStore } from '#adapters/persistence/IconManifestStore.mjs';
 import { YamlObservationStore } from '#adapters/persistence/yaml/YamlObservationStore.mjs';
 import { createObservationPairingService } from '#apps/nutrition/ObservationPairingService.mjs';
 import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
@@ -132,6 +133,28 @@ export function createHealthApiRouter(config) {
   // operationally equivalent to a singleton without actually being one.
   const photoStore = new PhotoStore({ dataService, logger });
 
+  // The food-icon vocabulary (PRD F5.1). Its OWN instance off the shared
+  // `dataService`, exactly as goals/savedMeals/medical/photos above. The
+  // manifest lives in the data mount and the files it names live on the media
+  // mount, so the store needs both roots; `getMediaDir()` is the same root
+  // `getPath('icons')` derives from.
+  //
+  // A household with no manifest installed yields an empty vocabulary and the
+  // icon route 404s — rows fall back to the neutral dot rather than the app
+  // refusing to boot over decoration.
+  const iconManifestStore = configService?.getMediaDir
+    ? new IconManifestStore({ dataService, mediaRoot: configService.getMediaDir(), logger })
+    : null;
+
+  // Warm the render cache in the background, unhurried, so the edit sheet's
+  // picker (60 icons at once) is never the thing that discovers a cold cache.
+  // Fire-and-forget by design: nothing waits for it, a failure is logged and
+  // dropped, and it paces itself so it never becomes the reason a request is
+  // slow. See IconManifestStore.warmCache for why the cache goes cold at all.
+  iconManifestStore?.warmCache().catch((error) => {
+    logger.warn?.('health.icons.warm.failed', { error: error.message });
+  });
+
   // The kitchen-scale observation ledger, for the day view's read / re-pair / dismiss
   // surface. Its OWN adapter instance off the shared `dataService`, exactly as
   // goals/savedMeals/medical/photos above — the live scale path (app.mjs) builds a second
@@ -173,6 +196,7 @@ export function createHealthApiRouter(config) {
     medicalService,
     photoStore,
     observationPairing,
+    iconManifestStore,
     logger
   });
 }

@@ -19,6 +19,10 @@ const NUTRITION_UPDATE_FIELDS = new Set([
   // `changes.microsSource = null` is silently dropped and a stale 'ai'/'catalog'
   // provenance can outlive the AI/catalog numbers it described.
   'microsSource',
+  // Task 7.4: the edit sheet's "just this entry" icon override PUTs this
+  // field. Without it here, updateNutritionItem drops it silently before the
+  // store ever sees it and the sheet closes on a change that never happened.
+  'icon',
 ]);
 
 /**

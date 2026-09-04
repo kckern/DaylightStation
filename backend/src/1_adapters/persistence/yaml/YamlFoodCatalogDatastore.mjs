@@ -45,6 +45,7 @@ export class YamlFoodCatalogDatastore extends IFoodCatalogDatastore {
       barcodeUpc: entry.barcodeUpc,
       useCount: entry.useCount,
       favorite: entry.favorite === true,
+      icon: entry.icon ?? null,
       lastUsed: entry.lastUsed,
       createdAt: entry.createdAt,
     };

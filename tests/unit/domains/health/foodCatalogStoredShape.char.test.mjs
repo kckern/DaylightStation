@@ -57,6 +57,10 @@ describe('food catalog stored YAML shape (characterization)', () => {
     expect(arr).toHaveLength(1);
     // Exact stored shape (order-independent via yaml.dump of a canonical object)
     // favorite field added to dehydrated shape in YamlFoodCatalogDatastore#dehydrate
+    // icon added likewise (Task 7.3): the food's picture sticks to the CATALOG
+    // entry, not to one row, so it has to survive the round-trip to disk. An
+    // entry that never got one stores an explicit null, which is what "no
+    // picture chosen" looks like — the row then renders the neutral glyph.
     expect(yaml.dump(arr[0])).toBe(yaml.dump({
       id: 'fc-1',
       name: 'Greek Yogurt',
@@ -66,6 +70,7 @@ describe('food catalog stored YAML shape (characterization)', () => {
       barcodeUpc: '012345678905',
       useCount: 3,
       favorite: false,
+      icon: null,
       lastUsed: '2026-07-08',
       createdAt: '2026-07-01T00:00:00.000Z',
     }));
@@ -86,5 +91,19 @@ describe('food catalog stored YAML shape (characterization)', () => {
     expect(loaded.name).toBe('Oats');
     expect(loaded.nutrients).toEqual({ calories: 150, protein: 5, carbs: 27, fat: 3 });
     expect(loaded.matches('oats')).toBe(true);
+  });
+
+  // A field added to #dehydrate is easy to add DECORATIVELY — the service tests
+  // run against an in-memory store and would pass either way. This one goes to
+  // disk and back, so deleting `icon` from the dehydrator fails it.
+  it("an entry's icon survives the round-trip to disk, so a food keeps its picture", async () => {
+    const entry = new FoodCatalogEntry({
+      id: 'fc-3', name: 'Fried Eggs', icon: 'fried-eggs',
+      nutrients: { calories: 200, protein: 13, carbs: 1, fat: 15 },
+      lastUsed: '2026-09-03', createdAt: '2026-09-03T00:00:00.000Z',
+    });
+    await store.save(entry, USER);
+    expect(stored()[0].icon).toBe('fried-eggs');
+    expect((await store.getById('fc-3', USER)).icon).toBe('fried-eggs');
   });
 });

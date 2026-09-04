@@ -236,8 +236,13 @@ transports**.
 - **F5.3** Icons render on item rows, group rows (dish icon, else dominant child's
   icon), the quick-add and template pickers, and the edit sheet.
 - **F5.4** Icon override in the edit sheet offers **"just this entry" / "always for
-  this food"** — the latter updates the catalog (past rows follow on next render);
-  the former touches only the entry.
+  this food"** — the former touches only the entry; the latter pins the catalog
+  **and** corrects the row on screen. *(Corrected during implementation: this line
+  originally said "past rows follow on next render". They do not. A row's `icon` is
+  a copy taken at log time and nothing rewrites history, so "always" governs this
+  row and everything logged afterwards, while earlier rows keep the picture they
+  were logged with. Pinning the catalog alone would leave the row the user is
+  looking at unchanged, which is why the override writes both.)*
 
 ---
 

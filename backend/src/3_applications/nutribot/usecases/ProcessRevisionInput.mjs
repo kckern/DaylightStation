@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
 import { repairTruncatedJson } from '../lib/repairJson.mjs';
 import { buildCommittedChoices } from '../lib/committedChoices.mjs';
+import { confineIcon, iconVocabulary } from '#domains/nutrition/services/icons.mjs';
 
 /**
  * Process revision input use case
@@ -20,6 +21,7 @@ export class ProcessRevisionInput {
   #nutriListStore;
   #conversationStateStore;
   #config;
+  #iconVocabulary;
   #logger;
 
   constructor(deps) {
@@ -32,6 +34,12 @@ export class ProcessRevisionInput {
     this.#nutriListStore = deps.nutriListStore;
     this.#conversationStateStore = deps.conversationStateStore;
     this.#config = deps.config;
+    // The revision flow re-parses into the same row shape as the first capture
+    // (decision log 2.2), so it is a THIRD place a model-named icon can reach a
+    // stored row and must be confined the same way. Without the vocabulary
+    // injected, every proposed icon collapses to the neutral sentinel — safe,
+    // and visibly so, rather than silently storing a slug that 404s.
+    this.#iconVocabulary = iconVocabulary(deps.foodIconsString);
     this.#logger = deps.logger || console;
   }
 
@@ -261,7 +269,7 @@ Noom colors:
           unit: item.unit || 'serving',
           amount: item.quantity || item.amount || 1,
           color: this.#normalizeNoomColor(item.noom_color || item.color),
-          icon: item.icon || 'default',
+          icon: confineIcon(item.icon, this.#iconVocabulary),
           calories: item.calories ?? 0,
           protein: item.protein ?? 0,
           carbs: item.carbs ?? 0,

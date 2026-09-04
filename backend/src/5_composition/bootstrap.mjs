@@ -254,6 +254,7 @@ import { dataService } from './runtimePersistence.mjs';
 import { YamlNutriListDatastore } from '#adapters/persistence/yaml/YamlNutriListDatastore.mjs';
 import { FetchImageDownloader } from '#adapters/nutribot/FetchImageDownloader.mjs';
 import { PhotoStore } from '#adapters/persistence/PhotoStore.mjs';
+import { IconManifestStore } from '#adapters/persistence/IconManifestStore.mjs';
 import { FilesystemFoodIconCatalog } from '#adapters/nutribot/FilesystemFoodIconCatalog.mjs';
 import { LatestReconciliationReader } from '#apps/health/LatestReconciliationReader.mjs';
 import { NodePromiseDeadline } from '#adapters/scheduling/NodePromiseDeadline.mjs';
@@ -2236,18 +2237,40 @@ export async function createNutribotServices(config) {
     mode: resolvedReportDelivery ? 'photo' : 'text-fallback',
   });
 
-  // Build food icon list from available icon files on disk
-  const foodIconDir = configService.getPath('icons') + '/food';
-  const foodIconCatalog = new FilesystemFoodIconCatalog({ iconDir: foodIconDir });
+  // The icon vocabulary the capture agent may choose from (PRD F5.1: ONE
+  // vocabulary). The reviewed manifest is the source of truth; the legacy flat
+  // directory is only the fallback for a household that has not installed one.
+  //
+  // Only the manifest's OFFERED slugs go in — its aliases exist so already-
+  // stored `FoodItem.icon` values keep resolving, not so the model can pick
+  // them. Every mapper CONFINES the model's answer to this same string
+  // (2_domains/nutrition/services/icons.mjs), so a slug that is not here can
+  // never reach a stored row.
+  //
+  // `getMediaDir` is called through an optional-call: a configService double
+  // without it (the composition contract registry supplies one) must degrade to
+  // the legacy directory, not take the whole nutribot container down over
+  // decoration. Same fail-soft posture as healthApi.mjs's store.
   let foodIconsString = 'apple banana bread cheese chicken default';
-  try {
-    const iconFiles = foodIconCatalog.list();
-    if (iconFiles.length > 0) {
-      foodIconsString = iconFiles.join(' ');
-      logger.info?.('nutribot.icons.loaded', { count: iconFiles.length, dir: foodIconDir });
+  const mediaRoot = configService.getMediaDir?.() ?? null;
+  const manifestSlugs = mediaRoot
+    ? new IconManifestStore({ dataService, mediaRoot, logger }).list()
+    : [];
+  if (manifestSlugs.length > 0) {
+    foodIconsString = manifestSlugs.join(' ');
+    logger.info?.('nutribot.icons.loaded', { count: manifestSlugs.length, source: 'manifest' });
+  } else {
+    const foodIconDir = configService.getPath('icons') + '/food';
+    const foodIconCatalog = new FilesystemFoodIconCatalog({ iconDir: foodIconDir });
+    try {
+      const iconFiles = foodIconCatalog.list();
+      if (iconFiles.length > 0) {
+        foodIconsString = iconFiles.join(' ');
+        logger.info?.('nutribot.icons.loaded', { count: iconFiles.length, dir: foodIconDir, source: 'legacy-directory' });
+      }
+    } catch (e) {
+      logger.warn?.('nutribot.icons.readFailed', { dir: foodIconDir, error: e.message });
     }
-  } catch (e) {
-    logger.warn?.('nutribot.icons.readFailed', { dir: foodIconDir, error: e.message });
   }
 
   // Create nutribot container with all dependencies
