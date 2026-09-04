@@ -370,6 +370,7 @@ import { HmacSchoolStudyGrantIssuer } from './1_adapters/school/actions/HmacScho
 import { HmacSchoolReelGrantIssuer } from './1_adapters/school/actions/HmacSchoolReelGrantIssuer.mjs';
 import { HmacSchoolCubeGrantIssuer } from './1_adapters/school/actions/HmacSchoolCubeGrantIssuer.mjs';
 import { HmacSchoolBookGrantIssuer } from './1_adapters/school/actions/HmacSchoolBookGrantIssuer.mjs';
+import { HmacSchoolLaunchPreviewTokenIssuer } from './1_adapters/school/actions/HmacSchoolLaunchPreviewTokenIssuer.mjs';
 import { KociembaCubeRecoverySolver } from './1_adapters/school/rubiksCube/KociembaCubeRecoverySolver.mjs';
 import { FilesystemLanguageReelRepository } from './1_adapters/school/FilesystemLanguageReelRepository.mjs';
 import { FilesystemRubiksCubeProgressRepository } from './1_adapters/school/FilesystemRubiksCubeProgressRepository.mjs';
@@ -3288,6 +3289,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   let schoolReelGrants = null;
   let schoolCubeGrants = null;
   let schoolBookGrants = null;
+  let schoolLaunchPreviewTokens = null;
   try {
     schoolStudyGrants = new HmacSchoolStudyGrantIssuer({ key: jwtSecret });
   } catch (error) {
@@ -3301,6 +3303,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }
   try { schoolBookGrants = new HmacSchoolBookGrantIssuer({ key: jwtSecret }); } catch (error) {
     rootLogger.error('school.books.grants-unavailable', { error: error.message });
+  }
+  try { schoolLaunchPreviewTokens = new HmacSchoolLaunchPreviewTokenIssuer({ key: jwtSecret }); } catch (error) {
+    rootLogger.error('school.launch-preview.tokens-unavailable', { error: error.message });
   }
   const schoolDocumentFileStore = new YamlDocumentFileStore();
   const languageReelService = new LanguageReelService({
@@ -3885,6 +3890,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       studyGrants: schoolStudyGrants,
       languageReelService,
       languageReelGrants: schoolReelGrants,
+      launchPreviewTokens: schoolLaunchPreviewTokens,
       // Piano's own use case, so School's piano-course program reads exactly
       // what the kiosk reads (progress, sequential gating, co-progress lock)
       // instead of a second implementation that could disagree with it.
@@ -4332,6 +4338,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         curriculumExceptions: schoolLifecycle.stores.curriculumExceptionStore ?? null,
         printDocuments: schoolLifecycle.stores.printDocuments ?? null,
       }) : null,
+    launchPreviewTokens: schoolLaunchPreviewTokens,
     // Built inside the lifecycle module, where the companion code store and the
     // household id live — never re-constructed here over a second store
     // instance, which would be a second way to describe one file.

@@ -344,7 +344,7 @@ function PreviewBanner({ card, onExit }) {
   return (
     <div className="school-selfservice-card__preview" data-testid="selfservice-preview-banner">
       <div className="school-selfservice-card__preview-copy">
-        <strong>Preview</strong>
+        <strong>Teacher preview</strong>
         <span>Nothing here is live — no work opens, nothing prints.</span>
         {scope && <span className="school-selfservice-card__preview-scope">{scope}</span>}
       </div>

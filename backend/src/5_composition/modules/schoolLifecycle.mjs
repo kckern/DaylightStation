@@ -233,6 +233,7 @@ export async function createSchoolLifecycle({
   studyGrants = null,
   languageReelService = null,
   languageReelGrants = null,
+  launchPreviewTokens = null,
   // Piano's `GetPlayableUnits` use case, injected so the piano-course program
   // reads the SAME course/progress/lock projection the kiosk itself renders.
   // Null in a composition without Piano: the program simply never registers.
@@ -1269,6 +1270,7 @@ export async function createSchoolLifecycle({
     timezone,
     clock,
     logger,
+    launchPreviewTokens,
   });
 
   // The WRITE half. `/act` is where a button press earns a real session — the

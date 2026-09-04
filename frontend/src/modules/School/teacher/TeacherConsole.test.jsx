@@ -1,6 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MantineProvider } from '@mantine/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import TeacherConsole from './TeacherConsole.jsx';
+import TeacherConsoleView from './TeacherConsole.jsx';
+
+const TeacherConsole = () => <MantineProvider><TeacherConsoleView /></MantineProvider>;
 
 vi.mock('../schoolApi.js', () => {
   const okEmpty = async () => ({ ok: true, status: 200, data: [] });
@@ -248,7 +251,7 @@ describe('TeacherConsole workspace', () => {
     fireEvent.change(screen.getByLabelText('Jump to'), { target: { value: '2099-01-01' } });
     await waitFor(() => expect(schoolApi.agendaPreview).toHaveBeenLastCalledWith('user_4', '2099-01-01'));
     expect(window.location.pathname).toBe('/school/teacher/students/user_4/day/2099-01-01');
-    fireEvent.click(screen.getByRole('button', { name: 'Show the printed agenda' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview printable agenda' }));
     expect(screen.getByText(/don’t work\. Nothing here starts a lesson/i)).toBeTruthy();
     expect(screen.queryByRole('button', { name: /print .* agenda/i })).toBeNull();
     expect(teacherWorkspaceApi.agendaDispatchPreview).not.toHaveBeenCalled();
@@ -261,6 +264,22 @@ describe('TeacherConsole workspace', () => {
     await waitFor(() => expect(screen.getByText('Tuesday, Aug 25')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /previous day/i }));
     await waitFor(() => expect(window.location.pathname).toBe('/school/teacher/students/user_4/day/2026-08-24'));
+  });
+
+  it('returns a session opened from Day to the exact study day', async () => {
+    teacherWorkspaceApi.session.mockResolvedValueOnce({ ok: true, status: 200, data: {
+      schema: 'school.teacher-session/v5', sessionId: 'ses_from_day', revision: 1,
+      taxonomy: { subject: 'Science', courseTitle: 'Mammals', lessonTitle: 'Fishing Cat' },
+      state: { learnerId: 'user_4', state: 'created', terminal: false }, events: [], artifacts: [],
+      capabilities: { launchPreview: true, gradeCorrection: false, companionRecovery: false,
+        offerRetake: false, manualSettlement: false },
+    } });
+    window.history.pushState({}, '', '/school/teacher/students/user_4/history/sessions/ses_from_day?from=day&studyDay=2026-08-24');
+    render(<TeacherConsole />);
+    const back = await screen.findByRole('button', { name: '← Back to Monday, Aug 24' });
+    fireEvent.click(back);
+    expect(window.location.pathname).toBe('/school/teacher/students/user_4/day/2026-08-24');
+    expect(window.location.search).toBe('');
   });
 
   it('shows Day first in the learner tab strip', async () => {

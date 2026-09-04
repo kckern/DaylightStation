@@ -44,6 +44,7 @@ export function createSchoolRouter({
   retractSessionGradeAdjustment = null,
   invalidateSessionEvidence = null,
   teacherAgendaDispatch = null,
+  launchPreviewTokens = null,
   manageCurriculumException = null,
   teacherCapabilitySessions = null,
   teacherGate = null,
@@ -1086,6 +1087,20 @@ export function createSchoolRouter({
       before: textQuery(req.query.before),
       unitId: textQuery(req.query.unitId),
     })));
+  }));
+  // Opened directly by window.open so the popup is created during the click
+  // gesture. This signs a five-minute read-only scope and redirects to the
+  // existing School launch-card preview; no session or learner action exists.
+  router.get('/teacher/learners/:learnerId/launch-preview', wrap((req, res) => {
+    if (!launchPreviewTokens) throw new EntityNotFoundError('launch preview', 'not configured');
+    const subject = typeof req.query.subject === 'string' ? req.query.subject.trim() : '';
+    if (!subject) throw new ValidationError('subject is required');
+    const token = launchPreviewTokens.issue({
+      learnerId: req.params.learnerId,
+      subject,
+      continueToday: req.query.continueToday === '1' || req.query.continueToday === 'true',
+    });
+    res.set('Cache-Control', 'no-store').redirect(302, `/school?preview=${encodeURIComponent(token)}`);
   }));
   router.post('/teacher/learners/:learnerId/agenda/dispatch/preview', wrap(async (req, res) => {
     if (!teacherAgendaDispatch) throw new EntityNotFoundError('teacher agenda dispatch', 'not configured');

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { MantineProvider } from '@mantine/core';
 
 vi.mock('../../schoolApi.js', () => ({
   schoolApi: { agendaPreview: vi.fn(), teacherDay: vi.fn() },
@@ -47,8 +48,8 @@ beforeEach(() => {
 });
 
 const mount = (props = {}) => render(
-  <LearnerDayView learnerId="user_4" learnerName="User_4" studyDay="2026-08-25"
-    onChangeStudyDay={vi.fn()} onOpenSession={vi.fn()} {...props} />,
+  <MantineProvider><LearnerDayView learnerId="user_4" learnerName="User_4" studyDay="2026-08-25"
+    onChangeStudyDay={vi.fn()} onOpenSession={vi.fn()} {...props} /></MantineProvider>,
 );
 
 describe('LearnerDayView', () => {
@@ -83,7 +84,7 @@ describe('LearnerDayView', () => {
     const onOpenSession = vi.fn();
     mount({ onOpenSession });
     await waitFor(() => expect(screen.getByText('Monday · Psalms 49, 50, 51, 61')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /Monday · Psalms/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open details' }));
     expect(onOpenSession).toHaveBeenCalledWith('ses_1');
   });
 
@@ -95,15 +96,19 @@ describe('LearnerDayView', () => {
   });
 
   it('shows work graded today that belongs to another study day, labelled as such', async () => {
+    const onOpenSession = vi.fn();
     schoolApi.teacherDay.mockResolvedValue(ok({ learners: [{
       learnerId: 'user_4', sessions: [],
       processedToday: [{ sessionId: 'ses_old', subject: 'civilization', lessonTitle: 'The Midwestern States',
         studyDay: '2026-08-23', processedAt: '2026-08-25T14:03:00Z' }],
     }] }));
-    mount();
+    mount({ onOpenSession });
     await waitFor(() => expect(screen.getByText('The Midwestern States')).toBeInTheDocument());
     expect(screen.getByText(/graded today/i)).toBeInTheDocument();
     expect(screen.getByText(/Aug 23/)).toBeInTheDocument();
+    const row = screen.getByText('The Midwestern States').closest('li');
+    fireEvent.click(within(row).getByRole('button', { name: 'Open details' }));
+    expect(onOpenSession).toHaveBeenCalledWith('ses_old');
   });
 
   it('credits a subject served by carried-over work instead of calling it unrecorded', async () => {
@@ -134,7 +139,7 @@ describe('LearnerDayView', () => {
   // --- The printed agenda (operator requirement) --------------------------
   it('offers the exact printer image for the selected day', async () => {
     mount();
-    const toggle = await screen.findByRole('button', { name: /show the printed agenda/i });
+    const toggle = await screen.findByRole('button', { name: /preview printable agenda/i });
     fireEvent.click(toggle);
     const image = await screen.findByAltText(/printed agenda/i);
     expect(image).toHaveAttribute('src', expect.stringContaining('/agenda/preview'));
@@ -145,7 +150,7 @@ describe('LearnerDayView', () => {
 
   it('promises in plain words that the previewed codes are dead', async () => {
     mount();
-    fireEvent.click(await screen.findByRole('button', { name: /show the printed agenda/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /preview printable agenda/i }));
     expect(await screen.findByText(/codes on this copy don’t work/i)).toBeInTheDocument();
     // The old five-noun disclaimer is gone.
     expect(screen.queryByText(/agenda artifact, print record, working QR/i)).not.toBeInTheDocument();
@@ -153,14 +158,14 @@ describe('LearnerDayView', () => {
 
   it('re-points the printer image when the day changes', async () => {
     const { rerender } = render(
-      <LearnerDayView learnerId="user_4" learnerName="A" studyDay="2026-08-25"
-        onChangeStudyDay={vi.fn()} onOpenSession={vi.fn()} />,
+      <MantineProvider><LearnerDayView learnerId="user_4" learnerName="A" studyDay="2026-08-25"
+        onChangeStudyDay={vi.fn()} onOpenSession={vi.fn()} /></MantineProvider>,
     );
-    fireEvent.click(await screen.findByRole('button', { name: /show the printed agenda/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /preview printable agenda/i }));
     expect(await screen.findByAltText(/printed agenda/i)).toHaveAttribute('src', expect.stringContaining('2026-08-25'));
     rerender(
-      <LearnerDayView learnerId="user_4" learnerName="A" studyDay="2026-08-24"
-        onChangeStudyDay={vi.fn()} onOpenSession={vi.fn()} />,
+      <MantineProvider><LearnerDayView learnerId="user_4" learnerName="A" studyDay="2026-08-24"
+        onChangeStudyDay={vi.fn()} onOpenSession={vi.fn()} /></MantineProvider>,
     );
     await waitFor(() => expect(screen.getByAltText(/printed agenda/i))
       .toHaveAttribute('src', expect.stringContaining('2026-08-24')));
@@ -169,7 +174,7 @@ describe('LearnerDayView', () => {
   it('never issues a non-GET to any agenda route', async () => {
     // Previewing must not mint a session, ticket, QR, or digit code.
     mount();
-    fireEvent.click(await screen.findByRole('button', { name: /show the printed agenda/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /preview printable agenda/i }));
     await screen.findByAltText(/printed agenda/i);
     expect(schoolApi.agendaDispatch).not.toBeDefined();
     // The only agenda call the view makes is the read-only JSON preview.

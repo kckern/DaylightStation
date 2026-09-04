@@ -124,6 +124,16 @@ describe('joinLearnerDay', () => {
     expect(joinLearnerDay({})).toMatchObject({ rows: [], counts: { total: 0 } });
   });
 
+  it('does not count an absent assignment as work not started', () => {
+    const result = joinLearnerDay({
+      sections: [{ subject: 'english', next: null, obligation: { state: 'excused', reason: 'caught_up' } }],
+      sessions: [],
+    });
+    expect(result.rows[0]).toMatchObject({ status: 'unassigned', detail: 'Caught up' });
+    expect(result.counts.planned).toBeUndefined();
+    expect(result.counts.unassigned).toBe(1);
+  });
+
   it('keeps a subjectless session rather than dropping it', () => {
     const { rows } = joinLearnerDay({ sections: [], sessions: [{ sessionId: 'ses_x' }] });
     expect(rows).toHaveLength(1);
@@ -340,7 +350,7 @@ describe('joinLearnerDay', () => {
   it('classifies every state the backend session machine can produce', () => {
     // Mirror of `backend/src/2_domains/school/sessions/sessionEvents.mjs`
     // TRANSITIONS. If the backend grows a state, add it BOTH there and to
-    // DONE_STATES / IN_FLIGHT_STATES in learnerDay.js — an unknown state falls
+    // DONE_STATES / IN_FLIGHT_STATES in sessionPresentation.js — an unknown state falls
     // through to 'planned', which silently understates a child's day.
     const BACKEND_STATES = [
       'created', 'issued', 'reprinted', 'submitted', 'graded', 'outcome_recorded', 'rewarded',

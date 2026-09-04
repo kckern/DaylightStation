@@ -9,18 +9,19 @@
  * free — previewing a day never creates a session, print, or code.
  */
 import { useMemo, useState } from 'react';
+import { DateStepper, Sheet } from '../../../../lib/ui/index.js';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { joinLearnerDay, DAY_STATUS_LABEL } from '../learnerDay.js';
-import { humanDate, teacherDate, teacherTime, localDay, shiftDay } from '../teacherDates.js';
+import { humanDate, teacherDate, teacherTime, localDay } from '../teacherDates.js';
 import { LessonIdentity, SubjectIdentity } from '../CurriculumIdentity.jsx';
 import { teacherWorkspaceApi } from '../teacherWorkspaceApi.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
 import { teacherLog } from '../teacherLog.js';
 import PanelFrame from './PanelFrame.jsx';
-import SessionPaperRecord from './SessionPaperRecord.jsx';
 import { DigestArtifactButtons } from './RosterStrip.jsx';
 import { agendaPreviewSrc } from './agendaPreviewSrc.js';
+import LaunchPreviewAction from './LaunchPreviewAction.jsx';
 
 // Client-minted, resource-scoped: the same shape ArtifactReprint uses so a
 // double-tap on the print button can never mint two receipts. Not imported
@@ -43,23 +44,14 @@ const scoreLine = (session) => {
 };
 
 function DayNav({ studyDay, onChangeStudyDay }) {
-  const isToday = studyDay === localDay();
   return (
     <div className="teacher-day-nav">
-      <button type="button" className="teacher-btn teacher-btn--quiet" aria-label="Previous day"
-        onClick={() => onChangeStudyDay(shiftDay(studyDay, -1))}>←</button>
-      <div className="teacher-day-nav__label">
-        <strong>{humanDate(studyDay) ?? 'Pick a day'}</strong>
-        {isToday && <span className="teacher-day-nav__today">Today</span>}
-      </div>
-      <button type="button" className="teacher-btn teacher-btn--quiet" aria-label="Next day"
-        onClick={() => onChangeStudyDay(shiftDay(studyDay, 1))}>→</button>
+      <h3>{humanDate(studyDay) ?? 'Pick a day'}</h3>
+      <DateStepper date={studyDay} today={localDay()} label="Today" onChange={onChangeStudyDay} />
       <label className="teacher-day-nav__pick">
         <span>Jump to</span>
         <input type="date" value={studyDay} onChange={(event) => event.target.value && onChangeStudyDay(event.target.value)} />
       </label>
-      {!isToday && <button type="button" className="teacher-btn teacher-btn--quiet"
-        onClick={() => onChangeStudyDay(localDay())}>Back to today</button>}
     </div>
   );
 }
@@ -68,29 +60,27 @@ export function PrintedAgenda({ learnerId, studyDay }) {
   const [open, setOpen] = useState(false);
   const src = agendaPreviewSrc(learnerId, studyDay);
   return (
-    <section className="teacher-printed-agenda">
-      <div className="teacher-action-row">
-        <button type="button" className="teacher-btn" onClick={() => setOpen((value) => !value)}>
-          {open ? 'Hide the printed agenda' : 'Show the printed agenda'}
-        </button>
-        {open && <a className="teacher-btn teacher-btn--quiet" href={src} target="_blank" rel="noreferrer">Open full size ↗</a>}
-      </div>
-      {open && <>
+    <>
+      <button type="button" className="teacher-btn" onClick={() => setOpen(true)}>
+        Preview printable agenda
+      </button>
+      <Sheet open={open} onClose={() => setOpen(false)} title="Printable agenda preview">
         <p className="teacher-printed-agenda__promise">
           This is the paper as it would print — but the codes on this copy don’t work. Nothing here starts a lesson.
         </p>
         <img className="teacher-printed-agenda__image" src={src} alt={`Printed agenda for ${humanDate(studyDay) ?? 'the selected day'}`} />
-      </>}
-    </section>
+        <a className="teacher-btn teacher-btn--quiet" href={src} target="_blank" rel="noreferrer">Open full size ↗</a>
+      </Sheet>
+    </>
   );
 }
 
 /**
  * The one console path that drives a physical printer — everything above
  * this is a read. `PrintedAgenda` is inert by construction; this is not, and
- * the two must never look like a matched pair. It gets its own box, its own
- * accent, and no shared row with the preview toggle, because that adjacency
- * is exactly where a teacher would stop reading the difference.
+ * the two must never look equivalent. They share one named Printed agenda
+ * block so the distinction can be stated once in plain language; dispatch is
+ * still the filled primary action and requires its own preview/confirmation.
  *
  * Dispatch mints against the planner's OWN current day — it takes no
  * `studyDay` — so viewing a past or future day and pressing print would
@@ -170,7 +160,7 @@ function AgendaDispatch({ learnerId, learnerName, studyDay }) {
   );
 }
 
-function DayRow({ row, onOpenSession }) {
+function DayRow({ row, learnerId, onOpenSession }) {
   const session = row.session;
   // The SESSION's subject wins over the section's. The planner buckets
   // non-canonical subjects into 'other', so a unit-matched piano lesson
@@ -187,7 +177,7 @@ function DayRow({ row, onOpenSession }) {
     ? <LessonIdentity compact subject={subject} courseTitle={session.courseTitle}
         moduleTitle={session.moduleTitle} lessonTitle={title ?? 'Lesson'} posterUrl={session.posterUrl} />
     : <div className="teacher-day-row__unstarted"><SubjectIdentity subject={subject} />
-        <strong>{row.planned ?? 'No work offered'}</strong></div>;
+        <strong>{row.planned ?? 'No assignment today'}</strong></div>;
   return (
     <li className={`teacher-day-row teacher-day-row--${row.status}`}>
       {/* One vocabulary with the dashboard's lesson cards: the chip is
@@ -199,14 +189,18 @@ function DayRow({ row, onOpenSession }) {
         {row.unplanned && <span className="teacher-day-chip__tag">not on the plan</span>}
       </span>
       <div className="teacher-day-row__body">
-        {session
-          ? <button type="button" className="teacher-day-row__open" onClick={() => onOpenSession(session.sessionId)}>{body}</button>
-          : body}
+        {body}
         {detail && <small className="teacher-day-row__detail">{detail}</small>}
       </div>
       <div className="teacher-day-row__right">
         {scoreLine(session) && <span className="teacher-day-row__score">{scoreLine(session)}</span>}
-        {session?.sessionId && <SessionPaperRecord sessionId={session.sessionId} lessonTitle={title ?? 'Lesson'} />}
+        <div className="teacher-day-row__actions">
+          {session?.sessionId && <button type="button" className="teacher-btn" onClick={() => onOpenSession(session.sessionId)}>Open details</button>}
+          <LaunchPreviewAction learnerId={learnerId} subject={subject} label="Preview" />
+          {session && <DigestArtifactButtons session={session} onOpen={(kind, openedSession) => {
+            teacherLog.nav('artifact-open', { learnerId, sessionId: openedSession.sessionId, kind });
+          }} />}
+        </div>
       </div>
     </li>
   );
@@ -252,6 +246,7 @@ export default function LearnerDayView({ learnerId, learnerName, studyDay, onCha
     joined.counts.planned ? `${joined.counts.planned} not started` : null,
     joined.counts.deferred ? `${joined.counts.deferred} deferred` : null,
     joined.counts.blocked ? `${joined.counts.blocked} blocked` : null,
+    joined.counts.unassigned ? `${joined.counts.unassigned} no assignment` : null,
     unplanned ? `${unplanned} not on the plan` : null,
   ].filter(Boolean).join(' · ');
 
@@ -282,19 +277,27 @@ export default function LearnerDayView({ learnerId, learnerName, studyDay, onCha
           </ul>
         )}
         <ul className="teacher-day-rows">
-          {joined.rows.map((row) => <DayRow key={row.key} row={row} onOpenSession={onOpenSession} />)}
+          {joined.rows.map((row) => <DayRow key={row.key} row={row} learnerId={learnerId} onOpenSession={onOpenSession} />)}
         </ul>
       </PanelFrame>
       {/* Outside the PanelFrame deliberately: PanelFrame renders children
           only in the `ok` state, and "what would today's paper look like?"
           is a fair question on a day with nothing planned or recorded. */}
-      <PrintedAgenda learnerId={learnerId} studyDay={studyDay} />
-      {/* Keyed on learner+day: a plain re-render (switching Students-rail rows
+      <section className="teacher-day-print-tools" aria-labelledby="teacher-day-print-title">
+        <div>
+          <h2 id="teacher-day-print-title">Printed agenda</h2>
+          <p>Preview is inert. Printing sends today&rsquo;s agenda to the physical printer.</p>
+        </div>
+        <div className="teacher-action-row">
+          <PrintedAgenda learnerId={learnerId} studyDay={studyDay} />
+          {/* Keyed on learner+day: a plain re-render (switching Students-rail rows
           reuses this element type at the same position) would otherwise carry
           a stale `preview`/`idempotencyKey` across children — User_5's ready
           count and Idempotency-Key sitting under User_4's name. The key forces
           a remount, which is the only thing that resets that state. */}
-      <AgendaDispatch key={`${learnerId}:${studyDay}`} learnerId={learnerId} learnerName={learnerName} studyDay={studyDay} />
+          <AgendaDispatch key={`${learnerId}:${studyDay}`} learnerId={learnerId} learnerName={learnerName} studyDay={studyDay} />
+        </div>
+      </section>
       {/* The heading deliberately avoids repeating the row chip's exact words:
           "Graded today" is the per-row label, and the section should not say
           the same phrase twice over one list. */}
@@ -306,10 +309,8 @@ export default function LearnerDayView({ learnerId, learnerName, studyDay, onCha
               <li className="teacher-day-row teacher-day-row--processed" key={session.sessionId}>
                 <span className="teacher-day-chip teacher-day-chip--processed">Graded today</span>
                 <div className="teacher-day-row__body">
-                  <button type="button" className="teacher-day-row__open" onClick={() => onOpenSession(session.sessionId)}>
-                    <LessonIdentity compact subject={session.subject} courseTitle={session.courseTitle}
-                      moduleTitle={session.moduleTitle} lessonTitle={session.lessonTitle ?? 'Lesson'} posterUrl={session.posterUrl} />
-                  </button>
+                  <LessonIdentity compact subject={session.subject} courseTitle={session.courseTitle}
+                    moduleTitle={session.moduleTitle} lessonTitle={session.lessonTitle ?? 'Lesson'} posterUrl={session.posterUrl} />
                   <small className="teacher-day-row__detail">
                     Study day {teacherDate(session.studyDay)}
                     {teacherTime(session.processedAt) ? ` · marked ${teacherTime(session.processedAt)}` : ''}
@@ -317,13 +318,16 @@ export default function LearnerDayView({ learnerId, learnerName, studyDay, onCha
                 </div>
                 <div className="teacher-day-row__right">
                   {scoreLine(session) && <span className="teacher-day-row__score">{scoreLine(session)}</span>}
-                  <DigestArtifactButtons session={session} onOpen={(kind, openedSession) => {
-                    teacherLog.nav('artifact-open', { learnerId, sessionId: openedSession.sessionId, kind });
-                  }} />
-                  {session.remediation?.activeSessionId && (
-                    <button type="button" className="teacher-btn teacher-btn--quiet"
-                      onClick={() => onOpenSession(session.remediation.activeSessionId)}>Open active retry →</button>
-                  )}
+                  <div className="teacher-day-row__actions">
+                    <button type="button" className="teacher-btn" onClick={() => onOpenSession(session.sessionId)}>Open details</button>
+                    <DigestArtifactButtons session={session} onOpen={(kind, openedSession) => {
+                      teacherLog.nav('artifact-open', { learnerId, sessionId: openedSession.sessionId, kind });
+                    }} />
+                    {session.remediation?.activeSessionId && (
+                      <button type="button" className="teacher-btn teacher-btn--quiet"
+                        onClick={() => onOpenSession(session.remediation.activeSessionId)}>Open active retry →</button>
+                    )}
+                  </div>
                 </div>
               </li>
             ))}

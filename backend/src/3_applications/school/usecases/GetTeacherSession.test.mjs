@@ -34,13 +34,17 @@ describe('GetTeacherSession artifact read-through', () => {
     const result = await useCase.execute({ sessionId: 'ses_illinois' });
 
     expect(result).toMatchObject({
-      schema: 'school.teacher-session/v4',
+      schema: 'school.teacher-session/v5',
       taxonomy: {
         subject: 'Civilization', lessonTitle: 'Illinois', courseTitle: 'Young People’s Atlas of the United States',
         moduleTitle: 'United States Regions and States', posterUrl: curriculumPosterRef('teacher', 'young-peoples-atlas-us'),
       },
       assignment: { documentRevision: 'frozen-rev', questions: [{ prompt: 'Which state is Illinois?' }] },
       assessment: { items: [{ given: 'Illinois', verdict: 'correct' }] },
+      capabilities: {
+        gradeCorrection: true, launchPreview: true, companionRecovery: false,
+        offerRetake: false, manualSettlement: true,
+      },
       artifacts: [{ artifactId: 'civilization/young-peoples-atlas-us/ws-ses-illinois', availability: 'unavailable', exactBytesRetained: false }],
     });
     expect(result.artifacts[0].originalPdfUrl).toBeUndefined();
