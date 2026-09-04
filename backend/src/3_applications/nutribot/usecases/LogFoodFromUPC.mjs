@@ -208,7 +208,21 @@ export class LogFoodFromUPC {
             protein: foodItem.protein,
             carbs: foodItem.carbs,
             fat: foodItem.fat,
-            source: 'nutritionix',
+            // The serving the panel describes, which is what makes this row an
+            // observation rather than a bare total.
+            grams: foodItem.grams,
+            unit: foodItem.unit,
+            amount: foodItem.amount,
+            // PROVENANCE. This use case has always had the barcode in scope and
+            // has always thrown it away, hard-coding `source: 'nutritionix'`
+            // like the two AI capture paths — which is why all 683 catalog
+            // entries claimed the same source and not one carried a UPC, across
+            // 224 UPC logs. Writing it revives `getByUpc` and the UPC index,
+            // and lets the derivation weight a manufacturer's own panel above a
+            // model's guess. It does NOT gate anything: a source gate would
+            // freeze 84% of these foods at whichever row wrote first.
+            source: 'upc',
+            barcodeUpc: upc,
           }, userId);
         } catch (err) {
           this.#logger.warn?.('nutribot.catalog.record_failed', { name: foodItem.label, error: err.message });

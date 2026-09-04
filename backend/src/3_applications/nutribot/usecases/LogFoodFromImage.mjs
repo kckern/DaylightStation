@@ -6,7 +6,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { formatFoodList, formatDateHeader, formatLoggedSummary } from '#domains/nutrition/entities/formatters.mjs';
+import { formatFoodList, formatDateHeader, formatLoggedSummary, formatDensityWarnings } from '#domains/nutrition/entities/formatters.mjs';
 import { repairTruncatedJson } from '../lib/repairJson.mjs';
 import { createNutriLog } from '../nutriLogRecords.mjs';
 import { groupParsedItems } from '#domains/nutrition/services/groupParsedItems.mjs';
@@ -269,6 +269,22 @@ export class LogFoodFromImage {
         await this.#foodLogStore.save(nutriLog);
       }
 
+      // 8a-bis. Density guard (catalog-density fix, step 2). BEFORE the catalog
+      // donation below — a donation adds this row to the very history the guard
+      // compares against, and a row judged against a median it has already
+      // moved is not judged at all. Nothing here corrects a number: the parsed
+      // values are logged as-is and land unsettled like every capture, so a
+      // flagged item just reaches the pending-review surface with a reason.
+      let densityWarning = '';
+      if (this.#catalogService?.assessDensity) {
+        try {
+          const findings = await this.#catalogService.assessDensity(foodItems, userId);
+          densityWarning = formatDensityWarnings(findings);
+        } catch (err) {
+          this.#logger.warn?.('nutribot.density.assess_failed', { conversationId, error: err.message });
+        }
+      }
+
       // 8b. Record food items in catalog for quick-add
       if (this.#catalogService) {
         for (const item of foodItems) {
@@ -279,6 +295,14 @@ export class LogFoodFromImage {
               protein: item.protein,
               carbs: item.carbs,
               fat: item.fat,
+              // The MASS, and the id that makes this row's observation
+              // idempotent. Without them the catalog can only remember a
+              // total, which is the portion-multiple problem it just stopped
+              // having.
+              grams: item.grams,
+              unit: item.unit,
+              amount: item.amount,
+              logId: item.id,
               // Spread, not four named fields: an unanswered micro is ABSENT
               // on `item` (see the mapper), and naming it here would
               // resurrect it as `undefined` -> a donated structural zero.
@@ -295,7 +319,7 @@ export class LogFoodFromImage {
       }
 
       // 9. Update photo caption with food list + action buttons
-      const caption = this.#formatFoodCaption(foodItems, nutriLog.date || localDate);
+      const caption = this.#formatFoodCaption(foodItems, nutriLog.date || localDate, densityWarning);
       const buttons = this.#buildActionButtons(nutriLog.id);
 
       await messaging.updateMessage(photoMsgId, {
@@ -404,6 +428,7 @@ export class LogFoodFromImage {
 5. Assign a noom_color: "green" (low cal density), "yellow" (moderate), or "orange" (high cal density).
 6. Select the best matching icon from this list: ${this.#foodIconsString}
 7. Use Title Case for all food names.
+7b. The "name" is the FOOD, and only the food. The PORTION lives in "grams"/"quantity"/"unit" and must never appear in the name — no counts, no container, no size, no parenthetical: write "Premier Protein Shake", never "Premier Protein Shake (Bottle)", "2 Premier Protein Shakes", "Premier Protein Shake (335ml)" or "Almonds (Handful)". The same food eaten in a different amount must come back with the SAME name, because that name is the key the food is remembered under.
 8. If a food is a composite dish (e.g. a sandwich, a smoothie, a burger) that you broke down into ingredient items per instruction 2, give every one of those ingredient items the SAME "dish" string (the dish's name). Standalone foods that were not broken down OMIT "dish" entirely. If the photo shows two separate dishes or plates, use a DIFFERENT "dish" value for each plate's items.
 9. If a caption is provided with the photo, determine whether it explicitly ASSIGNS this food to a specific meal (e.g. "for lunch", "breakfast", "a midnight snack") — not merely mentions a time or a meal word in passing. Do NOT set the flag for an incidental time reference (e.g. "after my morning run" — describes when something else happened, not this food's meal) or a meal word used as scenery rather than an assignment (e.g. "grabbed it on the way to dinner with friends" — the food itself isn't being called dinner). If the caption does explicitly assign a meal, set "mealTimeExplicit" to true and set "time" to that meal: "morning", "afternoon", "evening", or "night". Otherwise (no caption, or it does not explicitly assign one), omit "mealTimeExplicit" (or set it to false) and omit "time".
 
@@ -617,11 +642,14 @@ ${conservativeNote}${portionBoost}`,
    * Format food caption for image message
    * @private
    */
-  #formatFoodCaption(items, date) {
+  #formatFoodCaption(items, date, densityWarning = '') {
     const dateHeader = date ? formatDateHeader(date, { timezone: this.#getTimezone(), now: new Date() }) : '';
     const foodList = formatFoodList(items);
     const loggedSummary = formatLoggedSummary(items);
-    return `${loggedSummary}\n${dateHeader}\n\n${foodList}`;
+    // '' when nothing was flagged, so the caption is byte-identical to what it
+    // has always been for the overwhelming majority of captures.
+    const warningBlock = densityWarning ? `\n\n${densityWarning}` : '';
+    return `${loggedSummary}\n${dateHeader}\n\n${foodList}${warningBlock}`;
   }
 
   /**

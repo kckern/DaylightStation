@@ -174,6 +174,25 @@ export class TemplateService {
 
   async listDismissedKeys(userId) { return this.#templateStore.listDismissedKeys(userId); }
 
+  /**
+   * Add a key to the dismissal ledger WITHOUT there being a template row to
+   * remove.
+   *
+   * The ledger is the household's one "never propose this to me again" list,
+   * and `dismiss` above can only reach it by way of a stored template. The
+   * catalog drift audit computes its proposals fresh from history on every run
+   * and stores none, so it needs the ledger and not the template store — hence
+   * this door. Keys are namespaced by their proposer (`catalog-density:...`),
+   * so nothing here can collide with a meal-template proposal key.
+   */
+  async dismissKey(key, userId) {
+    const clean = String(key ?? '').trim();
+    if (!clean) throw coded('dismissKey requires a key', 'TEMPLATE_KEY_REQUIRED');
+    await this.#templateStore.addDismissedKey(clean, userId);
+    this.#logger.info?.('health.templates.key_dismissed', { key: clean });
+    return { ok: true, key: clean };
+  }
+
   async getById(id, userId) { return this.#templateStore.getById(id, userId); }
 
   async create({ name, icon = null, components, source = 'manual', proposalKey = null }, userId) {
