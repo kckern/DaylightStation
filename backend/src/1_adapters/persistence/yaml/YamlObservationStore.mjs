@@ -325,6 +325,24 @@ function requireValueForKind(kind, value, unit) {
 }
 
 /**
+ * The same per-kind value rules the write path enforces, asked as a QUESTION rather than
+ * as an assertion — a read must never throw over one bad row.
+ *
+ * @param {unknown} kind
+ * @param {unknown} value
+ * @param {unknown} unit
+ * @returns {boolean}
+ */
+function hasValidValueForKind(kind, value, unit) {
+  try {
+    validateObservationValue({ kind, value, unit });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Structural shape check for one row already inside the file (as opposed to `require*`,
  * which validates a caller's INPUT before it is ever written). A row failing this is
  * garbage that reached the file some other way — a hand edit, a future schema change read
@@ -332,10 +350,13 @@ function requireValueForKind(kind, value, unit) {
  * is skipped rather than trusted, WITHOUT being removed from the underlying file (see
  * `#readAllValid`).
  *
- * Deliberately loose on `value`, `unit`, and `pairedEntryUuid`: those are allowed to be
- * various types or `null` by design, so over-constraining them here would reject valid
- * rows. This checks only the fields whose shape is load-bearing for every other method in
- * this class (id lookup, date filtering, scale filtering, status filtering).
+ * `value` and `unit` are held to the SAME per-kind rules as a write, and the reason is
+ * specific: a `value: NaN` weight sitting on disk is read back, merged into a composition,
+ * and reads `complete` (because `NaN !== null`) — which is enough to drive the UNATTENDED
+ * commit and file an entry whose grams serialise to `null` with nothing flagged anywhere.
+ * A row that cannot satisfy its own kind is not a valid row, whichever direction it is
+ * travelling. `pairedEntryUuid` stays unconstrained: it is a uuid or `null` by design, and
+ * a wrong one cannot fabricate a number.
  *
  * @param {unknown} r
  * @returns {boolean}
@@ -348,7 +369,8 @@ function isStructurallyValid(r) {
     typeof r.scaleId === 'string' && r.scaleId.length > 0 &&
     typeof r.at === 'string' && LOCAL_TIMESTAMP_RE.test(r.at) &&
     typeof r.date === 'string' && DATE_RE.test(r.date) &&
-    KNOWN_STATUSES.includes(r.status)
+    KNOWN_STATUSES.includes(r.status) &&
+    hasValidValueForKind(r.kind, r.value, r.unit)
   );
 }
 

@@ -76,13 +76,15 @@ rebroadcasts and persists two record kinds:
 ## Nutribot integration
 
 A second, independent consumer of the `food-scale` topic
-(`backend/src/3_applications/hardware/ScaleNutribotBridge.mjs`) turns weights into
-Telegram density-logging prompts for the household head. Two paths:
+(`backend/src/3_applications/nutrition/ObservationService.mjs`) turns weights into
+Telegram density-logging prompts for the household head, recording every signal on a
+durable ledger as it goes. Two paths:
 
 - **AUTO** — a settled rise above the learned resting load posts **one** prompt that
   then **edits in place** as the weight climbs. Answering it frees it. Returning near
-  the resting load ends the session and **retracts** an unanswered prompt. A placement
-  is **suppressed** when it looks like putting the scale away — it lands in the
+  the resting load ends the session and **closes** an unanswered prompt without
+  withdrawing it — it stays answerable, and the **next placement supersedes it**. A
+  placement is **suppressed** when it looks like putting the scale away — it lands in the
   configured `storage_weight_g` band, or it's a `heavy_g`+ jump right after a burst of
   recent posts. Weights never expire.
 - **FORCE** — an **ESP button press** logs the live weight now, **bypassing the

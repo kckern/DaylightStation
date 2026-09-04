@@ -231,6 +231,62 @@ describe('matchObservations — composition for observations with no candidate e
     });
   });
 
+  // ZERO IS A WEIGHT. `complete` is compared against `null`, never tested for truthiness,
+  // because a genuine 0 g reading with a density scanned against it is a finished
+  // placement — an empty tared vessel, or food lifted off after the tare. Rewriting the
+  // rule as `!!grams` or `grams && density` reads identically at a glance and silently
+  // strands every such placement: the quiet commit refuses it as `incomplete` forever
+  // and the prompt stays `pending` until the next placement supersedes it.
+  it('a ZERO-gram weight with a density is a COMPLETE composition, not a falsy one', () => {
+    const weight = observation({ id: 'w1', kind: 'weight', value: 0, unit: 'g', at: '2026-09-02 18:00:00' });
+    const density = observation({ id: 'd1', kind: 'density', value: 3, unit: null, at: '2026-09-02 18:00:20' });
+    const result = matchObservations({
+      observations: [weight, density], entries: [], nowTs: localMs('2026-09-02 18:01:00'),
+    });
+    expect(result.composition).toEqual({
+      scaleId: 'kitchen-1',
+      grams: 0,
+      unit: 'g',
+      density: 3,
+      container: null,
+      complete: true,
+      observationIds: ['w1', 'd1'],
+    });
+  });
+
+  it('a ZERO-gram weight alone is still incomplete — it is the DENSITY that is missing', () => {
+    const weight = observation({ id: 'w1', kind: 'weight', value: 0, unit: 'g', at: '2026-09-02 18:00:00' });
+    const result = matchObservations({ observations: [weight], entries: [], nowTs: localMs('2026-09-02 18:01:00') });
+    expect(result.composition).toMatchObject({ grams: 0, density: null, complete: false });
+  });
+
+  // Last-writer-wins per slot, for the CONTAINER as well as the density. The rows are
+  // append-only, so a rescan does not overwrite anything — the later row simply wins, and
+  // that is what makes rescanning the repair for a wrong slot.
+  it('the LATER container row wins, so a rescan repairs a wrong tare', () => {
+    const first = observation({ id: 'c1', kind: 'container', value: 'mug', unit: null, at: '2026-09-02 18:00:00' });
+    const second = observation({ id: 'c2', kind: 'container', value: 'tupperware', unit: null, at: '2026-09-02 18:00:30' });
+    const weight = observation({ id: 'w1', kind: 'weight', value: 500, unit: 'g', at: '2026-09-02 18:00:40' });
+    const result = matchObservations({
+      observations: [first, second, weight], entries: [], nowTs: localMs('2026-09-02 18:01:00'),
+    });
+    expect(result.composition.container).toBe('tupperware');
+    // BOTH rows stay in the evidence set: neither was deleted, and the undo that takes
+    // the later one back is what lets the earlier one win again.
+    expect(result.composition.observationIds).toEqual(['c1', 'c2', 'w1']);
+  });
+
+  it('the LATER weight row wins too, so the composition reports the current load', () => {
+    const first = observation({ id: 'w1', kind: 'weight', value: 480, unit: 'g', at: '2026-09-02 18:00:00' });
+    const second = observation({ id: 'w2', kind: 'weight', value: 613, unit: 'ml', at: '2026-09-02 18:00:30' });
+    const result = matchObservations({
+      observations: [first, second], entries: [], nowTs: localMs('2026-09-02 18:01:00'),
+    });
+    // The unit travels with the weight that won — a stale unit against a fresh number is
+    // how a millilitre reading gets multiplied by a kcal-per-gram density.
+    expect(result.composition).toMatchObject({ grams: 613, unit: 'ml' });
+  });
+
   it('an unclaimed observation older than the window from nowTs is dropped from composition', () => {
     const weight = observation({ id: 'w1', kind: 'weight', value: 220, unit: 'g', at: '2026-09-02 18:00:00' });
     const result = matchObservations({ observations: [weight], entries: [], nowTs: localMs('2026-09-02 18:16:00') });

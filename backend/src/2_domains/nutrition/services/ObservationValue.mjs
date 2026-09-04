@@ -68,16 +68,23 @@ function describeValue(value) {
 }
 
 /**
+ * `label` and `field` are deliberately different things. The MESSAGE names what the value
+ * means to a person — "container must be a non-empty string" — while `field` names the
+ * ROW COLUMN a caller would go and look at, which for every kind but the unit is `value`.
+ * Conflating them makes one of the two wrong: either the message says "value" and tells a
+ * person nothing, or `field` says "container" and points at a column that does not exist.
+ *
  * @param {unknown} value
- * @param {string} field
+ * @param {string} label human-facing name, for the message
  * @param {string} code
+ * @param {string} [field='value'] the row column, for the structured payload
  * @returns {string}
  * @throws {ValidationError} If not a non-empty string.
  */
-function requireNonEmptyString(value, field, code) {
+function requireNonEmptyString(value, label, code, field = 'value') {
   if (typeof value !== 'string' || value.length === 0) {
     throw new ValidationError(
-      `${field} must be a non-empty string (received: ${describeValue(value)})`,
+      `${label} must be a non-empty string (received: ${describeValue(value)})`,
       { code, field, value },
     );
   }
@@ -116,7 +123,7 @@ export function validateWeightValue(grams) {
  */
 export function validateWeightUnit(unit) {
   if (unit === undefined || unit === null) return null;
-  return requireNonEmptyString(unit, 'unit', 'INVALID_WEIGHT_UNIT');
+  return requireNonEmptyString(unit, 'unit', 'INVALID_WEIGHT_UNIT', 'unit');
 }
 
 /**

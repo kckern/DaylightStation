@@ -319,7 +319,7 @@ both, because it is one event in each story.
 | Event | Says |
 |---|---|
 | `observation.service.ready` | the scale path is wired and listening |
-| `observation.service.skipped` / `.wireFailed` | it is NOT wired: no head of household, no bot id, or the wiring threw. A fridge scan is refused rather than acknowledged while this holds |
+| `observation.service.skipped` / `.wireFailed` | it is NOT wired: no head of household, no bot id, or the wiring threw. A fridge scan is refused rather than acknowledged while this holds — but **the refusal is invisible at the fridge**: there is no prompt to paint a ⚠️ on precisely because there is no chat to post one in, so the person gets a scanner beep and nothing else. These two lines and `applyScan.unavailable` are the only record. If someone reports "the sheet stopped doing anything", look here first |
 | `observation.appended` | a signal became a row |
 | `observation.append.failed` | it did not — the value broke its kind's rule, or the file could not be written |
 | `observation.read.failed` | the ledger could not be read. See the corrupt-file trap in [Known gaps](#known-gaps--deliberate-do-not-silently-fix) |
@@ -328,7 +328,7 @@ both, because it is one event in each story.
 | `observation.paired` / `.dismissed` | a person acted on a signal in the day view |
 | `scaleNutribot.pushed` / `.suppressed` | a prompt was posted, or a placement was judged not to be food |
 | `scaleNutribot.commit.committed` / `.skipped` / `.failed` | the prompt's view of the same commit |
-| `applyScan.unavailable` | a fridge-sheet code was refused because there is nowhere to record it |
+| `applyScan.unavailable` | a fridge-sheet code was refused because there is nowhere to record it. Logged, never shown — see the row above |
 
 ---
 
