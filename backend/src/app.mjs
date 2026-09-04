@@ -99,7 +99,7 @@ import { createEconomyApi } from '#composition/modules/economyApi.mjs';
 import { createJournalistApiRouter } from '#composition/modules/journalistApi.mjs';
 import { createHomebotApiRouter } from '#composition/modules/homebotApi.mjs';
 import { createNutribotApiRouter } from '#composition/modules/nutribotApi.mjs';
-import { createHealthApiRouter, createHealthDashboardApiRouter, createTemplateCurationJob } from '#composition/modules/healthApi.mjs';
+import { createHealthApiRouter, createHealthDashboardApiRouter, createTemplateCurationJob, createCatalogAuditService } from '#composition/modules/healthApi.mjs';
 import { createEntropyApiRouter } from '#composition/modules/entropyApi.mjs';
 import { createLifelogApiRouter } from '#composition/modules/lifelogApi.mjs';
 import { createStaticApiRouter } from '#composition/modules/staticApi.mjs';
@@ -5614,6 +5614,48 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         await templateCuration.run(username);
       } catch (err) {
         rootLogger.warn('health.templates.curation.failed', { error: err.message });
+      }
+    });
+  }
+
+  // Weekly food-catalog drift audit (catalog-density fix, step 5). It READS:
+  // it compares each catalog entry's derived serving against that food's own
+  // logged history and logs what disagrees. It writes no nutrition and files
+  // no proposal on its own — the report is recomputed on demand at
+  // GET /api/v1/health/nutrition/catalog/audit, where a person approves or
+  // dismisses each row. Sunday 04:10, beside the template curation, for the
+  // same reason: after the nightly archive rotation, before anyone is up.
+  //
+  // Composed inside a guard and NOT allowed to be fatal, the same posture as
+  // the curation job above: a wiring error in a nutrition convenience must not
+  // take media, fitness and school down at boot.
+  let catalogAudit = null;
+  try {
+    catalogAudit = createCatalogAuditService({
+      healthServices,
+      logger: rootLogger.child({ module: 'health-catalog-audit' }),
+    });
+  } catch (err) {
+    rootLogger.error('health.catalog.audit.compose_failed', { error: err.message });
+  }
+  if (agentsServices.scheduler && catalogAudit) {
+    agentsServices.scheduler.registerTask('health:catalog-audit', '10 4 * * 0', async () => {
+      const username = configService.getHeadOfHousehold?.() || configService.getDefaultUsername?.();
+      if (!username) {
+        rootLogger.warn('health.catalog.audit.no_user', {});
+        return;
+      }
+      try {
+        const report = await catalogAudit.report(username);
+        rootLogger.info('health.catalog.audit.weekly', {
+          username,
+          scanned: report.scanned,
+          considered: report.considered,
+          flagged: report.entries.length,
+          names: report.entries.slice(0, 20).map((e) => e.name),
+        });
+      } catch (err) {
+        rootLogger.warn('health.catalog.audit.failed', { error: err.message });
       }
     });
   }

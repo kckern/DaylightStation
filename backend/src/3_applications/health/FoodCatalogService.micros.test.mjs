@@ -64,7 +64,11 @@ describe('FoodCatalogService.recordUsage — micro donation', () => {
     const existing = makeEntry({ calories: 140, protein: 12, carbs: 1, fat: 10, sodium: 320, fiber: 2 });
     const { svc, map } = makeService([existing]);
     await svc.recordUsage({ name: 'Eggs', calories: 150, protein: 13, carbs: 1, fat: 11 }, 'u');
-    expect(map.get('e1').nutrients).toMatchObject({ sodium: 320, fiber: 2, calories: 150 });
+    // The micros survive, which is what this test is about. The CALORIES no
+    // longer move: "latest wins" is gone (catalog-density fix, step 1), and a
+    // row with no mass is not an observation at all — it carries a total with
+    // nothing to divide by. 140 is the entry's own canonical value, unchanged.
+    expect(map.get('e1').nutrients).toMatchObject({ sodium: 320, fiber: 2, calories: 140 });
   });
 
   // C2 (review): the bug this pair exists to keep dead. A model that answers

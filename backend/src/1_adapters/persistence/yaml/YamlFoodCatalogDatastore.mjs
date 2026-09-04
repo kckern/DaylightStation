@@ -40,7 +40,18 @@ export class YamlFoodCatalogDatastore extends IFoodCatalogDatastore {
       id: entry.id,
       name: entry.name,
       normalizedName: entry.normalizedName,
+      // The DERIVED view is what goes on disk, so anything reading the YAML
+      // directly (a report, a human, an export) sees the same serving the app
+      // shows. It is a materialized view of `observations`, never the input to
+      // the derivation — `#hydrate` hands it back as `nutrients`, which the
+      // entity keeps only as the fallback for an entry whose ring cannot
+      // answer. Micros ride along because the derived view layers over the
+      // base record.
       nutrients: { ...entry.nutrients },
+      // The evidence. A field missing from this dehydrator is a field that
+      // silently does not survive a restart — the trap this program has now
+      // hit four times — so the ring is written whole, per observation copied.
+      observations: (entry.observations || []).map((o) => ({ ...o })),
       source: entry.source,
       barcodeUpc: entry.barcodeUpc,
       useCount: entry.useCount,

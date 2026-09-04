@@ -123,7 +123,7 @@ function serializeHealthMetric(metric) {
  * @returns {express.Router}
  */
 export function createHealthRouter(config) {
-  const { healthService, healthOperations, dashboardService, catalogService, longitudinalService, budgetService, savedMealsService, templateService = null, medicalService, photoStore = null, observationPairing = null, iconManifestStore = null, logger = console } = config;
+  const { healthService, healthOperations, dashboardService, catalogService, longitudinalService, budgetService, savedMealsService, templateService = null, catalogAuditService = null, medicalService, photoStore = null, observationPairing = null, iconManifestStore = null, logger = console } = config;
   const router = express.Router();
 
   // JSON parsing middleware
@@ -983,6 +983,56 @@ export function createHealthRouter(config) {
       } catch (err) {
         if (err.code === 'TEMPLATES_WRITE_FAILED') {
           logger.error?.('health.templates.remove.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        throw err;
+      }
+    }));
+  }
+
+  // ==========================================================================
+  // Food catalog drift audit (catalog-density fix, step 5)
+  //
+  // The report is COMPUTED, never stored: it is a pure function of the
+  // catalog, the logged history and the dismissal ledger, so GET recomputes it
+  // and there is no second copy to go stale. Approve re-seeds one entry's
+  // observation ring from the rows on disk (the canonical value derives from
+  // it); Dismiss writes the key into the household's existing dismissal
+  // ledger. Neither route sets a nutrition number.
+  // ==========================================================================
+  if (catalogAuditService) {
+    router.get('/nutrition/catalog/audit', asyncHandler(async (req, res) => {
+      return res.json(await catalogAuditService.report(getDefaultUsername()));
+    }));
+
+    router.post('/nutrition/catalog/audit/approve', asyncHandler(async (req, res) => {
+      const { key } = req.body || {};
+      if (!key) return res.status(400).json({ error: 'key is required' });
+      try {
+        return res.json(await catalogAuditService.approve(key, getDefaultUsername()));
+      } catch (err) {
+        if (err.code === 'BAD_KEY') return res.status(400).json({ error: err.message, code: err.code });
+        if (err.code === 'NOT_FOUND' || err.code === 'NO_HISTORY') {
+          return res.status(404).json({ error: err.message, code: err.code });
+        }
+        if (err.code === 'CATALOG_WRITE_FAILED') {
+          logger.error?.('health.catalog.audit.approve.write_failed', { error: err.message });
+          return sendInternalError(res, { error: err.message, code: err.code });
+        }
+        throw err;
+      }
+    }));
+
+    router.post('/nutrition/catalog/audit/dismiss', asyncHandler(async (req, res) => {
+      const { key } = req.body || {};
+      if (!key) return res.status(400).json({ error: 'key is required' });
+      try {
+        return res.json(await catalogAuditService.dismiss(key, getDefaultUsername()));
+      } catch (err) {
+        if (err.code === 'BAD_KEY') return res.status(400).json({ error: err.message, code: err.code });
+        if (err.code === 'LEDGER_UNAVAILABLE') return res.status(503).json({ error: err.message, code: err.code });
+        if (err.code === 'TEMPLATES_WRITE_FAILED') {
+          logger.error?.('health.catalog.audit.dismiss.write_failed', { error: err.message });
           return sendInternalError(res, { error: err.message, code: err.code });
         }
         throw err;

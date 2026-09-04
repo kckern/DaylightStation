@@ -17,6 +17,9 @@ import { SavedMealsService } from '#apps/health/SavedMealsService.mjs';
 import { YamlMealTemplateDatastore } from '#adapters/persistence/yaml/YamlMealTemplateDatastore.mjs';
 import { TemplateService } from '#apps/health/TemplateService.mjs';
 import { TemplateCurationJob } from '#apps/health/TemplateCurationJob.mjs';
+import { YamlFoodCatalogDatastore } from '#adapters/persistence/yaml/YamlFoodCatalogDatastore.mjs';
+import { CatalogReconcileJob } from '#apps/health/CatalogReconcileJob.mjs';
+import { CatalogAuditService } from '#apps/health/CatalogAuditService.mjs';
 import { YamlMedicalReadingsDatastore } from '#adapters/persistence/yaml/YamlMedicalReadingsDatastore.mjs';
 import { MedicalReadingsService } from '#apps/health/MedicalReadingsService.mjs';
 import { PhotoStore } from '#adapters/persistence/PhotoStore.mjs';
@@ -132,6 +135,20 @@ export function createHealthApiRouter(config) {
     logger,
   });
 
+  // The catalog drift audit (catalog-density fix, step 5). Its OWN catalog
+  // adapter off the shared `dataService`, the same pattern goals/savedMeals/
+  // medical/templates use above — both handles resolve the identical
+  // users/{userId}/lifelog/nutrition/food_catalog.yml.
+  //
+  // It shares the TEMPLATE service built above, because the dismissal ledger is
+  // the household's one "never propose this again" list and drift keys live in
+  // it alongside meal-template keys (namespaced, so they cannot collide).
+  const catalogAuditService = createCatalogAuditService({
+    healthServices,
+    templateService,
+    logger,
+  });
+
   const medicalService = new MedicalReadingsService({
     store: new YamlMedicalReadingsDatastore({ dataService }),
     createId: uuidv4,
@@ -209,6 +226,7 @@ export function createHealthApiRouter(config) {
     budgetService,
     savedMealsService,
     templateService,
+    catalogAuditService,
     medicalService,
     photoStore,
     observationPairing,
@@ -245,6 +263,43 @@ export function createTemplateCurationJob({ healthServices, logger = console }) 
     }),
     nutriListStore: healthServices.nutriListStore,
     clock: { now: () => Date.now() },
+    logger,
+  });
+}
+
+/**
+ * Compose the catalog drift audit and the reconcile job it re-seeds through.
+ *
+ * Same "own adapter instance off the shared dataService" pattern as every
+ * other store in this file. Used twice: by the router (the manual report and
+ * its Approve/Dismiss) and by the weekly `health:catalog-audit` task in
+ * app.mjs, which only reads and logs.
+ *
+ * @param {Object} config
+ * @param {Object} config.healthServices - from createHealthServices (nutriListStore)
+ * @param {Object} [config.templateService] - the shared dismissal ledger; one is
+ *   built here when the caller has none of its own
+ * @param {Object} [config.logger]
+ * @returns {CatalogAuditService}
+ */
+export function createCatalogAuditService({ healthServices, templateService = null, logger = console }) {
+  const catalogStore = new YamlFoodCatalogDatastore({ dataService, logger });
+  const reconcileJob = new CatalogReconcileJob({
+    catalogStore,
+    nutriListStore: healthServices.nutriListStore,
+    clock: { now: () => Date.now() },
+    logger,
+  });
+  return new CatalogAuditService({
+    catalogStore,
+    reconcileJob,
+    templateService: templateService || new TemplateService({
+      templateStore: new YamlMealTemplateDatastore({ dataService }),
+      nutriListStore: healthServices.nutriListStore,
+      clock: { now: () => Date.now() },
+      createId: uuidv4,
+      logger,
+    }),
     logger,
   });
 }
