@@ -16,6 +16,13 @@ describe('DateStepper', () => {
     expect(screen.getByText('Today')).toBeTruthy();
   });
 
+  it('supports a stable Today shortcut when another heading owns the date', () => {
+    const change = vi.fn();
+    render(<DateStepper date="2026-08-20" today="2026-09-02" label="Today" onChange={change} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    expect(change).toHaveBeenCalledWith('2026-09-02');
+  });
+
   it('label click jumps back to max', () => {
     const change = vi.fn();
     render(<DateStepper date="2026-08-20" onChange={change} max="2026-09-02" />);

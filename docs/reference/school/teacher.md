@@ -154,6 +154,18 @@ reads — the plan (`agenda/preview?format=json&studyDay=…`) and the record
 (`teacher/day?studyDay=…`) — through the pure `joinLearnerDay`. Previewing a
 day never writes, for today or any other day.
 
+The Day uses one compact row per subject. The progress chip is the state; the
+lesson identity is not itself a hidden navigation target. **Open details** is
+the explicit route into the session record, **Preview** opens the launch card,
+and paper controls appear directly only when an issued artifact actually
+exists. A subject with no planned offer is **No assignment**, not **Not
+started**, and is excluded from the unfinished count.
+
+Opening a session from a Day records `from=day&studyDay=YYYY-MM-DD` in the URL.
+The inspector's Back control returns to that exact date; a session opened from
+History returns to History. The browser's incidental navigation stack is not
+the source of this promise.
+
 ---
 
 ## 3. The work-session lifecycle
@@ -257,6 +269,14 @@ reassignment could not legally follow a reward until it became legal here.
 | `rewarded` | correct the mark — the effective grade and its reward reconcile | Session inspector | **step-up** |
 | any | give credit for work the tech lost — attest the unit | Student → Operations | capability |
 | any | move the work to the right child | Student → Operations | capability |
+
+The session inspector presents those moves from the server's
+`school.teacher-session/v5` capability map. A newly created session says **Not
+started**; it never claims that the learner completed it. Score is absent until
+there is a meaningful score, empty artifact sections are absent, exceptional
+repairs live under **More actions**, and read-along recovery is shown only for
+a lesson with a required companion. The launch-card preview is available only
+while the session is non-terminal and has a resolvable subject.
 
 **Abandonment is not available everywhere.** `abandoned` is legal only from
 `created`, `issued`, `reprinted`, `media_dispatched`, `media_stalled`,

@@ -38,6 +38,8 @@ describe('teacherSessionPath origin', () => {
     const { teacherSessionPath } = await import('./teacherUrl.js');
     expect(teacherSessionPath('user_2', 's1', '/school/teacher', { from: 'today' }))
       .toBe('/school/teacher/students/user_2/history/sessions/s1?from=today');
+    expect(teacherSessionPath('user_2', 's1', '/school/teacher', { from: 'day', studyDay: '2026-09-04' }))
+      .toBe('/school/teacher/students/user_2/history/sessions/s1?from=day&studyDay=2026-09-04');
     expect(teacherSessionPath('user_2', 's1')).toBe('/school/teacher/students/user_2/history/sessions/s1');
   });
 });

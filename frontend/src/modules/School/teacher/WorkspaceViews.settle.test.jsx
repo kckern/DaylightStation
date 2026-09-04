@@ -48,7 +48,7 @@ import { teacherWorkspaceApi } from './teacherWorkspaceApi.js';
 const KIDS = [{ id: 'user_2', name: 'User_2' }];
 
 const sessionAt = (state, extra = {}) => ({
-  schema: 'school.teacher-session/v4',
+  schema: 'school.teacher-session/v5',
   sessionId: 'ses_1',
   revision: 3,
   state: { sessionId: 'ses_1', learnerId: 'user_2', state, terminal: false, ...extra },
@@ -63,7 +63,7 @@ const heading = () => screen.queryByText('Settle this by hand');
 async function renderAt(state, extra) {
   teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: sessionAt(state, extra) });
   render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
-  await waitFor(() => expect(screen.getByText('Outcome')).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText('Status')).toBeInTheDocument());
 }
 
 describe('SessionInspector — settle this by hand', () => {

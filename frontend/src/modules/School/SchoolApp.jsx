@@ -194,6 +194,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   const screenId = useMemo(() => screenIdFromUrlBase(urlBase), [urlBase]);
   const initialLink = useMemo(() => parseSchoolPath(urlBase), [urlBase]);
   const [section, setSection] = useState(initialLink.section); // a sections id, or null = home grid
+  const [queryPreviewLink, setQueryPreviewLink] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get('preview'); } catch { return null; }
+  });
   // The materials chain below the section (collection → work → track ids). It
   // is both the DEEP-LINK input MaterialsSection restores from on entry and the
   // live nav state it reports back so the URL stays in lock-step with the
@@ -649,6 +652,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       const link = parseSchoolPath(urlBase);
       setSection(link.section);
       setMaterialPath(link.materialPath);
+      try { setQueryPreviewLink(new URLSearchParams(window.location.search).get('preview')); } catch { setQueryPreviewLink(null); }
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
@@ -681,6 +685,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     // not watched — listing them would re-run this on every launch and clear
     // the notice/panel state it exists to protect. `SchoolApp.launch.test.jsx`
     // ("an identity lapse with the shelf up …") pins the lapse path.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- identity changes alone own this reset; see rationale above
   }, [currentUser?.id, isGuest]);
 
   const subjectId = section?.startsWith('subject:') ? section.slice(8) : null;
@@ -690,7 +695,21 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // The opaque payload from a `/launch-preview/<payload>` link. Never decoded
   // here — the backend owns the codec, and a client that also decoded it would
   // be a second opinion about what a link means.
-  const launchPreviewLink = section?.startsWith('launch-preview:') ? section.slice(15) : null;
+  const launchPreviewLink = queryPreviewLink
+    ?? (section?.startsWith('launch-preview:') ? section.slice(15) : null);
+  const leaveLaunchPreview = useCallback(() => {
+    if (queryPreviewLink && window.opener && !window.opener.closed) {
+      window.close();
+      return;
+    }
+    setQueryPreviewLink(null);
+    goHome();
+    if (queryPreviewLink) {
+      const query = new URLSearchParams(window.location.search);
+      query.delete('preview');
+      window.history.replaceState({}, '', `${window.location.pathname}${query.size ? `?${query}` : ''}`);
+    }
+  }, [queryPreviewLink, goHome]);
   const sectionLabel = !section ? null
       : subjectId ? subjectLabel(subjectId)
       : section === 'library' ? 'Library'
@@ -798,7 +817,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             the keypad because `section` is set, and it can mint nothing, so a
             locked panel is not weakened by being able to draw it. */}
         {launchPreviewLink && !active && (
-          <LaunchCardPreview link={launchPreviewLink} onExit={goHome} />
+          <LaunchCardPreview link={launchPreviewLink} onExit={leaveLaunchPreview} />
         )}
         {/* LOCKED PANEL (design §3). The keypad IS the resting state; a
             resolved code puts the launch card over it. Runners are rendered
@@ -809,7 +828,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             and SentenceLadderProgram renders outside the `!lock.locked` wrapper
             below. Gating on `!active` alone mounted the program with the
             keypad still underneath it. */}
-        {lock.locked && !active && !section && (
+        {lock.locked && !active && !section && !launchPreviewLink && (
           selfService.view === 'keypad' ? (
             <div className="school-lock-split" data-side={lockSide}>
               <Keypad

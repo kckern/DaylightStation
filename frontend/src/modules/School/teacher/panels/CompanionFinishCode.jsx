@@ -32,7 +32,7 @@ const UNAVAILABLE = {
 
 const FALLBACK = 'There is no code to read out for this lesson.';
 
-export function CompanionFinishCode({ sessionId }) {
+export function CompanionFinishCode({ sessionId, embedded = false }) {
   const [revealed, setRevealed] = useState(null);
   const { run, busy, errors } = useTeacherWrite({ panel: 'companion-finish-code' });
   const key = `finish-code:${sessionId}`;
@@ -46,8 +46,9 @@ export function CompanionFinishCode({ sessionId }) {
     onSuccess: setRevealed,
   });
 
+  const Tag = embedded ? 'div' : 'section';
   return (
-    <section className="teacher-panel teacher-companion-code">
+    <Tag className={embedded ? 'teacher-companion-code' : 'teacher-panel teacher-companion-code'}>
       <h3 className="teacher-panel__title">Read-along code</h3>
       <p>
         If the read-along won’t play, read these letters to the child so they can fill in the
@@ -83,7 +84,7 @@ export function CompanionFinishCode({ sessionId }) {
         </>
       )}
       {errors[key] && <p className="teacher-panel__error">{errors[key]}</p>}
-    </section>
+    </Tag>
   );
 }
 

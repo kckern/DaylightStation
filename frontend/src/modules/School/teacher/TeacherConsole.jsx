@@ -16,7 +16,7 @@ import { teacherLog } from './teacherLog.js';
 import {
   parseTeacherPath, teacherDayPath, teacherLearnerPath, teacherSectionPath, teacherSessionPath,
 } from './teacherUrl.js';
-import { localDay } from './teacherDates.js';
+import { humanDate, localDay } from './teacherDates.js';
 import TabErrorBoundary from './TabErrorBoundary.jsx';
 import {
   CoursesView, CurriculumView, DashboardView, HistoryView, LearnerDayScreen, LearnerOperationsView,
@@ -54,8 +54,8 @@ function TeacherShell() {
   const [railOpen, setRailOpen] = useState(false);
 
   const navigate = useCallback((path, replace = false) => {
-    if (window.location.pathname !== path) window.history[replace ? 'replaceState' : 'pushState']({}, '', path);
-    const next = parseTeacherPath(path);
+    if (`${window.location.pathname}${window.location.search}` !== path) window.history[replace ? 'replaceState' : 'pushState']({}, '', path);
+    const next = parseTeacherPath(new URL(path, window.location.origin).pathname);
     setRoute(next);
     setRailOpen(false);
     teacherLog.nav('workspace', { kind: next.kind, section: next.section, learnerId: next.learnerId, sessionId: next.sessionId });
@@ -114,7 +114,7 @@ function TeacherShell() {
   const learner = kids.find((kid) => kid.id === route.learnerId) ?? null;
   const goGlobal = (section) => navigate(teacherSectionPath(section, route.base));
   const goLearner = (learnerId, section = 'day', detail = null) => navigate(teacherLearnerPath(learnerId, section, detail, route.base));
-  const goSession = (sessionId) => navigate(teacherSessionPath(route.learnerId, sessionId, route.base));
+  const goSession = (sessionId, origin = {}) => navigate(teacherSessionPath(route.learnerId, sessionId, route.base, origin));
   const studyDay = route.studyDay ?? localDay();
   const goDay = (nextDay) => navigate(teacherDayPath(route.learnerId, nextDay, route.base));
 
@@ -127,14 +127,23 @@ function TeacherShell() {
   } else if (route.kind === 'session') {
     // Back returns to the view that opened the session (?from=today → the
     // dashboard digest), not always History.
-    const fromToday = new URLSearchParams(window.location.search).get('from') === 'today';
-    view = <SessionInspector learnerId={route.learnerId} sessionId={route.sessionId} kids={kids} onBack={() => (fromToday || !route.learnerId ? goGlobal('dashboard') : goLearner(route.learnerId, 'history'))} />;
+    const origin = new URLSearchParams(window.location.search);
+    const from = origin.get('from');
+    const originDay = origin.get('studyDay');
+    const backToDay = from === 'day' && /^\d{4}-\d{2}-\d{2}$/.test(originDay ?? '');
+    const backLabel = backToDay ? `Back to ${humanDate(originDay)}`
+      : from === 'today' || !route.learnerId ? 'Back to dashboard' : 'Back to history';
+    view = <SessionInspector learnerId={route.learnerId} sessionId={route.sessionId} kids={kids}
+      backLabel={backLabel}
+      onBack={() => (backToDay ? goDay(originDay)
+        : (from === 'today' || !route.learnerId ? goGlobal('dashboard') : goLearner(route.learnerId, 'history')))} />;
   } else if (route.kind === 'learner' && learner) {
     const views = {
       day: <LearnerDayScreen learnerId={learner.id} learnerName={learner.name} studyDay={studyDay}
-        onChangeStudyDay={goDay} onOpenSession={goSession} />,
+        onChangeStudyDay={goDay} onOpenSession={(sessionId) => goSession(sessionId, { from: 'day', studyDay })} />,
       courses: <CoursesView learnerId={learner.id} learnerName={learner.name} courseId={route.courseId} kids={kids} />,
-      history: <HistoryView learnerId={learner.id} learnerName={learner.name} onOpenSession={goSession} />,
+      history: <HistoryView learnerId={learner.id} learnerName={learner.name}
+        onOpenSession={(sessionId) => goSession(sessionId, { from: 'history' })} />,
       reports: <ReportsView learnerId={learner.id} kids={kids} />,
       operations: <LearnerOperationsView learnerId={learner.id} learnerName={learner.name} kids={kids} />,
     };

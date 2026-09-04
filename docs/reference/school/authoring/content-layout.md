@@ -117,6 +117,35 @@ for deterministic number lines, ten frames, counters, base-ten blocks, arrays,
 fraction bars, clocks, graphs, and shape sets. Generated specs use
 `school.math-svg/v1` and may coexist with safe hand-authored SVGs.
 
+### Elementary Math 2–3 release gate
+
+`scripts/generate-elementary-math-course.mjs` is the authoring source for the
+`elementary-math-2-3` course. Module mastery questions live in
+`scripts/school/elementary-math-mastery.mjs`; they are fresh transfer items,
+not copies sampled from lesson banks. Named challenge and cumulative lessons
+also have independent builders so a new title cannot conceal a cloned bank.
+
+The generator refuses publication when any twelve-item bank has a semantic
+duplicate, fewer than three item-specific feedback variants, the mechanical
+numeric `answer ±1/±2` distractor set, a non-unique greatest/least or
+machine-checkable equation answer, an invalid rounding choice, or mixed
+measurement dimensions in a reasonable-estimate pool. A course-wide pass also
+rejects a question repeated in another bank, full-bank clones, and mastery
+items without a specific assessed concept. Every distractor therefore needs an
+authored error model; `decoysFor()` intentionally has no numeric or fraction
+fallback.
+
+Before refreshing the live course, run:
+
+```bash
+npx vitest run scripts/generate-elementary-math-course.test.mjs cli/school/math-assets.test.mjs
+node scripts/generate-elementary-math-course.mjs --check --data-dir "$DAYLIGHT_BASE_PATH/data"
+node cli/school.mjs decoys audit math/elementary-math-2-3 --data-dir "$DAYLIGHT_BASE_PATH/data"
+```
+
+The last command audits the currently published copy; run it again after a
+refresh, followed by `node cli/school.mjs catalog validate --render-probe`.
+
 For a rich lesson, `_index.yml` is the `school.unit/v1` manifest and each other
 YAML file is a typed artifact. The artifact's stable bank id, not its physical
 path, is its address; moving between compact and rich forms therefore does not

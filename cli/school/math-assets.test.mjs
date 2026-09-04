@@ -32,6 +32,20 @@ describe('math asset authoring', () => {
     },
   );
 
+  it.each(['right-triangle', 'rotated-square', 'pentagon', 'hexagon', 'octagon', 'rhombus', 'trapezoid', 'parallelogram'])(
+    'renders the expanded %s shape without a raster or external reference', (type) => {
+      const svg = renderMathAsset(spec({
+        ref: `school/math/proof/${type}`,
+        kind: 'shape_set',
+        alt: `Shape A is a ${type}.`,
+        params: { shapes: [{ label: 'A', type }] },
+      }));
+      expect(svg).toContain('<polygon');
+      expect(svg).toContain('>A</text>');
+      expect(svg).not.toMatch(/(?:<image|\s(?:href|xlink:href)=)/u);
+    },
+  );
+
   it('rejects traversal and unknown primitives', () => {
     expect(validateMathAssetSpec(spec({ ref: 'school/math/../secret', kind: 'plot' }))).toEqual(expect.arrayContaining([
       expect.stringMatching(/ref/), expect.stringMatching(/kind/),

@@ -5,9 +5,9 @@
  * an agenda, read six digits off it, type them before they expired. That is a
  * lot of ceremony to answer "does this course's poster resolve yet?".
  *
- * IT RENDERS THE PANEL'S CARD, NOT A DRAWING OF ONE. The payload goes to
- * `/self-service/preview`, which decodes it and resolves the card through the
- * SAME read-only resolver and the SAME builder a typed code goes through. If
+ * IT RENDERS THE PANEL'S CARD, NOT A DRAWING OF ONE. The opaque preview link
+ * goes to `/self-service/preview`, which verifies or decodes it and resolves
+ * the card through the SAME read-only resolver and the SAME builder a typed code goes through. If
  * this component showed a card assembled any other way it would answer
  * questions about a surface the house does not run, which is worse than no
  * preview at all.
