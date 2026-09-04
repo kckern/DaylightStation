@@ -116,6 +116,19 @@ describe('CatalogReconcileJob', () => {
     expect(saved).toEqual([]);
   });
 
+  it('stays idempotent when history holds two rows under one id', async () => {
+    // The stored ring keeps one observation per id, so the change check has to
+    // compare against the SAME normalization. When it did not, this entry was
+    // re-written on every run — identical bytes, but `seeded` never reached 0.
+    // Found on the real 683-entry catalog, not invented here.
+    const entries = [makeEntry()];
+    const dupes = [...history, row({ uuid: 'e', date: '2026-08-25', calories: 999, grams: 700, amount: 700 })];
+    const { job } = harness(dupes, entries);
+    const runs = [await job.run('u'), await job.run('u'), await job.run('u')];
+    expect(runs.map((r) => r.seeded)).toEqual([1, 0, 0]);
+    expect(new Set(entries[0].observations.map((o) => o.logId)).size).toBe(entries[0].observations.length);
+  });
+
   it('dryRun computes the same answer and writes nothing', async () => {
     const { job, saved } = harness(history, [makeEntry()]);
     const result = await job.run('u', { dryRun: true });

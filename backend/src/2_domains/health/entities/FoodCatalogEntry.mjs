@@ -4,7 +4,7 @@
  * Built passively from logged foods. Tracks usage frequency for quick-add.
  */
 
-import { deriveCanonical, sortObservations, OBSERVATION_LIMIT } from '#domains/health/services/catalogDensity.mjs';
+import { deriveCanonical, sortObservations, normalizeRing, OBSERVATION_LIMIT } from '#domains/health/services/catalogDensity.mjs';
 
 export class FoodCatalogEntry {
   /**
@@ -151,14 +151,7 @@ export class FoodCatalogEntry {
    * property `backfill` does not have (decision 2.29).
    */
   setObservations(observations) {
-    const list = Array.isArray(observations) ? observations : [];
-    const byId = new Map();
-    const anonymous = [];
-    for (const obs of list) {
-      if (!obs || typeof obs !== 'object') continue;
-      if (obs.logId) byId.set(obs.logId, { ...obs }); else anonymous.push({ ...obs });
-    }
-    this.observations = sortObservations([...byId.values(), ...anonymous]).slice(-OBSERVATION_LIMIT);
+    this.observations = normalizeRing(observations);
   }
 
   /** Defensive copy: stored observations must not alias the caller's array. */

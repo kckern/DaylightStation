@@ -86,6 +86,23 @@ describe('CatalogAuditService.report', () => {
     expect(report.dismissed).toBe(1);
   });
 
+  it('stays quiet about a big ratio between two tiny numbers', async () => {
+    // "Lettuce: 1 kcal vs 8 kcal" is an 8x drift and worth nobody's attention.
+    // Found on the real catalog, where the ratio gate alone produced seven such
+    // rows out of 22.
+    const lettuce = new FoodCatalogEntry({
+      id: 'e9', name: 'Lettuce', nutrients: { calories: 1 },
+      lastUsed: '2026-08-25', createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    const rows = [1, 2, 3].map((i) => row({
+      uuid: `l${i}`, name: 'Lettuce', date: `2026-08-0${i}`, calories: 8, grams: 50, amount: 50,
+    }));
+    const { svc } = harness({ rows, entries: [lettuce] });
+    const report = await svc.report('u');
+    expect(report.considered).toBe(1);
+    expect(report.entries).toEqual([]);
+  });
+
   it('is deterministic — two runs, byte-identical reports', async () => {
     const { svc } = harness();
     const a = await svc.report('u');

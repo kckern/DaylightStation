@@ -29,7 +29,7 @@
  */
 
 import { FoodCatalogEntry } from '#domains/health/entities/FoodCatalogEntry.mjs';
-import { observationFromRow, sortObservations, OBSERVATION_LIMIT } from '#domains/health/services/catalogDensity.mjs';
+import { observationFromRow, sortObservations, normalizeRing } from '#domains/health/services/catalogDensity.mjs';
 
 /** Local (not UTC) YYYY-MM-DD — the UTC form reads as tomorrow every evening here. */
 function localDateISO(d) {
@@ -106,7 +106,12 @@ export class CatalogReconcileJob {
     for (const entry of catalog) {
       const observations = byName.get(entry.normalizedName);
       if (!observations || observations.length === 0) { skipped += 1; continue; }
-      const next = carrySource(entry.observations, sortObservations(observations).slice(-OBSERVATION_LIMIT));
+      // `normalizeRing` is what `setObservations` will store, so the change
+      // check below compares like with like. Comparing against the raw
+      // history instead made an entry with two rows under one id look changed
+      // on every run — identical bytes on disk, but `seeded` never reached 0,
+      // which is the exact claim this job exists to be able to make.
+      const next = carrySource(entry.observations, normalizeRing(observations));
       // A ring that is already exactly this is not rewritten. This is what
       // makes the second and third runs no-ops rather than merely harmless
       // ones, and it is why the written file is byte-stable.

@@ -49,6 +49,18 @@ describe('LogFoodFromImage — the density guard', () => {
     expect(captions.at(-1)).not.toContain('⚠️');
   });
 
+  it('hands the guard the PARSED ITEMS, not an empty list', async () => {
+    // The stub answers from a fixture and never inspects its arguments, so
+    // without this every other assertion here survives the use case passing
+    // the guard nothing at all.
+    const { uc, catalogService } = makeUseCase({});
+    await run(uc);
+    const [items, userId] = catalogService.assessDensity.mock.calls[0];
+    expect(userId).toBe('alice');
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ label: 'Premier Protein Shake', calories: 610, grams: 385 });
+  });
+
   it('asks the catalog BEFORE donating the row', async () => {
     const order = [];
     const { uc, catalogService } = makeUseCase({});
