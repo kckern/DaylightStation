@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Button, Group, Stack, Text, TextInput } from '@mantine/core';
+import { Button, Group, Stack, Text, TextInput, UnstyledButton } from '@mantine/core';
 import { Sheet } from '@/lib/ui';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { BUCKETS } from './mealBuckets.js';
 import { nutritionPhotoUrl } from './photoUrl.js';
+import { nutritionIconUrl, NEUTRAL_ICON } from './iconUrl.js';
 import { ObservationRow } from './ObservationRow.jsx';
 
 const logger = createAppLogger('health').child('entry-edit');
@@ -44,13 +45,42 @@ export function EntryEditSheet({ row, open, onClose, onChanged, observations = [
   const [error, setError] = useState(null);
   const [name, setName] = useState(displayName(row));
   const [pairingId, setPairingId] = useState(null);
+  // Icon override (PRD F5.4). `picking` opens the grid; `pendingIcon` is the
+  // slug the user tapped but has not yet chosen a SCOPE for — "just this
+  // entry" or "always for this food" — because the scope is the whole point
+  // of the interaction and picking a picture must not silently imply one.
+  const [picking, setPicking] = useState(false);
+  const [iconQuery, setIconQuery] = useState('');
+  const [iconOptions, setIconOptions] = useState([]);
+  const [pendingIcon, setPendingIcon] = useState(null);
 
   // Keep the rename field in sync whenever a DIFFERENT row is opened — this
   // component instance persists across opens (TodayView holds it mounted),
   // so without this the input would keep showing the previous row's name.
   useEffect(() => {
     if (row) setName(displayName(row));
+    // Same reason as the name field: this instance persists across opens, so
+    // a half-finished icon change on the PREVIOUS row would otherwise still be
+    // on screen — and could be applied to a different food.
+    setPicking(false);
+    setPendingIcon(null);
+    setIconQuery('');
   }, [row?.uuid]);
+
+  // The vocabulary comes from the manifest, never from a list in this file:
+  // filenames (and which slugs exist at all) are the manifest's business.
+  useEffect(() => {
+    if (!picking) return undefined;
+    let cancelled = false;
+    DaylightAPI(`api/v1/health/nutrition/icons?q=${encodeURIComponent(iconQuery)}&limit=60`)
+      .then((res) => { if (!cancelled) setIconOptions(Array.isArray(res?.icons) ? res.icons : []); })
+      .catch((err) => {
+        if (cancelled) return;
+        logger.warn('icons.list_failed', { error: err?.message });
+        setIconOptions([]);
+      });
+    return () => { cancelled = true; };
+  }, [picking, iconQuery]);
 
   if (!row) return null;
 
@@ -184,6 +214,27 @@ export function EntryEditSheet({ row, open, onClose, onChanged, observations = [
     } finally { setPairingId(null); }
   };
 
+  // "Just this entry" (PRD F5.4): only the row changes. The catalog keeps
+  // whatever it had, so the next log of this food is unaffected.
+  const applyIconToEntry = (icon) => run(
+    () => DaylightAPI(`api/v1/health/nutrilist/${row.uuid}`, { icon }, 'PUT'),
+    'icon.entry',
+  );
+
+  // "Always for this food": the catalog entry is pinned AND this row is
+  // corrected. The row update is not redundant — a row's icon is a COPY taken
+  // at log time, so pinning the catalog alone would leave the row the user is
+  // looking at unchanged, and the change would read as having failed. Past
+  // rows are likewise not rewritten; they keep the picture they were logged
+  // with, and new logs of this food get the pinned one.
+  const applyIconAlways = (icon) => run(async () => {
+    await DaylightAPI('api/v1/health/nutrition/catalog/icon',
+      { name: displayName(row), icon }, 'PUT');
+    await DaylightAPI(`api/v1/health/nutrilist/${row.uuid}`, { icon }, 'PUT');
+  }, 'icon.always');
+
+  const currentIcon = row.icon && row.icon !== NEUTRAL_ICON ? row.icon : null;
+
   const saveName = () => {
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -303,6 +354,59 @@ export function EntryEditSheet({ row, open, onClose, onChanged, observations = [
                 );
               })}
             </div>
+          </>
+        ) : null}
+
+        <Text size="xs" fw={600} tt="uppercase">Icon</Text>
+        <Group gap="xs" wrap="nowrap">
+          {currentIcon ? (
+            <img className="health-row__icon health-row__icon--picker" src={nutritionIconUrl(currentIcon)}
+              alt={`Current icon: ${currentIcon}`} />
+          ) : (
+            <Text size="sm" c="dimmed">No icon</Text>
+          )}
+          <Button size="xs" variant="light" disabled={busy}
+            onClick={() => { setPicking((open) => !open); setPendingIcon(null); }}>
+            {picking ? 'Cancel' : 'Change…'}
+          </Button>
+          {currentIcon && !picking ? (
+            <Button size="xs" variant="subtle" disabled={busy} onClick={() => applyIconToEntry(null)}>
+              Remove
+            </Button>
+          ) : null}
+        </Group>
+
+        {picking ? (
+          <>
+            <TextInput className="health-edit__control" aria-label="Search icons" placeholder="Search icons"
+              value={iconQuery} disabled={busy} onChange={(e) => setIconQuery(e.currentTarget.value)} />
+            {/* A grid of tap targets, never a dropdown: this is a touch
+                surface and the pictures ARE the labels. Each carries its slug
+                as its accessible name, so the grid is navigable without
+                seeing the images at all. */}
+            <div className="health-icon-grid">
+              {iconOptions.map((slug) => (
+                <UnstyledButton key={slug} className="health-icon-grid__cell" aria-label={slug}
+                  aria-pressed={pendingIcon === slug} onClick={() => setPendingIcon(slug)}>
+                  <img className="health-row__icon health-row__icon--picker" src={nutritionIconUrl(slug)} alt="" loading="lazy" />
+                </UnstyledButton>
+              ))}
+              {iconOptions.length === 0 ? <Text size="sm" c="dimmed">No icons match.</Text> : null}
+            </div>
+            {/* The scope question. Asked AFTER a picture is chosen and never
+                assumed — "always" edits a food the user may log for years. */}
+            {pendingIcon ? (
+              <Group gap="xs">
+                <Button size="xs" disabled={busy} onClick={() => applyIconToEntry(pendingIcon)}>
+                  Just this entry
+                </Button>
+                {!isGroup ? (
+                  <Button size="xs" variant="light" disabled={busy} onClick={() => applyIconAlways(pendingIcon)}>
+                    Always for this food
+                  </Button>
+                ) : null}
+              </Group>
+            ) : null}
           </>
         ) : null}
 

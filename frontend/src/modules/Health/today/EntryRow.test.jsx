@@ -170,4 +170,95 @@ describe('EntryRow', () => {
       expect(screen.getByRole('button', { name: /confirm entry/i })).toBeTruthy();
     });
   });
+
+  // Task 7.4 — food icons. The Noom dot stays the fallback glyph, so every
+  // assertion here is a pair: what appears AND what it replaced.
+  describe('food icon', () => {
+    const icon = () => document.querySelector('img.health-row__icon');
+    const dot = () => document.querySelector('.health-row__dot');
+
+    it('a row with an icon renders the picture instead of the dot', () => {
+      r(<EntryRow row={{ ...baseRow, icon: 'fried-eggs' }} onTap={() => {}} onConfirm={() => {}} />);
+      expect(icon()).toBeTruthy();
+      expect(icon().getAttribute('src')).toBe('/api/v1/health/nutrition/icons/fried-eggs');
+      expect(dot()).toBeFalsy();
+    });
+
+    it('a row with no icon renders the dot, exactly as before', () => {
+      r(<EntryRow row={{ ...baseRow }} onTap={() => {}} onConfirm={() => {}} />);
+      expect(icon()).toBeFalsy();
+      expect(dot()).toBeTruthy();
+    });
+
+    it("the capture pipeline's neutral sentinel is NOT a picture — the dot stands", () => {
+      r(<EntryRow row={{ ...baseRow, icon: 'default' }} onTap={() => {}} onConfirm={() => {}} />);
+      expect(icon()).toBeFalsy();
+      expect(dot()).toBeTruthy();
+    });
+
+    it('a failed icon load falls back to the dot rather than a broken-image glyph', () => {
+      r(<EntryRow row={{ ...baseRow, icon: 'fried-eggs' }} onTap={() => {}} onConfirm={() => {}} />);
+      expect(dot()).toBeFalsy();
+      fireEvent.error(icon());
+      expect(icon()).toBeFalsy();
+      expect(dot()).toBeTruthy();
+    });
+
+    // The reason the failure state stores a SLUG rather than a boolean: after
+    // an override the same component instance is re-rendered with a new icon,
+    // and a boolean would keep suppressing it forever.
+    it('a row whose icon is CHANGED after a failure shows the new picture', () => {
+      const { rerender } = r(<EntryRow row={{ ...baseRow, icon: 'fried-eggs' }} onTap={() => {}} onConfirm={() => {}} />);
+      fireEvent.error(icon());
+      expect(icon()).toBeFalsy();
+      rerender(
+        <MantineProvider>
+          <EntryRow row={{ ...baseRow, icon: 'avocado-toast' }} onTap={() => {}} onConfirm={() => {}} />
+        </MantineProvider>,
+      );
+      expect(icon()).toBeTruthy();
+      expect(icon().getAttribute('src')).toBe('/api/v1/health/nutrition/icons/avocado-toast');
+    });
+
+    it('the icon is decorative: empty alt, so a screen reader reads the name once', () => {
+      r(<EntryRow row={{ ...baseRow, icon: 'fried-eggs' }} onTap={() => {}} onConfirm={() => {}} />);
+      expect(icon().getAttribute('alt')).toBe('');
+    });
+
+    it('the row declares the wider icon column only when an icon actually renders', () => {
+      // jsdom cannot see layout, so this asserts the CLASS the component sets;
+      // the column widths themselves live in health.scss and are compiled by
+      // the stylesheet gate.
+      const { unmount } = r(<EntryRow row={{ ...baseRow, icon: 'fried-eggs' }} onTap={() => {}} onConfirm={() => {}} />);
+      expect(document.querySelector('.health-row--icon')).toBeTruthy();
+      fireEvent.error(icon());
+      expect(document.querySelector('.health-row--icon')).toBeFalsy();
+      unmount();
+      r(<EntryRow row={{ ...baseRow }} onTap={() => {}} onConfirm={() => {}} />);
+      expect(document.querySelector('.health-row--icon')).toBeFalsy();
+    });
+
+    describe('group rows', () => {
+      const group = (over) => ({ uuid: 'g1', name: 'Smoothie', calories: 0, kind: 'group', ...over });
+      const renderGroup = (row) => r(
+        <EntryRow row={row} onTap={() => {}} onConfirm={() => {}} isGroup expanded={false} onToggle={() => {}} rollupKcal={225} />,
+      );
+
+      it("a dish uses its OWN icon when it has one", () => {
+        renderGroup(group({ icon: 'avocado-toast', children: [{ uuid: 'c1', icon: 'fried-eggs' }] }));
+        expect(icon().getAttribute('src')).toContain('avocado-toast');
+      });
+
+      it("a dish with no icon borrows the first child that has one", () => {
+        renderGroup(group({ children: [{ uuid: 'c1' }, { uuid: 'c2', icon: 'fried-eggs' }] }));
+        expect(icon().getAttribute('src')).toContain('fried-eggs');
+      });
+
+      it('a dish whose children have no icons renders none, and no dot either (a group has never had one)', () => {
+        renderGroup(group({ children: [{ uuid: 'c1' }, { uuid: 'c2' }] }));
+        expect(icon()).toBeFalsy();
+        expect(dot()).toBeFalsy();
+      });
+    });
+  });
 });

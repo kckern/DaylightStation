@@ -387,3 +387,122 @@ describe('EntryEditSheet — Measurements', () => {
     expect(btn).toBeDisabled();
   });
 });
+
+// Task 7.4 — icon override (PRD F5.4). The whole point of the interaction is
+// the SCOPE question: picking a picture must never silently imply "always".
+describe('EntryEditSheet — icon override', () => {
+  const iconRow = { ...row, icon: 'boiled-egg' };
+  const mountIcons = (props = {}, r = iconRow) => render(
+    <MantineProvider>
+      <DismissStackProvider>
+        <EntryEditSheet row={r} open onClose={() => {}} onChanged={() => {}} {...props} />
+      </DismissStackProvider>
+    </MantineProvider>
+  );
+
+  beforeEach(() => {
+    apiMock.mockReset();
+    apiMock.mockImplementation(async (path) => (
+      String(path).startsWith('api/v1/health/nutrition/icons')
+        ? { icons: ['fried-eggs', 'avocado-toast'], count: 2 }
+        : {}
+    ));
+  });
+
+  const openPicker = async () => {
+    fireEvent.click(screen.getByRole('button', { name: /change/i }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'fried-eggs' })).toBeTruthy());
+  };
+
+  it("shows the row's current icon", () => {
+    mountIcons();
+    expect(screen.getByAltText(/current icon: boiled-egg/i)).toBeTruthy();
+  });
+
+  it('says so plainly when the row has no icon', () => {
+    mountIcons({}, row);
+    expect(screen.getByText(/no icon/i)).toBeTruthy();
+  });
+
+  it('the picker lists the manifest vocabulary, never a list held in this file', async () => {
+    mountIcons();
+    await openPicker();
+    const listCall = apiMock.mock.calls.find(([p]) => String(p).startsWith('api/v1/health/nutrition/icons'));
+    expect(listCall).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'avocado-toast' })).toBeTruthy();
+  });
+
+  it('picking a picture asks for the scope and writes NOTHING yet', async () => {
+    mountIcons();
+    await openPicker();
+    const before = apiMock.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'fried-eggs' }));
+    expect(screen.getByRole('button', { name: /just this entry/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /always for this food/i })).toBeTruthy();
+    expect(apiMock.mock.calls.length).toBe(before);
+  });
+
+  it('"Just this entry" PUTs the row only — the catalog is untouched', async () => {
+    const onChanged = vi.fn();
+    mountIcons({ onChanged });
+    await openPicker();
+    fireEvent.click(screen.getByRole('button', { name: 'fried-eggs' }));
+    fireEvent.click(screen.getByRole('button', { name: /just this entry/i }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    const writes = apiMock.mock.calls.filter(([, , method]) => method === 'PUT');
+    expect(writes).toHaveLength(1);
+    expect(writes[0][0]).toBe('api/v1/health/nutrilist/r1');
+    expect(writes[0][1]).toEqual({ icon: 'fried-eggs' });
+  });
+
+  it('"Always for this food" pins the catalog AND corrects this row', async () => {
+    const onChanged = vi.fn();
+    mountIcons({ onChanged });
+    await openPicker();
+    fireEvent.click(screen.getByRole('button', { name: 'fried-eggs' }));
+    fireEvent.click(screen.getByRole('button', { name: /always for this food/i }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    const writes = apiMock.mock.calls.filter(([, , method]) => method === 'PUT');
+    expect(writes.map(([p]) => p)).toEqual([
+      'api/v1/health/nutrition/catalog/icon',
+      'api/v1/health/nutrilist/r1',
+    ]);
+    expect(writes[0][1]).toEqual({ name: 'Eggs', icon: 'fried-eggs' });
+    expect(writes[1][1]).toEqual({ icon: 'fried-eggs' });
+  });
+
+  it('Remove clears the row back to the neutral glyph', async () => {
+    const onChanged = vi.fn();
+    mountIcons({ onChanged });
+    fireEvent.click(screen.getByRole('button', { name: /remove/i }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    const writes = apiMock.mock.calls.filter(([, , method]) => method === 'PUT');
+    expect(writes[0][1]).toEqual({ icon: null });
+  });
+
+  // A dish is not a catalog food — its name is a label the parse invented, so
+  // "always" would pin (or 404 against) something that isn't a food entry.
+  it('a group row is offered "just this entry" only', async () => {
+    mountIcons({}, { ...iconRow, kind: 'group', children: [] });
+    await openPicker();
+    fireEvent.click(screen.getByRole('button', { name: 'fried-eggs' }));
+    expect(screen.getByRole('button', { name: /just this entry/i })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /always for this food/i })).toBeNull();
+  });
+
+  it('a half-finished pick does not survive onto a DIFFERENT row', async () => {
+    const { rerender } = mountIcons();
+    await openPicker();
+    fireEvent.click(screen.getByRole('button', { name: 'fried-eggs' }));
+    expect(screen.getByRole('button', { name: /just this entry/i })).toBeTruthy();
+    rerender(
+      <MantineProvider>
+        <DismissStackProvider>
+          <EntryEditSheet row={{ ...row, uuid: 'r2', name: 'Toast' }} open onClose={() => {}} onChanged={() => {}} />
+        </DismissStackProvider>
+      </MantineProvider>
+    );
+    expect(screen.queryByRole('button', { name: /just this entry/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'fried-eggs' })).toBeNull();
+  });
+});
