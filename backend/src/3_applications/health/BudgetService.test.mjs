@@ -460,7 +460,9 @@ describe('BudgetService.getBudgetRange', () => {
   it.each([
     ['from is not a date', '2026-9-1', '2026-09-01'],
     ['to is not a date', '2026-09-01', 'yesterday'],
-    ['from is a calendar impossibility', '2026-02-31', '2026-03-01'],
+    ['from is a calendar impossibility that Date silently normalizes', '2026-02-31', '2026-03-01'],
+    ['from is a calendar impossibility that Date rejects outright', '2026-08-32', '2026-09-01'],
+    ['to is out of range', '2026-09-01', '2026-13-01'],
     ['from is after to', '2026-09-02', '2026-09-01'],
     ['the range exceeds 62 days', '2026-01-01', '2026-06-01'],
   ])('refuses with RANGE_INVALID when %s', async (_label, from, to) => {

@@ -8,6 +8,7 @@ import { useHealthDay } from './useHealthDay.js';
 import { EquationStrip } from './EquationStrip.jsx';
 import { WeekStrip } from './WeekStrip.jsx';
 import { MacroBarRow } from './MacroBarRow.jsx';
+import { WeightChip } from './WeightChip.jsx';
 import { MacroFooter } from './MacroFooter.jsx';
 import { LogTable } from './LogTable.jsx';
 import { AddCombobox } from './AddCombobox.jsx';
@@ -226,6 +227,10 @@ export function TodayView({ onSetupGoals, onCoachTap }) {
           over one fold — so the bars and the kcal number can never disagree. */}
       <MacroBarRow macros={day.budget?.macros} goals={day.budget?.goals}
         microCoverage={day.budget?.microCoverage} />
+      {/* Weight sits between the macro bars and the week strip: it is the other
+          number the budget is computed FROM, so it belongs beside the equation
+          rather than buried in the Progress tab. */}
+      <WeightChip />
       <WeekStrip date={date} today={todayISO()} onDateChange={setDate} />
       {day.error ? <ErrorState error={day.error} onRetry={day.reload} label="Food log" /> : null}
       {captureNotice ? (
