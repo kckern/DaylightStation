@@ -15,6 +15,17 @@ function localDateISO(d) {
   return `${y}-${m}-${day}`;
 }
 
+/**
+ * `'default'` is the capture pipeline's sentinel for "the model named no icon"
+ * (LogFoodFromText/Image map an absent or unknown slug to it). It resolves to a
+ * real file so a row never shows a broken image, but it is NOT a choice about
+ * this food: donating it to the catalog would pin the food to the fallback
+ * glyph permanently, and every later real icon would be refused as "already
+ * has one".
+ */
+const NEUTRAL_ICON = 'default';
+const isRealIcon = (icon) => typeof icon === 'string' && icon !== '' && icon !== NEUTRAL_ICON;
+
 export class FoodCatalogService {
   #catalogStore;
   #nutriListStore;
@@ -77,6 +88,13 @@ export class FoodCatalogService {
           ...(foodItem.microsSource ? pickMicros(foodItem) : {}),
         };
       }
+      // Icons FILL, they never overwrite. `setIcon` (the edit sheet's "always
+      // for this food") is a deliberate human choice, and a later parse of the
+      // same food must not quietly undo it — an override that survives until
+      // the next log of that food is not an override. The neutral sentinel is
+      // not an icon: donating it would pin the food to the fallback glyph and
+      // block every real icon that came after.
+      if (!existing.icon && isRealIcon(foodItem.icon)) existing.icon = foodItem.icon;
       await this.#catalogStore.save(existing, userId);
       this.#logger.debug?.('health.catalog.usage_recorded', { name: foodItem.name, useCount: existing.useCount });
     } else {
@@ -95,6 +113,7 @@ export class FoodCatalogService {
         },
         source: foodItem.source || 'nutritionix',
         barcodeUpc: foodItem.barcodeUpc || null,
+        icon: isRealIcon(foodItem.icon) ? foodItem.icon : null,
         lastUsed: new Date(this.#clock.now()).toISOString().slice(0, 10),
         createdAt: new Date(this.#clock.now()).toISOString(),
       });
@@ -141,6 +160,10 @@ export class FoodCatalogService {
       unit: 'serving',
       amount: 1,
       color: 'yellow',
+      // The food's picture travels with it (PRD U5.2). Null when the catalog
+      // entry has none — the row then renders the neutral dot, rather than a
+      // filename this layer invented.
+      icon: entry.icon ?? null,
       date: today,
       mealTime: (() => { const h = now.getHours(); return h < 11 ? 'morning' : h < 15 ? 'afternoon' : h < 20 ? 'evening' : 'night'; })(),
       log_uuid: 'QUICKADD',
@@ -214,6 +237,12 @@ export class FoodCatalogService {
           protein: item.protein,
           carbs: item.carbs,
           fat: item.fat,
+          // Icons DO backfill, unlike micros below. A stored `icon` is a slug
+          // chosen for that food, not a number defaulted at the persistence
+          // boundary, so nothing about it has been lost by the time a backfill
+          // reads it — and recordUsage only fills an ABSENT icon, so a
+          // backfill can never overwrite a human choice.
+          icon: item.icon,
           // NO micros, deliberately. A stored row's fiber/sugar/sodium/
           // cholesterol have already been defaulted to 0 at the persistence
           // boundary, so per-key provenance is gone by the time a backfill can
@@ -266,6 +295,32 @@ export class FoodCatalogService {
     const existing = await this.#catalogStore.findByNormalizedName(name, userId);
     if (!existing) throw new Error(`Catalog entry not found by name: ${name}`);
     return this.setFavorite(existing.id, userId, favorite);
+  }
+
+  /**
+   * Pin this food's icon (the edit sheet's "always for this food", PRD F5.4).
+   * Unlike recordUsage's fill, this OVERWRITES: it is an explicit human
+   * correction, and past rows follow on their next render because the row's
+   * own icon is only a copy taken at log time.
+   * @param {string} id
+   * @param {string} userId
+   * @param {string|null} icon - a manifest slug, or null to clear back to the
+   *   neutral fallback
+   */
+  async setIcon(id, userId, icon) {
+    const entry = await this.#catalogStore.getById(id, userId);
+    if (!entry) throw new Error(`Catalog entry not found: ${id}`);
+    entry.icon = isRealIcon(icon) ? icon : null;
+    await this.#catalogStore.save(entry, userId);
+    this.#logger.info?.('health.catalog.icon_set', { id, icon: entry.icon });
+    return entry;
+  }
+
+  /** Same, addressed by food name — what a log row can actually supply. */
+  async setIconByName(name, userId, icon) {
+    const existing = await this.#catalogStore.findByNormalizedName(name, userId);
+    if (!existing) throw new Error(`Catalog entry not found by name: ${name}`);
+    return this.setIcon(existing.id, userId, icon);
   }
 
   async getByUpc(upc, userId) {

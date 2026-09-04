@@ -15,6 +15,12 @@ export class FoodCatalogEntry {
     this.barcodeUpc = data.barcodeUpc || null;
     this.useCount = data.useCount || 1;
     this.favorite = data.favorite === true;
+    // The manifest slug this food is pictured with (PRD F5.2). Null means "no
+    // picture chosen" and renders the neutral fallback glyph — never a guessed
+    // filename, because filenames live in the manifest and nowhere else.
+    // It sticks to the FOOD, not to one entry (U5.2), which is why it lives
+    // here and gets copied onto each quick-added row.
+    this.icon = data.icon || null;
     this.lastUsed = data.lastUsed;
     this.createdAt = data.createdAt;
   }
