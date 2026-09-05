@@ -25,7 +25,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActionIcon, Alert, Autocomplete, Badge, Button, Card, Code, Group, Loader,
-  Select, Stack, Switch, Text, Title, Tooltip,
+  Radio, Select, Stack, Switch, Text, Title, Tooltip,
 } from '@mantine/core';
 import { IconArrowDown, IconArrowUp, IconPlus, IconTrash } from '@tabler/icons-react';
 import getLogger from '../../../lib/logging/Logger.js';
@@ -33,6 +33,12 @@ import { schoolAdminApi } from './schoolAdminApi.js';
 import { useRoster } from './useRoster.js';
 import { useGrader } from './useGrader.js';
 import GraderBar from './GraderBar.jsx';
+import {
+  chooseReadingProgram,
+  describeReadingEnrollment,
+  READING_PROGRAM_OPTIONS,
+  readingEnrollments,
+} from '../../School/readingPrograms.js';
 import './SchoolAdmin.scss';
 
 /**
@@ -169,6 +175,7 @@ export default function CurriculumPlanner() {
 
   const [courses, setCourses] = useState([]);
   const [units, setUnits] = useState([]);
+  const [programs, setPrograms] = useState([]);
   const [dirty, setDirty] = useState(false);
   const [addingCourse, setAddingCourse] = useState('');
   const [addingUnit, setAddingUnit] = useState('');
@@ -218,6 +225,7 @@ export default function CurriculumPlanner() {
     const record = records.find((r) => r.learnerId === learnerId) ?? null;
     setCourses(toEntries(record?.courses, 'courseId'));
     setUnits(toEntries(record?.units, 'unitId'));
+    setPrograms(Array.isArray(record?.programs) ? record.programs : []);
     setDirty(false);
     setSaveError(null);
     setSaved(null);
@@ -237,6 +245,16 @@ export default function CurriculumPlanner() {
 
   const editCourses = useCallback((next) => { setCourses(next); setDirty(true); setSaved(null); }, []);
   const editUnits = useCallback((next) => { setUnits(next); setDirty(true); setSaved(null); }, []);
+  const editReading = useCallback((selection) => {
+    setPrograms((current) => chooseReadingProgram(current, selection === 'none' ? null : selection));
+    setDirty(true);
+    setSaved(null);
+  }, []);
+
+  const reading = readingEnrollments(programs);
+  const readingConflict = reading.length > 1;
+  const readingSelection = readingConflict ? 'conflict' : reading[0]?.programId ?? 'none';
+  const otherPrograms = programs.filter((entry) => !['story-time', 'book-log'].includes(entry?.programId));
 
   const save = useCallback(async () => {
     if (!learnerId) return;
@@ -253,6 +271,7 @@ export default function CurriculumPlanner() {
     const body = {
       courses: toStored(courses, 'courseId'),
       units: toStored(units, 'unitId'),
+      programs,
       assignedBy: grader.id,
       pin: pin || null,
       // What this screen LOADED (null = no record existed): arms the server's
@@ -260,7 +279,7 @@ export default function CurriculumPlanner() {
       baseUpdatedAt: records.find((r) => r.learnerId === learnerId)?.updatedAt ?? null,
     };
     logger.info('assignment-save-dispatch', {
-      learnerId, by: grader.id, courses: body.courses.length, units: body.units.length,
+      learnerId, by: grader.id, courses: body.courses.length, units: body.units.length, programs: body.programs.length,
     });
     try {
       await schoolAdminApi.putAssignment(learnerId, body);
@@ -274,7 +293,7 @@ export default function CurriculumPlanner() {
     } finally {
       setSaving(false);
     }
-  }, [learnerId, grader, graderId, courses, units, records, pin, logger, loadAssignments]);
+  }, [learnerId, grader, graderId, courses, units, programs, records, pin, logger, loadAssignments]);
 
   const learnerOptions = useMemo(() => {
     const ids = new Set(roster.map((u) => u.id));
@@ -355,6 +374,51 @@ export default function CurriculumPlanner() {
             setAdding={setAddingUnit}
           />
 
+          <Card withBorder padding="md">
+            <Group justify="space-between" align="center" mb="xs">
+              <Title order={5}>Reading experience</Title>
+              <Badge variant="light" color="blue">English</Badge>
+            </Group>
+            <Text size="sm" c="dimmed" mb="sm">
+              Choose by how this learner reads, not by subject. These are two different
+              English experiences and only one can be assigned at a time.
+            </Text>
+            {readingConflict && (
+              <Alert color="red" title="Conflicting reading assignments" mb="sm">
+                This saved plan contains both story time and book logging. Choose the one
+                this learner should actually use before saving anything else.
+              </Alert>
+            )}
+            <Radio.Group
+              label="Reading assignment"
+              value={readingSelection}
+              onChange={editReading}
+            >
+              <Stack gap="sm" mt="xs">
+                <Radio value="none" label="No reading experience" disabled={!canSignOff} />
+                {READING_PROGRAM_OPTIONS.map((option) => (
+                  <Radio
+                    key={option.id}
+                    value={option.id}
+                    disabled={!canSignOff}
+                    label={option.label}
+                    description={`${option.audience}. ${option.description}`}
+                  />
+                ))}
+              </Stack>
+            </Radio.Group>
+            {reading.length === 1 && (
+              <Text size="xs" c="dimmed" mt="sm">
+                Current target: {describeReadingEnrollment(reading[0])}.
+              </Text>
+            )}
+            {otherPrograms.length > 0 && (
+              <Text size="xs" c="dimmed" mt="sm">
+                {otherPrograms.length} other program {otherPrograms.length === 1 ? 'enrollment is' : 'enrollments are'} preserved unchanged.
+              </Text>
+            )}
+          </Card>
+
           <Text size="xs" c="dimmed">
             The numbers are priority: the agenda offers required work in this order, and holds
             electives back until the required work is done.
@@ -364,7 +428,7 @@ export default function CurriculumPlanner() {
           {saved && !dirty && <Text size="sm" c="green">{saved}</Text>}
 
           <Group>
-            <Button onClick={save} loading={saving} disabled={!canSignOff || !dirty || !learnerId}>
+            <Button onClick={save} loading={saving} disabled={!canSignOff || !dirty || !learnerId || readingConflict}>
               Save plan
             </Button>
             {dirty && <Text size="sm" c="orange">Unsaved changes.</Text>}

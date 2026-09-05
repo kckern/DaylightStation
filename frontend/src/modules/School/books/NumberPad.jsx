@@ -27,7 +27,7 @@
  * fire on pointerdown through `useTapFire`, so a jab that slides or rolls
  * off the key still lands (the panel's "hard to press" complaint).
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import useTapFire from '../selfService/useTapFire.js';
 
 const DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
@@ -40,6 +40,7 @@ const DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
  * @param {string} [props.submitLabel] - the button's word.
  * @param {boolean} [props.canSubmit] - the parent's verdict on the current
  *   entry; false disables submit. An empty entry is never submittable.
+ * @param {boolean} [props.disabled] - freezes every control during a write.
  * @param {string|null} [props.hint] - one line under the pad, for when the
  *   parent has something to say about the entry.
  * @param {string} [props.value] - a string makes the pad CONTROLLED: what is
@@ -54,6 +55,7 @@ export default function NumberPad({
   allowX = false,
   submitLabel = 'Go',
   canSubmit = true,
+  disabled = false,
   hint = null,
   value,
   onChange = null,
@@ -71,21 +73,57 @@ export default function NumberPad({
   }, [controlled, entry, onChange]);
 
   const press = useCallback((char) => {
+    if (disabled) return;
     if (entry.length >= maxLength) return;
     update(entry + char);
-  }, [entry, maxLength, update]);
+  }, [disabled, entry, maxLength, update]);
 
   const backspace = useCallback(() => {
+    if (disabled) return;
     update(entry.slice(0, -1));
-  }, [entry, update]);
+  }, [disabled, entry, update]);
 
-  const submittable = canSubmit && entry.length > 0;
+  const clear = useCallback(() => {
+    if (disabled) return;
+    update('');
+  }, [disabled, update]);
+
+  const submittable = !disabled && canSubmit && entry.length > 0;
   const submit = useCallback(() => {
     if (!submittable) return;
     // The entry stays: a "no, not that book" or a failed lookup comes back to
     // the digits the child already typed, not to an empty row.
     onSubmit?.(entry);
   }, [entry, onSubmit, submittable]);
+
+  // The wall panel has a paired HID keyboard, and a barcode scanner presents
+  // as one. Keep the handler scoped to the mounted pad; never steal typing
+  // from a future real input embedded in the same screen.
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (disabled || event.metaKey || event.ctrlKey || event.altKey) return;
+      const tag = event.target?.tagName?.toLowerCase?.();
+      if (tag === 'input' || tag === 'textarea' || event.target?.isContentEditable) return;
+      if (/^\d$/.test(event.key)) {
+        event.preventDefault();
+        press(event.key);
+      } else if (allowX && event.key.toUpperCase() === 'X') {
+        event.preventDefault();
+        press('X');
+      } else if (event.key === 'Backspace' || event.key === 'Delete') {
+        event.preventDefault();
+        backspace();
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        clear();
+      } else if (event.key === 'Enter' && submittable) {
+        event.preventDefault();
+        submit();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [allowX, backspace, clear, disabled, press, submit, submittable]);
 
   const slots = Array.from({ length: maxLength }, (_, i) => entry[i] ?? '');
 
@@ -110,12 +148,22 @@ export default function NumberPad({
         ))}
       </div>
 
+      <button
+        type="button"
+        className="school-books-pad__clear"
+        disabled={disabled || entry.length === 0}
+        {...tap(clear)}
+      >
+        Clear number
+      </button>
+
       <div className="school-books-pad__keys">
         {DIGITS.map((digit) => (
           <button
             key={digit}
             type="button"
             className="school-books-pad__key"
+            disabled={disabled}
             {...tap(() => press(digit))}
           >
             {digit}
@@ -125,6 +173,7 @@ export default function NumberPad({
           type="button"
           className="school-books-pad__key school-books-pad__key--back"
           aria-label="Backspace"
+          disabled={disabled}
           {...tap(backspace)}
         >
           ⌫
@@ -132,6 +181,7 @@ export default function NumberPad({
         <button
           type="button"
           className="school-books-pad__key"
+          disabled={disabled}
           {...tap(() => press('0'))}
         >
           0
@@ -140,6 +190,7 @@ export default function NumberPad({
           <button
             type="button"
             className="school-books-pad__key"
+            disabled={disabled}
             {...tap(() => press('X'))}
           >
             X

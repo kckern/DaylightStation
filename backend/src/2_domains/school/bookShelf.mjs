@@ -35,7 +35,7 @@
 export const PROGRESS_MODES = Object.freeze(['page', 'minutes', 'check']);
 
 /** What an event can be. `started` and `finished` bracket; the rest are signals. */
-export const PROGRESS_KINDS = Object.freeze(['started', 'progress', 'finished', 'set-aside']);
+export const PROGRESS_KINDS = Object.freeze(['started', 'progress', 'finished', 'reopened', 'set-aside']);
 
 /** Default day key: the ISO date of the instant. Callers with a study-day rule inject their own. */
 const isoDay = (at) => String(at ?? '').slice(0, 10);
@@ -64,6 +64,32 @@ const sorted = (events) => [...(events ?? [])].filter(Boolean)
   .sort((left, right) => String(left.at).localeCompare(String(right.at)));
 
 /**
+ * Finish corrections follow APPEND order, not event time. A child may undo a
+ * finish today and then choose the correct date last week; sorting those two
+ * by their represented dates would put the correction after the new finish.
+ */
+function finishFacts(events) {
+  let active = null;
+  const corrected = new Set();
+  for (const event of (events ?? []).filter(Boolean)) {
+    if (event.kind === 'finished') active = event;
+    if (event.kind === 'reopened' && active) {
+      corrected.add(active);
+      active = null;
+    }
+  }
+  return { active, corrected };
+}
+
+/** Opening/setting aside is not reading; a finish canceled by reopen is not evidence. */
+function readingEvents(events) {
+  const facts = finishFacts(events);
+  return sorted(events).filter((event) => (
+    event.kind === 'progress' || (event.kind === 'finished' && !facts.corrected.has(event))
+  ));
+}
+
+/**
  * The mode a book gets when it joins a shelf.
  * @param {{pageCount?: number|null}} book
  * @returns {'page'|'check'}
@@ -84,14 +110,13 @@ export function inferProgressMode(book) {
 export function projectShelfItem(item, { dayOf = isoDay } = {}) {
   const events = sorted(item?.events);
   const last = events.at(-1);
-  const finished = events.some((event) => event.kind === 'finished');
+  const finish = finishFacts(item?.events).active;
+  const finished = Boolean(finish);
 
-  // A finished book is finished, wherever the finish sorts. The "already
-  // finished it" door stamps the finish on a PAST day while the open is now,
-  // so the last event by time is `started` — reading that as "still reading"
-  // kept a finished book on the shelf and out of history. `set-aside` stays
-  // last-event-based: a child may set a book aside and pick it back up on the
-  // same item, and a later progress event must be able to reopen it.
+  // A finish decision is effective wherever it sorts until a later `reopened`
+  // correction supersedes it. The "already finished it" door stamps both the
+  // open and finish on the chosen past day; the explicit correction is what
+  // makes an accidental finish reversible without deleting evidence.
   const status = finished ? 'finished'
     : (last?.kind === 'set-aside' ? 'set-aside'
       : (events.length > 0 ? 'reading' : 'unread'));
@@ -102,10 +127,9 @@ export function projectShelfItem(item, { dayOf = isoDay } = {}) {
   const page = pages.length ? Math.max(...pages) : null;
 
   const minutes = events.reduce((sum, event) => sum + (Number.isFinite(event.minutes) ? event.minutes : 0), 0);
-  // The same set `measureObligation('checkins')` counts — every event but a
-  // set-aside — so the tile's caption and the obligation line agree: a day
-  // the child only finished the book is a day read (review m5).
-  const daysRead = new Set(events.filter((e) => e.kind !== 'set-aside')
+  // The same set `measureObligation('checkins')` counts. Merely adding a book
+  // emits `started`, but is not evidence that the child read that day.
+  const daysRead = new Set(readingEvents(item?.events)
     .map((event) => dayOf(event.at)).filter(Boolean)).size;
 
   return {
@@ -114,7 +138,7 @@ export function projectShelfItem(item, { dayOf = isoDay } = {}) {
     percent: percentFor(item, page, finished),
     minutes: item?.progressMode === 'minutes' ? minutes : (minutes || null),
     daysRead,
-    lastAt: last?.at ?? null,
+    lastAt: (finished ? finish?.at : last?.at) ?? null,
   };
 }
 
@@ -175,8 +199,10 @@ export function measureObligation(obligation, items = [], window = null, { dayOf
 
 function countFor(metric, items, window, dayOf) {
   if (metric === 'books') {
-    return items.filter((item) => sorted(item.events)
-      .some((event) => event.kind === 'finished' && inWindow(event.at, window, dayOf))).length;
+    return items.filter((item) => {
+      const finish = finishFacts(item.events).active;
+      return finish && inWindow(finish.at, window, dayOf);
+    }).length;
   }
 
   if (metric === 'minutes') {
@@ -188,8 +214,7 @@ function countFor(metric, items, window, dayOf) {
   if (metric === 'checkins') {
     const days = new Set();
     for (const item of items) {
-      for (const event of sorted(item.events)) {
-        if (event.kind === 'set-aside') continue;
+      for (const event of readingEvents(item.events)) {
         if (inWindow(event.at, window, dayOf)) days.add(dayOf(event.at));
       }
     }

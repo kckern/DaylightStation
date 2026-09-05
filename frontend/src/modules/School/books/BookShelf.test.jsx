@@ -21,7 +21,7 @@ import BookShelf, { localDayKey } from './BookShelf.jsx';
 
 const actions = () => ({
   noteActivity: vi.fn(), done: vi.fn(), retry: vi.fn(), openHistory: vi.fn(), back: vi.fn(),
-  startAdd: vi.fn(), openItem: vi.fn(), openDuplicate: vi.fn(),
+  startAdd: vi.fn(), openItem: vi.fn(), openDuplicate: vi.fn(), undoFinish: vi.fn(),
 });
 
 const item = (id, overrides = {}, projection = {}) => ({
@@ -262,6 +262,26 @@ describe('BookShelf', () => {
       expect(within(overlay).getByText('Type the number under the barcode')).toBeInTheDocument();
       expect(screen.queryByTestId('book-shelf-grid')).toBeNull();
       expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
+    });
+
+    it('receipt: makes a finished write explicit and wires history, back, and undo', () => {
+      const a = arm({
+        view: 'receipt',
+        receipt: {
+          kind: 'finished', book: HATCHET, finishedOn: '2026-08-25',
+          itemId: HATCHET.itemId, undoEntryId: 'undo-1',
+        },
+      });
+      mount();
+      expect(screen.getByTestId('book-save-receipt')).toHaveTextContent('Book finished!');
+      expect(screen.getByTestId('book-save-receipt')).toHaveTextContent('Hatchet');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Back to my books' }));
+      fireEvent.click(screen.getByRole('button', { name: 'See History' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Undo finish' }));
+      expect(a.back).toHaveBeenCalledTimes(1);
+      expect(a.openHistory).toHaveBeenCalledTimes(1);
+      expect(a.undoFinish).toHaveBeenCalledTimes(1);
     });
   });
 

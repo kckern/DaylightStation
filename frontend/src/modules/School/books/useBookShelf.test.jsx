@@ -58,7 +58,7 @@ const ITEM = {
   projection: { status: 'reading', page: 84, percent: 43, minutes: 0, daysRead: 2, lastAt: '2026-08-25' },
 };
 const shelfOf = (items = [ITEM]) => ({ ok: true, status: 200, data: { learnerId: 'kid', items, obligation: null } });
-const okWrite = () => ({ ok: true, status: 200, data: { ok: true } });
+const okWrite = () => ({ ok: true, status: 200, data: { ok: true, item: ITEM } });
 const failedWrite = (message = 'page must be a whole number') => ({
   ok: false, status: 400, data: { ok: false, error: { type: 'validation', message, code: 'BAD' }, traceId: 't' },
 });
@@ -143,6 +143,19 @@ describe('useBookShelf: loading', () => {
     h.roster.mockResolvedValue({ ok: false, status: 500, data: null });
     const r = await mounted();
     expect(r.result.current.learner).toEqual({ id: 'kid', name: 'kid' });
+  });
+
+  it('1d. a slow optional roster never holds a valid shelf behind loading', async () => {
+    let releaseRoster;
+    h.roster.mockReturnValueOnce(new Promise((resolve) => { releaseRoster = resolve; }));
+    const r = mount();
+
+    await act(async () => {});
+    expect(r.result.current.view).toBe('shelf');
+    expect(r.result.current.learner).toEqual({ id: 'kid', name: 'kid' });
+
+    await act(async () => { releaseRoster({ ok: true, data: [{ id: 'kid', name: 'User_4' }] }); });
+    expect(r.result.current.learner.name).toBe('User_4');
   });
 
   it('2. a shelf-load failure names the fault and retry re-fetches', async () => {
@@ -292,7 +305,7 @@ describe('useBookShelf: the add flow', () => {
     expect(r.result.current.step).toBe('number');
   });
 
-  it('6. lookup: ok → cover; not-found and unavailable → back to the pad with the number kept', async () => {
+  it('6. lookup: ok and a clean catalog miss → confirmation; outage → retry with the number kept', async () => {
     h.shelf.mockResolvedValue(shelfOf([])); // an empty shelf, so nothing reads as a duplicate
     const r = await mounted();
     act(() => r.result.current.actions.startAdd());
@@ -315,12 +328,14 @@ describe('useBookShelf: the add flow', () => {
     act(() => r.result.current.actions.typeIsbn(ISBN));
     h.resolve.mockResolvedValueOnce({ ok: false, status: 404, data: { status: 'not-found', reason: 'no-source' } });
     await act(async () => { await r.result.current.actions.lookup(); });
-    expect(r.result.current.step).toBe('number');
-    expect(r.result.current.add.hint).toBe(COPY['not-found']);
+    expect(r.result.current.step).toBe('cover');
+    expect(r.result.current.add.resolved.book).toMatchObject({ isbn13: ISBN, title: null, coverUrl: null });
+    expect(r.result.current.add.metadataMissing).toBe(true);
     expect(r.result.current.add.entry).toBe(ISBN);
     expect(r.result.current.add.canRetry).toBe(false);
     expect(h.log).toHaveBeenCalledWith('lookup', expect.objectContaining({ status: 'not-found' }));
 
+    act(() => r.result.current.actions.confirmCover(false));
     h.resolve.mockResolvedValueOnce({ ok: false, status: 503, data: { status: 'unavailable', failures: 2 } });
     await act(async () => { await r.result.current.actions.lookup(); });
     expect(r.result.current.step).toBe('number');
@@ -356,12 +371,12 @@ describe('useBookShelf: the add flow', () => {
     expect(r2.result.current.add.duplicateOf).toBeNull();
   });
 
-  it('8. confirmCover(false) clears the number; confirmCover(true) mints two distinct ids', async () => {
+  it('8. confirmCover(false) keeps the number editable; confirmCover(true) mints two distinct ids', async () => {
     const r = await mountedEmpty();
     await toCover(r);
     act(() => r.result.current.actions.confirmCover(false));
     expect(r.result.current.step).toBe('number');
-    expect(r.result.current.add.entry).toBe('');
+    expect(r.result.current.add.entry).toBe(ISBN);
     expect(r.result.current.add.resolved).toBeNull();
 
     await toCover(r);
@@ -373,14 +388,15 @@ describe('useBookShelf: the add flow', () => {
     expect(entryId).not.toBe(progressEntryId);
   });
 
-  it('9a. choose(starting) opens the item and returns to a refetched shelf', async () => {
+  it('9a. choose(starting) opens the item, refetches, and shows a receipt', async () => {
     const r = await mountedEmpty();
     await toWhere(r);
     const { entryId } = r.result.current.add;
     await act(async () => { await r.result.current.actions.choose('starting'); });
     expect(h.open).toHaveBeenCalledWith('kid', 'g1', { bookId: ISBN, entryId, where: 'starting' });
     expect(h.shelf).toHaveBeenCalledTimes(2);
-    expect(r.result.current.view).toBe('shelf');
+    expect(r.result.current.view).toBe('receipt');
+    expect(r.result.current.receipt).toEqual({ kind: 'added', book: BOOK });
     expect(r.result.current.step).toBeNull();
     expect(r.result.current.add.entry).toBe('');
     expect(h.log).toHaveBeenCalledWith('item-opened', expect.objectContaining({ where: 'starting' }));
@@ -394,7 +410,8 @@ describe('useBookShelf: the add flow', () => {
     const { entryId, progressEntryId } = r.result.current.add;
     await act(async () => { await r.result.current.actions.submitPage(84); });
     expect(h.open).toHaveBeenCalledWith('kid', 'g1', { bookId: ISBN, entryId, where: 'partway', page: 84, progressEntryId });
-    expect(r.result.current.view).toBe('shelf');
+    expect(r.result.current.view).toBe('receipt');
+    expect(r.result.current.receipt).toEqual({ kind: 'progress', book: BOOK, page: 84 });
   });
 
   it('9c. choose(finished) asks for the day, then opens with the finished event on that day', async () => {
@@ -404,9 +421,13 @@ describe('useBookShelf: the add flow', () => {
     expect(r.result.current.step).toBe('when');
     const { entryId, progressEntryId } = r.result.current.add;
     await act(async () => { await r.result.current.actions.submitDay('2026-08-25'); });
-    expect(r.result.current.add.finishedOn === '2026-08-25' || r.result.current.view === 'shelf').toBe(true);
+    expect(r.result.current.add.finishedOn === '2026-08-25' || r.result.current.view === 'receipt').toBe(true);
     expect(h.open).toHaveBeenCalledWith('kid', 'g1', { bookId: ISBN, entryId, where: 'finished', finishedOn: '2026-08-25', progressEntryId });
-    expect(r.result.current.view).toBe('shelf');
+    expect(r.result.current.view).toBe('receipt');
+    expect(r.result.current.receipt).toMatchObject({
+      kind: 'finished', book: BOOK, finishedOn: '2026-08-25', itemId: ITEM.itemId,
+    });
+    expect(r.result.current.receipt.undoEntryId).toMatch(UUID);
   });
 
   it('9d. the same ids ride a retried open — a double tap appends once', async () => {
@@ -420,7 +441,7 @@ describe('useBookShelf: the add flow', () => {
     await act(async () => { await r.result.current.actions.choose('starting'); });
     const [first, second] = h.open.mock.calls;
     expect(second[2].entryId).toBe(first[2].entryId);
-    expect(r.result.current.view).toBe('shelf');
+    expect(r.result.current.view).toBe('receipt');
     expect(r.result.current.error).toBeNull();
   });
 
@@ -481,31 +502,38 @@ describe('useBookShelf: updating a book', () => {
     await act(async () => { await r.result.current.actions.submitProgress({ page: 90 }); });
     expect(h.progress).toHaveBeenCalledWith('kid', 'g1', ITEM.itemId, { kind: 'progress', page: 90, entryId });
     expect(h.shelf).toHaveBeenCalledTimes(2);
-    expect(r.result.current.view).toBe('shelf');
+    expect(r.result.current.view).toBe('receipt');
+    expect(r.result.current.receipt).toEqual({ kind: 'progress', book: ITEM, page: 90 });
     expect(h.log).toHaveBeenCalledWith('progress', expect.objectContaining({ kind: 'progress', mode: 'page' }));
 
+    act(() => r.result.current.actions.back());
     act(() => r.result.current.actions.openItem(ITEM.itemId));
     const second = r.result.current.update.entryId;
     expect(second).toMatch(UUID);
     expect(second).not.toBe(entryId);
     await act(async () => { await r.result.current.actions.checkIn(); });
     expect(h.progress).toHaveBeenLastCalledWith('kid', 'g1', ITEM.itemId, { kind: 'progress', entryId: second });
+    expect(r.result.current.receipt.kind).toBe('checkin');
 
+    act(() => r.result.current.actions.back());
     act(() => r.result.current.actions.openItem(ITEM.itemId));
     const third = r.result.current.update.entryId;
     await act(async () => { await r.result.current.actions.finish(); });
     expect(h.progress).toHaveBeenLastCalledWith('kid', 'g1', ITEM.itemId, { kind: 'finished', entryId: third });
 
+    act(() => r.result.current.actions.back());
     act(() => r.result.current.actions.openItem(ITEM.itemId));
     const fourth = r.result.current.update.entryId;
     await act(async () => { await r.result.current.actions.finish('2026-08-25'); });
     expect(h.progress).toHaveBeenLastCalledWith('kid', 'g1', ITEM.itemId, { kind: 'finished', finishedOn: '2026-08-25', entryId: fourth });
 
+    act(() => r.result.current.actions.back());
     act(() => r.result.current.actions.openItem(ITEM.itemId));
     const fifth = r.result.current.update.entryId;
     await act(async () => { await r.result.current.actions.setAside(); });
     expect(h.progress).toHaveBeenLastCalledWith('kid', 'g1', ITEM.itemId, { kind: 'set-aside', entryId: fifth });
 
+    act(() => r.result.current.actions.back());
     act(() => r.result.current.actions.openItem(ITEM.itemId));
     await act(async () => { await r.result.current.actions.setMode('check'); });
     expect(h.mode).toHaveBeenCalledWith('kid', 'g1', ITEM.itemId, 'check');
@@ -545,8 +573,23 @@ describe('useBookShelf: updating a book', () => {
 
     await act(async () => { await r.result.current.actions.submitProgress({ page: 90 }); });
     expect(h.progress).toHaveBeenLastCalledWith('kid', 'g1', ITEM.itemId, { kind: 'progress', page: 90, entryId });
-    expect(r.result.current.view).toBe('shelf');
+    expect(r.result.current.view).toBe('receipt');
     expect(r.result.current.error).toBeNull();
+  });
+
+  it('11a. undoFinish appends a reopened correction and restores the shelf item', async () => {
+    const r = await mounted();
+    act(() => r.result.current.actions.openItem(ITEM.itemId));
+    await act(async () => { await r.result.current.actions.finish('2026-08-25'); });
+    const { undoEntryId } = r.result.current.receipt;
+
+    await act(async () => { await r.result.current.actions.undoFinish(); });
+
+    expect(h.progress).toHaveBeenLastCalledWith('kid', 'g1', ITEM.itemId, {
+      kind: 'reopened', entryId: undoEntryId,
+    });
+    expect(r.result.current.view).toBe('receipt');
+    expect(r.result.current.receipt).toEqual({ kind: 'reopened', book: ITEM });
   });
 
   it('11b. a write answering after done() changes nothing', async () => {
@@ -608,7 +651,7 @@ describe('useBookShelf: review hardenings (task 11b)', () => {
 
     await act(async () => { releaseShelf(shelfOf()); await pending; });
     expect(r.result.current.busy).toBe(false);
-    expect(r.result.current.view).toBe('shelf');
+    expect(r.result.current.view).toBe('receipt');
   });
 
   it('13b. choose(starting): busy holds until the shelf re-read lands; a tap in that window sends nothing', async () => {
@@ -628,7 +671,7 @@ describe('useBookShelf: review hardenings (task 11b)', () => {
 
     await act(async () => { releaseShelf(shelfOf()); await pending; });
     expect(r.result.current.busy).toBe(false);
-    expect(r.result.current.view).toBe('shelf');
+    expect(r.result.current.view).toBe('receipt');
   });
 
   // Item 2 — the duplicate guard refuses the mint, and openDuplicate reaches the item.

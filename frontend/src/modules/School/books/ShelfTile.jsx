@@ -15,7 +15,8 @@
  * button: nothing there is editable. No `<h1>`, no logging — the parent owns
  * the story.
  */
-import { useState } from 'react';
+import BookCover from './BookCover.jsx';
+import { presentBook } from './bookPresentation.js';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -73,30 +74,21 @@ function outcomeFor(item) {
  *   `projection.status`.
  */
 export default function ShelfTile({ item, onSelect = null, incompatibleMetric = null, finished = false }) {
-  const [coverFailed, setCoverFailed] = useState(false);
   const status = item.projection?.status ?? 'reading';
   const onHistory = finished || status === 'finished' || status === 'set-aside';
-  const title = item.title || item.bookId || 'Untitled';
-  const hasCover = Boolean(item.coverUrl) && !coverFailed;
+  const presentation = presentBook(item);
+  const title = presentation.title;
 
   const showBar = !onHistory && item.progressMode === 'page' && item.pageCount !== null && item.pageCount !== undefined;
   const percent = Math.min(100, Math.max(0, Number(item.projection?.percent) || 0));
 
   const body = (
     <>
-      {hasCover ? (
-        <img
-          className="school-books-tile__cover"
-          src={item.coverUrl}
-          alt={title}
-          onError={() => setCoverFailed(true)}
-        />
-      ) : (
-        <div className="school-selfservice-card__poster-placeholder school-books-tile__cover" aria-hidden="true">
-          <span>✦</span>
-        </div>
+      <BookCover book={item} className="school-books-tile__cover" loading="lazy" />
+      <span className="school-books-tile__title" title={title}>{title}</span>
+      {presentation.author && (
+        <span className="school-books-tile__author" title={presentation.allAuthors}>{presentation.author}</span>
       )}
-      <span className="school-books-tile__title">{title}</span>
       {showBar && (
         <div
           className="school-books-tile__bar"
@@ -120,7 +112,7 @@ export default function ShelfTile({ item, onSelect = null, incompatibleMetric = 
     return <div className="school-books-tile school-books-tile--still">{body}</div>;
   }
   return (
-    <button type="button" className="school-books-tile" onClick={() => onSelect(item.itemId)}>
+    <button type="button" className="school-books-tile" aria-label={`Open ${title}`} onClick={() => onSelect(item.itemId)}>
       {body}
     </button>
   );

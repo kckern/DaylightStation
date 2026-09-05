@@ -57,6 +57,7 @@ const EMPTY_ADD = Object.freeze({
   entryId: null,
   progressEntryId: null,
   finishedOn: null,
+  metadataMissing: false,
   lookupHint: null,
   canRetry: false,
 });
@@ -91,6 +92,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
   const [add, setAdd] = useState(EMPTY_ADD);
   const [currentItemId, setCurrentItemId] = useState(null);
   const [updateEntryId, setUpdateEntryId] = useState(null);
+  const [receipt, setReceipt] = useState(null);
   // Bumped by every interaction; the idle timer re-arms off it.
   const [activity, setActivity] = useState(0);
 
@@ -113,6 +115,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
   const addRef = useRef(add); addRef.current = add;
   const itemRef = useRef(currentItemId); itemRef.current = currentItemId;
   const updateEntryRef = useRef(updateEntryId); updateEntryRef.current = updateEntryId;
+  const receiptRef = useRef(receipt); receiptRef.current = receipt;
 
   const touch = useCallback(() => setActivity((n) => n + 1), []);
   const isClosed = () => viewRef.current === 'closed';
@@ -131,31 +134,32 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     setAdd(EMPTY_ADD);
     setCurrentItemId(null);
     setUpdateEntryId(null);
+    setReceipt(null);
     onExitRef.current?.(reason);
   }, []);
 
   /** Back to the tiles with the add/update state cleared. */
   const toShelf = useCallback(() => {
+    viewRef.current = 'shelf';
     setView('shelf');
     setStep(null);
     setAdd(EMPTY_ADD);
     setCurrentItemId(null);
     setUpdateEntryId(null);
+    setReceipt(null);
   }, []);
 
-  /** The parallel first read: the shelf and the child's name. */
+  /** Start the required shelf and optional roster reads together. */
   const load = useCallback(async () => {
     const gen = genRef.current;
     setError(null);
-    const [shelfRes, rosterRes] = await Promise.all([
-      schoolApi.books.shelf(learnerId, grant),
-      schoolApi.roster(),
-    ]);
+    const shelfRequest = schoolApi.books.shelf(learnerId, grant);
+    // Normalize this optional request immediately so even a rejecting test
+    // double (the real API never rejects) cannot become an unhandled promise
+    // while a failed shelf takes the early return below.
+    const rosterRequest = Promise.resolve(schoolApi.roster()).catch(() => null);
+    const shelfRes = await shelfRequest;
     if (genRef.current !== gen) return; // rule 1
-
-    const members = Array.isArray(rosterRes?.data) ? rosterRes.data : (rosterRes?.data?.learners ?? []);
-    const me = rosterRes?.ok ? members.find((m) => m?.id === learnerId) : null;
-    setLearner({ id: learnerId, name: me?.name || learnerId });
 
     if (!shelfRes.ok || !shelfRes.data) {
       setError({ message: messageOf(shelfRes, LOAD_FAILED_SENTENCE) });
@@ -163,11 +167,20 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
       return;
     }
     setShelf(shelfRes.data);
+    viewRef.current = 'shelf';
     setView('shelf');
+
+    // A roster outage cannot hold a valid shelf behind the loading screen.
+    void rosterRequest.then((rosterRes) => {
+      if (genRef.current !== gen) return;
+      const members = Array.isArray(rosterRes?.data) ? rosterRes.data : (rosterRes?.data?.learners ?? []);
+      const me = rosterRes?.ok ? members.find((m) => m?.id === learnerId) : null;
+      setLearner({ id: learnerId, name: me?.name || learnerId });
+    });
   }, [learnerId, grant]);
 
-  /** Re-read the shelf after a write and land on the tiles. */
-  const refetch = useCallback(async () => {
+  /** Re-read after a write, then show an unambiguous receipt when supplied. */
+  const refetch = useCallback(async ({ receipt: nextReceipt = null } = {}) => {
     const gen = genRef.current;
     const res = await schoolApi.books.shelf(learnerId, grant);
     if (genRef.current !== gen) return; // rule 1
@@ -180,7 +193,17 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
       setError({ message: messageOf(res, LOAD_FAILED_SENTENCE) });
       schoolLog.bookShelfError('shelf.failed', { status: res.status, learnerId });
     }
-    toShelf();
+    setStep(null);
+    setAdd(EMPTY_ADD);
+    setCurrentItemId(null);
+    setUpdateEntryId(null);
+    if (nextReceipt) {
+      setReceipt(nextReceipt);
+      viewRef.current = 'receipt';
+      setView('receipt');
+    } else {
+      toShelf();
+    }
   }, [learnerId, grant, toShelf]);
 
   useEffect(() => {
@@ -215,8 +238,10 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
   }, [load, touch]);
 
   const openHistory = useCallback(() => {
-    if (viewRef.current !== 'shelf') return;
+    if (viewRef.current !== 'shelf' && viewRef.current !== 'receipt') return;
     touch();
+    setReceipt(null);
+    viewRef.current = 'history';
     setView('history');
     schoolLog.bookShelf('history-opened', { learnerId });
   }, [learnerId, touch]);
@@ -270,7 +295,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
   const back = useCallback(() => {
     if (isClosed()) return;
     const v = viewRef.current;
-    if (v === 'update' || v === 'history') { touch(); setError(null); toShelf(); return; }
+    if (v === 'update' || v === 'history' || v === 'receipt') { touch(); setError(null); toShelf(); return; }
     if (v !== 'add') return;
     const s = stepRef.current;
     touch();
@@ -335,25 +360,47 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     const status = res?.data?.status ?? 'unavailable';
     schoolLog.bookShelf('lookup', { status, httpStatus: res?.status ?? 0 });
 
-    if (status === 'ok' && res.data.book) {
-      const { book } = res.data;
+    const showConfirmation = (book, { metadataMissing = false } = {}) => {
       // Duplicate guard (design §5): already `reading` on this shelf points
       // at that item. A finished copy is not a duplicate — a re-read opens a
       // fresh item (PRD S9).
       const dup = shelfRef.current?.items?.find(
         (i) => i.bookId === book.isbn13 && i.projection?.status === 'reading',
       ) ?? null;
-      setAdd((a) => ({ ...a, resolved: res.data, duplicateOf: dup?.itemId ?? null }));
+      setAdd((a) => ({
+        ...a,
+        resolved: { ...(res.data ?? {}), book },
+        duplicateOf: dup?.itemId ?? null,
+        metadataMissing,
+      }));
       setStep('cover');
+    };
+    if (status === 'ok' && res.data.book) {
+      showConfirmation(res.data.book);
+      return;
+    }
+    if (status === 'not-found') {
+      // The domain already checksum-validated and canonicalized this number.
+      // A clean catalog miss may still be the real book in User_4's hands, so
+      // confirmation continues with an honest placeholder instead of a fake
+      // dead-end grown-up instruction. The backend independently validates
+      // the ISBN again before accepting the shelf write.
+      showConfirmation({
+        isbn13: check.isbn13,
+        title: null,
+        subtitle: null,
+        authors: [],
+        description: null,
+        coverUrl: null,
+        pageCount: null,
+      }, { metadataMissing: true });
+      schoolLog.bookShelf('cover.unresolved', { reason: res.data?.reason ?? null });
       return;
     }
     // Every other outcome goes back to the pad WITH the number kept.
     let lookupHint;
     let canRetry = false;
-    if (status === 'not-found') {
-      lookupHint = COPY['not-found'];
-      schoolLog.bookShelf('cover.unresolved', { reason: res.data?.reason ?? null });
-    } else if (status === 'invalid') {
+    if (status === 'invalid') {
       // The server disagreed with the local check; say what it said.
       lookupHint = COPY[res.data?.reason] ?? COPY['not-an-identifier'];
     } else {
@@ -372,7 +419,8 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     touch();
     schoolLog.bookShelf('cover', { accepted: Boolean(yes) });
     if (!yes) {
-      setAdd(EMPTY_ADD);
+      // Provider ambiguity should cost one correction, not thirteen taps.
+      setAdd((a) => ({ ...EMPTY_ADD, entry: a.entry }));
       setStep('number');
       return;
     }
@@ -423,7 +471,16 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     schoolLog.bookShelf('item-opened', { bookId, where });
     // The slot stays taken through the re-read: a second tap while the
     // overlay is still up must not send a second write.
-    await refetch();
+    const book = resolved.book;
+    const nextReceipt = where === 'finished'
+      ? {
+        kind: 'finished', book, finishedOn: extra.finishedOn ?? null,
+        itemId: res.data?.item?.itemId ?? null, undoEntryId: mintId(),
+      }
+      : where === 'partway'
+        ? { kind: 'progress', book, page: extra.page ?? null }
+        : { kind: 'added', book };
+    await refetch({ receipt: nextReceipt });
     if (genRef.current !== gen) return; // rule 1 (close() already released)
     release();
   }, [learnerId, grant, refetch, release]);
@@ -482,7 +539,19 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
       return;
     }
     schoolLog.bookShelf('progress', { kind: event.kind, mode: item.progressMode, itemId });
-    await refetch();
+    const nextReceipt = event.kind === 'finished'
+      ? {
+        kind: 'finished', book: item, finishedOn: event.finishedOn ?? null,
+        itemId, undoEntryId: mintId(),
+      }
+      : event.kind === 'set-aside'
+        ? { kind: 'set-aside', book: item }
+        : event.page
+          ? { kind: 'progress', book: item, page: event.page }
+          : event.minutes
+            ? { kind: 'progress', book: item, minutes: event.minutes }
+            : { kind: 'checkin', book: item };
+    await refetch({ receipt: nextReceipt });
     if (genRef.current !== gen) return; // rule 1 (close() already released)
     release();
   }, [learnerId, grant, refetch, release, touch]);
@@ -509,6 +578,34 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
   })), [writeEvent]);
 
   const setAside = useCallback(() => writeEvent({ kind: 'set-aside' }), [writeEvent]);
+
+  /** Correct an accidental finish without deleting or rewriting evidence. */
+  const undoFinish = useCallback(async () => {
+    if (viewRef.current !== 'receipt' || workRef.current) return;
+    const currentReceipt = receiptRef.current;
+    if (currentReceipt?.kind !== 'finished' || !currentReceipt.itemId || !currentReceipt.undoEntryId) return;
+    touch();
+    workRef.current = true;
+    setBusy(true);
+    setError(null);
+    const gen = genRef.current;
+    const res = await schoolApi.books.progress(learnerId, grant, currentReceipt.itemId, {
+      kind: 'reopened', entryId: currentReceipt.undoEntryId,
+    });
+    if (genRef.current !== gen) return;
+    if (!res.ok) {
+      release();
+      setError({ message: messageOf(res, WRITE_FAILED_SENTENCE) });
+      schoolLog.bookShelfError('write.failed', {
+        kind: 'reopened', itemId: currentReceipt.itemId, status: res.status,
+      });
+      return;
+    }
+    schoolLog.bookShelf('progress', { kind: 'reopened', itemId: currentReceipt.itemId });
+    await refetch({ receipt: { kind: 'reopened', book: currentReceipt.book } });
+    if (genRef.current !== gen) return;
+    release();
+  }, [learnerId, grant, refetch, release, touch]);
 
   const setMode = useCallback(async (progressMode) => {
     if (viewRef.current !== 'update') return;
@@ -557,11 +654,11 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
   const actions = useMemo(() => ({
     noteActivity, done, retry, openHistory, back, startAdd,
     typeIsbn, lookup, retryLookup, confirmCover, choose, submitPage, submitDay,
-    openItem, openDuplicate, submitProgress, checkIn, finish, setAside, setMode,
+    openItem, openDuplicate, submitProgress, checkIn, finish, setAside, undoFinish, setMode,
   }), [
     noteActivity, done, retry, openHistory, back, startAdd,
     typeIsbn, lookup, retryLookup, confirmCover, choose, submitPage, submitDay,
-    openItem, openDuplicate, submitProgress, checkIn, finish, setAside, setMode,
+    openItem, openDuplicate, submitProgress, checkIn, finish, setAside, undoFinish, setMode,
   ]);
 
   return {
@@ -575,6 +672,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     error,
     busy,
     current,
+    receipt,
     add: {
       entry: add.entry,
       check,
@@ -586,6 +684,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
       entryId: add.entryId,
       progressEntryId: add.progressEntryId,
       finishedOn: add.finishedOn,
+      metadataMissing: add.metadataMissing,
     },
     update: { entryId: updateEntryId },
     actions,

@@ -9,9 +9,9 @@
  * side and the month is a footnote on the cell where it changes.
  *
  * Shape: rows of seven, Monday first (ISO, matching schoolCalendar), starting
- * on the Monday on or before `today − 20 days` so at least three full weeks
- * show, ending on today. Cells after today are `null`: the future is absent,
- * not greyed.
+ * on the Monday on or before `window end − 20 days` so at least three full
+ * weeks show. The default window ends today; `offsetDays` pages it backward.
+ * Cells after the window end are `null` rather than greyed.
  *
  * Pure. Every date is a `YYYY-MM-DD` key and all arithmetic is UTC on those
  * keys; nothing here reads the clock or the machine's locale. `today` is
@@ -65,22 +65,27 @@ export function dayLabel(key) {
 
 /**
  * Rows of seven cells, Monday first, from the Monday on or before
- * `today − 20 days` through today. Cells after today are `null`.
+ * `window end − 20 days` through the window end. The default window ends
+ * today; `offsetDays` moves it into the past. Later cells are `null`.
  *
  * @param {string} todayKey - `YYYY-MM-DD`; the caller's clock, never ours.
+ * @param {{offsetDays?: number}} [options] - move the rolling window into the
+ *   past without changing which day is the real `today`.
  * @returns {Array<Array<{key: string, day: number, weekday: number, monthStart: boolean, isToday: boolean} | null>>}
  */
-export function buildDayGrid(todayKey) {
+export function buildDayGrid(todayKey, { offsetDays = 0 } = {}) {
   const todayMs = parseKey(todayKey);
-  const lookbackMs = todayMs - LOOKBACK_DAYS * DAY_MS;
+  const safeOffset = Number.isInteger(offsetDays) && offsetDays > 0 ? offsetDays : 0;
+  const endMs = todayMs - safeOffset * DAY_MS;
+  const lookbackMs = endMs - LOOKBACK_DAYS * DAY_MS;
   const startMs = lookbackMs - (isoWeekday(lookbackMs) - 1) * DAY_MS;
 
   const rows = [];
-  for (let rowStart = startMs; rowStart <= todayMs; rowStart += 7 * DAY_MS) {
+  for (let rowStart = startMs; rowStart <= endMs; rowStart += 7 * DAY_MS) {
     const row = [];
     for (let i = 0; i < 7; i += 1) {
       const ms = rowStart + i * DAY_MS;
-      if (ms > todayMs) { row.push(null); continue; }
+      if (ms > endMs) { row.push(null); continue; }
       const day = new Date(ms).getUTCDate();
       row.push({
         key: formatKey(ms),

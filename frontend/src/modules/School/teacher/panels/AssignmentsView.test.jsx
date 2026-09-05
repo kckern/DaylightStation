@@ -225,4 +225,81 @@ describe('AssignmentsView — the rendered component preserves enrollments on sa
 
     expect(schoolApi.putAssignments.mock.calls[0][1].programs).toEqual([piano]);
   });
+
+  it('shows the reading experience and preserves unrelated program policy when switching it', async () => {
+    const storyTime = {
+      programId: 'story-time', corpusId: null, target: 2,
+      subject: 'english', title: 'Story time', schedule: { daysOfWeek: [1, 2, 3, 4, 5] },
+    };
+    const language = {
+      programId: 'sentence-ladder', corpusId: 'korean',
+      policy: { dailySentences: 10 },
+    };
+    schoolApi.assignments.mockResolvedValue({
+      ok: true, status: 200,
+      data: {
+        courses: [ENROLLED], units: [], programs: [language, storyTime],
+        updatedAt: '2026-08-13T00:00:00Z',
+      },
+    });
+    schoolApi.curriculumUnits.mockResolvedValue({
+      ok: true, status: 200,
+      data: { units: [{ unitId: 'atlas-unit-1', courseId: 'young-peoples-atlas-us' }] },
+    });
+    schoolApi.putAssignments.mockResolvedValue({ ok: true, status: 200, data: null });
+
+    render(<AssignmentsView learnerId="user_4" learnerName="User_4" />);
+    expect(await screen.findByText(/Preschool story time — 2 stories/)).toBeInTheDocument();
+    expect(screen.getByText('Sentence Ladder')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Edit assignments/i }));
+    fireEvent.click(screen.getByRole('radio', { name: /Independent reading — book log/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Save$/i }));
+
+    await waitFor(() => expect(schoolApi.putAssignments).toHaveBeenCalled());
+    expect(schoolApi.putAssignments.mock.calls[0][1].programs).toEqual([
+      language,
+      {
+        programId: 'book-log', subject: 'english', title: 'Reading',
+        obligation: { metric: 'checkins', quantity: 1, per: 'day' },
+        schedule: { daysOfWeek: [1, 2, 3, 4, 5] },
+      },
+    ]);
+  });
+
+  it('surfaces an invalid double-reading enrollment and refuses to resave it unchanged', async () => {
+    schoolApi.assignments.mockResolvedValue({
+      ok: true, status: 200,
+      data: {
+        courses: [ENROLLED], units: [],
+        programs: [{ programId: 'story-time' }, { programId: 'book-log' }],
+        updatedAt: '2026-08-13T00:00:00Z',
+      },
+    });
+    schoolApi.curriculumUnits.mockResolvedValue({
+      ok: true, status: 200,
+      data: { units: [{ unitId: 'atlas-unit-1', courseId: 'young-peoples-atlas-us' }] },
+    });
+
+    render(<AssignmentsView learnerId="user_4" learnerName="User_4" />);
+    expect(await screen.findByText(/Conflicting reading assignments/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Edit assignments/i }));
+    expect(screen.getByRole('button', { name: /^Save$/i })).toBeDisabled();
+    expect(screen.getByText(/Choose one before saving/)).toBeInTheDocument();
+  });
+
+  it('still lets a teacher repair Reading when the unrelated curriculum catalog is unavailable', async () => {
+    schoolApi.assignments.mockResolvedValue({
+      ok: true, status: 200,
+      data: {
+        courses: [], units: [], programs: [{ programId: 'story-time', target: 2 }],
+        updatedAt: '2026-08-13T00:00:00Z',
+      },
+    });
+    schoolApi.curriculumUnits.mockResolvedValue({ ok: false, status: 503, data: null });
+
+    render(<AssignmentsView learnerId="user_4" learnerName="User_4" />);
+    fireEvent.click(await screen.findByRole('button', { name: /Edit assignments/i }));
+    expect(screen.getByRole('radio', { name: /Independent reading — book log/i })).toBeInTheDocument();
+  });
 });

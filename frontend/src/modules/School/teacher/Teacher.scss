@@ -998,6 +998,30 @@
   padding: 3px 0;
 }
 
+.teacher-assignments__reading {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #e2d8c4;
+  border-radius: 10px;
+
+  legend {
+    padding: 0 5px;
+    color: #5d5647;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .teacher-assignments__pick {
+    align-items: flex-start;
+    min-height: 44px;
+    padding: 6px 0;
+
+    input { margin-top: 2px; }
+  }
+}
+
 .teacher-assignments__actions {
   display: flex;
   gap: 8px;

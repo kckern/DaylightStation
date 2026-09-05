@@ -684,9 +684,12 @@ export class ResolveAccessCode {
     // with `ResolveSubjectNext` (`continuationEntry.mjs`), not a mirror of
     // it. The mirror read the planner's pre-append snapshots and closed the
     // reading shelf at the panel after the scan path had been fixed.
-    const entry = section.next ?? (continueToday && section.servedToday
-      ? findContinuationEntry(plan, { subject, program })
-      : null);
+    const requestedProgram = program ? findContinuationEntry(plan, { subject, program }) : null;
+    const entry = requestedProgram?.program === program
+      ? requestedProgram
+      : (section.next ?? (continueToday && section.servedToday
+        ? findContinuationEntry(plan, { subject, program })
+        : null));
     if (!entry) {
       if (section.lockedRemedy) return withProjection({ kind: 'locked', remedy: section.lockedRemedy });
       if (section.programUnavailable) return withProjection({ kind: 'unavailable' });
@@ -694,10 +697,14 @@ export class ResolveAccessCode {
     }
 
     const unit = new Map(units.map((u) => [u.unitId, u])).get(entry.unitId) ?? null;
-    if (entry.program) return withProjection({
-      kind: 'program', programId: entry.program,
-      unit: projectProgramEntry(entry, programStatusFor(programStatuses, entry)),
-    });
+    if (entry.program) {
+      const status = programStatusFor(programStatuses, entry);
+      if (status?.error === true) return withProjection({ kind: 'unavailable' });
+      return withProjection({
+        kind: 'program', programId: entry.program,
+        unit: projectProgramEntry(entry, status),
+      });
+    }
 
     const paused = pausedExceptionFor(activeExceptions, entry.unitId);
     if (paused) return withProjection({ kind: 'locked', remedy: `Content paused: ${paused.reason}` });

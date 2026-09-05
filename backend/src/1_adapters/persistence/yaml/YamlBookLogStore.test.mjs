@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { YamlBookLogStore } from './YamlBookLogStore.mjs';
+import { BookLogShelfUnreadableError, YamlBookLogStore } from './YamlBookLogStore.mjs';
 
 const silentLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 
@@ -105,23 +105,32 @@ describe('YamlBookLogStore', () => {
     expect(await store().listForLearner('nobody')).toEqual([]);
   });
 
-  it('answers an empty shelf for a corrupt file rather than taking the panel down', async () => {
+  it('names a corrupt shelf instead of pretending the learner has no books', async () => {
     const dir = path.join(root, 'school/records/books');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'kid.yml'), 'this: [is: not: valid');
-    expect(await store().listForLearner('kid')).toEqual([]);
+    await expect(store().listForLearner('kid')).rejects.toBeInstanceOf(BookLogShelfUnreadableError);
   });
 
-  it('side-files a corrupt shelf before replacing it, so evidence is recoverable', async () => {
+  it('refuses to replace a corrupt shelf and leaves its evidence byte-for-byte intact', async () => {
     const dir = path.join(root, 'school/records/books');
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, 'kid.yml'), 'this: [is: not: valid');
+    const file = path.join(dir, 'kid.yml');
+    const original = 'this: [is: not: valid';
+    fs.writeFileSync(file, original);
 
-    await store().openItem(opened());
+    await expect(store().openItem(opened())).rejects.toBeInstanceOf(BookLogShelfUnreadableError);
+    expect(fs.readFileSync(file, 'utf8')).toBe(original);
+    expect(fs.readdirSync(dir)).toEqual(['kid.yml']);
+  });
 
-    const sideFiled = fs.readdirSync(dir).filter((name) => name.includes('.corrupt-'));
-    expect(sideFiled).toHaveLength(1);
-    expect(fs.readFileSync(path.join(dir, sideFiled[0]), 'utf8')).toContain('is: not: valid');
+  it('treats valid YAML with the wrong root shape as damaged data', async () => {
+    const dir = path.join(root, 'school/records/books');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'kid.yml'), 'learner: kid\n');
+    await expect(store().listForLearner('kid')).rejects.toMatchObject({
+      code: 'BOOK_LOG_SHELF_UNREADABLE', status: 'corrupt', learnerId: 'kid',
+    });
   });
   it('gives two opens of the same book on the same day different itemIds', async () => {
     const subject = store();

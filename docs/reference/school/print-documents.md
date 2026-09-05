@@ -254,11 +254,12 @@ evidence, assessment revisions, and artifact recipe. It must not
 allocate an OMR card, republish a document, alter a grade, or create an
 artifact merely because someone opened the record.
 
-`school.teacher-session/v4` is the browser contract for that projection. It
+`school.teacher-session/v5` is the browser contract for that projection. It
 returns human taxonomy (subject, course, module, lesson), a named assignment
 with the frozen questions, item-level assessment evidence, and an artifact
-lineage. Internal ids remain links between records; they are never the title
-shown to a teacher.
+lineage. It also returns explicit UI capabilities for grade correction, launch
+preview, companion recovery, another attempt, and manual settlement. Internal
+ids remain links between records; they are never the title shown to a teacher.
 
 Every newly issued worksheet artifact uses `school.session-artifact/v4`. Its
 YAML records the linked session or sessions, complete source document, frozen

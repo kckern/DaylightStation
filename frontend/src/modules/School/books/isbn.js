@@ -33,7 +33,7 @@ export const COPY = Object.freeze({
   'isbn10-checksum': 'Check that number — one digit is off',
   'not-a-book-prefix': "That's the library's sticker. Flip the book over.",
   'not-an-identifier': "That's the library's sticker. Flip the book over.",
-  'not-found': "We couldn't find that one — ask a grown-up to add it",
+  'not-found': "We couldn't find a title or cover. You can still log this ISBN.",
   unavailable: "Can't look books up right now — try again in a minute",
 });
 

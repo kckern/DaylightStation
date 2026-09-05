@@ -89,6 +89,21 @@ describe('GoogleBooksAdapter', () => {
     expect(record.googleVolumeId).toBe('real');
   });
 
+  it('recognises an ISBN-10 declaration as the requested canonical ISBN-13', async () => {
+    const data = {
+      totalItems: 2,
+      items: [
+        { id: 'bundle', volumeInfo: { title: 'Hatchet Gift Set',
+          industryIdentifiers: [{ type: 'ISBN_13', identifier: '9780000000002' }] } },
+        { id: 'real', volumeInfo: { title: 'Hatchet',
+          industryIdentifiers: [{ type: 'ISBN_10', identifier: '0064400557' }] } },
+      ],
+    };
+    const record = await adapterWith([{ data }]).byIsbn('9780064400558');
+    expect(record.title).toBe('Hatchet');
+    expect(record.googleVolumeId).toBe('real');
+  });
+
   it('returns null when Google has nothing', async () => {
     expect(await adapterWith([{ data: { totalItems: 0, items: [] } }]).byIsbn('9780064400558')).toBeNull();
   });

@@ -49,7 +49,6 @@ import { HttpClient } from '#system/services/HttpClient.mjs';
  */
 
 const BASE_URL = 'https://openlibrary.org';
-const COVERS_URL = 'https://covers.openlibrary.org';
 const ISBN13 = /^\d{13}$/;
 const DEFAULT_TIMEOUT_MS = 8000;
 
@@ -89,12 +88,11 @@ function splitSeries(raw) {
 }
 
 export class OpenLibraryAdapter extends IBookMetadataGateway {
-  #baseUrl; #coversUrl; #httpClient; #logger; #timeoutMs;
+  #baseUrl; #httpClient; #logger; #timeoutMs;
 
-  constructor({ baseUrl = BASE_URL, coversUrl = COVERS_URL, httpClient, logger = console, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+  constructor({ baseUrl = BASE_URL, httpClient, logger = console, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
     super();
     this.#baseUrl = baseUrl.replace(/\/$/, '');
-    this.#coversUrl = coversUrl.replace(/\/$/, '');
     this.#logger = logger;
     this.#httpClient = httpClient || new HttpClient({ logger });
     this.#timeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_TIMEOUT_MS;
@@ -138,13 +136,22 @@ export class OpenLibraryAdapter extends IBookMetadataGateway {
       people: names(edition.subject_people),
       places: names(edition.subject_places),
       excerpts: (edition.excerpts ?? []).map((entry) => text(entry?.text)).filter(Boolean),
-      coverUrl: `${this.#coversUrl}/b/isbn/${isbn13}-L.jpg`,
+      // A syntactically plausible Covers URL still returns a placeholder when
+      // OpenLibrary has no art. Trust the edition's explicit cover object so a
+      // lower-precedence provider with real art can win the merge.
+      coverUrl: this.#cover(edition),
       olEditionKey: edition.identifiers?.openlibrary?.[0] ?? null,
       olWorkKey: enrichment.workKey,
       wikipediaUrl: (edition.links ?? []).map((l) => l?.url).find((u) => /wikipedia\.org/i.test(u ?? '')) ?? null,
       series: enrichment.series,
       seriesVolume: enrichment.seriesVolume,
     });
+  }
+
+  #cover(edition) {
+    const cover = edition?.cover ?? {};
+    const url = cover.large ?? cover.medium ?? cover.small;
+    return url ? String(url).replace(/^http:\/\//i, 'https://') : null;
   }
 
   /**

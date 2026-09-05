@@ -1,7 +1,7 @@
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { PROGRESS_MODES, isDayKey, noonOf } from '#domains/school/bookShelf.mjs';
 
-const KINDS = new Set(['progress', 'finished', 'set-aside']);
+const KINDS = new Set(['progress', 'finished', 'reopened', 'set-aside']);
 
 /**
  * RecordBookProgress — one event on a book already on the shelf.
@@ -35,7 +35,7 @@ export class RecordBookProgress {
   }
 
   async execute({ learnerId, itemId, kind, page = null, minutes = null, finishedOn = null, note = null, rating = null, entryId } = {}) {
-    if (!KINDS.has(kind)) throw new ValidationError(`kind must be progress|finished|set-aside, got: ${kind}`);
+    if (!KINDS.has(kind)) throw new ValidationError(`kind must be progress|finished|reopened|set-aside, got: ${kind}`);
     if (typeof entryId !== 'string' || !entryId) throw new ValidationError('entryId is required');
     if (finishedOn !== null && kind !== 'finished') throw new ValidationError('finishedOn only applies to a finished event');
     if (rating !== null && !(Number.isInteger(rating) && rating >= 1 && rating <= 5)) throw new ValidationError('rating must be an integer from 1 to 5');
@@ -45,6 +45,20 @@ export class RecordBookProgress {
     if (minutes !== null && item.progressMode !== 'minutes') throw new ValidationError(`minutes is not accepted in ${item.progressMode} mode`);
     if (page !== null && !(Number.isInteger(page) && page > 0)) throw new ValidationError('page must be a positive integer');
     if (minutes !== null && !(Number.isInteger(minutes) && minutes > 0)) throw new ValidationError('minutes must be a positive integer');
+    if (kind !== 'progress' && (page !== null || minutes !== null)) {
+      throw new ValidationError('page and minutes only apply to a progress event');
+    }
+    if (kind === 'progress') {
+      if (item.progressMode === 'page' && page === null) {
+        throw new ValidationError('page mode requires a page');
+      }
+      if (item.progressMode === 'minutes' && minutes === null) {
+        throw new ValidationError('minutes mode requires minutes');
+      }
+      if (item.progressMode === 'check' && (page !== null || minutes !== null)) {
+        throw new ValidationError('check mode takes no page or minutes');
+      }
+    }
 
     let at = this.#clock().toISOString();
     if (kind === 'finished' && finishedOn !== null) {

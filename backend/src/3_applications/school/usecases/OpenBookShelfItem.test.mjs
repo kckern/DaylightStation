@@ -105,9 +105,37 @@ describe('OpenBookShelfItem', () => {
     await expect(uc.execute({ learnerId: 'kid', bookId: '9780064400558', entryId: 'e1', where: 'partway', page: 4, finishedOn: '2026-08-30', progressEntryId: 'p1' })).rejects.toThrow(/finishedOn/);
   });
 
-  it('refuses a book the resolver does not know, before touching the store', async () => {
+  it('refuses a noncanonical identifier even if a resolver incorrectly calls it not-found', async () => {
     const [uc, store] = useCase();
     await expect(uc.execute({ learnerId: 'kid', bookId: '9780000000000', entryId: 'e1', where: 'starting' })).rejects.toThrow(/not-found/);
+    expect(store.opened).toEqual([]);
+  });
+
+  it('keeps a checksum-valid ISBN loggable when every provider cleanly misses it', async () => {
+    const [uc, store] = useCase();
+    const out = await uc.execute({
+      learnerId: 'kid', bookId: '9780027746723', entryId: 'e1',
+      where: 'finished', finishedOn: '2026-09-01', progressEntryId: 'f1',
+    });
+    expect(out.book).toMatchObject({
+      isbn13: '9780027746723', title: null, coverUrl: null,
+      sources: ['unresolved-isbn'],
+    });
+    expect(store.opened[0]).toMatchObject({
+      bookId: '9780027746723', progressMode: 'check', pageCount: null,
+    });
+    expect(store.events[0]).toMatchObject({ kind: 'finished', entryId: 'f1' });
+  });
+
+  it('does not turn a provider outage into an unresolved placeholder', async () => {
+    const store = makeStore();
+    const unavailable = { async execute() { return { status: 'unavailable' }; } };
+    const uc = new OpenBookShelfItem({
+      bookLog: store, resolveBook: unavailable, clock: CLOCK, dayOf: UTC_DAY, logger: silent,
+    });
+    await expect(uc.execute({
+      learnerId: 'kid', bookId: '9780027746723', entryId: 'e1', where: 'starting',
+    })).rejects.toThrow(/unavailable/);
     expect(store.opened).toEqual([]);
   });
 
@@ -117,5 +145,18 @@ describe('OpenBookShelfItem', () => {
     const uc = new OpenBookShelfItem({ bookLog: store, resolveBook: resolver, clock: CLOCK, dayOf: UTC_DAY, logger: silent });
     const out = await uc.execute({ learnerId: 'kid', bookId: '9780027746723', entryId: 'e1', where: 'starting' });
     expect(out.item.progressMode).toBe('check');
+  });
+
+  it('uses page mode when the child supplies a partway page even if metadata has no page count', async () => {
+    const resolver = { async execute() { return { status: 'ok', book: { isbn13: '9780027746723', title: 'x', pageCount: null } }; } };
+    const store = makeStore();
+    const uc = new OpenBookShelfItem({ bookLog: store, resolveBook: resolver, clock: CLOCK, dayOf: UTC_DAY, logger: silent });
+    const out = await uc.execute({
+      learnerId: 'kid', bookId: '9780027746723', entryId: 'e1',
+      where: 'partway', page: 84, progressEntryId: 'p1',
+    });
+    expect(out.item.progressMode).toBe('page');
+    expect(out.item.pageCount).toBeNull();
+    expect(store.events[0]).toMatchObject({ kind: 'progress', page: 84 });
   });
 });

@@ -115,22 +115,51 @@ describe('projectShelfItem', () => {
     ] })).status).toBe('reading');
   });
 
-  it('counts a finish-only day as a day read — the same set measureObligation(checkins) counts (review m5)', () => {
+  it('undoes a mistaken finish with a later append-only reopened event', () => {
+    const corrected = item({ events: [
+      ev('started', '2026-08-01T10:00:00Z'),
+      ev('progress', '2026-08-03T10:00:00Z', { page: 40 }),
+      ev('finished', '2026-08-04T10:00:00Z'),
+      ev('reopened', '2026-08-04T10:01:00Z'),
+    ] });
+    expect(projectShelfItem(corrected)).toMatchObject({ status: 'reading', page: 40, percent: 22 });
+    expect(measureObligation(
+      { metric: 'books', quantity: 1, per: 'week' }, [corrected],
+      { from: '2026-08-01', to: '2026-08-09' },
+    ).actual).toBe(0);
+    expect(projectShelfItem(corrected).daysRead).toBe(1); // the real page log, not the canceled finish
+  });
+
+  it('a later finish after reopening is once again the effective finish', () => {
+    const corrected = item({ events: [
+      ev('finished', '2026-08-04T10:00:00Z'),
+      ev('reopened', '2026-09-04T10:01:00Z'),
+      ev('finished', '2026-08-05T10:00:00Z'),
+    ] });
+    expect(projectShelfItem(corrected).status).toBe('finished');
+    expect(projectShelfItem(corrected).lastAt).toBe('2026-08-05T10:00:00Z');
+    expect(measureObligation(
+      { metric: 'books', quantity: 1, per: 'week' }, [corrected],
+      { from: '2026-08-01', to: '2026-08-09' },
+    ).actual).toBe(1);
+  });
+
+  it('counts a finish-only day as read but not the day the book was merely added', () => {
     const item = { progressMode: 'page', pageCount: 100, events: [
       { kind: 'started', at: '2026-09-01T18:00:00.000Z' },
       { kind: 'finished', at: '2026-09-02T18:00:00.000Z' },
     ] };
-    expect(projectShelfItem(item).daysRead).toBe(2);
-    expect(measureObligation({ metric: 'checkins', quantity: 1, per: 'day' }, [item], { from: '2026-09-01', to: '2026-09-02' }).actual).toBe(2);
+    expect(projectShelfItem(item).daysRead).toBe(1);
+    expect(measureObligation({ metric: 'checkins', quantity: 1, per: 'day' }, [item], { from: '2026-09-01', to: '2026-09-02' }).actual).toBe(1);
   });
 
-  it('a set-aside day is not a day read, in either count', () => {
+  it('neither adding nor setting aside a book is a day read', () => {
     const item = { progressMode: 'page', pageCount: 100, events: [
       { kind: 'started', at: '2026-09-01T18:00:00.000Z' },
       { kind: 'set-aside', at: '2026-09-02T18:00:00.000Z' },
     ] };
-    expect(projectShelfItem(item).daysRead).toBe(1);
-    expect(measureObligation({ metric: 'checkins', quantity: 1, per: 'day' }, [item], { from: '2026-09-01', to: '2026-09-02' }).actual).toBe(1);
+    expect(projectShelfItem(item).daysRead).toBe(0);
+    expect(measureObligation({ metric: 'checkins', quantity: 1, per: 'day' }, [item], { from: '2026-09-01', to: '2026-09-02' }).actual).toBe(0);
   });
 
   it('does not count a corrupt at as a day read', () => {

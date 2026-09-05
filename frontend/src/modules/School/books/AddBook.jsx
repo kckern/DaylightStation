@@ -20,9 +20,11 @@
  * `lookup` the hook abandons the round trip and returns the pad with the
  * digits kept. No logging from here; the hook owns the story.
  */
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import NumberPad from './NumberPad.jsx';
 import DayPicker from './DayPicker.jsx';
+import BookCover from './BookCover.jsx';
+import { presentBook } from './bookPresentation.js';
 import useTapFire from '../selfService/useTapFire.js';
 
 const DOORS = [
@@ -31,33 +33,16 @@ const DOORS = [
   { where: 'finished', label: 'I already finished it' },
 ];
 
-function authorsOf(book) {
-  const list = Array.isArray(book?.authors) ? book.authors.filter(Boolean) : [];
-  return list.join(', ');
-}
-
-function Cover({ book, className }) {
-  const [failed, setFailed] = useState(false);
-  const title = book?.title || book?.isbn13 || 'Untitled';
-  if (book?.coverUrl && !failed) {
-    return <img className={className} src={book.coverUrl} alt={title} onError={() => setFailed(true)} />;
-  }
-  return (
-    <div className={`school-selfservice-card__poster-placeholder ${className}`} aria-hidden="true">
-      <span>✦</span>
-    </div>
-  );
-}
-
 /** The book named once above a step that comes after the cover. */
 function BookLine({ book }) {
   if (!book) return null;
-  const by = authorsOf(book);
+  const presentation = presentBook(book);
   return (
     <div className="school-books-add__book">
-      <Cover book={book} className="school-books-add__thumb" />
-      <span className="school-books-add__line">
-        {book.title}{by ? ` · ${by}` : ''}
+      <BookCover book={book} className="school-books-add__thumb" />
+      <span className="school-books-add__line" title={presentation.title}>
+        <strong>{presentation.title}</strong>
+        {presentation.author && <span title={presentation.allAuthors}>{presentation.author}</span>}
       </span>
     </div>
   );
@@ -81,6 +66,7 @@ export default function AddBook({ step, add, today, error = null, busy = false, 
   const tap = useTapFire();
   const press = useCallback((fn) => tap(() => { if (!busy) fn(); }), [tap, busy]);
   const book = add?.resolved?.book ?? null;
+  const presentation = presentBook(book);
   const message = error?.message ?? null;
 
   let body;
@@ -88,24 +74,36 @@ export default function AddBook({ step, add, today, error = null, busy = false, 
     body = <p className="school-books__loading" role="status">Looking it up…</p>;
   } else if (step === 'cover') {
     const duplicate = Boolean(add?.duplicateOf);
+    const metadataMissing = Boolean(add?.metadataMissing);
     body = (
       <div className="school-books-add__card">
-        <Cover book={book} className="school-books-add__cover" />
+        <BookCover book={book} className="school-books-add__cover" />
         <div className="school-books-add__about">
-          <h3 className="school-books-add__title">{book?.title}</h3>
-          {authorsOf(book) && <p className="school-books-add__author">{authorsOf(book)}</p>}
-          {book?.description && <p className="school-books-add__description">{book.description}</p>}
+          <h3 className="school-books-add__title" title={presentation.title}>{presentation.title}</h3>
+          {presentation.author && (
+            <p className="school-books-add__author" title={presentation.allAuthors}>{presentation.author}</p>
+          )}
+          {presentation.description && <p className="school-books-add__description">{presentation.description}</p>}
+          {metadataMissing && (
+            <p className="school-books-add__description">
+              We couldn&apos;t find a title or cover. Check that this number matches your book; you can still log it by ISBN.
+            </p>
+          )}
         </div>
         <p className="school-books-add__prompt">
-          {duplicate ? "You've already got this one" : 'Is this your book?'}
+          {duplicate
+            ? "You've already got this one"
+            : (metadataMissing ? 'Is this the ISBN on your book?' : 'Is this your book?')}
         </p>
         <div className="school-books-add__answers">
           {duplicate ? (
-            <button type="button" className="school-books-add__yes" {...press(() => actions.openDuplicate())}>Open it</button>
+            <button type="button" className="school-books-add__yes" disabled={busy} {...press(() => actions.openDuplicate())}>Open it</button>
           ) : (
-            <button type="button" className="school-books-add__yes" {...press(() => actions.confirmCover(true))}>Yes</button>
+            <button type="button" className="school-books-add__yes" disabled={busy} {...press(() => actions.confirmCover(true))}>
+              {metadataMissing ? 'Yes, log this book' : 'Yes'}
+            </button>
           )}
-          <button type="button" className="school-books-add__no" {...press(() => actions.confirmCover(false))}>No</button>
+          <button type="button" className="school-books-add__no" disabled={busy} {...press(() => actions.confirmCover(false))}>No, edit number</button>
         </div>
         <Fault message={message} />
       </div>
@@ -139,6 +137,7 @@ export default function AddBook({ step, add, today, error = null, busy = false, 
           maxLength={4}
           submitLabel="Save"
           canSubmit={!busy}
+          disabled={busy}
           hint={message}
           onSubmit={(entry) => actions.submitPage(Number(entry))}
         />
@@ -149,7 +148,7 @@ export default function AddBook({ step, add, today, error = null, busy = false, 
       <div className="school-books-add__when">
         <BookLine book={book} />
         <p className="school-books-add__prompt">When did you finish it?</p>
-        <DayPicker key={today} today={today} onConfirm={(key) => { if (!busy) actions.submitDay(key); }} />
+        <DayPicker key={today} today={today} busy={busy} onConfirm={(key) => { if (!busy) actions.submitDay(key); }} />
         <Fault message={message} />
       </div>
     );
@@ -163,6 +162,7 @@ export default function AddBook({ step, add, today, error = null, busy = false, 
           allowX
           submitLabel="Look it up"
           canSubmit={Boolean(add?.canSubmit) && !busy}
+          disabled={busy}
           hint={add?.hint ?? message}
           value={typeof add?.entry === 'string' ? add.entry : ''}
           onChange={actions.typeIsbn}
@@ -179,7 +179,7 @@ export default function AddBook({ step, add, today, error = null, busy = false, 
 
   return (
     <div className="school-books-add" data-testid="add-book" data-step={step}>
-      <button type="button" className="school-books__back" onClick={actions.back}>‹ back</button>
+      <button type="button" className="school-books__back" disabled={busy} onClick={() => { if (!busy) actions.back(); }}>‹ back</button>
       {body}
     </div>
   );

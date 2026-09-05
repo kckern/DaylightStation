@@ -79,7 +79,7 @@ describe('checkIsbn', () => {
     expect(COPY['isbn10-checksum']).toMatch(/one digit is off/);
     expect(COPY['not-a-book-prefix']).toMatch(/Flip the book over/);
     expect(COPY['not-an-identifier']).toMatch(/Flip the book over/);
-    expect(COPY['not-found']).toMatch(/grown-up/);
+    expect(COPY['not-found']).toMatch(/still log this ISBN/);
     expect(COPY.unavailable).toMatch(/try again/);
   });
 

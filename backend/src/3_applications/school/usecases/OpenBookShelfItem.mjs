@@ -1,4 +1,6 @@
 import { ValidationError } from '#domains/core/errors/index.mjs';
+import { parseBookIdentifier } from '#domains/books/BookIdentifier.mjs';
+import { createBookRecord } from '#domains/books/BookRecord.mjs';
 import { inferProgressMode, isDayKey, noonOf } from '#domains/school/bookShelf.mjs';
 
 const WHERE = new Set(['starting', 'partway', 'finished']);
@@ -53,17 +55,37 @@ export class OpenBookShelfItem {
     }
 
     const resolved = await this.#resolveBook.execute(bookId);
-    if (resolved.status !== 'ok') throw new ValidationError(`book ${bookId} did not resolve: ${resolved.status}`);
-    const { book } = resolved;
+    let book = resolved.status === 'ok' ? (resolved.book ?? null) : null;
+    if (resolved.status === 'not-found') {
+      // A clean provider miss is not evidence that the physical book in the
+      // child's hands does not exist. Keep the checksum-validated ISBN as a
+      // truthful minimal record; later catalog resolution can fill the shelf
+      // presentation without rewriting reading evidence. Outages and invalid
+      // identifiers still fail, because they are not clean misses.
+      const identifier = parseBookIdentifier(bookId);
+      if (identifier.kind === 'isbn') {
+        book = createBookRecord({ source: 'unresolved-isbn', isbn13: identifier.isbn13 });
+      }
+    }
+    if (resolved.status !== 'ok' && !book) {
+      throw new ValidationError(`book ${bookId} did not resolve: ${resolved.status}`);
+    }
+    // The child explicitly supplied a physical page on the partway door.
+    // That is stronger evidence for page mode than a provider's missing page
+    // count is for check mode. Keep the page even without a denominator; the
+    // UI can show `p. 84` without drawing a percentage bar.
+    const progressMode = where === 'partway' ? 'page' : inferProgressMode(book);
 
     // A backdated finish lives ENTIRELY on the day it was finished. The store
-    // stamps the `started` event at `openedAt`, and `checkins` counts every
-    // event by its day — so an `openedAt` of now would credit TODAY for a book
-    // read last week. `starting` and `partway` are genuinely happening now.
+    // stamps the `started` event at `openedAt`. `started` is deliberately not
+    // reading evidence, but co-locating the item's opening and finish still
+    // gives the append-only record one honest historical origin instead of a
+    // misleading "opened today, finished last week" pair. `starting` and
+    // `partway` are genuinely happening now.
     const openedAt = where === 'finished' ? noonOf(finishedOn) : now;
     const item = await this.#bookLog.openItem({
       learnerId, bookId: book.isbn13 ?? bookId, entryId, openedAt,
-      progressMode: inferProgressMode(book), pageCount: book.pageCount ?? null,
+      progressMode, pageCount: book.pageCount ?? null,
     });
 
     let event = null;
@@ -73,7 +95,10 @@ export class OpenBookShelfItem {
       event = await this.#bookLog.appendEvent({ itemId: item.itemId, kind: 'finished', at: noonOf(finishedOn), entryId: progressEntryId });
     }
 
-    this.#logger.info?.('school.book-shelf.item-opened', { learnerId, bookId: item.bookId, where, progressMode: item.progressMode });
+    this.#logger.info?.('school.book-shelf.item-opened', {
+      learnerId, bookId: item.bookId, where, progressMode: item.progressMode,
+      metadata: resolved.status === 'ok' ? 'resolved' : 'pending',
+    });
     return { item, event, book };
   }
 }

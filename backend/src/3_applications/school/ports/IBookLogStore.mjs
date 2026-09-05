@@ -49,7 +49,7 @@ export class IBookLogStore {
   /**
    * Append one progress event to an existing shelf item.
    *
-   * @param {{itemId: string, kind: 'progress'|'finished'|'set-aside',
+   * @param {{itemId: string, kind: 'progress'|'finished'|'reopened'|'set-aside',
    *          at: string, page?: number|null, minutes?: number|null,
    *          note?: string|null, rating?: number|null, source?: string|null,
    *          externalId?: string|null, entryId: string}} event

@@ -39,6 +39,56 @@ describe('planDailyAgenda once-only book-log', () => {
   });
 });
 
+describe('program and curriculum tracks sharing one subject', () => {
+  const lesson = {
+    unitId: 'english-lesson-1', title: 'English lesson', subject: 'english',
+    program: null, elective: false, status: 'available', timingPriority: 3, timingRank: 0,
+  };
+  const shelf = {
+    unitId: 'book-log:shelf', title: 'Reading', subject: 'english',
+    program: 'book-log', programInstance: 'shelf', cadence: 'daily', elective: false,
+    status: 'available', timingPriority: 3, timingRank: 0,
+  };
+  const pass = {
+    sessionId: 'english-pass', unitId: lesson.unitId, state: 'closed', terminal: true,
+    updatedAt: '2026-08-25T18:00:00.000Z',
+    outcome: { result: 'passed', at: '2026-08-25T18:00:00.000Z' },
+  };
+  const build = ({ lessonDone = false, bookDone = false, bookError = false } = {}) => planDailyAgenda({
+    plan: { entries: [lesson, shelf] },
+    sessions: lessonDone ? [pass] : [],
+    now: '2026-08-25T18:00:00.000Z',
+    programStatuses: { 'book-log::shelf': { doneToday: bookDone, error: bookError, terminal: false } },
+  }).sections.find((section) => section.subject === 'english');
+
+  it('offers the reading shelf after the English lesson is done', () => {
+    const section = build({ lessonDone: true });
+    expect(section.servedToday).toBe(false);
+    expect(section.next?.unitId).toBe('book-log:shelf');
+    expect(section.obligation).toEqual({ state: 'obligated', reason: null });
+  });
+
+  it('offers the English lesson after reading is logged', () => {
+    const section = build({ bookDone: true });
+    expect(section.servedToday).toBe(false);
+    expect(section.next?.unitId).toBe('english-lesson-1');
+  });
+
+  it('marks the shared subject served only after both independent tracks are done', () => {
+    const section = build({ lessonDone: true, bookDone: true });
+    expect(section.servedToday).toBe(true);
+    expect(section.next).toBeNull();
+    expect(section.obligation).toEqual({ state: 'served', reason: null });
+  });
+
+  it('does not let a completed English lesson hide a broken required reading program', () => {
+    const section = build({ lessonDone: true, bookError: true });
+    expect(section.servedToday).toBe(false);
+    expect(section.next).toBeNull();
+    expect(section.obligation).toEqual({ state: 'faulted', reason: 'program_unavailable' });
+  });
+});
+
 describe('served work from a program subject', () => {
   // A program subject (piano/arts) completes outside a work session, so its
   // work never appears in the plan entries `servedWork` was built from. The
