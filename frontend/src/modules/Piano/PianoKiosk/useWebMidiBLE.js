@@ -596,18 +596,18 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
     return emitOut(out, [0xb0 | (channel & 0x0f), 122, on ? 127 : 0], 'midi.out.local-control', { on, channel });
   }, []);
 
-  // Select a voice: optional Bank Select (MSB+LSB) then Program Change. Bank 0
-  // sends a plain PC (the 128 GM voices); a non-zero bank reaches the device's
-  // extra banks (e.g. the Suzuki Asian-folk voices). Each message is logged with
-  // its own seq/timestamp so the send ORDER is visible when diagnosing the
-  // one-turn-late bug.
+  // Select a voice: Bank Select (MSB+LSB) then Program Change. Bank selection is
+  // MIDI channel state, so zero MUST be sent too. Omitting it after an Asian-folk
+  // (bank 1) voice leaves later GM Program Changes in the variation bank. On the
+  // MDG-400 that makes the early families sound unrelated while programs without
+  // a bank-1 variation fall back to GM, creating the misleading appearance of a
+  // partial/offset patch map. Each message is logged with its own seq/timestamp
+  // so the send ORDER is visible when diagnosing the one-turn-late bug.
   const sendVoice = useCallback((program, bank = 0, channel = 0) => {
     const out = outputRef.current;
     if (!out && !bridgeOutUp()) return false;
-    if (bank) {
-      emitOut(out, [0xb0 | (channel & 0x0f), 0, bank & 0x7f], 'midi.out.bank-msb', { bank, channel });
-      emitOut(out, [0xb0 | (channel & 0x0f), 32, 0], 'midi.out.bank-lsb', { channel });
-    }
+    emitOut(out, [0xb0 | (channel & 0x0f), 0, bank & 0x7f], 'midi.out.bank-msb', { bank, channel });
+    emitOut(out, [0xb0 | (channel & 0x0f), 32, 0], 'midi.out.bank-lsb', { bank, channel });
     const bytes = [0xc0 | (channel & 0x0f), program & 0x7f];
     emitOut(out, bytes, 'midi.out.voice', { program, bank, channel });
     flushOut(out, bytes); // re-send to push the PC through BLE (one-turn-late fix)

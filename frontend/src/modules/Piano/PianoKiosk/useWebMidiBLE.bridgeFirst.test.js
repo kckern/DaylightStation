@@ -51,10 +51,28 @@ describe('useWebMidiBLE bridge-first routing', () => {
       result.current.sendControlChange(91, 64, 0);
       result.current.sendNote(60, 100, 0);
     });
+    expect(bridgeSendMidi).toHaveBeenCalledWith([0xb0, 0, 0]);
+    expect(bridgeSendMidi).toHaveBeenCalledWith([0xb0, 32, 0]);
     expect(bridgeSendMidi).toHaveBeenCalledWith([0xc0, 24]);
     expect(bridgeSendMidi).toHaveBeenCalledWith([0xb0, 91, 64]);
     expect(bridgeSendMidi).toHaveBeenCalledWith([0x90, 60, 100]);
     expect(sent).toEqual([]); // nothing through the zombie-prone handle
+  });
+
+  it('explicitly restores bank 0 after selecting a variation-bank voice', () => {
+    bridgeSendMidi.mockReturnValue(true);
+    bridgeOutUp.mockReturnValue(true);
+    const { result } = renderHook(() => useWebMidiBLE({}));
+
+    act(() => {
+      result.current.sendVoice(15, 1, 0);
+      result.current.sendVoice(3, 0, 0);
+    });
+
+    expect(bridgeSendMidi.mock.calls.slice(0, 6).map(([bytes]) => bytes)).toEqual([
+      [0xb0, 0, 1], [0xb0, 32, 0], [0xc0, 15],
+      [0xb0, 0, 0], [0xb0, 32, 0], [0xc0, 3],
+    ]);
   });
 
   it('control sends work with NO Web MIDI output at all while the bridge is up', () => {

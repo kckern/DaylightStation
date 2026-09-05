@@ -136,6 +136,30 @@ of which were the problem.
 
 ## 5. Reading the history
 
+### Short hardware smoke test
+
+With a recorder running, use the repository CLI to verify a drum marker, one
+melodic Program Change, and three notes. It is dry-run by default; `--send` is
+required for live output:
+
+```bash
+node cli/piano-midi-smoke.cli.mjs              # inspect the exact sequence
+PB_HOST={tablet}:8770 node cli/piano-midi-smoke.cli.mjs --send
+# very short (~2–3 s) pilot:
+PB_HOST={tablet}:8770 node cli/piano-midi-smoke.cli.mjs --mini --send
+```
+
+The marker uses GM channel 10 (kick/snare/closed-hat/snare/kick), while the
+melodic test uses channel 1, Program Change 0 (Acoustic Grand), and C4/E4/G4.
+The tool finishes with All Notes Off on both channels.
+
+Voice selection always sends Bank Select MSB and LSB before Program Change,
+including explicit zeroes for the 128 GM voices. Bank Select is sticky MIDI
+channel state: omitting bank 0 after selecting an Asian-folk/variation voice can
+make the next low-numbered GM Program Change select an unrelated variation. The
+hardware sweep likewise reasserts bank 0 for every sampled program so its results
+cannot inherit state from an earlier session.
+
 The APK heartbeat already carries the verdict, once a minute.
 
 ```bash
