@@ -38,8 +38,11 @@ Frontend: startup-step preservation, deduplication, expiry, no mat-only auto-sta
 resume, dynamic card insertion below HR/RPM, and existing count/heart regressions.
 Post-deploy: exact firmware id, expected boot transition, healthy Wi-Fi/WS/OTA,
 stable idle counters, matching normalized API telemetry, loaded kiosk build.
-User test: take down mat, lay flat, step once → card at 1, step again → 2, stomp
-once → one additional step and one stomp; stop → totals remain visible.
+User test: take down mat and lay flat; start the usual HR-tracked workout.
+Step once → card at 1 below HR/RPM, step again → 2, stomp once → one additional
+step and one stomp; stop → totals remain visible. No calibration or assignment
+tap is required. Handling during an already active workout can resemble a step;
+for an unambiguous 1 → 2 check, position the mat before starting the workout.
 
 Manufacturer reference: [ASC detection and recovery notes](https://docs.asc.com/usingHAui.html).
 The manufacturer documents slow recovery and unit variation; timing/threshold
@@ -71,4 +74,29 @@ behavior still needs the user's real physical acceptance, not just synthetic tra
   local build directories are private. No credentials rotated, no threshold
   adjustments, no recalibration, and no synthetic telemetry sent to production.
 
-Status: firmware deployed; app deployment and real kiosk build verification next.
+## Deployment and ready-for-test handoff
+
+- App commit `f94ed5f874a27e320043d9588c1859e168321820` merged to main and
+  deployed. Production build metadata: September 4, 18:12:47 PDT. Container is
+  healthy. Standalone idle gates passed before build, replacement and kiosk
+  refresh; an earlier active-video gate was respected until playback stopped.
+- At September 5 01:16:53 UTC (September 4 local), actual garage Firefox 154
+  logged `fitness-profile-started.entryAsset=/assets/index-bjSQbGiX.js`, exactly
+  matching the served page, and created `step_mat` → `garage-step-mat`.
+  Its screenshot shows the normal idle Fitness home, not a simulated workout.
+- The normalized API confirms the same firmware id, boot 25, unknown occupancy,
+  live readings and zero steps/stomps. ESP Wi-Fi/WS/OTA remain healthy; idle
+  counters stayed at zero for several minutes across the app restart/reload.
+- Public equipment catalog has ten entries and exactly one correct mat binding.
+  Removing only the previously recovered mat entry from the parsed live config
+  still matches the pre-recovery backup in every other setting. No governance
+  requirements or challenges changed.
+- Expected WebSocket errors occurred during container replacement, before the
+  new client startup. No Fitness errors were observed after that startup in the
+  handoff check. Commit gates, including nine composition tests, also passed.
+
+Status: **ready for the user's physical test**. The real wall → floor → footfall
+and active-sidebar visual acceptance remain unperformed; automated traces and
+an idle screenshot are not substitutes. No further deployment is needed to begin
+that test. The older tracker goal remains blocked on physical acceptance; it was
+not falsely marked complete to work around the goal-replacement limitation.
