@@ -22,6 +22,8 @@
 import { useCallback, useState } from 'react';
 import NumberPad from './NumberPad.jsx';
 import DayPicker from './DayPicker.jsx';
+import BookCover from './BookCover.jsx';
+import { presentBook } from './bookPresentation.js';
 import { formatMinutes } from './ShelfTile.jsx';
 import useTapFire from '../selfService/useTapFire.js';
 
@@ -48,19 +50,6 @@ export function progressLine(item) {
   }
 }
 
-function Cover({ item }) {
-  const [failed, setFailed] = useState(false);
-  const title = item.title || item.bookId || 'Untitled';
-  if (item.coverUrl && !failed) {
-    return <img className="school-books-update__cover" src={item.coverUrl} alt={title} onError={() => setFailed(true)} />;
-  }
-  return (
-    <div className="school-selfservice-card__poster-placeholder school-books-update__cover" aria-hidden="true">
-      <span>✦</span>
-    </div>
-  );
-}
-
 /**
  * @param {object} props
  * @param {object} props.item - the open shelf item (`current` from the hook).
@@ -78,7 +67,8 @@ export default function UpdateBook({ item, today, error = null, busy = false, ac
   const press = useCallback((fn) => tap(() => { if (!busy) fn(); }), [tap, busy]);
 
   const mode = item.progressMode ?? 'page';
-  const title = item.title || item.bookId || 'Untitled';
+  const presentation = presentBook(item);
+  const title = presentation.title;
   const percent = Math.min(100, Math.max(0, Number(item.projection?.percent) || 0));
   const showBar = mode === 'page' && item.pageCount !== null && item.pageCount !== undefined;
   const message = error?.message ?? null;
@@ -105,7 +95,7 @@ export default function UpdateBook({ item, today, error = null, busy = false, ac
             {label}
           </button>
         ))}
-        <button type="button" className="school-books-update__quiet" onClick={() => setChoosing(false)}>never mind</button>
+        <button type="button" className="school-books-update__quiet" disabled={busy} {...press(() => setChoosing(false))}>never mind</button>
         {message && <p className="school-books-update__fault" role="alert">{message}</p>}
       </div>
     );
@@ -113,8 +103,8 @@ export default function UpdateBook({ item, today, error = null, busy = false, ac
     control = (
       <div className="school-books-update__finish">
         <p className="school-books-update__prompt">When did you finish it?</p>
-        <DayPicker key={today} today={today} onConfirm={(key) => { if (!busy) actions.finish(key); }} />
-        <button type="button" className="school-books-update__quiet" onClick={() => setFinishing(false)}>never mind</button>
+        <DayPicker key={today} today={today} busy={busy} onConfirm={(key) => { if (!busy) actions.finish(key); }} />
+        <button type="button" className="school-books-update__quiet" disabled={busy} {...press(() => setFinishing(false))}>never mind</button>
         {message && <p className="school-books-update__fault" role="alert">{message}</p>}
       </div>
     );
@@ -139,6 +129,7 @@ export default function UpdateBook({ item, today, error = null, busy = false, ac
         maxLength={mode === 'minutes' ? 3 : 4}
         submitLabel="Save"
         canSubmit={!busy}
+        disabled={busy}
         hint={message}
         onSubmit={submitPad}
       />
@@ -147,17 +138,21 @@ export default function UpdateBook({ item, today, error = null, busy = false, ac
 
   return (
     <div className="school-books-update" data-testid="update-book">
-      <button type="button" className="school-books__back" onClick={actions.back}>‹ back</button>
+      <button type="button" className="school-books__back" disabled={busy} onClick={() => { if (!busy) actions.back(); }}>‹ back</button>
 
       <div className="school-books-update__book">
-        <Cover item={item} />
+        <BookCover book={item} className="school-books-update__cover" />
         <div className="school-books-update__meta">
-          <h3 className="school-books-update__title">{title}</h3>
+          <h3 className="school-books-update__title" title={title}>{title}</h3>
+          {presentation.author && (
+            <p className="school-books-update__author" title={presentation.allAuthors}>{presentation.author}</p>
+          )}
           <button
             type="button"
             className="school-books-update__progress"
             aria-expanded={choosing}
-            onClick={() => { setChoosing((c) => !c); setFinishing(false); }}
+            disabled={busy}
+            onClick={() => { if (!busy) { setChoosing((c) => !c); setFinishing(false); } }}
           >
             {showBar && (
               <span

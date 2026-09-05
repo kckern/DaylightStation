@@ -5,9 +5,11 @@ const silentLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: (
 const CLOCK = () => new Date('2026-08-09T18:00:00Z'); // Sunday, still 2026-08-09 in PT
 
 const assignmentsWith = (enrollment) => ({
-  async listForLearner() { return enrollment ? [enrollment] : []; },
+  async get(learnerId) {
+    return { learnerId, programs: enrollment ? [enrollment] : [] };
+  },
 });
-const brokenAssignments = { async listForLearner() { throw new Error('unreadable'); } };
+const brokenAssignments = { async get() { throw new Error('unreadable'); } };
 const storeWith = (items) => ({ async listForLearner() { return items; } });
 const brokenStore = { async listForLearner() { throw new Error('unreadable'); } };
 
@@ -24,6 +26,13 @@ const enrolled = (obligation = null) => ({ programId: 'book-log', obligation, su
 const item = (overrides = {}) => ({ bookId: 'b1', progressMode: 'page', pageCount: 184, events: [], ...overrides });
 
 describe('BookLogProgramLauncher', () => {
+  it('requires the real assignment port shape at construction', () => {
+    expect(() => new BookLogProgramLauncher({
+      assignments: { async listForLearner() { return []; } },
+      bookLog: storeWith([]),
+    })).toThrow(/get\(learnerId\)/);
+  });
+
   it('is the book-log program and says where it lives', () => {
     const instance = launcher(enrolled());
     expect(instance.id).toBe('book-log');

@@ -132,6 +132,9 @@ function readObligation(raw) {
   } else if (OBLIGATION_METRICS.includes(metric) && quantity > MAX_QUANTITY[metric]) {
     errors.push(`obligation.quantity for ${metric} must be at most ${MAX_QUANTITY[metric]}, got: ${quantity}`);
   }
+  if (metric === 'checkins' && per === 'day' && Number.isInteger(quantity) && quantity !== 1) {
+    errors.push(`a daily checkins obligation must have quantity 1, got: ${quantity}`);
+  }
 
   const scope = readScope(raw.scope, errors);
 

@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { schoolApi } from './schoolApi.js';
 
 beforeEach(() => vi.unstubAllGlobals());
+afterEach(() => vi.useRealTimers());
 
 describe('schoolApi', () => {
   it('asks for the server-selected study day when no day is supplied', async () => {
@@ -14,6 +15,18 @@ describe('schoolApi', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify([{ id: 'b' }]), { status: 200 })));
     expect(await schoolApi.banks()).toEqual({ ok: true, status: 200, data: [{ id: 'b' }] });
     expect(fetch).toHaveBeenCalledWith('/api/v1/school/banks', expect.any(Object));
+  });
+  it('bounds a book lookup so a broken browser socket cannot strand the add flow', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn((_url, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new Error('aborted')));
+    })));
+
+    const pending = schoolApi.books.resolve('9780064400558');
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    await expect(pending).resolves.toEqual({ ok: false, status: 0, data: null });
+    expect(fetch.mock.calls[0][1].signal.aborted).toBe(true);
   });
   it('passes audience and posts JSON bodies', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));

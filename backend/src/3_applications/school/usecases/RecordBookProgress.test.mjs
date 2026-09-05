@@ -47,6 +47,21 @@ describe('RecordBookProgress', () => {
     await expect(uc2.execute({ learnerId: 'kid', itemId: 'kid:b:e1', kind: 'progress', minutes: 3, entryId: 'x' })).rejects.toThrow(/mode/);
   });
 
+  it('requires the progress value promised by page/minutes mode', async () => {
+    const [pages] = useCase();
+    await expect(pages.execute({ learnerId: 'kid', itemId: 'kid:b:e1', kind: 'progress', entryId: 'empty-page' }))
+      .rejects.toThrow(/requires a page/);
+    const [minutes] = useCase(makeStore(shelf('minutes')));
+    await expect(minutes.execute({ learnerId: 'kid', itemId: 'kid:b:e1', kind: 'progress', entryId: 'empty-minutes' }))
+      .rejects.toThrow(/requires minutes/);
+  });
+
+  it('refuses page/minutes payloads on lifecycle events', async () => {
+    const [uc] = useCase();
+    await expect(uc.execute({ learnerId: 'kid', itemId: 'kid:b:e1', kind: 'finished', page: 184, entryId: 'finish-page' }))
+      .rejects.toThrow(/only apply to a progress event/);
+  });
+
   it('accepts a page beyond the known total — editions differ', async () => {
     const [uc, store] = useCase();
     await uc.execute({ learnerId: 'kid', itemId: 'kid:b:e1', kind: 'progress', page: 212, entryId: 'p1' });
@@ -57,6 +72,14 @@ describe('RecordBookProgress', () => {
     const [uc, store] = useCase();
     await uc.execute({ learnerId: 'kid', itemId: 'kid:b:e1', kind: 'finished', finishedOn: '2026-08-30', entryId: 'f1' });
     expect(store.events[0].at).toBe('2026-08-30T12:00:00.000Z');
+  });
+
+  it('records an append-only reopened correction for a mistaken finish', async () => {
+    const [uc, store] = useCase();
+    await uc.execute({ learnerId: 'kid', itemId: 'kid:b:e1', kind: 'reopened', entryId: 'undo-f1' });
+    expect(store.events[0]).toMatchObject({
+      itemId: 'kid:b:e1', kind: 'reopened', entryId: 'undo-f1', at: '2026-09-02T20:00:00.000Z',
+    });
   });
 
   it('the future ceiling is the household study day, not the UTC date (review m1)', async () => {

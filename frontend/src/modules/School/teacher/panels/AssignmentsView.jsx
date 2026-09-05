@@ -16,6 +16,12 @@ import { curriculumTitles } from '../curriculumTitles.js';
 import { labelize } from '../labelize.js';
 import { teacherSectionPath } from '../teacherUrl.js';
 import { idsOf, mergeEntries } from './assignmentEntries.js';
+import {
+  chooseReadingProgram,
+  describeReadingEnrollment,
+  READING_PROGRAM_OPTIONS,
+  readingEnrollments,
+} from '../../readingPrograms.js';
 
 export default function AssignmentsView({ learnerId, learnerName }) {
   const record = usePanelFetch(() => schoolApi.assignments(learnerId), {
@@ -32,7 +38,7 @@ export default function AssignmentsView({ learnerId, learnerName }) {
   const { run, busy, errors } = useTeacherWrite({ panel: 'assignments' });
   const profile = useTeacherProfile();
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState({ courses: [], units: [] });
+  const [draft, setDraft] = useState({ courses: [], units: [], programs: [] });
   // assignedBy is a user id, never display copy — resolve to a name.
   const teacherName = (id) => (profile.teachers ?? []).find((t) => t.id === id)?.name
     ?? (profile.currentTeacher?.id === id ? profile.currentTeacher.name : null)
@@ -47,6 +53,7 @@ export default function AssignmentsView({ learnerId, learnerName }) {
     setDraft({
       courses: idsOf(record.data?.courses, 'courseId'),
       units: idsOf(record.data?.units, 'unitId'),
+      programs: Array.isArray(record.data?.programs) ? record.data.programs : [],
     });
     setEditing(true);
   };
@@ -56,10 +63,22 @@ export default function AssignmentsView({ learnerId, learnerName }) {
     [kind]: d[kind].includes(id) ? d[kind].filter((x) => x !== id) : [...d[kind], id],
   }));
 
+  const chooseReading = (programId) => setDraft((d) => ({
+    ...d,
+    programs: chooseReadingProgram(d.programs, programId === 'none' ? null : programId),
+  }));
+
+  const currentReading = readingEnrollments(record.data?.programs);
+  const draftReading = readingEnrollments(draft.programs);
+  const readingConflict = draftReading.length > 1;
+  const readingSelection = readingConflict ? 'conflict' : draftReading[0]?.programId ?? 'none';
+  const otherPrograms = (record.data?.programs ?? [])
+    .filter((entry) => !['story-time', 'book-log'].includes(entry?.programId));
+
   const save = () => run('save', ({ actorId, pin }) => schoolApi.putAssignments(learnerId, {
     courses: mergeEntries(record.data?.courses, draft.courses, 'courseId'),
     units: mergeEntries(record.data?.units, draft.units, 'unitId'),
-    ...(record.data?.programs?.length ? { programs: record.data.programs } : {}),
+    programs: draft.programs,
     assignedBy: actorId,
     pin,
     // Concurrent-edit guard (B14): what we LOADED; a stale save is refused
@@ -87,14 +106,39 @@ export default function AssignmentsView({ learnerId, learnerName }) {
                   <ul>{idsOf(record.data.units, 'unitId').map((u) => <li key={u}>{titles.lesson(u)}</li>)}</ul>
                 </div>
               )}
+              {currentReading.length === 1 && (
+                <div className="teacher-assignments__group">
+                  <h3>Reading</h3>
+                  <p>
+                    {READING_PROGRAM_OPTIONS.find((option) => option.id === currentReading[0].programId)?.label}
+                    {' — '}{describeReadingEnrollment(currentReading[0])}
+                  </p>
+                </div>
+              )}
+              {currentReading.length > 1 && (
+                <p className="teacher-panel__error">
+                  Conflicting reading assignments: both preschool story time and book logging are saved.
+                </p>
+              )}
+              {otherPrograms.length > 0 && (
+                <div className="teacher-assignments__group">
+                  <h3>Other programs</h3>
+                  <ul>{otherPrograms.map((entry, index) => (
+                    <li key={`${entry.programId ?? 'program'}-${entry.corpusId ?? index}`}>
+                      {labelize(entry.title ?? entry.programId ?? 'program')}
+                    </li>
+                  ))}</ul>
+                </div>
+              )}
               {record.data.assignedBy && (
                 <p className="teacher-assignments__meta">Assigned by {teacherName(record.data.assignedBy)}</p>
               )}
             </div>
           )}
-          {(catalog.state === 'ok') && (
-            <button type="button" className="teacher-assignments__edit" onClick={startEditing}>Edit assignments</button>
-          )}
+          {/* Reading-program repair must not depend on the curriculum catalog.
+              Existing course/unit ids remain visible as stale entries if that
+              separate read is unavailable, and are preserved unless unchecked. */}
+          <button type="button" className="teacher-assignments__edit" onClick={startEditing}>Edit assignments</button>
         </>
       )}
       {editing && (
@@ -142,8 +186,41 @@ export default function AssignmentsView({ learnerId, learnerName }) {
               </label>
             ))}
           </div>
+          <fieldset className="teacher-assignments__group teacher-assignments__reading">
+            <legend>Reading experience</legend>
+            <p className="teacher-assignments__meta">
+              Choose by how {learnerName ?? learnerId} reads. Story time is a shared-screen
+              preschool activity; book logging is for an independent reader with a physical book.
+            </p>
+            {readingConflict && (
+              <p className="teacher-panel__error">
+                Both reading experiences are currently assigned. Choose one before saving.
+              </p>
+            )}
+            <label className="teacher-assignments__pick">
+              <input
+                type="radio" name="reading-program" value="none"
+                checked={readingSelection === 'none'} onChange={() => chooseReading('none')}
+              />
+              No reading experience
+            </label>
+            {READING_PROGRAM_OPTIONS.map((option) => (
+              <label key={option.id} className="teacher-assignments__pick">
+                <input
+                  type="radio" name="reading-program" value={option.id}
+                  checked={readingSelection === option.id} onChange={() => chooseReading(option.id)}
+                />
+                <span><strong>{option.label}</strong><br />{option.audience}. {option.description}</span>
+              </label>
+            ))}
+            {draftReading.length === 1 && (
+              <p className="teacher-assignments__meta">
+                Current target: {describeReadingEnrollment(draftReading[0])}.
+              </p>
+            )}
+          </fieldset>
           <div className="teacher-assignments__actions">
-            <button type="button" disabled={busy === 'save'} onClick={save}>Save</button>
+            <button type="button" disabled={busy === 'save' || readingConflict} onClick={save}>Save</button>
             <button type="button" onClick={() => setEditing(false)}>Cancel</button>
           </div>
           {errors.save && <p className="teacher-panel__error">{errors.save}</p>}

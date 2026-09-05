@@ -126,9 +126,16 @@ export class ResolveSubjectNext {
     // The served-day continuation is ONE rule shared with `ResolveAccessCode`
     // (`continuationEntry.mjs`): read `plan.entries` by status, prefer the
     // program the token named. Two inline copies of this line drifted once.
-    const entry = section.next ?? (continueToday && section.servedToday
-      ? findContinuationEntry(plan, { subject, program })
-      : null);
+    // A token that names a program names the destination, even before the
+    // subject has been served. English curriculum and the reading shelf share
+    // a subject; letting `section.next` win first made User_4's reading code open
+    // the English lesson whenever that lesson happened to sort first.
+    const requestedProgram = program ? findContinuationEntry(plan, { subject, program }) : null;
+    const entry = requestedProgram?.program === program
+      ? requestedProgram
+      : (section.next ?? (continueToday && section.servedToday
+        ? findContinuationEntry(plan, { subject, program })
+        : null));
     if (!entry) {
       if (section.lockedRemedy) return { kind: 'locked', remedy: section.lockedRemedy };
       if (section.programUnavailable) return { kind: 'unavailable' };
@@ -140,10 +147,14 @@ export class ResolveSubjectNext {
 
     // A program entry never gets a session — there is nothing here to track,
     // same rule `BuildAgenda#offerFor` follows for the identical case.
-    if (entry.program) return {
-      kind: 'program', programId: entry.program,
-      unit: projectProgramEntry(entry, programStatusFor(programStatuses, entry)),
-    };
+    if (entry.program) {
+      const status = programStatusFor(programStatuses, entry);
+      if (status?.error === true) return { kind: 'unavailable' };
+      return {
+        kind: 'program', programId: entry.program,
+        unit: projectProgramEntry(entry, status),
+      };
+    }
 
     const paused = pausedExceptionFor(activeExceptions, entry.unitId);
     if (paused) return { kind: 'locked', remedy: `Content paused: ${paused.reason}` };

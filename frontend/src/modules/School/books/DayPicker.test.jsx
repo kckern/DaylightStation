@@ -46,6 +46,28 @@ describe('DayPicker', () => {
     expect(onConfirm).toHaveBeenCalledWith('2026-08-30');
   });
 
+  it('can move to an older window instead of imposing a hidden three-week limit', () => {
+    const onConfirm = vi.fn();
+    render(<DayPicker today="2026-09-02" onConfirm={onConfirm} />);
+    fireEvent.click(screen.getByRole('button', { name: /pick a day/i }));
+    fireEvent.click(screen.getByRole('button', { name: /earlier dates/i }));
+    fireEvent.click(screen.getByRole('gridcell', { name: /Sunday 2 August/ }));
+    fireEvent.click(screen.getByRole('button', { name: /that's the day/i }));
+    expect(onConfirm).toHaveBeenCalledWith('2026-08-02');
+    expect(screen.getByRole('button', { name: /later dates/i })).toBeEnabled();
+  });
+
+  it('stops paging before the visible window spills beyond the preceding year', () => {
+    render(<DayPicker today="2026-09-02" onConfirm={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: /pick a day/i }));
+    const earlier = screen.getByRole('button', { name: /earlier dates/i });
+    for (let page = 0; page < 16; page += 1) fireEvent.click(earlier);
+    expect(earlier).toBeDisabled();
+    const labels = screen.getAllByRole('gridcell').map((cell) => cell.getAttribute('aria-label'));
+    expect(labels).toContain('Monday 8 September');
+    expect(labels).not.toContain('Monday 1 September');
+  });
+
   it('refuses a bad today prop loudly', () => {
     expect(() => render(<DayPicker today="bad" onConfirm={() => {}} />)).toThrow(/YYYY-MM-DD/);
   });
@@ -61,6 +83,15 @@ describe('DayPicker', () => {
   it('a missing onConfirm fails loudly, like a missing today', () => {
     render(<DayPicker today="2026-09-02" />);
     expect(() => fireEvent.click(screen.getByRole('button', { name: /that's the day/i }))).toThrow();
+  });
+
+  it('freezes the date controls while a write is busy', () => {
+    const onConfirm = vi.fn();
+    render(<DayPicker today="2026-09-02" busy onConfirm={onConfirm} />);
+    expect(screen.getByRole('button', { name: /pick a day/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /that's the day/i })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /that's the day/i }));
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 
   describe('fires on touch-down like every other shelf tappable (review n4)', () => {

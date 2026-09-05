@@ -3,8 +3,8 @@
  *
  * Two properties matter more than the rest: reassignment is adults only, and the
  * screen writes PLANNER CONFIG and nothing else. The second is asserted by
- * pinning the exact call shape — `putAssignment` with courses, units and the
- * adult who made the change, no other API surface reachable.
+ * pinning the exact call shape — `putAssignment` with courses, units, programs
+ * and the adult who made the change, no other API surface reachable.
  *
  * `assignedBy` is not decoration. The server refuses a planning write that does
  * not name a grown-up on the roster, so a screen that stopped sending it would
@@ -133,6 +133,7 @@ describe('CurriculumPlanner — writing a plan', () => {
     await waitFor(() => expect(putAssignmentMock).toHaveBeenCalledWith('learner-1', {
       courses: [{ courseId: 'math-fractions', elective: true }],
       units: [{ unitId: 'art.01', elective: true }],
+      programs: [],
       assignedBy: 'dad',
       pin: null,
       baseUpdatedAt: '2026-07-27T10:00:00.000Z', // arms the stale-save guard (wave 8 #19)
@@ -155,6 +156,7 @@ describe('CurriculumPlanner — writing a plan', () => {
         { courseId: 'first-course', elective: false },
       ],
       units: [],
+      programs: [],
       assignedBy: 'dad',
       pin: null,
       baseUpdatedAt: '2026-07-27T10:00:00.000Z', // arms the stale-save guard (wave 8 #19)
@@ -171,6 +173,7 @@ describe('CurriculumPlanner — writing a plan', () => {
     await waitFor(() => expect(putAssignmentMock).toHaveBeenCalledWith('learner-1', {
       courses: [],
       units: [{ unitId: 'art.01', elective: true }],
+      programs: [],
       assignedBy: 'dad',
       pin: null,
       baseUpdatedAt: '2026-07-27T10:00:00.000Z', // arms the stale-save guard (wave 8 #19)
@@ -181,6 +184,61 @@ describe('CurriculumPlanner — writing a plan', () => {
     renderPlanner();
     await settled();
     expect(screen.getByRole('button', { name: /Save plan/i })).toBeDisabled();
+  });
+
+  it('shows and preserves User_4’s full book-log policy while another field changes', async () => {
+    const bookLog = {
+      programId: 'book-log', corpusId: null, subject: 'english', title: 'Reading',
+      obligation: { metric: 'checkins', quantity: 1, per: 'day', scope: null },
+      schedule: { daysOfWeek: [1, 2, 3, 4, 5] },
+    };
+    const language = {
+      programId: 'sentence-ladder', corpusId: 'korean',
+      policy: { dailySentences: 10 },
+    };
+    assignmentsMock.mockResolvedValue({ assignments: [record({ programs: [language, bookLog] })] });
+    renderPlanner();
+    await settled();
+
+    expect(screen.getByRole('radio', { name: /Independent reading — book log/i })).toBeChecked();
+    expect(screen.getByText('Current target: 1 reading check-in per day.')).toBeInTheDocument();
+    expect(screen.getByText(/1 other program enrollment is preserved unchanged/)).toBeInTheDocument();
+
+    fireEvent.click(electives()[0]);
+    fireEvent.click(screen.getByRole('button', { name: /Save plan/i }));
+
+    await waitFor(() => expect(putAssignmentMock).toHaveBeenCalledWith(
+      'learner-1', expect.objectContaining({ programs: [language, bookLog] }),
+    ));
+  });
+
+  it('switches story time to the independent book log as one explicit choice', async () => {
+    assignmentsMock.mockResolvedValue({
+      assignments: [record({
+        programs: [{
+          programId: 'story-time', corpusId: null, target: 2,
+          subject: 'english', title: 'Story time',
+          schedule: { daysOfWeek: [1, 2, 3, 4, 5] },
+        }],
+      })],
+    });
+    renderPlanner();
+    await settled();
+
+    expect(screen.getByRole('radio', { name: /Preschool story time/i })).toBeChecked();
+    fireEvent.click(screen.getByRole('radio', { name: /Independent reading — book log/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Save plan/i }));
+
+    await waitFor(() => expect(putAssignmentMock).toHaveBeenCalledWith(
+      'learner-1',
+      expect.objectContaining({
+        programs: [{
+          programId: 'book-log', subject: 'english', title: 'Reading',
+          obligation: { metric: 'checkins', quantity: 1, per: 'day' },
+          schedule: { daysOfWeek: [1, 2, 3, 4, 5] },
+        }],
+      }),
+    ));
   });
 });
 

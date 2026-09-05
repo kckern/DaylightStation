@@ -24,6 +24,7 @@ const BOOK = {
 const add = (overrides = {}) => ({
   entry: '', check: { state: 'typing' }, hint: null, canSubmit: false, canRetry: false,
   resolved: null, duplicateOf: null, entryId: null, progressEntryId: null, finishedOn: null,
+  metadataMissing: false,
   ...overrides,
 });
 
@@ -91,14 +92,14 @@ describe('AddBook', () => {
 
     it('paints the card and asks; Yes / No → confirmCover', () => {
       const a = mount('cover', { add: add({ resolved }) });
-      expect(screen.getByRole('img', { name: 'Hatchet' })).toHaveAttribute('src', '/c/h.jpg');
+      expect(screen.getByRole('img', { name: 'Cover of Hatchet' })).toHaveAttribute('src', '/c/h.jpg');
       expect(screen.getByText('Hatchet')).toBeInTheDocument();
       expect(screen.getByText('Gary Paulsen')).toBeInTheDocument();
       expect(screen.getByText('A boy, a plane, a hatchet.')).toBeInTheDocument();
       expect(screen.getByText(/is this your book/i)).toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'Yes' }));
       expect(a.confirmCover).toHaveBeenCalledWith(true);
-      fireEvent.click(screen.getByRole('button', { name: 'No' }));
+      fireEvent.click(screen.getByRole('button', { name: 'No, edit number' }));
       expect(a.confirmCover).toHaveBeenCalledWith(false);
     });
 
@@ -109,8 +110,24 @@ describe('AddBook', () => {
       expect(screen.queryByRole('button', { name: 'Yes' })).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: 'Open it' }));
       expect(a.openDuplicate).toHaveBeenCalledTimes(1);
-      fireEvent.click(screen.getByRole('button', { name: 'No' }));
+      fireEvent.click(screen.getByRole('button', { name: 'No, edit number' }));
       expect(a.confirmCover).toHaveBeenCalledWith(false);
+    });
+
+    it('lets a clean catalog miss continue under an honest ISBN placeholder', () => {
+      const unresolved = {
+        status: 'not-found',
+        book: { isbn13: '9780027746723', title: null, authors: [], coverUrl: null },
+      };
+      const a = mount('cover', { add: add({ resolved: unresolved, metadataMissing: true }) });
+      expect(screen.getByRole('img', { name: /no cover available for book 9780027746723/i })).toBeInTheDocument();
+      expect(screen.getByText('Book 9780027746723')).toBeInTheDocument();
+      expect(screen.getByText(/couldn't find a title or cover/i)).toBeInTheDocument();
+      expect(screen.getByText(/you can still log it by ISBN/i)).toBeInTheDocument();
+      expect(screen.queryByText(/fill in the book details later/i)).toBeNull();
+      expect(screen.getByText(/is this the ISBN on your book/i)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Yes, log this book' }));
+      expect(a.confirmCover).toHaveBeenCalledWith(true);
     });
   });
 

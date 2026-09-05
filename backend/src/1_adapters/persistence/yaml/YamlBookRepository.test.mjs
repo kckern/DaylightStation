@@ -19,7 +19,9 @@ describe('YamlBookRepository', () => {
   });
 
   it('saves a record under household/books/<isbn13>.yml and finds it again, frozen and complete', async () => {
-    const r = repo();
+    const r = new YamlBookRepository({
+      configService, logger: silent, clock: () => new Date('2026-09-03T12:00:00.000Z'),
+    });
     const saved = await r.save(createBookRecord({
       source: 'openlibrary', isbn13: '9780064400558', title: "Charlotte's Web", pageCount: 184,
       authors: ['E. B. White'], people: ['Wilbur', 'Charlotte'],
@@ -33,6 +35,9 @@ describe('YamlBookRepository', () => {
     // Every field of the model is present after a round trip, not just the ones written.
     expect(found).toHaveProperty('series');
     expect(found.series).toBeNull();
+    expect(await r.findByIsbnEntry('9780064400558')).toMatchObject({
+      book: { title: "Charlotte's Web" }, cachedAt: '2026-09-03T12:00:00.000Z',
+    });
   });
 
   it('returns null for a book it has never seen', async () => {

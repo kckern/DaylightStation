@@ -180,10 +180,13 @@ describe('ResolveAccessCode — a served reading code continues to what the toke
     unitId: 'eng-1', title: 'English 1', subject: 'english', status: 'available', program: null, sessionId: null,
   };
 
-  function servedEnglishProjection() {
+  function servedEnglishProjection({ served = true, next = null } = {}) {
     const assignment = { learnerId: LEARNER_ID, courses: [], programs: [{ programId: 'book-log', subject: 'english' }] };
     const plan = appendAssignedProgramEntries({ entries: [{ ...ENGLISH_LESSON }], errors: [] }, assignment);
-    const sections = [{ subject: 'english', servedToday: true, next: null, progressRows: [] }];
+    const sections = [{
+      subject: 'english', servedToday: served,
+      next: served ? null : (next ?? plan.entries[0]), progressRows: [],
+    }];
     const programStatuses = [{
       programId: 'book-log', programInstance: 'shelf',
       status: { enrolled: true, error: false, doneToday: true, terminal: false, progressLabel: null, score: null },
@@ -245,5 +248,14 @@ describe('ResolveAccessCode — a served reading code continues to what the toke
     expect(resolution).not.toBeNull();
     expect(resolution.kind).toBe('move');
     expect(resolution.entry?.unitId).toBe('eng-1');
+  });
+
+  it('unserved, program: book-log ⇒ the shelf even when section.next is the English lesson', async () => {
+    const planProjection = servedEnglishProjection({ served: false });
+    const resolver = resolverFor({ record: readingRecord({ program: 'book-log' }), planProjection });
+
+    const { resolution } = await resolver.resolve({ code: '482913' });
+
+    expect(resolution).toMatchObject({ kind: 'program', programId: 'book-log', unit: { unitId: 'book-log:shelf' } });
   });
 });

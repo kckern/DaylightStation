@@ -1,10 +1,12 @@
 # The reading shelf — School-side UI design
 
-**Status:** design, awaiting review
+**Status:** implemented with 2026-09-03 adversarial remediation; live panel acceptance pending
 **Date:** 2026-09-02
 **Builds on:** `2026-09-02-books-domain-prd.md` (the domain, the obligation grammar, the
 launcher and the store — all implemented, 201 tests green)
 **Scope:** the frontend a child touches, and the three routes it needs
+
+**Implementation note:** the end-to-end contract, production incident, and post-build deviations are tracked in `2026-09-03-user_4-reading-shelf-end-to-end-audit.md`. In particular, success now has an explicit receipt/undo, covers share a contain/fallback policy, metadata has a child-facing presentation layer, ISBN entry supports HID scanners, and the finish picker pages up to one year back.
 
 ---
 
@@ -155,8 +157,8 @@ One control, matched to the mode:
 
 - **The pad starts empty**, not prefilled with the last page. A child should type what
   they see, not edit a number.
-- **`I finished it`** is one tap: appends `finished`, returns to the shelf, the tile moves
-  to history. The optional reflection prompt (PRD §5.4 — voice memo or a star) can follow
+- **`I finished it`** opens the finish-day choice, appends `finished`, then shows an
+  explicit receipt with History and append-only Undo. The optional reflection prompt (PRD §5.4 — voice memo or a star) can follow
   later and is **never blocking**.
 - **`set it aside`** is deliberately small and low on the card. It is a real outcome
   (PRD S8), not a failure, but not the thing a thumb lands on.
@@ -194,28 +196,30 @@ button dark with no sentence; thirteen is judged as it lands:
 | `not-a-book-prefix`, `not-an-identifier` | *That's the library's sticker. Flip the book over.* |
 | valid | `Look it up` lights up |
 
-A failed lookup keeps the digits on the pad; `NumberPad` never empties on submit.
+An unavailable or invalid lookup keeps the digits on the pad; `NumberPad` never empties on submit. A clean catalog miss continues to an explicitly unidentified confirmation card instead of becoming a dead end.
 
 An ISBN-10 typed off a copyright page is accepted and converted (PRD B1).
 
 ### Step 2 — the cover
 
 `GET /api/v1/books/resolve?id=` runs `ResolveBook`. The card shows cover, title, author,
-description. *Is this your book?* — `Yes` / `No`. `No` clears the number and returns to
-the pad.
+description. *Is this your book?* — `Yes` / `No, edit number`. No retains the number and
+returns to the pad.
 
 The four resolve outcomes get four different sentences, on purpose:
 
 | `status` | Copy |
 |---|---|
 | `ok` | the card |
-| `not-found` | *We couldn't find that one — ask a grown-up to add it* |
+| `not-found` | Placeholder cover + `Book <ISBN>` + *We couldn't find a title or cover. You can still log this ISBN now and fill in the book details later.* + `Is this the ISBN on your book?` |
 | `unavailable` | *Can't look books up right now — try again in a minute* + `Retry` |
 | `invalid` | never reaches here; caught in step 1 |
 
 **Duplicate guard:** if that ISBN is already `reading` on this shelf, the card says
 *You've already got this one* and offers to open it. A re-read after `finished` is allowed
 and opens a fresh item (PRD S9).
+
+A checksum-valid ISBN remains physical evidence even when every provider cleanly misses it. After the child confirms the number, `OpenBookShelfItem` stores the canonical ISBN with a minimal `unresolved-isbn` presentation record. The shelf renders a calm placeholder and `Book <ISBN>` until a later successful lookup fills the shared catalog cache. A provider outage does **not** take this path: it remains unavailable/retryable so broken infrastructure is never recorded as “unknown book.”
 
 ### Step 3 — where are you with it
 
@@ -245,7 +249,7 @@ and opens a fresh item (PRD S9).
 - **Already finished** → *When did you finish it?* — the day picker below. The chosen
   day becomes the `at` on the `finished` event **and** the item's `openedAt`.
 
-### The day picker — a rolling three weeks, weekday first
+### The day picker — three-week pages, weekday first
 
 Not a calendar. A calendar grid is laid out for adults finding a date; a child remembers
 *"it was Saturday"* and works forward from there. So the weekday leads, the date of the
@@ -266,8 +270,10 @@ Collapsed, it is one answer — today — with a `pick a day ›` to open the re
 └──────────────────────────────────┘
 ```
 
-Opened, it is the last three weeks, most recent row at the bottom, **today marked and
-already selected**, future days absent rather than greyed:
+Opened, it shows three weeks at a time, most recent row at the bottom, **today marked and
+already selected**, future days absent rather than greyed. Earlier/later controls move in
+21-day pages, covering roughly the preceding school year while keeping the
+oldest visible cell within 364 days of the current study day:
 
 ```
 ┌────────────────────────────────────────────┐
@@ -354,7 +360,7 @@ frontend/src/modules/School/books/
   useBookShelf.js        state: shelf, add-flow step machine, idle timer, entryId minting
   isbn.js                client-side ISBN check with the length gate + the copy table
   NumberPad.jsx          the pad (explicit submit, retained entry, variable length, X)
-  DayPicker.jsx / dayGrid.js   the rolling three-week picker + its pure grid
+  DayPicker.jsx / dayGrid.js   the paged three-week picker + its pure grid
   (API calls live on schoolApi.books; logging on schoolLog.bookShelf — no new facade files)
 ```
 
@@ -390,5 +396,10 @@ Discipline per `docs/ai-context/testing.md`: no vacuous passes, no conditional a
   after `I finished it`.
 - **Grown-up assignment authoring** (scoping a series) — a teacher-gate surface, and the
   only place `SearchBooks` is ever reachable.
+- **Reading-program selection itself is no longer hidden.** Both adult assignment
+  planners expose one mutually exclusive choice between preschool story time and
+  independent book logging, preserve unrelated program policy, and the write boundary
+  refuses both reading experiences together. Fine-grained obligation/scoped-series
+  authoring still belongs in the fuller teacher-gated surface above.
 - **Audiobookshelf minutes** flowing in automatically — PRD R3; the event model already
   carries `source` and `externalId` for it.

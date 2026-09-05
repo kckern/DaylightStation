@@ -34,7 +34,7 @@ describe('ShelfTile', () => {
   describe('the cover', () => {
     it('renders the cover image named by the title', () => {
       render(<ShelfTile item={item()} onSelect={() => {}} />);
-      const img = screen.getByRole('img', { name: 'Hatchet' });
+      const img = screen.getByRole('img', { name: 'Cover of Hatchet' });
       expect(img).toHaveAttribute('src', '/covers/hatchet.jpg');
     });
 
@@ -42,13 +42,34 @@ describe('ShelfTile', () => {
       const { container } = render(<ShelfTile item={item({ coverUrl: null })} onSelect={() => {}} />);
       expect(container.querySelector(`.${PLACEHOLDER}`)).not.toBeNull();
       expect(container.querySelector('img')).toBeNull();
+      expect(screen.getByRole('img', { name: 'No cover available for Hatchet' })).toBeInTheDocument();
     });
 
     it('falls back to the placeholder when the cover fails to load', () => {
       const { container } = render(<ShelfTile item={item()} onSelect={() => {}} />);
-      fireEvent.error(screen.getByRole('img', { name: 'Hatchet' }));
+      fireEvent.error(screen.getByRole('img', { name: 'Cover of Hatchet' }));
       expect(container.querySelector(`.${PLACEHOLDER}`)).not.toBeNull();
       expect(container.querySelector('img')).toBeNull();
+      expect(screen.getByRole('img', { name: 'No cover available for Hatchet' })).toBeInTheDocument();
+    });
+
+    it('retries when a shelf refresh supplies a different cover URL', () => {
+      const { rerender } = render(<ShelfTile item={item()} onSelect={() => {}} />);
+      fireEvent.error(screen.getByRole('img', { name: 'Cover of Hatchet' }));
+      rerender(<ShelfTile item={item({ coverUrl: '/covers/hatchet-2.jpg' })} onSelect={() => {}} />);
+      expect(screen.getByRole('img', { name: 'Cover of Hatchet' })).toHaveAttribute('src', '/covers/hatchet-2.jpg');
+    });
+
+    it('refuses an active or opaque cover URL from provider data', () => {
+      const { container } = render(<ShelfTile item={item({ coverUrl: 'javascript:alert(1)' })} onSelect={() => {}} />);
+      expect(container.querySelector('img')).toBeNull();
+      expect(screen.getByRole('img', { name: 'No cover available for Hatchet' })).toBeInTheDocument();
+    });
+
+    it('refuses a backslash path that a browser could normalize into a cross-origin URL', () => {
+      const { container } = render(<ShelfTile item={item({ coverUrl: '/\\evil.example/cover.jpg' })} onSelect={() => {}} />);
+      expect(container.querySelector('img')).toBeNull();
+      expect(screen.getByRole('img', { name: 'No cover available for Hatchet' })).toBeInTheDocument();
     });
   });
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createBookRecord } from '#domains/books/BookRecord.mjs';
 import { ResolveBook } from './ResolveBook.mjs';
 
@@ -129,6 +129,50 @@ describe('ResolveBook', () => {
     const again = await resolver.execute('9780064400558', { refresh: true });
     expect(calls).toBe(2);
     expect(again.book.title).toBe('call 2');
+  });
+
+  it('returns a stale record immediately, refreshes once, and preserves good fields through a partial response', async () => {
+    const old = createBookRecord({
+      source: 'openlibrary', isbn13: '9780064400558', title: 'Old title',
+      description: 'A useful description', coverUrl: 'https://old.example/cover.jpg',
+    });
+    const repository = makeRepo();
+    repository.store.set(old.isbn13, old);
+    repository.findByIsbnEntry = async () => ({ book: old, cachedAt: '2026-07-01T00:00:00.000Z' });
+    let calls = 0;
+    const resolver = new ResolveBook({
+      repository, logger: silentLogger, clock: () => new Date('2026-09-03T00:00:00.000Z'),
+      gateways: [gateway('openlibrary', async (isbn13) => {
+        calls += 1;
+        return createBookRecord({ source: 'openlibrary', isbn13, title: 'Fresh title' });
+      })],
+    });
+
+    const result = await resolver.execute(old.isbn13);
+
+    expect(result).toMatchObject({ status: 'ok', book: { title: 'Old title' }, fromCache: true, refreshing: true });
+    await vi.waitFor(() => expect(repository.saved).toHaveLength(1));
+    expect(calls).toBe(1);
+    expect(repository.saved[0]).toMatchObject({
+      title: 'Fresh title', description: 'A useful description', coverUrl: 'https://old.example/cover.jpg',
+    });
+  });
+
+  it('an explicit refresh keeps the cached book when every provider is down', async () => {
+    const old = createBookRecord({ source: 'openlibrary', isbn13: '9780064400558', title: 'Still usable' });
+    const repository = makeRepo();
+    repository.store.set(old.isbn13, old);
+    const resolver = new ResolveBook({
+      repository, logger: silentLogger, gateways: [brokenGateway('openlibrary', 'provider down')],
+    });
+
+    const result = await resolver.execute(old.isbn13, { refresh: true });
+
+    expect(result).toMatchObject({
+      status: 'ok', book: { title: 'Still usable' }, fromCache: true, refreshFailed: true,
+      failures: [{ source: 'openlibrary', error: 'provider down' }],
+    });
+    expect(repository.saved).toEqual([]);
   });
 
   it('resolves a library record id through the library gateway, then by ISBN', async () => {

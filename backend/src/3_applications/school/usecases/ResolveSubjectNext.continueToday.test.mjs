@@ -25,7 +25,7 @@ function fixture({ served, withLesson = false }) {
   const shelf = plan.entries.find((entry) => entry.unitId === 'book-log:shelf');
   const sections = [{
     subject: 'english', progressRows: [],
-    servedToday: served, next: served ? null : shelf,
+    servedToday: served, next: served ? null : (withLesson ? plan.entries.find((entry) => entry.unitId === LESSON.unitId) : shelf),
   }];
   const programStatuses = [{
     programId: 'book-log', programInstance: 'shelf',
@@ -68,6 +68,16 @@ describe('ResolveSubjectNext continueToday on a served reading subject', () => {
 
     const result = await useCase.execute({
       learnerId: LEARNER_ID, subject: 'english', continueToday: true, program: 'book-log',
+    });
+
+    expect(result).toMatchObject({ kind: 'program', programId: 'book-log', unit: { unitId: 'book-log:shelf' } });
+  });
+
+  it('an unserved English section still obeys a token that explicitly names book-log', async () => {
+    const { useCase } = fixture({ served: false, withLesson: true });
+
+    const result = await useCase.execute({
+      learnerId: LEARNER_ID, subject: 'english', program: 'book-log',
     });
 
     expect(result).toMatchObject({ kind: 'program', programId: 'book-log', unit: { unitId: 'book-log:shelf' } });

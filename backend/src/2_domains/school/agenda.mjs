@@ -275,16 +275,35 @@ export function planDailyAgenda({
     const eligible = list.filter((e) => !(e.program && (
       unavailableProgramKeys.has(programStatusKey(e)) || terminalProgramKeys.has(programStatusKey(e))
     )));
-    const candidate = [...eligible.filter((e) => e.status === 'in_progress'), ...eligible.filter((e) => e.status === 'available')]
-      .sort(byEntryPriority)[0] ?? null;
     const subjectPassedToday = list.some((e) => passedTodayIds.has(e.unitId));
-    const candidatePasses = candidate ? (passedTodayByScope.get(timingScope(candidate)) ?? 0) : 0;
-    const isFocus = Boolean(candidate && focusExtras(candidate) > 0);
+    const curriculumCandidate = [
+      ...eligible.filter((e) => !e.program && e.status === 'in_progress'),
+      ...eligible.filter((e) => !e.program && e.status === 'available'),
+    ].sort(byEntryPriority)[0] ?? null;
+    const candidatePasses = curriculumCandidate
+      ? (passedTodayByScope.get(timingScope(curriculumCandidate)) ?? 0)
+      : 0;
+    const isFocus = Boolean(curriculumCandidate && focusExtras(curriculumCandidate) > 0);
     // A normal subject is served after one pass. An urgent focus course can
     // offer its next newly-unlocked lesson until its declared daily budget is
     // reached; an in-progress retry is always resumable regardless.
-    const servedToday = (subjectPassedToday || programDone)
-      && !(isFocus && candidatePasses < focusBudget(candidate));
+    const curriculumServedForOffers = subjectPassedToday
+      && !(isFocus && candidatePasses < focusBudget(curriculumCandidate));
+
+    // Curriculum and programs are independent tracks even when they share a
+    // subject. Completing an English lesson suppresses the next English lesson
+    // for today, but not User_4's reading shelf; logging reading suppresses that
+    // shelf, but not an unfinished English lesson.
+    const offerEligible = eligible.filter((entry) => (
+      entry.program
+        ? programStatusFor(programStatuses, entry)?.doneToday !== true
+        : !curriculumServedForOffers
+    ));
+    const candidate = [
+      ...offerEligible.filter((e) => e.status === 'in_progress'),
+      ...offerEligible.filter((e) => e.status === 'available'),
+    ].sort(byEntryPriority)[0] ?? null;
+    const servedToday = (subjectPassedToday || programDone) && !candidate && !programUnavailable;
 
     const candidateStatus = candidate?.program ? programStatusFor(programStatuses, candidate) : null;
     const next = !servedToday && candidate
@@ -319,12 +338,23 @@ export function planDailyAgenda({
     // program that will not answer, and work blocked by something nothing can
     // reach (see `blockerChainIsReachable` above).
     const nonElectiveList = list.filter((e) => !e.elective);
-    const actionable = eligible.filter((e) => !e.elective && (e.status === 'in_progress' || e.status === 'available'));
+    const actionable = offerEligible.filter((e) => !e.elective && (e.status === 'in_progress' || e.status === 'available'));
     const nonElectiveProgramDone = nonElectiveList.some((e) => (
       e.program && programStatusFor(programStatuses, e)?.error !== true
       && programStatusFor(programStatuses, e)?.doneToday === true
     ));
-    const obligationServed = nonElectiveList.some((e) => passedTodayIds.has(e.unitId)) || nonElectiveProgramDone;
+    const requiredPrograms = nonElectiveList.filter((e) => e.program && !terminalProgramKeys.has(programStatusKey(e)));
+    const hasRequiredCurriculum = nonElectiveList.some((e) => !e.program);
+    const curriculumObligationServed = !hasRequiredCurriculum || subjectPassedToday;
+    const programObligationsServed = requiredPrograms.length === 0 || requiredPrograms.every((entry) => {
+      const status = programStatusFor(programStatuses, entry);
+      return status?.error !== true && status?.doneToday === true;
+    });
+    const obligationServed = (subjectPassedToday || nonElectiveProgramDone)
+      && curriculumObligationServed && programObligationsServed;
+    const unavailableRequiredProgram = nonElectiveList.some((entry) => (
+      entry.program && unavailableProgramKeys.has(programStatusKey(entry))
+    ));
     // Every entry is asked, including electives — an elective's schedule never
     // changes a verdict, but a typo in one is still a typo, and this is the
     // only place anything looks at it.
@@ -339,7 +369,9 @@ export function planDailyAgenda({
     const isBacklog = (e) => e.timing?.mode === 'catch_up' || e.timingState === 'catch_up';
     const hasNonElective = (pred) => nonElectiveList.some(pred);
     let obligation;
-    if (obligationServed) {
+    if (unavailableRequiredProgram) {
+      obligation = { state: 'faulted', reason: 'program_unavailable' };
+    } else if (obligationServed) {
       obligation = { state: 'served', reason: null };
     } else if (actionable.length === 0) {
       let reason;

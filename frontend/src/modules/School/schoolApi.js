@@ -23,13 +23,19 @@ async function req(path, body, method, headers = {}) {
  * OUTSIDE `/api/v1/school`. State Gates is a shared subscriber resource, so
  * the school board consumes it without pretending it is a School endpoint.
  */
-async function reqAbsolute(path) {
+async function reqAbsolute(path, { timeoutMs = null } = {}) {
+  const controller = Number.isFinite(timeoutMs) && timeoutMs > 0 ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   try {
-    const r = await fetch(path, { method: 'GET', credentials: 'same-origin' });
+    const r = await fetch(path, {
+      method: 'GET', credentials: 'same-origin', ...(controller ? { signal: controller.signal } : {}),
+    });
     const data = await r.json().catch(() => null);
     return { ok: r.ok, status: r.status, data };
   } catch {
     return { ok: false, status: 0, data: null };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -93,7 +99,10 @@ export const schoolApi = {
   // /school — no grant, it names a book, not a child. Item ids are
   // `learner:isbn:entry`, so they are encoded (Express decodes them back).
   books: {
-    resolve: (id) => reqAbsolute(`/api/v1/books/resolve?id=${encodeURIComponent(id)}`),
+    // OpenLibrary's bounded enrichment can make three serial calls. Give the
+    // composed server path room to finish, but never let a broken socket live
+    // until the shelf's 90-second idle close.
+    resolve: (id) => reqAbsolute(`/api/v1/books/resolve?id=${encodeURIComponent(id)}`, { timeoutMs: 30_000 }),
     shelf: (learnerId, grant) => req(
       `/books/${encodeURIComponent(learnerId)}/shelf`, undefined, 'GET', { 'X-School-Book-Grant': grant },
     ),

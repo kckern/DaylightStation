@@ -19,10 +19,10 @@
  * says what it wants: the daily reading code names its `program`, the
  * forward-action tokens do not.
  *
- * Not yet applied: the agenda withholds a program entry whose launcher
- * errored, but the section exposes only the boolean `programUnavailable`,
- * not the errored keys, so this helper cannot exclude them. When the section
- * names them, exclude them here — in one place.
+ * The helper deliberately does not need program-status knowledge. Both
+ * resolvers inspect the selected entry's launcher status and return
+ * `unavailable` before offering an errored program; keeping that check at the
+ * application boundary lets this ordering helper stay pure.
  */
 const CONTINUABLE = new Set(['in_progress', 'available']);
 

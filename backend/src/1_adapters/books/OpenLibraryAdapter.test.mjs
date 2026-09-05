@@ -120,13 +120,21 @@ describe('OpenLibraryAdapter', () => {
     expect(record.seriesVolume).toBe(2);
   });
 
-  it('always offers a cover URL derived from the ISBN', async () => {
+  it('uses the explicit provider cover and upgrades it to https', async () => {
+    const adapter = adapterWith([
+      { match: '/api/books', data: { 'ISBN:9780064471046': { title: 'x', cover: { medium: 'http://covers.example/x.jpg' } } } },
+      { match: '/isbn/', data: {} },
+    ]);
+    expect((await adapter.byIsbn('9780064471046')).coverUrl)
+      .toBe('https://covers.example/x.jpg');
+  });
+
+  it('does not invent a cover when the edition says it has none', async () => {
     const adapter = adapterWith([
       { match: '/api/books', data: { 'ISBN:9780064471046': { title: 'x' } } },
       { match: '/isbn/', data: {} },
     ]);
-    expect((await adapter.byIsbn('9780064471046')).coverUrl)
-      .toBe('https://covers.openlibrary.org/b/isbn/9780064471046-L.jpg');
+    expect((await adapter.byIsbn('9780064471046')).coverUrl).toBeNull();
   });
 
   it('returns null for a book OpenLibrary does not have — a miss is not a failure', async () => {

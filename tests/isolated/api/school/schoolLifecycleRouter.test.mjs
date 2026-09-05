@@ -54,10 +54,10 @@ const resolveReviewItem = {
 };
 
 const setAssignments = {
-  execute: async ({ learnerId, courses, units, assignedBy, pin = null, baseUpdatedAt = null }) => {
+  execute: async ({ learnerId, courses, units, programs, assignedBy, pin = null, baseUpdatedAt = null }) => {
     if (assignedBy === 'kid1') throw named('GuestForbiddenError', 'Only a grown-up can change what a child is assigned');
     if (!Array.isArray(courses) || !Array.isArray(units)) throw named('ValidationError', 'courses and units must be arrays');
-    return { learnerId, courses, units, assignedBy, pin, baseUpdatedAt, updatedAt: '2026-07-27T09:00:00.000Z' };
+    return { learnerId, courses, units, programs, assignedBy, pin, baseUpdatedAt, updatedAt: '2026-07-27T09:00:00.000Z' };
   },
 };
 
@@ -392,8 +392,12 @@ describe('the parent surface', () => {
     expect((await fetch(`${base}/assignments`)).status).toBe(200);
     expect((await fetch(`${base}/assignments/kid1`)).status).toBe(200);
     expect((await fetch(`${base}/assignments/nobody`)).status).toBe(404);
-    const r = await put('/assignments/kid2', { courses: ['history'], units: [], assignedBy: 'parent' });
-    expect(await r.json()).toMatchObject({ learnerId: 'kid2', courses: ['history'], assignedBy: 'parent', updatedAt: '2026-07-27T09:00:00.000Z' });
+    const programs = [{ programId: 'book-log', subject: 'english' }];
+    const r = await put('/assignments/kid2', { courses: ['history'], units: [], programs, assignedBy: 'parent' });
+    expect(await r.json()).toMatchObject({
+      learnerId: 'kid2', courses: ['history'], programs,
+      assignedBy: 'parent', updatedAt: '2026-07-27T09:00:00.000Z',
+    });
   });
 
   it('400s an assignment that is not a pair of lists', async () => {

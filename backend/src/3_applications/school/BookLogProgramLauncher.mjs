@@ -63,7 +63,9 @@ export class BookLogProgramLauncher {
   #assignments; #bookLog; #timezone; #clock; #logger; #grants;
 
   constructor({ assignments, bookLog, timezone = null, clock = () => new Date(), logger = console, grants = null } = {}) {
-    if (!assignments) throw new Error('BookLogProgramLauncher requires an assignments store');
+    if (!assignments || typeof assignments.get !== 'function') {
+      throw new Error('BookLogProgramLauncher requires an assignments store with get(learnerId)');
+    }
     if (!bookLog) throw new Error('BookLogProgramLauncher requires a bookLog store');
     this.#assignments = assignments;
     this.#bookLog = bookLog;
@@ -112,7 +114,8 @@ export class BookLogProgramLauncher {
     if (typeof learnerId !== 'string' || !learnerId) throw new TypeError('BookLogProgramLauncher.status takes { userId }');
     let enrollment;
     try {
-      enrollment = (await this.#assignments.listForLearner(learnerId) ?? [])
+      const assignment = await this.#assignments.get(learnerId);
+      enrollment = (Array.isArray(assignment?.programs) ? assignment.programs : [])
         .find((entry) => entry?.programId === BOOK_LOG_PROGRAM_ID) ?? null;
     } catch (error) {
       this.#logger.warn?.('school.book-log.assignments-unreadable', { learnerId, error: error.message });
