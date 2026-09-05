@@ -13,7 +13,7 @@ import { ActivityMonitor } from '../../modules/Fitness/domain/ActivityMonitor.js
 import { SessionEntityRegistry } from './SessionEntity.js';
 import { DeviceEventRouter } from './DeviceEventRouter.js';
 import { VibrationActivityTracker } from './VibrationActivityTracker.js';
-import { PressureMatActivityTracker } from './PressureMatActivityTracker.js';
+import { PressureMatActivityTracker, PRESSURE_MAT_STARTUP_WINDOW_MS } from './PressureMatActivityTracker.js';
 import { findUnclosedMedia } from './closeOpenMedia.js';
 import getLogger from '../../lib/logging/Logger.js';
 import { heapSnapshotFields } from '../../lib/perf/memoryProbe.js';
@@ -232,6 +232,7 @@ export class FitnessSession {
 
     // Pre-session buffer to avoid ghost sessions from spurious single pings
     this._preSessionBuffer = [];
+    this._lastStartupHeartRateAt = null;
     this._bufferThresholdMet = false;
     this._preSessionThreshold = 3; // Require N valid HR samples before starting
     this._lastPreSessionLogAt = 0;
@@ -1140,6 +1141,7 @@ export class FitnessSession {
       timestamp,
       assignedUserId,
       countSession: Boolean(this.sessionId),
+      retainStartup: !this.sessionId && this._hasRecentStartupHeartRate(timestamp),
     });
     if (!before.engaged && snapshot.engaged) {
       this.logEvent('activity_engaged', { type: 'pressure_mat', equipmentId, matId });
@@ -1349,6 +1351,12 @@ export class FitnessSession {
     return isValid;
   }
 
+  _hasRecentStartupHeartRate(timestamp) {
+    return this._lastStartupHeartRateAt != null
+      && timestamp >= this._lastStartupHeartRateAt
+      && timestamp - this._lastStartupHeartRateAt <= PRESSURE_MAT_STARTUP_WINDOW_MS;
+  }
+
   _maybeStartSessionFromBuffer(deviceData, timestamp) {
     if (this.sessionId) return false;
     // Cooldown: don't auto-start a new session within the cooldown window after the last one ended
@@ -1366,6 +1374,7 @@ export class FitnessSession {
     }
     const eligible = this._isValidPreSessionSample(deviceData);
     if (eligible) {
+      this._lastStartupHeartRateAt = timestamp;
       this._preSessionBuffer.push({ ...deviceData, timestamp });
     } else if (!eligible && this._preSessionBuffer.length === 0) {
       // Log why sample was rejected (throttled to avoid spam)
@@ -1940,7 +1949,18 @@ export class FitnessSession {
       resolveEquipmentId: (device) => this._resolveEquipmentId(device)
     });
     this._timelineRecorder.setVibrationTrackers(this._vibrationTrackers);
-    this._pressureMatTrackers.forEach((tracker) => tracker.reset());
+    this._pressureMatTrackers.forEach((tracker) => {
+      const snapshot = tracker.beginSession(nowDate.getTime(), {
+        retainStartup: this._hasRecentStartupHeartRate(nowDate.getTime()),
+      });
+      if (snapshot.seenThisSession) {
+        getLogger().info('fitness.pressure_mat.startup_steps_retained', {
+          sessionId: this.sessionId, matId: tracker.matId,
+          steps: snapshot.sessionSteps, stomps: snapshot.sessionStomps,
+        });
+      }
+    });
+    this._lastStartupHeartRateAt = null;
     this._timelineRecorder.setPressureMatTrackers?.(this._pressureMatTrackers);
 
     this._participantRoster.reset();
@@ -2663,6 +2683,7 @@ export class FitnessSession {
   }
 
   reset() {
+    this._lastStartupHeartRateAt = null;
     this.sessionId = null;
     this.startTime = null;
     this.endTime = null;

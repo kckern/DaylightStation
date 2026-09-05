@@ -2,6 +2,7 @@ const RELAY_SOURCE = 'pressure-mat-relay';
 const DEFAULT_TOPIC = 'pressure-mat';
 const VALID_TYPES = new Set(['reading', 'presence', 'hello']);
 const VALID_PRESENCE_EVENTS = new Set(['pressed', 'released', 'stomped']);
+const DETECTION_STATES = new Set(['initializing', 'ready', 'pressed', 'rearmed']);
 
 /**
  * Adapter for Daylight pressure-mat ESP32 relays.
@@ -99,16 +100,29 @@ export class PressureMatAdapter {
     if (Number.isFinite(peakGradientVps)) payload.peakGradientVps = Math.max(0, peakGradientVps);
     if (Number.isFinite(pressDurationMs)) payload.pressDurationMs = Math.max(0, pressDurationMs);
     if (typeof message.classified_stomp === 'boolean') payload.classifiedStomp = message.classified_stomp;
+    if (Number.isSafeInteger(message.boot_count) && message.boot_count >= 0) payload.bootCount = message.boot_count;
+    if (typeof message.firmware_build === 'string' && /^[a-zA-Z0-9._-]{1,80}$/.test(message.firmware_build)) payload.firmwareBuild = message.firmware_build;
+    if (DETECTION_STATES.has(message.detection_state)) payload.detectionState = message.detection_state;
+    if (typeof message.occupancy_known === 'boolean') payload.occupancyKnown = message.occupancy_known;
+    if (Number.isSafeInteger(message.rearm_count) && message.rearm_count >= 0) payload.rearmCount = message.rearm_count;
     if (message.type === 'presence') payload.event = message.event;
     if (message.type === 'hello') {
       payload.uptimeS = Math.max(0, Number(message.uptime_s) || 0);
-      payload.bootCount = Math.max(0, Number(message.boot_count) || 0);
       payload.lastReset = message.last_reset || 'UNKNOWN';
       payload.rssi = Number(message.rssi) || 0;
       payload.freeHeap = Math.max(0, Number(message.free_heap) || 0);
     }
 
     const previous = this.#latest.get(id) || {};
+    if (payload.firmwareBuild && (previous.firmwareBuild !== payload.firmwareBuild || previous.bootCount !== payload.bootCount)) {
+      this.#logger.info?.('pressure_mat.firmware.connected', {
+        id, firmwareBuild: payload.firmwareBuild, bootCount: payload.bootCount,
+        detectionState: payload.detectionState, occupancyKnown: payload.occupancyKnown,
+      });
+    }
+    if (payload.detectionState === 'rearmed' && previous.detectionState !== 'rearmed') {
+      this.#logger.info?.('pressure_mat.detector.rearmed', { id, rearmCount: payload.rearmCount, steps: payload.steps, stomps: payload.stomps });
+    }
     this.#latest.set(id, { ...previous, ...payload, clientId, receivedAtMs });
     this.#eventBus.broadcast(this.#definition(id).topic || DEFAULT_TOPIC, payload);
     return true;

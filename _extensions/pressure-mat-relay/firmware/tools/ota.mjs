@@ -104,6 +104,8 @@ try {
   if (!existsSync(imagePath) || !existsSync(espotaPath)) {
     throw new Error(`OTA build or uploader missing: ${imagePath}, ${espotaPath}`);
   }
+  // The image embeds Wi-Fi and OTA credentials, just like config.h.
+  chmodSync(imagePath, 0o600);
 
   console.log(`[ota] uploading ${matId} -> ${host}:3232 (authenticated${via ? ` via ${via}` : ''})`);
   if (via) {
@@ -114,7 +116,8 @@ try {
       `${remoteDir}/espota-stdin.py`,
       `${remoteDir}/firmware.bin`,
     ];
-    run('ssh', [via, 'mkdir', '-p', remoteDir]);
+    run('ssh', [via, 'mkdir', '-p', '-m', '700', remoteDir]);
+    run('ssh', [via, 'chmod', '700', remoteDir]);
     run('scp', [espotaPath, wrapperPath, imagePath, `${via}:${remoteDir}/`]);
     run('ssh', [via, 'python3', remoteFiles[1], host, remoteFiles[2], remoteFiles[0]], {
       input: `${uploadPassword}\n`,
@@ -140,7 +143,7 @@ try {
     try {
       execFileSync('ssh', [via, 'rm', '-f', ...remoteFiles], { cwd: firmwareDir, stdio: 'ignore' });
     } catch {
-      console.error('[ota] warning: could not remove staged non-secret OTA files');
+      console.error('[ota] warning: could not remove staged OTA files; firmware contains credentials');
     }
   }
 }

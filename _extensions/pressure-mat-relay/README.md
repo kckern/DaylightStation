@@ -13,7 +13,7 @@ scale**:
 - `voltage`: smoothed ADC voltage
 - `delta_v`: drop from the pre-press voltage
 - `gradient_vps`: speed and direction of the pressure change
-- `occupied`: derived, hysteretic on/off state
+- `occupied`: inferred pressure state, meaningful only when `occupancy_known` is true
 - `steps`: press-transition count since boot
 - `stomps`: high-impact step count since boot (heuristic, separately tunable)
 
@@ -40,9 +40,12 @@ The backend re-broadcasts all three on the configured `pressure-mat` topic.
 
 Every 50 ms the firmware averages 100 GPIO0 ADC readings, then smooths seven
 frames. A sufficiently fast voltage drop arms a press threshold; crossing the
-threshold latches occupancy. A rising voltage and a smaller recovery threshold
-release it. Defaults match ASC's published approximately-one-pound preset:
+threshold registers a press. Net recovery from the press minimum (default
+`0.06 V`, sustained for 150 ms) registers release, even when recovery is too
+slow to cross a per-frame gradient gate. Defaults match ASC's published approximately-one-pound preset:
 `0.12 V` pressure change and `0.08 V/s` gradient.
+The former `release_gradient_ratio` setting is no longer used; release depends
+on `release_delta_ratio` and sustained net recovery.
 
 A press is counted once as a step. If that same press also crosses the default
 `0.48 V` and `0.20 V/s` impact thresholds, it increments `stomps` and emits
@@ -55,6 +58,32 @@ summary to `released`: `peak_delta_v`, positive-magnitude
 fields to use for distributions. The instantaneous values on `pressed` and
 `stomped` describe threshold-crossing frames and are not substitutes for the
 per-press maxima.
+
+After at least five seconds of a held signal and a 2.5-second settled window,
+the detector re-arms for a fresh load edge. This increments only `rearm_count`:
+no invented `released` event, step, or stomp. `occupancy_known` becomes false.
+The abandoned interval has no completed-press summary. Steady loading/noise
+does not repeat counts; a fresh qualifying drop can count even after storage
+left the old detector latched. Booting and long sampling gaps also establish
+an unknown reference. A single analog trace cannot identify feet versus
+handling or prove that a person has left; these are pressure-cycle counts.
+
+Every message and `GET /status` carry `firmware_build`, `boot_count`,
+`detection_state` (`initializing`, `ready`, `pressed`, `rearmed`),
+`occupancy_known`, and `rearm_count`. The generated source/settings hash
+identifies the build without including credentials. Persisted NVS threshold
+overrides are reported separately in `/status`. The backend exposes camelCase
+equivalents and logs firmware connections and re-arming once per transition.
+
+The actual portable detector is regression-tested with slow-release, long-held,
+noise/drift, sample-gap, bounce, impact ordering, and uptime-wrap traces:
+
+```bash
+node _extensions/pressure-mat-relay/firmware/tools/test-detector.mjs
+```
+
+Requires a C++11 compiler with address/undefined-behavior sanitizer support
+(`g++` by default, or `CXX`). No hardware, private data, or backend is involved.
 
 This gradient gate matters: the textile drifts and recovers slowly, so treating
 one fixed voltage as a switch produces false events.
@@ -124,8 +153,14 @@ OTA is compile-time disabled unless both `enabled: true` and a password are
 present. During a transfer the firmware quiesces WebSocket and HTTP work, feeds
 the watchdog per received chunk, and reboots into the previous image after an
 OTA error. The existing `default.csv` has two 1.25 MiB application slots; this
-image fits. The currently deployed protocol-v1 image has no ArduinoOTA listener,
-so enabling OTA still requires exactly one USB bootstrap flash.
+image fits. An older image without ArduinoOTA needs one USB bootstrap flash;
+check `/status` for `ota.enabled` rather than inferring it from protocol version.
+Before updating, run the environment's standalone idle/deployment gate, verify
+the configured device id, and retain a private rollback artifact. Recheck the
+gate immediately before delivery. After reboot, verify the expected build id,
+incremented boot count, healthy Wi-Fi/WebSocket, and stable idle counters.
+Generated headers and firmware binaries contain credentials; never commit or
+publish them. OTA staging directories are private and staged files are removed.
 
 ## Operations
 
@@ -194,6 +229,12 @@ unavailable) until the session ends. The workout timeline samples totals and SPM
 every five seconds; it does not duplicate the raw transition stream already
 stored here. Typed `activity_rate` governance and `step` challenges are documented
 in [the governance engine reference](../../docs/reference/fitness/governance-engine.md#step-mat-lifecycle).
+
+Mat traffic alone never starts a Fitness session. During HR-confirmed startup,
+up to ten seconds of recent mat deltas are retained across the asynchronous
+start/resume check; idle handling and expired candidates are discarded. Device
+counter baselines survive that boundary so repeated packets cannot count twice.
+First use still needs an active/starting HR workout, not an assignment click.
 
 The original pre-Daylight app partition was backed up before flashing to
 `/tmp/daylight-step-esp32c3-original-app0.bin` with SHA-256

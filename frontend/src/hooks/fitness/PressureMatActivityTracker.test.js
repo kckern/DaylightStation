@@ -6,6 +6,42 @@ const reading = (event, steps, stomps, extra = {}) => ({
 });
 
 describe('PressureMatActivityTracker', () => {
+  it('retains corroborated startup deltas once, without exposing a pre-session card or losing the epoch', () => {
+    const tracker = new PressureMatActivityTracker('step-mat', 'mat-1');
+    const pending = { timestamp: 2000, countSession: false, retainStartup: true, assignedUserId: 'alex' };
+    tracker.ingest(reading(null, 84, 46, { bootCount: 24 }), { timestamp: 1000, countSession: false });
+    tracker.ingest(reading('pressed', 85, 46, { bootCount: 24 }), pending);
+    tracker.ingest(reading('stomped', 85, 47, { bootCount: 24 }), { ...pending, timestamp: 2050 });
+    expect(tracker.snapshot(2100)).toMatchObject({ seenThisSession: false, sessionSteps: 0 });
+    expect(tracker.beginSession(3000, { retainStartup: true })).toMatchObject({ sessionSteps: 1, sessionStomps: 1, engaged: true, users: { alex: { steps: 1, stomps: 1 } } });
+    tracker.ingest(reading('stomped', 85, 47, { bootCount: 24 }), { timestamp: 3100 });
+    tracker.ingest(reading('pressed', 86, 47, { bootCount: 24 }), { timestamp: 3200 });
+    expect(tracker.snapshot(3200)).toMatchObject({ sessionSteps: 2, sessionStomps: 1 });
+  });
+
+  it.each([false, true])('discards idle or expired candidates without counting a duplicate (expired=%s)', (expired) => {
+    const tracker = new PressureMatActivityTracker('step-mat', 'mat-1');
+    tracker.ingest(reading('pressed', 85, 46), { timestamp: 1000, countSession: false, retainStartup: true });
+    tracker.beginSession(expired ? 12000 : 2000, { retainStartup: expired });
+    tracker.ingest(reading('pressed', 85, 46), { timestamp: 13000 });
+    expect(tracker.snapshot(13000)).toMatchObject({ sessionSteps: 0, seenThisSession: false });
+  });
+
+  it('rearming does not count, disengage a used mat, or erase totals', () => {
+    const tracker = new PressureMatActivityTracker('step-mat', 'mat-1');
+    tracker.ingest(reading('pressed', 1, 0), { timestamp: 1000 });
+    tracker.ingest(reading(null, 1, 0, { occupancyKnown: false, detectionState: 'rearmed' }), { timestamp: 7000 });
+    expect(tracker.snapshot(7000)).toMatchObject({ sessionSteps: 1, engaged: true, latest: { occupancyKnown: false } });
+  });
+
+  it('does not import an unobserved idle gap into startup totals', () => {
+    const tracker = new PressureMatActivityTracker('step-mat', 'mat-1');
+    tracker.ingest(reading(null, 10, 2), { timestamp: 1000, countSession: false });
+    tracker.ingest(reading(null, 50, 20), { timestamp: 20000, countSession: false, retainStartup: true });
+    tracker.ingest(reading('pressed', 51, 20), { timestamp: 21000, countSession: false, retainStartup: true });
+    expect(tracker.beginSession(22000, { retainStartup: true })).toMatchObject({ sessionSteps: 1, sessionStomps: 0 });
+  });
+
   it('counts a stomp as one step and one stomp without double counting', () => {
     const tracker = new PressureMatActivityTracker('step-mat', 'mat-1');
     tracker.ingest(reading(null, 0, 0), { timestamp: 1_000 });

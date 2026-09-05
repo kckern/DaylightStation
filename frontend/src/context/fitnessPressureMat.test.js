@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { normalizePressureMatMessage, pressureMatFitnessEvent } from './fitnessPressureMat.js';
 
 describe('fitness pressure mat', () => {
+  it('retains unknown occupancy and recovery diagnostics without emitting a physical release', () => {
+    const reading = normalizePressureMatMessage({ topic: 'pressure-mat', id: 'mat1', type: 'reading',
+      firmwareBuild: 'mat-recovery-abc', bootCount: 25, detectionState: 'rearmed',
+      rearmCount: 1, occupancyKnown: false, occupied: false, steps: 84, stomps: 46 });
+    expect(reading).toMatchObject({ firmwareBuild: 'mat-recovery-abc', bootCount: 25,
+      detectionState: 'rearmed', rearmCount: 1, occupancyKnown: false, steps: 84, stomps: 46 });
+    expect(pressureMatFitnessEvent(reading)).toBeNull();
+  });
+
   it('does not invent a zero boot identity when optional diagnostics are missing', () => {
     const reading = normalizePressureMatMessage({ topic: 'pressure-mat', id: 'mat1', type: 'presence', event: 'pressed', bootCount: null });
     expect(reading.bootCount).toBeNull();
