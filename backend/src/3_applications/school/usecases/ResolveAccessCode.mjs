@@ -60,7 +60,7 @@ import { resolveTokenState } from '#domains/school/sessions/tokens.mjs';
 import { nextMove } from './offerSession.mjs';
 import { pausedExceptionFor } from '../curriculumExceptionProjection.mjs';
 import { projectProgramEntry } from '../assignedProgramPlan.mjs';
-import { findContinuationEntry } from './continuationEntry.mjs';
+import { findContinuationEntry, findReopenableProgramEntry } from './continuationEntry.mjs';
 
 /**
  * The sessionId the synthetic `created` event carries. Never persisted, and
@@ -678,7 +678,21 @@ export class ResolveAccessCode {
     // honour the token's own flag, never assume it is always false: only
     // refuse with `served` when the subject is served AND the token did not
     // ask to continue anyway.
-    if (section.servedToday && !continueToday) return withProjection({ kind: 'served', subjectLabel: subject });
+    // ...and even then, a subject served is not always a subject closed. A
+    // program that is a LOG rather than a task (the reading shelf) declares
+    // `reopenable`, and that keeps its button on the card. Same rule, same
+    // helper, as the scan path — the two resolvers drifting on exactly this
+    // question is what once closed the shelf at the wall panel.
+    if (section.servedToday && !continueToday) {
+      const reopen = findReopenableProgramEntry(plan, {
+        subject, statusOf: (candidate) => programStatusFor(programStatuses, candidate),
+      });
+      if (!reopen) return withProjection({ kind: 'served', subjectLabel: subject });
+      return withProjection({
+        kind: 'program', programId: reopen.entry.program,
+        unit: projectProgramEntry(reopen.entry, reopen.status),
+      });
+    }
 
     // What a served subject continues TO is the one rule this file shares
     // with `ResolveSubjectNext` (`continuationEntry.mjs`), not a mirror of

@@ -151,6 +151,23 @@ export class BookLogProgramLauncher {
       doneToday: obligation ? measured.met : null,
       // Only a cumulative target can ever be finished for good.
       terminal: Boolean(obligation) && obligation.per === 'once' && measured.met,
+      // THE SHELF NEVER CLOSES. A met daily target means nothing is OWED; it
+      // does not mean the child is finished with their books. They may want to
+      // log the next twenty pages, finish the book, start another, or fix a
+      // page they typed wrong — and a log that refuses entries after the first
+      // one of the day is not a log.
+      //
+      // Without this, `doneToday: true` made the subject read as served and
+      // the card came back "You already did this today." with nothing but Go
+      // back: a child who read once in the morning could not record reading
+      // again that evening. The typed reading code escaped it (its token
+      // carries `continueToday`), so the failure only showed on the path with
+      // no token — which is the one a grown-up looks at.
+      //
+      // A `once` obligation is the exception and is already `terminal` above:
+      // a finished series really is done, and re-offering it forever is the
+      // bug that `cadence: 'once'` exists to prevent.
+      reopenable: !(Boolean(obligation) && obligation.per === 'once' && measured.met),
       // The shelf's obligation line adds the window word (`today`, `this
       // week`) client-side; `per` rides along so it can.
       obligationProgress: obligation ? { ...measured, per: obligation.per } : null,
