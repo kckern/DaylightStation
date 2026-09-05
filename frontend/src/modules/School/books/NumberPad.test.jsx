@@ -80,4 +80,34 @@ describe('NumberPad', () => {
     rerender(<NumberPad label="x" maxLength={4} value="" onSubmit={() => {}} />);
     expect(entry()).toBe('');
   });
+
+  it('accepts a barcode scanner or paired keyboard and submits on Enter', () => {
+    const onSubmit = vi.fn();
+    render(<NumberPad label="ISBN" maxLength={13} allowX submitLabel="Look it up" onSubmit={onSubmit} />);
+    for (const key of '9780064400558') fireEvent.keyDown(window, { key });
+    expect(entry()).toBe('9780064400558');
+    fireEvent.keyDown(window, { key: 'Enter' });
+    expect(onSubmit).toHaveBeenCalledWith('9780064400558');
+  });
+
+  it('can clear the full number without thirteen backspaces', () => {
+    const onChange = vi.fn();
+    render(<NumberPad label="ISBN" maxLength={13} value="9780064400558" onChange={onChange} onSubmit={() => {}} />);
+    const clear = screen.getByRole('button', { name: 'Clear number' });
+    expect(clear).toBeEnabled();
+    fireEvent.click(clear);
+    expect(onChange).toHaveBeenCalledWith('');
+  });
+
+  it('freezes pointer and scanner input while a write is busy', () => {
+    const onChange = vi.fn();
+    const onSubmit = vi.fn();
+    render(<NumberPad label="ISBN" maxLength={13} value="978" disabled onChange={onChange} onSubmit={onSubmit} />);
+    expect(screen.getByRole('button', { name: '1' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Clear number' })).toBeDisabled();
+    fireEvent.keyDown(window, { key: '0' });
+    fireEvent.keyDown(window, { key: 'Enter' });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
 });

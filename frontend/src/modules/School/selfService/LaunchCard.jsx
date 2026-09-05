@@ -279,6 +279,7 @@ const PROGRAM_CTA = Object.freeze({
   'sentence-ladder': { icon: 'language', label: 'Practice sentences' },
   'language-reels': { icon: 'kind-video', label: 'Watch and listen' },
   'rubiks-cube': { icon: 'skills', label: 'Solve the cube' },
+  'book-log': { icon: 'english', label: 'Open my books' },
 });
 
 function actionPresentation(action) {

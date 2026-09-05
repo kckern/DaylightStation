@@ -32,16 +32,13 @@
  * was finished, or a double tap) produced one id, and the second `started`
  * became an orphan that read as `reading` forever.
  *
- * ## READS FAIL OPEN; WRITES FAIL LOUD
+ * ## MISSING IS EMPTY; DAMAGED IS LOUD
  *
- * A missing OR corrupt file both answer `[]` — the worst that does is show an
- * empty shelf, never take the panel down. An unsafe learner id THROWS, because
- * filing a book under the wrong key loses it for good.
- *
- * A corrupt file is COPIED ASIDE before it is replaced. `openItem` is a
- * read-modify-write, so treating corruption as "empty shelf" on the write path
- * would let one stray byte erase a year of reading with nothing kept. The
- * side-file keeps it recoverable by hand while leaving the shelf usable.
+ * A missing file answers `[]`. A corrupt, structurally invalid, or unreadable
+ * file throws a named error on reads AND writes. Painting a damaged year of
+ * evidence as an empty shelf tells a child the wrong story; accepting the next
+ * write after that would replace the only copy. The UI can retry and an adult
+ * can repair the bytes, but this adapter never silently discards them.
  *
  * @module adapters/persistence/yaml/YamlBookLogStore
  */
@@ -54,6 +51,16 @@ import { IBookLogStore } from '#apps/school/ports/IBookLogStore.mjs';
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 const PROGRESS_MODES = new Set(['page', 'minutes', 'check']);
+
+export class BookLogShelfUnreadableError extends Error {
+  constructor({ learnerId, status, reason }) {
+    super(`Reading shelf for ${learnerId} is ${status}: ${reason || 'invalid data'}`);
+    this.name = 'BookLogShelfUnreadableError';
+    this.code = 'BOOK_LOG_SHELF_UNREADABLE';
+    this.learnerId = learnerId;
+    this.status = status;
+  }
+}
 
 export class YamlBookLogStore extends IBookLogStore {
   #configService; #logger; #clock;
@@ -80,7 +87,7 @@ export class YamlBookLogStore extends IBookLogStore {
     return learnerId;
   }
 
-  /** Never throws. `corrupt` is kept apart from `missing` for the write path. */
+  /** Never throws; callers decide whether a missing or damaged file is usable. */
   #load(learnerId) {
     const file = this.#fileFor(learnerId);
     if (!fileExists(file)) return { status: 'missing', items: [], text: null, file };
@@ -92,11 +99,22 @@ export class YamlBookLogStore extends IBookLogStore {
     }
     try {
       const parsed = yaml.load(text);
-      const items = Array.isArray(parsed?.items) ? parsed.items.filter(Boolean) : [];
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || !Array.isArray(parsed.items)) {
+        return { status: 'corrupt', items: [], text, file, reason: 'root must be a mapping with an items list' };
+      }
+      const items = parsed.items.filter(Boolean);
       return { status: 'ok', items, text, file };
     } catch (error) {
       return { status: 'corrupt', items: [], text, file, reason: error.message };
     }
+  }
+
+  #requireReadable(learnerId, loaded) {
+    if (loaded.status === 'missing' || loaded.status === 'ok') return loaded;
+    this.#logger.error?.('school.book-log.shelf-unreadable', {
+      learnerId, status: loaded.status, file: loaded.file, reason: loaded.reason,
+    });
+    throw new BookLogShelfUnreadableError({ learnerId, status: loaded.status, reason: loaded.reason });
   }
 
   /** Serialise writes; a shelf is read-modify-write and two panels may race. */
@@ -109,17 +127,7 @@ export class YamlBookLogStore extends IBookLogStore {
   #persist(learnerId, loaded, items) {
     const file = this.#fileFor(learnerId);
     ensureDir(path.dirname(file));
-    if (loaded.status === 'corrupt' && typeof loaded.text === 'string') {
-      const stamp = this.#clock().toISOString().replace(/[:.]/g, '');
-      const sideFile = `${file}.corrupt-${stamp}`;
-      writeFileAtomic(sideFile, loaded.text);
-      this.#logger.error?.('school.book-log.shelf-corrupt', { learnerId, sideFile, reason: loaded.reason });
-    }
-    if (loaded.status === 'unreadable') {
-      // We could not get the bytes, so we cannot preserve them, so we refuse to
-      // replace the file.
-      throw new Error(`YamlBookLogStore: refusing to overwrite an unreadable shelf for ${learnerId}: ${loaded.reason}`);
-    }
+    this.#requireReadable(learnerId, loaded);
     writeFileAtomic(file, yaml.dump({ items }, { lineWidth: 120 }));
   }
 
@@ -130,7 +138,7 @@ export class YamlBookLogStore extends IBookLogStore {
     if (typeof entryId !== 'string' || !entryId.trim()) throw new Error('YamlBookLogStore: entryId is required to open an item');
 
     return this.#enqueue(() => {
-      const loaded = this.#load(learnerId);
+      const loaded = this.#requireReadable(learnerId, this.#load(learnerId));
       const items = [...loaded.items];
 
       const existing = items.find((entry) => entry?.events?.some((event) => event?.entryId === entryId));
@@ -170,7 +178,7 @@ export class YamlBookLogStore extends IBookLogStore {
     const learnerId = this.#assertLearner(event.learnerId ?? learnerFromItemId(itemId));
 
     return this.#enqueue(() => {
-      const loaded = this.#load(learnerId);
+      const loaded = this.#requireReadable(learnerId, this.#load(learnerId));
       const items = loaded.items.map((entry) => ({ ...entry, events: [...(entry.events ?? [])] }));
       const target = items.find((entry) => entry.itemId === itemId);
       if (!target) throw new Error(`YamlBookLogStore: no shelf item for itemId ${itemId}`);
@@ -200,7 +208,7 @@ export class YamlBookLogStore extends IBookLogStore {
     if (!PROGRESS_MODES.has(progressMode)) throw new Error(`YamlBookLogStore: unknown progressMode: ${progressMode}`);
     const learnerId = this.#assertLearner(learnerFromItemId(itemId));
     return this.#enqueue(() => {
-      const loaded = this.#load(learnerId);
+      const loaded = this.#requireReadable(learnerId, this.#load(learnerId));
       const items = loaded.items.map((entry) => ({ ...entry, events: [...(entry.events ?? [])] }));
       const target = items.find((entry) => entry.itemId === itemId);
       if (!target) throw new Error(`YamlBookLogStore: no shelf item for itemId ${itemId}`);
@@ -213,11 +221,7 @@ export class YamlBookLogStore extends IBookLogStore {
 
   async listForLearner(learnerId) {
     if (typeof learnerId !== 'string' || !SAFE_ID.test(learnerId)) return [];
-    const loaded = this.#load(learnerId);
-    if (loaded.status === 'corrupt' || loaded.status === 'unreadable') {
-      this.#logger.warn?.('school.book-log.shelf-unreadable', { learnerId, status: loaded.status });
-      return [];
-    }
+    const loaded = this.#requireReadable(learnerId, this.#load(learnerId));
     return loaded.items.map((item) => ({ ...item, events: [...(item.events ?? [])] }));
   }
 

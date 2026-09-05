@@ -4,7 +4,7 @@ import { projectShelfItem } from '#domains/school/bookShelf.mjs';
 /**
  * GetBookShelf — everything the shelf screen needs for one learner, in one read.
  *
- * Items come from the log, facts (title, authors, cover) from the resolved-record
+ * Items come from the log, facts (title, subtitle, authors, cover) from the resolved-record
  * repository, projections from the domain, and the obligation line from the
  * launcher. Days are counted with the LAUNCHER's `dayOf` so the agenda and the
  * card never disagree about `daysRead` for the same child (Task 5).
@@ -55,6 +55,7 @@ export class GetBookShelf {
       return {
         ...item,
         title: book?.title ?? null,
+        subtitle: book?.subtitle ?? null,
         authors: book?.authors ?? [],
         coverUrl: book?.coverUrl ?? null,
         projection: projectShelfItem(item, { dayOf }),

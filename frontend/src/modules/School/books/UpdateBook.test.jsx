@@ -38,7 +38,7 @@ describe('UpdateBook', () => {
   it('has a root the shelf can find, the cover and the title', () => {
     mount();
     expect(screen.getByTestId('update-book')).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Hatchet' })).toHaveAttribute('src', '/c/h.jpg');
+    expect(screen.getByRole('img', { name: 'Cover of Hatchet' })).toHaveAttribute('src', '/c/h.jpg');
     expect(screen.getByText('Hatchet')).toBeInTheDocument();
   });
 

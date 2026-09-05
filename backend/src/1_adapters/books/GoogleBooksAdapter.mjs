@@ -1,6 +1,7 @@
 // backend/src/1_adapters/books/GoogleBooksAdapter.mjs
 
 import { IBookMetadataGateway } from '#apps/books/ports/IBookMetadataGateway.mjs';
+import { parseBookIdentifier } from '#domains/books/BookIdentifier.mjs';
 import { createBookRecord } from '#domains/books/BookRecord.mjs';
 import { HttpClient } from '#system/services/HttpClient.mjs';
 
@@ -63,6 +64,12 @@ function yearFrom(value) {
 const declaredIsbns = (volumeInfo) => (volumeInfo?.industryIdentifiers ?? [])
   .map((entry) => entry?.identifier)
   .filter(Boolean);
+
+/** ISBN-10 and ISBN-13 declarations reduced to the canonical ISBN-13 key. */
+const canonicalDeclaredIsbns = (volumeInfo) => declaredIsbns(volumeInfo)
+  .map((value) => parseBookIdentifier(String(value)))
+  .filter((parsed) => parsed.kind === 'isbn')
+  .map((parsed) => parsed.isbn13);
 
 export class GoogleBooksAdapter extends IBookMetadataGateway {
   #baseUrl; #apiKey; #httpClient; #logger; #timeoutMs;
@@ -133,7 +140,7 @@ export class GoogleBooksAdapter extends IBookMetadataGateway {
   #pickItem(items, isbn13) {
     const list = Array.isArray(items) ? items.filter(Boolean) : [];
     if (list.length === 0) return null;
-    const exact = list.find((item) => declaredIsbns(item.volumeInfo).includes(isbn13));
+    const exact = list.find((item) => canonicalDeclaredIsbns(item.volumeInfo).includes(isbn13));
     if (!exact) {
       this.#logger.debug?.('books.googlebooks.no-exact-isbn-match', { isbn13, candidates: list.length });
     }

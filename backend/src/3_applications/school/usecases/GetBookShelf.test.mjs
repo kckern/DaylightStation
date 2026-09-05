@@ -10,7 +10,7 @@ const items = [
 ];
 const deps = (over = {}) => ({
   bookLog: { async listForLearner() { return items; } },
-  bookRepository: { async findByIsbn(id) { return id === 'b' ? { isbn13: 'b', title: 'Hatchet', authors: ['Gary Paulsen'], coverUrl: 'https://c/h.jpg' } : null; } },
+  bookRepository: { async findByIsbn(id) { return id === 'b' ? { isbn13: 'b', title: 'Hatchet', subtitle: 'A Novel', authors: ['Gary Paulsen'], coverUrl: 'https://c/h.jpg' } : null; } },
   bookLogLauncher: {
     dayOf: (iso) => String(iso).slice(0, 10),
     async status({ userId }) { return { enrolled: true, progressLabel: '1 of 1 check-in', obligationProgress: { actual: 1, target: 1, metric: 'checkins', incompatibleBooks: [] } }; },
@@ -23,7 +23,7 @@ describe('GetBookShelf', () => {
   it('returns every item with its projection and the book facts the tile needs', async () => {
     const view = await new GetBookShelf(deps()).execute({ learnerId: 'kid' });
     const hatchet = view.items.find((i) => i.itemId === 'kid:b:e1');
-    expect(hatchet).toMatchObject({ title: 'Hatchet', authors: ['Gary Paulsen'], coverUrl: 'https://c/h.jpg',
+    expect(hatchet).toMatchObject({ title: 'Hatchet', subtitle: 'A Novel', authors: ['Gary Paulsen'], coverUrl: 'https://c/h.jpg',
       projection: { status: 'reading', page: 84, percent: 46 } });
   });
 

@@ -304,6 +304,7 @@ describe('LaunchCard actions', () => {
     ['sentence-ladder', 'Practice sentences'],
     ['language-reels', 'Watch and listen'],
     ['rubiks-cube', 'Solve the cube'],
+    ['book-log', 'Open my books'],
   ])('says what a child does for %s', (target, label) => {
     renderCard({
       ...PIANO_CARD,
