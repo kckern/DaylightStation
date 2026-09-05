@@ -79,6 +79,42 @@ describe('PressureMatActivityTracker', () => {
     expect(tracker.snapshot(18_000).stepsPerMinute).toBe(0);
   });
 
+  it('drops SPM to zero once stepping stops, without waiting out the averaging window', () => {
+    const tracker = new PressureMatActivityTracker('step-mat', 'mat-1', {
+      online_timeout_seconds: 60, spm_window_seconds: 15, spm_zero_seconds: 4,
+    });
+    tracker.ingest(reading(null, 0, 0), { timestamp: 1_000 });
+    tracker.ingest(reading('pressed', 1, 0), { timestamp: 2_000 });
+    tracker.ingest(reading('pressed', 2, 0), { timestamp: 3_000 });
+    // Still stepping: the window supplies the rate.
+    expect(tracker.snapshot(6_000).stepsPerMinute).toBe(8);
+    // Quiet for longer than spm_zero_seconds — the mat is still online and the
+    // steps are still inside the 15s window, but the rate is no longer true.
+    expect(tracker.snapshot(7_001).stepsPerMinute).toBe(0);
+    // Zeroing the rate must not touch the workout totals.
+    expect(tracker.snapshot(7_001)).toMatchObject({ sessionSteps: 2, engaged: true, seenThisSession: true });
+  });
+
+  it('keeps reporting a rate across a gap shorter than the silence gate', () => {
+    const tracker = new PressureMatActivityTracker('step-mat', 'mat-1', {
+      online_timeout_seconds: 60, spm_window_seconds: 15, spm_zero_seconds: 4,
+    });
+    tracker.ingest(reading(null, 0, 0), { timestamp: 1_000 });
+    tracker.ingest(reading('pressed', 1, 0), { timestamp: 2_000 });
+    // A slow stepper at ~20 SPM must not flicker to zero between footfalls.
+    expect(tracker.snapshot(5_000).stepsPerMinute).toBe(4);
+  });
+
+  it('honours a configured silence gate over the default', () => {
+    const tracker = new PressureMatActivityTracker('step-mat', 'mat-1', {
+      online_timeout_seconds: 60, spm_window_seconds: 15, spm_zero_seconds: 10,
+    });
+    tracker.ingest(reading(null, 0, 0), { timestamp: 1_000 });
+    tracker.ingest(reading('pressed', 1, 0), { timestamp: 2_000 });
+    expect(tracker.snapshot(11_000).stepsPerMinute).toBe(4);
+    expect(tracker.snapshot(12_001).stepsPerMinute).toBe(0);
+  });
+
   it('manual disengagement preserves totals', () => {
     const tracker = new PressureMatActivityTracker('step-mat', 'mat-1');
     tracker.ingest(reading('pressed', 1, 0), { timestamp: 1_000 });

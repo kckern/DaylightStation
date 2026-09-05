@@ -23,7 +23,12 @@ describe('TimelineRecorder pressure-mat observability', () => {
 
   it('samples canonical totals/SPM and per-user totals without raw edge events', () => {
     const timestamp = 20_000;
-    const tracker = new PressureMatActivityTracker('step_mat', 'garage-step-mat', { spm_window_seconds: 15 });
+    // Silence gate widened past the tick gap on purpose: this case is about the
+    // canonical series names and the absence of raw edge events, so the rate
+    // must stay live. The gate itself is covered below and in the tracker suite.
+    const tracker = new PressureMatActivityTracker('step_mat', 'garage-step-mat', {
+      spm_window_seconds: 15, spm_zero_seconds: 15,
+    });
     tracker.ingest({
       id: 'garage-step-mat', type: 'presence', event: 'pressed', steps: 1, stomps: 0,
     }, { timestamp: 10_000, assignedUserId: 'user_1' });
@@ -50,5 +55,31 @@ describe('TimelineRecorder pressure-mat observability', () => {
     expect(timeline.series['user:user_2:steps_total']).toEqual([2]);
     expect(timeline.events).toEqual([]);
     expect(Object.keys(timeline.series).some((key) => key.startsWith('pressure-mat:'))).toBe(false);
+  });
+
+  it('records a zero rate for a tick sampled after stepping stopped', () => {
+    const tracker = new PressureMatActivityTracker('step_mat', 'garage-step-mat', {
+      spm_window_seconds: 15, spm_zero_seconds: 4,
+    });
+    tracker.ingest({
+      id: 'garage-step-mat', type: 'presence', event: 'pressed', steps: 1, stomps: 0,
+    }, { timestamp: 10_000, assignedUserId: 'user_1' });
+
+    const timeline = new FitnessTimeline(0, 5_000);
+    const recorder = new TimelineRecorder({ intervalMs: 5_000 });
+    recorder.configure({
+      deviceManager: { getAllDevices: () => [] },
+      userManager: {},
+      timeline,
+      activityMonitor: { getPreviousTickActive: () => new Set(), recordTick: vi.fn() },
+      eventJournal: { log: vi.fn() },
+    });
+    recorder.setPressureMatTrackers(new Map([['step_mat', tracker]]));
+    // 10s after the last step: still inside the 15s averaging window, but the
+    // recorded rate must agree with the display and read 0.
+    recorder.recordTick({ timestamp: 20_000, sessionId: 'session-1' });
+
+    expect(timeline.series['device:step_mat:steps_per_minute']).toEqual([0]);
+    expect(timeline.series['device:step_mat:steps_total']).toEqual([1]);
   });
 });

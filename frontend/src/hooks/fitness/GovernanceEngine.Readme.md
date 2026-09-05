@@ -58,6 +58,24 @@ Requirement rules can be:
 - `any` - At least one person must meet it
 - A specific number (e.g., `2` means exactly 2 participants)
 
+### Cadence Floor (steady-state RPM)
+
+A `cadence_floor` requirement holds one rider to the ride they visibly started.
+It stays dormant until the equipment is claimed by an active participant who has
+a live HR strap **and** has pedalled above `arm_min_rpm` for `arm_seconds` this
+session. Once armed, `trip_after_seconds` of zero RPM makes it unsatisfied and
+the normal warning/grace/lock path runs.
+
+Because arming requires proof of a ride in progress, this gate deliberately
+applies to **exempt** riders too — it is the only requirement that can put a
+non-subject in `missingUsers`. Exemption excuses someone from a heart-rate
+target, not from continuing an activity they started. It disarms instantly on
+unassign, strap loss, or rider change, so getting off the bike is always safe.
+
+Note that a stopped rider's cadence device reports `connected: false` within
+~1.2s; that is the stop signal. Only a whole-transport stall suspends the gate.
+Full detail: `docs/reference/fitness/governance-engine.md`.
+
 ### Grace Period
 When participants drop below requirements, they get a configurable grace period (countdown timer) before the video locks. This prevents brief dips from immediately pausing content.
 

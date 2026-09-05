@@ -4,6 +4,7 @@ import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.jsx';
 import RpmDeviceAvatar from '@/modules/Fitness/components/RpmDeviceAvatar.jsx';
+import StepMatVitalsTile from '@/modules/Fitness/components/StepMatVitalsTile.jsx';
 import { DEFAULT_ANONYMOUS_HR_HARD_FLOOR_BPM } from '@/hooks/fitness/ParticipantRoster.js';
 import { resolveUserZone } from './resolveUserZone.js';
 import { lookupZoneProgress } from '@/modules/Fitness/domain/zoneProgressIndex.js';
@@ -63,7 +64,8 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
     usersConfigRaw = {},
     equipment = [],
     deviceConfiguration,
-    zoneProgressIndex
+    zoneProgressIndex,
+    pressureMatActivities = {}
   } = fitnessCtx || {};
 
   const cycleChallenge = fitnessCtx?.governanceState?.challenge || null;
@@ -178,6 +180,32 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
     });
   }, [rpmDevices, equipmentMap, equipment, deviceConfiguration?.cadence]);
 
+  // Same admission rule as the panel card: a mat that has not been stepped on
+  // this session is clutter, not information.
+  const matItems = useMemo(() => {
+    const session = fitnessCtx?.fitnessSessionInstance || null;
+    return Object.values(pressureMatActivities || {})
+      .filter((snapshot) => snapshot?.seenThisSession)
+      .map((snapshot) => {
+        const equipmentEntry = (Array.isArray(equipment) ? equipment : [])
+          .find((entry) => String(entry?.id) === String(snapshot.equipmentId)) || null;
+        const assignedUserId = session?.getEquipmentUser?.(snapshot.equipmentId) || null;
+        return {
+          equipmentId: snapshot.equipmentId,
+          name: equipmentEntry?.name || 'Step Mat',
+          // The mat belongs to whoever claimed it; with nobody claiming it, the
+          // equipment image is the honest picture.
+          avatarSrc: assignedUserId
+            ? DaylightMediaPath(`/static/img/users/${assignedUserId}`)
+            : DaylightMediaPath(`/static/img/equipment/${snapshot.equipmentId}`),
+          stepsPerMinute: Number(snapshot.stepsPerMinute) || 0,
+          sessionSteps: Number(snapshot.sessionSteps) || 0,
+          sessionStomps: Number(snapshot.sessionStomps) || 0,
+          isInactive: !snapshot.active || !snapshot.online,
+        };
+      });
+  }, [pressureMatActivities, equipment, fitnessCtx?.fitnessSessionInstance]);
+
   const handleToggleAnchor = useCallback((event) => {
     if (event) {
       event.preventDefault();
@@ -186,7 +214,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
     setAnchor((prev) => (prev === 'right' ? 'left' : 'right'));
   }, []);
 
-  if (!visible || (!hrItems.length && !rpmItems.length)) {
+  if (!visible || (!hrItems.length && !rpmItems.length && !matItems.length)) {
     return null;
   }
 
@@ -241,6 +269,22 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
               }}
               fallbackSrc={DaylightMediaPath('/static/img/equipment/equipment')}
               renderValue={(value) => (Number.isFinite(value) ? value : 0)}
+            />
+          ))}
+        </div>
+      )}
+      {matItems.length > 0 && (
+        <div className={`fullscreen-vitals-group mat-group count-${matItems.length}`}>
+          {matItems.map((item) => (
+            <StepMatVitalsTile
+              key={`mat-${item.equipmentId}`}
+              name={item.name}
+              avatarSrc={item.avatarSrc}
+              fallbackSrc={DaylightMediaPath('/static/img/equipment/equipment')}
+              stepsPerMinute={item.stepsPerMinute}
+              sessionSteps={item.sessionSteps}
+              sessionStomps={item.sessionStomps}
+              isInactive={item.isInactive}
             />
           ))}
         </div>

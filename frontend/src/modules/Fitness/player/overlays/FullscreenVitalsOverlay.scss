@@ -66,6 +66,13 @@
     align-items: flex-end;
   }
 
+  // Mats sit on the same baseline as the RPM avatars so a mixed row reads as
+  // one row; the tile's own squareness carries the distinction.
+  .mat-group {
+    flex-direction: row;
+    align-items: flex-end;
+  }
+
   .vital-rpm {
     --rpm-scale: 1;
     width: 68px;

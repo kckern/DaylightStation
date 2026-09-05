@@ -31,6 +31,12 @@ export class PressureMatActivityTracker {
     this.activeTimeoutMs = positiveSeconds(config.active_timeout_seconds, 10) * 1000;
     this.onlineTimeoutMs = positiveSeconds(config.online_timeout_seconds, 5) * 1000;
     this.spmWindowMs = positiveSeconds(config.spm_window_seconds, 15) * 1000;
+    // Silence gate, mirroring DeviceManager's rpmZero for cadence: a rate is a
+    // claim about NOW, so it must fall to zero once the footfalls stop rather
+    // than decaying over the whole averaging window. Sized for stepping, not
+    // pedaling — at 40 SPM footfalls are 1.5s apart, so cadence's 1.2s would
+    // flicker to zero between every step. 4s holds cleanly down to ~15 SPM.
+    this.spmZeroMs = positiveSeconds(config.spm_zero_seconds, 4) * 1000;
   }
 
   reset() {
@@ -225,6 +231,24 @@ export class PressureMatActivityTracker {
     }
   }
 
+  /**
+   * Live step rate, or 0 once the mat has gone quiet.
+   *
+   * The sliding window alone cannot express "stopped": one step inside a 15s
+   * window still reads 4 SPM for a further 15 seconds. So the window supplies
+   * the VALUE and `lastStepAt` supplies the LIVENESS, exactly as cadence pairs
+   * its reading with `lastSignificantActivity` under DeviceManager's rpmZero.
+   *
+   * An offline mat needs no separate branch: steps only arrive as messages, so
+   * `lastStepAt <= lastSeenAt` and any mat stale enough to be offline is
+   * already past this gate. The card reports the reason for a dead sensor
+   * through `online`/`status`, not through a held rate.
+   */
+  _stepsPerMinute(timestamp) {
+    if (this.lastStepAt == null || timestamp - this.lastStepAt > this.spmZeroMs) return 0;
+    return this.stepTimestamps.length * (60000 / this.spmWindowMs);
+  }
+
   snapshot(timestamp = Date.now()) {
     this.tick(timestamp);
     const online = this.lastSeenAt != null && timestamp - this.lastSeenAt <= this.onlineTimeoutMs;
@@ -232,6 +256,7 @@ export class PressureMatActivityTracker {
     const users = {};
     this.userTotals.forEach((totals, userId) => { users[userId] = { ...totals }; });
     return {
+      stepsPerMinute: this._stepsPerMinute(timestamp),
       equipmentId: this.equipmentId,
       matId: this.matId,
       online,
@@ -241,7 +266,6 @@ export class PressureMatActivityTracker {
       occupied: Boolean(this.latest?.occupied),
       sessionSteps: this.sessionSteps,
       sessionStomps: this.sessionStomps,
-      stepsPerMinute: this.stepTimestamps.length * (60000 / this.spmWindowMs),
       lastSeenAt: this.lastSeenAt,
       lastStepAt: this.lastStepAt,
       lastStompAt: this.lastStompAt,

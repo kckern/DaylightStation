@@ -338,6 +338,8 @@ export class GovernanceEngine {
     this._cadenceFilters = new Map();      // equipmentId → CadenceFilter
     this._lastSeenCadenceTs = new Map();   // equipmentId → last ts we treated as fresh
     this._activeRequirementIds = new Set();
+    // cadence_floor latches: requirementId → { riderId, armedMs, armed, lastTs, zeroSince }
+    this._cadenceFloorState = new Map();
   }
 
   _registerGovernanceTypes() {
@@ -414,6 +416,9 @@ export class GovernanceEngine {
       .register('zone', {})
       .register('activity_rate', {
         evaluate: (requirement, ctx) => this._evaluateActivityRateRequirement(requirement, ctx),
+      })
+      .register('cadence_floor', {
+        evaluate: (requirement, ctx) => this._evaluateCadenceFloorRequirement(requirement, ctx),
       });
   }
 
@@ -1152,6 +1157,30 @@ export class GovernanceEngine {
               offlinePolicy: String(entry.offline_policy || 'suspend'),
             };
           }
+          if (type === 'cadence_floor') {
+            const equipment = String(entry.equipment || '').trim();
+            const armSeconds = Number(entry.arm_seconds ?? 30);
+            const armMinRpm = Number(entry.arm_min_rpm ?? 30);
+            const tripAfterSeconds = Number(entry.trip_after_seconds ?? 10);
+            const positive = (value) => Number.isFinite(value) && value > 0;
+            if (!equipment || !positive(armSeconds) || !positive(armMinRpm) || !positive(tripAfterSeconds)) {
+              getLogger().warn('governance.cadence_floor.config_rejected', {
+                policyId, requirementIndex, equipment, armSeconds, armMinRpm, tripAfterSeconds,
+              });
+              return null;
+            }
+            return {
+              id: entry.id || `${policyId}_requirement_${requirementIndex}`,
+              type,
+              equipment,
+              armSeconds,
+              armMinRpm,
+              tripAfterSeconds,
+              enabled: entry.enabled !== false,
+              requireRiderHr: entry.require_rider_hr !== false,
+              label: entry.label ? String(entry.label) : null,
+            };
+          }
           getLogger().warn('governance.requirement.unknown_type', { policyId, requirementIndex, type });
           return null;
         }).filter(Boolean)
@@ -1488,6 +1517,9 @@ export class GovernanceEngine {
         const participantsBelowThreshold = this._getParticipantsBelowThreshold(evalContext);
         // Classify so we can confirm a guest/exempt was NEVER the cause of the
         // warning (they must never appear in a requirement's missingUsers).
+        // ONE exception: a `cadence_floor` requirement deliberately blames an
+        // exempt rider it has watched ride and then stop. If an exempt id shows
+        // up below, check for a cadence_floor summary before calling it a bug.
         const warnCls = this._classifyParticipants(
           evalContext?.activeParticipants ?? this._latestInputs.activeParticipants ?? []
         );
@@ -1499,7 +1531,7 @@ export class GovernanceEngine {
           participantCount: evalContext?.activeParticipants?.length ?? this._latestInputs.activeParticipants?.length ?? 0,
           subjects: warnCls.subjects,
           guests: warnCls.guests,   // expected: never the reason for a warning
-          exempt: warnCls.exempt,   // expected: never the reason for a warning
+          exempt: warnCls.exempt,   // expected: never — except via cadence_floor
           requirements: this.requirementSummary?.requirements?.slice(0, 5) // Limit for log size
         });
       }
@@ -1518,7 +1550,7 @@ export class GovernanceEngine {
           participantStates: this._getParticipantStates(evalContext),
           subjects: lockCls.subjects,
           guests: lockCls.guests,   // expected: never the reason for a lock
-          exempt: lockCls.exempt,   // expected: never the reason for a lock
+          exempt: lockCls.exempt,   // expected: never — except via cadence_floor
           challengeActive: !!this.challengeState?.activeChallenge,
           challengeId: this.challengeState?.activeChallenge?.id || null
         });
@@ -1866,6 +1898,7 @@ export class GovernanceEngine {
     this._remainingMs = null;
     this._warningCooldownUntil = null;
     this._activeRequirementIds.clear();
+    this._cadenceFloorState.clear();
 
     // State caching for performance - throttle recomputation to 200ms
     this._stateCache = null;
@@ -1951,6 +1984,7 @@ export class GovernanceEngine {
     this._warningCooldownUntil = null;
     this._stateCache = null;
     this._activeRequirementIds.clear();
+    this._cadenceFloorState.clear();
     this._stateCacheTs = 0;
     this._stateCacheThrottleMs = 200;
     this._stateVersion = 0;
@@ -2771,6 +2805,10 @@ export class GovernanceEngine {
         .filter(([key]) => key !== 'grace_period_seconds')
         .map(([zone, rule], index) => ({ id: `legacy_${index}`, type: 'zone', zone, rule }));
     return definitions.map((definition) => {
+      // A cadence_floor gate cannot be armed before participant data exists —
+      // arming requires a claimed rider with a live strap and a ride already in
+      // progress. It contributes nothing to a pre-HR lock screen shell.
+      if (definition?.type === 'cadence_floor') return null;
       if (definition?.type === 'activity_rate') {
         const snap = this._latestInputs?.activityMetricMap?.[definition.equipment];
         if (!definition.enabled || !snap?.engaged) return null;
@@ -2833,9 +2871,15 @@ export class GovernanceEngine {
     let justEngaged = false;
     definitions.forEach((definition) => {
       let summary = null;
-      if (definition?.type === 'activity_rate') {
-        summary = this.requirementTypes.evaluate('activity_rate', definition, {
+      const definitionType = definition?.type || 'zone';
+      if (definitionType !== 'zone') {
+        summary = this.requirementTypes.evaluate(definitionType, definition, {
           activityMetricMap: this._latestInputs?.activityMetricMap || {},
+          equipmentCadenceMap: this._latestInputs?.equipmentCadenceMap || {},
+          equipmentRiderMap: this._latestInputs?.equipmentRiderMap || {},
+          hrInactiveUsers: this._latestInputs?.hrInactiveUsers || [],
+          activeParticipants,
+          timestamp: Date.now(),
         });
         if (summary?.justEngaged) justEngaged = true;
       } else {
@@ -2856,7 +2900,7 @@ export class GovernanceEngine {
       // A disengaged/disabled activity requirement is intentionally dormant,
       // not a failed requirement. Preserve the defensive fail-closed behavior
       // for zone definitions whose metadata has not loaded yet.
-      const containsZoneRequirement = definitions.some((definition) => definition?.type !== 'activity_rate');
+      const containsZoneRequirement = definitions.some((definition) => (definition?.type || 'zone') === 'zone');
       return { summaries: [], allSatisfied: !containsZoneRequirement, justEngaged };
     }
     return { summaries, allSatisfied, justEngaged };
@@ -2894,6 +2938,164 @@ export class GovernanceEngine {
       suspended,
       justEngaged,
       satisfied: suspended || actual >= requirement.minimum,
+    };
+  }
+
+  /**
+   * Steady-state "you were riding, now you're not" gate for a cadence machine.
+   *
+   * WHY THIS EXISTS: the zone requirement governs heart rate, and a rider in
+   * `governance.exemptions` is filtered out of it entirely — so an exempt kid
+   * could sit on the tricycle doing nothing and no gate ever noticed. The cycle
+   * CHALLENGE enforces RPM, but only episodically and only for a rider it
+   * selected. This is the always-on counterpart.
+   *
+   * ARMED BY EVIDENCE, NOT BY ROSTER. It only bites someone this session has
+   * already watched ride: a claimed rider, with a live HR strap, who has
+   * accumulated `armSeconds` above `armMinRpm` on this equipment. That is why
+   * bypassing the exemption here is not a loophole — there is proof of a ride
+   * in progress, and the exemption exists to excuse people from an HR TARGET,
+   * not to excuse them from continuing an activity they visibly started.
+   * This is the ONE place a non-subject can land in `missingUsers`.
+   *
+   * READING CADENCE HERE IS SUBTLE. `_readCadenceDevice` reports
+   * `connected: false` within rpmZero (~1.2s) of the rider stopping, because
+   * `lastSignificantActivity` only advances on non-zero cadence. So
+   * "disconnected" is the STOP signal, not a reason to stand down — gating the
+   * latch on `connected` would disarm the gate at exactly the moment it should
+   * fire. Only `transportStalled` (no device anywhere is delivering) means
+   * "cannot tell", and that suspends.
+   *
+   * A cadence sensor that genuinely dies reads the same as a rider who stopped.
+   * That is accepted: the rider is required to be present with a live strap, a
+   * warning precedes the lock, and a dead sensor on a machine someone is
+   * actively riding is a fault the household should be told about.
+   */
+  _evaluateCadenceFloorRequirement(requirement, {
+    equipmentCadenceMap = {},
+    equipmentRiderMap = {},
+    activeParticipants = [],
+    hrInactiveUsers = [],
+    timestamp = Date.now(),
+  } = {}) {
+    const id = requirement.id || `cadence_floor:${requirement.equipment}`;
+    const state = this._cadenceFloorState.get(id)
+      || { riderId: null, armedMs: 0, armed: false, lastTs: null, zeroSince: null };
+
+    const standDown = (reason) => {
+      if (state.armed) {
+        getLogger().info('governance.cadence_floor.disarmed', {
+          requirementId: id, equipment: requirement.equipment, riderId: state.riderId, reason,
+        });
+      }
+      this._cadenceFloorState.set(id, {
+        riderId: state.riderId, armedMs: 0, armed: false, lastTs: null, zeroSince: null,
+      });
+      this._activeRequirementIds.delete(id);
+      return null;
+    };
+
+    if (!requirement.enabled) return standDown('disabled');
+
+    const riderId = equipmentRiderMap?.[requirement.equipment] || null;
+    // Evidence belongs to the person who produced it. A new rider starts over.
+    if (state.riderId !== riderId) {
+      state.riderId = riderId;
+      state.armedMs = 0;
+      state.armed = false;
+      state.lastTs = null;
+      state.zeroSince = null;
+    }
+    if (!riderId) return standDown('unclaimed');
+
+    const present = (Array.isArray(activeParticipants) ? activeParticipants : []).includes(riderId);
+    if (!present) return standDown('rider_absent');
+    if (requirement.requireRiderHr
+      && (Array.isArray(hrInactiveUsers) ? hrInactiveUsers : []).includes(riderId)) {
+      return standDown('rider_hr_inactive');
+    }
+
+    const cadence = equipmentCadenceMap?.[requirement.equipment] || null;
+    // No cadence entry at all is not evidence of a stopped rider.
+    if (!cadence) return standDown('no_cadence_source');
+    if (cadence.transportStalled) {
+      // Hold the latch — a starved pipeline says nothing about this rider — but
+      // never accrue evidence or count down toward a lock on data we don't have.
+      state.lastTs = timestamp;
+      state.zeroSince = null;
+      this._cadenceFloorState.set(id, state);
+      if (!state.armed) return null;
+      return this._cadenceFloorSummary(requirement, id, riderId, 0, { suspended: true });
+    }
+
+    const rpm = Number(cadence.rpm) || 0;
+    // `connected: false` without a stall = the cadence device went quiet = stopped.
+    const movingAboveArm = Boolean(cadence.connected) && rpm >= requirement.armMinRpm;
+    const elapsed = state.lastTs == null ? 0 : Math.max(0, timestamp - state.lastTs);
+    state.lastTs = timestamp;
+
+    if (!state.armed) {
+      if (movingAboveArm) state.armedMs += elapsed;
+      if (state.armedMs >= requirement.armSeconds * 1000) {
+        state.armed = true;
+        getLogger().info('governance.cadence_floor.armed', {
+          requirementId: id, equipment: requirement.equipment, riderId, armSeconds: requirement.armSeconds,
+        });
+      }
+      state.zeroSince = null;
+      this._cadenceFloorState.set(id, state);
+      if (!state.armed) {
+        this._activeRequirementIds.delete(id);
+        return null;
+      }
+    }
+
+    const stopped = !cadence.connected || rpm <= 0;
+    if (stopped) {
+      if (state.zeroSince == null) state.zeroSince = timestamp;
+    } else {
+      state.zeroSince = null;
+    }
+    this._cadenceFloorState.set(id, state);
+
+    const stoppedMs = state.zeroSince == null ? 0 : timestamp - state.zeroSince;
+    const tripped = stoppedMs >= requirement.tripAfterSeconds * 1000;
+    const justEngaged = !this._activeRequirementIds.has(id);
+    this._activeRequirementIds.add(id);
+    if (tripped && justEngaged) {
+      getLogger().info('governance.cadence_floor.tripped', {
+        requirementId: id, equipment: requirement.equipment, riderId, stoppedMs,
+      });
+    }
+    return this._cadenceFloorSummary(requirement, id, riderId, rpm, { tripped, justEngaged, stoppedMs });
+  }
+
+  _cadenceFloorSummary(requirement, id, riderId, rpm, { tripped = false, suspended = false, justEngaged = false, stoppedMs = 0 } = {}) {
+    const label = requirement.label || 'Keep pedaling';
+    return {
+      id,
+      type: 'cadence_floor',
+      equipment: requirement.equipment,
+      metric: 'rpm',
+      zone: null,
+      zoneLabel: requirement.label || 'Pedaling',
+      targetZoneId: null,
+      severity: requirement.armMinRpm,
+      rule: 'minimum',
+      ruleLabel: suspended ? 'Sensor unavailable' : label,
+      requiredCount: 1,
+      actualCount: tripped ? 0 : 1,
+      currentRate: rpm,
+      targetRate: requirement.armMinRpm,
+      riderId,
+      stoppedMs,
+      metUsers: tripped ? [] : [riderId],
+      // The one deliberate exception to "an exempt rider is never blamed" — see
+      // the evaluator's header for why the evidence latch makes this fair.
+      missingUsers: tripped ? [riderId] : [],
+      suspended,
+      justEngaged,
+      satisfied: suspended || !tripped,
     };
   }
 
