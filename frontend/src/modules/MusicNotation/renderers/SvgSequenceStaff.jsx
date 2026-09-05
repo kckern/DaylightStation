@@ -33,15 +33,16 @@ import './SvgSequenceStaff.scss';
  * @param {Array<{midi?:number, midis?:number[], accidental?:'sharp'|'flat'}>} notes
  *   Ordered asks. One entry = one column; an entry with `midis` is a
  *   simultaneity (a dyad or triad) and draws as a chord in that column.
- * @param {number} cursorIndex - entries before it are done, at/after it are todo
+ * @param {number} cursorIndex - entries before it are done, this entry is the
+ *   black cursor target, and entries after it are brown future notes.
  *   unless an attempt is in progress at the cursor (see `activeNotes`).
  * @param {Map|null} activeNotes - currently held keys. This is the ONLY signal
  *   the run-state colouring reads:
  *     - opacity never encodes run state — every notehead is drawn at full
  *       opacity always; the visual weight difference between "played" and
  *       "to play" is a COLOUR (jet black vs. brown), never a fade;
- *     - with nothing held, the cursor entry reads as plain "not yet played"
- *       (brown) like every entry after it — there is no attempt to judge yet;
+ *     - with nothing held, the cursor entry stays black: it is the note the
+ *       child is currently reading. Only entries AFTER it are brown;
  *     - the moment any key is held, the cursor entry's own noteheads colour
  *       per NOTE, not as a group: a target pitch being held is green, a
  *       target pitch not being held is red — a partially-played chord is not
@@ -174,15 +175,16 @@ export function SvgSequenceStaff({
 
         // Run state, rule 1 + 5: opacity NEVER carries this — every notehead
         // renders at full opacity regardless of state, so the only thing that
-        // changes below is colour. `done` (before the cursor) and `todo` (at
-        // or after it, resting) are ENTRY-level: every head in the column
+        // changes below is colour. `done` (before the cursor), `current` (the
+        // resting cursor), and `todo` (after it) are ENTRY-level: every head
+        // in the column
         // shares one treatment. `active` — the cursor entry mid-attempt — is
         // the one case colour is decided per notehead, not per entry: a
         // three-note chord with two pitches held and one not is two greens
         // and a red, never a single verdict for the column.
         const isCursor = index === cursorIndex;
         const active = isCursor && attemptInProgress;
-        const state = index < cursorIndex ? 'done' : active ? 'active' : 'todo';
+        const state = index < cursorIndex ? 'done' : active ? 'active' : isCursor ? 'current' : 'todo';
 
         // Accidentals alternate columns by how many the CHORD carries, not by
         // notehead index — two accidentals three heads apart still need

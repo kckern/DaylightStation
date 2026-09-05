@@ -86,6 +86,24 @@ export function PianoMidiProvider({ children, preferredInputName }) {
   return <PianoMidiContext.Provider value={value}>{children}</PianoMidiContext.Provider>;
 }
 
+/**
+ * Adapts a host-owned live-note snapshot to the kiosk MIDI contract.  The
+ * office display already owns its WebSocket stream; giving a gate this small
+ * provider lets shared exercise UI consume that same stream without opening a
+ * second MIDI connection or treating the office as an ungated special case.
+ */
+export function ExternalPianoMidiProvider({ activeNotes, connected = true, children }) {
+  const snapshot = useMemo(() => ({
+    activeNotes: activeNotes ?? new Map(), noteHistory: [], sustainPedal: false, isPlaying: false,
+  }), [activeNotes]);
+  const notes = useMemo(() => ({
+    getSnapshot: () => snapshot,
+    subscribe: () => () => {},
+  }), [snapshot]);
+  const value = useMemo(() => ({ connected, notes }), [connected, notes]);
+  return <PianoMidiContext.Provider value={value}>{children}</PianoMidiContext.Provider>;
+}
+
 /** Access the shared piano MIDI surface (see useWebMidiBLE for its shape). */
 // eslint-disable-next-line react-refresh/only-export-components -- usePianoMidi is co-located with its Context/Provider (standard pattern); 61 consumers, splitting out of scope for a lint pass
 export function usePianoMidi() {

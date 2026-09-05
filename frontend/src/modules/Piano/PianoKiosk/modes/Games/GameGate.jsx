@@ -721,6 +721,7 @@ export default function GameGate({
         // served, and a retry must land on the same scale.
         pickIndex={attempt.pickIndex}
         framing={framing}
+        traceContext={{ attemptId: attempt.attemptId, sessionId }}
         onResolved={handleResolved}
         onPassed={handlePassed}
         onFailed={handleFailed}

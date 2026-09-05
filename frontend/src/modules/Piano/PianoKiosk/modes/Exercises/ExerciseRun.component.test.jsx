@@ -224,11 +224,12 @@ describe('ExerciseRun shared assessment wiring', () => {
     await screen.findByText('Play the first note to begin.');
 
     act(() => { h.activeNotes = new Map([[60, { velocity: 1 }]]); view.rerender(<ExerciseRun {...props} />); });
-    // Free practice on sequential material is tier 2 now: the cursor this
-    // watches lives on the sequence staff rather than the ABC notation. Same
-    // cursor, same source (`eventIndex`) — only the stage that draws it moved.
-    await waitFor(() => expect(screen.getByTestId('sequence-staff')).toHaveAttribute('data-cursor', '1'));
+    // The assessor advances on note-on, but the visual cursor remains on the
+    // key still held so the child never sees the staff jump ahead of their
+    // finger. It moves to the next ask on release.
+    await waitFor(() => expect(screen.getByTestId('sequence-staff')).toHaveAttribute('data-cursor', '0'));
     act(() => { h.activeNotes = new Map(); view.rerender(<ExerciseRun {...props} />); });
+    await waitFor(() => expect(screen.getByTestId('sequence-staff')).toHaveAttribute('data-cursor', '1'));
     act(() => { h.activeNotes = new Map([[62, { velocity: 1 }]]); view.rerender(<ExerciseRun {...props} />); });
 
     expect(await screen.findByText('Passed')).toBeInTheDocument();

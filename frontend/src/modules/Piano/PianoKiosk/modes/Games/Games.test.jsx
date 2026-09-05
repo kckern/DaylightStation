@@ -44,7 +44,7 @@ vi.mock('../../../gameRegistry.js', async (importOriginal) => {
     );
   }
   const entry = {
-    id: 'probe-game', label: 'Probe Game', status: 'released', icon: 'game', LazyComponent: ProbeGame,
+    id: 'probe-game', label: 'Probe Game', status: 'released', icon: 'game', exerciseGate: true, LazyComponent: ProbeGame,
   };
   return { ...actual, getGameEntry: (id) => (id === 'probe-game' ? entry : actual.getGameEntry(id)) };
 });

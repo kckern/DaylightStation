@@ -80,8 +80,8 @@
   //   done  — jet black.  Already played; the base `.action-staff__note` ink,
   //           stated explicitly so `done` never silently rides on "whatever
   //           the default happens to be".
-  //   todo  — brown.      Not yet played, INCLUDING the cursor's own entry
-  //           while it sits idle with nothing held. Chosen against the cream
+  //   current — jet black. The idle cursor target is what the child reads now.
+  //   todo  — brown.      Future entries only. Chosen against the cream
   //           paper (#f5f0e8) for a hue clearly apart from black at a glance,
   //           not a faded version of it.
   //   hit   — green.      A target notehead, in the entry currently under an
@@ -98,6 +98,11 @@
   }
 
   .sequence-note-done {
+    fill: rgba(0, 0, 0, 1);
+    stroke: rgba(0, 0, 0, 1);
+  }
+
+  .sequence-note-current {
     fill: rgba(0, 0, 0, 1);
     stroke: rgba(0, 0, 0, 1);
   }
@@ -130,7 +135,7 @@
   [data-stem-state='todo'] .action-staff__stem { stroke: rgba(120, 66, 22, 1); }
   [data-stem-state='hit'] .action-staff__stem { stroke: rgba(0, 150, 70, 1); }
   [data-stem-state='miss'] .action-staff__stem { stroke: rgba(160, 20, 20, 1); }
-  // `done` and `mixed` are deliberately absent: both keep the base
+  // `done`, `current`, and `mixed` are deliberately absent: all keep the base
   // `.action-staff__stem` black — `done` because that IS jet black, `mixed`
   // because a chord split between hit and miss has no single verdict to give
   // the shared stem, so it stays the plain, no-verdict ink.
