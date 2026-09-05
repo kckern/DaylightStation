@@ -18,7 +18,6 @@
 #define STOMP_DELTA_V            0.48f
 #define STOMP_GRADIENT_VPS       0.20f
 #define RELEASE_DELTA_RATIO      0.50f
-#define RELEASE_GRADIENT_RATIO   0.40f
 #define SAMPLE_INTERVAL_MS       50
 #define RAW_SAMPLES_PER_FRAME    100
 #define SMOOTHING_FRAMES         7

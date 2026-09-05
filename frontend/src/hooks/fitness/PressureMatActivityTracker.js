@@ -1,3 +1,5 @@
+export const PRESSURE_MAT_STARTUP_WINDOW_MS = 10_000;
+
 const finiteNonNegative = (value) => {
   if (value == null || value === '') return null;
   const number = Number(value);
@@ -46,6 +48,33 @@ export class PressureMatActivityTracker {
     this.engaged = false;
     this.seenThisSession = false;
     this.latest = null;
+    this._startupActivity = [];
+  }
+
+  // Keep the live device epoch/baseline at session start. Resetting it would
+  // either drop the first pending step or mistake a duplicate for a new one.
+  beginSession(timestamp, { retainStartup = false } = {}) {
+    const pending = retainStartup ? this._startupActivity.filter((sample) =>
+      timestamp >= sample.timestamp && timestamp - sample.timestamp <= PRESSURE_MAT_STARTUP_WINDOW_MS) : [];
+    this.sessionSteps = this.sessionStomps = 0;
+    this.userTotals.clear();
+    this.stepTimestamps = [];
+    this.lastStepAt = this.lastStompAt = null;
+    this.engaged = this.seenThisSession = false;
+    this._startupActivity = [];
+    for (const sample of pending) this._countActivity(sample);
+    return this.snapshot(timestamp);
+  }
+
+  _countActivity({ stepDelta, stompDelta, timestamp, assignedUserId }) {
+    this.sessionSteps += stepDelta;
+    this.sessionStomps += stompDelta;
+    this._recordSteps(stepDelta, timestamp);
+    if (stompDelta > 0) {
+      this.lastStompAt = timestamp;
+      this.seenThisSession = true;
+    }
+    this._attribute(assignedUserId, stepDelta, stompDelta);
   }
 
   /** Durable workout state only: never replay device-boot counters across a browser gap. */
@@ -132,12 +161,13 @@ export class PressureMatActivityTracker {
 
   /**
    * @param {object} reading normalized pressure-mat websocket payload
-   * @param {{timestamp?:number, assignedUserId?:string|null, countSession?:boolean}} options
+   * @param {{timestamp?:number, assignedUserId?:string|null, countSession?:boolean, retainStartup?:boolean}} options
    */
-  ingest(reading, { timestamp = Date.now(), assignedUserId = null, countSession = true } = {}) {
+  ingest(reading, { timestamp = Date.now(), assignedUserId = null, countSession = true, retainStartup = false } = {}) {
     if (!reading || String(reading.id || '') !== this.matId) return this.snapshot(timestamp);
     const now = Number.isFinite(timestamp) ? timestamp : Date.now();
     if (!this._acceptCounterEpoch(reading)) return this.snapshot(now);
+    const previousSeenAt = this.lastSeenAt;
     this.lastSeenAt = now;
     this.latest = { ...reading, receivedAt: now };
 
@@ -169,15 +199,19 @@ export class PressureMatActivityTracker {
     // missed and the stomp is the first message we see, restore that step once.
     if (isStompEdge && stompDelta > 0 && stepDelta === 0 && rawSteps == null) stepDelta = stompDelta;
 
+    const activity = { stepDelta, stompDelta, timestamp: now, assignedUserId };
+    this._startupActivity = this._startupActivity.filter((sample) => now - sample.timestamp <= PRESSURE_MAT_STARTUP_WINDOW_MS);
     if (countSession) {
-      this.sessionSteps += stepDelta;
-      this.sessionStomps += stompDelta;
-      this._recordSteps(stepDelta, now);
-      if (stompDelta > 0) {
-        this.lastStompAt = now;
-        this.seenThisSession = true;
+      this._countActivity(activity);
+    } else if (retainStartup && (stepDelta || stompDelta)) {
+      // Do not import an unobserved idle interval just because HR has now
+      // arrived. With no recent baseline, retain only an explicit new edge.
+      if (previousSeenAt == null || now - previousSeenAt > PRESSURE_MAT_STARTUP_WINDOW_MS) {
+        activity.stepDelta = isStepEdge || isStompEdge ? Math.min(1, stepDelta) : 0;
+        activity.stompDelta = isStompEdge ? Math.min(1, stompDelta) : 0;
       }
-      this._attribute(assignedUserId, stepDelta, stompDelta);
+      this._startupActivity.push(activity);
+      this._startupActivity = this._startupActivity.slice(-256);
     }
 
     this.tick(now);

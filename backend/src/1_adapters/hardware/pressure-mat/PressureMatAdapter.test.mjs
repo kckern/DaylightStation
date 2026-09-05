@@ -15,6 +15,21 @@ function harness(config = {}, options = {}) {
 }
 
 describe('PressureMatAdapter', () => {
+  it('preserves firmware/boot identity on readings and never invents a release for rearming', () => {
+    const h = harness();
+    const frame = { source: 'pressure-mat-relay', type: 'reading', id: 'mat1',
+      voltage: 2.95, delta_v: 0, gradient_vps: 0, occupied: false, steps: 84, stomps: 46,
+      firmware_build: 'mat-recovery-abc123', boot_count: 25, occupancy_known: false,
+      detection_state: 'rearmed', rearm_count: 1 };
+    h.emit(frame);
+    h.emit(frame);
+    expect(h.broadcasts[0].payload).toMatchObject({ type: 'reading', firmwareBuild: 'mat-recovery-abc123',
+      bootCount: 25, occupancyKnown: false, detectionState: 'rearmed', rearmCount: 1, steps: 84, stomps: 46 });
+    expect(h.broadcasts[0].payload).not.toHaveProperty('event');
+    expect(h.logger.info.mock.calls.filter(([event]) => event === 'pressure_mat.firmware.connected')).toHaveLength(1);
+    expect(h.logger.info.mock.calls.filter(([event]) => event === 'pressure_mat.detector.rearmed')).toHaveLength(1);
+  });
+
   it('normalizes readings, broadcasts them, and keeps status', () => {
     const h = harness({ pressure_mats: { mat1: { label: 'Step mat', topic: 'fitness-floor' } } });
     h.emit({ source: 'pressure-mat-relay', type: 'reading', id: 'mat1', voltage: 2.31, delta_v: .42, gradient_vps: -.8, occupied: true, steps: 3, ts: 1234 });

@@ -16,9 +16,13 @@
 #include <esp_system.h>
 #include <esp32-hal-rgb-led.h>
 #include "config.h"
+#include "PressureMatDetector.h"
+
+#ifndef FIRMWARE_BUILD_ID
+#define FIRMWARE_BUILD_ID "unversioned"
+#endif
 
 #define RELAY_SOURCE "pressure-mat-relay"
-#define ARM_WINDOW_MS 5000UL
 #define WDT_TIMEOUT_S 20
 
 // OTA defaults OFF so an older generated config.h cannot accidentally expose
@@ -35,33 +39,15 @@ static WebSocketsClient ws;
 static WebServer http(80);
 static Preferences prefs;
 static bool wsConnected = false;
-static bool occupied = false;
-static bool initialized = false;
-static bool pressArmed = false;
-static bool releaseArmed = false;
-static float voltage = 0.0f;
-static float previousVoltage = 0.0f;
-static float restVoltage = 0.0f;
-static float deltaVoltage = 0.0f;
-static float gradient = 0.0f;
-static float pressThreshold = 0.0f;
-static float releaseThreshold = 0.0f;
+static PressureMatDetector detector;
+static const auto& reading = detector.state();
 static float configuredPressDelta = PRESS_DELTA_V;
 static float configuredPressGradient = PRESS_GRADIENT_VPS;
 static float configuredStompDelta = STOMP_DELTA_V;
 static float configuredStompGradient = STOMP_GRADIENT_VPS;
-static uint32_t pressArmedAt = 0;
-static uint32_t releaseArmedAt = 0;
 static uint32_t sampleAt = 0;
 static uint32_t readingAt = 0;
 static uint32_t helloAt = 0;
-static uint32_t stepCount = 0;
-static uint32_t stompCount = 0;
-static uint32_t transitionCount = 0;
-static uint32_t pressStartedAt = 0;
-static bool stompReported = false;
-static float peakDeltaVoltage = 0.0f;
-static float peakImpactGradient = 0.0f;
 static uint32_t bootCount = 0;
 static esp_reset_reason_t resetReason = ESP_RST_UNKNOWN;
 static float samples[SMOOTHING_FRAMES] = {};
@@ -118,14 +104,19 @@ static bool sendDocument(JsonDocument& doc) {
 
 static void addReading(JsonDocument& doc) {
   doc["protocol_version"] = 2;
+  doc["firmware_build"] = FIRMWARE_BUILD_ID;
+  doc["boot_count"] = bootCount;
   doc["id"] = MAT_ID;
-  doc["voltage"] = serialized(String(voltage, 3));
-  doc["rest_voltage"] = serialized(String(restVoltage, 3));
-  doc["delta_v"] = serialized(String(deltaVoltage, 3));
-  doc["gradient_vps"] = serialized(String(gradient, 3));
-  doc["occupied"] = occupied;
-  doc["steps"] = stepCount;
-  doc["stomps"] = stompCount;
+  doc["voltage"] = serialized(String(reading.voltage, 3));
+  doc["rest_voltage"] = serialized(String(reading.restVoltage, 3));
+  doc["delta_v"] = serialized(String(reading.delta, 3));
+  doc["gradient_vps"] = serialized(String(reading.gradient, 3));
+  doc["occupied"] = reading.occupied;
+  doc["occupancy_known"] = reading.occupancyKnown;
+  doc["detection_state"] = detector.phase();
+  doc["rearm_count"] = reading.rearms;
+  doc["steps"] = reading.steps;
+  doc["stomps"] = reading.stomps;
   doc["ts"] = millis();
 }
 
@@ -144,14 +135,14 @@ static void sendPresence(const char* event, bool includePressSummary = false) {
   doc["event"] = event;
   addReading(doc);
   if (includePressSummary) {
-    doc["peak_delta_v"] = serialized(String(peakDeltaVoltage, 3));
-    doc["peak_gradient_vps"] = serialized(String(peakImpactGradient, 3));
-    doc["press_duration_ms"] = pressStartedAt ? millis() - pressStartedAt : 0;
-    doc["classified_stomp"] = stompReported;
+    doc["peak_delta_v"] = serialized(String(reading.peakDelta, 3));
+    doc["peak_gradient_vps"] = serialized(String(reading.peakGradient, 3));
+    doc["press_duration_ms"] = reading.pressDurationMs;
+    doc["classified_stomp"] = reading.classifiedStomp;
   }
   sendDocument(doc);
   Serial.printf("[mat] %s voltage=%.3f delta=%.3f gradient=%.3f steps=%lu\n",
-                event, voltage, deltaVoltage, gradient, (unsigned long)stepCount);
+                event, reading.voltage, reading.delta, reading.gradient, (unsigned long)reading.steps);
 }
 
 static void sendHello() {
@@ -188,81 +179,35 @@ static float smooth(float frame) {
   return total / sampleCount;
 }
 
-static void maybeReportStomp() {
-  if (!occupied || stompReported || deltaVoltage < configuredStompDelta ||
-      peakImpactGradient < configuredStompGradient) return;
-  stompReported = true;
-  stompCount++;
-  flashLed(32, 0, 24, 90);
-  sendPresence("stomped");
+static void configureDetector() {
+  PressureMatDetector::Config config;
+  config.pressDelta = configuredPressDelta;
+  config.pressGradient = configuredPressGradient;
+  config.stompDelta = configuredStompDelta;
+  config.stompGradient = configuredStompGradient;
+  config.releaseRatio = RELEASE_DELTA_RATIO;
+  config.maxSampleGapMs = std::max<uint32_t>(500, SAMPLE_INTERVAL_MS * 3);
+  detector.configure(config);
 }
 
-static void transitionTo(bool nextOccupied) {
-  if (occupied == nextOccupied) return;
-  occupied = nextOccupied;
-  transitionCount++;
-  pressArmed = false;
-  releaseArmed = false;
-  if (occupied) {
-    stepCount++;
-    pressStartedAt = millis();
-    stompReported = false;
-    peakImpactGradient = max(0.0f, -gradient);
-    deltaVoltage = max(0.0f, restVoltage - voltage);
-    peakDeltaVoltage = deltaVoltage;
-    flashLed(0, 32, 0);
-    sendPresence("pressed");
-    maybeReportStomp();
-  } else {
-    deltaVoltage = 0.0f;
-    flashLed(0, 0, 32);
-    // Release is the authoritative one-record-per-press observation. It carries
-    // the maxima accumulated across the whole occupied interval, rather than
-    // whichever instantaneous sample happened to cross an event threshold.
-    sendPresence("released", true);
-    pressStartedAt = 0;
-    stompReported = false;
-    peakDeltaVoltage = peakImpactGradient = 0.0f;
-  }
+static void recalibrateDetector() {
+  detector.recalibrate();
+  sampleCount = sampleIndex = 0;
 }
 
 static void sampleSensor() {
   const float next = smooth(readFrameVoltage());
-  if (!initialized || sampleCount < SMOOTHING_FRAMES) {
-    voltage = previousVoltage = restVoltage = next;
-    initialized = sampleCount >= SMOOTHING_FRAMES;
-    return;
-  }
-
-  previousVoltage = voltage;
-  voltage = next;
-  gradient = (voltage - previousVoltage) / (SAMPLE_INTERVAL_MS / 1000.0f);
-  const uint32_t now = millis();
-
-  if (!occupied) {
-    deltaVoltage = 0.0f;
-    // Capture the edge once. Recomputing the absolute threshold on every
-    // falling frame makes it chase a smooth footfall downward forever.
-    if (!pressArmed && gradient <= -configuredPressGradient) {
-      restVoltage = previousVoltage;
-      pressThreshold = previousVoltage - configuredPressDelta;
-      pressArmed = true;
-      pressArmedAt = now;
-    }
-    if (pressArmed && now - pressArmedAt > ARM_WINDOW_MS) pressArmed = false;
-    if (pressArmed && voltage <= pressThreshold) transitionTo(true);
-  } else {
-    deltaVoltage = max(0.0f, restVoltage - voltage);
-    peakDeltaVoltage = max(peakDeltaVoltage, deltaVoltage);
-    peakImpactGradient = max(peakImpactGradient, -gradient);
-    maybeReportStomp();
-    if (!releaseArmed && gradient >= configuredPressGradient * RELEASE_GRADIENT_RATIO) {
-      releaseThreshold = previousVoltage + configuredPressDelta * RELEASE_DELTA_RATIO;
-      releaseArmed = true;
-      releaseArmedAt = now;
-    }
-    if (releaseArmed && now - releaseArmedAt > ARM_WINDOW_MS) releaseArmed = false;
-    if (releaseArmed && voltage >= releaseThreshold) transitionTo(false);
+  if (sampleCount < SMOOTHING_FRAMES) return;
+  const auto events = detector.sample(next, millis());
+  if (events.pressed) { flashLed(0, 32, 0); sendPresence("pressed"); }
+  if (events.stomped) { flashLed(32, 0, 24, 90); sendPresence("stomped"); }
+  if (events.released) { flashLed(0, 0, 32); sendPresence("released", true); }
+  if (events.rearmed) {
+    // A settled state is not proof of a physical release. Publish diagnostics,
+    // not a fabricated presence edge, and preserve both physical counters.
+    sendReading();
+    Serial.printf("[mat] rearmed count=%lu steps=%lu occupancy=unknown\n",
+                  (unsigned long)reading.rearms, (unsigned long)reading.steps);
   }
 }
 
@@ -271,6 +216,10 @@ static void statusResponse() {
   doc["protocol_version"] = 2;
   doc["id"] = MAT_ID;
   doc["source"] = RELAY_SOURCE;
+  doc["firmware_build"] = FIRMWARE_BUILD_ID;
+  doc["detection_state"] = detector.phase();
+  doc["occupancy_known"] = reading.occupancyKnown;
+  doc["rearm_count"] = reading.rearms;
   doc["uptime_s"] = millis() / 1000;
   doc["boot_count"] = bootCount;
   doc["last_reset"] = resetReasonName(resetReason);
@@ -281,17 +230,17 @@ static void statusResponse() {
   doc["ota"]["enabled"] = OTA_ENABLED == 1;
   doc["ota"]["port"] = OTA_ENABLED == 1 ? 3232 : 0;
   doc["sensor"]["pin"] = SENSOR_PIN;
-  doc["sensor"]["voltage"] = voltage;
-  doc["sensor"]["rest_voltage"] = restVoltage;
-  doc["sensor"]["delta_v"] = deltaVoltage;
-  doc["sensor"]["gradient_vps"] = gradient;
-  doc["sensor"]["occupied"] = occupied;
-  doc["sensor"]["steps"] = stepCount;
-  doc["sensor"]["stomps"] = stompCount;
-  doc["sensor"]["transitions"] = transitionCount;
-  doc["sensor"]["current_press_peak_delta_v"] = peakDeltaVoltage;
-  doc["sensor"]["current_press_peak_gradient_vps"] = peakImpactGradient;
-  doc["sensor"]["current_press_duration_ms"] = occupied && pressStartedAt ? millis() - pressStartedAt : 0;
+  doc["sensor"]["voltage"] = reading.voltage;
+  doc["sensor"]["rest_voltage"] = reading.restVoltage;
+  doc["sensor"]["delta_v"] = reading.delta;
+  doc["sensor"]["gradient_vps"] = reading.gradient;
+  doc["sensor"]["occupied"] = reading.occupied;
+  doc["sensor"]["steps"] = reading.steps;
+  doc["sensor"]["stomps"] = reading.stomps;
+  doc["sensor"]["transitions"] = reading.transitions;
+  doc["sensor"]["current_press_peak_delta_v"] = reading.peakDelta;
+  doc["sensor"]["current_press_peak_gradient_vps"] = reading.peakGradient;
+  doc["sensor"]["current_press_duration_ms"] = reading.occupied ? reading.pressDurationMs : 0;
   doc["detection"]["press_delta_v"] = configuredPressDelta;
   doc["detection"]["press_gradient_vps"] = configuredPressGradient;
   doc["detection"]["stomp_delta_v"] = configuredStompDelta;
@@ -317,13 +266,7 @@ static void wsEvent(WStype_t type, uint8_t* payload, size_t length) {
     if (deserializeJson(command, payload, length)) return;
     const char* action = command["action"] | "";
     if (strcmp(action, "recalibrate") == 0) {
-      occupied = false;
-      initialized = false;
-      sampleCount = 0;
-      pressArmed = releaseArmed = false;
-      pressStartedAt = 0;
-      stompReported = false;
-      peakDeltaVoltage = peakImpactGradient = 0.0f;
+      recalibrateDetector();
       Serial.println("[command] recalibrate");
     } else if (strcmp(action, "threshold") == 0) {
       const float delta = command["delta"] | configuredPressDelta;
@@ -338,6 +281,7 @@ static void wsEvent(WStype_t type, uint8_t* payload, size_t length) {
       prefs.putFloat("press-grad", configuredPressGradient);
       prefs.putFloat("stomp-delta", configuredStompDelta);
       prefs.putFloat("stomp-grad", configuredStompGradient);
+      configureDetector();
       Serial.println("[command] threshold updated");
     } else if (strcmp(action, "reboot") == 0) {
       Serial.println("[command] reboot");
@@ -383,6 +327,7 @@ void setup() {
   configuredStompDelta = prefs.isKey("stomp-delta") ? prefs.getFloat("stomp-delta", STOMP_DELTA_V) : STOMP_DELTA_V;
   configuredStompGradient = prefs.isKey("stomp-grad") ? prefs.getFloat("stomp-grad", STOMP_GRADIENT_VPS) : STOMP_GRADIENT_VPS;
 
+  configureDetector();
   analogReadResolution(12);
   analogSetPinAttenuation(SENSOR_PIN, ADC_11db);
 #if STATUS_LED_ENABLED
@@ -429,13 +374,7 @@ void setup() {
   http.on("/", statusResponse);
   http.on("/status", statusResponse);
   http.on("/recalibrate", HTTP_POST, []() {
-    occupied = false;
-    initialized = false;
-    sampleCount = 0;
-    pressArmed = releaseArmed = false;
-    pressStartedAt = 0;
-    stompReported = false;
-    peakDeltaVoltage = peakImpactGradient = 0.0f;
+    recalibrateDetector();
     http.send(200, "application/json", "{\"ok\":true,\"action\":\"recalibrate\"}");
   });
   http.on("/threshold", HTTP_POST, []() {
@@ -459,6 +398,7 @@ void setup() {
     prefs.putFloat("press-grad", configuredPressGradient);
     prefs.putFloat("stomp-delta", configuredStompDelta);
     prefs.putFloat("stomp-grad", configuredStompGradient);
+    configureDetector();
     statusResponse();
   });
   http.on("/reboot", []() {
@@ -510,12 +450,12 @@ void loop() {
     sampleAt = now;
     sampleSensor();
   }
-  if (initialized && now - readingAt >= READING_INTERVAL_MS) {
+  if (reading.initialized && now - readingAt >= READING_INTERVAL_MS) {
     readingAt = now;
     sendReading();
     Serial.printf("[sample] voltage=%.3f delta=%.3f gradient=%.3f occupied=%d steps=%lu stomps=%lu\n",
-                  voltage, deltaVoltage, gradient, occupied,
-                  (unsigned long)stepCount, (unsigned long)stompCount);
+                  reading.voltage, reading.delta, reading.gradient, reading.occupied,
+                  (unsigned long)reading.steps, (unsigned long)reading.stomps);
   }
   if (now - helloAt >= HELLO_INTERVAL_MS) {
     helloAt = now;

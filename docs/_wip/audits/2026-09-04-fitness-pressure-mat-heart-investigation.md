@@ -7,6 +7,13 @@ Physical garage acceptance remains pending. The equipment entry was selectively
 recovered without changing any other settings. The investigation evidence below
 describes the original state; the rollout evidence records the current state.
 
+Follow-up: the user confirmed the mat is hanging on the wall and requested a
+new ready-for-test milestone. The ESP recovery/startup implementation and newer
+deployment evidence are tracked in
+[pressure-mat test readiness](../plans/2026-09-04-pressure-mat-test-ready.md).
+That supersedes the older firmware status and manual-recalibration advice
+below; physical acceptance is still not claimed.
+
 ## Rollout evidence and remaining physical check
 
 - Application commit `e28724f0876560ac1cb10bd8c628211c6590e8f8` built successfully
