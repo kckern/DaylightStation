@@ -13,6 +13,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
 import { IFoodLogDatastore } from '#apps/nutribot/ports/IFoodLogDatastore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { serializeFoodItem } from '#shared/contracts/nutrition/foodItemRecord.mjs';
 import {
   ensureDir,
   dirExists,
@@ -20,17 +21,12 @@ import {
   loadYamlSafe,
   saveYaml
 } from '#system/utils/FileIO.mjs';
+import { getFileStats, resolveYamlPath } from '#system/utils/FileIO.mjs';
 
 const ARCHIVE_RETENTION_DAYS = 30;
 
 function dehydrateFoodItem(item) {
-  return {
-    foodId: item.foodId, originalQuantity: item.originalQuantity, nutrientProvenance: item.nutrientProvenance,
-    id: item.id, uuid: item.uuid, label: item.label, icon: item.icon,
-    grams: item.grams, unit: item.unit, amount: item.amount, color: item.color,
-    calories: item.calories, protein: item.protein, carbs: item.carbs, fat: item.fat,
-    fiber: item.fiber, sugar: item.sugar, sodium: item.sodium, cholesterol: item.cholesterol,
-  };
+  return serializeFoodItem(item);
 }
 
 function dehydrateNutriLog(log) {
@@ -219,6 +215,18 @@ export class YamlFoodLogDatastore extends IFoodLogDatastore {
     return nutriLog;
   }
 
+  /** Cheap invalidation key; archive contents are only parsed after a change. */
+  getRevision(userId) {
+    const archiveDir = this.#getArchiveDir(userId);
+    const files = [this.#getPath(userId), ...(dirExists(archiveDir)
+      ? listYamlFiles(archiveDir).map(name => path.join(archiveDir, name)) : [])];
+    return files.sort().map(file => {
+      const resolved = resolveYamlPath(file);
+      const stat = resolved ? getFileStats(resolved) : null;
+      return [file, stat?.mtimeMs ?? null, stat?.size ?? null];
+    });
+  }
+
   /**
    * Find a NutriLog by ID
    * Checks hot storage first, then searches monthly archives
@@ -263,7 +271,14 @@ export class YamlFoodLogDatastore extends IFoodLogDatastore {
    */
   async findAll(userId, options = {}) {
     const filePath = this.#getPath(userId);
-    const data = this.#readFile(filePath);
+    const data = {};
+    if (options.includeArchives && dirExists(this.#getArchiveDir(userId))) {
+      for (const month of listYamlFiles(this.#getArchiveDir(userId), { stripExtension: true })) {
+        Object.assign(data, this.#loadArchive(userId, month));
+      }
+    }
+    // Active copies win when an entry exists in both tiers.
+    Object.assign(data, this.#readFile(filePath));
 
     let logs = Object.values(data)
       .map(entity => this.#hydrate(userId, entity))

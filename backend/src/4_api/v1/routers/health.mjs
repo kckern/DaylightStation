@@ -170,6 +170,29 @@ export function createHealthRouter(config) {
 
   router.get('/context', (req, res) => res.json({ userId: getDefaultUsername() }));
 
+  const cleanup = () => {
+    const service = config.cleanupProvider?.();
+    if (!service) throw Object.assign(new Error('Nutrition cleanup is unavailable'), { status: 503 });
+    return service;
+  };
+  // Owner comes from Health's trusted household context, never request payload.
+  router.get('/nutrition/cleanup', asyncHandler(async (_req, res) => res.json(cleanup().status(getDefaultUsername()))));
+  router.get('/nutrition/cleanup/history', asyncHandler(async (req, res) => {
+    const offset = Number(req.query.offset || 0);
+    if (!Number.isSafeInteger(offset) || offset < 0) return res.status(400).json({ error: 'Invalid offset' });
+    res.json(await cleanup().history(getDefaultUsername(), { offset, limit: 30 }));
+  }));
+  router.patch('/nutrition/cleanup/settings', asyncHandler(async (req, res) => res.json(await cleanup().settings(getDefaultUsername(), req.body))));
+  router.post('/nutrition/cleanup/run', asyncHandler(async (_req, res) => res.status(202).json(await cleanup().request(getDefaultUsername(), { manual: true }))));
+  router.post('/nutrition/cleanup/undo/:id', asyncHandler(async (req, res) => res.json(await cleanup().repairs.undo({
+    userId: getDefaultUsername(), repairId: req.params.id, operationId: req.body.operationId,
+  }))));
+  router.post('/nutrition/cleanup/questions/:id/answer', asyncHandler(async (req, res) => {
+    const { expectedVersion, operationId, choiceId, text, dismiss } = req.body;
+    res.json(await cleanup().interactions.answer({ userId: getDefaultUsername(), id: req.params.id,
+      expectedVersion, operationId, choiceId, text, dismiss }));
+  }));
+
   router.get('/day', asyncHandler(async (req, res) => {
     const date = req.query.date || getToday();
     const error = validateOptionalDate(date);
@@ -1283,6 +1306,24 @@ export function createHealthRouter(config) {
         return sendInternalError(res, { error: err.message });
       }
     }));
+
+    router.post('/nutrition/pending/:id/review', asyncHandler(async (req, res) => {
+      const { expectedVersion, operationId, action, items, portionFactor, date, mealTime, nutritionReviewed } = req.body;
+      if (typeof expectedVersion !== 'string' || !expectedVersion || typeof operationId !== 'string' || !operationId || operationId.length > 128) {
+        return res.status(400).json({ error: 'expectedVersion and operationId are required' });
+      }
+      try {
+        const result = await healthOperations.reviewPendingNutrition({
+          userId: getDefaultUsername(), logUuid: req.params.id, expectedVersion, operationId,
+          action, items, portionFactor, date, mealTime, nutritionReviewed,
+        });
+        return res.json(result);
+      } catch (error) {
+        if (error.status) return res.status(error.status).json({ error: error.message });
+        logger.error?.('health.nutrition.review.error', { logId: req.params.id, error: error.message });
+        return sendInternalError(res, { error: 'Could not save review. Retry the same action.' });
+      }
+    }));
   }
 
   // ==========================================================================
@@ -1551,7 +1592,7 @@ export function createHealthRouter(config) {
   // ==========================================================================
 
   router.use((err, req, res, next) => {
-    if ([400, 404, 409, 422].includes(err.status)) {
+    if ([400, 404, 409, 422, 503].includes(err.status)) {
       logger.warn?.('health.command.rejected', { code: err.code, status: err.status, url: req.url });
       return res.status(err.status).json({ error: err.message, code: err.code });
     }

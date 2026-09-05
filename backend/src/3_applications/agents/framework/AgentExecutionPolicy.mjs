@@ -36,7 +36,7 @@ export class AgentExecutionPolicy {
       : [];
     return applyDecorators(
       tools,
-      [...agentDecorators, userIdInjector, createCallLimiter({ maxToolCalls: this.#maxToolCalls }), transcriptRecorder],
+      [...agentDecorators, userIdInjector, createCallLimiter({ maxToolCalls: Math.min(context.maxToolCalls ?? this.#maxToolCalls, this.#maxToolCalls) }), transcriptRecorder],
       { ...context, transcript },
     );
   }

@@ -28,6 +28,7 @@ export function IntakeBurnChart({ days = [], loading = false, title = 'Intake vs
       {/* `title={null}` suppresses the heading for a caller that already
           names the block (the Progress page's SectionCard). */}
       {title === null ? null : <h3 className="health-intakeburn__title">{title}</h3>}
+      <p className="health-intakeburn__legend"><span>↑ Exercise</span><span>↓ Food</span><span>kcal · same scale</span></p>
       <div className="health-intakeburn__plot" role="img"
         aria-label={known.length
           ? `${known.length} days: average intake ${avgFood} kcal, average burn ${avgBurn} kcal${gaps ? `, ${gaps} days without data` : ''}`
@@ -59,8 +60,13 @@ export function IntakeBurnChart({ days = [], loading = false, title = 'Intake vs
           ))}
         </div>
       </div>
+      {known.length ? <p className="health-intakeburn__legend">
+        <span>Peak exercise {Math.round(Math.max(...known.map(bar => bar.exercise)))} kcal</span>
+        <span>Peak food {Math.round(Math.max(...known.map(bar => bar.food)))} kcal</span>
+        <span>{days[0]?.date} – {days.at(-1)?.date}</span>
+      </p> : null}
       <p className="health-intakeburn__caption">
-        {known.length ? `avg ${avgFood ?? '—'} logged · ${avgBurn} exercise · ${logged.length}/${days.length} days logged` : 'No data yet'}
+        {known.length ? `avg ${avgFood ?? '—'} kcal logged · ${avgBurn} kcal exercise · ${logged.length}/${days.length} days logged` : 'No data yet'}
         {gaps ? ` · ${gaps} without data` : ''}
       </p>
     </section>

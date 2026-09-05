@@ -6,6 +6,7 @@
  */
 
 import { createNutriLog } from '../nutriLogRecords.mjs';
+import { createLocalNutritionResponse } from '../services/LocalNutritionResponse.mjs';
 import { getMealTimeFromHour } from '#domains/nutrition/entities/schemas.mjs';
 import { formatLocalTimestamp } from '#domains/core/utils/time.mjs';
 
@@ -77,7 +78,7 @@ export class LogFoodFromUPC {
 
     this.#logger.debug?.('logUPC.start', { conversationId, upc, hasResponseContext: !!responseContext });
 
-    const messaging = this.#getMessaging(responseContext, conversationId);
+    const messaging = input.headless ? createLocalNutritionResponse() : this.#getMessaging(responseContext, conversationId);
     let status = null;
     let statusMsgId = null;
 
@@ -181,7 +182,8 @@ export class LogFoodFromUPC {
         foodId: product.foodId || null,
         grams,
         unit: product.serving?.unit || 'serving',
-        amount: 1,
+        amount: product.serving?.unit === 'ml' ? product.serving.size : 1,
+        originalQuantity: { amount: product.serving?.size ?? 1, unit: product.serving?.unit || 'serving', grams },
         color: classification.noomColor,
         calories: Number(product.nutrition?.calories) || 0,
         protein: Number(product.nutrition?.protein) || 0,
@@ -215,6 +217,7 @@ export class LogFoodFromUPC {
         metadata: {
           source: 'upc',
           sourceUpc: upc,
+          ...(product.nutritionLookup ? { nutritionLookup: product.nutritionLookup } : {}),
         },
         timezone,
         timestamp: now,
@@ -226,7 +229,7 @@ export class LogFoodFromUPC {
       }
 
       // 7b. Record food item in catalog for quick-add
-      if (this.#catalogService) {
+      if (this.#catalogService && !product.nutritionLookup?.warnings?.length) {
         try {
           await this.#catalogService.recordUsage({
             foodId: foodItem.foodId,

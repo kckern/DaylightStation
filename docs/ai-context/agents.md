@@ -4,6 +4,11 @@
 
 Autonomous AI agents that use LLM reasoning for complex tasks. Unlike rule-based bots (journalist, nutribot), agents can reason, use tools, and make decisions dynamically.
 
+For the current validated runtime, managed runs, cancellation, questions and SDK
+versions, see [Shared agent runtime contracts](../reference/core/agent-runtime.md).
+The [nutrition auditor](../reference/health/nutrition-cleanup.md) reads historical
+evidence but only applies guarded today/yesterday repairs through the Health service.
+
 ## Key Concepts
 
 | Term | Definition |

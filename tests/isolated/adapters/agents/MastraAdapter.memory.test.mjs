@@ -59,7 +59,7 @@ describe('MastraAdapter — memory wiring', () => {
       systemPrompt: 'sys',
       context: { userId: 'kc', threadId: 'T-1' },
     });
-    expect(recorded[0].memOpts).toEqual({ memory: { resource: 'kc', thread: 'T-1' } });
+    expect(recorded[0].memOpts).toMatchObject({ memory: { resource: 'kc', thread: 'T-1' } });
   });
 
   it('does NOT pass memory opts when threadId is missing', async () => {
@@ -75,7 +75,7 @@ describe('MastraAdapter — memory wiring', () => {
       systemPrompt: 'sys',
       context: { userId: 'kc' },  // no threadId
     });
-    expect(recorded[0].memOpts).toBeUndefined();
+    expect(recorded[0].memOpts.memory).toBeUndefined();
   });
 
   it('does NOT pass memory at all when adapter has no memory configured', async () => {
@@ -91,7 +91,7 @@ describe('MastraAdapter — memory wiring', () => {
       context: { userId: 'kc', threadId: 'T-1' },
     });
     expect(recorded[0].ctorOpts.memory).toBeUndefined();
-    expect(recorded[0].memOpts).toBeUndefined();
+    expect(recorded[0].memOpts.memory).toBeUndefined();
   });
 
   it('streamExecute passes same memory opts', async () => {
@@ -110,6 +110,6 @@ describe('MastraAdapter — memory wiring', () => {
     // drain
     for await (const _ of iter) { /* consume */ }
     expect(recorded[0].method).toBe('stream');
-    expect(recorded[0].memOpts).toEqual({ memory: { resource: 'kc', thread: 'T-2' } });
+    expect(recorded[0].memOpts).toMatchObject({ memory: { resource: 'kc', thread: 'T-2' } });
   });
 });

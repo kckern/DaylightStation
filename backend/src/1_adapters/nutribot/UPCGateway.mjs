@@ -7,6 +7,7 @@
  */
 
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { normalizeProductNutrition, normalizeNutritionixNutrition } from './normalizeProductNutrition.mjs';
 
 // Default barcode image fallback
 const BARCODE_IMAGE_FALLBACK = (upc) => `https://images.barcodespider.com/upcimage/${upc}.jpg`;
@@ -114,25 +115,7 @@ export class UPCGateway {
       }
 
       const p = data.product;
-      const nutriments = p.nutriments || {};
-
-      // Get serving size info
-      const servingSize = Number(p.serving_quantity) || 100;
-      const servingUnit = p.serving_quantity_unit || 'g';
-
-      // Calculate nutrition per serving (OFF gives per 100g, so scale if needed)
-      const scaleFactor = servingSize / 100;
-
-      const nutrition = {
-        calories: Math.round((nutriments['energy-kcal_100g'] || nutriments['energy-kcal'] || 0) * scaleFactor),
-        protein: Math.round((nutriments.proteins_100g || nutriments.proteins || 0) * scaleFactor * 10) / 10,
-        carbs: Math.round((nutriments.carbohydrates_100g || nutriments.carbohydrates || 0) * scaleFactor * 10) / 10,
-        fat: Math.round((nutriments.fat_100g || nutriments.fat || 0) * scaleFactor * 10) / 10,
-        fiber: Math.round((nutriments.fiber_100g || nutriments.fiber || 0) * scaleFactor * 10) / 10,
-        sugar: Math.round((nutriments.sugars_100g || nutriments.sugars || 0) * scaleFactor * 10) / 10,
-        sodium: Math.round((nutriments.sodium_100g || nutriments.sodium || 0) * scaleFactor * 1000),
-        cholesterol: Math.round((nutriments.cholesterol_100g || nutriments.cholesterol || 0) * scaleFactor * 1000),
-      };
+      const { nutrition, serving, nutritionLookup } = normalizeProductNutrition(p);
 
       return {
         upc,
@@ -140,12 +123,9 @@ export class UPCGateway {
         brand: p.brands || null,
         imageUrl: p.image_url || p.image_front_url || BARCODE_IMAGE_FALLBACK(upc),
         icon: '🍽️',
-        noomColor: this.#inferNoomColor(nutrition, p.categories_tags || [], servingSize),
-
-        serving: {
-          size: servingSize,
-          unit: servingUnit,
-        },
+        noomColor: serving.unit === 'g' ? this.#inferNoomColor(nutrition, p.categories_tags || [], serving.size) : 'yellow',
+        serving,
+        nutritionLookup,
 
         nutrition,
       };
@@ -174,18 +154,8 @@ export class UPCGateway {
       }
 
       const food = response.data.foods[0];
-      const servingGrams = food.serving_weight_grams || 100;
-
-      const nutrition = {
-        calories: Math.round(food.nf_calories || 0),
-        protein: Math.round((food.nf_protein || 0) * 10) / 10,
-        carbs: Math.round((food.nf_total_carbohydrate || 0) * 10) / 10,
-        fat: Math.round((food.nf_total_fat || 0) * 10) / 10,
-        fiber: Math.round((food.nf_dietary_fiber || 0) * 10) / 10,
-        sugar: Math.round((food.nf_sugars || 0) * 10) / 10,
-        sodium: Math.round(food.nf_sodium || 0),
-        cholesterol: Math.round(food.nf_cholesterol || 0),
-      };
+      const normalized = normalizeNutritionixNutrition(food);
+      const { nutrition, serving } = normalized;
 
       return {
         upc,
@@ -193,12 +163,8 @@ export class UPCGateway {
         brand: food.brand_name || null,
         imageUrl: food.photo?.thumb || BARCODE_IMAGE_FALLBACK(upc),
         icon: '🍽️',
-        noomColor: this.#inferNoomColor(nutrition, [], servingGrams),
-        serving: {
-          size: servingGrams,
-          unit: food.serving_unit || 'g',
-        },
-        nutrition,
+        noomColor: serving.unit === 'g' ? this.#inferNoomColor(nutrition, [], serving.size) : 'yellow',
+        ...normalized,
       };
     } catch (error) {
       this.#logger.debug?.('upc.nutritionix.error', { upc, error: error.message });

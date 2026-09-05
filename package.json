@@ -1,9 +1,10 @@
 {
+  "engines": { "node": ">=22.13.0" },
   "dependencies": {
     "@extractus/article-extractor": "^8.0.20",
-    "@mastra/core": "1.32.1",
-    "@mastra/libsql": "1.10.0",
-    "@mastra/memory": "1.17.5",
+    "@mastra/core": "1.64.0",
+    "@mastra/libsql": "1.22.3",
+    "@mastra/memory": "1.28.2",
     "@napi-rs/canvas": "^0.1.93",
     "@resvg/resvg-js": "^2.6.2",
     "@tabler/icons-react": "^3.36.1",
@@ -60,7 +61,7 @@
     "winston": "^3.18.3",
     "winston-loggly-bulk": "^3.3.3",
     "yaml": "^2.8.2",
-    "zod": "^3.23.8"
+    "zod": "4.5.4"
   },
   "imports": {
     "#system/*": "./backend/src/0_system/*",

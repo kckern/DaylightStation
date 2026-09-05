@@ -22,8 +22,10 @@ export class AcceptFoodLog {
   #config;
   #logger;
   #pause;
+  #reviewService;
 
   constructor(deps) {
+    this.#reviewService = deps.reviewService;
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
 
     this.#messagingGateway = deps.messagingGateway;
@@ -66,6 +68,7 @@ export class AcceptFoodLog {
    *   coaching orchestrator after EVERY capture — inline, inside the capture request.
    */
   async execute(input) {
+    if (this.#reviewService) return this.#reviewService.execute({ ...input, action: 'confirm' });
     const { userId, conversationId, logUuid, messageId, responseContext } = input;
     const autoReport = input.autoReport !== false;
 

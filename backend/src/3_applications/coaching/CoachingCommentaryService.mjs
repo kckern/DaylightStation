@@ -19,19 +19,22 @@ ASSIGNMENT CONTEXT:
 - exercise-reaction: Frame the burned calories as budget. What does it buy?`;
 
 /**
- * Generates a single commentary sentence via Mastra generate().
+ * Generates a single commentary sentence through the shared agent runtime.
  * If the LLM fails or returns nothing, returns empty string.
  */
 export class CoachingCommentaryService {
   #agentFactory;
+  #runtime;
   #logger;
 
   /**
    * @param {Object} deps
-   * @param {Function} deps.agentFactory - () => Mastra Agent instance (allows lazy creation and test injection)
+   * @param {Object} deps.runtime - IAgentRuntime
+   * @param {Function} [deps.agentFactory] - Legacy test/provider compatibility seam
    * @param {Object} [deps.logger]
    */
-  constructor({ agentFactory, logger }) {
+  constructor({ runtime, agentFactory, logger }) {
+    this.#runtime = runtime;
     this.#agentFactory = agentFactory;
     this.#logger = logger || console;
   }
@@ -42,9 +45,11 @@ export class CoachingCommentaryService {
    */
   async generate(snapshot) {
     try {
-      const agent = this.#agentFactory();
-      const response = await agent.generate(JSON.stringify(snapshot));
-      const raw = response?.text?.trim() || '';
+      const response = this.#runtime ? await this.#runtime.execute({ agentId: 'health-coach-commentary',
+        input: JSON.stringify(snapshot), tools: [], systemPrompt: SYSTEM_PROMPT,
+        context: { userId: snapshot.userId }, limits: { timeoutMs: 30000, maxToolCalls: 1, maxSteps: 1 } })
+        : await this.#agentFactory().generate(JSON.stringify(snapshot));
+      const raw = (response?.output ?? response?.text)?.trim() || '';
 
       // Strip any HTML tags the LLM might have included despite instructions
       const cleaned = raw.replace(/<[^>]*>/g, '').trim();

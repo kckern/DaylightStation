@@ -25,8 +25,10 @@ export class DiscardFoodLog {
   #nutriListStore;
   #conversationStateStore;
   #logger;
+  #reviewService;
 
   constructor(deps) {
+    this.#reviewService = deps.reviewService;
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
 
     this.#messagingGateway = deps.messagingGateway;
@@ -59,6 +61,10 @@ export class DiscardFoodLog {
    * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
+    if (this.#reviewService) {
+      const log = await this.#foodLogStore.findById(input.userId, input.logUuid);
+      if (log?.status === 'pending') return this.#reviewService.execute({ ...input, action: 'discard' });
+    }
     const { userId, conversationId, logUuid, messageId, responseContext } = input;
 
     this.#logger.debug?.('discardLog.start', { conversationId, logUuid, hasResponseContext: !!responseContext });

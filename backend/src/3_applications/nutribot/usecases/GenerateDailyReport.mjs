@@ -113,6 +113,8 @@ export class GenerateDailyReport {
     const today = this.#getTodayDate(userId);
     let date = input.date || today;
     let anchorDateForHistory = date;
+    const syncSnapshot = input.syncSnapshot;
+    let supersededReportId = null;
 
     this.#logger.debug?.('report.generate.start', { userId, date, forceRegenerate, hasResponseContext: !!responseContext });
 
@@ -128,8 +130,8 @@ export class GenerateDailyReport {
         }
 
         const messagesToDelete = new Set();
-        if (lastReportMessageId) messagesToDelete.add(String(lastReportMessageId));
-        if (triggerMessageId) messagesToDelete.add(String(triggerMessageId));
+        if (!syncSnapshot && lastReportMessageId) messagesToDelete.add(String(lastReportMessageId));
+        if (!syncSnapshot && triggerMessageId) messagesToDelete.add(String(triggerMessageId));
 
         for (const msgId of messagesToDelete) {
           try {
@@ -174,7 +176,22 @@ export class GenerateDailyReport {
       //    most recent CALENDAR day that has logs (by meal.date, not entry order,
       //    so back-dated logging never drags the anchor backwards). Only skip if
       //    the user has never logged anything at all.
-      let summary = await this.#foodLogStore.getDailySummary(userId, date);
+      let summary;
+      if (syncSnapshot) {
+        // App edits live in the authoritative item ledger. The original capture
+        // may have different quantities, a different date, or no rows left.
+        const rows = syncSnapshot.items.filter(row => row.kind !== 'group');
+        summary = { logCount: new Set(rows.map(row => row.logId || row.log_uuid || row.uuid)).size,
+          itemCount: rows.length, totalGrams: rows.reduce((sum, row) => sum + (Number(row.grams) || 0), 0),
+          colorCounts: {}, gramsByColor: {} };
+        for (const row of rows) {
+          const color = row.color || row.noom_color;
+          summary.colorCounts[color] = (summary.colorCounts[color] || 0) + 1;
+          summary.gramsByColor[color] = (summary.gramsByColor[color] || 0) + (Number(row.grams) || 0);
+        }
+      } else {
+        summary = await this.#foodLogStore.getDailySummary(userId, date);
+      }
 
       if (summary.logCount === 0 && !input.date) {
         const fallbackDate = await this.#getMostRecentLoggedDate(userId, today);
@@ -187,7 +204,7 @@ export class GenerateDailyReport {
         }
       }
 
-      if (summary.logCount === 0) {
+      if (summary.logCount === 0 && !syncSnapshot) {
         this.#logger.info?.('report.generate.skipped', { userId, date, reason: 'no_logs' });
         return { success: true, skipped: true, skippedReason: 'No food logged for this date' };
       }
@@ -196,19 +213,20 @@ export class GenerateDailyReport {
       let status = null;
       let statusMsgId;
 
-      if (messaging.createStatusIndicator) {
+      // Background replication keeps the previous report visible while rendering.
+      if (!syncSnapshot && messaging.createStatusIndicator) {
         status = await messaging.createStatusIndicator(
           '📊 Generating report',
           { frames: ['.', '..', '...'], interval: 2000 }
         );
         statusMsgId = status.messageId;
-      } else {
+      } else if (!syncSnapshot) {
         const result = await messaging.sendMessage('📊 Generating report...', {});
         statusMsgId = result.messageId;
       }
 
       // 4. Get items for the report
-      const items = await this.#nutriListStore.findByDate(userId, date);
+      const items = syncSnapshot?.items ?? await this.#nutriListStore.findByDate(userId, date);
 
       // 5. Calculate totals
       const totals = items.reduce(
@@ -222,13 +240,13 @@ export class GenerateDailyReport {
         { calories: 0, protein: 0, carbs: 0, fat: 0 }
       );
 
-      const goals = this.#config.getUserGoals?.(userId);
+      const goals = syncSnapshot?.goals ?? this.#config.getUserGoals?.(userId);
       if (!goals) {
         throw new Error(`getUserGoals returned null for user ${userId}`);
       }
 
       // 6. Build history for chart
-      const history = await this.#buildHistory(userId, anchorDateForHistory);
+      const history = syncSnapshot?.history ?? await this.#buildHistory(userId, anchorDateForHistory);
 
       // 7. Generate PNG report if renderer available
       let preparedReport = null;
@@ -243,13 +261,14 @@ export class GenerateDailyReport {
           }));
         } catch (e) {
           this.#logger.error?.('report.png.failed', { error: e.message });
+          if (syncSnapshot) throw e;
         }
       }
 
       // 8. Cancel status indicator before sending report
       if (status) {
         await status.cancel();
-      } else {
+      } else if (statusMsgId) {
         try {
           await messaging.deleteMessage(statusMsgId);
         } catch (e) {
@@ -287,13 +306,14 @@ export class GenerateDailyReport {
       let messageId;
       if (preparedReport) {
         const result = await preparedReport.sendTo(messaging, caption, {
+          silent: Boolean(syncSnapshot),
           choices: buttons,
           inline: true,
         });
         messageId = result.messageId;
       } else {
-        const reportMessage = this.#buildReportMessage(summary, date);
-        const result = await messaging.sendMessage( reportMessage, { parseMode: 'HTML', choices: buttons, inline: true });
+        const reportMessage = `${syncSnapshot ? `${date} · ${caption}\n\n` : ''}${this.#buildReportMessage(summary, date)}`;
+        const result = await messaging.sendMessage( reportMessage, { parseMode: 'HTML', choices: buttons, inline: true, silent: Boolean(syncSnapshot) });
         messageId = result.messageId;
       }
 
@@ -307,15 +327,26 @@ export class GenerateDailyReport {
           if (!state) {
             state = { conversationId };
           }
+          if (syncSnapshot) {
+            supersededReportId = state.nutritionReportMessages?.[date]
+              || (state.lastReportDate === date ? state.lastReportMessageId : null);
+            state.nutritionReportMessages = { ...state.nutritionReportMessages, [date]: messageId };
+          }
           state.lastReportMessageId = messageId;
+          state.lastReportDate = date;
           await this.#conversationStateStore.set(conversationId, state);
         } catch (e) {
           this.#logger.warn?.('report.saveState.error', { error: e.message });
         }
       }
 
+      if (supersededReportId && String(supersededReportId) !== String(messageId)) {
+        try { await messaging.deleteMessage(supersededReportId); }
+        catch (error) { this.#logger.warn?.('report.deletePrevious.error', { error: error.message }); }
+      }
+
       // 13. Send coaching commentary (fire-and-forget)
-      if (this.#coachingOrchestrator) {
+      if (this.#coachingOrchestrator && !input.suppressCoaching) {
         this.#coachingOrchestrator.sendPostReport({
           userId,
           conversationId,

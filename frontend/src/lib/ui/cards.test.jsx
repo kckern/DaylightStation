@@ -4,6 +4,13 @@ import { render, screen } from '@testing-library/react';
 import { SectionCard, StatCard } from './cards.jsx';
 
 describe('cards', () => {
+  it('offers a compact layout without changing the stat content', () => {
+    const { container } = render(<StatCard compact label="Weight" value="171.6" unit="lb" trend="Stable" spark={<svg aria-label="Trend" />} />);
+    expect(container.querySelector('.ds-stat--compact')).toBeTruthy();
+    expect(screen.getByText('171.6')).toBeTruthy();
+    expect(screen.getByText('Stable')).toBeTruthy();
+    expect(screen.getByLabelText('Trend')).toBeTruthy();
+  });
   it('SectionCard renders title, actions, children', () => {
     render(
       <SectionCard title="Weight" actions={<button>edit</button>}>

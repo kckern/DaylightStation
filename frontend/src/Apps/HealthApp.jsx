@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { lazy, Suspense, useLayoutEffect, useRef, useState } from 'react';
+import { ActionIcon } from '@mantine/core';
 import { localDateISO } from '@shared-contracts/health/isoDate.mjs';
 import { useApiResource } from '../lib/hooks/useApiResource.js';
 import { AgentConversationProvider, useAgentConversation } from '../modules/Agent/AgentChatSurface.jsx';
@@ -16,6 +17,7 @@ import { TodayView } from '../modules/Health/today/TodayView.jsx';
 import '../modules/Health/health.scss';
 const ProgressView = lazy(() => import('../modules/Health/progress/ProgressView.jsx').then(module => ({ default: module.ProgressView })));
 const MedicalView = lazy(() => import('../modules/Health/medical/MedicalView.jsx').then(module => ({ default: module.MedicalView })));
+const HealthSettings = lazy(() => import('../modules/Health/cleanup/HealthSettings.jsx').then(module => ({ default: module.HealthSettings })));
 
 const Icon = ({ d }) => (
   <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -37,6 +39,7 @@ const TAB_PATH = { today: '/health', progress: '/health/progress', health: '/hea
 // /health/* subpath (including the bare /health itself) falls through to
 // "today", matching the index route's <Navigate>-free default render.
 function tabForPath(pathname) {
+  if (pathname.startsWith('/health/settings')) return 'settings';
   if (pathname.startsWith('/health/progress')) return 'progress';
   if (pathname.startsWith('/health/medical')) return 'health';
   if (pathname.startsWith('/health/coach')) return 'coach';
@@ -80,6 +83,7 @@ const HealthShell = ({ userId }) => {
             if (event.target.matches('.ds-chrome__main')) scrollPositions.current.set(activeTab, event.target.scrollTop);
           }}>
           <AppChrome title="Health" tabs={TABS} activeTab={activeTab}
+            headerActions={<ActionIcon aria-label="Health settings" variant="subtle" onClick={() => navigate('/health/settings')}><Icon d="M4 5h12M4 10h12M4 15h12M7 3v4M13 8v4M9 13v4" /></ActionIcon>}
             onTabChange={(id) => navigate(`${TAB_PATH[id] || '/health'}${location.search}`)}>
             {/* Keep the logging session (drafts, pending requests, retry bytes)
                 alive between tabs; hidden views do not poll or acquire media. */}
@@ -90,6 +94,7 @@ const HealthShell = ({ userId }) => {
               <Route index element={null} />
               <Route path="progress" element={<ProgressView />} />
               <Route path="medical" element={<MedicalView />} />
+              <Route path="settings" element={<HealthSettings />} />
               {/* CoachChat only supports variant 'light'|'overlay' (see AgentChatSurface) —
                   'full' isn't a real variant. The default 'light' variant is already the
                   full-height flex-column layout (`.coach-chat { height: 100% }`), which is

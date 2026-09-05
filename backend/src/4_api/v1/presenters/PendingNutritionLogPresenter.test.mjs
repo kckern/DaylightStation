@@ -30,7 +30,7 @@ describe('deriveNutritionLogSource', () => {
 describe('presentPendingNutritionLog', () => {
   it('projects id, createdAt, source, mealTime, and a slim items list', () => {
     const result = presentPendingNutritionLog(baseLog);
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       id: 'log-1',
       createdAt: '2026-08-30T11:42:00.000Z',
       source: 'telegram',

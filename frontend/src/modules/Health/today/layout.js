@@ -10,9 +10,10 @@
 // layout.contract.test.js reads the COMPILED stylesheet and fails if they ever
 // disagree (jsdom cannot see layout, but it can read a compiled rule).
 import { useEffect, useState } from 'react';
+import { DS_TOKENS } from '../../../lib/theme/tokens.mjs';
 
 /** Below this the Today column is a single stack; at or above it, main + aside. */
-export const ASIDE_MIN_WIDTH_PX = 1100;
+export const ASIDE_MIN_WIDTH_PX = DS_TOKENS.breakpoints.lg;
 export const ASIDE_MEDIA_QUERY = `(min-width: ${ASIDE_MIN_WIDTH_PX}px)`;
 
 /**

@@ -25,7 +25,7 @@ vi.mock('../capture/VoiceCapture.jsx', () => ({
 }));
 vi.mock('../capture/BarcodeCapture.jsx', () => ({ BarcodeCapture: () => null }));
 vi.mock('../capture/CustomFoodSheet.jsx', () => ({ CustomFoodSheet: () => null }));
-vi.mock('./QuickCaptureBar.jsx', () => ({ QuickCaptureBar: () => null }));
+vi.mock('./QuickCaptureBar.jsx', () => ({ QuickCaptureBar: ({ onVoiceCapture }) => <button onClick={() => onVoiceCapture('data:audio/webm;base64,zzz', 'morning')}>MockVoiceCapture-morning</button> }));
 
 import { MemoryRouter } from 'react-router-dom';
 import { TodayView } from './TodayView.jsx';

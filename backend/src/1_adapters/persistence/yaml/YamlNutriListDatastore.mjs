@@ -69,6 +69,8 @@ function dehydrateNutriListItem(log, item) {
     microsSource: item.microsSource,
     foodId: item.foodId,
     nutrientProvenance: item.nutrientProvenance,
+    manualFields: item.manualFields,
+    cleanupFields: item.cleanupFields,
     originalQuantity: item.originalQuantity ?? { amount: item.amount, unit: item.unit },
   };
 }
@@ -126,6 +128,26 @@ export class YamlNutriListDatastore extends INutriListDatastore {
 
   #revisionPath(userId) {
     return this.#dataService.user.resolveDir('lifelog/nutrition/ledger-revision', userId);
+  }
+
+  #cleanupAuditPath(userId) {
+    return this.#dataService.user.resolveDir('lifelog/nutrition/cleanup-audit', userId);
+  }
+
+  async getCleanupAudit(userId, id) {
+    this.#recover(userId);
+    return (loadYaml(this.#cleanupAuditPath(userId)) || {})[id] || null;
+  }
+
+  async listCleanupAudit(userId, { offset = 0, limit = 50 } = {}) {
+    this.#recover(userId);
+    const records = Object.values(loadYaml(this.#cleanupAuditPath(userId)) || {}).reverse();
+    return { records: records.slice(offset, offset + Math.min(limit, 100)), total: records.length };
+  }
+
+  getRevision(userId) {
+    this.#recover(userId);
+    return loadYaml(this.#revisionPath(userId))?.revision || 0;
   }
 
   readDaySnapshot(userId, date) {
@@ -225,9 +247,14 @@ export class YamlNutriListDatastore extends INutriListDatastore {
   }
 
   /** One validated mutation across active/archive rows and their summaries. */
-  async mutateEntries(userId, { updates = [], deleteIds = [] } = {}) {
+  async mutateEntries(userId, { updates = [], deleteIds = [], creates = [], audit = null, validate = null, dryRun = false } = {}) {
     const documents = this.#documents(userId);
     const all = [...documents.values()].flat();
+    const auditRecords = audit ? (loadYaml(this.#cleanupAuditPath(userId)) || {}) : null;
+    if (audit && auditRecords[audit.id]) {
+      if (auditRecords[audit.id].fingerprint !== audit.fingerprint) throw Object.assign(new Error('Repair operation was reused'), { status: 409 });
+      return auditRecords[audit.id].result;
+    }
     const matches = (row, id) => row.uuid === id || row.id === id;
     const affectedDates = new Set();
     const affectedIds = new Set();
@@ -242,6 +269,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
         throw Object.assign(new Error('This entry changed. Reload it before saving.'), { code: 'VERSION_CONFLICT', status: 409 });
       }
       if (changes.date != null && !isISODate(changes.date)) throw Object.assign(new Error('Invalid date'), { status: 400 });
+      if (Object.entries(changes).every(([key, value]) => JSON.stringify(original[key]) === JSON.stringify(value))) continue;
       const next = { ...original, ...changes, version: (original.version ?? 1) + 1 };
       if (Object.hasOwn(changes, 'name')) Object.assign(next, { item: changes.name, label: changes.name });
       changed.set(original.uuid || original.id, next);
@@ -258,6 +286,14 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     const writes = new Map();
     const destination = this.#getPath(userId);
     const relocated = [];
+    for (const row of creates) {
+      if (row.kind !== 'group' || all.some(existing => matches(existing, row.uuid || row.id))) {
+        throw Object.assign(new Error('Invalid or duplicate group header'), { status: 409 });
+      }
+      relocated.push({ ...row, version: 1 });
+      affectedIds.add(row.uuid || row.id);
+      affectedDates.add(row.date);
+    }
     for (const [file, rows] of documents) {
       const next = rows.flatMap(row => {
         const key = row.uuid || row.id;
@@ -273,6 +309,8 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     }
     if (relocated.length) writes.set(destination, [...(writes.get(destination) || documents.get(destination)), ...relocated]);
     const finalRows = [...documents].flatMap(([file, rows]) => writes.get(file) || rows);
+    validate?.({ before: all, after: finalRows });
+    if (dryRun || !affectedIds.size) return { items: [], affectedIds: [], affectedDates: [], dryRun };
     const summaries = this.#readNutriday(userId);
     for (const date of affectedDates) {
       if (!date) continue;
@@ -290,9 +328,17 @@ export class YamlNutriListDatastore extends INutriListDatastore {
       for (const key of removed) deleted[key] = all.find(row => (row.uuid || row.id) === key);
       writes.set(this.#tombstonePath(userId), deleted);
     }
-    this.#commit(userId, writes);
-    return { items: [...changed.values()].map(row => this.#normalizeItem(row)),
+    const result = { items: [...changed.values(), ...creates].map(row => this.#normalizeItem(row)),
       affectedIds: [...affectedIds], affectedDates: [...affectedDates].filter(Boolean) };
+    if (audit) {
+      auditRecords[audit.id] = { ...audit, userId,
+        before: all.filter(row => affectedIds.has(row.uuid || row.id)),
+        after: finalRows.filter(row => affectedIds.has(row.uuid || row.id)),
+        result };
+      writes.set(this.#cleanupAuditPath(userId), auditRecords);
+    }
+    this.#commit(userId, writes);
+    return result;
   }
 
   /** Restore exactly the deleted snapshots; never reconstruct nutrition. */
@@ -476,6 +522,8 @@ export class YamlNutriListDatastore extends INutriListDatastore {
         originalQuantity: item.originalQuantity ?? { amount: item.amount ?? null, unit: item.unit ?? null },
         nutrientBasis: item.nutrientBasis ?? null,
         nutrientProvenance: item.nutrientProvenance ?? null,
+        manualFields: item.manualFields ?? [],
+        cleanupFields: item.cleanupFields ?? [],
         copiedFrom: item.copiedFrom ?? null,
         grams: foodGrams(item),
         unit: item.unit || 'g',

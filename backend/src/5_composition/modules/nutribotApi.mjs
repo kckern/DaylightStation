@@ -42,6 +42,7 @@ export function createNutribotApiRouter(config) {
   // Create webhook parser and input router
   const webhookParser = botId ? new TelegramWebhookParser({ botId, logger }) : null;
   const applicationInputRouter = new NutribotInputRouter(nutribotServices.nutribotContainer, {
+    cleanupProvider: config.cleanupProvider,
     userResolver,
     userIdentityService,
     config: nutribotServices.nutribotContainer.getConfig?.(),

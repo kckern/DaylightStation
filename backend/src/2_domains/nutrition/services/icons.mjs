@@ -26,20 +26,35 @@ export const NEUTRAL_ICON = 'default';
  * @param {string} foodIconsString
  * @returns {Set<string>}
  */
-export function iconVocabulary(foodIconsString) {
-  return new Set(
+export function iconVocabulary(foodIconsString, foodNames = {}) {
+  const vocabulary = new Set(
     String(foodIconsString || '')
       .split(/\s+/)
       .filter(Boolean),
   );
+  vocabulary.foodNames = new Map(Object.entries(foodNames).map(([name, icon]) => [normalizeName(name), icon]));
+  return vocabulary;
 }
+
+const normalizeName = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
 /**
  * @param {unknown} icon - whatever the model put in the `icon` field
  * @param {Set<string>} vocabulary
  * @returns {string} a slug that is either in the vocabulary or the sentinel
  */
-export function confineIcon(icon, vocabulary) {
+export function confineIcon(icon, vocabulary, foodName = '') {
+  const name = normalizeName(foodName);
+  if (vocabulary.foodNames?.has(name)) {
+    const reviewed = vocabulary.foodNames.get(name);
+    return vocabulary.has(reviewed) ? reviewed : NEUTRAL_ICON;
+  }
+  // These observed mismatches are not equivalents: condiments ≠ ranch,
+  // whipped cream ≠ cream sauce, and a tortilla ≠ the dish it contains.
+  if (['white fish', 'fish taco', 'ranch', 'ranch dressing', 'cream sauce', 'white sauce'].includes(name)) {
+    const exact = name.replaceAll(' ', '-');
+    return vocabulary.has(exact) ? exact : NEUTRAL_ICON;
+  }
   if (typeof icon !== 'string' || !icon) return NEUTRAL_ICON;
   return vocabulary.has(icon) ? icon : NEUTRAL_ICON;
 }

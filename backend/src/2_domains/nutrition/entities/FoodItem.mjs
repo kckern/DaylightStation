@@ -106,6 +106,8 @@ export class FoodItem {
     this.foodId = data.foodId;
     this.nutrientProvenance = data.nutrientProvenance;
     this.originalQuantity = data.originalQuantity;
+    this.manualFields = data.manualFields;
+    this.cleanupFields = data.cleanupFields;
 
     Object.freeze(this);
   }
@@ -205,6 +207,8 @@ export class FoodItem {
       foodId: this.foodId,
       nutrientProvenance: this.nutrientProvenance,
       originalQuantity: this.originalQuantity,
+      manualFields: this.manualFields,
+      cleanupFields: this.cleanupFields,
       ...updates,
     });
   }

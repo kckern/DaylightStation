@@ -10,13 +10,13 @@ export function EquationStrip({ budget, budgetError, date, today, onDateChange, 
       <DateStepper date={date} onChange={onDateChange} max={today} />
       {budget ? (
         <div className="health-equation__math" aria-label="Calorie equation">
-          <span>{n(budget.budget)}</span>
+          <span><small>Budget </small>{n(budget.budget)}</span>
           <span className="health-equation__op">−</span>
-          <span>{n(budget.food)}</span>
+          <span><small>Food </small>{n(budget.food)}</span>
           <span className="health-equation__op">+</span>
-          <span>{n(budget.exercise)}</span>
+          <span><small>Exercise </small>{n(budget.exercise)}</span>
           <span className="health-equation__op">=</span>
-          <strong className="health-equation__net">{n(Math.abs(budget.remaining))}</strong>
+          <strong className="health-equation__net">{n(Math.abs(budget.remaining))} kcal</strong>
           <span className="health-equation__status">{budget.status}</span>
           {budget.stale ? <span className="health-equation__stale" title="Latest weigh-in is over a week old">stale wt</span> : null}
         </div>

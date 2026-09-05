@@ -36,6 +36,8 @@ import { SelectScaleDensity } from './usecases/SelectScaleDensity.mjs';
 import { ShowScaleDensityHelp } from './usecases/ShowScaleDensityHelp.mjs';
 import { RetractScaleLog } from './usecases/RetractScaleLog.mjs';
 import { LogScaleFoodFromText } from './usecases/LogScaleFoodFromText.mjs';
+import { FoodLogReview } from '#apps/nutrition/FoodLogReview.mjs';
+import { createLocalNutritionResponse } from './services/LocalNutritionResponse.mjs';
 
 /**
  * NutriBot Container
@@ -68,6 +70,7 @@ export class NutribotContainer {
   #imageDownloader;
   #photoStore;
   #pause;
+  #foodLogReview;
 
   // Use Cases (lazy-loaded)
   #logFoodFromImage;
@@ -120,7 +123,7 @@ export class NutribotContainer {
     this.#logger = options.logger || console;
 
     // Accept injected dependencies
-    this.#messagingGateway = options.messagingGateway;
+    this.#messagingGateway = options.messagingGateway || createLocalNutritionResponse();
     this.#aiGateway = options.aiGateway;
     this.#upcGateway = options.upcGateway;
     this.#googleImageGateway = options.googleImageGateway;
@@ -217,6 +220,7 @@ export class NutribotContainer {
         conversationStateStore: this.#conversationStateStore,
         config: this.#config,
         foodIconsString: this.#foodIconsString,
+        foodIconNames: this.#options.foodIconNames,
         logger: this.#logger,
         pause: this.#pause,
         reconciliationReader: this.#reconciliationReader,
@@ -237,6 +241,7 @@ export class NutribotContainer {
         conversationStateStore: this.#conversationStateStore,
         config: this.#config,
         foodIconsString: this.#foodIconsString,
+        foodIconNames: this.#options.foodIconNames,
         logger: this.#logger,
         reconciliationReader: this.#reconciliationReader,
         catalogService: this.#catalogService,
@@ -248,6 +253,7 @@ export class NutribotContainer {
   getLogFoodFromVoice() {
     if (!this.#logFoodFromVoice) {
       this.#logFoodFromVoice = new LogFoodFromVoice({
+        transcribeAudio: this.#options.transcribeAudio,
         messagingGateway: this.getMessagingGateway(),
         logFoodFromText: this.getLogFoodFromText(),
         logger: this.#logger,
@@ -267,6 +273,7 @@ export class NutribotContainer {
         conversationStateStore: this.#conversationStateStore,
         config: this.#config,
         foodIconsString: this.#foodIconsString,
+        foodIconNames: this.#options.foodIconNames,
         logger: this.#logger,
         barcodeGenerator: this.#barcodeGenerator,
         catalogService: this.#catalogService,
@@ -371,6 +378,7 @@ export class NutribotContainer {
   getAcceptFoodLog() {
     if (!this.#acceptFoodLog) {
       this.#acceptFoodLog = new AcceptFoodLog({
+        reviewService: this.getFoodLogReview(),
         messagingGateway: this.getMessagingGateway(),
         foodLogStore: this.#foodLogStore,
         nutriListStore: this.#nutriListStore,
@@ -387,6 +395,7 @@ export class NutribotContainer {
   getDiscardFoodLog() {
     if (!this.#discardFoodLog) {
       this.#discardFoodLog = new DiscardFoodLog({
+        reviewService: this.getFoodLogReview(),
         messagingGateway: this.getMessagingGateway(),
         foodLogStore: this.#foodLogStore,
         nutriListStore: this.#nutriListStore,
@@ -415,6 +424,7 @@ export class NutribotContainer {
         messagingGateway: this.getMessagingGateway(),
         aiGateway: this.getAIGateway(),
         foodIconsString: this.#foodIconsString,
+        foodIconNames: this.#options.foodIconNames,
         foodLogStore: this.#foodLogStore,
         nutriListStore: this.#nutriListStore,
         conversationStateStore: this.#conversationStateStore,
@@ -427,6 +437,7 @@ export class NutribotContainer {
   getSelectUPCPortion() {
     if (!this.#selectUPCPortion) {
       this.#selectUPCPortion = new SelectUPCPortion({
+        reviewService: this.getFoodLogReview(),
         messagingGateway: this.getMessagingGateway(),
         foodLogStore: this.#foodLogStore,
         nutriListStore: this.#nutriListStore,
@@ -439,6 +450,10 @@ export class NutribotContainer {
   }
 
   // ==================== Reporting Use Cases ====================
+
+  getFoodLogReview() {
+    return this.#foodLogReview ||= new FoodLogReview({ foodLogs: this.#foodLogStore, items: this.#nutriListStore, logger: this.#logger });
+  }
 
   getGenerateDailyReport() {
     if (!this.#generateDailyReport) {

@@ -1,8 +1,10 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { LogTable } from './LogTable.jsx';
 import { BUCKETS } from './mealBuckets.js';
+
+beforeEach(() => sessionStorage.clear());
 
 const byBucket = new Map([
   ['morning', [{ uuid: '1', name: 'Eggs', calories: 140, amount: 2, unit: 'lg', color: 'green' }]],
@@ -127,9 +129,10 @@ describe('LogTable', () => {
 
     it('a collapsed group shows its rolled-up kcal while its children are not rendered', () => {
       render(<LogTable byBucket={groupBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+      fireEvent.click(screen.getByRole('button', { name: /collapse smoothie/i }));
       expect(screen.getByText('Smoothie')).toBeTruthy();
       // Rollup (105 + 120), not the group row's own (zero) calories.
-      expect(screen.getByText('225')).toBeTruthy();
+      expect(document.querySelector('.health-row--group .health-row__kcal').textContent).toBe('Total · 225 kcal');
       expect(screen.queryByText('Banana')).toBeNull();
       expect(screen.queryByText('Protein powder')).toBeNull();
       const expandBtn = screen.getByRole('button', { name: /expand smoothie/i });
@@ -138,10 +141,12 @@ describe('LogTable', () => {
 
     it('expanding the group reveals its children indented, without changing the rollup', () => {
       render(<LogTable byBucket={groupBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+      expect(screen.getByText('Banana')).toBeTruthy(); // Expanded by default.
+      fireEvent.click(screen.getByRole('button', { name: /collapse smoothie/i }));
       fireEvent.click(screen.getByRole('button', { name: /expand smoothie/i }));
       expect(screen.getByText('Banana')).toBeTruthy();
       expect(screen.getByText('Protein powder')).toBeTruthy();
-      expect(screen.getByText('225')).toBeTruthy();
+      expect(document.querySelector('.health-row--group .health-row__kcal').textContent).toBe('Total · 225 kcal');
       const collapseBtn = screen.getByRole('button', { name: /collapse smoothie/i });
       expect(collapseBtn.getAttribute('aria-expanded')).toBe('true');
     });
@@ -156,7 +161,7 @@ describe('LogTable', () => {
     it('bucket kcal total counts each gram once (group contributes zero, children carry the values)', () => {
       render(<LogTable byBucket={groupBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
       // 0 (group) + 105 + 120 = 225, not 450 (double-counted) or 0.
-      expect(screen.getByText('225 kcal')).toBeTruthy();
+      expect(document.querySelector('.health-meal__kcal').textContent).toBe('225 kcal');
     });
 
     // Regression: LogTable must render attached children regardless of the
@@ -177,43 +182,25 @@ describe('LogTable', () => {
       expect(screen.getByText('Plate')).toBeTruthy();
       // Rolled-up kcal shown collapsed; the child itself appears once expanded.
       expect(screen.getByText('200')).toBeTruthy();
-      const expandBtn = screen.getByRole('button', { name: /expand plate/i });
-      fireEvent.click(expandBtn);
+      expect(screen.getByRole('button', { name: /collapse plate/i })).toBeTruthy();
       expect(screen.getByText('Side item')).toBeTruthy();
     });
 
   });
 
   describe('per-meal capture controls (Task 4.2)', () => {
-    it('every meal section renders mic/camera/barcode controls with bucket-specific accessible names', () => {
-      render(<LogTable byBucket={emptyByBucket} sessions={[]}
-        onAddTo={() => {}} onRowTap={() => {}}
-        onVoiceCapture={() => {}} onPhotoCapture={() => {}} onOpenBarcode={() => {}} />, { wrapper });
-
-      // One meal spot-checked in full…
-      expect(screen.getByRole('button', { name: 'Log by voice to Breakfast' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Log by photo to Breakfast' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Scan barcode to Breakfast' })).toBeTruthy();
-      // …and every OTHER bucket gets its own distinctly-named trio, not a
-      // shared/ambiguous "Log by voice" label repeated four times — that's
-      // the whole point of the a11y requirement (four otherwise-identical
-      // buttons would be indistinguishable to a screen-reader user).
-      for (const label of ['Lunch', 'Dinner', 'Snacks']) {
-        expect(screen.getByRole('button', { name: `Log by voice to ${label}` })).toBeTruthy();
-        expect(screen.getByRole('button', { name: `Log by photo to ${label}` })).toBeTruthy();
-        expect(screen.getByRole('button', { name: `Scan barcode to ${label}` })).toBeTruthy();
-      }
+    it('meal headers do not repeat capture controls', () => {
+      render(<LogTable byBucket={emptyByBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
+      expect(screen.queryByRole('button', { name: /Log by voice/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Scan barcode/ })).toBeNull();
+      expect(screen.getAllByRole('button', { name: /Add food/ })).toHaveLength(4);
     });
 
-    it('tapping a given section\'s barcode control fires onOpenBarcode with THAT section\'s bucket id', () => {
-      const onOpenBarcode = vi.fn();
-      render(<LogTable byBucket={emptyByBucket} sessions={[]}
-        onAddTo={() => {}} onRowTap={() => {}}
-        onVoiceCapture={() => {}} onPhotoCapture={() => {}} onOpenBarcode={onOpenBarcode} />, { wrapper });
-
-      fireEvent.click(screen.getByRole('button', { name: 'Scan barcode to Lunch' }));
-      expect(onOpenBarcode).toHaveBeenCalledWith('afternoon');
-      expect(onOpenBarcode).not.toHaveBeenCalledWith('morning');
+    it('Add food preserves the chosen meal target', () => {
+      const onAddTo = vi.fn();
+      render(<LogTable byBucket={emptyByBucket} sessions={[]} onAddTo={onAddTo} onRowTap={() => {}} />, { wrapper });
+      fireEvent.click(screen.getByText('Lunch').closest('section').querySelector('.health-meal__add'));
+      expect(onAddTo).toHaveBeenCalledWith('afternoon');
     });
 
     it('the Ungrouped/orphans section carries NO capture controls (only real meal buckets do)', () => {
@@ -256,7 +243,7 @@ describe('LogTable — per-meal macro subtotal', () => {
       { uuid: '1', name: 'Eggs', calories: 140, protein: 12, carbs: 1, fat: 10 },
       { uuid: '2', name: 'Toast', calories: 90, protein: 3, carbs: 17, fat: 1 },
     ])} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
-    expect(screen.getByText('P 15 · C 18 · F 11')).toBeTruthy();
+    expect(screen.getByText('Protein 15 g · Carbs 18 g · Fat 11 g')).toBeTruthy();
   });
 
   it('counts a group and its children ONCE — the group row carries zero macros by design', () => {
@@ -265,7 +252,7 @@ describe('LogTable — per-meal macro subtotal', () => {
       { uuid: 'c1', parentId: 'g1', name: 'Banana', calories: 105, protein: 1, carbs: 27, fat: 0 },
       { uuid: 'c2', parentId: 'g1', name: 'Yogurt', calories: 100, protein: 10, carbs: 6, fat: 3 },
     ])} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
-    expect(screen.getByText('P 11 · C 33 · F 3')).toBeTruthy();
+    expect(screen.getByText('Protein 11 g · Carbs 33 g · Fat 3 g')).toBeTruthy();
   });
 
   it('renders NO subtotal line for a meal of legacy rows with no macro data', () => {

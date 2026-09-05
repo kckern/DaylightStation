@@ -87,7 +87,7 @@ describe('EntryRow', () => {
 
     it('shows the rollup kcal (not the group row\'s own zero) and a real expand button with aria-expanded', () => {
       r(<EntryRow row={groupRow} onTap={() => {}} onConfirm={() => {}} isGroup expanded={false} onToggle={() => {}} rollupKcal={225} />);
-      expect(screen.getByText('225')).toBeTruthy();
+      expect(document.querySelector('.health-row__kcal').textContent).toBe('Total · 225 kcal');
       const btn = screen.getByRole('button', { name: /expand smoothie/i });
       expect(btn.getAttribute('aria-expanded')).toBe('false');
     });
@@ -186,14 +186,14 @@ describe('EntryRow', () => {
   // Task 7.4 — food icons. The Noom dot stays the fallback glyph, so every
   // assertion here is a pair: what appears AND what it replaced.
   describe('food icon', () => {
-    const icon = () => document.querySelector('img.health-row__icon');
-    const dot = () => document.querySelector('svg.health-row__icon');
+    const icon = () => document.querySelector('.health-row__icon img');
+    const dot = () => document.querySelector('.health-row__icon svg');
 
     it('a row with an icon renders the picture instead of the dot', () => {
       r(<EntryRow row={{ ...baseRow, icon: 'fried-eggs' }} onTap={() => {}} onConfirm={() => {}} />);
       expect(icon()).toBeTruthy();
       expect(icon().getAttribute('src')).toBe('/api/v1/health/nutrition/icons/fried-eggs');
-      expect(dot()).toBeFalsy();
+      expect(dot()).toBeTruthy(); // Placeholder remains until decode completes.
     });
 
     it('a row with no icon renders a semantic food fallback', () => {
@@ -210,7 +210,7 @@ describe('EntryRow', () => {
 
     it('a failed icon load falls back to a food glyph rather than a broken-image glyph', () => {
       r(<EntryRow row={{ ...baseRow, icon: 'fried-eggs' }} onTap={() => {}} onConfirm={() => {}} />);
-      expect(dot()).toBeFalsy();
+      expect(dot()).toBeTruthy(); // Placeholder remains until decode completes.
       fireEvent.error(icon());
       expect(icon()).toBeFalsy();
       expect(dot()).toBeTruthy();
@@ -261,9 +261,10 @@ describe('EntryRow', () => {
         expect(icon().getAttribute('src')).toContain('avocado-toast');
       });
 
-      it("a dish with no icon borrows the first child that has one", () => {
+      it("a dish with no icon does not borrow misleading ingredient art", () => {
         renderGroup(group({ children: [{ uuid: 'c1' }, { uuid: 'c2', icon: 'fried-eggs' }] }));
-        expect(icon().getAttribute('src')).toContain('fried-eggs');
+        expect(icon()).toBeNull();
+        expect(dot()).toBeTruthy();
       });
 
       it('a dish whose children have no icons uses the shared food fallback', () => {

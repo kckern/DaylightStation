@@ -11,37 +11,7 @@ import { formatLocalTimestamp } from '#domains/core/utils/time.mjs';
 import { FoodItem } from './FoodItem.mjs';
 import { getMealTimeFromHour, validateNutriLog, LogStatuses } from './schemas.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
-
-function foodItemRecord(item) {
-  return {
-    id: item.id,
-    uuid: item.uuid,
-    label: item.label,
-    icon: item.icon,
-    grams: item.grams,
-    unit: item.unit,
-    amount: item.amount,
-    color: item.color,
-    calories: item.calories,
-    protein: item.protein,
-    carbs: item.carbs,
-    fat: item.fat,
-    fiber: item.fiber,
-    sugar: item.sugar,
-    sodium: item.sodium,
-    cholesterol: item.cholesterol,
-    // Lifecycle / group fields must survive every FoodItem -> record -> NutriLog
-    // round-trip (`with`, `setItems`, `updateItem` all go through here).
-    // `settled` is absence-sensitive: absent = legacy row = treat as settled.
-    kind: item.kind,
-    parentId: item.parentId,
-    photoRef: item.photoRef,
-    ...(item.settled !== undefined ? { settled: item.settled } : {}),
-    settledBy: item.settledBy,
-    settledAt: item.settledAt,
-    microsSource: item.microsSource,
-  };
-}
+import { serializeFoodItem as foodItemRecord } from '#shared/contracts/nutrition/foodItemRecord.mjs';
 
 /**
  * NutriLog entity - aggregate root for food logging

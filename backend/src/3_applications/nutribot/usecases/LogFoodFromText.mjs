@@ -80,7 +80,7 @@ export class LogFoodFromText {
     this.#logger = deps.logger || console;
     this.#encodeCallback = deps.encodeCallback || ((cmd, data) => JSON.stringify({ cmd, ...data }));
     this.#foodIconsString = deps.foodIconsString || 'apple banana bread cheese chicken default';
-    this.#iconVocabulary = iconVocabulary(this.#foodIconsString);
+    this.#iconVocabulary = iconVocabulary(this.#foodIconsString, deps.foodIconNames);
     this.#reconciliationReader = deps.reconciliationReader || null;
     this.#catalogService = deps.catalogService || null;
     this.#pause = deps.pause || (async () => {});
@@ -502,7 +502,7 @@ export class LogFoodFromText {
 2. Estimate portion sizes in grams or common measures
 3. Estimate macros (calories, protein, carbs, fat) and micronutrients (fiber, sugar, sodium, cholesterol) for each item
 4. Assign a noom_color: "green" (low cal density), "yellow" (moderate), or "orange" (high cal density)
-5. Select the best matching icon from this list: ${this.#foodIconsString}
+5. Select an equivalent food icon from this list: ${this.#foodIconsString}. Use "default" if none depicts the actual food; similar colors or ingredients are not an equivalent.
 6. Determine the date - today is ${dayOfWeek}, ${today} at ${timeAMPM} (TZ: ${timezone}, unix: ${unix}).
    If user mentions "yesterday", "last night", "on wednesday", etc., calculate the actual date.
 7. Use Title Case for all food names (e.g., "Grilled Chicken Breast", "Mashed Potatoes")
@@ -586,7 +586,7 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
             unit: gramsRounded ? 'g' : item.unit || 'serving',
             amount: item.quantity || item.amount || gramsRounded || 1,
             color: this.#normalizeNoomColor(item.noom_color || item.color),
-            icon: confineIcon(item.icon, this.#iconVocabulary),
+            icon: confineIcon(item.icon, this.#iconVocabulary, item.name || item.label),
             calories: item.calories ?? 0,
             protein: item.protein ?? 0,
             carbs: item.carbs ?? 0,

@@ -2253,9 +2253,8 @@ export async function createNutribotServices(config) {
   // decoration. Same fail-soft posture as healthApi.mjs's store.
   let foodIconsString = 'apple banana bread cheese chicken default';
   const mediaRoot = configService.getMediaDir?.() ?? null;
-  const manifestSlugs = mediaRoot
-    ? new IconManifestStore({ dataService, mediaRoot, logger }).list()
-    : [];
+  const iconManifest = mediaRoot ? new IconManifestStore({ dataService, mediaRoot, logger }) : null;
+  const manifestSlugs = iconManifest?.list() || [];
   if (manifestSlugs.length > 0) {
     foodIconsString = manifestSlugs.join(' ');
     logger.info?.('nutribot.icons.loaded', { count: manifestSlugs.length, source: 'manifest' });
@@ -2282,6 +2281,8 @@ export async function createNutribotServices(config) {
   const scaleConfig = normalizeScaleNutribotConfig(scaleRawConfig);
 
   const nutribotContainer = new NutribotContainer(nutribotConfig, {
+    foodIconNames: iconManifest?.foodNames() || {},
+    transcribeAudio: config.transcribeAudio,
     messagingGateway: telegramAdapter,
     aiGateway,
     upcGateway,
@@ -2751,15 +2752,9 @@ export async function createAgentsServices(config) {
   // Create coaching orchestrator (new template-driven system)
   let coachingOrchestrator = null;
   if (healthStore && messagingGateway) {
-    const { Agent } = await import('@mastra/core/agent');
-    const commentaryAgentFactory = () => new Agent({
-      name: 'health-coach-commentary',
-      instructions: CoachingCommentaryService.SYSTEM_PROMPT,
-      model: 'openai/gpt-4o-mini',
-    });
-
     const commentaryService = new CoachingCommentaryService({
-      agentFactory: commentaryAgentFactory,
+      runtime: new MastraAdapter({ model: 'openai/gpt-4o-mini', logger, maxToolCalls: 1, timeoutMs: 30000,
+        executionPolicy: new AgentExecutionPolicy({ maxToolCalls: 1, logger, transcriptStore }) }),
       logger,
     });
 

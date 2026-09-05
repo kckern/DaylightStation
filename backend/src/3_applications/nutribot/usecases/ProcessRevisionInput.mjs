@@ -40,7 +40,7 @@ export class ProcessRevisionInput {
     // stored row and must be confined the same way. Without the vocabulary
     // injected, every proposed icon collapses to the neutral sentinel — safe,
     // and visibly so, rather than silently storing a slug that 404s.
-    this.#iconVocabulary = iconVocabulary(deps.foodIconsString);
+    this.#iconVocabulary = iconVocabulary(deps.foodIconsString, deps.foodIconNames);
     this.#logger = deps.logger || console;
   }
 
@@ -269,7 +269,7 @@ Noom colors:
           unit: item.unit || 'serving',
           amount: item.quantity || item.amount || 1,
           color: this.#normalizeNoomColor(item.noom_color || item.color),
-          icon: confineIcon(item.icon, this.#iconVocabulary),
+          icon: confineIcon(item.icon, this.#iconVocabulary, item.name || item.label),
           calories: item.calories ?? 0,
           protein: item.protein ?? 0,
           carbs: item.carbs ?? 0,
