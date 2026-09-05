@@ -56,13 +56,17 @@ export function LessonIdentity({
   subject, courseTitle, moduleTitle, lessonTitle, posterUrl, heading = false, compact = false,
 }) {
   const Title = heading ? 'h2' : 'strong';
-  const courseLabel = courseTitle ?? 'Course unavailable';
+  // `null` is "this has no course" — a program that owns its own completion,
+  // like the reading shelf. `undefined` is "a course was expected and its
+  // metadata did not load", which is worth saying out loud. Collapsing the two
+  // put "Course unavailable" under healthy rows and read as a fault report.
+  const courseLabel = courseTitle === null ? null : (courseTitle ?? 'Course unavailable');
   return <div className={`teacher-lesson-identity${compact ? ' teacher-lesson-identity--compact' : ''}`}>
     <SubjectIdentity subject={subject} />
-    <PosterSlot posterUrl={posterUrl} label={courseLabel} />
+    <PosterSlot posterUrl={posterUrl} label={courseLabel ?? lessonTitle ?? 'this lesson'} />
     <div className="teacher-lesson-identity__copy">
       <Title>{lessonTitle ?? 'Lesson'}</Title>
-      <span>{courseLabel}</span>
+      {courseLabel && <span>{courseLabel}</span>}
       {/* This is authored display copy, not an id.  `labelize` would quietly
           damage capitalization such as US or a proper unit name. */}
       {moduleTitle && <small>{moduleTitle}</small>}
