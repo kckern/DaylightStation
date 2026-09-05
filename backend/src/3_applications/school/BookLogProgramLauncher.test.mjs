@@ -201,6 +201,20 @@ describe('BookLogProgramLauncher', () => {
     expect(() => launcher(enrolled()).issueLaunchTarget({ userId: 'kid' })).toThrow(/grant/);
   });
 
+  it('names itself with a program: course id, so the card can draw its artwork', async () => {
+    const status = await launcher(enrolled()).status({ userId: 'kid' });
+    // NOT a curriculum course id. A course with no units is what the catalog
+    // gate exists to reject; the scheme lets a program carry art without
+    // pretending to be one. Same trick `piano-course` plays with `plex:`.
+    expect(status.context.course).toEqual({ id: 'program:book-log', title: 'Independent study' });
+    expect(status.context.lesson.id).toBe('book-log:shelf');
+  });
+
+  it('stays reopenable with a met DAILY target — the shelf is a log, not a task', async () => {
+    const status = await launcher(enrolled()).status({ userId: 'kid' });
+    expect(status.reopenable).toBe(true);
+  });
+
   it('exposes ONE day function, the household study day, for every reader of the shelf', () => {
     const instance = launcher(enrolled());
     // 04:30Z on Aug 10 is 9:30pm PDT on Aug 9 — study day 2026-08-09 under the 4am rule.

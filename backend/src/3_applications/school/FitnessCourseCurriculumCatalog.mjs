@@ -82,6 +82,7 @@ export class FitnessCourseCurriculumCatalog {
   getDocument(id) { return this.#base.getDocument(id); }
   getManifest(id) { return this.#base.getManifest(id); }
   getCoursePoster(id) { return this.#base.getCoursePoster?.(id) ?? null; }
+  getProgramPoster(id) { return this.#base.getProgramPoster?.(id) ?? null; }
 }
 
 export default FitnessCourseCurriculumCatalog;

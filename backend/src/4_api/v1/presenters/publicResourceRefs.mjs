@@ -21,6 +21,9 @@ const CURRICULUM_POSTER_MOUNTS = Object.freeze({
   selfservice: 'self-service',
 });
 
+/** The one scheme in the course-id vocabulary that is not a curriculum id. */
+const PROGRAM_COURSE_ID = /^program:(.+)$/;
+
 export function publicResourceUrl(ref) {
   switch (ref?.kind) {
     case 'display-image': return `/api/v1/display/${segment(ref.source)}/${segment(ref.id)}`;
@@ -30,7 +33,16 @@ export function publicResourceUrl(ref) {
     case 'school-artifact': return `/api/v1/school/teacher/artifacts/${segment(ref.artifactId)}/${ref.variant}`;
     case 'curriculum-poster': {
       const mount = CURRICULUM_POSTER_MOUNTS[ref.scope];
-      return mount ? `/api/v1/school/${mount}/curriculum/${segment(ref.courseId)}/poster.jpg` : null;
+      if (!mount) return null;
+      // `program:<id>` is a SCHEME in the course-id vocabulary, exactly as
+      // `plex:<ratingKey>` is on the client. A program (the reading shelf) has
+      // artwork but no course, and inventing a course to carry a picture would
+      // put a unit-less entity in front of the catalog gate, the gradebook and
+      // enrollment. The id says which shelf to read; this says where from.
+      const program = PROGRAM_COURSE_ID.exec(String(ref.courseId));
+      return program
+        ? `/api/v1/school/${mount}/programs/${segment(program[1])}/poster.jpg`
+        : `/api/v1/school/${mount}/curriculum/${segment(ref.courseId)}/poster.jpg`;
     }
     case 'content-stream': return `/api/v1/stream/${segment(ref.source)}/${segment(ref.id)}`;
     case 'stream-proxy': {

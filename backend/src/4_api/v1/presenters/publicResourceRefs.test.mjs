@@ -18,6 +18,11 @@ describe('public resource URL characterization', () => {
     // that 404s — every agenda-planned lesson lost its poster, and the
     // characterization test called it correct. See the presenter's scope map.
     [curriculumPosterRef('selfservice', 'course-1'), '/api/v1/school/self-service/curriculum/course-1/poster.jpg'],
+    // `program:<id>` is a scheme in the course-id vocabulary, not a curriculum
+    // id: a program has artwork but no course, and it must not be routed at the
+    // curriculum shelf, which would 404 it into a placeholder.
+    [curriculumPosterRef('selfservice', 'program:book-log'), '/api/v1/school/self-service/programs/book-log/poster.jpg'],
+    [curriculumPosterRef('teacher', 'program:book-log'), '/api/v1/school/teacher/programs/book-log/poster.jpg'],
     [streamRef('plex', '11'), '/api/v1/stream/plex/11'],
   ])('projects %o to the existing public URL', (ref, expected) => {
     expect(publicResourceUrl(ref)).toBe(expected);

@@ -105,6 +105,20 @@ export function createSchoolSelfServiceRouter({
         .set('X-Content-Type-Options', 'nosniff')
         .send(bytes);
     }));
+
+    // A PROGRAM's poster, on the same terms. A program (the reading shelf) is
+    // not a course and is deliberately not made into one to get a picture, so
+    // its artwork cannot come from the route above — it has no course id to
+    // ask with. Same 404-never-a-substitute rule: no poster means the panel
+    // draws its own calm placeholder.
+    router.get('/programs/:programId/poster.jpg', asyncHandler(async (req, res) => {
+      const bytes = await curriculum.getProgramPoster?.(req.params.programId);
+      if (!bytes) return res.status(404).end();
+      return res.set('Cache-Control', 'private, max-age=3600')
+        .set('Content-Type', 'image/jpeg')
+        .set('X-Content-Type-Options', 'nosniff')
+        .send(bytes);
+    }));
   }
 
   if (runSelfServiceAction) {

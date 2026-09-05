@@ -840,6 +840,24 @@ ids. The feedback lane rolls consecutive same-session verdicts into one
 expandable summary; machine grading is never attributed as if it were a
 person.
 
+**Where artwork comes from.** A course id is resolved to a poster in one of
+three ways, and the vocabulary is shared by the launch card, the agenda and
+the teacher day view: a plain curriculum id is served from the course's own
+package (`media/school/<subject>/<work>/poster.jpg`, declared by `poster:` in
+the course config); `plex:<ratingKey>` resolves through the household image
+proxy; and `program:<programId>` is served from
+`media/school/programs/<programId>/poster.jpg`.
+
+The third exists because a program is not a course. The reading shelf has
+artwork but no units, no sequence and no course enrollment, and minting a
+course to carry a picture would put a unit-less entity in front of the catalog
+gate, the gradebook and enrollment. A program therefore keeps its own identity
+and names itself with the `program:` scheme — the same move `piano-course`
+already makes with `plex:`.
+
+A missing poster is a 404 in every one of the three, never a generated
+substitute, and every surface draws its own calm placeholder instead.
+
 Console information architecture: the Curriculum page is a course-card
 catalog; lessons and pass bars (including a bulk course-level set, written
 through the per-unit override store) live on the per-course drill-in page.

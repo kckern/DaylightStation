@@ -365,6 +365,36 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
     return null;
   }
 
+  /**
+   * A PROGRAM's poster. Same bytes, same rules, a different shelf.
+   *
+   * A program is not a course and must not be made into one to get a picture:
+   * a course with no units is exactly what the catalog gate exists to reject,
+   * and four other subsystems (progress, gradebook, enrollment, the console's
+   * course links) would then believe in an entity that does not exist. So a
+   * program keeps its own identity and its artwork lives beside it, at
+   * `<media>/school/programs/<programId>/poster.jpg`.
+   *
+   * Inherits both of `getCoursePoster`'s rules verbatim, because they are the
+   * ones that matter: the JPEG magic-byte check (a renamed SVG served as an
+   * image is content-sniffing trouble wherever it comes from), and NO POSTER
+   * MEANS NULL — the route 404s and the surface draws its own placeholder,
+   * rather than anything inventing a substitute.
+   *
+   * @param {string} programId
+   * @returns {Promise<Buffer|null>}
+   */
+  async getProgramPoster(programId) {
+    if (typeof programId !== 'string' || !CURRICULUM_ID_RE.test(programId)) return null;
+    try {
+      const bytes = await readBinaryFromPathAsync(
+        path.join(this.#configService.getMediaDir(), 'school', 'programs', programId, 'poster.jpg'),
+      );
+      if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) return null;
+      return bytes;
+    } catch { return null; }
+  }
+
   /** @param {{ batch?: number }} [options] */
   listUnits(options) { return this.#list(KINDS.units, options); }
 

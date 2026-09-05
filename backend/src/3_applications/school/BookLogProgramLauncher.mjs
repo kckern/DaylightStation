@@ -168,6 +168,25 @@ export class BookLogProgramLauncher {
       // a finished series really is done, and re-offering it forever is the
       // bug that `cadence: 'once'` exists to prevent.
       reopenable: !(Boolean(obligation) && obligation.per === 'once' && measured.met),
+      // THE SHELF'S OWN TAXONOMY, so the card and the day row can name it and
+      // draw its artwork. Without a `context` the projection passed the entry
+      // through untouched, the card came out `course: null`, and the artwork
+      // slot had nothing to resolve — which is why Reading was the one row on
+      // the board with no picture and no course line.
+      //
+      // `program:book-log` is a SCHEME, not a course id. It is the same trick
+      // `piano-course` already relies on with `plex:<ratingKey>`: a program
+      // supplies an id in a vocabulary the poster resolvers understand. It is
+      // deliberately NOT a curriculum course — a course with no units is what
+      // the catalog gate exists to reject, and enrollment, progress and the
+      // gradebook would all try to believe in it.
+      //
+      // "Independent study" is not invented copy: it is the wording the
+      // printed agenda already uses for this row.
+      context: {
+        course: { id: `program:${BOOK_LOG_PROGRAM_ID}`, title: 'Independent study' },
+        lesson: { id: `${BOOK_LOG_PROGRAM_ID}:shelf`, title: enrollment.title ?? 'Reading' },
+      },
       // The shelf's obligation line adds the window word (`today`, `this
       // week`) client-side; `per` rides along so it can.
       obligationProgress: obligation ? { ...measured, per: obligation.per } : null,

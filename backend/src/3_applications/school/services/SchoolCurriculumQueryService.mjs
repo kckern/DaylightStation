@@ -8,6 +8,8 @@ export class SchoolCurriculumQueryService {
 
   isConfigured() { return Boolean(this.curriculum); }
   async getCoursePoster(courseId) { return this.curriculum?.getCoursePoster?.(courseId) ?? null; }
+
+  async getProgramPoster(programId) { return this.curriculum?.getProgramPoster?.(programId) ?? null; }
   async getUnit(unitId) { return this.curriculum?.getUnitSummary?.(unitId) ?? null; }
 
   async getCourse(courseId) {

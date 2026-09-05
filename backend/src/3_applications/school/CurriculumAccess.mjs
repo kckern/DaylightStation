@@ -200,6 +200,11 @@ export class CurriculumAccess {
     return this.#catalog.getCoursePoster?.(courseId) ?? null;
   }
 
+  /** A program's own artwork — see `YamlCurriculumDatastore.getProgramPoster`. */
+  async getProgramPoster(programId) {
+    return this.#catalog.getProgramPoster?.(programId) ?? null;
+  }
+
   /** @returns {Promise<object[]>} every publishable unit, normalised */
   async listUnits() {
     return [...(await this.#current()).units.values()];
