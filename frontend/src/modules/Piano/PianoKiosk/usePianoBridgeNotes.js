@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
+import { bridgeHostPlausible } from './bridgeHost.js';
 
 let _logger;
 const logger = () => (_logger ||= getLogger().child({ component: 'piano-bridge-notes' }));
@@ -76,6 +77,16 @@ export function usePianoBridgeNotes({ url = DEFAULT_URL, enabled = true, onNote 
   const wsRef = useRef(null);
   const retryRef = useRef(0);
   const everConnectedRef = useRef(false);
+  // Can an APK exist on this client at all? On a laptop it cannot, so the
+  // bridge-first grace window below protects nothing and only buys a burst of
+  // ERROR rows per tab. Read once: the host cannot change mid-session.
+  const plausibleRef = useRef(bridgeHostPlausible());
+  // A failure is worth `error` only while a bridge is still plausibly there:
+  // it has worked before (a real drop), or we are inside the boot-race grace
+  // on a host that could actually have one.
+  const loudRef = useRef(null);
+  loudRef.current = () => everConnectedRef.current
+    || (plausibleRef.current && !graceExpiredRef.current);
   const onNoteRef = useRef(onNote);
   onNoteRef.current = onNote;
 
@@ -128,7 +139,7 @@ export function usePianoBridgeNotes({ url = DEFAULT_URL, enabled = true, onNote 
         // it is correctly using Web MIDI, and its socket error is the expected
         // steady state, so it drops to debug and is sampled rather than
         // reported once per retry forever.
-        if (everConnectedRef.current || !graceExpiredRef.current) {
+        if (loudRef.current()) {
           logger().error('bridge.socket-error', { url });
         } else {
           logger().sampled('bridge.socket-error.bridgeless', { url }, { maxPerMinute: 1, aggregate: true });
@@ -142,18 +153,18 @@ export function usePianoBridgeNotes({ url = DEFAULT_URL, enabled = true, onNote 
         // close after a successful open is a normal drop (bridge exists), so
         // don't let it push the client into Web-MIDI fallback.
         if (!everConnectedRef.current) setFailCount((n) => n + 1);
-        if (everConnectedRef.current || !graceExpiredRef.current) {
+        if (loudRef.current()) {
           logger().warn('bridge.closed', { url, code: e?.code, reason: e?.reason, willReconnect });
         } else {
           logger().sampled('bridge.closed.bridgeless', { url, code: e?.code, willReconnect }, { maxPerMinute: 1, aggregate: true });
         }
         if (closed) { setLink('closed'); return; }
         setLink('reconnecting');
-        const ceiling = (everConnectedRef.current || !graceExpiredRef.current)
+        const ceiling = loudRef.current()
           ? RECONNECT_CEILING_MS
           : RECONNECT_CEILING_BRIDGELESS_MS;
         const delay = Math.min(ceiling, 250 * 2 ** retryRef.current++);
-        if (everConnectedRef.current || !graceExpiredRef.current) {
+        if (loudRef.current()) {
           logger().info('bridge.reconnect-scheduled', { url, attempt: retryRef.current, delayMs: delay });
         } else {
           logger().sampled('bridge.reconnect-scheduled.bridgeless', { url, delayMs: delay }, { maxPerMinute: 1, aggregate: true });
@@ -179,7 +190,11 @@ export function usePianoBridgeNotes({ url = DEFAULT_URL, enabled = true, onNote 
     return () => clearTimeout(t);
   }, [enabled]);
 
-  const unavailable = !everConnected && failCount >= 2 && graceExpired;
+  // `graceExpired` is only a precondition where a bridge could appear; a laptop
+  // should reach Web MIDI immediately rather than waiting out the tablet's
+  // boot-race window.
+  const unavailable = !everConnected && failCount >= 2
+    && (graceExpired || !plausibleRef.current);
 
   /**
    * Send raw MIDI (in practice: SysEx) to the piano through the APK's `midi.raw`
