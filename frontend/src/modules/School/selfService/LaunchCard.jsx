@@ -51,11 +51,21 @@ const SYNTHESISED_EXIT = 'Close';
  * card actually draws it, exactly as the materials grid does.
  */
 const PLEX_ID = /^plex:(\d+)$/;
+// The third kind of course id: a PROGRAM. The reading shelf has artwork but no
+// course, and a course invented to carry a picture would be a unit-less entity
+// the catalog gate, the gradebook and enrollment would all try to believe in.
+// So `program:<id>` is a scheme here, beside `plex:`, and the backend presenter
+// carries the same branch for the refs it mints.
+const PROGRAM_ID = /^program:(.+)$/;
 
 function posterSrc(courseId) {
   const plex = PLEX_ID.exec(String(courseId));
   if (plex) {
     return sizedPlexImage(`/api/v1/proxy/plex/library/metadata/${plex[1]}/thumb`, ...ART_BOX.launchPoster);
+  }
+  const program = PROGRAM_ID.exec(String(courseId));
+  if (program) {
+    return `/api/v1/school/self-service/programs/${encodeURIComponent(program[1])}/poster.jpg`;
   }
   return `/api/v1/school/self-service/curriculum/${encodeURIComponent(courseId)}/poster.jpg`;
 }
