@@ -109,11 +109,23 @@ export function createIngestRateLimiter({
       b.lastRefill = t;
       b.lastSeen = t;
 
+      // `null` (never summarized), not 0 — 0 is a real timestamp and is where an
+      // injected clock starts, which made every suppression look due.
+      const summaryDue = b.lastSummaryAt === null || (t - b.lastSummaryAt) >= summaryIntervalMs;
+
       if (b.tokens >= 1) {
         b.tokens -= 1;
-        // Leaving a throttled stretch: report the total before resetting, so the
-        // gap in the record is explained rather than merely absent.
-        if (b.suppressed > 0) {
+        // Leaving a throttled stretch: report the total, so the gap in the
+        // record is explained rather than merely absent.
+        //
+        // This is gated on the SAME interval as the throttling summary, and it
+        // has to be. A steady drip against a slow refill does not throttle once
+        // and stop — the bucket flaps, suppressing a few then admitting one as a
+        // token lands. Reporting on every recovery turned a 16/min flood into
+        // ~12/min of summaries about it, which is not a fix. Holding the count
+        // instead of resetting it means nothing is lost; it is simply carried to
+        // the next due summary.
+        if (b.suppressed > 0 && summaryDue) {
           const summary = throttleSummary(event, b.suppressed, 'recovered');
           b.suppressed = 0;
           b.lastSummaryAt = t;
@@ -123,10 +135,7 @@ export function createIngestRateLimiter({
       }
 
       b.suppressed += 1;
-      // `null` (never summarized), not 0 — 0 is a real timestamp and is where an
-      // injected clock starts, which made every suppression look due.
-      const due = b.lastSummaryAt === null || (t - b.lastSummaryAt) >= summaryIntervalMs;
-      if (due) {
+      if (summaryDue) {
         b.lastSummaryAt = t;
         const summary = throttleSummary(event, b.suppressed, 'throttling');
         b.suppressed = 0;
