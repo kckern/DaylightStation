@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, useParams, Navigate, useLocation, useNavi
 import { MantineProvider } from '@mantine/core';
 import '@mantine/core/styles.css';
 import { createAppTheme } from './lib/theme/createAppTheme.js';
+import { OfficeRedirect, TVRedirect, SchoolDeepLinkRedirect, TeacherNextRedirect } from './routeRedirects.jsx';
 import { WebSocketProvider } from './contexts/WebSocketContext.jsx';
 import HomeApp from './Apps/HomeApp.jsx';
 import FinanceApp from './Apps/FinanceApp.jsx';
@@ -89,36 +90,6 @@ configurePlaybackLogger({
   level: 'debug'
 });
 
-// Legacy /office routes redirect to screen-framework
-const OfficeRedirect = () => <Navigate to="/screen/office" replace />;
-
-// Legacy /tv (TVApp) retired in favor of the screen-framework living-room screen.
-// Redirect so stale bookmarks / device configs still land somewhere valid — and
-// PRESERVE the query string (?queue=/?play=/?shader= autoplay params the screen honors).
-const TVRedirect = () => {
-  const { search } = useLocation();
-  return <Navigate to={`/screen/living-room${search}`} replace />;
-};
-
-// /school/<deep-path> → /app/school/<deep-path>, keeping School's own
-// segments (subject/…, library/…, material/…) intact through the redirect.
-const SchoolDeepLinkRedirect = () => {
-  const { pathname, search } = useLocation();
-  return <Navigate to={`/app${pathname}${search}`} replace />;
-};
-
-// /school/teacher-next[/*] was the rollout alias for the teacher-console
-// rebuild; the rebuild landed at /school/teacher and the alias route itself
-// was already removed from this file. Left alone, a teacher-next bookmark
-// fell through to the /school/* splat above and landed in the KIDS' school
-// app instead of the console — a silent wrong-surface redirect, worse than
-// the 404 it looked like it would be. Redirect explicitly to the real
-// surface instead, sub-path and query preserved.
-const TeacherNextRedirect = () => {
-  const { pathname, search } = useLocation();
-  return <Navigate to={`${pathname.replace(/^\/school\/teacher-next/, '/school/teacher')}${search}`} replace />;
-};
-
 // Standalone /app/:appId route — renders a registered app directly without the TV shell.
 // Used for testing and direct linking to specific apps (e.g. /app/weekly-review).
 const AppDirectRoute = () => {
@@ -184,13 +155,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         {/* /school — first-class URL for the School app; AppDirectRoute serves it.
             The splat carries School's own deep-link segments (subject/…,
             library, material/…), which SchoolApp parses itself. */}
-        <Route path="/school" element={<Navigate to="/app/school" replace />} />
+        <Route path="/school" element={<SchoolDeepLinkRedirect />} />
         {/* The teacher console is its OWN surface, not the school app — these
             static routes outrank the /school/* splat (v6 ranking), so the
             kids' shell never parses a /school/teacher URL. */}
         <Route path="/school/teacher" element={<TeacherConsoleRoute />} />
         <Route path="/school/teacher/*" element={<TeacherConsoleRoute />} />
-        {/* Retired rollout alias — redirect, don't 404 (see TeacherNextRedirect above). */}
+        {/* Retired rollout alias — redirect, don't 404 (see routeRedirects.jsx). */}
         <Route path="/school/teacher-next" element={<TeacherNextRedirect />} />
         <Route path="/school/teacher-next/*" element={<TeacherNextRedirect />} />
         <Route path="/school/*" element={<SchoolDeepLinkRedirect />} />
