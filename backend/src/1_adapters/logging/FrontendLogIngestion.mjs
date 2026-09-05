@@ -8,6 +8,7 @@ import { getDispatcher, isLoggingInitialized } from '#system/logging/dispatcher.
 import { formatLocalTimestamp } from '#system/logging/localTimestamp.mjs';
 import { getSessionFileTransport } from '#system/logging/transports/sessionFile.mjs';
 import { getSessionEventsFileTransport } from '#system/logging/transports/sessionEventsFile.mjs';
+import { createIngestRateLimiter } from './ingestRateLimiter.mjs';
 
 /**
  * Predicate: is this a full-fidelity input-telemetry event?
@@ -35,6 +36,16 @@ export function isInputChannel(event) { return event?.context?.channel === 'inpu
  *   hook is enough; a second consumer can fan out from there.
  * @returns {number} Number of events processed
  */
+/**
+ * Process-wide limiter. Frontend logging is only as well-behaved as the oldest
+ * browser tab still running it, and a client-side fix cannot reach a tab that
+ * never reloads — so the ceiling has to live here. See ingestRateLimiter.mjs.
+ */
+const rateLimiter = createIngestRateLimiter();
+
+/** Test seam: drop all accumulated buckets. */
+export function __resetIngestRateLimiter() { rateLimiter.reset(); }
+
 export function ingestFrontendLogs(payload, clientMeta = {}, hooks = {}) {
   if (!isLoggingInitialized()) {
     process.stderr.write('[LogIngestion] Dispatcher not initialized, dropping events\n');
@@ -59,9 +70,23 @@ export function ingestFrontendLogs(payload, clientMeta = {}, hooks = {}) {
 
       // Input-channel telemetry bypasses the semantic pipeline (dispatcher +
       // session-file) and routes straight to the .events stream transport.
+      // It is also exempt from rate limiting: it is high-volume by design and
+      // never reaches the log store the limiter exists to protect.
       if (isInputChannel(normalized)) {
         const eft = getSessionEventsFileTransport();
         if (eft) eft.write(normalized);
+        processed++;
+        continue;
+      }
+
+      // A flood is contained to the client producing it — see ingestRateKey.
+      // The summary is dispatched even when the event itself is dropped, so a
+      // suppressed stretch is visible as a count rather than as a silent gap.
+      const { allow, summary } = rateLimiter.check(normalized);
+      if (summary) dispatcher.dispatch(summary);
+      if (!allow) {
+        // Counted as processed: it was received and accounted for, and the
+        // caller's number is a receipt, not a promise that it was retained.
         processed++;
         continue;
       }
