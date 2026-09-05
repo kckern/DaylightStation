@@ -453,6 +453,9 @@
 }
 .teacher-lesson-identity { display: grid; grid-template-columns: 48px minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 10px; align-items: center;
   .teacher-subject-identity { grid-column: 2; align-self: end; } &__poster { grid-column: 1; grid-row: 1 / 3; width: 48px; height: 68px; border-radius: 5px; object-fit: cover; background: #e9e1d3; } &__copy { grid-column: 2; display: grid; gap: 2px; min-width: 0; } strong, h2 { margin: 0; color: #302a22; font-size: 17px; line-height: 1.15; } span { color: #756b5d; } small { color: #8a8272; }
+  // Same box as a real cover, so a row without art keeps the grid's shape.
+  // The mark is decorative; the aria-label carries the meaning.
+  &__poster--empty { display: grid; place-items: center; color: #b3a891; font-size: 20px; background: #f1ebdf; border: 1px dashed #ddd2bd; }
   &--compact { grid-template-columns: 42px minmax(0, 1fr); .teacher-lesson-identity__poster { width: 42px; height: 59px; } strong { font-size: 16px; } }
 }
 .teacher-issued-records { margin: 12px 0 4px 18px; padding: 12px; border-left: 3px solid #e8dfc9; background: #fcfaf5;

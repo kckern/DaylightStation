@@ -1,5 +1,5 @@
+import { useEffect, useState } from 'react';
 import Icon from '../home/icons/Icon.jsx';
-import SafeImg from './panels/SafeImg.jsx';
 import { SUBJECTS, subjectLabel } from '../home/subjects.js';
 import { labelize } from './labelize.js';
 
@@ -21,6 +21,36 @@ export function SubjectIdentity({ subject, className = '', iconOnly = false }) {
   </span>;
 }
 
+/**
+ * The poster slot is ALWAYS drawn, art or no art.
+ *
+ * Rendering the `<img>` only when `posterUrl` was set made a row with no cover
+ * collapse to a different shape from a row with one, so a day's list came out
+ * ragged and it read as "these lessons are different" rather than "we have no
+ * picture for this one". The launch card settled this already: a calm mark,
+ * never an invented cover. This is the same placeholder, for the same reason.
+ */
+function PosterSlot({ posterUrl, label }) {
+  // Owns its own failure rather than delegating to SafeImg, whose empty
+  // fallback renders nothing — which is the collapse this slot exists to
+  // prevent. A URL that 404s must look the same as no URL at all: a poster
+  // we do not have, not a row built differently.
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [posterUrl]);
+  if (!posterUrl || failed) {
+    return (
+      <div className="teacher-lesson-identity__poster teacher-lesson-identity__poster--empty"
+        role="img" aria-label={`No cover for ${label}`}>
+        <span aria-hidden="true">✦</span>
+      </div>
+    );
+  }
+  return (
+    <img className="teacher-lesson-identity__poster" src={posterUrl}
+      alt={`${label} cover`} loading="lazy" decoding="async" onError={() => setFailed(true)} />
+  );
+}
+
 /** A curriculum reference is never only a title: it carries subject and course identity. */
 export function LessonIdentity({
   subject, courseTitle, moduleTitle, lessonTitle, posterUrl, heading = false, compact = false,
@@ -29,7 +59,7 @@ export function LessonIdentity({
   const courseLabel = courseTitle ?? 'Course unavailable';
   return <div className={`teacher-lesson-identity${compact ? ' teacher-lesson-identity--compact' : ''}`}>
     <SubjectIdentity subject={subject} />
-    {posterUrl && <SafeImg className="teacher-lesson-identity__poster" src={posterUrl} alt={`${courseLabel} cover`} fallback="" />}
+    <PosterSlot posterUrl={posterUrl} label={courseLabel} />
     <div className="teacher-lesson-identity__copy">
       <Title>{lessonTitle ?? 'Lesson'}</Title>
       <span>{courseLabel}</span>

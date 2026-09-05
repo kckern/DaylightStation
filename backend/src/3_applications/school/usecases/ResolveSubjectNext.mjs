@@ -35,7 +35,7 @@ import { PlanProjection } from '../PlanProjection.mjs';
 import { ensureSession, nextMove } from './offerSession.mjs';
 import { pausedExceptionFor } from '../curriculumExceptionProjection.mjs';
 import { projectProgramEntry } from '../assignedProgramPlan.mjs';
-import { findContinuationEntry } from './continuationEntry.mjs';
+import { findContinuationEntry, findReopenableProgramEntry } from './continuationEntry.mjs';
 
 export class ResolveSubjectNext {
   // `curriculum`, `assignments`, `attestations` and `curriculumExceptions` are
@@ -121,7 +121,27 @@ export class ResolveSubjectNext {
 
     const section = sections.find((s) => s.subject === subject);
     if (!section) return { kind: 'empty' };
-    if (section.servedToday && !continueToday) return { kind: 'served', subjectLabel: subject };
+    // A SERVED SUBJECT IS NOT ALWAYS A CLOSED ONE. Some programs are logs
+    // rather than tasks: the reading shelf is open all day, every day, and a
+    // met daily target means nothing is owed — not that the child is done with
+    // their books. Such a launcher says so with `reopenable`, and that answer
+    // outranks `servedToday` here so the card keeps its button instead of
+    // becoming "You already did this today." with no way in.
+    //
+    // Deliberately narrower than `continueToday`, which reopens a served
+    // subject to WHATEVER is eligible, curriculum included. This reopens only
+    // to a program that declares itself always-open, so a graded lesson stays
+    // finished for the day exactly as before.
+    if (section.servedToday && !continueToday) {
+      const reopen = findReopenableProgramEntry(plan, {
+        subject, statusOf: (entry) => programStatusFor(programStatuses, entry),
+      });
+      if (!reopen) return { kind: 'served', subjectLabel: subject };
+      return {
+        kind: 'program', programId: reopen.entry.program,
+        unit: projectProgramEntry(reopen.entry, reopen.status),
+      };
+    }
 
     // The served-day continuation is ONE rule shared with `ResolveAccessCode`
     // (`continuationEntry.mjs`): read `plan.entries` by status, prefer the

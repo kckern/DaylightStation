@@ -57,3 +57,34 @@ export function findContinuationEntry(plan, { subject, program = null } = {}) {
 }
 
 export default findContinuationEntry;
+
+/**
+ * The always-open program entry a SERVED subject can still be reopened to.
+ *
+ * Distinct from `findContinuationEntry` above, and deliberately so: that one
+ * answers "the token asked to continue — to what?" and will happily hand back
+ * a curriculum lesson. This one answers "this subject is done for the day, but
+ * is anything here still legitimately open?", and only a program whose
+ * launcher declares `reopenable` qualifies. A graded lesson stays finished.
+ *
+ * Pure, like its neighbour: it is handed a `statusOf` rather than knowing how
+ * to look a program status up, so the application boundary keeps owning that.
+ *
+ * @param {{ entries?: object[] }|null|undefined} plan
+ * @param {object} args
+ * @param {string} args.subject
+ * @param {(entry: object) => object|null} args.statusOf
+ * @returns {{entry: object, status: object}|null}
+ */
+export function findReopenableProgramEntry(plan, { subject, statusOf } = {}) {
+  if (typeof statusOf !== 'function') return null;
+  for (const entry of plan?.entries ?? []) {
+    if (!entry?.program || entry.subject !== subject) continue;
+    const status = statusOf(entry);
+    // An errored launcher is NOT reopened: `unavailable` is the honest card,
+    // and offering a button that cannot open is the dead end this avoids.
+    if (status?.error === true || status?.reopenable !== true) continue;
+    return { entry, status };
+  }
+  return null;
+}

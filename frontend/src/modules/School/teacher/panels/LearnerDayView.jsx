@@ -173,9 +173,17 @@ function DayRow({ row, learnerId, onOpenSession }) {
   const detail = row.detail ?? (row.carriedOver && session?.studyDay
     ? `Study day ${teacherDate(session.studyDay)}${teacherTime(session.processedAt) ? ` · marked ${teacherTime(session.processedAt)}` : ''}`
     : null);
-  const body = session
-    ? <LessonIdentity compact subject={subject} courseTitle={session.courseTitle}
-        moduleTitle={session.moduleTitle} lessonTitle={title ?? 'Lesson'} posterUrl={session.posterUrl} />
+  // AN UNSTARTED ROW IS THE SAME KIND OF THING AS A STARTED ONE, so it gets
+  // the same anatomy. It used to render a bare subject chip and a title, which
+  // is why a day of planned work showed no covers at all: the offer was
+  // carrying `courseTitle`/`moduleTitle`/`posterUrl` the whole time (see
+  // `offer` in learnerDay.js — "the resolved taxonomy … and the lesson's
+  // poster") and this dropped every one of them on the floor.
+  const identity = session ?? row.offer ?? null;
+  const body = identity
+    ? <LessonIdentity compact subject={subject}
+        courseTitle={identity.courseTitle} moduleTitle={identity.moduleTitle}
+        lessonTitle={title ?? identity.title ?? 'Lesson'} posterUrl={identity.posterUrl} />
     : <div className="teacher-day-row__unstarted"><SubjectIdentity subject={subject} />
         <strong>{row.planned ?? 'No assignment today'}</strong></div>;
   return (
