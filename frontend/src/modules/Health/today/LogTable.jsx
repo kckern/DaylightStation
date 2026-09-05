@@ -1,30 +1,10 @@
 import { useState } from 'react';
-import { ActionIcon, UnstyledButton } from '@mantine/core';
+import { UnstyledButton } from '@mantine/core';
 import { LoadingState } from '@/lib/ui';
 import { sumCounted } from '@shared-contracts/nutrition/countedRows.mjs';
 import { BUCKETS, UNGROUPED } from './mealBuckets.js';
 import { EntryRow } from './EntryRow.jsx';
 import { groupRows } from './groupRows.js';
-import { VoiceCapture } from '../capture/VoiceCapture.jsx';
-import { PhotoCapture } from '../capture/PhotoCapture.jsx';
-
-// Same inline-SVG pattern as TodayView.jsx's footer BarcodeIcon — duplicated
-// rather than shared to avoid a LogTable <-> TodayView circular import
-// (TodayView already imports LogTable).
-const BarcodeIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-    <path d="M2 3v12M5 3v12M7.5 3v12M10 3v12M13 3v12M16 3v12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-  </svg>
-);
-
-/** Opens the barcode-scan sheet, pre-targeted at this meal's bucket. */
-function MealBarcodeButton({ label, onClick }) {
-  return (
-    <ActionIcon aria-label={`Scan barcode to ${label}`} className="health-meal__capture-btn" onClick={onClick}>
-      <BarcodeIcon />
-    </ActionIcon>
-  );
-}
 
 // Bucket totals fold through the SHARED counted-rows contract — the same file
 // BudgetService folds the day's equation and macros with. A group row carries
@@ -36,18 +16,21 @@ const kcal = (rows) => Math.round(sumCounted(rows, 'calories'));
 // Per-meal macro subtotal (Task 6.3), on that same predicate. Returns null when
 // the meal has no macro data at all, so a day of legacy rows shows
 // "P 0 · C 0 · F 0" nowhere.
-const MACRO_SUBTOTAL = [['protein', 'P'], ['carbs', 'C'], ['fat', 'F']];
+const MACRO_SUBTOTAL = [['protein', 'Protein'], ['carbs', 'Carbs'], ['fat', 'Fat']];
 const macroLine = (rows) => {
   const totals = MACRO_SUBTOTAL.map(([key, letter]) => [letter, Math.round(sumCounted(rows, key))]);
   if (!totals.some(([, value]) => value > 0)) return null;
-  return totals.map(([letter, value]) => `${letter} ${value}`).join(' · ');
+  return totals.map(([letter, value]) => `${letter} ${value} g`).join(' · ');
 };
 
 function Section({
   label, rows, onAdd, onRowTap, onConfirm, headerAction, coldLoading, pending,
-  bucketId, onVoiceCapture, onPhotoCapture, onOpenBarcode, captureBusy, measuredByUuid, active,
+  measuredByUuid,
 }) {
-  const [expanded, setExpanded] = useState(() => new Set());
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return new Set(JSON.parse(sessionStorage.getItem('health:collapsed-dishes') || '[]')); }
+    catch { return new Set(); }
+  });
   const entries = groupRows(rows);
   const macros = macroLine(rows);
   // The section frame (heading + kcal + add row) is PERMANENT structure —
@@ -59,9 +42,15 @@ function Section({
   // from `day.loading && !day.items.length`.
   const showShimmer = coldLoading && rows.length === 0;
 
-  const toggle = (key) => setExpanded((prev) => {
+  const toggle = (key) => setCollapsed((prev) => {
     const next = new Set(prev);
     if (next.has(key)) next.delete(key); else next.add(key);
+    try {
+      // Other meal sections may have changed since this section mounted.
+      const stored = new Set(JSON.parse(sessionStorage.getItem('health:collapsed-dishes') || '[]'));
+      if (next.has(key)) stored.add(key); else stored.delete(key);
+      sessionStorage.setItem('health:collapsed-dishes', JSON.stringify([...stored]));
+    } catch { /* Storage is optional. */ }
     return next;
   });
 
@@ -71,17 +60,6 @@ function Section({
         <h4 className="health-meal__label">{label}</h4>
         <span className="health-meal__header-right">
           <span className="health-meal__kcal">{rows.length ? `${kcal(rows)} kcal` : '—'}</span>
-          {/* Per-meal capture controls (Task 4.2) — only present when this
-              Section IS a real meal bucket (bucketId set); the Ungrouped /
-              orphans Section below never passes one, so no capture trio
-              renders there. */}
-          {bucketId ? (
-            <span className="health-meal__capture">
-              <VoiceCapture active={active} bucket={bucketId} mealLabel={label} busy={captureBusy} onCapture={onVoiceCapture} />
-              <PhotoCapture bucket={bucketId} mealLabel={label} busy={captureBusy} onCapture={onPhotoCapture} />
-              <MealBarcodeButton label={label} onClick={() => onOpenBarcode(bucketId)} />
-            </span>
-          ) : null}
           {headerAction || null}
         </span>
       </header>
@@ -114,7 +92,7 @@ function Section({
         if (!isGroup) {
           return <EntryRow key={key} row={row} onTap={onRowTap} onConfirm={onConfirm} measured={measured} />;
         }
-        const isOpen = expanded.has(key);
+        const isOpen = !collapsed.has(key);
         return (
           <div key={key} className="health-group">
             {/* `children` is attached to the row object here — not read
@@ -150,10 +128,9 @@ function Section({
 }
 
 export function LogTable({
-  active = true,
   byBucket, sessions = [], exerciseAvailable = false, onAddTo, onRowTap, onConfirm,
   addSlot, addingTo, bucketHeaderAction, coldLoading = false, capturePendingBucket = null, capturePendingBuckets = [],
-  onVoiceCapture, onPhotoCapture, onOpenBarcode, captureBusy = false, measuredByUuid = null,
+  measuredByUuid = null,
 }) {
   const orphans = byBucket.get(null) || [];
   return (
@@ -162,12 +139,11 @@ export function LogTable({
         const rows = byBucket.get(b.id) || [];
         return (
           <div key={b.id}>
-            <Section active={active} label={b.label} rows={rows}
+            <Section label={b.label} rows={rows}
               onAdd={() => onAddTo(b.id)} onRowTap={onRowTap} onConfirm={onConfirm}
               headerAction={bucketHeaderAction ? bucketHeaderAction(b.id, rows, b.label) : null}
               coldLoading={coldLoading} pending={capturePendingBucket === b.id || capturePendingBuckets.includes(b.id)}
-              bucketId={b.id} onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
-              onOpenBarcode={onOpenBarcode} captureBusy={captureBusy} measuredByUuid={measuredByUuid} />
+              measuredByUuid={measuredByUuid} />
             {addingTo === b.id && addSlot ? addSlot : null}
           </div>
         );

@@ -59,6 +59,8 @@ export function toInputEvent(parsed, telegramRef = null) {
       firstName: parsed.metadata?.from?.first_name,
       username: parsed.metadata?.from?.username,
       chatType: parsed.metadata?.chatType,
+      chatId: parsed.metadata?.chatId,
+      replyToMessageId: parsed.metadata?.replyToMessageId,
     },
   };
 }

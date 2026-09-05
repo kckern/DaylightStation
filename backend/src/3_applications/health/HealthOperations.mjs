@@ -3,6 +3,9 @@ import { nowTs24 } from '#system/utils/time.mjs';
 import { foodGrams, scaleFoodPortion, NUTRIENT_KEYS } from '#shared/contracts/health/foodQuantity.mjs';
 import { v5 as uuidv5 } from 'uuid';
 import { isISODate } from '#shared/contracts/health/isoDate.mjs';
+import { nutritionLogVersion } from '../nutrition/FoodLogReview.mjs';
+import { serializeNutriLog } from '../nutrition/NutriLogProjection.mjs';
+import { nutritionLookupFor } from '#shared/contracts/nutrition/nutritionLookup.mjs';
 
 const NUTRITION_UPDATE_FIELDS = new Set([
   'item', 'name', 'unit', 'amount', 'grams', 'noom_color', 'color',
@@ -211,7 +214,10 @@ export class HealthOperations {
         const childChanges = {};
         for (const key of ['mealTime', 'date']) if (Object.hasOwn(allowedChanges, key)) childChanges[key] = allowedChanges[key];
         if (changes.factor != null) Object.assign(childChanges, scaleFoodPortion(child, changes.factor));
-        if (Object.keys(childChanges).length) updates.push({ id: child.uuid ?? child.id, changes: childChanges, expectedVersion: child.version ?? 1 });
+        if (Object.keys(childChanges).length) {
+          if (ratify) childChanges.manualFields = [...new Set([...(child.manualFields || []), ...Object.keys(childChanges)])];
+          updates.push({ id: child.uuid ?? child.id, changes: childChanges, expectedVersion: child.version ?? 1 });
+        }
       }
       const result = await this.nutritionItems.mutateEntries(username, { updates });
       return { item: result.items[0], changedFields: Object.keys(allowedChanges),
@@ -345,12 +351,16 @@ export class HealthOperations {
     return this.nutritionInput.processCallback(input);
   }
 
+  reviewPendingNutrition(input) { return this.nutritionInput.reviewPending(input); }
+
   get pendingNutritionAvailable() {
     return typeof this.nutritionInput?.listPendingByDate === 'function';
   }
 
-  listPendingNutrition(username, date) {
-    return this.nutritionInput.listPendingByDate(username, date);
+  async listPendingNutrition(username, date) {
+    const logs = await this.nutritionInput.listPendingByDate(username, date);
+    return logs.map(log => ({ ...serializeNutriLog(log), version: nutritionLogVersion(log),
+      metadata: { ...log.metadata, nutritionLookup: nutritionLookupFor(log) } }));
   }
 }
 

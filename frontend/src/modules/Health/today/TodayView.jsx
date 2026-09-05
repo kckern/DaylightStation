@@ -1,7 +1,7 @@
 import { lazy, Suspense, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { isISODate } from '@shared-contracts/health/isoDate.mjs';
-import { Button } from '@mantine/core';
+import { ActionIcon, Button, Menu } from '@mantine/core';
 import { ErrorState } from '@/lib/ui';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
@@ -18,6 +18,7 @@ import { MacroFooter } from './MacroFooter.jsx';
 import { LogTable } from './LogTable.jsx';
 import { AddCombobox } from './AddCombobox.jsx';
 import { NeedsReviewSection } from './NeedsReviewSection.jsx';
+import { CleanupQuestions } from '../cleanup/CleanupQuestions.jsx';
 import { ObservationsSection } from './ObservationRow.jsx';
 import { EntryEditor } from './EntryEditor.jsx';
 import { TemplatePicker } from './TemplatePicker.jsx';
@@ -83,17 +84,12 @@ export function TodayView({ active = true, onSetupGoals, onCoachTap }) {
   const monthEnd = date < todayISO() ? date : todayISO();
   const monthRange = useBudgetRange(addDays(monthEnd, -29), monthEnd, { enabled: active && wideViewport });
   const dash = useApiResource('api/v1/health/dashboard', { enabled: active, label: 'dashboard', logger });
-  // Pending NutriLogs for the viewed date. Text/image/voice/barcode captures
-  // now land immediately as accepted+unsettled rows in the nutrilist (Task 1.1),
-  // so they no longer show up here. The scale bridge's multi-step composition
-  // flow still mints status:'pending' logs (not replaced until a later phase)
-  // and a pending log never syncs into the nutrilist that day.byBucket is
-  // built from — so this stays as the scale's off-surface visibility fix.
+  // Review belongs to the shared food log, regardless of capture surface.
+  // In particular, scanner/Telegram UPC captures can remain pending until
+  // a portion is confirmed. Health must offer confirmation for those too.
   const pendingReview = useApiResource(`api/v1/health/nutrition/pending?date=${date}`,
-    { deps: [date], enabled: active, label: 'pending-review', logger });
-  // Only surface scale-origin pending logs — the other sources (telegram,
-  // web) no longer mint pending rows now that captures commit on arrival.
-  const scalePending = (pendingReview.data?.pending || []).filter((p) => p.source === 'scale');
+    { deps: [date], enabled: active, label: 'pending-review', logger, swr: true });
+  const pendingLogs = pendingReview.data?.pending || [];
   // The DURABLE kitchen-scale ledger for this date (Task 5.4). Distinct from
   // `pendingReview` above, which is about NutriLogs awaiting Accept/Discard:
   // these are the raw signals underneath — a settled weight, a scanned
@@ -295,10 +291,13 @@ export function TodayView({ active = true, onSetupGoals, onCoachTap }) {
 
   const bucketHeaderAction = (bucketId, rows, label) => {
     if (!rows.length) return null;
-    if (date !== todayISO()) {
-      return <Button size="compact-xs" variant="subtle" onClick={() => copyMealToToday(rows, bucketId, label)}>Copy to today</Button>;
-    }
-    return <Button size="compact-xs" variant="subtle" onClick={() => saveBucketAsMeal(rows, label)}>Save as meal</Button>;
+    return <Menu position="bottom-end">
+      <Menu.Target><ActionIcon className="health-meal__capture-btn" variant="subtle" aria-label={`${label} actions`}>⋯</ActionIcon></Menu.Target>
+      <Menu.Dropdown>
+        {date !== todayISO() ? <Menu.Item onClick={() => copyMealToToday(rows, bucketId, label)}>Copy to today</Menu.Item> : null}
+        <Menu.Item onClick={() => saveBucketAsMeal(rows, label)}>Save as meal</Menu.Item>
+      </Menu.Dropdown>
+    </Menu>;
   };
 
   // The day's STRUCTURE (headings, section frames, add rows) renders
@@ -351,7 +350,7 @@ export function TodayView({ active = true, onSetupGoals, onCoachTap }) {
         <Button size="compact-xs" variant="subtle" disabled={undoBusy} onClick={() => setUndoDelete(null)}>Dismiss</Button>
       </div> : null}
       {day.error ? <ErrorState error={day.error} onRetry={day.reload} label="Food log" /> : null}
-      {pendingReview.error ? <ErrorState error={pendingReview.error} onRetry={pendingReview.reload} label="Scale review unavailable" /> : null}
+      {pendingReview.error ? <ErrorState error={pendingReview.error} onRetry={pendingReview.reload} label="Food review unavailable" /> : null}
       {observations.error ? <ErrorState error={observations.error} onRetry={observations.reload} label="Measurements unavailable" /> : null}
       {captureNotice ? (
         <div className="health-pending" role="status">
@@ -366,8 +365,8 @@ export function TodayView({ active = true, onSetupGoals, onCoachTap }) {
           </div>
         </div>
       ) : null}
-      <NeedsReviewSection pending={scalePending}
-        onChanged={() => { pendingReview.reload(); day.reload(); }} />
+      <NeedsReviewSection pending={pendingLogs} onChanged={day.reload} />
+      <CleanupQuestions active={active} onChanged={day.reload} />
       <ObservationsSection observations={unmatched} onChanged={() => observations.reload()} />
       <LogTable byBucket={day.byBucket} sessions={day.budget?.sessions || []}
         active={active}
@@ -379,12 +378,16 @@ export function TodayView({ active = true, onSetupGoals, onCoachTap }) {
         onOpenBarcode={openBarcode} captureBusy={nutrition.busy}
         measuredByUuid={measuredByUuid}
         addSlot={addingTo ? (
+          <div className="health-meal__adding">
+          <QuickCaptureBar active={active} bucketOverride={addingTo} date={date} busy={nutrition.busy}
+            onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture} onOpenBarcode={openBarcode} onAddTo={setAddingTo} />
           <AddCombobox bucketId={addingTo} date={date}
             onDone={() => { setAddingTo(null); day.reload(); }}
             onCancel={() => setAddingTo(null)}
             onManageFoods={() => setManageFoods(true)}
             onMeals={() => { setFocusTemplateId(null); setTemplatesFor(addingTo); }}
             onTemplate={(entry) => { setFocusTemplateId(entry.id); setTemplatesFor(addingTo); }} />
+          </div>
         ) : null} />
       <MacroFooter items={day.items} coachLine={coachLine} onCoachTap={onCoachTap} />
       <BarcodeCapture open={active && captureMode === 'barcode'} busy={nutrition.busy} bucket={barcodeTargetBucket}

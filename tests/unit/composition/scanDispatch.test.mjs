@@ -866,6 +866,7 @@ describe('product — the UPC path', () => {
       conversationId: 'telegram:b777_c4242',
       upc: '041260010682',
       messageId: null,
+      headless: true,
     });
     // The PLATFORM argument, pinned. The comment above this derivation records a
     // production outage — a conversation id that reached UPCGateway and then died
@@ -909,16 +910,13 @@ describe('product — the UPC path', () => {
     expect(eventNames(h.barcodeLogger, 'warn')).toContain('barcode_relay.nutribot.no_user');
   });
 
-  it('refuses to dispatch without a conversation the adapter can parse', async () => {
-    // The old fallback built `nutribot-upc:<userId>`, which reached UPCGateway and
-    // then died at delivery with a 400. No address is better than a bad one.
+  it('persists scans headlessly without a Telegram conversation', async () => {
     const h = harness({
       nutribotIdentity: { defaultUserId: () => 'test-user', conversationIdFor: () => null },
       relayInstances: { 'nutribot-upc': { route: 'nutribot' } },
     });
     await h.scanDispatch.handleScan(upcScan());
-    expect(h.execute).not.toHaveBeenCalled();
-    expect(eventNames(h.barcodeLogger, 'warn')).toContain('barcode_relay.nutribot.no_conversation');
+    expect(h.execute).toHaveBeenCalledWith(expect.objectContaining({ userId: 'test-user', conversationId: 'device:test-user', headless: true }));
   });
 
   it('reports a rejected UPC dispatch without rejecting the scan', async () => {

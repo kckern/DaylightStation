@@ -68,7 +68,7 @@ describe('groupParsedItems — one dish, three members', () => {
     expect(group.kind).toBe('group');
     expect(group.label).toBe('Smoothie');
     expect(group.id).toBe('grp-1');
-    expect(group.icon).toBe('banana'); // first member's icon
+    expect(group.icon).toBe('default'); // A dish is not its first ingredient.
     expect(group.grams).toBe(120 + 200 + 30);
     expect(group.amount).toBe(group.grams);
     expect(group.unit).toBe('g');

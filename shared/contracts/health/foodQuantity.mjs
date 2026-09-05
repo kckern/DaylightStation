@@ -38,5 +38,6 @@ export function scaleFoodPortion(row, factor) {
   const grams = foodGrams(row);
   changes.grams = grams === null ? null : Math.round(grams * factor * 100) / 100;
   if (changes.grams !== null) Object.assign(changes, { amount: changes.grams, unit: 'g' });
+  else if (typeof row.amount === 'number' && row.amount > 0) changes.amount = Math.round(row.amount * factor * 100) / 100;
   return changes;
 }
