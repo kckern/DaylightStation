@@ -14,7 +14,7 @@ import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { joinLearnerDay, DAY_STATUS_LABEL } from '../learnerDay.js';
 import { humanDate, teacherDate, teacherTime, localDay } from '../teacherDates.js';
-import { LessonIdentity, SubjectIdentity } from '../CurriculumIdentity.jsx';
+import { LessonIdentity } from '../CurriculumIdentity.jsx';
 import { teacherWorkspaceApi } from '../teacherWorkspaceApi.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
 import { teacherLog } from '../teacherLog.js';
@@ -173,19 +173,29 @@ function DayRow({ row, learnerId, onOpenSession }) {
   const detail = row.detail ?? (row.carriedOver && session?.studyDay
     ? `Study day ${teacherDate(session.studyDay)}${teacherTime(session.processedAt) ? ` · marked ${teacherTime(session.processedAt)}` : ''}`
     : null);
-  // AN UNSTARTED ROW IS THE SAME KIND OF THING AS A STARTED ONE, so it gets
-  // the same anatomy. It used to render a bare subject chip and a title, which
-  // is why a day of planned work showed no covers at all: the offer was
-  // carrying `courseTitle`/`moduleTitle`/`posterUrl` the whole time (see
-  // `offer` in learnerDay.js — "the resolved taxonomy … and the lesson's
-  // poster") and this dropped every one of them on the floor.
-  const identity = session ?? row.offer ?? null;
-  const body = identity
-    ? <LessonIdentity compact subject={subject}
-        courseTitle={identity.courseTitle} moduleTitle={identity.moduleTitle}
-        lessonTitle={title ?? identity.title ?? 'Lesson'} posterUrl={identity.posterUrl} />
-    : <div className="teacher-day-row__unstarted"><SubjectIdentity subject={subject} />
-        <strong>{row.planned ?? 'No assignment today'}</strong></div>;
+  // EVERY ROW HAS THE SAME ANATOMY, started or not. An unstarted row used to
+  // render a bare subject chip and a title, which is why a day of planned work
+  // showed no covers at all: the offer was carrying the resolved taxonomy and
+  // the lesson's poster the whole time (see `offer` in learnerDay.js) and this
+  // dropped every one of them on the floor.
+  //
+  // THE TWO SIDES SPELL IT DIFFERENTLY, and that is the trap. A session carries
+  // flat `courseTitle`/`moduleTitle`; an offer carries `taxonomy.course` /
+  // `taxonomy.unit`. Reading the session's names off an offer yields undefined,
+  // which `LessonIdentity` renders as the alarming "Course unavailable" on a
+  // row that is perfectly healthy.
+  const offerTaxonomy = row.offer?.taxonomy ?? null;
+  const courseTitle = session?.courseTitle ?? offerTaxonomy?.course ?? null;
+  const moduleTitle = session?.moduleTitle ?? offerTaxonomy?.unit ?? null;
+  const posterUrl = session?.posterUrl ?? row.offer?.posterUrl ?? null;
+  // Drawn even with nothing to show — a served subject whose program owns its
+  // own completion (the reading shelf) has no session AND no offer, and it
+  // still deserves the same shape as its neighbours rather than a ragged row.
+  const body = (
+    <LessonIdentity compact subject={subject}
+      courseTitle={courseTitle} moduleTitle={moduleTitle}
+      lessonTitle={title ?? row.planned ?? 'No assignment today'} posterUrl={posterUrl} />
+  );
   return (
     <li className={`teacher-day-row teacher-day-row--${row.status}`}>
       {/* One vocabulary with the dashboard's lesson cards: the chip is
