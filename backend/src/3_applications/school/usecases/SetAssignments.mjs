@@ -12,7 +12,11 @@
  * a person rather than appearing out of the air.
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
+import { STORY_TIME_PROGRAM_ID } from '#domains/school/storyTime.mjs';
+import { BOOK_LOG_PROGRAM_ID } from '#domains/school/bookLog.mjs';
 import { assertNotStale } from './staleSaveGuard.mjs';
+
+const READING_PROGRAM_IDS = new Set([STORY_TIME_PROGRAM_ID, BOOK_LOG_PROGRAM_ID]);
 
 export class SetAssignments {
   #assignments; #grownUps; #teacherGate; #curriculum; #roster; #programValidators; #realtime; #clock; #logger;
@@ -84,6 +88,13 @@ export class SetAssignments {
       if (programKeys.has(key)) throw new ValidationError(`duplicate program assignment: ${requestedId}/${result.enrollment.corpusId}`);
       programKeys.add(key);
       normalizedPrograms.push(result.enrollment);
+    }
+    const readingPrograms = normalizedPrograms
+      .filter((entry) => READING_PROGRAM_IDS.has(entry.programId));
+    if (readingPrograms.length > 1) {
+      throw new ValidationError(
+        'choose one reading experience: preschool story-time or independent book-log, not both',
+      );
     }
     // Referential honesty (admin advocacy A4). Both checks are advisory in
     // posture — they DEGRADE to accepting when the reference source itself

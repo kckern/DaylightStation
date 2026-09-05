@@ -164,8 +164,9 @@ reading*, book-log is *books finished over time*.
   edition (`OL…M`) keys, and OpenLibrary URLs pasted whole.
 - **B2.** A malformed identifier is rejected **at the domain boundary with a specific
   message** ("that's 12 digits — an ISBN has 10 or 13"), never sent to a network call.
-  A mistyped digit that *passes* checksum but matches nothing returns "no book found",
-  which is a different outcome from "the lookup failed" and must render differently.
+  A mistyped digit that *passes* checksum but matches nothing returns "no metadata found"
+  and requires physical-ISBN confirmation; this is a different outcome from "the lookup
+  failed" and must render differently.
 - **B3.** The canonical key is **ISBN-13 where one exists**, falling back to the
   OpenLibrary work key. Every alternate identifier seen for a book is stored alongside it,
   so the same book logged by ISBN in March and by library record in June is **one book**.
@@ -188,12 +189,18 @@ reading*, book-log is *books finished over time*.
   single-call implementation renders every book with a blank description.
 - **B7.** A partial record is a **success**, not a failure. A book with no cover and no
   description still renders — the child typed a real ISBN and deserves to see the title.
-  Only "no identifier matched anywhere" is a miss.
-- **B8.** **Every resolved record is cached durably**, keyed by canonical id, with the raw
-  source payloads retained. Two reasons: household reading repeats heavily (siblings, re-reads),
-  and it means an OpenLibrary outage does not stop a child from logging a book the house
-  has seen before. Cache is a repository, not a TTL cache — records are refreshed on
-  demand, never expired out from under a log entry.
+  A clean provider miss for a checksum-valid ISBN is still loggable under an explicit
+  `unresolved-isbn` placeholder: the physical identifier is evidence even when the
+  catalog is incomplete, and later resolution can improve presentation without changing
+  reading history. Provider failure remains `unavailable` and retryable; an outage must
+  never masquerade as a clean miss.
+- **B8.** **Every resolved record is cached durably**, keyed by canonical id, with its
+  resolution time retained. Two reasons: household reading repeats heavily (siblings,
+  re-reads), and it means an OpenLibrary outage does not stop a child logging a book the
+  house has seen before. A cached record is never expired out from under a log entry.
+  After 30 days it is returned immediately and refreshed once in the background;
+  known-good cached fields participate in the merge so a partial refresh cannot erase
+  them. An explicit awaited refresh also keeps the cache when every provider fails.
 - **B9.** **THERE IS NO SEARCH BAR ON THE CHILD SURFACE. DECIDED 2026-09-02.** A child
   never browses for a book; they identify the object in their hands. The identifier is
   printed on the thing itself, and lookup is a direct read of it — one number in, one book
@@ -887,7 +894,7 @@ Layer placement follows `docs/reference/core/layers-of-abstraction/`.
 
 frontend/src/modules/School/books/
   NumberPad.jsx         the pad — explicit submit, retained entry, variable length, X key
-  DayPicker.jsx         rolling three weeks, weekday first, no month breaks (+ dayGrid.js)
+  DayPicker.jsx         paged three-week windows, weekday first, no month breaks (+ dayGrid.js)
   isbn.js               client-side ISBN check with the length gate + the copy table
   useBookShelf.js       state machine, generation guard, idle timer, entryId minting
   BookShelf.jsx / ShelfTile.jsx / UpdateBook.jsx / AddBook.jsx / History.jsx
@@ -1117,6 +1124,13 @@ registered programs: story-time, book-log
 All five asks from the brainstorm validate, `schedule` composes through the existing
 `withSchedule` wrapper with no new code, and the grammar refuses what it does not
 understand.
+
+The adult assignment surfaces now expose the choice that the raw program ids previously
+hid: **Preschool story time** for a pre-reader using the shared screen, or **Independent
+reading — book log** for a grade-school reader logging physical books. The choices are
+mutually exclusive at the `SetAssignments` write boundary. Both planners carry every
+unrelated program object through unchanged, so editing a course cannot erase a reading,
+language, flashcard, or piano enrollment.
 
 ### Verified against the live API, not just fixtures
 

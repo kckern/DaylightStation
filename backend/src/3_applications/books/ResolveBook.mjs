@@ -35,19 +35,23 @@ import { createBookRecord, mergeBookRecords } from '#domains/books/BookRecord.mj
  * a real ISBN deserves to see its title (B7). Only "no provider had it" is a
  * miss.
  *
- * ## THE CACHE IS A REPOSITORY, NOT A TTL
+ * ## THE CACHE IS DURABLE, WITH STALE-WHILE-REVALIDATE
  *
  * Household reading repeats heavily — siblings, re-reads — and a cached record
  * means an OpenLibrary outage cannot stop a child logging a book the house has
- * seen before. Records are refreshed on demand (`refresh: true`), never expired
- * out from under a log entry that points at them.
+ * seen before. A current record returns immediately. After thirty days it
+ * still returns immediately, then refreshes once in the background. The old
+ * record participates in the merge so a partial provider outage cannot erase
+ * a good cover, author, or description. `refresh: true` remains the explicit,
+ * awaited repair path, and also keeps the old record if every provider fails.
  *
  * Layer: APPLICATION (3_applications/books).
  *
  * @module applications/books/ResolveBook
  */
 export class ResolveBook {
-  #gateways; #repository; #libraryCatalog; #logger;
+  #gateways; #repository; #libraryCatalog; #logger; #clock; #refreshAfterMs;
+  #refreshing = new Map();
 
   /**
    * @param {object} deps
@@ -55,11 +59,18 @@ export class ResolveBook {
    * @param {object} [deps.repository] - IBookRepository; omit to disable caching
    * @param {object} [deps.libraryCatalog] - ILibraryCatalogGateway
    */
-  constructor({ gateways = [], repository = null, libraryCatalog = null, logger = console } = {}) {
+  constructor({
+    gateways = [], repository = null, libraryCatalog = null, logger = console,
+    clock = () => new Date(), refreshAfterMs = 30 * 24 * 60 * 60 * 1000,
+  } = {}) {
     this.#gateways = gateways.filter(Boolean);
     this.#repository = repository;
     this.#libraryCatalog = libraryCatalog;
     this.#logger = logger;
+    this.#clock = typeof clock === 'function' ? clock : () => new Date();
+    this.#refreshAfterMs = Number.isFinite(refreshAfterMs) && refreshAfterMs >= 0
+      ? refreshAfterMs
+      : 30 * 24 * 60 * 60 * 1000;
   }
 
   /**
@@ -79,15 +90,25 @@ export class ResolveBook {
 
     const { isbn13, libraryRecordId } = located;
 
-    if (!refresh && this.#repository) {
-      const cached = await this.#repository.findByIsbn(isbn13);
-      if (cached) return { status: 'ok', book: cached, fromCache: true };
+    const cachedEntry = await this.#cachedEntry(isbn13);
+    const cached = cachedEntry?.book ?? null;
+    if (!refresh && cached) {
+      const stale = this.#isStale(cachedEntry);
+      if (stale) this.#refreshInBackground({ isbn13, libraryRecordId, cached });
+      return { status: 'ok', book: cached, fromCache: true, ...(stale ? { refreshing: true } : {}) };
     }
 
     const { records, failures } = await this.#ask(isbn13);
 
     if (records.length === 0) {
       // Everything broke vs nobody had it. Conflating these caches an outage.
+      if (cached) {
+        this.#logger.warn?.('books.resolve.refresh-kept-cache', { isbn13, failures: failures.length });
+        return {
+          status: 'ok', book: cached, fromCache: true, refreshFailed: true,
+          ...(failures.length ? { failures } : {}),
+        };
+      }
       const status = failures.length > 0 ? 'unavailable' : 'not-found';
       this.#logger.info?.(`books.resolve.${status}`, { isbn13, failures: failures.length });
       return { status, ...(failures.length ? { failures } : {}) };
@@ -95,8 +116,8 @@ export class ResolveBook {
 
     const merged = mergeBookRecords(
       libraryRecordId
-        ? [...records, createBookRecord({ source: 'library', isbn13, libraryRecordId })]
-        : records,
+        ? [...records, createBookRecord({ source: 'library', isbn13, libraryRecordId }), cached]
+        : [...records, cached],
     );
 
     if (this.#repository) await this.#repository.save(merged);
@@ -105,6 +126,47 @@ export class ResolveBook {
       isbn13, sources: merged.sources, failures: failures.length,
     });
     return { status: 'ok', book: merged, ...(failures.length ? { failures } : {}) };
+  }
+
+  async #cachedEntry(isbn13) {
+    if (!this.#repository) return null;
+    // The explicit override check keeps simple test/dummy repositories that
+    // inherit the port's compatibility method from being treated as freshness
+    // aware when they do not persist a timestamp.
+    const hasFreshnessRead = Object.prototype.hasOwnProperty.call(
+      Object.getPrototypeOf(this.#repository) ?? {}, 'findByIsbnEntry',
+    ) || Object.prototype.hasOwnProperty.call(this.#repository, 'findByIsbnEntry');
+    if (hasFreshnessRead) return this.#repository.findByIsbnEntry(isbn13);
+    const book = await this.#repository.findByIsbn(isbn13);
+    return book ? { book, cachedAt: null, freshnessUnknown: true } : null;
+  }
+
+  #isStale(entry) {
+    if (!entry || entry.freshnessUnknown) return false;
+    const cachedMs = Date.parse(entry.cachedAt ?? '');
+    if (!Number.isFinite(cachedMs)) return true;
+    return this.#clock().getTime() - cachedMs >= this.#refreshAfterMs;
+  }
+
+  #refreshInBackground({ isbn13, libraryRecordId, cached }) {
+    if (this.#refreshing.has(isbn13)) return;
+    const refresh = (async () => {
+      const { records, failures } = await this.#ask(isbn13);
+      if (records.length === 0) {
+        this.#logger.warn?.('books.resolve.background-refresh-kept-cache', { isbn13, failures: failures.length });
+        return;
+      }
+      const merged = mergeBookRecords(
+        libraryRecordId
+          ? [...records, createBookRecord({ source: 'library', isbn13, libraryRecordId }), cached]
+          : [...records, cached],
+      );
+      await this.#repository.save(merged);
+      this.#logger.info?.('books.resolve.background-refreshed', { isbn13, failures: failures.length });
+    })().catch((error) => {
+      this.#logger.warn?.('books.resolve.background-refresh-failed', { isbn13, error: error.message });
+    }).finally(() => this.#refreshing.delete(isbn13));
+    this.#refreshing.set(isbn13, refresh);
   }
 
   /**

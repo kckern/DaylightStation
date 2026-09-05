@@ -27,19 +27,21 @@ const ISBN13 = /^\d{13}$/;
 export class YamlBookRepository extends IBookRepository {
   #configService;
   #logger;
+  #clock;
 
   /**
    * @param {object} deps
    * @param {object} deps.configService - must expose `getHouseholdPath(suffix)`
    * @param {object} [deps.logger]
    */
-  constructor({ configService, logger = console } = {}) {
+  constructor({ configService, logger = console, clock = () => new Date() } = {}) {
     super();
     if (!configService || typeof configService.getHouseholdPath !== 'function') {
       throw new Error('YamlBookRepository: configService with getHouseholdPath() is required');
     }
     this.#configService = configService;
     this.#logger = logger;
+    this.#clock = typeof clock === 'function' ? clock : () => new Date();
   }
 
   #fileFor(isbn13) {
@@ -47,13 +49,20 @@ export class YamlBookRepository extends IBookRepository {
   }
 
   async findByIsbn(isbn13) {
+    return (await this.findByIsbnEntry(isbn13))?.book ?? null;
+  }
+
+  async findByIsbnEntry(isbn13) {
     if (!ISBN13.test(String(isbn13 ?? ''))) return null;
     const file = this.#fileFor(isbn13);
     if (!fileExists(file)) return null;
     try {
       const loaded = yaml.load(readFile(file));
       if (!loaded || typeof loaded !== 'object' || Array.isArray(loaded)) throw new Error('not a mapping');
-      return createBookRecord(loaded);
+      return {
+        book: createBookRecord(loaded),
+        cachedAt: typeof loaded.cachedAt === 'string' ? loaded.cachedAt : null,
+      };
     } catch (error) {
       this.#logger.warn?.('books.repository.corrupt', { isbn13, file, error: error.message });
       return null;
@@ -72,6 +81,7 @@ export class YamlBookRepository extends IBookRepository {
     const plain = Object.fromEntries(
       Object.entries(record).map(([key, value]) => [key, Array.isArray(value) ? [...value] : value]),
     );
+    plain.cachedAt = this.#clock().toISOString();
     writeFileAtomic(file, yaml.dump(plain, { lineWidth: 120 }));
     this.#logger.debug?.('books.repository.saved', { isbn13, sources: record.sources });
     return record;

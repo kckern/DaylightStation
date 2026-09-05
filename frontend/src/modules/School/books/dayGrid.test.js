@@ -20,6 +20,14 @@ describe('buildDayGrid', () => {
     expect(rows.at(-1).map((c) => c?.key ?? null)).toEqual(['2026-08-31', '2026-09-01', '2026-09-02', null, null, null, null]);
   });
 
+  it('can page the same rolling grid into the past while preserving the real today marker', () => {
+    const rows = buildDayGrid('2026-09-02', { offsetDays: 21 });
+    const flat = rows.flat().filter(Boolean);
+    expect(flat.at(-1).key).toBe('2026-08-12');
+    expect(flat.some((cell) => cell.isToday)).toBe(false);
+    expect(flat.some((cell) => cell.key === '2026-08-02')).toBe(true);
+  });
+
   it('a row that crosses a month boundary is ONE row, with the month change flagged on the cell', () => {
     const rows = buildDayGrid('2026-09-02');
     const crossing = rows.find((r) => r.some((c) => c?.key === '2026-08-31') && r.some((c) => c?.key === '2026-09-01'));

@@ -98,6 +98,13 @@ describe('validateBookLogEnrollment', () => {
       expect(errs({ ...base, obligation: { metric: 'books', quantity: 5000, per: 'day' } }))
         .toContainEqual(expect.stringMatching(/quantity/));
     });
+
+    it('refuses multiple daily check-ins because the metric counts distinct days', () => {
+      expect(errs({ ...base, obligation: { metric: 'checkins', quantity: 2, per: 'day' } }))
+        .toContainEqual(expect.stringMatching(/daily checkins/));
+      expect(ok({ ...base, obligation: { metric: 'checkins', quantity: 3, per: 'week' } }).obligation)
+        .toMatchObject({ quantity: 3, per: 'week' });
+    });
   });
 
   describe('scope', () => {
