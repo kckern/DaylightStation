@@ -639,13 +639,9 @@ export function createScanDispatch(deps = {}) {
       || relayConfig.nutribot?.conversation_id
       || nutribotIdentity.conversationIdFor(userId);
 
-    if (!conversationId) {
-      emit(barcodeLogger, 'warn', 'barcode_relay.nutribot.no_conversation', { device, code: raw, userId });
-      return { status: 'refused', ok: false, message: 'no nutribot conversation' };
-    }
-
     getLogFoodFromUPC().execute({
-      userId, conversationId, upc: body, messageId: null,
+      userId, conversationId: conversationId || `device:${userId}`, upc: body, messageId: null,
+      headless: true,
     }).catch((err) => {
       emit(barcodeLogger, 'warn', 'barcode_relay.nutribot.dispatch.failed', { device, error: errText(err) });
     });

@@ -46,7 +46,7 @@ export class LogFoodFromImage {
     this.#logger = deps.logger || console;
     this.#encodeCallback = deps.encodeCallback || ((cmd, data) => JSON.stringify({ cmd, ...data }));
     this.#foodIconsString = deps.foodIconsString || 'apple banana bread cheese chicken default';
-    this.#iconVocabulary = iconVocabulary(this.#foodIconsString);
+    this.#iconVocabulary = iconVocabulary(this.#foodIconsString, deps.foodIconNames);
     this.#imageProcessor = deps.imageProcessor; // Optional: for downloading/processing images
     this.#reconciliationReader = deps.reconciliationReader || null;
     this.#catalogService = deps.catalogService || null;
@@ -526,7 +526,7 @@ ${conservativeNote}${portionBoost}`,
         unit: item.unit || 'serving',
         amount: item.quantity || item.amount || 1,
         color: this.#normalizeNoomColor(item.noom_color || item.color),
-        icon: confineIcon(item.icon, this.#iconVocabulary),
+        icon: confineIcon(item.icon, this.#iconVocabulary, item.name || item.label),
         calories: item.calories ?? 0,
         protein: item.protein ?? 0,
         carbs: item.carbs ?? 0,

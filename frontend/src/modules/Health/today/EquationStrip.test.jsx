@@ -12,7 +12,7 @@ describe('EquationStrip', () => {
     expect(screen.getByText('2,100')).toBeTruthy();
     expect(screen.getByText('1,280')).toBeTruthy();
     expect(screen.getByText('320')).toBeTruthy(); // exercise term (ops render as separate spans)
-    expect(screen.getByText('1,140')).toBeTruthy();
+    expect(screen.getByText('1,140 kcal')).toBeTruthy();
     expect(screen.getByText(/under/)).toBeTruthy();
   });
 

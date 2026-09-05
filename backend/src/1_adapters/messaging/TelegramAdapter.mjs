@@ -102,7 +102,8 @@ export class TelegramAdapter extends IMessagingGateway {
   async sendMessage(chatId, text, options = {}) {
     const params = {
       chat_id: this.extractChatId(chatId),
-      text
+      text,
+      ...(options.silent ? { disable_notification: true } : {}),
     };
 
     if (options.parseMode) {
@@ -170,7 +171,8 @@ export class TelegramAdapter extends IMessagingGateway {
     // file_id (or remote URL after a failed download) - use standard API call
     const params = {
       chat_id: numericChatId,
-      photo: imageSource
+      photo: imageSource,
+      ...(options.silent ? { disable_notification: true } : {}),
     };
 
     if (caption) {
@@ -214,6 +216,7 @@ export class TelegramAdapter extends IMessagingGateway {
     const form = new FormData();
 
     form.append('chat_id', chatId.toString());
+    if (options.silent) form.append('disable_notification', 'true');
 
     if (Buffer.isBuffer(imageSource)) {
       form.append('photo', imageSource, { filename: 'image.png', contentType: 'image/png' });

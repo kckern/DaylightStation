@@ -17,6 +17,7 @@ export class NutribotInputRouter extends BaseInputRouter {
   #userResolver;
   #userIdentityService;
   #aiGatewayAvailable;
+  #cleanupProvider;
 
   /**
    * @param {import('../../3_applications/nutribot/NutribotContainer.mjs').NutribotContainer} container
@@ -30,9 +31,20 @@ export class NutribotInputRouter extends BaseInputRouter {
     this.#userIdentityService = options.userIdentityService || null;
     this.#userResolver = options.userResolver;
     this.#aiGatewayAvailable = options.aiGatewayAvailable !== false;
+    this.#cleanupProvider = options.cleanupProvider;
+  }
+
+  async route(event, responseContext = null) {
+    if (event.platform === 'telegram') {
+      const handled = await this.#cleanupProvider?.()?.handleTelegram(this.#resolveUserId(event), event, responseContext);
+      if (handled) return { ok: true, handled: true };
+    }
+    return super.route(event, responseContext);
   }
 
   // ==================== Auto-commit seam ====================
+
+  reviewPending(input) { return this.container.getFoodLogReview().execute(input); }
   //
   // AI captures (text / voice / image / barcode) are logged IMMEDIATELY as
   // unsettled — there is no pending Accept/Revise/Discard gate any more. The
@@ -425,6 +437,9 @@ export class NutribotInputRouter extends BaseInputRouter {
           logUuid: decoded.id,
           messageId: event.messageId,
           responseContext,
+          // App confirmation completes independently; optional surface reports
+          // are regenerated from the committed ledger by the sync worker.
+          autoReport: event.platform !== 'web',
         });
       }
       case CallbackActions.REJECT_LOG: {

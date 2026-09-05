@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.4
-ARG NODE_VERSION=20.11.0
+ARG NODE_VERSION=22.23.2
 FROM node:${NODE_VERSION}-alpine
 
 WORKDIR /usr/src/app

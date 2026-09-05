@@ -177,7 +177,7 @@ describe('AddCombobox — zero-keystroke suggestions', () => {
     const imgs = [...container.querySelectorAll('.health-suggest__list img')];
     expect(imgs).toHaveLength(1);
     expect(imgs[0].getAttribute('src')).toBe('/api/v1/health/nutrition/icons/oatmeal');
-    expect(container.querySelectorAll('svg.health-suggest__icon')).toHaveLength(1);
+    expect(container.querySelectorAll('.health-suggest__icon svg')).toHaveLength(2);
   });
 
   it('the neutral sentinel is not a picture — it draws no icon and no request', async () => {
@@ -187,14 +187,14 @@ describe('AddCombobox — zero-keystroke suggestions', () => {
     const { container } = r(<AddCombobox bucketId="morning" onDone={() => {}} onCancel={() => {}} />);
     await waitFor(() => expect(screen.getByText('Something')).toBeTruthy());
     expect(container.querySelectorAll('.health-suggest__list img')).toHaveLength(0);
-    expect(container.querySelector('svg.health-suggest__icon')).toBeTruthy();
+    expect(container.querySelector('.health-suggest__icon svg')).toBeTruthy();
   });
 
   it('a broken icon retires that slug — the row keeps its name and kcal, and no image is left behind', async () => {
     apiMock.mockResolvedValue(OPEN);
     const { container } = r(<AddCombobox bucketId="morning" onDone={() => {}} onCancel={() => {}} />);
     await waitFor(() => expect(screen.getByText('Oatmeal')).toBeTruthy());
-    fireEvent.error(container.querySelector('.health-suggest__icon'));
+    fireEvent.error(container.querySelector('.health-suggest__icon img'));
     await waitFor(() => expect(container.querySelectorAll('.health-suggest__list img')).toHaveLength(0));
     expect(screen.getByText('Oatmeal')).toBeTruthy();
     expect(screen.getByText('150 kcal')).toBeTruthy();

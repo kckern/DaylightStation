@@ -21,12 +21,14 @@ export class LogFoodFromVoice {
   #messagingGateway;
   #logFoodFromText;
   #logger;
+  #transcribeAudio;
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
     if (!deps.logFoodFromText) throw new Error('logFoodFromText is required');
 
     this.#messagingGateway = deps.messagingGateway;
+    this.#transcribeAudio = deps.transcribeAudio;
     this.#logFoodFromText = deps.logFoodFromText;
     this.#logger = deps.logger || console;
   }
@@ -42,7 +44,8 @@ export class LogFoodFromVoice {
       return {
         sendMessage: (text, options) => responseContext.sendMessage(text, options),
         deleteMessage: (msgId) => responseContext.deleteMessage(msgId),
-        transcribeVoice: (fileId) => this.#messagingGateway.transcribeVoice(fileId),
+        transcribeVoice: (fileId) => fileId?.buffer && this.#transcribeAudio
+          ? this.#transcribeAudio(fileId) : this.#messagingGateway.transcribeVoice(fileId),
         createStatusIndicator: responseContext.createStatusIndicator?.bind(responseContext),
       };
     }

@@ -63,17 +63,11 @@ export class TelegramWebhookParser {
       return null;
     }
 
-    if (message.photo) {
-      return this.#parsePhoto(message);
-    }
-    if (message.document) {
-      return this.#parseDocument(message);
-    }
-    if (message.voice) {
-      return this.#parseVoice(message);
-    }
-    if (message.text) {
-      return this.#parseText(message);
+    const parsed = message.photo ? this.#parsePhoto(message) : message.document ? this.#parseDocument(message)
+      : message.voice ? this.#parseVoice(message) : message.text ? this.#parseText(message) : null;
+    if (parsed) {
+      parsed.metadata = { ...parsed.metadata, chatId: String(message.chat.id), replyToMessageId: message.reply_to_message?.message_id ? String(message.reply_to_message.message_id) : null };
+      return parsed;
     }
 
     this.#logger.debug?.('telegram.parse.unsupported', { messageKeys: Object.keys(message) });
@@ -91,6 +85,7 @@ export class TelegramWebhookParser {
       messageId: String(callbackQuery.message?.message_id),
       metadata: {
         from: callbackQuery.from,
+        chatId: String(chatId),
         chatType: callbackQuery.message?.chat?.type
       }
     };

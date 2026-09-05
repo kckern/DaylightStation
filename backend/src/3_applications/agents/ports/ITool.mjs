@@ -49,11 +49,17 @@ export function isTool(obj) {
  * @param {Function} config.execute
  * @returns {ITool}
  */
-export function createTool({ name, description, parameters, execute }) {
+export function createTool({ name, description, parameters, execute, outputSchema, suspendSchema, resumeSchema, requireApproval, toModelOutput, transform }) {
   return {
     name,
     description,
     parameters: parameters || { type: 'object', properties: {} },
     execute,
+    ...(outputSchema ? { outputSchema } : {}),
+    ...(suspendSchema ? { suspendSchema } : {}),
+    ...(resumeSchema ? { resumeSchema } : {}),
+    ...(requireApproval ? { requireApproval } : {}),
+    ...(toModelOutput ? { toModelOutput } : {}),
+    ...(transform ? { transform } : {}),
   };
 }

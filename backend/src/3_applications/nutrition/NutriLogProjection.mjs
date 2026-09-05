@@ -1,35 +1,5 @@
-export function serializeFoodItem(item) {
-  return {
-    id: item.id,
-    uuid: item.uuid,
-    label: item.label,
-    icon: item.icon,
-    grams: item.grams,
-    unit: item.unit,
-    amount: item.amount,
-    color: item.color,
-    calories: item.calories,
-    protein: item.protein,
-    carbs: item.carbs,
-    fat: item.fat,
-    fiber: item.fiber,
-    sugar: item.sugar,
-    sodium: item.sodium,
-    cholesterol: item.cholesterol,
-    // Lifecycle / group fields. `settled` is absence-sensitive: an absent key
-    // means "legacy row, treat as settled", so it is only emitted when present.
-    kind: item.kind,
-    parentId: item.parentId,
-    photoRef: item.photoRef,
-    ...(item.settled !== undefined ? { settled: item.settled } : {}),
-    settledBy: item.settledBy,
-    settledAt: item.settledAt,
-    microsSource: item.microsSource,
-    foodId: item.foodId,
-    nutrientProvenance: item.nutrientProvenance,
-    originalQuantity: item.originalQuantity,
-  };
-}
+import { serializeFoodItem } from '#shared/contracts/nutrition/foodItemRecord.mjs';
+export { serializeFoodItem };
 
 export function serializeNutriLog(log) {
   const record = {

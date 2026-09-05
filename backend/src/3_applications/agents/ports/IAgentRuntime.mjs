@@ -14,7 +14,12 @@ export class IAgentRuntime {
    * @param {string} options.systemPrompt - Agent persona/instructions
    * @param {Object} [options.context] - Execution context (userId, etc.)
    * @param {Object} [options.memory] - Conversation memory (optional)
-   * @returns {Promise<{output: string, toolCalls: Array}>}
+   * @param {AbortSignal} [options.signal] - Cancellation propagated to model and tools
+   * @param {{timeoutMs?: number, maxToolCalls?: number, maxSteps?: number}} [options.limits]
+   * @param {Object} [options.outputSchema] - JSON Schema; invalid output must reject
+   * @param {string[]} [options.toolAllowlist] - Narrow the supplied tool set
+   * @param {Object} [options.modelSettings] - Provider-neutral sampling/output limits
+   * @returns {Promise<{output: string, toolCalls: Array, turnId: string, runId: string, status: string, structured?: unknown, usage?: Object, evaluation?: unknown, interaction?: Object}>}
    */
   async execute(_options) { throw new Error('IAgentRuntime.execute not implemented'); }
 
@@ -28,7 +33,8 @@ export class IAgentRuntime {
 
   /**
    * Execute an agent with streaming output.
-   * Yields normalized chunks: text-delta, tool-start, tool-end, finish.
+   * Yields normalized chunks: text-delta, tool-start, tool-end, input-required,
+   * error, finish. Tool events carry stable toolCallId, not only tool name.
    * @param {Object} options - Same shape as execute
    * @returns {AsyncIterable<{type: 'text-delta'|'tool-start'|'tool-end'|'finish', text?: string, toolName?: string, args?: object, result?: any, reason?: string, usage?: object}>}
    */

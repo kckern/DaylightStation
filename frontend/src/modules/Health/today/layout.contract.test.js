@@ -49,7 +49,7 @@ describe('Today layout stylesheet', () => {
   });
 
   it('gives the wide layout a main column and a fixed-width aside', () => {
-    const wide = css.match(/@media \(min-width: 1100px\) \{ \.health-today \{([^}]*)\}/)?.[1] ?? '';
+    const wide = css.match(/@media \(min-width: 1200px\) \{ \.health-today \{([^}]*)\}/)?.[1] ?? '';
     expect(wide).toMatch(/display: grid/);
     expect(wide).toMatch(/grid-template-columns: minmax\(0, 1fr\) 320px/);
   });

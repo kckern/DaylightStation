@@ -43,12 +43,46 @@ function buildApp(overrides = {}) {
   app.use('/health', createHealthRouter({
     healthOperations,
     healthService: {},
+    cleanupProvider: () => overrides.cleanup,
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   }));
   return { app, healthData, nutritionItems, personalContext, setDailyCoaching, nutritionInput };
 }
 
 describe('health HTTP contract through application operations', () => {
+  it('exposes cleanup controls with server-owned identity and rejects unavailable service', async () => {
+    const cleanup = { status: vi.fn(() => ({ questions: [], runs: [] })), history: vi.fn(async () => ({ records: [], total: 0 })),
+      request: vi.fn(async () => ({ runId: 'one' })), settings: vi.fn(async () => ({})),
+      interactions: { answer: vi.fn(async () => ({ status: 'resolved' })) }, repairs: { undo: vi.fn(async () => ({})) } };
+    const { app } = buildApp({ cleanup });
+    expect((await request(app).get('/health/nutrition/cleanup?userId=bob')).status).toBe(200);
+    expect(cleanup.status).toHaveBeenCalledWith('alex');
+    expect((await request(app).get('/health/nutrition/cleanup/history?offset=-1')).status).toBe(400);
+    expect((await request(app).post('/health/nutrition/cleanup/run')).status).toBe(202);
+    expect(cleanup.request).toHaveBeenCalledWith('alex', { manual: true });
+    await request(app).post('/health/nutrition/cleanup/questions/q1/answer').send({ userId: 'bob', expectedVersion: 1, operationId: 'one', text: 'Cod' });
+    expect(cleanup.interactions.answer).toHaveBeenCalledWith(expect.objectContaining({ userId: 'alex', id: 'q1', text: 'Cod' }));
+    expect((await request(buildApp().app).get('/health/nutrition/cleanup')).status).toBe(503);
+  });
+  it('projects pending versions and routes review commands with server-owned user identity', async () => {
+    const nutritionInput = {
+      process: vi.fn(), processCallback: vi.fn(),
+      listPendingByDate: vi.fn(async () => [{ id: 'capture', items: [], status: 'pending',
+        meal: { date: '2026-08-28', time: 'afternoon' }, conversationId: 'device:alex' }]),
+      reviewPending: vi.fn(async () => ({ success: true })),
+    };
+    const { app } = buildApp({ nutritionInput });
+    const response = await request(app).get('/health/nutrition/pending?date=2026-08-28');
+    const pending = response.body.pending[0];
+    expect(pending).toMatchObject({ id: 'capture', source: 'scanner', date: '2026-08-28' });
+    expect(pending.version).toMatch(/^[a-f0-9]{64}$/);
+    expect((await request(app).post('/health/nutrition/pending/capture/review').send({ action: 'confirm' })).status).toBe(400);
+    const body = { expectedVersion: pending.version, operationId: 'one', action: 'confirm', userId: 'someone-else' };
+    expect((await request(app).post('/health/nutrition/pending/capture/review').send(body)).status).toBe(200);
+    expect(nutritionInput.reviewPending).toHaveBeenCalledWith(expect.objectContaining({ userId: 'alex', logUuid: 'capture', operationId: 'one' }));
+    nutritionInput.reviewPending.mockRejectedValue(Object.assign(new Error('Reload review'), { status: 409 }));
+    expect((await request(app).post('/health/nutrition/pending/capture/review').send(body)).status).toBe(409);
+  });
   it('keeps legacy raw weight and wrapped workout shapes distinct', async () => {
     const { app } = buildApp();
     const weight = await request(app).get('/health/weight');
@@ -88,7 +122,7 @@ describe('health HTTP contract through application operations', () => {
       message: 'Nutrilist item created successfully',
       data: {
         uuid: 'fixed-id', userId: 'alex', item: 'Banana', name: 'Banana',
-        unit: 'g', amount: 0, grams: 0, color: 'yellow', noom_color: 'yellow',
+        unit: 'g', amount: 0, grams: null, color: 'yellow', noom_color: 'yellow',
         date: '2026-08-28', log_uuid: 'MANUAL',
       },
     });

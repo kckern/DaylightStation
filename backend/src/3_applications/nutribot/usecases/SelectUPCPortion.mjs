@@ -18,6 +18,7 @@ export class SelectUPCPortion {
   #generateDailyReport;
   #logger;
   #pause;
+  #reviewService;
 
   /**
    * Format confirmation message for accepted food
@@ -51,6 +52,7 @@ export class SelectUPCPortion {
   }
 
   constructor(deps) {
+    this.#reviewService = deps.reviewService;
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
 
     this.#messagingGateway = deps.messagingGateway;
@@ -71,6 +73,7 @@ export class SelectUPCPortion {
    * @param {string} [input.messageId]
    */
   async execute(input) {
+    if (this.#reviewService) return this.#reviewService.execute({ ...input, action: 'confirm' });
     const { userId, conversationId, logUuid, portionFactor, messageId, responseContext } = input;
 
     this.#logger.debug?.('selectPortion.start', { conversationId, logUuid, portionFactor });

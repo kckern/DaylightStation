@@ -218,6 +218,7 @@ export function createHealthApiRouter(config) {
   });
 
   return createHealthRouter({
+    cleanupProvider: config.cleanupProvider,
     healthService: healthServices.healthService,
     healthOperations,
     dashboardService,

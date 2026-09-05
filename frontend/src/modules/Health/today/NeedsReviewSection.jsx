@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button } from '@mantine/core';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
+import { PendingReviewEditor } from './PendingReviewEditor.jsx';
 
 const logger = createAppLogger('health').child('needs-review');
 
-const SOURCE_LABEL = { telegram: 'Telegram', scale: 'Scale', web: 'Web' };
+const SOURCE_LABEL = { telegram: 'Telegram', scale: 'Scale', web: 'Web', scanner: 'Scanner' };
 
 /** Sum of a pending log's item calories, rounded for display. */
 function totalCalories(items) {
@@ -23,18 +24,22 @@ function itemsSummary(items) {
  * the web Today view until acted on. Root-cause fix, live incident 2026-09-02.
  */
 function NeedsReviewRow({ entry, onChanged }) {
+  const [reviewing, setReviewing] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const discardOperation = useRef(null);
 
-  const act = async (cmd) => {
+  const discard = async () => {
+    if (busy) return;
     setBusy(true); setError(null);
     try {
-      const callbackData = JSON.stringify({ cmd, id: entry.id });
-      await DaylightAPI('api/v1/health/nutrition/callback', { callbackData }, 'POST');
-      logger.info('needs-review.action', { cmd, id: entry.id, source: entry.source });
+      if (!discardOperation.current) discardOperation.current = crypto.randomUUID();
+      await DaylightAPI(`api/v1/health/nutrition/pending/${entry.id}/review`,
+        { action: 'discard', expectedVersion: entry.version, operationId: discardOperation.current }, 'POST');
+      logger.info('needs-review.action', { action: 'discard', id: entry.id, source: entry.source });
       onChanged();
     } catch (err) {
-      logger.error('needs-review.action_failed', { cmd, id: entry.id, error: err?.message });
+      logger.error('needs-review.action_failed', { action: 'discard', id: entry.id, error: err?.message });
       setError(err);
     } finally { setBusy(false); }
   };
@@ -44,15 +49,16 @@ function NeedsReviewRow({ entry, onChanged }) {
       <div className="health-pending__row-info">
         <span className="health-pending__row-items">{itemsSummary(entry.items)}</span>
         <span className="health-pending__row-meta">
-          {totalCalories(entry.items)} kcal
-          <span className="health-pending__tag">{SOURCE_LABEL[entry.source] || entry.source}</span>
+          {entry.nutritionLookup?.missing?.includes('calories') ? 'Calories need review' : `${totalCalories(entry.items)} kcal`}
+          <span className="health-pending__tag">{entry.captureMethod === 'upc' ? 'Barcode' : SOURCE_LABEL[entry.source] || entry.source}</span>
         </span>
       </div>
       {error ? <p className="health-pending__error">{error.message} — retry below.</p> : null}
       <div className="health-pending__actions">
-        <Button size="xs" color="green" loading={busy} disabled={busy} onClick={() => act('a')}>Accept</Button>
-        <Button size="xs" variant="subtle" color="red" loading={busy} disabled={busy} onClick={() => act('x')}>Discard</Button>
+        <Button size="xs" loading={busy} disabled={busy} onClick={() => setReviewing(entry)}>Review food</Button>
+        <Button size="xs" variant="subtle" color="red" loading={busy} disabled={busy} onClick={discard}>Discard</Button>
       </div>
+      {reviewing ? <PendingReviewEditor entry={reviewing} onClose={() => setReviewing(null)} onChanged={onChanged} /> : null}
     </div>
   );
 }

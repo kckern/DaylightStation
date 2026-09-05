@@ -44,6 +44,15 @@
   &__number { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ds-text-high); }
   &__unit { font-size: 0.8rem; color: var(--ds-text-low); }
   &__trend { font-size: 0.8rem; color: var(--ds-text-mid); }
+  // Dense summaries keep the same stat vocabulary with a sparkline beside it.
+  &--compact {
+    width: 100%; min-width: 0; box-sizing: border-box;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.1rem 0.75rem; padding: 0.5rem 0.75rem;
+    .ds-stat__label, .ds-stat__value, .ds-stat__trend { grid-column: 1; }
+    .ds-stat__number { font-size: 1.15rem; }
+    .ds-stat__spark { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
+  }
 }
 
 .ds-sheet {

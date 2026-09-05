@@ -44,7 +44,8 @@ export function groupParsedItems(items, { makeId } = {}) {
     const members = membersByDish.get(dish);
 
     const totalGrams = members.reduce((sum, m) => sum + (typeof m.grams === 'number' ? m.grams : 0), 0);
-    const grams = Math.min(10000, Math.max(1, totalGrams || 1));
+    const grams = members.every(m => typeof m.grams === 'number' && m.grams > 0)
+      ? Math.min(10000, totalGrams) : null;
 
     // Most common member color; ties resolve to the first member's color.
     const colorCounts = new Map();
@@ -65,10 +66,10 @@ export function groupParsedItems(items, { makeId } = {}) {
       entry: {
         id,
         label: dish,
-        icon: members[0].icon,
+        icon: 'default',
         grams,
         unit: 'g',
-        amount: grams,
+        amount: grams || 1,
         color,
         calories: 0,
         protein: 0,

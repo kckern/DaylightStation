@@ -20,9 +20,9 @@ export function SectionCard({ title, actions, children, className = '' }) {
  * Label / big tabular number / trend / sparkline. `emphasis` is the ONE
  * louder variant — a screen should have at most one emphasized stat.
  */
-export function StatCard({ label, value, unit, trend, spark, emphasis = false }) {
+export function StatCard({ label, value, unit, trend, spark, emphasis = false, compact = false }) {
   return (
-    <div className={`ds-stat${emphasis ? ' ds-stat--emphasis' : ''}`}>
+    <div className={`ds-stat${emphasis ? ' ds-stat--emphasis' : ''}${compact ? ' ds-stat--compact' : ''}`}>
       <span className="ds-stat__label">{label}</span>
       <span className="ds-stat__value">
         <span className="ds-stat__number">{value}</span>

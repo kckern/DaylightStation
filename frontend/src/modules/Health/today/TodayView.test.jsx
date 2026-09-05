@@ -41,7 +41,13 @@ vi.mock('../capture/CustomFoodSheet.jsx', () => ({ CustomFoodSheet: () => null }
 // non-deterministic in this file's tests and (b) collide with whichever
 // per-meal instance happens to share that hour's bucket, since the mock's
 // label depends only on `bucket`, not on which caller rendered it.
-vi.mock('./QuickCaptureBar.jsx', () => ({ QuickCaptureBar: () => null }));
+// Expose the toolbar callback seam deterministically; its real target UI has a separate suite.
+vi.mock('./QuickCaptureBar.jsx', () => ({ QuickCaptureBar: ({ bucketOverride, onPhotoCapture, onVoiceCapture }) => bucketOverride ? null :
+  <div>{['morning', 'afternoon', 'evening', 'night'].map(bucket => <div key={bucket}>
+    <button onClick={() => onPhotoCapture('data:image/png;base64,zzz', bucket)}>MockPhotoCapture-{bucket}</button>
+    <button onClick={() => onVoiceCapture('data:audio/webm;base64,zzz', bucket)}>MockVoiceCapture-{bucket}</button>
+  </div>)}</div>
+}));
 
 // Pin the capture-pending bucket target so the "which bucket does the
 // placeholder land in" tests are deterministic regardless of wall-clock
@@ -124,12 +130,14 @@ describe('TodayView — photo/voice capture: no review phase, day reload instead
     expect(screen.queryByText(/couldn't identify/i)).toBeFalsy();
   });
 
-  it('the NeedsReviewSection mount is only fed scale-origin pending logs (telegram/web are filtered out)', async () => {
+  it('shows pending logs from every capture surface', async () => {
     apiMock.mockImplementation(baseApi({
       pending: {
         pending: [
           { id: 'log-1', source: 'telegram', items: [{ label: 'Oatmeal', calories: 210 }] },
           { id: 'log-2', source: 'scale', items: [{ label: 'Chicken breast', calories: 231 }] },
+          { id: 'log-3', source: 'web', items: [{ label: 'Apple', calories: 95 }] },
+          { id: 'log-4', source: 'scanner', items: [{ label: 'Shake', calories: 160 }] },
         ],
       },
     }));
@@ -137,7 +145,38 @@ describe('TodayView — photo/voice capture: no review phase, day reload instead
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
 
     await waitFor(() => expect(screen.getByText('Chicken breast')).toBeTruthy());
-    expect(screen.queryByText('Oatmeal')).toBeFalsy();
+    expect(screen.getByText('Oatmeal')).toBeTruthy();
+    expect(screen.getByText('Apple')).toBeTruthy();
+    expect(screen.getByText('Shake')).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: /^Review food$/ })).toHaveLength(4);
+  });
+
+  it('confirms a Telegram barcode entry in Health and refreshes the pending list and day', async () => {
+    let accepted = false;
+    const pending = { id: 'barcode-log', source: 'telegram', mealTime: 'afternoon',
+      items: [{ label: 'Salted Caramel Protein Shake', calories: 160 }] };
+    apiMock.mockImplementation(async (path, body, method) => {
+      if (path.endsWith('nutrition/pending/barcode-log/review') && method === 'POST') {
+        expect(body.action).toBe('confirm');
+        accepted = true;
+        return { logged: true, messages: [] };
+      }
+      if (path.includes('nutrition/pending')) return { pending: accepted ? [] : [pending] };
+      if (path.includes('health/day?')) return {
+        items: accepted ? [{ uuid: 'shake-row', name: 'Salted Caramel Protein Shake',
+          calories: 160, mealTime: 'afternoon' }] : [],
+        budget: { ...BUDGET, food: accepted ? 160 : 0, remaining: accepted ? 1840 : 2000 },
+      };
+      return baseApi()(path);
+    });
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Review food$/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm food' }));
+    await waitFor(() => {
+      expect(screen.queryByText('NEEDS REVIEW')).toBeNull();
+      expect(document.querySelector('.health-row__name')?.textContent).toBe('Salted Caramel Protein Shake');
+      expect(screen.getByText('1,840 kcal')).toBeTruthy();
+    });
   });
 });
 
@@ -243,7 +282,7 @@ describe('TodayView — Task 3.2: permanent chrome, SWR day data, in-place captu
     });
 
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
-    await waitFor(() => expect(screen.getByText('Exercise')).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Exercise' })).toBeTruthy());
   });
 
   it('shows an in-place "Analyzing…" placeholder in the target bucket while a capture is in flight, cleared once the result lands', async () => {
@@ -442,7 +481,7 @@ describe('TodayView — scale observations', () => {
 
   // ---- No-regression guards for the day-view behaviours this task edits ----
 
-  it('REGRESSION: NeedsReviewSection is still mounted and still filtered to source==="scale"', async () => {
+  it('shows pending food from other sources alongside scale observations', async () => {
     apiMock.mockImplementation(baseApi({
       observations: { observations: [OPEN_WEIGHT] },
       pending: {
@@ -456,7 +495,7 @@ describe('TodayView — scale observations', () => {
 
     await waitFor(() => expect(screen.getByText('NEEDS REVIEW')).toBeTruthy());
     expect(screen.getByText('Chicken breast')).toBeTruthy();
-    expect(screen.queryByText('Oatmeal')).toBeNull();
+    expect(screen.getByText('Oatmeal')).toBeTruthy();
   });
 
   it('REGRESSION: the unsettled cue stays gated strictly on settled === false', async () => {
@@ -481,10 +520,10 @@ describe('TodayView — scale observations', () => {
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
 
     await waitFor(() => expect(screen.getByText('Curry')).toBeTruthy());
-    expect(screen.getByText('330 kcal')).toBeTruthy();
+    expect(screen.getByText('Curry').closest('section').querySelector('.health-meal__kcal').textContent).toBe('330 kcal');
     // Group rendering intact: collapsed, with an expand control, children hidden.
-    expect(screen.getByRole('button', { name: 'Expand Curry' })).toBeTruthy();
-    expect(screen.queryByText('Rice')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Collapse Curry' })).toBeTruthy();
+    expect(screen.getByText('Rice')).toBeTruthy();
   });
 
   // QuickCaptureBar is stubbed out at the top of this file (it has its own suite), so
@@ -495,7 +534,7 @@ describe('TodayView — scale observations', () => {
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
     await waitFor(() => screen.getByText('MockPhotoCapture-morning'));
     expect(screen.getByText('MockVoiceCapture-evening')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Scan barcode to Breakfast' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Scan barcode to Breakfast' })).toBeNull();
   });
 });
 
@@ -521,6 +560,7 @@ describe('TodayView — saving a meal writes a template, and the picker is the o
     window.prompt = vi.fn(() => 'My breakfast');
     apiMock.mockImplementation(dayApi());
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Breakfast actions' }));
     await waitFor(() => screen.getByText('Save as meal'));
     fireEvent.click(screen.getByText('Save as meal'));
 

@@ -47,7 +47,7 @@ export function useHealthDay(date, { enabled = true } = {}) {
     window.addEventListener('focus', reload);
     const onVisible = () => { if (document.visibilityState === 'visible') reload(); };
     document.addEventListener('visibilitychange', onVisible);
-    const interval = setInterval(onVisible, 30000);
+    const interval = setInterval(onVisible, 15000);
     return () => {
       window.removeEventListener('focus', reload);
       document.removeEventListener('visibilitychange', onVisible);
