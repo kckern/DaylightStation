@@ -1551,6 +1551,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     _delegate: null,
   };
 
+  let nutritionCleanup = null;
   // Health domain router
   v1Routers.health = createHealthApiRouter({
     healthServices,
@@ -1561,6 +1562,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     lifePlanRepository: lifeplanResult.container.getLifePlanStore(),
     catalogService: healthServices.catalogService,
     webNutribotAdapter: webNutribotAdapterProxy,
+    cleanupProvider: () => nutritionCleanup,
     logger: rootLogger.child({ module: 'health-api' })
   });
 
@@ -5207,6 +5209,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const nutribotTelegramAdapter = getMessagingAdapter(householdId, 'nutribot');
 
   const nutribotServices = await createNutribotServices({
+    transcribeAudio: async ({ buffer, mimeType }) => {
+      if (!voiceTranscriptionService) throw Object.assign(new Error('Transcription not configured'), { code: 'MISSING_CONFIG' });
+      const extension = { 'audio/webm': 'webm', 'audio/mp4': 'm4a', 'audio/mpeg': 'mp3', 'audio/wav': 'wav' }[mimeType] || 'ogg';
+      return (await voiceTranscriptionService.transcribe(buffer, { filename: `voice.${extension}`, contentType: mimeType })).text;
+    },
     configService,
     dataService,
     telegramAdapter: nutribotTelegramAdapter,
@@ -5266,6 +5273,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }
 
   const nutribotApiResult = createNutribotApiRouter({
+    cleanupProvider: () => nutritionCleanup,
     nutribotServices,
     userResolver,
     userIdentityService,
@@ -5280,6 +5288,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.nutribot = nutribotApiResult.router;
   // Wire real adapter into the proxy now that it's available
   webNutribotAdapterProxy._delegate = nutribotApiResult.webNutribotAdapter;
+
+  try {
+    const { startNutritionSurfaceSync } = await import('#composition/modules/nutritionSurfaceSync.mjs');
+    startNutritionSurfaceSync({ configService, userIdentityService, dataService, nutribotServices,
+      logger: rootLogger.child({ module: 'nutrition-surface-sync' }), server });
+  } catch (error) {
+    rootLogger.warn('nutrition.surface.unavailable', { error: error.message });
+  }
 
   // Journalist application
   const journalistConfig = configService.getAppConfig('journalist') || {};
@@ -5394,6 +5410,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // WebNutribotAdapter by this point — nutribotApiResult ran above).
     webNutribotAdapter: webNutribotAdapterProxy,
   });
+
+  try {
+    const { createNutritionCleanup } = await import('#composition/modules/nutritionCleanup.mjs');
+    nutritionCleanup = createNutritionCleanup({ configService, userIdentityService, dataService, nutribotServices, upcGateway,
+      agentOrchestrator: agentsServices.agentOrchestrator,
+      logger: rootLogger.child({ module: 'nutrition-cleanup' }), server,
+      scheduled: enableScheduler && (process.env.NODE_ENV === 'production' || process.env.ENABLE_CRON === 'true') });
+  } catch (error) {
+    rootLogger.error('nutrition.cleanup.unavailable', { error: error.message });
+  }
 
   // Lifeplan ceremony reminders — hourly check for due ceremonies across all
   // users with a life plan. CeremonyScheduler gates each ceremony to its

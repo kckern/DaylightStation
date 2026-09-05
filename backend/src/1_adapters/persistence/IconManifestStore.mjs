@@ -131,6 +131,7 @@ export class IconManifestStore {
   #loaded = false;
   #icons = {};
   #aliases = {};
+  #foodNames = {};
   #cacheDir = null;
   #cacheDirResolved = false;
   #realRoot = null;
@@ -174,6 +175,7 @@ export class IconManifestStore {
     }
     this.#icons = raw.icons && typeof raw.icons === 'object' ? raw.icons : {};
     this.#aliases = raw.aliases && typeof raw.aliases === 'object' ? raw.aliases : {};
+    this.#foodNames = raw.foodNames && typeof raw.foodNames === 'object' ? raw.foodNames : {};
     this.#logger.info?.('health.icons.manifest.loaded', {
       icons: Object.keys(this.#icons).length,
       aliases: Object.keys(this.#aliases).length,
@@ -185,12 +187,20 @@ export class IconManifestStore {
     this.#loaded = false;
     this.#icons = {};
     this.#aliases = {};
+    this.#foodNames = {};
   }
 
   /** The OFFERED vocabulary, sorted. Aliases are deliberately excluded. */
   list() {
     this.#load();
     return Object.keys(this.#icons).sort();
+  }
+
+  /** Reviewed semantic aliases: a null value explicitly means no suitable art. */
+  foodNames() {
+    this.#load();
+    return Object.fromEntries(Object.entries(this.#foodNames)
+      .filter(([, slug]) => slug === null || Object.hasOwn(this.#icons, slug)));
   }
 
   /** True when the slug resolves at all (primary or alias). */

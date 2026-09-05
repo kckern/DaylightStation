@@ -3,63 +3,25 @@
 /**
  * MastraAdapter - Implements IAgentRuntime using Mastra framework
  *
- * This is the ONLY file that imports the Mastra SDK.
+ * SDK details stay inside agent adapters.
  * All agent definitions use the abstract IAgentRuntime interface.
  */
 
 import { Agent } from '@mastra/core/agent';
 import { createTool as mastraCreateTool } from '@mastra/core/tools';
-import { z } from 'zod';
+import { RequestContext, MASTRA_RESOURCE_ID_KEY, MASTRA_THREAD_ID_KEY } from '@mastra/core/request-context';
+import { MastraLogger } from '@mastra/core/logger';
+import { createLogger } from '#system/logging/logger.mjs';
+import { standardSchema, assertSchema } from './standardSchema.mjs';
 import crypto from 'node:crypto';
 import { IAgentRuntime } from '#apps/agents/ports/IAgentRuntime.mjs';
 
-/**
- * Convert JSON Schema to Zod schema (simplified)
- * @param {Object} jsonSchema
- * @returns {z.ZodType}
- */
-function jsonSchemaToZod(jsonSchema) {
-  if (!jsonSchema || jsonSchema.type !== 'object') {
-    return z.object({});
-  }
-
-  const shape = {};
-  const properties = jsonSchema.properties || {};
-  const required = jsonSchema.required || [];
-
-  for (const [key, prop] of Object.entries(properties)) {
-    let zodType;
-
-    switch (prop.type) {
-      case 'string':
-        zodType = z.string();
-        if (prop.description) zodType = zodType.describe(prop.description);
-        break;
-      case 'number':
-      case 'integer':
-        zodType = z.number();
-        if (prop.description) zodType = zodType.describe(prop.description);
-        break;
-      case 'boolean':
-        zodType = z.boolean();
-        if (prop.description) zodType = zodType.describe(prop.description);
-        break;
-      case 'array':
-        zodType = z.array(z.any());
-        if (prop.description) zodType = zodType.describe(prop.description);
-        break;
-      default:
-        zodType = z.any();
-    }
-
-    if (!required.includes(key)) {
-      zodType = zodType.optional();
-    }
-
-    shape[key] = zodType;
-  }
-
-  return z.object(shape);
+class StructuredSdkLogger extends MastraLogger {
+  constructor(logger) { super({ name: 'daylight-agent' }); this.sink = logger; }
+  debug(message) { this.sink.debug?.('agent.sdk', { message }); }
+  info(message) { this.sink.info?.('agent.sdk', { message }); }
+  warn(message) { this.sink.warn?.('agent.sdk', { message }); }
+  error(message) { this.sink.error?.('agent.sdk', { message }); }
 }
 
 export class MastraAdapter extends IAgentRuntime {
@@ -72,6 +34,7 @@ export class MastraAdapter extends IAgentRuntime {
   #inputProcessors;
   #outputProcessors;
   #executionPolicy;
+  #hooks;
 
   /**
    * @param {Object} deps
@@ -92,7 +55,7 @@ export class MastraAdapter extends IAgentRuntime {
       throw new Error('MastraAdapter requires executionPolicy');
     }
     this.#model = deps.model || 'openai/gpt-4o';
-    this.#logger = deps.logger || console;
+    this.#logger = deps.logger || createLogger({ app: 'agents' });
     this.#maxToolCalls = deps.maxToolCalls || 50;
     this.#timeoutMs = deps.timeoutMs || 120000;
     this.#AgentClass = deps.agentClass || Agent;
@@ -100,6 +63,7 @@ export class MastraAdapter extends IAgentRuntime {
     this.#inputProcessors = deps.inputProcessors || null;
     this.#outputProcessors = deps.outputProcessors || null;
     this.#executionPolicy = deps.executionPolicy;
+    this.#hooks = deps.hooks || {};
   }
 
   /**
@@ -111,7 +75,7 @@ export class MastraAdapter extends IAgentRuntime {
    * The agent's own decorators (e.g. PolicyDecorator on concierge) are
    * prepended so they run before the framework defaults.
    *
-   * Mastra-specific wiring (jsonSchemaToZod + mastraCreateTool) and
+   * Mastra-specific wiring (Standard Schema + mastraCreateTool) and
    * structured logger emission stay at adapter level.
    *
    * @param {Array} tools - ITool instances
@@ -135,8 +99,16 @@ export class MastraAdapter extends IAgentRuntime {
       mastraTools[originalTool.name] = mastraCreateTool({
         id: originalTool.name,
         description: originalTool.description,
-        inputSchema: jsonSchemaToZod(decoratedTool.parameters),
-        execute: async (inputData) => {
+        inputSchema: standardSchema(decoratedTool.parameters),
+        ...(originalTool.outputSchema ? { outputSchema: standardSchema(originalTool.outputSchema) } : {}),
+        ...(originalTool.suspendSchema ? { suspendSchema: standardSchema(originalTool.suspendSchema) } : {}),
+        ...(originalTool.resumeSchema ? { resumeSchema: standardSchema(originalTool.resumeSchema) } : {}),
+        ...(originalTool.requireApproval ? { requireApproval: true } : {}),
+        ...(originalTool.toModelOutput ? { toModelOutput: originalTool.toModelOutput } : {}),
+        ...(originalTool.transform ? { transform: originalTool.transform } : {}),
+        execute: async (inputData, sdkContext) => {
+          context.signal?.throwIfAborted();
+          assertSchema(inputData ?? {}, decoratedTool.parameters, originalTool.name);
           callCounter.count++;
 
           this.#logger.debug?.('tool.execute.call', {
@@ -148,7 +120,17 @@ export class MastraAdapter extends IAgentRuntime {
 
           // decoratedTool.execute handles: userId injection, call limiting,
           // transcript recording, and error-envelope wrapping on throws.
-          const result = await decoratedTool.execute(inputData ?? {}, decoratorContext);
+          const result = await decoratedTool.execute(inputData ?? {}, {
+            ...decoratorContext,
+            signal: context.signal ?? sdkContext?.abortSignal,
+            toolCallId: sdkContext?.toolCallId,
+            resumeData: sdkContext?.agent?.resumeData,
+            requestInput: sdkContext?.agent?.suspend,
+          });
+          context.signal?.throwIfAborted();
+          if (!result?.error) assertSchema(result, originalTool.outputSchema, originalTool.name + ' output');
+          await this.#emitHook('onToolResult', { tool: originalTool.name, toolCallId: sdkContext?.toolCallId,
+            runId: context.runId, userId: context.userId, result });
 
           if (result && typeof result === 'object' && 'error' in result) {
             // Distinguish limit-reached from other errors for the warn log.
@@ -184,7 +166,10 @@ export class MastraAdapter extends IAgentRuntime {
    * Execute an agent synchronously
    * @implements IAgentRuntime.execute
    */
-  async execute({ agent, agentId, input, messages = [], tools, systemPrompt, context = {} }) {
+  async execute({ agent, agentId, input, messages = [], tools, systemPrompt, context = {}, ...options }) {
+    const scope = this.#executionScope(options, context);
+    context = scope.context;
+    tools = this.#allowedTools(tools, options.toolAllowlist);
     const name = agentId || agent?.constructor?.id || 'unknown';
     const turnId = context.turnId ?? crypto.randomUUID();
     const userId = context.userId ?? null;
@@ -201,7 +186,6 @@ export class MastraAdapter extends IAgentRuntime {
     });
 
     const callCounter = { count: 0 };
-    const mastraTools = this.#translateTools(tools || [], context, callCounter, transcript, agent);
 
     const startedAt = Date.now();
     this.#logger.info?.('agent.execute.start', {
@@ -211,7 +195,10 @@ export class MastraAdapter extends IAgentRuntime {
     });
 
     try {
+      scope.context.signal.throwIfAborted();
+      const mastraTools = this.#translateTools(tools || [], context, callCounter, transcript, agent);
       const agentOpts = {
+        id: name,
         name,
         instructions: systemPrompt,
         model: this.#model,
@@ -219,9 +206,13 @@ export class MastraAdapter extends IAgentRuntime {
         // Workaround for Mastra issue #16179 — autoResumeSuspendedTools
         // mutates schemas across Zod v3/v4 and crashes prepare-tools-step.
         autoResumeSuspendedTools: false,
+        defaultOptions: { autoResumeSuspendedTools: false },
+        ...(this.#inputProcessors ? { inputProcessors: this.#inputProcessors } : {}),
+        ...(this.#outputProcessors ? { outputProcessors: this.#outputProcessors } : {}),
       };
       if (this.#memory) agentOpts.memory = this.#memory;
       const mastraAgent = new this.#AgentClass(agentOpts);
+      mastraAgent.__setLogger?.(new StructuredSdkLogger(this.#logger));
 
       const callArg = (Array.isArray(messages) && messages.length > 0) ? messages : input;
 
@@ -230,20 +221,25 @@ export class MastraAdapter extends IAgentRuntime {
         : null;
 
 
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(`Agent execution timed out after ${this.#timeoutMs}ms`)), this.#timeoutMs)
-      );
-      const response = await Promise.race([
-        memoryOpts ? mastraAgent.generate(callArg, memoryOpts) : mastraAgent.generate(callArg),
-        timeoutPromise,
-      ]);
+      const response = await scope.wait(mastraAgent.generate(callArg, {
+        ...memoryOpts, ...scope.options,
+        ...(options.outputSchema ? { structuredOutput: {
+          schema: standardSchema(options.outputSchema), errorStrategy: 'strict',
+        } } : {}),
+      }));
+      if (response.error) throw response.error;
+      if (response.tripwire) throw Object.assign(new Error('Agent input was blocked by a processor'), { code: 'AGENT_INPUT_BLOCKED' });
+      const suspended = response.finishReason === 'suspended' || response.suspendPayload != null;
+      if (options.outputSchema && !suspended) {
+        assertSchema(response.object, options.outputSchema, 'agent output');
+      }
 
       transcript?.setOutput({
         text: response.text || '',
         finishReason: response.finishReason || (response.toolCalls?.length ? 'tool_calls' : 'stop'),
         usage: response.usage || null,
       });
-      transcript?.setStatus('ok');
+      transcript?.setStatus(suspended ? 'suspended' : 'ok');
 
       this.#logger.info?.('agent.execute.complete', {
         agentId: name,
@@ -252,14 +248,25 @@ export class MastraAdapter extends IAgentRuntime {
         durationMs: Date.now() - startedAt,
       });
 
-      return {
+      const result = {
         output: response.text,
         toolCalls: response.toolCalls || [],
         turnId,
+        runId: response.runId ?? context.runId ?? turnId,
+        status: suspended ? 'suspended' : 'completed',
+        structured: response.object,
+        usage: response.totalUsage ?? response.usage ?? null,
+        finishReason: response.finishReason,
+        ...(response.suspendPayload ? { interaction: response.suspendPayload } : {}),
       };
+      const evaluation = await scope.wait(this.#emitHook('evaluate', { ...result, agentId: name, userId }));
+      if (evaluation !== undefined) result.evaluation = evaluation;
+      await this.#emitHook('onResult', { ...result, agentId: name, userId });
+      return result;
     } catch (error) {
       transcript?.setError(error, { toolCallsBeforeError: callCounter.count });
-      transcript?.setStatus(error?.name === 'AbortError' ? 'aborted' : 'error');
+      transcript?.setStatus(error?.name === 'AbortError' ? 'aborted' : error?.name === 'TimeoutError' ? 'timeout' : 'error');
+      await this.#emitHook('onError', { agentId: name, userId, turnId, error });
 
       this.#logger.error?.('agent.execute.error', {
         agentId: name,
@@ -269,6 +276,7 @@ export class MastraAdapter extends IAgentRuntime {
       });
       throw error;
     } finally {
+      scope.close();
       try { await transcript?.flush(); } catch { /* swallow */ }
     }
   }
@@ -278,7 +286,10 @@ export class MastraAdapter extends IAgentRuntime {
    * Yields normalized chunks: text-delta, tool-start, tool-end, finish.
    * @implements IAgentRuntime.streamExecute
    */
-  async *streamExecute({ agent, agentId, input, messages = [], tools, systemPrompt, context = {} }) {
+  async *streamExecute({ agent, agentId, input, messages = [], tools, systemPrompt, context = {}, ...options }) {
+    const scope = this.#executionScope(options, context);
+    context = scope.context;
+    tools = this.#allowedTools(tools, options.toolAllowlist);
     const name = agentId || agent?.constructor?.id || 'unknown';
     const turnId = context.turnId ?? crypto.randomUUID();
     const userId = context.userId ?? null;
@@ -295,7 +306,6 @@ export class MastraAdapter extends IAgentRuntime {
     });
 
     const callCounter = { count: 0 };
-    const mastraTools = this.#translateTools(tools || [], context, callCounter, transcript, agent);
 
     const startedAt = Date.now();
     this.#logger.info?.('agent.stream.start', {
@@ -308,9 +318,13 @@ export class MastraAdapter extends IAgentRuntime {
     let finishReason = 'stop';
     let usage = null;
     const toolStartTimes = new Map();
+    let iterator;
 
     try {
+      scope.context.signal.throwIfAborted();
+      const mastraTools = this.#translateTools(tools || [], context, callCounter, transcript, agent);
       const agentOpts = {
+        id: name,
         name,
         instructions: systemPrompt,
         model: this.#model,
@@ -318,17 +332,26 @@ export class MastraAdapter extends IAgentRuntime {
         // Workaround for Mastra issue #16179 — autoResumeSuspendedTools
         // mutates schemas across Zod v3/v4 and crashes prepare-tools-step.
         autoResumeSuspendedTools: false,
+        defaultOptions: { autoResumeSuspendedTools: false },
+        ...(this.#inputProcessors ? { inputProcessors: this.#inputProcessors } : {}),
+        ...(this.#outputProcessors ? { outputProcessors: this.#outputProcessors } : {}),
       };
       if (this.#memory) agentOpts.memory = this.#memory;
       const mastraAgent = new this.#AgentClass(agentOpts);
+      mastraAgent.__setLogger?.(new StructuredSdkLogger(this.#logger));
 
       const callArg = (Array.isArray(messages) && messages.length > 0) ? messages : input;
       const memoryOpts = (this.#memory && userId && threadId)
         ? { memory: { resource: userId, thread: threadId } }
         : null;
-      const output = await (memoryOpts ? mastraAgent.stream(callArg, memoryOpts) : mastraAgent.stream(callArg));
+      const output = await scope.wait(mastraAgent.stream(callArg, { ...memoryOpts, ...scope.options }));
       const iterable = output?.fullStream ?? output;
-      for await (const part of iterable) {
+      iterator = iterable[Symbol.asyncIterator]();
+      while (true) {
+        const next = await scope.wait(iterator.next());
+        if (next.done) break;
+        const part = next.value;
+        scope.context.signal.throwIfAborted();
         const payload = part?.payload ?? {};
         switch (part?.type) {
           case 'text-delta': {
@@ -339,22 +362,34 @@ export class MastraAdapter extends IAgentRuntime {
           }
           case 'tool-call': {
             const toolName = payload.toolName ?? part.toolName;
-            toolStartTimes.set(toolName, Date.now());
-            yield { type: 'tool-start', toolName, args: payload.args ?? part.args };
+            const toolCallId = payload.toolCallId ?? part.toolCallId ?? toolName;
+            toolStartTimes.set(toolCallId, Date.now());
+            yield { type: 'tool-start', toolName, toolCallId, args: payload.args ?? part.args };
             break;
           }
           case 'tool-result': {
             const toolName = payload.toolName ?? part.toolName;
-            const toolStartedAt = toolStartTimes.get(toolName);
+            const toolCallId = payload.toolCallId ?? part.toolCallId ?? toolName;
+            const toolStartedAt = toolStartTimes.get(toolCallId);
             const latencyMs = toolStartedAt ? Date.now() - toolStartedAt : 0;
-            toolStartTimes.delete(toolName);
-            yield { type: 'tool-end', toolName, result: payload.result ?? part.result, latencyMs };
+            toolStartTimes.delete(toolCallId);
+            yield { type: 'tool-end', toolName, toolCallId, result: payload.result ?? part.result, latencyMs };
             break;
           }
           case 'finish':
             finishReason = payload?.stepResult?.reason ?? part.finishReason ?? 'stop';
             usage = payload?.output?.usage ?? part.usage ?? null;
             yield { type: 'finish', reason: finishReason, usage };
+            break;
+          case 'tool-call-approval':
+          case 'tool-call-suspended':
+            yield { type: 'input-required', runId: part.runId ?? output.runId, interaction: payload };
+            break;
+          case 'abort':
+            throw new DOMException('Agent execution aborted', 'AbortError');
+          case 'error':
+          case 'tool-error':
+            yield { type: 'error', message: String(payload.error?.message ?? payload.error ?? 'Agent execution failed'), toolCallId: payload.toolCallId };
             break;
           default:
             this.#logger.debug?.('agent.stream.unknown_event', {
@@ -366,6 +401,7 @@ export class MastraAdapter extends IAgentRuntime {
 
       transcript?.setOutput({ text: accumulatedText, finishReason, usage });
       transcript?.setStatus('ok');
+      await this.#emitHook('onResult', { agentId: name, userId, turnId, output: accumulatedText, finishReason, usage });
 
       this.#logger.info?.('agent.stream.complete', {
         agentId: name,
@@ -375,7 +411,8 @@ export class MastraAdapter extends IAgentRuntime {
       });
     } catch (error) {
       transcript?.setError(error, { toolCallsBeforeError: callCounter.count });
-      transcript?.setStatus(error?.name === 'AbortError' ? 'aborted' : 'error');
+      transcript?.setStatus(error?.name === 'AbortError' ? 'aborted' : error?.name === 'TimeoutError' ? 'timeout' : 'error');
+      await this.#emitHook('onError', { agentId: name, userId, turnId, error });
 
       this.#logger.error?.('agent.stream.error', {
         agentId: name,
@@ -385,6 +422,9 @@ export class MastraAdapter extends IAgentRuntime {
       });
       throw error;
     } finally {
+      scope.close();
+      // Do not let a stalled provider's iterator.return() hold cancellation open.
+      try { Promise.resolve(iterator?.return?.()).catch(() => {}); } catch { /* scope already closed */ }
       try { await transcript?.flush(); } catch { /* swallow */ }
     }
   }
@@ -420,6 +460,64 @@ export class MastraAdapter extends IAgentRuntime {
     });
 
     return { taskId };
+  }
+
+  #allowedTools(tools = [], allowlist) {
+    if (!allowlist) return tools;
+    const allowed = new Set(allowlist);
+    return tools.filter(tool => allowed.has(tool.name));
+  }
+
+  #executionScope(options, context) {
+    const controller = new AbortController();
+    const timeoutMs = options.limits?.timeoutMs ?? this.#timeoutMs;
+    const external = options.signal ?? context.signal;
+    const abort = () => controller.abort(external.reason);
+    external?.addEventListener('abort', abort, { once: true });
+    if (external?.aborted) abort();
+    const timer = setTimeout(() => controller.abort(new DOMException(
+      `Agent execution timed out after ${timeoutMs}ms`, 'TimeoutError')), timeoutMs);
+    timer.unref?.();
+    const signal = controller.signal;
+    const requestContext = new RequestContext(Object.entries(context).filter(([key]) => !['signal', 'requestContext'].includes(key) && !key.startsWith('mastra__')));
+    if (context.userId) requestContext.set(MASTRA_RESOURCE_ID_KEY, context.userId);
+    if (context.threadId) requestContext.set(MASTRA_THREAD_ID_KEY, context.threadId);
+    return {
+      context: { ...context, signal, maxToolCalls: options.limits?.maxToolCalls ?? this.#maxToolCalls },
+      options: {
+        abortSignal: signal,
+        requestContext,
+        maxSteps: options.limits?.maxSteps ?? options.limits?.maxToolCalls ?? this.#maxToolCalls,
+        timeout: { totalMs: timeoutMs },
+        ...(context.runId ? { runId: context.runId } : {}),
+        ...(options.modelSettings ? { modelSettings: options.modelSettings } : {}),
+      },
+      async wait(promise) {
+        signal.throwIfAborted();
+        let rejectOnAbort;
+        const aborted = new Promise((_, reject) => {
+          rejectOnAbort = () => reject(signal.reason);
+          signal.addEventListener('abort', rejectOnAbort, { once: true });
+        });
+        try { return await Promise.race([promise, aborted]); }
+        finally { signal.removeEventListener('abort', rejectOnAbort); }
+      },
+      close() {
+        clearTimeout(timer);
+        external?.removeEventListener('abort', abort);
+        controller.abort(new DOMException('Execution scope closed', 'AbortError'));
+      },
+    };
+  }
+
+  async #emitHook(name, value) {
+    if (!this.#hooks[name]) return undefined;
+    let timer;
+    try { return await Promise.race([Promise.resolve().then(() => this.#hooks[name](value)), new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Hook deadline exceeded')), 1000); timer.unref?.();
+    })]); }
+    catch (error) { this.#logger.warn?.('agent.hook.failed', { name, error: error.message }); }
+    finally { clearTimeout(timer); }
   }
 }
 

@@ -34,8 +34,13 @@ export function EntryRow({ row, onTap, onConfirm, isGroup = false, expanded = fa
   // is model prose (cup, tbsp, serving) and has produced nonsense such as
   // "313 servings" when amount was actually the gram count. Show a valid
   // mass in grams, or show nothing — never expose that mixed vocabulary.
-  const grams = Number(row.grams);
-  const portion = Number.isFinite(grams) && grams > 0 ? `${Math.round(grams * 10) / 10} g` : isGroup ? '' : 'Weight unknown';
+  const members = row.children?.filter(item => item.kind !== 'group') || [];
+  const groupGrams = members.length && members.every(item => item.grams > 0)
+    ? members.reduce((sum, item) => sum + item.grams, 0) : null;
+  const grams = Number(isGroup ? groupGrams : row.grams);
+  const liquid = row.unit === 'ml' && row.amount > 0 && row.originalQuantity?.unit === 'ml';
+  const portion = Number.isFinite(grams) && grams > 0 ? `${Math.round(grams * 10) / 10} g`
+    : liquid ? `${row.amount} ml` : 'Weight unknown';
   // The API serves an EFFECTIVE settled flag per row. Absent or `true` means
   // settled — only an explicit `false` means unsettled. Never treat a
   // missing key as unsettled (older/other row shapes lack the field).
@@ -71,7 +76,7 @@ export function EntryRow({ row, onTap, onConfirm, isGroup = false, expanded = fa
   // A dish's own picture, else the first thing in it (PRD F5.3). A group row
   // is handed its children by LogTable precisely so this can be decided here
   // rather than at every call site.
-  const iconSlug = row.icon || (isGroup ? row.children?.find((c) => c.icon)?.icon : null) || null;
+  const iconSlug = row.icon || null;
 
   const rowClass = [
     'health-row',
@@ -112,16 +117,11 @@ export function EntryRow({ row, onTap, onConfirm, isGroup = false, expanded = fa
             onError={hideBrokenThumb}
           />
         ) : null}
-        {/* The food's picture where there is one, the Noom dot where there is
-            not. The dot remains the fallback glyph (PRD F5.3): a group row
-            has no dot of its own, so a group whose icon fails simply loses
-            the column — the same shape it had before icons existed.
-            `onError` names the slug it is retiring, so a later override of
-            the same row shows its new picture immediately. */}
+        {/* Artwork and the neutral fallback occupy the same permanent slot. */}
         <FoodIcon icon={iconSlug} />
         <span className="health-row__name">{name}</span>
         <span className="health-row__portion">{portion}</span>
-        <span className="health-row__kcal">{Math.round(displayKcal || 0)}</span>
+        <span className="health-row__kcal">{isGroup ? <span className="health-row__total-label">Total · </span> : null}{Math.round(displayKcal || 0)}{isGroup ? ' kcal' : ''}</span>
         {/* Text badge, not color alone — perceivable non-visually and in
             greyscale. Static text; no aria-live, so it never spams. */}
         {unsettled ? <span className="health-row__badge">Unconfirmed</span> : null}

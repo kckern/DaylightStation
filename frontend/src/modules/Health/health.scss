@@ -1,4 +1,5 @@
 @use "sass:math";
+@use "../../styles/breakpoints" as bp;
 // frontend/src/modules/Health/health.scss
 // Health app styling — DS pack shell (Task F1). var(--ds-*) tokens only
 // (audit:ui gate rejects raw colors). Styles accrete as later Part F tasks
@@ -28,7 +29,7 @@
 // NOTHING here animates `filter`: it is a known paint-cost trap in this repo
 // (low fps with zero long tasks). Hue changes are flat background swaps.
 $health-bar-cap: 1.25;
-$health-bar-box: 34px;
+$health-bar-box: 16px;
 
 .health-weekstrip {
   display: flex; flex-direction: column; gap: 0.2rem;
@@ -59,8 +60,8 @@ $health-bar-box: 34px;
     &:hover { background: var(--ds-surface-alt); }
     &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
     &--active {
-      background: color-mix(in srgb, var(--ds-accent) 25%, var(--ds-surface)); border-color: var(--ds-accent);
-      color: var(--ds-text-high); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+      background: var(--ds-surface); border-color: var(--ds-accent);
+      color: var(--ds-text-high);
     }
     // Today is RINGED, which is a different statement from "the day you are
     // looking at" (the fill above) — both can be true, and on a past date only
@@ -71,7 +72,7 @@ $health-bar-box: 34px;
     }
     &--month-start { border-left-color: var(--ds-border); border-radius: 0 8px 8px 0; }
   }
-  &__month { min-height: 0.75rem; font-size: 0.58rem; font-weight: 700; text-transform: uppercase; color: var(--ds-accent); }
+  &__month { min-height: 0.75rem; font-size: 0.58rem; font-weight: 700; text-transform: uppercase; color: var(--ds-text-mid); }
   &__dow { font-size: 0.64rem; font-weight: 600; letter-spacing: 0.01em; }
   &__num { font-size: 0.95rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ds-text-high); }
   &__kcal { font-size: 0.62rem; font-variant-numeric: tabular-nums; color: var(--ds-text-low); }
@@ -232,32 +233,14 @@ $health-bar-box: 34px;
   &__macros { font-size: 0.8rem; color: var(--ds-text-mid); font-variant-numeric: tabular-nums; }
 }
 
-// Task 4.3 quick-capture bar geometry — SINGLE SOURCE for the arithmetic
-// shared by `.health-quickbar` (the bar itself) and `.health-today`'s
-// clearance padding, so the two can never drift apart the way they did in
-// review (bar footprint 7.95rem vs. a hand-picked 7rem padding — masked on
-// mobile by `.ds-chrome__nav`'s real grid-row clearance, but a genuine
-// ~1rem overlap on tablet-up, where that nav becomes a left rail and
-// `.ds-chrome__main`'s bottom edge coincides with the viewport bottom).
-//
-//   $health-quickbar-offset   4.5rem  — clearance from the viewport bottom
-//   $health-quickbar-btn-pad  0.35rem — the bar's own padding, one side
-//   $health-quickbar-btn-size 44px    — touch-target floor (== button height)
-//   bar height  = 2 × btn-pad + btn-size        = 0.7rem + 44px  = 3.45rem
-//   bar footprint (offset + own height)         = 4.5rem + 3.45rem = 7.95rem
-//   `.health-today` padding-bottom = footprint + $health-quickbar-margin
-//                                  = 7.95rem + 0.5rem = 8.45rem  (> 7.95rem)
-$health-quickbar-offset: 4.5rem;
-$health-quickbar-btn-pad: 0.35rem;
 $health-quickbar-btn-size: 44px;
-$health-quickbar-margin: 0.5rem; // deliberate slack over the exact footprint
 
 // Task 8.4 layout. `$health-aside-breakpoint` is the SCSS half of a value that
 // also exists in JS (today/layout.js's ASIDE_MIN_WIDTH_PX) — the sidebar's
 // widgets are 30-day surfaces and must not FETCH on a phone, which the CSS
 // alone cannot decide. layout.contract.test.js reads this compiled rule and
 // fails if the two ever drift.
-$health-aside-breakpoint: 1100px;
+$health-aside-breakpoint: bp.$bp-lg;
 $health-aside-width: 320px;
 $health-today-column: 720px;
 $health-aside-gap: 1.5rem;
@@ -350,10 +333,12 @@ $health-aside-gap: 1.5rem;
 // (the "mobile: always visible; desktop: same, unobtrusive" interface
 // note) — no breakpoint-specific rule needed.
 .health-quickbar {
-  position: relative; justify-self: end; width: max-content;
-  display: flex; align-items: center; gap: 0.4rem;
-  padding: $health-quickbar-btn-pad; border-radius: 999px;
-  background: var(--ds-surface); border: 1px solid var(--ds-border);
+  position: relative; justify-self: stretch; max-width: 100%;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem;
+  padding: 0.4rem 0; margin-block: 0.35rem;
+  border-bottom: 1px solid var(--ds-border);
+  &__target { flex: 1 1 9rem; min-width: 8rem; max-width: 13rem; color: var(--ds-text-high); }
+  &__target input { min-height: 44px; }
 
   // Same 44px-touch-target floor as `.health-meal__capture-btn` — see that
   // rule's comment (min-width/min-height always win over ActionIcon's
@@ -380,25 +365,21 @@ $health-aside-gap: 1.5rem;
 .health-meal {
   margin-top: 0.4rem;
   &__header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--ds-border); padding-bottom: 0.05rem; }
-  // Three capture buttons (voice/photo/barcode) plus a Copy-to-today /
-  // Save-as-meal action can outgrow the space left by the label at narrow
-  // widths. Let this cluster wrap onto a second line — never force the kcal
-  // text (below) to break internally, and never let the cluster overflow
-  // past the card edge.
+  // Keep the subtotal and secondary actions aligned without overflowing.
   &__header-right { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 0.15rem 0.3rem; }
   &__label { margin: 0; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ds-text-mid); }
   // Must never wrap mid-value ("230" / "kcal" landing on separate lines) —
   // that's the narrow-width regression this rule guards against. The
   // header-right cluster wraps around it instead; see that rule above.
-  &__kcal { font-size: 0.72rem; color: var(--ds-text-low); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  &__kcal { font-size: 0.78rem; color: var(--ds-text-mid); font-variant-numeric: tabular-nums; white-space: nowrap; }
   // Per-meal macro subtotal (Task 6.3) — its own line under the header rather
   // than another chip crammed into `__header-right`, which already carries the
   // kcal, three 44px capture buttons and an optional action button.
   &__macros {
-    font-size: 0.64rem; color: var(--ds-text-low); font-variant-numeric: tabular-nums;
+    font-size: 0.72rem; color: var(--ds-text-mid); font-variant-numeric: tabular-nums;
     padding: 0.05rem 0.2rem 0;
   }
-  &__add { display: block; width: 100%; text-align: left; padding: 0.28rem 0.2rem; color: var(--ds-text-low); font-size: 0.76rem; border-radius: 6px;
+  &__add { display: block; width: 100%; min-height: 44px; text-align: left; padding: 0.28rem 0.2rem; color: var(--ds-text-mid); font-size: 0.8rem; border-radius: 6px;
     &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; } }
   &--exercise .health-row__kcal { color: var(--ds-success); }
 
@@ -428,13 +409,13 @@ $health-aside-gap: 1.5rem;
 .health-row {
   display: grid; grid-template-columns: 14px 1fr auto 3.25rem; gap: 0.35rem;
   align-items: center; width: 100%; flex: 1 1 auto; min-width: 0;
-  padding: 0.25rem 0.2rem; border-radius: 6px; text-align: left;
+  padding: 0.25rem 0.2rem; min-height: 44px; border-radius: 6px; text-align: left;
   font-size: 0.86rem;
   color: var(--ds-text-high);
   &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
   &__dot { width: 10px; height: 10px; border-radius: 50%; }
   &__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  &__portion { font-size: 0.68rem; color: var(--ds-text-low); }
+  &__portion { font-size: 0.75rem; color: var(--ds-text-mid); font-variant-numeric: tabular-nums; }
   &__kcal { text-align: right; font-variant-numeric: tabular-nums; }
   &--readonly { grid-template-columns: 1fr auto 3.5rem; color: var(--ds-text-mid); }
 
@@ -469,7 +450,7 @@ $health-aside-gap: 1.5rem;
   // `--group` deliberately: the single-class forms tie on specificity and the
   // later one must win, while the compound forms outrank both.
   &--icon { grid-template-columns: 24px 1fr auto 3.5rem; }
-  &--group.health-row--icon { grid-template-columns: 24px 1fr auto 3.5rem; }
+  &--group.health-row--icon { grid-template-columns: 24px minmax(0, 1fr) auto auto; }
   &--thumb.health-row--icon { grid-template-columns: 32px 24px 1fr auto 3.5rem; }
   &--group.health-row--thumb.health-row--icon { grid-template-columns: 32px 24px 1fr auto 3.5rem; }
   &__icon { width: 24px; height: 24px; object-fit: contain; }
@@ -517,7 +498,30 @@ $health-aside-gap: 1.5rem;
   }
 }
 
-.health-row-line--child { padding-left: 1.5rem; }
+.health-row-line--child {
+  margin-left: 1.35rem; padding-left: 1.25rem; position: relative;
+  border-left: 1px solid var(--ds-border);
+  &::before { content: ''; position: absolute; left: 0; top: 22px; width: 0.8rem; border-top: 1px solid var(--ds-border); }
+}
+.health-group > .health-row-line:first-child { background: var(--ds-surface); border-radius: 6px; }
+.health-row--group { font-weight: 600; }
+.health-row__total-label { font-size: 0.72rem; font-weight: 400; color: var(--ds-text-mid); }
+.health-row__badge, .health-row__scale { grid-column: 2 / -1; font-size: 0.68rem; color: var(--ds-text-mid); }
+.health-row__badge { color: var(--ds-warning); }
+.health-food-art {
+  display: inline-block; position: relative; flex: none; color: var(--ds-text-mid);
+  > img, > svg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+}
+.health-review {
+  display: grid; gap: 1rem;
+  fieldset { min-width: 0; border: 1px solid var(--ds-border); border-radius: 6px; display: grid; gap: 0.6rem; }
+  input, button { min-height: 44px; }
+  &__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
+  &__warning { border-left: 2px solid var(--ds-warning); padding-left: 0.75rem; }
+}
+.health-equation__math { flex-wrap: wrap; }
+.health-equation__math small { font-size: 0.7rem; color: var(--ds-text-mid); }
+.health-intakeburn__legend { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0; font-size: 0.7rem; color: var(--ds-text-mid); }
 
 // Its own real button (not a bigger glyph) — min-height/width give the
 // 44px touch target called for by the a11y requirement.
@@ -738,4 +742,8 @@ $health-aside-gap: 1.5rem;
 .health-suggest__badge {
   padding: 0.05rem 0.4rem; border-radius: 999px; font-size: 0.7rem;
   background: var(--ds-surface-alt); color: var(--ds-text-mid); white-space: nowrap;
+}
+.health-cleanup-evidence {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

@@ -345,6 +345,8 @@ export class WebNutribotAdapter {
     return this.#foodLogStore.findPendingByDate(userId, date);
   }
 
+  reviewPending(input) { return this.#inputRouter.reviewPending(input); }
+
   #createCaptureContext(captured) {
     let nextId = 1;
     const makeId = () => `web_msg_${nextId++}`;

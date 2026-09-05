@@ -34,7 +34,7 @@ describe('IntakeBurnChart', () => {
   it('states the averages and the number of holes rather than implying none', () => {
     render(<IntakeBurnChart days={[day(iso(0), 2000, 400), day(iso(1), 1000, 200), gap(iso(2))]} />);
     const caption = document.querySelector('.health-intakeburn__caption').textContent;
-    expect(caption).toContain('avg 1500 logged · 300 exercise');
+    expect(caption).toContain('avg 1500 kcal logged · 300 kcal exercise');
     expect(caption).toContain('1 without data');
     expect(document.querySelector('.health-intakeburn__plot').getAttribute('aria-label'))
       .toBe('2 days: average intake 1500 kcal, average burn 300 kcal, 1 days without data');
@@ -45,7 +45,7 @@ describe('IntakeBurnChart', () => {
   it('does not let holes dilute the averages', () => {
     render(<IntakeBurnChart days={[day(iso(0), 2000, 400), day(iso(1), 1000, 200), gap(iso(2)), gap(iso(3))]} />);
     const caption = document.querySelector('.health-intakeburn__caption').textContent;
-    expect(caption).toContain('avg 1500 logged · 300 exercise');  // over the 2 KNOWN days
+    expect(caption).toContain('avg 1500 kcal logged · 300 kcal exercise');  // over the 2 KNOWN days
     expect(caption).not.toContain('avg 750');            // not over all 4
     expect(document.querySelector('.health-intakeburn__plot').getAttribute('aria-label'))
       .toMatch(/^2 days: /);

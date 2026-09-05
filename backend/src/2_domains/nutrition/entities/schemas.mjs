@@ -233,6 +233,8 @@ export function validateFoodItem(item) {
       microsSource: item.microsSource ?? null,
       foodId: item.foodId ?? null,
       originalQuantity: item.originalQuantity ?? null,
+      manualFields: Array.isArray(item.manualFields) ? item.manualFields.filter(field => typeof field === 'string') : [],
+      cleanupFields: Array.isArray(item.cleanupFields) ? item.cleanupFields.filter(field => typeof field === 'string') : [],
       nutrientProvenance: item.nutrientProvenance ?? null,
     },
   };
@@ -365,6 +367,10 @@ export function validateNutriLog(log) {
         originalText: log.metadata?.originalText,
         aiModel: log.metadata?.aiModel,
         processingTimeMs: log.metadata?.processingTimeMs,
+        sourceUpc: log.metadata?.sourceUpc,
+        nutritionLookup: log.metadata?.nutritionLookup,
+        reviewOperation: log.metadata?.reviewOperation,
+        cleanupAudit: log.metadata?.cleanupAudit,
         // Scale-path provenance. This whitelist is what actually reaches YAML
         // (`save()` stores `toJSON()`), so a key omitted here is DROPPED, not
         // merely unvalidated. These four were being silently discarded:

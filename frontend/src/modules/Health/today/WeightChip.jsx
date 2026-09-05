@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { buildWeightSeries, fmtLbs, fmtDelta, VIEW_W, VIEW_H } from './weightSeries.js';
-import { ErrorState } from '@/lib/ui';
+import { ErrorState, StatCard, Skeleton } from '@/lib/ui';
 
 const logger = createAppLogger('health').child('weight-chip');
 
@@ -33,10 +33,8 @@ export function WeightChip() {
 
   return (
     <div className="health-weightchip" role="group" aria-label={label} aria-busy={res.loading}>
-      <div className="health-weightchip__readout">
-        <span className="health-weightchip__value">{fmtLbs(latestLbs)}</span>
-        <span className="health-weightchip__unit">lb</span>
-        {deltaText ? (
+      <StatCard compact label="Weight" value={res.loading ? <Skeleton width={64} height={24} /> : fmtLbs(latestLbs)} unit="lb"
+        trend={deltaText ? (
           <span className={`health-weightchip__delta health-weightchip__delta--${direction}`} data-testid="weight-delta">
             <span className="health-weightchip__arrow" aria-hidden="true">{ARROWS[direction]}</span>
             {deltaText}
@@ -47,8 +45,7 @@ export function WeightChip() {
             no 7-day trend yet
           </span>
         )}
-      </div>
-      {rawPoints || avgPoints ? (
+      spark={rawPoints || avgPoints ? (
         <svg className="health-weightchip__spark" viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
           preserveAspectRatio="none" role="img"
           aria-label={`${entries.length} day weight sparkline ending ${latest?.date || ''}`}>
@@ -65,7 +62,7 @@ export function WeightChip() {
         // One reading is not a line. Drawing a flat segment across the box
         // would assert a month of stability nobody measured.
         <span className="health-weightchip__spark health-weightchip__spark--empty" data-testid="spark-empty" aria-hidden="true" />
-      )}
+      )} />
     </div>
   );
 }

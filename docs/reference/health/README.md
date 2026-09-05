@@ -533,11 +533,13 @@ Two flows are deliberately exempt from the accept half of the seam:
   row never syncs into the day's NutriList, so it doesn't appear among Today's normal rows
   and doesn't count toward the budget; `GET /nutrition/pending?date=` surfaces it
   separately, and Today renders it in a **NEEDS REVIEW** banner above the meal buckets,
-  with its own Accept/Discard. That endpoint returns pending rows regardless of origin, but
-  every other capture commits on arrival (above), so Today filters the banner to
-  scale-origin rows.
+  with its own Accept/Discard. Both the endpoint and the banner include pending logs
+  from every capture surface, including scanner/Telegram barcode entries awaiting
+  portion confirmation. Health can accept the stored portion or discard the entry
+  directly; Telegram is an optional capture surface, not a required confirmation step.
+  Confirmation refreshes the pending list and the day's rows and budget together.
 
-  **A NEEDS REVIEW row is not permanent.** The prompt behind it is still the scale's live
+  **A scale-origin NEEDS REVIEW row is not permanent.** The prompt behind it is still the scale's live
   one, and the next thing put on that pan supersedes it — the row is marked `rejected`, its
   message is deleted, and the banner entry disappears with nobody having acted on it. This
   is the one place the value below is written. So the banner is a "before the next meal"
@@ -1173,7 +1175,8 @@ All under `/api/v1/health/`, from `backend/src/4_api/v1/routers/health.mjs`:
 | `DELETE /nutrition/templates/:id` | remove a template |
 | `POST /nutrition/input` | unified capture entry point (`type: text\|image\|voice\|barcode`) |
 | `POST /nutrition/callback` | resolve a capture's Undo/Edit/portion choice, or a scale-pending Accept/Discard |
-| `GET /nutrition/pending?date=` | pending NutriLogs for a date (the scale's NEEDS REVIEW banner) |
+| `GET /nutrition/pending?date=` | pending NutriLogs from every capture surface for a date (Health's NEEDS REVIEW banner) |
+| `POST /nutrition/pending/:id/review` | save, confirm, or discard with `expectedVersion` and `operationId`; optional portion factor, item edits, date, meal, and nutrition-warning acknowledgement |
 | `GET /nutrition/photos/:photoRef` | serve a captured photo (see [Photo persistence](#photo-persistence) below) |
 | `GET /nutrition/icons` | the offered icon vocabulary for the picker (`?q=`, `?limit=`) — slugs only |
 | `GET /nutrition/icons/:slug` | serve one food icon (see [Food icons](#food-icons) above) |
@@ -1186,9 +1189,64 @@ All under `/api/v1/health/`, from `backend/src/4_api/v1/routers/health.mjs`:
 
 ---
 
+## Optional messaging-surface synchronization
+
+Health can confirm pending captures from any source. The original messaging
+service is not required to complete that confirmation, and app confirmation
+does not wait for report rendering or delivery.
+
+`NutritionSurfaceSync` polls committed records every 15 seconds. For users with
+a connected nutrition bot, it updates linked capture messages in place and
+regenerates affected daily reports from the authoritative item ledger. Portion
+edits, names, moves, deletes, restores, and new app entries are reflected; a
+move updates both dates and deleting the final entry produces a zero-item
+report. Pending food is excluded from totals. Archived capture messages remain
+discoverable. The app's existing resource refresh picks up changes made from
+the messaging surface as well.
+
+Delivery fingerprints are persisted separately in
+`users/{userId}/lifelog/nutrition/surface-sync.yml`. Failed messages and reports
+retry independently on the next poll, including after a restart. A failed
+delivery never rolls back a food edit. The first attachment records a baseline
+without replaying historical messages. Disconnecting the bot disables this
+projection without disabling Health. Delivery is at least once: a crash between
+remote delivery and checkpoint persistence can repeat a report; message edits
+are idempotent. Deleted/uneditable remote messages are recorded as permanently
+unavailable, without retrying forever or silently replacing them.
+
+Reports keep the previous version visible until the replacement is delivered.
+Background synchronization does not generate coaching messages. Relevant events:
+`nutrition.surface.attached`, `.message.updated`, `.message.retry`,
+`.report.updated`, `.report.retry`, and `.unavailable`.
+
+Hardware UPC scans persist headlessly; connected messaging delivery is a later,
+optional projection. Web review and Telegram portion/confirm callbacks share
+`FoodLogReview`: a durable intent precedes the idempotent ledger append, and
+acceptance is marked only afterward. Retries resume the stored operation;
+stale app edits fail with 409. Changing a request requires a new operation ID.
+
+Food-group and lifecycle fields round-trip through capture YAML. Group records
+remain non-additive; Health renders totals from their children. Expand/collapse
+is remembered by stable dish ID for the browser session. All artwork uses a fixed
+24px slot with a neutral circle until decoded, or when missing/failed. Optional
+reviewed name-to-slug overrides live in the icon manifest's `foodNames` map.
+
+For the evidence-backed September 4 taco repair, use
+`cli/health-group-repair.cli.mjs` to generate a dry-run manifest, then review it
+before an offline apply with a new backup directory. The repair never changes
+nutrition or portions. Historical shake nutrition still needs label verification.
+
 ## Related
 
 - [`docs/reference/nutrition/README.md`](../nutrition/README.md) — the fridge-scale/barcode
   scan pipeline that feeds the same NutriList log from the kitchen, independent of this app.
 - [`docs/reference/frontend/design-system.md`](../frontend/design-system.md) — the `@/lib/ui`
   primitives and pack theming this app is built on.
+
+## Nutrition cleanup
+
+Health Settings now includes an optional nutrition auditor, preview mode, shared
+Health/Telegram questions, and conflict-safe repair history/Undo. See
+[Nutrition cleanup](nutrition-cleanup.md) and the
+[rollout runbook](../../runbooks/nutrition-cleanup-rollout.md). Automatic cleanup is
+off by default; historical records are reference-only.

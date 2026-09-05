@@ -13,13 +13,15 @@ function r(ui) { return render(<MantineProvider>{ui}</MantineProvider>); }
 const PENDING = [
   {
     id: 'log-1',
+    version: 'v1', date: '2026-09-02',
     createdAt: '2026-09-02T11:42:00.000Z',
     source: 'telegram',
     mealTime: 'morning',
-    items: [{ label: 'Oatmeal', calories: 210 }, { label: 'Banana', calories: 105 }],
+    items: [{ id: 'oatmeal', label: 'Oatmeal', calories: 210 }, { id: 'banana', label: 'Banana', calories: 105 }],
   },
   {
     id: 'log-2',
+    version: 'v1', date: '2026-09-02',
     createdAt: '2026-09-02T14:05:00.000Z',
     source: 'scale',
     mealTime: 'afternoon',
@@ -46,22 +48,23 @@ describe('NeedsReviewSection', () => {
     expect(screen.getByText('Scale')).toBeTruthy();
   });
 
-  it('Accept posts {cmd:"a", id} to /nutrition/callback and calls onChanged', async () => {
+  it('Review opens an editable sheet and confirms through the shared command', async () => {
     apiMock.mockResolvedValue({ messages: [], logged: true });
     const onChanged = vi.fn();
     r(<NeedsReviewSection pending={[PENDING[0]]} onChanged={onChanged} />);
 
-    fireEvent.click(screen.getAllByRole('button', { name: /accept/i })[0]);
+    fireEvent.click(screen.getByRole('button', { name: /review food/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm food/i }));
 
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
     expect(apiMock).toHaveBeenCalledWith(
-      'api/v1/health/nutrition/callback',
-      { callbackData: JSON.stringify({ cmd: 'a', id: 'log-1' }) },
+      'api/v1/health/nutrition/pending/log-1/review',
+      expect.objectContaining({ action: 'confirm', expectedVersion: 'v1', operationId: expect.any(String) }),
       'POST',
     );
   });
 
-  it('Discard posts {cmd:"x", id} to /nutrition/callback and calls onChanged', async () => {
+  it('Discard checks the opened version and calls onChanged', async () => {
     apiMock.mockResolvedValue({ messages: [], logged: false });
     const onChanged = vi.fn();
     r(<NeedsReviewSection pending={[PENDING[1]]} onChanged={onChanged} />);
@@ -70,8 +73,8 @@ describe('NeedsReviewSection', () => {
 
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
     expect(apiMock).toHaveBeenCalledWith(
-      'api/v1/health/nutrition/callback',
-      { callbackData: JSON.stringify({ cmd: 'x', id: 'log-2' }) },
+      'api/v1/health/nutrition/pending/log-2/review',
+      expect.objectContaining({ action: 'discard', expectedVersion: 'v1', operationId: expect.any(String) }),
       'POST',
     );
   });
@@ -81,7 +84,8 @@ describe('NeedsReviewSection', () => {
     const onChanged = vi.fn();
     r(<NeedsReviewSection pending={[PENDING[0]]} onChanged={onChanged} />);
 
-    fireEvent.click(screen.getAllByRole('button', { name: /accept/i })[0]);
+    fireEvent.click(screen.getByRole('button', { name: /review food/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm food/i }));
 
     await waitFor(() => expect(screen.getByText(/network down/)).toBeTruthy());
     expect(onChanged).not.toHaveBeenCalled();

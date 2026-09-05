@@ -36,6 +36,22 @@ const makeUseCase = ({ nutriLog }) => {
 };
 
 describe('AcceptFoodLog nutrilist mealTime stamping', () => {
+  it('confirms an external barcode log through the web response without contacting its original gateway', async () => {
+    const nutriLog = { ...makePendingLog({ mealTime: 'afternoon' }),
+      conversationId: 'external:kc', metadata: { source: 'upc', messageId: '22' } };
+    const messagingGateway = messagingStub();
+    const foodLogStore = { findByUuid: vi.fn(async () => nutriLog), updateStatus: vi.fn(async () => {}) };
+    const nutriListStore = { saveMany: vi.fn(async () => {}) };
+    const report = { execute: vi.fn() };
+    const uc = new AcceptFoodLog({ messagingGateway, foodLogStore, nutriListStore,
+      generateDailyReport: report, logger: { debug() {}, info() {}, warn() {}, error() {} } });
+    await expect(uc.execute({ userId: 'kc', conversationId: 'web:kc', logUuid: 'log-1',
+      responseContext: messagingStub(), autoReport: false })).resolves.toMatchObject({ success: true });
+    expect(foodLogStore.updateStatus).toHaveBeenCalledWith('kc', 'log-1', 'accepted');
+    expect(nutriListStore.saveMany).toHaveBeenCalledWith([expect.objectContaining({ date: '2026-08-30', mealTime: 'afternoon' })]);
+    for (const method of Object.values(messagingGateway)) expect(method).not.toHaveBeenCalled();
+    expect(report.execute).not.toHaveBeenCalled();
+  });
   it('stamps the nutrilist row with the log\'s meal.time (afternoon)', async () => {
     const nutriLog = makePendingLog({ mealTime: 'afternoon' });
     const { uc, nutriListStore } = makeUseCase({ nutriLog });
