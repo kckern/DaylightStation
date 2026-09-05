@@ -195,7 +195,8 @@ function GameHost() {
   // switching a challenge on in front of all nine games and every child at
   // once. Both dimensions are absent by default, which reads as "everyone,
   // everywhere", so an unscoped block behaves exactly as it always did.
-  const gateEnabled = gateAppliesTo(config.gameGate, { learnerId, gameId });
+  const gateEnabled = entry?.exerciseGate === true
+    && gateAppliesTo(config.gameGate, { learnerId, gameId });
   const learnerGateConfig = gateConfigForLearner(config.gameGate, learnerId);
   const dayProgressRequired = learnerGateConfig?.dailyEscalation?.enabled === true;
   const [gatePending, setGatePending] = useState(gateEnabled);

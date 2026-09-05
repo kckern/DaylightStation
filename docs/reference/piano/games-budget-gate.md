@@ -202,6 +202,14 @@ forever.
 The gate fires at **every match boundary**, entering a game and playing again alike.
 Replays outnumber game entries by roughly 3:2, so a per-entry gate would miss most play.
 
+Gate eligibility is declared by the game registry, not by the kiosk route. A host that
+mounts a gate-enabled game must wait for the household gate configuration, put the gate
+in front of the first match when it applies to the selected learner and game id, and
+provide the same rematch boundary. This includes `PianoVisualizer` on the office display;
+the display is a different surface for Chess, not a way around Chess's gate. Hosts may
+adapt their own note stream into the shared piano-MIDI contract, but must not open a second
+physical MIDI input to do so.
+
 ### It swaps, it does not overlay
 
 The gate renders **in place of the game, at the same route**. The URL does not change;

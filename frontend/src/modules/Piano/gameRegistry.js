@@ -20,6 +20,7 @@ const GAME_REGISTRY = {
   },
   'space-invaders': {
     label: 'Space Invaders', icon: 'game-space-invaders', status: 'released', family: 'note-stream',
+    exerciseGate: true,
     component: () => importWithReload(() => import('./PianoSpaceInvaders/SpaceInvadersGame')),
     hook: () => importWithReload(() => import('./PianoSpaceInvaders/useSpaceInvadersGame')),
     layout: 'replace',
@@ -27,6 +28,7 @@ const GAME_REGISTRY = {
   },
   tetris: {
     label: 'Tetris', icon: 'game-tetris', status: 'released', family: 'bound-action',
+    exerciseGate: true,
     component: () => importWithReload(() => import('./PianoTetris/PianoTetris')),
     hook: () => importWithReload(() => import('./PianoTetris/useTetrisGame')),
     layout: 'replace',
@@ -34,6 +36,7 @@ const GAME_REGISTRY = {
   },
   flashcards: {
     label: 'Flashcards', icon: 'game-flashcards', status: 'released', family: 'prompt-response',
+    exerciseGate: true,
     component: () => importWithReload(() => import('./PianoFlashcards/PianoFlashcards')),
     hook: () => importWithReload(() => import('./PianoFlashcards/useFlashcardGame')),
     layout: 'replace',
@@ -41,6 +44,7 @@ const GAME_REGISTRY = {
   },
   hero: {
     label: 'Piano Hero', icon: 'game-hero', status: 'released', family: 'note-stream',
+    exerciseGate: true,
     component: () => importWithReload(() => import('./PianoHeroGame/PianoHeroGame')),
     hook: () => importWithReload(() => import('./PianoHeroGame/PianoHeroGame')),
     layout: 'replace',
@@ -48,6 +52,7 @@ const GAME_REGISTRY = {
   },
   'side-scroller': {
     label: 'Side Scroller', icon: 'game-side-scroller', status: 'released', family: 'bound-action',
+    exerciseGate: true,
     component: () => importWithReload(() => import('./SideScrollerGame/SideScrollerGame')),
     hook: () => importWithReload(() => import('./SideScrollerGame/useSideScrollerGame')),
     layout: 'replace',
@@ -55,6 +60,10 @@ const GAME_REGISTRY = {
   },
   chess: {
     label: 'Piano Chess', icon: 'game-chess', status: 'released', family: 'addressed-board',
+    // This is a property of Chess, not of a particular launcher. Every host
+    // that mounts this entry must put its configured match boundary in front of
+    // it, including the office piano display.
+    exerciseGate: true,
     component: () => importWithReload(() => import('./PianoChessGame/PianoChessGame')),
     hook: () => importWithReload(() => import('./PianoChessGame/PianoChessGame')),
     layout: 'replace',
@@ -62,6 +71,7 @@ const GAME_REGISTRY = {
   },
   'connect-four': {
     label: 'Connect Four', icon: 'game-connect-four', status: 'released', family: 'addressed-board',
+    exerciseGate: true,
     component: () => importWithReload(() => import('./PianoConnectFour/PianoConnectFour')),
     hook: () => importWithReload(() => import('./PianoConnectFour/PianoConnectFour')),
     layout: 'replace',
@@ -69,6 +79,7 @@ const GAME_REGISTRY = {
   },
   checkers: {
     label: 'Piano Checkers', icon: 'game-checkers', status: 'released', family: 'addressed-board',
+    exerciseGate: true,
     component: () => importWithReload(() => import('./PianoCheckers/PianoCheckers')),
     hook: () => importWithReload(() => import('./PianoCheckers/PianoCheckers')),
     layout: 'replace',

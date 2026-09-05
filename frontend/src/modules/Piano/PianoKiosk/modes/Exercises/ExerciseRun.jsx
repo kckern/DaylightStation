@@ -110,6 +110,25 @@ export function wrongEventState(event) {
 }
 
 /**
+ * The assessor may advance as soon as a correct key goes down.  The child still
+ * has that key held, though, so drawing the assessor's NEXT event immediately
+ * makes the cursor look one note ahead and turns the note under their finger
+ * into a ghost.  Keep the just-completed event visible until its key is lifted.
+ */
+export function visualCursorFor(events = [], assessmentCursor = 0, activeNotes = null, status = 'prepared') {
+  const cursor = Math.min(Math.max(Number.isInteger(assessmentCursor) ? assessmentCursor : 0, 0), events.length);
+  if (status === 'completed' || status === 'aborted' || status === 'timeout' || cursor >= events.length) {
+    return { index: cursor, reason: 'complete' };
+  }
+  const held = new Set(activeNotes ? activeNotes.keys() : []);
+  const current = events[cursor]?.notes?.map((note) => note.midi) ?? [];
+  if (current.some((midi) => held.has(midi))) return { index: cursor, reason: 'engine-current' };
+  const previous = events[cursor - 1]?.notes?.map((note) => note.midi) ?? [];
+  if (previous.some((midi) => held.has(midi))) return { index: cursor - 1, reason: 'held-completed' };
+  return { index: cursor, reason: 'engine-current' };
+}
+
+/**
  * Did this run clear its bar?
  *
  * Two inputs, in this order, and both are needed:
@@ -191,7 +210,7 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   player on a dead end. Both callbacks are optional and additive: omit them
  *   and the surface behaves exactly as it did before.
  */
-export default function ExerciseRun({ instance, score, requirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, framing = null, ask = null, askTuple = null, tier = null, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, framing = null, ask = null, askTuple = null, tier = null, traceContext = null, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
@@ -234,6 +253,19 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   // repeated Continue tap remains idempotent server-side.
   const assessmentIdRef = useRef(null);
   const runtimeRef = useRef(null);
+  const lastVisualCursorRef = useRef(null);
+  const traceFieldsRef = useRef(null);
+  traceFieldsRef.current = {
+    assessmentId: assessmentIdRef.current,
+    learnerId: typeof currentUser === 'string' ? currentUser : currentUser?.id ?? null,
+    hostAttemptId: traceContext?.attemptId ?? null,
+    hostSessionId: traceContext?.sessionId ?? null,
+    subjectId: instance?.id ?? score?.id ?? null,
+    intent,
+  };
+  const traceEvent = useCallback((event, data = {}) => {
+    logger.info(event, { ...traceFieldsRef.current, assessmentId: assessmentIdRef.current, ...data });
+  }, [logger]);
   const access = resolveExerciseRunAccess(intent, currentUser);
   const { challenge } = access;
   const selectedMode = challenge ? requirement?.mode : practiceMode;
@@ -353,18 +385,36 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     if (!attempt) return;
     setUnrunnable(false);
     runtimeRef.current?.dispose();
+    assessmentIdRef.current = makeId('attempt');
     const next = createAssessmentRuntime({
       attempt,
       createAttempt: buildAttempt,
       now: () => Date.now(),
       tickMs: 50,
-      onEvent: (event) => setLastWrong(wrongEventState(event)),
+      onEvent: (event, state, previous) => {
+        setLastWrong(wrongEventState(event));
+        traceEvent('piano.exercise-observation', {
+          eventType: event.type,
+          eventId: event.eventId ?? null,
+          midi: event.midi ?? null,
+          reason: event.reason ?? null,
+          cursorBefore: previous?.cursor ?? null,
+          cursorAfter: state?.cursor ?? null,
+          statusBefore: previous?.status ?? null,
+          statusAfter: state?.status ?? null,
+          held: Array.isArray(event.held) ? event.held : null,
+        });
+      },
     });
     runtimeRef.current = next;
     previousNotesRef.current = [...activeNotesRef.current.keys()];
     lastHeldObservedRef.current = null;
     persistedRef.current = false;
-    assessmentIdRef.current = makeId('attempt');
+    traceEvent('piano.exercise-runtime-installed', {
+      matcher: next.getSnapshot().matcher,
+      mode: next.getSnapshot().mode,
+      cursor: next.getSnapshot().cursor,
+    });
     globalThis.clearInterval(countInTimerRef.current);
     countInTimerRef.current = null;
     setLastWrong(null);
@@ -375,7 +425,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     setNoteOnTick(0);
     setPrePulseStopped(false);
     setRuntime(next);
-  }, [buildAttempt]);
+  }, [buildAttempt, traceEvent]);
 
   useEffect(installRuntime, [installRuntime]);
 
@@ -640,9 +690,20 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   const heldKey = held.join(',');
   useEffect(() => {
     if (!runtime) return;
-    const onsets = held.filter((midi) => !previousNotesRef.current.includes(midi));
+    const previousHeld = previousNotesRef.current;
+    const onsets = held.filter((midi) => !previousHeld.includes(midi));
+    const releases = previousHeld.filter((midi) => !held.includes(midi));
     previousNotesRef.current = held;
     const time = Date.now();
+    traceEvent('piano.exercise-midi-state', {
+      heldBefore: previousHeld,
+      heldAfter: held,
+      onsets,
+      releases,
+      assessmentCursor: runtime.getSnapshot().cursor,
+      status: runtime.getSnapshot().status,
+      time,
+    });
     // Every note-on the run sees resets the stall clock — including the one
     // that arms it, which is the note the clock should be measured from.
     if (onsets.length) setNoteOnTick((tick) => tick + 1);
@@ -696,7 +757,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
       return;
     }
     for (const midi of onsets) runtime.observe({ midi, time, clock: 'date-now' });
-  }, [activeNotes, armingPitches, held, heldKey, runtime, snapshot.cursor, snapshot.matcher, snapshot.mode, snapshot.status, startCountIn]);
+  }, [activeNotes, armingPitches, held, heldKey, runtime, snapshot.cursor, snapshot.matcher, snapshot.mode, snapshot.status, startCountIn, traceEvent]);
 
   useEffect(() => () => {
     globalThis.clearInterval(countInTimerRef.current);
@@ -706,6 +767,10 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
       const interrupted = runtimeRef.current.abort();
       persist(interrupted.result, 'aborted', { keepalive: true });
     }
+    traceEvent('piano.exercise-runtime-disposed', {
+      cursor: active?.cursor ?? null,
+      status: active?.status ?? null,
+    });
     runtimeRef.current?.dispose();
   }, [persist]);
 
@@ -715,6 +780,23 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   // Both degraded states must be checked BEFORE the skeleton. `runtime` stays
   // null whenever there is no attempt to build, so a `!runtime` test placed
   // first swallows them and spins on a skeleton forever.
+  const progress = runtime ? assessmentProgress(snapshot) : { eventIndex: 0 };
+  const askEvents = instance ? instance.events : (snapshot.expectation?.events ?? []);
+  const eventIndex = Math.min(progress.eventIndex, askEvents.length);
+  const visualCursor = visualCursorFor(askEvents, eventIndex, activeNotes, snapshot.status);
+  const visualCursorSignature = `${assessmentIdRef.current ?? 'none'}:${eventIndex}:${visualCursor.index}:${visualCursor.reason}:${heldKey}:${snapshot.status}`;
+  useEffect(() => {
+    if (lastVisualCursorRef.current === visualCursorSignature) return;
+    lastVisualCursorRef.current = visualCursorSignature;
+    traceEvent('piano.exercise-visual-cursor', {
+      assessmentCursor: eventIndex,
+      displayedCursor: visualCursor.index,
+      reason: visualCursor.reason,
+      held,
+      status: snapshot.status,
+    });
+  }, [eventIndex, held, snapshot.status, traceEvent, visualCursor.index, visualCursor.reason, visualCursorSignature]);
+
   if (notFound) return <PianoEmpty message="Exercise not found. It may have been renamed." />;
   if (unrunnable) return <PianoEmpty message="Cannot start this one. It is missing something the challenge needs — try another." />;
   if (instance === undefined || score === undefined || (challenge && !requirement)) return <SkeletonStage />;
@@ -726,12 +808,6 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
    */
   if (!runtime && !score) return <SkeletonStage />;
 
-  const progress = runtime ? assessmentProgress(snapshot) : { eventIndex: 0 };
-  // What the run is asking for, event by event. A bank instance authored them;
-  // a score's come from the compiled expectation, because the engraving is the
-  // only place they exist.
-  const askEvents = instance ? instance.events : (snapshot.expectation?.events ?? []);
-  const eventIndex = Math.min(progress.eventIndex, askEvents.length);
   // A judged attempt is over and has something to say, whether it finished or
   // stalled. Leaving a stalled one out would leave the child on the running
   // status line — a run that has ended, still saying "follow the highlighted
@@ -756,7 +832,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
    * button are still the only way to take it.
    */
   const hostOwnsFailure = Boolean(onFailed) && !passed;
-  const currentEvent = askEvents[Math.min(eventIndex, askEvents.length - 1)] || askEvents[0];
+  const currentEvent = askEvents[Math.min(visualCursor.index, askEvents.length - 1)] || askEvents[0];
   const targetNotes = new Map((currentEvent?.notes || []).map((note) => [note.midi, { velocity: 1 }]));
 
   /**
@@ -839,7 +915,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
         {stage === 'keys' && (
           <KeysAsk
             events={instance.events}
-            cursorIndex={eventIndex}
+            cursorIndex={visualCursor.index}
             activeNotes={activeNotes}
             wrongMidi={lastWrong?.midi ?? null}
             showStaff={askStaff}
@@ -856,7 +932,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
             <p>Play the named music without looking at the answer.</p>
             {hintVisible && (
               <div className="piano-exercise-run__recall-hint" data-testid="piano-recall-hint">
-                <KeysAsk events={instance.events} cursorIndex={eventIndex} activeNotes={activeNotes} wrongMidi={lastWrong?.midi ?? null} />
+                <KeysAsk events={instance.events} cursorIndex={visualCursor.index} activeNotes={activeNotes} wrongMidi={lastWrong?.midi ?? null} />
               </div>
             )}
           </div>
@@ -879,7 +955,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
                 rule this component now follows exists to forbid. */}
             <SvgSequenceStaff
               notes={staffNotes}
-              cursorIndex={eventIndex}
+              cursorIndex={visualCursor.index}
               activeNotes={activeNotes}
               clef={clefForInstance(instance)}
               accidental={accidental}
@@ -900,7 +976,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
             measures={score.measures}
             onExpectation={takeScoreExpectation}
             onUnrunnable={handleScoreUnrunnable}
-            cursorIndex={eventIndex}
+            cursorIndex={visualCursor.index}
             wrongMidi={lastWrong?.midi ?? null}
           />
         )}
@@ -912,6 +988,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
           first note" there would be a lie a child would act on: nothing is
           listening, and a piano that ignores you is indistinguishable from a
           broken one. */}
+      <div className="piano-exercise-run__rail">
       {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{!runtime ? 'Getting the music ready…' : snapshot.mode === 'cued' ? `Press any key to start. You'll hear ${countIn?.clicks ?? beatsPerMeasure} clicks, then play at that speed.` : 'Play the first note to begin.'}</p>{!connected && <span>Waiting for the piano…</span>}</div>}
       {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : isWrong ? 'That note was not expected — keep going.' : stage === 'recall' ? 'Play the named music from memory.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.'}</p>}
       {phase === 'done' && result && !hostOwnsFailure && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}`}>
@@ -924,6 +1001,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
           : <p className="piano-exercise-run__result-copy">{passed ? 'You played every note that was asked for.' : 'Some of the notes are still missing. Have another go.'}</p>}
         <div className="piano-exercise-run__result-actions"><button type="button" className="piano-exercises__quiet-action" onClick={installRuntime}>{challenge ? 'Retry' : 'Again'}</button>{challenge && !passed && <button type="button" onClick={onExit}>Practice first</button>}{passed && <button type="button" onClick={() => onPassed?.({ ...result, assessmentId: assessmentIdRef.current })}>Continue</button>}</div>
       </section>}
+      </div>
       {keyboardFooter && <footer className="piano-exercise-run__keys"><PianoKeyboard activeNotes={activeNotes} targetNotes={targetNotes} wrongNotes={wrongNotes} dimTarget startNote={Math.max(21, Math.min(...expected) - 5)} endNote={Math.min(108, Math.max(...expected) + 5)} /></footer>}
     </section>
   );

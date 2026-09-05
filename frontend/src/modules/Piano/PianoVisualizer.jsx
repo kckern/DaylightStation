@@ -24,6 +24,11 @@ import { useSessionTracking } from './useSessionTracking.js';
 import { useSpamDetection } from './useSpamDetection.js';
 import { useScreenOverlay } from '../../screen-framework/overlays/ScreenOverlayProvider.jsx';
 import useSchoolGameAccess from './PianoKiosk/useSchoolGameAccess.js';
+import GameGate from './PianoKiosk/modes/Games/GameGate.jsx';
+import MatchGateContext from './PianoKiosk/modes/Games/MatchGateContext.js';
+import { gateAppliesTo, gateConfigForLearner } from './PianoKiosk/modes/Games/gateScope.js';
+import PianoUserContext from './PianoKiosk/PianoUserContext.jsx';
+import { ExternalPianoMidiProvider } from './PianoKiosk/PianoMidiContext.jsx';
 
 const formatDuration = (seconds) => {
   const mins = Math.floor(seconds / 60);
@@ -178,6 +183,27 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   });
 
   const activeGameEntry = activeGameId ? getGameEntry(activeGameId) : null;
+  // A gate belongs to the game entry.  The office display is another host for
+  // the same Chess component, not an exemption from Chess's match boundary.
+  // Hold the game while its config is still unknown; briefly mounting it before
+  // the config response is a bypass just as surely as never checking.
+  const gateKey = activeGameEntry?.exerciseGate && activeGameId
+    ? `${activeGameId}:${currentUser ?? 'guest'}` : null;
+  const gateConfigLoading = Boolean(gateKey) && appConfig === null;
+  const gameGateEnabled = Boolean(gateKey) && !gateConfigLoading
+    && gateAppliesTo(appConfig?.gameGate, { learnerId: currentUser, gameId: activeGameId });
+  const [passedGateKey, setPassedGateKey] = useState(null);
+  const [officeMatchId, setOfficeMatchId] = useState(1);
+  const gatePending = Boolean(gateKey) && (gateConfigLoading || (gameGateEnabled && passedGateKey !== gateKey));
+  const requestOfficeRematch = useCallback(() => {
+    if (gameGateEnabled) setPassedGateKey(null);
+    setOfficeMatchId((value) => value + 1);
+  }, [gameGateEnabled]);
+  const officeMatchGate = useMemo(() => ({
+    armed: gameGateEnabled,
+    requestRematch: requestOfficeRematch,
+    registerCompletion: () => null,
+  }), [gameGateEnabled, requestOfficeRematch]);
   const isFullscreenGame = schoolGameAccess.unlocked && activeGameEntry?.layout === 'replace';
 
   // A deep link, a note struck just before a status refresh, or a player
@@ -405,14 +431,29 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
               `game` field stays the plain id — a saved `data.game:"tetris"`
               query has to find an office-screen crash and a kiosk one under the
               same name, not "tetris:7" here and "tetris" there. */}
-          <GameBoundary
-            key={`${activeGameId}:${launchNonce}`}
+          {gatePending ? (
+            gateConfigLoading ? <div className="piano-mode__placeholder" role="status">Preparing Chess…</div> : (
+              <ExternalPianoMidiProvider activeNotes={activeNotes}>
+              <PianoUserContext.Provider value={{ currentUser }}>
+                <GameGate
+                  learnerId={currentUser}
+                  gateConfig={gateConfigForLearner(appConfig?.gameGate, currentUser)}
+                  gameLabel={activeGameEntry.label ?? activeGameId}
+                  onPassed={() => { setPassedGateKey(gateKey); setOfficeMatchId((value) => value + 1); }}
+                  onLeave={quitGame}
+                />
+              </PianoUserContext.Provider>
+              </ExternalPianoMidiProvider>
+            )
+          ) : <GameBoundary
+            key={`${activeGameId}:${launchNonce}:${officeMatchId}`}
             resetKey={`${activeGameId}:${launchNonce}`}
             gameId={activeGameId}
             label={activeGameEntry.label ?? 'This game'}
             onExit={quitCrashedGame}
           >
             <Suspense fallback={null}>
+              <MatchGateContext.Provider value={officeMatchGate}>
               <MountedGame
                 Component={activeGameEntry.LazyComponent}
                 activeNotes={activeNotes}
@@ -430,8 +471,10 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
                 playerName={currentUserName}
                 onDeactivate={quitGame}
               />
+              </MatchGateContext.Provider>
             </Suspense>
           </GameBoundary>
+          }
           </div>
         </div>
       )}

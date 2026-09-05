@@ -188,6 +188,7 @@ export default function AskSession({
   intent = 'practice',
   practiceMode = 'free',
   framing = null,
+  traceContext = null,
   onPassed,
   onFailed,
   onExit,
@@ -341,6 +342,7 @@ export default function AskSession({
       ask={askLine}
       askTuple={resolvedAsk.tuple}
       tier={tier}
+      traceContext={traceContext}
       onPassed={onPassed}
       onFailed={onFailed}
       onExit={onExit}

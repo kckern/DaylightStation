@@ -38,7 +38,11 @@ export function createAssessmentRuntime({ attempt, createAttempt, subscribeMidi,
     const previous = state;
     const previousStatus = state.status;
     state = next.status === 'completed' && !next.result ? finalizeAssessmentAttempt(next) : next;
-    for (const event of events.filter(Boolean)) onEvent?.(event, state);
+    // Observability consumers need both sides of a transition.  Passing the
+    // previous immutable attempt costs the runtime nothing, and lets a surface
+    // explain exactly why its rendered cursor moved without guessing from a
+    // throttled React snapshot.
+    for (const event of events.filter(Boolean)) onEvent?.(event, state, previous);
     const terminal = previousStatus !== state.status && ['completed', 'aborted', 'timeout', 'error'].includes(state.status);
     if (state !== previous) (immediate || terminal ? emitSnapshot() : scheduleSnapshot());
     if (terminal) {
