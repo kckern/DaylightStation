@@ -208,6 +208,8 @@ Registered requirement types:
 
 - `zone` — the existing participant heart-rate-zone requirement.
 - `activity_rate` — an optional, equipment-scoped rolling-rate requirement.
+- `cadence_floor` — a steady-state RPM gate for one cadence machine, armed by
+  evidence of a ride rather than by roster membership.
 
 Registered challenge types:
 
@@ -799,3 +801,63 @@ zones:
 - `docs/_wip/bugs/2026-02-03-governance-test-flakiness.md` - Bug investigation
 - `docs/_wip/bugs/2026-02-03-governance-test-skipped-items.md` - Skipped test details
 - `docs/plans/2026-02-03-governance-test-hysteresis-fix.md` - Implementation plan
+
+## Cadence floor — holding a rider to the ride they started
+
+A `cadence_floor` requirement watches one cadence machine and locks playback when
+the person riding it stops. It exists because neither existing gate covers that
+case: the `zone` requirement governs heart rate and excuses anyone listed in
+`governance.exemptions`, while a `cycle` challenge enforces RPM only in bursts,
+for a rider it selected. Between them, an exempt rider could sit on the tricycle
+doing nothing indefinitely.
+
+```yaml
+requirements:
+  - type: cadence_floor
+    id: tricycle_idle
+    equipment: tricycle
+    label: Keep pedaling
+    arm_seconds: 30
+    arm_min_rpm: 30
+    trip_after_seconds: 10
+    require_rider_hr: true
+```
+
+### Armed by evidence, not by roster
+
+The gate is dormant until all of the following are true at once:
+
+1. The equipment is **claimed** by a rider who is an active participant.
+2. That rider has a **live heart-rate strap** (`require_rider_hr`, default true).
+   An exempt rider satisfies this — exemption excuses an HR *target*, not
+   presence.
+3. The rider has accumulated **`arm_seconds` above `arm_min_rpm`** on this
+   equipment during this session.
+
+Only then does it start watching for a stop. After `trip_after_seconds` of
+continuous zero RPM the requirement goes unsatisfied and the ordinary
+warning → grace → lock path runs; there are no new phases. It disarms the moment
+the rider is unassigned, their strap drops, or a new rider takes over — a clean
+dismount can never lock the room, and evidence never transfers between riders.
+
+This is **the one place a non-subject can appear in `missingUsers`**. It is not a
+hole in the exemption model: blame requires proof, held by this gate alone, that
+the person was riding moments ago.
+
+### Reading cadence correctly
+
+`_readCadenceDevice` reports `connected: false` within `rpmZero` (~1.2s) of a
+rider stopping, because `lastSignificantActivity` only advances on non-zero
+cadence. So for this gate **"disconnected" is the stop signal**, not a reason to
+stand down — treating it as a fault would disarm the gate at the exact moment it
+should fire. Only `transportStalled` (no device anywhere is delivering) means
+"cannot tell": that suspends the requirement, holding the latch while refusing to
+accrue evidence or count down toward a lock.
+
+A cadence sensor that genuinely dies is indistinguishable from a rider who
+stopped. That is accepted — the rider must be present with a live strap, a
+warning precedes the lock, and a dead sensor on a machine someone is actively
+riding is a fault worth surfacing.
+
+Emits `governance.cadence_floor.armed`, `.disarmed` (with a `reason`), and
+`.tripped`.
