@@ -61,16 +61,49 @@ describe('ingestRateLimiter', () => {
 
   it('announces throttling immediately, then the remainder on recovery', () => {
     const c = clock();
-    const rl = createIngestRateLimiter({ capacity: 1, refillPerMinute: 60, summaryIntervalMs: 999_999, now: c.now });
+    const rl = createIngestRateLimiter({ capacity: 1, refillPerMinute: 60, summaryIntervalMs: 1_000, now: c.now });
     rl.check(evt());                                     // spends the only token
     // The FIRST suppression reports at once — you want to know throttling began
     // without waiting out a summary interval.
     expect(rl.check(evt()).summary).toMatchObject({ data: { phase: 'throttling', suppressed: 1 } });
     rl.check(evt()); rl.check(evt());                    // 2 more, silently counted
-    c.advance(2_000);                                    // refill
+    c.advance(2_000);                                    // refill AND past the interval
     const back = rl.check(evt());
     expect(back.allow).toBe(true);
     expect(back.summary).toMatchObject({ data: { phase: 'recovered', suppressed: 2 } });
+  });
+
+  it('bounds TOTAL output — summaries must not replace the flood they describe', () => {
+    // Regression: gating only the throttling summary and not the recovery one
+    // turned a 16/min flood into ~12/min of summaries about it. A steady drip
+    // against a slow refill makes the bucket flap, so every recovery emitted.
+    const c = clock();
+    const rl = createIngestRateLimiter({ capacity: 30, refillPerMinute: 3, summaryIntervalMs: 60_000, now: c.now });
+    let allowed = 0; let summaries = 0;
+    for (let i = 0; i < 16 * 60; i += 1) {           // 16/min for an hour
+      c.advance(3_750);
+      const r = rl.check(evt());
+      if (r.allow) allowed += 1;
+      if (r.summary) summaries += 1;
+    }
+    // Roughly one summary per minute per key, never one per recovery.
+    expect(summaries).toBeLessThanOrEqual(65);
+    // And the two together must stay far under the 960 the flood would produce.
+    expect(allowed + summaries).toBeLessThan(300);
+  });
+
+  it('carries a suppressed count forward rather than dropping it when not yet due', () => {
+    const c = clock();
+    const rl = createIngestRateLimiter({ capacity: 1, refillPerMinute: 60, summaryIntervalMs: 60_000, now: c.now });
+    rl.check(evt());
+    expect(rl.check(evt()).summary).toMatchObject({ data: { suppressed: 1 } });  // first, at once
+    rl.check(evt()); rl.check(evt());               // 2 more, not yet due
+    c.advance(2_000);
+    expect(rl.check(evt()).summary).toBeNull();     // recovered but not due — held
+    c.advance(70_000);                              // now past the interval
+    const late = rl.check(evt());
+    // The held 2 were not lost; they surface in the first due summary after.
+    expect(late.summary).toMatchObject({ data: { phase: 'recovered', suppressed: 2 } });
   });
 
   it('ISOLATES clients: a flooding laptop cannot silence the tablet', () => {
