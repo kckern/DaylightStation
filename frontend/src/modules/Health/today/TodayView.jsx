@@ -367,7 +367,7 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
       ) : null}
       <CleanupQuestions active={active} onChanged={day.reload} />
       <ObservationsSection observations={unmatched} onChanged={() => observations.reload()} />
-      <LogTable byBucket={preview.byBucket} sessions={preview.budget?.sessions || []}
+      <LogTable byBucket={preview.byBucket} date={date} sessions={preview.budget?.sessions || []}
         active={active}
         exerciseAvailable={Boolean(day.budget)}
         coldLoading={coldLoading} capturePendingBuckets={[...capturePending.values()].filter(pending => pending.date === date).map(pending => pending.bucket)}

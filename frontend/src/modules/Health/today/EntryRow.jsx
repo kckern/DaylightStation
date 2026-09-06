@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { UnstyledButton } from '@mantine/core';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
-import { formatNutrients } from '@shared-contracts/nutrition/countedRows.mjs';
+import { MacroBadges } from './MacroBadges.jsx';
 import { nutritionPhotoUrl } from './photoUrl.js';
 import { FoodIcon } from './FoodIcon.jsx';
 import { PortionControl } from './PortionControl.jsx';
@@ -41,12 +41,12 @@ export function EntryRow({ row, onTap, onConfirm, isGroup = false, expanded = fa
     <UnstyledButton className="health-row__identity" disabled={Boolean(portions?.draft)} onClick={() => onTap(row)} aria-label={`Edit ${name}`}>
       {row.photoRef && brokenPhoto !== row.photoRef ? <img className="health-row__thumb"
         src={nutritionPhotoUrl(row.photoRef, { thumb: true })} alt="" loading="lazy" onError={() => setBrokenPhoto(row.photoRef)} /> : <FoodIcon icon={row.icon} />}
-      <span className="health-row__description"><span className="health-row__name">{name}</span>{' '}
+      <span className="health-row__description" title={name}><span className="health-row__name">{name}</span>{' '}
         {unsettled && confirmation !== 'saved' ? <span className="health-row__badge" title="Counted now; stabilizes automatically after 72 hours unless you confirm sooner.">Estimated</span> : null}
         {measured ? <span className="health-row__scale" title={measured}> · Scale ✓</span> : null}
-        <span className="health-row__macros" title="+ means some nutrition is unknown">{formatNutrients(isGroup ? row.children : [row])}</span>
       </span>
     </UnstyledButton>
+    <MacroBadges rows={isGroup ? row.children : [row]} className="health-row__macros" />
     <PortionControl row={row} />
     <span className="health-row__kcal" title="Calories">{displayKcal == null ? '—' : Math.round(displayKcal)}<small> kcal</small></span>
     <div className="health-row__action">

@@ -24,7 +24,7 @@ export function foodPortion(row) {
 
 export function formatFoodPortion(row) {
   const { value, unit } = foodPortion(row);
-  return value === null ? '—' : `${Number(value.toFixed(1))} ${unit}`;
+  return value === null ? '—' : `${unit === 'g' ? Math.round(value) : Number(value.toFixed(1))} ${unit}`;
 }
 
 export function portionFactor(row, portion) {
