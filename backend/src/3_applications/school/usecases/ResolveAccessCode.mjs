@@ -59,7 +59,8 @@ import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display
 import { resolveTokenState } from '#domains/school/sessions/tokens.mjs';
 import { nextMove } from './offerSession.mjs';
 import { pausedExceptionFor } from '../curriculumExceptionProjection.mjs';
-import { projectProgramEntry } from '../assignedProgramPlan.mjs';
+import { projectProgramEntry, bookLogShelfEntry } from '../assignedProgramPlan.mjs';
+import { BOOK_LOG_PROGRAM_ID, bookLogContext } from '#domains/school/bookLog.mjs';
 import { findContinuationEntry, findReopenableProgramEntry } from './continuationEntry.mjs';
 
 /**
@@ -669,6 +670,42 @@ export class ResolveAccessCode {
     });
     const { units, nowIso } = projection;
     const withProjection = (value) => ({ ...value, projection });
+
+    // THE READING SHELF IS OPEN TO EVERY LEARNER, ENROLLED OR NOT — and that
+    // is why this branch sits ABOVE the section lookup rather than inside the
+    // continuation logic below.
+    //
+    // A `book-log` enrollment carries an OBLIGATION; it does not grant access
+    // (`BookLogProgramLauncher`'s header: "The shelf works with no enrollment
+    // at all"). But reachability used to be derived entirely from it:
+    // `appendAssignedProgramEntries` appends `book-log:shelf` to `plan.entries`
+    // only from an enrollment, and `findContinuationEntry` can only return an
+    // entry that is IN the plan. So for a learner without one there were two
+    // failures, and the second was the worse: with no english section at all
+    // this fell straight to `kind: 'empty'`, and WITH an english section a
+    // reading code selected `section.next` and opened that child's English
+    // LESSON instead of their reading log.
+    //
+    // A reading code names its program. Honour that literally: the shelf, or
+    // nothing — never a lesson wearing the shelf's code.
+    if (program === BOOK_LOG_PROGRAM_ID) {
+      const planned = findContinuationEntry(plan, { subject, program });
+      const entry = planned?.program === program ? planned : bookLogShelfEntry({ subject });
+      const status = programStatusFor(programStatuses, entry);
+      // An UNREADABLE shelf still refuses; an ABSENT status does not. A learner
+      // with no plan entry has no launcher status by construction, and treating
+      // that silence as a fault would close the shelf to exactly the children
+      // this branch exists to let in. `projectProgramEntry` returns the entry
+      // untouched when there is no context, so the card falls back to the
+      // entry's own title rather than rendering blank.
+      if (status?.error === true) return withProjection({ kind: 'unavailable' });
+      return withProjection({
+        kind: 'program',
+        programId: BOOK_LOG_PROGRAM_ID,
+        unit: projectProgramEntry(entry, status ?? { context: bookLogContext() }),
+      });
+    }
+
     const section = sections.find((s) => s.subject === subject);
     if (!section) return withProjection({ kind: 'empty' });
     // The receipt prints a QR AND a six-digit code side by side for the SAME
