@@ -54,8 +54,12 @@ export function createSchoolSelfServiceRouter({
   // router follows for every one of its routes.
   if (resolveAccessCode) {
     router.post('/resolve', asyncHandler(async (req, res) => {
-      const { code } = req.body || {};
-      const card = await resolveAccessCode.execute({ code });
+      // `deviceId` is the wrong-code throttle's bucket key. It comes from the
+      // body rather than `req.ip` because every panel in the house reaches the
+      // backend through one reverse proxy, so the IP identifies the proxy and
+      // nothing else — keying on it would let one screen throttle another.
+      const { code, deviceId } = req.body || {};
+      const card = await resolveAccessCode.execute({ code, deviceId });
       res.set('Cache-Control', 'no-store').json(card);
     }));
   }
