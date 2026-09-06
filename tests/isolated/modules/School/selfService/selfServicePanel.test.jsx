@@ -357,8 +357,35 @@ describe('locked panel — typing a code', () => {
     expect(actionButton('print')).toBeInTheDocument();
     expect(actionButton('exit')).toBeInTheDocument();
     await waitFor(() => expect(actionButton('print')).toHaveFocus());
-    expect(resolveMock).toHaveBeenCalledWith('481920');
+    // The code, and the panel's own id for the wrong-code throttle's bucket
+    // (2026-09-06). Null here because this harness renders without a screenId —
+    // a request with no device shares one fallback bucket rather than being
+    // keyed on the request IP, which in this house names the reverse proxy and
+    // nothing else.
+    expect(resolveMock).toHaveBeenCalledWith('481920', null);
     await waitFor(() => expect(selfServiceLog).toHaveBeenCalledWith('code.resolved', expect.anything()));
+  });
+
+  it('sends the PANEL\'s own id, so one screen cannot throttle another', async () => {
+    // The wrong-code throttle buckets per device. It cannot bucket on the
+    // request IP: every screen in this house reaches the backend through one
+    // reverse proxy, so an IP names the proxy — 48,781 of 48,801 frontend
+    // events on 2026-09-06 carried the same one. A regression here would be
+    // invisible until the living-room screen started throttling the Portal.
+    // `screenId` is derived from the URL, not a prop — `schoolUrlBase()` reads
+    // `window.location.pathname` — so the panel identity has to be set the way
+    // the Portal really sets it.
+    const original = window.location.pathname;
+    window.history.replaceState({}, '', '/screen/portal');
+    try {
+      renderLocked();
+      await screen.findByTestId('selfservice-keypad');
+      await typeCode('481920');
+      await screen.findByTestId('selfservice-card');
+      expect(resolveMock).toHaveBeenCalledWith('481920', 'portal');
+    } finally {
+      window.history.replaceState({}, '', original);
+    }
   });
 
   it('the exit on the card returns to the lock screen', async () => {
