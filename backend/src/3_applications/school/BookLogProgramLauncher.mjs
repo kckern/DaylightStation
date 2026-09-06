@@ -9,6 +9,18 @@
  * Nothing below the seam knows an obligation exists — `bookShelf.mjs` measures
  * whatever it is handed and has no idea where the number came from.
  *
+ * AND THAT IS NOW TRUE OF REACHABILITY TOO (2026-09-06). It used not to be:
+ * `subjectsWithReadingShelf` read the enrollment, so only an enrolled child's
+ * code named the program, and `appendAssignedProgramEntries` put the shelf in
+ * the plan only from an enrollment — so the sentence above was true of the
+ * STORE and false of the way in. In a household with one enrolled reader, three
+ * children could not log a book at all. An enrollment now carries the
+ * obligation and nothing else: `BuildAgenda` mints a reading code for every
+ * learner, and `ResolveAccessCode` synthesizes a shelf entry when the plan
+ * holds none. `status()` is unchanged and still answers `enrolled: false,
+ * doneToday: true` for a learner with no enrollment — nothing is OWED, so
+ * nothing appears on their agenda and nothing is scored.
+ *
  * ## `doneToday` MEANS "NOTHING OWED TODAY"
  *
  * For a `day` window that is literal. For `week`, `month` and `once` it means
