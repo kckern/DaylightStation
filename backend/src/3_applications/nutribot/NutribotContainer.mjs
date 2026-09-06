@@ -71,6 +71,7 @@ export class NutribotContainer {
   #photoStore;
   #pause;
   #foodLogReview;
+  #receiptPublisher = null;
 
   // Use Cases (lazy-loaded)
   #logFoodFromImage;
@@ -154,6 +155,9 @@ export class NutribotContainer {
     return this.#config;
   }
 
+  setReceiptPublisher(publisher) { this.#receiptPublisher = publisher; }
+  getReceiptPublisher() { return this.#receiptPublisher; }
+
   // ==================== Infrastructure Getters ====================
 
   getMessagingGateway() {
@@ -214,6 +218,7 @@ export class NutribotContainer {
   getLogFoodFromImage() {
     if (!this.#logFoodFromImage) {
       this.#logFoodFromImage = new LogFoodFromImage({
+        receipts: () => this.#receiptPublisher,
         messagingGateway: this.getMessagingGateway(),
         aiGateway: this.getAIGateway(),
         foodLogStore: this.#foodLogStore,
@@ -235,6 +240,7 @@ export class NutribotContainer {
   getLogFoodFromText() {
     if (!this.#logFoodFromText) {
       this.#logFoodFromText = new LogFoodFromText({
+        receipts: () => this.#receiptPublisher,
         messagingGateway: this.getMessagingGateway(),
         aiGateway: this.getAIGateway(),
         foodLogStore: this.#foodLogStore,
@@ -265,6 +271,7 @@ export class NutribotContainer {
   getLogFoodFromUPC() {
     if (!this.#logFoodFromUPC) {
       this.#logFoodFromUPC = new LogFoodFromUPC({
+        receipts: () => this.#receiptPublisher,
         messagingGateway: this.getMessagingGateway(),
         upcGateway: this.#upcGateway,
         aiGateway: this.#aiGateway,
@@ -277,6 +284,7 @@ export class NutribotContainer {
         logger: this.#logger,
         barcodeGenerator: this.#barcodeGenerator,
         catalogService: this.#catalogService,
+        reviewService: this.getFoodLogReview(),
       });
     }
     return this.#logFoodFromUPC;
@@ -314,6 +322,7 @@ export class NutribotContainer {
   getSelectScaleDensity() {
     if (!this.#selectScaleDensity) {
       this.#selectScaleDensity = new SelectScaleDensity({
+        receipts: () => this.#receiptPublisher,
         messagingGateway: this.getMessagingGateway(),
         foodLogStore: this.#foodLogStore,
         conversationStateStore: this.#conversationStateStore,
@@ -339,6 +348,7 @@ export class NutribotContainer {
   getLogScaleFoodFromText() {
     if (!this.#logScaleFoodFromText) {
       this.#logScaleFoodFromText = new LogScaleFoodFromText({
+        receipts: () => this.#receiptPublisher,
         messagingGateway: this.getMessagingGateway(),
         aiGateway: this.getAIGateway(),
         foodLogStore: this.#foodLogStore,
@@ -378,6 +388,7 @@ export class NutribotContainer {
   getAcceptFoodLog() {
     if (!this.#acceptFoodLog) {
       this.#acceptFoodLog = new AcceptFoodLog({
+        receipts: () => this.#receiptPublisher,
         reviewService: this.getFoodLogReview(),
         messagingGateway: this.getMessagingGateway(),
         foodLogStore: this.#foodLogStore,
@@ -395,6 +406,7 @@ export class NutribotContainer {
   getDiscardFoodLog() {
     if (!this.#discardFoodLog) {
       this.#discardFoodLog = new DiscardFoodLog({
+        receipts: () => this.#receiptPublisher,
         reviewService: this.getFoodLogReview(),
         messagingGateway: this.getMessagingGateway(),
         foodLogStore: this.#foodLogStore,
@@ -409,6 +421,7 @@ export class NutribotContainer {
   getReviseFoodLog() {
     if (!this.#reviseFoodLog) {
       this.#reviseFoodLog = new ReviseFoodLog({
+        receipts: () => this.#receiptPublisher,
         messagingGateway: this.getMessagingGateway(),
         foodLogStore: this.#foodLogStore,
         conversationStateStore: this.#conversationStateStore,
@@ -421,6 +434,7 @@ export class NutribotContainer {
   getProcessRevisionInput() {
     if (!this.#processRevisionInput) {
       this.#processRevisionInput = new ProcessRevisionInput({
+        receipts: () => this.#receiptPublisher,
         messagingGateway: this.getMessagingGateway(),
         aiGateway: this.getAIGateway(),
         foodIconsString: this.#foodIconsString,
@@ -437,6 +451,7 @@ export class NutribotContainer {
   getSelectUPCPortion() {
     if (!this.#selectUPCPortion) {
       this.#selectUPCPortion = new SelectUPCPortion({
+        receipts: () => this.#receiptPublisher,
         reviewService: this.getFoodLogReview(),
         messagingGateway: this.getMessagingGateway(),
         foodLogStore: this.#foodLogStore,

@@ -58,6 +58,7 @@ const HealthShell = ({ userId }) => {
   const location = useLocation();
   const [overlayOpen, setOverlayOpen] = useState(false);
   const [coachEntry, setCoachEntry] = useState(null);
+  const [sidebarTarget, setSidebarTarget] = useState(null);
   const openCoach = entry => { setCoachEntry(entry || null); setOverlayOpen(true); };
   const conversation = useAgentConversation({ agentId: 'health-coach', userId,
     context: { selectedDate: new URLSearchParams(location.search).get('date') || localDateISO(new Date()),
@@ -83,12 +84,13 @@ const HealthShell = ({ userId }) => {
             if (event.target.matches('.ds-chrome__main')) scrollPositions.current.set(activeTab, event.target.scrollTop);
           }}>
           <AppChrome title="Health" tabs={TABS} activeTab={activeTab}
+            sidebarRef={setSidebarTarget} sidebarActive={activeTab === 'today'}
             headerActions={<ActionIcon aria-label="Health settings" variant="subtle" onClick={() => navigate('/health/settings')}><Icon d="M4 5h12M4 10h12M4 15h12M7 3v4M13 8v4M9 13v4" /></ActionIcon>}
             onTabChange={(id) => navigate(`${TAB_PATH[id] || '/health'}${location.search}`)}>
             {/* Keep the logging session (drafts, pending requests, retry bytes)
                 alive between tabs; hidden views do not poll or acquire media. */}
             {visitedToday.current ? <div hidden={activeTab !== 'today'}>
-              <TodayView active={activeTab === 'today'} onSetupGoals={() => navigate(`/health/progress${location.search}`)} onCoachTap={openCoach} />
+              <TodayView active={activeTab === 'today'} sidebarTarget={sidebarTarget} onSetupGoals={() => navigate(`/health/progress${location.search}`)} onCoachTap={openCoach} />
             </div> : null}
             <Suspense fallback={<LoadingState label="Health" />}><Routes>
               <Route index element={null} />

@@ -170,6 +170,18 @@ export function createHealthRouter(config) {
 
   router.get('/context', (req, res) => res.json({ userId: getDefaultUsername() }));
 
+  router.post('/nutrition/receipts/reconcile', asyncHandler(async (req, res) => {
+    const publisher = config.receiptPublisherProvider?.();
+    if (!publisher) return res.status(503).json({ error: 'Nutrition receipts are unavailable' });
+    const { logIds, dryRun, expectedFingerprints } = req.body || {};
+    try {
+      res.json(await publisher.reconcile(getDefaultUsername(), { logIds, dryRun, expectedFingerprints }));
+    } catch (error) {
+      if (error.status) return res.status(error.status).json({ error: error.message });
+      throw error;
+    }
+  }));
+
   const cleanup = () => {
     const service = config.cleanupProvider?.();
     if (!service) throw Object.assign(new Error('Nutrition cleanup is unavailable'), { status: 503 });
@@ -183,6 +195,15 @@ export function createHealthRouter(config) {
     res.json(await cleanup().history(getDefaultUsername(), { offset, limit: 30 }));
   }));
   router.patch('/nutrition/cleanup/settings', asyncHandler(async (req, res) => res.json(await cleanup().settings(getDefaultUsername(), req.body))));
+  router.post('/nutrition/capture-recovery', asyncHandler(async (req, res) => {
+    const { logUuid, expectedVersion, operationId, observationIds, dryRun } = req.body;
+    try {
+      res.json(await cleanup().recovery.recover({ userId: getDefaultUsername(), logUuid, expectedVersion, operationId, observationIds, dryRun }));
+    } catch (error) {
+      if (error.status) return res.status(error.status).json({ error: error.message });
+      throw error;
+    }
+  }));
   router.post('/nutrition/cleanup/run', asyncHandler(async (_req, res) => res.status(202).json(await cleanup().request(getDefaultUsername(), { manual: true }))));
   router.post('/nutrition/cleanup/undo/:id', asyncHandler(async (req, res) => res.json(await cleanup().repairs.undo({
     userId: getDefaultUsername(), repairId: req.params.id, operationId: req.body.operationId,
@@ -627,7 +648,7 @@ export function createHealthRouter(config) {
     router.put('/nutrilist/:uuid', asyncHandler(async (req, res) => {
       const { uuid } = req.params;
       const userId = getDefaultUsername();
-      const updateData = req.body;
+      const { operationId, ...updateData } = req.body;
 
       // "Just this entry" (PRD F5.4) travels through this generic PUT, so the
       // icon is checked here rather than trusted from the client.
@@ -638,7 +659,8 @@ export function createHealthRouter(config) {
       }
 
       // Check if item exists
-      const update = await healthOperations.updateNutritionItem(userId, uuid, updateData);
+      const update = await runNutritionOperation(userId, operationId, { operation: 'entry-update', id: uuid, ...updateData },
+        () => healthOperations.updateNutritionItem(userId, uuid, updateData));
       if (!update) {
         return res.status(404).json({ error: 'Nutrilist item not found' });
       }
@@ -648,6 +670,7 @@ export function createHealthRouter(config) {
       res.json({
         message: 'Nutrilist item updated successfully',
         data: update.item,
+        versions: update.versions,
         cascadedIds: update.cascadedIds || [],
         affectedIds: [update.item.uuid ?? update.item.id, ...(update.cascadedIds || [])],
         affectedDates: update.affectedDates
@@ -1240,7 +1263,7 @@ export function createHealthRouter(config) {
       }
       try {
         const result = await runNutritionOperation(userId, req.body.operationId, { type, content, bucket, date, audioRef }, () => healthOperations.processNutritionInput({
-          type, content, userId, bucket, date, audioRef: audioRef ?? undefined,
+          type, content, userId, bucket, date, audioRef: audioRef ?? undefined, operationId: req.body.operationId,
         }));
         return res.json(result);
       } catch (err) {

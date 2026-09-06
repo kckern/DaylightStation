@@ -4,7 +4,6 @@ import {
   densityForLevel,
   buildDensityKeyboard,
   buildContainerKeyboard,
-  buildConfirmButtons,
   densityPromptText,
   densityHelpText,
 } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
@@ -64,13 +63,6 @@ describe('scaleNutribotConfig', () => {
     const plate = kb.flat().find((b) => JSON.parse(b.callback_data).c === 'dinner-plate');
     expect(plate.text).toBe('🍽 Dinner plate');
     expect(plate.text).not.toMatch(/\d/);
-  });
-
-  it('buildConfirmButtons emits accept/revise/discard', () => {
-    const enc = (cmd, data) => JSON.stringify({ cmd, ...data });
-    const rows = buildConfirmButtons(enc, 'log123');
-    const cmds = rows.flat().map((b) => JSON.parse(b.callback_data).cmd);
-    expect(cmds).toEqual(['a', 'r', 'x']);
   });
 
   it('normalizes dedupDeltaG and per-level hint with defaults', () => {

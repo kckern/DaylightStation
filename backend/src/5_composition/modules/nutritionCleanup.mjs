@@ -4,6 +4,7 @@ import { AgentTranscriptFileStore } from '#adapters/agents/AgentTranscriptFileSt
 import { YamlAgentStateStore } from '#adapters/persistence/yaml/YamlAgentStateStore.mjs';
 import { YamlFoodCatalogDatastore } from '#adapters/persistence/yaml/YamlFoodCatalogDatastore.mjs';
 import { YamlSavedMealsDatastore } from '#adapters/persistence/yaml/YamlSavedMealsDatastore.mjs';
+import { YamlObservationStore } from '#adapters/persistence/yaml/YamlObservationStore.mjs';
 import { IconManifestStore } from '#adapters/persistence/IconManifestStore.mjs';
 import { TelegramNutribotIdentity } from '#adapters/nutribot/TelegramNutribotIdentity.mjs';
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
@@ -12,6 +13,9 @@ import { NutritionAuditor } from '#apps/agents/nutrition-auditor/NutritionAudito
 import { NutritionCleanup } from '#apps/nutrition/NutritionCleanup.mjs';
 import { NutritionRepairService } from '#apps/nutrition/NutritionRepairService.mjs';
 import { CleanupQuestionSurface } from '#apps/nutrition/CleanupQuestionSurface.mjs';
+import { NutritionStabilization } from '#apps/nutrition/NutritionStabilization.mjs';
+import { NutritionCaptureRecovery } from '#apps/nutrition/NutritionCaptureRecovery.mjs';
+import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 
 export function createNutritionCleanup({ dataService, configService, userIdentityService, nutribotServices, upcGateway, agentOrchestrator, logger, scheduled = false, server }) {
   const clock = { now: () => Date.now() };
@@ -27,10 +31,15 @@ export function createNutritionCleanup({ dataService, configService, userIdentit
   const dbDir = configService.getDataDir() + '/agents';
   const runs = new MastraRunAdapter({ dbPath: dbDir + '/cleanup-runs.db' });
   const auditor = new NutritionAuditor({ runtime, items, foodLogs, clock, timezoneFor, icons, upc: upcGateway,
+    observations: new YamlObservationStore({ dataService, logger }),
     catalog: new YamlFoodCatalogDatastore({ dataService, logger }), meals: new YamlSavedMealsDatastore({ dataService }) });
   agentOrchestrator?.register(NutritionAuditor, { ...auditor, runtime });
   const repairs = new NutritionRepairService({ items, foodLogs, review: container.getFoodLogReview(), icons, clock, timezoneFor });
-  const cleanup = new NutritionCleanup({ store, runs, auditor, repairs, items, foodLogs, clock, timezoneFor, logger });
+  const stabilization = new NutritionStabilization({ items, review: container.getFoodLogReview(), clock, logger });
+  const cleanup = new NutritionCleanup({ store, runs, auditor, repairs, items, foodLogs, clock, timezoneFor, logger, stabilization });
+  cleanup.recovery = new NutritionCaptureRecovery({ review: container.getFoodLogReview(), items,
+    observations: new YamlObservationStore({ dataService, logger }),
+    scaleConfig: () => normalizeScaleNutribotConfig(configService.getHouseholdAppConfig?.(null, 'scales') || {}) });
   const identity = userIdentityService?.resolvePlatformId ? new TelegramNutribotIdentity({ configService, userIdentityService }) : null;
   const surface = new CleanupQuestionSurface({ cleanup, destinationFor: userId => identity?.conversationIdFor(userId) || null,
     gateway: container.getMessagingGateway(), logger });

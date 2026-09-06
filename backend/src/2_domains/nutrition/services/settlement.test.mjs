@@ -2,6 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { effectiveSettled, presentSettlement, AUTO_SETTLE_DAYS } from './settlement.mjs';
 
 describe('effectiveSettled', () => {
+  it('uses an explicit instant for new reviews, not calendar-day age', () => {
+    const row = { settled: false, date: '2026-09-01', review: { state: 'provisional', stabilizesAt: '2026-09-08T19:48:16Z' } };
+    expect(effectiveSettled(row, '2026-09-08', Date.parse('2026-09-08T19:48:15Z'))).toBe(false);
+    expect(effectiveSettled(row, '2026-09-08', Date.parse('2026-09-08T19:48:16Z'))).toBe(true);
+  });
   it('absent settled field = settled (legacy rows)', () => {
     expect(effectiveSettled({ date: '2026-09-01' }, '2026-09-02')).toBe(true);
   });

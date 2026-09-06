@@ -2,30 +2,31 @@
  * Process Revision Input Use Case
  * @module nutribot/usecases/ProcessRevisionInput
  *
- * Processes user's revision text and updates the pending log.
+ * Applies an explicit user revision against a versioned current-ledger snapshot.
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
 import { repairTruncatedJson } from '../lib/repairJson.mjs';
-import { buildCommittedChoices } from '../lib/committedChoices.mjs';
 import { confineIcon, iconVocabulary } from '#domains/nutrition/services/icons.mjs';
 import { capturedFoodGrams, capturedNutrientProvenance } from '#shared/contracts/health/foodQuantity.mjs';
+import { validateFoodItem, validateMealTime } from '#domains/nutrition/entities/schemas.mjs';
+import { isISODate } from '#shared/contracts/health/isoDate.mjs';
 
 /**
  * Process revision input use case
  */
 export class ProcessRevisionInput {
+  #receipts;
   #messagingGateway;
   #aiGateway;
   #foodLogStore;
   #nutriListStore;
   #conversationStateStore;
-  #config;
   #iconVocabulary;
   #logger;
 
   constructor(deps) {
+    this.#receipts = deps.receipts || (() => null);
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
     if (!deps.aiGateway) throw new Error('aiGateway is required');
 
@@ -34,7 +35,6 @@ export class ProcessRevisionInput {
     this.#foodLogStore = deps.foodLogStore;
     this.#nutriListStore = deps.nutriListStore;
     this.#conversationStateStore = deps.conversationStateStore;
-    this.#config = deps.config;
     // The revision flow re-parses into the same row shape as the first capture
     // (decision log 2.2), so it is a THIRD place a model-named icon can reach a
     // stored row and must be confined the same way. Without the vocabulary
@@ -42,14 +42,6 @@ export class ProcessRevisionInput {
     // and visibly so, rather than silently storing a slug that 404s.
     this.#iconVocabulary = iconVocabulary(deps.foodIconsString, deps.foodIconNames);
     this.#logger = deps.logger || console;
-  }
-
-  /**
-   * Get timezone from config
-   * @private
-   */
-  #getTimezone() {
-    return this.#config?.getDefaultTimezone?.() || 'America/Los_Angeles';
   }
 
   #getMessaging(responseContext, conversationId) {
@@ -83,7 +75,6 @@ export class ProcessRevisionInput {
       }
 
       const logUuid = state.flowState?.pendingLogUuid;
-      const originalMessageId = state.flowState?.originalMessageId;
 
       // 2. Delete user's revision message
       if (messageId) {
@@ -94,18 +85,7 @@ export class ProcessRevisionInput {
         }
       }
 
-      // 3. Show processing indicator on original message
-      if (originalMessageId) {
-        try {
-          const processingButton = [[{ text: '⏳ Processing...', callback_data: 'noop' }]];
-          await messaging.updateMessage(originalMessageId, {
-            choices: processingButton,
-            inline: true,
-          });
-        } catch (e) {
-          this.#logger.debug?.('processRevision.processingIndicator.failed', { error: e.message });
-        }
-      }
+      await this.#receipts()?.interaction(userId, logUuid, 'processing');
 
       // 4. Load current log
       let nutriLog = null;
@@ -117,17 +97,23 @@ export class ProcessRevisionInput {
         return { success: false, error: 'Log not found' };
       }
 
-      // 5. Call AI to apply revisions
-      const prompt = this.#buildRevisionPrompt(nutriLog.items, text);
+      // The model sees the CURRENT ledger, including prior Health/Mastra edits.
+      // Keep its version snapshot through the AI call for commit-time fencing.
+      const ledger = nutriLog.status !== 'pending' && this.#nutriListStore?.findByLogId
+        ? await this.#nutriListStore.findByLogId(userId, nutriLog.id) : null;
+      if (ledger && !ledger.length) throw Object.assign(new Error('Food entries no longer exist'), { status: 409 });
+      const currentItems = ledger || nutriLog.items;
+      const prompt = this.#buildRevisionPrompt(currentItems, text);
       const response = await this.#aiGateway.chat(prompt, { maxTokens: 4096 });
 
       // 6. Parse revised items
-      const revisedItems = this.#carryForwardSettlement(
-        nutriLog.items,
+      const revisedItems = this.#mergeUserRevision(
+        currentItems,
         this.#parseRevisionResponse(response),
       );
 
       if (revisedItems.length === 0) {
+        await this.#receipts()?.interaction(userId, logUuid, 'revision');
         await messaging.sendMessage("❓ I couldn't understand that revision. Try being more specific.", {});
         return { success: false, error: 'Could not parse revision' };
       }
@@ -138,9 +124,9 @@ export class ProcessRevisionInput {
       if (this.#nutriListStore?.syncFromLog) {
         await this.#nutriListStore.syncFromLog({
           id: nutriLog.id, uuid: nutriLog.uuid, userId, meal: nutriLog.meal,
-          createdAt: nutriLog.createdAt, status: nutriLog.status,
-          isAccepted: nutriLog.isAccepted ?? nutriLog.status === 'accepted', items: revisedItems,
-        }, { revision: true });
+          createdAt: nutriLog.createdAt, status: ledger?.length ? 'accepted' : nutriLog.status,
+          isAccepted: !!ledger?.length || (nutriLog.isAccepted ?? nutriLog.status === 'accepted'), items: revisedItems,
+        }, { revision: true, expectedVersions: ledger?.map(row => ({ id: row.uuid || row.id, version: row.version ?? 1 })) });
       }
       if (this.#foodLogStore) {
         await this.#foodLogStore.updateItems(userId, logUuid, revisedItems);
@@ -156,23 +142,7 @@ export class ProcessRevisionInput {
         await this.#conversationStateStore.set(conversationId, newState);
       }
 
-      // 9. Show revised items with buttons
-      const logDate = nutriLog.meal?.date || nutriLog.date;
-      const dateHeader = logDate ? formatDateHeader(logDate, { timezone: this.#getTimezone(), now: new Date() }) : '';
-      const foodList = formatFoodList(revisedItems);
-      const buttons = this.#buildActionButtons(logUuid);
-      const messageText = dateHeader ? `${dateHeader}\n\n${foodList}` : foodList;
-
-      const isImageLog = nutriLog?.metadata?.source === 'image';
-      if (originalMessageId) {
-        const updatePayload = isImageLog ? { caption: messageText, choices: buttons, inline: true } : { text: messageText, choices: buttons, inline: true };
-        await messaging.updateMessage(originalMessageId, updatePayload);
-      } else {
-        await messaging.sendMessage(messageText, {
-          choices: buttons,
-          inline: true,
-        });
-      }
+      await this.#receipts()?.interaction(userId, logUuid, null);
 
       this.#logger.info?.('processRevision.complete', {
         conversationId,
@@ -186,6 +156,8 @@ export class ProcessRevisionInput {
         itemCount: revisedItems.length,
       };
     } catch (error) {
+      const state = await this.#conversationStateStore?.get(conversationId);
+      if (state?.flowState?.pendingLogUuid) await this.#receipts()?.interaction(userId, state.flowState.pendingLogUuid, 'revision');
       this.#logger.error?.('processRevision.error', { conversationId, error: error.message });
       throw error;
     }
@@ -207,6 +179,8 @@ export class ProcessRevisionInput {
 3. Re-estimate macros for any modified items
 4. Assign noom_color for new items: "green" (low cal density), "yellow" (moderate), or "orange" (high cal density)
 5. Use Title Case for all food names (e.g., "Grilled Chicken Breast", "Mashed Potatoes")
+6. Keep each existing item's id (use uuid when present), kind, parentId, date and mealTime. Use id:null only for genuinely new food requested by the user. Never invent new group headers.
+7. Keep unknown nutrients null and unchanged fields exactly as supplied. Preserve groups and quantities unless the user asked to change them.
 
 Current items:
 ${currentJson}
@@ -215,6 +189,7 @@ Respond in JSON format with the COMPLETE revised list:
 {
   "items": [
     {
+      "id": "existing uuid, or null for new food",
       "name": "Food Name In Title Case",
       "noom_color": "green|yellow|orange",
       "quantity": 1,
@@ -261,23 +236,14 @@ Noom colors:
         const rawItems = data.items || [];
 
         return rawItems.map((item) => ({
-          id: uuidv4(),
-          label: item.name || item.label || 'Unknown',
-          grams: capturedFoodGrams(item),
-          originalQuantity: { grams: item.grams ?? null, amount: item.quantity ?? item.amount ?? null, unit: item.unit ?? null },
-          nutrientProvenance: capturedNutrientProvenance(item, 'ai', capturedFoodGrams(item)),
-          unit: item.unit || 'serving',
-          amount: item.quantity || item.amount || 1,
-          color: this.#normalizeNoomColor(item.noom_color || item.color),
-          icon: confineIcon(item.icon, this.#iconVocabulary, item.name || item.label),
-          calories: item.calories ?? 0,
-          protein: item.protein ?? 0,
-          carbs: item.carbs ?? 0,
-          fat: item.fat ?? 0,
-          fiber: item.fiber ?? 0,
-          sugar: item.sugar ?? 0,
-          sodium: item.sodium ?? 0,
-          cholesterol: item.cholesterol ?? 0,
+          id: item.id || item.uuid || null,
+          ...Object.fromEntries(['date', 'mealTime', 'kind', 'parentId', 'unit', 'calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium', 'cholesterol']
+            .filter(key => Object.hasOwn(item, key)).map(key => [key, item[key]])),
+          ...(item.name || item.label ? { label: item.name || item.label } : {}),
+          ...(Object.hasOwn(item, 'grams') ? { grams: capturedFoodGrams(item) } : {}),
+          ...(Object.hasOwn(item, 'quantity') || Object.hasOwn(item, 'amount') ? { amount: item.quantity ?? item.amount } : {}),
+          ...(item.noom_color || item.color ? { color: this.#normalizeNoomColor(item.noom_color || item.color) } : {}),
+          ...(Object.hasOwn(item, 'icon') ? { icon: confineIcon(item.icon, this.#iconVocabulary, item.name || item.label) } : {}),
         }));
       }
       return [];
@@ -300,33 +266,53 @@ Noom colors:
     return 'yellow';
   }
 
-  /**
-   * Carry the log's settlement state onto freshly re-parsed items.
-   *
-   * The AI returns raw items with no `settled` key, so without this a revision
-   * would silently strip `settled: false` off an unsettled entry — split-brain
-   * against rows already written at capture time. The absence rule still
-   * governs: if the existing items carry no `settled` key (legacy row), the
-   * revised ones don't either. Never defaulted.
-   *
-   * @private
-   */
-  #carryForwardSettlement(existingItems, revisedItems) {
-    const wasUnsettled = (existingItems || []).some(item => item?.settled === false);
-    if (!wasUnsettled) return revisedItems;
-    return revisedItems.map(item => ({ ...item, settled: false }));
-  }
-
-  /**
-   * Build action buttons.
-   *
-   * The log is already committed by the time a revision runs, so this offers the
-   * committed keyboard (Undo / Edit) — never Accept, which `AcceptFoodLog`
-   * would refuse with 'Log already processed'.
-   * @private
-   */
-  #buildActionButtons(logUuid) {
-    return buildCommittedChoices(logUuid);
+  /** Keep stable identity, grouping, placement and provenance from the ledger.
+   * Only explicit changed fields become user-protected; missing AI keys are not
+   * permission to erase a prior Health or reviewer correction. */
+  #mergeUserRevision(existingItems, revisedItems) {
+    const used = new Set();
+    const merged = revisedItems.map(item => {
+      const original = existingItems.find(row => item.id && [row.uuid, row.id].includes(item.id))
+        || (!item.id && existingItems.find(row => (row.name || row.label || row.item) === item.label));
+      if (item.id && !original) throw Object.assign(new Error('Revision returned an unknown food ID'), { status: 409 });
+      const id = original?.uuid || original?.id || uuidv4();
+      if (used.has(id)) throw new Error('Revision repeated a food item');
+      used.add(id);
+      const values = Object.fromEntries(Object.entries(item).filter(([key, value]) => value !== undefined
+        && !['review', 'settled', 'settledBy', 'settledAt', 'manualFields', 'version'].includes(key)));
+      const fields = Object.keys(values).filter(key => !['id', 'originalQuantity', 'nutrientProvenance'].includes(key)
+        && JSON.stringify(values[key]) !== JSON.stringify(key === 'label' ? original?.name || original?.label || original?.item : original?.[key]));
+      if (values.kind === 'group' && original?.kind !== 'group') throw new Error('Revision cannot invent a group');
+      if (original?.kind === 'group' && values.kind && values.kind !== 'group') throw new Error('Revision cannot turn a group into food');
+      const result = { ...original, ...values, id: original?.id || id, uuid: id,
+        manualFields: [...new Set([...(original?.manualFields || []), ...fields])],
+      };
+      if (!original) {
+        result.grams = capturedFoodGrams(result);
+        result.unit ??= 'serving'; result.amount ??= 1;
+        result.color ??= 'yellow'; result.label ??= 'Unknown';
+        result.icon ??= confineIcon(null, this.#iconVocabulary, result.label);
+        result.originalQuantity = { grams: result.grams, amount: result.amount, unit: result.unit };
+        result.nutrientProvenance = capturedNutrientProvenance(result, 'ai', result.grams);
+      }
+      if (result.kind === 'group') {
+        result.grams = null;
+        for (const field of ['calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium', 'cholesterol']) result[field] = 0;
+      }
+      result.label ??= result.name || result.item;
+      const validation = validateFoodItem(result);
+      if (!validation.valid || (result.date && !isISODate(result.date))
+        || (result.mealTime != null && !validateMealTime(result.mealTime).valid)) {
+        throw Object.assign(new Error('Invalid food revision; check the quantities and nutrition'), { status: 400 });
+      }
+      return result;
+    });
+    for (const item of merged) {
+      if (item.parentId && !merged.some(parent => parent.kind === 'group' && [parent.id, parent.uuid].includes(item.parentId))) {
+        throw new Error('Revision would leave food without its group');
+      }
+    }
+    return merged;
   }
 }
 

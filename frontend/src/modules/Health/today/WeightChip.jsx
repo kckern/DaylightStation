@@ -1,18 +1,19 @@
 import { useMemo } from 'react';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
-import { buildWeightSeries, fmtLbs, fmtDelta, VIEW_W, VIEW_H } from './weightSeries.js';
+import { buildWeightSeries, fmtLbs, fmtDelta, TREND_ARROWS, VIEW_W, VIEW_H } from './weightSeries.js';
 import { ErrorState, StatCard, Skeleton } from '@/lib/ui';
 
 const logger = createAppLogger('health').child('weight-chip');
 
-const ARROWS = { up: '▲', down: '▼', flat: '■' };
-
 /**
  * Weight + 7-day trend + a 30-day sparkline, as one compact row.
  *
- * The sparkline is two inline SVG polylines — the raw daily readings and the
- * adjusted average the budget is actually computed from — on ONE shared scale.
+ * The sparkline is two inline SVG polylines — the days actually weighed and the
+ * adjusted average the budget is computed from — on ONE shared scale. The raw
+ * line is `measurement`, never the forward-filled `lbs`: most days carry a
+ * repeated `lbs` from the last weigh-in, and drawing those as readings turns
+ * "nobody stepped on the scale" into a flat run that reads like stability.
  * No chart library for two polylines, and nothing here animates `filter`
  * (a known paint-cost trap in this repo: low fps with zero long tasks).
  *
@@ -20,9 +21,9 @@ const ARROWS = { up: '▲', down: '▼', flat: '■' };
  * colour alone), and a history too short to have a 7-day delta says so instead
  * of printing a confident ±0.0.
  */
-export function WeightChip() {
+export function WeightChip({ asOf }) {
   const res = useApiResource('api/v1/health/weight', { label: 'weight-chip', logger, swr: true });
-  const series = useMemo(() => buildWeightSeries(res.data), [res.data]);
+  const series = useMemo(() => buildWeightSeries(res.data, { asOf }), [res.data, asOf]);
   const { latestLbs, deltaLbs, direction, rawPoints, avgPoints, entries, latest, trendDays } = series;
   if (res.error) return <ErrorState error={res.error} onRetry={res.reload} label="Weight unavailable" />;
 
@@ -33,10 +34,10 @@ export function WeightChip() {
 
   return (
     <div className="health-weightchip" role="group" aria-label={label} aria-busy={res.loading}>
-      <StatCard compact label="Weight" value={res.loading ? <Skeleton width={64} height={24} /> : fmtLbs(latestLbs)} unit="lb"
+      <StatCard compact label={`Weight${latest?.date ? ` · as of ${latest.date}` : ''}`} value={res.loading ? <Skeleton width={64} height={24} /> : fmtLbs(latestLbs)} unit="lb"
         trend={deltaText ? (
           <span className={`health-weightchip__delta health-weightchip__delta--${direction}`} data-testid="weight-delta">
-            <span className="health-weightchip__arrow" aria-hidden="true">{ARROWS[direction]}</span>
+            <span className="health-weightchip__arrow" aria-hidden="true">{TREND_ARROWS[direction]}</span>
             {deltaText}
             <span className="health-weightchip__window"> / {trendDays}d</span>
           </span>

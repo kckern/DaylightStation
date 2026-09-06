@@ -14,6 +14,30 @@ beforeEach(() => {
 const summary = () => loadYaml(path.join(root, 'lifelog/nutrition/nutriday'));
 
 describe('nutrition ledger truth', () => {
+  it('revises the current snapshot after a Health correction, preserving IDs and moved dates', async () => {
+    const log = { id: 'capture-1', userId: 'u', isAccepted: true, status: 'accepted',
+      meal: { date: '2020-01-01', time: 'morning' }, items: [row()] };
+    await store.syncFromLog(log);
+    await store.update('u', 'food-a', { date: '2026-09-05', mealTime: null, calories: 150 });
+    const current = await store.findByLogId('u', log.id);
+    const expectedVersions = current.map(item => ({ id: item.uuid, version: item.version }));
+    await store.syncFromLog({ ...log, items: current.map(item => ({ ...item, label: 'Corrected Food', calories: 160 })) }, { revision: true, expectedVersions });
+    expect(await store.findByUuid('u', 'food-a')).toMatchObject({ name: 'Corrected Food', date: '2026-09-05', mealTime: null, calories: 160, version: 3 });
+    expect(summary()['2020-01-01'].calories).toBe(0);
+    expect(summary()['2026-09-05'].calories).toBe(160);
+    await expect(store.syncFromLog(log, { revision: true, expectedVersions })).rejects.toMatchObject({ code: 'VERSION_CONFLICT' });
+  });
+  it('rejects a revision whose snapshot predates a concurrent deletion', async () => {
+    const log = { id: 'capture-1', userId: 'u', isAccepted: true, status: 'accepted',
+      meal: { date: '2020-01-01', time: 'morning' }, items: [row(), row({ uuid: 'food-b' })] };
+    await store.syncFromLog(log);
+    const current = await store.findByLogId('u', log.id);
+    await store.deleteById('u', 'food-b');
+    await expect(store.syncFromLog(log, { revision: true, expectedVersions: current.map(item => ({ id: item.uuid, version: item.version })) })).rejects.toMatchObject({ code: 'VERSION_CONFLICT' });
+    const remaining = await store.findByLogId('u', log.id);
+    await expect(store.syncFromLog(log, { revision: true, expectedVersions: remaining.map(item => ({ id: item.uuid, version: item.version })) })).rejects.toMatchObject({ code: 'VERSION_CONFLICT' });
+    expect(await store.findByUuid('u', 'food-b')).toBeNull();
+  });
   it('never turns servings or explicit unknown grams into mass', async () => {
     await store.saveMany([row({ grams: 0, amount: 313, unit: 'servings' })]);
     expect((await store.findByUuid('u', 'food-a')).grams).toBeNull();

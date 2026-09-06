@@ -136,7 +136,7 @@ export class WebNutribotAdapter {
       platform: 'web',
       platformUserId: userId,
       messageId: null,
-      payload: { bucket: bucket || null, date: date || null },
+      payload: { bucket: bucket || null, date: date || null, ...(input.operationId ? { operationId: input.operationId } : {}) },
     };
 
     // Map input type to router event type and payload shape
@@ -395,6 +395,8 @@ export class WebNutribotAdapter {
 
       return {
         messageId,
+        kind: 'text',
+        async release() {},
 
         async finish(content, finishOptions = {}) {
           await updateMessage(messageId, { text: content, ...finishOptions });

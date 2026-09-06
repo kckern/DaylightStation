@@ -1,6 +1,7 @@
 import { createTool } from "../ports/ITool.mjs";
 import { serializeFoodItem } from "#shared/contracts/nutrition/foodItemRecord.mjs";
 import { CLEANUP_NUMBERS, entryKey } from "#domains/nutrition/services/cleanupPolicy.mjs";
+import { foodGrams } from '#shared/contracts/health/foodQuantity.mjs';
 
 /** Reusable read-only nutrition evidence tools. Ownership is bound by the application, never by model arguments. */
 export class NutritionEvidenceToolFactory {
@@ -21,7 +22,7 @@ export class NutritionEvidenceToolFactory {
           if (!log) return { error: 'Capture unavailable' };
           return remember('capture', { id: log.id, meal: log.meal, source: log.metadata?.source,
             text: log.text || log.metadata?.text || log.metadata?.transcription || log.metadata?.originalText,
-            sourceUpc: log.metadata?.sourceUpc, nutritionLookup: log.metadata?.nutritionLookup,
+            sourceUpc: log.metadata?.sourceUpc, nutritionLookup: log.metadata?.nutritionLookup, captureEvidence: log.metadata?.captureEvidence,
             items: log.items.map(serializeFoodItem) });
         } }),
       createTool({ name: 'common_foods_and_meals', description: 'Read saved meals and matching common foods; do not assume historical portions were eaten today.',
@@ -46,18 +47,30 @@ export class NutritionEvidenceToolFactory {
           const product = await this.upc.lookup(upc);
           if (!product) return { error: 'Product lookup unavailable' };
           const facts = [];
-          // Legacy/uncertain lookup records are deliberately not numerical authority.
-          if (log.metadata.nutritionLookup && product.nutritionLookup && !product.nutritionLookup.warnings?.length) {
+          // Numeric authority comes from a verified serving in this fresh lookup,
+          // not whether the older capture remembered to persist its lookup audit.
+          if (product.nutritionLookup && (product.nutritionLookup.servingVerified || !product.nutritionLookup.warnings?.length)) {
             const rows = [...snapshot.rows, ...snapshot.pending.flatMap(p => p.items)];
             const captured = rows.filter(row => row.kind !== 'group' && (row.logUuid || row.log_uuid || row.logId) === log.id);
             // A barcode identifies the packaged product, not every ingredient
             // in a subsequently split capture. Only an unambiguous single food
             // can inherit its serving facts.
             for (const item of captured.length === 1 ? captured : []) {
-              if (item.unit === product.serving?.unit && product.serving.size > 0 && item.amount > 0) {
+              let factor = null;
+              const size = product.serving?.size;
+              const unit = product.serving?.unit;
+              if (size > 0 && unit === 'g' && foodGrams(item) > 0) factor = foodGrams(item) / size;
+              else if (size > 0 && item.unit === unit && unit !== 'g' && item.amount > 0) factor = item.amount / size;
+              else if (item.captureEvidence?.assumption === 'one-serving' && item.grams == null && !item.manualFields?.length) {
+                factor = 1;
+                if (size > 0 && ['g', 'ml'].includes(unit)) {
+                  for (const [field, value] of Object.entries({ grams: unit === 'g' ? size : null, amount: size, unit })) facts.push({ entryId: entryKey(item), field, value });
+                }
+              }
+              if (factor != null) {
                 for (const [field, value] of Object.entries(product.nutrition || {})) {
-                  if (CLEANUP_NUMBERS.includes(field) && Number.isFinite(value)) facts.push({
-                    entryId: entryKey(item), field, value: Math.round(value * item.amount / product.serving.size * 1000) / 1000,
+                  if (CLEANUP_NUMBERS.includes(field) && Number.isFinite(value) && !product.nutritionLookup.conflicts?.includes(field)) facts.push({
+                    entryId: entryKey(item), field, value: Math.round(value * factor * 1000) / 1000,
                   });
                 }
               }
@@ -65,6 +78,12 @@ export class NutritionEvidenceToolFactory {
           }
           return remember('product', { upc, product, fetchedAt: new Date(this.clock.now()).toISOString() }, facts);
         } }),
+      createTool({ name: 'read_scale_evidence', description: 'Read persisted weight/density/tare observations with placement IDs. Different placements and separate UPC captures are not interchangeable.',
+        parameters: { type: 'object', properties: { placementId: { type: 'string' } } },
+        execute: async ({ placementId } = {}) => remember('capture', {
+          observations: (snapshot.observations || []).filter(row => !placementId || row.placementId === placementId),
+          rows: snapshot.rows.filter(row => row.captureEvidence?.source === 'scale' && (!placementId || row.captureEvidence.placementId === placementId)),
+        }) }),
     ];
   }
 }

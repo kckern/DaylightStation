@@ -24,6 +24,13 @@ const obs = (n) => ({
 });
 
 describe('YamlFoodCatalogDatastore — the observation ring survives a restart', () => {
+  it('preserves explicit artwork pins through persistence and hydration', async () => {
+    const { store, disk } = makeStore();
+    await store.save(new FoodCatalogEntry({ id: 'pinned', name: 'Eggs', icon: 'fried-eggs', iconOverride: 'fried-eggs',
+      lastUsed: '2026-09-05', createdAt: '2026-09-05T12:00:00Z' }), 'u');
+    expect(disk.rows[0].iconOverride).toBe('fried-eggs');
+    expect((await store.getById('pinned', 'u')).iconOverride).toBe('fried-eggs');
+  });
   it('writes the ring and reads it back whole', async () => {
     // A field missing from #dehydrate is a field that silently does not
     // survive a restart. That has happened four times in this program, so it

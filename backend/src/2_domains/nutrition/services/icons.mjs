@@ -50,8 +50,12 @@ export function confineIcon(icon, vocabulary, foodName = '') {
     return vocabulary.has(reviewed) ? reviewed : NEUTRAL_ICON;
   }
   // These observed mismatches are not equivalents: condiments ≠ ranch,
-  // whipped cream ≠ cream sauce, and a tortilla ≠ the dish it contains.
-  if (['white fish', 'fish taco', 'ranch', 'ranch dressing', 'cream sauce', 'white sauce'].includes(name)) {
+  // whipped cream ≠ cream sauce, a tortilla ≠ the dish it contains,
+  // ham ≠ a cheeseburger, and plain ingredients ≠ prepared desserts.
+  // A reviewed manifest alias above can supply a suitable asset later.
+  if (['white fish', 'fish taco', 'ranch', 'ranch dressing', 'cream sauce', 'white sauce',
+    'diced ham', 'scrambled eggs', 'plain yogurt', 'oikos pro plain',
+    'chia seeds', 'organic chia seed', 'organic chia seeds'].includes(name)) {
     const exact = name.replaceAll(' ', '-');
     return vocabulary.has(exact) ? exact : NEUTRAL_ICON;
   }

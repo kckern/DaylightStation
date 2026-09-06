@@ -68,6 +68,8 @@ export function ingestRateKey(event) {
  * @param {number} [options.maxBuckets]
  * @param {() => number} [options.now] injected clock, so tests do not sleep
  */
+import { createTokenBucket } from '#system/utils/tokenBucket.mjs';
+
 export function createIngestRateLimiter({
   capacity = DEFAULT_CAPACITY,
   refillPerMinute = DEFAULT_REFILL_PER_MIN,
@@ -75,20 +77,11 @@ export function createIngestRateLimiter({
   maxBuckets = DEFAULT_MAX_BUCKETS,
   now = () => Date.now(),
 } = {}) {
-  const buckets = new Map();
-  const refillPerMs = refillPerMinute / 60_000;
-
-  const evictIdlest = () => {
-    // Cheap approximation of LRU: drop the single least-recently-touched entry.
-    // Buckets are only an optimisation — losing one costs a fresh burst
-    // allowance, never correctness.
-    let oldestKey = null;
-    let oldestAt = Infinity;
-    for (const [key, b] of buckets) {
-      if (b.lastSeen < oldestAt) { oldestAt = b.lastSeen; oldestKey = key; }
-    }
-    if (oldestKey !== null) buckets.delete(oldestKey);
-  };
+  // The ARITHMETIC is shared (`#system/utils/tokenBucket.mjs`); only the policy
+  // below — what a key is, and what to emit when a caller is denied — belongs
+  // to log ingestion. The bucket returned by `take` is where this file keeps
+  // `suppressed` and `lastSummaryAt`, which the core neither reads nor writes.
+  const bucket = createTokenBucket({ capacity, refillPerMinute, maxBuckets, now });
 
   return {
     /**
@@ -99,22 +92,16 @@ export function createIngestRateLimiter({
     check(event) {
       const key = ingestRateKey(event);
       const t = now();
-      let b = buckets.get(key);
-      if (!b) {
-        if (buckets.size >= maxBuckets) evictIdlest();
-        b = { tokens: capacity, lastRefill: t, lastSeen: t, suppressed: 0, lastSummaryAt: null };
-        buckets.set(key, b);
-      }
-      b.tokens = Math.min(capacity, b.tokens + (t - b.lastRefill) * refillPerMs);
-      b.lastRefill = t;
-      b.lastSeen = t;
+      const { allow, bucket: b } = bucket.take(key);
+      // This file's own bookkeeping, hung on the shared bucket. A bucket the
+      // core has just created carries neither field.
+      if (b.suppressed === undefined) { b.suppressed = 0; b.lastSummaryAt = null; }
 
       // `null` (never summarized), not 0 — 0 is a real timestamp and is where an
       // injected clock starts, which made every suppression look due.
       const summaryDue = b.lastSummaryAt === null || (t - b.lastSummaryAt) >= summaryIntervalMs;
 
-      if (b.tokens >= 1) {
-        b.tokens -= 1;
+      if (allow) {
         // Leaving a throttled stretch: report the total, so the gap in the
         // record is explained rather than merely absent.
         //
@@ -145,8 +132,8 @@ export function createIngestRateLimiter({
     },
 
     /** Test/diagnostic seam. */
-    size() { return buckets.size; },
-    reset() { buckets.clear(); },
+    size() { return bucket.size(); },
+    reset() { bucket.reset(); },
   };
 }
 

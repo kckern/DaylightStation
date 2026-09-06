@@ -133,18 +133,17 @@ export class TelegramResponseContext extends IResponseContext {
     let animationTimer = null;
     let currentFrame = 0;
     const baseText = initialText;
+    const updates = new Set();
 
     // Start animation if frames provided
     if (shouldAnimate) {
-      animationTimer = setInterval(async () => {
+      animationTimer = setInterval(() => {
         currentFrame = (currentFrame + 1) % frames.length;
-        try {
-          await this.updateMessage(messageId, {
+        const update = this.updateMessage(messageId, {
             text: `${baseText}${frames[currentFrame]}`,
-          });
-        } catch (e) {
-          // Ignore update failures during animation (message may be gone)
-        }
+          }).catch(() => {});
+        updates.add(update);
+        void update.finally(() => updates.delete(update));
       }, interval);
     }
 
@@ -160,6 +159,8 @@ export class TelegramResponseContext extends IResponseContext {
 
     return {
       messageId,
+      kind: 'text',
+      async release() { cleanup(); await Promise.allSettled([...updates]); },
 
       /**
        * Complete the status with final content.
@@ -170,6 +171,7 @@ export class TelegramResponseContext extends IResponseContext {
        */
       async finish(content, options = {}) {
         cleanup();
+        await Promise.allSettled([...updates]);
         await ctx.updateMessage(messageId, {
           text: content,
           ...options,
@@ -184,6 +186,7 @@ export class TelegramResponseContext extends IResponseContext {
        */
       async cancel() {
         cleanup();
+        await Promise.allSettled([...updates]);
         try {
           await ctx.deleteMessage(messageId);
         } catch (e) {
@@ -215,18 +218,17 @@ export class TelegramResponseContext extends IResponseContext {
     let animationTimer = null;
     let currentFrame = 0;
     const baseCaption = initialCaption;
+    const updates = new Set();
 
     // Start caption animation if frames provided
     if (shouldAnimate) {
-      animationTimer = setInterval(async () => {
+      animationTimer = setInterval(() => {
         currentFrame = (currentFrame + 1) % frames.length;
-        try {
-          await this.updateMessage(messageId, {
+        const update = this.updateMessage(messageId, {
             caption: `${baseCaption}${frames[currentFrame]}`,
-          });
-        } catch (e) {
-          // Ignore update failures during animation (message may be gone)
-        }
+          }).catch(() => {});
+        updates.add(update);
+        void update.finally(() => updates.delete(update));
       }, interval);
     }
 
@@ -241,9 +243,12 @@ export class TelegramResponseContext extends IResponseContext {
 
     return {
       messageId,
+      kind: 'photo',
+      async release() { cleanup(); await Promise.allSettled([...updates]); },
 
       async finish(content, options = {}) {
         cleanup();
+        await Promise.allSettled([...updates]);
         await ctx.updateMessage(messageId, {
           caption: content,
           ...options,
@@ -253,6 +258,7 @@ export class TelegramResponseContext extends IResponseContext {
 
       async cancel() {
         cleanup();
+        await Promise.allSettled([...updates]);
         try {
           await ctx.deleteMessage(messageId);
         } catch (e) {

@@ -167,18 +167,24 @@ const PRINT_KINDS = new Set(['print', 'retry']);
  * beside a keypad with no way forward.
  *
  * `reason` is the machine-readable discriminator and the ONLY thing consulted:
- * `unknown_code` | `not_answering`, always present on a refusal card. An
- * earlier draft matched the user-facing sentence instead, which meant
+ * `unknown_code` | `used_up` | `not_answering`, always present on a refusal
+ * card. An earlier draft matched the user-facing sentence instead, which meant
  * rewording the backend's copy for a child would silently remove this panel's
  * retry button — a dead end introduced by a typo.
  *
- * The default LEANS TOWARD FAULT: only `unknown_code`, the one reason that
- * definitively means "the child mistyped", suppresses the retry. Anything
- * unrecognised or absent gets one, because a spurious retry button costs a
- * wasted tap while a missing one is a dead end at a wall panel that has no
- * other affordance.
+ * The default LEANS TOWARD FAULT: only the reasons that definitively mean "the
+ * server is fine, the code is not" suppress the retry. Anything unrecognised or
+ * absent gets one, because a spurious retry button costs a wasted tap while a
+ * missing one is a dead end at a wall panel that has no other affordance.
+ *
+ * `used_up` AND `slow_down` JOINED THE LIST ON 2026-09-06, and each had to
+ * arrive in the same change as the backend refusal that emits it. A code is now spent after a few opens; left
+ * out of this set it would have been classified as an outage, so a child whose
+ * code was simply finished would read "the school computer isn't answering"
+ * beside a Retry button that could never work.
  */
-const isBackendFault = (payload) => payload?.reason !== 'unknown_code';
+const CHILD_FIXABLE_REASONS = new Set(['unknown_code', 'used_up', 'slow_down']);
+const isBackendFault = (payload) => !CHILD_FIXABLE_REASONS.has(payload?.reason);
 
 /**
  * What `onLaunch` (SchoolApp's `onPortalLaunch`) needs in order to route into a
@@ -230,6 +236,11 @@ export function useSelfService({
   idleTimeoutSeconds = DEFAULT_IDLE_TIMEOUT_SECONDS,
   claim = null,
   onLaunch = null,
+  // This panel's own identity, sent with every code so the backend's
+  // wrong-code throttle can bucket per DEVICE. It cannot use `req.ip`: every
+  // screen in the house reaches the backend through one reverse proxy, so an
+  // IP names the proxy and would let the living-room screen throttle this one.
+  deviceId = null,
   printConfirmTimeoutMs = PRINT_CONFIRM_TIMEOUT_MS,
   printerPollMs = PRINTER_POLL_MS,
 } = {}) {
@@ -247,6 +258,10 @@ export function useSelfService({
   // The code stays valid across an exit or a timeout — nothing here revokes
   // it, so the child can simply type it again.
   const codeRef = useRef(null);
+  // The learner a resolved card named, held back until the child confirms it is
+  // them. Never claimed from here directly — `confirmIdentity` below is the one
+  // place it is spent, so a card that is abandoned claims nobody.
+  const pendingLearnerRef = useRef(null);
   const lastTriedRef = useRef(null);
   // Rule 4. Bumped by every return-to-lock; an in-flight request whose
   // generation has moved on drops its answer on the floor.
@@ -281,6 +296,10 @@ export function useSelfService({
     setDegraded(false);
     setBusy(false);
     codeRef.current = null;
+    // A child who walked away from "Is this you?" — or hit Escape, or timed
+    // out — claimed nobody, and must not be claimable later either. Cleared
+    // with everything else the card was holding.
+    pendingLearnerRef.current = null;
   }, []);
 
   /**
@@ -301,7 +320,7 @@ export function useSelfService({
     if (!beginWork()) return { resolved: false, sentence: null, skipped: true };
     const gen = genRef.current;
     lastTriedRef.current = code;
-    const res = await schoolApi.selfServiceResolve(code);
+    const res = await schoolApi.selfServiceResolve(code, deviceId);
     endWork();
     if (genRef.current !== gen) return { resolved: false, sentence: null, skipped: true }; // rule 4
 
@@ -336,21 +355,64 @@ export function useSelfService({
     setMessage(null);
     setCard(res.data);
     setSentence(null);
-    setView('card');
     schoolLog.selfService('code.resolved', { subject: res.data.subject ?? null });
+    const learnerId = res.data.learnerId
+      ?? (typeof res.data.learner === 'string' ? res.data.learner : res.data.learner?.id)
+      ?? null;
+
+    // AHEAD OF THE CLAIM, NOT AFTER IT. `claim` is what makes everything that
+    // follows record against this learner — a runner, the shelf mount, the
+    // day's history — so confirming afterwards would attribute the work first
+    // and ask about it second. The card is rendered either way; what waits is
+    // the identity, and therefore the writing.
+    if (res.data.presentation?.confirmIdentity && learnerId) {
+      pendingLearnerRef.current = learnerId;
+      setView('identity');
+      schoolLog.selfService('identity.asked', { userId: learnerId });
+      return { resolved: true, sentence: null, degraded: false };
+    }
+
+    setView('card');
     // Claim so a runner mounted from this card records against the learner the
     // code named — the same soft-claim `useSchoolLaunch` performs. A valid
     // contextual card confirms that identity; the keypad itself stays
     // anonymous.
-    const learnerId = res.data.learnerId
-      ?? (typeof res.data.learner === 'string' ? res.data.learner : res.data.learner?.id)
-      ?? null;
     if (learnerId && claim) claim(learnerId);
     return { resolved: true, sentence: null, degraded: false };
-  }, [beginWork, claim, endWork]);
+  }, [beginWork, claim, endWork, deviceId]);
 
   /** The degraded retry — the same code, not a fresh typing exercise. */
   const retry = useCallback(() => submit(lastTriedRef.current), [submit]);
+
+  /**
+   * "Yes, that's me." The claim that `submit` held back.
+   *
+   * Deliberately the ONLY caller of `claim` on the confirm path: a child who
+   * walks away from the question, or taps "not me", leaves the panel having
+   * recorded nothing against anyone. That is the whole value of asking BEFORE
+   * claiming rather than after.
+   */
+  const confirmIdentity = useCallback(() => {
+    const learnerId = pendingLearnerRef.current;
+    pendingLearnerRef.current = null;
+    if (learnerId && claim) claim(learnerId);
+    schoolLog.selfService('identity.confirmed', { userId: learnerId ?? null });
+    setView('card');
+  }, [claim]);
+
+  /**
+   * "No." Back to the keypad with nothing claimed and nothing opened — and
+   * logged, because a child saying "that is not me" at a shared panel is the
+   * one signal this system can get about a code in the wrong hands.
+   */
+  const denyIdentity = useCallback(() => {
+    const learnerId = pendingLearnerRef.current;
+    pendingLearnerRef.current = null;
+    schoolLog.selfService('identity.denied', { userId: learnerId ?? null });
+    setCard(null);
+    setSentence(null);
+    setView('keypad');
+  }, []);
 
   /** Land on words with a Done. The ending every non-mounting path shares. */
   const say = useCallback((words) => {
@@ -624,7 +686,7 @@ export function useSelfService({
     // without any chance of the two disagreeing about the window.
     confirmRemainingMs,
     confirmTotalMs: confirmRemainingMs === null ? null : Number(printConfirmTimeoutMs),
-    submit, retry, runAction, confirmPrint, exit: toLock, reload,
+    submit, retry, runAction, confirmPrint, confirmIdentity, denyIdentity, exit: toLock, reload,
   };
 }
 

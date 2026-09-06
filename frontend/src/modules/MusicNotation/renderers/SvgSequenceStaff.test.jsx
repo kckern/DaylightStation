@@ -111,25 +111,30 @@ describe('SvgSequenceStaff', () => {
   // Opacity carries exactly one meaning on this staff — "this is your finger,
   // not the music" — so a NOTATED note is full opacity in every state, always.
   // Weight-behind/weight-ahead used to be encoded as green-done/dimmed-todo;
-  // it is now jet-black-done vs. brown-todo, and the cursor's own entry reads
-  // as todo (brown) until something is actually held against it.
+  // it is now jet-black-done vs. brown-todo. The cursor's OWN resting entry is
+  // its own state, `current`, and it is BLACK, not brown (124db2188): it is the
+  // note the child is reading right now, so only entries AFTER it are brown.
+  // Black-vs-brown therefore reads as "read this far" — a resting cursor makes
+  // no claim about whether the note was played, which is still rule 5's job.
   describe('resting palette (done / todo, no attempt in progress)', () => {
-    it('colours entries before the cursor done and the rest todo, with no held-key state', () => {
+    it('colours entries before the cursor done, the cursor current, and the rest todo', () => {
       const { container } = render(<SvgSequenceStaff notes={notes(60, 62, 64, 65)} cursorIndex={2} />);
       expect(container.querySelectorAll('.sequence-note-done')).toHaveLength(2);
-      expect(container.querySelectorAll('.sequence-note-todo')).toHaveLength(2);
+      expect(container.querySelectorAll('.sequence-note-current')).toHaveLength(1);
+      expect(container.querySelectorAll('.sequence-note-todo')).toHaveLength(1);
       expect(container.querySelectorAll('.sequence-note-hit')).toHaveLength(0);
       expect(container.querySelectorAll('.sequence-note-miss')).toHaveLength(0);
-      // The cursor's OWN entry is one of the two todo notes here — resting,
-      // not a distinct "next" treatment (that state no longer exists).
+      // The cursor's OWN entry carries `current`, its own resting state — not
+      // `todo` with the rest of the future, and not a verdict of any kind.
       expect(container.querySelector('[data-sequence-index="2"] .action-staff__note').getAttribute('class'))
-        .toContain('sequence-note-todo');
+        .toContain('sequence-note-current');
     });
 
-    it('marks nothing done at the start of a run — the cursor entry rests as todo, not black', () => {
+    it('marks nothing done at the start of a run — the cursor rests black, the rest brown', () => {
       const { container } = render(<SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={0} />);
       expect(container.querySelectorAll('.sequence-note-done')).toHaveLength(0);
-      expect(container.querySelectorAll('.sequence-note-todo')).toHaveLength(3);
+      expect(container.querySelectorAll('.sequence-note-current')).toHaveLength(1);
+      expect(container.querySelectorAll('.sequence-note-todo')).toHaveLength(2);
     });
 
     it('marks everything done once the sequence is complete', () => {
@@ -142,7 +147,10 @@ describe('SvgSequenceStaff', () => {
       const { container } = render(
         <SvgSequenceStaff notes={[{ midis: [60, 64, 67] }, { midi: 72 }]} cursorIndex={0} />
       );
-      expect(container.querySelectorAll('.sequence-note-todo')).toHaveLength(4);
+      // Entry-level, so all three heads of the chord share one treatment; the
+      // single note after it is the only brown thing on the staff.
+      expect(container.querySelectorAll('.sequence-note-current')).toHaveLength(3);
+      expect(container.querySelectorAll('.sequence-note-todo')).toHaveLength(1);
     });
 
     it('never sets a partial-opacity attribute on a notated notehead, done or todo', () => {
@@ -171,14 +179,14 @@ describe('SvgSequenceStaff', () => {
   // Colour is per NOTE, scoped to the cursor's own entry, and gated entirely on
   // whether anything is currently held — never a remembered flag.
   describe('an attempt in progress at the cursor', () => {
-    it('renders plain todo, not miss, when nothing at all is held', () => {
+    it('renders the plain resting cursor, not miss, when nothing at all is held', () => {
       // Rule 5, the one this whole model hinges on: an unplayed note is not a
       // standing accusation. No keys down means no verdict of any kind.
       const { container } = render(<SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1} />);
       expect(container.querySelectorAll('.sequence-note-miss')).toHaveLength(0);
       expect(container.querySelectorAll('.sequence-note-hit')).toHaveLength(0);
       expect(container.querySelector('[data-sequence-index="1"] .action-staff__note').getAttribute('class'))
-        .toContain('sequence-note-todo');
+        .toContain('sequence-note-current');
     });
 
     it('colours a held single-note target green, with a green stem', () => {
@@ -266,7 +274,7 @@ describe('SvgSequenceStaff', () => {
       expect(container.querySelector('[data-sequence-index="2"]').getAttribute('data-state')).toBe('todo');
     });
 
-    it('everything reverts to todo/black and the ghost clears the instant nothing is held (rule 4)', () => {
+    it('everything reverts to the resting cursor and the ghost clears the instant nothing is held (rule 4)', () => {
       const held = new Map([[61, { velocity: 80 }]]);
       const { container, rerender } = render(
         <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1} activeNotes={held} />
@@ -279,7 +287,7 @@ describe('SvgSequenceStaff', () => {
       expect(container.querySelectorAll('.sequence-note-hit')).toHaveLength(0);
       expect(container.querySelectorAll('.sequence-note-wrong-ghost')).toHaveLength(0);
       expect(container.querySelector('[data-sequence-index="1"] .action-staff__note').getAttribute('class'))
-        .toContain('sequence-note-todo');
+        .toContain('sequence-note-current');
     });
   });
 

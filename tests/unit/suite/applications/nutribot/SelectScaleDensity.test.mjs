@@ -12,7 +12,7 @@ function makeLog(grams) {
 }
 
 describe('SelectScaleDensity', () => {
-  let messaging, foodLogStore, stateStore, useCase, savedLog;
+  let messaging, foodLogStore, stateStore, useCase, savedLog, receipts;
   beforeEach(() => {
     messaging = { updateMessage: jest.fn().mockResolvedValue({}) };
     savedLog = null;
@@ -21,7 +21,9 @@ describe('SelectScaleDensity', () => {
       save: jest.fn().mockImplementation((l) => { savedLog = l; return Promise.resolve(); }),
     };
     stateStore = { clear: jest.fn().mockResolvedValue({}) };
+    receipts = { refresh: jest.fn().mockResolvedValue({}) };
     useCase = new SelectScaleDensity({
+      receipts: () => receipts,
       messagingGateway: messaging, foodLogStore, conversationStateStore: stateStore,
       scaleConfig: normalizeScaleNutribotConfig({}), logger,
     });
@@ -36,7 +38,7 @@ describe('SelectScaleDensity', () => {
     expect(savedLog.items[0].calories).toBe(336);
     expect(savedLog.items[0].label).toBe('Mixed');
     expect(stateStore.clear).toHaveBeenCalledWith('telegram:b1_c2');
-    const cmds = messaging.updateMessage.mock.calls[0][1].choices.flat().map((b) => JSON.parse(b.callback_data).cmd);
-    expect(cmds).toEqual(['a', 'r', 'x']);
+    expect(receipts.refresh).toHaveBeenCalledWith('kckern', 'log1', { ready: true });
+    expect(messaging.updateMessage).not.toHaveBeenCalled();
   });
 });

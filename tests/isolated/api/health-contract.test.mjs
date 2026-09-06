@@ -50,6 +50,15 @@ function buildApp(overrides = {}) {
 }
 
 describe('health HTTP contract through application operations', () => {
+  it('keeps selective recovery owner-bound and preserves preview/version controls', async () => {
+    const recover = vi.fn(async () => ({ dryRun: true, receipt: { after: [] } }));
+    const { app } = buildApp({ cleanup: { recovery: { recover } } });
+    const body = { userId: 'someone-else', logUuid: 'capture', expectedVersion: 'v1', operationId: 'repair', observationIds: ['weight', 'density'], dryRun: true };
+    expect((await request(app).post('/health/nutrition/capture-recovery').send(body)).status).toBe(200);
+    expect(recover).toHaveBeenCalledWith({ ...body, userId: 'alex' });
+    recover.mockRejectedValue(Object.assign(new Error('Capture changed'), { status: 409 }));
+    expect((await request(app).post('/health/nutrition/capture-recovery').send(body)).status).toBe(409);
+  });
   it('exposes cleanup controls with server-owned identity and rejects unavailable service', async () => {
     const cleanup = { status: vi.fn(() => ({ questions: [], runs: [] })), history: vi.fn(async () => ({ records: [], total: 0 })),
       request: vi.fn(async () => ({ runId: 'one' })), settings: vi.fn(async () => ({})),
@@ -135,16 +144,22 @@ describe('health HTTP contract through application operations', () => {
     const response = await request(app).put('/health/nutrilist/n1').send({ calories: 90, forbidden: true });
     expect(response.status).toBe(200);
     expect(response.body.message).toBe('Nutrilist item updated successfully');
-    // Any successful edit ratifies (settles) the row, so the update call carries
-    // the settle stamp alongside the edited field — pin that intended contract
-    // rather than ignoring it.
+    // An ordinary edit no longer SETTLES the row (f81b295ae): settling is a
+    // server-owned lifecycle step that only an explicit `{ settled: true }`
+    // command performs, because stamping every edit certified figures nobody
+    // had looked at. What an edit does instead is PROTECT the field it
+    // touched — `manualFields` names it, so later polling/review may keep
+    // enriching the untouched fields without overwriting a human correction.
     expect(nutritionItems.update).toHaveBeenCalledWith('alex', 'n1', expect.objectContaining({
       calories: 90,
-      settled: true,
-      settledBy: 'user',
+      manualFields: ['calories'],
     }));
+    // ...and it must NOT settle: the stamp is the one-tap confirm's to write.
+    const [, , sent] = nutritionItems.update.mock.calls[0];
+    expect(sent).not.toHaveProperty('settled');
+    expect(sent).not.toHaveProperty('settledBy');
     // The field whitelist must still reject unknown fields — `forbidden` was
-    // never sent to the store, stamp or no stamp.
+    // never sent to the store, protected field or no.
     const [, , updateArgs] = nutritionItems.update.mock.calls[0];
     expect(updateArgs).not.toHaveProperty('forbidden');
   });

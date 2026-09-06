@@ -212,7 +212,7 @@ import { createAutomotiveApi } from '#composition/modules/automotiveApi.mjs';
 import { createQuizScanRecorder } from '#apps/quizzes/quizScanRecorder.mjs';
 import { EventBusEventInputSource } from '#adapters/scan/EventBusEventInputSource.mjs';
 import { YamlDecodedQuizScanStore } from '#adapters/persistence/yaml/YamlDecodedQuizScanStore.mjs';
-import { createObservationService } from '#apps/nutrition/ObservationService.mjs';
+import { createObservationService } from '#apps/nutrition/ScaleObservationService.mjs';
 import { YamlObservationStore } from '#adapters/persistence/yaml/YamlObservationStore.mjs';
 import { ApplyScanToComposition } from '#apps/nutribot/usecases/ApplyScanToComposition.mjs';
 import { validateScanConfig } from '#apps/nutribot/lib/validateScanConfig.mjs';
@@ -1552,6 +1552,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   };
 
   let nutritionCleanup = null;
+  let nutritionReceiptPublisher = null;
   // Health domain router
   v1Routers.health = createHealthApiRouter({
     healthServices,
@@ -1563,6 +1564,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     catalogService: healthServices.catalogService,
     webNutribotAdapter: webNutribotAdapterProxy,
     cleanupProvider: () => nutritionCleanup,
+    receiptPublisherProvider: () => nutritionReceiptPublisher,
     logger: rootLogger.child({ module: 'health-api' })
   });
 
@@ -5240,7 +5242,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       ? userIdentityService.resolvePlatformId('telegram', scaleHeadUser)
       : null;
     const scaleBotId = systemBots.nutribot?.telegram?.bot_id || '';
-    if (scaleHeadPlatformId && scaleBotId) {
+    if (scaleHeadUser) {
       observationService = createObservationService({
         // The composition root owns the transport. The application layer describes a
         // SCALE-SIGNAL SOURCE, not a generic event bus — which is also why the old bridge
@@ -5257,7 +5259,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         // uuid — which is what an observation's `pairedEntryUuid` points at.
         foodLogStore: nutribotServices.nutribotContainer.getFoodLogStore?.() || null,
         userId: scaleHeadUser,
-        conversationId: `telegram:b${scaleBotId}_c${scaleHeadPlatformId}`,
+        conversationId: scaleHeadPlatformId && scaleBotId ? `telegram:b${scaleBotId}_c${scaleHeadPlatformId}` : `device:${scaleHeadUser}`,
         scaleConfig: nutribotServices.scaleConfig,
         timezone: configService.getHouseholdTimezone?.(householdId),
         clock: () => new Date(),
@@ -5291,8 +5293,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   try {
     const { startNutritionSurfaceSync } = await import('#composition/modules/nutritionSurfaceSync.mjs');
-    startNutritionSurfaceSync({ configService, userIdentityService, dataService, nutribotServices,
+    const receiptSync = startNutritionSurfaceSync({ configService, userIdentityService, dataService, nutribotServices,
       logger: rootLogger.child({ module: 'nutrition-surface-sync' }), server });
+    nutritionReceiptPublisher = receiptSync.publisher || null;
   } catch (error) {
     rootLogger.warn('nutrition.surface.unavailable', { error: error.message });
   }

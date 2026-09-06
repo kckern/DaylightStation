@@ -193,6 +193,31 @@ function bulkPrintAction({ token, label, subjects, accessCode }) {
 }
 
 /**
+ * The reading-log card — the FOURTH and last designated construction site.
+ *
+ * A card of its own rather than a code on the English lesson's, because it is
+ * not that lesson and does not follow it: the reading log is open every day, to
+ * every learner, whether or not they are enrolled in anything and whether or
+ * not English is finished. Riding on the lesson card would make it vanish on
+ * exactly the days the lesson is done — the days a child most wants to record
+ * the book they finished with it.
+ *
+ * Same well-formed-code contract as `bulkPrintAction`, for the same reason: the
+ * caller only builds this when it already holds a good code, so there is no
+ * `codeAbsenceBlocks` fallback. No code means no card — a Reading card a child
+ * cannot type into is worse than none.
+ */
+function readingLogAction({ token, label, accessCode }) {
+  return {
+    type: 'scan_action',
+    action: token,
+    label,
+    hideCode: true,
+    ...panelCodeField(accessCode),
+  };
+}
+
+/**
  * The printed time, as a person says it: `Mon 27 Jul, 9:05 am`.
  *
  * A raw ISO timestamp on a child's paper is machine notation, and the agenda
@@ -374,6 +399,12 @@ function appendNoteLines(blocks, noteLines) {
  * @param {string} [args.bulkAccessCode] six-digit panel code aliasing
  *   `bulkToken`, formatted the same way as a per-token `accessCodesByToken`
  *   entry — see `panelCodeBlocks`.
+ * @param {string} [args.readingToken] opaque scan token for the reading log,
+ *   minted for EVERY learner rather than only the enrolled ones — an
+ *   enrollment carries the obligation, not the access. Absent, no Reading card
+ *   prints and the receipt is byte-identical to one built before the feature.
+ * @param {string} [args.readingAccessCode] six-digit panel code aliasing
+ *   `readingToken`. A malformed one prints no card at all, like the bulk code.
  * @param {string} [args.footer]
  * @returns {object} a document ready for `validateDocument`
  */
@@ -381,6 +412,7 @@ export function agendaDocument({
   learnerId, learnerName = null, generatedAt = null, timeZone = 'UTC',
   sections = [], tokensBySubject = {}, accessCodesByToken = {},
   bulkToken = null, bulkAccessCode = null,
+  readingToken = null, readingAccessCode = null,
   footer = null, notes = [],
 } = {}) {
   // The learner's name is the document TITLE, not a text block: the renderers
@@ -560,6 +592,16 @@ export function agendaDocument({
   // drew adrift BELOW the card on the canvas renderer, with nothing saying
   // which card it belonged to. `hideCode` still suppresses the raw TOKEN
   // under the QR — the six digits are the only thing a child should read.
+  // Before the bulk card, so "print all sheets" stays the last action on the
+  // page. Unconditional on enrollment by design — see `readingLogAction`.
+  if (isNonEmptyString(readingToken) && typeof readingAccessCode === 'string' && PANEL_CODE.test(readingAccessCode)) {
+    blocks.push(readingLogAction({
+      token: readingToken,
+      label: 'Reading log — add or update a book',
+      accessCode: readingAccessCode,
+    }));
+  }
+
   if (isNonEmptyString(bulkToken) && typeof bulkAccessCode === 'string' && PANEL_CODE.test(bulkAccessCode)) {
     blocks.push(bulkPrintAction({
       token: bulkToken,

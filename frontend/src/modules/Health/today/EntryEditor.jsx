@@ -4,7 +4,9 @@ import { Sheet, ErrorState } from '@/lib/ui';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
-import { foodGrams, NUTRIENT_KEYS, scaleFoodPortion } from '@shared-contracts/health/foodQuantity.mjs';
+import { foodGrams, foodPortion, NUTRIENT_KEYS, scaleFoodPortion } from '@shared-contracts/health/foodQuantity.mjs';
+import { formatNutrients, nutrientSummary } from '@shared-contracts/nutrition/countedRows.mjs';
+import { updateEntry, entryError } from './entryCommands.js';
 import { BUCKETS } from './mealBuckets.js';
 import { FoodIcon } from './FoodIcon.jsx';
 import { ObservationRow } from './ObservationRow.jsx';
@@ -24,9 +26,11 @@ function Editor({ row, onClose, onChanged, onDeleted, onCoach, observations = []
   const isGroup = row.kind === 'group';
   const original = isGroup ? {
     grams: children.every(child => foodGrams(child) !== null) ? children.reduce((sum, child) => sum + foodGrams(child), 0) : null,
-    ...Object.fromEntries(NUTRIENT_KEYS.map(key => [key, children.reduce((sum, child) => sum + (child[key] || 0), 0)])),
+    ...Object.fromEntries(Object.entries(nutrientSummary(children, NUTRIENT_KEYS)).map(([key, coverage]) => [key, coverage.value])),
   } : row;
-  const originalGrams = foodGrams(original);
+  const originalPortion = foodPortion(row);
+  const originalGrams = originalPortion.value;
+  const wholeGrams = !originalGrams || originalPortion.unit === 'g';
   const [name, setName] = useState(nameOf(row));
   const [grams, setGrams] = useState(originalGrams ?? '');
   const [mealTime, setMealTime] = useState(row.mealTime);
@@ -40,6 +44,7 @@ function Editor({ row, onClose, onChanged, onDeleted, onCoach, observations = []
   const [query, setQuery] = useState('');
   const [icons, setIcons] = useState([]);
   const pending = useRef(false);
+  const saveOperation = useRef(null);
   const catalog = useApiResource(isGroup ? null : row.foodId
     ? `api/v1/health/nutrition/catalog/${encodeURIComponent(row.foodId)}`
     : `api/v1/health/nutrition/catalog/suggest?q=${encodeURIComponent(nameOf(row))}`, { label: 'Saved food', logger });
@@ -72,34 +77,34 @@ function Editor({ row, onClose, onChanged, onDeleted, onCoach, observations = []
     finally { pending.current = false; setBusy(false); }
   };
 
-  const save = () => run(() => DaylightAPI(`api/v1/health/nutrilist/${identity(row)}`, {
-    name: name.trim(), mealTime, date, icon,
-    expectedVersion: row.version ?? 1,
-    correctedNutrients: Object.keys(overrides),
-    ...(isGroup ? (factor !== 1 ? { factor } : {}) : {
-      ...(grams !== '' ? { grams: Number(grams), amount: Number(grams), unit: 'g' } : {}),
-      ...nutrients,
-      // Unknown original mass cannot establish a density; preserve its totals.
-      ...(grams !== '' ? { grams: Number(grams) } : {}),
-    }),
-  }, 'PUT'), { close: true });
+  const save = () => run(() => {
+    const changes = Object.fromEntries(Object.entries({ name: name.trim(), mealTime, date, icon })
+      .filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(key === 'name' ? nameOf(row) : row[key])));
+    if (originalGrams && factor !== 1) changes.portion = { value: Number(grams), unit: originalPortion.unit };
+    else if (!originalGrams && grams !== '') changes.grams = Number(grams);
+    for (const [key, value] of Object.entries(overrides)) if (value !== original[key]) changes[key] = value;
+    changes.correctedNutrients = Object.keys(overrides).filter(key => Object.hasOwn(changes, key));
+    const fingerprint = JSON.stringify(changes);
+    if (saveOperation.current?.fingerprint !== fingerprint) saveOperation.current = { fingerprint, id: crypto.randomUUID() };
+    return updateEntry(row, changes, saveOperation.current.id);
+  }, { close: true });
 
   return <Sheet open onClose={() => { if (!busy) onClose(); }} title={nameOf(row)}>
     <Stack gap="xs">
-      {error ? <Text role="alert" size="sm" c="red">{error.message}</Text> : null}
+      {error ? <Text role="alert" size="sm" c="red">{entryError(error)}</Text> : null}
       <Group wrap="nowrap" gap="xs">
         <UnstyledButton aria-label="Change food icon" onClick={() => setPicking(value => !value)} disabled={busy}><FoodIcon icon={icon} /></UnstyledButton>
         <TextInput label="Name" value={name} onChange={event => setName(event.target.value)} disabled={busy} style={{ flex: 1 }} />
       </Group>
-      <NumberInput label={isGroup ? 'Whole dish weight' : 'Weight'} suffix=" g" aria-label="Weight in grams"
-        data-autofocus min={0.01} decimalScale={2} value={grams} disabled={busy || (isGroup && !originalGrams)}
+      <NumberInput label={isGroup ? 'Whole dish portion' : 'Portion'} suffix={` ${originalGrams ? originalPortion.unit : 'g'}`} aria-label={`Portion in ${originalGrams ? originalPortion.unit : 'g'}`}
+        data-autofocus min={wholeGrams ? 1 : 0.01} decimalScale={wholeGrams ? 0 : 2} value={wholeGrams && typeof grams === 'number' ? Math.round(grams) : grams} disabled={busy || (isGroup && !originalGrams)}
         placeholder="Weight unknown" onChange={setGrams} onFocus={event => event.target.select()}
         onKeyDown={event => { if (event.key === 'Enter' && name.trim() && !busy) save(); }} />
       <Group gap="xs">
         {factors.map(value => <Button key={value} size="compact-xs" variant="light" disabled={busy || !originalGrams}
-          onClick={() => setGrams(Math.round((Number(grams) || originalGrams) * value * 100) / 100)}>×{value}</Button>)}
+          onClick={() => setGrams(wholeGrams ? Math.max(1, Math.round((Number(grams) || originalGrams) * value)) : Math.round((Number(grams) || originalGrams) * value * 100) / 100)}>×{value}</Button>)}
       </Group>
-      <Text size="sm">{Math.round(nutrients.calories || 0)} kcal · P {Math.round(nutrients.protein || 0)} g · C {Math.round(nutrients.carbs || 0)} g · F {Math.round(nutrients.fat || 0)} g</Text>
+      <Text size="sm">{nutrients.calories == null ? '—' : Math.round(nutrients.calories)} kcal · {formatNutrients([nutrients])}</Text>
       <SegmentedControl aria-label="Meal" size="xs" fullWidth value={mealTime || ''} disabled={busy}
         data={BUCKETS.map(bucket => ({ value: bucket.id, label: bucket.label }))} onChange={setMealTime} />
       {picking ? <>
@@ -116,11 +121,11 @@ function Editor({ row, onClose, onChanged, onDeleted, onCoach, observations = []
               ...(row.foodId ? { id: row.foodId } : { name: nameOf(row) }), icon,
             }, 'PUT'))}>Use icon for this food</Button>
             <Button size="compact-xs" variant="light" disabled={busy} onClick={() => run(() => DaylightAPI('api/v1/health/nutrition/templates', {
-              name: name.trim(), components: [{ ...row, ...nutrients, name: name.trim(), icon, grams: Number(grams) || null, role: 'core' }],
+              name: name.trim(), components: [{ ...row, ...nutrients, name: name.trim(), icon, role: 'core' }],
             }, 'POST'))}>Save as meal</Button>
           </Group> : null}
-          {!isGroup ? NUTRIENT_KEYS.map(key => <NumberInput key={key} label={`${key}${key === 'calories' ? ' (kcal)' : ['sodium', 'cholesterol'].includes(key) ? ' (mg)' : ' (g)'}`}
-            min={0} value={nutrients[key] ?? ''} disabled={busy} onChange={value => setOverrides(previous => ({ ...previous, [key]: value === '' ? null : value }))} />) : null}
+          {!isGroup ? NUTRIENT_KEYS.map(key => <NumberInput key={key} label={`${key[0].toUpperCase() + key.slice(1)}${key === 'calories' ? ' (kcal)' : ['sodium', 'cholesterol'].includes(key) ? ' (mg)' : ' (g)'}`}
+            min={0} decimalScale={0} value={nutrients[key] == null ? '' : Math.round(nutrients[key])} disabled={busy} onChange={value => setOverrides(previous => ({ ...previous, [key]: value === '' ? null : value }))} />) : null}
           {row.photoRef ? <img className="health-edit__photo" src={nutritionPhotoUrl(row.photoRef)} alt="Food capture" /> : null}
           {!isGroup ? observations.filter(observation => observation.status !== 'dismissed').map(observation => <ObservationRow key={observation.id}
             observation={observation} attached={observation.pairedEntryUuid === identity(row)}

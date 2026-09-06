@@ -43,6 +43,41 @@ export const BOOK_LOG_PROGRAM_ID = 'book-log';
 /** The subject a shelf sits under when the enrollment names none. */
 export const DEFAULT_BOOK_LOG_SUBJECT = 'english';
 
+/** The unitId the shelf answers to, everywhere. One shelf per learner. */
+export const BOOK_LOG_SHELF_UNIT_ID = `${BOOK_LOG_PROGRAM_ID}:shelf`;
+
+/** The title a shelf carries when no enrollment named one. */
+export const DEFAULT_BOOK_LOG_TITLE = 'Reading';
+
+/**
+ * How the shelf names itself to a card — its course and lesson line.
+ *
+ * ONE AUTHORITY, because there are now two ways to reach the shelf and they
+ * must not describe it differently. An ENROLLED learner's card takes this from
+ * the launcher's `status()`; an UNENROLLED learner has no enrollment, no plan
+ * entry and therefore no launcher status, so their card synthesizes the same
+ * context from here. Two hand-written copies of these literals would let one
+ * child's Reading card say "Independent study" and another's say nothing.
+ *
+ * `program:book-log` is a SCHEME, not a course id — the same trick
+ * `piano-course` uses with `plex:<ratingKey>`. It is deliberately NOT a
+ * curriculum course: a course with no units is exactly what the catalog gate
+ * refuses, and enrollment, progress and the gradebook would all try to believe
+ * in it.
+ *
+ * "Independent study" is not invented copy — it is the wording the printed
+ * agenda already uses for this row.
+ *
+ * @param {string} [title] the enrollment's title, when there is an enrollment
+ * @returns {{course: {id: string, title: string}, lesson: {id: string, title: string}}}
+ */
+export function bookLogContext(title = DEFAULT_BOOK_LOG_TITLE) {
+  return {
+    course: { id: `program:${BOOK_LOG_PROGRAM_ID}`, title: 'Independent study' },
+    lesson: { id: BOOK_LOG_SHELF_UNIT_ID, title: title || DEFAULT_BOOK_LOG_TITLE },
+  };
+}
+
 /** How an obligation is counted. See `A3` in the PRD for each one's derivation. */
 export const OBLIGATION_METRICS = Object.freeze(['pages', 'minutes', 'books', 'checkins']);
 

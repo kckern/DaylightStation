@@ -8,6 +8,7 @@ describe('LogFoodFromImage', () => {
   let mockAI;
   let mockFoodLogStore;
   let mockConversationStateStore;
+  let receipts;
 
   beforeEach(() => {
     mockMessaging = {
@@ -48,7 +49,9 @@ describe('LogFoodFromImage', () => {
       clear: jest.fn().mockResolvedValue({}),
     };
 
+    receipts = { bind: jest.fn().mockResolvedValue({}) };
     useCase = new LogFoodFromImage({
+      receipts: () => receipts,
       messagingGateway: mockMessaging,
       aiGateway: mockAI,
       foodLogStore: mockFoodLogStore,
@@ -86,14 +89,10 @@ describe('LogFoodFromImage', () => {
       // sendPhoto called once (for status), NOT twice
       expect(mockMessaging.sendPhoto).toHaveBeenCalledTimes(1);
 
-      // Caption updated in-place with food list + buttons
-      expect(mockMessaging.updateMessage).toHaveBeenCalledWith(
-        '200', // messageId from sendPhoto
-        expect.objectContaining({
-          caption: expect.any(String),
-          choices: expect.any(Array),
-        })
-      );
+      expect(receipts.bind).toHaveBeenCalledWith('user_1', expect.any(String), {
+        conversationId: 'telegram:bot_chat', messageId: '200', caption: true,
+      });
+      expect(mockMessaging.updateMessage).not.toHaveBeenCalled();
 
       // Status message should NOT be deleted (photo stays)
       expect(mockMessaging.deleteMessage).not.toHaveBeenCalled();

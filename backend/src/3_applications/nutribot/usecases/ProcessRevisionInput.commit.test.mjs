@@ -31,11 +31,13 @@ function makeHarness({ existingItems }) {
     updateItems: vi.fn(async (userId, id, items) => ({ ...revisedLog, items })),
   };
   const nutriListStore = { syncFromLog: vi.fn(async () => {}) };
+  const receipts = { interaction: vi.fn(async () => {}) };
   const conversationStateStore = {
     get: vi.fn(async () => ({ activeFlow: 'revision', flowState: { pendingLogUuid: 'log-1', originalMessageId: 'bot-1' } })),
     set: vi.fn(async () => {}),
   };
   const uc = new ProcessRevisionInput({
+    receipts: () => receipts,
     messagingGateway: { sendMessage: vi.fn(), updateMessage: vi.fn(), deleteMessage: vi.fn() },
     aiGateway: { chat: vi.fn(async () => aiResponse) },
     foodLogStore,
@@ -49,17 +51,28 @@ function makeHarness({ existingItems }) {
     updateMessage: vi.fn(async (messageId, payload) => { updates.push({ messageId, payload }); }),
     deleteMessage: vi.fn(async () => {}),
   };
-  return { uc, foodLogStore, nutriListStore, responseContext, updates };
+  return { uc, foodLogStore, nutriListStore, responseContext, updates, receipts };
 }
 
-const unsettled = [{ id: 'i1', uuid: 'i1', label: 'Toast', grams: 40, unit: 'slice', amount: 1, color: 'yellow', calories: 120, settled: false }];
-const legacy = [{ id: 'i1', uuid: 'i1', label: 'Toast', grams: 40, unit: 'slice', amount: 1, color: 'yellow', calories: 120 }];
+const foodId = '0b1d5fe6-c838-47f4-82e2-d0e47b6f7ea1';
+const unsettled = [{ id: 'toast00001', uuid: foodId, label: 'Toast', grams: 40, unit: 'slice', amount: 1, color: 'yellow', calories: 120, settled: false }];
+const legacy = [{ id: 'toast00001', uuid: foodId, label: 'Toast', grams: 40, unit: 'slice', amount: 1, color: 'yellow', calories: 120 }];
 
 const run = ({ uc, responseContext }) => uc.execute({
   userId: 'kc', conversationId: 'web:kc', text: 'make it 2 slices', messageId: 'user-1', responseContext,
 });
 
 describe('ProcessRevisionInput on a committed log', () => {
+  it('loads the current ledger and fences its versions rather than revising the stale capture', async () => {
+    const h = makeHarness({ existingItems: unsettled });
+    const current = [{ ...unsettled[0], version: 8, date: '2026-09-05', mealTime: null,
+      fiber: null, photoRef: 'saved-photo', cleanupEvidence: { name: ['label'] }, manualFields: ['date'] }];
+    h.nutriListStore.findByLogId = vi.fn(async () => current);
+    await run(h);
+    expect(h.nutriListStore.syncFromLog.mock.calls[0][1]).toEqual({ revision: true, expectedVersions: [{ id: foodId, version: 8 }] });
+    expect(h.nutriListStore.syncFromLog.mock.calls[0][0].items[0]).toMatchObject({ uuid: foodId, date: '2026-09-05', mealTime: null,
+      fiber: null, photoRef: 'saved-photo', cleanupEvidence: { name: ['label'] } });
+  });
   it('does not rewrite evidence or claim success when the consumed ledger conflicts', async () => {
     const h = makeHarness({ existingItems: unsettled });
     h.nutriListStore.syncFromLog.mockRejectedValue(Object.assign(new Error('Entry corrected elsewhere'), { code: 'VERSION_CONFLICT' }));
@@ -81,33 +94,29 @@ describe('ProcessRevisionInput on a committed log', () => {
     expect(syncedLog.items[0].calories).toBe(240);
   });
 
-  it('carries settled:false forward onto the revised items', async () => {
+  it('protects a user-revised portion from further automatic review', async () => {
     const h = makeHarness({ existingItems: unsettled });
     await run(h);
 
     const [, , items] = h.foodLogStore.updateItems.mock.calls[0];
-    expect(items.every(i => i.settled === false)).toBe(true);
+    expect(items.every(i => i.settled === false && !i.settledBy)).toBe(true);
+    expect(items[0].uuid).toBe(foodId);
+    expect(items[0].manualFields).toContain('grams');
   });
 
-  it('leaves settled ABSENT when the existing items are legacy rows', async () => {
+  it('records explicit user revision on legacy rows too', async () => {
     const h = makeHarness({ existingItems: legacy });
     await run(h);
 
     const [, , items] = h.foodLogStore.updateItems.mock.calls[0];
-    for (const item of items) expect('settled' in item).toBe(false);
+    for (const item of items) { expect(item.settledBy).toBeUndefined(); expect(item.manualFields).toContain('grams'); }
   });
 
-  it('offers Undo/Edit, never Accept, on the revised message', async () => {
+  it('restores the shared receipt rather than composing a second confirmation', async () => {
     const h = makeHarness({ existingItems: unsettled });
     await run(h);
 
-    const final = h.updates[h.updates.length - 1];
-    const buttons = (final.payload.choices || []).flat();
-    const cmds = buttons.map(b => JSON.parse(b.callback_data).cmd);
-
-    expect(cmds).not.toContain('a');
-    expect(cmds.sort()).toEqual(['r', 'x']);
-    expect(buttons.some(b => /Accept/i.test(b.text))).toBe(false);
-    expect(buttons.some(b => /Undo/i.test(b.text))).toBe(true);
+    expect(h.updates).toEqual([]);
+    expect(h.receipts.interaction.mock.calls).toEqual([['kc', 'log-1', 'processing'], ['kc', 'log-1', null]]);
   });
 });

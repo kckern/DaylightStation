@@ -1435,13 +1435,46 @@ panel code is labelled and unspaced, the calculator code is bare and grouped in
 threes, and each names a different device. Schoolcalc entries mint `token: null`
 and are therefore **not** keypad-reachable — intended, not an oversight.
 
-**Two clocks on one record.** `subject_next` tokens carry a 7-day TTL so the
+**Two clocks and a counter.** `subject_next` tokens carry a 7-day TTL so the
 printed QR outlives the day. A code riding that clock would still be typable a
 week later and would open whatever the subject offers *that* day, contradicting
 the paper in the child's hand. So the record carries its own
-`accessCodeExpiresAt`, set to the next 4am study-day boundary, and
-`createTokenRecord` refuses a code that would outlive its token. Codes are legal
-on `subject_next` only.
+`accessCodeExpiresAt`, set to the next 4am study-day boundary, and a code that
+would outlive its token is refused at mint time. Codes are legal on
+`subject_next`, `worksheet_companion` and `agenda_print`.
+
+The clocks bound how *long* a code is typable. A **use cap** bounds how many
+times it opens something: a lesson code is spent after three opens, and the
+fourth is refused with a sentence naming the way forward rather than "Try
+again." — retyping is exactly what cannot help. The count is taken when a button
+actually opens something, never on a lookup: the panel resolves a code twice per
+interaction (once to draw the card, once when the button is pressed), and a
+child may look at their card as often as they like. Leaving, and an action that
+failed, are both free.
+
+A spent code stays *live*. It resolves and is refused in words rather than
+vanishing, and it stays in the minter's collision set so its six digits cannot
+be handed to another child while its paper is still in a hand.
+
+**The reading code is uncapped**, deliberately — see "The reading log" below.
+
+**Wrong codes are throttled, per device.** Only a *rejected* code spends
+allowance, so a child working through several of their own codes is never
+slowed; a device producing nothing but misses is asked to pause, and a `warn` is
+emitted so a burst is visible without archaeology. The bucket is keyed on the
+panel's own id and never on the request IP — every screen in the house reaches
+the backend through one reverse proxy, so an IP names the proxy and would let
+one screen throttle another.
+
+**A re-entered code asks whose paper it is.** Typing a code claims the learner it
+names, so a card being opened for the second or third time asks "Is this you?"
+*before* that claim, with the learner's face and name already on screen. The
+first open of a fresh code each day asks nothing. It is a speed bump rather than
+a lock — identity here is a soft, self-declared tap and anyone can tap yes — but
+a child who walks away, times out, or says no has claimed nobody.
+
+None of this makes a code authentication. What is bounded is how much a single
+leaked code is worth, not who is holding it.
 
 **`/resolve` does not write.** `ResolveSubjectNext.execute` calls `ensureSession`,
 which appends a `created` event when an entry has no session — so resolving a
@@ -1450,6 +1483,44 @@ that sibling's history. `ResolveAccessCode` computes `nextMove` against a
 synthetic `created` state instead and hands `/act` a `SYNTHETIC_SESSION_ID` that
 must never reach a use case. `/act` is where a real session is opened, because by
 then the child has pressed a button.
+
+#### The reading log
+
+**The shelf is open to every learner, every day.** An enrollment carries the
+*obligation* — how much reading is owed, and therefore whether a row appears on
+the agenda and counts toward the day — and nothing else. It does not grant
+access. A learner with no reading enrollment has no reading row, no target and
+no score, and can still look a book up, log pages and finish it.
+
+Every learner's agenda therefore carries a **`READING LOG` code** of its own,
+minted whether or not they are enrolled and printed as its own card, separate
+from the `PANEL CODE` on a lesson. It is minted independently of the day's
+sections, so it is still there on a day when English is already finished —
+which is exactly the day a child wants to record the book they finished with it.
+
+That code names its program, and it is honoured literally: it opens the shelf,
+never the English lesson that happens to share its subject. Opening the wrong
+work would be worse than opening nothing, because a child cannot tell it went
+wrong.
+
+**It is uncapped**, unlike a lesson code. A log is not a task: "I finished
+another one" is something a child may honestly do several times in a day, and a
+cap would break the feature. Frequency was never the real question on this
+surface — attribution is, and the shelf answers it continuously by carrying the
+learner's face and name at the top of it, including while a book is open. A
+shelf left open on a shared wall panel is one child's books with another child's
+hands on them, and the name at the top is how the second child notices.
+
+**What the shelf will not accept.** A finish may be dated in the past — "I
+finished it on the trip last week" is an honest entry — but not more than a
+fortnight back, so an entry cannot rewrite a period that has already been
+reported on. A page past the end of a book is kept as evidence rather than
+refused, because mispaginated metadata, omnibus editions and other printings are
+all real; only a page implausible for any edition is turned away. A book whose
+length is unknown has no ceiling at all, which is the ordinary case rather than
+the edge one. The day picker offers only days the log will accept.
+
+---
 
 **One action per card, never a composite.** A one-tap print-and-play is forbidden
 by the session event schema in both directions (`issued` has no media edge;

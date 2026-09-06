@@ -46,7 +46,9 @@ describe('one fold for the whole day', () => {
 
   it('the per-meal macro subtotal drops every uncounted row', () => {
     render(<LogTable byBucket={byBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
-    expect(screen.getByText('Protein 15 g · Carbs 18 g · Fat 11 g')).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Protein: 15 grams' })).toHaveTextContent('15');
+    expect(screen.getByRole('img', { name: 'Carbs: 18 grams' })).toHaveTextContent('18');
+    expect(screen.getByRole('img', { name: 'Fat: 11 grams' })).toHaveTextContent('11');
   });
 
   it('the footer macro totals drop every uncounted row', () => {

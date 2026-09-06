@@ -71,6 +71,9 @@ function dehydrateNutriListItem(log, item) {
     nutrientProvenance: item.nutrientProvenance,
     manualFields: item.manualFields,
     cleanupFields: item.cleanupFields,
+    review: item.review,
+    captureEvidence: item.captureEvidence,
+    cleanupEvidence: item.cleanupEvidence,
     originalQuantity: item.originalQuantity ?? { amount: item.amount, unit: item.unit },
   };
 }
@@ -166,6 +169,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     if (prior && prior.fingerprint !== fingerprint) throw Object.assign(new Error('Operation ID was already used for another request'), { code: 'IDEMPOTENCY_CONFLICT', status: 409 });
     if (inFlightOperations.has(key)) return inFlightOperations.get(key);
     if (prior?.result) return prior.result;
+    if (prior?.mutationResult) return prior.mutationResult;
     if (prior?.items?.length) {
       // The ledger committed before the response could be recorded. Recover
       // the committed outcome rather than calling the parser a second time.
@@ -174,7 +178,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     }
     operations[id] = { fingerprint, pending: true };
     this.#writeFile(this.#operationsPath(userId), operations);
-    const promise = operationContext.run({ userId, id, fingerprint }, async () => {
+    const promise = operationContext.run({ userId, id, fingerprint, operation: payload.operation }, async () => {
       const result = await action();
       const latest = loadYaml(this.#operationsPath(userId)) || {};
       latest[id] = { ...latest[id], fingerprint, pending: false, result };
@@ -330,6 +334,21 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     }
     const result = { items: [...changed.values(), ...creates].map(row => this.#normalizeItem(row)),
       affectedIds: [...affectedIds], affectedDates: [...affectedDates].filter(Boolean) };
+    const operation = operationContext.getStore();
+    if (operation?.userId === userId && operation.operation === 'entry-update' && updates.length) {
+      const root = all.find(row => matches(row, updates[0].id));
+      const rootId = root.uuid || root.id;
+      const operations = loadYaml(this.#operationsPath(userId)) || {};
+      operations[operation.id] = { ...operations[operation.id], fingerprint: operation.fingerprint,
+        mutationResult: { item: result.items.find(row => (row.uuid || row.id) === rootId) || this.#normalizeItem(root),
+          versions: Object.fromEntries(updates.map(({ id }) => {
+            const row = finalRows.find(row => matches(row, id));
+            return [row.uuid || row.id, row.version ?? 1];
+          })),
+          changedFields: Object.keys(updates[0].changes), cascadedIds: result.affectedIds.filter(id => id !== rootId),
+          affectedDates: result.affectedDates } };
+      writes.set(this.#operationsPath(userId), operations);
+    }
     if (audit) {
       auditRecords[audit.id] = { ...audit, userId,
         before: all.filter(row => affectedIds.has(row.uuid || row.id)),
@@ -416,7 +435,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
    * @param {NutriLog} nutriLog
    * @returns {Promise<void>}
    */
-  async syncFromLog(nutriLog, { revision = false } = {}) {
+  async syncFromLog(nutriLog, { revision = false, expectedVersions = null } = {}) {
     this.#recover(nutriLog.userId);
     const filePath = this.#getPath(nutriLog.userId);
     const logId = nutriLog.id;
@@ -445,16 +464,29 @@ export class YamlNutriListDatastore extends INutriListDatastore {
       if (revision) {
         const belongs = row => row.logId === logId || row.log_uuid === logUuid;
         const originalRows = existing.filter(belongs);
-        if (originalRows.some(row => (row.version ?? 1) > 1) || Object.values(deleted).some(belongs)) {
+        const versions = list => list.map(row => [row.uuid || row.id, row.version ?? 1]).sort(([a], [b]) => a.localeCompare(b));
+        const conflict = expectedVersions
+          ? JSON.stringify(versions(originalRows)) !== JSON.stringify(versions(expectedVersions))
+          : originalRows.some(row => (row.version ?? 1) > 1) || Object.values(deleted).some(belongs);
+        if (conflict) {
           throw Object.assign(new Error('This capture has been corrected in the food log. Edit its entries there.'), { status: 409, code: 'VERSION_CONFLICT' });
         }
         const documents = this.#documents(nutriLog.userId);
         const writes = new Map([...documents].map(([file, rows]) => [file, rows.filter(row => !belongs(row))]));
-        const replacements = newItems.map(item => ({ ...item, version: 2 }));
+        const replacements = newItems.map((item, index) => {
+          const original = originalRows.find(row => row.uuid === item.uuid || row.id === item.id);
+          const proposed = nutriLog.items[index];
+          if (!original && (existingIds.has(item.uuid || item.id) || deleted[item.uuid || item.id])) {
+            throw Object.assign(new Error('Revision cannot reuse another or deleted entry'), { status: 409, code: 'VERSION_CONFLICT' });
+          }
+          return { ...item, date: proposed.date || item.date,
+            mealTime: Object.hasOwn(proposed, 'mealTime') ? proposed.mealTime : item.mealTime,
+            version: original ? (original.version ?? 1) + 1 : 1 };
+        });
         const replacementIds = new Set(replacements.map(item => item.uuid || item.id));
         for (const row of originalRows) if (!replacementIds.has(row.uuid || row.id)) deleted[row.uuid || row.id] = row;
         writes.set(filePath, [...writes.get(filePath), ...replacements]);
-        this.#commitRows(nutriLog.userId, writes, [...originalRows.map(row => row.date), nutriLog.meal?.date],
+        this.#commitRows(nutriLog.userId, writes, [...originalRows.map(row => row.date), ...replacements.map(row => row.date), nutriLog.meal?.date],
           new Map([[this.#tombstonePath(nutriLog.userId), deleted]]));
         return;
       }
@@ -524,19 +556,22 @@ export class YamlNutriListDatastore extends INutriListDatastore {
         nutrientProvenance: item.nutrientProvenance ?? null,
         manualFields: item.manualFields ?? [],
         cleanupFields: item.cleanupFields ?? [],
+        review: item.review,
+        captureEvidence: item.captureEvidence,
+        cleanupEvidence: item.cleanupEvidence,
         copiedFrom: item.copiedFrom ?? null,
         grams: foodGrams(item),
         unit: item.unit || 'g',
         amount: item.amount ?? foodGrams(item),
         noom_color: item.color || item.noom_color || 'yellow',
-        calories: item.calories ?? 0,
-        fat: item.fat ?? 0,
-        carbs: item.carbs ?? 0,
-        protein: item.protein ?? 0,
-        fiber: item.fiber ?? 0,
-        sugar: item.sugar ?? 0,
-        sodium: item.sodium ?? 0,
-        cholesterol: item.cholesterol ?? 0,
+        calories: item.calories === undefined ? 0 : item.calories,
+        fat: item.fat === undefined ? 0 : item.fat,
+        carbs: item.carbs === undefined ? 0 : item.carbs,
+        protein: item.protein === undefined ? 0 : item.protein,
+        fiber: item.fiber === undefined ? 0 : item.fiber,
+        sugar: item.sugar === undefined ? 0 : item.sugar,
+        sodium: item.sodium === undefined ? 0 : item.sodium,
+        cholesterol: item.cholesterol === undefined ? 0 : item.cholesterol,
         date: item.date,
         mealTime: item.mealTime ?? null,
         logId: item.logId || item.log_uuid || item.logUuid,

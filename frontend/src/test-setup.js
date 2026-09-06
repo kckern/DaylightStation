@@ -8,7 +8,16 @@ import { configure } from '@testing-library/dom';
 // AdminPreviewPlayer, WeeklyReview…), each passing every solo run. Raising the
 // ceiling changes NOTHING about what must become true — only how long a
 // starved worker is allowed to take to observe it.
-configure({ asyncUtilTimeout: 5000 });
+//
+// 5s was still the BINDING ceiling, which is why victims kept appearing after
+// `testTimeout` was raised to 20s: a starved `waitFor` gives up at its own
+// limit long before the test's, so the 20s only ever governed tests that do
+// not wait. Measured 2026-09-06 in a full gate sweep — ArtLibrary's quick-tag
+// and WeeklyReview's extent-probe fallback each failed at 5064ms, and each
+// takes ~40ms run alone. A 120x stall is scheduling, not logic, so the number
+// below has to leave room for it while staying under `testTimeout` (20s) —
+// a waitFor outliving its own test only moves the failure.
+configure({ asyncUtilTimeout: 15000 });
 
 // happy-dom doesn't provide localStorage in our custom env. Add a minimal
 // in-memory polyfill so persistence tests work consistently across runs.

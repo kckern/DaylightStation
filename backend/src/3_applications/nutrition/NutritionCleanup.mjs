@@ -4,6 +4,8 @@ import { AgentInteractions } from '#apps/agents/framework/AgentInteractions.mjs'
 
 const fail = (message, status = 409) => { throw Object.assign(new Error(message), { status }); };
 const terminal = new Set(['completed', 'failed', 'cancelled']);
+const questionExpired = (question, now, dates) => question.entryVersions.some(row => row.stabilizesAt
+  ? !Number.isFinite(Date.parse(row.stabilizesAt)) || Date.parse(row.stabilizesAt) <= now : !dates.includes(row.date));
 
 /** Durable dispatcher and application phase gates around read-only AI reasoning. */
 export class NutritionCleanup {
@@ -104,8 +106,6 @@ export class NutritionCleanup {
       } catch (error) {
         if (error.status !== 409 && error.status !== 404) throw error;
         outcomes.push({ status: 'skipped', reason: error.message, ...(run.dryRun ? { proposal } : {}) });
-        if (error.code === 'CLEANUP_REVIEW_REQUIRED') questions.push({ question: proposal.reason + '. Is this change correct?',
-          entryIds: proposal.updates.map(u => u.id), choices: [{ label: 'Apply these changes', repair: proposal }] });
       }
     }
     if (!run.dryRun && fence()) for (const q of questions) {
@@ -113,8 +113,10 @@ export class NutritionCleanup {
       const entries = allRows.filter(row => q.entryIds.includes(row.uuid) || q.entryIds.includes(row.id));
       if (entries.length !== new Set(q.entryIds).size) continue;
       this.interactions.ask(userId, {
+        dedupeIssue: true,
         issueKey: sha256Text(JSON.stringify([q.entryIds.slice().sort(), [...new Set(q.choices.flatMap(choice => choice.repair.updates.flatMap(update => Object.keys(update.changes))))].sort()])),
-        question: q.question, runId: id, entryVersions: entries.map(row => ({ id: entryKey(row), version: row.version ?? 1, date: row.date })),
+        question: q.question, runId: id, entryVersions: entries.map(row => ({ id: entryKey(row), version: row.version ?? 1, date: row.date,
+          ...(row.review ? { stabilizesAt: row.review.stabilizesAt } : {}) })),
         choices: q.choices.map((choice, i) => ({ ...choice, id: String(i) })), evidence: result.evidence,
         entryNames: Object.fromEntries(entries.flatMap(row => [row.id, row.uuid].filter(Boolean).map(key => [key, row.name || row.label || row.item || key]))),
         snapshot: run.snapshot,
@@ -139,7 +141,7 @@ export class NutritionCleanup {
       return { status: 'resolved', result };
     }
     const dates = cleanupDates(this.clock.now(), this.timezoneFor(userId));
-    if (question.entryVersions.some(row => !dates.includes(row.date))) fail('This question is outside today/yesterday. Edit the historical entry manually.');
+    if (questionExpired(question, this.clock.now(), dates)) fail('The review window has closed. You can still edit the entry manually.');
     const current = await this.auditor.snapshot(userId);
     const rows = [...current.rows, ...current.pending.flatMap(log => log.items)];
     for (const expected of question.entryVersions) {
@@ -162,12 +164,16 @@ export class NutritionCleanup {
     return this.#answer(userId, { ...question, prepared });
   }
   async tick(userId) {
+    await this.stabilization?.run(userId);
+    if (this.store.load(userId).policyVersion !== 2) this.store.update(userId, state => {
+      state.policyVersion = 2; state.settings.telegram = false;
+    });
     await this.interactions.recover(userId);
     const state = this.store.load(userId);
     const dates = cleanupDates(this.clock.now(), this.timezoneFor(userId));
-    if (Object.values(state.questions).some(q => q.status === 'open' && q.entryVersions.some(row => !dates.includes(row.date)))) {
+    if (Object.values(state.questions).some(q => q.status === 'open' && questionExpired(q, this.clock.now(), dates))) {
       this.store.update(userId, current => {
-        for (const q of Object.values(current.questions)) if (q.status === 'open' && q.entryVersions.some(row => !dates.includes(row.date))) { q.status = 'stale'; q.version++; }
+        for (const q of Object.values(current.questions)) if (q.status === 'open' && questionExpired(q, this.clock.now(), dates)) { q.status = 'stale'; q.version++; }
       });
     }
     if (!state.settings.enabled) return;
