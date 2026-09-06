@@ -310,7 +310,7 @@ export const schoolApi = {
   // non-2xx here means the backend itself is unwell (down, lifecycle disabled
   // → 404, or 500) and the panel shows its degraded message instead of "Try
   // again" — the two must not be confused.
-  selfServiceResolve: (code) => req('/self-service/resolve', { code }),
+  selfServiceResolve: (code, deviceId = null) => req('/self-service/resolve', { code, ...(deviceId ? { deviceId } : {}) }),
   // The same card, opened from a link a grown-up was handed instead of six
   // digits a child typed. Same never-errors-for-a-bad-input contract as
   // `/resolve`: an unreadable link is a 200 carrying `{ ok: false, sentence }`,
