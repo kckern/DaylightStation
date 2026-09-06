@@ -21,6 +21,65 @@ and they age out.
 Full postmortems live in `docs/_wip/bugs/` — these are condensed for the
 failure *patterns* they reveal, which recur in other subsystems too.
 
+### 2026-09-06 — one reading code, thirty-six opens, and a finish dated into a closed week
+
+Reported as "abuse of the reading code by an unauthorized learner". The logs
+could not confirm who was typing it — and that turned out to be the finding, not
+a limit of the investigation.
+
+**What the store showed.** One `book-log` code, minted 07:55, was typed 13 times
+between 07:56 and 13:01 and opened the shelf 15 times. The day before, another
+was typed 11 times in five minutes. 36 backend resolutions across two days, all
+naming the same learner. No other code in the retained window behaves this way —
+every other one resolves once or twice and stops.
+
+**Four separate gaps, and only the first was suspected.**
+
+1. *A code had two clocks and no counter.* Both bounded how LONG it stays
+   typable; neither bounded how many times it opens something. Live until the
+   4am rollover, so up to ~21 hours of unlimited use. Documented at the time as
+   deliberate — "there is no throttle and no lockout anywhere in this path" —
+   and it WAS the right call when a code opened one lesson. It stopped being
+   right the day one opened a free-form shelf.
+2. *Typing a code silently claims the learner.* Every `code.resolved` was
+   followed immediately by `school.profile.claimed`. Whoever typed it became
+   that child for attribution, which is why the logs cannot answer the question
+   that was asked. Identity at the panel is a soft self-declared tap by design;
+   the gap was that a code claimed *before* anyone was asked.
+3. *Wrong codes were not throttled.* 126 rejections in 14 days, in bursts — 8 in
+   3 minutes, 7 in 65 seconds, 6 in 8 seconds — none of it above `info`.
+4. *The shelf accepted data no reading session produces.* Page **250** on a
+   **192**-page book, then page 5 fifteen seconds later; and a book opened
+   09-06T15:07Z whose `finished` event was stamped **2026-08-19**, eighteen days
+   before it was opened.
+
+**Two silent downstream effects of that fourth one, worth knowing because
+neither surfaces as an error.** A shelf item takes its FURTHEST page, so the
+page-5 correction did nothing and the item permanently reads 250 — there is no
+retraction path for a progress event, only for a finish. And the shelf sorts on
+the finish's own timestamp, so a book finished today sank below books touched
+three weeks earlier, while the obligation window counted it in mid-August and
+missed the day it was actually read.
+
+**A fifth thing, found while fixing the others and unrelated to the abuse.**
+Reachability of the reading shelf was derived entirely from a `book-log`
+enrollment, although the shelf itself needs none. One child of four was
+enrolled; the other three had no route to a reading log at all, silently.
+
+**What changed.** Lesson codes are spent after three opens, counted when a button
+opens something rather than on a lookup. Wrong codes are throttled per device —
+not per IP, because every screen here reaches the backend through one reverse
+proxy. A re-entered code asks "Is this you?" before it claims anyone. Backdating
+is bounded to a fortnight on both write doors, and an implausible page is
+refused while a merely-past-the-end one is still kept. The reading log is open to
+every learner with its own daily code, and is deliberately uncapped — its own
+learner chip, not a frequency limit, is what answers "whose log is this?".
+
+**The pattern worth carrying forward:** the question was "who is doing this?",
+and the system could not answer it because attribution happened before anyone
+was asked. Three of the four gaps were only visible by cross-reading the log
+store against the data volume; none of them raised anything above `info`.
+
 ### 2026-08-25 — one tap became five, and a timed-out print became blank paper
 
 Full report: `docs/_wip/bugs/2026-08-25-school-morning-scan-and-print-incident.md`
