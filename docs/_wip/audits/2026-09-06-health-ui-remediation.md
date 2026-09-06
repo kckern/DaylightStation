@@ -1,7 +1,10 @@
 # Health UI remediation verification
 
-Implements the September 5 audit and its 16-item remediation plan. Deployment and
-the two previewed artwork corrections are pending at this checkpoint.
+Implements the September 5 audit and its 16-item remediation plan. Code is
+committed and fast-forwarded to main as `f81b295ae`. Deployment and the two
+previewed artwork corrections are pending at this checkpoint: the live deployment
+gate detected Portal activity, then both video rendering and Portal activity.
+No Docker build or restart was attempted through a blocked gate.
 
 ## Changes
 
@@ -43,8 +46,10 @@ release commits once. Volume entry remains volume and does not confirm nutrition
 
 Parse, stylesheet, layer, filesystem and UI-baseline gates pass. The production
 frontend build passes; existing Sass deprecations and chunk-size warnings remain.
-An earlier browser run reported a resource-loading error; the complete rerun
-passed without weakening the unexpected-request assertion.
+An earlier browser run reported a resource-loading error; the complete rerun and
+three repeats of all three context journeys (nine additional executions) passed
+without weakening the unexpected-request assertion. Commit-time composition
+contract checks also passed all nine tests.
 
 ## Screenshots
 
@@ -86,3 +91,8 @@ be a fresh versioned icon-only command using the before value, not a file restor
 The pre-repair day has food 1,539 kcal, base budget 1,788 kcal, exercise 347 kcal,
 remaining 596 kcal. Yogurt/chia deadlines are September 8 at 19:48:18Z and
 19:48:21Z. Recheck these and the original mutable Telegram bindings after repair.
+
+The read-only receipt preview and durable checkpoint agree on original message
+IDs: yogurt `11659`, chia `11658`, scale `11660`, burrito `11663` (caption).
+All four rendered fingerprints already match their delivery acknowledgements.
+The preview used food-log IDs, not entry IDs, and did not edit Telegram.
