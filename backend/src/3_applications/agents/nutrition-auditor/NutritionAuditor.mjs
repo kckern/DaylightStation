@@ -114,6 +114,7 @@ Use best judgment for naming, identity, meal placement and neutral artwork. An o
 Never delete food, invent consumption, confirm pending captures, or rewrite history.
 Group headers are non-additive, kind=group, with zero nutrients; children carry nutrition.
 Use createGroups to propose a new header with existing children; their IDs/versions must come from the snapshot.
+Only ungrouped children (parentId=null) may receive a new group. A food already inside a group must keep that group; never create a replacement or duplicate header.
 Never group across captures or move a child without its group. Missing artwork may remain neutral; do not force a wrong icon.
 Copy each entry's repairTarget exactly. For pending captures use logUuid and expectedLogVersion. For committed rows use null for both. sourceCaptureId is only for read_capture/lookup_barcode_product, NEVER a pending repair target.
 Keep independent repairs separate: do not bundle nutrition corrections with optional artwork or grouping. Only output real icon slugs returned by find_food_art; an emoji in a product record is not an icon slug. Describe proposals as proposals, not as changes already applied.
