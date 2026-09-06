@@ -99,7 +99,7 @@ const LAUNCH_OUTCOMES = Object.freeze({
 
 export class RunSelfServiceAction {
   #resolver; #sessions; #issue; #media; #remediation; #donow; #close; #launchers; #companions; #companionHandlers;
-  #newSessionId; #clock; #logger;
+  #newSessionId; #clock; #logger; #tokens;
 
   /**
    * @param {object} deps
@@ -120,6 +120,12 @@ export class RunSelfServiceAction {
    *   honours a `launch:` unit the moment DoNow reports `dispatched`, as
    *   `ResolveScanAction#dispatchLaunch` does — never with `signedOffBy`, that
    *   claim belongs to a grown-up and not to a keypad.
+   * @param {import('../ports/ITokenRegistry.mjs').ITokenRegistry} [deps.tokens]
+   *   the SAME registry `/resolve` reads, so a use is counted against the very
+   *   record the cap is read from. Optional-degrading like every collaborator
+   *   below: absent, codes simply are not spent — the panel keeps working and
+   *   the cap is the thing that stops applying, which is the right direction
+   *   for a missing dependency to fail.
    * @param {() => string} [deps.newSessionId]
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
@@ -133,6 +139,7 @@ export class RunSelfServiceAction {
     resolveAccessCode, sessions,
     issueDocument = null, dispatchMedia = null, openRemediation = null,
     donow = null, closeSessionOutcome = null, launchers = new Map(), companions = null, companionHandlers = null,
+    tokens = null,
     newSessionId = () => `ses_${shortId(8)}`,
     clock = () => new Date(), logger = console,
   } = {}) {
@@ -141,6 +148,7 @@ export class RunSelfServiceAction {
     }
     this.#resolver = resolveAccessCode;
     this.#sessions = sessions;
+    this.#tokens = tokens;
     this.#issue = issueDocument;
     this.#media = dispatchMedia;
     this.#remediation = openRemediation;
@@ -169,9 +177,13 @@ export class RunSelfServiceAction {
    */
   async execute({ code, action } = {}) {
     const kind = typeof action === 'string' ? action : (action?.kind ?? null);
+    // Filled in by `#run` once a real action is under way, so the spend below
+    // can happen HERE, where the outcome is finally known, without threading a
+    // return value through every branch of a method with a dozen exits.
+    const spend = {};
     let result;
     try {
-      result = await this.#run({ code, kind });
+      result = await this.#run({ code, kind, spend });
     } catch (error) {
       // The outer net. Every branch below has its own catch with better
       // words; this one exists so that no throw at all can reach the router.
@@ -200,10 +212,40 @@ export class RunSelfServiceAction {
       action: kind, outcome: answer.outcome, sessionId: answer.sessionId,
       status: answer.effect?.status ?? answer.effect?.decision ?? null,
     });
+    await this.#spendCode(spend, answer.outcome);
     return answer;
   }
 
-  async #run({ code, kind }) {
+  /**
+   * Count one use of the code, at the ONE moment that means anything: a button
+   * press that actually opened something.
+   *
+   * NOT ON `/resolve`. That route is read-only by contract, and this method's
+   * caller re-resolves the same code on the way in — so counting there would
+   * spend two uses for every one interaction a child has.
+   *
+   * NOT ON A FAILURE EITHER. A printer that would not answer gives the child
+   * nothing, and charging them for it turns an outage into a lockout. The
+   * counter measures what a child GOT, not what they attempted.
+   *
+   * Never throws: a registry that will not record a use must not retract work
+   * that already happened. The child has their sheet; losing the count is the
+   * cheaper of the two failures, and it is logged so it is not silent.
+   */
+  async #spendCode(spend, outcome) {
+    const token = spend?.token ?? null;
+    if (!token || outcome === 'failed' || outcome === 'refused') return;
+    if (typeof this.#tokens?.recordUse !== 'function') return;
+    try {
+      await this.#tokens.recordUse(token, { at: this.#clock().toISOString() });
+    } catch (error) {
+      this.#logger.warn?.('school.selfservice.code.use-unrecorded', {
+        error: error?.message ?? String(error),
+      });
+    }
+  }
+
+  async #run({ code, kind, spend = null }) {
     let resolved;
     try {
       resolved = await this.#resolver.resolve({ code });
@@ -214,7 +256,7 @@ export class RunSelfServiceAction {
       return { outcome: 'failed', sentence: TELL_A_GROWN_UP };
     }
 
-    const { card, resolution } = resolved ?? {};
+    const { card, resolution, record } = resolved ?? {};
     // An unknown, expired or revoked code already carries its own sentence
     // ("Try again."), and so does a backend that would not answer. Reusing
     // them keeps the keypad saying one thing about one code.
@@ -233,10 +275,16 @@ export class RunSelfServiceAction {
     }
 
     // The way out of the card. No session, no use case, nothing recorded —
-    // the code stays valid and the panel goes back to the keypad.
+    // the code stays valid and the panel goes back to the keypad. Looking at a
+    // card and leaving has always been free, and a counter that charged for it
+    // would spend a child's code on their own second thoughts.
     if (kind === 'exit') {
       return { outcome: 'done', sentence: 'Okay — see you next time.', transition: 'close' };
     }
+
+    // Past `exit`, a real action is about to run. Handed to `execute`, which
+    // spends it only if the action actually delivered something.
+    if (spend) spend.token = record?.token ?? null;
 
     if (kind === 'companion' && resolution?.kind === 'companion') {
       const answer = await this.#companionHandlers?.open?.({ offer: resolution.offer });

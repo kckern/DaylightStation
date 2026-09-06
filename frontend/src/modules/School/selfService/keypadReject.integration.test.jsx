@@ -98,6 +98,28 @@ describe('unknown code → NONONO, through the real hook', () => {
     expect(entryText()).toBe(REJECT_WORD);
   });
 
+  it('a SPENT code is refused like a bad one, not like an outage', async () => {
+    // The trap this asserts against: `isBackendFault` leaned toward FAULT for
+    // any reason it did not recognise, so shipping the backend's `used_up`
+    // refusal without teaching this hook would have shown a child "the school
+    // computer isn't answering" beside a Retry button — for a code that is
+    // perfectly understood and simply finished. Retrying it can never work.
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: false, reason: 'used_up', learner: null, subject: null, title: null,
+        sentence: 'You have opened this a few times already. Ask a grown-up for a new card.',
+        actions: [],
+      }),
+    });
+    render(<Panel />);
+    typeCode('123456');
+    await act(async () => { await vi.advanceTimersByTimeAsync(300 + 1200); });
+    expect(screen.getByTestId('selfservice-entry')).toHaveAttribute('data-state', 'rejected');
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  });
+
   it('a backend outage gets words and a retry, never the animation', async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: false, status: 503, json: async () => null,

@@ -167,18 +167,24 @@ const PRINT_KINDS = new Set(['print', 'retry']);
  * beside a keypad with no way forward.
  *
  * `reason` is the machine-readable discriminator and the ONLY thing consulted:
- * `unknown_code` | `not_answering`, always present on a refusal card. An
- * earlier draft matched the user-facing sentence instead, which meant
+ * `unknown_code` | `used_up` | `not_answering`, always present on a refusal
+ * card. An earlier draft matched the user-facing sentence instead, which meant
  * rewording the backend's copy for a child would silently remove this panel's
  * retry button — a dead end introduced by a typo.
  *
- * The default LEANS TOWARD FAULT: only `unknown_code`, the one reason that
- * definitively means "the child mistyped", suppresses the retry. Anything
- * unrecognised or absent gets one, because a spurious retry button costs a
- * wasted tap while a missing one is a dead end at a wall panel that has no
- * other affordance.
+ * The default LEANS TOWARD FAULT: only the reasons that definitively mean "the
+ * server is fine, the code is not" suppress the retry. Anything unrecognised or
+ * absent gets one, because a spurious retry button costs a wasted tap while a
+ * missing one is a dead end at a wall panel that has no other affordance.
+ *
+ * `used_up` JOINED THE LIST ON 2026-09-06, and it had to arrive in the same
+ * change as the backend refusal. A code is now spent after a few opens; left
+ * out of this set it would have been classified as an outage, so a child whose
+ * code was simply finished would read "the school computer isn't answering"
+ * beside a Retry button that could never work.
  */
-const isBackendFault = (payload) => payload?.reason !== 'unknown_code';
+const CHILD_FIXABLE_REASONS = new Set(['unknown_code', 'used_up']);
+const isBackendFault = (payload) => !CHILD_FIXABLE_REASONS.has(payload?.reason);
 
 /**
  * What `onLaunch` (SchoolApp's `onPortalLaunch`) needs in order to route into a
