@@ -215,14 +215,14 @@ export function validateFoodItem(item) {
       amount: item.amount,
       color: item.color,
       // Nutrition fields (optional, default to 0)
-      calories: item.calories ?? 0,
-      protein: item.protein ?? 0,
-      carbs: item.carbs ?? 0,
-      fat: item.fat ?? 0,
-      fiber: item.fiber ?? 0,
-      sugar: item.sugar ?? 0,
-      sodium: item.sodium ?? 0,
-      cholesterol: item.cholesterol ?? 0,
+      calories: item.calories === undefined ? 0 : item.calories,
+      protein: item.protein === undefined ? 0 : item.protein,
+      carbs: item.carbs === undefined ? 0 : item.carbs,
+      fat: item.fat === undefined ? 0 : item.fat,
+      fiber: item.fiber === undefined ? 0 : item.fiber,
+      sugar: item.sugar === undefined ? 0 : item.sugar,
+      sodium: item.sodium === undefined ? 0 : item.sodium,
+      cholesterol: item.cholesterol === undefined ? 0 : item.cholesterol,
       // Lifecycle / group fields
       kind: item.kind || 'item',
       parentId: item.parentId ?? null,
@@ -235,6 +235,9 @@ export function validateFoodItem(item) {
       originalQuantity: item.originalQuantity ?? null,
       manualFields: Array.isArray(item.manualFields) ? item.manualFields.filter(field => typeof field === 'string') : [],
       cleanupFields: Array.isArray(item.cleanupFields) ? item.cleanupFields.filter(field => typeof field === 'string') : [],
+      review: item.review,
+      captureEvidence: item.captureEvidence,
+      cleanupEvidence: item.cleanupEvidence,
       nutrientProvenance: item.nutrientProvenance ?? null,
     },
   };
@@ -371,6 +374,9 @@ export function validateNutriLog(log) {
         nutritionLookup: log.metadata?.nutritionLookup,
         reviewOperation: log.metadata?.reviewOperation,
         cleanupAudit: log.metadata?.cleanupAudit,
+        captureRecovery: log.metadata?.captureRecovery,
+        captureEvidence: log.metadata?.captureEvidence,
+        placementId: log.metadata?.placementId,
         // Scale-path provenance. This whitelist is what actually reaches YAML
         // (`save()` stores `toJSON()`), so a key omitted here is DROPPED, not
         // merely unvalidated. These four were being silently discarded:

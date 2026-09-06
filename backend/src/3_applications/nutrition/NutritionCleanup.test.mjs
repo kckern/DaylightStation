@@ -25,14 +25,14 @@ async function fixture({ pending = false } = {}) {
   const store = new YamlAgentStateStore({ dataService });
   const clock = { now: () => Date.parse('2026-09-04T19:00:00Z') };
   const timezoneFor = () => 'America/Los_Angeles';
-  const review = new FoodLogReview({ foodLogs, items, logger });
+  const review = new FoodLogReview({ foodLogs, items, logger, clock });
   const log = createNutriLog({ userId: 'alice', meal: { date: '2026-09-04', time: 'afternoon' }, timezone: timezoneFor(), timestamp: new Date(clock.now()),
     metadata: { source: 'voice' }, items: [
       { id: 'fish000001', label: 'White Fish', calories: 52, grams: 55, amount: 55, unit: 'g', icon: 'default', color: 'green', settled: false },
       { id: 'tortilla01', label: 'Tortilla', calories: 145, grams: 50, amount: 50, unit: 'g', icon: 'default', color: 'yellow', settled: false },
     ] });
   await foodLogs.save(log);
-  if (!pending) await review.execute({ userId: 'alice', logUuid: log.id });
+  if (!pending) await review.capture({ userId: 'alice', logUuid: log.id });
   const repairs = new NutritionRepairService({ items, foodLogs, review, clock, timezoneFor, icons: { has: slug => slug === 'fish' } });
   const auditor = new NutritionAuditor({ items, foodLogs, clock, timezoneFor, runtime: {} });
   const proposal = changes => ({ reason: 'Original capture identifies white fish', evidenceIds: ['source'], logUuid: pending ? log.id : null,
@@ -41,6 +41,28 @@ async function fixture({ pending = false } = {}) {
   return { root, logger, dataService, foodLogs, items, store, clock, timezoneFor, review, log, repairs, auditor, proposal, apply };
 }
 describe('nutrition cleanup policy and journal', () => {
+  it('allows a bounded provisional estimate, labels it honestly, and accepts better verified evidence once', async () => {
+    const f = await fixture();
+    const proposed = { ...f.proposal({ calories: 60 }), mode: 'estimate', confidence: 0.9, reason: 'Estimated cooked white fish at the captured 55g portion' };
+    await f.apply({}, { proposal: proposed });
+    let row = await f.items.findByUuid('alice', 'fish000001');
+    expect(row).toMatchObject({ calories: 60, settled: false, nutrientProvenance: { calories: { source: 'nutrition-auditor-estimate', confidence: 0.9 } } });
+    const verified = { ...f.proposal({ calories: 65 }), updates: [{ id: row.uuid, expectedVersion: row.version, changes: { calories: 65 } }] };
+    const evidence = [{ id: 'new-panel', kind: 'label', facts: [{ entryId: row.uuid, field: 'calories', value: 65 }] }];
+    await f.apply({}, { operationId: 'verified', proposal: verified, evidence });
+    await f.apply({}, { operationId: 'verified', proposal: verified, evidence });
+    row = await f.items.findByUuid('alice', row.uuid);
+    expect(row).toMatchObject({ calories: 65, nutrientProvenance: { calories: { source: 'nutrition-auditor-verified' } } });
+    await expect(f.apply({}, { operationId: 'oscillate', proposal: { ...verified, updates: [{ id: row.uuid, expectedVersion: row.version, changes: { calories: 60 } }] }, evidence }))
+      .rejects.toMatchObject({ code: 'CLEANUP_ALREADY_REPAIRED' });
+  });
+  it('rejects low confidence, guessed portions and estimates beyond the review deadline', async () => {
+    const f = await fixture();
+    await expect(f.apply({}, { proposal: { ...f.proposal({ calories: 60 }), mode: 'estimate', confidence: 0.6 } })).rejects.toMatchObject({ code: 'CLEANUP_REVIEW_REQUIRED' });
+    await expect(f.apply({}, { proposal: { ...f.proposal({ grams: 500 }), mode: 'estimate', confidence: 0.99 } })).rejects.toMatchObject({ code: 'CLEANUP_REVIEW_REQUIRED' });
+    f.clock.now = () => Date.parse('2026-09-07T19:00:00Z');
+    await expect(f.apply({ icon: 'fish' })).rejects.toMatchObject({ code: 'CLEANUP_DATE_WINDOW' });
+  });
   it('computes calendar yesterday across DST and the UTC date boundary', () => {
     expect(cleanupDates(Date.parse('2026-03-09T06:30:00Z'), 'America/Los_Angeles')).toEqual(['2026-03-08', '2026-03-07']);
     expect(cleanupDates(Date.parse('2026-11-02T07:30:00Z'), 'America/Los_Angeles')).toEqual(['2026-11-01', '2026-10-31']);

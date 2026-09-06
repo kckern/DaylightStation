@@ -68,7 +68,9 @@ export class AcceptFoodLog {
    *   coaching orchestrator after EVERY capture — inline, inside the capture request.
    */
   async execute(input) {
-    if (this.#reviewService) return this.#reviewService.execute({ ...input, action: 'confirm' });
+    if (this.#reviewService) return input.provisional
+      ? this.#reviewService.capture(input)
+      : this.#reviewService.execute({ ...input, action: 'confirm' });
     const { userId, conversationId, logUuid, messageId, responseContext } = input;
     const autoReport = input.autoReport !== false;
 

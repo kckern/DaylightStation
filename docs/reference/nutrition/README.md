@@ -430,7 +430,8 @@ restart before it takes effect.
 | `services/ObservationValue.mjs` — what a signal's value may be, per kind | **shipped**, 22 tests |
 | `2_domains/nutrition/services/ObservationMatcher.mjs` — merge rules, window | **shipped** |
 | `1_adapters/persistence/yaml/YamlObservationStore.mjs` — durable ledger, hot file + monthly archives | **shipped** |
-| `3_applications/nutrition/ObservationService.mjs` — prompt flow, composition surface, quiet commit | **shipped** |
+| `3_applications/nutrition/ScaleObservationService.mjs` — durable placements and quiet provisional ledger projection | **current production path**; see [72-hour lifecycle](../health/nutrition-cleanup.md) |
+| `3_applications/nutrition/ObservationService.mjs` — legacy Telegram prompt/quiet commit | retained for compatibility tests; not composed at startup |
 | `3_applications/nutrition/ObservationPairingService.mjs` — pair / re-pair / dismiss from the day view | **shipped** |
 | `ApplyScanToComposition` use case | **shipped**, handles density/container/reset/undo/done |
 | `nutriscan` route wiring (`5_composition/modules/scanDispatch.mjs`) | **shipped** |

@@ -6,7 +6,6 @@ const rowView = row => ({
   id: row.uuid || row.id, name: row.name || row.item || row.label,
   date: row.date, mealTime: row.mealTime, grams: row.grams, amount: row.amount, unit: row.unit,
   icon: row.icon, color: row.color || row.noom_color, kind: row.kind, parentId: row.parentId,
-  settled: row.settled,
   ...Object.fromEntries(['calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium', 'cholesterol']
     .map(key => [key, row[key] ?? null])),
 });
@@ -76,8 +75,8 @@ export class NutritionSurfaceSync {
       const renderRows = pending ? (log.items || []).map(row => ({ ...rowView(row), date: log.meal?.date, mealTime: log.meal?.time })) : (byLog.get(log.id) || []);
       const formatRows = values => values.filter(row => row.kind !== 'group').map(row =>
         `${row.date || ''} ${row.mealTime || ''} · ${row.name || row.item || row.label} · ${row.grams != null ? `${row.grams} g` : row.unit === 'ml' ? `${row.amount} ml` : 'weight unknown'} · ${Math.round(row.calories || 0)} kcal`).join('\n');
-      const pendingText = `Needs review\n${formatRows(renderRows)}${log.metadata?.nutritionLookup?.warnings?.length ? '\nNutrition needs checking in Health before confirmation.' : ''}`;
-      if (!link && pending && d.surface.createPending
+      const pendingText = `Saved capture\n${formatRows(renderRows)}`;
+      if (d.publishChanges === true && !link && pending && d.surface.createPending
         && (log.conversationId === destination || /^(web|device):/.test(log.conversationId || ''))) {
         try {
           link = await d.surface.createPending(destination, log.id, pendingText);
@@ -138,7 +137,7 @@ export class NutritionSurfaceSync {
       // Refresh history in reports this worker actually published, without
       // creating six unrelated historical reports for every backdated edit.
       if (state.days[date] === next && (!state.reportHistory[date] || state.reportHistory[date] === historyVersion)) continue;
-      if (!initial) {
+      if (!initial && d.publishChanges === true) {
         try {
           await d.surface.report({ userId, conversationId: destination, date, items, history });
           state.reportHistory[date] = historyVersion;

@@ -86,14 +86,14 @@ export class FoodItem {
     this.#amount = data.amount;
     this.#color = data.color;
     // Nutrition fields
-    this.#calories = data.calories ?? 0;
-    this.#protein = data.protein ?? 0;
-    this.#carbs = data.carbs ?? 0;
-    this.#fat = data.fat ?? 0;
-    this.#fiber = data.fiber ?? 0;
-    this.#sugar = data.sugar ?? 0;
-    this.#sodium = data.sodium ?? 0;
-    this.#cholesterol = data.cholesterol ?? 0;
+    this.#calories = data.calories === undefined ? 0 : data.calories;
+    this.#protein = data.protein === undefined ? 0 : data.protein;
+    this.#carbs = data.carbs === undefined ? 0 : data.carbs;
+    this.#fat = data.fat === undefined ? 0 : data.fat;
+    this.#fiber = data.fiber === undefined ? 0 : data.fiber;
+    this.#sugar = data.sugar === undefined ? 0 : data.sugar;
+    this.#sodium = data.sodium === undefined ? 0 : data.sodium;
+    this.#cholesterol = data.cholesterol === undefined ? 0 : data.cholesterol;
     // Lifecycle / group fields. `settled` is the one field whose ABSENCE is
     // meaningful (legacy row = settled), so it is never defaulted here.
     this.#kind = data.kind;
@@ -108,6 +108,9 @@ export class FoodItem {
     this.originalQuantity = data.originalQuantity;
     this.manualFields = data.manualFields;
     this.cleanupFields = data.cleanupFields;
+    this.review = data.review;
+    this.captureEvidence = data.captureEvidence;
+    this.cleanupEvidence = data.cleanupEvidence;
 
     Object.freeze(this);
   }
@@ -209,6 +212,9 @@ export class FoodItem {
       originalQuantity: this.originalQuantity,
       manualFields: this.manualFields,
       cleanupFields: this.cleanupFields,
+      review: this.review,
+      captureEvidence: this.captureEvidence,
+      cleanupEvidence: this.cleanupEvidence,
       ...updates,
     });
   }

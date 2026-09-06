@@ -5,6 +5,7 @@ import { MealTimes } from '#domains/nutrition/entities/schemas.mjs';
 import { scaleFoodPortion } from '#shared/contracts/health/foodQuantity.mjs';
 import { nutritionLookupFor } from '#shared/contracts/nutrition/nutritionLookup.mjs';
 import { FoodItem } from '#domains/nutrition/entities/FoodItem.mjs';
+import { provisionalReview, confirmReview, canAutoReview } from '#shared/contracts/nutrition/reviewLifecycle.mjs';
 import { validateCleanup, entryKey, CLEANUP_FIELDS } from '#domains/nutrition/services/cleanupPolicy.mjs';
 
 const nutrients = ['calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium', 'cholesterol'];
@@ -19,8 +20,100 @@ const fail = (message, status = 400) => { throw Object.assign(new Error(message)
  * the same command resumes; a competing surface cannot re-scale the intent.
  */ 
 export class FoodLogReview {
-  #foodLogs; #items; #logger; #queues = new Map();
-  constructor({ foodLogs, items, logger }) { this.#foodLogs = foodLogs; this.#items = items; this.#logger = logger; }
+  #foodLogs; #items; #logger; #queues = new Map(); #clock;
+  constructor({ foodLogs, items, logger, clock = { now: () => Date.now() } }) { this.#foodLogs = foodLogs; this.#items = items; this.#logger = logger; this.#clock = clock; }
+  capture(input) {
+    return this.execute({ ...input, action: 'capture', operationId: input.operationId || `capture:${input.logUuid}` });
+  }
+  /** Explicit, version-checked legacy recovery; never part of the automatic sweep.
+   * Prepared items/evidence come from NutritionCaptureRecovery, not model output. */
+  restoreCapture({ userId, logUuid, expectedVersion, operationId, fingerprint, prepare, dryRun }) {
+    return this.runExclusive(userId, async () => {
+      let log = await this.#foodLogs.findById(userId, logUuid);
+      if (!log) fail('Capture not found', 404);
+      const prior = log.metadata?.captureRecovery;
+      if (prior?.operationId === operationId && prior.fingerprint !== fingerprint) fail('Recovery ID was reused', 409);
+      if (prior?.operationId !== operationId) {
+        if (log.status !== 'pending' || nutritionLogVersion(log) !== expectedVersion) fail('Capture changed before recovery', 409);
+        if (log.items.some(item => item.review || item.settledBy === 'user' || item.manualFields?.length)) fail('Only untouched legacy captures can be recovered', 409);
+        const prepared = await prepare(log);
+        const receipt = { operationId, fingerprint, beforeVersion: expectedVersion,
+          before: log.items.map(serializeFoodItem), after: prepared.items.map(serializeFoodItem),
+          observationIds: prepared.metadata.captureEvidence?.observationIds || [], at: new Date(this.#clock.now()).toISOString() };
+        if (dryRun) return { dryRun: true, receipt };
+        log = log.with({ ...prepared, metadata: { ...log.metadata, ...prepared.metadata, captureRecovery: receipt } }, new Date(this.#clock.now()));
+        await this.#foodLogs.save(log);
+      }
+      if (dryRun) return { dryRun: true, receipt: prior };
+      await this.#execute({ userId, logUuid, action: 'capture', operationId });
+      return { success: true, receipt: log.metadata.captureRecovery };
+    });
+  }
+  recover(userId) {
+    return this.runExclusive(userId, async () => {
+      for (const log of await this.#foodLogs.findPending(userId)) {
+        if (log.metadata?.reviewOperation?.complete === false) await this.#finish(userId, log);
+        else if (log.metadata?.source !== 'scale' && log.items.some(item => item.review?.state === 'provisional')) {
+          await this.#execute({ userId, logUuid: log.id, action: 'capture', operationId: `capture:${log.id}` });
+        }
+      }
+    });
+  }
+  completeCapture({ userId, logUuid, expectedVersion, operationId, evidence, fence, dryRun = false }) {
+    return this.runExclusive(userId, async () => {
+      const log = await this.#foodLogs.findById(userId, logUuid);
+      if (log?.status === 'accepted' && log.metadata?.reviewOperation?.id === operationId) return { success: true, affectedIds: [], affectedDates: [], alreadyProcessed: true };
+      if (!log || log.status !== 'pending' || nutritionLogVersion(log) !== expectedVersion) fail('Capture changed before completion', 409);
+      if (!log.items.length || !log.items.every(item => canAutoReview(item, this.#clock.now()))) fail('Capture is not in provisional review', 409);
+      if (!evidence.some(source => source.kind === 'capture' && source.data?.id === logUuid)) fail('Completion requires original capture evidence', 409);
+      if (log.metadata?.source === 'scale' && !log.metadata?.captureEvidence?.kcalPer100g) fail('Scale capture is incomplete', 409);
+      if (!fence()) fail('Repair run is no longer active', 409);
+      if (dryRun) return { items: [], affectedIds: [], affectedDates: [], dryRun: true, captureId: logUuid };
+      const result = await this.#execute({ userId, logUuid, action: 'capture', operationId });
+      return { ...result, affectedIds: log.items.map(item => item.uuid || item.id), affectedDates: [log.meal.date] };
+    });
+  }
+  /** Deterministic evidence enrichment shares the confirmation lock. The ledger
+   * is authoritative after capture; user fields and expired reviews are protected. */
+  reconcileCapture({ userId, logUuid, changes, metadata, operationId, complete }) {
+    return this.runExclusive(userId, async () => {
+      let log = await this.#foodLogs.findById(userId, logUuid);
+      if (!log || !['pending', 'accepted'].includes(log.status)) return { status: 'protected', protected: true };
+      if (log.metadata?.reviewOperation?.complete === false) log = await this.#finish(userId, log);
+      const ledger = log.status === 'accepted' ? await this.#items.findByLogId(userId, log.id) : [];
+      if (log.status === 'accepted' && !ledger.length) return { status: 'protected', protected: true };
+      const sourceItems = ledger.length ? ledger.map(row => new FoodItem({ ...row, label: row.name || row.label || row.item })) : log.items;
+      const next = sourceItems.map(item => {
+        if (!canAutoReview(item, this.#clock.now())) return item;
+        const protectedFields = new Set(item.manualFields || []);
+        for (const key of item.cleanupFields || []) if (['name', 'label', 'icon', 'foodId', 'color'].includes(key)) protectedFields.add(key);
+        if (protectedFields.has('name')) protectedFields.add('label');
+        // Quantity edits also own the nutrition calculated for that portion.
+        const quantityOwned = ['grams', 'amount', 'unit'].some(key => protectedFields.has(key));
+        const scaled = !quantityOwned && item.grams > 0 && changes.grams > 0 ? scaleFoodPortion(item, changes.grams / item.grams) : {};
+        const patch = Object.fromEntries(Object.entries({ ...scaled, ...changes }).filter(([key, value]) => !protectedFields.has(key)
+          && !(quantityOwned && [...nutrients, 'grams', 'amount', 'unit'].includes(key))
+          && !(nutrients.includes(key) && value == null && item[key] != null)));
+        // A weight update scales an existing estimate instead of erasing it with
+        // the density-only input's unknown macro/micro fields.
+        for (const key of nutrients) if (patch[key] === undefined && scaled[key] != null && !protectedFields.has(key)) patch[key] = scaled[key];
+        patch.nutrientProvenance = { ...item.nutrientProvenance, ...patch.nutrientProvenance };
+        return item.with(patch);
+      });
+      if (ledger.length) {
+        await this.#items.mutateEntries(userId, {
+          updates: next.map((item, i) => ({ id: ledger[i].uuid || ledger[i].id, expectedVersion: ledger[i].version,
+            changes: { ...serializeFoodItem(item), name: item.label } })),
+          audit: { id: operationId, fingerprint: sha256Text(JSON.stringify({ changes, metadata })),
+            actor: 'capture-evidence', reason: 'Incoming scale evidence', at: new Date(this.#clock.now()).toISOString() },
+        });
+      }
+      log = log.with({ items: next, metadata: { ...log.metadata, ...metadata } }, new Date(this.#clock.now()));
+      await this.#foodLogs.save(log);
+      if (complete && log.status === 'pending') await this.#execute({ userId, logUuid, action: 'capture', operationId: `capture:${logUuid}` });
+      return { success: true, entryUuid: next[0]?.uuid };
+    });
+  }
   execute(input) {
     return this.runExclusive(input.userId, () => this.#execute(input));
   }
@@ -58,7 +151,7 @@ export class FoodLogReview {
       if (after.some(row => row.date !== date || row.mealTime !== mealTime)) fail('Move the complete pending capture consistently', 409);
       signal?.throwIfAborted();
       if (!fence()) fail('Repair is no longer active', 409);
-      validateCleanup({ before, after, updates, creates, evidence, now: clock.now(), timezone, userId, userDirected });
+      validateCleanup({ before, after, updates, creates, evidence, now: clock.now(), timezone, userId, userDirected, mode: proposal.mode, confidence: proposal.confidence });
       for (const update of updates) {
         const row = after.find(row => row.id === update.id || row.uuid === update.id);
         const original = before.find(row => row.id === update.id || row.uuid === update.id);
@@ -66,6 +159,18 @@ export class FoodLogReview {
         if (!fields.length) continue;
         const key = userDirected ? 'manualFields' : 'cleanupFields';
         row[key] = [...new Set([...(row[key] || []), ...fields])];
+        if (!userDirected) row.cleanupEvidence = { ...row.cleanupEvidence,
+          ...Object.fromEntries(fields.map(field => [field, [...new Set([...(row.cleanupEvidence?.[field] || []), ...evidence.map(source => source.id)])]])) };
+        if (!userDirected && proposal.mode === 'estimate') row.nutrientProvenance = { ...row.nutrientProvenance,
+          ...Object.fromEntries(fields.filter(field => nutrients.includes(field)).map(field => [field, {
+            source: 'nutrition-auditor-estimate', confidence: proposal.confidence, rationale: proposal.reason,
+            evidenceIds: evidence.map(source => source.id), at: new Date(clock.now()).toISOString(), grams: row.grams,
+          }])) };
+        if (!userDirected && proposal.mode !== 'estimate') row.nutrientProvenance = { ...row.nutrientProvenance,
+          ...Object.fromEntries(fields.filter(field => nutrients.includes(field)).map(field => [field, {
+            source: 'nutrition-auditor-verified', rationale: proposal.reason, evidenceIds: evidence.map(source => source.id),
+            at: new Date(clock.now()).toISOString(), grams: row.grams,
+          }])) };
       }
       const items = after.map(row => new FoodItem(row));
       if (dryRun || JSON.stringify(log.items.map(serializeFoodItem)) === JSON.stringify(items.map(serializeFoodItem))) return { items: [], affectedIds: [], affectedDates: [], dryRun };
@@ -102,7 +207,7 @@ export class FoodLogReview {
   async #execute(input) {
     const { userId, logUuid, action = 'confirm', expectedVersion, operationId,
       portionFactor = 1, items: edits = [], date, mealTime, nutritionReviewed = false } = input;
-    if (!['save', 'confirm', 'discard'].includes(action)) fail('Unknown review action');
+    if (!['save', 'confirm', 'discard', 'capture'].includes(action)) fail('Unknown review action');
     if (!Number.isFinite(portionFactor) || portionFactor <= 0 || portionFactor > 100) fail('Invalid portion');
     if (date !== undefined && !isISODate(date)) fail('Invalid date');
     if (mealTime !== undefined && !MealTimes.includes(mealTime)) fail('Invalid meal');
@@ -122,10 +227,14 @@ export class FoodLogReview {
     }
     if (!sameOperation && expectedVersion && expectedVersion !== nutritionLogVersion(log)) fail('This capture changed. Reload before reviewing it.', 409);
     if (!sameOperation && log.status !== 'pending') {
-      if (!expectedVersion && log.status === 'accepted' && action === 'confirm') return { success: true, logUuid, status: log.status, alreadyProcessed: true };
-      fail('This capture was already reviewed. Reload to see the current record.', 409);
+      if (log.status === 'accepted' && action === 'capture') return { success: true, logUuid, status: log.status, alreadyProcessed: true };
+      if (log.status !== 'accepted') fail('This capture was already reviewed. Reload to see the current record.', 409);
     }
     if (!sameOperation) {
+      const ledger = log.status === 'accepted' ? await this.#items.findByLogId(userId, log.id) : [];
+      if (log.status === 'accepted' && !ledger.length) fail('Food entries no longer exist', 409);
+      // The counted ledger may have newer user/agent edits than the capture.
+      if (ledger.length) log = log.with({ items: ledger.map(row => new FoodItem({ ...row, label: row.name || row.label || row.item })) }, new Date(this.#clock.now()));
       const ids = new Set(log.items.map(item => item.id));
       const seen = new Set();
       for (const edit of edits) {
@@ -148,7 +257,9 @@ export class FoodLogReview {
         }
         const manualFields = [...new Set([...(item.manualFields || []), ...Object.keys(scaled), ...Object.keys(changes),
           ...(date && date !== log.meal.date ? ['date'] : []), ...(mealTime && mealTime !== log.meal.time ? ['mealTime'] : [])])];
-        try { return item.with({ ...scaled, ...changes, nutrientProvenance, manualFields }); }
+        const lifecycle = action === 'capture' ? provisionalReview(item, this.#clock.now(), log.metadata?.source)
+          : action === 'confirm' ? confirmReview(item, this.#clock.now()) : {};
+        try { return item.with({ ...scaled, ...changes, nutrientProvenance, manualFields, ...lifecycle }); }
         catch { fail('Invalid food quantity or nutrition. Check the edited fields.'); }
       });
       items = items.map(item => {
@@ -164,22 +275,35 @@ export class FoodLogReview {
             reviewed: nutritionReviewed || lookup.reviewed || false,
             missing: (lookup.missing || []).filter(key => !edits.some(edit => Number.isFinite(edit[key]))),
           } } : {}),
-          reviewOperation: { id: operationId || `review:${nutritionLogVersion(log)}:${action}`, hash: requestHash, action, complete: action === 'save' } },
+          reviewOperation: { id: operationId || `review:${nutritionLogVersion(log)}:${action}`, hash: requestHash, action,
+            ledgerVersions: ledger.map(row => ({ id: row.uuid || row.id, version: row.version })),
+            complete: action === 'save' && !ledger.length } },
       }, new Date());
       await this.#foodLogs.save(log);
     }
-    if (action !== 'save') log = await this.#finish(userId, log);
+    if (!log.metadata.reviewOperation.complete) log = await this.#finish(userId, log);
     this.#logger?.info?.('nutrition.review.completed', { userId, logUuid, action });
     return { success: true, logUuid, status: log.status, version: nutritionLogVersion(log) };
   }
   async #finish(userId, log) {
     const operation = log.metadata.reviewOperation;
-    if (operation.action === 'confirm') {
-      await this.#items.saveMany(log.items.map(item => ({
+    const rows = log.items.map(item => ({
         ...serializeFoodItem(item), userId, logUuid: log.id, date: log.meal.date, mealTime: log.meal.time,
-      })));
-      log = log.accept(new Date());
-    } else if (operation.action === 'discard') {
+      }));
+    if (operation.ledgerVersions?.length) {
+      const discard = operation.action === 'discard';
+      await this.#items.mutateEntries(userId, {
+        updates: discard ? [] : rows.map(row => ({ id: row.uuid || row.id,
+          expectedVersion: operation.ledgerVersions.find(v => v.id === (row.uuid || row.id))?.version,
+          changes: { ...row, name: row.label } })),
+        deleteIds: discard ? operation.ledgerVersions.map(v => v.id) : [],
+        audit: { id: operation.id, fingerprint: operation.hash, actor: 'user', reason: operation.action, at: new Date(this.#clock.now()).toISOString() },
+      });
+    } else if (['confirm', 'capture'].includes(operation.action)) {
+      await this.#items.saveMany(rows);
+    }
+    if (['confirm', 'capture'].includes(operation.action) && log.status === 'pending') log = log.accept(new Date(this.#clock.now()));
+    if (operation.action === 'discard') {
       log = log.with({ status: 'deleted' }, new Date());
     }
     log = log.with({ metadata: { ...log.metadata, reviewOperation: { ...operation, complete: true } } }, new Date());

@@ -40,7 +40,7 @@ export function EntryRow({ row, onTap, onConfirm, isGroup = false, expanded = fa
   const grams = Number(isGroup ? groupGrams : row.grams);
   const liquid = row.unit === 'ml' && row.amount > 0 && row.originalQuantity?.unit === 'ml';
   const portion = Number.isFinite(grams) && grams > 0 ? `${Math.round(grams * 10) / 10} g`
-    : liquid ? `${row.amount} ml` : 'Weight unknown';
+    : liquid ? `${row.amount} ml` : row.unit === 'serving' ? `${row.amount || 1} serving` : 'Weight unknown';
   // The API serves an EFFECTIVE settled flag per row. Absent or `true` means
   // settled — only an explicit `false` means unsettled. Never treat a
   // missing key as unsettled (older/other row shapes lack the field).
@@ -121,10 +121,10 @@ export function EntryRow({ row, onTap, onConfirm, isGroup = false, expanded = fa
         <FoodIcon icon={iconSlug} />
         <span className="health-row__name">{name}</span>
         <span className="health-row__portion">{portion}</span>
-        <span className="health-row__kcal">{isGroup ? <span className="health-row__total-label">Total · </span> : null}{Math.round(displayKcal || 0)}{isGroup ? ' kcal' : ''}</span>
+        <span className="health-row__kcal">{isGroup ? <span className="health-row__total-label">Total · </span> : null}{displayKcal == null ? '—' : Math.round(displayKcal)}{isGroup ? ' kcal' : ''}</span>
         {/* Text badge, not color alone — perceivable non-visually and in
             greyscale. Static text; no aria-live, so it never spams. */}
-        {unsettled ? <span className="health-row__badge">Unconfirmed</span> : null}
+        {unsettled ? <span className="health-row__badge" title="Included in totals. You can edit or confirm; otherwise this estimate stabilizes automatically after 72 hours.">Estimated</span> : null}
         {/* SCALE-MEASURED badge: this row's grams came off the kitchen scale, not
             from a guess. `measured` is the caller's already-computed summary
             ("82 g · scale ✓") — derived once per day from the observations that

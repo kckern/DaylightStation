@@ -7,8 +7,13 @@
 
 import { createNutriLog } from '../nutriLogRecords.mjs';
 import { createLocalNutritionResponse } from '../services/LocalNutritionResponse.mjs';
-import { getMealTimeFromHour } from '#domains/nutrition/entities/schemas.mjs';
+import { getMealTimeFromHour, MealTimes } from '#domains/nutrition/entities/schemas.mjs';
 import { formatLocalTimestamp } from '#domains/core/utils/time.mjs';
+import { provisionalReview } from '#shared/contracts/nutrition/reviewLifecycle.mjs';
+import { sha256Text } from '#system/utils/sha256.mjs';
+
+const NUTRIENTS = ['calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium', 'cholesterol'];
+const finiteNutrient = value => value != null && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
 
 /**
  * Log food from UPC use case
@@ -26,6 +31,9 @@ export class LogFoodFromUPC {
   #foodIconsString;
   #barcodeGenerator;
   #catalogService;
+  #reviewService;
+  #inflight = new Map();
+  #clock;
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
@@ -42,6 +50,8 @@ export class LogFoodFromUPC {
     this.#foodIconsString = deps.foodIconsString || 'apple banana bread cheese chicken default';
     this.#barcodeGenerator = deps.barcodeGenerator; // Optional: for generating barcode images
     this.#catalogService = deps.catalogService || null;
+    this.#reviewService = deps.reviewService;
+    this.#clock = deps.clock || { now: () => Date.now() };
   }
 
   /**
@@ -66,6 +76,29 @@ export class LogFoodFromUPC {
    * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
+    const eventId = input.operationId || (input.messageId ? `${input.conversationId}:${input.messageId}` : null);
+    if (!eventId) return this.#execute(input);
+    const hash = sha256Text(`${input.userId}:upc:${eventId}`);
+    const logId = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+    if (this.#inflight.has(logId)) {
+      const active = this.#inflight.get(logId);
+      if (active.upc !== input.upc) throw Object.assign(new Error('Capture operation ID reused for another barcode'), { status: 409 });
+      return active.promise;
+    }
+    const pending = (async () => {
+      const existing = await this.#foodLogStore?.findById?.(input.userId, logId);
+      if (existing) {
+        if (existing.metadata?.sourceUpc !== input.upc) throw Object.assign(new Error('Capture operation ID reused for another barcode'), { status: 409 });
+        if (existing.status === 'pending' && this.#reviewService) await this.#reviewService.capture({ userId: input.userId, logUuid: logId });
+        return { success: true, nutrilogUuid: logId, committed: existing.status === 'accepted' || (existing.status === 'pending' && !!this.#reviewService),
+          mealTime: existing.meal.time, alreadyProcessed: true };
+      }
+      return this.#execute({ ...input, captureId: logId });
+    })();
+    this.#inflight.set(logId, { upc: input.upc, promise: pending });
+    try { return await pending; } finally { this.#inflight.delete(logId); }
+  }
+  async #execute(input) {
     const {
       userId, conversationId, upc, messageId,
       // The day the client is LOOKING AT (`YYYY-MM-DD`). ABSENT MEANS TODAY,
@@ -78,9 +111,10 @@ export class LogFoodFromUPC {
 
     this.#logger.debug?.('logUPC.start', { conversationId, upc, hasResponseContext: !!responseContext });
 
-    const messaging = input.headless ? createLocalNutritionResponse() : this.#getMessaging(responseContext, conversationId);
+    let messaging = input.headless ? createLocalNutritionResponse() : this.#getMessaging(responseContext, conversationId);
     let status = null;
     let statusMsgId = null;
+    let capturedLog = null;
 
     try {
       // 1. Delete original user message
@@ -108,6 +142,7 @@ export class LogFoodFromUPC {
       }
 
       if (!status) {
+        try {
         if (messaging.createStatusIndicator) {
           status = await messaging.createStatusIndicator(statusCaption, animationOpts);
           statusMsgId = status.messageId;
@@ -115,23 +150,33 @@ export class LogFoodFromUPC {
           const statusMsg = await messaging.sendMessage(`${statusCaption}...`);
           statusMsgId = statusMsg.messageId;
         }
+        } catch (error) {
+          this.#logger.warn?.('logUPC.deliveryUnavailable', { upc, error: error.message });
+          messaging = createLocalNutritionResponse();
+          status = null; statusMsgId = (await messaging.sendMessage(statusCaption)).messageId;
+        }
       }
 
       // 3. Resolve product: user's catalog first (custom mappings win and can
       // override bad upstream data — spec Data model §3), then the gateway.
       let product = null;
+      let catalogEntry = null;
       if (this.#catalogService?.getByUpc) {
         try {
           const entry = await this.#catalogService.getByUpc(upc, userId);
           if (entry) {
+            catalogEntry = entry;
             product = {
               name: entry.name,
               brand: null,
               imageUrl: null,
-              serving: { size: entry.canonicalGrams, unit: 'g' },
+              serving: entry.canonicalGrams > 0 ? { size: entry.canonicalGrams, unit: 'g' } : { size: 1, unit: 'serving' },
               icon: entry.icon,
               foodId: entry.id,
               nutrition: { ...entry.nutrients },
+              nutritionLookup: { source: 'catalog', basis: entry.canonicalGrams > 0 ? 'serving' : 'unknown',
+                missing: NUTRIENTS.filter(key => finiteNutrient(entry.nutrients?.[key]) === null),
+                warnings: entry.canonicalGrams > 0 ? [] : ['Catalog serving mass is unknown; using one serving.'] },
             };
             this.#logger.info?.('logUPC.catalogHit', { upc, name: entry.name });
           }
@@ -139,8 +184,17 @@ export class LogFoodFromUPC {
           this.#logger.warn?.('logUPC.catalogLookupFailed', { upc, error: e.message });
         }
       }
-      if (!product && this.#upcGateway) {
-        product = await this.#upcGateway.lookup(upc);
+      const incomplete = product && (product.nutritionLookup.basis === 'unknown' || product.nutritionLookup.missing.length);
+      if ((!product || (incomplete && !catalogEntry?.manualPortion)) && this.#upcGateway) {
+        try {
+          const fresh = await this.#upcGateway.lookup(upc);
+          if (fresh) product = { ...fresh, foodId: catalogEntry?.id || fresh.foodId,
+            // Identity and explicit icon pins survive nutrition refreshes.
+            ...(catalogEntry?.iconOverride ? { icon: catalogEntry.iconOverride } : {}) };
+        } catch (error) {
+          if (!product) throw error;
+          this.#logger.warn?.('logUPC.refreshFailed', { upc, error: error.message });
+        }
       }
 
       if (!product) {
@@ -181,35 +235,30 @@ export class LogFoodFromUPC {
         icon: product.icon || classification.icon,
         foodId: product.foodId || null,
         grams,
-        unit: product.serving?.unit || 'serving',
-        amount: product.serving?.unit === 'ml' ? product.serving.size : 1,
+        unit: grams ? 'g' : product.serving?.unit || 'serving',
+        amount: grams || (product.serving?.unit === 'ml' ? product.serving.size : 1),
         originalQuantity: { amount: product.serving?.size ?? 1, unit: product.serving?.unit || 'serving', grams },
         color: classification.noomColor,
-        calories: Number(product.nutrition?.calories) || 0,
-        protein: Number(product.nutrition?.protein) || 0,
-        carbs: Number(product.nutrition?.carbs) || 0,
-        fat: Number(product.nutrition?.fat) || 0,
-        fiber: Number(product.nutrition?.fiber) || 0,
-        sugar: Number(product.nutrition?.sugar) || 0,
-        sodium: Number(product.nutrition?.sodium) || 0,
-        cholesterol: Number(product.nutrition?.cholesterol) || 0,
+        ...Object.fromEntries(NUTRIENTS.map(key => [key, finiteNutrient(product.nutrition?.[key])])),
+        ...provisionalReview({}, this.#clock.now(), 'upc'),
+        captureEvidence: { source: 'upc', upc, serving: product.serving, assumption: 'one-serving' },
       };
       if (this.#catalogService?.resolveIdentity) Object.assign(foodItem, await this.#catalogService.resolveIdentity(foodItem, userId));
 
       // 6. Create NutriLog entity
       const timezone = this.#config?.getUserTimezone?.(userId) || 'America/Los_Angeles';
-      const now = new Date();
+      const now = new Date(this.#clock.now());
       // Decision 2.24: on a day that is not today the clock's hour names no
       // meal on that day, so the day is filled from its first one.
-      const meal = viewedDate
+      const meal = viewedDate || MealTimes.includes(input.bucket)
         ? {
-          date: viewedDate,
-          time: viewedDate === formatLocalTimestamp(now, timezone).split(' ')[0]
-            ? getMealTimeFromHour(now.getHours())
+          date: viewedDate || formatLocalTimestamp(now, timezone).split(' ')[0],
+          time: MealTimes.includes(input.bucket) ? input.bucket : viewedDate === formatLocalTimestamp(now, timezone).split(' ')[0]
+            ? getMealTimeFromHour(Number(new Intl.DateTimeFormat('en-US', { timeZone: timezone, hour: 'numeric', hourCycle: 'h23' }).format(now)))
             : 'morning',
         }
         : undefined;
-      const nutriLog = createNutriLog({
+      let nutriLog = createNutriLog({
         userId,
         conversationId,
         items: [foodItem],
@@ -221,11 +270,16 @@ export class LogFoodFromUPC {
         },
         timezone,
         timestamp: now,
-      });
+      }, input.captureId ? { newId: () => input.captureId } : {});
 
       // 7. Save NutriLog
       if (this.#foodLogStore) {
         await this.#foodLogStore.save(nutriLog);
+      }
+      if (this.#reviewService) {
+        await this.#reviewService.capture({ userId, logUuid: nutriLog.id });
+        nutriLog = await this.#foodLogStore.findById(userId, nutriLog.id);
+        capturedLog = nutriLog;
       }
 
       // 7b. Record food item in catalog for quick-add
@@ -238,6 +292,10 @@ export class LogFoodFromUPC {
             protein: foodItem.protein,
             carbs: foodItem.carbs,
             fat: foodItem.fat,
+            fiber: foodItem.fiber,
+            sugar: foodItem.sugar,
+            sodium: foodItem.sodium,
+            cholesterol: foodItem.cholesterol,
             // The serving the panel describes, which is what makes this row an
             // observation rather than a bare total.
             grams: foodItem.grams,
@@ -286,10 +344,11 @@ export class LogFoodFromUPC {
         photoMsgId = result.messageId;
       }
 
-      // Update NutriLog with messageId
+      // Reload after ledger acceptance so messaging never restores pending state.
       if (this.#foodLogStore && photoMsgId) {
-        const updatedLog = nutriLog.with({
-          metadata: { ...nutriLog.metadata, messageId: String(photoMsgId) },
+        const latest = this.#foodLogStore.findById ? await this.#foodLogStore.findById(userId, nutriLog.id) : nutriLog;
+        const updatedLog = latest.with({
+          metadata: { ...latest.metadata, messageId: String(photoMsgId) },
         }, new Date());
         await this.#foodLogStore.save(updatedLog);
       }
@@ -305,8 +364,14 @@ export class LogFoodFromUPC {
         success: true,
         nutrilogUuid: nutriLog.id,
         product,
+        committed: nutriLog.status === 'accepted',
+        mealTime: nutriLog.meal.time,
       };
     } catch (error) {
+      if (capturedLog) {
+        this.#logger.warn?.('logUPC.savedDeliveryFailed', { upc, logUuid: capturedLog.id, error: error.message });
+        return { success: true, nutrilogUuid: capturedLog.id, committed: true, mealTime: capturedLog.meal.time, deliveryFailed: true };
+      }
       this.#logger.error?.('logUPC.error', { conversationId, upc, error: error.message });
 
       if (status || statusMsgId) {

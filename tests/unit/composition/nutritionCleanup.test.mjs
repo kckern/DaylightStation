@@ -14,8 +14,8 @@ it('composes a paused, preview-only cleanup service without Telegram or a backen
       dataService: { user: { resolveDir: (relative, userId) => join(root, userId, relative) }, household: { read: () => null } },
       configService: { getMediaDir: () => root, getDataDir: () => root, getHeadOfHousehold: () => 'alice' },
       nutribotServices: {
-        nutribotContainer: { getFoodLogReview: () => ({}), getMessagingGateway: () => ({ available: false }) },
-        nutriListStore: {}, foodLogStore: {},
+        nutribotContainer: { getFoodLogReview: () => ({ recover: async () => {}, runExclusive: async (_user, action) => action() }), getMessagingGateway: () => ({ available: false }) },
+        nutriListStore: { findByDateRange: async () => [] }, foodLogStore: {},
       },
       agentOrchestrator: { register }, logger,
     });

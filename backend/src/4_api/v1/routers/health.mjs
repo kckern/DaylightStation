@@ -183,6 +183,15 @@ export function createHealthRouter(config) {
     res.json(await cleanup().history(getDefaultUsername(), { offset, limit: 30 }));
   }));
   router.patch('/nutrition/cleanup/settings', asyncHandler(async (req, res) => res.json(await cleanup().settings(getDefaultUsername(), req.body))));
+  router.post('/nutrition/capture-recovery', asyncHandler(async (req, res) => {
+    const { logUuid, expectedVersion, operationId, observationIds, dryRun } = req.body;
+    try {
+      res.json(await cleanup().recovery.recover({ userId: getDefaultUsername(), logUuid, expectedVersion, operationId, observationIds, dryRun }));
+    } catch (error) {
+      if (error.status) return res.status(error.status).json({ error: error.message });
+      throw error;
+    }
+  }));
   router.post('/nutrition/cleanup/run', asyncHandler(async (_req, res) => res.status(202).json(await cleanup().request(getDefaultUsername(), { manual: true }))));
   router.post('/nutrition/cleanup/undo/:id', asyncHandler(async (req, res) => res.json(await cleanup().repairs.undo({
     userId: getDefaultUsername(), repairId: req.params.id, operationId: req.body.operationId,
@@ -1240,7 +1249,7 @@ export function createHealthRouter(config) {
       }
       try {
         const result = await runNutritionOperation(userId, req.body.operationId, { type, content, bucket, date, audioRef }, () => healthOperations.processNutritionInput({
-          type, content, userId, bucket, date, audioRef: audioRef ?? undefined,
+          type, content, userId, bucket, date, audioRef: audioRef ?? undefined, operationId: req.body.operationId,
         }));
         return res.json(result);
       } catch (err) {
