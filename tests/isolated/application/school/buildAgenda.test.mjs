@@ -4,6 +4,7 @@ import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { validateDocument } from '#domains/school/documents/documentValidation.mjs';
 import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
 import { studyDayWindow } from '#domains/school/studyDay.mjs';
+import { BOOK_LOG_PROGRAM_ID } from '#domains/school/bookLog.mjs';
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeAssignmentStore, FakeReviewQueue,
   fakeClock, seededRng, sequentialIds, silentLogger,
@@ -563,6 +564,14 @@ describe('notes for you (spec R7)', () => {
  */
 describe('self-service panel codes', () => {
   const subjectRecords = () => tokens.ofClass('subject_next');
+  // The reading code is a `subject_next` record too, but it is not a lesson:
+  // it is minted for EVERY learner, outside the section loop, and carries
+  // `program: 'book-log'`. Tests that count LESSON codes have to say so, or
+  // they drift into asserting how many programs the household runs.
+  const lessonRecords = () => subjectRecords()
+    .filter((record) => record.subject?.program !== BOOK_LOG_PROGRAM_ID);
+  const readingRecords = () => subjectRecords()
+    .filter((record) => record.subject?.program === BOOK_LOG_PROGRAM_ID);
   // fakeClock stands at 09:00 UTC on 2026-07-27, and the study day rolls at
   // 4am — so the code dies at 04:00 the next morning while the token keeps its
   // week. Read off `studyDayWindow`, never restated, for the same reason
@@ -631,11 +640,16 @@ describe('self-service panel codes', () => {
       rng,
     });
     await useCase.execute({ learnerId: 'kid1' });
-    const codes = subjectRecords().map((r) => r.accessCode);
+    const codes = lessonRecords().map((r) => r.accessCode);
     expect(codes).toHaveLength(2);
     expect(codes).toContain('481920');
     expect(codes).toContain('222222');
     expect(new Set(codes).size).toBe(2);
+    // The reading code draws from the SAME `mintedCodes` set, so it is part of
+    // this guarantee rather than an exception to it: every code on one sheet,
+    // lesson or log, is distinct.
+    const everyCode = subjectRecords().map((r) => r.accessCode);
+    expect(new Set(everyCode).size).toBe(everyCode.length);
   });
 
   it('never reissues a code that is still live from a previous agenda', async () => {
@@ -643,7 +657,7 @@ describe('self-service panel codes', () => {
     // already sitting on a previous day's paper.
     build({ selfService: { enabled: true } });
     await useCase.execute({ learnerId: 'kid1' });
-    const [{ accessCode: alreadyOnPaper }] = subjectRecords();
+    const [{ accessCode: alreadyOnPaper }] = lessonRecords();
     expect(alreadyOnPaper).toMatch(/^\d{6}$/);
 
     // Same seed, same learner, same first draw — but the registry now reports
@@ -655,9 +669,12 @@ describe('self-service panel codes', () => {
     build({ selfService: { enabled: true }, tokenRegistry: carriedOver });
     await useCase.execute({ learnerId: 'kid1' });
 
-    const records = subjectRecords();
+    const records = lessonRecords();
     expect(records).toHaveLength(1);
     expect(records[0].accessCode).toMatch(/^\d{6}$/);
+    // The cross-day guard covers the reading code too — it is minted from the
+    // same `liveCodes` set.
+    for (const reading of readingRecords()) expect(reading.accessCode).not.toBe(alreadyOnPaper);
     // The whole cross-day half of the guard: without it the index keeps only
     // the last writer and the earlier record's printed code stops resolving —
     // a child types the code on their paper and opens someone else's lesson.
@@ -706,6 +723,56 @@ describe('self-service panel codes', () => {
     await expect(useCase.execute({ learnerId: 'kid1' })).rejects.toThrow(/liveAccessCodes/);
   });
 
+  it('mints a reading code for a learner with NO book-log enrollment', async () => {
+    // The whole point of the 2026-09-06 change: an enrollment carries the
+    // OBLIGATION, not the access. `kid1` has no book-log program, and until
+    // now that meant no code named the shelf and no way to reach it.
+    build({ selfService: { enabled: true } });
+    await useCase.execute({ learnerId: 'kid1' });
+
+    const [reading] = readingRecords();
+    expect(reading).toBeTruthy();
+    expect(reading.subject).toMatchObject({
+      learnerId: 'kid1', subject: 'english',
+      continueToday: true, program: BOOK_LOG_PROGRAM_ID,
+    });
+    expect(reading.accessCode).toMatch(/^\d{6}$/);
+    // Same two clocks as every other panel code: the code dies at the
+    // rollover, the token keeps its week.
+    expect(reading.accessCodeExpiresAt).toBe(rollover());
+  });
+
+  it('prints the reading card, with its code under its own QR', async () => {
+    build({ selfService: { enabled: true } });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    const [reading] = readingRecords();
+
+    const card = result.document.blocks.find(
+      (b) => b.type === 'scan_action' && b.action === reading.token,
+    );
+    expect(card).toBeTruthy();
+    expect(card.label).toMatch(/Reading log/i);
+    expect(card.panelCode).toBe(reading.accessCode);
+    expect(validateDocument(result.document).errors).toEqual([]);
+  });
+
+  it('mints NO reading code when self-service is off', async () => {
+    // Nothing to type it into. A live code nobody can use is a code that only
+    // takes a slot in the registry's collision set.
+    build({});
+    await useCase.execute({ learnerId: 'kid1' });
+    expect(readingRecords()).toEqual([]);
+  });
+
+  it('hands the reading token back so an unprinted build can revoke it', async () => {
+    // It carries a LIVE code, exactly like every lesson code, so a build that
+    // never reaches the printer must be able to hand it back.
+    build({ selfService: { enabled: true } });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    const [reading] = readingRecords();
+    expect(result.mintedTokens).toContain(reading.token);
+  });
+
   it('leaves a calculator subject codeless — there is no token to alias', async () => {
     build({
       units: rawUnits({
@@ -719,7 +786,11 @@ describe('self-service panel codes', () => {
       selfService: { enabled: true },
     });
     const result = await useCase.execute({ learnerId: 'kid1' });
-    expect(subjectRecords()).toEqual([]);
+    // No LESSON code: a calculator subject has no token to alias. The reading
+    // code is unaffected — it is not this subject's, and a child whose only
+    // lesson today is on the calculator can still log a book.
+    expect(lessonRecords()).toEqual([]);
+    expect(readingRecords()).toHaveLength(1);
     expect(transcript(result.document)).not.toContain('PANEL CODE');
     expect(transcript(result.document)).toContain('Enter on calculator.');
   });
