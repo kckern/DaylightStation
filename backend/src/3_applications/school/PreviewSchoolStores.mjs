@@ -18,4 +18,8 @@ export class PreviewSchoolTokenRegistry {
 
   put = async () => {};
   liveAccessCodes = () => this.tokens.liveAccessCodes();
+  // A preview must not spend a child's code any more than it may mint one. It
+  // reports the record it would have bumped so a caller reading the result sees
+  // the same shape, and writes nothing.
+  recordUse = async (token) => this.tokens.get?.(token) ?? null;
 }

@@ -40,6 +40,7 @@ import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display
 import { curriculumPosterRef } from '#apps/common/resources/publicResourceRefs.mjs';
 import { lessonProgressRowsFromPlan } from '#domains/school/lessonProgress.mjs';
 import { BOOK_LOG_PROGRAM_ID, DEFAULT_BOOK_LOG_SUBJECT } from '#domains/school/bookLog.mjs';
+import { DEFAULT_ACCESS_CODE_MAX_USES } from '#domains/school/sessions/accessCode.mjs';
 
 const DEFAULT_SUBJECT_TOKEN_TTL_HOURS = 168;
 const HOUR_MS = 3_600_000;
@@ -73,7 +74,7 @@ export class BuildAgenda {
   // end.
   #sessions; #tokens; #launchers; #timezone; #teacherNotes;
   #clock; #rng; #newSessionId; #ttlMs; #logger; #reviewQueue; #schoolCalcStudies; #schoolCalcMode;
-  #selfService; #languageReelService; #previewOnly; #planProjection;
+  #selfService; #languageReelService; #previewOnly; #planProjection; #accessCodeMaxUses;
 
   /**
    * @param {object} deps
@@ -150,6 +151,15 @@ export class BuildAgenda {
     // One switch, read once: `selfService.enabled !== true` is today's agenda,
     // byte for byte — no code minted, no key on the record, no line on the paper.
     this.#selfService = selfService?.enabled === true;
+    // How many opens one printed code is worth. Read from the same
+    // `school.yml` block that switches the feature on, so a household can tune
+    // it; an absent or nonsensical value falls back to the domain's default
+    // rather than to "unlimited", because a typo must not quietly remove the
+    // limit it was trying to change.
+    const configuredMaxUses = selfService?.codeMaxUses;
+    this.#accessCodeMaxUses = Number.isInteger(configuredMaxUses) && configuredMaxUses > 0
+      ? configuredMaxUses
+      : DEFAULT_ACCESS_CODE_MAX_USES;
     // A code is only unique if something can say whether it is already taken.
     // Refuse at CONSTRUCTION rather than letting the first agenda of the day
     // discover it: `mintAccessCode` has no default `taken`, and a registry
@@ -409,6 +419,10 @@ export class BuildAgenda {
           accessCode,
           // The code dies at the rollover; the token above keeps its week.
           accessCodeExpiresAt: this.#accessCodeExpiryFor(nowIso, expiresAt),
+          // ...and it is also spent after a few opens. A lesson code opens ONE
+          // lesson; the all-day window it used to have was the thing a shared
+          // code lived in.
+          maxUses: this.#accessCodeMaxUses,
         } : {}),
       });
       // eslint-disable-next-line no-await-in-loop
@@ -462,6 +476,9 @@ export class BuildAgenda {
           expiresAt,
           accessCode: bulkAccessCode,
           accessCodeExpiresAt: this.#accessCodeExpiryFor(nowIso, expiresAt),
+          // One use covers all N sheets — the bulk code prints the set in one
+          // job, so a use is a job and not a sheet.
+          maxUses: this.#accessCodeMaxUses,
         });
         await this.#tokens.put(bulkRecord);
         bulkToken = bulkRecord.token;
@@ -527,6 +544,11 @@ export class BuildAgenda {
           expiresAt,
           accessCode: readingAccessCode,
           accessCodeExpiresAt: this.#accessCodeExpiryFor(nowIso, expiresAt),
+          // NO `maxUses`, deliberately. A log is not a task: "I finished
+          // another one" is a thing a child may honestly do several times in a
+          // day, and a cap here would break the very feature this code exists
+          // for. Attribution, not frequency, is the real question on the shelf,
+          // and the shelf answers it with the learner chip at the top of it.
         });
         await this.#tokens.put(readingRecord);
         readingToken = readingRecord.token;

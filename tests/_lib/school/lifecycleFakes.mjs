@@ -220,6 +220,21 @@ export class FakeTokenRegistry extends ITokenRegistry {
     return revoked;
   }
 
+  /**
+   * Mirrors `YamlTokenRegistry.recordUse`. It has to exist here or the cap is
+   * untested by construction: every school lifecycle test resolves through this
+   * fake, so a missing method would throw at `/act` and be read as a wiring bug
+   * rather than the counter never running.
+   */
+  async recordUse(token, { at } = {}) {
+    const record = await this.get(token);
+    if (!record) return null;
+    const used = Number.isInteger(record.useCount) ? record.useCount : 0;
+    const bumped = { ...record, useCount: used + 1, lastUsedAt: at };
+    this.#records.set(this.#key(token), bumped);
+    return bumped;
+  }
+
   /** Test-only. */
   all() { return [...this.#records.values()]; }
 
