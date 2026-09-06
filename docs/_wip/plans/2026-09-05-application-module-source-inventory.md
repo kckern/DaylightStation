@@ -1,0 +1,325 @@
+# Product-module migration: source-area inventory
+
+**Date:** 2026-09-05
+**Baseline:** `2144f762a37408b906efc0e359dc4649078d5ab4`
+**Parent:** [Migration execution design](2026-09-05-application-module-migration-plan.md)
+**Status:** Complete directory-level seed inventory for the areas below; proposed
+ownership is not a completed per-file relocation ledger or a claim that every
+implementation was audited. WP-01 resolves the identified splits before moving
+their files. Domain rank never follows the owner category automatically.
+
+## 1. Scope and measured population
+
+Counts come from `git ls-files`, not local `node_modules`, build outputs, or
+ignored scratch files. Test counts below match filenames containing `.test.` or
+`.spec.`; they are not discovered/executed case counts and are not additive to
+the tracked column. Every retained root still needs an explicit owner/role.
+
+| Tracked source area | Tracked files | Test-named files |
+|---|---:|---:|
+| `backend/src/0_system` | 87 | 6 |
+| `backend/src/1_adapters` | 863 | 161 |
+| `backend/src/1_rendering` | 96 | 23 |
+| `backend/src/2_domains` | 543 | 99 |
+| `backend/src/3_applications` | 1,422 | 297 |
+| `backend/src/4_api` | 282 | 114 |
+| `backend/src/5_composition` | 76 | 13 |
+| `frontend/src/Apps` | 44 | 12 |
+| `frontend/src/modules` | 3,625 | 1,130 |
+| `frontend/src/screen-framework` | 130 | 48 |
+| `shared` | 161 | 57 |
+| `_extensions` | 610 | 59 |
+| `cli` | 290 | 64 |
+| `scripts` | 42 | 4 |
+| `tests` | 1,887 | 1,529 |
+
+There are 74 tracked application-layer folders, 43 domain folders, 35 frontend
+module folders, and 19 extension folders. The tables below name each. They do
+not classify by assuming a file belongs wherever its current folder suggests:
+the owner of the port/model/policy decides; these are starting destinations.
+
+## 2. Backend application-layer ownership map
+
+All sources in this table are under `backend/src/3_applications/`. `P` means
+product module, `C` shared capability, and `S` platform. Existing files retain
+their **application layer** unless inspection identifies a misplaced artifact;
+being assigned to platform does not turn a use case into system code.
+
+| Source folder | Proposed owner/home | Split or preservation instruction |
+|---|---|---|
+| `admin` | P `admin` | Generic admin product shell; app-specific settings operations stay with their app |
+| `agents` | C `agents` | Generic execution/memory contracts; product-specific agent assignments stay with their product |
+| `ai` | C `ai` | Provider-neutral operations/ports; concrete SDKs are adapters |
+| `ambient` | C `ambient` | Ambient sensing/coordination; room-specific choices remain config/composition |
+| `auth` | S platform application | Authentication use cases/ports are not system runtime internals |
+| `automotive` | P `automotive` | Vehicle/trip/service policy, repositories, CLI and UI |
+| `books` | C `books` | Shared book metadata resolution; School shelf/curriculum remains School |
+| `calendar` | C `calendar` | Shared calendar query; product-specific schedule policies stay product-owned |
+| `camera` | C `camera` | Capture/query capability; product selections and permissions preserved |
+| `canvas` | C `art-display` | Separate authored art/content behavior from generic drawing primitives |
+| `catalog` | C `content` | Catalog operations; no generic dumping ground for other owners' records |
+| `chess` | C `gaming`, chess subcontext | Shared chess operations; Piano challenge/ladder orchestration returns to Piano |
+| `coaching` | P `life` | Life coaching policy; generic agent/AI mechanism comes from capabilities |
+| `common` | Split by port consumer | Common gateway contracts receive a named capability owner; no permanent `common` application owner |
+| `config` | S platform application | Config operations distinct from system config loading and product schemas |
+| `content` | C `content` | Content registry/projection semantics; provider SDKs stay adapters |
+| `content-filter` | C `content` | Preserve selection/filter policy and provider-neutral interfaces |
+| `cost` | C `cost` | Shared usage/cost accounting; don't merge with household Finance budget policy |
+| `devices` | C `device-dispatch` | Device operations/ports, not concrete kiosk transports |
+| `donow` | C `donow` | Existing cross-product dispatch semantics; bindings remain composition |
+| `economy` | C `household-economy` | Shared ledger; earning/redemption decisions remain product policies |
+| `eink` | C `eink` | Display-device capability, independent firmware mapping |
+| `emulator` | P `emulator` | Preserve its distinct existing architecture; do not merge into gaming kernel |
+| `entropy` | C `entropy` | Existing shared state/query semantics; retain domain rank |
+| `epaper` | C `eink` | Keep differing contracts if not actually interchangeable; no forced consolidation |
+| `eventbus` | S platform application | Semantic ports distinct from system event transport |
+| `events` | Split by event owner | Product publication facades go to owners; generic transport stays platform |
+| `feed` | P `feed` | Feed policy and external projections through injected peer queries |
+| `finance` | P `finance` | Budget/transactions and finance-specific provider ports |
+| `fitness` | P `fitness` | Workout/session policy; shared exercise corpus separately owned |
+| `gaming` | C `gaming` + P `party-games`/`game-experiences` | Split generic authority/effects from environment/experience-specific policy |
+| `gratitude` | P `gratitude` | Full product including rendering, print bridge and public selections query |
+| `hardware` | Split by implemented capability port | Device/scan/print transport bridges, not a permanent omnibus hardware owner |
+| `harvester` | C `harvesting` | Scheduling/ingestion mechanism; source-domain transforms stay with record owner |
+| `health` | P `health` | Health aggregation and medical policy; preserve rank and record authority |
+| `home` | P `home` | Household dashboard/product behavior, not generic home automation transport |
+| `home-automation` | C `home-automation` | Provider-neutral home automation; household scenes remain config/policy |
+| `homebot` | P `homebot` | Conversational/task orchestration, shared messaging/AI dependencies |
+| `homeline` | P `homeline` | Calling product/lease state; shared media mechanisms remain separate |
+| `journaling` | P `journaling` | Keep current journal operation boundary; do not silently merge with Journalist |
+| `journalist` | P `journalist` | Conversational journaling workflow and owned record formats |
+| `lifelog` | C `lifelog` | Shared aggregation/archive access; Life product consumes public operations |
+| `lifeplan` | P `life` | Preserve lifeplan semantic subcontext and stored names under Life product |
+| `livestream` | P `livestream` | Stream production/orchestration; public source adapter can be exported |
+| `logging` | S platform application | Semantic operations separate from system log dispatch |
+| `measures` | P `measures` | Measurement/ring policy; inspect cross-Health queries explicitly |
+| `media` | C `playback`/`content` + P `media` | Split playback/content operations from media-browser policy by class |
+| `messaging` | C `messaging` | Public messaging ports; product conversations remain product-owned |
+| `midi` | C `midi` | Transport/recording-neutral operations; Piano exercise policy stays Piano |
+| `newsreporter` | P `newsreporter` | Report workflow; generic agent/media/rendering dependencies injected |
+| `notification` | C `notifications` | Delivery semantics; product decides when/why to notify |
+| `nutribot` | P `nutribot` | Conversational food logging; preserve shared nutrition write contracts |
+| `nutrition` | C `nutrition` | Shared nutrition record/observation operations; Health and Nutribot are consumers |
+| `piano` | P `piano` | Exercise/assessment/studio/producer/kiosk policy stays one current product owner |
+| `piano-games` | P `piano` | Piano game budget/challenge policy, not generic game authority |
+| `pianoaudio` | C `piano-audio` | Audio rendering/recording facility; review consumer closure before export |
+| `playback-hub` | C `playback-hub` | Multi-device playback coordination; preserve satellite API contracts |
+| `presentation` | C `presentation` | Catalog/projection/scene machinery, never authoritative game mutations |
+| `printer` | C `print-output` | Fleet/delivery operations; product print selection/layout stays product-owned |
+| `proxy` | C `content`/`playback` | MintPlaybackStream is playback; thumbnails/assets are content. Generic HTTP mechanics alone belong to system |
+| `qrcode` | C `qr-code` | QR operations; School/scan semantics remain their owners |
+| `quizzes` | P `school` | quizScanRecorder decodes the School assessment form; raw OMR transport remains scan capability |
+| `reference` | C `reference` | Shared reference lookup; course use stays School |
+| `scan` | C `scan` | Generic input normalization/dispatch; consumer record interpretation stays product-owned |
+| `scheduling` | C `scheduling` + product handlers | Application jobs/policies are not the system timer loop |
+| `school` | P `school` | Curriculum, evidence, print/scan policy and surface lifecycle |
+| `screens` | C `screen-host` | Existing configuration query plus integration; room config isn't a separate app |
+| `sheets` | C `print-sheets` | Reusable printable interaction machinery; School content/renderers remain School |
+| `shutdown` | C `shutdown` | Shared shutdown safety policy; don't reclassify as domain-neutral system |
+| `state-gates` | C `state-gates` | Shared assertions/entitlements; product policy is injected |
+| `static-assets` | S platform application + owning capability | Generic serving vs domain-specific asset lookup; preserve URLs |
+| `trigger` | C `trigger` | Dispatch abstractions; mappings and product actions supplied by composition |
+| `tts` | C `speech` | Provider-neutral speech operations; SDK/audio pipeline at appropriate outer layers |
+| `weekly-review` | P `weekly-review` | Aggregation workflow; retains domain rank and provider-independent dependencies |
+
+This table covers all 74 folder names. Split rows are **work-blocking decisions
+for their files**, not optional future cleanup. Resolve them into named owners,
+not an `integrations/misc` or `platform/services` destination.
+
+## 3. Domain contexts and layers
+
+Keep domain context identity/rank separately from product ownership. The exact
+existing contexts are:
+
+- Level 0 in current reference/scanner: `core`.
+- Level 1: `content`, `common`, `messaging`, `notification`, `scheduling`,
+  `entropy`, `state-gates`.
+- Level 2: `ambient`, `art`, `automotive`, `barcode`, `camera`, `concierge`,
+  `cost`, `donow`, `economy`, `exercise`, `feed`, `finance`, `fitness`, `gaming`,
+  `gratitude`, `home-automation`, `journaling`, `lifeplan`, `livestream`,
+  `measures`, `media`, `midi`, `nutrition`, `piano`, `pianoaudio`, `playback-hub`,
+  `scan`, `school`, `shutdown`, `trigger`.
+- Level 3: `health`, `journalist`, `lifelog`, `weekly-review`.
+- Missing rank requiring a reference decision: `books`.
+
+These 43 names must survive classification even when several contexts share an
+owner or a context is physically portable. `core` moves to the platform's domain
+foundation; semantic pieces of `common` need exact context attribution, not an
+automatic system label. `art`, `barcode`, `concierge`, and `exercise` have no
+identically named application folder: begin with art-display, scan, life/agents,
+and exercise-library ownership respectively, then trace actual consumer policy.
+No consumer-facing package rename changes context rank.
+
+The same-rank/import discrepancy and unknown-domain blind spot described in
+main-plan section 8 are explicit prerequisites, not silently approved edges.
+
+## 4. Frontend ownership map
+
+All source folders below are under `frontend/src/modules/`. App entry files in
+`frontend/src/Apps/` move with the product they launch; root routing remains
+composition. The source-area ledger also includes app-specific hooks/contexts
+currently outside `modules/`.
+
+| Source folder | Proposed home | Split point |
+|---|---|---|
+| `Admin` | `modules/admin/web` + product settings exports | Generic admin navigation consumes registered public editor entries |
+| `Agent` | `capabilities/agents/web` | Product assignment/UI policy remains with that product |
+| `AppContainer` | Platform web host + product app subdirectories | Move nested Gratitude/FamilySelector/etc. by behavior owner, not container name |
+| `Auth` | Platform web auth | Authentication presentation is not domain model code |
+| `Auto` | `modules/automotive/web` | Preserve `/auto` URLs and vehicle data names |
+| `Blank` | Platform web primitive | No independent empty application owner |
+| `Calendar` | `capabilities/calendar/web` | Calendaring policy remains consumer-specific |
+| `CameraFeed` | `capabilities/camera/web` | Room selection/config stays composition/data |
+| `Chess` | `capabilities/gaming/web/chess` | Board accepts labels/colors and knows squares, not Piano/School policy; retain neutral presentation |
+| `Content` | `capabilities/content/web` | Generic content UI; product menus remain their owners |
+| `Displayer` | `capabilities/content/web` | Rendering selected content is not content ownership |
+| `Emulator` | `modules/emulator/web` | Keep separate from generic Gaming taxonomy |
+| `Entropy` | `capabilities/entropy/web` | Public widget, same semantic owner as its data |
+| `Feed` | `modules/feed/web` | Playback imported via supported public entry |
+| `Feedback` | `capabilities/feedback/web` | Product feedback policy supplied, generic collection reusable |
+| `Finances` | `modules/finance/web` | Source name normalization only; public IDs unchanged |
+| `Fitness` | `modules/fitness/web` | Shared exercise corpus, playback and host contracts external |
+| `Gaming` | `capabilities/gaming/web`, `modules/game-experiences`, `modules/party-games` | Preserve platform/experience/environment direction |
+| `Health` | `modules/health/web` | Nutrition/identity through public operations |
+| `HomeDashboard` | `modules/home/web` | Household dashboard composition/product policy |
+| `Input` | Camera/speech capture capabilities + Homeline calling product | Contains Webcam and VideoCall, not keyboard/game input; shared device hooks split from calling policy |
+| `Life` | `modules/life/web` | Preserve Now/Log/Plan/Coach subcontexts, consume public lifelog/agents |
+| `LiveStream` | `modules/livestream/web` | Stream-production product |
+| `Media` | `modules/media/web` | Browser/session product policy; core Player stays playback |
+| `Menu` | Shared navigation capability + installed menu composition | Host-neutral navigation vs catalog/product selection |
+| `MusicNotation` | `capabilities/music-notation/web` | Reusable notation; Piano teaching policy stays Piano |
+| `Piano` | `modules/piano/web` | Published widget/challenge provider remain Piano-owned |
+| `Player` | `capabilities/playback/web` | Whole consumer dependency surface, not just Player.jsx |
+| `School` | `modules/school/web` | Learning policy plus publicly hosted views |
+| `Surround` | `capabilities/playback/web` or named presentation subowner | Inspect host-neutral chrome vs classical-content policy |
+| `Time` | Platform web clock widget | Preserve clock/timezone semantics |
+| `Upcoming` | `capabilities/calendar/web` | Public calendar presentation |
+| `VoiceCapture` | `capabilities/speech/web` | Recording mechanism; transcript use stays product policy |
+| `Weather` | `capabilities/weather/web` | Public weather display and data capability |
+| `WeeklyReview` | `modules/weekly-review/web` | Product aggregation/UI |
+
+Other frontend roots:
+
+- `screen-framework`: main-plan section 1.4; generic host vs installed composition.
+- `hooks`, `context`, `contexts`, `lib`, `services`, `components`: classify per
+  consumer/semantic owner. For example `hooks/fitness` belongs to Fitness;
+  logging/HTTP/WebSocket mechanisms belong to platform, and `lib/Player` is
+  reviewed with playback. No bulk "all lib is platform" operation.
+- `assets`, `styles`, `public`: product assets move; universal tokens/fonts and
+  intentional stable URLs retain explicit shared ownership and artifact checks.
+- `dev`: generic harness shell stays central; product scenarios become owner-local.
+- `main.jsx`/RootApp: installed-system browser composition; no business-policy sink.
+
+## 5. Adapters, rendering, API and composition
+
+These layers follow semantic ownership, not their existing horizontal grouping.
+
+| Source group | Classification procedure | Required evidence |
+|---|---|---|
+| Product-named adapter families | Follow the port/model they translate | Owned port import, callers, configuration and write authority |
+| `persistence/yaml`, `persistence/files`, other stores | Split by aggregate/namespace; e.g. Gratitude/Vehicle/School stores move to products | Storage-path/codec/reader ledger, atomicity and old-reader/new-write test |
+| Content provider families | Content capability adapters, with public provider contract and configured composition | Existing manifest/provider IDs, URL/proxy behavior and adapter contract tests |
+| AI/messaging/device/vendor providers | Follow named capability's application port; provider facets separately classified | Preserve provider lookup, config precedence and no-op/error semantics |
+| Hardware/print bridges | Shared printer transport vs app-owned print request bridge | No renderer↔adapter or concrete peer-adapter imports |
+| `1_rendering/<product>` | Product `server/rendering` | Precomputed model and unchanged output; no application-port imports |
+| `1_rendering/lib`, canvas/pdf primitives | Platform rendering or named output capability | Pure presentation mechanics, no product model selection |
+| `4_api/v1/routers` and handlers | Product/capability API except central mount table and shared HTTP helpers | Ordered full mounted route inventory, aliases, middleware/auth and response contracts |
+| `4_api/middleware`, `utils` | Platform API or explicitly product-owned HTTP concern | No upward/runtime implementation imports through public aliases |
+| `5_composition/modules` | Owner composition factories; cross-owner bindings remain central | Factory constructor contracts, exactly-once existing registration/start/stop |
+| `5_composition/integrations` | `backend/src/composition/integrations`, supplied owner-public provider entries | System enumerates paths only; composition loads/selects executable manifests; see main §10.2 |
+
+Inventory every adapter file, including families named `admin`, `agents`,
+`ambient`, `books`, `calendar`, `camera`, `catalog`, `chess`, `config`, `cost`,
+`donow`, `eink`, `emulator`, `feedback`, `glossika`, `google`, `harvester`,
+`identity`, `integrations`, `jamcorder`, `komga`, `logging`, `notification`,
+`process`, `proxy`, `reference`, `runtime`, `scan`, `scheduling`, `secrets`,
+`strava`, `telegram`, `trigger`, and `video`; provider or transport names do not
+establish product ownership. The complete per-file adapter ledger, not this
+example list, is WP-01's exit artifact.
+
+## 6. External-runtime ownership map
+
+These 19 existing folders have independent operational concerns. Homes below
+are proposed logical owners; default physical movement follows main-plan 11.3.
+Preserve package/firmware identity, deployed command paths and wire protocol.
+
+| `_extensions/` source | Logical owner | Build/contract concern |
+|---|---|---|
+| `audio-bridge` | Playback/speech integration | Android audio bridge; inspect calling and microphone consumers |
+| `audio-router` | Playback integration | Audio-routing process/transport; preserve operator launch path |
+| `content-barcode-relay` | Scan/input capability | Firmware scan transport; product interpretation injected |
+| `document-processor` | Document-processing capability | Standalone service/build/lock, not controller startup |
+| `eink-panel` | E-ink capability | Firmware and display payloads |
+| `fingerprint` | Household-identity/device integration | Identity capture boundary; no biometric fixtures in public source |
+| `fitness` | Fitness product | ANT+ scanner/controller; own package/lock and device effects |
+| `ir-blaster` | Device-dispatch integration | Firmware/transmission contract |
+| `kitchen-relay` | Scan/nutrition input integration | Inspect hardware vs nutrition semantics; don't create speculative Kitchen app |
+| `obd-relay` | Automotive product | Vehicle telemetry protocol, firmware and replay fixture |
+| `omr-relay` | Scan capability | OMR transport; School grading stays School |
+| `piano` | Piano product, MIDI transport facet reviewed separately | Recorder, simulator, Python/Node toolchains and launch templates |
+| `piano-bridge` | Piano/MIDI integration | Android bridge and MIDI protocol |
+| `playback-hub` | Playback-hub capability | Separate playback coordinator protocol/runtime |
+| `portal-keys` | Screen-host/input integration | Android key capture and kiosk lifecycle |
+| `pressure-mat-relay` | Device/input capability | Firmware events; Fitness/School interpretations remain consumers |
+| `rf-blaster` | Device-dispatch integration | Firmware/transmission contract |
+| `ti86-app` | School product | Calculator application/toolchain, packet and print/scan links |
+| `ticalc-relay` | School calculator integration | Bridge firmware; preserves calculator protocol and deployment commands |
+
+## 7. Remaining repository roots
+
+- `shared/`: universal declarative naming contracts remain canonical; product
+  and capability-specific code follows its actual owner. Main §8.2 explicitly
+  distinguishes approved declarations/lookups, wire builders/serializers,
+  domain rules and application orchestration. In particular, gaming's coordinator
+  is application logic despite `kernel/`, and the media envelope builder is not
+  pure because it reads the clock. No whole-directory contracts/kernel exemption.
+- `backend/index.js`, web entry HTML/main, root package scripts and CLI dispatch
+  stay stable executable entrypoints. Their package manifests become the planned
+  workspace composition dependencies; no product internals accumulate there.
+- `cli/`: move owner-specific handlers (Automotive, Piano, curriculum/School,
+  gaming assets, exercise library, content filter, etc.) with owners. Shared
+  argument/config handling stays in central CLI infrastructure. Migration-only
+  operators remain explicitly classified tooling with dry-run safeguards.
+- `scripts/`: stable build/deploy/operator entrypoints remain. Owner-specific
+  implementations can move behind them. New architecture/dev/test tools have
+  explicit input roots; ignored workstation scripts do not count as delivered.
+- `tests/`: shared runner infrastructure, cross-owner flows, acceptance tests,
+  fixture utilities and platform tests remain; owner-only tests/fixtures move or
+  remain with explicit metadata. Archives/scratch/output are not runtime source.
+- `docs/`: canonical reference and runbook organization remains. Owner READMEs
+  and relocated path references link here. Do not copy the layer rules into
+  divergent owner-local policy documents.
+- `docker/`, `.githooks`, `.github`, `.vscode`: platform tooling/configuration;
+  inspect hidden workflow/editor assumptions and CI coverage. `.github` currently
+  contains instruction files, not an executable test workflow.
+- `.claude`, `.claire`, `.superpowers`, root agent files: development guidance or
+  tooling/artifacts, classified separately from production. Review public-safety
+  and source-path references before publication.
+- `content`, `data-drafts`, tracked placeholders under `data`, `media`, `logs`,
+  and `tmp`: classify each tracked item as authored asset, fixture, placeholder,
+  or accidental artifact. No private-data contents are reproduced here. Do not
+  automatically delete them, relocate live data, or treat a draft as code.
+- `logo` and root license/documentation files: project branding/governance assets;
+  preserve licensing/attribution and do not infer redistribution rights for other
+  fonts, media, proprietary course content or device SDKs.
+
+## 8. Per-file ledger completion procedure
+
+1. Enumerate tracked files plus the actual production/dev build closure; report
+   local-only dependencies separately. Record ignored/generated inputs, modes
+   and symlinks without accidentally including `node_modules` or secrets.
+2. Apply this table's proposed defaults, then split by actual port/model/policy
+   owner. Assign role/runtime/context/rank/public entry independently.
+3. Resolve every split row and every unknown production path with a named
+   maintainer decision. Classify mixed files by extraction, not dual ownership.
+4. Attach incoming imports, storage readers/writers, registrations, assets,
+   tests/runners and external contracts to each move group.
+5. Review and validate full coverage: exactly one disposition per canonical
+   source file; no ownerless runtime code; no duplicate implementation; every
+   retained source root explicitly justified.
+6. Reconcile after each batch and again at release. New mainline files must not
+   bypass classification because the original census predates them.
+
+Directory-level completeness here is evidence of **plan scope**. Migration
+completion requires the machine-verifiable file/contract/test ledgers described
+in the main plan; none is implied by these tables alone.

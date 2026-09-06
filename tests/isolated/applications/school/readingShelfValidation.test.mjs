@@ -41,7 +41,7 @@ const dayOf = (iso) => String(iso).slice(0, 10);
 
 /** The real shelf shape the audit was run against: a 192-page book. */
 const item = (over = {}) => ({
-  itemId: 'user_4:b:e1', bookId: 'b', progressMode: 'page', pageCount: 192,
+  itemId: 'test-learner:b:e1', bookId: 'b', progressMode: 'page', pageCount: 192,
   events: [{ kind: 'started', at: '2026-09-06T15:07:00.000Z' }], ...over,
 });
 
@@ -60,7 +60,7 @@ const recorder = (store) => new RecordBookProgress({
 function openStore() {
   return {
     events: [], opened: [],
-    async openItem(args) { this.opened.push(args); return { itemId: 'user_4:b:e2', ...args }; },
+    async openItem(args) { this.opened.push(args); return { itemId: 'test-learner:b:e2', ...args }; },
     async appendEvent(event) { this.events.push(event); return event; },
   };
 }
@@ -82,7 +82,7 @@ describe('reading shelf — the page ceiling', () => {
     // refusing mispaginated editions, omnibus volumes and other printings.
     const store = progressStore([item({ pageCount: 184 })]);
     await recorder(store).execute({
-      learnerId: 'user_4', itemId: 'user_4:b:e1', kind: 'progress', page: 212, entryId: 'p1',
+      learnerId: 'test-learner', itemId: 'test-learner:b:e1', kind: 'progress', page: 212, entryId: 'p1',
     });
     expect(store.events[0]).toMatchObject({ page: 212 });
   });
@@ -90,7 +90,7 @@ describe('reading shelf — the page ceiling', () => {
   it('refuses the audited 250-of-192', async () => {
     const store = progressStore();
     await expect(recorder(store).execute({
-      learnerId: 'user_4', itemId: 'user_4:b:e1', kind: 'progress', page: 500, entryId: 'p1',
+      learnerId: 'test-learner', itemId: 'test-learner:b:e1', kind: 'progress', page: 500, entryId: 'p1',
     })).rejects.toThrow(/too big for this book/);
     expect(store.events).toHaveLength(0);
   });
@@ -102,7 +102,7 @@ describe('reading shelf — the page ceiling', () => {
     // unbounded is the common path, not the edge case.
     const store = progressStore([item({ pageCount: null })]);
     await recorder(store).execute({
-      learnerId: 'user_4', itemId: 'user_4:b:e1', kind: 'progress', page: 9999, entryId: 'p1',
+      learnerId: 'test-learner', itemId: 'test-learner:b:e1', kind: 'progress', page: 9999, entryId: 'p1',
     });
     expect(store.events[0]).toMatchObject({ page: 9999 });
   });
@@ -110,7 +110,7 @@ describe('reading shelf — the page ceiling', () => {
   it('applies on the partway door too, after metadata resolves', async () => {
     const store = openStore();
     await expect(opener(store).execute({
-      learnerId: 'user_4', bookId: '9780000000002', entryId: 'e1', progressEntryId: 'e2',
+      learnerId: 'test-learner', bookId: '9780000000002', entryId: 'e1', progressEntryId: 'e2',
       where: 'partway', page: 500,
     })).rejects.toThrow(/too big for this book/);
   });
@@ -118,7 +118,7 @@ describe('reading shelf — the page ceiling', () => {
   it('lets the partway door through when the book resolved without a length', async () => {
     const store = openStore();
     await opener(store, null).execute({
-      learnerId: 'user_4', bookId: '9780000000002', entryId: 'e1', progressEntryId: 'e2',
+      learnerId: 'test-learner', bookId: '9780000000002', entryId: 'e1', progressEntryId: 'e2',
       where: 'partway', page: 500,
     });
     expect(store.events[0]).toMatchObject({ kind: 'progress', page: 500 });
@@ -131,13 +131,13 @@ describe('reading shelf — the backdate floor', () => {
 
     const store = progressStore();
     await recorder(store).execute({
-      learnerId: 'user_4', itemId: 'user_4:b:e1', kind: 'finished', finishedOn: day, entryId: 'f1',
+      learnerId: 'test-learner', itemId: 'test-learner:b:e1', kind: 'finished', finishedOn: day, entryId: 'f1',
     });
     expect(store.events[0]).toMatchObject({ kind: 'finished', at: `${day}T12:00:00.000Z` });
 
     const opened = openStore();
     await opener(opened).execute({
-      learnerId: 'user_4', bookId: '9780000000002', entryId: 'e1', progressEntryId: 'e2',
+      learnerId: 'test-learner', bookId: '9780000000002', entryId: 'e1', progressEntryId: 'e2',
       where: 'finished', finishedOn: day,
     });
     expect(opened.events[0]).toMatchObject({ kind: 'finished', at: `${day}T12:00:00.000Z` });
@@ -148,13 +148,13 @@ describe('reading shelf — the backdate floor', () => {
 
     const store = progressStore();
     await expect(recorder(store).execute({
-      learnerId: 'user_4', itemId: 'user_4:b:e1', kind: 'finished', finishedOn: day, entryId: 'f1',
+      learnerId: 'test-learner', itemId: 'test-learner:b:e1', kind: 'finished', finishedOn: day, entryId: 'f1',
     })).rejects.toThrow(/days ago/);
     expect(store.events).toHaveLength(0);
 
     const opened = openStore();
     await expect(opener(opened).execute({
-      learnerId: 'user_4', bookId: '9780000000002', entryId: 'e1', progressEntryId: 'e2',
+      learnerId: 'test-learner', bookId: '9780000000002', entryId: 'e1', progressEntryId: 'e2',
       where: 'finished', finishedOn: day,
     })).rejects.toThrow(/days ago/);
     expect(opened.events).toHaveLength(0);
@@ -163,7 +163,7 @@ describe('reading shelf — the backdate floor', () => {
   it('refuses the audited 2026-08-19 stamp on a book opened 2026-09-06', async () => {
     const store = progressStore();
     await expect(recorder(store).execute({
-      learnerId: 'user_4', itemId: 'user_4:b:e1', kind: 'finished', finishedOn: '2026-08-19', entryId: 'f1',
+      learnerId: 'test-learner', itemId: 'test-learner:b:e1', kind: 'finished', finishedOn: '2026-08-19', entryId: 'f1',
     })).rejects.toThrow(/days ago/);
   });
 
@@ -172,7 +172,7 @@ describe('reading shelf — the backdate floor', () => {
     // picked last month have different mistakes to fix.
     const store = progressStore();
     await expect(recorder(store).execute({
-      learnerId: 'user_4', itemId: 'user_4:b:e1', kind: 'finished', finishedOn: '2026-09-07', entryId: 'f1',
+      learnerId: 'test-learner', itemId: 'test-learner:b:e1', kind: 'finished', finishedOn: '2026-09-07', entryId: 'f1',
     })).rejects.toThrow(/future/);
   });
 });

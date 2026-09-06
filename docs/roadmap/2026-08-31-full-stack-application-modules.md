@@ -3,17 +3,297 @@
 > A roadmap for making Daylight Station extensible at the application level,
 > without weakening its existing domain and adapter boundaries.
 
-**Status:** Proposed architecture and migration roadmap — no implementation implied | **Last updated:** 2026-08-31
+**Status:** Structural migration plan reviewed through five adversarial rounds; proposed, not implemented | **Last updated:** 2026-09-05
+
+**Current work plan:** [Numbered pre-implementation checklist](../_wip/plans/2026-09-05-application-module-preimplementation-plan.md).
+Inventory, boundary design, dedicated characterization tests and documentation
+lead to an auditable Gratitude rehearsal plan. Existing application code remains
+unchanged; executing the migration is outside this preparation scope.
+
+**Immediate design:** [Application ownership and behavior-preserving migration](../_wip/plans/2026-09-05-application-module-migration-plan.md).
+It takes precedence for the first cutover: reorganize ownership and dependencies,
+prove existing behavior with green/red gates, and add no runtime functionality.
+The [module runtime exploration](../_wip/plans/2026-09-05-application-module-runtime-design.md)
+and the larger capability/satellite designs below are deferred directions, not
+prerequisites for that migration.
+
+The [source inventory](../_wip/plans/2026-09-05-application-module-source-inventory.md)
+and [five-round review record](../_wip/plans/2026-09-05-application-module-adversarial-reviews.md)
+support the immediate plan. Layer requirements remain binding; review completion
+authorizes neither source moves before their gates nor a production deployment.
 
 **Related:** [Backend Architecture](../reference/core/backend-architecture.md),
 [Application Layer Guidelines](../reference/core/layers-of-abstraction/application-layer-guidelines.md),
 [Domain Layer Guidelines](../reference/core/layers-of-abstraction/domain-layer-guidelines.md)
 
-**Reading map:** Sections 1–3 state the decision and vocabulary. Sections 4–10
+**Reading map:** Section 0 records the codebase review and proposed first decisions.
+Sections 1–3 state the decision and vocabulary. Sections 4–10
 define the target model and exercise it against Music, Kitchen, adapters, and
-satellites. Section 11 is the normative architecture and enforcement contract.
+satellites. Section 11 describes the target architecture and enforcement contract.
 Sections 12–17 cover migration, acceptance, risks, and questions that the pilot
 must resolve.
+
+---
+
+## 0. Codebase review and proposed first design
+
+Reviewed on 2026-09-05 against commit `2144f762a`, after synchronizing the clean
+checkout with the deployed source. Findings below describe inspected source
+and static checks, not a live deployment test. The external Kitchen providers
+and every satellite have not been audited in this pass.
+
+The central proposal holds up: application ownership is scattered, while useful
+composition, adapter, persistence, and presentation boundaries already exist.
+The next step is to establish ownership and behavior-preserving migration gates
+around those boundaries. A new module runtime is not necessary for that move.
+The original design consequences below include functional candidates now
+deferred by sections 0.6–0.7 and the immediate migration plan.
+
+### 0.1 What exists, and what still needs design
+
+| Area | Current evidence | Design consequence |
+|---|---|---|
+| Composition | [`app.mjs`](../../backend/src/app.mjs) is 6,591 lines; [`bootstrap.mjs`](../../backend/src/5_composition/bootstrap.mjs) is 3,705. Feature composers already exist under `5_composition/modules/`, but `app.mjs` still selects, starts, mounts, and stops individual features. | Move owner wiring behind public composition entries; retain installed assembly and current activation order. A new module runtime is deferred. |
+| Adapter selection | [`AdapterRegistry`](../../backend/src/5_composition/integrations/AdapterRegistry.mjs) discovers capability/provider manifests; [`IntegrationLoader`](../../backend/src/5_composition/integrations/IntegrationLoader.mjs) constructs household adapters. [`HouseholdAdapters.get`](../../backend/src/5_composition/integrations/HouseholdAdapters.mjs) can return a no-op. | Preserve selection/no-op behavior. Split system path enumeration from composition module loading; classify executable manifests as composition. Versioned resolution is deferred. |
+| Configuration | [`HOUSEHOLD_APP_CONFIGS`](../../shared/contracts/householdConfig.mjs) already owns grouped paths, including `gratitude/config`, `school/school`, and `hardware/scales`. [`ConfigService`](../../backend/src/0_system/config/ConfigService.mjs) and the config loader use that registry; unknown config keys do not fall back to flat paths. | Preserve the authoritative registry, read/write symmetry and authorization restrictions; no parallel config discovery or mandatory generation. |
+| Browser discovery | [`main.jsx`](../../frontend/src/main.jsx) owns top-level routes; [`appRegistry.js`](../../frontend/src/lib/appRegistry.js) owns AppContainer launch entries; [`AdminNav`](../../frontend/src/modules/Admin/AdminNav.jsx) and [`AppConfigEditor`](../../frontend/src/modules/Admin/Apps/AppConfigEditor.jsx) add further lists. | A pilot must cover its launch surface and its admin editor, as well as normal route registration. |
+| Content discovery | `createContentRegistry` in `bootstrap.mjs` passes a separate hardcoded `appDefs` map to [`AppRegistryAdapter`](../../backend/src/1_adapters/content/app-registry/AppRegistryAdapter.mjs). It is not identical to the browser map. | Preserve each catalog's actual population and existing `app:gratitude` IDs. Catalog unification is separate behavior work. |
+| Household scope | Global [`householdResolver`](../../backend/src/4_api/middleware/householdResolver.mjs) sets `req.householdId`, but the [`Gratitude router`](../../backend/src/4_api/v1/routers/gratitude.mjs) selects `req.query.household` or the default household. Integration startup initially loads the default household. | Characterize and preserve the existing selection semantics during moves. Per-household instances and correcting the mismatch need separate behavior review. |
+| Access | [`permissionGate`](../../backend/src/4_api/middleware/permissionGate.mjs) checks configured app-route mappings; unmapped routes pass through. | Preserve current enforcement/order during the cutover; new access declarations are deferred. Hiding a surface cannot enforce API access. |
+| Lifecycle | `app.mjs` starts schedulers, subscriptions, and hardware-facing loops in separate sections and attaches feature-specific `SIGTERM` handlers. | Preserve start/stop ordering, instance scope and cleanup; prove one controller/writer. New activation and enablement machinery is deferred. |
+| Architecture | [`audit-layer-imports.mjs`](../../scripts/audit-layer-imports.mjs) scans `.mjs` under `backend/src` and `shared`, with `cli` added for port analysis. [`audit-direct-fs-imports.mjs`](../../scripts/audit-direct-fs-imports.mjs) has separate backend root rules. | Both must recognize vertical modules before source moves. An ignored directory can appear compliant. |
+| Delivery gates | [The commit hook](../../.githooks/pre-commit) runs architecture, link, parse, and composition checks. No checked-in `.github/workflows` jobs were found. | Add automated CI and confirm required-check enforcement separately; a local hook alone does not provide it. |
+| Build and packages | [The Dockerfile](../../docker/Dockerfile) explicitly copies `shared`, `backend`, `frontend`, and `cli`. Root, backend, and frontend have separate dependency installations; [Vite](../../frontend/vite.config.js) has explicit aliases. | New source roots need image, resolver, watcher, and test integration. A module that works through test aliases may still be absent from the shipped image. |
+
+The static checks passed at the reviewed revision:
+
+- `node scripts/audit-layer-imports.mjs`: all reported counts are zero except
+  `apps-success-false`, which remains at its existing baseline of 44.
+- `node scripts/audit-direct-fs-imports.mjs`: passed, 2,542 runtime files checked.
+
+These results establish the existing baseline, not module-boundary coverage.
+The broad dependency table in the older backend architecture overview permits
+imports that the current audit rejects. The pilot must preserve the stricter
+executable rules and reconcile the reference prose when the policy is extracted.
+
+### 0.2 Gratitude as a candidate proof, with explicit outgoing and incoming edges
+
+Gratitude remains a useful small candidate reviewed here. It exercises domain
+objects, a datastore port, YAML persistence, card rendering, printing, HTTP,
+realtime publication, a launchable UI, and configuration without School's
+hardware and learning lifecycle. It is not isolated today:
+
+- Family Selector and the generic app parameter resolver both call
+  `/api/v1/gratitude/bootstrap` for household users. Give the reusable projection
+  a `household-identity` boundary while preserving that URL and its semantics.
+  Making Gratitude removable is a separate runtime objective.
+- [`GratitudeFeedAdapter`](../../backend/src/1_adapters/feed/sources/GratitudeFeedAdapter.mjs)
+  reads Gratitude's stored YAML directly. Feed needs an injected narrow selection
+  query with unchanged behavior; disabled-module semantics are deferred.
+- [`HomeBotContainer`](../../backend/src/3_applications/homebot/HomeBotContainer.mjs)
+  receives the concrete Gratitude service. Its assignment workflow needs a
+  narrow command contract, not access to all Gratitude operations.
+- [`TemporaryImagePrintGateway`](../../backend/src/1_adapters/hardware/thermal-printer/TemporaryImagePrintGateway.mjs)
+  implements a Gratitude-owned port despite its generic hardware location.
+  Keep it with that owner during extraction; a later public `print-output`
+  implementation may replace it after the provider-neutral artifact contract
+  is established.
+- The admin editor, configuration registry, backend content list, event facade,
+  and external consumers must participate in migration parity tests, not just the API
+  router and launch screen.
+
+School confirms why a large application should follow the pilot:
+[`schoolLifecycle.mjs`](../../backend/src/5_composition/modules/schoolLifecycle.mjs)
+assembles learning, printing, device dispatch, Piano handoffs, Fitness evidence,
+and policy bridges. Its School-specific surface certification also includes
+paper and calculator targets; it is not the platform's browser surface registry.
+Those contracts need individual ownership decisions before extraction.
+
+### 0.3 Deferred runtime decisions
+
+The [design draft](../_wip/plans/2026-09-05-application-module-runtime-design.md)
+proposed these defaults before the scope was narrowed to structural migration.
+They are retained for later runtime review, not the immediate cutover:
+
+1. Plain owner directories initially, with build-generated catalogs and explicit
+   public entry points. Defer a workspace-package migration until dependency
+   resolution is proven from both Node and the production web build.
+2. Validate declarative manifests without executing application entries. Produce
+   separate server loaders, browser loaders, and portable config metadata from
+   the same installed set.
+3. Compose once per `(moduleId, householdId)` and share that instance across its
+   surfaces. Freeze selected capability bindings for that activation.
+4. Require exact capability contract revisions for v0; distinguish contract
+   support, configured availability, and transient health.
+5. Treat enabling, disabling, and changing providers as restart-required in v0.
+   Compose inert objects, activate with owned cleanup, then admit requests.
+6. Preserve `/api/v1/gratitude`, `/app/gratitude`, `app:gratitude`, the admin
+   route, config paths, and stored record shapes. Route ownership and access
+   declarations become part of the manifest immediately.
+7. Require the pilot to run with a fake printer, without a printer, in two
+   synthetic households, and completely absent from the build.
+
+The ordering needs one correction to the original phases: pilot removal cannot
+be the Phase 3 exit while frontend discovery and config integration arrive in
+Phases 5–6. Phase 3 proves an inert, composed slice; final removal is a combined
+runtime, catalog, configuration, and consumer-compatibility gate. The design
+draft groups that work into reviewable increments.
+
+### 0.4 Contributor ownership comes before the runtime contract
+
+Subsequent design discussion clarified the primary goal: a musician should be
+able to own and develop the complete Piano product without understanding or
+editing unrelated household applications or platform internals. Playback,
+household identity, persistence, logging, and development fixtures should be
+provided through documented dependencies. The runtime above is a candidate
+means of achieving that goal, not the definition of an application.
+
+A working definition is: **a full-stack application is an independently
+understandable product ownership boundary containing its domain behavior and
+the server, UI, configuration, tests, and optional device code needed to deliver
+that behavior, while consuming common facilities through public contracts.**
+It need not implement every layer itself. Its author should own product-specific
+schemas and policy while the platform provides the persistence mechanism.
+
+Three questions must be answered separately:
+
+| Axis | Question | Examples |
+|---|---|---|
+| Ownership | Who maintains and decides the meaning of this code? | Piano/Music, School, Screens, platform, a reusable playback owner |
+| Artifact role | What does this particular artifact do? | Domain rule, use case, port, adapter, public component, widget, host, route, contract |
+| Runtime | Where does it execute? | Server, browser, satellite; portable code is explicitly marked |
+
+Import/export visibility is another explicit property. A product may both
+consume public facilities and export a widget, embeddable surface, or capability.
+That does not change the ownership of its private domain code. Mutual exclusion
+should apply to an artifact's owner and classification within each axis, not
+force an entire product into exactly one of "application", "service", and
+"surface" when it contains several roles.
+
+Screens exposes this problem in the current code:
+[`widgets/builtins.js`](../../frontend/src/screen-framework/widgets/builtins.js)
+imports Piano, School, Finance, Health, and other application presentations;
+Piano imports screen overlay/session utilities in return. A finished configured
+screen is a user-facing composition product. The layout, input, overlay, and
+host contracts it uses may have reusable implementations. The future boundary
+should separate those artifacts rather than label the whole current directory
+either a shared service or an application.
+
+The desired relationship is a host consuming Piano's published widget while
+Piano implements a neutral host contract. It is not a pair of private imports
+between Screens and Piano. Standalone Player and player-in-a-screen similarly
+share an implementation without making every host part of the playback owner.
+General embedding must therefore be investigated while settling the taxonomy,
+even if the first runtime only implements the contracts required by real hosts.
+
+Before treating the runtime draft as the chosen design, define the contributor
+package, the public artifact kinds, the allowed dependency matrix, and a Piano
+development harness that runs without private household data or unrelated
+hardware. Whether Piano belongs under a broader Music owner remains a product
+ownership decision rather than a consequence of sharing MIDI or notation code.
+
+### 0.5 Migration preference: coordinated cutover, incremental preparation
+
+The user's preference is to reach the destination format promptly, with a
+coordinated cutover if feasible. A long-lived mixed architecture is not an
+accepted requirement. Gratitude can serve as a temporary proof on an isolated
+branch without becoming the first of many separately deployed migrations.
+
+Three changes have different readiness requirements: moving source into owner
+directories; replacing private dependencies with public contracts; and changing
+runtime activation/discovery. The first two can be prepared in ordered commits
+and released together. New activation/discovery behavior is deferred. A directory
+move alone does not complete the architectural change, and a single deployment
+does not require one giant unreviewable commit.
+
+For a short mixed-layout fallback, create destination roots (`modules/`,
+`capabilities/`, and necessary platform/library roots) beside the existing code.
+Move each owned implementation once, update its consumers, and remove its old
+registration in the same increment. Existing unmigrated code remains at its
+known paths. Do not first move the whole live tree to `deprecated/`: that adds
+another import, tool, and deployment-path migration without resolving ownership.
+
+New code must not gain dependencies on legacy private implementations. Any
+necessary boundary adapter belongs in a small composition-owned migration area,
+with an exact consumer list and removal condition. There must be one runtime
+registration and one writable data authority for each feature. Do not keep
+duplicate old/new implementations or broad re-export trees merely to make
+every historical import continue to work.
+
+The preferred release strategy is to prove a representative owner plus the
+Piano/Screens/playback relationship, migrate remaining ownership on a branch,
+then make one controlled production cutover. Readiness requires the dependency
+matrix, artifact build, configuration/data compatibility, and core user flows
+to be checked. Keep stored formats stable during the structural move so code
+rollback remains practical. Feature redesigns and new satellite deployment
+mechanisms need not be bundled into that cutover.
+
+### 0.6 Platform, shared capability, application, and public exports
+
+The immediate ownership model has three primary categories:
+
+- **Platform core:** domain-neutral operating infrastructure, including transport,
+  configuration loading, authentication enforcement, persistence mechanisms,
+  observability, and build/test facilities.
+- **Shared capabilities:** named reusable facilities with their own maintainers
+  and contracts, such as playback, gaming, screen hosting, household identity,
+  and notation.
+  These can contain domain logic, UI, libraries, services, and adapters. They
+  are not all platform core and need not be network services.
+- **Applications:** coherent products such as Piano, School, Health, Fitness,
+  Automotive, Gratitude, and Party Games. They own product policy and
+  may publish components or operations for other applications to consume.
+
+An **application-owned public export** is visibility, not a fourth ownership
+category. Multiple consumers do not automatically promote a component into the
+platform. Library, adapter, host, and API are artifact roles; server, browser,
+and portable are execution classifications. Keep those axes separate.
+
+[`Player.jsx`](../../frontend/src/modules/Player/Player.jsx) and its supporting
+playback implementation belong outside their consuming applications in the
+shared playback capability. Piano video policy, Fitness governance, and School
+lesson behavior remain in those applications. Likewise, the gaming kernel,
+scoring/turn/dice mechanics, and reusable rulesets form a shared gaming facility;
+the entire current Gaming tree should not move there without classification.
+`backend/shared/gaming` resolves through a symlink to root `shared/gaming`.
+
+The code already demonstrates the distinction:
+[`chordAddress.js`](../../frontend/src/modules/Piano/PianoChessGame/chordAddress.js)
+keeps instrument-to-square translation in Piano while shared chess knows only
+about the game. A published Piano challenge provider remains Piano-owned even
+when the generic gaming runtime invokes it. Family Games may depend on gaming
+and household identity directly; it need not get every facility through gaming.
+
+The screen framework is intended to be generic: classify it as a reusable UI
+framework/host, not wholesale as an application. Its current folder also contains
+installed-widget selection and Daylight-specific integration. Separate those
+from host/layout mechanics. A room screen may simply be configuration, not a
+new application owner; create a Screens product boundary only for actual
+separately owned product policy. Composition binds exported widgets/providers;
+the generic host does not import its app consumers. See the
+[screen-framework partition](../_wip/plans/2026-09-05-application-module-migration-plan.md#14-screen-framework-generic-host-versus-its-installed-composition).
+
+See [the source-backed partition and dependency rules](../_wip/plans/2026-09-05-application-module-migration-plan.md#1-partition-by-responsibility-not-by-how-many-callers-a-file-has).
+
+### 0.7 Structural migration must preserve behavior and test coverage
+
+The immediate migration changes file ownership, imports, public seams, and the
+tooling needed to support them—not product functionality. Keep current HTTP,
+UI, storage/configuration, permission, event, and lifecycle behavior. Do not
+bundle new enablement, household scope, provider selection, or data migrations.
+
+Before relocating code, prove that architecture scanners, test discovery,
+resolvers, assets, and production image inputs cover the destination. An
+in-memory forbidden-filesystem-import probe was caught at its old application
+path but ignored at a proposed `modules/.../server/application/` path. Selected
+tests produced 95 passes and two existing Piano route-fixture failures; that
+sample is not a green baseline or comprehensive API certification.
+
+The [execution plan](../_wip/plans/2026-09-05-application-module-migration-plan.md#6-execution-reviewable-preparation-one-production-cutover)
+starts with ownership/contract inventory and green/red tooling, then rehearses
+representative extractions on a branch before completing the ownership map and
+performing one production cutover. No `deprecated/` tree, duplicate runtime, or
+blanket compatibility re-export layer is required.
 
 ---
 
@@ -125,9 +405,11 @@ as Music exercises, Karaoke, sheet music, and MIDI recording are internal parts
 of the Music application until independent lifecycle and ownership prove that a
 different boundary is needed.
 
-This should be an incremental extraction, not a repository-wide directory
-rewrite. The module contract must be proven by extracting one small existing
-application before it becomes the required shape for large applications.
+The contract should be proven against existing applications before it becomes
+the required shape for the repository. Implementation can proceed in ordered
+extractions on a branch and land in one coordinated cutover; it need not require
+a long period of separately deployed old and new architectures. Section 0.5
+records the preferred migration strategy and the mixed-layout fallback.
 
 The migration must also preserve architecture mechanically, not only in prose.
 Before module-local layers become a normal source layout, the existing
@@ -146,15 +428,17 @@ architecture discussions.
 | Term | Meaning |
 |---|---|
 | **Application layer** | Clean Architecture use cases, orchestration, and ports; currently `backend/src/3_applications/` |
-| **Application module** | An installable full-stack Daylight product domain, such as Music, School, Fitness, or Gratitude |
+| **Application module** | A full-stack product ownership boundary, such as Piano, School, Fitness, or Gratitude; independent installation is a later runtime concern |
 | **Adapter** | A concrete provider implementing a port or capability |
-| **Capability** | A provider-neutral runtime function that applications may declare, consume, or expose |
+| **Shared capability owner** | A named reusable facility such as playback or gaming, potentially containing libraries, UI, services, contracts, and adapters |
+| **Capability contract** | A supported function or interface that applications may consume or implement; runtime discovery and negotiation are optional later machinery |
+| **Application public export** | An app-owned supported component, operation, or contract published for other owners; not a promotion into platform ownership |
 | **Integration** | A concrete reusable provider implementation of a public capability, potentially including both server and satellite code |
 | **Library** | Reusable code with no runtime enablement, provider resolution, or lifecycle |
 | **Satellite** | An independently built and deployed runtime target owned by an application, integration, or rarely the platform |
 | **Satellite instance** | One privately provisioned installation of a satellite artifact in a household or system environment |
 | **Surface** | A named route, kiosk, embedded view, widget, or other presentation exposed by an application module |
-| **Platform** | Shared contracts, runtime, module loader, shell, configuration, security, observability, and composition machinery |
+| **Platform core** | Domain-neutral runtime, transport, configuration, security, observability, and developer infrastructure; product selection belongs to explicit composition |
 
 An application module contains an application layer; it is not synonymous with
 that layer.
@@ -994,6 +1278,12 @@ than through edits scattered across core registries.
 
 ### 5.1 Server composition contract
 
+For household-scoped modules, "composed once" means once per
+`(moduleId, householdId)`, shared by all of that household's surfaces. It does
+not mean one mutable instance for the entire process. The v0 design also
+separates inert composition from activation and defers runtime re-composition
+to a later lifecycle design.
+
 The server entry receives platform services and resolved capabilities. It
 returns only the integration points it owns:
 
@@ -1110,7 +1400,8 @@ An `ApplicationModuleRegistry` should:
 7. compose enabled and available server modules;
 8. mount routers and register jobs, subscriptions, permissions, and health
    checks;
-9. dispose modules during shutdown or reload;
+9. dispose modules during shutdown or failed activation (hot reload is deferred
+   in v0);
 10. evaluate surface-level requirements and visibility;
 11. publish the resulting module and surface catalog to the frontend and admin
     surfaces.
@@ -2220,7 +2511,10 @@ Cross-owner checks add these constraints:
   runtime entry point;
 - an integration can implement its owning capability but cannot become a
   shortcut into application internals;
-- platform code cannot depend on an application module;
+- platform core cannot depend on an application implementation; explicit
+  system/product composition may reference public composition and surface
+  entries. That wiring can remain handwritten during the structural migration;
+  generated catalog loaders are a later option, not a prerequisite;
 - package aliases, relative paths, dynamic imports, re-exports, CommonJS
   `require`, and static template imports receive the same verdict; and
 - owner-level and capability-provider dependency cycles are rejected with the
@@ -2425,6 +2719,11 @@ presume that every existing directory must eventually vanish.
 
 ## 13. Migration roadmap
 
+**Scope note:** These original phases include new runtime functionality. Follow
+the [behavior-preserving execution plan](../_wip/plans/2026-09-05-application-module-migration-plan.md)
+for the immediate source cutover. Treat activation, enablement, module absence,
+and new discovery machinery below as later work requiring separate approval.
+
 ### Phase 0 — Inventory and dependency map
 
 - Inventory every current place where a new application must be registered.
@@ -2499,8 +2798,11 @@ Every remaining manual core edit is evidence of a missing extension point. The
 contract should be revised from this evidence before extracting a second
 module.
 
-**Exit condition:** removing the pilot manifest removes the application without
-leaving broken imports, routes, jobs, or navigation.
+**Exit condition:** the pilot composes through its declared entry with synthetic
+dependencies, preserving storage and API behavior. Any temporary compatibility
+wiring is recorded explicitly. Complete removal without broken consumers,
+routes, jobs, or navigation is the combined exit gate after Phases 4–6, as
+detailed in the v0 design.
 
 ### Phase 4 — Enablement and server catalog
 
@@ -2791,8 +3093,10 @@ separate threat model and compatibility design.
 
 ## 17. Questions to resolve through the pilot
 
-The pilot extraction should answer these questions with code rather than
-speculation:
+The pilot extraction should answer these questions with code. Section 0 and the
+v0 design propose defaults for catalog generation, directory packaging,
+household scope, API injection, and restart-based enablement. They remain
+proposals until the pilot demonstrates them:
 
 1. Should modules be workspace packages immediately, or plain directories with
    import aliases first?
