@@ -338,19 +338,30 @@ export function planDailyAgenda({
     // program that will not answer, and work blocked by something nothing can
     // reach (see `blockerChainIsReachable` above).
     const nonElectiveList = list.filter((e) => !e.elective);
-    const actionable = offerEligible.filter((e) => !e.elective && (e.status === 'in_progress' || e.status === 'available'));
+    // The obligation reads its own eligibility, not the offer track's. An
+    // elective pass suppresses the next OFFER in its subject, but it must
+    // never hide the required entry from this ladder — hiding it turned
+    // `obligated` into `excused: caught_up`, which is how an elective came to
+    // excuse untouched required work (regression, 2026-09-06).
+    const nonElectivePassedToday = nonElectiveList.some((e) => passedTodayIds.has(e.unitId));
+    const obligationEligible = eligible.filter((entry) => (
+      entry.program
+        ? programStatusFor(programStatuses, entry)?.doneToday !== true
+        : !nonElectivePassedToday
+    ));
+    const actionable = obligationEligible.filter((e) => !e.elective && (e.status === 'in_progress' || e.status === 'available'));
     const nonElectiveProgramDone = nonElectiveList.some((e) => (
       e.program && programStatusFor(programStatuses, e)?.error !== true
       && programStatusFor(programStatuses, e)?.doneToday === true
     ));
     const requiredPrograms = nonElectiveList.filter((e) => e.program && !terminalProgramKeys.has(programStatusKey(e)));
     const hasRequiredCurriculum = nonElectiveList.some((e) => !e.program);
-    const curriculumObligationServed = !hasRequiredCurriculum || subjectPassedToday;
+    const curriculumObligationServed = !hasRequiredCurriculum || nonElectivePassedToday;
     const programObligationsServed = requiredPrograms.length === 0 || requiredPrograms.every((entry) => {
       const status = programStatusFor(programStatuses, entry);
       return status?.error !== true && status?.doneToday === true;
     });
-    const obligationServed = (subjectPassedToday || nonElectiveProgramDone)
+    const obligationServed = (nonElectivePassedToday || nonElectiveProgramDone)
       && curriculumObligationServed && programObligationsServed;
     const unavailableRequiredProgram = nonElectiveList.some((entry) => (
       entry.program && unavailableProgramKeys.has(programStatusKey(entry))
