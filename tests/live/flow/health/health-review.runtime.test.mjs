@@ -7,6 +7,24 @@ const items = [
   { uuid: 'fish', name: 'White Fish', parentId: 'taco', calories: 52, grams: 55, icon: 'default' },
 ].map(row => ({ ...row, date, mealTime: 'afternoon', version: 1 }));
 
+for (const width of [1440, 390]) test(`three provisional incident entries count quietly at ${width}px`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width, height: 1000 });
+  const fixture = await installHealthFixtures(page, { items: [
+    { uuid: 'yogurt', name: 'Oikos plain yogurt', calories: 160, amount: 1, unit: 'serving', grams: null },
+    { uuid: 'chia', name: 'Chia seeds', calories: 70, amount: 14, unit: 'g', grams: 14 },
+    { uuid: 'scale', name: 'Mixed food', calories: 641, amount: 458, unit: 'g', grams: 458 },
+  ].map(row => ({ ...row, date, mealTime: 'afternoon', icon: 'default', settled: false, version: 1,
+    review: { state: 'provisional', stabilizesAt: '2026-09-08T19:48:16Z' } })) });
+  await page.goto('/health?date=' + date);
+  await expect(page.locator('.health-row')).toHaveCount(3);
+  await expect(page.getByText('Estimated', { exact: true })).toHaveCount(3);
+  await expect(page.getByText('Food 871', { exact: true })).toBeVisible();
+  await expect(page.getByText(/needs settlement|unconfirmed|needs confirmation/i)).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('three-provisional-entries.png'), fullPage: true });
+  expect(fixture.unexpected).toEqual([]);
+});
+
 for (const width of [1440, 390]) test(`group and review layout at ${width}px`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width, height: 1000 });
   const state = await installHealthFixtures(page, { items });

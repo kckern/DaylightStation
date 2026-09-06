@@ -41,11 +41,11 @@ export function HealthSettings() {
   return <Stack gap="md">
     <SectionCard title="Nutrition cleanup">
       <Stack gap="md">
-        <Text size="sm">Uses older meals as reference; only repairs today and yesterday. Never adds meals, deletes consumed food, or confirms pending captures. Changes and evidence are recorded below.</Text>
+        <Text size="sm">Scans count immediately as estimates. Cleanup can refine provisional entries for 72 hours using capture evidence and older meals as reference. It preserves your corrections and never invents consumption. Changes and evidence are recorded below.</Text>
         <Switch label="Automatic cleanup" checked={settings.enabled} disabled={busy} onChange={event => mutate('settings', { expectedVersion: resource.data.version, enabled: event.currentTarget.checked }, 'PATCH')} />
         <Switch label="Preview only — do not change food or send questions" checked={settings.dryRun} disabled={busy} onChange={event => mutate('settings', { expectedVersion: resource.data.version, dryRun: event.currentTarget.checked }, 'PATCH')} />
         <Switch label="Also show questions in Telegram" checked={settings.telegram} disabled={busy} onChange={event => mutate('settings', { expectedVersion: resource.data.version, telegram: event.currentTarget.checked }, 'PATCH')} />
-        <Text size="sm" c="dimmed">Turning off automatic cleanup cancels active cleanup work. Questions remain available here. Successful repairs stay quiet.</Text>
+        <Text size="sm" c="dimmed">Turning off cleanup cancels AI review. Estimates still stabilize automatically after 72 hours. Repairs and stabilization stay quiet; confirmation is optional.</Text>
         <Button variant="light" disabled={busy || resource.data.runs.some(run => ['queued', 'running', 'retry'].includes(run.status))} onClick={() => mutate('run', {})}>{settings.dryRun ? 'Preview cleanup now' : 'Run cleanup now'}</Button>
         {error ? <Text c="red" role="alert">{error}</Text> : null}
       </Stack>

@@ -14,6 +14,20 @@ function fixture(rows) {
   return { ...deps, tool: name => tools.find(tool => tool.name === name) };
 }
 describe('read-only nutrition evidence tools', () => {
+  it('uses solid mass rather than the legacy one-gram amount and keeps partial nutrients usable', async () => {
+    const f = fixture([{ uuid: 'chia', logUuid: 'capture', grams: 14, amount: 1, unit: 'g' }]);
+    f.upc.lookup.mockResolvedValue({ serving: { size: 14, unit: 'g' }, nutrition: { calories: 70, fiber: 5.1, sugar: null },
+      nutritionLookup: { servingVerified: true, conflicts: [], warnings: ['Nutrition unavailable: sugar.'] } });
+    const result = await f.tool('lookup_barcode_product').execute({ logId: 'capture' });
+    expect(result.facts).toEqual([{ entryId: 'chia', field: 'calories', value: 70 }, { entryId: 'chia', field: 'fiber', value: 5.1 }]);
+  });
+  it('can establish a missing serving basis without treating a whole yogurt serving as one gram', async () => {
+    const f = fixture([{ uuid: 'yogurt', logUuid: 'capture', grams: null, amount: 1, unit: 'serving', captureEvidence: { assumption: 'one-serving' } }]);
+    f.upc.lookup.mockResolvedValue({ serving: { size: 170, unit: 'g' }, nutrition: { calories: 160 }, nutritionLookup: { warnings: [] } });
+    const result = await f.tool('lookup_barcode_product').execute({ logId: 'capture' });
+    expect(result.facts).toContainEqual({ entryId: 'yogurt', field: 'grams', value: 170 });
+    expect(result.facts).toContainEqual({ entryId: 'yogurt', field: 'calories', value: 160 });
+  });
   it('searches old history with pagination and binds the trusted owner', async () => {
     const f = fixture([]);
     const result = await f.tool('search_food_history').execute({ query: 'shake', offset: 30, userId: 'bob' });

@@ -50,6 +50,15 @@ function buildApp(overrides = {}) {
 }
 
 describe('health HTTP contract through application operations', () => {
+  it('keeps selective recovery owner-bound and preserves preview/version controls', async () => {
+    const recover = vi.fn(async () => ({ dryRun: true, receipt: { after: [] } }));
+    const { app } = buildApp({ cleanup: { recovery: { recover } } });
+    const body = { userId: 'someone-else', logUuid: 'capture', expectedVersion: 'v1', operationId: 'repair', observationIds: ['weight', 'density'], dryRun: true };
+    expect((await request(app).post('/health/nutrition/capture-recovery').send(body)).status).toBe(200);
+    expect(recover).toHaveBeenCalledWith({ ...body, userId: 'alex' });
+    recover.mockRejectedValue(Object.assign(new Error('Capture changed'), { status: 409 }));
+    expect((await request(app).post('/health/nutrition/capture-recovery').send(body)).status).toBe(409);
+  });
   it('exposes cleanup controls with server-owned identity and rejects unavailable service', async () => {
     const cleanup = { status: vi.fn(() => ({ questions: [], runs: [] })), history: vi.fn(async () => ({ records: [], total: 0 })),
       request: vi.fn(async () => ({ runId: 'one' })), settings: vi.fn(async () => ({})),

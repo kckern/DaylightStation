@@ -18,7 +18,7 @@ describe('EntryRow', () => {
     r(<EntryRow row={{ ...baseRow, settled: false }} onTap={() => {}} onConfirm={() => {}} />);
     expect(document.querySelector('.health-row--unsettled')).toBeTruthy();
     // Non-visual signal: real text content, not color alone.
-    expect(screen.getByText(/unconfirmed/i)).toBeTruthy();
+    expect(screen.getByText(/estimated/i)).toBeTruthy();
     const confirmBtn = screen.getByRole('button', { name: /confirm entry/i });
     expect(confirmBtn).toBeTruthy();
   });
@@ -26,7 +26,7 @@ describe('EntryRow', () => {
   it('a settled row (settled:true) renders neither the cue nor the confirm button', () => {
     r(<EntryRow row={{ ...baseRow, settled: true }} onTap={() => {}} onConfirm={() => {}} />);
     expect(document.querySelector('.health-row--unsettled')).toBeFalsy();
-    expect(screen.queryByText(/unconfirmed/i)).toBeFalsy();
+    expect(screen.queryByText(/estimated/i)).toBeFalsy();
     expect(screen.queryByRole('button', { name: /confirm entry/i })).toBeNull();
   });
 
@@ -126,7 +126,7 @@ describe('EntryRow', () => {
   it('an indented child row still carries the unsettled cue and confirm affordance', () => {
     r(<EntryRow row={{ ...baseRow, settled: false }} onTap={() => {}} onConfirm={() => {}} child />);
     expect(document.querySelector('.health-row-line--child')).toBeTruthy();
-    expect(screen.getByText(/unconfirmed/i)).toBeTruthy();
+    expect(screen.getByText(/estimated/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: /confirm entry/i })).toBeTruthy();
   });
 
@@ -177,7 +177,7 @@ describe('EntryRow', () => {
 
     it('coexists with the unsettled cue — an entry can be scale-measured AND unconfirmed', () => {
       r(<EntryRow row={{ ...baseRow, settled: false }} onTap={() => {}} onConfirm={() => {}} measured="82 g · scale ✓" />);
-      expect(screen.getByText(/unconfirmed/i)).toBeTruthy();
+      expect(screen.getByText(/estimated/i)).toBeTruthy();
       expect(screen.getByText('82 g · scale ✓')).toBeTruthy();
       expect(screen.getByRole('button', { name: /confirm entry/i })).toBeTruthy();
     });

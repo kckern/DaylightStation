@@ -617,7 +617,7 @@ export function createScanDispatch(deps = {}) {
   };
 
   // ---- product (a bare UPC, claimed by the reader's route) ------------------
-  const handleProduct = ({ body, raw, device }) => {
+  const handleProduct = ({ body, raw, device, operationId }) => {
     const relayCfg = relayCfgFor(device);
     const userId = relayCfg.nutribot?.user_id
       || relayConfig.nutribot?.user_id
@@ -642,20 +642,21 @@ export function createScanDispatch(deps = {}) {
     getLogFoodFromUPC().execute({
       userId, conversationId: conversationId || `device:${userId}`, upc: body, messageId: null,
       headless: true,
+      ...(operationId ? { operationId } : {}),
     }).catch((err) => {
       emit(barcodeLogger, 'warn', 'barcode_relay.nutribot.dispatch.failed', { device, error: errText(err) });
     });
     return { status: 'logged', effect: { upc: body, conversationId } };
   };
 
-  const buildHandlers = (ts) => {
+  const buildHandlers = (ts, eventId = null) => {
     const trigger = makeTriggerHandler(ts);
     return [
       { namespace: 'content', handle: trigger },
       { namespace: 'command', handle: trigger },
       { namespace: 'school', handle: handleSchool },
       { namespace: 'nutrition', handle: handleNutrition },
-      { namespace: 'product', handle: handleProduct },
+      { namespace: 'product', handle: scan => handleProduct({ ...scan, operationId: eventId ? `scan:${scan.device}:${eventId}` : null }) },
     ];
   };
 
@@ -676,7 +677,7 @@ export function createScanDispatch(deps = {}) {
     // `meta.route` as well as what the step-5 lookup reads.
     const route = relay.route || relayCfgFor(relay.device).route || 'content';
     const dispatcher = new ScanDispatcher({
-      handlers: buildHandlers(relay.ts), routeFallback, logger,
+      handlers: buildHandlers(relay.ts, relay.eventId), routeFallback, logger,
     });
     return dispatcher.dispatch({ code: relay.code, device: relay.device, route });
   }

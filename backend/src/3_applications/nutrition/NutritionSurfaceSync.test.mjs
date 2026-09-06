@@ -7,6 +7,7 @@ function fixture() {
   const rows = [];
   const saved = new Map();
   const deps = {
+    publishChanges: true, // legacy opt-in replication behavior
     users: () => ['alice'], destinationFor: () => 'surface:alice',
     linkFor: (entry, destination) => entry.conversationId === destination && entry.metadata.messageId
       ? { messageId: entry.metadata.messageId, caption: true } : null,
@@ -26,6 +27,21 @@ function fixture() {
 }
 
 describe('NutritionSurfaceSync', () => {
+  it('defaults to quiet: no new pending prompt or report on capture, correction, or stabilization', async () => {
+    const f = fixture();
+    delete f.deps.publishChanges;
+    f.deps.surface.createPending = vi.fn();
+    delete f.log.metadata.messageId;
+    f.log.conversationId = 'device:alice';
+    await f.sync.run();
+    f.add(); await f.sync.run();
+    f.rows[0].calories = 155; await f.sync.run();
+    f.rows[0].settled = true; await f.sync.run();
+    await new NutritionSurfaceSync(f.deps).run();
+    expect(f.deps.surface.createPending).not.toHaveBeenCalled();
+    expect(f.deps.surface.report).not.toHaveBeenCalled();
+    expect(f.deps.surface.updateMessage).not.toHaveBeenCalled();
+  });
   it('publishes a headless pending capture once, and syncs review date changes', async () => {
     const f = fixture();
     f.log.conversationId = 'device:alice'; f.log.meal = { date: '2026-09-04', time: 'afternoon' };

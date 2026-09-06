@@ -226,7 +226,7 @@ describe('LogTable', () => {
         [null, []],
       ]);
       render(<LogTable byBucket={unsettledGroupBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
-      expect(screen.getByText(/unconfirmed/i)).toBeTruthy();
+      expect(screen.getByText(/estimated/i)).toBeTruthy();
       expect(screen.getByRole('button', { name: /confirm entry/i })).toBeTruthy();
     });
   });

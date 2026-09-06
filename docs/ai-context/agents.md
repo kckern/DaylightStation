@@ -7,7 +7,9 @@ Autonomous AI agents that use LLM reasoning for complex tasks. Unlike rule-based
 For the current validated runtime, managed runs, cancellation, questions and SDK
 versions, see [Shared agent runtime contracts](../reference/core/agent-runtime.md).
 The [nutrition auditor](../reference/health/nutrition-cleanup.md) reads historical
-evidence but only applies guarded today/yesterday repairs through the Health service.
+evidence and applies guarded repairs to active 72-hour provisional captures through
+Health (legacy rows retain a today/yesterday guard). Capture completion, bounded
+estimates, verified corrections and silent deterministic finalization are separate.
 
 ## Key Concepts
 

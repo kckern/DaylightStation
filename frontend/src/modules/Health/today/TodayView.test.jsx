@@ -507,7 +507,7 @@ describe('TodayView — scale observations', () => {
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
 
     await waitFor(() => expect(screen.getByText('Guessed')).toBeTruthy());
-    expect(screen.getAllByText(/unconfirmed/i)).toHaveLength(1);
+    expect(screen.getAllByText(/estimated/i)).toHaveLength(1);
     expect(document.querySelectorAll('.health-row--unsettled')).toHaveLength(1);
   });
 

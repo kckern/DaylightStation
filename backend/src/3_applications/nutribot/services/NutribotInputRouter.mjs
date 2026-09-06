@@ -94,6 +94,7 @@ export class NutribotInputRouter extends BaseInputRouter {
 
     const userId = this.#resolveUserId(event);
     const items = await this.#stampUnsettled(userId, logId, source);
+    if (result.committed) return { ok: true, result, committed: true, logId, items, mealTime: result.mealTime, moved: false };
     const { mealTime, moved } = await this.#resolveMealTime({
       userId,
       logId,
@@ -234,7 +235,7 @@ export class NutribotInputRouter extends BaseInputRouter {
       // (rendered image + coaching kick, after a 300ms pause) inline in EVERY
       // capture request. Manual Accept paths keep the report.
       const accepted = await useCase.execute({
-        userId, conversationId, logUuid: logId, responseContext, autoReport: false,
+        userId, conversationId, logUuid: logId, responseContext, autoReport: false, provisional: true,
       });
       if (accepted?.success === false) {
         this.logger.warn?.('nutribot.capture.commitRefused', { source, logId, error: accepted.error });
@@ -387,14 +388,15 @@ export class NutribotInputRouter extends BaseInputRouter {
 
   async handleUpc(event, responseContext) {
     const useCase = this.container.getLogFoodFromUPC();
-    // commit:false — the barcode flow commits at its portion-selection step,
-    // which refuses an already-accepted log. Items are still stamped unsettled.
+    // The UPC use case owns capture for hardware and interactive transports.
     return await this.#capture(event, responseContext, { source: 'barcode', commit: false }, (rc) =>
       useCase.execute({
         userId: this.#resolveUserId(event),
         conversationId: event.conversationId,
         upc: event.payload.text,
         messageId: event.messageId,
+        operationId: event.payload.operationId || event.operationId,
+        bucket: event.payload.bucket || null,
         date: event.payload.date || null,
         responseContext: rc,
       }));

@@ -47,7 +47,7 @@ function Question({ question, onChanged, onFeedback }) {
   const disabled = busy || question.status === 'answering';
   return <SectionCard title={question.question}>
     <Stack gap="sm">
-      <Text size="sm" c="dimmed">Nothing changes until you answer. Cleanup is limited to today and yesterday.</Text>
+      <Text size="sm" c="dimmed">Optional: your current estimate already counts. Without an answer, it stabilizes automatically after its 72-hour review window.</Text>
       {question.choices.map(choice => <Stack gap="xs" key={choice.id}>
         <RepairPreview repair={choice.repair} entryNames={question.entryNames} />
         <Button variant="light" disabled={disabled} onClick={() => answer({ choiceId: choice.id })}>{choice.label}</Button>

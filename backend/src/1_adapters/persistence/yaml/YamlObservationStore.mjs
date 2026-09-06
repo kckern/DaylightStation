@@ -634,6 +634,31 @@ export class YamlObservationStore extends IObservationStore {
 
   // ==================== Public API ====================
 
+  loadPlacements(userId) {
+    requireUserId(userId);
+    const file = path.join(this.#dataService.user.resolveDir('lifelog/nutrition', userId), 'scale-placements.yml');
+    let result;
+    try { result = readYamlFromPath(file); }
+    catch (error) { if (error.code === 'ENOENT') return {}; throw error; }
+    if (result == null) return {};
+    if (typeof result !== 'object' || Array.isArray(result)) throw new Error('Corrupt scale placement state');
+    return result;
+  }
+
+  savePlacement(userId, scaleId, state) {
+    requireUserId(userId); requireScaleId(scaleId);
+    const all = this.loadPlacements(userId);
+    const file = path.join(this.#dataService.user.resolveDir('lifelog/nutrition', userId), 'scale-placements.yml');
+    ensureDir(path.dirname(file));
+    saveYamlToPathAtomic(file, { ...all, [scaleId]: structuredClone(state) });
+  }
+
+  findByPlacement(userId, placementId) {
+    requireUserId(userId);
+    return this.#readValidWithArchives(userId, this.#archiveMonths(userId))
+      .filter(row => row.placementId === placementId).map(row => ({ ...row }));
+  }
+
   /**
    * Append a new observation. Assigns `id`, derives `date` from `at`, and starts the
    * record at `status: 'open'` / `pairedEntryUuid: null`.
@@ -673,6 +698,8 @@ export class YamlObservationStore extends IObservationStore {
       date: at.slice(0, 10),
       status: 'open',
       pairedEntryUuid: null,
+      ...(obs.placementId ? { placementId: obs.placementId } : {}),
+      ...(obs.observedAt ? { observedAt: obs.observedAt } : {}),
     };
 
     // The roll rides this cycle: `append` already reads and rewrites the whole file, so

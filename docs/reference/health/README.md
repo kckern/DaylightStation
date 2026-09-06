@@ -854,14 +854,17 @@ predates this tracking) reads as already-ratified with no backfill needed. A row
 capture is stamped into the moment it's parsed (see [Capture funnels](#capture-funnels)
 above).
 
-An unsettled row also **auto-settles by age**: once it's more than three days old it
-presents as settled even though the stored value is still `false`. This is computed each
-time the day is read, not written back — nothing ever mutates the row to auto-settle it,
-and no scheduled job runs the check.
+New captures now carry an exact 72-hour `review` deadline. A deterministic worker
+persists `settled: true, settledBy: auto` after that deadline, including after
+downtime; totals do not change and no message is sent. Legacy rows without a
+`review` record retain their older read-time date-only behavior. See
+[Nutrition cleanup](nutrition-cleanup.md) for the current capture, reconciliation,
+notification and recovery contracts; older prompt-flow descriptions above describe
+the legacy implementation.
 
 A person settles a row three ways: any successful edit (a `PUT` on the row, from
 `EntryEditSheet` or elsewhere) stamps `settled: true, settledBy: 'user'` alongside
-whatever else changed; an unsettled row's "Unconfirmed" badge carries its own one-tap
+whatever else changed; a provisional row's muted "Estimated" badge carries its optional one-tap
 confirm button that sends that same stamp with no other field changed; and a **quick-add**
 writes the stamp at creation, since picking a known food off the suggestion list is itself
 the ratification.

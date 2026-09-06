@@ -479,11 +479,11 @@ $health-aside-gap: 1.5rem;
 
   // Unsettled cue: dashed accent (survives greyscale) PAIRED with the
   // `&__badge` text below (never color alone — accessibility requirement).
-  &--unsettled { border-left: 2px dashed var(--ds-warning); padding-left: calc(0.25rem - 2px); }
+  &--unsettled { border-left: 2px solid transparent; padding-left: calc(0.25rem - 2px); }
   &__badge {
     grid-column: 1 / -1; justify-self: start;
-    font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
-    color: var(--ds-warning); padding-left: 24px;
+    font-size: 0.68rem; font-weight: 400;
+    color: var(--ds-text-mid); padding-left: 24px;
   }
 
   // "82 g · scale ✓" — this row's grams came off the kitchen scale. Same
@@ -507,7 +507,7 @@ $health-aside-gap: 1.5rem;
 .health-row--group { font-weight: 600; }
 .health-row__total-label { font-size: 0.72rem; font-weight: 400; color: var(--ds-text-mid); }
 .health-row__badge, .health-row__scale { grid-column: 2 / -1; font-size: 0.68rem; color: var(--ds-text-mid); }
-.health-row__badge { color: var(--ds-warning); }
+.health-row__badge { color: var(--ds-text-mid); }
 .health-food-art {
   display: inline-block; position: relative; flex: none; color: var(--ds-text-mid);
   > img, > svg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }

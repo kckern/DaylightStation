@@ -1,4 +1,5 @@
 import { presentSettlement } from '#domains/nutrition/services/settlement.mjs';
+import { confirmReview } from '#shared/contracts/nutrition/reviewLifecycle.mjs';
 import { nowTs24 } from '#system/utils/time.mjs';
 import { foodGrams, scaleFoodPortion, NUTRIENT_KEYS } from '#shared/contracts/health/foodQuantity.mjs';
 import { v5 as uuidv5 } from 'uuid';
@@ -49,6 +50,7 @@ export class HealthOperations {
     resolveCoachingUsername = () => null,
     today,
     newId,
+    clock = { now: () => Date.now() },
   }) {
     this.healthData = healthData;
     this.nutritionItems = nutritionItems;
@@ -59,6 +61,7 @@ export class HealthOperations {
     this.resolveCoachingUsername = resolveCoachingUsername;
     this.today = today;
     this.newId = newId;
+    this.clock = clock;
   }
 
   defaultUsername() {
@@ -103,14 +106,14 @@ export class HealthOperations {
   async findNutritionItemsByDate(username, date) {
     const rows = await this.nutritionItems.findByDate(username, date);
     const today = this.today();
-    return rows.map((row) => ({ ...row, ...presentSettlement(row, today) }));
+    return rows.map((row) => ({ ...row, ...presentSettlement(row, today, this.clock.now()) }));
   }
 
   async readNutritionDay(username, date) {
     const snapshot = this.nutritionItems.readDaySnapshot
       ? this.nutritionItems.readDaySnapshot(username, date)
       : { date, items: await this.nutritionItems.findByDate(username, date), revision: null };
-    return { ...snapshot, items: snapshot.items.map(row => ({ ...row, ...presentSettlement(row, this.today()) })) };
+    return { ...snapshot, items: snapshot.items.map(row => ({ ...row, ...presentSettlement(row, this.today(), this.clock.now()) })) };
   }
 
   findNutritionItem(username, id) {
@@ -192,6 +195,8 @@ export class HealthOperations {
     const allowedChanges = Object.fromEntries(
       Object.entries(stampedChanges).filter(([field]) => NUTRITION_UPDATE_FIELDS.has(field)),
     );
+    // Internal lifecycle metadata is not an API-editable field.
+    if (ratify && existing.review) allowedChanges.review = confirmReview(existing).review;
     if (changes.factor != null) Object.assign(allowedChanges, scaleFoodPortion(existing, changes.factor));
     if (changes.grams != null && existing.kind !== 'group' && foodGrams(existing)) {
       // Exact mass changes and multipliers share the same extensive arithmetic.
@@ -339,8 +344,8 @@ export class HealthOperations {
    *   nutribot input pipeline, where the router seam applies the precedence:
    *   explicit-in-utterance/caption > bucket > clock default.
    */
-  processNutritionInput({ type, content, userId, bucket, date, audioRef }) {
-    return this.nutritionInput.process({ type, content, userId, bucket, date, audioRef });
+  processNutritionInput({ type, content, userId, bucket, date, audioRef, operationId }) {
+    return this.nutritionInput.process({ type, content, userId, bucket, date, audioRef, ...(operationId ? { operationId } : {}) });
   }
 
   runNutritionOperation(userId, operationId, payload, action) {

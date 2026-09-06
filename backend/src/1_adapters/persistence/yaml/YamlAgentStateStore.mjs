@@ -15,7 +15,7 @@ export class YamlAgentStateStore extends IAgentStateStore {
     return this.dataService.user.resolveDir('agents/' + this.namespace, userId);
   }
   load(userId) {
-    return loadYaml(this.path(userId)) || { version: 0, settings: { enabled: false, dryRun: true, telegram: true }, runs: {}, questions: {} };
+    return loadYaml(this.path(userId)) || { version: 0, settings: { enabled: false, dryRun: true, telegram: false }, runs: {}, questions: {} };
   }
   update(userId, change) {
     const state = this.load(userId);
