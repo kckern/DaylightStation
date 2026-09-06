@@ -5,7 +5,21 @@
  *
  * It is NOT authentication (design D1): anyone who can read the code can ask
  * the panel to open that work. The lock keeps a child on task, not out of a
- * vault, so there is no throttle and no lockout anywhere in this path.
+ * vault.
+ *
+ * That was once written here as "so there is no throttle and no lockout
+ * anywhere in this path", and as of 2026-09-06 it is no longer true. It stopped
+ * being true the day a code opened a free-form SHELF rather than one lesson: a
+ * single code was typed thirteen times in five hours, and nothing spent it,
+ * slowed it, or noticed. Two limits now exist, and neither makes this
+ * authentication:
+ *
+ *   - a code is spent after `DEFAULT_ACCESS_CODE_MAX_USES` opens (below);
+ *   - repeated REJECTED codes are throttled at the panel.
+ *
+ * Both bound how much one leaked code is worth. Neither asks who is holding
+ * it — that question has no answer at a keypad, and pretending otherwise is
+ * what the original note was right to warn against.
  *
  * Deliberately NOT `../continuationCode.mjs`. That module is a reversible
  * affine encoding of `learnerSlot x moduleCode` — permanent and fully
@@ -18,6 +32,26 @@
 import { ValidationError, DomainInvariantError } from '#domains/core/errors/index.mjs';
 
 export const SCHOOL_ACCESS_CODE_DIGITS = 6;
+
+/**
+ * How many times one printed code may OPEN something before it is spent.
+ *
+ * Three, because a real lesson trip is one open and a fumble is two — a
+ * mis-tap, a card closed by accident, a child who walked away and came back.
+ * Three leaves room for that and still stops a code being typed thirteen times
+ * in five hours, which is what one was (2026-09-06), by someone who was
+ * probably not the child whose paper it was printed on.
+ *
+ * NOT A LOCK, and the header above still stands: anyone who can read the code
+ * can use it, three times. What this removes is the ALL-DAY window — a code
+ * that opened work without limit until 4am the next morning.
+ *
+ * The reading log is deliberately exempt (`BuildAgenda`): a log is not a task,
+ * and "I finished another one" is a thing a child may honestly do five times in
+ * a day. Frequency was only ever a proxy there; the shelf's own learner chip is
+ * what answers "whose log is this?".
+ */
+export const DEFAULT_ACCESS_CODE_MAX_USES = 3;
 
 /** Derived, never restated: widening DIGITS must widen the space and the pattern together. */
 export const SCHOOL_ACCESS_CODE_SPACE = 10 ** SCHOOL_ACCESS_CODE_DIGITS;
