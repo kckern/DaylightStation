@@ -118,6 +118,26 @@ const USED_UP = Object.freeze({
   actions: Object.freeze([]),
 });
 
+/**
+ * Too many wrong codes, too fast.
+ *
+ * A FOURTH reason, and child-fixable like the two above it: waiting is
+ * something the child can do, so this must not draw a Retry button that
+ * suggests the server is at fault.
+ *
+ * Deliberately NOT a lockout. Tokens refill continuously, so a child who
+ * mistyped twice and paused is never held; what this blunts is the burst — 8
+ * attempts in 3 minutes, 7 in 65 seconds, 6 in 8 seconds, all observed on this
+ * panel with nothing anywhere noticing. It is also the only reason on this list
+ * that produces a `warn`, because unlike a single wrong code, a burst is worth
+ * seeing in the log store.
+ */
+const SLOW_DOWN = Object.freeze({
+  ok: false, reason: 'slow_down', learner: null, subject: null, title: null,
+  sentence: 'Slow down for a moment, then try again.',
+  actions: Object.freeze([]),
+});
+
 /** The backend broke, not the child. Distinct wording so the logs and the
  * child's face agree about which of the two happened. */
 const NOT_ANSWERING = Object.freeze({
@@ -132,7 +152,7 @@ export class ResolveAccessCode {
   // `curriculum` stays for `getUnit` on the companion path, which is not a plan
   // read at all; `sessions` stays because reading events read-only is the one
   // step this resolver deliberately does differently from the scan path.
-  #tokens; #curriculum; #sessions; #assignments;
+  #tokens; #curriculum; #sessions; #assignments; #attemptLimiter;
   #issueDocument; #companions; #roster; #mediaSurface; #timezone; #clock; #logger; #planProjection; #launchPreviewTokens;
 
   /**
@@ -160,12 +180,17 @@ export class ResolveAccessCode {
     // Shared with `BuildAgenda` and `ResolveSubjectNext` in composition: the
     // digits printed beside the QR must mean what the QR means.
     planProjection = null, launchPreviewTokens = null,
+    attemptLimiter = null,
     timezone = null, clock = () => new Date(), logger = console,
   } = {}) {
     if (!tokens || !curriculum || !assignments || !sessions) {
       throw new Error('ResolveAccessCode requires tokens, curriculum, assignments and sessions');
     }
     this.#tokens = tokens;
+    // Optional-degrading: absent, wrong codes are not throttled and the panel
+    // behaves exactly as it did before. A limiter is a blunting device, not a
+    // correctness guarantee, so a deployment without one must still work.
+    this.#attemptLimiter = attemptLimiter;
     this.#curriculum = curriculum;
     this.#assignments = assignments;
     this.#sessions = sessions;
@@ -201,8 +226,8 @@ export class ResolveAccessCode {
    *   only on a refusal, and is what a caller branches on — see the constants
    *   above, including why an unrecognised value must be read as a fault.
    */
-  async execute({ code } = {}) {
-    return (await this.resolve({ code })).card;
+  async execute({ code, deviceId = null } = {}) {
+    return (await this.resolve({ code, deviceId })).card;
   }
 
   /**
@@ -222,7 +247,7 @@ export class ResolveAccessCode {
    * @param {string} args.code
    * @returns {Promise<{card: object, resolution: object|null}>}
    */
-  async resolve({ code } = {}) {
+  async resolve({ code, deviceId = null } = {}) {
     let record;
     try {
       // Format, expiry, revocation and class are ALL the registry's answer —
@@ -280,10 +305,17 @@ export class ResolveAccessCode {
       // Typed at a wall panel by a child, so it is logged rather than
       // swallowed: a code that never works is a minting or expiry bug and
       // there is no other way to see it.
+      // ONLY A REJECTION SPENDS A TOKEN. A child working through their own
+      // codes correctly is never slowed, however many they type; a device
+      // producing nothing but misses runs out of allowance and is asked to
+      // wait. That asymmetry is the whole design — the burst is the signal,
+      // not the volume.
+      const overBudget = this.#strikeAttempt(deviceId);
       this.#logger.info?.('school.selfservice.code.rejected', {
         reason: record ? 'unscoped-record' : 'no-live-record',
+        ...(overBudget ? { throttled: true } : {}),
       });
-      return { card: TRY_AGAIN, resolution: null };
+      return { card: overBudget ? SLOW_DOWN : TRY_AGAIN, resolution: null };
     }
 
     try {
@@ -794,6 +826,44 @@ export class ResolveAccessCode {
 
     const { sessionId, state } = await this.#readState({ entry, learnerId, nowIso });
     return withProjection({ kind: 'move', move: nextMove(unit ?? {}, state), sessionId, state, unit, entry });
+  }
+
+  /**
+   * Spend one of this device's wrong-code tokens, and say whether it is now
+   * over budget.
+   *
+   * KEYED ON THE DEVICE, NEVER ON THE IP. Every panel in this house reaches the
+   * backend through one reverse proxy — 48,781 of 48,801 frontend events on
+   * 2026-09-06 reported the same `context.ip` — so `req.ip` would put the whole
+   * household in one bucket and let the living-room screen throttle the school
+   * panel. The panel sends its own id; a request without one shares a single
+   * fallback bucket, which is still better than no limit and still cannot be
+   * confused with a real device.
+   *
+   * @returns {boolean} true when this attempt is over the allowance
+   */
+  #strikeAttempt(deviceId) {
+    if (!this.#attemptLimiter?.take) return false;
+    const key = typeof deviceId === 'string' && deviceId.trim() ? deviceId.trim() : 'panel:unidentified';
+    let allow = true;
+    try {
+      ({ allow } = this.#attemptLimiter.take(key));
+    } catch (error) {
+      // A limiter that throws must not become a refusal. Failing OPEN is right
+      // here and wrong almost everywhere else: the cost of a missed throttle is
+      // a child typing a few more wrong codes, and the cost of a false one is a
+      // child locked out of their own work by a bug in a blunting device.
+      this.#logger.warn?.('school.selfservice.attempt-limiter-failed', {
+        error: error?.message ?? String(error),
+      });
+      return false;
+    }
+    if (!allow) {
+      // The one refusal on this path worth a `warn`: a single wrong code is
+      // noise, a burst is a fact about the room.
+      this.#logger.warn?.('school.selfservice.code.throttled', { deviceId: key });
+    }
+    return !allow;
   }
 
   /**
