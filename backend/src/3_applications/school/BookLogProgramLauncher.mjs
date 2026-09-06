@@ -9,6 +9,18 @@
  * Nothing below the seam knows an obligation exists — `bookShelf.mjs` measures
  * whatever it is handed and has no idea where the number came from.
  *
+ * AND THAT IS NOW TRUE OF REACHABILITY TOO (2026-09-06). It used not to be:
+ * `subjectsWithReadingShelf` read the enrollment, so only an enrolled child's
+ * code named the program, and `appendAssignedProgramEntries` put the shelf in
+ * the plan only from an enrollment — so the sentence above was true of the
+ * STORE and false of the way in. In a household with one enrolled reader, three
+ * children could not log a book at all. An enrollment now carries the
+ * obligation and nothing else: `BuildAgenda` mints a reading code for every
+ * learner, and `ResolveAccessCode` synthesizes a shelf entry when the plan
+ * holds none. `status()` is unchanged and still answers `enrolled: false,
+ * doneToday: true` for a learner with no enrollment — nothing is OWED, so
+ * nothing appears on their agenda and nothing is scored.
+ *
  * ## `doneToday` MEANS "NOTHING OWED TODAY"
  *
  * For a `day` window that is literal. For `week`, `month` and `once` it means
@@ -32,7 +44,7 @@
  *
  * @module applications/school/BookLogProgramLauncher
  */
-import { BOOK_LOG_PROGRAM_ID } from '#domains/school/bookLog.mjs';
+import { BOOK_LOG_PROGRAM_ID, bookLogContext } from '#domains/school/bookLog.mjs';
 import { measureObligation, projectShelfItem } from '#domains/school/bookShelf.mjs';
 import { studyDayForInstant } from '#domains/school/studyDay.mjs';
 
@@ -123,7 +135,19 @@ export class BookLogProgramLauncher {
     }
 
     if (!enrollment) {
-      return { enrolled: false, error: false, doneToday: true, terminal: false, progressLabel: null, score: null };
+      // NOT ENROLLED IS NOT "NO SHELF". The shelf is open to every learner —
+      // an enrollment adds an OBLIGATION, it does not grant access (see this
+      // file's header). So `doneToday: true` and `enrolled: false` keep the
+      // row off the agenda, because nothing is owed, while `reopenable` and a
+      // `context` still describe a shelf that can be opened and drawn.
+      //
+      // Without the context this branch answered a card with `course: null`,
+      // which is the blank-artwork case the poster route exists to refuse.
+      return {
+        enrolled: false, error: false, doneToday: true, terminal: false,
+        reopenable: true, context: bookLogContext(),
+        progressLabel: null, score: null, obligationProgress: null,
+      };
     }
 
     let items;
@@ -183,10 +207,7 @@ export class BookLogProgramLauncher {
       //
       // "Independent study" is not invented copy: it is the wording the
       // printed agenda already uses for this row.
-      context: {
-        course: { id: `program:${BOOK_LOG_PROGRAM_ID}`, title: 'Independent study' },
-        lesson: { id: `${BOOK_LOG_PROGRAM_ID}:shelf`, title: enrollment.title ?? 'Reading' },
-      },
+      context: bookLogContext(enrollment.title),
       // The shelf's obligation line adds the window word (`today`, `this
       // week`) client-side; `per` rides along so it can.
       obligationProgress: obligation ? { ...measured, per: obligation.per } : null,

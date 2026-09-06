@@ -11,6 +11,7 @@ export function normalizeProductNutrition(product) {
   const unit = product.serving_quantity_unit || null;
   const servingKnown = quantity > 0 && ['g', 'ml'].includes(unit);
   const warnings = [];
+  const conflicts = [];
   if (!servingKnown) warnings.push('Serving size or unit is missing. Check the product label.');
   const serving = { size: servingKnown ? quantity : 1, unit: servingKnown ? unit : 'serving' };
   const nutrition = {}, basis = {}, missing = [];
@@ -34,13 +35,14 @@ export function normalizeProductNutrition(product) {
     if (numeric(n[`${source}_serving`]) !== null && per100 !== null && servingKnown
       && Math.abs(value - per100 * quantity / 100) > Math.max(1, value * 0.1)) {
       warnings.push(`Conflicting serving and per-100 values for ${key}. Check the label.`);
+      conflicts.push(key);
     }
     const multiplier = ['sodium', 'cholesterol'].includes(key) ? 1000 : 1;
     nutrition[key] = value === null ? null : Math.round(value * multiplier * 1000) / 1000;
     basis[key] = value === null ? null : selectedBasis;
   }
   if (missing.length) warnings.push(`Nutrition unavailable: ${missing.join(', ')}.`);
-  return { serving, nutrition, nutritionLookup: { source: 'openfoodfacts', basis, missing, warnings } };
+  return { serving, nutrition, nutritionLookup: { source: 'openfoodfacts', basis, missing, warnings, conflicts, servingVerified: servingKnown } };
 }
 
 /** Nutritionix nf_* fields describe one serving; serving_weight_grams is mass,
@@ -54,5 +56,5 @@ export function normalizeNutritionixNutrition(food) {
   const missing = Object.keys(nutrition).filter(key => nutrition[key] === null);
   const warnings = missing.length ? [`Nutrition unavailable: ${missing.join(', ')}.`] : [];
   return { serving: grams > 0 ? { size: grams, unit: 'g' } : { size: 1, unit: 'serving' },
-    nutrition, nutritionLookup: { source: 'nutritionix', basis: 'serving', missing, warnings } };
+    nutrition, nutritionLookup: { source: 'nutritionix', basis: 'serving', missing, warnings, conflicts: [], servingVerified: grams > 0 } };
 }

@@ -32,11 +32,22 @@ point.
   Identical retries coalesce and recover committed rows after a lost response.
   Reusing an ID for a different payload returns 409. Older clients without IDs
   remain compatible but do not receive that duplicate-submission guarantee.
-- **Corrections:** a centered desktop dialog / mobile bottom sheet leads with exact
-  grams. Preview all nutrient scaling, make several changes, then Save once with
-  `expectedVersion`. Delete offers Undo. Focus is contained and restored; scroll
+- **Corrections:** a centered desktop dialog / mobile bottom sheet leads with the
+  current portion and its unit. Preview all nutrient scaling, make several changes,
+  then Save once with `expectedVersion` and an idempotent `operationId`. Group
+  commands carry the exact displayed membership in `expectedVersions`; any stale
+  member or membership change rejects the entire command. Delete offers Undo. Focus is contained and restored; scroll
   locks are shared with Coach. Replacing the entry dialog with Coach preserves
   the original focus-return target; overlay Escape closes without clearing a draft.
+- **Confirmation is explicit:** only Confirm ends review early. Editing a name,
+  artwork, portion or nutrient protects the changed fields without ratifying the
+  rest. Unconfirmed captures count immediately and retain their 72-hour deadline.
+- **Inline portions:** primary-button horizontal drag previews all row, group,
+  meal and day totals from one draft overlay. The threshold is 5px, sensitivity
+  1g per 2px (Shift: one tenth speed, still snapping to whole grams); click opens direct entry, arrows adjust and
+  Enter commits. Release sends one command; Escape/pointer cancellation sends
+  none. Polls preserve the gesture's baseline. Conflicts require explicit reload
+  and apply, and unseen group members require discarding the draft first.
 - **Context:** Today stays mounted across tabs to preserve drafts, capture retries
   and scroll. Hidden Today stops polling; leaving during a recording stops and
   submits that recording to its original target. Closing the app discards unsent
@@ -96,8 +107,10 @@ It serves `/budget`, `/budget/range`, and the budget portion of `/day`. Today re
 one `/day?date=` snapshot containing entries, their ledger revision, and a budget
 computed from those exact entries. A budget setup error does not hide the food log. `EquationStrip.jsx` is proof by absence: it destructures `budget.budget`,
 `budget.food`, `budget.exercise`, `budget.remaining`, `budget.status`, `budget.stale` and
-renders them verbatim — the only computation left client-side is `Math.abs()` for display
-sign and `.toLocaleString()` for grouping.
+renders them verbatim. During portion editing, `portionPreview.js` overlays the
+shared counting contract's calorie delta on this server snapshot so the row, meal
+and remaining allowance move together. It does not recalculate goals, burn or the
+base budget. The overlay retires when the read model contains the saved versions.
 
 `BudgetService.getBudget(userId, date)`:
 
@@ -218,12 +231,30 @@ inline Add food surface is a bordered, height-capped panel rather than loose
 text; suggestions use one column on the narrowest screens and two from 480 px,
 with a real catalog icon or a reserved Noom-dot fallback on every row.
 
-Food rows expose one portion vocabulary: a valid positive `grams` value is
-shown as `N g`, and no portion is shown when grams are absent. Capture-specific
-`amount`/`unit` prose (cups, tablespoons, servings, and similar) is retained in
-the data model but never mixed into the Today ledger. Scaling an entry in its
-edit sheet scales `grams` with its nutrient values so that displayed mass stays
-truthful.
+Food rows use the shared `foodPortion` contract: known mass first, otherwise the
+current amount/unit, never stale `originalQuantity`. Millilitres and servings
+remain those units; they do not imply grams. Group mass is the sum of known
+child masses, unknown if any child mass is unknown. Unknown nutrients show `—`,
+known zero shows `0`, and partially covered totals show `+`. Macro intake remains
+visible even without goals. Each row has one artwork slot, inline estimate and
+macro badges, an independently actionable portion and an explicit Confirm button.
+Food names stay on one line (ellipsis with the full name on hover and in the edit
+button's accessible name). Protein, carbs and fat occupy aligned numeric badge
+columns in rose, sage green and gold; the day's labelled totals carry matching
+color dots. Badges omit letters and units, with full nutrient names and grams in
+their tooltips and accessible names. Meal totals use the same badges. Grams and
+calories display as whole numbers, including portion previews and editor fields;
+gram adjustments snap to positive integers. Stored nutrient precision is retained
+for proportional scaling, and non-mass portions can still use fractional units.
+
+Exercise rows show a program poster, title, start time, duration, average heart
+rate when supplied, and calorie credit. One optional fitness session index request
+for the selected date resolves `homeSessionId` against session and segment IDs.
+Matched rows use the primary video's program artwork and link to
+`/fitness/home/session-{id}`; unlinked workouts keep a neutral exercise icon.
+Missing artwork falls back in place, and a failed index request offers Retry
+without hiding exercise credit. The fitness index never adds workouts or changes
+the calorie equation.
 
 The week strip separates its seven-day viewport from the selected day. Picking
 a visible day changes only the selection; explicit 44 px previous/next-week
@@ -358,25 +389,16 @@ about it.
 
 ### Column and sidebar
 
-The Today column is capped at 720px and centred — every measurement in this app
-was tuned against a phone-width column, and log rows spanning a 2560px monitor
-are unreadable. At 1100px the page becomes a grid of that column plus a 320px
-sticky aside holding the weight chip, the month block and the intake-vs-burn
-chart.
-
-There is **one** instance of each of those widgets in the markup. On a narrow
-viewport the aside is simply the next block in the stack, which is what puts the
-weight chip directly under the macro bars; the wide layout moves that same
-element into the second column. Nothing is rendered twice and hidden.
-
-The 30-day widgets' *mount* is gated on the breakpoint, not merely their
-visibility: CSS alone cannot stop a phone fetching a month of budgets for a
-column it will never draw. That puts the breakpoint in JavaScript
-(`today/layout.js`) as well as in the stylesheet, and
-`today/layout.contract.test.js` reads the compiled stylesheet and fails if the
-two ever disagree. Layout itself is verified with real Playwright screenshots at
-390px and 1440px — jsdom cannot see layout, and an assertion about widths or
-grid placement made under it is vacuous.
+At 1200px the existing AppChrome left rail expands to 320px on Today only and
+holds week, dated weight and thirty-day context. The main log is capped at
+1440px with two populated meal columns in chronological order. Other apps keep
+their existing 200px rail. Below 1200px the log uses one column and week/weight
+history is collapsed below it; month charts mount only on wide screens.
+Empty meals use an add strip, and exceptional uncounted captures have a closed
+disclosure below the log. Group expansion survives refresh, with the final
+child's tree connector ending at its own row. Six-viewport browser tests enforce
+no horizontal overflow, 44px targets, and first-food positions of ≤300px at
+1366×768 and ≤350px at 390×844.
 
 ---
 
@@ -385,13 +407,11 @@ grid placement made under it is vacuous.
 Four ways to get a food onto the log — type, speak, photograph, or scan a barcode — start
 from one of two places on Today.
 
-Each of the four meal sections carries its own voice, photo, and barcode buttons in its
-header, scoped to that meal — one tap from Breakfast's row starts a capture that targets
-Breakfast — alongside the "+ Add food…" row underneath for a typed sentence or type-ahead
-pick against the same meal.
+Each populated meal header has a compact Add button for its inline picker.
+Empty meals expose the same action in the add strip.
 
 A single compact quick-capture bar (`QuickCaptureBar.jsx`) sits in normal document flow
-below the week strip, offering the same four capture types with no meal of its own — it defaults to
+above the day log, offering the four capture types with no meal of its own — it defaults to
 whichever meal the current time of day implies (the hour mapping in
 [Meal buckets](#meal-buckets) above). This is the day view's only such affordance: the
 footer below the log carries the macro summary and coach line, never capture controls.
@@ -603,7 +623,7 @@ ahead of them and stamps that group's id onto each member's `parentId`; an item 
 `dish` stays standalone. A parse where nothing carries a `dish` produces an ordinary flat
 list of items — grouping is additive, never a mode the rest of the pipeline branches on.
 
-Today's log renders a group collapsed by default, showing a rolled-up calorie total
+Today's log remembers a group's expansion in session storage, showing a rolled-up calorie total
 computed by summing its members at read time (never a stored value on the group row
 itself); tapping it expands the row to show its members indented beneath it. A member
 whose `parentId` doesn't resolve to any row on the day — a deleted or otherwise missing
@@ -699,21 +719,24 @@ the manifest has exactly one home.
 
 **The agent cannot invent a name.** The composition root builds the capture prompt's
 vocabulary from the manifest's offered slugs, and all three mappers that turn a model
-response into rows — text, image, and the revision re-parse — CONFINE the model's answer to
+response into rows — text, image, UPC and the revision re-parse — CONFINE the model's answer to
 that vocabulary (`backend/src/2_domains/nutrition/services/icons.mjs`). A slug that is not
 in the vocabulary becomes `default`, the neutral sentinel, rather than a stored name that
 404s forever afterwards.
 
 **`default` is not a picture.** It resolves to a real file so nothing renders broken, but
-it means "nobody chose one". The UI treats it as no icon and shows the Noom colour dot;
+it means "nobody chose one". The UI treats it as no icon and shows a neutral food symbol;
 the catalog never accepts it as a food's icon, because donating it would pin that food to
 the fallback glyph and block every real icon proposed afterwards.
 
 **The icon sticks to the food, not to the row.** `FoodCatalogEntry.icon` is filled by the
 first capture that names one and is **never overwritten by a later capture** — "always for
 this food" is a human choice that has to outlive the next time that food is logged. A
-quick-add copies the catalog's icon onto the row it writes. A group row shows its own icon
-if it has one, else the first child's.
+quick-add copies the catalog's icon onto the row it writes. Explicit pins also persist
+as `iconOverride`, separately from inferred artwork. A legacy `default` catalog value
+cannot mask suitable capture artwork. Reviewed manifest aliases and observed mismatch
+guards reject misleading art (such as diced ham → cheeseburger); absent suitable assets,
+the neutral symbol is intentional. A group shows its own photo or artwork, not both.
 
 **Override, and its two scopes.** The edit sheet's picker writes nothing when a picture is
 tapped; it asks first. *Just this entry* PUTs `icon` on the row alone. *Always for this
@@ -854,17 +877,20 @@ predates this tracking) reads as already-ratified with no backfill needed. A row
 capture is stamped into the moment it's parsed (see [Capture funnels](#capture-funnels)
 above).
 
-An unsettled row also **auto-settles by age**: once it's more than three days old it
-presents as settled even though the stored value is still `false`. This is computed each
-time the day is read, not written back — nothing ever mutates the row to auto-settle it,
-and no scheduled job runs the check.
+New captures now carry an exact 72-hour `review` deadline. A deterministic worker
+persists `settled: true, settledBy: auto` after that deadline, including after
+downtime; totals do not change and no message is sent. Legacy rows without a
+`review` record retain their older read-time date-only behavior. See
+[Nutrition cleanup](nutrition-cleanup.md) for the current capture, reconciliation,
+notification and recovery contracts; older prompt-flow descriptions above describe
+the legacy implementation.
 
-A person settles a row three ways: any successful edit (a `PUT` on the row, from
-`EntryEditSheet` or elsewhere) stamps `settled: true, settledBy: 'user'` alongside
-whatever else changed; an unsettled row's "Unconfirmed" badge carries its own one-tap
-confirm button that sends that same stamp with no other field changed; and a **quick-add**
-writes the stamp at creation, since picking a known food off the suggestion list is itself
-the ratification.
+A person confirms a provisional row with its optional one-tap Confirm button.
+That sends an explicit `{ settled: true }` versioned command. A group confirms
+only the root and exact displayed children, atomically. Ordinary `PUT` edits and
+AI revisions do not confirm; they preserve the deadline and protect only the
+fields actually corrected. A **quick-add** remains confirmed at creation because
+picking a known food off the suggestion list is an explicit logging choice.
 
 ---
 
@@ -1195,35 +1221,55 @@ Health can confirm pending captures from any source. The original messaging
 service is not required to complete that confirmation, and app confirmation
 does not wait for report rendering or delivery.
 
-`NutritionSurfaceSync` polls committed records every 15 seconds. For users with
-a connected nutrition bot, it updates linked capture messages in place and
-regenerates affected daily reports from the authoritative item ledger. Portion
-edits, names, moves, deletes, restores, and new app entries are reflected; a
-move updates both dates and deleting the final entry produces a zero-item
-report. Pending food is excluded from totals. Archived capture messages remain
-discoverable. The app's existing resource refresh picks up changes made from
-the messaging surface as well.
+`NutritionSurfaceSync` is a 15-second polling trigger, with no formatting or
+transport code. It calls the same `NutritionReceiptPublisher` used by captures,
+confirmations, portion choices, Undo and revision interactions. The publisher
+loads the current authoritative ledger inside a serialized per-user queue and
+passes a domain read model to `1_rendering/nutribot/NutritionReceiptRenderer`.
+Accepted receipts never use the old parser's items. Group headings organize
+children without adding consumption. Compact colored food lines use actual
+stored grams; unknown mass stays a serving/volume, never fabricated grams.
+
+New Telegram captures hand their known processing message to the publisher;
+in-flight animations drain before handoff. Later weight/density evidence, Health
+edits and guarded Mastra repairs edit that same message. ✅ means saved, not
+user-confirmed. Internal evidence changes and silent 72-hour stabilization do
+not alter receipt copy or controls. No automatic new headless receipts, daily
+reports, repair announcements or settlement reminders are generated here.
+Explicit report commands remain separate from capture receipts. Health's
+visible-tab 15-second polling, focus refresh and mutation invalidation read the
+same ledger, without Telegram logic in `HealthApp.jsx`.
 
 Delivery fingerprints are persisted separately in
-`users/{userId}/lifelog/nutrition/surface-sync.yml`. Failed messages and reports
-retry independently on the next poll, including after a restart. A failed
-delivery never rolls back a food edit. The first attachment records a baseline
-without replaying historical messages. Disconnecting the bot disables this
-projection without disabling Health. Delivery is at least once: a crash between
-remote delivery and checkpoint persistence can repeat a report; message edits
-are idempotent. Deleted/uneditable remote messages are recorded as permanently
-unavailable, without retrying forever or silently replacing them.
+`users/{userId}/lifelog/nutrition/surface-sync.yml` (schema 2). Each receipt owns
+a durable text/photo message binding, interaction state and fingerprint of its
+rendered text AND controls. Binding intent persists before delivery; successful
+edits are acknowledged afterward. Known-message edits retry after failure or
+restart; Telegram's "not modified" response counts as success. Uncertain sends
+are not repeated as new messages. Deleted/uneditable receipts are recorded as
+unavailable, never silently replaced. Telegram delivery never rolls back food.
+Unchanged store revisions skip archive reads; metadata-only changes do not edit
+messages. First attachment/migration establishes a quiet history baseline.
 
-Reports keep the previous version visible until the replacement is delivered.
-Background synchronization does not generate coaching messages. Relevant events:
-`nutrition.surface.attached`, `.message.updated`, `.message.retry`,
-`.report.updated`, `.report.retry`, and `.unavailable`.
+Selective reformatting uses `POST /nutrition/receipts/reconcile` with 1–20 exact
+`logIds`. `dryRun` defaults true and returns rendered previews/fingerprints.
+Applying requires `dryRun:false` and `expectedFingerprints:{logId:fingerprint}`;
+all selected previews are checked before any edit. A changed preview returns
+409, an unknown/unlinked receipt 404, and unavailable messaging 503. Inspect
+each result's `delivery` status; retry is not reported as delivered. This endpoint
+never modifies food records or rewrites unselected history. Relevant events:
+`nutrition.receipt.updated`, `.retry`, `.bind_retry`, `.interaction_retry`.
 
 Hardware UPC scans persist headlessly; connected messaging delivery is a later,
 optional projection. Web review and Telegram portion/confirm callbacks share
 `FoodLogReview`: a durable intent precedes the idempotent ledger append, and
 acceptance is marked only afterward. Retries resume the stored operation;
 stale app edits fail with 409. Changing a request requires a new operation ID.
+Telegram text revisions likewise read a fresh ledger snapshot and commit only
+if every original entry version still matches. Stable IDs, groups, unknown
+nutrients and existing Health placement survive; a failed revision cannot fall
+through into a new food capture. Revision mode/cancel controls belong to the
+receipt publisher and remain intact during background reviewer corrections.
 
 Food-group and lifecycle fields round-trip through capture YAML. Group records
 remain non-additive; Health renders totals from their children. Expand/collapse

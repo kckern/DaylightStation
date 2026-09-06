@@ -710,3 +710,71 @@ describe('index rebuild', () => {
     expect(warns.map(([event]) => event)).toContain('school.tokens.record-unreadable');
   });
 });
+
+/**
+ * `recordUse` — the counter behind the access-code cap (2026-09-06).
+ *
+ * READ-MODIFY-WRITE, not `put`. `#write` replaces the whole file, so bumping a
+ * counter through `put` would erase every field it was not handed — the
+ * subject, both clocks, the cap itself. Modelled on `revoke`, inside the same
+ * write chain, for exactly that reason.
+ */
+describe('YamlTokenRegistry.recordUse', () => {
+  const useAt = '2026-09-06T18:00:00.000Z';
+  // The shared `mint` helper defaults to `issue_document`, which may not carry
+  // an access code at all — a cap only ever applies to a coded `subject_next`.
+  const mintCoded = () => mint({
+    tokenClass: 'subject_next',
+    subject: { learnerId: 'kid1', subject: 'english' },
+    expiresAt: '2026-09-13T18:00:00.000Z',
+    accessCode: '482913',
+    accessCodeExpiresAt: '2026-09-07T11:00:00.000Z',
+    maxUses: 3,
+  });
+
+  it('counts from an ABSENT useCount, so records written before the cap need no migration', async () => {
+    const record = await registry.put(mintCoded());
+    expect(record.useCount).toBeUndefined();
+
+    const bumped = await registry.recordUse(record.token, { at: useAt });
+    expect(bumped.useCount).toBe(1);
+    expect(bumped.lastUsedAt).toBe(useAt);
+  });
+
+  it('preserves every other field — this is the whole reason it is not a put', async () => {
+    const record = await registry.put(mintCoded());
+    const bumped = await registry.recordUse(record.token, { at: useAt });
+    expect(bumped.accessCode).toBe(record.accessCode);
+    expect(bumped.accessCodeExpiresAt).toBe(record.accessCodeExpiresAt);
+    expect(bumped.tokenClass).toBe(record.tokenClass);
+    expect(bumped.subject).toEqual(record.subject);
+    expect(bumped.issuedAt).toBe(record.issuedAt);
+    expect(bumped.expiresAt).toBe(record.expiresAt);
+  });
+
+  it('survives a round trip to disk', async () => {
+    const record = await registry.put(mintCoded());
+    await registry.recordUse(record.token, { at: useAt });
+    await registry.recordUse(record.token, { at: useAt });
+    const reread = await registry.get(record.token);
+    expect(reread.useCount).toBe(2);
+  });
+
+  it('serialises concurrent bumps rather than losing one', async () => {
+    // Two panels, one code. Without the write chain this is a classic
+    // read-modify-write race and the count lands on 1.
+    const record = await registry.put(mintCoded());
+    await Promise.all([
+      registry.recordUse(record.token, { at: useAt }),
+      registry.recordUse(record.token, { at: useAt }),
+      registry.recordUse(record.token, { at: useAt }),
+    ]);
+    expect((await registry.get(record.token)).useCount).toBe(3);
+  });
+
+  it('answers null for a token it does not know, and refuses a bad `at`', async () => {
+    expect(await registry.recordUse('sch:ZZZZZZZZZZZZZZZZ', { at: useAt })).toBeNull();
+    const record = await registry.put(mintCoded());
+    await expect(registry.recordUse(record.token, { at: 'not-a-time' })).rejects.toThrow(/ISO-8601/);
+  });
+});

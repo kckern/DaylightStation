@@ -105,7 +105,6 @@ export function WeekStrip({ date, today, onDateChange, viewportEnd, onViewportCh
             disabled={d > today}
             aria-label={label}
             onClick={() => onDateChange(d)}>
-            <span className="health-weekstrip__month">{startsMonth ? monthShort(d) : ''}</span>
             <span className="health-weekstrip__dow">{WEEKDAY_SHORT[dt.getDay()]}</span>
             <span className="health-weekstrip__num">{dt.getDate()}</span>
             <span className="health-weekstrip__barbox" aria-hidden="true">

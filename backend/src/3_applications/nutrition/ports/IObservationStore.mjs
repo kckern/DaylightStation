@@ -65,6 +65,10 @@
  */
 
 export class IObservationStore {
+  /** Durable hardware identity/baseline/deadline checkpoints, per scale. */
+  loadPlacements(userId) { throw new Error('IObservationStore.loadPlacements must be implemented'); }
+  savePlacement(userId, scaleId, state) { throw new Error('IObservationStore.savePlacement must be implemented'); }
+  findByPlacement(userId, placementId) { throw new Error('IObservationStore.findByPlacement must be implemented'); }
   /**
    * Append a new observation. Assigns `id`, derives `date` from `at`, starts the row at
    * `status: 'open'` / `pairedEntryUuid: null`.

@@ -2,7 +2,6 @@
 
 import { BaseInputRouter } from '#apps/common/input/BaseInputRouter.mjs';
 import { decodeCallback, CallbackActions } from '../lib/callback.mjs';
-import { buildCommittedChoices, withCommittedChoices } from '../lib/committedChoices.mjs';
 import { stampUnsettled } from '../lib/unsettledStamp.mjs';
 import { NutribotScaleRefusal } from '../ports/NutribotScaleRefusal.mjs';
 import { MealTimes } from '#domains/nutrition/entities/schemas.mjs';
@@ -46,26 +45,9 @@ export class NutribotInputRouter extends BaseInputRouter {
 
   reviewPending(input) { return this.container.getFoodLogReview().execute(input); }
   //
-  // AI captures (text / voice / image / barcode) are logged IMMEDIATELY as
-  // unsettled — there is no pending Accept/Revise/Discard gate any more. The
-  // seam is two narrow pieces, both owned here:
-  //
-  //   * message seam — `withCommittedChoices` decorates the responseContext the
-  //     use case sends through, so the keyboard it builds and sends from inside
-  //     itself never reaches the user offering Accept.
-  //   * accept seam — after execute() returns, every item is stamped
-  //     `settled: false` and the log runs the same accept path AcceptFoodLog
-  //     uses (status -> accepted, acceptedAt stamped, nutrilist synced), which
-  //     is what makes the rows visible to the day view and counted by
-  //     BudgetService.
-  //
-  // SCALE IS EXEMPT: the scale branches never call this — they keep their
-  // multi-step composition flow until a later phase replaces it.
-  //
-  // BARCODE stamps but does not accept: the UPC flow has no Accept gate to
-  // retire, it commits at the portion-selection step (SelectUPCPortion), which
-  // would refuse a log this seam had already accepted. Stamping here means the
-  // rows that step writes carry `settled: false` without touching that use case.
+  // Captures are counted provisionally through FoodLogReview. UPC and scale
+  // capture use that boundary directly; text/image are committed here. Only
+  // after the ledger commit do we ask the sole receipt publisher to refresh.
 
   /**
    * Run a capture use case through the auto-commit seam.
@@ -78,13 +60,7 @@ export class NutribotInputRouter extends BaseInputRouter {
    * @param {(responseContext: Object|null) => Promise<any>} run
    */
   async #capture(event, responseContext, { source, commit }, run) {
-    const decorated = withCommittedChoices(responseContext, {
-      onRewrite: (logId, method) => {
-        this.logger.debug?.('nutribot.capture.choicesRewritten', { source, logId, method });
-      },
-    });
-
-    const result = await run(decorated);
+    const result = await run(responseContext);
     const logId = result?.nutrilogUuid || null;
 
     if (!logId) {
@@ -94,6 +70,7 @@ export class NutribotInputRouter extends BaseInputRouter {
 
     const userId = this.#resolveUserId(event);
     const items = await this.#stampUnsettled(userId, logId, source);
+    if (result.committed) return { ok: true, result, committed: true, logId, items, mealTime: result.mealTime, moved: false };
     const { mealTime, moved } = await this.#resolveMealTime({
       userId,
       logId,
@@ -112,9 +89,11 @@ export class NutribotInputRouter extends BaseInputRouter {
       userId,
       conversationId: event.conversationId,
       logId,
-      responseContext: decorated,
+      responseContext,
       source,
     });
+
+    if (committed) await this.container.getReceiptPublisher?.()?.refresh(userId, logId);
 
     return { ok: true, result, committed, logId, items, mealTime, moved };
   }
@@ -234,7 +213,7 @@ export class NutribotInputRouter extends BaseInputRouter {
       // (rendered image + coaching kick, after a 300ms pause) inline in EVERY
       // capture request. Manual Accept paths keep the report.
       const accepted = await useCase.execute({
-        userId, conversationId, logUuid: logId, responseContext, autoReport: false,
+        userId, conversationId, logUuid: logId, responseContext, autoReport: false, provisional: true,
       });
       if (accepted?.success === false) {
         this.logger.warn?.('nutribot.capture.commitRefused', { source, logId, error: accepted.error });
@@ -281,15 +260,13 @@ export class NutribotInputRouter extends BaseInputRouter {
             text: event.payload.text?.substring(0, 50),
           });
           const useCase = this.container.getProcessRevisionInput();
-          // Decorated: a revision lands on an ALREADY-COMMITTED log, so its
-          // terminal keyboard must not offer Accept either.
           const result = await useCase.execute({
             userId: this.#resolveUserId(event),
             conversationId: event.conversationId,
             logUuid: pendingLogUuid,
             text: event.payload.text,
             messageId: event.messageId,
-            responseContext: withCommittedChoices(responseContext),
+            responseContext,
           });
           return { ok: true, result };
         }
@@ -318,6 +295,9 @@ export class NutribotInputRouter extends BaseInputRouter {
           conversationId: event.conversationId,
           error: e.message,
         });
+        // A failed revision is not a fresh food capture. Falling through here
+        // would turn a conflict or AI outage into duplicate consumption.
+        throw e;
       }
     }
 
@@ -387,14 +367,15 @@ export class NutribotInputRouter extends BaseInputRouter {
 
   async handleUpc(event, responseContext) {
     const useCase = this.container.getLogFoodFromUPC();
-    // commit:false — the barcode flow commits at its portion-selection step,
-    // which refuses an already-accepted log. Items are still stamped unsettled.
+    // The UPC use case owns capture for hardware and interactive transports.
     return await this.#capture(event, responseContext, { source: 'barcode', commit: false }, (rc) =>
       useCase.execute({
         userId: this.#resolveUserId(event),
         conversationId: event.conversationId,
         upc: event.payload.text,
         messageId: event.messageId,
+        operationId: event.payload.operationId || event.operationId,
+        bucket: event.payload.bucket || null,
         date: event.payload.date || null,
         responseContext: rc,
       }));
@@ -698,16 +679,7 @@ export class NutribotInputRouter extends BaseInputRouter {
           }
         }
 
-        if (responseContext?.updateMessage) {
-          try {
-            // The log is already committed — restore the committed keyboard,
-            // not the retired Accept/Revise/Discard gate.
-            const buttons = buildCommittedChoices(decoded.id);
-            await responseContext.updateMessage(event.messageId, { choices: buttons, inline: true });
-          } catch (e) {
-            this.logger.warn?.('nutribot.callback.cr.updateFailed', { error: e.message });
-          }
-        }
+        await this.container.getReceiptPublisher?.()?.interaction(this.#resolveUserId(event), decoded.id, null);
         return { ok: true, handled: true };
       }
 

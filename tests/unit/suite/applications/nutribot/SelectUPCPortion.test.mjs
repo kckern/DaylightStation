@@ -8,6 +8,7 @@ describe('SelectUPCPortion', () => {
   let mockFoodLogStore;
   let mockNutriListStore;
   let findByUuidCalledWith;
+  let receipts;
 
   beforeEach(() => {
     findByUuidCalledWith = null;
@@ -37,7 +38,9 @@ describe('SelectUPCPortion', () => {
       saveMany: jest.fn().mockResolvedValue({}),
     };
 
+    receipts = { refresh: jest.fn().mockResolvedValue({}) };
     useCase = new SelectUPCPortion({
+      receipts: () => receipts,
       messagingGateway: mockMessaging,
       foodLogStore: mockFoodLogStore,
       nutriListStore: mockNutriListStore,
@@ -101,15 +104,8 @@ describe('SelectUPCPortion', () => {
         messageId: '50',
       });
 
-      // Should update message caption in-place (not delete)
-      expect(mockMessaging.updateMessage).toHaveBeenCalledWith(
-        'telegram:b6898194425_c575596036',
-        '50',
-        expect.objectContaining({
-          caption: expect.any(String),
-          choices: [],
-        })
-      );
+      expect(receipts.refresh).toHaveBeenCalledWith('user_1', 'abc123');
+      expect(mockMessaging.updateMessage).not.toHaveBeenCalled();
 
       // Should NOT delete the message (photo should be preserved)
       expect(mockMessaging.deleteMessage).not.toHaveBeenCalled();
@@ -118,8 +114,8 @@ describe('SelectUPCPortion', () => {
       expect(mockMessaging.sendMessage).not.toHaveBeenCalled();
     });
 
-    it('falls back to sendMessage when updateMessage fails', async () => {
-      mockMessaging.updateMessage = jest.fn().mockRejectedValue(new Error('Telegram API error'));
+    it('leaves retries to the publisher without creating a replacement message', async () => {
+      receipts.refresh.mockResolvedValue({ retry: true });
 
       mockFoodLogStore.findByUuid = jest.fn().mockResolvedValue({
         id: 'abc123',
@@ -137,8 +133,9 @@ describe('SelectUPCPortion', () => {
         messageId: '50',
       });
 
-      expect(mockMessaging.updateMessage).toHaveBeenCalled();
-      expect(mockMessaging.sendMessage).toHaveBeenCalled();
+      expect(receipts.refresh).toHaveBeenCalled();
+      expect(mockMessaging.updateMessage).not.toHaveBeenCalled();
+      expect(mockMessaging.sendMessage).not.toHaveBeenCalled();
     });
   });
 });

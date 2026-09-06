@@ -21,6 +21,7 @@
 // it, and re-open the entire back catalogue for automatic re-pairing.
 
 import { serializeFoodItem } from '../nutriLogRecords.mjs';
+import { provisionalReview } from '#shared/contracts/nutrition/reviewLifecycle.mjs';
 
 /**
  * Stamp `settled: false` on every item of a log, in place.
@@ -37,13 +38,14 @@ import { serializeFoodItem } from '../nutriLogRecords.mjs';
  * @param {object} [args.logger] Injected logger. `debug` on success, `warn` on failure.
  * @returns {Promise<object[]>} The stamped item records, or `[]` when nothing was stamped.
  */
-export async function stampUnsettled({ foodLogStore, userId, logId, source, logger = console }) {
+export async function stampUnsettled({ foodLogStore, userId, logId, source, logger = {}, now = Date.now() }) {
   if (!foodLogStore?.findByUuid || !foodLogStore?.save) return [];
 
   try {
     const log = await foodLogStore.findByUuid(logId, userId);
     if (!log?.items?.length) return [];
-    const items = log.items.map((item) => ({ ...serializeFoodItem(item), settled: false }));
+    if (log.status && log.status !== 'pending') return log.items.map(serializeFoodItem);
+    const items = log.items.map((item) => ({ ...serializeFoodItem(item), ...provisionalReview(item, now, source) }));
     await foodLogStore.save(log.updateItems(items, new Date()));
     logger.debug?.('nutribot.capture.unsettledStamped', { source, logId, itemCount: items.length });
     return items;

@@ -2,22 +2,21 @@
 // AI's only job is to estimate the dish's blended caloric density (kcal/g) + macros/g.
 // No portion guessing, no portionBoost — that is the whole point of the scale.
 
-import { buildConfirmButtons } from '../lib/scaleNutribotConfig.mjs';
 import { ApplicationError } from '#apps/common/errors/index.mjs';
 import { serializeFoodItem } from '../nutriLogRecords.mjs';
 
 export class LogScaleFoodFromText {
-  #messagingGateway; #aiGateway; #foodLogStore; #conversationStateStore; #logger; #encodeCallback;
+  #receipts; #messagingGateway; #aiGateway; #foodLogStore; #conversationStateStore; #logger;
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
     if (!deps.aiGateway) throw new Error('aiGateway is required');
     this.#messagingGateway = deps.messagingGateway;
+    this.#receipts = deps.receipts || (() => null);
     this.#aiGateway = deps.aiGateway;
     this.#foodLogStore = deps.foodLogStore;
     this.#conversationStateStore = deps.conversationStateStore;
     this.#logger = deps.logger || console;
-    this.#encodeCallback = deps.encodeCallback || ((cmd, data) => JSON.stringify({ cmd, ...data }));
   }
 
   #getMessaging(responseContext, conversationId) {
@@ -93,21 +92,11 @@ export class LogScaleFoodFromText {
       try { await this.#conversationStateStore.clear(conversationId); } catch (e) { this.#logger.debug?.('logScaleText.clearFailed', { error: e.message }); }
     }
 
-    const t = `⚖️ ${grams} g · ${est.label}\n🔥 ~${calories} kcal · P${updatedItem.protein} C${updatedItem.carbs} F${updatedItem.fat}`;
-    const choices = buildConfirmButtons(this.#encodeCallback, logUuid);
-    const botMessageId = nutriLog.metadata?.messageId;
-
     if (messageId) {
       try { await messaging.deleteMessage(messageId); } catch { /* ignore */ }
     }
 
-    if (botMessageId) {
-      try { await messaging.updateMessage(botMessageId, { text: t, choices, inline: true }); }
-      catch (e) { this.#logger.warn?.('logScaleText.updateFailed', { error: e.message }); }
-    } else {
-      try { await messaging.sendMessage(t, { choices, inline: true }); }
-      catch (e) { this.#logger.warn?.('logScaleText.sendFailed', { error: e.message }); }
-    }
+    await this.#receipts()?.refresh(userId, logUuid, { ready: true });
 
     this.#logger.info?.('logScaleText.done', { logUuid, grams, density: est.density, calories });
     return { success: true, calories };

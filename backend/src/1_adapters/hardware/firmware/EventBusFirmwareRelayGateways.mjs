@@ -1,4 +1,5 @@
 import { formatIsoLocal, formatLocalTimestamp } from '#domains/core/utils/time.mjs';
+import { randomUUID } from 'node:crypto';
 
 class BaseGateway {
   constructor({ eventBus }) { this.eventBus = eventBus; }
@@ -30,7 +31,10 @@ export class BarcodeFirmwareGateway extends BaseGateway {
       const code = typeof frame.code === 'string' ? frame.code.trim() : ''; if (!code) return;
       const device = typeof frame.device === 'string' && frame.device ? frame.device : this.defaultDevice;
       const route = ['content', 'nutribot'].includes(frame.route) ? frame.route : this.defaultRoute;
-      const event = { source: 'barcode-relay', device, route, code, ts: formatLocalTimestamp(new Date(), this.timezone) };
+      // Distinct scans in the same second are distinct servings. Downstream
+      // retries retain this identity instead of deduplicating on wall-clock text.
+      const eventId = typeof frame.eventId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(frame.eventId) ? frame.eventId : randomUUID();
+      const event = { source: 'barcode-relay', device, route, code, eventId, ts: formatLocalTimestamp(new Date(), this.timezone) };
       listener(event, { clientId }); this.publish(device, event);
     });
   }

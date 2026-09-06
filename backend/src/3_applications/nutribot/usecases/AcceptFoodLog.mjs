@@ -5,7 +5,6 @@
  * Confirms a pending food log and adds items to daily list.
  */
 
-import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
 import { deriveLogDate } from '../lib/deriveLogDate.mjs';
 import { serializeFoodItem, serializeNutriLog } from '../nutriLogRecords.mjs';
 
@@ -13,6 +12,7 @@ import { serializeFoodItem, serializeNutriLog } from '../nutriLogRecords.mjs';
  * Accept food log use case
  */
 export class AcceptFoodLog {
+  #receipts;
   #messagingGateway;
   #foodLogStore;
   #nutriListStore;
@@ -25,6 +25,7 @@ export class AcceptFoodLog {
   #reviewService;
 
   constructor(deps) {
+    this.#receipts = deps.receipts || (() => null);
     this.#reviewService = deps.reviewService;
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
 
@@ -68,7 +69,12 @@ export class AcceptFoodLog {
    *   coaching orchestrator after EVERY capture — inline, inside the capture request.
    */
   async execute(input) {
-    if (this.#reviewService) return this.#reviewService.execute({ ...input, action: 'confirm' });
+    if (this.#reviewService) {
+      const result = input.provisional ? await this.#reviewService.capture(input)
+        : await this.#reviewService.execute({ ...input, action: "confirm" });
+      await this.#receipts()?.refresh(input.userId, input.logUuid);
+      return result;
+    }
     const { userId, conversationId, logUuid, messageId, responseContext } = input;
     const autoReport = input.autoReport !== false;
 
@@ -129,35 +135,7 @@ export class AcceptFoodLog {
         await this.#conversationStateStore.clear(conversationId);
       }
 
-      // 6. Update message to show accepted status
-      if (messageId) {
-        try {
-          const timezone = this.#config?.getDefaultTimezone?.() || 'America/Los_Angeles';
-          let logDate = null;
-          try {
-            logDate = deriveLogDate(
-              serializeNutriLog(nutriLog),
-              timezone,
-            );
-          } catch (e) {
-            this.#logger.warn?.('acceptLog.dateHeader.deriveFailed', { error: e.message });
-          }
-          const dateHeader = logDate ? formatDateHeader(logDate, { now: new Date() }).replace('🕒', '✅') : '';
-          const foodList = formatFoodList(nutriLog.items || []);
-
-          const acceptedText = `${dateHeader}\n\n${foodList}`;
-
-          // Use caption for photo messages (image/upc sources), text for others
-          const isPhotoMessage = ['image', 'upc'].includes(nutriLog.metadata?.source);
-          const updatePayload = isPhotoMessage
-            ? { caption: acceptedText, choices: [], inline: true }
-            : { text: acceptedText, choices: [], inline: true };
-
-          await messaging.updateMessage(messageId, updatePayload);
-        } catch (e) {
-          this.#logger.warn?.('acceptLog.updateMessageFailed', { error: e.message });
-        }
-      }
+      await this.#receipts()?.refresh(userId, logUuid);
 
       this.#logger.info?.('acceptLog.complete', {
         conversationId,

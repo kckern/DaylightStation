@@ -93,6 +93,8 @@
   }
 
   &__send {
+    min-height: 44px;
+    min-width: 64px;
     flex-shrink: 0;
     padding: 0.5rem 1rem;
     background: var(--mantine-color-blue-6);
@@ -251,4 +253,9 @@
   font-size: 11px;
   color: var(--mantine-color-textMid-0);
   overflow-x: auto;
+}
+// Optional starters draft text only; choosing one never sends a model request.
+.coach-chat__starters {
+  display: grid; gap: 0.5rem; padding: 1rem; color: var(--ds-text-mid);
+  button { min-height: 44px; text-align: left; padding: 0.5rem; border: 1px solid var(--ds-border); border-radius: 6px; background: var(--ds-surface); color: var(--ds-text-high); cursor: pointer; }
 }

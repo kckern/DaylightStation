@@ -16,23 +16,23 @@ describe('EntryRow', () => {
 
   it('an unsettled row (settled:false) renders the unsettled cue and a confirm button', () => {
     r(<EntryRow row={{ ...baseRow, settled: false }} onTap={() => {}} onConfirm={() => {}} />);
-    expect(document.querySelector('.health-row--unsettled')).toBeTruthy();
+    expect(document.querySelector('.health-row-line--unsettled')).toBeTruthy();
     // Non-visual signal: real text content, not color alone.
-    expect(screen.getByText(/unconfirmed/i)).toBeTruthy();
+    expect(screen.getByText(/estimated/i)).toBeTruthy();
     const confirmBtn = screen.getByRole('button', { name: /confirm entry/i });
     expect(confirmBtn).toBeTruthy();
   });
 
   it('a settled row (settled:true) renders neither the cue nor the confirm button', () => {
     r(<EntryRow row={{ ...baseRow, settled: true }} onTap={() => {}} onConfirm={() => {}} />);
-    expect(document.querySelector('.health-row--unsettled')).toBeFalsy();
-    expect(screen.queryByText(/unconfirmed/i)).toBeFalsy();
+    expect(document.querySelector('.health-row-line--unsettled')).toBeFalsy();
+    expect(screen.queryByText(/estimated/i)).toBeFalsy();
     expect(screen.queryByRole('button', { name: /confirm entry/i })).toBeNull();
   });
 
   it('a row with NO settled key renders neither the cue nor the confirm button (absent = settled)', () => {
     r(<EntryRow row={{ ...baseRow }} onTap={() => {}} onConfirm={() => {}} />);
-    expect(document.querySelector('.health-row--unsettled')).toBeFalsy();
+    expect(document.querySelector('.health-row-line--unsettled')).toBeFalsy();
     expect(screen.queryByRole('button', { name: /confirm entry/i })).toBeNull();
   });
 
@@ -46,7 +46,7 @@ describe('EntryRow', () => {
     await waitFor(() => expect(onConfirm).toHaveBeenCalled());
     expect(apiMock).toHaveBeenCalledWith(
       'api/v1/health/nutrilist/row-1',
-      { settled: true },
+      expect.objectContaining({ settled: true, expectedVersion: 1, expectedVersions: { 'row-1': 1 }, operationId: expect.any(String) }),
       'PUT',
     );
   });
@@ -76,10 +76,20 @@ describe('EntryRow', () => {
     expect(screen.queryByText(/servings/i)).toBeNull();
   });
 
-  it('shows no portion when grams are unavailable', () => {
+  it('shows the current serving quantity without calling it grams', () => {
     r(<EntryRow row={{ ...baseRow, grams: null, amount: 2, unit: 'cups' }} onTap={() => {}} />);
-    expect(screen.queryByText(/cups/i)).toBeNull();
-    expect(document.querySelector('.health-row__portion').textContent).toBe('Weight unknown');
+    expect(screen.getByText('2 cups')).toBeTruthy();
+    expect(document.querySelector('.health-row__portion').textContent).toBe('2 cups');
+  });
+
+  it('rounds displayed grams and calories and keeps unknown macros distinct from zero', () => {
+    r(<EntryRow row={{ ...baseRow, grams: 167.4, calories: 290.8, protein: 7.4, carbs: null, fat: 0 }} onTap={() => {}} />);
+    expect(screen.getByText('167 g')).toBeTruthy();
+    expect(document.querySelector('.health-row__kcal')).toHaveTextContent('291 kcal');
+    expect(screen.getByRole('img', { name: 'Protein: 7 grams' })).toHaveTextContent('7');
+    expect(screen.getByRole('img', { name: 'Carbs: unknown' })).toHaveTextContent('—');
+    expect(screen.getByRole('img', { name: 'Fat: 0 grams' })).toHaveTextContent('0');
+    expect(screen.getByRole('button', { name: 'Edit Apple' }).querySelector('.health-macros')).toBeNull();
   });
 
   describe('group presentation', () => {
@@ -87,7 +97,7 @@ describe('EntryRow', () => {
 
     it('shows the rollup kcal (not the group row\'s own zero) and a real expand button with aria-expanded', () => {
       r(<EntryRow row={groupRow} onTap={() => {}} onConfirm={() => {}} isGroup expanded={false} onToggle={() => {}} rollupKcal={225} />);
-      expect(document.querySelector('.health-row__kcal').textContent).toBe('Total · 225 kcal');
+      expect(document.querySelector('.health-row__kcal').textContent).toBe('225 kcal');
       const btn = screen.getByRole('button', { name: /expand smoothie/i });
       expect(btn.getAttribute('aria-expanded')).toBe('false');
     });
@@ -126,7 +136,7 @@ describe('EntryRow', () => {
   it('an indented child row still carries the unsettled cue and confirm affordance', () => {
     r(<EntryRow row={{ ...baseRow, settled: false }} onTap={() => {}} onConfirm={() => {}} child />);
     expect(document.querySelector('.health-row-line--child')).toBeTruthy();
-    expect(screen.getByText(/unconfirmed/i)).toBeTruthy();
+    expect(screen.getByText(/estimated/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: /confirm entry/i })).toBeTruthy();
   });
 
@@ -152,7 +162,8 @@ describe('EntryRow', () => {
       const img = document.querySelector('img.health-row__thumb');
       expect(img.style.display).not.toBe('none');
       fireEvent.error(img);
-      expect(img.style.display).toBe('none');
+      expect(document.querySelector('img.health-row__thumb')).toBeNull();
+      expect(document.querySelector('.health-food-art')).toBeTruthy();
     });
 
     it('a group row with photoRef also renders a thumbnail', () => {
@@ -167,7 +178,7 @@ describe('EntryRow', () => {
   describe('scale-measured badge', () => {
     it('renders the caller-supplied measurement summary as TEXT, not colour alone', () => {
       r(<EntryRow row={{ ...baseRow }} onTap={() => {}} onConfirm={() => {}} measured="82 g · scale ✓" />);
-      expect(screen.getByText('82 g · scale ✓')).toBeTruthy();
+      expect(screen.getByTitle('82 g · scale ✓')).toBeTruthy();
     });
 
     it('renders no badge when the row has no consumed observation', () => {
@@ -177,8 +188,8 @@ describe('EntryRow', () => {
 
     it('coexists with the unsettled cue — an entry can be scale-measured AND unconfirmed', () => {
       r(<EntryRow row={{ ...baseRow, settled: false }} onTap={() => {}} onConfirm={() => {}} measured="82 g · scale ✓" />);
-      expect(screen.getByText(/unconfirmed/i)).toBeTruthy();
-      expect(screen.getByText('82 g · scale ✓')).toBeTruthy();
+      expect(screen.getByText(/estimated/i)).toBeTruthy();
+      expect(screen.getByTitle('82 g · scale ✓')).toBeTruthy();
       expect(screen.getByRole('button', { name: /confirm entry/i })).toBeTruthy();
     });
   });
@@ -242,12 +253,12 @@ describe('EntryRow', () => {
       // the column widths themselves live in health.scss and are compiled by
       // the stylesheet gate.
       const { unmount } = r(<EntryRow row={{ ...baseRow, icon: 'fried-eggs' }} onTap={() => {}} onConfirm={() => {}} />);
-      expect(document.querySelector('.health-row--icon')).toBeTruthy();
+      expect(document.querySelector('.health-row__identity')).toBeTruthy();
       fireEvent.error(icon());
-      expect(document.querySelector('.health-row--icon')).toBeTruthy();
+      expect(document.querySelector('.health-row__identity')).toBeTruthy();
       unmount();
       r(<EntryRow row={{ ...baseRow }} onTap={() => {}} onConfirm={() => {}} />);
-      expect(document.querySelector('.health-row--icon')).toBeTruthy();
+      expect(document.querySelector('.health-row__identity')).toBeTruthy();
     });
 
     describe('group rows', () => {

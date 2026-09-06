@@ -7,7 +7,6 @@ import { capturedFoodGrams, capturedNutrientProvenance } from '#shared/contracts
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { formatFoodList, formatDateHeader, formatLoggedSummary, formatDensityWarnings } from '#domains/nutrition/entities/formatters.mjs';
 import { repairTruncatedJson } from '../lib/repairJson.mjs';
 import { deriveLogDate } from '../lib/deriveLogDate.mjs';
 import { createNutriLog, serializeNutriLog } from '../nutriLogRecords.mjs';
@@ -55,6 +54,7 @@ function pinnedTimeDetails(dateStr, timezone = 'America/Los_Angeles') {
  * Log food from text use case
  */
 export class LogFoodFromText {
+  #receipts;
   #messagingGateway;
   #aiGateway;
   #foodLogStore;
@@ -69,6 +69,7 @@ export class LogFoodFromText {
   #pause;
 
   constructor(deps) {
+    this.#receipts = deps.receipts || (() => null);
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
     if (!deps.aiGateway) throw new Error('aiGateway is required');
 
@@ -148,6 +149,7 @@ export class LogFoodFromText {
       }
     }
 
+    let status = null;
     try {
       // SHORT-CIRCUIT: If in revision mode, handle revision directly
       // Skip generic AI call and status message creation — update original message in-place
@@ -172,9 +174,9 @@ export class LogFoodFromText {
 
       // 1. Create status indicator (or use existing message for revision flows)
       const truncatedText = text.length > 300 ? text.substring(0, 300) + '...' : text;
-      let status = null;
       let statusMsgId;
 
+      try {
       if (existingMessageId) {
         // Revision flow: message already exists, just track its ID
         statusMsgId = existingMessageId;
@@ -189,6 +191,11 @@ export class LogFoodFromText {
         // Fallback for gateways without status indicator support
         const result = await messaging.sendMessage(`🔍 Analyzing...\n💬 "${truncatedText}"`, {});
         statusMsgId = result.messageId;
+      }
+      } catch (error) {
+        // Delivery is not a prerequisite for saving food. An uncertain send
+        // is never retried as a second message; Health still receives the log.
+        this.#logger.warn?.('logText.deliveryUnavailable', { conversationId, error: error.message });
       }
 
       // 2. Call AI for food detection
@@ -331,11 +338,12 @@ export class LogFoodFromText {
       // is logged exactly as parsed and lands UNSETTLED like every capture
       // (NutribotInputRouter stamps `settled: false`), so a flagged item simply
       // arrives on the pending-review surface with a reason attached.
-      let densityWarning = '';
+      let densityFindings = [];
       if (this.#catalogService?.assessDensity) {
         try {
           const findings = await this.#catalogService.assessDensity(foodItems, userId);
-          densityWarning = formatDensityWarnings(findings);
+          densityFindings = findings;
+          if (findings.length) this.#logger.info?.('nutribot.density.findings', { logId: nutriLog.id, findings });
         } catch (err) {
           this.#logger.warn?.('nutribot.density.assess_failed', { conversationId, error: err.message });
         }
@@ -375,38 +383,9 @@ export class LogFoodFromText {
         }
       }
 
-      // 6. Update message with the logged summary, date header, food list, and buttons
-      const dateHeader = formatDateHeader(logDate, { timezone: this.#getTimezone(), now: new Date() });
-      const foodList = formatFoodList(foodItems);
-      const loggedSummary = formatLoggedSummary(foodItems);
-      const buttons = this.#buildActionButtons(nutriLog.id);
-      // '' when nothing was flagged, so the message is byte-identical to what
-      // it has always been for the overwhelming majority of captures.
-      const warningBlock = densityWarning ? `\n\n${densityWarning}` : '';
-
-      try {
-        if (status) {
-          // Use status indicator's finish (stops animation, updates in place)
-          await status.finish(`${loggedSummary}\n${dateHeader}\n\n${foodList}${warningBlock}`, {
-            choices: buttons,
-            inline: true,
-          });
-        } else {
-          // Fallback: direct update
-          await messaging.updateMessage(statusMsgId, {
-            text: `${loggedSummary}\n${dateHeader}\n\n${foodList}${warningBlock}`,
-            choices: buttons,
-            inline: true,
-          });
-        }
-      } catch (updateError) {
-        this.#logger.warn?.('logText.updateMessage.failed', { conversationId, error: updateError.message });
-        try {
-          await messaging.sendMessage(`✅ Food logged! (message update failed)\n\n${dateHeader}\n\n${foodList}${warningBlock}`, { reply_markup: { inline_keyboard: buttons } });
-        } catch (recoveryError) {
-          this.#logger.error?.('logText.recovery.failed', { conversationId, error: recoveryError.message });
-        }
-      }
+      // Hand the existing status message to the receipt publisher. Drain any
+      // in-flight animation first so it cannot clobber the committed receipt.
+      await status?.release?.();
 
       // 7. Delete original user message
       if (messageId) {
@@ -416,10 +395,11 @@ export class LogFoodFromText {
       // 8. Update NutriLog with messageId
       if (this.#foodLogStore) {
         const updatedLog = nutriLog.with({
-          metadata: { ...nutriLog.metadata, messageId: String(statusMsgId) },
+          metadata: { ...nutriLog.metadata, ...(statusMsgId ? { messageId: String(statusMsgId), messageKind: 'text' } : {}), densityFindings },
         }, new Date());
         await this.#foodLogStore.save(updatedLog);
       }
+      await this.#receipts()?.bind(userId, nutriLog.id, { conversationId, messageId: statusMsgId, caption: false });
 
       this.#logger.info?.('logText.complete', {
         conversationId,
@@ -443,6 +423,8 @@ export class LogFoodFromText {
     } catch (error) {
       this.#logger.error?.('logText.error', { conversationId, error: error.message });
       throw error;
+    } finally {
+      await status?.release?.();
     }
   }
 
@@ -641,19 +623,6 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
     return 'yellow';
   }
 
-  /**
-   * Build action buttons
-   * @private
-   */
-  #buildActionButtons(logUuid) {
-    return [
-      [
-        { text: '✅ Accept', callback_data: this.#encodeCallback('a', { id: logUuid }) },
-        { text: '✏️ Revise', callback_data: this.#encodeCallback('r', { id: logUuid }) },
-        { text: '🗑️ Discard', callback_data: this.#encodeCallback('x', { id: logUuid }) },
-      ],
-    ];
-  }
 
   /**
    * Handle revision mode: update existing log with new items
@@ -695,22 +664,8 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
       this.#logger.debug?.('logText.revision.stateCleared', { conversationId });
     }
 
-    // Update the message with revised items
-    const finalDate = updatedLog.meal?.date || updatedLog.date;
-    const dateHeader = formatDateHeader(finalDate, { timezone: this.#getTimezone(), now: new Date() });
-    const foodList = formatFoodList(foodItems);
-    const buttons = this.#buildActionButtons(updatedLog.id);
-
-    // Determine which message to update (prefer original log message)
     const messageToUpdate = originalMessageId || statusMsgId;
-
-    // Check if this was an image-based log for proper update format
-    const isImageLog = targetLog.metadata?.source === 'image';
-    const updatePayload = isImageLog
-      ? { caption: `${dateHeader}\n\n${foodList}`, choices: buttons, inline: true }
-      : { text: `${dateHeader}\n\n${foodList}`, choices: buttons, inline: true };
-
-    await messaging.updateMessage(messageToUpdate, updatePayload);
+    await this.#receipts()?.interaction(userId, updatedLog.id, null);
 
     // Delete the "Analyzing..." status message if different from the target
     if (statusMsgId && statusMsgId !== messageToUpdate) {
@@ -759,19 +714,7 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
       return null;
     }
 
-    const isImageLog = targetLog.metadata?.source === 'image';
-
-    // 2. Update original message to show "Processing revision..."
-    if (originalMessageId) {
-      const processingPayload = isImageLog
-        ? { caption: '🔍 Processing revision...' }
-        : { text: '🔍 Processing revision...' };
-      try {
-        await messaging.updateMessage(originalMessageId, processingPayload);
-      } catch (e) {
-        this.#logger.debug?.('logText.revisionDirect.processingUpdate.failed', { error: e.message });
-      }
-    }
+    await this.#receipts()?.interaction(userId, targetLog.id, "processing");
 
     // 3. Build contextual prompt with original items
     const originalItems = (targetLog.items || [])
@@ -809,18 +752,7 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
       finalItems = revisedItems.length > 0 ? revisedItems : targetLog.items || [];
 
       if (finalItems.length === 0) {
-        // Truly empty — restore original message with buttons
-        const existingDate = targetLog.meal?.date || targetLog.date;
-        const dateHeader = formatDateHeader(existingDate, { timezone: this.#getTimezone(), now: new Date() });
-        const foodList = formatFoodList(targetLog.items || []);
-        const buttons = this.#buildActionButtons(targetLog.id);
-
-        if (originalMessageId) {
-          const restorePayload = isImageLog
-            ? { caption: `${dateHeader}\n\n${foodList}`, choices: buttons, inline: true }
-            : { text: `${dateHeader}\n\n${foodList}`, choices: buttons, inline: true };
-          await messaging.updateMessage(originalMessageId, restorePayload);
-        }
+        await this.#receipts()?.interaction(userId, targetLog.id, null);
 
         // Delete user's text message — safe to do now since we've restored the original
         if (messageId) {
@@ -857,33 +789,11 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
         this.#logger.debug?.('logText.revisionDirect.stateCleared', { conversationId });
       }
 
-      // 9. Update ORIGINAL message with revised items + buttons
-      const finalDate = updatedLog.meal?.date || updatedLog.date || existingDate;
-      const dateHeader = formatDateHeader(finalDate, { timezone: this.#getTimezone(), now: new Date() });
-      const foodList = formatFoodList(finalItems);
-      const buttons = this.#buildActionButtons(updatedLog.id);
-
       messageToUpdate = originalMessageId;
-      const updatePayload = isImageLog
-        ? { caption: `${dateHeader}\n\n${foodList}`, choices: buttons, inline: true }
-        : { text: `${dateHeader}\n\n${foodList}`, choices: buttons, inline: true };
-
-      if (messageToUpdate) {
-        await messaging.updateMessage(messageToUpdate, updatePayload);
-      }
+      await this.#receipts()?.interaction(userId, updatedLog.id, null);
     } catch (aiError) {
       this.#logger.error?.('logText.revisionDirect.aiError', { conversationId, error: aiError.message });
-      // Restore original message with buttons so user can try again
-      if (originalMessageId) {
-        const buttons = this.#buildActionButtons(targetLog.id);
-        const logDate = targetLog.meal?.date || targetLog.date;
-        const dateHeader = formatDateHeader(logDate, { timezone: this.#getTimezone(), now: new Date() });
-        const foodList = formatFoodList(targetLog.items || []);
-        const restorePayload = isImageLog
-          ? { caption: `${dateHeader}\n\n${foodList}`, choices: buttons, inline: true }
-          : { text: `${dateHeader}\n\n${foodList}`, choices: buttons, inline: true };
-        try { await messaging.updateMessage(originalMessageId, restorePayload); } catch (e) { /* best effort */ }
-      }
+      await this.#receipts()?.interaction(userId, targetLog.id, "revision");
       // Don't clear state and don't delete user's message — user might want to try again
       throw aiError;
     }
@@ -960,9 +870,7 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
 
     const contextualText = `Original items:\n${originalItems}\n\nUser revision: "${text}"`;
 
-    await messaging.updateMessage(messageToUpdate, {
-      text: '🔍 Processing as revision...',
-    });
+    await this.#receipts()?.interaction(userId, targetLog.id, "processing");
 
     // Call AI with contextual prompt — pin "today" to original log's date (same
     // reasoning as #handleRevisionDirect)
@@ -998,16 +906,7 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
       this.#logger.debug?.('logText.revisionFallback.stateCleared', { conversationId });
     }
 
-    const logDate = updatedLog.meal?.date || updatedLog.date;
-    const dateHeader = formatDateHeader(logDate, { timezone: this.#getTimezone(), now: new Date() });
-    const foodList = formatFoodList(finalItems);
-    const buttons = this.#buildActionButtons(updatedLog.id);
-
-    await messaging.updateMessage(messageToUpdate, {
-      text: `${dateHeader}\n\n${foodList}`,
-      choices: buttons,
-      inline: true,
-    });
+    await this.#receipts()?.interaction(userId, updatedLog.id, null);
 
     // Delete the "Analyzing..." status message if it's different from the target
     if (statusMsgId && statusMsgId !== messageToUpdate) {

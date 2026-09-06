@@ -8,13 +8,13 @@ test('favorites follow stable food identity after a rename and do not leak to an
       { uuid: 'b', foodId: 'food-b', name: 'Toast', date: '2026-09-01', mealTime: 'morning', grams: 40, calories: 100 }],
   });
   await page.goto('/health?date=2026-09-01');
-  await page.locator('.health-row', { hasText: 'Original oats' }).click();
+  await page.getByRole('button', { name: 'Edit Original oats', exact: true }).click();
   await expect(page.getByRole('button', { name: 'favorite', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'favorite', exact: true }).click();
   await expect(page.getByRole('button', { name: 'favorite', exact: true })).toHaveAttribute('aria-pressed', 'false');
   expect(state.requests.find(request => request.method === 'PUT')?.body).toEqual({ id: 'food-a', favorite: false });
   await page.keyboard.press('Escape');
-  await page.locator('.health-row', { hasText: 'Toast' }).click();
+  await page.getByRole('button', { name: 'Edit Toast', exact: true }).click();
   await expect(page.getByRole('button', { name: 'favorite', exact: true })).toHaveAttribute('aria-pressed', 'false');
   expect(state.foods).toHaveLength(2);
   expect(state.items[0].name).toBe('Original oats');
@@ -30,10 +30,10 @@ test('coach shares identity, selected-entry context and visible history between 
       'data: {"type":"text-delta","text":"Fixture coach answer"}\n\ndata: {"type":"finish","reason":"stop"}\n\ndata: {"type":"done"}\n\n' });
   });
   await page.goto('/health?date=2026-09-01');
-  const row = page.locator('.health-row', { hasText: 'Fixture oats' });
+  const row = page.locator('.health-row-line', { hasText: 'Fixture oats' });
   await expect(row).toBeVisible({ timeout: 30000 });
   expect(state.requests.filter(request => request.endpoint === '/mentions/all')).toHaveLength(0);
-  await row.click();
+  await row.locator('.health-row__identity').click();
   await page.getByText('Nutrition, date & evidence', { exact: true }).click();
   await page.getByRole('button', { name: 'Ask coach about this entry' }).click();
   const overlay = page.getByRole('dialog', { name: 'Health Coach' });
@@ -44,7 +44,7 @@ test('coach shares identity, selected-entry context and visible history between 
   expect(calls[0].context).toMatchObject({ userId: 'health-fixture', selectedDate: '2026-09-01', selectedEntry: { id: 'a', name: 'Fixture oats', date: '2026-09-01' } });
   await page.keyboard.press('Escape');
   await expect(overlay).not.toBeVisible();
-  await expect(row).toBeFocused();
+  await expect(row.locator('.health-row__identity')).toBeFocused();
   await page.getByRole('link', { name: 'Coach', exact: true }).click();
   await expect(page.getByText('Fixture coach answer', { exact: true })).toBeVisible();
   await page.reload();
@@ -60,7 +60,7 @@ test('double-tapping a pending quick-add creates only one request and one row', 
   let requests = 0;
   await page.route('**/api/v1/health/nutrition/catalog/quickadd', async route => { requests++; await wait; await route.fallback(); });
   await page.goto('/health');
-  await page.getByText('+ Add food…', { exact: true }).first().click();
+  await page.getByRole('button', { name: /Add food to/ }).first().click();
   await page.getByRole('option', { name: /Fixture oats/ }).evaluate(element => { element.click(); element.click(); });
   await expect.poll(() => requests).toBe(1);
   release();
@@ -83,7 +83,7 @@ test('scanner releases its media after its first result and acquires a fresh str
   const state = await installHealthFixtures(page, { foods: [{ id: 'food-a', name: 'Fixture oats', upc: 'fixture-upc', grams: 80, calories: 300 }] });
   await page.goto('/health');
   for (let count = 1; count <= 2; count++) {
-    await page.getByRole('button', { name: 'Scan barcode to Breakfast', exact: true }).click();
+    await page.getByRole('button', { name: /^Quick scan barcode to / }).click();
     await expect.poll(() => state.items.length).toBe(count);
     await expect.poll(() => page.evaluate(() => window.fixtureStreams.length)).toBe(count);
     await expect.poll(() => page.evaluate(() => window.fixtureStreams.every(stream => stream.getTracks().every(track => track.readyState === 'ended')))).toBe(true);

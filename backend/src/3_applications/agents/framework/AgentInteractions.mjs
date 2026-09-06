@@ -7,6 +7,10 @@ export class AgentInteractions {
   ask(userId, question) {
     const id = sha256Text(JSON.stringify([question.issueKey, question.entryVersions])).slice(0, 24);
     return this.store.update(userId, state => {
+      if (question.dedupeIssue) {
+        const existing = Object.values(state.questions).find(q => q.issueKey === question.issueKey);
+        if (existing) return existing;
+      }
       if (state.questions[id]) return state.questions[id];
       const saved = { ...question, id, userId, version: 1, status: 'open', createdAt: new Date(this.clock.now()).toISOString() };
       state.questions[id] = saved;

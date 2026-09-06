@@ -17,6 +17,8 @@
  *
  * @typedef {Object} IStatusIndicator
  * @property {string} messageId - The underlying message ID
+ * @property {'text'|'photo'} kind - Whether the bound message uses text or a caption
+ * @property {function(): Promise<void>} release - Stop and drain animation without editing/deleting; hand off to the receipt publisher
  * @property {function(string, Object?): Promise<string>} finish - Complete with final content, returns messageId
  * @property {function(): Promise<void>} cancel - Abort without final message (deletes status)
  */

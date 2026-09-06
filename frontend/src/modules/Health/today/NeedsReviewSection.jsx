@@ -71,12 +71,12 @@ function NeedsReviewRow({ entry, onChanged }) {
 export function NeedsReviewSection({ pending, onChanged }) {
   if (!pending || pending.length === 0) return null;
   return (
-    <div className="health-pending health-pending--needs-review" role="status">
-      <p className="health-pending__heading">NEEDS REVIEW</p>
+    <details className="health-pending health-pending--needs-review">
+      <summary>{pending.length} {pending.length === 1 ? 'capture' : 'captures'} not counted · Review</summary>
       {pending.map((entry) => (
         <NeedsReviewRow key={entry.id} entry={entry} onChanged={onChanged} />
       ))}
-    </div>
+    </details>
   );
 }
 export default NeedsReviewSection;

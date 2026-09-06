@@ -25,6 +25,40 @@ async function fixture() {
   return { root, foodLogs, items, log, makeReview, review: makeReview(), logger };
 }
 describe('shared pending food review', () => {
+  it('keeps Telegram portion commands usable after Health restores a discarded entry', async () => {
+    const f = await fixture();
+    await f.review.capture({ userId: 'alice', logUuid: f.log.id });
+    const [row] = await f.items.findByLogId('alice', f.log.id);
+    await f.review.execute({ userId: 'alice', logUuid: f.log.id, action: 'discard' });
+    await f.items.restoreEntries('alice', [row.uuid]);
+    await f.review.execute({ userId: 'alice', logUuid: f.log.id, action: 'confirm', portionFactor: 0.5 });
+    expect(await f.items.findByUuid('alice', row.uuid)).toMatchObject({ calories: 80, settledBy: 'user' });
+  });
+  it('a Telegram portion confirmation preserves the placement already edited in Health', async () => {
+    const f = await fixture();
+    await f.review.capture({ userId: 'alice', logUuid: f.log.id });
+    const [row] = await f.items.findByLogId('alice', f.log.id);
+    await f.items.update('alice', row.uuid, { date: '2026-09-05', mealTime: null });
+    await f.review.execute({ userId: 'alice', logUuid: f.log.id, action: 'confirm', portionFactor: 0.5 });
+    expect(await f.items.findByDate('alice', '2026-09-04')).toHaveLength(0);
+    expect(await f.items.findByUuid('alice', row.uuid)).toMatchObject({ date: '2026-09-05', mealTime: null, calories: 80 });
+  });
+  it('counts a warning-bearing capture provisionally and can confirm its portion later, exactly once', async () => {
+    const f = await fixture();
+    await f.foodLogs.save(f.log.with({ items: f.log.items.map(item => item.with({ sugar: null })),
+      metadata: { ...f.log.metadata, nutritionLookup: { source: 'fixture', missing: ['sugar'], warnings: ['Unknown sugar'] } } }, new Date()));
+    await f.review.capture({ userId: 'alice', logUuid: f.log.id });
+    await f.makeReview().capture({ userId: 'alice', logUuid: f.log.id });
+    let rows = await f.items.findByDate('alice', '2026-09-04');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ calories: 160, sugar: null, settled: false, review: { state: 'provisional' } });
+    const input = { userId: 'alice', logUuid: f.log.id, operationId: 'portion', portionFactor: 0.5, nutritionReviewed: true };
+    await f.review.execute(input);
+    await f.makeReview().execute(input);
+    rows = await f.items.findByDate('alice', '2026-09-04');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ calories: 80, sugar: null, settled: true, review: { state: 'confirmed' } });
+  });
   it('requires label acknowledgement for legacy barcode imports without changing their estimates', async () => {
     const f = await fixture();
     await f.foodLogs.save(f.log.with({ metadata: { source: 'upc' } }, new Date()));
@@ -93,7 +127,7 @@ describe('shared pending food review', () => {
     await f.review.execute({ userId: 'alice', logUuid: log.id });
     const rows = await f.items.findByDate('alice', '2026-09-04');
     expect(rows.find(row => row.id === 'taco000001')).toMatchObject({ kind: 'group', calories: 0, grams: 105 });
-    expect(rows.find(row => row.id === 'fish000001')).toMatchObject({ parentId: 'taco000001', settled: false });
+    expect(rows.find(row => row.id === 'fish000001')).toMatchObject({ parentId: 'taco000001', settled: true, settledBy: 'user' });
     expect(rows.reduce((sum, row) => sum + row.calories, 0)).toBe(197);
   });
   it('rejects stale edits and reused operation IDs without altering food', async () => {

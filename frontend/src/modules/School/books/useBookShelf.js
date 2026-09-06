@@ -668,6 +668,12 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     // The household study day the server read the shelf on (`YYYY-MM-DD`),
     // or null from a server that did not say. The panel's "Today".
     studyDay: typeof shelf?.studyDay === 'string' && shelf.studyDay ? shelf.studyDay : null,
+    // The oldest day the server will accept a finish on, straight from the
+    // shelf read. Null from a server that did not say — the day picker then
+    // draws the window it always did rather than inventing a floor of its own.
+    earliestFinishDay: typeof shelf?.earliestFinishDay === 'string' && shelf.earliestFinishDay
+      ? shelf.earliestFinishDay
+      : null,
     learner,
     error,
     busy,

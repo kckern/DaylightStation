@@ -53,10 +53,13 @@ function assertGoalsShape(goals) {
     if (typeof goals[key] !== 'number' || !Number.isFinite(goals[key]) || goals[key] <= 0) goalsInvalid(`${key} must be a positive number`);
   }
   if (!Number.isInteger(goals.birthYear) || goals.birthYear < 1900 || goals.birthYear > new Date().getFullYear()) goalsInvalid('birthYear must be a valid year');
-  for (const key of ['targetWeightLbs', 'activityBaseline', 'budgetFloor']) {
+  for (const key of ['targetWeightLbs', 'activityBaseline', 'budgetFloor', 'targetBodyFatPct']) {
     if (goals[key] !== undefined && (typeof goals[key] !== 'number' || !Number.isFinite(goals[key]) || goals[key] <= 0)) goalsInvalid(`${key} must be positive`);
   }
   if (goals.weeklyRateLbs !== undefined && (typeof goals.weeklyRateLbs !== 'number' || !Number.isFinite(goals.weeklyRateLbs))) goalsInvalid('weeklyRateLbs must be numeric');
+  // A body-fat target is a percentage, and one at or above 100 divides by zero
+  // (or flips sign) in the lean-mass projection that consumes it.
+  if (goals.targetBodyFatPct !== undefined && goals.targetBodyFatPct >= 100) goalsInvalid('targetBodyFatPct must be below 100');
 
   const macroGoals = goals.macroGoals;
   if (macroGoals !== undefined && macroGoals !== null) {

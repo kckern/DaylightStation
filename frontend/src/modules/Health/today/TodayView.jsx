@@ -1,4 +1,7 @@
 import { lazy, Suspense, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { PortionContext, usePortionDraft } from './usePortionDraft.js';
+import { formatNutrients, nutrientSummary } from '@shared-contracts/nutrition/countedRows.mjs';
 import { useSearchParams } from 'react-router-dom';
 import { isISODate } from '@shared-contracts/health/isoDate.mjs';
 import { ActionIcon, Button, Menu } from '@mantine/core';
@@ -14,7 +17,6 @@ import { WeightChip } from './WeightChip.jsx';
 import { MonthBlock } from './MonthBlock.jsx';
 import { useBudgetRange } from './useBudgetRange.js';
 import { useIsWideViewport } from './layout.js';
-import { MacroFooter } from './MacroFooter.jsx';
 import { LogTable } from './LogTable.jsx';
 import { AddCombobox } from './AddCombobox.jsx';
 import { NeedsReviewSection } from './NeedsReviewSection.jsx';
@@ -32,7 +34,7 @@ import { CustomFoodSheet } from '../capture/CustomFoodSheet.jsx';
 const logger = createAppLogger('health').child('today');
 const IntakeBurnChart = lazy(() => import('../progress/IntakeBurnChart.jsx').then(module => ({ default: module.IntakeBurnChart })));
 
-export function TodayView({ active = true, onSetupGoals, onCoachTap }) {
+export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachTap }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const dateParam = searchParams.get('date');
   const date = isISODate(dateParam) && dateParam <= todayISO() ? dateParam : todayISO();
@@ -40,6 +42,7 @@ export function TodayView({ active = true, onSetupGoals, onCoachTap }) {
   const weekParam = searchParams.get('week');
   const viewportEnd = isISODate(weekParam) && weekParam <= weekEnd(todayISO()) ? weekEnd(weekParam) : weekEnd(date);
   const day = useHealthDay(date, { enabled: active });
+  const preview = usePortionDraft(day, date);
   const [addingTo, setAddingTo] = useState(null);   // bucketId | null — F5 renders the combobox here
   const [editingRow, setEditingRow] = useState(null); // row | null — F6 renders the edit sheet
   const [captureMode, setCaptureMode] = useState(null); // 'barcode' | null
@@ -308,34 +311,31 @@ export function TodayView({ active = true, onSetupGoals, onCoachTap }) {
   // `day.loading` false the whole time, so it never re-triggers this.
   const coldLoading = day.loading && !day.items.length;
 
+  const history = <>
+    <WeekStrip enabled={active} date={date} today={todayISO()} onDateChange={setDate} viewportEnd={viewportEnd}
+      onViewportChange={value => setSearchParams(previous => { const next = new URLSearchParams(previous); next.set('week', value); return next; })} />
+    {active ? <WeightChip asOf={date} /> : null}
+    {wideViewport ? <MonthBlock days={monthRange.days} loading={monthRange.loading} /> : null}
+    {wideViewport ? <Suspense fallback={null}><IntakeBurnChart days={monthRange.days} loading={monthRange.loading} /></Suspense> : null}
+  </>;
+
   return (
-    <div className="health-today">
-      <EquationStrip budget={day.budget} budgetError={day.budgetError}
+    <PortionContext.Provider value={preview.control}><div className="health-today">
+      <EquationStrip budget={preview.budget} budgetError={day.budgetError}
         date={date} today={todayISO()} onDateChange={setDate} onSetupGoals={onSetupGoals} />
       {/* Macro / watch-micro bars sit directly under the equation (F4.1). They
           read the SAME day sums the equation does — BudgetService computes both
           over one fold — so the bars and the kcal number can never disagree. */}
-      <MacroBarRow macros={day.budget?.macros} goals={day.budget?.goals}
-        microCoverage={day.budget?.microCoverage} />
-      {/* Weight sits between the macro bars and the week strip: it is the other
-          number the budget is computed FROM, so it belongs beside the equation
-          rather than buried in the Progress tab. */}
-      {/* ONE instance of each of these in the JSX. On a phone this element is
-          simply the next block in the stack — which puts the weight chip
-          directly under the macro bars, where Task 8.3 wants it; at
-          $health-aside-breakpoint the same element becomes the right column.
-          Nothing is rendered twice and hidden. */}
-      <aside className="health-today__aside">
-        {active ? <WeightChip /> : null}
-        {wideViewport ? <MonthBlock days={monthRange.days} loading={monthRange.loading} /> : null}
-        {/* Same `days` the month block just used — a second useBudgetRange here
-            would be a second identical request on every desktop page load. */}
-        {wideViewport ? <Suspense fallback={null}><IntakeBurnChart days={monthRange.days} loading={monthRange.loading} /></Suspense> : null}
-      </aside>
-      <WeekStrip enabled={active} date={date} today={todayISO()} onDateChange={setDate} viewportEnd={viewportEnd}
-        onViewportChange={value => setSearchParams(previous => { const next = new URLSearchParams(previous); next.set('week', value); return next; })} />
+      <MacroBarRow macros={preview.budget?.macros} goals={preview.budget?.goals}
+        macroCoverage={nutrientSummary(preview.items)} microCoverage={preview.budget?.microCoverage} />
+      {wideViewport && sidebarTarget ? createPortal(history, sidebarTarget) : null}
       <QuickCaptureBar active={active} onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
         onOpenBarcode={openBarcode} onAddTo={setAddingTo} busy={nutrition.busy} date={date} />
+      {preview.control.draft?.status === 'error' ? <div className="health-portion-error" role="alert">
+        <span>{preview.control.draft.error} Intended portion: {preview.control.draft.portion.value} {preview.control.draft.portion.unit}.</span>
+        <Button onClick={() => preview.control.retry()}>{preview.control.draft.conflict ? 'Reload & apply intended portion' : 'Retry same change'}</Button>
+        <Button variant="subtle" onClick={() => { preview.control.cancel(); day.reload(); }}>Discard draft &amp; reload</Button>
+      </div> : null}
       {undoDelete ? <div className="health-pending" role="status">
         <span>{undoDelete.label} deleted.</span>
         <Button size="compact-xs" loading={undoBusy} onClick={async () => {
@@ -365,10 +365,9 @@ export function TodayView({ active = true, onSetupGoals, onCoachTap }) {
           </div>
         </div>
       ) : null}
-      <NeedsReviewSection pending={pendingLogs} onChanged={day.reload} />
       <CleanupQuestions active={active} onChanged={day.reload} />
       <ObservationsSection observations={unmatched} onChanged={() => observations.reload()} />
-      <LogTable byBucket={day.byBucket} sessions={day.budget?.sessions || []}
+      <LogTable byBucket={preview.byBucket} date={date} sessions={preview.budget?.sessions || []}
         active={active}
         exerciseAvailable={Boolean(day.budget)}
         coldLoading={coldLoading} capturePendingBuckets={[...capturePending.values()].filter(pending => pending.date === date).map(pending => pending.bucket)}
@@ -379,8 +378,6 @@ export function TodayView({ active = true, onSetupGoals, onCoachTap }) {
         measuredByUuid={measuredByUuid}
         addSlot={addingTo ? (
           <div className="health-meal__adding">
-          <QuickCaptureBar active={active} bucketOverride={addingTo} date={date} busy={nutrition.busy}
-            onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture} onOpenBarcode={openBarcode} onAddTo={setAddingTo} />
           <AddCombobox bucketId={addingTo} date={date}
             onDone={() => { setAddingTo(null); day.reload(); }}
             onCancel={() => setAddingTo(null)}
@@ -389,7 +386,9 @@ export function TodayView({ active = true, onSetupGoals, onCoachTap }) {
             onTemplate={(entry) => { setFocusTemplateId(entry.id); setTemplatesFor(addingTo); }} />
           </div>
         ) : null} />
-      <MacroFooter items={day.items} coachLine={coachLine} onCoachTap={onCoachTap} />
+      <NeedsReviewSection pending={pendingLogs} onChanged={day.reload} />
+      {!wideViewport || !sidebarTarget ? <details className="health-history"><summary>Week &amp; weight history</summary>{history}</details> : null}
+      {coachLine ? <Button variant="subtle" onClick={() => onCoachTap()}>{coachLine}</Button> : null}
       <BarcodeCapture open={active && captureMode === 'barcode'} busy={nutrition.busy} bucket={barcodeTargetBucket}
         onClose={() => { setCaptureMode(null); setBarcodeTargetBucket(null); }}
         onDecode={async (upc, bucket) => {
@@ -421,7 +420,7 @@ export function TodayView({ active = true, onSetupGoals, onCoachTap }) {
       <TemplatePicker open={active && Boolean(templatesFor)} bucketId={templatesFor} date={date} focusTemplateId={focusTemplateId}
         onLogged={() => { setTemplatesFor(null); setFocusTemplateId(null); setAddingTo(null); day.reload(); }}
         onClose={() => { setTemplatesFor(null); setFocusTemplateId(null); }} />
-    </div>
+    </div></PortionContext.Provider>
   );
 }
 export default TodayView;

@@ -3,7 +3,9 @@ import { buildWeightSeries, fmtLbs, fmtDelta, VIEW_W, VIEW_H } from './weightSer
 
 // The real /health/weight payload shape: keyed by date, entries carrying both
 // the raw reading and the smoothed average the budget is computed from.
-const entry = (date, lbs, avg) => [date, { date, lbs, lbs_adjusted_average: avg }];
+// `measurement` is set alongside `lbs` because these fixtures mean "a day that
+// was actually weighed"; see the forward-fill tests below for the other case.
+const entry = (date, lbs, avg) => [date, { date, lbs, measurement: lbs, lbs_adjusted_average: avg }];
 const data = (...pairs) => Object.fromEntries(pairs);
 
 const day = (n) => `2026-09-${String(n).padStart(2, '0')}`;
@@ -86,9 +88,9 @@ describe('buildWeightSeries', () => {
 
   it('skips a reading missing a value rather than plotting it as zero', () => {
     const s = buildWeightSeries({
-      [day(1)]: { date: day(1), lbs: 170, lbs_adjusted_average: 170 },
-      [day(2)]: { date: day(2), lbs: null, lbs_adjusted_average: 170.5 },
-      [day(3)]: { date: day(3), lbs: 171, lbs_adjusted_average: 171 },
+      [day(1)]: { date: day(1), lbs: 170, measurement: 170, lbs_adjusted_average: 170 },
+      [day(2)]: { date: day(2), lbs: 170, measurement: null, lbs_adjusted_average: 170.5 },
+      [day(3)]: { date: day(3), lbs: 171, measurement: 171, lbs_adjusted_average: 171 },
     });
     expect(s.rawPoints.split(' ')).toHaveLength(2);  // the null is dropped...
     expect(s.avgPoints.split(' ')).toHaveLength(3);  // ...not zeroed
@@ -97,11 +99,59 @@ describe('buildWeightSeries', () => {
     expect(s.rawPoints.split(' ').map((p) => Number(p.split(',')[0]))).toEqual([0, 100]);
   });
 
+  it('plots ONLY real weigh-ins as raw points — a forward-filled lbs is not a reading', () => {
+    // Weighed on the 1st and the 3rd. The 2nd carries the 1st's `lbs` forward,
+    // which is the shape of every unweighed day in the real file.
+    const s = buildWeightSeries({
+      [day(1)]: { date: day(1), lbs: 170, measurement: 170, lbs_adjusted_average: 170 },
+      [day(2)]: { date: day(2), lbs: 170, lbs_adjusted_average: 170.2 },
+      [day(3)]: { date: day(3), lbs: 174, measurement: 174, lbs_adjusted_average: 170.4 },
+    });
+    // Two dots, not three: the middle day was never measured.
+    expect(s.rawPoints.split(' ')).toHaveLength(2);
+    expect(s.rawPoints.split(' ').map((p) => Number(p.split(',')[0]))).toEqual([0, VIEW_W]);
+    // The average is still defined every day.
+    expect(s.avgPoints.split(' ')).toHaveLength(3);
+  });
+
+  it('scales to the real readings, so a forward-filled run cannot stretch the axis', () => {
+    const s = buildWeightSeries({
+      [day(1)]: { date: day(1), lbs: 170, measurement: 170, lbs_adjusted_average: 171 },
+      [day(2)]: { date: day(2), lbs: 999, lbs_adjusted_average: 171 },
+      [day(3)]: { date: day(3), lbs: 172, measurement: 172, lbs_adjusted_average: 171 },
+    });
+    const ys = s.rawPoints.split(' ').map((p) => Number(p.split(',')[1]));
+    expect(ys[0]).toBe(VIEW_H); // 170 is the floor
+    expect(ys[1]).toBe(0);      // 172 is the ceiling — the stray 999 lbs is not in the scale
+  });
+
+  it('keeps per-day water weight and composition on the entry', () => {
+    const s = buildWeightSeries({
+      [day(1)]: { date: day(1), lbs: 170, measurement: 170, lbs_adjusted_average: 171,
+        water_weight: 3.5, fat_percent_adjusted_average: 21.4, calorie_balance: -320 },
+      [day(2)]: { date: day(2), lbs: 170, lbs_adjusted_average: 171, water_weight: 4.1 },
+    });
+    expect(s.entries[0].waterWeight).toBe(3.5);
+    expect(s.entries[1].waterWeight).toBe(4.1); // not the first day's, not the last day's
+    expect(s.entries[0].fatPct).toBe(21.4);
+    expect(s.entries[0].calorieBalance).toBe(-320);
+  });
+
+  it('leaves water weight null rather than defaulting it to zero', () => {
+    // A zero fallback would drop the derived line ~4 lb and read as sudden loss.
+    const s = buildWeightSeries({
+      [day(1)]: { date: day(1), lbs: 170, measurement: 170, lbs_adjusted_average: 171 },
+      [day(2)]: { date: day(2), lbs: 170, measurement: 170, lbs_adjusted_average: 171, water_weight: 4 },
+    });
+    expect(s.entries[0].waterWeight).toBeNull();
+    expect(s.entries[1].waterWeight).toBe(4);
+  });
+
   it('skips a row whose date is not a real calendar date instead of throwing', () => {
     const s = buildWeightSeries({
-      '2026-08-32': { date: '2026-08-32', lbs: 999, lbs_adjusted_average: 999 },
-      [day(1)]: { date: day(1), lbs: 170, lbs_adjusted_average: 170 },
-      [day(9)]: { date: day(9), lbs: 171, lbs_adjusted_average: 171 },
+      '2026-08-32': { date: '2026-08-32', lbs: 999, measurement: 999, lbs_adjusted_average: 999 },
+      [day(1)]: { date: day(1), lbs: 170, measurement: 170, lbs_adjusted_average: 170 },
+      [day(9)]: { date: day(9), lbs: 171, measurement: 171, lbs_adjusted_average: 171 },
     });
     expect(s.entries).toHaveLength(2);
     expect(s.deltaLbs).toBe(1);

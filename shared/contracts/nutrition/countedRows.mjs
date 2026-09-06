@@ -46,3 +46,17 @@ export function sumCounted(rows, key) {
     return sum + (Number.isFinite(value) ? value : 0);
   }, 0);
 }
+
+/** Known zero is data; null/missing is not. Group headers aren't food. */
+export function nutrientSummary(rows, keys = ['protein', 'carbs', 'fat']) {
+  const foods = (rows || []).filter(row => row.kind !== 'group' && isCountedRow(row));
+  return Object.fromEntries(keys.map(key => {
+    const known = foods.filter(row => typeof row[key] === 'number' && Number.isFinite(row[key]));
+    return [key, { value: known.length ? sumCounted(known, key) : null, covered: known.length, total: foods.length }];
+  }));
+}
+
+export function formatNutrients(rows) {
+  return Object.entries(nutrientSummary(rows)).map(([key, { value, covered, total }]) =>
+    `${{ protein: 'P', carbs: 'C', fat: 'F' }[key]} ${value === null ? '—' : `${Math.round(value)}${covered < total ? '+' : ''} g`}`).join(' · ');
+}

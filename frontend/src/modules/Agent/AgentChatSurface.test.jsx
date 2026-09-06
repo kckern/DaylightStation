@@ -33,6 +33,14 @@ describe('AgentChatSurface — basic rendering', () => {
     expect(container.querySelector('.coach-chat')).toBeTruthy();
   });
 
+  it('starter prompts fill the draft without sending an AI request', async () => {
+    render(<MantineProvider><AgentChatSurface agentId="health-coach" userId="kc" starterPrompts={['Review my day']} /></MantineProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Review my day' }));
+    await waitFor(() => expect(screen.getByRole('textbox').value).toBe('Review my day'));
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeTruthy();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   it('applies coach-chat--overlay when variant="overlay"', () => {
     const { container } = render(
       <MantineProvider>

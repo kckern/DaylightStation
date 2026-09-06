@@ -1,4 +1,5 @@
 import { isISODate } from '#shared/contracts/health/isoDate.mjs';
+import { canAutoReview } from '#shared/contracts/nutrition/reviewLifecycle.mjs';
 
 export const CLEANUP_NUMBERS = ['amount', 'grams', 'calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium', 'cholesterol'];
 export const CLEANUP_FIELDS = ['name', 'label', 'icon', 'foodId', 'color', 'kind', 'parentId', 'date', 'mealTime', 'unit', ...CLEANUP_NUMBERS];
@@ -14,7 +15,7 @@ export function cleanupDates(now, timezone) {
 }
 
 /** Pure commit-time policy. Facts are supplied by trusted tools, never the model. */
-export function validateCleanup({ before, after, updates, creates = [], evidence = [], now, timezone, userId, userDirected = false }) {
+export function validateCleanup({ before, after, updates, creates = [], evidence = [], now, timezone, userId, userDirected = false, mode = 'verified', confidence = 0 }) {
   const dates = cleanupDates(now, timezone);
   const byId = new Map(before.flatMap(row => [[row.uuid, row], [row.id, row]]));
   const seen = new Set();
@@ -24,20 +25,41 @@ export function validateCleanup({ before, after, updates, creates = [], evidence
     if (seen.has(entryKey(row))) fail('Repeated food update');
     seen.add(entryKey(row));
     if (expectedVersion == null || expectedVersion !== (row.version ?? 1)) fail('Entry changed', 'VERSION_CONFLICT');
-    if (!dates.includes(row.date) || (changes.date && !dates.includes(changes.date))) fail('Automatic cleanup only changes today and yesterday', 'CLEANUP_DATE_WINDOW');
+    if (row.review && !userDirected && !canAutoReview(row, now)) fail('The review window is closed', 'CLEANUP_DATE_WINDOW');
+    if (!row.review && !userDirected && row.settled !== false) fail('Preserving a settled legacy record', 'CLEANUP_DATE_WINDOW');
+    if ((!row.review && !dates.includes(row.date)) || (changes.date && !dates.includes(changes.date))) fail('Automatic cleanup only changes today and yesterday or active provisional captures', 'CLEANUP_DATE_WINDOW');
     if (Object.keys(changes).some(key => !CLEANUP_FIELDS.includes(key))) fail('Unsupported cleanup field');
     for (const [field, value] of Object.entries(changes)) {
       if (JSON.stringify(value) === JSON.stringify(row[field])) continue;
+      if (!userDirected && field === 'parentId' && row.parentId && value !== row.parentId) {
+        fail('Preserving the existing food group', 'CLEANUP_GROUP_PROTECTED');
+      }
       const aliases = ['label', 'name'].includes(field) ? ['label', 'name'] : [field];
       if (!userDirected && (row.settledBy === 'user' || aliases.some(key => row.manualFields?.includes(key)))) fail('Preserving your manual correction', 'CLEANUP_USER_PROTECTED');
-      if (!userDirected && aliases.some(key => row.cleanupFields?.includes(key))) fail('This field was already cleaned; leave it for manual review', 'CLEANUP_ALREADY_REPAIRED');
+      if (!userDirected && aliases.some(key => row.cleanupFields?.includes(key))) {
+        const fresh = row.review && evidence.some(source => ['product', 'label', 'capture'].includes(source.kind)
+          && !row.cleanupEvidence?.[field]?.includes(source.id)
+          && source.facts?.some(fact => fact.entryId === entryKey(row) && fact.field === field && fact.value === value));
+        if (!fresh) fail('No new evidence for this previously cleaned field', 'CLEANUP_ALREADY_REPAIRED');
+      }
       if (CLEANUP_NUMBERS.includes(field) && value !== null && (!Number.isFinite(value) || value < 0)) fail('Invalid nutrition or quantity');
       if (field === 'amount' && (!Number.isFinite(value) || value <= 0 || value > 10000)) fail('Invalid serving amount');
       if (['name', 'label', 'unit'].includes(field) && (typeof value !== 'string' || !value.trim() || value.length > (field === 'unit' ? 20 : 300))) fail('Invalid food label or unit');
       if (['amount', 'grams', 'unit', ...CLEANUP_NUMBERS.slice(2)].includes(field) && !userDirected) {
         const supported = evidence.some(source => ['product', 'label', 'capture'].includes(source.kind)
           && source.facts?.some(fact => fact.entryId === entryKey(row) && fact.field === field && fact.value === value));
-        if (!supported) fail('Quantity and nutrition require serving-specific evidence');
+        if (!supported) {
+          const nutrient = CLEANUP_NUMBERS.slice(2).includes(field);
+          const knownAuthority = ['user', 'label', 'upc', 'catalog', 'scale-density', 'nutrition-auditor-verified'].includes(row.nutrientProvenance?.[field]?.source)
+            || (['upc', 'scale', 'barcode'].includes(row.review?.source) && row[field] != null);
+          const evidenceForFood = evidence.some(source => ['capture', 'product', 'history', 'label'].includes(source.kind));
+          const reasonable = nutrient && value != null && value <= (['sodium', 'cholesterol'].includes(field) ? 10000 : field === 'calories' ? 5000 : 1000)
+            && (field !== 'calories' || !(row.grams > 0) || value / row.grams <= 9.5)
+            && (!['protein', 'carbs', 'fat', 'fiber', 'sugar'].includes(field) || !(row.grams > 0) || value <= row.grams);
+          if (!(mode === 'estimate' && confidence >= 0.8 && canAutoReview(row, now) && !knownAuthority && evidenceForFood && reasonable)) {
+            fail('Quantity and nutrition require serving-specific evidence or a bounded provisional estimate');
+          }
+        }
       }
     }
     if ('date' in changes && !isISODate(changes.date)) fail('Invalid date');

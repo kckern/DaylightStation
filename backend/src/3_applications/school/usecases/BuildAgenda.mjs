@@ -40,6 +40,7 @@ import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display
 import { curriculumPosterRef } from '#apps/common/resources/publicResourceRefs.mjs';
 import { lessonProgressRowsFromPlan } from '#domains/school/lessonProgress.mjs';
 import { BOOK_LOG_PROGRAM_ID, DEFAULT_BOOK_LOG_SUBJECT } from '#domains/school/bookLog.mjs';
+import { DEFAULT_ACCESS_CODE_MAX_USES } from '#domains/school/sessions/accessCode.mjs';
 
 const DEFAULT_SUBJECT_TOKEN_TTL_HOURS = 168;
 const HOUR_MS = 3_600_000;
@@ -61,6 +62,7 @@ const BOUNDARY_HOUR = 4;
  */
 const PREVIEW_TOKEN = 'preview:not-a-ticket';
 const PREVIEW_BULK_TOKEN = 'preview:not-a-bulk-ticket';
+const PREVIEW_READING_TOKEN = 'preview:not-a-reading-ticket';
 const PREVIEW_ACCESS_CODE = '000000';
 
 
@@ -72,7 +74,7 @@ export class BuildAgenda {
   // end.
   #sessions; #tokens; #launchers; #timezone; #teacherNotes;
   #clock; #rng; #newSessionId; #ttlMs; #logger; #reviewQueue; #schoolCalcStudies; #schoolCalcMode;
-  #selfService; #languageReelService; #previewOnly; #planProjection;
+  #selfService; #languageReelService; #previewOnly; #planProjection; #accessCodeMaxUses;
 
   /**
    * @param {object} deps
@@ -149,6 +151,15 @@ export class BuildAgenda {
     // One switch, read once: `selfService.enabled !== true` is today's agenda,
     // byte for byte — no code minted, no key on the record, no line on the paper.
     this.#selfService = selfService?.enabled === true;
+    // How many opens one printed code is worth. Read from the same
+    // `school.yml` block that switches the feature on, so a household can tune
+    // it; an absent or nonsensical value falls back to the domain's default
+    // rather than to "unlimited", because a typo must not quietly remove the
+    // limit it was trying to change.
+    const configuredMaxUses = selfService?.codeMaxUses;
+    this.#accessCodeMaxUses = Number.isInteger(configuredMaxUses) && configuredMaxUses > 0
+      ? configuredMaxUses
+      : DEFAULT_ACCESS_CODE_MAX_USES;
     // A code is only unique if something can say whether it is already taken.
     // Refuse at CONSTRUCTION rather than letting the first agenda of the day
     // discover it: `mintAccessCode` has no default `taken`, and a registry
@@ -292,6 +303,11 @@ export class BuildAgenda {
     // place to add a book, not only a lesson to finish. Read from the
     // assignment `PlanProjection` already loaded — no second store read.
     const readingSubjects = subjectsWithReadingShelf(assignment);
+    // Which subject the reading code hangs under. An enrollment may place the
+    // shelf somewhere other than English; without one there is nothing to ask,
+    // so the default stands. `subjectsWithReadingShelf` keeps deciding the
+    // SUBJECT — it no longer decides who may reach the shelf.
+    const [readingSubject = DEFAULT_BOOK_LOG_SUBJECT] = readingSubjects;
 
     for (const section of sectionsWithProgress) {
       const entry = section.next;
@@ -403,6 +419,10 @@ export class BuildAgenda {
           accessCode,
           // The code dies at the rollover; the token above keeps its week.
           accessCodeExpiresAt: this.#accessCodeExpiryFor(nowIso, expiresAt),
+          // ...and it is also spent after a few opens. A lesson code opens ONE
+          // lesson; the all-day window it used to have was the thing a shared
+          // code lived in.
+          maxUses: this.#accessCodeMaxUses,
         } : {}),
       });
       // eslint-disable-next-line no-await-in-loop
@@ -456,6 +476,9 @@ export class BuildAgenda {
           expiresAt,
           accessCode: bulkAccessCode,
           accessCodeExpiresAt: this.#accessCodeExpiryFor(nowIso, expiresAt),
+          // One use covers all N sheets — the bulk code prints the set in one
+          // job, so a use is a job and not a sheet.
+          maxUses: this.#accessCodeMaxUses,
         });
         await this.#tokens.put(bulkRecord);
         bulkToken = bulkRecord.token;
@@ -472,6 +495,68 @@ export class BuildAgenda {
       } else {
         this.#logger.debug?.('school.agenda.bulk-print.skipped', {
           learnerId, printableCount: printableOffers.length,
+        });
+      }
+    }
+
+    // THE READING LOG, FOR EVERY LEARNER — enrolled or not.
+    //
+    // A `book-log` enrollment carries an OBLIGATION; it does not grant access.
+    // But until now it was the only way IN: `subjectsWithReadingShelf` reads
+    // the enrollment, so only an enrolled child's code named the program, and
+    // `appendAssignedProgramEntries` only puts the shelf in the plan from an
+    // enrollment. A household with one enrolled reader had three children who
+    // could not log a book at all.
+    //
+    // MINTED OUTSIDE THE SECTION LOOP, deliberately. That loop `continue`s on
+    // `!section.next` — a subject served today, or one the learner has no work
+    // in — which is exactly the day a child most wants the log: they have
+    // finished their English lesson and want to record the book they finished
+    // with it. Hanging the reading code off a section would make it disappear
+    // on precisely those days.
+    let readingToken = null;
+    let readingAccessCode = null;
+    if (this.#selfService) {
+      if (this.#previewOnly) {
+        readingToken = PREVIEW_READING_TOKEN;
+        readingAccessCode = PREVIEW_ACCESS_CODE;
+      } else {
+        readingAccessCode = mintAccessCode({
+          rng: this.#rng,
+          taken: (code) => liveCodes.has(code) || mintedCodes.has(code),
+        });
+        mintedCodes.add(readingAccessCode);
+        const readingRecord = mintToken({
+          tokenClass: 'subject_next',
+          subject: {
+            learnerId,
+            subject: readingSubject,
+            // Both flags, and both are load-bearing. `continueToday` keeps the
+            // code alive on a subject already served; `program` is what
+            // `ResolveAccessCode` honours literally, so this code opens the
+            // SHELF and never the English lesson that happens to share its
+            // subject.
+            continueToday: true,
+            program: BOOK_LOG_PROGRAM_ID,
+          },
+          at: nowIso,
+          rng: this.#rng,
+          expiresAt,
+          accessCode: readingAccessCode,
+          accessCodeExpiresAt: this.#accessCodeExpiryFor(nowIso, expiresAt),
+          // NO `maxUses`, deliberately. A log is not a task: "I finished
+          // another one" is a thing a child may honestly do several times in a
+          // day, and a cap here would break the very feature this code exists
+          // for. Attribution, not frequency, is the real question on the shelf,
+          // and the shelf answers it with the learner chip at the top of it.
+        });
+        await this.#tokens.put(readingRecord);
+        readingToken = readingRecord.token;
+        // Handed back like every other live code, so a build that never
+        // reaches the printer can revoke it.
+        mintedTokens.push(readingRecord.token);
+        this.#logger.info?.('school.agenda.reading-code.minted', {
+          learnerId, subject: readingSubject, enrolled: readingSubjects.size > 0,
         });
       }
     }
@@ -574,6 +659,7 @@ export class BuildAgenda {
         learnerId, learnerName, generatedAt: nowIso, timeZone: this.#timezone,
         sections: sectionsForDocument, tokensBySubject, accessCodesByToken,
         bulkToken, bulkAccessCode,
+        readingToken, readingAccessCode,
         notes,
       }),
     };

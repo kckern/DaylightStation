@@ -14,6 +14,8 @@ const makeUseCase = ({ aiPayload, findings = [], catalog = true } = {}) => {
     deleteMessage: vi.fn(async () => {}),
   };
   const recorded = [];
+  const foodLogStore = { save: vi.fn(async () => {}) };
+  const receipts = { bind: vi.fn(async () => {}) };
   const catalogService = {
     assessDensity: vi.fn(async () => findings),
     recordUsage: vi.fn(async (item) => { recorded.push(item); }),
@@ -21,11 +23,12 @@ const makeUseCase = ({ aiPayload, findings = [], catalog = true } = {}) => {
   const uc = new LogFoodFromText({
     messagingGateway,
     aiGateway: { chat: vi.fn(async () => JSON.stringify(aiPayload)) },
-    foodLogStore: { save: vi.fn(async () => {}) },
+    foodLogStore,
+    receipts: () => receipts,
     catalogService: catalog ? catalogService : null,
     logger: silent,
   });
-  return { uc, sent, catalogService, recorded };
+  return { uc, sent, catalogService, recorded, foodLogStore, receipts, messagingGateway };
 };
 
 const SHAKE = {
@@ -36,22 +39,28 @@ const SHAKE = {
 const run = (uc) => uc.execute({ userId: 'alice', conversationId: 'web:alice', text: 'one bottle of Premier Protein', messageId: 1 });
 
 describe('LogFoodFromText — the density guard', () => {
-  it('annotates the confirmation with what history expected, and logs the parsed number anyway', async () => {
-    const { uc, sent } = makeUseCase({
+  it('saves food when the initial Telegram send fails without retrying another send', async () => {
+    const f = makeUseCase({ aiPayload: SHAKE });
+    f.messagingGateway.sendMessage.mockRejectedValueOnce(new Error('response lost'));
+    expect((await run(f.uc)).success).toBe(true);
+    expect(f.foodLogStore.save).toHaveBeenCalled();
+    expect(f.messagingGateway.sendMessage).toHaveBeenCalledTimes(1);
+  });
+  it('saves density findings as evidence and hands off the receipt without warning spam', async () => {
+    const { uc, sent, foodLogStore, receipts } = makeUseCase({
       aiPayload: SHAKE,
       findings: [{ name: 'Premier Protein Shake', calories: 610, grams: 385, ratio: 3.27, expectedCalories: 187, sampleCount: 57 }],
     });
     const result = await run(uc);
     expect(result.success).toBe(true);
-    const message = sent.at(-1);
-    expect(message).toContain('610 kcal for 385 g');
-    expect(message).toContain('~187 kcal expected');
-    // The parsed number is still what got logged. The guard states, it does
-    // not correct.
-    expect(message).toContain('Premier Protein Shake');
+    const [saved] = foodLogStore.save.mock.lastCall;
+    expect(saved.metadata.densityFindings).toEqual([expect.objectContaining({ calories: 610, expectedCalories: 187 })]);
+    expect(saved.items[0].calories).toBe(610);
+    expect(sent).toEqual([]);
+    expect(receipts.bind).toHaveBeenCalledWith('alice', saved.id, { conversationId: 'web:alice', messageId: 'm1', caption: false });
   });
 
-  it('leaves the message byte-identical when nothing is flagged', async () => {
+  it('leaves all final receipt formatting to the publisher with or without findings', async () => {
     const flagged = makeUseCase({
       aiPayload: SHAKE,
       findings: [{ name: 'Premier Protein Shake', calories: 610, grams: 385, ratio: 3.27, expectedCalories: 187, sampleCount: 57 }],
@@ -59,8 +68,10 @@ describe('LogFoodFromText — the density guard', () => {
     await run(flagged.uc);
     const quiet = makeUseCase({ aiPayload: SHAKE, findings: [] });
     await run(quiet.uc);
-    expect(quiet.sent.at(-1)).not.toContain('⚠️');
-    expect(flagged.sent.at(-1)).toBe(`${quiet.sent.at(-1)}\n\n${'⚠️ Premier Protein Shake: 610 kcal for 385 g is 3.3× your usual for this food (~187 kcal expected, from 57 past logs).\nTap Revise if the portion is wrong.'}`);
+    expect(quiet.sent).toEqual([]);
+    expect(flagged.sent).toEqual([]);
+    expect(quiet.receipts.bind).toHaveBeenCalledTimes(1);
+    expect(flagged.receipts.bind).toHaveBeenCalledTimes(1);
   });
 
   it('hands the guard the PARSED ITEMS, not an empty list', async () => {
@@ -98,7 +109,7 @@ describe('LogFoodFromText — the density guard', () => {
     catalogService.assessDensity.mockRejectedValue(new Error('catalog unreadable'));
     const result = await run(uc);
     expect(result.success).toBe(true);
-    expect(sent.at(-1)).not.toContain('⚠️');
+    expect(sent).toEqual([]);
   });
 
   it('runs at all only when the catalog is wired', async () => {

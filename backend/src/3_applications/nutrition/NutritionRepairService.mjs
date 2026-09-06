@@ -1,5 +1,5 @@
 import { sha256Text } from '#system/utils/sha256.mjs';
-import { validateCleanup, entryKey, CLEANUP_FIELDS } from '#domains/nutrition/services/cleanupPolicy.mjs';
+import { validateCleanup, entryKey, CLEANUP_FIELDS, CLEANUP_NUMBERS } from '#domains/nutrition/services/cleanupPolicy.mjs';
 
 const fail = (message, status = 409) => { throw Object.assign(new Error(message), { status }); };
 
@@ -15,6 +15,11 @@ export class NutritionRepairService {
       return prior.result;
     }
     if (!proposal.reason || !evidence.length) fail('Repair requires evidence and a reason');
+    if (proposal.mode === 'complete') {
+      if (!proposal.logUuid || proposal.updates?.length || proposal.createGroups?.length) fail('Completion must name one unmodified capture');
+      return this.review.completeCapture({ userId, logUuid: proposal.logUuid, expectedVersion: proposal.expectedLogVersion,
+        operationId, evidence, fence, dryRun });
+    }
     const updates = structuredClone(proposal.updates || []);
     const capture = proposal.logUuid ? await this.foodLogs.findById(userId, proposal.logUuid) : null;
     const creates = [];
@@ -62,7 +67,7 @@ export class NutritionRepairService {
         signal?.throwIfAborted();
         if (!fence()) fail('Repair run is no longer active');
         validateCleanup({ before, after, updates, creates, evidence, userId,
-          userDirected, now: this.clock.now(), timezone: this.timezoneFor(userId) });
+          userDirected, now: this.clock.now(), timezone: this.timezoneFor(userId), mode: proposal.mode, confidence: proposal.confidence });
         for (const update of updates) {
           const row = after.find(row => row.id === update.id || row.uuid === update.id);
           const original = before.find(row => row.id === update.id || row.uuid === update.id);
@@ -70,6 +75,18 @@ export class NutritionRepairService {
           if (!fields.length) continue;
           const key = userDirected ? 'manualFields' : 'cleanupFields';
           row[key] = [...new Set([...(row[key] || []), ...fields])];
+          if (!userDirected) row.cleanupEvidence = { ...row.cleanupEvidence,
+            ...Object.fromEntries(fields.map(field => [field, [...new Set([...(row.cleanupEvidence?.[field] || []), ...evidence.map(source => source.id)])]])) };
+          if (!userDirected && proposal.mode === 'estimate') row.nutrientProvenance = { ...row.nutrientProvenance,
+            ...Object.fromEntries(fields.filter(field => !['amount', 'grams'].includes(field) && typeof row[field] === 'number').map(field => [field, {
+              source: 'nutrition-auditor-estimate', confidence: proposal.confidence, rationale: proposal.reason,
+              evidenceIds: evidence.map(source => source.id), at: new Date(this.clock.now()).toISOString(), grams: row.grams,
+            }])) };
+          if (!userDirected && proposal.mode !== 'estimate') row.nutrientProvenance = { ...row.nutrientProvenance,
+            ...Object.fromEntries(fields.filter(field => CLEANUP_NUMBERS.slice(2).includes(field)).map(field => [field, {
+              source: 'nutrition-auditor-verified', rationale: proposal.reason, evidenceIds: evidence.map(source => source.id),
+              at: new Date(this.clock.now()).toISOString(), grams: row.grams,
+            }])) };
         }
       },
     });

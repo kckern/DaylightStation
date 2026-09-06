@@ -24,27 +24,27 @@ describe('entry correction dialog', () => {
     await waitFor(() => expect(changed).toHaveBeenCalledOnce());
     expect(writes()).toHaveLength(1);
     expect(writes()[0]).toEqual(['api/v1/health/nutrilist/r1', expect.objectContaining({
-      grams: 200, calories: 280, protein: 24, fiber: 10, sodium: 600, expectedVersion: 3,
+      portion: { value: 200, unit: 'g' }, expectedVersion: 3, expectedVersions: { r1: 3 }, operationId: expect.any(String),
     }), 'PUT']);
   });
 
   it('exact grams, rename, and date are one save, not several transactions', async () => {
     mount();
-    fireEvent.change(screen.getByLabelText('Weight in grams'), { target: { value: '75' } });
+    fireEvent.change(screen.getByLabelText('Portion in g'), { target: { value: '75' } });
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Scrambled eggs' } });
     fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2020-01-01' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
     await waitFor(() => expect(writes()).toHaveLength(1));
-    expect(writes()[0][1]).toMatchObject({ grams: 75, calories: 105, fiber: 3.75, name: 'Scrambled eggs', date: '2020-01-01' });
+    expect(writes()[0][1]).toMatchObject({ portion: { value: 75, unit: 'g' }, name: 'Scrambled eggs', date: '2020-01-01' });
   });
 
   it('unknown mass never invents a density when a weight is supplied', async () => {
-    mount({ row: { ...row, grams: null, amount: 313, unit: 'servings' } });
+    mount({ row: { ...row, grams: null, amount: null, unit: 'g' } });
     expect(screen.getByRole('button', { name: '×2' }).disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText('Weight in grams'), { target: { value: '150' } });
+    fireEvent.change(screen.getByLabelText('Portion in g'), { target: { value: '150' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
     await waitFor(() => expect(writes()).toHaveLength(1));
-    expect(writes()[0][1]).toMatchObject({ grams: 150, calories: 140, fiber: 5 });
+    expect(writes()[0][1]).toMatchObject({ grams: 150 });
   });
 
   it('sends group scaling as one server command and shows live child totals', async () => {
@@ -55,7 +55,7 @@ describe('entry correction dialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
     await waitFor(() => expect(writes()).toHaveLength(1));
     expect(writes()[0][0]).toBe('api/v1/health/nutrilist/g1');
-    expect(writes()[0][1]).toMatchObject({ factor: 2 });
+    expect(writes()[0][1]).toMatchObject({ portion: { value: 400, unit: 'g' }, expectedVersions: { g1: 3, r1: 3, r2: 3 } });
     expect(writes()[0][1].calories).toBeUndefined();
   });
 
@@ -103,7 +103,7 @@ describe('entry correction dialog', () => {
 
   it('records explicitly corrected nutrients separately from scaled totals', async () => {
     mount();
-    fireEvent.change(screen.getByLabelText('fiber (g)'), { target: { value: '8' } });
+    fireEvent.change(screen.getByLabelText('Fiber (g)'), { target: { value: '8' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
     await waitFor(() => expect(writes()).toHaveLength(1));
     expect(writes()[0][1]).toMatchObject({ fiber: 8, correctedNutrients: ['fiber'] });

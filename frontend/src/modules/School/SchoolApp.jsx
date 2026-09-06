@@ -520,6 +520,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     idleTimeoutSeconds: lock.idleTimeoutSeconds,
     claim,
     onLaunch: onPortalLaunch,
+    // 'browser' is the dev/preview identity, not a panel — sending it would
+    // put every developer's tab in one shared throttle bucket.
+    deviceId: screenId && screenId !== 'browser' ? screenId : null,
   });
 
   const [lockSide, setLockSide] = useState('keypad-left');
@@ -861,6 +864,8 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
               confirmTotalMs={selfService.confirmTotalMs}
               onAction={selfService.runAction}
               onConfirm={selfService.confirmPrint}
+              onConfirmIdentity={selfService.confirmIdentity}
+              onDenyIdentity={selfService.denyIdentity}
               onExit={selfService.exit}
             />
           )

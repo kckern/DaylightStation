@@ -92,7 +92,7 @@ describe('capture icon assignment is confined to the manifest vocabulary', () =>
         foodLogStore: {
           findByUuid: vi.fn(async () => ({
             uuid: 'log-1', date: '2026-09-03',
-            items: [{ id: 'old-1', label: 'Eggs', calories: 100, icon: 'fried-eggs' }],
+            items: [{ id: 'eggs000001', uuid: '0b1d5fe6-c838-47f4-82e2-d0e47b6f7ea1', label: 'Eggs', grams: 100, unit: 'g', amount: 100, color: 'yellow', calories: 100, icon: 'fried-eggs' }],
           })),
           updateItems: vi.fn(async (_u, _id, items) => { updated.push(items); return { uuid: 'log-1', items }; }),
         },

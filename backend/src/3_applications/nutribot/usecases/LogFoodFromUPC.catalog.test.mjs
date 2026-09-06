@@ -26,7 +26,7 @@ const makeUseCase = ({ catalogHit = null, gatewayHit = null } = {}) => {
 };
 
 describe('LogFoodFromUPC catalog-first', () => {
-  it('a catalog UPC hit short-circuits the external gateway', async () => {
+  it('an incomplete catalog hit attempts refresh and retains its estimate if unavailable', async () => {
     const { uc, upcGateway, foodLogStore } = makeUseCase({
       catalogHit: {
         name: 'Local Granola',
@@ -36,7 +36,8 @@ describe('LogFoodFromUPC catalog-first', () => {
     const result = await uc.execute({ userId: 'u', conversationId: 'c', upc: '012345678905' });
     expect(result.success).toBe(true);
     expect(result.product.name).toBe('Local Granola');
-    expect(upcGateway.lookup).not.toHaveBeenCalled();
+    expect(upcGateway.lookup).toHaveBeenCalledWith('012345678905');
+    expect(result.product.serving).toEqual({ size: 1, unit: 'serving' });
     expect(foodLogStore.save).toHaveBeenCalled();
   });
 
@@ -49,7 +50,8 @@ describe('LogFoodFromUPC catalog-first', () => {
     const { uc, catalogService } = makeUseCase({
       catalogHit: {
         name: 'Local Granola',
-        nutrients: { calories: 210, protein: 5, carbs: 30, fat: 8 },
+        canonicalGrams: 45,
+        nutrients: { calories: 210, protein: 5, carbs: 30, fat: 8, fiber: 4, sugar: 2, sodium: 10, cholesterol: 0 },
       },
     });
     await uc.execute({ userId: 'u', conversationId: 'c', upc: '012345678905' });
@@ -62,9 +64,9 @@ describe('LogFoodFromUPC catalog-first', () => {
       barcodeUpc: '012345678905',
       calories: 210,
     });
-    // This catalog fixture supplies no mass. Never invent one to make it
-    // eligible for density observations.
-    expect(donated.grams).toBeNull();
+    expect(donated.grams).toBe(45);
+    expect(donated.amount).toBe(45);
+    expect(donated.fiber).toBe(4);
   });
 
   it('a double miss reports unknownUpc with the code', async () => {

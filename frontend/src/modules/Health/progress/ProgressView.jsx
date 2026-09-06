@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import HighchartsReact from 'highcharts-react-official';
 import Highcharts from 'highcharts';
 import { Button, NumberInput, SegmentedControl, Stack, Text } from '@mantine/core';
-import { SectionCard, StatCard, LoadingState, ErrorState } from '@/lib/ui';
+import { SectionCard, StatCard, Sheet, LoadingState, ErrorState } from '@/lib/ui';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
@@ -13,31 +13,40 @@ import { MonthBlock } from '../today/MonthBlock.jsx';
 import { IntakeBurnChart } from './IntakeBurnChart.jsx';
 import { goalSaveMessage } from './goalSaveError.js';
 import { addDays } from '../today/WeekStrip.jsx';
-import { normalizeWeightEntries } from '../today/weightSeries.js';
+import { normalizeWeightEntries, buildWeightSeries, fmtDelta, fmtLbs, TREND_ARROWS } from '../today/weightSeries.js';
+import { buildWeightChartOptions, daysToGoal, goalDate, DEFAULT_TARGET_BODY_FAT_PCT } from './weightChart.js';
 
 const logger = createAppLogger('health').child('progress');
+
+// A projection that cannot be made says why. "⚠" alone leaves the reader
+// guessing whether the data is missing or the trend is going the wrong way.
+const PROJECTION_BLOCKED = {
+  'no-data': 'no body fat reading',
+  'no-trend': 'no trend yet',
+  diverging: 'not on track',
+};
 
 // Reads the --ds-* custom properties off a mounted DS-themed element — the
 // chart config is ported from Weight.jsx's Highcharts usage, but hardcoded
 // hex colors are swapped for the live token values (getComputedStyle, not
 // Highcharts' CSS-styled mode: styled mode needs a stylesheet keyed to
 // Highcharts' own class names, which is more machinery than one chart needs).
+// The chart itself is built in weightChart.js; this only supplies the paint.
 function readTokens(el) {
   const cs = getComputedStyle(el);
   const get = (name) => cs.getPropertyValue(name).trim();
   return {
+    textHigh: get('--ds-text-high'),
     textMid: get('--ds-text-mid'),
+    textLow: get('--ds-text-low'),
     border: get('--ds-border'),
+    surface: get('--ds-surface'),
     accent: get('--ds-accent') || get('--ds-info'),
-    success: get('--ds-success'),
   };
 }
 
-const fmtTrend = (dailyTrend) => {
-  if (dailyTrend == null) return '—';
-  const perWeek = Math.round(dailyTrend * 7 * 100) / 100;
-  return perWeek > 0 ? `+${perWeek}` : `${perWeek}`;
-};
+const emptyGoals = () => ({ sex: 'male', targetWeightLbs: '', weeklyRateLbs: 0,
+  activityBaseline: 1.2, budgetFloor: '', heightIn: '', birthYear: '', targetBodyFatPct: '' });
 
 /** Weight trend + goal editor + 14-day adherence bars — absorbs Weight.jsx's
  * chart and goal-setting UX for the new Health app (Weight.jsx itself stays,
@@ -49,19 +58,17 @@ export function ProgressView() {
     if (containerRef.current) setTokens(readTokens(containerRef.current));
   }, []);
 
-  const weightRes = useApiResource('api/v1/lifelog/weight', { label: 'weight', logger });
+  const weightRes = useApiResource('api/v1/health/weight', { label: 'weight', logger });
   const goalsRes = useApiResource('api/v1/health/goals', { label: 'goals', logger });
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  const [editingGoals, setEditingGoals] = useState(false);
 
   // Seed the form once goals load; a later reload (after save) must not
   // clobber in-progress edits, so only seed while form is still null.
   useEffect(() => {
-    if (goalsRes.data && !form) setForm(goalsRes.data.goals || {
-      sex: 'male', targetWeightLbs: '', weeklyRateLbs: 0,
-      activityBaseline: 1.2, budgetFloor: '', heightIn: '', birthYear: '',
-    });
+    if (goalsRes.data && !form) setForm(goalsRes.data.goals || emptyGoals());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [goalsRes.data]);
 
@@ -76,73 +83,28 @@ export function ProgressView() {
   const entries = useMemo(() => normalizeWeightEntries(weightRes.data), [weightRes.data]);
 
   const latest = entries[entries.length - 1] || null;
+  const weightTrend = useMemo(() => buildWeightSeries(weightRes.data), [weightRes.data]);
 
-  const chartOptions = useMemo(() => {
-    if (!tokens || !entries.length) return null;
-    const from = addDays(entries.at(-1).date, -83);
-    const windowed = entries.filter(entry => entry.date >= from);
-    const at = entry => Date.parse(`${entry.date}T12:00:00Z`);
-    const avgData = windowed.map((e) => e.avg);
-    const goalLbs = form?.targetWeightLbs ?? goalsRes.data?.goals?.targetWeightLbs ?? null;
-    const goalData = goalLbs ? windowed.map(() => goalLbs) : null;
-    const values = avgData.filter((v) => v != null).concat(goalData || []);
-    if (!values.length) return null;
-    const minV = Math.min(...values);
-    const maxV = Math.max(...values);
+  const goalLbs = form?.targetWeightLbs ?? goalsRes.data?.goals?.targetWeightLbs ?? null;
+  const chartOptions = useMemo(
+    () => buildWeightChartOptions({ entries, tokens, goalLbs: goalLbs || null }),
+    [tokens, entries, goalLbs],
+  );
 
-    return {
-      chart: { backgroundColor: 'transparent', height: 240 },
-      title: { text: null },
-      credits: { enabled: false },
-      legend: { enabled: false },
-      yAxis: {
-        min: Math.floor(minV) - 1,
-        max: Math.ceil(maxV) + 1,
-        tickInterval: 5,
-        gridLineColor: tokens.border,
-        gridLineWidth: 1,
-        opposite: true,
-        offset: -8,
-        title: { enabled: false },
-        labels: { style: { color: tokens.textMid, fontSize: '0.85rem' }, format: '{value} lbs' },
-      },
-      xAxis: {
-        type: 'datetime',
-        tickInterval: 7 * 86400000,
-        gridLineColor: tokens.border,
-        gridLineWidth: 1,
-        lineColor: tokens.border,
-        labels: { rotation: -35, style: { color: tokens.textMid, fontSize: '0.75rem' } },
-        // Weekly vertical guides (Weight.jsx's month-boundary plotLines,
-        // ported to a week boundary — Monday — so the grid reads at the same
-        // cadence as the weekly tickInterval above).
-        plotLines: windowed.map((e, index) => (
-          new Date(`${e.date}T12:00:00`).getDay() === 1
-            ? { color: tokens.border, width: 1, value: at(e), zIndex: 1 }
-            : null
-        )).filter(Boolean),
-      },
-      plotOptions: {
-        // Visible point markers on the smoothed series (Weight.jsx's
-        // treatment) — small filled circles at every day, not just the
-        // hover state.
-        areaspline: {
-          marker: { enabled: true, radius: 2.5, symbol: 'circle', fillColor: tokens.accent },
-          lineWidth: 2,
-          fillOpacity: 0.15,
-          tooltip: {
-            headerFormat: '',
-            pointFormatter() { return `<b>${Highcharts.dateFormat('%b %e', this.x)}</b>: ${this.y.toFixed(1)} lbs`; },
-          },
-        },
-        line: { marker: { enabled: false } },
-      },
-      series: [
-        { type: 'areaspline', name: 'Weight (adjusted avg)', data: windowed.map((entry, index) => [at(entry), avgData[index]]), color: tokens.accent },
-        ...(goalData ? [{ type: 'line', name: 'Goal', data: windowed.map((entry, index) => [at(entry), goalData[index]]), color: tokens.success, lineWidth: 1.5, dashStyle: 'Dash' }] : []),
-      ],
-    };
-  }, [tokens, entries, form?.targetWeightLbs, goalsRes.data]);
+  // The projection rides on the DERIVED delta the trend cell shows, never the
+  // stored `..._7day_trend` field, so the two cells cannot print different
+  // futures for the same day.
+  // Number() rather than ?? — a cleared NumberInput is '', which is not nullish
+  // and would otherwise be handed to the projection as a target of "".
+  const targetBodyFatPct = Number(form?.targetBodyFatPct ?? goalsRes.data?.goals?.targetBodyFatPct)
+    || DEFAULT_TARGET_BODY_FAT_PCT;
+  const projection = useMemo(() => daysToGoal({
+    lbs: latest?.avg ?? latest?.lbs ?? null,
+    fatPct: latest?.fatPct ?? null,
+    targetPct: targetBodyFatPct,
+    deltaLbs: weightTrend.deltaLbs,
+    trendDays: weightTrend.trendDays,
+  }), [latest, targetBodyFatPct, weightTrend.deltaLbs, weightTrend.trendDays]);
 
   const saveGoals = async () => {
     setSaving(true);
@@ -152,6 +114,7 @@ export function ProgressView() {
       await DaylightAPI('api/v1/health/goals', payload, 'PUT');
       logger.info('goals.saved', {});
       goalsRes.reload();
+      setEditingGoals(false);
     } catch (err) {
       logger.error('goals.save.failed', { error: err?.message });
       setSaveError(err);
@@ -162,6 +125,12 @@ export function ProgressView() {
 
   return (
     <div className="health-progress" ref={containerRef}>
+      <SectionCard title="Goals">
+        <div className="health-goals-summary"><Text size="sm">{goalsRes.data?.goals
+          ? `Target ${goalsRes.data.goals.targetWeightLbs ?? '—'} lb · ${goalsRes.data.goals.weeklyRateLbs ?? '—'} lb/week · Floor ${goalsRes.data.goals.budgetFloor ?? '—'} kcal`
+          : 'Set your goals to calculate a daily budget.'}</Text>
+          <Button variant="light" onClick={() => { setForm(goalsRes.data?.goals || emptyGoals()); setSaveError(null); setEditingGoals(true); }}>Edit goals</Button></div>
+      </SectionCard>
       {weightRes.loading ? <LoadingState label="weight history" rows={5} /> : null}
       {weightRes.error ? <ErrorState error={weightRes.error} onRetry={weightRes.reload} label="Weight history" /> : null}
       {!weightRes.loading && !weightRes.error ? (
@@ -169,12 +138,24 @@ export function ProgressView() {
           {chartOptions ? <HighchartsReact highcharts={Highcharts} options={chartOptions} /> : null}
           {latest ? (
             <div className="health-progress__stats">
-              <StatCard label="Current weight"
-                value={latest.avg != null || latest.lbs != null ? Math.round((latest.avg ?? latest.lbs) * 10) / 10 : '—'} unit="lbs" emphasis />
-              <StatCard label="7-day trend" value={fmtTrend(latest.lbs_adjusted_average_7day_trend)} unit="lbs/wk" />
-              <StatCard label="Body fat"
-                value={latest.fat_percent_adjusted_average != null ? Math.round(latest.fat_percent_adjusted_average * 10) / 10 : '—'}
-                unit="%" />
+              <StatCard label={`Weight · as of ${latest.date}`}
+                value={fmtLbs(latest.avg ?? latest.lbs)} unit="lbs" emphasis />
+              <StatCard label="Composition"
+                value={latest.fatPct != null ? Math.round(latest.fatPct * 10) / 10 : '—'} unit="%" />
+              <StatCard label={`Trend · ${weightTrend.trendDays ?? 7} days`}
+                value={weightTrend.deltaLbs == null ? 'no trend yet' : (
+                  <span className={`health-progress__trend health-progress__trend--${weightTrend.direction}`}>
+                    <span aria-hidden="true">{TREND_ARROWS[weightTrend.direction]}</span> {fmtDelta(weightTrend.deltaLbs)}
+                  </span>
+                )} unit={weightTrend.deltaLbs == null ? '' : 'lb'} />
+              {/* Zero is BALANCED, not a missing figure — and an absent
+                  calorie_balance is the missing one. */}
+              <StatCard label="Daily calories"
+                value={latest.calorieBalance == null ? '—' : (latest.calorieBalance === 0 ? 'Balanced' : `${latest.calorieBalance > 0 ? '+' : '−'}${Math.abs(latest.calorieBalance)}`)}
+                unit={latest.calorieBalance ? 'kcal' : ''} />
+              <StatCard label={`Days to ${targetBodyFatPct}%`}
+                value={projection.days == null ? PROJECTION_BLOCKED[projection.reason] : (projection.days === 0 ? 'reached' : projection.days)}
+                unit={projection.days ? goalDate(latest.date, projection.days) || '' : ''} />
             </div>
           ) : null}
         </SectionCard>
@@ -195,16 +176,21 @@ export function ProgressView() {
         )}
       </SectionCard>
 
-      <SectionCard title="Goals">
+      <Sheet open={editingGoals} onClose={() => { if (!saving) { setEditingGoals(false); setForm(goalsRes.data?.goals || null); } }} title="Edit goals">
         {goalsRes.error ? <ErrorState error={goalsRes.error} onRetry={goalsRes.reload} label="Goals" /> : !form ? <LoadingState label="goals" rows={4} /> : (
           <Stack gap="sm">
             {saveError ? <Text size="sm" c="red">{goalSaveMessage(saveError)}</Text> : null}
-            <SegmentedControl value={form.sex || 'male'} onChange={(v) => setForm({ ...form, sex: v })}
+            <SegmentedControl aria-label="Sex for budget calculation" value={form.sex || 'male'} onChange={(v) => setForm({ ...form, sex: v })}
               data={[{ label: 'Male', value: 'male' }, { label: 'Female', value: 'female' }]} />
             <NumberInput label="Target weight" suffix=" lbs" value={form.targetWeightLbs}
               onChange={(v) => setForm({ ...form, targetWeightLbs: v })} />
             <NumberInput label="Weekly rate" suffix=" lbs/wk" step={0.25} decimalScale={2} value={form.weeklyRateLbs}
               onChange={(v) => setForm({ ...form, weeklyRateLbs: v })} />
+            {/* Drives the "days to N%" projection. Left blank it falls back to
+                DEFAULT_TARGET_BODY_FAT_PCT rather than hiding the cell. */}
+            <NumberInput label="Target body fat" suffix=" %" step={0.5} decimalScale={1}
+              placeholder={String(DEFAULT_TARGET_BODY_FAT_PCT)} value={form.targetBodyFatPct}
+              onChange={(v) => setForm({ ...form, targetBodyFatPct: v })} />
             <NumberInput label="Activity baseline" step={0.05} decimalScale={2} value={form.activityBaseline}
               onChange={(v) => setForm({ ...form, activityBaseline: v })} />
             <NumberInput label="Budget floor" suffix=" kcal" value={form.budgetFloor}
@@ -246,7 +232,7 @@ export function ProgressView() {
             <Button onClick={saveGoals} loading={saving}>Save goals</Button>
           </Stack>
         )}
-      </SectionCard>
+      </Sheet>
     </div>
   );
 }

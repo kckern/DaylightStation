@@ -75,6 +75,7 @@ describe('FoodCatalogService icon assignment', () => {
     h = harness([entry({ icon: 'boiled-egg' })]);
     const updated = await h.svc.setIcon('e1', 'u', 'fried-eggs');
     expect(updated.icon).toBe('fried-eggs');
+    expect(updated.iconOverride).toBe('fried-eggs');
     expect(h.map.get('e1').icon).toBe('fried-eggs');
   });
 
@@ -82,6 +83,13 @@ describe('FoodCatalogService icon assignment', () => {
     h = harness([entry()]);
     await h.svc.setIconByName('eggs', 'u', 'fried-eggs');
     expect(h.map.get('e1').icon).toBe('fried-eggs');
+  });
+
+  it('neutral catalog artwork does not mask a valid capture icon, but explicit pins win', async () => {
+    h = harness([entry({ icon: 'default' })]);
+    expect((await h.svc.resolveIdentity({ foodId: 'e1', name: 'Eggs', icon: 'fried-eggs' }, 'u')).icon).toBe('fried-eggs');
+    await h.svc.setIcon('e1', 'u', 'boiled-egg');
+    expect((await h.svc.resolveIdentity({ foodId: 'e1', name: 'Eggs', icon: 'fried-eggs' }, 'u')).icon).toBe('boiled-egg');
   });
 
   it('setIconByName throws for a food the catalog does not know', async () => {

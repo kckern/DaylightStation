@@ -137,6 +137,7 @@ export function buildContextualLaunchCard({
   module = null,
   lesson = null,
   progress = null,
+  confirmIdentity = false,
   options = {},
 } = {}) {
   const { sentence, actions } = offeredCard(resolution, options);
@@ -193,6 +194,20 @@ export function buildContextualLaunchCard({
     presentation: {
       status: cardStatus(resolution, actions, sentence),
       message: sentence,
+      // ASK WHOSE PAPER THIS IS, but only when the pattern warrants it.
+      //
+      // The card already NAMES the learner — avatar, name, subject — and that
+      // passive display is the first line of defence and always on. This flag
+      // asks for an explicit tap instead, and it is set only for a code being
+      // re-entered: the first open of a fresh code each day is the honest
+      // child's normal path and gets no friction at all.
+      //
+      // Additive to `school.self-service-card/v2`, so a panel that has not
+      // learned it renders exactly what it rendered before — the same reason
+      // every other field on this envelope is additive. It is a speed bump and
+      // not a lock; anyone can tap yes. At a keypad with a soft, self-declared
+      // identity there is no stronger honest claim to make.
+      ...(confirmIdentity ? { confirmIdentity: true } : {}),
     },
     actions,
   };

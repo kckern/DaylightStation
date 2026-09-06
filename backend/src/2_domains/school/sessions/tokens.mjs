@@ -97,6 +97,7 @@ export function isSchoolToken(code) {
  */
 export function mintToken({
   tokenClass, subject, at, rng, expiresAt = null, accessCode = null, accessCodeExpiresAt = null,
+  maxUses = null,
 } = {}) {
   if (typeof rng !== 'function') throw new Error('mintToken: rng function is required');
   let body = '';
@@ -109,7 +110,7 @@ export function mintToken({
 
   return createTokenRecord({
     token: `${TOKEN_PREFIX}${body}`, tokenClass, subject, at, expiresAt,
-    accessCode, accessCodeExpiresAt,
+    accessCode, accessCodeExpiresAt, maxUses,
   }, { caller: 'mintToken' });
 }
 
@@ -120,6 +121,7 @@ export function mintToken({
  */
 export function createTokenRecord({
   token, tokenClass, subject, at, expiresAt = null, accessCode = null, accessCodeExpiresAt = null,
+  maxUses = null,
 } = {}, { caller = 'createTokenRecord' } = {}) {
   if (!TOKEN_CLASSES.includes(tokenClass)) throw new Error(`${caller}: unknown token class: ${tokenClass}`);
   if (!TOKEN_PATTERN.test(token || '')) throw new Error(`${caller}: token must be an opaque 16-character School token`);
@@ -188,6 +190,7 @@ export function createTokenRecord({
   }
 
   let code = null;
+  let cap = null;
   if (accessCode != null || accessCodeExpiresAt != null) {
     if (accessCode == null) {
       throw new ValidationError(`${caller}: accessCodeExpiresAt requires an accessCode`, {
@@ -222,6 +225,31 @@ export function createTokenRecord({
         details: { caller, expiresAt, accessCodeExpiresAt },
       });
     }
+
+    // A THIRD LIMIT ON THE CODE, and it is a COUNT rather than a clock.
+    // The two clocks above bound how long a code is typable; neither bounds how
+    // many times. A lesson code is meant to open one lesson, but nothing spent
+    // it, so one sat live for a whole study day and was typed 13 times in five
+    // hours by someone who was probably not its owner (2026-09-06).
+    //
+    // `null` means uncapped, and that is the honest default for a record built
+    // by hand or replayed from disk — a missing field must not silently become
+    // a limit that retires codes already printed on paper. `mintAccessCode`'s
+    // callers pass the household's cap explicitly.
+    if (maxUses != null && !(Number.isInteger(maxUses) && maxUses > 0)) {
+      throw new ValidationError(`${caller}: maxUses must be a positive integer`, {
+        code: 'SCHOOL_ACCESS_CODE_MAX_USES_INVALID', details: { caller, maxUses },
+      });
+    }
+    cap = maxUses;
+  }
+  if (maxUses != null && code == null) {
+    // A cap on a record with no code caps nothing — the count is only ever
+    // reached through the panel. Loud, because a caller who passed one believed
+    // they were limiting something.
+    throw new ValidationError(`${caller}: maxUses requires an accessCode`, {
+      code: 'SCHOOL_ACCESS_CODE_MAX_USES_WITHOUT_CODE', details: { caller, maxUses },
+    });
   }
 
   // One exit, one object. The spread keeps the no-code record byte-identical to
@@ -230,6 +258,11 @@ export function createTokenRecord({
   return {
     token, tokenClass, subject: structuredClone(subject), issuedAt: at, expiresAt, revokedAt: null,
     ...(code == null ? {} : { accessCode: code, accessCodeExpiresAt }),
+    // `useCount` is deliberately NOT minted. It is mutation state, owned by the
+    // registry's read-modify-write the way `revokedAt: null` is minted here and
+    // set by `revoke` — and an absent count reads as zero everywhere, so every
+    // record already on disk needs no migration.
+    ...(cap == null ? {} : { maxUses: cap }),
   };
 }
 
@@ -261,6 +294,36 @@ export function createTokenRecord({
  * @param {string} ctx.now ISO current time (injected — this module reads no clock)
  * @returns {boolean}
  */
+/**
+ * Has this code been used up?
+ *
+ * SEPARATE FROM `isAccessCodeLive`, ON PURPOSE, and the reason is the child
+ * standing at the panel rather than the shape of the code. `isAccessCodeLive`
+ * is what `getByAccessCode` and `liveAccessCodes` consult; folding the count in
+ * there would do two wrong things at once. The lookup would answer `null`, so
+ * the panel could only say "Try again." — for a code that is not wrong, at a
+ * keypad where retyping it can never help, which is the dead end this whole
+ * subsystem exists to avoid. And a spent-but-unexpired code would drop out of
+ * the mint's collision set while its paper is still in a child's hand, so
+ * tomorrow's agenda could hand the same six digits to a different learner.
+ *
+ * So a spent code stays live, resolves, and is refused by the resolver with
+ * words. This predicate is how the resolver knows.
+ *
+ * UNCAPPED IS NOT SPENT. `maxUses` absent means no limit — every record written
+ * before this existed, and the reading log, which is a log rather than a task
+ * and legitimately opens many times a day.
+ *
+ * @param {object} record the registry record
+ * @returns {boolean}
+ */
+export function isAccessCodeSpent(record) {
+  const cap = record?.maxUses;
+  if (!Number.isInteger(cap) || cap <= 0) return false;
+  const used = record?.useCount;
+  return Number.isInteger(used) && used >= cap;
+}
+
 export function isAccessCodeLive(record, { now } = {}) {
   if (!record || typeof record !== 'object' || Array.isArray(record)) return false;
   if (record.revokedAt) return false;
