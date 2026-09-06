@@ -53,6 +53,108 @@ export function isDayKey(value) {
   return Number.isFinite(ms) && new Date(ms).toISOString().slice(0, 10) === value;
 }
 
+/**
+ * How far back a finish may be dated (2026-09-06).
+ *
+ * A finish carries a DAY the child chooses, not the instant they tapped, so
+ * "I finished this on the trip last week" is an honest entry and the bound has
+ * to be generous enough to hold it. It cannot be unbounded: a book started
+ * today was found stamped `2026-08-19`, eighteen days earlier, which drops
+ * credit into a week the gradebook has already reported on. Fourteen days keeps
+ * every plausible catch-up and refuses that.
+ *
+ * A grown-up route is the escape hatch for anything older — deliberately, so an
+ * entry that rewrites a closed period passes through someone who can see it.
+ */
+export const MAX_BACKDATE_DAYS = 14;
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Whole days from `from` to `to`, both `YYYY-MM-DD`. Anchored at noon UTC via
+ * `noonOf` so no household timezone or DST shift can move a day boundary
+ * underneath the subtraction.
+ *
+ * @returns {number|null} null when either key is not a real day
+ */
+export function daysBetween(from, to) {
+  if (!isDayKey(from) || !isDayKey(to)) return null;
+  return Math.round((Date.parse(noonOf(to)) - Date.parse(noonOf(from))) / DAY_MS);
+}
+
+/**
+ * May a finish be dated `day`, given today's study day?
+ *
+ * Refuses the future for the same reason the callers already do, and the
+ * distant past for the reason above. Fails closed on an unreadable day — the
+ * callers validate the shape first, so reaching here with junk is a caller bug,
+ * not an entry to wave through.
+ *
+ * @param {string} day - the chosen finish day, `YYYY-MM-DD`
+ * @param {string} today - the household study day, `YYYY-MM-DD`
+ * @param {{maxDaysBack?: number}} [options]
+ * @returns {boolean}
+ */
+export function isBackdateAllowed(day, today, { maxDaysBack = MAX_BACKDATE_DAYS } = {}) {
+  const delta = daysBetween(day, today);
+  if (delta === null) return false;
+  return delta >= 0 && delta <= maxDaysBack;
+}
+
+/**
+ * The oldest day `isBackdateAllowed` will accept — the SAME rule read forwards,
+ * so the floor the server enforces and the floor it advertises to the panel
+ * cannot drift apart. `GetBookShelf` puts this on the shelf view and the day
+ * picker draws its window from it, rather than either side hardcoding 14.
+ *
+ * @param {string} today - the household study day, `YYYY-MM-DD`
+ * @param {{maxDaysBack?: number}} [options]
+ * @returns {string|null} null when `today` is not a real day
+ */
+export function earliestBackdateDay(today, { maxDaysBack = MAX_BACKDATE_DAYS } = {}) {
+  if (!isDayKey(today)) return null;
+  return new Date(Date.parse(noonOf(today)) - maxDaysBack * DAY_MS).toISOString().slice(0, 10);
+}
+
+/**
+ * How far past a book's stated length a page may still be logged.
+ *
+ * NOT 1. `percentFor` below deliberately keeps a page beyond `pageCount` and
+ * clamps only the bar — "the 212-of-184 case" — because mispaginated metadata,
+ * omnibus editions and a different printing are all real, and the page the
+ * child is looking at is the true fact. A hard `page <= pageCount` would
+ * reverse that decision and start refusing honest entries.
+ *
+ * What it will not hold is 250 of 192 followed by page 5 fifteen seconds later
+ * (observed 2026-09-06), which is a keypad being mashed. Doubling the book is
+ * the widest edition mismatch anyone has produced and is comfortably past every
+ * real one.
+ */
+export const PAGE_PLAUSIBILITY_FACTOR = 2;
+
+/**
+ * Is `page` a plausible page of a book `pageCount` long?
+ *
+ * TRUE WHENEVER THERE IS NO DENOMINATOR, and that is the load-bearing half.
+ * `pageCount` is null in measured, ordinary cases: Google Books returned 0 for
+ * two of three books on 2026-09-02, an unresolved ISBN opens a minimal record
+ * with none at all, and the `partway` door forces page mode with no denominator
+ * on purpose. It is also snapshotted at open time and never refreshed, so an
+ * item opened before metadata resolved keeps `null` forever. Treating "unknown
+ * length" as "no ceiling" is therefore the common path, not the edge case —
+ * inverting this would refuse a large share of legitimate logs.
+ *
+ * @param {number} page
+ * @param {number|null|undefined} pageCount
+ * @param {{factor?: number}} [options]
+ * @returns {boolean}
+ */
+export function isPlausiblePage(page, pageCount, { factor = PAGE_PLAUSIBILITY_FACTOR } = {}) {
+  if (!Number.isInteger(page) || page <= 0) return false;
+  if (!Number.isFinite(pageCount) || pageCount <= 0) return true;
+  return page <= pageCount * factor;
+}
+
 const inWindow = (at, window, dayOf) => {
   if (!window) return true;
   const day = dayOf(at);

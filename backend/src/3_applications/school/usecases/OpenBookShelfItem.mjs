@@ -1,7 +1,9 @@
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { parseBookIdentifier } from '#domains/books/BookIdentifier.mjs';
 import { createBookRecord } from '#domains/books/BookRecord.mjs';
-import { inferProgressMode, isDayKey, noonOf } from '#domains/school/bookShelf.mjs';
+import {
+  inferProgressMode, isDayKey, noonOf, isBackdateAllowed, isPlausiblePage, MAX_BACKDATE_DAYS,
+} from '#domains/school/bookShelf.mjs';
 
 const WHERE = new Set(['starting', 'partway', 'finished']);
 
@@ -52,6 +54,13 @@ export class OpenBookShelfItem {
     if (where === 'finished') {
       if (!isDayKey(finishedOn)) throw new ValidationError('finished requires finishedOn as a real day, YYYY-MM-DD');
       if (finishedOn > today) throw new ValidationError('finishedOn cannot be in the future');
+      // THE SAME FLOOR AS `RecordBookProgress`, AND THIS IS THE DOOR THAT
+      // MATTERS MORE. `finished` is how a book already read gets logged, so it
+      // is the path a far-backdated entry actually takes; bounding only the
+      // other use case would leave the hole wide open.
+      if (!isBackdateAllowed(finishedOn, today)) {
+        throw new ValidationError(`That day is more than ${MAX_BACKDATE_DAYS} days ago. Ask a grown-up.`);
+      }
     }
 
     const resolved = await this.#resolveBook.execute(bookId);
@@ -75,6 +84,16 @@ export class OpenBookShelfItem {
     // count is for check mode. Keep the page even without a denominator; the
     // UI can show `p. 84` without drawing a percentage bar.
     const progressMode = where === 'partway' ? 'page' : inferProgressMode(book);
+
+    // CHECKED HERE, NOT BESIDE THE OTHER `partway` GUARDS ABOVE. The book's
+    // length is not known until `resolveBook` has answered, so the shape check
+    // ("a positive page") and the plausibility check ("a page this book could
+    // have") cannot sit together — the denominator does not exist yet at the
+    // first one. A book that resolved without a pageCount has no ceiling, which
+    // is the ordinary case on this door (see `isPlausiblePage`).
+    if (where === 'partway' && !isPlausiblePage(page, book.pageCount)) {
+      throw new ValidationError('That page number is too big for this book.');
+    }
 
     // A backdated finish lives ENTIRELY on the day it was finished. The store
     // stamps the `started` event at `openedAt`. `started` is deliberately not
