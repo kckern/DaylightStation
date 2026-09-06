@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { auditWireSchema, decodeAudit } from './NutritionAuditor.mjs';
+import { auditWireSchema, decodeAudit, normalizeAuditRepairs } from './NutritionAuditor.mjs';
 import { assertSchema } from '#adapters/agents/standardSchema.mjs';
 
 const result = changes => ({ summary: 'Verified panel', repairs: [{
@@ -9,6 +9,15 @@ const result = changes => ({ summary: 'Verified panel', repairs: [{
 }], questions: [] });
 
 describe('Auditor strict structured output', () => {
+  it('keeps supported nutrients when a separate cosmetic suggestion is unavailable', () => {
+    const audit = decodeAudit(result([{ field: 'sugar', value: 4 }]));
+    audit.repairs[0].updates.push({ id: 'food', expectedVersion: 1, changes: { icon: '🍽️', sodium: 60 } });
+    expect(normalizeAuditRepairs(audit, { has: () => false }).repairs[0].updates).toEqual([
+      { id: 'food', expectedVersion: 1, changes: { sugar: 4, sodium: 60 } },
+    ]);
+    audit.repairs[0].updates.push({ id: 'food', expectedVersion: 1, changes: { sugar: 8 } });
+    expect(() => normalizeAuditRepairs(audit, { has: () => false })).toThrow('Conflicting');
+  });
   it('requires every object key without unsupported sparse-object constraints', () => {
     const walk = value => {
       if (!value || typeof value !== 'object') return;

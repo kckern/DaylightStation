@@ -41,6 +41,15 @@ async function fixture({ pending = false } = {}) {
   return { root, logger, dataService, foodLogs, items, store, clock, timezoneFor, review, log, repairs, auditor, proposal, apply };
 }
 describe('nutrition cleanup policy and journal', () => {
+  it('does not reopen settled legacy history or untouched legacy pending food', async () => {
+    const f = await fixture({ pending: true });
+    await f.items.saveMany([{ userId: 'alice', uuid: 'legacy', id: 'legacy', name: 'Old food', date: '2026-09-04', calories: 80 }]);
+    const snapshot = await f.auditor.snapshot('alice');
+    expect(snapshot.rows).toEqual([]);
+    await expect(f.repairs.apply({ userId: 'alice', operationId: 'legacy',
+      proposal: { reason: 'Artwork', updates: [{ id: 'legacy', expectedVersion: 1, changes: { icon: 'fish' } }] },
+      evidence: [{ kind: 'icons' }] })).rejects.toMatchObject({ code: 'CLEANUP_DATE_WINDOW' });
+  });
   it('allows a bounded provisional estimate, labels it honestly, and accepts better verified evidence once', async () => {
     const f = await fixture();
     const proposed = { ...f.proposal({ calories: 60 }), mode: 'estimate', confidence: 0.9, reason: 'Estimated cooked white fish at the captured 55g portion' };

@@ -26,6 +26,7 @@ export function validateCleanup({ before, after, updates, creates = [], evidence
     seen.add(entryKey(row));
     if (expectedVersion == null || expectedVersion !== (row.version ?? 1)) fail('Entry changed', 'VERSION_CONFLICT');
     if (row.review && !userDirected && !canAutoReview(row, now)) fail('The review window is closed', 'CLEANUP_DATE_WINDOW');
+    if (!row.review && !userDirected && row.settled !== false) fail('Preserving a settled legacy record', 'CLEANUP_DATE_WINDOW');
     if ((!row.review && !dates.includes(row.date)) || (changes.date && !dates.includes(changes.date))) fail('Automatic cleanup only changes today and yesterday or active provisional captures', 'CLEANUP_DATE_WINDOW');
     if (Object.keys(changes).some(key => !CLEANUP_FIELDS.includes(key))) fail('Unsupported cleanup field');
     for (const [field, value] of Object.entries(changes)) {
