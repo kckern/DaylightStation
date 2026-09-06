@@ -1,5 +1,7 @@
 import { ValidationError } from '#domains/core/errors/index.mjs';
-import { PROGRESS_MODES, isDayKey, noonOf } from '#domains/school/bookShelf.mjs';
+import {
+  PROGRESS_MODES, isDayKey, noonOf, isBackdateAllowed, isPlausiblePage, MAX_BACKDATE_DAYS,
+} from '#domains/school/bookShelf.mjs';
 
 const KINDS = new Set(['progress', 'finished', 'reopened', 'set-aside']);
 
@@ -44,6 +46,11 @@ export class RecordBookProgress {
     if (page !== null && item.progressMode !== 'page') throw new ValidationError(`page is not accepted in ${item.progressMode} mode`);
     if (minutes !== null && item.progressMode !== 'minutes') throw new ValidationError(`minutes is not accepted in ${item.progressMode} mode`);
     if (page !== null && !(Number.isInteger(page) && page > 0)) throw new ValidationError('page must be a positive integer');
+    // A ceiling, not an equality — see `isPlausiblePage`. A book with no known
+    // length has no ceiling at all, which is the ordinary case, not the edge.
+    if (page !== null && !isPlausiblePage(page, item.pageCount)) {
+      throw new ValidationError('That page number is too big for this book.');
+    }
     if (minutes !== null && !(Number.isInteger(minutes) && minutes > 0)) throw new ValidationError('minutes must be a positive integer');
     if (kind !== 'progress' && (page !== null || minutes !== null)) {
       throw new ValidationError('page and minutes only apply to a progress event');
@@ -64,6 +71,13 @@ export class RecordBookProgress {
     if (kind === 'finished' && finishedOn !== null) {
       if (!isDayKey(finishedOn)) throw new ValidationError('finishedOn must be a real day, YYYY-MM-DD');
       if (finishedOn > this.#dayOf(at)) throw new ValidationError('finishedOn cannot be in the future');
+      // The past needs a floor too. Unbounded, a book started today could be
+      // stamped weeks back and drop credit into a reported period — observed
+      // 2026-09-06, eighteen days. Kept as a SEPARATE check from the future one
+      // so the child is told which end they are past.
+      if (!isBackdateAllowed(finishedOn, this.#dayOf(at))) {
+        throw new ValidationError(`That day is more than ${MAX_BACKDATE_DAYS} days ago. Ask a grown-up.`);
+      }
       at = noonOf(finishedOn);
     }
 

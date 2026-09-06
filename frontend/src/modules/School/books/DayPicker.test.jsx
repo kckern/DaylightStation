@@ -119,3 +119,49 @@ describe('DayPicker', () => {
     });
   });
 });
+
+/**
+ * THE FLOOR THE SERVER NAMES (2026-09-06).
+ *
+ * A finish may not be dated more than `MAX_BACKDATE_DAYS` back — the write path
+ * refuses it (`isBackdateAllowed`). The picker must not OFFER such a day: a
+ * child who taps one and is told no has been invited into a dead end by the
+ * control itself. `minDay` arrives on the shelf view as `earliestFinishDay`, so
+ * the bound has one author and the panel never carries a second copy of "14".
+ */
+describe('DayPicker — minDay, the backdate floor', () => {
+  const open = () => fireEvent.click(screen.getByRole('button', { name: /pick a day/i }));
+
+  it('blanks days before the floor, exactly as it blanks the future', () => {
+    render(<DayPicker today="2026-09-02" minDay="2026-08-26" onConfirm={() => {}} />);
+    open();
+    expect(screen.getByRole('gridcell', { name: /Wednesday 26 August/ })).toBeInTheDocument();
+    expect(screen.queryByRole('gridcell', { name: /25 August/ })).toBeNull();
+    expect(screen.queryByRole('gridcell', { name: /24 August/ })).toBeNull();
+  });
+
+  it('stops paging back once the next page would be entirely blank', () => {
+    render(<DayPicker today="2026-09-02" minDay="2026-08-26" onConfirm={() => {}} />);
+    open();
+    expect(screen.getByRole('button', { name: /earlier dates/i })).toBeDisabled();
+  });
+
+  it('clamps an initial value that is older than the floor', () => {
+    const onConfirm = vi.fn();
+    render(<DayPicker today="2026-09-02" minDay="2026-08-26" value="2026-07-01" onConfirm={onConfirm} />);
+    fireEvent.click(screen.getByRole('button', { name: /that's the day/i }));
+    expect(onConfirm).toHaveBeenCalledWith('2026-08-26');
+  });
+
+  it('keeps the full year window when the server named no floor', () => {
+    // A server that said nothing must not silently shrink the control. Absent
+    // and malformed are the same answer: no floor.
+    for (const minDay of [undefined, null, '', 'not-a-day', '2026-02-31']) {
+      const { unmount } = render(<DayPicker today="2026-09-02" minDay={minDay} onConfirm={() => {}} />);
+      open();
+      expect(screen.getByRole('gridcell', { name: /13 August/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /earlier dates/i })).not.toBeDisabled();
+      unmount();
+    }
+  });
+});

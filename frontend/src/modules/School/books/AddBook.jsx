@@ -62,7 +62,7 @@ function Fault({ message }) {
  * @param {boolean} props.busy - a write is in flight.
  * @param {object} props.actions - the hook's actions.
  */
-export default function AddBook({ step, add, today, error = null, busy = false, actions }) {
+export default function AddBook({ step, add, today, earliestDay = null, error = null, busy = false, actions }) {
   const tap = useTapFire();
   const press = useCallback((fn) => tap(() => { if (!busy) fn(); }), [tap, busy]);
   const book = add?.resolved?.book ?? null;
@@ -148,7 +148,7 @@ export default function AddBook({ step, add, today, error = null, busy = false, 
       <div className="school-books-add__when">
         <BookLine book={book} />
         <p className="school-books-add__prompt">When did you finish it?</p>
-        <DayPicker key={today} today={today} busy={busy} onConfirm={(key) => { if (!busy) actions.submitDay(key); }} />
+        <DayPicker key={today} today={today} minDay={earliestDay} busy={busy} onConfirm={(key) => { if (!busy) actions.submitDay(key); }} />
         <Fault message={message} />
       </div>
     );

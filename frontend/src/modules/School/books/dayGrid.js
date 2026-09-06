@@ -27,7 +27,7 @@ export const MONTH_NAMES = [
 ];
 
 const KEY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
-const DAY_MS = 24 * 60 * 60 * 1000;
+export const DAY_MS = 24 * 60 * 60 * 1000;
 const LOOKBACK_DAYS = 20;
 
 /** `YYYY-MM-DD` → UTC midnight in ms. Strict: anything else throws. */
@@ -68,17 +68,32 @@ export function dayLabel(key) {
  * `window end − 20 days` through the window end. The default window ends
  * today; `offsetDays` moves it into the past. Later cells are `null`.
  *
+ * `minDay` blanks the OTHER end, and it is `null` in exactly the same way a
+ * future cell is: the server refuses a finish dated before its backdate floor
+ * (`earliestFinishDay` on the shelf view), and a grid that still drew those
+ * days would invite a child to tap one and be told no. Absent or unreadable,
+ * there is no floor — a server that said nothing must not silently shrink the
+ * window a child has always had.
+ *
  * @param {string} todayKey - `YYYY-MM-DD`; the caller's clock, never ours.
- * @param {{offsetDays?: number}} [options] - move the rolling window into the
- *   past without changing which day is the real `today`.
+ * @param {{offsetDays?: number, minDay?: string|null}} [options] - move the
+ *   rolling window into the past without changing which day is the real
+ *   `today`; `minDay` is the oldest selectable day.
  * @returns {Array<Array<{key: string, day: number, weekday: number, monthStart: boolean, isToday: boolean} | null>>}
  */
-export function buildDayGrid(todayKey, { offsetDays = 0 } = {}) {
+export function buildDayGrid(todayKey, { offsetDays = 0, minDay = null } = {}) {
   const todayMs = parseKey(todayKey);
   const safeOffset = Number.isInteger(offsetDays) && offsetDays > 0 ? offsetDays : 0;
   const endMs = todayMs - safeOffset * DAY_MS;
   const lookbackMs = endMs - LOOKBACK_DAYS * DAY_MS;
   const startMs = lookbackMs - (isoWeekday(lookbackMs) - 1) * DAY_MS;
+  // Tolerated, not thrown: `minDay` arrives over the wire, and a malformed one
+  // must not take down the control a child needs. `parseKey` throws, so this is
+  // the one place in this module that catches.
+  let minMs = null;
+  if (typeof minDay === 'string' && minDay) {
+    try { minMs = parseKey(minDay); } catch { minMs = null; }
+  }
 
   const rows = [];
   for (let rowStart = startMs; rowStart <= endMs; rowStart += 7 * DAY_MS) {
@@ -86,6 +101,7 @@ export function buildDayGrid(todayKey, { offsetDays = 0 } = {}) {
     for (let i = 0; i < 7; i += 1) {
       const ms = rowStart + i * DAY_MS;
       if (ms > endMs) { row.push(null); continue; }
+      if (minMs !== null && ms < minMs) { row.push(null); continue; }
       const day = new Date(ms).getUTCDate();
       row.push({
         key: formatKey(ms),
@@ -95,7 +111,14 @@ export function buildDayGrid(todayKey, { offsetDays = 0 } = {}) {
         isToday: ms === todayMs,
       });
     }
-    rows.push(row);
+    // A row with nothing selectable on it is not a row. Before `minDay` only
+    // TRAILING cells were ever null, so every row was guaranteed a real cell
+    // and DayPicker keys each row off `row.find(Boolean).key`. A floor can
+    // blank a whole leading week, which made that read `undefined.key`. Dropping
+    // the row keeps that contract true instead of pushing the guard onto every
+    // consumer — and with no `minDay` this cannot fire, since `rowStart <= endMs`
+    // already guarantees the row's first cell.
+    if (row.some(Boolean)) rows.push(row);
   }
   return rows;
 }
