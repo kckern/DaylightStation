@@ -347,3 +347,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-03 | fitness/false-zero-pipeline-stall | 7814a4cb2 | Fitness false-zero pipeline stall: State Gates YAML storm + school prewarm O(N²) + transport-stall hold. Merged to main 96a17ad8c. |
 | 2026-09-04 | fix/mat-test-ready | f94ed5f874a27e320043d9588c1859e168321820 | Mat detector recovery, startup step handoff, firmware identity and authenticated OTA; merged to main and deployed for physical testing. |
 | 2026-09-05 | feat/piano-cap-agenda-overflow | c21ba38b0 | School agenda overflow cap follow-up; already fully merged into main. |
+| 2026-09-05 | fix/health-reconciliation | 4a4593eae | Quiet provisional capture, durable scale reconciliation, guarded Mastra repairs, selective legacy recovery and 72-hour stabilization; fast-forwarded into main. |
