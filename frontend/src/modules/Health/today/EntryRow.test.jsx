@@ -82,6 +82,16 @@ describe('EntryRow', () => {
     expect(document.querySelector('.health-row__portion').textContent).toBe('2 cups');
   });
 
+  it('rounds displayed grams and calories and keeps unknown macros distinct from zero', () => {
+    r(<EntryRow row={{ ...baseRow, grams: 167.4, calories: 290.8, protein: 7.4, carbs: null, fat: 0 }} onTap={() => {}} />);
+    expect(screen.getByText('167 g')).toBeTruthy();
+    expect(document.querySelector('.health-row__kcal')).toHaveTextContent('291 kcal');
+    expect(screen.getByRole('img', { name: 'Protein: 7 grams' })).toHaveTextContent('7');
+    expect(screen.getByRole('img', { name: 'Carbs: unknown' })).toHaveTextContent('—');
+    expect(screen.getByRole('img', { name: 'Fat: 0 grams' })).toHaveTextContent('0');
+    expect(screen.getByRole('button', { name: 'Edit Apple' }).querySelector('.health-macros')).toBeNull();
+  });
+
   describe('group presentation', () => {
     const groupRow = { uuid: 'g1', name: 'Smoothie', calories: 0, kind: 'group' };
 

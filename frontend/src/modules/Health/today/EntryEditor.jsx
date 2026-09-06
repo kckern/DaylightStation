@@ -30,6 +30,7 @@ function Editor({ row, onClose, onChanged, onDeleted, onCoach, observations = []
   } : row;
   const originalPortion = foodPortion(row);
   const originalGrams = originalPortion.value;
+  const wholeGrams = !originalGrams || originalPortion.unit === 'g';
   const [name, setName] = useState(nameOf(row));
   const [grams, setGrams] = useState(originalGrams ?? '');
   const [mealTime, setMealTime] = useState(row.mealTime);
@@ -96,12 +97,12 @@ function Editor({ row, onClose, onChanged, onDeleted, onCoach, observations = []
         <TextInput label="Name" value={name} onChange={event => setName(event.target.value)} disabled={busy} style={{ flex: 1 }} />
       </Group>
       <NumberInput label={isGroup ? 'Whole dish portion' : 'Portion'} suffix={` ${originalGrams ? originalPortion.unit : 'g'}`} aria-label={`Portion in ${originalGrams ? originalPortion.unit : 'g'}`}
-        data-autofocus min={0.01} decimalScale={2} value={grams} disabled={busy || (isGroup && !originalGrams)}
+        data-autofocus min={wholeGrams ? 1 : 0.01} decimalScale={wholeGrams ? 0 : 2} value={wholeGrams && typeof grams === 'number' ? Math.round(grams) : grams} disabled={busy || (isGroup && !originalGrams)}
         placeholder="Weight unknown" onChange={setGrams} onFocus={event => event.target.select()}
         onKeyDown={event => { if (event.key === 'Enter' && name.trim() && !busy) save(); }} />
       <Group gap="xs">
         {factors.map(value => <Button key={value} size="compact-xs" variant="light" disabled={busy || !originalGrams}
-          onClick={() => setGrams(Math.round((Number(grams) || originalGrams) * value * 100) / 100)}>×{value}</Button>)}
+          onClick={() => setGrams(wholeGrams ? Math.max(1, Math.round((Number(grams) || originalGrams) * value)) : Math.round((Number(grams) || originalGrams) * value * 100) / 100)}>×{value}</Button>)}
       </Group>
       <Text size="sm">{nutrients.calories == null ? '—' : Math.round(nutrients.calories)} kcal · {formatNutrients([nutrients])}</Text>
       <SegmentedControl aria-label="Meal" size="xs" fullWidth value={mealTime || ''} disabled={busy}
@@ -124,7 +125,7 @@ function Editor({ row, onClose, onChanged, onDeleted, onCoach, observations = []
             }, 'POST'))}>Save as meal</Button>
           </Group> : null}
           {!isGroup ? NUTRIENT_KEYS.map(key => <NumberInput key={key} label={`${key[0].toUpperCase() + key.slice(1)}${key === 'calories' ? ' (kcal)' : ['sodium', 'cholesterol'].includes(key) ? ' (mg)' : ' (g)'}`}
-            min={0} value={nutrients[key] ?? ''} disabled={busy} onChange={value => setOverrides(previous => ({ ...previous, [key]: value === '' ? null : value }))} />) : null}
+            min={0} decimalScale={0} value={nutrients[key] == null ? '' : Math.round(nutrients[key])} disabled={busy} onChange={value => setOverrides(previous => ({ ...previous, [key]: value === '' ? null : value }))} />) : null}
           {row.photoRef ? <img className="health-edit__photo" src={nutritionPhotoUrl(row.photoRef)} alt="Food capture" /> : null}
           {!isGroup ? observations.filter(observation => observation.status !== 'dismissed').map(observation => <ObservationRow key={observation.id}
             observation={observation} attached={observation.pairedEntryUuid === identity(row)}
