@@ -421,6 +421,32 @@ export class YamlTokenRegistry extends ITokenRegistry {
       return revoked;
     });
   }
+
+  /** @inheritdoc */
+  async recordUse(token, { at } = {}) {
+    const body = bodyOf(token);
+    if (!body) return null;
+    if (typeof at !== 'string' || Number.isNaN(Date.parse(at))) {
+      throw new Error('YamlTokenRegistry: recordUse requires an ISO-8601 `at`');
+    }
+    // READ-MODIFY-WRITE, inside the same chain as `revoke` — `put` is a
+    // whole-file overwrite (`#write`) and would drop every field it was not
+    // handed, so bumping a counter with one would silently erase the record.
+    // The chain is in-process only, which is the same assumption `revoke`
+    // already rests on: one process owns this directory.
+    return this.#enqueue(async () => {
+      const record = await this.get(token);
+      if (!record) return null;
+      // An absent count reads as zero, so records written before the cap
+      // existed need no migration. Counting past `maxUses` is allowed and
+      // deliberate — the resolver refuses at the boundary, and a count that
+      // kept climbing is evidence of how hard a spent code was retried.
+      const used = Number.isInteger(record.useCount) ? record.useCount : 0;
+      const bumped = { ...record, useCount: used + 1, lastUsedAt: at };
+      await this.#write(body, bumped);
+      return bumped;
+    });
+  }
 }
 
 export default YamlTokenRegistry;

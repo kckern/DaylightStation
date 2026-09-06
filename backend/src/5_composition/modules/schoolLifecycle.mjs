@@ -1284,6 +1284,9 @@ export async function createSchoolLifecycle({
   const runSelfServiceAction = new RunSelfServiceAction({
     resolveAccessCode,
     sessions: stores.sessions,
+    // The same registry `/resolve` reads the cap from, so a use is counted
+    // against the very record it is checked against.
+    tokens: stores.tokens,
     issueDocument,
     dispatchMedia: mediaOrNothing,
     openRemediation,

@@ -56,7 +56,7 @@ import { buildContextualLaunchCard } from '#domains/school/selfService/contextua
 import { decodeLaunchPreviewLink } from '#apps/school/services/launchPreviewLink.mjs';
 import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
 import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display.mjs';
-import { resolveTokenState } from '#domains/school/sessions/tokens.mjs';
+import { resolveTokenState, isAccessCodeSpent } from '#domains/school/sessions/tokens.mjs';
 import { nextMove } from './offerSession.mjs';
 import { pausedExceptionFor } from '../curriculumExceptionProjection.mjs';
 import { projectProgramEntry, bookLogShelfEntry } from '../assignedProgramPlan.mjs';
@@ -97,6 +97,25 @@ export const SYNTHETIC_SESSION_ID = 'synthetic:unopened';
 const TRY_AGAIN = Object.freeze({
   ok: false, reason: 'unknown_code', learner: null, subject: null, title: null,
   sentence: 'Try again.', actions: Object.freeze([]),
+});
+
+/**
+ * The code was real, and it is finished.
+ *
+ * A THIRD REASON, and the header above says what that costs: a consumer must
+ * treat an unrecognised `reason` as a FAULT, so `useSelfService`'s
+ * `isBackendFault` had to learn this value in the same change or a spent code
+ * would render as an outage with a retry button.
+ *
+ * Not `unknown_code`, because it is not one — retyping it is exactly what
+ * cannot help, and "Try again." would send a child around that loop until they
+ * gave up. The sentence names the way forward instead, which is the
+ * never-a-dead-end rule holding at the one refusal that is genuinely terminal.
+ */
+const USED_UP = Object.freeze({
+  ok: false, reason: 'used_up', learner: null, subject: null, title: null,
+  sentence: 'You have opened this a few times already. Ask a grown-up for a new card.',
+  actions: Object.freeze([]),
 });
 
 /** The backend broke, not the child. Distinct wording so the logs and the
@@ -242,6 +261,19 @@ export class ResolveAccessCode {
       }
     }
 
+    // Spent, and refused with words rather than by vanishing. `record` is in
+    // hand here and `/resolve` still writes nothing — the count is bumped by
+    // `/act`, after a button has actually opened something.
+    if (isAccessCodeSpent(record)) {
+      this.#logger.info?.('school.selfservice.code.rejected', {
+        reason: 'used_up',
+        learnerId: record?.subject?.learnerId ?? null,
+        useCount: record?.useCount ?? null,
+        maxUses: record?.maxUses ?? null,
+      });
+      return { card: USED_UP, resolution: null };
+    }
+
     const learnerId = record?.subject?.learnerId ?? null;
     const subject = record?.subject?.subject ?? null;
     if (!record || !learnerId || !subject) {
@@ -299,7 +331,7 @@ export class ResolveAccessCode {
           firstIssuedAt: resolution.state.firstIssuedAt,
         });
       }
-      return { card, resolution };
+      return { card, resolution, record };
     } catch (error) {
       return {
         card: this.#faulted('resolve', { learnerId, subject, error: error?.message ?? String(error) }),
