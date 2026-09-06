@@ -179,8 +179,13 @@ describe('MenuWidget — yielding the nav stack', () => {
         <MenuWidget source="TVApp" />
       </ScreenOverlayProvider>
     );
+    // Wait for the INTERCEPTOR, not for the markup that arrives before it.
+    // The widget registers itself from an effect, so the testid appearing only
+    // proves the render committed — the ref is still empty until passive
+    // effects flush, and a starved worker flushes them late (observed:
+    // `expected undefined to be 'widget'` at 64ms under load, 2026-09-06).
     await waitFor(() => expect(screen.getByTestId('menu-stack-widget')).toBeTruthy());
-    expect(ref.current?.()).toBe('widget');
+    await waitFor(() => expect(ref.current?.()).toBe('widget'));
 
     act(() => { screen.getByTestId('open-menu-overlay').click(); });
 
