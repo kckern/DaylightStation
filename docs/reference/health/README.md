@@ -733,7 +733,9 @@ the fallback glyph and block every real icon proposed afterwards.
 first capture that names one and is **never overwritten by a later capture** — "always for
 this food" is a human choice that has to outlive the next time that food is logged. A
 quick-add copies the catalog's icon onto the row it writes. Explicit pins also persist
-as `iconOverride`, separately from inferred artwork. A legacy `default` catalog value
+as `iconOverride`, separately from inferred artwork, and every presented catalog entry
+carries both: `icon` is the picture, `iconOverride` says a person chose it. The same slug
+in both fields is a pin; a slug with a null override is a guess the first capture supplied. A legacy `default` catalog value
 cannot mask suitable capture artwork. Reviewed manifest aliases and observed mismatch
 guards reject misleading art (such as diced ham → cheeseburger); absent suitable assets,
 the neutral symbol is intentional. A group shows its own photo or artwork, not both.
@@ -1190,7 +1192,7 @@ All under `/api/v1/health/`, from `backend/src/4_api/v1/routers/health.mjs`:
 | `POST /nutrition/catalog/quickadd` | deterministic log from a catalog entry; body `{ catalogEntryId, mealTime? }`, 400 on a `mealTime` outside the four |
 | `POST /nutrition/catalog` | create a custom food (optionally `barcodeUpc`-mapped) |
 | `PUT /nutrition/catalog/favorite` | toggle favorite by id or name |
-| `PUT /nutrition/catalog/icon` | pin a food's icon by id or name — the "always for this food" override |
+| `PUT /nutrition/catalog/icon` | pin a food's icon by id or name — the "always for this food" override; answers with the presented entry, `iconOverride` included, so the caller can read back what it set |
 | `POST /nutrition/catalog/backfill` | seed the catalog from existing log history |
 | `GET /nutrition/meals`, `POST /nutrition/meals`, `POST /nutrition/meals/:id/log`, `DELETE /nutrition/meals/:id` | legacy saved-meal compatibility; no surface lists them |
 | `GET /nutrition/templates?includeProposed=` | meal templates; proposals are hidden unless asked for |
