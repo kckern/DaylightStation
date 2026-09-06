@@ -169,6 +169,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     if (prior && prior.fingerprint !== fingerprint) throw Object.assign(new Error('Operation ID was already used for another request'), { code: 'IDEMPOTENCY_CONFLICT', status: 409 });
     if (inFlightOperations.has(key)) return inFlightOperations.get(key);
     if (prior?.result) return prior.result;
+    if (prior?.mutationResult) return prior.mutationResult;
     if (prior?.items?.length) {
       // The ledger committed before the response could be recorded. Recover
       // the committed outcome rather than calling the parser a second time.
@@ -177,7 +178,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     }
     operations[id] = { fingerprint, pending: true };
     this.#writeFile(this.#operationsPath(userId), operations);
-    const promise = operationContext.run({ userId, id, fingerprint }, async () => {
+    const promise = operationContext.run({ userId, id, fingerprint, operation: payload.operation }, async () => {
       const result = await action();
       const latest = loadYaml(this.#operationsPath(userId)) || {};
       latest[id] = { ...latest[id], fingerprint, pending: false, result };
@@ -333,6 +334,21 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     }
     const result = { items: [...changed.values(), ...creates].map(row => this.#normalizeItem(row)),
       affectedIds: [...affectedIds], affectedDates: [...affectedDates].filter(Boolean) };
+    const operation = operationContext.getStore();
+    if (operation?.userId === userId && operation.operation === 'entry-update' && updates.length) {
+      const root = all.find(row => matches(row, updates[0].id));
+      const rootId = root.uuid || root.id;
+      const operations = loadYaml(this.#operationsPath(userId)) || {};
+      operations[operation.id] = { ...operations[operation.id], fingerprint: operation.fingerprint,
+        mutationResult: { item: result.items.find(row => (row.uuid || row.id) === rootId) || this.#normalizeItem(root),
+          versions: Object.fromEntries(updates.map(({ id }) => {
+            const row = finalRows.find(row => matches(row, id));
+            return [row.uuid || row.id, row.version ?? 1];
+          })),
+          changedFields: Object.keys(updates[0].changes), cascadedIds: result.affectedIds.filter(id => id !== rootId),
+          affectedDates: result.affectedDates } };
+      writes.set(this.#operationsPath(userId), operations);
+    }
     if (audit) {
       auditRecords[audit.id] = { ...audit, userId,
         before: all.filter(row => affectedIds.has(row.uuid || row.id)),

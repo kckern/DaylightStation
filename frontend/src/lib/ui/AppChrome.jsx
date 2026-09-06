@@ -4,13 +4,13 @@
 // CSS-switched). Nav pattern adopted from Media's PrimaryNav.
 import './ds.scss';
 
-export function AppChrome({ title, tabs = [], activeTab, onTabChange, headerActions, footer, children }) {
+export function AppChrome({ title, tabs = [], activeTab, onTabChange, headerActions, footer, sidebarRef, sidebarActive = false, children }) {
   const actions = Array.isArray(headerActions) ? headerActions : (headerActions ? [headerActions] : []);
   if (actions.length > 3) {
     throw new Error('AppChrome allows at most 3 header actions — quiet chrome is the contract');
   }
   return (
-    <div className="ds-chrome">
+    <div className={`ds-chrome${sidebarActive ? ' ds-chrome--context' : ''}`}>
       <header className="ds-chrome__header">
         <h1 className="ds-chrome__title">{title}</h1>
         {actions.length ? <div className="ds-chrome__actions">{actions}</div> : null}
@@ -30,6 +30,7 @@ export function AppChrome({ title, tabs = [], activeTab, onTabChange, headerActi
             <span className="ds-chrome__tab-label">{tab.label}</span>
           </a>
         ))}
+        {sidebarRef ? <div ref={sidebarRef} className="ds-chrome__context" hidden={!sidebarActive} /> : null}
       </nav>
       <main className="ds-chrome__main">{children}</main>
       {footer ? <div className="ds-chrome__footer">{footer}</div> : null}

@@ -85,7 +85,7 @@ describe('HealthOperations findNutritionItemsByDate settlement', () => {
   });
 });
 
-describe('HealthOperations updateNutritionItem settles on edit', () => {
+describe('HealthOperations updateNutritionItem confirms only explicitly', () => {
   function buildOps({ existing = { uuid: 'row-1', mealTime: 'morning', settled: false } } = {}) {
     const findByUuid = vi.fn(async () => existing);
     const update = vi.fn(async (username, id, changes) => ({ ...existing, ...changes }));
@@ -97,24 +97,22 @@ describe('HealthOperations updateNutritionItem settles on edit', () => {
     return { ops, findByUuid, update };
   }
 
-  it('an edit of an unrelated field also stamps settled:true/settledBy:user/settledAt, and the edit survives', async () => {
+  it('an unrelated edit protects the correction without ratifying the estimate', async () => {
     const { ops, update } = buildOps();
     const result = await ops.updateNutritionItem('kc', 'row-1', { mealTime: 'evening' });
 
     expect(update).toHaveBeenCalledTimes(1);
     const [, , persistedChanges] = update.mock.calls[0];
     expect(persistedChanges.mealTime).toBe('evening');
-    expect(persistedChanges.settled).toBe(true);
-    expect(persistedChanges.settledBy).toBe('user');
-    expect(typeof persistedChanges.settledAt).toBe('string');
-    expect(persistedChanges.settledAt.length).toBeGreaterThan(0);
+    expect(persistedChanges.settled).toBeUndefined();
+    expect(persistedChanges.settledBy).toBeUndefined();
+    expect(persistedChanges.settledAt).toBeUndefined();
+    expect(persistedChanges.manualFields).toEqual(['mealTime']);
 
     expect(result.item.mealTime).toBe('evening');
-    expect(result.item.settled).toBe(true);
+    expect(result.item.settled).toBe(false);
     expect(result.changedFields).toContain('mealTime');
-    expect(result.changedFields).toContain('settled');
-    expect(result.changedFields).toContain('settledBy');
-    expect(result.changedFields).toContain('settledAt');
+    expect(result.changedFields).not.toContain('settled');
   });
 
   it('a bare { settled: true } one-tap confirm reaches the store (whitelist regression guard)', async () => {
@@ -130,7 +128,7 @@ describe('HealthOperations updateNutritionItem settles on edit', () => {
 
   it('settledAt is a local timestamp, not a UTC ISO string', async () => {
     const { ops, update } = buildOps();
-    await ops.updateNutritionItem('kc', 'row-1', { mealTime: 'evening' });
+    await ops.updateNutritionItem('kc', 'row-1', { settled: true });
 
     const [, , persistedChanges] = update.mock.calls[0];
     // A UTC ISO string looks like 2026-09-02T23:59:59.123Z — local timestamps
@@ -214,7 +212,7 @@ describe('HealthOperations updateNutritionItem cascades mealTime to a group\'s c
 
     await ops.updateNutritionItem('kc', 'g1', { name: 'Berry Smoothie' });
 
-    expect(findByDate).not.toHaveBeenCalled();
+    expect(findByDate).toHaveBeenCalledTimes(1);
     expect(update).toHaveBeenCalledTimes(1);
   });
 });
@@ -266,12 +264,13 @@ describe('HealthOperations.updateNutritionItem ratification stamp', () => {
 
   const unreviewed = { uuid: 'r1', name: 'Guessed dish', calories: 999, settled: false, kind: 'item' };
 
-  it('an ordinary edit still ratifies the row — a human touched these numbers', async () => {
+  it('an ordinary calorie edit protects calories without certifying other fields', async () => {
     const { ops, update } = buildOps(unreviewed);
     await ops.updateNutritionItem('kc', 'r1', { calories: 400 });
     const [, , changes] = update.mock.calls[0];
-    expect(changes.settled).toBe(true);
-    expect(changes.settledBy).toBe('user');
+    expect(changes.settled).toBeUndefined();
+    expect(changes.settledBy).toBeUndefined();
+    expect(changes.manualFields).toEqual(['calories']);
   });
 
   it('ratify:false writes the corrected fields WITHOUT certifying the rest', async () => {

@@ -94,7 +94,7 @@ describe('mutable nutrition receipts with the real capture/reviewer/Health ledge
     await publisher.publish(userId);
     expect(delivered.get('23').text).toContain('Weighed food 400g');
     const day = await health.readNutritionDay(userId, '2026-09-05');
-    expect(day.items.find(row => row.uuid === scaleRow.uuid)).toMatchObject({ grams: 400, calories: 560, settledBy: 'user' });
+    expect(day.items.find(row => row.uuid === scaleRow.uuid)).toMatchObject({ grams: 400, calories: 560, settled: false, manualFields: expect.arrayContaining(['grams', 'calories']) });
     expect(day.items.find(row => row.uuid === yogurtRow.uuid).name).toBe('Greek Yogurt');
     expect(day.items.map(row => row.uuid).sort()).toEqual(originalIds);
 

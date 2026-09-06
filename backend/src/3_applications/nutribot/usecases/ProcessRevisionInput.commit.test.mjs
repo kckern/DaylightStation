@@ -99,7 +99,7 @@ describe('ProcessRevisionInput on a committed log', () => {
     await run(h);
 
     const [, , items] = h.foodLogStore.updateItems.mock.calls[0];
-    expect(items.every(i => i.settled === true && i.settledBy === 'user')).toBe(true);
+    expect(items.every(i => i.settled === false && !i.settledBy)).toBe(true);
     expect(items[0].uuid).toBe(foodId);
     expect(items[0].manualFields).toContain('grams');
   });
@@ -109,7 +109,7 @@ describe('ProcessRevisionInput on a committed log', () => {
     await run(h);
 
     const [, , items] = h.foodLogStore.updateItems.mock.calls[0];
-    for (const item of items) expect(item.settledBy).toBe('user');
+    for (const item of items) { expect(item.settledBy).toBeUndefined(); expect(item.manualFields).toContain('grams'); }
   });
 
   it('restores the shared receipt rather than composing a second confirmation', async () => {

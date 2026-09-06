@@ -25,7 +25,7 @@ describe('LogTable', () => {
     expect(screen.getByText('Breakfast')).toBeTruthy();
     expect(screen.getByText('Eggs')).toBeTruthy();
     expect(screen.getByText('140 kcal')).toBeTruthy();
-    expect(screen.getAllByText(/Add food/)).toHaveLength(BUCKETS.length);
+    expect(screen.getAllByRole('button', { name: /Add food/ })).toHaveLength(BUCKETS.length);
   });
 
   it('hides UNGROUPED when empty, shows it when populated', () => {
@@ -50,7 +50,7 @@ describe('LogTable', () => {
   it('add and row taps fire with the right arguments', () => {
     const onAddTo = vi.fn(); const onRowTap = vi.fn();
     render(<LogTable byBucket={byBucket} sessions={[]} onAddTo={onAddTo} onRowTap={onRowTap} />, { wrapper });
-    fireEvent.click(screen.getAllByText(/Add food/)[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: /Add food/ })[0]);
     expect(onAddTo).toHaveBeenCalledWith('morning');
     fireEvent.click(screen.getByText('Eggs'));
     expect(onRowTap).toHaveBeenCalledWith(expect.objectContaining({ uuid: '1' }));
@@ -65,7 +65,7 @@ describe('LogTable', () => {
       expect(screen.getByText('Dinner')).toBeTruthy();
       expect(screen.getByText('Snacks')).toBeTruthy();
       // Structure is present alongside the shimmer, not instead of it.
-      expect(screen.getAllByText(/Add food/)).toHaveLength(BUCKETS.length);
+      expect(screen.getAllByRole('button', { name: /Add food/ })).toHaveLength(BUCKETS.length);
       expect(screen.getAllByLabelText(/^Loading /).length).toBeGreaterThan(0);
     });
 
@@ -132,7 +132,7 @@ describe('LogTable', () => {
       fireEvent.click(screen.getByRole('button', { name: /collapse smoothie/i }));
       expect(screen.getByText('Smoothie')).toBeTruthy();
       // Rollup (105 + 120), not the group row's own (zero) calories.
-      expect(document.querySelector('.health-row--group .health-row__kcal').textContent).toBe('Total · 225 kcal');
+      expect(document.querySelector('.health-row-line--group .health-row__kcal').textContent).toBe('225 kcal');
       expect(screen.queryByText('Banana')).toBeNull();
       expect(screen.queryByText('Protein powder')).toBeNull();
       const expandBtn = screen.getByRole('button', { name: /expand smoothie/i });
@@ -146,7 +146,7 @@ describe('LogTable', () => {
       fireEvent.click(screen.getByRole('button', { name: /expand smoothie/i }));
       expect(screen.getByText('Banana')).toBeTruthy();
       expect(screen.getByText('Protein powder')).toBeTruthy();
-      expect(document.querySelector('.health-row--group .health-row__kcal').textContent).toBe('Total · 225 kcal');
+      expect(document.querySelector('.health-row-line--group .health-row__kcal').textContent).toBe('225 kcal');
       const collapseBtn = screen.getByRole('button', { name: /collapse smoothie/i });
       expect(collapseBtn.getAttribute('aria-expanded')).toBe('true');
     });
@@ -181,7 +181,7 @@ describe('LogTable', () => {
       render(<LogTable byBucket={plainParentBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
       expect(screen.getByText('Plate')).toBeTruthy();
       // Rolled-up kcal shown collapsed; the child itself appears once expanded.
-      expect(screen.getByText('200')).toBeTruthy();
+      expect(document.querySelector('.health-row-line--group .health-row__kcal').textContent).toBe('200 kcal');
       expect(screen.getByRole('button', { name: /collapse plate/i })).toBeTruthy();
       expect(screen.getByText('Side item')).toBeTruthy();
     });
@@ -199,7 +199,7 @@ describe('LogTable', () => {
     it('Add food preserves the chosen meal target', () => {
       const onAddTo = vi.fn();
       render(<LogTable byBucket={emptyByBucket} sessions={[]} onAddTo={onAddTo} onRowTap={() => {}} />, { wrapper });
-      fireEvent.click(screen.getByText('Lunch').closest('section').querySelector('.health-meal__add'));
+      fireEvent.click(screen.getByRole('button', { name: 'Add food to Lunch' }));
       expect(onAddTo).toHaveBeenCalledWith('afternoon');
     });
 
@@ -243,7 +243,7 @@ describe('LogTable — per-meal macro subtotal', () => {
       { uuid: '1', name: 'Eggs', calories: 140, protein: 12, carbs: 1, fat: 10 },
       { uuid: '2', name: 'Toast', calories: 90, protein: 3, carbs: 17, fat: 1 },
     ])} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
-    expect(screen.getByText('Protein 15 g · Carbs 18 g · Fat 11 g')).toBeTruthy();
+    expect(screen.getByText('P 15 g · C 18 g · F 11 g')).toBeTruthy();
   });
 
   it('counts a group and its children ONCE — the group row carries zero macros by design', () => {
@@ -252,7 +252,7 @@ describe('LogTable — per-meal macro subtotal', () => {
       { uuid: 'c1', parentId: 'g1', name: 'Banana', calories: 105, protein: 1, carbs: 27, fat: 0 },
       { uuid: 'c2', parentId: 'g1', name: 'Yogurt', calories: 100, protein: 10, carbs: 6, fat: 3 },
     ])} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
-    expect(screen.getByText('Protein 11 g · Carbs 33 g · Fat 3 g')).toBeTruthy();
+    expect(document.querySelector('.health-meal__macros').textContent).toBe('P 11 g · C 33 g · F 3 g');
   });
 
   it('renders NO subtotal line for a meal of legacy rows with no macro data', () => {

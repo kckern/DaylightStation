@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import HighchartsReact from 'highcharts-react-official';
 import Highcharts from 'highcharts';
 import { Button, NumberInput, SegmentedControl, Stack, Text } from '@mantine/core';
-import { SectionCard, StatCard, LoadingState, ErrorState } from '@/lib/ui';
+import { SectionCard, StatCard, Sheet, LoadingState, ErrorState } from '@/lib/ui';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
@@ -13,7 +13,7 @@ import { MonthBlock } from '../today/MonthBlock.jsx';
 import { IntakeBurnChart } from './IntakeBurnChart.jsx';
 import { goalSaveMessage } from './goalSaveError.js';
 import { addDays } from '../today/WeekStrip.jsx';
-import { normalizeWeightEntries } from '../today/weightSeries.js';
+import { normalizeWeightEntries, buildWeightSeries, fmtDelta } from '../today/weightSeries.js';
 
 const logger = createAppLogger('health').child('progress');
 
@@ -33,11 +33,8 @@ function readTokens(el) {
   };
 }
 
-const fmtTrend = (dailyTrend) => {
-  if (dailyTrend == null) return '—';
-  const perWeek = Math.round(dailyTrend * 7 * 100) / 100;
-  return perWeek > 0 ? `+${perWeek}` : `${perWeek}`;
-};
+const emptyGoals = () => ({ sex: 'male', targetWeightLbs: '', weeklyRateLbs: 0,
+  activityBaseline: 1.2, budgetFloor: '', heightIn: '', birthYear: '' });
 
 /** Weight trend + goal editor + 14-day adherence bars — absorbs Weight.jsx's
  * chart and goal-setting UX for the new Health app (Weight.jsx itself stays,
@@ -54,6 +51,7 @@ export function ProgressView() {
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  const [editingGoals, setEditingGoals] = useState(false);
 
   // Seed the form once goals load; a later reload (after save) must not
   // clobber in-progress edits, so only seed while form is still null.
@@ -76,6 +74,7 @@ export function ProgressView() {
   const entries = useMemo(() => normalizeWeightEntries(weightRes.data), [weightRes.data]);
 
   const latest = entries[entries.length - 1] || null;
+  const weightTrend = useMemo(() => buildWeightSeries(weightRes.data), [weightRes.data]);
 
   const chartOptions = useMemo(() => {
     if (!tokens || !entries.length) return null;
@@ -152,6 +151,7 @@ export function ProgressView() {
       await DaylightAPI('api/v1/health/goals', payload, 'PUT');
       logger.info('goals.saved', {});
       goalsRes.reload();
+      setEditingGoals(false);
     } catch (err) {
       logger.error('goals.save.failed', { error: err?.message });
       setSaveError(err);
@@ -162,6 +162,12 @@ export function ProgressView() {
 
   return (
     <div className="health-progress" ref={containerRef}>
+      <SectionCard title="Goals">
+        <div className="health-goals-summary"><Text size="sm">{goalsRes.data?.goals
+          ? `Target ${goalsRes.data.goals.targetWeightLbs ?? '—'} lb · ${goalsRes.data.goals.weeklyRateLbs ?? '—'} lb/week · Floor ${goalsRes.data.goals.budgetFloor ?? '—'} kcal`
+          : 'Set your goals to calculate a daily budget.'}</Text>
+          <Button variant="light" onClick={() => { setForm(goalsRes.data?.goals || emptyGoals()); setSaveError(null); setEditingGoals(true); }}>Edit goals</Button></div>
+      </SectionCard>
       {weightRes.loading ? <LoadingState label="weight history" rows={5} /> : null}
       {weightRes.error ? <ErrorState error={weightRes.error} onRetry={weightRes.reload} label="Weight history" /> : null}
       {!weightRes.loading && !weightRes.error ? (
@@ -169,9 +175,9 @@ export function ProgressView() {
           {chartOptions ? <HighchartsReact highcharts={Highcharts} options={chartOptions} /> : null}
           {latest ? (
             <div className="health-progress__stats">
-              <StatCard label="Current weight"
+              <StatCard label={`Weight · as of ${latest.date}`}
                 value={latest.avg != null || latest.lbs != null ? Math.round((latest.avg ?? latest.lbs) * 10) / 10 : '—'} unit="lbs" emphasis />
-              <StatCard label="7-day trend" value={fmtTrend(latest.lbs_adjusted_average_7day_trend)} unit="lbs/wk" />
+              <StatCard label={`Adjusted change · ${weightTrend.trendDays ?? 7} days`} value={fmtDelta(weightTrend.deltaLbs) ?? '—'} unit="lb" />
               <StatCard label="Body fat"
                 value={latest.fat_percent_adjusted_average != null ? Math.round(latest.fat_percent_adjusted_average * 10) / 10 : '—'}
                 unit="%" />
@@ -195,11 +201,11 @@ export function ProgressView() {
         )}
       </SectionCard>
 
-      <SectionCard title="Goals">
+      <Sheet open={editingGoals} onClose={() => { if (!saving) { setEditingGoals(false); setForm(goalsRes.data?.goals || null); } }} title="Edit goals">
         {goalsRes.error ? <ErrorState error={goalsRes.error} onRetry={goalsRes.reload} label="Goals" /> : !form ? <LoadingState label="goals" rows={4} /> : (
           <Stack gap="sm">
             {saveError ? <Text size="sm" c="red">{goalSaveMessage(saveError)}</Text> : null}
-            <SegmentedControl value={form.sex || 'male'} onChange={(v) => setForm({ ...form, sex: v })}
+            <SegmentedControl aria-label="Sex for budget calculation" value={form.sex || 'male'} onChange={(v) => setForm({ ...form, sex: v })}
               data={[{ label: 'Male', value: 'male' }, { label: 'Female', value: 'female' }]} />
             <NumberInput label="Target weight" suffix=" lbs" value={form.targetWeightLbs}
               onChange={(v) => setForm({ ...form, targetWeightLbs: v })} />
@@ -246,7 +252,7 @@ export function ProgressView() {
             <Button onClick={saveGoals} loading={saving}>Save goals</Button>
           </Stack>
         )}
-      </SectionCard>
+      </Sheet>
     </div>
   );
 }

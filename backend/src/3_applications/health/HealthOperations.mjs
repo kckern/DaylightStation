@@ -1,7 +1,7 @@
 import { presentSettlement } from '#domains/nutrition/services/settlement.mjs';
 import { confirmReview } from '#shared/contracts/nutrition/reviewLifecycle.mjs';
 import { nowTs24 } from '#system/utils/time.mjs';
-import { foodGrams, scaleFoodPortion, NUTRIENT_KEYS } from '#shared/contracts/health/foodQuantity.mjs';
+import { foodGrams, portionFactor, scaleFoodPortion, NUTRIENT_KEYS } from '#shared/contracts/health/foodQuantity.mjs';
 import { v5 as uuidv5 } from 'uuid';
 import { isISODate } from '#shared/contracts/health/isoDate.mjs';
 import { nutritionLogVersion } from '../nutrition/FoodLogReview.mjs';
@@ -15,11 +15,8 @@ const NUTRITION_UPDATE_FIELDS = new Set([
   // (Breakfast/Lunch/Dinner/Snacks) — the today-view combobox (F5) and edit
   // sheet (F6) both PUT this field expecting it to persist.
   'mealTime',
-  // settled/settledBy/settledAt: a human edit (or an explicit one-tap
-  // confirm, `{ settled: true }` alone) ratifies the machine's estimate.
-  // Without these in the whitelist, updateNutritionItem's stamp below is
-  // silently dropped before it ever reaches the store.
-  'settled', 'settledBy', 'settledAt',
+  // Lifecycle fields are server-owned. Only an explicit settled:true command
+  // confirms an estimate; changing its portion or artwork does not.
   // Task 5.5: a kitchen-scale re-pair recomputes macros from a density level and
   // explicitly nulls `microsSource` (a density estimate is not AI/catalog
   // micronutrient data) — without it here, `ObservationPairingService.recomputeEntry`'s
@@ -170,34 +167,19 @@ export class HealthOperations {
     }
     const existing = await this.nutritionItems.findByUuid(username, id);
     if (!existing) return null;
-    const ratify = options.ratify !== false;
-    // Any successful edit is a human touch ratifying the machine's estimate —
-    // settle the row. A body of just `{ settled: true }` (the one-tap
-    // confirm) flows through this same stamp. Never conditional/defaulted:
-    // this is an explicit write, not a fallback. The stamp is merged BEFORE
-    // the whitelist filter (not after) so NUTRITION_UPDATE_FIELDS stays the
-    // single real gate on what reaches the store — settled/settledBy/settledAt
-    // must be present in that Set or this stamp is silently dropped too.
-    //
-    // `ratify: false` omits the stamp entirely rather than writing `settled: false`:
-    // an ABSENT `settled` key means "legacy row, treat as settled", so writing a value
-    // here would change the meaning of rows that never carried one. Omitting leaves
-    // whatever the row already said — an unreviewed estimate stays unreviewed, a
-    // confirmed row stays confirmed.
-    const stampedChanges = ratify
-      ? {
-        ...changes,
-        settled: true,
-        settledBy: 'user',
-        settledAt: nowTs24(),
-      }
-      : { ...changes };
+    const ratify = changes.settled === true && options.ratify !== false;
+    const siblings = existing.kind === 'group' ? await this.nutritionItems.findByDate(username, existing.date) : [];
+    const children = siblings.filter(child => child.parentId != null && [existing.id, existing.uuid].includes(child.parentId));
+    const factor = changes.portion != null ? portionFactor({ ...existing, children }, changes.portion) : changes.factor;
+    if (factor != null && (!Number.isFinite(factor) || factor <= 0)) {
+      throw Object.assign(new Error('Portion factor must be positive'), { status: 400 });
+    }
     const allowedChanges = Object.fromEntries(
-      Object.entries(stampedChanges).filter(([field]) => NUTRITION_UPDATE_FIELDS.has(field)),
+      Object.entries(changes).filter(([field]) => NUTRITION_UPDATE_FIELDS.has(field)),
     );
-    // Internal lifecycle metadata is not an API-editable field.
-    if (ratify && existing.review) allowedChanges.review = confirmReview(existing).review;
-    if (changes.factor != null) Object.assign(allowedChanges, scaleFoodPortion(existing, changes.factor));
+    if (ratify && existing.settled !== true) Object.assign(allowedChanges, confirmReview(existing, this.clock.now()), { settledAt: nowTs24() });
+    if (factor != null) Object.assign(allowedChanges, scaleFoodPortion({ ...existing, children }, factor),
+      Object.fromEntries(Object.entries(changes).filter(([key]) => NUTRIENT_KEYS.includes(key))));
     if (changes.grams != null && existing.kind !== 'group' && foodGrams(existing)) {
       // Exact mass changes and multipliers share the same extensive arithmetic.
       Object.assign(allowedChanges, scaleFoodPortion(existing, changes.grams / foodGrams(existing)),
@@ -211,21 +193,42 @@ export class HealthOperations {
         else allowedChanges.nutrientProvenance[key] = { source: 'user', grams: allowedChanges.grams ?? foodGrams(existing), at: nowTs24() };
       }
     }
+    // Protect only actual human corrections, including values derived from a
+    // portion correction. Polling/review may still enrich untouched fields.
+    const protect = (row, patch) => {
+      if (options.ratify === false) return;
+      const fields = Object.keys(patch).filter(key => NUTRITION_UPDATE_FIELDS.has(key)
+        && JSON.stringify(patch[key]) !== JSON.stringify(row[key]));
+      if (fields.length) patch.manualFields = [...new Set([...(row.manualFields || []), ...fields])];
+    };
+    protect(existing, allowedChanges);
     if (typeof this.nutritionItems.mutateEntries === 'function') {
-      const siblings = existing.kind === 'group' ? await this.nutritionItems.findByDate(username, existing.date) : [];
-      const children = siblings.filter(child => child.parentId != null && (child.parentId === existing.id || child.parentId === existing.uuid));
+      const scope = [existing, ...children].map(row => row.uuid ?? row.id).sort();
+      if (changes.expectedVersions && JSON.stringify(Object.keys(changes.expectedVersions).sort()) !== JSON.stringify(scope)) {
+        throw Object.assign(new Error('This group changed. Reload it before saving.'), { code: 'VERSION_CONFLICT', status: 409 });
+      }
+      const version = row => changes.expectedVersions?.[row.uuid ?? row.id] ?? ((row.uuid ?? row.id) === (existing.uuid ?? existing.id) ? changes.expectedVersion : null) ?? row.version ?? 1;
       const updates = [{ id, changes: allowedChanges, expectedVersion: changes.expectedVersion ?? existing.version ?? 1 }];
+      updates[0].expectedVersion = version(existing);
       for (const child of children) {
         const childChanges = {};
         for (const key of ['mealTime', 'date']) if (Object.hasOwn(allowedChanges, key)) childChanges[key] = allowedChanges[key];
-        if (changes.factor != null) Object.assign(childChanges, scaleFoodPortion(child, changes.factor));
-        if (Object.keys(childChanges).length) {
-          if (ratify) childChanges.manualFields = [...new Set([...(child.manualFields || []), ...Object.keys(childChanges)])];
-          updates.push({ id: child.uuid ?? child.id, changes: childChanges, expectedVersion: child.version ?? 1 });
-        }
+        if (factor != null) Object.assign(childChanges, scaleFoodPortion(child, factor));
+        if (ratify && child.settled !== true) Object.assign(childChanges, confirmReview(child, this.clock.now()));
+        protect(child, childChanges);
+        updates.push({ id: child.uuid ?? child.id, changes: childChanges, expectedVersion: version(child) });
       }
-      const result = await this.nutritionItems.mutateEntries(username, { updates });
-      return { item: result.items[0], changedFields: Object.keys(allowedChanges),
+      const result = await this.nutritionItems.mutateEntries(username, { updates, validate: ({ before }) => {
+        if (!changes.expectedVersions || existing.kind !== 'group') return;
+        const current = before.filter(row => (row.uuid ?? row.id) === (existing.uuid ?? existing.id)
+          || (row.parentId != null && [existing.id, existing.uuid].includes(row.parentId))).map(row => row.uuid ?? row.id).sort();
+        if (JSON.stringify(scope) !== JSON.stringify(current)) throw Object.assign(new Error('This group changed. Reload it before saving.'), { code: 'VERSION_CONFLICT', status: 409 });
+      } });
+      return { item: result.items.find(row => (row.uuid ?? row.id) === (existing.uuid ?? existing.id)) ?? existing, changedFields: Object.keys(allowedChanges),
+        versions: Object.fromEntries([existing, ...children].map(row => {
+          const id = row.uuid ?? row.id;
+          return [id, result.items.find(item => (item.uuid ?? item.id) === id)?.version ?? row.version ?? 1];
+        })),
         cascadedIds: result.affectedIds.filter(value => value !== (existing.uuid ?? existing.id)),
         affectedDates: result.affectedDates };
     }

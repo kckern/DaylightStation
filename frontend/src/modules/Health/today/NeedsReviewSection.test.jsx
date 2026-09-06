@@ -39,7 +39,7 @@ describe('NeedsReviewSection', () => {
 
   it('renders a NEEDS REVIEW row per pending log with items, kcal total, and source tag', () => {
     r(<NeedsReviewSection pending={PENDING} onChanged={() => {}} />);
-    expect(screen.getByText('NEEDS REVIEW')).toBeTruthy();
+    expect(screen.getByText(/captures? not counted · Review/)).toBeTruthy();
     expect(screen.getByText('Oatmeal, Banana')).toBeTruthy();
     expect(screen.getByText(/315 kcal/)).toBeTruthy();
     expect(screen.getByText('Telegram')).toBeTruthy();

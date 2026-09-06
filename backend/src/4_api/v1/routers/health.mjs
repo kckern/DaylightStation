@@ -648,7 +648,7 @@ export function createHealthRouter(config) {
     router.put('/nutrilist/:uuid', asyncHandler(async (req, res) => {
       const { uuid } = req.params;
       const userId = getDefaultUsername();
-      const updateData = req.body;
+      const { operationId, ...updateData } = req.body;
 
       // "Just this entry" (PRD F5.4) travels through this generic PUT, so the
       // icon is checked here rather than trusted from the client.
@@ -659,7 +659,8 @@ export function createHealthRouter(config) {
       }
 
       // Check if item exists
-      const update = await healthOperations.updateNutritionItem(userId, uuid, updateData);
+      const update = await runNutritionOperation(userId, operationId, { operation: 'entry-update', id: uuid, ...updateData },
+        () => healthOperations.updateNutritionItem(userId, uuid, updateData));
       if (!update) {
         return res.status(404).json({ error: 'Nutrilist item not found' });
       }
@@ -669,6 +670,7 @@ export function createHealthRouter(config) {
       res.json({
         message: 'Nutrilist item updated successfully',
         data: update.item,
+        versions: update.versions,
         cascadedIds: update.cascadedIds || [],
         affectedIds: [update.item.uuid ?? update.item.id, ...(update.cascadedIds || [])],
         affectedDates: update.affectedDates

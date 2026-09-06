@@ -63,6 +63,7 @@ export class YamlFoodCatalogDatastore extends IFoodCatalogDatastore {
       ),
       favorite: entry.favorite === true,
       icon: entry.icon ?? null,
+      iconOverride: entry.iconOverride ?? null,
       lastUsed: entry.lastUsed,
       createdAt: entry.createdAt,
     };

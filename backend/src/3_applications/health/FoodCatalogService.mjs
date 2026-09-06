@@ -426,7 +426,7 @@ export class FoodCatalogService {
     try {
       const entry = item.foodId ? await this.#catalogStore.getById(item.foodId, userId)
         : await this.#catalogStore.findByNormalizedName(item.name || item.label, userId);
-      return entry ? { ...item, foodId: entry.id, icon: entry.icon || item.icon } : { ...item, foodId };
+      return entry ? { ...item, foodId: entry.id, icon: entry.iconOverride || (isRealIcon(entry.icon) ? entry.icon : item.icon) } : { ...item, foodId };
     } catch (err) {
       this.#logger.warn?.('health.catalog.identity_unavailable', { error: err.message });
       return { ...item, foodId };
@@ -462,6 +462,7 @@ export class FoodCatalogService {
     const entry = await this.#catalogStore.getById(id, userId);
     if (!entry) throw new Error(`Catalog entry not found: ${id}`);
     entry.icon = isRealIcon(icon) ? icon : null;
+    entry.iconOverride = entry.icon;
     await this.#catalogStore.save(entry, userId);
     this.#logger.info?.('health.catalog.icon_set', { id, icon: entry.icon });
     return entry;

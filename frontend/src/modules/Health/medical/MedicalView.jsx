@@ -66,13 +66,13 @@ export function MedicalView() {
 
   return (
     <div className="health-medical">
-      <Group justify="flex-end" mb="sm">
+      {metrics.length ? <Group justify="flex-end" mb="sm">
         <Button size="xs" onClick={openAdd}>Add reading</Button>
-      </Group>
+      </Group> : null}
 
       {med.loading ? <LoadingState label="medical readings" rows={4} /> : null}
       {med.error ? <ErrorState error={med.error} onRetry={med.reload} label="Medical readings" /> : null}
-      {!open && error ? <ErrorState error={error} label="Reading could not be deleted" /> : null}
+      {!open && error ? <ErrorState error={error} onRetry={() => { setError(null); med.reload(); }} label="Reading could not be deleted" /> : null}
       {!med.loading && !med.error && !metrics.length ? (
         <EmptyState title="No medical readings yet"
           hint="Add a blood pressure, glucose, or lab reading to start tracking."

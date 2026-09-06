@@ -51,7 +51,7 @@ $health-bar-box: 16px;
     &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
     &:disabled { color: var(--ds-text-low); opacity: 0.35; }
   }
-  &__days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.2rem; }
+  &__days { display: grid; grid-template-columns: repeat(7, minmax(44px, 1fr)); gap: 0; }
 
   &__cell {
     display: flex; flex-direction: column; align-items: center; gap: 0.15rem;
@@ -255,48 +255,22 @@ $health-aside-gap: 1.5rem;
 // rows edge to edge is unreadable, and every measurement in this app (macro
 // bar tracks, the week strip's seven cells) was tuned against a phone-width
 // column.
-.health-today {
-  max-width: $health-today-column;
-  margin-inline: auto;
-  // The day log is an information-dense ledger. Keep controls at their 44px
-  // touch floor, but take the surrounding type down one step so more of the
-  // day remains visible without scrolling.
-  font-size: 0.9rem;
-  padding-bottom: 0.75rem;
+.health-today { max-width: 1440px; margin-inline: auto; padding-bottom: 0.75rem; }
+.health-history {
+  border-bottom: 1px solid var(--ds-border);
+  > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--ds-text-mid); }
 }
-
-// Narrow: the aside is simply the next block in the stack, landing directly
-// under the macro bars — which is exactly where the weight chip belongs on a
-// phone. There is ONE instance of each widget in the JSX; the wide layout below
-// moves this same element into a column rather than rendering a second copy.
-.health-today__aside {
-  display: flex; flex-direction: column; gap: 0.6rem;
-}
-
+.health-macro-intake { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; padding-block: 0.4rem; color: var(--ds-text-mid); font-variant-numeric: tabular-nums; font-size: 0.85rem; }
+.health-log { display: grid; gap: 0.5rem 1rem; align-items: start; }
 @media (min-width: $health-aside-breakpoint) {
-  .health-today {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) $health-aside-width;
-    column-gap: $health-aside-gap;
-    align-items: start;
-    max-width: calc(#{$health-today-column} + #{$health-aside-width} + #{$health-aside-gap});
-
-    // Everything else stays in the capped main column...
-    > * { grid-column: 1; min-width: 0; }
-    // ...and the aside takes the second column, pinned to the top of the page
-    // and sticky so it stays useful while the log scrolls.
-    // Spanning the rows rather than sitting in row 1: an aside pinned to row 1
-    // alone STRETCHES that row to its own height, which pushes a 150px hole
-    // between the equation strip and everything under it in the main column.
-    // The span is generous (Today renders ~20 children) and costs nothing —
-    // empty implicit rows are zero-height and `row-gap` is 0.
-    row-gap: 0;
-    > .health-today__aside {
-      grid-column: 2; grid-row: 1 / span 50;
-      align-self: start; position: sticky; top: 0.5rem;
-    }
-  }
+  .health-log { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+.health-log__empty-meals, .health-meal--exercise { grid-column: 1 / -1; }
+.health-log__empty-meals { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.health-log__empty-add { min-height: 44px; padding-inline: 0.5rem; color: var(--ds-text-mid); }
+.health-portion { cursor: ew-resize; touch-action: pan-y; user-select: none; min-height: 44px; min-width: 44px; text-align: right; }
+.health-portion-error { display: flex; flex-wrap: wrap; gap: 0.5rem; color: var(--ds-danger); }
+.health-portion:focus-visible, .health-row__identity:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 1px; }
 
 // The 30-day block (Task 8.4) — the week strip at a month's zoom, same
 // encoding, same honesty rule: a hole is hollow, never a zero-height bar.
@@ -364,9 +338,10 @@ $health-aside-gap: 1.5rem;
 
 .health-meal {
   margin-top: 0.4rem;
-  &__header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--ds-border); padding-bottom: 0.05rem; }
+  &__header { display: flex; flex-wrap: wrap; gap: 0.1rem 0.5rem; align-items: center; border-bottom: 1px solid var(--ds-border); min-height: 44px; }
+  &__header &__add { width: 44px; text-align: center; font-size: 1.25rem; }
   // Keep the subtotal and secondary actions aligned without overflowing.
-  &__header-right { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 0.15rem 0.3rem; }
+  &__header-right { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 0.15rem 0.3rem; }
   &__label { margin: 0; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ds-text-mid); }
   // Must never wrap mid-value ("230" / "kcal" landing on separate lines) —
   // that's the narrow-width regression this rule guards against. The
@@ -402,61 +377,34 @@ $health-aside-gap: 1.5rem;
 // control — kept as a sibling, never nested inside the row button (a
 // button-in-a-button is invalid and breaks the confirm tap target).
 .health-row-line {
-  display: flex; align-items: stretch; gap: 0.25rem;
-  &--unsettled { align-items: center; }
+  display: grid; grid-template-columns: 20px minmax(0, 1fr) 4.5rem 3.8rem 44px;
+  align-items: center; gap: 0.2rem; min-height: 48px; position: relative;
 }
-
 .health-row {
-  display: grid; grid-template-columns: 14px 1fr auto 3.25rem; gap: 0.35rem;
-  align-items: center; width: 100%; flex: 1 1 auto; min-width: 0;
-  padding: 0.25rem 0.2rem; min-height: 44px; border-radius: 6px; text-align: left;
-  font-size: 0.86rem;
-  color: var(--ds-text-high);
-  &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
-  &__dot { width: 10px; height: 10px; border-radius: 50%; }
-  &__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  &__portion { font-size: 0.75rem; color: var(--ds-text-mid); font-variant-numeric: tabular-nums; }
-  &__kcal { text-align: right; font-variant-numeric: tabular-nums; }
-  &--readonly { grid-template-columns: 1fr auto 3.5rem; color: var(--ds-text-mid); }
-
-  // In-place AI-capture wait row (TodayView's capturePending) — same
-  // readonly-ish layout as an exercise credit row, just quieter (italic,
-  // low-emphasis text) since nothing here is tappable yet.
-  &--pending { grid-template-columns: 1fr; color: var(--ds-text-low); font-style: italic; }
-
-  // Group row: no dot slot (the expand control, a sibling button, takes
-  // that visual position instead — see `&__expand` below).
-  &--group { grid-template-columns: 1fr auto 3.5rem; }
-
-  // A row carrying a photoRef (group header or standalone item) gets a
-  // 32px thumbnail column prepended. This column is reserved by the
-  // presence of photoRef alone, never by whether the image actually
-  // loaded — see EntryRow.jsx's hideBrokenThumb: a failed load hides the
-  // <img> in place so this column's width holds and nothing reflows.
-  &--thumb { grid-template-columns: 32px 14px 1fr auto 3.5rem; }
-  // Compound selector (both modifiers on the same element) — `&--x&--y`
-  // is invalid Sass (a bare `&` may only start a compound selector, not
-  // appear a second time mid-selector), so the second `&` is spelled out
-  // literally as `.health-row` instead.
-  &--group.health-row--thumb { grid-template-columns: 32px 1fr auto 3.5rem; }
-  &__thumb { width: 32px; height: 32px; border-radius: 6px; object-fit: cover; }
-
-  // A food icon takes the DOT's grid column, at 24px rather than the dot's
-  // 14px — the column width therefore depends on which of the two rendered,
-  // which is why `--icon` is applied from EntryRow only when a URL survives
-  // (an icon whose load failed falls back to the dot AND to the 14px column,
-  // so nothing is left holding empty space). A group row has no dot column at
-  // all, so for it `--icon` ADDS one. These rules follow `--thumb` and
-  // `--group` deliberately: the single-class forms tie on specificity and the
-  // later one must win, while the compound forms outrank both.
-  &--icon { grid-template-columns: 24px 1fr auto 3.5rem; }
-  &--group.health-row--icon { grid-template-columns: 24px minmax(0, 1fr) auto auto; }
-  &--thumb.health-row--icon { grid-template-columns: 32px 24px 1fr auto 3.5rem; }
-  &--group.health-row--thumb.health-row--icon { grid-template-columns: 32px 24px 1fr auto 3.5rem; }
-  &__icon { width: 24px; height: 24px; object-fit: contain; }
-
-  // The picker grid inside the edit sheet.
-  &__icon--picker { width: 40px; height: 40px; }
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; min-height: 44px; gap: 0.5rem;
+  &__identity { display: flex; align-items: center; gap: 0.4rem; min-width: 0; min-height: 44px; text-align: left; }
+  &__description { min-width: 0; }
+  &__name { overflow-wrap: anywhere; color: var(--ds-text-high); font-size: 0.86rem; }
+  &__portion { color: var(--ds-text-mid); font-size: 0.8rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  &__kcal { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-size: 0.86rem; small { font-size: 0.65rem; color: var(--ds-text-mid); } }
+  &__macros { display: block; color: var(--ds-text-mid); font-size: 0.72rem; font-weight: 400; }
+  &__action { width: 44px; text-align: center; color: var(--ds-success); }
+  &__thumb { width: 24px; height: 24px; flex: none; border-radius: 4px; object-fit: cover; }
+  &__icon { width: 24px; height: 24px; flex: none; }
+  &__error { grid-column: 2 / -1; color: var(--ds-danger); font-size: 0.8rem; }
+  &__branch { align-self: stretch; position: relative; }
+}
+.health-row-line--group { background: var(--ds-surface); border-radius: 6px; font-weight: 600; }
+.health-row-line--child .health-row__branch {
+  &::before { content: ''; position: absolute; left: 10px; top: 0; bottom: 0; border-left: 1px solid var(--ds-border); }
+  &::after { content: ''; position: absolute; left: 10px; right: 0; top: 24px; border-top: 1px solid var(--ds-border); }
+}
+.health-row-line--last-child .health-row__branch::before { bottom: auto; height: 24px; }
+.health-row__branch .health-row__expand { position: absolute; inset: 0 auto auto -12px; }
+@include bp.mobile-only {
+  .health-row-line { grid-template-columns: 12px minmax(0, 1fr) 3.5rem 3rem 44px; gap: 0.1rem; }
+  .health-row__kcal small { display: none; }
+  .health-row__identity { gap: 0.25rem; }
 }
 
 // Icon picker: a wrapping grid of 44px tap targets (the household touch-target
@@ -472,42 +420,9 @@ $health-aside-gap: 1.5rem;
     &[aria-pressed='true'] { background: var(--ds-accent); }
   }
 
-  // A group's child, indented one level. Flattened (PRD F2.4) — a
-  // group-nested-in-a-group still gets exactly this one indent, never a
-  // deeper one.
-  &--child { padding-left: 1.5rem; }
-
-  // Unsettled cue: dashed accent (survives greyscale) PAIRED with the
-  // `&__badge` text below (never color alone — accessibility requirement).
-  &--unsettled { border-left: 2px solid transparent; padding-left: calc(0.25rem - 2px); }
-  &__badge {
-    grid-column: 1 / -1; justify-self: start;
-    font-size: 0.68rem; font-weight: 400;
-    color: var(--ds-text-mid); padding-left: 24px;
-  }
-
-  // "82 g · scale ✓" — this row's grams came off the kitchen scale. Same
-  // full-width badge slot as `&__badge` above (they can both be present: an
-  // entry can be scale-measured AND still unconfirmed), success-toned rather
-  // than warning-toned because it is a statement of confidence, not a
-  // request for attention.
-  &__scale {
-    grid-column: 1 / -1; justify-self: start;
-    font-size: 0.68rem; font-weight: 600; letter-spacing: 0.03em;
-    color: var(--ds-success); padding-left: 24px;
-  }
 }
 
-.health-row-line--child {
-  margin-left: 1.35rem; padding-left: 1.25rem; position: relative;
-  border-left: 1px solid var(--ds-border);
-  &::before { content: ''; position: absolute; left: 0; top: 22px; width: 0.8rem; border-top: 1px solid var(--ds-border); }
-}
-.health-group > .health-row-line:first-child { background: var(--ds-surface); border-radius: 6px; }
-.health-row--group { font-weight: 600; }
-.health-row__total-label { font-size: 0.72rem; font-weight: 400; color: var(--ds-text-mid); }
-.health-row__badge, .health-row__scale { grid-column: 2 / -1; font-size: 0.68rem; color: var(--ds-text-mid); }
-.health-row__badge { color: var(--ds-text-mid); }
+.health-row__badge, .health-row__scale { font-size: 0.68rem; font-weight: 400; color: var(--ds-text-mid); }
 .health-food-art {
   display: inline-block; position: relative; flex: none; color: var(--ds-text-mid);
   > img, > svg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
@@ -528,7 +443,7 @@ $health-aside-gap: 1.5rem;
 .health-row__confirm {
   display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
   min-width: 44px; min-height: 44px;
-  border: 1px solid var(--ds-warning); border-radius: 8px;
+  border: 1px solid transparent; border-radius: 8px;
   color: var(--ds-warning); font-size: 1rem;
   &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
   &:hover { background: var(--ds-surface-alt); }
@@ -672,8 +587,10 @@ $health-aside-gap: 1.5rem;
   display: flex; flex-direction: column; gap: 0.75rem;
 
   &__stats {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
     gap: 0.5rem; margin-top: 0.5rem;
+    .ds-stat { min-width: 0; }
+    .ds-stat__value { flex-wrap: wrap; }
   }
   &__bars { display: flex; align-items: flex-end; gap: 3px; height: 64px; }
   &__bar {
@@ -684,6 +601,12 @@ $health-aside-gap: 1.5rem;
     &--gap { background: var(--ds-border); opacity: 0.4; }
   }
 }
+
+.health-goals-summary { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
+.health-pending--needs-review { padding: 0; margin-block: 0.25rem; background: none; border: none; }
+.health-pending--needs-review > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--ds-text-mid); }
+.health-pending--needs-review[open] { padding-bottom: 0.5rem; }
+.ds-root[data-pack='health'] summary { min-height: 44px; cursor: pointer; }
 
 // One watch-micro row in the goals form: the limit input, and — only once a
 // limit exists — the ceiling/floor choice beside it.

@@ -51,19 +51,24 @@ export function HealthSettings() {
       </Stack>
     </SectionCard>
     <CleanupQuestions />
-    <SectionCard title="Recent scans"><Stack gap="sm">
+    <SectionCard title="Cleanup runs"><Stack gap="sm">
+      <Text size="sm">{resource.data.runs[0]?.summary || 'No completed cleanup summary yet.'}</Text>
+      <details><summary>Run history ({resource.data.runs.length})</summary>
       {resource.data.runs.length ? resource.data.runs.map(run => <details key={run.id}>
         <summary>{new Date(run.createdAt).toLocaleString()} · {run.dryRun ? 'Preview' : 'Cleanup'} · {run.status}</summary>
         <Text size="sm">{run.summary || run.error || 'Waiting for results'}</Text>
         {(run.outcomes || []).map((outcome, i) => <Stack gap="xs" key={i}><Text size="sm">{outcome.status}{outcome.reason ? `: ${outcome.reason}` : ''}</Text><RepairPreview repair={outcome.proposal} /></Stack>)}
-      </details>) : <Text size="sm" c="dimmed">No scans yet.</Text>}
+      </details>) : <Text size="sm" c="dimmed">No cleanup runs yet.</Text>}
+      </details>
     </Stack></SectionCard>
     <SectionCard title="Repair history"><Stack gap="sm">
+      <details><summary>View repairs ({history.data?.total ?? '—'})</summary>
       {history.error ? <ErrorState error={history.error} onRetry={history.reload} /> : null}
       {!history.data && history.loading ? <LoadingState label="Repair history" /> : null}
       {history.data?.records.map(record => <Group key={record.id} justify="space-between"><Text size="sm">{new Date(record.at).toLocaleString()} · {record.reason}</Text><Button size="xs" variant="subtle" onClick={() => setSelected(record)}>Details</Button></Group>)}
       {history.data?.total === 0 ? <Text size="sm" c="dimmed">No repairs have been made.</Text> : null}
       <Group><Button variant="subtle" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 30))}>Previous</Button><Button variant="subtle" disabled={offset + 30 >= (history.data?.total || 0)} onClick={() => setOffset(offset + 30)}>Next</Button></Group>
+      </details>
     </Stack></SectionCard>
     {selected ? <Sheet open title="Repair details" onClose={() => { if (!busy) setSelected(null); }}><Stack gap="sm">
       <Text>{selected.reason}</Text><Text size="sm" c="dimmed">{selected.actor} · {selected.at}</Text>

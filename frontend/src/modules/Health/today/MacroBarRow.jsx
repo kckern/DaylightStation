@@ -39,7 +39,7 @@ function Bar({ label, value, target, unit, tone, caption, ariaLabel }) {
       <span className="health-macrobar__track" role="img" aria-label={ariaLabel}>
         <span className="health-macrobar__fill" style={{ width: `${pct}%` }} />
       </span>
-      <span className="health-macrobar__value">{fmt(value)}<span className="health-macrobar__target">{` / ${fmt(target)} ${unit}`}</span></span>
+      <span className="health-macrobar__value">{value == null ? '—' : fmt(value)}<span className="health-macrobar__target">{` / ${fmt(target)} ${unit}`}</span></span>
       {caption ? <span className="health-macrobar__caption">{caption}</span> : null}
     </div>
   );
@@ -64,7 +64,7 @@ function Bar({ label, value, target, unit, tone, caption, ariaLabel }) {
  * implying a per-micro count; closing the gap properly needs per-key provenance
  * on the row, which the stored shape does not have.
  */
-export function MacroBarRow({ macros, goals, microCoverage }) {
+export function MacroBarRow({ macros, goals, macroCoverage, microCoverage }) {
   const macroGoals = goals?.macroGoals || null;
   const watchMicros = Array.isArray(goals?.watchMicros) ? goals.watchMicros : [];
 
@@ -73,7 +73,8 @@ export function MacroBarRow({ macros, goals, microCoverage }) {
     return MACROS
       .filter((m) => Number(macroGoals[m.goalKey]) > 0)
       .map((m) => {
-        const value = num(macros[m.key]);
+        const coverage = macroCoverage?.[m.key];
+        const value = coverage ? coverage.value : (macros[m.key] == null ? null : num(macros[m.key]));
         const target = Number(macroGoals[m.goalKey]);
         const over = value > target;
         return {
@@ -83,10 +84,11 @@ export function MacroBarRow({ macros, goals, microCoverage }) {
           // A macro goal is a floor you aim at; exceeding it is worth flagging
           // (var(--ds-warning)) but it is not a failure the way a ceiling is.
           tone: over ? 'over-goal' : 'goal',
-          ariaLabel: `${m.label} ${fmt(value)} of ${fmt(target)} ${m.unit} goal, ${truePct(value, target)} percent${over ? ', over goal' : ''}`,
+          ariaLabel: value == null ? `${m.label} unknown; ${fmt(target)} ${m.unit} goal`
+            : `${m.label} ${fmt(value)} of ${fmt(target)} ${m.unit} goal, ${truePct(value, target)} percent${over ? ', over goal' : ''}${coverage && coverage.covered < coverage.total ? ', partial data' : ''}`,
         };
       });
-  }, [macros, macroGoals]);
+  }, [macros, macroGoals, macroCoverage]);
 
   const microBars = useMemo(() => {
     if (!macros) return [];
@@ -142,15 +144,22 @@ export function MacroBarRow({ macros, goals, microCoverage }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signature]);
 
-  // No targets configured means no bars — Progress is where goals are set, and
-  // an empty scaffold here would be chrome with nothing to say.
-  if (!macroBars.length && !microBars.length) return null;
+  const withoutTargets = MACROS.filter(m => !macroBars.some(bar => bar.key === m.key));
+  const intake = withoutTargets.length ? <div className="health-macro-intake" title="+ means some food has unknown macros">
+    {withoutTargets.map(m => { const coverage = macroCoverage?.[m.key];
+      const value = coverage ? coverage.value : macros?.[m.key];
+      return <span key={m.key}>{m.label} {value == null ? '—' : `${fmt(value)}${coverage && coverage.covered < coverage.total ? '+' : ''} g`}</span>;
+    })}
+  </div> : null;
+  if (!macroBars.length && !microBars.length) return intake;
 
   return (
     <div className="health-macrobar">
+      {intake}
       {macroBars.map((b) => (
         <Bar key={b.key} label={b.label} value={b.value} target={b.target}
-          unit={b.unit} tone={b.tone} ariaLabel={b.ariaLabel} />
+          unit={b.unit} tone={b.tone} ariaLabel={b.ariaLabel}
+          caption={macroCoverage?.[b.key]?.covered < macroCoverage?.[b.key]?.total ? 'Partial — some food has unknown macros' : null} />
       ))}
       {microBars.map((b) => (
         <Bar key={b.key} label={b.label} value={b.value} target={b.target}

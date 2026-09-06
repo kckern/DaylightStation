@@ -11,6 +11,7 @@ import { getMealTimeFromHour, MealTimes } from '#domains/nutrition/entities/sche
 import { formatLocalTimestamp } from '#domains/core/utils/time.mjs';
 import { provisionalReview } from '#shared/contracts/nutrition/reviewLifecycle.mjs';
 import { sha256Text } from '#system/utils/sha256.mjs';
+import { confineIcon, iconVocabulary } from '#domains/nutrition/services/icons.mjs';
 
 const NUTRIENTS = ['calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium', 'cholesterol'];
 const finiteNutrient = value => value != null && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
@@ -30,6 +31,7 @@ export class LogFoodFromUPC {
   #logger;
   #encodeCallback;
   #foodIconsString;
+  #iconVocabulary;
   #barcodeGenerator;
   #catalogService;
   #reviewService;
@@ -50,6 +52,7 @@ export class LogFoodFromUPC {
     this.#logger = deps.logger || console;
     this.#encodeCallback = deps.encodeCallback || ((cmd, data) => JSON.stringify({ cmd, ...data }));
     this.#foodIconsString = deps.foodIconsString || 'apple banana bread cheese chicken default';
+    this.#iconVocabulary = iconVocabulary(this.#foodIconsString, deps.foodIconNames);
     this.#barcodeGenerator = deps.barcodeGenerator; // Optional: for generating barcode images
     this.#catalogService = deps.catalogService || null;
     this.#reviewService = deps.reviewService;
@@ -218,10 +221,11 @@ export class LogFoodFromUPC {
       }
 
       // 4. Classify product if AI available
-      let classification = { icon: 'default', noomColor: 'yellow' };
+      let classification = { icon: confineIcon(product.icon, this.#iconVocabulary, product.name), noomColor: 'yellow' };
       if (this.#aiGateway) {
         try {
           classification = await this.#classifyProduct(product);
+          classification.icon = confineIcon(classification.icon, this.#iconVocabulary, product.name);
         } catch (e) {
           this.#logger.warn?.('upc.classify.failed', { upc, error: e.message });
         }
@@ -241,7 +245,7 @@ export class LogFoodFromUPC {
         && Number(product.serving?.size) > 0 ? Number(product.serving.size) : null;
       const foodItem = {
         label: product.name,
-        icon: product.icon || classification.icon,
+        icon: catalogEntry?.iconOverride || confineIcon(product.icon && product.icon !== 'default' ? product.icon : classification.icon, this.#iconVocabulary, product.name),
         foodId: product.foodId || null,
         grams,
         unit: grams ? 'g' : product.serving?.unit || 'serving',
