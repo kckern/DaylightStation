@@ -258,6 +258,10 @@ export function useSelfService({
   // The code stays valid across an exit or a timeout — nothing here revokes
   // it, so the child can simply type it again.
   const codeRef = useRef(null);
+  // The learner a resolved card named, held back until the child confirms it is
+  // them. Never claimed from here directly — `confirmIdentity` below is the one
+  // place it is spent, so a card that is abandoned claims nobody.
+  const pendingLearnerRef = useRef(null);
   const lastTriedRef = useRef(null);
   // Rule 4. Bumped by every return-to-lock; an in-flight request whose
   // generation has moved on drops its answer on the floor.
@@ -292,6 +296,10 @@ export function useSelfService({
     setDegraded(false);
     setBusy(false);
     codeRef.current = null;
+    // A child who walked away from "Is this you?" — or hit Escape, or timed
+    // out — claimed nobody, and must not be claimable later either. Cleared
+    // with everything else the card was holding.
+    pendingLearnerRef.current = null;
   }, []);
 
   /**
@@ -347,21 +355,64 @@ export function useSelfService({
     setMessage(null);
     setCard(res.data);
     setSentence(null);
-    setView('card');
     schoolLog.selfService('code.resolved', { subject: res.data.subject ?? null });
+    const learnerId = res.data.learnerId
+      ?? (typeof res.data.learner === 'string' ? res.data.learner : res.data.learner?.id)
+      ?? null;
+
+    // AHEAD OF THE CLAIM, NOT AFTER IT. `claim` is what makes everything that
+    // follows record against this learner — a runner, the shelf mount, the
+    // day's history — so confirming afterwards would attribute the work first
+    // and ask about it second. The card is rendered either way; what waits is
+    // the identity, and therefore the writing.
+    if (res.data.presentation?.confirmIdentity && learnerId) {
+      pendingLearnerRef.current = learnerId;
+      setView('identity');
+      schoolLog.selfService('identity.asked', { userId: learnerId });
+      return { resolved: true, sentence: null, degraded: false };
+    }
+
+    setView('card');
     // Claim so a runner mounted from this card records against the learner the
     // code named — the same soft-claim `useSchoolLaunch` performs. A valid
     // contextual card confirms that identity; the keypad itself stays
     // anonymous.
-    const learnerId = res.data.learnerId
-      ?? (typeof res.data.learner === 'string' ? res.data.learner : res.data.learner?.id)
-      ?? null;
     if (learnerId && claim) claim(learnerId);
     return { resolved: true, sentence: null, degraded: false };
   }, [beginWork, claim, endWork, deviceId]);
 
   /** The degraded retry — the same code, not a fresh typing exercise. */
   const retry = useCallback(() => submit(lastTriedRef.current), [submit]);
+
+  /**
+   * "Yes, that's me." The claim that `submit` held back.
+   *
+   * Deliberately the ONLY caller of `claim` on the confirm path: a child who
+   * walks away from the question, or taps "not me", leaves the panel having
+   * recorded nothing against anyone. That is the whole value of asking BEFORE
+   * claiming rather than after.
+   */
+  const confirmIdentity = useCallback(() => {
+    const learnerId = pendingLearnerRef.current;
+    pendingLearnerRef.current = null;
+    if (learnerId && claim) claim(learnerId);
+    schoolLog.selfService('identity.confirmed', { userId: learnerId ?? null });
+    setView('card');
+  }, [claim]);
+
+  /**
+   * "No." Back to the keypad with nothing claimed and nothing opened — and
+   * logged, because a child saying "that is not me" at a shared panel is the
+   * one signal this system can get about a code in the wrong hands.
+   */
+  const denyIdentity = useCallback(() => {
+    const learnerId = pendingLearnerRef.current;
+    pendingLearnerRef.current = null;
+    schoolLog.selfService('identity.denied', { userId: learnerId ?? null });
+    setCard(null);
+    setSentence(null);
+    setView('keypad');
+  }, []);
 
   /** Land on words with a Done. The ending every non-mounting path shares. */
   const say = useCallback((words) => {
@@ -635,7 +686,7 @@ export function useSelfService({
     // without any chance of the two disagreeing about the window.
     confirmRemainingMs,
     confirmTotalMs: confirmRemainingMs === null ? null : Number(printConfirmTimeoutMs),
-    submit, retry, runAction, confirmPrint, exit: toLock, reload,
+    submit, retry, runAction, confirmPrint, confirmIdentity, denyIdentity, exit: toLock, reload,
   };
 }
 
