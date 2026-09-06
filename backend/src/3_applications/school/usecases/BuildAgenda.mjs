@@ -61,6 +61,7 @@ const BOUNDARY_HOUR = 4;
  */
 const PREVIEW_TOKEN = 'preview:not-a-ticket';
 const PREVIEW_BULK_TOKEN = 'preview:not-a-bulk-ticket';
+const PREVIEW_READING_TOKEN = 'preview:not-a-reading-ticket';
 const PREVIEW_ACCESS_CODE = '000000';
 
 
@@ -292,6 +293,11 @@ export class BuildAgenda {
     // place to add a book, not only a lesson to finish. Read from the
     // assignment `PlanProjection` already loaded — no second store read.
     const readingSubjects = subjectsWithReadingShelf(assignment);
+    // Which subject the reading code hangs under. An enrollment may place the
+    // shelf somewhere other than English; without one there is nothing to ask,
+    // so the default stands. `subjectsWithReadingShelf` keeps deciding the
+    // SUBJECT — it no longer decides who may reach the shelf.
+    const [readingSubject = DEFAULT_BOOK_LOG_SUBJECT] = readingSubjects;
 
     for (const section of sectionsWithProgress) {
       const entry = section.next;
@@ -476,6 +482,63 @@ export class BuildAgenda {
       }
     }
 
+    // THE READING LOG, FOR EVERY LEARNER — enrolled or not.
+    //
+    // A `book-log` enrollment carries an OBLIGATION; it does not grant access.
+    // But until now it was the only way IN: `subjectsWithReadingShelf` reads
+    // the enrollment, so only an enrolled child's code named the program, and
+    // `appendAssignedProgramEntries` only puts the shelf in the plan from an
+    // enrollment. A household with one enrolled reader had three children who
+    // could not log a book at all.
+    //
+    // MINTED OUTSIDE THE SECTION LOOP, deliberately. That loop `continue`s on
+    // `!section.next` — a subject served today, or one the learner has no work
+    // in — which is exactly the day a child most wants the log: they have
+    // finished their English lesson and want to record the book they finished
+    // with it. Hanging the reading code off a section would make it disappear
+    // on precisely those days.
+    let readingToken = null;
+    let readingAccessCode = null;
+    if (this.#selfService) {
+      if (this.#previewOnly) {
+        readingToken = PREVIEW_READING_TOKEN;
+        readingAccessCode = PREVIEW_ACCESS_CODE;
+      } else {
+        readingAccessCode = mintAccessCode({
+          rng: this.#rng,
+          taken: (code) => liveCodes.has(code) || mintedCodes.has(code),
+        });
+        mintedCodes.add(readingAccessCode);
+        const readingRecord = mintToken({
+          tokenClass: 'subject_next',
+          subject: {
+            learnerId,
+            subject: readingSubject,
+            // Both flags, and both are load-bearing. `continueToday` keeps the
+            // code alive on a subject already served; `program` is what
+            // `ResolveAccessCode` honours literally, so this code opens the
+            // SHELF and never the English lesson that happens to share its
+            // subject.
+            continueToday: true,
+            program: BOOK_LOG_PROGRAM_ID,
+          },
+          at: nowIso,
+          rng: this.#rng,
+          expiresAt,
+          accessCode: readingAccessCode,
+          accessCodeExpiresAt: this.#accessCodeExpiryFor(nowIso, expiresAt),
+        });
+        await this.#tokens.put(readingRecord);
+        readingToken = readingRecord.token;
+        // Handed back like every other live code, so a build that never
+        // reaches the printer can revoke it.
+        mintedTokens.push(readingRecord.token);
+        this.#logger.info?.('school.agenda.reading-code.minted', {
+          learnerId, subject: readingSubject, enrolled: readingSubjects.size > 0,
+        });
+      }
+    }
+
     // `agendaDocument` composes its own "{title} — {actionLabel}" line, so the
     // document sees only the SUFFIX here — the offer above carries the full
     // label, which is a different consumer's concern (Task 11's resolver).
@@ -574,6 +637,7 @@ export class BuildAgenda {
         learnerId, learnerName, generatedAt: nowIso, timeZone: this.#timezone,
         sections: sectionsForDocument, tokensBySubject, accessCodesByToken,
         bulkToken, bulkAccessCode,
+        readingToken, readingAccessCode,
         notes,
       }),
     };
