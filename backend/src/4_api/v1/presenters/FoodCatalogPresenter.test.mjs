@@ -10,7 +10,7 @@ describe('presentFoodCatalogEntry', () => {
   // own caller. An entry with no icon presents an explicit null rather than
   // omitting the key, so "no picture chosen" is stated rather than inferred
   // from an absence.
-  it('preserves the established API record, now thirteen fields', () => {
+  it('preserves the established API record, now fourteen fields', () => {
     const entry = new FoodCatalogEntry({
       id: 'food-1', name: 'Apple', normalizedName: 'apple', nutrients: { calories: 95 },
       source: 'manual', barcodeUpc: null, useCount: 2,
@@ -19,6 +19,10 @@ describe('presentFoodCatalogEntry', () => {
     expect(presentFoodCatalogEntry(entry)).toEqual({
       id: 'food-1', name: 'Apple', normalizedName: 'apple', nutrients: { calories: 95 },
       source: 'manual', barcodeUpc: null, useCount: 2, icon: null,
+      // Presented as a hard boolean, never the stored value: a catalog entry
+      // written before favorites existed has no `favorite` key at all, and the
+      // client must not have to tell `undefined` from `false`.
+      favorite: false,
       // An entry with no observation that carries a mass says so — explicit
       // nulls and a zero count, never a guessed density.
       canonicalGrams: null, densityKcalPerGram: null, observationCount: 0,
