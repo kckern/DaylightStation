@@ -126,7 +126,7 @@ function Shelf({ shelf, error, actions }) {
  * @param {(reason: 'done'|'idle') => void} [props.onExit]
  */
 export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit }) {
-  const { view, step, shelf, studyDay, learner, error, busy, current, receipt, add, actions } = useBookShelf({ learnerId, grant, idleTimeoutSeconds, onExit });
+  const { view, step, shelf, studyDay, earliestFinishDay, learner, error, busy, current, receipt, add, actions } = useBookShelf({ learnerId, grant, idleTimeoutSeconds, onExit });
 
   if (view === 'closed') return null;
   // The server's study day, re-read on every shelf fetch; the DayPickers are
@@ -142,9 +142,9 @@ export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit
   } else if (view === 'history') {
     body = <History items={shelf?.items ?? []} onBack={actions.back} />;
   } else if (view === 'update' && current) {
-    body = <UpdateBook item={current} today={today} error={error} busy={busy} actions={actions} />;
+    body = <UpdateBook item={current} today={today} earliestDay={earliestFinishDay} error={error} busy={busy} actions={actions} />;
   } else if (view === 'add') {
-    body = <AddBook step={step} add={add} today={today} error={error} busy={busy} actions={actions} />;
+    body = <AddBook step={step} add={add} today={today} earliestDay={earliestFinishDay} error={error} busy={busy} actions={actions} />;
   } else if (view === 'receipt' && receipt) {
     body = (
       <SaveReceipt

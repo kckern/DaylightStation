@@ -65,3 +65,42 @@ describe('buildDayGrid', () => {
     expect(() => buildDayGrid('2026-9-2')).toThrow(/YYYY-MM-DD/);
   });
 });
+
+/**
+ * `minDay` — the oldest selectable day, from the shelf view's
+ * `earliestFinishDay`. Added 2026-09-06 alongside the server-side backdate
+ * floor, so the grid cannot draw a day the write path refuses.
+ */
+describe('buildDayGrid — minDay', () => {
+  const keysIn = (rows) => rows.flat().filter(Boolean).map((cell) => cell.key);
+
+  it('blanks every day before the floor and keeps the floor itself', () => {
+    const keys = keysIn(buildDayGrid('2026-09-02', { minDay: '2026-08-26' }));
+    expect(keys).toContain('2026-08-26');
+    expect(keys.every((key) => key >= '2026-08-26')).toBe(true);
+    expect(keys[0]).toBe('2026-08-26');
+  });
+
+  it('NEVER returns an entirely blank row', () => {
+    // DayPicker keys each row off `row.find(Boolean).key`. A floor landing
+    // mid-grid used to leave a whole leading week null, which read
+    // `undefined.key` and took the control down on render.
+    for (const minDay of ['2026-08-13', '2026-08-26', '2026-09-01', '2026-09-02']) {
+      const rows = buildDayGrid('2026-09-02', { minDay });
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) expect(row.some(Boolean)).toBe(true);
+    }
+  });
+
+  it('still refuses the future while a floor is set', () => {
+    const keys = keysIn(buildDayGrid('2026-09-02', { minDay: '2026-08-26' }));
+    expect(keys.every((key) => key <= '2026-09-02')).toBe(true);
+  });
+
+  it('is unchanged by an absent or unreadable floor', () => {
+    const plain = keysIn(buildDayGrid('2026-09-02'));
+    for (const minDay of [null, undefined, '', 'not-a-day', '2026-02-31']) {
+      expect(keysIn(buildDayGrid('2026-09-02', { minDay }))).toEqual(plain);
+    }
+  });
+});
