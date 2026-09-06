@@ -34,13 +34,13 @@ const claim = vi.fn();
 const cardBody = ({ confirmIdentity }) => ({
   ok: true,
   schema: 'school.self-service-card/v2',
-  learner: 'user_4',
-  learnerId: 'user_4',
+  learner: 'test-learner',
+  learnerId: 'test-learner',
   subject: 'english',
   title: 'English 1',
   sentence: null,
   context: {
-    learner: { id: 'user_4', displayName: 'User_4' },
+    learner: { id: 'test-learner', displayName: 'Test-Learner' },
     taxonomy: { subject: { id: 'english', label: 'English & Literature' }, course: null, module: null, lesson: null },
     trail: [],
     progress: [],
@@ -115,7 +115,7 @@ describe('identity confirmation before the claim', () => {
     serve(cardBody({ confirmIdentity: false }));
     render(<Panel />);
     await typeCode('482913');
-    expect(claim).toHaveBeenCalledWith('user_4');
+    expect(claim).toHaveBeenCalledWith('test-learner');
     expect(screen.queryByTestId('selfservice-identity-yes')).toBeNull();
   });
 
@@ -124,7 +124,7 @@ describe('identity confirmation before the claim', () => {
     render(<Panel />);
     await typeCode('482913');
     expect(screen.getByTestId('selfservice-identity-yes')).toBeInTheDocument();
-    expect(screen.getByText(/Is this you, User_4\?/)).toBeInTheDocument();
+    expect(screen.getByText(/Is this you, Test-Learner\?/)).toBeInTheDocument();
     // THE POINT: attribution has not happened yet.
     expect(claim).not.toHaveBeenCalled();
   });
@@ -134,7 +134,7 @@ describe('identity confirmation before the claim', () => {
     render(<Panel />);
     await typeCode('482913');
     await act(async () => { fireEvent.click(screen.getByTestId('selfservice-identity-yes')); });
-    expect(claim).toHaveBeenCalledWith('user_4');
+    expect(claim).toHaveBeenCalledWith('test-learner');
     expect(screen.queryByTestId('selfservice-identity-yes')).toBeNull();
   });
 
@@ -150,7 +150,7 @@ describe('identity confirmation before the claim', () => {
 
   it('still asks when the card has no display name, without saying "you, undefined"', async () => {
     const body = cardBody({ confirmIdentity: true });
-    body.context.learner = { id: 'user_4' };
+    body.context.learner = { id: 'test-learner' };
     serve(body);
     render(<Panel />);
     await typeCode('482913');
