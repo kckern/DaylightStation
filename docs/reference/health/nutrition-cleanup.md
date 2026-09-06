@@ -55,7 +55,10 @@ must be reviewed in Health instead of truncated Telegram choice buttons.
   precedents without a date cutoff. History searches are paginated.
 - Automatically revise active provisional captures within their 72-hour deadline,
   checked **at commit time**, including delayed/restarted work. Legacy repairs
-  retain the today/yesterday guard in the user's timezone.
+  retain the today/yesterday guard in the user's timezone and require explicit
+  `settled: false`. Absent settlement metadata means legacy settled history and is
+  not reopened. Unsupported artwork is dropped independently of nutrient repairs;
+  compatible patches to one entry are merged, but conflicting values are rejected.
 - Names, food identification, meal/date categorization, available artwork and flat
   groups are eligible. New headers have zero additive nutrition; children retain
   their existing quantities/nutrition. Groups cannot cross captures/days/meals.
