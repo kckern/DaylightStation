@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import * as sass from 'sass';
+import { readFileSync } from 'node:fs';
 import { ASIDE_MIN_WIDTH_PX } from './layout.js';
 
 // jsdom cannot see layout. What it CAN do is read the compiled stylesheet, so
@@ -29,7 +30,7 @@ describe('Today layout stylesheet', () => {
 
   it('caps and centres the Today column instead of letting it span a 2560px monitor', () => {
     const today = rule('.health-today');
-    expect(today).toMatch(/max-width: 720px/);
+    expect(today).toMatch(/max-width: 1440px/);
     expect(today).toMatch(/margin-inline: auto/);
   });
 
@@ -42,26 +43,23 @@ describe('Today layout stylesheet', () => {
   });
 
   it('keeps the day ledger at its compact type and row rhythm', () => {
-    expect(rule('.health-today')).toMatch(/font-size: 0.9rem/);
-    expect(rule('.health-meal')).toMatch(/margin-top: 0.4rem/);
-    expect(rule('.health-row')).toMatch(/padding: 0.25rem 0.2rem/);
-    expect(rule('.health-row')).toMatch(/font-size: 0.86rem/);
+    expect(rule('.health-row-line')).toMatch(/min-height: 48px/);
+    expect(rule('.health-row__identity')).toMatch(/min-height: 44px/);
+    expect(rule('.health-row__name')).toMatch(/font-size: 0.86rem/);
+    expect(rule('.health-row__icon')).toMatch(/width: 24px/);
   });
 
-  it('gives the wide layout a main column and a fixed-width aside', () => {
-    const wide = css.match(/@media \(min-width: 1200px\) \{ \.health-today \{([^}]*)\}/)?.[1] ?? '';
-    expect(wide).toMatch(/display: grid/);
-    expect(wide).toMatch(/grid-template-columns: minmax\(0, 1fr\) 320px/);
+  it('gives populated meals two equal desktop columns', () => {
+    const wide = css.match(/@media \(min-width: 1200px\) \{ \.health-log \{([^}]*)\}/)?.[1] ?? '';
+    expect(rule('.health-log')).toMatch(/display: grid/);
+    expect(wide).toMatch(/grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
   });
 
-  it('moves the ONE aside element into column 2 — it is not a second copy that gets hidden', () => {
-    // If the aside were duplicated, the narrow rule would be `display: none`
-    // on one of them. It is not: the narrow rule is a normal flex stack.
-    const narrow = rule('.health-today__aside');
-    expect(narrow).toMatch(/display: flex/);
-    expect(narrow).not.toMatch(/display: *none/);
-    const placed = rule('.health-today > .health-today__aside');
-    expect(placed).toMatch(/grid-column: 2/);
+  it('opts Health into the left context rail without changing other apps', () => {
+    const chrome = readFileSync(new URL('../../../lib/ui/ds.scss', import.meta.url), 'utf8');
+    expect(chrome).toContain('&--context { grid-template-columns: 320px minmax(0, 1fr); }');
+    expect(chrome).toContain('grid-template-columns: 200px 1fr;');
+    expect(rule('.health-history > summary')).toMatch(/min-height: 44px/);
   });
 
   it('never animates `filter` — a known paint-cost trap in this repo', () => {

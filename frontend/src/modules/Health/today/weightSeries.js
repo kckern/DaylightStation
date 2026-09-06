@@ -54,8 +54,8 @@ export function normalizeWeightEntries(weightData) {
  *   salt as a trend. A null delta means the history is too short to have one,
  *   and the chip must say so rather than print a confident 0.0.
  */
-export function buildWeightSeries(weightData, { days = 30, trendDays = 7 } = {}) {
-  const all = normalizeWeightEntries(weightData);
+export function buildWeightSeries(weightData, { days = 30, trendDays = 7, asOf } = {}) {
+  const all = normalizeWeightEntries(weightData).filter(entry => !asOf || entry.date <= asOf);
 
   const latestDate = all.at(-1)?.date;
   const windowStart = latestDate ? new Date(`${latestDate}T12:00:00Z`) : null;

@@ -30,6 +30,7 @@ export function CoachChat({ userId, variant = 'light', style, conversation }) {
       style={style}
       mentions={mentions}
       conversation={conversation}
+      starterPrompts={['Review my recent food log', 'Help me adjust a portion', 'Explain my weight trend']}
     />
   );
 }

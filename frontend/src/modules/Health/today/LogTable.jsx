@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { UnstyledButton } from '@mantine/core';
 import { LoadingState } from '@/lib/ui';
-import { sumCounted } from '@shared-contracts/nutrition/countedRows.mjs';
+import { sumCounted, formatNutrients } from '@shared-contracts/nutrition/countedRows.mjs';
 import { BUCKETS, UNGROUPED } from './mealBuckets.js';
 import { EntryRow } from './EntryRow.jsx';
 import { groupRows } from './groupRows.js';
@@ -13,16 +13,6 @@ import { groupRows } from './groupRows.js';
 // each gram of food exactly once; `sumCounted` says so once, for everyone.
 const kcal = (rows) => Math.round(sumCounted(rows, 'calories'));
 
-// Per-meal macro subtotal (Task 6.3), on that same predicate. Returns null when
-// the meal has no macro data at all, so a day of legacy rows shows
-// "P 0 · C 0 · F 0" nowhere.
-const MACRO_SUBTOTAL = [['protein', 'Protein'], ['carbs', 'Carbs'], ['fat', 'Fat']];
-const macroLine = (rows) => {
-  const totals = MACRO_SUBTOTAL.map(([key, letter]) => [letter, Math.round(sumCounted(rows, key))]);
-  if (!totals.some(([, value]) => value > 0)) return null;
-  return totals.map(([letter, value]) => `${letter} ${value} g`).join(' · ');
-};
-
 function Section({
   label, rows, onAdd, onRowTap, onConfirm, headerAction, coldLoading, pending,
   measuredByUuid,
@@ -32,7 +22,7 @@ function Section({
     catch { return new Set(); }
   });
   const entries = groupRows(rows);
-  const macros = macroLine(rows);
+  const macros = rows.length ? formatNutrients(rows) : null;
   // The section frame (heading + kcal + add row) is PERMANENT structure —
   // it never depends on whether data has arrived yet. Only the entry list
   // itself swaps for a shimmer, and only on a true cold start (this bucket
@@ -58,12 +48,13 @@ function Section({
     <section className="health-meal">
       <header className="health-meal__header">
         <h4 className="health-meal__label">{label}</h4>
+        {macros ? <span className="health-meal__macros" title="+ means some nutrition is unknown">{macros}</span> : null}
         <span className="health-meal__header-right">
           <span className="health-meal__kcal">{rows.length ? `${kcal(rows)} kcal` : '—'}</span>
           {headerAction || null}
+          {onAdd ? <UnstyledButton className="health-meal__add" aria-label={`Add food to ${label}`} onClick={onAdd}>+</UnstyledButton> : null}
         </span>
       </header>
-      {macros ? <div className="health-meal__macros">{macros}</div> : null}
       {showShimmer ? <LoadingState label={`${label} entries`} rows={2} /> : null}
       {!showShimmer && entries.map(({ row, children, rollup }) => {
         const key = row.uuid ?? row.id;
@@ -104,8 +95,8 @@ function Section({
               row={{ ...row, children }} onTap={onRowTap} onConfirm={onConfirm} measured={measured}
               isGroup expanded={isOpen} onToggle={() => toggle(key)} rollupKcal={rollup.calories}
             />
-            {isOpen ? children.map((c) => (
-              <EntryRow key={c.uuid ?? c.id} row={c} onTap={onRowTap} onConfirm={onConfirm} child
+            {isOpen ? children.map((c, index) => (
+              <EntryRow key={c.uuid ?? c.id} row={c} onTap={onRowTap} onConfirm={onConfirm} child lastChild={index === children.length - 1}
                 measured={measuredByUuid?.get(c.uuid) ?? measuredByUuid?.get(c.id) ?? null} />
             )) : null}
           </div>
@@ -120,9 +111,6 @@ function Section({
           <span className="health-row__name">Analyzing…</span>
         </div>
       ) : null}
-      {onAdd ? (
-        <UnstyledButton className="health-meal__add" onClick={onAdd}>+ Add food…</UnstyledButton>
-      ) : null}
     </section>
   );
 }
@@ -135,7 +123,7 @@ export function LogTable({
   const orphans = byBucket.get(null) || [];
   return (
     <div className="health-log">
-      {BUCKETS.map((b) => {
+      {BUCKETS.filter(b => coldLoading || byBucket.get(b.id)?.length || addingTo === b.id || capturePendingBucket === b.id || capturePendingBuckets.includes(b.id)).map((b) => {
         const rows = byBucket.get(b.id) || [];
         return (
           <div key={b.id}>
@@ -148,6 +136,8 @@ export function LogTable({
           </div>
         );
       })}
+      {!coldLoading ? <div className="health-log__empty-meals">{BUCKETS.filter(b => !byBucket.get(b.id)?.length && addingTo !== b.id && capturePendingBucket !== b.id && !capturePendingBuckets.includes(b.id)).map(b =>
+        <UnstyledButton key={b.id} className="health-log__empty-add" aria-label={`Add food to ${b.label}`} onClick={() => onAddTo(b.id)}>+ {b.label}</UnstyledButton>)}</div> : null}
       {/* Gated on `exerciseAvailable` (budget data has arrived), NOT on
           `sessions.length` — a zero-session day is a real, stable answer
           ("no workout yet today"), not an absence of data. Gating on length
@@ -161,7 +151,7 @@ export function LogTable({
           </header>
           {sessions.map((s, i) => (
             <div key={i} className="health-row health-row--readonly">
-              <span className="health-row__name">{s.type || s.title || 'Workout'}</span>
+              <span className="health-row__name">{s.title || s.type || 'Workout'}</span>
               <span className="health-row__portion">{(s.minutes ?? s.duration_min) ? `${Math.round(s.minutes ?? s.duration_min)} min` : ''}</span>
               <span className="health-row__kcal">+{Math.round(s.calories || 0)}</span>
             </div>

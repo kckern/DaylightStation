@@ -11,23 +11,26 @@ const MACROS = { protein: 82, carbs: 140, fat: 40, fiber: 12, sugar: 60, sodium:
 const fill = (label) => screen.getByLabelText(new RegExp(`^${label} `)).querySelector('.health-macrobar__fill');
 const item = (label) => screen.getByLabelText(new RegExp(`^${label} `)).closest('.health-macrobar__item');
 
-describe('MacroBarRow — nothing to say, nothing rendered', () => {
-  it('renders nothing when no goals are configured', () => {
-    const { container } = render(<MacroBarRow macros={MACROS} goals={{}} microCoverage={{}} />);
-    expect(container.firstChild).toBeNull();
+describe('MacroBarRow — intake does not require goals', () => {
+  it('renders known intake when no goals are configured', () => {
+    render(<MacroBarRow macros={MACROS} goals={{}} microCoverage={{}} />);
+    expect(screen.getByText('Protein 82 g')).toBeTruthy();
+    expect(screen.getByText('Carbs 140 g')).toBeTruthy();
   });
 
-  it('renders nothing when the budget has not arrived', () => {
-    const { container } = render(<MacroBarRow macros={undefined}
+  it('shows unknown, not zero, when the budget has not arrived', () => {
+    render(<MacroBarRow macros={undefined}
       goals={{ macroGoals: { proteinG: 150 } }} microCoverage={undefined} />);
-    expect(container.firstChild).toBeNull();
+    expect(screen.getByText('Protein —')).toBeTruthy();
   });
 
-  it('renders only the macros that actually have a target', () => {
+  it('adds bars only for configured targets, retaining the other intake', () => {
     render(<MacroBarRow macros={MACROS} goals={{ macroGoals: { proteinG: 150, carbsG: null, fatG: null } }} microCoverage={{}} />);
     expect(screen.getByText('Protein')).toBeTruthy();
     expect(screen.queryByText('Carbs')).toBeNull();
     expect(screen.queryByText('Fat')).toBeNull();
+    expect(screen.getByText('Carbs 140 g')).toBeTruthy();
+    expect(screen.getByText('Fat 40 g')).toBeTruthy();
   });
 });
 

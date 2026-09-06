@@ -118,6 +118,12 @@
   &__title { margin: 0; font-size: 1rem; font-weight: 600; }
   &__actions { display: flex; gap: 0.5rem; }
   &__main { grid-area: main; overflow-y: auto; padding: 0.75rem 1rem; }
+  &__context { display: none; }
+  @media (min-width: bp.$bp-lg) {
+    &--context { grid-template-columns: 320px minmax(0, 1fr); }
+    &--context &__nav { overflow-y: auto; }
+    &--context &__context { display: block; margin: 0.75rem -3px 0; }
+  }
   &__footer { grid-area: footer; border-top: 1px solid var(--ds-border); padding: 0.4rem 1rem; }
 
   &__nav {

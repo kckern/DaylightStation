@@ -1,143 +1,60 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { UnstyledButton } from '@mantine/core';
-import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
+import { formatNutrients } from '@shared-contracts/nutrition/countedRows.mjs';
 import { nutritionPhotoUrl } from './photoUrl.js';
 import { FoodIcon } from './FoodIcon.jsx';
+import { PortionControl } from './PortionControl.jsx';
+import { entryId, entryError, isEntryConflict, updateEntry } from './entryCommands.js';
+import { usePortionControl } from './usePortionDraft.js';
 
 const logger = createAppLogger('health').child('entry-row');
 
-// A failed thumbnail load hides itself in place — no broken-image glyph,
-// no layout jump. Direct DOM mutation (not React state) because the
-// element's own 32px grid column is reserved unconditionally by
-// `photoRef`'s presence, not by load success — hiding the <img> alone
-// leaves that column's width intact, so nothing around it reflows.
-const hideBrokenThumb = (e) => { e.currentTarget.style.display = 'none'; };
-
-const NOOM = { green: 'var(--ds-success)', yellow: 'var(--ds-warning)', orange: 'var(--ds-danger)' };
-
-/**
- * `row` renders as an item by default. Pass `isGroup` to render it as a
- * group header (rollup kcal instead of the row's own — zero, by design —
- * calories, plus an expand/collapse control) and `child` to render it as
- * one of that group's indented children. Both presentations keep the
- * unsettled cue and confirm affordance exactly as a plain item does.
- */
-export function EntryRow({ row, onTap, onConfirm, isGroup = false, expanded = false, onToggle, rollupKcal, child = false, measured = null }) {
-  // Which SLUG failed, not a boolean: the row's icon can change under a live
-  // component (the edit sheet's override rewrites it and the day reloads in
-  // place), and a boolean would keep hiding the new picture because the old
-  // one broke. No reset effect either — that is a race, and there is nothing
-  // to reset when the state names what it is about.
+export function EntryRow({ row, onTap, onConfirm, isGroup = false, expanded = false, onToggle, rollupKcal, child = false, lastChild = false, measured = null }) {
   const [error, setError] = useState(null);
-  // Grams are the one comparable quantity across captures. `amount + unit`
-  // is model prose (cup, tbsp, serving) and has produced nonsense such as
-  // "313 servings" when amount was actually the gram count. Show a valid
-  // mass in grams, or show nothing — never expose that mixed vocabulary.
-  const members = row.children?.filter(item => item.kind !== 'group') || [];
-  const groupGrams = members.length && members.every(item => item.grams > 0)
-    ? members.reduce((sum, item) => sum + item.grams, 0) : null;
-  const grams = Number(isGroup ? groupGrams : row.grams);
-  const liquid = row.unit === 'ml' && row.amount > 0 && row.originalQuantity?.unit === 'ml';
-  const portion = Number.isFinite(grams) && grams > 0 ? `${Math.round(grams * 10) / 10} g`
-    : liquid ? `${row.amount} ml` : row.unit === 'serving' ? `${row.amount || 1} serving` : 'Weight unknown';
-  // The API serves an EFFECTIVE settled flag per row. Absent or `true` means
-  // settled — only an explicit `false` means unsettled. Never treat a
-  // missing key as unsettled (older/other row shapes lack the field).
-  const unsettled = row.settled === false;
+  const [confirmation, setConfirmation] = useState(null);
+  const pending = useRef(false);
+  const operation = useRef(null);
+  const [brokenPhoto, setBrokenPhoto] = useState(null);
+  const portions = usePortionControl();
+  const unsettled = row.settled === false || (isGroup && row.children?.some(item => item.settled === false));
   const name = row.name || row.item || row.label || '';
   const displayKcal = isGroup ? rollupKcal : row.calories;
-
-  const confirm = async (e) => {
-    e.stopPropagation();
+  const confirm = async () => {
+    if (pending.current || confirmation === 'saved') return;
+    pending.current = true; setConfirmation('saving'); setError(null);
+    operation.current ??= { id: crypto.randomUUID(), row };
     try {
-      await DaylightAPI(`api/v1/health/nutrilist/${row.uuid}`, { settled: true }, 'PUT');
-      logger.info('entry.confirm', { uuid: row.uuid });
-      onConfirm?.(row);
+      await updateEntry(operation.current.row, { settled: true }, operation.current.id);
+      setConfirmation('saved'); logger.info('entry.confirm', { uuid: entryId(row) }); onConfirm?.(row);
     } catch (err) {
-      logger.error('entry.confirm_failed', { uuid: row.uuid, error: err?.message });
-      setError(err);
-    }
+      setConfirmation(null); setError(entryError(err));
+      if (isEntryConflict(err)) { operation.current = null; onConfirm?.(row); }
+      logger.warn('entry.confirm_failed', { uuid: entryId(row), error: err.message });
+    } finally { pending.current = false; }
   };
-
-  const toggle = (e) => {
-    e.stopPropagation();
-    onToggle?.();
-  };
-
-  const lineClass = [
-    'health-row-line',
-    unsettled && 'health-row-line--unsettled',
-    child && 'health-row-line--child',
-  ].filter(Boolean).join(' ');
-
-  const hasThumb = Boolean(row.photoRef);
-
-  // A dish's own picture, else the first thing in it (PRD F5.3). A group row
-  // is handed its children by LogTable precisely so this can be decided here
-  // rather than at every call site.
-  const iconSlug = row.icon || null;
-
-  const rowClass = [
-    'health-row',
-    unsettled && 'health-row--unsettled',
-    isGroup && 'health-row--group',
-    child && 'health-row--child',
-    hasThumb && 'health-row--thumb',
-    // The icon occupies the dot's grid column at a larger size, so the column
-    // width is a function of which of the two is actually rendered.
-    'health-row--icon',
-  ].filter(Boolean).join(' ');
-
-  return (
-    <div className={lineClass}>
-      {error ? <span role="alert" className="health-capture-error">{error.message}</span> : null}
-      {isGroup ? (
-        // Sibling button, never nested inside the row button below (a
-        // button-in-a-button is invalid and would swallow the row tap).
-        // `aria-expanded` plus the Expand/Collapse text in the accessible
-        // name make the state perceivable non-visually — never chevron
-        // rotation alone.
-        <UnstyledButton
-          className="health-row__expand"
-          aria-expanded={expanded}
-          aria-label={`${expanded ? 'Collapse' : 'Expand'} ${name}`}
-          onClick={toggle}
-        >
-          <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
-        </UnstyledButton>
-      ) : null}
-      <UnstyledButton className={rowClass} onClick={() => onTap(row)}>
-        {hasThumb ? (
-          <img
-            className="health-row__thumb"
-            src={nutritionPhotoUrl(row.photoRef, { thumb: true })}
-            alt=""
-            loading="lazy"
-            onError={hideBrokenThumb}
-          />
-        ) : null}
-        {/* Artwork and the neutral fallback occupy the same permanent slot. */}
-        <FoodIcon icon={iconSlug} />
-        <span className="health-row__name">{name}</span>
-        <span className="health-row__portion">{portion}</span>
-        <span className="health-row__kcal">{isGroup ? <span className="health-row__total-label">Total · </span> : null}{displayKcal == null ? '—' : Math.round(displayKcal)}{isGroup ? ' kcal' : ''}</span>
-        {/* Text badge, not color alone — perceivable non-visually and in
-            greyscale. Static text; no aria-live, so it never spams. */}
-        {unsettled ? <span className="health-row__badge" title="Included in totals. You can edit or confirm; otherwise this estimate stabilizes automatically after 72 hours.">Estimated</span> : null}
-        {/* SCALE-MEASURED badge: this row's grams came off the kitchen scale, not
-            from a guess. `measured` is the caller's already-computed summary
-            ("82 g · scale ✓") — derived once per day from the observations that
-            name this row's uuid, never re-derived per row. Text, like the
-            unsettled badge above, so it survives greyscale and a screen reader. */}
-        {measured ? <span className="health-row__scale">{measured}</span> : null}
-      </UnstyledButton>
-      {unsettled ? (
-        <UnstyledButton className="health-row__confirm" aria-label="Confirm entry" onClick={confirm}>
-          <span aria-hidden="true">✓</span>
-        </UnstyledButton>
-      ) : null}
+  return <div className={['health-row-line', unsettled && confirmation !== 'saved' && 'health-row-line--unsettled', child && 'health-row-line--child', lastChild && 'health-row-line--last-child', isGroup && 'health-row-line--group'].filter(Boolean).join(' ')}>
+    <div className="health-row__branch">
+      {isGroup ? <UnstyledButton className="health-row__expand" aria-expanded={expanded}
+        aria-label={`${expanded ? 'Collapse' : 'Expand'} ${name}`} onClick={onToggle}>{expanded ? '▾' : '▸'}</UnstyledButton> : null}
     </div>
-  );
+    <UnstyledButton className="health-row__identity" disabled={Boolean(portions?.draft)} onClick={() => onTap(row)} aria-label={`Edit ${name}`}>
+      {row.photoRef && brokenPhoto !== row.photoRef ? <img className="health-row__thumb"
+        src={nutritionPhotoUrl(row.photoRef, { thumb: true })} alt="" loading="lazy" onError={() => setBrokenPhoto(row.photoRef)} /> : <FoodIcon icon={row.icon} />}
+      <span className="health-row__description"><span className="health-row__name">{name}</span>{' '}
+        {unsettled && confirmation !== 'saved' ? <span className="health-row__badge" title="Counted now; stabilizes automatically after 72 hours unless you confirm sooner.">Estimated</span> : null}
+        {measured ? <span className="health-row__scale" title={measured}> · Scale ✓</span> : null}
+        <span className="health-row__macros" title="+ means some nutrition is unknown">{formatNutrients(isGroup ? row.children : [row])}</span>
+      </span>
+    </UnstyledButton>
+    <PortionControl row={row} />
+    <span className="health-row__kcal" title="Calories">{displayKcal == null ? '—' : Math.round(displayKcal)}<small> kcal</small></span>
+    <div className="health-row__action">
+      {confirmation === 'saved' ? <span role="status" aria-label={`${name} confirmed`} title="Confirmed">✓</span> : unsettled ?
+        <UnstyledButton className="health-row__confirm" aria-label={`Confirm entry: ${name}`} title="Confirm this estimate"
+          disabled={confirmation === 'saving' || Boolean(portions?.draft)} aria-busy={confirmation === 'saving'} onClick={confirm}>{confirmation === 'saving' ? '…' : '✓'}</UnstyledButton> : null}
+    </div>
+    {error ? <span role="alert" className="health-row__error">{error}</span> : null}
+  </div>;
 }
 export default EntryRow;

@@ -20,9 +20,9 @@ const ARROWS = { up: '▲', down: '▼', flat: '■' };
  * colour alone), and a history too short to have a 7-day delta says so instead
  * of printing a confident ±0.0.
  */
-export function WeightChip() {
+export function WeightChip({ asOf }) {
   const res = useApiResource('api/v1/health/weight', { label: 'weight-chip', logger, swr: true });
-  const series = useMemo(() => buildWeightSeries(res.data), [res.data]);
+  const series = useMemo(() => buildWeightSeries(res.data, { asOf }), [res.data, asOf]);
   const { latestLbs, deltaLbs, direction, rawPoints, avgPoints, entries, latest, trendDays } = series;
   if (res.error) return <ErrorState error={res.error} onRetry={res.reload} label="Weight unavailable" />;
 
@@ -33,7 +33,7 @@ export function WeightChip() {
 
   return (
     <div className="health-weightchip" role="group" aria-label={label} aria-busy={res.loading}>
-      <StatCard compact label="Weight" value={res.loading ? <Skeleton width={64} height={24} /> : fmtLbs(latestLbs)} unit="lb"
+      <StatCard compact label={`Weight${latest?.date ? ` · as of ${latest.date}` : ''}`} value={res.loading ? <Skeleton width={64} height={24} /> : fmtLbs(latestLbs)} unit="lb"
         trend={deltaText ? (
           <span className={`health-weightchip__delta health-weightchip__delta--${direction}`} data-testid="weight-delta">
             <span className="health-weightchip__arrow" aria-hidden="true">{ARROWS[direction]}</span>

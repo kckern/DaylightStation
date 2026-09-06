@@ -99,7 +99,7 @@ function OwnedAgentChatSurface(props) {
   </AgentConversationProvider>;
 }
 
-function AgentChatView({ conversation, variant = 'light', style, mentions }) {
+function AgentChatView({ conversation, variant = 'light', style, mentions, starterPrompts = [] }) {
   const { pendingMentionsRef } = conversation;
 
   return (
@@ -109,6 +109,13 @@ function AgentChatView({ conversation, variant = 'light', style, mentions }) {
     >
       <ThreadPrimitive.Root className="coach-chat__thread">
         <ThreadPrimitive.Viewport className="coach-chat__viewport">
+          {starterPrompts.length ? <ThreadPrimitive.Empty><div className="coach-chat__starters">
+            <p>Ask about your food log, portions, or progress.</p>
+            {starterPrompts.map(prompt => <button type="button" key={prompt} onClick={() => {
+              conversation.runtime.thread.composer.setText(prompt);
+            }}>{prompt}</button>)}
+            <small>Choose a prompt to draft it; Send starts the conversation.</small>
+          </div></ThreadPrimitive.Empty> : null}
           <ThreadPrimitive.Messages
             components={{
               UserMessage: UserMessage,
@@ -137,7 +144,7 @@ function ComposerPlain({ cancelOnEscape }) {
         placeholder="Ask…"
         cancelOnEscape={cancelOnEscape}
       />
-      <ComposerPrimitive.Send className="coach-chat__send" />
+      <ComposerPrimitive.Send className="coach-chat__send" aria-label="Send message">Send</ComposerPrimitive.Send>
     </ComposerPrimitive.Root>
   );
 }
@@ -260,7 +267,7 @@ function ComposerWithMentions({ mentions, pendingMentionsRef, cancelOnEscape }) 
           placeholder="Ask… (type @ to mention)"
           cancelOnEscape={cancelOnEscape}
         />
-        <ComposerPrimitive.Send className="coach-chat__send" />
+        <ComposerPrimitive.Send className="coach-chat__send" aria-label="Send message">Send</ComposerPrimitive.Send>
       </ComposerPrimitive.Root>
     </ComposerPrimitive.Unstable_TriggerPopoverRoot>
     </div>

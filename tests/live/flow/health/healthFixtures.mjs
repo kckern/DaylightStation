@@ -1,9 +1,10 @@
 /** Browser journeys never mutate the household. HTTP persistence has its own isolated suite. */
-export async function installHealthFixtures(page, { items = [], foods = [] } = {}) {
+import { portionFactor, scaleFoodPortion } from '../../../../shared/contracts/health/foodQuantity.mjs';
+export async function installHealthFixtures(page, { items = [], foods = [], budgetBase = 2000, exercise = 0 } = {}) {
   const state = { items: structuredClone(items), foods: structuredClone(foods), requests: [], unexpected: [], deleted: new Map(), holdCapture: null };
   const budget = date => {
     const food = state.items.filter(row => row.date === date).reduce((sum, row) => sum + row.calories, 0);
-    return { budget: 2000, food, exercise: 0, remaining: 2000 - food, status: 'under', macros: {}, sessions: [] };
+    return { budget: budgetBase, food, exercise, remaining: budgetBase + exercise - food, status: 'under', macros: {}, sessions: [] };
   };
   const add = (food, body) => {
     const row = { ...food, uuid: `fixture-row-${state.requests.length}`, version: 1, foodId: food.id,
@@ -70,7 +71,18 @@ export async function installHealthFixtures(page, { items = [], foods = [] } = {
         state.deleted.set(id, row); state.items = state.items.filter(row => row.uuid !== id);
         return reply({ affectedIds: [id], affectedDates: [row.date] });
       }
-      if (method === 'PUT') { Object.assign(row, body, { version: row.version + 1 }); return reply({ data: row, cascadedIds: [], affectedIds: [id] }); }
+      if (method === 'PUT') {
+        if (body.expectedVersion !== row.version) return route.fulfill({ status: 409, json: { error: 'This entry changed. Reload it before saving.' } });
+        const children = row.kind === 'group' ? state.items.filter(child => child.parentId === row.uuid) : [];
+        if (body.portion) {
+          const factor = portionFactor({ ...row, children }, body.portion);
+          for (const member of [row, ...children]) Object.assign(member, scaleFoodPortion(member, factor));
+        }
+        const { portion, operationId, expectedVersion, expectedVersions, ...fields } = body;
+        Object.assign(row, fields);
+        for (const member of [row, ...children]) member.version++;
+        return reply({ data: row, versions: Object.fromEntries([row, ...children].map(member => [member.uuid, member.version])), cascadedIds: children.map(child => child.uuid), affectedIds: [id] });
+      }
     }
     if (method === 'POST' && endpoint === '/nutrition/restore') {
       for (const id of body.entryIds) if (state.deleted.has(id)) { state.items.push(state.deleted.get(id)); state.deleted.delete(id); }

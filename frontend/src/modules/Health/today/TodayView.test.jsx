@@ -207,7 +207,7 @@ describe('TodayView — Task 3.2: permanent chrome, SWR day data, in-place captu
     expect(screen.getByText('Lunch')).toBeTruthy();
     expect(screen.getByText('Dinner')).toBeTruthy();
     expect(screen.getByText('Snacks')).toBeTruthy();
-    expect(screen.getAllByText(/Add food/).length).toBe(4);
+    expect(screen.getAllByRole('button', { name: /Add food/ }).length).toBe(4);
     // The shimmer lives INSIDE a section body, not as a page-level spinner.
     const shimmers = screen.getAllByLabelText(/^Loading /);
     expect(shimmers.length).toBeGreaterThan(0);
@@ -305,9 +305,8 @@ describe('TodayView — Task 3.2: permanent chrome, SWR day data, in-place captu
     const placeholder = screen.getByText('Analyzing…');
     expect(placeholder.closest('[aria-busy="true"]')).toBeTruthy();
     const lunchSection = screen.getByText('Lunch').closest('section');
-    const breakfastSection = screen.getByText('Breakfast').closest('section');
     expect(lunchSection.contains(placeholder)).toBe(true);
-    expect(breakfastSection.contains(placeholder)).toBe(false);
+    expect(screen.getByRole('button', { name: 'Add food to Breakfast' })).toBeTruthy();
 
     resolveInput({ messages: [] });
     await waitFor(() => expect(screen.queryByText('Analyzing…')).toBeNull());
@@ -444,7 +443,7 @@ describe('TodayView — scale observations', () => {
     ));
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
 
-    await waitFor(() => expect(screen.getByText('213 g · scale ✓')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTitle('213 g · scale ✓')).toBeTruthy());
     expect(document.querySelector('.health-obs')).toBeFalsy();
   });
 
@@ -455,7 +454,7 @@ describe('TodayView — scale observations', () => {
     ));
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
 
-    await waitFor(() => expect(screen.getByText('213 g · scale ✓')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTitle('213 g · scale ✓')).toBeTruthy());
     expect(screen.queryByText('82 g · scale ✓')).toBeNull();
     expect(screen.queryByText('295 g · scale ✓')).toBeNull();
   });
@@ -493,7 +492,7 @@ describe('TodayView — scale observations', () => {
     }));
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
 
-    await waitFor(() => expect(screen.getByText('NEEDS REVIEW')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/captures? not counted · Review/)).toBeTruthy());
     expect(screen.getByText('Chicken breast')).toBeTruthy();
     expect(screen.getByText('Oatmeal')).toBeTruthy();
   });
@@ -508,7 +507,7 @@ describe('TodayView — scale observations', () => {
 
     await waitFor(() => expect(screen.getByText('Guessed')).toBeTruthy());
     expect(screen.getAllByText(/estimated/i)).toHaveLength(1);
-    expect(document.querySelectorAll('.health-row--unsettled')).toHaveLength(1);
+    expect(document.querySelectorAll('.health-row-line--unsettled')).toHaveLength(1);
   });
 
   it('REGRESSION: bucket kcal totals still sum every row unconditionally (a group carries zero)', async () => {
@@ -577,8 +576,8 @@ describe('TodayView — saving a meal writes a template, and the picker is the o
   it('the add row opens the template picker, which asks for proposals too', async () => {
     apiMock.mockImplementation(dayApi());
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
-    await waitFor(() => screen.getAllByText('+ Add food…'));
-    fireEvent.click(screen.getAllByText('+ Add food…')[0]);
+    await waitFor(() => screen.getAllByRole('button', { name: /Add food/i }));
+    fireEvent.click(screen.getAllByRole('button', { name: /Add food/i })[0]);
     const meals = await screen.findByText(/Meals & templates/);
     fireEvent.click(meals);
     await waitFor(() => expect(

@@ -16,7 +16,7 @@ for (const width of [1440, 390]) test(`three provisional incident entries count 
   ].map(row => ({ ...row, date, mealTime: 'afternoon', icon: 'default', settled: false, version: 1,
     review: { state: 'provisional', stabilizesAt: '2026-09-08T19:48:16Z' } })) });
   await page.goto('/health?date=' + date);
-  await expect(page.locator('.health-row')).toHaveCount(3);
+  await expect(page.locator('.health-row-line')).toHaveCount(3);
   await expect(page.getByText('Estimated', { exact: true })).toHaveCount(3);
   await expect(page.getByText('Food 871', { exact: true })).toBeVisible();
   await expect(page.getByText(/needs settlement|unconfirmed|needs confirmation/i)).toHaveCount(0);
@@ -45,8 +45,8 @@ for (const width of [1440, 390]) test(`group and review layout at ${width}px`, a
   await page.goto('/health?date=' + date);
   const group = page.getByRole('button', { name: 'Collapse Fish Taco', exact: true });
   await expect(group).toBeVisible();
-  await expect(page.getByText('Total · 197 kcal')).toBeVisible();
-  const tortilla = page.locator('.health-row', { hasText: 'Tortilla' });
+  await expect(page.getByRole('button', { name: 'Edit Fish Taco', exact: true }).locator('..')).toContainText('197');
+  const tortilla = page.locator('.health-row-line', { hasText: 'Tortilla' });
   const before = await tortilla.boundingBox();
   release();
   await expect(tortilla.locator('.health-food-art')).toHaveAttribute('data-state', 'ready');
@@ -61,6 +61,7 @@ for (const width of [1440, 390]) test(`group and review layout at ${width}px`, a
   await expect(tortilla).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('health-review-layout.png'), fullPage: true });
+  await page.getByText('1 capture not counted · Review', { exact: true }).click();
   await page.getByRole('button', { name: 'Review food', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Review food' });
   await expect(dialog).toBeVisible();
@@ -99,6 +100,7 @@ for (const width of [1440, 390]) test(`cleanup questions and settings at ${width
   await expect(page.getByLabel('Preview only — do not change food or send questions', { exact: true })).toBeChecked();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('cleanup-settings.png'), fullPage: true });
+  await page.getByText('View repairs (1)', { exact: true }).click();
   await page.getByRole('button', { name: 'Details', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Repair details', exact: true });
   await expect(dialog.getByRole('columnheader', { name: 'Before', exact: true })).toBeVisible();

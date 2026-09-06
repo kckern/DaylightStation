@@ -210,8 +210,7 @@ describe('WeekStrip', () => {
     strip();
     await screen.findByText('Thu');
     expect(screen.getByText('Fri')).toBeTruthy();
-    expect(screen.getByText('Aug')).toBeTruthy();
-    expect(screen.getByText('Sep')).toBeTruthy();
+    expect(screen.getByText(/Aug.*Sep/)).toBeTruthy();
     expect(document.querySelectorAll('.health-weekstrip__cell--month-start')).toHaveLength(1);
   });
 

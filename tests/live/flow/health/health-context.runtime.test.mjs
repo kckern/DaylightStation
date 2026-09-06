@@ -8,15 +8,17 @@ test('draft and scroll survive tab navigation; absent goals offer a real form; m
   ] }] } }));
   await page.setViewportSize({ width: 390, height: 700 });
   await page.goto('/health?date=2026-09-01');
-  await page.getByText('+ Add food…', { exact: true }).last().click();
+  await page.getByRole('button', { name: /Add food to/ }).last().click();
   await page.getByRole('combobox').fill('my unfinished food');
   const priorScroll = await page.locator('.ds-chrome__main').evaluate(element => element.scrollTop);
   await page.getByRole('link', { name: 'Medical', exact: true }).click();
   await expect(page.locator('.health-medical__row').first()).toContainText('90 mg/dL');
   await expect(page.locator('.health-medical__row').last()).toContainText('5 mmol/L');
   await page.getByRole('link', { name: 'Progress', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit goals', exact: true }).click();
   await expect(page.getByLabel('Birth year')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Save goals', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
   await page.getByRole('link', { name: 'Today', exact: true }).click();
   await expect(page.getByRole('combobox')).toHaveValue('my unfinished food');
   await expect(page).toHaveURL(/date=2026-09-01/);
@@ -29,9 +31,9 @@ test('entry dialog contains keyboard focus and restores it on Escape', async ({ 
   const state = await installHealthFixtures(page, { items: [{ uuid: 'row-a', name: 'Fixture oats', date: '2026-09-01', mealTime: 'morning', grams: 80, calories: 300 }] });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('/health?date=2026-09-01');
-  const row = page.locator('.health-row', { hasText: 'Fixture oats' });
-  await row.click();
-  await expect(page.getByLabel('Weight in grams')).toBeFocused();
+  const row = page.locator('.health-row-line', { hasText: 'Fixture oats' });
+  await row.locator('.health-row__identity').click();
+  await expect(page.getByLabel('Portion in g')).toBeFocused();
   for (let i = 0; i < 20; i++) {
     await page.keyboard.press('Tab');
     expect(await page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')))).toBe(true);
@@ -39,7 +41,7 @@ test('entry dialog contains keyboard focus and restores it on Escape', async ({ 
   await page.screenshot({ path: test.info().outputPath('desktop-editor.png') });
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(row).toBeFocused();
+  await expect(row.locator('.health-row__identity')).toBeFocused();
   expect(state.unexpected).toEqual([]);
 });
 
@@ -51,11 +53,12 @@ test('failed voice capture keeps retry bytes and original day across tabs', asyn
     return attempts === 1 ? route.fulfill({ status: 503, json: { error: 'Please retry this recording' } }) : route.fallback();
   });
   await page.goto('/health?date=2026-09-01');
-  await page.getByRole('button', { name: 'Log by voice to Breakfast', exact: true }).click();
-  await page.getByRole('button', { name: 'Stop recording — Breakfast', exact: true }).click();
+  await page.getByRole('button', { name: 'Quick voice log to Breakfast on 2026-09-01', exact: true }).click();
+  await page.getByRole('button', { name: 'Stop recording — Breakfast on 2026-09-01', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Retry recording', exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Medical', exact: true }).click();
   await page.getByRole('link', { name: 'Today', exact: true }).click();
+  if (await page.getByText('Week & weight history', { exact: true }).isVisible()) await page.getByText('Week & weight history', { exact: true }).click();
   await page.getByRole('button', { name: 'Previous week', exact: true }).click();
   await page.locator('.health-weekstrip__cell').first().click();
   await page.getByRole('button', { name: 'Retry recording', exact: true }).click();

@@ -38,6 +38,7 @@ export class FoodCatalogEntry {
     // It sticks to the FOOD, not to one entry (U5.2), which is why it lives
     // here and gets copied onto each quick-added row.
     this.icon = data.icon || null;
+    this.iconOverride = data.iconOverride || null;
     // Per-meal-bucket usage, keyed by bucket id (morning/afternoon/evening/
     // night): `{ count, lastUsed, quantity }`. This is what makes the
     // add-combobox's zero-query list bucket-aware (PRD F8.1) and what supplies

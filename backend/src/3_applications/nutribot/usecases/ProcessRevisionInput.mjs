@@ -9,7 +9,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { repairTruncatedJson } from '../lib/repairJson.mjs';
 import { confineIcon, iconVocabulary } from '#domains/nutrition/services/icons.mjs';
 import { capturedFoodGrams, capturedNutrientProvenance } from '#shared/contracts/health/foodQuantity.mjs';
-import { confirmReview } from '#shared/contracts/nutrition/reviewLifecycle.mjs';
 import { validateFoodItem, validateMealTime } from '#domains/nutrition/entities/schemas.mjs';
 import { isISODate } from '#shared/contracts/health/isoDate.mjs';
 
@@ -279,13 +278,13 @@ Noom colors:
       const id = original?.uuid || original?.id || uuidv4();
       if (used.has(id)) throw new Error('Revision repeated a food item');
       used.add(id);
-      const values = Object.fromEntries(Object.entries(item).filter(([, value]) => value !== undefined));
+      const values = Object.fromEntries(Object.entries(item).filter(([key, value]) => value !== undefined
+        && !['review', 'settled', 'settledBy', 'settledAt', 'manualFields', 'version'].includes(key)));
       const fields = Object.keys(values).filter(key => !['id', 'originalQuantity', 'nutrientProvenance'].includes(key)
         && JSON.stringify(values[key]) !== JSON.stringify(key === 'label' ? original?.name || original?.label || original?.item : original?.[key]));
       if (values.kind === 'group' && original?.kind !== 'group') throw new Error('Revision cannot invent a group');
       if (original?.kind === 'group' && values.kind && values.kind !== 'group') throw new Error('Revision cannot turn a group into food');
       const result = { ...original, ...values, id: original?.id || id, uuid: id,
-        ...(fields.length ? confirmReview(original || item, Date.now()) : {}),
         manualFields: [...new Set([...(original?.manualFields || []), ...fields])],
       };
       if (!original) {
