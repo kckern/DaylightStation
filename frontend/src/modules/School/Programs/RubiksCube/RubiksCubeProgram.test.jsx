@@ -1,12 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor, configure } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-// Testing Library's 1s default is a wall-clock budget, and this file's finds
-// race it when the suite runs at full width — the gate runs 2,874 files, and
-// this test passed alone and failed in the batch on 2026-09-01. A flaky test is
-// one people learn to re-run, which is the same as not having it. The assertions
-// are unchanged; they simply get room to be true under contention.
-configure({ asyncUtilTimeout: 5000 });
+// The wall-clock budget for this file's finds is the suite-wide one now
+// (frontend/src/test-setup.js, 15s). A local `configure({ asyncUtilTimeout })`
+// used to sit here raising the 1s default; left in place it would CLAMP the
+// higher global back down, which is the opposite of what it was written to do.
 import RubiksCubeProgram from './RubiksCubeProgram.jsx';
 import { COLORS, FACES } from '@shared-gaming/rulesets/rubiks-cube/index.mjs';
 import { schoolApi } from '../../schoolApi.js';
@@ -27,6 +25,17 @@ describe('RubiksCubeProgram', () => {
     schoolApi.rubiksCubePreview.mockResolvedValue({ ok: true, data: { course: { title: 'Rubik’s Cube Foundations' }, lesson: demo, active, preview: true } });
     render(<RubiksCubeProgram />);
     expect(await screen.findByText('Centres, edges, and corners')).toBeInTheDocument();
+    // SETTLE BEFORE DRIVING. `demoPlaying` is reset by an effect keyed on
+    // `lesson?.id`, which goes undefined -> 'centres-and-pieces' when the load
+    // commits. The heading (what the find above waits on) paints with that
+    // commit, but the passive effect flushes after it — so on a starved worker
+    // the order becomes: click sets demoPlaying true, THEN the pending reset
+    // sets it false, and the button is back to 'Replay demonstration' by the
+    // time it is read. Reproduced 2/10 under CPU load (2026-09-06); the dump
+    // showed the reverted label, not a missing tree. Flushing here puts the
+    // reset before the click, where it belongs, and it must happen on the real
+    // clock — the fake timers below cannot run an effect they never scheduled.
+    await act(async () => {});
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole('button', { name: 'Replay demonstration' }));
     expect(screen.getByRole('button', { name: 'Playing…' })).toBeInTheDocument();
