@@ -26,11 +26,11 @@ capture, guarded reviewer, user protections and silent 72-hour stabilization.
 - [x] Existing Health visible-tab polling/invalidation observes Telegram/reviewer
   changes; no receipt or Telegram logic added to `HealthApp.jsx`.
 - [x] Architecture regression assertions forbid competing final receipt layouts.
-- [ ] Targeted and broad tests, API tests, frontend checks, current composition
+- [x] Targeted and broad tests, API tests, frontend checks, current composition
   and precommit gates pass (record unrelated baseline failures separately).
-- [ ] Build/deploy gates respected; deployed build verified; exact affected
+- [x] Build/deploy gates respected; deployed build verified; exact affected
   receipts previewed, then repaired in place without a history-wide rewrite.
-- [ ] Canonical docs updated and final requirement-by-requirement audit completed.
+- [x] Canonical docs updated and final requirement-by-requirement audit completed.
 
 ## Implementation notes
 
@@ -47,6 +47,9 @@ and verifies preview fingerprints before edits. It never modifies food records.
 
 ## Verification notes
 
+- Final focused Vitest run: 128 files, 1,322 tests passed. Repository commit
+  gates passed: filesystem/layer/UI/link/parse checks, 316 SCSS entrypoints and
+  all 9 composition contracts. Runtime implementation is `fe62028c3`.
 - Real YAML capture/reviewer/Health replay passes: 3 incident entries, 871 kcal,
   late weight/density, manual edits, durable delivery retry and silent stabilization.
 - Publisher tests cover quiet migration, selected preview conflicts, serialized
@@ -61,3 +64,13 @@ and verifies preview fingerprints before edits. It never modifies food records.
   `audioRef:null`. The Vitest-importing legacy-router file must use Vitest, not Jest.
 - Canonical Health and nutrition-cleanup references describe the new ownership,
   delivery state, reconciliation API and quiet-review behavior.
+- Deployed `fe62028c3` after clear pre-build and pre-restart gates; container
+  health and build metadata verified. Backed up receipt checkpoints and food
+  files first. Previewed exactly the yogurt, chia, scale-food and burrito
+  receipts; all four returned `delivery:updated` on their original message IDs.
+  The burrito retains its photo caption. Delivery acknowledgements are durable,
+  with no unavailable targets. Both capture and consumed-ledger files remained
+  byte-for-byte identical to their predeployment backups.
+- Scope audit: no food repairs or reviewer configuration changes in this rollout;
+  no mass history rewrite or new headless Telegram messages. Existing barcode
+  nutrition-verification safeguards remain enforced by the shared review command.
