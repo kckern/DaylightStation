@@ -62,6 +62,8 @@ must be reviewed in Health instead of truncated Telegram choice buttons.
 - Names, food identification, meal/date categorization, available artwork and flat
   groups are eligible. New headers have zero additive nutrition; children retain
   their existing quantities/nutrition. Groups cannot cross captures/days/meals.
+  Already-grouped ingredients keep their existing parent: automatic cleanup cannot
+  create a duplicate header or orphan the original group by moving its children.
 - Verified quantity, unit and nutrient changes require exact, serving-specific facts from
   trusted evidence tools. Habitual portions, a product's package size, and model
   confidence are not evidence of the amount consumed. The barcode tool reads the

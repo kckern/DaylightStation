@@ -31,6 +31,9 @@ export function validateCleanup({ before, after, updates, creates = [], evidence
     if (Object.keys(changes).some(key => !CLEANUP_FIELDS.includes(key))) fail('Unsupported cleanup field');
     for (const [field, value] of Object.entries(changes)) {
       if (JSON.stringify(value) === JSON.stringify(row[field])) continue;
+      if (!userDirected && field === 'parentId' && row.parentId && value !== row.parentId) {
+        fail('Preserving the existing food group', 'CLEANUP_GROUP_PROTECTED');
+      }
       const aliases = ['label', 'name'].includes(field) ? ['label', 'name'] : [field];
       if (!userDirected && (row.settledBy === 'user' || aliases.some(key => row.manualFields?.includes(key)))) fail('Preserving your manual correction', 'CLEANUP_USER_PROTECTED');
       if (!userDirected && aliases.some(key => row.cleanupFields?.includes(key))) {
