@@ -864,6 +864,8 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
               confirmTotalMs={selfService.confirmTotalMs}
               onAction={selfService.runAction}
               onConfirm={selfService.confirmPrint}
+              onConfirmIdentity={selfService.confirmIdentity}
+              onDenyIdentity={selfService.denyIdentity}
               onExit={selfService.exit}
             />
           )

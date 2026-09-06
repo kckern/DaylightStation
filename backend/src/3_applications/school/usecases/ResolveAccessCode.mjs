@@ -331,7 +331,14 @@ export class ResolveAccessCode {
         // time value it needs comes from here.
         now: this.#clock(),
       };
-      const projection = await this.#projectionFor({ resolution, learnerId, subject, options });
+      const projection = await this.#projectionFor({
+        resolution, learnerId, subject, options,
+        // A code being RE-ENTERED. The first open of a fresh code each day is
+        // the honest path and gets no friction; the second and third ask whose
+        // paper this is. Read straight off the record, so the signal is the
+        // same count the cap is measured with.
+        confirmIdentity: Number.isInteger(record?.useCount) && record.useCount >= 1,
+      });
       const card = {
         ok: true,
         learner: learnerId,
@@ -496,7 +503,7 @@ export class ResolveAccessCode {
     };
   }
 
-  async #projectionFor({ resolution, learnerId, subject, options }) {
+  async #projectionFor({ resolution, learnerId, subject, options, confirmIdentity = false }) {
     let facts = resolution?.projection ?? null;
     const unit = resolution?.unit ?? null;
     if (!facts && unit) {
@@ -569,6 +576,7 @@ export class ResolveAccessCode {
         scope: index === 0 ? 'course' : 'module',
         ...row,
       })) ?? [],
+      confirmIdentity,
       options,
     });
   }
