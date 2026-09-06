@@ -75,7 +75,12 @@ describe('locked kiosk split home', () => {
     expect(split).toBeTruthy();
     expect(split.getAttribute('data-side')).toBe('keypad-left');
     expect(screen.getByText('Learner3')).toBeInTheDocument();
-    expect(screen.getByText('1 of 2')).toBeInTheDocument();
+    // The board loads in TWO stages: the roster names it, and `teacherDay`
+    // supplies what has been passed today. `agenda-status-board` exists after
+    // the first, so a synchronous query here races the second — it failed at
+    // 110ms in a full sweep (2026-09-06) and every solo run won the race.
+    // Wait for the count itself, which is the thing the second stage decides.
+    expect(await screen.findByText('1 of 2')).toBeInTheDocument();
   });
 
   it('swaps sides every 90s on an idle panel, without remounting the keypad', async () => {
