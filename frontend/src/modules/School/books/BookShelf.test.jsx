@@ -78,6 +78,42 @@ describe('BookShelf', () => {
     expect(container.firstChild).toBeNull();
   });
 
+  /**
+   * THE LEARNER CHIP IS A GUARD, not decoration — this file's own header says
+   * so: "a shelf left open on a shared wall panel is one child's books with
+   * another child's hands on them, and the name at the top is how the second
+   * child notices."
+   *
+   * Pinned in a test as of 2026-09-06, when the reading log was opened to every
+   * learner and the code that reaches it stopped being capped. Attribution, not
+   * frequency, is the control on this surface, and the chip is the whole of it —
+   * so a refactor that quietly drops the name or the face has removed a control
+   * rather than tidied a header.
+   */
+  describe('the learner chip', () => {
+    it('names the learner and draws their portrait', () => {
+      arm({});
+      mount();
+      expect(screen.getByText('Alpha')).toBeInTheDocument();
+      expect(screen.getByRole('img', { name: /Alpha/i })).toBeInTheDocument();
+    });
+
+    it('is still there while a book is open — the overlays are where pages get typed', () => {
+      arm({
+        view: 'update',
+        current: HATCHET,
+      });
+      mount();
+      expect(screen.getByText('Alpha')).toBeInTheDocument();
+    });
+
+    it('falls back to the id rather than drawing an anonymous shelf', () => {
+      arm({ learner: { id: 'kid' } });
+      mount();
+      expect(screen.getByText('kid')).toBeInTheDocument();
+    });
+  });
+
   describe('the shelf', () => {
     it('one tile per reading/unread item, then + Add a book last', () => {
       arm({ shelf: { learnerId: 'kid', items: [HATCHET, DONE_JULY, FROG, UNREAD], obligation: null } });
