@@ -96,6 +96,24 @@ export class ITokenRegistry {
   async revoke(token, opts) {
     throw new Error('ITokenRegistry.revoke must be implemented');
   }
+
+  /**
+   * Count one USE of this token's panel code, and say what the record now holds.
+   *
+   * Called from `/act` — a use is a button press that opened something, never a
+   * lookup. `/resolve` re-resolves on the way into `/act`, so counting there
+   * would spend two uses per interaction, and `ResolveAccessCode` is
+   * read-only by contract anyway.
+   *
+   * An implementation must read-modify-write: `put` replaces the whole record.
+   *
+   * @param {string} token
+   * @param {{ at?: string }} [opts] - ISO use time (injected, not read from a clock here)
+   * @returns {Promise<object|null>} the updated record, or null when unknown
+   */
+  async recordUse(token, opts) {
+    throw new Error('ITokenRegistry.recordUse must be implemented');
+  }
 }
 
 export default ITokenRegistry;
