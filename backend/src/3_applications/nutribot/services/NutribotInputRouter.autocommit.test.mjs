@@ -29,6 +29,8 @@ import { SelectUPCPortion } from '../usecases/SelectUPCPortion.mjs';
 import { LogFoodFromText } from '../usecases/LogFoodFromText.mjs';
 import { LogFoodFromVoice } from '../usecases/LogFoodFromVoice.mjs';
 import { createNutriLog } from '../nutriLogRecords.mjs';
+import { NutritionReceiptPublisher } from '#apps/nutrition/NutritionReceiptPublisher.mjs';
+import { NutritionReceiptRenderer } from '#rendering/nutribot/NutritionReceiptRenderer.mjs';
 
 const silentLogger = { debug() {}, info() {}, warn() {}, error() {} };
 
@@ -68,8 +70,8 @@ function makeResponseContext() {
   return {
     sent,
     updated,
-    sendMessage: vi.fn(async (text, options) => { sent.push({ text, options }); return { messageId: 'bot-1' }; }),
-    sendPhoto: vi.fn(async (src, caption, options) => { sent.push({ text: caption, options }); return { messageId: 'bot-2' }; }),
+    sendMessage: vi.fn(async (text, options) => { sent.push({ text, options }); return { messageId: '22' }; }),
+    sendPhoto: vi.fn(async (src, caption, options) => { sent.push({ text: caption, options }); return { messageId: '23' }; }),
     updateMessage: vi.fn(async (messageId, updates) => { updated.push({ messageId, updates }); }),
     deleteMessage: vi.fn(async () => {}),
   };
@@ -97,10 +99,7 @@ function makeCaptureUseCase(foodLogStore, { items, mealTime, mealTimeExplicit } 
         timestamp: new Date('2026-09-02T08:00:00Z'),
       });
       await foodLogStore.save(log);
-      await responseContext.sendMessage('🕒 Wednesday\n\nApple\nToast', {
-        choices: acceptRow(log.id),
-        inline: true,
-      });
+      await responseContext.sendMessage('Analyzing…', {});
       return {
         success: true,
         nutrilogUuid: log.id,
@@ -111,7 +110,7 @@ function makeCaptureUseCase(foodLogStore, { items, mealTime, mealTimeExplicit } 
   };
 }
 
-function makeHarness({ conversationState = null, captureUseCase, scaleUseCase, foodLogStore, voiceUseCase, logger } = {}) {
+function makeHarness({ conversationState = null, revisionUseCase, captureUseCase, scaleUseCase, foodLogStore, voiceUseCase, logger, receipts = { refresh: vi.fn(async () => {}) } } = {}) {
   foodLogStore = foodLogStore || makeFoodLogStore();
   const nutriListStore = { saveMany: vi.fn(async () => {}), removeByLogId: vi.fn(async () => 2) };
   const messagingGateway = {
@@ -136,15 +135,17 @@ function makeHarness({ conversationState = null, captureUseCase, scaleUseCase, f
     getFoodLogStore: () => foodLogStore,
     getNutriListStore: () => nutriListStore,
     getMessagingGateway: () => messagingGateway,
+    getReceiptPublisher: () => receipts,
     getAcceptFoodLog: () => acceptFoodLog,
     getLogFoodFromText: () => logFoodFromText,
     getLogFoodFromUPC: () => logFoodFromText,
     getLogScaleFoodFromText: () => logScaleFoodFromText,
+    getProcessRevisionInput: () => revisionUseCase,
     ...(voiceUseCase ? { getLogFoodFromVoice: () => voiceUseCase } : {}),
   };
 
   const router = new NutribotInputRouter(container, { logger: logger || silentLogger });
-  return { router, foodLogStore, nutriListStore, acceptSpy, generateDailyReport, logFoodFromText, logScaleFoodFromText };
+  return { router, foodLogStore, nutriListStore, acceptSpy, generateDailyReport, logFoodFromText, logScaleFoodFromText, receipts };
 }
 
 const textEvent = {
@@ -156,6 +157,13 @@ const textEvent = {
 };
 
 describe('NutribotInputRouter auto-commit seam', () => {
+  it('never turns a failed revision into a new food capture', async () => {
+    const revisionUseCase = { execute: vi.fn(async () => { throw new Error('Entry changed elsewhere'); }) };
+    const h = makeHarness({ revisionUseCase, conversationState: { activeFlow: 'revision', flowState: { pendingLogUuid: 'existing' } } });
+    await expect(h.router.handleText(textEvent, makeResponseContext())).rejects.toThrow('Entry changed elsewhere');
+    expect(h.logFoodFromText.execute).not.toHaveBeenCalled();
+    expect(h.nutriListStore.saveMany).not.toHaveBeenCalled();
+  });
   it('commits a text capture through the accept path with every item settled:false', async () => {
     const { router, foodLogStore, nutriListStore, acceptSpy } = makeHarness();
     const rc = makeResponseContext();
@@ -185,26 +193,16 @@ describe('NutribotInputRouter auto-commit seam', () => {
     expect(out.items.every(i => i.settled === false)).toBe(true);
   });
 
-  it('the outgoing message offers no Accept — only Undo and Edit', async () => {
-    const { router } = makeHarness();
+  it('requests the shared receipt after commit, without rewriting another sender’s keyboard', async () => {
+    const { router, receipts, foodLogStore } = makeHarness();
     const rc = makeResponseContext();
 
     const out = await router.handleText(textEvent, rc);
 
     expect(rc.sent).toHaveLength(1);
-    const choices = rc.sent[0].options.choices;
-    const labels = allButtons(choices).map(b => b.text);
-
-    expect(labels.some(t => /Accept/i.test(t))).toBe(false);
-    expect(labels.some(t => /Undo/i.test(t))).toBe(true);
-    expect(labels.some(t => /Edit/i.test(t))).toBe(true);
-
-    // Existing callback commands are reused: 'x' (REJECT_LOG) and 'r' (REVISE_ITEM)
-    expect(callbackCmds(choices).sort()).toEqual(['r', 'x']);
-    expect(callbackCmds(choices)).not.toContain('a');
-    for (const button of allButtons(choices)) {
-      expect(JSON.parse(button.callback_data).id).toBe(out.logId);
-    }
+    expect(rc.sent[0].options.choices).toBeUndefined();
+    expect(receipts.refresh).toHaveBeenCalledWith('kc', out.logId);
+    expect(foodLogStore.logs.get(out.logId).status).toBe('accepted');
   });
 
   it('leaves non-Accept keyboards (portion pickers, retries) untouched', async () => {
@@ -306,8 +304,10 @@ describe('daily-report cadence', () => {
 });
 
 describe('Telegram copy for a committed capture (task 1.4)', () => {
-  it('reads as already-logged — "Logged ✓ — n items, kcal kcal" — with Undo/Edit, not Accept', async () => {
+  it('renders the saved ledger through the same publisher used for subsequent corrections', async () => {
     const foodLogStore = makeFoodLogStore();
+    let publisher;
+    const receipts = { refresh: (...args) => publisher.refresh(...args), bind: (...args) => publisher.bind(...args) };
     const aiGateway = {
       chat: vi.fn(async () => JSON.stringify({
         items: [
@@ -319,16 +319,29 @@ describe('Telegram copy for a committed capture (task 1.4)', () => {
       })),
     };
     const realLogFoodFromText = new LogFoodFromText({
+      receipts: () => receipts,
       messagingGateway: { sendMessage: vi.fn(), updateMessage: vi.fn(), deleteMessage: vi.fn() },
       aiGateway,
       foodLogStore,
       logger: silentLogger,
     });
 
-    const { router } = makeHarness({ foodLogStore, captureUseCase: realLogFoodFromText });
+    const { router, nutriListStore } = makeHarness({ foodLogStore, captureUseCase: realLogFoodFromText, receipts });
     const rc = makeResponseContext();
+    let checkpoint;
+    publisher = new NutritionReceiptPublisher({
+      destinationFor: () => 'telegram:kc',
+      linkFor: log => log.metadata?.messageId ? { messageId: log.metadata.messageId, caption: false } : null,
+      foodLogs: { findAll: async () => [...foodLogStore.logs.values()] },
+      items: { findByDateRange: async () => nutriListStore.saveMany.mock.calls.flatMap(([rows]) => rows) },
+      checkpoints: { load: async () => checkpoint, save: async (_, value) => { checkpoint = structuredClone(value); } },
+      renderer: new NutritionReceiptRenderer(),
+      surface: { updateMessage: async (_, link, receipt) => rc.updateMessage(link.messageId, receipt) },
+      logger: silentLogger,
+    });
+    await publisher.publish('kc');
 
-    const out = await router.handleText(textEvent, rc);
+    const out = await router.handleText({ ...textEvent, conversationId: 'telegram:kc' }, rc);
 
     expect(out.committed).toBe(true);
 
@@ -340,13 +353,17 @@ describe('Telegram copy for a committed capture (task 1.4)', () => {
 
     // Copy reads as a confirmation, not a prompt: no "Accept" anywhere, and an
     // explicit "Logged" + item-count + kcal-total summary line.
-    expect(text).toMatch(/^Logged ✓ — 2 items, 215 kcal/);
+    expect(text).toMatch(/^✅ Wed, 2 Sept 2026/);
+    expect(text).toContain('🟢 Apple 180g');
+    expect(text).toContain('🟡 Toast 40g');
     expect(text).not.toMatch(/Accept/i);
 
     // Keyboard is still the committed Undo/Edit row (the message seam), not Accept.
     const buttons = allButtons(rc.updated[0].updates.choices);
     expect(buttons.map(b => b.text).some(t => /Accept/i.test(t))).toBe(false);
     expect(callbackCmds(rc.updated[0].updates.choices).sort()).toEqual(['r', 'x']);
+    await publisher.publish('kc');
+    expect(rc.updated).toHaveLength(1);
   });
 });
 

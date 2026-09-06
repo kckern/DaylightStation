@@ -19,6 +19,7 @@ const finiteNutrient = value => value != null && Number.isFinite(Number(value)) 
  * Log food from UPC use case
  */
 export class LogFoodFromUPC {
+  #receipts;
   #messagingGateway;
   #upcGateway;
   #aiGateway;
@@ -36,6 +37,7 @@ export class LogFoodFromUPC {
   #clock;
 
   constructor(deps) {
+    this.#receipts = deps.receipts || (() => null);
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
 
     this.#messagingGateway = deps.messagingGateway;
@@ -131,13 +133,20 @@ export class LogFoodFromUPC {
       const statusCaption = `🔍 Looking up barcode ${upc}`;
 
       if (this.#barcodeGenerator && messaging.createPhotoStatusIndicator) {
+        let barcodeBuffer;
         try {
-          const barcodeBuffer = await this.#barcodeGenerator.generate(upc);
+          barcodeBuffer = await this.#barcodeGenerator.generate(upc);
+        } catch (e) {
+          this.#logger.warn?.('logUPC.barcodeGenFailed', { upc, error: e.message });
+        }
+        if (barcodeBuffer) try {
           status = await messaging.createPhotoStatusIndicator(barcodeBuffer, statusCaption, animationOpts);
           statusMsgId = status.messageId;
         } catch (e) {
-          this.#logger.warn?.('logUPC.barcodeGenFailed', { upc, error: e.message });
-          // Fall through to text status below
+          this.#logger.warn?.('logUPC.deliveryUnavailable', { upc, error: e.message });
+          // Telegram may have accepted the photo despite a lost response. Do
+          // not fall back to another Telegram send and create a duplicate.
+          messaging = createLocalNutritionResponse();
         }
       }
 
@@ -317,41 +326,21 @@ export class LogFoodFromUPC {
         }
       }
 
-      // 8. Build portion selection message
-      const caption = this.#buildProductCaption(product, foodItem);
-      const portionButtons = this.#buildPortionButtons(nutriLog.id);
-
-      // 9. Cancel status indicator (deletes message) before sending photo
-      if (status) {
-        await status.cancel();
-      } else {
-        await messaging.deleteMessage(statusMsgId);
-      }
-
-      // 10. Send photo message (messaging platform fetches remote URLs directly)
-      let photoMsgId;
-      if (product.imageUrl) {
-        const result = await messaging.sendPhoto(product.imageUrl, caption, {
-          choices: portionButtons,
-          inline: true,
-        });
-        photoMsgId = result.messageId;
-      } else {
-        const result = await messaging.sendMessage( caption, {
-          choices: portionButtons,
-          inline: true,
-        });
-        photoMsgId = result.messageId;
-      }
+      // Keep the known status message. No delete-and-resend, and no uncertain
+      // second send that could duplicate a successfully captured serving.
+      await status?.release?.();
+      const photoMsgId = statusMsgId;
+      const caption = status?.kind === 'photo';
 
       // Reload after ledger acceptance so messaging never restores pending state.
       if (this.#foodLogStore && photoMsgId) {
         const latest = this.#foodLogStore.findById ? await this.#foodLogStore.findById(userId, nutriLog.id) : nutriLog;
         const updatedLog = latest.with({
-          metadata: { ...latest.metadata, messageId: String(photoMsgId) },
+          metadata: { ...latest.metadata, messageId: String(photoMsgId), messageKind: caption ? 'photo' : 'text' },
         }, new Date());
         await this.#foodLogStore.save(updatedLog);
       }
+      await this.#receipts()?.bind(userId, nutriLog.id, { conversationId, messageId: photoMsgId, caption });
 
       this.#logger.info?.('logUPC.complete', {
         conversationId,
@@ -389,6 +378,8 @@ export class LogFoodFromUPC {
       }
 
       throw error;
+    } finally {
+      await status?.release?.();
     }
   }
 
@@ -463,51 +454,7 @@ Respond ONLY in JSON: { "icon": "apple", "noomColor": "green" }`,
     return { icon: 'default', noomColor: 'yellow' };
   }
 
-  /**
-   * Build product caption
-   * @private
-   */
-  #buildProductCaption(product, foodItem) {
-    const servingSize = product.serving?.size || 100;
-    const servingUnit = product.serving?.unit || 'g';
-    const brandAlreadyInName = product.brand && product.name.toLowerCase().includes(product.brand.toLowerCase());
-    const brandSuffix = product.brand && !brandAlreadyInName ? ` (${product.brand})` : '';
-    const colorEmoji = { green: '🟢', yellow: '🟡', orange: '🟠' }[foodItem.color] || '🟡';
 
-    return [
-      `${colorEmoji} ${servingSize}${servingUnit} ${product.name}${brandSuffix}`,
-      '',
-      `🔥 Calories: ${foodItem.calories}`,
-      `🍖 Protein: ${foodItem.protein}g`,
-      `🍏 Carbs: ${foodItem.carbs}g`,
-      `🧀 Fat: ${foodItem.fat}g`,
-    ].join('\n');
-  }
-
-  /**
-   * Build portion selection buttons
-   * @private
-   */
-  #buildPortionButtons(logUuid) {
-    return [
-      [{ text: '1 serving', callback_data: this.#encodeCallback('p', { id: logUuid, f: 1 }) }],
-      [
-        { text: '¼', callback_data: this.#encodeCallback('p', { id: logUuid, f: 0.25 }) },
-        { text: '⅓', callback_data: this.#encodeCallback('p', { id: logUuid, f: 0.33 }) },
-        { text: '½', callback_data: this.#encodeCallback('p', { id: logUuid, f: 0.5 }) },
-        { text: '⅔', callback_data: this.#encodeCallback('p', { id: logUuid, f: 0.67 }) },
-        { text: '¾', callback_data: this.#encodeCallback('p', { id: logUuid, f: 0.75 }) },
-      ],
-      [
-        { text: '×1¼', callback_data: this.#encodeCallback('p', { id: logUuid, f: 1.25 }) },
-        { text: '×1½', callback_data: this.#encodeCallback('p', { id: logUuid, f: 1.5 }) },
-        { text: '×2', callback_data: this.#encodeCallback('p', { id: logUuid, f: 2 }) },
-        { text: '×3', callback_data: this.#encodeCallback('p', { id: logUuid, f: 3 }) },
-        { text: '×4', callback_data: this.#encodeCallback('p', { id: logUuid, f: 4 }) },
-      ],
-      [{ text: '❌ Cancel', callback_data: this.#encodeCallback('x', { id: logUuid }) }],
-    ];
-  }
 }
 
 export default LogFoodFromUPC;

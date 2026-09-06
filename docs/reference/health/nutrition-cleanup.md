@@ -113,8 +113,12 @@ workflow checkpoint and repair receipts remain durable. Transcripts use the exis
 private agent transcript store. Do not publish these files: they contain food history
 and user responses.
 
-The nutrition surface synchronizer may edit an already-linked receipt, but by
-default does not create pending prompts or daily reports after captures/repairs.
+The shared nutrition receipt publisher edits already-linked receipts from the
+committed ledger using the same renderer as initial captures. The synchronizer
+only triggers it; Mastra never renders receipt prose or receives a receipt
+messaging capability. It does not create pending prompts or daily reports after
+captures/repairs. See [mutable messaging synchronization](README.md#optional-messaging-surface-synchronization)
+for ownership, retry and selective preview/repair contracts.
 Cosmetic finalization does not trigger a receipt edit. Ordinary serving assumptions,
 unknown tare and missing nutrients need no question; exceptional questions are
 deduplicated by issue, not by every changing entry version. Telegram failures do

@@ -255,14 +255,6 @@ export function buildContainerKeyboard(cfg, encodeCallback, logUuid) {
   return [none, ...chunk(containers, 3)];
 }
 
-export function buildConfirmButtons(encodeCallback, logUuid) {
-  return [[
-    { text: '✅ Accept', callback_data: encodeCallback('a', { id: logUuid }) },
-    { text: '✏️ Revise', callback_data: encodeCallback('r', { id: logUuid }) },
-    { text: '🗑️ Discard', callback_data: encodeCallback('x', { id: logUuid }) },
-  ]];
-}
-
 export function densityPromptText(grams) {
   return `⚖️ ${grams} g`;
 }

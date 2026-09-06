@@ -9,6 +9,8 @@ const ITEMS = [{ name: 'Premier Protein Shake', grams: 385, calories: 610, prote
 const makeUseCase = ({ findings = [], catalog = true } = {}) => {
   const captions = [];
   const recorded = [];
+  const foodLogStore = { save: vi.fn(async () => {}) };
+  const receipts = { bind: vi.fn(async () => {}) };
   const catalogService = {
     assessDensity: vi.fn(async () => findings),
     recordUsage: vi.fn(async (item) => { recorded.push(item); }),
@@ -23,30 +25,34 @@ const makeUseCase = ({ findings = [], catalog = true } = {}) => {
       getFileUrl: vi.fn(async () => null),
     },
     aiGateway: { chatWithImage },
-    foodLogStore: { save: vi.fn(async () => {}) },
+    foodLogStore,
+    receipts: () => receipts,
     imageDownloader: { download: vi.fn(async () => Buffer.from('unused')) },
     catalogService: catalog ? catalogService : null,
     logger: silent,
   });
-  return { uc, captions, catalogService, recorded, chatWithImage };
+  return { uc, captions, catalogService, recorded, chatWithImage, foodLogStore, receipts };
 };
 
 const run = (uc) => uc.execute({ userId: 'alice', conversationId: 'web:alice', imageData: { url: DATA_URL } });
 
 describe('LogFoodFromImage — the density guard', () => {
-  it('annotates the photo caption with what history expected', async () => {
-    const { uc, captions } = makeUseCase({
+  it('keeps density findings as evidence and binds the existing photo instead of formatting a receipt', async () => {
+    const { uc, captions, foodLogStore, receipts } = makeUseCase({
       findings: [{ name: 'Premier Protein Shake', calories: 610, grams: 385, ratio: 3.27, expectedCalories: 187, sampleCount: 57 }],
     });
     expect((await run(uc)).success).toBe(true);
-    expect(captions.at(-1)).toContain('610 kcal for 385 g');
-    expect(captions.at(-1)).toContain('~187 kcal expected');
+    const [saved] = foodLogStore.save.mock.lastCall;
+    expect(saved.metadata.densityFindings).toEqual([expect.objectContaining({ calories: 610, expectedCalories: 187 })]);
+    expect(saved.items[0].calories).toBe(610);
+    expect(captions).toEqual([]);
+    expect(receipts.bind).toHaveBeenCalledWith('alice', saved.id, { conversationId: 'web:alice', messageId: 'p1', caption: true });
   });
 
   it('leaves the caption exactly as it was when nothing is flagged', async () => {
     const { uc, captions } = makeUseCase({ findings: [] });
     await run(uc);
-    expect(captions.at(-1)).not.toContain('⚠️');
+    expect(captions).toEqual([]);
   });
 
   it('hands the guard the PARSED ITEMS, not an empty list', async () => {
@@ -81,7 +87,7 @@ describe('LogFoodFromImage — the density guard', () => {
     const { uc, catalogService, captions } = makeUseCase({});
     catalogService.assessDensity.mockRejectedValue(new Error('catalog unreadable'));
     expect((await run(uc)).success).toBe(true);
-    expect(captions.at(-1)).not.toContain('⚠️');
+    expect(captions).toEqual([]);
   });
 
   it('runs at all only when the catalog is wired', async () => {

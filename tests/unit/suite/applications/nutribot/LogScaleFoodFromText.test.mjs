@@ -11,7 +11,7 @@ function makeLog(grams) {
 }
 
 describe('LogScaleFoodFromText', () => {
-  let messaging, aiGateway, foodLogStore, stateStore, useCase, savedLog;
+  let messaging, aiGateway, foodLogStore, stateStore, useCase, savedLog, receipts;
   beforeEach(() => {
     messaging = { updateMessage: jest.fn().mockResolvedValue({}), deleteMessage: jest.fn().mockResolvedValue({}) };
     aiGateway = { chat: jest.fn().mockResolvedValue('{"label":"Lasagna","density_kcal_per_g":1.7,"protein_per_g":0.08,"carbs_per_g":0.14,"fat_per_g":0.08}') };
@@ -21,7 +21,8 @@ describe('LogScaleFoodFromText', () => {
       save: jest.fn().mockImplementation((l) => { savedLog = l; return Promise.resolve(); }),
     };
     stateStore = { clear: jest.fn().mockResolvedValue({}) };
-    useCase = new LogScaleFoodFromText({ messagingGateway: messaging, aiGateway, foodLogStore, conversationStateStore: stateStore, logger });
+    receipts = { refresh: jest.fn().mockResolvedValue({}) };
+    useCase = new LogScaleFoodFromText({ receipts: () => receipts, messagingGateway: messaging, aiGateway, foodLogStore, conversationStateStore: stateStore, logger });
   });
 
   it('estimates blended density and multiplies by the exact grams', async () => {
@@ -37,7 +38,8 @@ describe('LogScaleFoodFromText', () => {
     expect(userMsg).toContain('350');
     expect(stateStore.clear).toHaveBeenCalled();
     // confirmation must land on the BOT's prompt message, not the user's inbound message
-    expect(messaging.updateMessage).toHaveBeenCalledWith('900', expect.objectContaining({ text: expect.any(String) }));
+    expect(receipts.refresh).toHaveBeenCalledWith('kckern', 'log1', { ready: true });
+    expect(messaging.updateMessage).not.toHaveBeenCalled();
     expect(messaging.deleteMessage).toHaveBeenCalledWith('555');
   });
 });

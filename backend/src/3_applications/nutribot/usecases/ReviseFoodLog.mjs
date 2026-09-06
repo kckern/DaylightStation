@@ -5,46 +5,23 @@
  * Enters revision mode for a pending food log.
  */
 
-import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
 
 /**
  * Revise food log use case
  */
 export class ReviseFoodLog {
-  #messagingGateway;
+  #receipts;
   #foodLogStore;
   #conversationStateStore;
-  #config;
   #logger;
-  #encodeCallback;
 
   constructor(deps) {
+    this.#receipts = deps.receipts || (() => null);
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
 
-    this.#messagingGateway = deps.messagingGateway;
     this.#foodLogStore = deps.foodLogStore;
     this.#conversationStateStore = deps.conversationStateStore;
-    this.#config = deps.config;
     this.#logger = deps.logger || console;
-    this.#encodeCallback = deps.encodeCallback || ((cmd, data) => JSON.stringify({ cmd, ...data }));
-  }
-
-  #getTimezone() {
-    return this.#config?.getDefaultTimezone?.() || 'America/Los_Angeles';
-  }
-
-  /**
-   * Get messaging interface (prefers responseContext for DDD compliance)
-   * @private
-   */
-  #getMessaging(responseContext, conversationId) {
-    if (responseContext) {
-      return responseContext;
-    }
-    return {
-      sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
-      updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(conversationId, msgId, updates),
-    };
   }
 
   /**
@@ -61,8 +38,6 @@ export class ReviseFoodLog {
 
     this.#logger.debug?.('reviseLog.start', { conversationId, logUuid, hasResponseContext: !!responseContext });
 
-    const messaging = this.#getMessaging(responseContext, conversationId);
-
     if (!logUuid) {
       this.#logger.error?.('reviseLog.missingLogUuid', { conversationId });
       throw new Error('logUuid is required');
@@ -74,6 +49,7 @@ export class ReviseFoodLog {
       if (this.#foodLogStore) {
         nutriLog = await this.#foodLogStore.findByUuid(logUuid, userId);
       }
+      if (!nutriLog || !['accepted', 'pending', 'deleted'].includes(nutriLog.status)) throw new Error('Food entry is no longer available');
 
       // 2. Set conversation state to revision mode
       if (this.#conversationStateStore) {
@@ -89,27 +65,8 @@ export class ReviseFoodLog {
         this.#logger.info?.('reviseLog.stateSet', { conversationId, activeFlow: state.activeFlow });
       }
 
-      // 3. Build revision prompt
-      const logDate = nutriLog?.meal?.date || nutriLog?.date;
-      const dateHeader = logDate ? formatDateHeader(logDate, { timezone: this.#getTimezone(), now: new Date() }) : '';
-      const currentItems = formatFoodList(nutriLog?.items || []);
-      const message = `✏️ Revise Entry:\n\n${dateHeader ? dateHeader + '\n\n' : ''}${currentItems || '(none)'}`;
-
-      // 4. Update the message or send new one
-      const isImageLog = nutriLog?.metadata?.source === 'image';
-      const cancelButton = [{ text: '❌ Cancel', callback_data: this.#encodeCallback('cr', { id: logUuid }) }];
-
-      if (messageId) {
-        const updatePayload = isImageLog
-          ? { caption: message, choices: [cancelButton], inline: true }
-          : { text: message, choices: [cancelButton], inline: true };
-        await messaging.updateMessage( messageId, updatePayload);
-      } else {
-        await messaging.sendMessage( message, {
-          choices: [cancelButton],
-          inline: true,
-        });
-      }
+      const result = await this.#receipts()?.interaction(userId, logUuid, 'revision');
+      const message = result?.receipts?.[0]?.text;
 
       this.#logger.info?.('reviseLog.modeEnabled', { conversationId, logUuid });
 

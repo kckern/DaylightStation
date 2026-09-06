@@ -395,6 +395,8 @@ export class WebNutribotAdapter {
 
       return {
         messageId,
+        kind: 'text',
+        async release() {},
 
         async finish(content, finishOptions = {}) {
           await updateMessage(messageId, { text: content, ...finishOptions });

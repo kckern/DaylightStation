@@ -1198,35 +1198,55 @@ Health can confirm pending captures from any source. The original messaging
 service is not required to complete that confirmation, and app confirmation
 does not wait for report rendering or delivery.
 
-`NutritionSurfaceSync` polls committed records every 15 seconds. For users with
-a connected nutrition bot, it updates linked capture messages in place and
-regenerates affected daily reports from the authoritative item ledger. Portion
-edits, names, moves, deletes, restores, and new app entries are reflected; a
-move updates both dates and deleting the final entry produces a zero-item
-report. Pending food is excluded from totals. Archived capture messages remain
-discoverable. The app's existing resource refresh picks up changes made from
-the messaging surface as well.
+`NutritionSurfaceSync` is a 15-second polling trigger, with no formatting or
+transport code. It calls the same `NutritionReceiptPublisher` used by captures,
+confirmations, portion choices, Undo and revision interactions. The publisher
+loads the current authoritative ledger inside a serialized per-user queue and
+passes a domain read model to `1_rendering/nutribot/NutritionReceiptRenderer`.
+Accepted receipts never use the old parser's items. Group headings organize
+children without adding consumption. Compact colored food lines use actual
+stored grams; unknown mass stays a serving/volume, never fabricated grams.
+
+New Telegram captures hand their known processing message to the publisher;
+in-flight animations drain before handoff. Later weight/density evidence, Health
+edits and guarded Mastra repairs edit that same message. ✅ means saved, not
+user-confirmed. Internal evidence changes and silent 72-hour stabilization do
+not alter receipt copy or controls. No automatic new headless receipts, daily
+reports, repair announcements or settlement reminders are generated here.
+Explicit report commands remain separate from capture receipts. Health's
+visible-tab 15-second polling, focus refresh and mutation invalidation read the
+same ledger, without Telegram logic in `HealthApp.jsx`.
 
 Delivery fingerprints are persisted separately in
-`users/{userId}/lifelog/nutrition/surface-sync.yml`. Failed messages and reports
-retry independently on the next poll, including after a restart. A failed
-delivery never rolls back a food edit. The first attachment records a baseline
-without replaying historical messages. Disconnecting the bot disables this
-projection without disabling Health. Delivery is at least once: a crash between
-remote delivery and checkpoint persistence can repeat a report; message edits
-are idempotent. Deleted/uneditable remote messages are recorded as permanently
-unavailable, without retrying forever or silently replacing them.
+`users/{userId}/lifelog/nutrition/surface-sync.yml` (schema 2). Each receipt owns
+a durable text/photo message binding, interaction state and fingerprint of its
+rendered text AND controls. Binding intent persists before delivery; successful
+edits are acknowledged afterward. Known-message edits retry after failure or
+restart; Telegram's "not modified" response counts as success. Uncertain sends
+are not repeated as new messages. Deleted/uneditable receipts are recorded as
+unavailable, never silently replaced. Telegram delivery never rolls back food.
+Unchanged store revisions skip archive reads; metadata-only changes do not edit
+messages. First attachment/migration establishes a quiet history baseline.
 
-Reports keep the previous version visible until the replacement is delivered.
-Background synchronization does not generate coaching messages. Relevant events:
-`nutrition.surface.attached`, `.message.updated`, `.message.retry`,
-`.report.updated`, `.report.retry`, and `.unavailable`.
+Selective reformatting uses `POST /nutrition/receipts/reconcile` with 1–20 exact
+`logIds`. `dryRun` defaults true and returns rendered previews/fingerprints.
+Applying requires `dryRun:false` and `expectedFingerprints:{logId:fingerprint}`;
+all selected previews are checked before any edit. A changed preview returns
+409, an unknown/unlinked receipt 404, and unavailable messaging 503. Inspect
+each result's `delivery` status; retry is not reported as delivered. This endpoint
+never modifies food records or rewrites unselected history. Relevant events:
+`nutrition.receipt.updated`, `.retry`, `.bind_retry`, `.interaction_retry`.
 
 Hardware UPC scans persist headlessly; connected messaging delivery is a later,
 optional projection. Web review and Telegram portion/confirm callbacks share
 `FoodLogReview`: a durable intent precedes the idempotent ledger append, and
 acceptance is marked only afterward. Retries resume the stored operation;
 stale app edits fail with 409. Changing a request requires a new operation ID.
+Telegram text revisions likewise read a fresh ledger snapshot and commit only
+if every original entry version still matches. Stable IDs, groups, unknown
+nutrients and existing Health placement survive; a failed revision cannot fall
+through into a new food capture. Revision mode/cancel controls belong to the
+receipt publisher and remain intact during background reviewer corrections.
 
 Food-group and lifecycle fields round-trip through capture YAML. Group records
 remain non-additive; Health renders totals from their children. Expand/collapse

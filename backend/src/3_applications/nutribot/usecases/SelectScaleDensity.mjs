@@ -19,7 +19,7 @@
 // held): a density-derived estimate is percent-of-calories arithmetic over a
 // hand-authored table, not AI or catalog micronutrient data, and `'ai'`/`'catalog'`
 // are the only other values that field may legitimately hold.
-import { densityForLevel, buildConfirmButtons } from '../lib/scaleNutribotConfig.mjs';
+import { densityForLevel } from '../lib/scaleNutribotConfig.mjs';
 import { ApplicationError } from '#apps/common/errors/index.mjs';
 import { serializeFoodItem } from '../nutriLogRecords.mjs';
 import { computeNutrition } from '#domains/nutrition/index.mjs';
@@ -33,26 +33,19 @@ function round1(n) {
 }
 
 export class SelectScaleDensity {
-  #messagingGateway; #foodLogStore; #conversationStateStore; #scaleConfig; #logger; #encodeCallback;
+  #receipts; #foodLogStore; #conversationStateStore; #scaleConfig; #logger;
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
-    this.#messagingGateway = deps.messagingGateway;
+    this.#receipts = deps.receipts || (() => null);
     this.#foodLogStore = deps.foodLogStore;
     this.#conversationStateStore = deps.conversationStateStore;
     this.#scaleConfig = deps.scaleConfig;
     this.#logger = deps.logger || console;
-    this.#encodeCallback = deps.encodeCallback || ((cmd, data) => JSON.stringify({ cmd, ...data }));
-  }
-
-  #getMessaging(responseContext, conversationId) {
-    if (responseContext) return responseContext;
-    return { updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(conversationId, msgId, updates) };
   }
 
   async execute(input) {
     const { userId, conversationId, logUuid, level, messageId, responseContext } = input;
-    const messaging = this.#getMessaging(responseContext, conversationId);
 
     const lvl = densityForLevel(this.#scaleConfig, level);
     if (!lvl) throw scaleError('unknown level', 'UNKNOWN_LEVEL', { level });
@@ -95,12 +88,7 @@ export class SelectScaleDensity {
       try { await this.#conversationStateStore.clear(conversationId); } catch (e) { this.#logger.debug?.('selectDensity.clearFailed', { error: e.message }); }
     }
 
-    const text = `⚖️ ${grams} g · ${lvl.emoji} ${lvl.label}\n🔥 ~${calories} kcal`;
-    const choices = buildConfirmButtons(this.#encodeCallback, logUuid);
-    if (messageId) {
-      try { await messaging.updateMessage(messageId, { text, choices, inline: true }); }
-      catch (e) { this.#logger.warn?.('selectDensity.updateFailed', { error: e.message }); }
-    }
+    await this.#receipts()?.refresh(userId, logUuid, { ready: true });
 
     this.#logger.info?.('selectDensity.done', { logUuid, grams, level: lvl.level, calories });
     return { success: true, calories };

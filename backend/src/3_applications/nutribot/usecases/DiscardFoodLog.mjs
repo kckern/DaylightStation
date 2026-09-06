@@ -20,6 +20,7 @@
  * Discard food log use case
  */
 export class DiscardFoodLog {
+  #receipts;
   #messagingGateway;
   #foodLogStore;
   #nutriListStore;
@@ -28,6 +29,7 @@ export class DiscardFoodLog {
   #reviewService;
 
   constructor(deps) {
+    this.#receipts = deps.receipts || (() => null);
     this.#reviewService = deps.reviewService;
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
 
@@ -62,8 +64,10 @@ export class DiscardFoodLog {
    */
   async execute(input) {
     if (this.#reviewService) {
-      const log = await this.#foodLogStore.findById(input.userId, input.logUuid);
-      if (log?.status === 'pending') return this.#reviewService.execute({ ...input, action: 'discard' });
+      const result = await this.#reviewService.execute({ ...input, action: "discard" });
+      await this.#conversationStateStore?.clear(input.conversationId);
+      await this.#receipts()?.interaction(input.userId, input.logUuid, null);
+      return result;
     }
     const { userId, conversationId, logUuid, messageId, responseContext } = input;
 
@@ -93,14 +97,7 @@ export class DiscardFoodLog {
         await this.#conversationStateStore.clear(conversationId);
       }
 
-      // 3. Delete the confirmation message
-      if (messageId) {
-        try {
-          await messaging.deleteMessage(messageId);
-        } catch (e) {
-          // Ignore delete errors
-        }
-      }
+      await this.#receipts()?.refresh(userId, logUuid);
 
       this.#logger.info?.('discardLog.complete', { conversationId, logUuid });
 

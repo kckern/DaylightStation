@@ -159,20 +159,7 @@ export class WebhookHandler {
             this.#logger.debug?.('webhook.callback.cr.clearState.failed', { error: e.message });
           }
         }
-        // Restore Accept/Revise/Discard buttons
-        const encodeCallback = (cmd, data) => JSON.stringify({ cmd, ...data });
-        const buttons = [
-          [
-            { text: '✅ Accept', callback_data: encodeCallback('a', { id: decoded.id }) },
-            { text: '✏️ Revise', callback_data: encodeCallback('r', { id: decoded.id }) },
-            { text: '🗑️ Discard', callback_data: encodeCallback('x', { id: decoded.id }) },
-          ],
-        ];
-        try {
-          await messaging.updateMessage(input.conversationId || input.userId, input.messageId, { choices: buttons, inline: true });
-        } catch (e) {
-          this.#logger.warn?.('webhook.callback.cr.updateFailed', { error: e.message });
-        }
+        await this.#container.getReceiptPublisher?.()?.interaction(input.userId, decoded.id, null);
         return { ok: true, handled: true };
       }
       default:
