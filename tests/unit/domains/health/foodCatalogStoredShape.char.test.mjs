@@ -91,6 +91,12 @@ describe('food catalog stored YAML shape (characterization)', () => {
       usageByBucket: {},
       favorite: false,
       icon: null,
+      // The PINNED picture, distinct from `icon`: `icon` is whatever the entry
+      // currently shows (inferred or set), `iconOverride` is the one a person
+      // chose, and it outranks any later inference (FoodCatalogService, and
+      // both UPC log paths, read it first). It has to survive a restart for
+      // that choice to mean anything, so it is pinned here like the rest.
+      iconOverride: null,
       lastUsed: '2026-07-08',
       createdAt: '2026-07-01T00:00:00.000Z',
     }));
