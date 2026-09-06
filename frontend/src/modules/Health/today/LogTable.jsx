@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { UnstyledButton } from '@mantine/core';
 import { LoadingState } from '@/lib/ui';
-import { sumCounted, formatNutrients } from '@shared-contracts/nutrition/countedRows.mjs';
+import { sumCounted } from '@shared-contracts/nutrition/countedRows.mjs';
+import { MacroBadges } from './MacroBadges.jsx';
+import { ExerciseSection } from './ExerciseSection.jsx';
 import { BUCKETS, UNGROUPED } from './mealBuckets.js';
 import { EntryRow } from './EntryRow.jsx';
 import { groupRows } from './groupRows.js';
@@ -22,7 +24,6 @@ function Section({
     catch { return new Set(); }
   });
   const entries = groupRows(rows);
-  const macros = rows.length ? formatNutrients(rows) : null;
   // The section frame (heading + kcal + add row) is PERMANENT structure —
   // it never depends on whether data has arrived yet. Only the entry list
   // itself swaps for a shimmer, and only on a true cold start (this bucket
@@ -48,7 +49,7 @@ function Section({
     <section className="health-meal">
       <header className="health-meal__header">
         <h4 className="health-meal__label">{label}</h4>
-        {macros ? <span className="health-meal__macros" title="+ means some nutrition is unknown">{macros}</span> : null}
+        {rows.length ? <MacroBadges rows={rows} className="health-meal__macros" /> : null}
         <span className="health-meal__header-right">
           <span className="health-meal__kcal">{rows.length ? `${kcal(rows)} kcal` : '—'}</span>
           {headerAction || null}
@@ -116,7 +117,7 @@ function Section({
 }
 
 export function LogTable({
-  byBucket, sessions = [], exerciseAvailable = false, onAddTo, onRowTap, onConfirm,
+  byBucket, date, sessions = [], exerciseAvailable = false, onAddTo, onRowTap, onConfirm,
   addSlot, addingTo, bucketHeaderAction, coldLoading = false, capturePendingBucket = null, capturePendingBuckets = [],
   measuredByUuid = null,
 }) {
@@ -144,19 +145,7 @@ export function LogTable({
           alone made the header pop in and out as sessions changed, which is
           exactly the "chrome dissolves" problem this task exists to fix. */}
       {exerciseAvailable || sessions.length ? (
-        <section className="health-meal health-meal--exercise">
-          <header className="health-meal__header">
-            <h4 className="health-meal__label">Exercise</h4>
-            <span className="health-meal__kcal">{sessions.length ? `+${kcal(sessions)} kcal` : '—'}</span>
-          </header>
-          {sessions.map((s, i) => (
-            <div key={i} className="health-row health-row--readonly">
-              <span className="health-row__name">{s.title || s.type || 'Workout'}</span>
-              <span className="health-row__portion">{(s.minutes ?? s.duration_min) ? `${Math.round(s.minutes ?? s.duration_min)} min` : ''}</span>
-              <span className="health-row__kcal">+{Math.round(s.calories || 0)}</span>
-            </div>
-          ))}
-        </section>
+        <ExerciseSection date={date} sessions={sessions} />
       ) : null}
       {orphans.length ? (
         <Section label={UNGROUPED.label} rows={orphans} onRowTap={onRowTap} onConfirm={onConfirm}

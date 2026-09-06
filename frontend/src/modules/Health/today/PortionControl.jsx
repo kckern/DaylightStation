@@ -11,6 +11,8 @@ export function PortionControl({ row }) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState('');
   const portion = foodPortion(row);
+  const wholeGrams = portion.unit === 'g';
+  const normalize = next => wholeGrams ? Math.max(1, Math.round(next)) : Math.max(0.1, Math.round(next * 10) / 10);
   const name = row.name || row.item || row.label;
   const own = control?.draft && entryId(control.draft.row) === entryId(row);
   const cancel = () => { gesture.current = null; setOpen(false); control?.cancel(); };
@@ -30,7 +32,7 @@ export function PortionControl({ row }) {
         const dx = event.clientX - start.x;
         if (!start.moved && Math.abs(dx) < 5) return;
         start.moved = true;
-        control.preview(Math.max(0.1, Math.round((start.value + dx / 2 * (event.shiftKey ? 0.1 : 1)) * 10) / 10));
+        control.preview(normalize(start.value + dx / 2 * (event.shiftKey ? 0.1 : 1)));
       }}
       onPointerUp={event => {
         const start = gesture.current;
@@ -38,12 +40,12 @@ export function PortionControl({ row }) {
         gesture.current = null;
         event.currentTarget.releasePointerCapture?.(event.pointerId);
         if (start.moved) control.commit();
-        else { setValue(portion.value); setOpen(true); }
+        else { setValue(wholeGrams ? Math.round(portion.value) : portion.value); setOpen(true); }
       }}
       onPointerCancel={cancel}
       onClick={event => {
         // Assistive technology can activate a button without pointer events.
-        if (event.detail === 0 && !own && !open && control.begin(row)) { setValue(portion.value); setOpen(true); }
+        if (event.detail === 0 && !own && !open && control.begin(row)) { setValue(wholeGrams ? Math.round(portion.value) : portion.value); setOpen(true); }
       }}
       onLostPointerCapture={() => { if (gesture.current) cancel(); }}
       onKeyDown={event => {
@@ -51,15 +53,15 @@ export function PortionControl({ row }) {
         if (['ArrowLeft', 'ArrowDown', 'ArrowRight', 'ArrowUp'].includes(event.key)) {
           event.preventDefault();
           if (!own && !control.begin(row)) return;
-          control.preview(Math.max(0.1, Math.round((portion.value + (['ArrowLeft', 'ArrowDown'].includes(event.key) ? -1 : 1) * (event.shiftKey ? 0.1 : 1)) * 10) / 10));
+          control.preview(normalize(portion.value + (['ArrowLeft', 'ArrowDown'].includes(event.key) ? -1 : 1) * (event.shiftKey && !wholeGrams ? 0.1 : 1)));
         }
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
           if (own) control.commit();
-          else if (control.begin(row)) { setValue(portion.value); setOpen(true); }
+          else if (control.begin(row)) { setValue(wholeGrams ? Math.round(portion.value) : portion.value); setOpen(true); }
         }
       }}>{formatFoodPortion(row)}</UnstyledButton></Popover.Target>
-    <Popover.Dropdown><NumberInput autoFocus label={`Portion (${portion.unit})`} value={value} min={0.1} decimalScale={1}
+    <Popover.Dropdown><NumberInput autoFocus label={`Portion (${portion.unit})`} value={value} min={wholeGrams ? 1 : 0.1} decimalScale={wholeGrams ? 0 : 1}
       onChange={next => { setValue(next); if (typeof next === 'number') control.preview(next); }}
       onKeyDown={event => { if (event.key === 'Escape') cancel(); if (event.key === 'Enter' && value > 0) { setOpen(false); control.commit(); } }} />
       <Group gap="xs"><Button variant="subtle" onClick={cancel}>Cancel</Button>

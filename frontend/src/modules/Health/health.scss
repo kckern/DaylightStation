@@ -261,6 +261,18 @@ $health-aside-gap: 1.5rem;
   > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--ds-text-mid); }
 }
 .health-macro-intake { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; padding-block: 0.4rem; color: var(--ds-text-mid); font-variant-numeric: tabular-nums; font-size: 0.85rem; }
+.health-macro-tone--protein { --health-macro-color: #f2a0b5; } /* data-color: protein rose */
+.health-macro-tone--carbs { --health-macro-color: #8dd6af; } /* data-color: carbohydrate sage */
+.health-macro-tone--fat { --health-macro-color: #e8ca79; } /* data-color: fat gold */
+.health-macro-legend { display: inline-flex; align-items: center; gap: 0.35rem;
+  &::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--health-macro-color); }
+}
+.health-macros { display: grid; grid-template-columns: repeat(3, 2rem); gap: 0.25rem; }
+.health-macro-badge {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 22px; padding-inline: 0.15rem; border-radius: 5px;
+  color: var(--health-macro-color); background: color-mix(in srgb, var(--health-macro-color) 13%, transparent);
+  font-size: 0.72rem; line-height: 1; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
 .health-log { display: grid; gap: 0.5rem 1rem; align-items: start; }
 @media (min-width: $health-aside-breakpoint) {
   .health-log { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -347,13 +359,8 @@ $health-aside-gap: 1.5rem;
   // that's the narrow-width regression this rule guards against. The
   // header-right cluster wraps around it instead; see that rule above.
   &__kcal { font-size: 0.78rem; color: var(--ds-text-mid); font-variant-numeric: tabular-nums; white-space: nowrap; }
-  // Per-meal macro subtotal (Task 6.3) — its own line under the header rather
-  // than another chip crammed into `__header-right`, which already carries the
-  // kcal, three 44px capture buttons and an optional action button.
-  &__macros {
-    font-size: 0.72rem; color: var(--ds-text-mid); font-variant-numeric: tabular-nums;
-    padding: 0.05rem 0.2rem 0;
-  }
+  &__macros { margin-left: auto; }
+  &__macros + &__header-right { margin-left: 0; }
   &__add { display: block; width: 100%; min-height: 44px; text-align: left; padding: 0.28rem 0.2rem; color: var(--ds-text-mid); font-size: 0.8rem; border-radius: 6px;
     &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; } }
   &--exercise .health-row__kcal { color: var(--ds-success); }
@@ -377,17 +384,16 @@ $health-aside-gap: 1.5rem;
 // control — kept as a sibling, never nested inside the row button (a
 // button-in-a-button is invalid and breaks the confirm tap target).
 .health-row-line {
-  display: grid; grid-template-columns: 20px minmax(0, 1fr) 4.5rem 3.8rem 44px;
+  display: grid; grid-template-columns: 20px minmax(0, 1fr) auto 4.5rem 3.8rem 44px;
   align-items: center; gap: 0.2rem; min-height: 48px; position: relative;
 }
 .health-row {
   display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; min-height: 44px; gap: 0.5rem;
   &__identity { display: flex; align-items: center; gap: 0.4rem; min-width: 0; min-height: 44px; text-align: left; }
-  &__description { min-width: 0; }
+  &__description { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   &__name { overflow-wrap: anywhere; color: var(--ds-text-high); font-size: 0.86rem; }
   &__portion { color: var(--ds-text-mid); font-size: 0.8rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
   &__kcal { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-size: 0.86rem; small { font-size: 0.65rem; color: var(--ds-text-mid); } }
-  &__macros { display: block; color: var(--ds-text-mid); font-size: 0.72rem; font-weight: 400; }
   &__action { width: 44px; text-align: center; color: var(--ds-success); }
   &__thumb { width: 24px; height: 24px; flex: none; border-radius: 4px; object-fit: cover; }
   &__icon { width: 24px; height: 24px; flex: none; }
@@ -402,9 +408,28 @@ $health-aside-gap: 1.5rem;
 .health-row-line--last-child .health-row__branch::before { bottom: auto; height: 24px; }
 .health-row__branch .health-row__expand { position: absolute; inset: 0 auto auto -12px; }
 @include bp.mobile-only {
-  .health-row-line { grid-template-columns: 12px minmax(0, 1fr) 3.5rem 3rem 44px; gap: 0.1rem; }
+  .health-row-line { grid-template-columns: 12px minmax(0, 1fr) auto 3rem 2.2rem 44px; gap: 0.1rem; }
+  .health-macros { grid-template-columns: repeat(3, 1.65rem); gap: 0.15rem; }
+  .health-macro-badge { font-size: 0.68rem; }
   .health-row__kcal small { display: none; }
   .health-row__identity { gap: 0.25rem; }
+}
+
+.health-exercise {
+  display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 0.75rem; align-items: center; padding-block: 0.65rem;
+  &__art { width: 42px; height: 60px; border-radius: 5px; overflow: hidden; display: grid; place-items: center; background: var(--ds-surface); color: var(--ds-text-mid);
+    img { width: 100%; height: 100%; object-fit: cover; }
+  }
+  &__title { color: var(--ds-text-high); font-size: 0.86rem; font-weight: 600; }
+  &__meta { display: flex; flex-wrap: wrap; gap: 0.2rem 0.75rem; margin-top: 0.25rem; font-size: 0.73rem; color: var(--ds-text-mid);
+    > span { display: inline-flex; align-items: center; gap: 0.2rem; white-space: nowrap; }
+  }
+  &__result { display: flex; flex-direction: column; align-items: flex-end; }
+  &__link { display: inline-flex; align-items: center; gap: 0.15rem; min-height: 44px; color: var(--ds-accent); font-size: 0.75rem; text-decoration: none;
+    &:hover { text-decoration: underline; }
+    &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
+  }
+  &__retry { min-height: 44px; color: var(--ds-text-mid); font-size: 0.75rem; }
 }
 
 // Icon picker: a wrapping grid of 44px tap targets (the household touch-target

@@ -44,7 +44,7 @@ point.
   rest. Unconfirmed captures count immediately and retain their 72-hour deadline.
 - **Inline portions:** primary-button horizontal drag previews all row, group,
   meal and day totals from one draft overlay. The threshold is 5px, sensitivity
-  1g per 2px (Shift: one tenth); click opens direct entry, arrows adjust and
+  1g per 2px (Shift: one tenth speed, still snapping to whole grams); click opens direct entry, arrows adjust and
   Enter commits. Release sends one command; Escape/pointer cancellation sends
   none. Polls preserve the gesture's baseline. Conflicts require explicit reload
   and apply, and unseen group members require discarding the draft first.
@@ -237,7 +237,24 @@ remain those units; they do not imply grams. Group mass is the sum of known
 child masses, unknown if any child mass is unknown. Unknown nutrients show `—`,
 known zero shows `0`, and partially covered totals show `+`. Macro intake remains
 visible even without goals. Each row has one artwork slot, inline estimate and
-macro text, an independently actionable portion and an explicit Confirm button.
+macro badges, an independently actionable portion and an explicit Confirm button.
+Food names stay on one line (ellipsis with the full name on hover and in the edit
+button's accessible name). Protein, carbs and fat occupy aligned numeric badge
+columns in rose, sage green and gold; the day's labelled totals carry matching
+color dots. Badges omit letters and units, with full nutrient names and grams in
+their tooltips and accessible names. Meal totals use the same badges. Grams and
+calories display as whole numbers, including portion previews and editor fields;
+gram adjustments snap to positive integers. Stored nutrient precision is retained
+for proportional scaling, and non-mass portions can still use fractional units.
+
+Exercise rows show a program poster, title, start time, duration, average heart
+rate when supplied, and calorie credit. One optional fitness session index request
+for the selected date resolves `homeSessionId` against session and segment IDs.
+Matched rows use the primary video's program artwork and link to
+`/fitness/home/session-{id}`; unlinked workouts keep a neutral exercise icon.
+Missing artwork falls back in place, and a failed index request offers Retry
+without hiding exercise credit. The fitness index never adds workouts or changes
+the calorie equation.
 
 The week strip separates its seven-day viewport from the selected day. Picking
 a visible day changes only the selection; explicit 44 px previous/next-week

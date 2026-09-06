@@ -148,7 +148,7 @@ export function MacroBarRow({ macros, goals, macroCoverage, microCoverage }) {
   const intake = withoutTargets.length ? <div className="health-macro-intake" title="+ means some food has unknown macros">
     {withoutTargets.map(m => { const coverage = macroCoverage?.[m.key];
       const value = coverage ? coverage.value : macros?.[m.key];
-      return <span key={m.key}>{m.label} {value == null ? '—' : `${fmt(value)}${coverage && coverage.covered < coverage.total ? '+' : ''} g`}</span>;
+      return <span key={m.key} className={`health-macro-legend health-macro-tone--${m.key}`}>{m.label} {value == null ? '—' : `${fmt(value)}${coverage && coverage.covered < coverage.total ? '+' : ''} g`}</span>;
     })}
   </div> : null;
   if (!macroBars.length && !microBars.length) return intake;

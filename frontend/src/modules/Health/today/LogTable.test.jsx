@@ -238,12 +238,14 @@ describe('LogTable — per-meal macro subtotal', () => {
     ['morning', morning], ['afternoon', []], ['evening', []], ['night', []], [null, []],
   ]);
 
-  it('shows P · C · F under the meal header', () => {
+  it('shows accessible macro badges beside the meal header', () => {
     render(<LogTable byBucket={bucketsWith([
       { uuid: '1', name: 'Eggs', calories: 140, protein: 12, carbs: 1, fat: 10 },
       { uuid: '2', name: 'Toast', calories: 90, protein: 3, carbs: 17, fat: 1 },
     ])} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
-    expect(screen.getByText('P 15 g · C 18 g · F 11 g')).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Protein: 15 grams' })).toHaveTextContent('15');
+    expect(screen.getByRole('img', { name: 'Carbs: 18 grams' })).toHaveTextContent('18');
+    expect(screen.getByRole('img', { name: 'Fat: 11 grams' })).toHaveTextContent('11');
   });
 
   it('counts a group and its children ONCE — the group row carries zero macros by design', () => {
@@ -252,7 +254,7 @@ describe('LogTable — per-meal macro subtotal', () => {
       { uuid: 'c1', parentId: 'g1', name: 'Banana', calories: 105, protein: 1, carbs: 27, fat: 0 },
       { uuid: 'c2', parentId: 'g1', name: 'Yogurt', calories: 100, protein: 10, carbs: 6, fat: 3 },
     ])} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
-    expect(document.querySelector('.health-meal__macros').textContent).toBe('P 11 g · C 33 g · F 3 g');
+    expect([...document.querySelector('.health-meal__macros').children].map(badge => badge.textContent)).toEqual(['11', '33', '3']);
   });
 
   it('renders NO subtotal line for a meal of legacy rows with no macro data', () => {
