@@ -177,13 +177,13 @@ const PRINT_KINDS = new Set(['print', 'retry']);
  * absent gets one, because a spurious retry button costs a wasted tap while a
  * missing one is a dead end at a wall panel that has no other affordance.
  *
- * `used_up` JOINED THE LIST ON 2026-09-06, and it had to arrive in the same
- * change as the backend refusal. A code is now spent after a few opens; left
+ * `used_up` AND `slow_down` JOINED THE LIST ON 2026-09-06, and each had to
+ * arrive in the same change as the backend refusal that emits it. A code is now spent after a few opens; left
  * out of this set it would have been classified as an outage, so a child whose
  * code was simply finished would read "the school computer isn't answering"
  * beside a Retry button that could never work.
  */
-const CHILD_FIXABLE_REASONS = new Set(['unknown_code', 'used_up']);
+const CHILD_FIXABLE_REASONS = new Set(['unknown_code', 'used_up', 'slow_down']);
 const isBackendFault = (payload) => !CHILD_FIXABLE_REASONS.has(payload?.reason);
 
 /**
@@ -236,6 +236,11 @@ export function useSelfService({
   idleTimeoutSeconds = DEFAULT_IDLE_TIMEOUT_SECONDS,
   claim = null,
   onLaunch = null,
+  // This panel's own identity, sent with every code so the backend's
+  // wrong-code throttle can bucket per DEVICE. It cannot use `req.ip`: every
+  // screen in the house reaches the backend through one reverse proxy, so an
+  // IP names the proxy and would let the living-room screen throttle this one.
+  deviceId = null,
   printConfirmTimeoutMs = PRINT_CONFIRM_TIMEOUT_MS,
   printerPollMs = PRINTER_POLL_MS,
 } = {}) {
@@ -307,7 +312,7 @@ export function useSelfService({
     if (!beginWork()) return { resolved: false, sentence: null, skipped: true };
     const gen = genRef.current;
     lastTriedRef.current = code;
-    const res = await schoolApi.selfServiceResolve(code);
+    const res = await schoolApi.selfServiceResolve(code, deviceId);
     endWork();
     if (genRef.current !== gen) return { resolved: false, sentence: null, skipped: true }; // rule 4
 
@@ -353,7 +358,7 @@ export function useSelfService({
       ?? null;
     if (learnerId && claim) claim(learnerId);
     return { resolved: true, sentence: null, degraded: false };
-  }, [beginWork, claim, endWork]);
+  }, [beginWork, claim, endWork, deviceId]);
 
   /** The degraded retry — the same code, not a fresh typing exercise. */
   const retry = useCallback(() => submit(lastTriedRef.current), [submit]);

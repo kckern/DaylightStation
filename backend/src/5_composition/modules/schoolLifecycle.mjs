@@ -124,6 +124,7 @@ import { ResolvePersonalCard } from '#apps/school/usecases/ResolvePersonalCard.m
 import { ResolveScanAction } from '#apps/school/usecases/ResolveScanAction.mjs';
 import { ResolveSubjectNext } from '#apps/school/usecases/ResolveSubjectNext.mjs';
 import { ResolveAccessCode } from '#apps/school/usecases/ResolveAccessCode.mjs';
+import { createTokenBucket } from '#system/utils/tokenBucket.mjs';
 import { RunSelfServiceAction } from '#apps/school/usecases/RunSelfServiceAction.mjs';
 import { RecordLessonCompanionProgress } from '#apps/school/usecases/RecordLessonCompanionProgress.mjs';
 import { GetCompanionFinishCode } from '#apps/school/usecases/GetCompanionFinishCode.mjs';
@@ -1254,9 +1255,18 @@ export async function createSchoolLifecycle({
   // `cfg.selfService` is the SAME `school.yml` block `buildAgenda` mints codes
   // from, passed through untouched — one config path, so the room a video goes
   // to and the codes that reach it can never come from two different readings.
+  // Wrong-code throttle for the panel keypad. Small on purpose: five wrong
+  // codes is already far past a mistyped digit, and the 3/min refill means a
+  // child who pauses is never held. Built HERE rather than inside the use case
+  // so the bucket is one per process and survives across requests.
+  const accessCodeAttemptLimiter = createTokenBucket({
+    capacity: 5, refillPerMinute: 3, maxBuckets: 64,
+  });
+
   const resolveAccessCode = new ResolveAccessCode({
     planProjection,
     tokens: stores.tokens,
+    attemptLimiter: accessCodeAttemptLimiter,
     curriculum,
     assignments: stores.assignments,
     sessions: stores.sessions,
