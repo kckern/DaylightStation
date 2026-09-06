@@ -31,6 +31,13 @@ const SUBJECT_FALLBACK_ICON = 'apple';
 const PRINT_AUTO_HINT = 'This closes by itself.';
 const CONFIRM_NO = 'No';
 const SYNTHESISED_EXIT = 'Close';
+/**
+ * Asked before a RE-ENTERED code claims anyone. The card already shows the
+ * learner's face and name above this — the question names them again in words
+ * because a child skims a picture and reads a question.
+ */
+const IDENTITY_YES = "Yes, that's me";
+const IDENTITY_NO = 'No';
 
 /**
  * WHERE A COURSE'S ARTWORK ACTUALLY LIVES.
@@ -400,6 +407,8 @@ export default function LaunchCard({
   confirmTotalMs = null,
   onAction,
   onConfirm,
+  onConfirmIdentity = null,
+  onDenyIdentity = null,
   onExit,
 }) {
   const isPreview = preview === true || card?.preview === true;
@@ -414,6 +423,10 @@ export default function LaunchCard({
   const context = card?.context ?? null;
   const taxonomy = context?.taxonomy ?? {};
   const learner = context?.learner ?? null;
+  // The name the identity question uses. Falls back rather than asking "Is this
+  // you, undefined?" — a card with no resolvable display name still has to be
+  // able to ask, and the generic form is a real sentence.
+  const identityName = learner?.displayName ?? 'you';
   const learnerAvatarId = learner?.avatar?.kind === 'learner'
     ? learner.avatar.id : learner?.id;
   const trail = Array.isArray(context?.trail) ? context.trail : [];
@@ -531,6 +544,43 @@ export default function LaunchCard({
                   )}
                 </div>
               </>
+            )}
+
+            {view === 'identity' && (
+              <div className="school-selfservice-card__confirm">
+                {/*
+                  The card shell above still draws the avatar, the name and the
+                  work — so the question is asked WITH the answer visible, not
+                  in a modal that hides what it is asking about. `role="status"`
+                  matches the print confirmation directly below; a wall panel's
+                  one live region should not change voice between two questions
+                  that look the same.
+                */}
+                <p className="school-selfservice-card__sentence" role="status">
+                  {identityName === 'you' ? 'Is this you?' : `Is this you, ${identityName}?`}
+                </p>
+                <div className="school-selfservice-card__actions">
+                  <button
+                    type="button"
+                    ref={actionFocusRef}
+                    className="school-selfservice-card__action is-primary"
+                    data-testid="selfservice-identity-yes"
+                    onClick={() => onConfirmIdentity?.()}
+                    disabled={busy}
+                  >
+                    <span className="school-selfservice-card__action-label">{IDENTITY_YES}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="school-selfservice-card__action is-secondary"
+                    data-testid="selfservice-identity-no"
+                    onClick={() => onDenyIdentity?.()}
+                    disabled={busy}
+                  >
+                    {IDENTITY_NO}
+                  </button>
+                </div>
+              </div>
             )}
 
             {view === 'confirm' && (
