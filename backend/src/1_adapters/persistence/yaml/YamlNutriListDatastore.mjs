@@ -419,7 +419,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
    * @param {NutriLog} nutriLog
    * @returns {Promise<void>}
    */
-  async syncFromLog(nutriLog, { revision = false } = {}) {
+  async syncFromLog(nutriLog, { revision = false, expectedVersions = null } = {}) {
     this.#recover(nutriLog.userId);
     const filePath = this.#getPath(nutriLog.userId);
     const logId = nutriLog.id;
@@ -448,16 +448,29 @@ export class YamlNutriListDatastore extends INutriListDatastore {
       if (revision) {
         const belongs = row => row.logId === logId || row.log_uuid === logUuid;
         const originalRows = existing.filter(belongs);
-        if (originalRows.some(row => (row.version ?? 1) > 1) || Object.values(deleted).some(belongs)) {
+        const versions = list => list.map(row => [row.uuid || row.id, row.version ?? 1]).sort(([a], [b]) => a.localeCompare(b));
+        const conflict = expectedVersions
+          ? JSON.stringify(versions(originalRows)) !== JSON.stringify(versions(expectedVersions))
+          : originalRows.some(row => (row.version ?? 1) > 1) || Object.values(deleted).some(belongs);
+        if (conflict) {
           throw Object.assign(new Error('This capture has been corrected in the food log. Edit its entries there.'), { status: 409, code: 'VERSION_CONFLICT' });
         }
         const documents = this.#documents(nutriLog.userId);
         const writes = new Map([...documents].map(([file, rows]) => [file, rows.filter(row => !belongs(row))]));
-        const replacements = newItems.map(item => ({ ...item, version: 2 }));
+        const replacements = newItems.map((item, index) => {
+          const original = originalRows.find(row => row.uuid === item.uuid || row.id === item.id);
+          const proposed = nutriLog.items[index];
+          if (!original && (existingIds.has(item.uuid || item.id) || deleted[item.uuid || item.id])) {
+            throw Object.assign(new Error('Revision cannot reuse another or deleted entry'), { status: 409, code: 'VERSION_CONFLICT' });
+          }
+          return { ...item, date: proposed.date || item.date,
+            mealTime: Object.hasOwn(proposed, 'mealTime') ? proposed.mealTime : item.mealTime,
+            version: original ? (original.version ?? 1) + 1 : 1 };
+        });
         const replacementIds = new Set(replacements.map(item => item.uuid || item.id));
         for (const row of originalRows) if (!replacementIds.has(row.uuid || row.id)) deleted[row.uuid || row.id] = row;
         writes.set(filePath, [...writes.get(filePath), ...replacements]);
-        this.#commitRows(nutriLog.userId, writes, [...originalRows.map(row => row.date), nutriLog.meal?.date],
+        this.#commitRows(nutriLog.userId, writes, [...originalRows.map(row => row.date), ...replacements.map(row => row.date), nutriLog.meal?.date],
           new Map([[this.#tombstonePath(nutriLog.userId), deleted]]));
         return;
       }

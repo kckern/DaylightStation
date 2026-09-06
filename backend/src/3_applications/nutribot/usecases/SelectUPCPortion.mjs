@@ -5,13 +5,13 @@
  * Applies portion selection to a UPC-based food log.
  */
 
-import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
 import { serializeFoodItem } from '../nutriLogRecords.mjs';
 
 /**
  * Select UPC portion use case (stateless - UUID in callback data)
  */
 export class SelectUPCPortion {
+  #receipts;
   #messagingGateway;
   #foodLogStore;
   #nutriListStore;
@@ -20,38 +20,8 @@ export class SelectUPCPortion {
   #pause;
   #reviewService;
 
-  /**
-   * Format confirmation message for accepted food
-   * @param {Array} items - Scaled food items
-   * @param {string} logDate - Date string YYYY-MM-DD
-   * @returns {string}
-   */
-  #formatConfirmation(items, logDate) {
-    // Format date like "Sun, 25 Jan 2026"
-    const date = new Date(logDate + 'T12:00:00');
-    const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
-    const day = date.getDate();
-    const month = date.toLocaleDateString('en-US', { month: 'short' });
-    const year = date.getFullYear();
-    const dateStr = `${dayName}, ${day} ${month} ${year}`;
-
-    // Determine meal period based on current time
-    const hour = new Date().getHours();
-    let period = 'evening';
-    if (hour < 12) period = 'morning';
-    else if (hour < 17) period = 'afternoon';
-
-    // Format items
-    const itemLines = items.map((item) => {
-      const grams = item.grams || 100;
-      const name = item.label || item.food || item.name || 'Food';
-      return `🟢 ${name} ${grams}g`;
-    });
-
-    return `✅ ${dateStr} ${period}\n\n${itemLines.join('\n')}`;
-  }
-
   constructor(deps) {
+    this.#receipts = deps.receipts || (() => null);
     this.#reviewService = deps.reviewService;
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
 
@@ -73,7 +43,11 @@ export class SelectUPCPortion {
    * @param {string} [input.messageId]
    */
   async execute(input) {
-    if (this.#reviewService) return this.#reviewService.execute({ ...input, action: 'confirm' });
+    if (this.#reviewService) {
+      const result = await this.#reviewService.execute({ ...input, action: 'confirm' });
+      await this.#receipts()?.refresh(input.userId, input.logUuid);
+      return result;
+    }
     const { userId, conversationId, logUuid, portionFactor, messageId, responseContext } = input;
 
     this.#logger.debug?.('selectPortion.start', { conversationId, logUuid, portionFactor });
@@ -98,17 +72,7 @@ export class SelectUPCPortion {
       // Check if already processed
       if (nutriLog.status !== 'pending') {
         this.#logger.info?.('selectPortion.alreadyProcessed', { logUuid, status: nutriLog.status });
-        if (messageId) {
-          try {
-            await this.#messagingGateway.updateMessage(conversationId, messageId, { choices: [] });
-          } catch (e) {
-            try {
-              await this.#messagingGateway.deleteMessage(conversationId, messageId);
-            } catch (err) {
-              this.#logger.warn?.('selectPortion.uiCleanupFailed', { error: err.message });
-            }
-          }
-        }
+        await this.#receipts()?.refresh(userId, logUuid);
         return { success: false, error: 'Log already processed' };
       }
 
@@ -151,26 +115,7 @@ export class SelectUPCPortion {
         await this.#nutriListStore.saveMany(listItems);
       }
 
-      // Update the existing message in-place (preserving photo if present)
-      if (messageId) {
-        try {
-          const dateHeader = logDate ? formatDateHeader(logDate, { now: new Date() }).replace('🕒', '✅') : '';
-          const foodList = formatFoodList(scaledItems);
-          const acceptedText = `${dateHeader}\n\n${foodList}`;
-
-          // UPC messages are photo messages — update caption to preserve image
-          await this.#messagingGateway.updateMessage(conversationId, messageId, {
-            caption: acceptedText,
-            choices: [],
-            inline: true,
-          });
-        } catch (e) {
-          this.#logger.warn?.('selectPortion.updateMessageFailed', { error: e.message });
-          // Fallback: send text confirmation if update fails
-          const confirmMsg = this.#formatConfirmation(scaledItems, logDate);
-          await this.#messagingGateway.sendMessage(conversationId, confirmMsg, { responseContext });
-        }
-      }
+      await this.#receipts()?.refresh(userId, logUuid);
 
       // Generate daily report if no pending items
       this.#logger.debug?.('selectPortion.autoreport.check', {

@@ -1552,6 +1552,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   };
 
   let nutritionCleanup = null;
+  let nutritionReceiptPublisher = null;
   // Health domain router
   v1Routers.health = createHealthApiRouter({
     healthServices,
@@ -1563,6 +1564,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     catalogService: healthServices.catalogService,
     webNutribotAdapter: webNutribotAdapterProxy,
     cleanupProvider: () => nutritionCleanup,
+    receiptPublisherProvider: () => nutritionReceiptPublisher,
     logger: rootLogger.child({ module: 'health-api' })
   });
 
@@ -5291,8 +5293,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   try {
     const { startNutritionSurfaceSync } = await import('#composition/modules/nutritionSurfaceSync.mjs');
-    startNutritionSurfaceSync({ configService, userIdentityService, dataService, nutribotServices,
+    const receiptSync = startNutritionSurfaceSync({ configService, userIdentityService, dataService, nutribotServices,
       logger: rootLogger.child({ module: 'nutrition-surface-sync' }), server });
+    nutritionReceiptPublisher = receiptSync.publisher || null;
   } catch (error) {
     rootLogger.warn('nutrition.surface.unavailable', { error: error.message });
   }

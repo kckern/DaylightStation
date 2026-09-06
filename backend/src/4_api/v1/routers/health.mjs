@@ -170,6 +170,18 @@ export function createHealthRouter(config) {
 
   router.get('/context', (req, res) => res.json({ userId: getDefaultUsername() }));
 
+  router.post('/nutrition/receipts/reconcile', asyncHandler(async (req, res) => {
+    const publisher = config.receiptPublisherProvider?.();
+    if (!publisher) return res.status(503).json({ error: 'Nutrition receipts are unavailable' });
+    const { logIds, dryRun, expectedFingerprints } = req.body || {};
+    try {
+      res.json(await publisher.reconcile(getDefaultUsername(), { logIds, dryRun, expectedFingerprints }));
+    } catch (error) {
+      if (error.status) return res.status(error.status).json({ error: error.message });
+      throw error;
+    }
+  }));
+
   const cleanup = () => {
     const service = config.cleanupProvider?.();
     if (!service) throw Object.assign(new Error('Nutrition cleanup is unavailable'), { status: 503 });

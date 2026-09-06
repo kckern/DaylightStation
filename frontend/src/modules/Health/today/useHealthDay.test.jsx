@@ -36,6 +36,17 @@ describe('useHealthDay', () => {
     expect(result.current.budget.remaining).toBe(1460);
   });
 
+  it('quietly adopts Telegram/reviewer ledger changes when the tab regains focus', async () => {
+    const { result } = renderHook(() => useHealthDay('2026-09-02'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    apiMock.mockResolvedValue({ items: [{ ...ROWS[0], name: 'Revised Eggs', calories: 280 }], budget: { ...BUDGET, food: 280 }, revision: 2 });
+    act(() => window.dispatchEvent(new Event('focus')));
+    expect(result.current.loading).toBe(false);
+    await waitFor(() => expect(result.current.revision).toBe(2));
+    expect(result.current.items).toEqual([{ ...ROWS[0], name: 'Revised Eggs', calories: 280 }]);
+    expect(result.current.budget.food).toBe(280);
+  });
+
   it('a failing budget endpoint leaves the log usable', async () => {
     apiMock.mockImplementation(async (path) => {
       return { items: ROWS, budget: null, budgetError: { code: 'GOALS_NOT_CONFIGURED' } };

@@ -7,7 +7,6 @@ import { capturedFoodGrams, capturedNutrientProvenance } from '#shared/contracts
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { formatFoodList, formatDateHeader, formatLoggedSummary, formatDensityWarnings } from '#domains/nutrition/entities/formatters.mjs';
 import { repairTruncatedJson } from '../lib/repairJson.mjs';
 import { createNutriLog } from '../nutriLogRecords.mjs';
 import { groupParsedItems } from '#domains/nutrition/services/groupParsedItems.mjs';
@@ -18,6 +17,7 @@ import { confineIcon, iconVocabulary } from '#domains/nutrition/services/icons.m
  * Log food from image use case
  */
 export class LogFoodFromImage {
+  #receipts;
   #messagingGateway;
   #aiGateway;
   #foodLogStore;
@@ -34,6 +34,7 @@ export class LogFoodFromImage {
   #photoStore;
 
   constructor(deps) {
+    this.#receipts = deps.receipts || (() => null);
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
     if (!deps.aiGateway) throw new Error('aiGateway is required');
     if (!deps.imageDownloader) throw new Error('imageDownloader is required');
@@ -159,14 +160,16 @@ export class LogFoodFromImage {
       }
 
       // 3. Send photo with analyzing caption as status
-      ({ messageId: photoMsgId } = await messaging.sendPhoto(
-        photoSource,
-        '🔍 Analyzing image for nutrition...',
-        {}
-      ));
+      try {
+        ({ messageId: photoMsgId } = await messaging.sendPhoto(
+          photoSource, '🔍 Analyzing image for nutrition...', {}
+        ));
+      } catch (error) {
+        this.#logger.warn?.('logImage.deliveryUnavailable', { conversationId, error: error.message });
+      }
 
       // Delete user's original image (now that we've re-sent it)
-      if (userMessageId) {
+      if (userMessageId && photoMsgId) {
         try {
           await messaging.deleteMessage(userMessageId);
         } catch (e) {
@@ -294,11 +297,12 @@ export class LogFoodFromImage {
       // moved is not judged at all. Nothing here corrects a number: the parsed
       // values are logged as-is and land unsettled like every capture, so a
       // flagged item just reaches the pending-review surface with a reason.
-      let densityWarning = '';
+      let densityFindings = [];
       if (this.#catalogService?.assessDensity) {
         try {
           const findings = await this.#catalogService.assessDensity(foodItems, userId);
-          densityWarning = formatDensityWarnings(findings);
+          densityFindings = findings;
+          if (findings.length) this.#logger.info?.('nutribot.density.findings', { logId: nutriLog.id, findings });
         } catch (err) {
           this.#logger.warn?.('nutribot.density.assess_failed', { conversationId, error: err.message });
         }
@@ -338,23 +342,15 @@ export class LogFoodFromImage {
         }
       }
 
-      // 9. Update photo caption with food list + action buttons
-      const caption = this.#formatFoodCaption(foodItems, nutriLog.date || targetDate, densityWarning);
-      const buttons = this.#buildActionButtons(nutriLog.id);
-
-      await messaging.updateMessage(photoMsgId, {
-        caption,
-        choices: buttons,
-        inline: true,
-      });
-
-      // 10. Update NutriLog with messageId
-      if (this.#foodLogStore && photoMsgId) {
+      // Bind the processing photo. The receipt is rendered from the ledger
+      // only AFTER the router commits the capture and resolves meal placement.
+      if (this.#foodLogStore) {
         const updatedLog = nutriLog.with({
-          metadata: { ...nutriLog.metadata, messageId: String(photoMsgId) },
+          metadata: { ...nutriLog.metadata, ...(photoMsgId ? { messageId: String(photoMsgId), messageKind: 'photo' } : {}), densityFindings },
         }, new Date());
         await this.#foodLogStore.save(updatedLog);
       }
+      await this.#receipts()?.bind(effectiveUserId, nutriLog.id, { conversationId, messageId: photoMsgId, caption: true });
 
       this.#logger.info?.('logImage.complete', {
         conversationId,
@@ -642,33 +638,6 @@ ${conservativeNote}${portionBoost}`,
     return 'yellow';
   }
 
-  /**
-   * Format food caption for image message
-   * @private
-   */
-  #formatFoodCaption(items, date, densityWarning = '') {
-    const dateHeader = date ? formatDateHeader(date, { timezone: this.#getTimezone(), now: new Date() }) : '';
-    const foodList = formatFoodList(items);
-    const loggedSummary = formatLoggedSummary(items);
-    // '' when nothing was flagged, so the caption is byte-identical to what it
-    // has always been for the overwhelming majority of captures.
-    const warningBlock = densityWarning ? `\n\n${densityWarning}` : '';
-    return `${loggedSummary}\n${dateHeader}\n\n${foodList}${warningBlock}`;
-  }
-
-  /**
-   * Build action buttons
-   * @private
-   */
-  #buildActionButtons(logUuid) {
-    return [
-      [
-        { text: '✅ Accept', callback_data: this.#encodeCallback('a', { id: logUuid }) },
-        { text: '✏️ Revise', callback_data: this.#encodeCallback('r', { id: logUuid }) },
-        { text: '🗑️ Discard', callback_data: this.#encodeCallback('x', { id: logUuid }) },
-      ],
-    ];
-  }
 }
 
 export default LogFoodFromImage;

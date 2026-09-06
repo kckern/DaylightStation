@@ -114,6 +114,7 @@ function buildDeps(overrides = {}) {
     }),
   };
 
+  const receiptPublisher = { interaction: vi.fn(async () => {}) };
   const logger = {
     info: vi.fn(),
     debug: vi.fn(),
@@ -123,6 +124,8 @@ function buildDeps(overrides = {}) {
 
   return {
     messagingGateway,
+    receipts: () => receiptPublisher,
+    receiptPublisher,
     aiGateway,
     foodLogStore,
     conversationStateStore,
@@ -170,16 +173,8 @@ describe('LogFoodFromText — revision short-circuit', () => {
       responseContext: deps.responseContext,
     });
 
-    // updateMessage should be called with the original message ID
-    const updateCalls = deps.responseContext.updateMessage.mock.calls;
-    // Find the final update (with choices/buttons)
-    const finalUpdate = updateCalls.find(
-      ([msgId, payload]) => msgId === 'orig-msg-42' && payload.choices
-    );
-    expect(finalUpdate).toBeTruthy();
-    expect(finalUpdate[0]).toBe('orig-msg-42');
-    expect(finalUpdate[1].choices).toBeDefined();
-    expect(finalUpdate[1].inline).toBe(true);
+    expect(deps.receiptPublisher.interaction).toHaveBeenCalledWith('user-1', 'log-uuid-123', null);
+    expect(deps.responseContext.updateMessage).not.toHaveBeenCalled();
   });
 
   it('should clear conversation state after successful revision', async () => {
@@ -259,13 +254,8 @@ describe('LogFoodFromText — revision short-circuit', () => {
       responseContext: deps.responseContext,
     });
 
-    const updateCalls = deps.responseContext.updateMessage.mock.calls;
-    const finalUpdate = updateCalls.find(
-      ([msgId, payload]) => msgId === 'orig-msg-42' && payload.choices
-    );
-    expect(finalUpdate).toBeTruthy();
-    expect(finalUpdate[1].caption).toBeDefined();
-    expect(finalUpdate[1].text).toBeUndefined();
+    expect(deps.receiptPublisher.interaction).toHaveBeenCalledWith('user-1', 'log-uuid-123', null);
+    expect(deps.responseContext.updateMessage).not.toHaveBeenCalled();
   });
 
   it('should restore original message and NOT delete user message when AI call fails', async () => {
@@ -282,12 +272,7 @@ describe('LogFoodFromText — revision short-circuit', () => {
       })
     ).rejects.toThrow('Network timeout');
 
-    // Original message should be restored with buttons so user can retry
-    const updateCalls = deps.responseContext.updateMessage.mock.calls;
-    const restoreCall = updateCalls.find(
-      ([msgId, payload]) => msgId === 'orig-msg-42' && payload.choices
-    );
-    expect(restoreCall).toBeTruthy();
+    expect(deps.receiptPublisher.interaction).toHaveBeenCalledWith('user-1', 'log-uuid-123', 'revision');
 
     // User's revision message should NOT be deleted — they can see their input and retry
     expect(deps.responseContext.deleteMessage).not.toHaveBeenCalled();
@@ -336,7 +321,9 @@ describe('ProcessRevisionInput — responseContext', () => {
       updateItems: vi.fn().mockResolvedValue({}),
     };
 
+    const receipts = { interaction: vi.fn(async () => {}) };
     const useCase = new ProcessRevisionInput({
+      receipts: () => receipts,
       messagingGateway: mockGateway,
       aiGateway: mockAi,
       foodLogStore: mockLogStore,
@@ -354,7 +341,8 @@ describe('ProcessRevisionInput — responseContext', () => {
 
     // responseContext should be used, NOT messagingGateway
     expect(mockResponseContext.deleteMessage).toHaveBeenCalledWith('user-msg');
-    expect(mockResponseContext.updateMessage).toHaveBeenCalled();
+    expect(mockResponseContext.updateMessage).not.toHaveBeenCalled();
+    expect(receipts.interaction).toHaveBeenCalledWith('user_1', 'log-1', null);
     expect(mockGateway.deleteMessage).not.toHaveBeenCalled();
     expect(mockGateway.updateMessage).not.toHaveBeenCalled();
   });

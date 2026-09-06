@@ -365,6 +365,8 @@ export function validateNutriLog(log) {
       nutrition: log.nutrition || {},
       metadata: {
         messageId: log.metadata?.messageId,
+        messageKind: log.metadata?.messageKind,
+        densityFindings: log.metadata?.densityFindings,
         source: log.metadata?.source || 'telegram',
         editedAt: log.metadata?.editedAt,
         originalText: log.metadata?.originalText,

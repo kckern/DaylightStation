@@ -215,6 +215,11 @@ export class FoodLogReview {
     if (typeof nutritionReviewed !== 'boolean') fail('Nutrition review acknowledgement must be a boolean');
     let log = await this.#foodLogs.findById(userId, logUuid);
     if (!log) fail('Food log not found', 404);
+    // Health Undo restores the authoritative rows; a historical capture status
+    // must not disable subsequent Telegram commands on those restored entries.
+    if (log.status === 'deleted' && (await this.#items.findByLogId(userId, log.id)).length) {
+      log = log.with({ status: 'accepted' }, new Date(this.#clock.now()));
+    }
     const requestHash = sha256Text(JSON.stringify({ action, portionFactor, edits, date, mealTime, nutritionReviewed }));
     const prior = log.metadata?.reviewOperation;
     const sameOperation = !!operationId && prior?.id === operationId;
@@ -276,7 +281,8 @@ export class FoodLogReview {
             missing: (lookup.missing || []).filter(key => !edits.some(edit => Number.isFinite(edit[key]))),
           } } : {}),
           reviewOperation: { id: operationId || `review:${nutritionLogVersion(log)}:${action}`, hash: requestHash, action,
-            ledgerVersions: ledger.map(row => ({ id: row.uuid || row.id, version: row.version })),
+            ledgerVersions: ledger.map(row => ({ id: row.uuid || row.id, version: row.version, date: row.date, mealTime: row.mealTime })),
+            placement: { ...(date !== undefined ? { date } : {}), ...(mealTime !== undefined ? { mealTime } : {}) },
             complete: action === 'save' && !ledger.length } },
       }, new Date());
       await this.#foodLogs.save(log);
@@ -287,9 +293,13 @@ export class FoodLogReview {
   }
   async #finish(userId, log) {
     const operation = log.metadata.reviewOperation;
-    const rows = log.items.map(item => ({
-        ...serializeFoodItem(item), userId, logUuid: log.id, date: log.meal.date, mealTime: log.meal.time,
-      }));
+    const rows = log.items.map(item => {
+      const current = operation.ledgerVersions?.find(row => row.id === (item.uuid || item.id));
+      return { ...serializeFoodItem(item), userId, logUuid: log.id,
+        date: operation.placement?.date ?? current?.date ?? log.meal.date,
+        mealTime: Object.hasOwn(operation.placement || {}, 'mealTime') ? operation.placement.mealTime
+          : current && Object.hasOwn(current, 'mealTime') ? current.mealTime : log.meal.time };
+    });
     if (operation.ledgerVersions?.length) {
       const discard = operation.action === 'discard';
       await this.#items.mutateEntries(userId, {
@@ -297,6 +307,12 @@ export class FoodLogReview {
           expectedVersion: operation.ledgerVersions.find(v => v.id === (row.uuid || row.id))?.version,
           changes: { ...row, name: row.label } })),
         deleteIds: discard ? operation.ledgerVersions.map(v => v.id) : [],
+        validate: ({ before }) => {
+          for (const expected of operation.ledgerVersions) {
+            const current = before.find(row => (row.uuid || row.id) === expected.id);
+            if (!current || (current.version ?? 1) !== (expected.version ?? 1)) fail('This entry changed. Reload before reviewing it.', 409);
+          }
+        },
         audit: { id: operation.id, fingerprint: operation.hash, actor: 'user', reason: operation.action, at: new Date(this.#clock.now()).toISOString() },
       });
     } else if (['confirm', 'capture'].includes(operation.action)) {
