@@ -27,7 +27,7 @@
  */
 import { useCallback, useMemo, useState } from 'react';
 import useTapFire from '../selfService/useTapFire.js';
-import { buildDayGrid, dayLabel, isoWeekday, monthLabel, parseKey, WEEKDAY_LABELS } from './dayGrid.js';
+import { buildDayGrid, dayLabel, DAY_MS, isoWeekday, monthLabel, parseKey, WEEKDAY_LABELS } from './dayGrid.js';
 
 const WINDOW_STEP_DAYS = 21;
 // Sixteen 21-day page shifts. The visible page itself reaches another
@@ -50,20 +50,38 @@ function shortLabel(key) {
  * @param {(key: string) => void} props.onConfirm - required; a missing
  *   handler throws on confirm rather than swallowing the child's answer.
  * @param {(key: string) => void} [props.onChange] - fires on every tap.
+ * @param {string|null} [props.minDay] - the oldest selectable day, from the
+ *   shelf view's `earliestFinishDay`. Days before it are drawn blank, exactly
+ *   as future days are, and paging stops there — the picker must never offer a
+ *   day the write path will refuse. Null means no floor.
  */
-export default function DayPicker({ today, value, onConfirm, onChange = null, busy = false }) {
+export default function DayPicker({
+  today, value, onConfirm, onChange = null, busy = false, minDay = null,
+}) {
   // Throws on a bad `today` — from render, so the parent hears about it now.
   parseKey(today);
   const tap = useTapFire();
   const [open, setOpen] = useState(false);
   const [offsetDays, setOffsetDays] = useState(0);
-  const rows = useMemo(() => buildDayGrid(today, { offsetDays }), [today, offsetDays]);
+  const rows = useMemo(() => buildDayGrid(today, { offsetDays, minDay }), [today, offsetDays, minDay]);
   const [selected, setSelected] = useState(() => {
     if (typeof value !== 'string') return today;
     parseKey(value);
     // Keys are `YYYY-MM-DD`, so string order is day order.
-    return value > today ? today : value;
+    const clamped = value > today ? today : value;
+    return minDay && clamped < minDay ? minDay : clamped;
   });
+  // Paging back is pointless once the NEXT page would end before the floor —
+  // every cell on it would be blank. Computed from the window end rather than
+  // read off the rendered grid, so it is one subtraction instead of a scan and
+  // cannot disagree with what `buildDayGrid` blanked.
+  const pagedOut = useMemo(() => {
+    if (typeof minDay !== 'string' || !minDay) return false;
+    let minMs;
+    try { minMs = parseKey(minDay); } catch { return false; }
+    const nextEndMs = parseKey(today) - (offsetDays + WINDOW_STEP_DAYS) * DAY_MS;
+    return nextEndMs < minMs;
+  }, [today, offsetDays, minDay]);
 
   const pick = useCallback((key) => {
     if (busy) return;
@@ -99,8 +117,8 @@ export default function DayPicker({ today, value, onConfirm, onChange = null, bu
           <div className="school-books-days__nav">
             <button
               type="button"
-              disabled={busy || offsetDays >= MAX_WINDOW_OFFSET_DAYS}
-              {...tap(() => { if (!busy) setOffsetDays((days) => Math.min(MAX_WINDOW_OFFSET_DAYS, days + WINDOW_STEP_DAYS)); })}
+              disabled={busy || pagedOut || offsetDays >= MAX_WINDOW_OFFSET_DAYS}
+              {...tap(() => { if (!busy && !pagedOut) setOffsetDays((days) => Math.min(MAX_WINDOW_OFFSET_DAYS, days + WINDOW_STEP_DAYS)); })}
             >
               ‹ earlier dates
             </button>

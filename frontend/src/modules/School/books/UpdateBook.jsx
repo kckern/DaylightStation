@@ -58,7 +58,7 @@ export function progressLine(item) {
  * @param {boolean} props.busy - a write is in flight.
  * @param {object} props.actions - the hook's actions.
  */
-export default function UpdateBook({ item, today, error = null, busy = false, actions }) {
+export default function UpdateBook({ item, today, earliestDay = null, error = null, busy = false, actions }) {
   const [finishing, setFinishing] = useState(false);
   const [choosing, setChoosing] = useState(false);
   const tap = useTapFire();
@@ -103,7 +103,7 @@ export default function UpdateBook({ item, today, error = null, busy = false, ac
     control = (
       <div className="school-books-update__finish">
         <p className="school-books-update__prompt">When did you finish it?</p>
-        <DayPicker key={today} today={today} busy={busy} onConfirm={(key) => { if (!busy) actions.finish(key); }} />
+        <DayPicker key={today} today={today} minDay={earliestDay} busy={busy} onConfirm={(key) => { if (!busy) actions.finish(key); }} />
         <button type="button" className="school-books-update__quiet" disabled={busy} {...press(() => setFinishing(false))}>never mind</button>
         {message && <p className="school-books-update__fault" role="alert">{message}</p>}
       </div>

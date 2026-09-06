@@ -1,5 +1,5 @@
 import { ValidationError } from '#domains/core/errors/index.mjs';
-import { projectShelfItem } from '#domains/school/bookShelf.mjs';
+import { projectShelfItem, earliestBackdateDay } from '#domains/school/bookShelf.mjs';
 
 /**
  * GetBookShelf — everything the shelf screen needs for one learner, in one read.
@@ -66,6 +66,12 @@ export class GetBookShelf {
     return {
       learnerId,
       studyDay,
+      // The oldest day a finish may be dated, so the day picker cannot OFFER a
+      // day the write path will refuse. Sent rather than recomputed on the
+      // client for the same reason `studyDay` is: the household's rule is the
+      // server's to state, and a second copy of "14" in the panel would drift
+      // the first time the bound moved.
+      earliestFinishDay: earliestBackdateDay(studyDay),
       items: enriched,
       obligation: progress ? { label: status.progressLabel ?? null, ...progress } : null,
     };
