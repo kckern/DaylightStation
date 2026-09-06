@@ -6,7 +6,9 @@
  */
 
 import { STORY_TIME_PROGRAM_ID } from '#domains/school/storyTime.mjs';
-import { BOOK_LOG_PROGRAM_ID, DEFAULT_BOOK_LOG_SUBJECT } from '#domains/school/bookLog.mjs';
+import {
+  BOOK_LOG_PROGRAM_ID, DEFAULT_BOOK_LOG_SUBJECT, DEFAULT_BOOK_LOG_TITLE, BOOK_LOG_SHELF_UNIT_ID,
+} from '#domains/school/bookLog.mjs';
 
 const baseEntry = ({
   unitId, title, subject, program, programInstance, schedule = null, cadence = 'daily',
@@ -38,6 +40,38 @@ const baseEntry = ({
   remedy: null,
   unlocks: [],
 });
+
+/**
+ * The reading shelf as a plan entry.
+ *
+ * EXPORTED BECAUSE THERE ARE NOW TWO WAYS TO REACH THE SHELF and they must
+ * produce the same entry. An ENROLLED learner gets one appended here, from
+ * their enrollment. An UNENROLLED learner has no enrollment to append from —
+ * the shelf is open to everyone, only the OBLIGATION comes from enrollment —
+ * so `ResolveAccessCode` synthesizes one when a reading code arrives and the
+ * plan holds no shelf. Two hand-built entries would drift on `timingPriority`,
+ * `status`, or the unitId itself, and the second one would resolve to a card
+ * subtly unlike the first.
+ *
+ * Not persisted and not owed: a synthesized entry never reaches `plan.entries`,
+ * so it cannot put a row on anyone's agenda.
+ *
+ * @param {{title?: string|null, subject?: string|null, schedule?: object|null,
+ *   cadence?: string}} [args]
+ */
+export function bookLogShelfEntry({
+  title = null, subject = null, schedule = null, cadence = 'daily',
+} = {}) {
+  return baseEntry({
+    unitId: BOOK_LOG_SHELF_UNIT_ID,
+    title: title ?? DEFAULT_BOOK_LOG_TITLE,
+    subject: subject ?? DEFAULT_BOOK_LOG_SUBJECT,
+    program: BOOK_LOG_PROGRAM_ID,
+    programInstance: 'shelf',
+    schedule,
+    cadence,
+  });
+}
 
 /** Mutates the planner result in the same additive way BuildAgenda always has. */
 export function appendAssignedProgramEntries(plan, assignment) {
@@ -72,12 +106,9 @@ export function appendAssignedProgramEntries(plan, assignment) {
       // SetAssignments already enforces. The entry is what makes the agenda
       // consult the launcher at all (collectProgramStatuses reads plan.entries);
       // without it a book-log enrollment was silently inert.
-      plan.entries.push(baseEntry({
-        unitId: `${BOOK_LOG_PROGRAM_ID}:shelf`,
-        title: enrollment.title ?? 'Reading',
-        subject: enrollment.subject ?? DEFAULT_BOOK_LOG_SUBJECT,
-        program: BOOK_LOG_PROGRAM_ID,
-        programInstance: 'shelf',
+      plan.entries.push(bookLogShelfEntry({
+        title: enrollment.title,
+        subject: enrollment.subject,
         schedule: enrollment.schedule,
         // The agenda retires a program entry only when it is `once` AND its
         // launcher says terminal. The launcher reports a met once-obligation
