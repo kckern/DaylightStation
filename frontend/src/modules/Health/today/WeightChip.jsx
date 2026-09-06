@@ -1,18 +1,19 @@
 import { useMemo } from 'react';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
-import { buildWeightSeries, fmtLbs, fmtDelta, VIEW_W, VIEW_H } from './weightSeries.js';
+import { buildWeightSeries, fmtLbs, fmtDelta, TREND_ARROWS, VIEW_W, VIEW_H } from './weightSeries.js';
 import { ErrorState, StatCard, Skeleton } from '@/lib/ui';
 
 const logger = createAppLogger('health').child('weight-chip');
 
-const ARROWS = { up: '▲', down: '▼', flat: '■' };
-
 /**
  * Weight + 7-day trend + a 30-day sparkline, as one compact row.
  *
- * The sparkline is two inline SVG polylines — the raw daily readings and the
- * adjusted average the budget is actually computed from — on ONE shared scale.
+ * The sparkline is two inline SVG polylines — the days actually weighed and the
+ * adjusted average the budget is computed from — on ONE shared scale. The raw
+ * line is `measurement`, never the forward-filled `lbs`: most days carry a
+ * repeated `lbs` from the last weigh-in, and drawing those as readings turns
+ * "nobody stepped on the scale" into a flat run that reads like stability.
  * No chart library for two polylines, and nothing here animates `filter`
  * (a known paint-cost trap in this repo: low fps with zero long tasks).
  *
@@ -36,7 +37,7 @@ export function WeightChip({ asOf }) {
       <StatCard compact label={`Weight${latest?.date ? ` · as of ${latest.date}` : ''}`} value={res.loading ? <Skeleton width={64} height={24} /> : fmtLbs(latestLbs)} unit="lb"
         trend={deltaText ? (
           <span className={`health-weightchip__delta health-weightchip__delta--${direction}`} data-testid="weight-delta">
-            <span className="health-weightchip__arrow" aria-hidden="true">{ARROWS[direction]}</span>
+            <span className="health-weightchip__arrow" aria-hidden="true">{TREND_ARROWS[direction]}</span>
             {deltaText}
             <span className="health-weightchip__window"> / {trendDays}d</span>
           </span>

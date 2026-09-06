@@ -586,11 +586,25 @@ $health-aside-gap: 1.5rem;
 .health-progress {
   display: flex; flex-direction: column; gap: 0.75rem;
 
+  // Five cells now (weight, composition, trend, calories, projection), so the
+  // track floor comes down from 180px — at 180 the row broke to two lines on a
+  // 1280px tablet, which splits the day's numbers across a fold.
   &__stats {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
     gap: 0.5rem; margin-top: 0.5rem;
     .ds-stat { min-width: 0; }
     .ds-stat__value { flex-wrap: wrap; }
+    // A projected date, or the reason there isn't one, rides in the unit slot
+    // and must not compete with the number it qualifies.
+    .ds-stat__unit { white-space: nowrap; }
+  }
+  // Same arrow + hue pairing as the Today chip — the glyph carries direction,
+  // the colour only reinforces it (A1: never colour alone).
+  &__trend {
+    display: inline-flex; align-items: baseline; gap: 0.25rem;
+    &--down { color: var(--ds-success); }
+    &--up { color: var(--ds-warning); }
+    &--flat { color: var(--ds-text-mid); }
   }
   &__bars { display: flex; align-items: flex-end; gap: 3px; height: 64px; }
   &__bar {

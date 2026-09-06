@@ -10,7 +10,10 @@ import { resetApiResourceCache } from '../../../lib/hooks/useApiResource.js';
 
 function r(ui) { return render(<MantineProvider>{ui}</MantineProvider>); }
 
-const entry = (date, lbs, avg) => [date, { date, lbs, lbs_adjusted_average: avg }];
+// `measurement` is set alongside `lbs` because these fixtures mean "a day that
+// was actually weighed". A day that was NOT weighed still carries `lbs`,
+// forward-filled — see the forward-fill test below.
+const entry = (date, lbs, avg) => [date, { date, lbs, measurement: lbs, lbs_adjusted_average: avg }];
 
 beforeEach(() => {
   resetApiResourceCache();
@@ -53,6 +56,22 @@ describe('WeightChip', () => {
     expect(raw.getAttribute('points').split(' ')).toHaveLength(3);
     expect(avg.getAttribute('points').split(' ')).toHaveLength(3);
     expect(raw.getAttribute('points')).not.toBe(avg.getAttribute('points'));
+  });
+
+  it('draws the raw line only across days that were actually weighed', async () => {
+    // The 3rd carries the 2nd's `lbs` forward with no `measurement` — the shape
+    // of every unweighed day in the real file. Plotting it would draw a flat
+    // run that reads as stability nobody measured.
+    apiMock.mockResolvedValue({
+      '2026-09-01': { date: '2026-09-01', lbs: 172.4, measurement: 172.4, lbs_adjusted_average: 172.0 },
+      '2026-09-02': { date: '2026-09-02', lbs: 168.1, measurement: 168.1, lbs_adjusted_average: 171.8 },
+      '2026-09-03': { date: '2026-09-03', lbs: 168.1, lbs_adjusted_average: 171.7 },
+      '2026-09-04': { date: '2026-09-04', lbs: 170.9, measurement: 170.9, lbs_adjusted_average: 171.6 },
+    });
+    r(<WeightChip />);
+    const raw = await screen.findByTestId('spark-raw');
+    expect(raw.getAttribute('points').split(' ')).toHaveLength(3);        // not 4
+    expect(screen.getByTestId('spark-avg').getAttribute('points').split(' ')).toHaveLength(4);
   });
 
   it('says so, rather than printing a confident zero, when there is no 7-day trend yet', async () => {
