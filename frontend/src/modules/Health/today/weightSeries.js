@@ -8,6 +8,14 @@
 // pounds of water weight) and `lbs_adjusted_average` (the smoothed line the
 // budget itself is computed from). Showing only the smooth line hides how noisy
 // the input is; showing only the raw line invites reading noise as progress.
+//
+// `lbs` and `measurement` are NOT interchangeable, and conflating them is the
+// bug this module used to have. Every row carries `lbs`, forward-filled from
+// the last weigh-in; only a day actually weighed carries `measurement` (in a
+// recent snapshot, 249 of 249 rows had `lbs` and 127 had `measurement`).
+// Plotting `lbs ?? measurement` therefore drew roughly half its points from
+// values nobody measured, as flat runs that read like real stability. The raw
+// series is `measurement` alone; `lbs` is kept for readouts, never plotted.
 
 /** Chart box in user units. preserveAspectRatio="none" stretches it to the CSS box. */
 import { isISODate } from '@shared-contracts/health/isoDate.mjs';
@@ -37,7 +45,18 @@ export function normalizeWeightEntries(weightData) {
   return Object.entries(weightData || {})
     .map(([key, entry]) => ({ ...entry, date: isISODate(key) ? key : entry?.date }))
     .filter(entry => isISODate(entry.date))
-    .map(entry => ({ ...entry, lbs: num(entry.lbs ?? entry.measurement), avg: num(entry.lbs_adjusted_average) }))
+    .map(entry => ({
+      ...entry,
+      // Forward-filled: present every day, carried over from the last weigh-in.
+      lbs: num(entry.lbs),
+      // A real trip to the scale, or null. The only honest raw series.
+      measurement: num(entry.measurement),
+      avg: num(entry.lbs_adjusted_average),
+      // Per-day, never today's value applied backwards — see buildWaterSeries.
+      waterWeight: num(entry.water_weight),
+      fatPct: num(entry.fat_percent_adjusted_average),
+      calorieBalance: num(entry.calorie_balance),
+    }))
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
@@ -87,7 +106,7 @@ export function buildWeightSeries(weightData, { days = 30, trendDays = 7, asOf }
 
   // Both series share ONE vertical scale — two independent scales would make
   // the raw line and the average line cross where they do not.
-  const values = entries.flatMap((e) => [e.lbs, e.avg]).filter((v) => v != null);
+  const values = entries.flatMap((e) => [e.measurement, e.avg]).filter((v) => v != null);
   const lo = values.length ? Math.min(...values) : 0;
   const hi = values.length ? Math.max(...values) : 0;
   const span = Math.max(hi - lo, MIN_SPAN_LBS);
@@ -113,10 +132,15 @@ export function buildWeightSeries(weightData, { days = 30, trendDays = 7, asOf }
     trendDays: trendFrom ? Math.round((instant(latest.date) - instant(trendFrom)) / 86400000) : null,
     // A single point is not a line: one reading draws nothing rather than a
     // horizontal bar implying a week of stability.
-    rawPoints: entries.length >= 2 ? toPoints('lbs') : '',
+    rawPoints: entries.length >= 2 ? toPoints('measurement') : '',
     avgPoints: entries.length >= 2 ? toPoints('avg') : '',
   };
 }
+
+/** Direction as a glyph. Shared by the chip and the Progress stat table so the
+ *  two surfaces cannot describe the same day differently. Direction is never
+ *  carried by colour alone (A1). */
+export const TREND_ARROWS = { up: '▲', down: '▼', flat: '■' };
 
 /** "171.6" / "—". One decimal: a bathroom scale's real resolution. */
 export const fmtLbs = (v) => (v == null || !Number.isFinite(Number(v)) ? '—' : (Math.round(Number(v) * 10) / 10).toFixed(1));
