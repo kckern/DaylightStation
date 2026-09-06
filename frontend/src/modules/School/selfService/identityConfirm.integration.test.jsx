@@ -40,7 +40,7 @@ const cardBody = ({ confirmIdentity }) => ({
   title: 'English 1',
   sentence: null,
   context: {
-    learner: { id: 'test-learner', displayName: 'Test Learner' },
+    learner: { id: 'test-learner', displayName: 'Test-Learner' },
     taxonomy: { subject: { id: 'english', label: 'English & Literature' }, course: null, module: null, lesson: null },
     trail: [],
     progress: [],
@@ -124,7 +124,7 @@ describe('identity confirmation before the claim', () => {
     render(<Panel />);
     await typeCode('482913');
     expect(screen.getByTestId('selfservice-identity-yes')).toBeInTheDocument();
-    expect(screen.getByText(/Is this you, Test Learner\?/)).toBeInTheDocument();
+    expect(screen.getByText(/Is this you, Test-Learner\?/)).toBeInTheDocument();
     // THE POINT: attribution has not happened yet.
     expect(claim).not.toHaveBeenCalled();
   });
