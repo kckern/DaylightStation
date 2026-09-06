@@ -21,12 +21,15 @@ function makeApp({ withManifest = true, catalog = {}, operations = {} } = {}) {
     setIcon: async (id, userId, icon) => {
       calls.setIcon.push({ id, userId, icon });
       if (catalog.missing) throw new Error(`Catalog entry not found: ${id}`);
-      return { id, name: 'Eggs', normalizedName: 'eggs', nutrients: {}, useCount: 1, icon };
+      // Mirrors the real `setIcon`, which writes BOTH: `icon` is the picture,
+      // `iconOverride` is the record that a person chose it. A double that
+      // only wrote one would let the pin silently stop being presented.
+      return { id, name: 'Eggs', normalizedName: 'eggs', nutrients: {}, useCount: 1, icon, iconOverride: icon };
     },
     setIconByName: async (name, userId, icon) => {
       calls.setIconByName.push({ name, userId, icon });
       if (catalog.missing) throw new Error(`Catalog entry not found by name: ${name}`);
-      return { id: 'e1', name, normalizedName: name.toLowerCase(), nutrients: {}, useCount: 1, icon };
+      return { id: 'e1', name, normalizedName: name.toLowerCase(), nutrients: {}, useCount: 1, icon, iconOverride: icon };
     },
   };
   const healthOperations = {
@@ -88,6 +91,10 @@ describe('PUT /api/v1/health/nutrition/catalog/icon — "always for this food"',
       .send({ name: 'Eggs', icon: 'fried-eggs' });
     expect(res.status).toBe(200);
     expect(res.body.entry.icon).toBe('fried-eggs');
+    // The pin itself comes back, so the caller of this PUT can check what it
+    // just set rather than inferring it from the picture alone — an inferred
+    // icon presents the same `icon` with a null `iconOverride`.
+    expect(res.body.entry.iconOverride).toBe('fried-eggs');
     expect(calls.setIconByName).toEqual([{ name: 'Eggs', userId: 'testuser', icon: 'fried-eggs' }]);
   });
 
