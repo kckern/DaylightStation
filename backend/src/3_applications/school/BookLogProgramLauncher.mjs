@@ -232,8 +232,8 @@ export class BookLogProgramLauncher {
    * calls for the teacher board, the status board, DoNow and the completion
    * recompute. A title is a per-book repository read; putting N of those behind
    * every one of those surfaces, to decorate one printed card, is a cost none of
-   * them asked for. The agenda calls this once per learner; nothing else calls
-   * it at all.
+   * them asked for. It is built to be called once per learner at print time,
+   * by the agenda, and by nothing that runs on every board refresh.
    *
    * It also does not consult the enrollment. Reading the log only for an
    * enrolled child would leave three of four learners with a bare box — the
@@ -249,11 +249,31 @@ export class BookLogProgramLauncher {
    * answer, and that says `unreadable` rather than `empty`, because telling a
    * child with a full shelf that they have no books is a lie the card can avoid.
    *
+   * A record with no TITLE collapses to `book: null` as well, so `book !== null`
+   * means exactly one thing — "I have a name for it" — which is the one question
+   * the card branches on. `createBookRecord` stubs every field for an ISBN that
+   * never resolved, so without the collapse a caller would be handed
+   * `{title: null, authors: [], pageCount: null}` and have to ask a second
+   * question to reach the answer the docblock already promises.
+   *
+   * A consumer needs an arm for `unreadable` of its own, and one that lacks it
+   * must fall through to the titleless card, never to the "no books yet" copy:
+   * printing "start a book" to a child whose shelf merely could not be read is
+   * the exact failure this state exists to prevent.
+   *
+   * ## THE PRINTED FRACTION AND THE DRAWN BAR COME FROM ONE ROW
+   *
+   * `page`, `percent` and `pageCount` all come from the SAME shelf item, which
+   * is why `pageCount` sits here and not on `book`. The catalog's length and the
+   * child's own record can disagree about a book, and `percentFor` measures the
+   * bar against the item's. A card drawing the bar from `percent` while printing
+   * "of {book.pageCount}" would show a denominator the bar never used.
+   *
    * @param {{userId: string}} args
    * @returns {Promise<{state: 'reading'|'finished'|'set-aside'|'empty'|'unreadable',
-   *   book: {title: string|null, authors: string[], pageCount: number|null}|null,
-   *   page: number|null, percent: number|null, minutes: number|null,
-   *   daysRead: number, at: string|null, alsoReading: string[]}>}
+   *   book: {title: string, authors: string[]}|null,
+   *   page: number|null, percent: number|null, pageCount: number|null,
+   *   minutes: number|null, daysRead: number, at: string|null, alsoReading: string[]}>}
    */
   async featuredBook({ userId } = {}) {
     const learnerId = userId;
@@ -262,39 +282,61 @@ export class BookLogProgramLauncher {
     try {
       items = (await this.#bookLog.listForLearner(learnerId)) ?? [];
     } catch (error) {
-      this.#logger.warn?.('school.book-log.shelf-unreadable', { learnerId, error: error.message });
-      return { state: 'unreadable', book: null, page: null, percent: null, minutes: null, daysRead: 0, at: null, alsoReading: [] };
+      // `error?.message ?? String(error)` because a store that rejects with a
+      // non-object (`throw null`) would make the SWALLOW throw, and that escape
+      // takes the whole card down — the one outcome this catch exists to deny.
+      this.#logger.warn?.('school.book-log.shelf-unreadable', { learnerId, error: error?.message ?? String(error) });
+      return { state: 'unreadable', book: null, page: null, percent: null, pageCount: null, minutes: null, daysRead: 0, at: null, alsoReading: [] };
     }
 
     const dayOf = (iso) => this.dayOf(iso);
     const { state, featured, alsoReading } = selectFeaturedShelfItem(items, { dayOf });
+    // An empty shelf has no featured row — the state every child is in before
+    // their first book. Without this guard `featured.item` below throws.
     if (!featured) {
-      return { state, book: null, page: null, percent: null, minutes: null, daysRead: 0, at: null, alsoReading: [] };
+      return { state, book: null, page: null, percent: null, pageCount: null, minutes: null, daysRead: 0, at: null, alsoReading: [] };
     }
 
     const facts = await this.#bookFacts(featured.item.bookId, learnerId);
     const others = await Promise.all(alsoReading.map((entry) => this.#bookFacts(entry.item.bookId, learnerId)));
+
+    this.#logger.debug?.('school.book-log.featured', { learnerId, state, hasTitle: Boolean(facts) });
 
     return {
       state,
       book: facts,
       page: featured.projection.page,
       percent: featured.projection.percent,
+      // The ITEM's length, not the catalog's — the same number `percentFor`
+      // divided by, so the printed fraction and the drawn bar cannot disagree.
+      pageCount: featured.item.pageCount ?? null,
       minutes: featured.projection.minutes,
       daysRead: featured.projection.daysRead,
       at: featured.projection.lastAt,
+      // A co-read book the repository could not name drops out rather than
+      // riding along as a null the card would try to print.
       alsoReading: others.map((book) => book?.title).filter(Boolean),
     };
   }
 
-  /** Null on every failure. Decoration must never cost the card. */
+  /**
+   * Null on every failure. Decoration must never cost the card.
+   *
+   * A TITLELESS record is a failure too: `createBookRecord` stubs every field
+   * for an ISBN that never resolved, and a record carrying no name has nothing
+   * a headline can use. Collapsing it here is what makes `book !== null` mean
+   * "I have a name for it" at the one place that asks.
+   */
   async #bookFacts(bookId, learnerId) {
     if (!this.#bookRepository?.findByIsbn) return null;
     try {
       const book = await this.#bookRepository.findByIsbn(bookId);
-      return book ? { title: book.title ?? null, authors: book.authors ?? [], pageCount: book.pageCount ?? null } : null;
+      return book?.title ? { title: book.title, authors: book.authors ?? [] } : null;
     } catch (error) {
-      this.#logger.warn?.('school.book-log.book-facts-failed', { learnerId, bookId, error: error.message });
+      // Not `error.message`: a repository rejecting with a non-object would
+      // throw inside this catch, escape `Promise.all` and take the card down —
+      // the opposite of "null on every failure".
+      this.#logger.warn?.('school.book-log.book-facts-failed', { learnerId, bookId, error: error?.message ?? String(error) });
       return null;
     }
   }
