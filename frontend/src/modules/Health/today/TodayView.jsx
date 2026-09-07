@@ -25,6 +25,7 @@ import { ObservationsSection } from './ObservationRow.jsx';
 import { EntryEditor } from './EntryEditor.jsx';
 import { TemplatePicker } from './TemplatePicker.jsx';
 import { FoodCatalogManager } from './FoodCatalogManager.jsx';
+import { PhotoCapture } from '../capture/PhotoCapture.jsx';
 import { QuickCaptureBar } from './QuickCaptureBar.jsx';
 import { localTodayISO as todayISO, currentMealBucketId, bucketLabel } from './mealBuckets.js';
 import { useNutritionInput } from '../capture/useNutritionInput.js';
@@ -43,7 +44,10 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   const viewportEnd = isISODate(weekParam) && weekParam <= weekEnd(todayISO()) ? weekEnd(weekParam) : weekEnd(date);
   const day = useHealthDay(date, { enabled: active });
   const preview = usePortionDraft(day, date);
-  const [addingTo, setAddingTo] = useState(null);   // bucketId | null — F5 renders the combobox here
+  const [addingTo, setAddingTo] = useState(null);
+  const [typingIn, setTypingIn] = useState(null);
+  const [mealUndo, setMealUndo] = useState(null);
+  const mealUndoOperation = useRef(null);   // bucketId | null — F5 renders the combobox here
   const [editingRow, setEditingRow] = useState(null); // row | null — F6 renders the edit sheet
   const [captureMode, setCaptureMode] = useState(null); // 'barcode' | null
   // bucketId | null — which meal's header-row barcode button opened the
@@ -64,10 +68,15 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   const [undoBusy, setUndoBusy] = useState(false);
   const undoPending = useRef(false);
   const [barcodeDate, setBarcodeDate] = useState(date);
-  // { audioRef, bucket } | null — a voice capture whose transcription failed on
+  // { audioRef | content, bucket, date, selectedIds } | null — a voice capture whose transcription failed on
   // the network. The recording is on the server, so the notice can offer a
-  // retry that re-uses it rather than asking for it again.
+  // retry that re-uses it rather than asking for it again. Departed controls
+  // also retain the original content here if its upload failed.
   const [captureRetry, setCaptureRetry] = useState(null);
+  // Keep choices with the original meal even when transcription is retried
+  // outside its microphone control, or the viewed date changes.
+  const [mealClarifications, setMealClarifications] = useState(new Map());
+  const clearMealClarification = key => setMealClarifications(previous => { const next = new Map(previous); next.delete(key); return next; });
   // bucketId | null — set the instant an AI capture (photo/voice/barcode)
   // submit starts, cleared in a `finally` once the result (success OR
   // failure) comes back. LogTable renders the "Analyzing…" placeholder row
@@ -206,13 +215,23 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   // saying "log this for lunch" must not silently land the entry under
   // Breakfast with no explanation. Reuse the existing captureNotice banner
   // rather than inventing a second notice mechanism.
-  const handleCaptureResult = (result, bucket = null, targetDate = date) => {
+  const handleCaptureResult = (result, bucket = null, targetDate = date, context = {}) => {
     // Offer the retry BEFORE the message is rendered, so the sentence that
     // says the recording is saved arrives with the button that uses it.
     setCaptureRetry(result?.transcribeFailed && result?.audioRef
-      ? { audioRef: result.audioRef, bucket: bucket || currentMealBucketId(), date: targetDate }
+      ? { audioRef: result.audioRef, bucket: bucket || currentMealBucketId(), date: targetDate, selectedIds: [...(context.selectedIds || [])] }
       : null);
-    if (result?.committed) day.reload();
+    const clarificationKey = `${targetDate}:${bucket || currentMealBucketId()}`;
+    if (result?.clarification) {
+      setMealClarifications(previous => new Map(previous).set(clarificationKey, { ...result.clarification, instructionText: result.instructionText || result.clarification.instructionText, selectedIds: [...(context.selectedIds || [])] }));
+    } else { clearMealClarification(clarificationKey); }
+    if (result?.committed) {
+      day.reload(); pendingReview.reload();
+      setCaptureNotice(result?.moved ? `Moved to ${bucketLabel(result.mealTime)}` : null);
+      if (result.undoToken) { setMealUndo({token:result.undoToken,label:'Meal updated'}); mealUndoOperation.current=null; }
+      return;
+    }
+    if (result?.clarification) { setCaptureNotice(null); return; }
     if (result?.moved) {
       setCaptureNotice(`Moved to ${bucketLabel(result.mealTime)}`);
       day.reload();
@@ -221,7 +240,7 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
     const messages = result?.messages || [];
     const hasChoices = messages.some((m) => (m.choices || []).flat().length > 0);
     if (!hasChoices) {
-      const text = messages[0]?.text;
+      const text = result?.responseText || messages.at(-1)?.text;
       if (text) setCaptureNotice(text);
       return;
     }
@@ -237,16 +256,16 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   // fall back to the same currentMealBucketId() guess as before — this is
   // ONLY where the placeholder shows, never the backend's actual
   // resolution.
-  const submitWithPending = async (type, content, { bucket, audioRef, date: targetDate = date } = {}) => {
+  const submitWithPending = async (type, content, { bucket, audioRef, date: targetDate = date, selectedIds, clarification } = {}) => {
     const bucketId = bucket || currentMealBucketId();
     const pendingId = crypto.randomUUID();
-    setCapturePending(previous => new Map(previous).set(pendingId, { bucket: bucketId, date: targetDate }));
+    setCapturePending(previous => new Map(previous).set(pendingId, { id:pendingId, bucket: bucketId, date: targetDate, startedAt:Date.now() }));
     try {
       // THE VIEWED DAY TRAVELS WITH THE CAPTURE. Without it the row is dated by
       // the server's clock, so food entered while looking at yesterday appeared
       // on today — the defect this closes. Only the LOGICAL date follows the
       // view; createdAt/settledAt stay real wall-clock instants.
-      return await nutrition.submit(type, content, { bucket, date: targetDate, audioRef });
+      return await nutrition.submit(type, content, { bucket, date: targetDate, audioRef, selectedIds, clarification });
     } catch (err) {
       setCaptureNotice(err?.message || 'Capture interrupted. Retry to check its result.');
       throw err;
@@ -260,8 +279,19 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   // forward `(dataUrl, bucket)`, with `bucket` always the clock-derived
   // default for QuickCaptureBar's instances and the specific meal's id for
   // LogTable's.
-  const handleVoiceOrPhotoCapture = async (type, dataUrl, bucket) => {
-    handleCaptureResult(await submitWithPending(type, dataUrl, { bucket }), bucket);
+  const handleVoiceOrPhotoCapture = async (type, dataUrl, bucket, context = {}) => {
+    try {
+      const result = await submitWithPending(type, dataUrl, { bucket, ...context });
+      handleCaptureResult(result, bucket, context.date || date, context);
+      return result;
+    } catch (err) {
+      // A date change removes the microphone's local retry owner. Keep the
+      // recording here so a failed upload can resend exactly the same intent.
+      if (type === 'voice' && (context.departed || context.isDeparted?.())) {
+        setCaptureRetry({ content: dataUrl, bucket, date: context.date || date, selectedIds: [...(context.selectedIds || [])] });
+      }
+      throw err;
+    }
   };
 
   // A transcription that failed on the network left the RECORDING on the
@@ -271,16 +301,17 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   // a sentence, and the retry affordance retires with it.
   const retryVoiceCapture = async () => {
     if (!captureRetry) return;
-    const { audioRef, bucket, date: targetDate } = captureRetry;
+    const { audioRef, content = null, bucket, date: targetDate, selectedIds } = captureRetry;
     setCaptureNotice(null);
     try {
-      handleCaptureResult(await submitWithPending('voice', null, { bucket, audioRef, date: targetDate }), bucket, targetDate);
+      handleCaptureResult(await submitWithPending('voice', content, { bucket, audioRef, date: targetDate, selectedIds }), bucket, targetDate, { selectedIds });
     } catch (err) {
       logger.error('capture.retry.failed', { audioRef, error: err?.message });
       setCaptureNotice('Retry failed. The saved recording is still selected; try again when connected.');
     }
   };
-  const onVoiceCapture = (dataUrl, bucket) => handleVoiceOrPhotoCapture('voice', dataUrl, bucket);
+  const onVoiceCapture = (dataUrl, bucket, context) => handleVoiceOrPhotoCapture('voice', dataUrl, bucket, context);
+  const onTextCapture = (text,bucket,context) => handleVoiceOrPhotoCapture('text',text,bucket,context);
   const onPhotoCapture = (dataUrl, bucket) => handleVoiceOrPhotoCapture('image', dataUrl, bucket);
 
   // Opens the barcode sheet, pre-targeted at a meal's bucket — LogTable's
@@ -331,13 +362,22 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
         macroCoverage={nutrientSummary(preview.items)} microCoverage={preview.budget?.microCoverage}
         showIntake={false} />
       {wideViewport && sidebarTarget ? createPortal(history, sidebarTarget) : null}
-      <QuickCaptureBar active={active} onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
+      <QuickCaptureBar hideVoice active={active} onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
         onOpenBarcode={openBarcode} onAddTo={setAddingTo} busy={nutrition.busy} date={date} />
       {preview.control.draft?.status === 'error' ? <div className="health-portion-error" role="alert">
         <span>{preview.control.draft.error} Intended portion: {preview.control.draft.portion.value} {preview.control.draft.portion.unit}.</span>
         <Button onClick={() => preview.control.retry()}>{preview.control.draft.conflict ? 'Reload & apply intended portion' : 'Retry same change'}</Button>
         <Button variant="subtle" onClick={() => { preview.control.cancel(); day.reload(); }}>Discard draft &amp; reload</Button>
       </div> : null}
+      {mealUndo ? <div className="health-pending" role="status"><span>{mealUndo.label}</span>
+        <Button size="compact-xs" aria-label="Undo meal change" loading={undoBusy} onClick={async()=>{
+          if(undoPending.current)return;
+          undoPending.current=true;setUndoBusy(true);
+          mealUndoOperation.current ??= crypto.randomUUID();
+          try { await DaylightAPI('api/v1/health/nutrition/meal-undo',{undoToken:mealUndo.token,operationId:mealUndoOperation.current},'POST');setMealUndo(null);day.reload(); }
+          catch(err){setCaptureNotice(err.message || 'Undo failed. Try again.');}
+          finally{undoPending.current=false;setUndoBusy(false);}
+        }}>Undo</Button><Button size="compact-xs" variant="subtle" disabled={undoBusy} onClick={()=>setMealUndo(null)}>Dismiss</Button></div> : null}
       {undoDelete ? <div className="health-pending" role="status">
         <span>{undoDelete.label} deleted.</span>
         <Button size="compact-xs" loading={undoBusy} onClick={async () => {
@@ -369,23 +409,30 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
       ) : null}
       <CleanupQuestions active={active} onChanged={day.reload} />
       <ObservationsSection observations={unmatched} onChanged={() => observations.reload()} />
-      <LogTable byBucket={preview.byBucket} date={date} sessions={preview.budget?.sessions || []}
+      <LogTable clarifications={mealClarifications} onClearClarification={clearMealClarification} byBucket={preview.byBucket} date={date} sessions={preview.budget?.sessions || []}
         active={active}
         exerciseAvailable={Boolean(day.budget)}
         coldLoading={coldLoading} capturePendingBuckets={[...capturePending.values()].filter(pending => pending.date === date).map(pending => pending.bucket)}
-        onAddTo={setAddingTo} onRowTap={setEditingRow} onConfirm={day.reload} addingTo={addingTo}
+        onAddTo={bucket=>{setAddingTo(prev=>prev===bucket?null:bucket);setTypingIn(null);}} onRowTap={setEditingRow} onConfirm={day.reload} addingTo={addingTo}
         bucketHeaderAction={bucketHeaderAction}
-        onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
+        onVoiceCapture={onVoiceCapture} onTextCapture={onTextCapture} onPhotoCapture={onPhotoCapture}
+        onMealChanged={result=>handleCaptureResult(result)} captureTasks={[...capturePending.values()]}
         onOpenBarcode={openBarcode} captureBusy={nutrition.busy}
         measuredByUuid={measuredByUuid}
         addSlot={addingTo ? (
           <div className="health-meal__adding">
-          <AddCombobox bucketId={addingTo} date={date}
+          <div className="health-meal-add-options">
+            <Button size="compact-xs" onClick={()=>setTypingIn(addingTo)}>Type food</Button>
+            <PhotoCapture bucket={addingTo} mealLabel={bucketLabel(addingTo)} onCapture={onPhotoCapture}/>
+            <Button size="compact-xs" variant="subtle" onClick={()=>openBarcode(addingTo)}>Scan barcode</Button>
+            <Button size="compact-xs" variant="subtle" onClick={()=>{setFocusTemplateId(null);setTemplatesFor(addingTo);}}>Meals &amp; templates</Button>
+          </div>
+          {typingIn === addingTo ? <AddCombobox bucketId={addingTo} date={date}
             onDone={() => { setAddingTo(null); day.reload(); }}
             onCancel={() => setAddingTo(null)}
             onManageFoods={() => setManageFoods(true)}
             onMeals={() => { setFocusTemplateId(null); setTemplatesFor(addingTo); }}
-            onTemplate={(entry) => { setFocusTemplateId(entry.id); setTemplatesFor(addingTo); }} />
+            onTemplate={(entry) => { setFocusTemplateId(entry.id); setTemplatesFor(addingTo); }} /> : null}
           </div>
         ) : null} />
       <NeedsReviewSection pending={pendingLogs} onChanged={day.reload} />

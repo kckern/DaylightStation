@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 const apiMock = vi.fn();
+const departureState = vi.hoisted(()=>({departed:false}));
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => apiMock(...a) }));
 
 // Bypass the real file-picker/FileReader and MediaRecorder plumbing — the
@@ -26,9 +27,13 @@ vi.mock('../capture/PhotoCapture.jsx', () => ({
 }));
 vi.mock('../capture/VoiceCapture.jsx', () => ({
   VoiceCapture: ({ onCapture, bucket }) => (
-    <button onClick={() => onCapture('data:audio/webm;base64,zzz', bucket)}>
+    <><button onClick={() => onCapture('data:audio/webm;base64,zzz', bucket)}>
       {bucket ? `MockVoiceCapture-${bucket}` : 'MockVoiceCapture'}
-    </button>
+    </button><button onClick={() => onCapture('data:audio/webm;base64,zzz', bucket, { departed:true }).catch(()=>{})}>
+      MockDepartedVoiceCapture-{bucket}
+    </button><button onClick={() => onCapture('data:audio/webm;base64,zzz', bucket, { isDeparted:()=>departureState.departed }).catch(()=>{})}>
+      MockPendingVoiceCapture-{bucket}
+    </button></>
   ),
 }));
 vi.mock('../capture/BarcodeCapture.jsx', () => ({ BarcodeCapture: () => null }));
@@ -42,10 +47,10 @@ vi.mock('../capture/CustomFoodSheet.jsx', () => ({ CustomFoodSheet: () => null }
 // per-meal instance happens to share that hour's bucket, since the mock's
 // label depends only on `bucket`, not on which caller rendered it.
 // Expose the toolbar callback seam deterministically; its real target UI has a separate suite.
-vi.mock('./QuickCaptureBar.jsx', () => ({ QuickCaptureBar: ({ bucketOverride, onPhotoCapture, onVoiceCapture }) => bucketOverride ? null :
+vi.mock('./QuickCaptureBar.jsx', () => ({ QuickCaptureBar: ({ bucketOverride, hideVoice, onPhotoCapture, onVoiceCapture }) => bucketOverride ? null :
   <div>{['morning', 'afternoon', 'evening', 'night'].map(bucket => <div key={bucket}>
     <button onClick={() => onPhotoCapture('data:image/png;base64,zzz', bucket)}>MockPhotoCapture-{bucket}</button>
-    <button onClick={() => onVoiceCapture('data:audio/webm;base64,zzz', bucket)}>MockVoiceCapture-{bucket}</button>
+    {!hideVoice ? <button onClick={() => onVoiceCapture('data:audio/webm;base64,zzz', bucket)}>MockVoiceCapture-{bucket}</button> : null}
   </div>)}</div>
 }));
 
@@ -507,7 +512,8 @@ describe('TodayView — scale observations', () => {
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
 
     await waitFor(() => expect(screen.getByText('Guessed')).toBeTruthy());
-    expect(screen.getAllByText(/estimated/i)).toHaveLength(1);
+    expect(screen.queryByText(/estimated/i)).toBeNull();
+    expect(screen.getAllByRole('button', { name: /confirm entry/i })).toHaveLength(1);
     expect(document.querySelectorAll('.health-row-line--unsettled')).toHaveLength(1);
   });
 
@@ -533,7 +539,7 @@ describe('TodayView — scale observations', () => {
     apiMock.mockImplementation(baseApi({ observations: { observations: [OPEN_WEIGHT] } }));
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
     await waitFor(() => screen.getByText('MockPhotoCapture-morning'));
-    expect(screen.getByText('MockVoiceCapture-evening')).toBeTruthy();
+    expect(screen.getByRole('button', {name:'Add food to Dinner'})).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Scan barcode to Breakfast' })).toBeNull();
   });
 });
@@ -585,4 +591,93 @@ describe('TodayView — saving a meal writes a template, and the picker is the o
       apiMock.mock.calls.some(([p]) => p.includes('nutrition/templates?includeProposed=1')),
     ).toBe(true));
   });
+});
+
+describe('completed meal capture notice', () => {
+  beforeEach(()=>{apiMock.mockReset();resetApiResourceCache();});
+  it('discards obsolete analyzing messages after committed success and offers Undo',async()=>{
+    apiMock.mockImplementation(baseApi({nutritionInput:{committed:true,undoToken:'meal-undo',message:'Analyzing... old transcript',messages:[{text:'Analyzing... old transcript'}]}}));
+    r(<TodayView onSetupGoals={()=>{}} onCoachTap={()=>{}}/>);
+    fireEvent.click(await screen.findByText('MockPhotoCapture-morning'));
+    await screen.findByRole('button',{name:'Undo meal change'});
+    expect(screen.queryByText('Analyzing... old transcript')).toBeNull();
+  });
+});
+
+it('preserves selection on saved voice retry and renders retry clarification choices', async () => {
+  apiMock.mockReset(); resetApiResourceCache();
+  const foods = [{uuid:'broth',name:'Beef broth',mealTime:'evening',calories:90,grams:300},{uuid:'tomato',name:'Tomato',mealTime:'evening',calories:20,grams:100}];
+  let attempt = 0;
+  apiMock.mockImplementation(async(path,body)=> {
+    if(path.includes('health/day?')) return {items:foods,budget:BUDGET};
+    if(path.includes('nutrition/input')) {
+      attempt++;
+      if(attempt===1) return {transcribeFailed:true,audioRef:'va_saved',responseText:'Recording saved. Try again.'};
+      if(attempt===2) return {instructionText:'double this',clarification:{question:'Which broth?',choices:[{id:'broth',label:'Use beef broth'}]}};
+      return {committed:true,undoToken:'undo-voice'};
+    }
+    return baseApi()(path);
+  });
+  r(<TodayView/>);
+  fireEvent.click(await screen.findByRole('button',{name:'Select foods'}));
+  fireEvent.click(screen.getByRole('checkbox',{name:'Select Beef broth'}));
+  fireEvent.click(screen.getByText('MockVoiceCapture-evening'));
+  fireEvent.click(await screen.findByRole('button',{name:'Try again',exact:true}));
+  await waitFor(()=>expect(apiMock.mock.calls.filter(([path])=>path.includes('nutrition/input'))).toHaveLength(2));
+  const original=apiMock.mock.calls.filter(([path])=>path.includes('nutrition/input'))[0][1];
+  const retry=apiMock.mock.calls.filter(([path])=>path.includes('nutrition/input'))[1][1];
+  expect(retry).toMatchObject({audioRef:'va_saved',bucket:'evening',date:original.date,selectedIds:['broth']});
+  fireEvent.click(await screen.findByRole('button',{name:'Use beef broth'}));
+  await waitFor(()=>expect(apiMock.mock.calls.filter(([path])=>path.includes('nutrition/input'))[2]?.[1]).toMatchObject({type:'text',content:'double this',bucket:'evening',date:original.date,selectedIds:['broth'],clarification:'broth'}));
+  expect(await screen.findByRole('button',{name:'Undo meal change'})).toBeTruthy();
+});
+
+it('retains a departed recording upload with identical bytes, context and operation ID for Retry', async () => {
+  apiMock.mockReset(); resetApiResourceCache();
+  const foods = [{uuid:'broth',name:'Beef broth',mealTime:'evening',calories:90,grams:300}];
+  let attempt=0;
+  apiMock.mockImplementation(async(path)=> {
+    if(path.includes('health/day?')) return {items:foods,budget:BUDGET};
+    if(path.includes('nutrition/input')) {
+      if(++attempt===1) throw new Error('Upload disconnected');
+      if(attempt===2) return {instructionText:'double this',clarification:{question:'Which broth?',choices:[{id:'broth',label:'Use departed broth'}]}};
+      return {committed:true,undoToken:'undo-departed'};
+    }
+    return baseApi()(path);
+  });
+  render(<MemoryRouter initialEntries={['/?date=2026-09-05']}><MantineProvider><TodayView/></MantineProvider></MemoryRouter>);
+  fireEvent.click(await screen.findByRole('button',{name:'Select foods'}));
+  fireEvent.click(screen.getByRole('checkbox',{name:'Select Beef broth'}));
+  fireEvent.click(screen.getByText('MockDepartedVoiceCapture-evening'));
+  fireEvent.click(await screen.findByRole('button',{name:'Try again',exact:true}));
+  await waitFor(()=>expect(apiMock.mock.calls.filter(([path])=>path.includes('nutrition/input'))).toHaveLength(2));
+  const inputs=apiMock.mock.calls.filter(([path])=>path.includes('nutrition/input'));
+  expect(inputs[0][1]).toMatchObject({content:'data:audio/webm;base64,zzz',type:'voice',date:'2026-09-05',bucket:'evening',selectedIds:['broth'],operationId:expect.any(String)});
+  expect(inputs[1][1]).toEqual(inputs[0][1]);
+  fireEvent.click(await screen.findByRole('button',{name:'Use departed broth'}));
+  expect(await screen.findByRole('button',{name:'Undo meal change'})).toBeTruthy();
+});
+
+it('offers the same recording Retry when navigation happens during an upload that later rejects', async () => {
+  apiMock.mockReset(); resetApiResourceCache(); departureState.departed=false;
+  const foods=[{uuid:'broth',name:'Beef broth',mealTime:'evening',calories:90,grams:300}];
+  let rejectUpload; const upload=new Promise((resolve,reject)=>{rejectUpload=reject;});
+  let attempt=0;
+  apiMock.mockImplementation(async(path)=> {
+    if(path.includes('health/day?')) return {items:foods,budget:BUDGET};
+    if(path.includes('nutrition/input')) return ++attempt===1 ? upload : {committed:true,undoToken:'undo-pending'};
+    return baseApi()(path);
+  });
+  r(<TodayView/>);
+  fireEvent.click(await screen.findByRole('button',{name:'Select foods'}));
+  fireEvent.click(screen.getByRole('checkbox',{name:'Select Beef broth'}));
+  fireEvent.click(screen.getByText('MockPendingVoiceCapture-evening'));
+  await waitFor(()=>expect(apiMock.mock.calls.filter(([path])=>path.includes('nutrition/input'))).toHaveLength(1));
+  departureState.departed=true;
+  rejectUpload(new Error('Upload disconnected after navigation'));
+  fireEvent.click(await screen.findByRole('button',{name:'Try again',exact:true}));
+  expect(await screen.findByRole('button',{name:'Undo meal change'})).toBeTruthy();
+  const inputs=apiMock.mock.calls.filter(([path])=>path.includes('nutrition/input'));
+  expect(inputs[0][1]).toMatchObject({content:'data:audio/webm;base64,zzz',selectedIds:['broth'],bucket:'evening',operationId:expect.any(String)});
+  expect(inputs[1][1]).toEqual(inputs[0][1]);
 });

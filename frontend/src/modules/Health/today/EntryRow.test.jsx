@@ -23,23 +23,23 @@ describe('EntryRow', () => {
     const before = withPlacement(<EntryRow row={{ ...baseRow, grams: 100 }} onTap={() => {}} />, 'before');
     let identity = document.querySelector('.health-row-identity');
     expect(identity.classList.contains('health-density-before')).toBe(true);
-    expect(identity.querySelector('.health-density-badge').nextElementSibling).toHaveClass('health-row-name');
-    expect(identity.children[0]).toHaveClass('health-row-artwork');
+    expect(identity.querySelector('.health-density-badge').nextElementSibling).toHaveClass('health-row-artwork');
+    expect(identity.children[0]).toHaveClass('health-density-badge');
     expect(identity.querySelector('.health-row-name').contains(identity.querySelector('.health-density-badge'))).toBe(false);
     before.unmount();
     withPlacement(<EntryRow row={{ ...baseRow, grams: 100 }} onTap={() => {}} />, 'after');
     identity = document.querySelector('.health-row-identity');
     expect(identity.classList.contains('health-density-after')).toBe(true);
-    expect(identity.querySelector('.health-density-badge').nextElementSibling).toHaveClass('health-row-name');
-    expect(identity.children[1]).toHaveClass('health-density-badge');
-    expect(identity.children[2]).toHaveClass('health-row-name');
+    expect(identity.children[0]).toHaveClass('health-row-artwork');
+    expect(identity.children[1]).toHaveClass('health-row-name');
+    expect(identity.children[2]).toHaveClass('health-density-badge');
   });
 
   it('an unsettled row (settled:false) renders the unsettled cue and a confirm button', () => {
     r(<EntryRow row={{ ...baseRow, settled: false }} onTap={() => {}} onConfirm={() => {}} />);
     expect(document.querySelector('.health-row-line--unsettled')).toBeTruthy();
-    // Non-visual signal: real text content, not color alone.
-    expect(screen.getByText(/estimated/i)).toBeTruthy();
+    // The confirmation control retains an accessible estimate action.
+    expect(screen.queryByText(/estimated/i)).toBeNull();
     const confirmBtn = screen.getByRole('button', { name: /confirm entry/i });
     expect(confirmBtn).toBeTruthy();
   });
@@ -157,7 +157,7 @@ describe('EntryRow', () => {
   it('an indented child row still carries the unsettled cue and confirm affordance', () => {
     r(<EntryRow row={{ ...baseRow, settled: false }} onTap={() => {}} onConfirm={() => {}} child />);
     expect(document.querySelector('.health-row-line--child')).toBeTruthy();
-    expect(screen.getByText(/estimated/i)).toBeTruthy();
+    expect(screen.queryByText(/estimated/i)).toBeNull();
     expect(screen.getByRole('button', { name: /confirm entry/i })).toBeTruthy();
   });
 
@@ -209,7 +209,7 @@ describe('EntryRow', () => {
 
     it('coexists with the unsettled cue — an entry can be scale-measured AND unconfirmed', () => {
       r(<EntryRow row={{ ...baseRow, settled: false }} onTap={() => {}} onConfirm={() => {}} measured="82 g · scale ✓" />);
-      expect(screen.getByText(/estimated/i)).toBeTruthy();
+      expect(screen.queryByText(/estimated/i)).toBeNull();
       expect(screen.getByTitle('82 g · scale ✓')).toBeTruthy();
       expect(screen.getByRole('button', { name: /confirm entry/i })).toBeTruthy();
     });

@@ -1,0 +1,14 @@
+.health-capture-progress { padding: 6px 8px; font-size: 0.75rem; }
+.health-capture-progress__track { height: 4px; background: var(--ds-border); overflow: hidden; border-radius: 2px; margin-top: 4px; }
+.health-capture-progress__track > span { display: block; height: 100%; background: var(--ds-info); transition: width var(--ds-motion-base) linear; }
+.health-capture-progress__track--indefinite > span { background: repeating-linear-gradient(135deg, var(--ds-info) 0 6px, var(--ds-surface) 6px 12px); background-size: 17px 17px; animation: health-analysis-stripes calc(var(--ds-motion-base) * 4) linear infinite; }
+@keyframes health-analysis-stripes { // --ds-motion-base controls this animation
+ to { background-position: 17px 0; } }
+@media (prefers-reduced-motion: reduce) { .health-capture-progress__track > span { animation: none; transition: none; } }
+.health-meal-tools, .health-meal-add-options, .health-meal-command-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 4px 0; }
+.health-meal-selection-row { display: flex; align-items: center; gap: 4px; }
+.health-meal-selection-row > .health-row-line { flex: 1; min-width: 0; }
+.health-meal-selection-row > input { flex: 0 0 auto; accent-color: var(--ds-info); }
+.health-meal-command-panel { padding: 8px; margin: 4px 0; border: 1px solid var(--ds-border, #39414c); border-radius: 6px; font-size: .8rem; }
+.health-meal-command-panel input[type=text] { color: inherit; background: transparent; border: 1px solid var(--ds-border, #39414c); border-radius: 4px; padding: 4px 6px; max-width: 100%; }
+.health-meal-command-panel label { display: flex; align-items: center; gap: 6px; margin: 4px 0; }

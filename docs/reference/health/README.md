@@ -1298,3 +1298,5 @@ Health/Telegram questions, and conflict-safe repair history/Undo. See
 [Nutrition cleanup](nutrition-cleanup.md) and the
 [rollout runbook](../../runbooks/nutrition-cleanup-rollout.md). Automatic cleanup is
 off by default; historical records are reference-only.
+
+Meal interaction and command contracts: [Meal food commands](meal-commands.md).

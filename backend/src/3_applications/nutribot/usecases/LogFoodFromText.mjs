@@ -119,6 +119,10 @@ export class LogFoodFromText {
    * Execute the use case
    */
   async execute(input) {
+    if (input.interpretText) {
+      const instruction = await input.interpretText(input.text);
+      if (instruction) return instruction;
+    }
     const {
       userId, conversationId, text, messageId, date: overrideDate,
       // The day the CLIENT is looking at. It becomes the prompt's "today" and
@@ -139,7 +143,7 @@ export class LogFoodFromText {
     let isRevisionMode = false;
     let pendingLogUuid = null;
     let originalMessageId = null;
-    if (this.#conversationStateStore) {
+    if (this.#conversationStateStore && !input.interpretText) {
       const state = await this.#conversationStateStore.get(conversationId);
       if (state?.activeFlow === 'revision') {
         isRevisionMode = true;
