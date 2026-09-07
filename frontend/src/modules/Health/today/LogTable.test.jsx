@@ -226,7 +226,7 @@ describe('LogTable', () => {
         [null, []],
       ]);
       render(<LogTable byBucket={unsettledGroupBucket} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
-      expect(screen.getByText(/estimated/i)).toBeTruthy();
+      expect(screen.queryByText(/estimated/i)).toBeNull();
       expect(screen.getByRole('button', { name: /confirm entry/i })).toBeTruthy();
     });
   });
@@ -267,5 +267,21 @@ describe('LogTable — per-meal macro subtotal', () => {
   it('renders no subtotal line for an empty meal', () => {
     render(<LogTable byBucket={bucketsWith([])} sessions={[]} onAddTo={() => {}} onRowTap={() => {}} />, { wrapper });
     expect(screen.queryByText(/^P \d/)).toBeNull();
+  });
+});
+
+
+describe('anticipated meal capture', () => {
+  it('shows Dinner at 18:30, retires it next window, and preserves populated meals', () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-06T18:30:00'));
+    try {
+      const { rerender } = render(<LogTable byBucket={byBucket} date="2026-09-06" onAddTo={()=>{}} onVoiceCapture={()=>{}} onRowTap={()=>{}}/>, {wrapper});
+      expect(screen.getByRole('button',{name:'Log by voice to Dinner'})).toBeTruthy();
+      vi.setSystemTime(new Date('2026-09-06T21:30:00'));
+      rerender(<LogTable byBucket={byBucket} date="2026-09-06" onAddTo={()=>{}} onVoiceCapture={()=>{}} onRowTap={()=>{}}/>);
+      expect(screen.getByRole('button',{name:'Log by voice to Snacks'})).toBeTruthy();
+      expect(screen.queryByRole('button',{name:'Log by voice to Dinner'})).toBeNull();
+      expect(screen.getByText('Eggs')).toBeTruthy();
+    } finally { vi.useRealTimers(); }
   });
 });

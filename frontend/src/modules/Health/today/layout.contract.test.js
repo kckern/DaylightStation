@@ -77,12 +77,27 @@ describe('Today layout stylesheet', () => {
   });
 
   it('defines distinct before and after visual orders for all identity siblings', () => {
-    expect(rule('.health-density-before .health-row-artwork')).toMatch(/order: 1/);
-    expect(rule('.health-density-before .health-density-badge')).toMatch(/order: 2/);
+    expect(rule('.health-density-before .health-row-artwork')).toMatch(/order: 2/);
+    expect(rule('.health-density-before .health-density-badge')).toMatch(/order: 1/);
     expect(rule('.health-density-before .health-row-name')).toMatch(/order: 3/);
     expect(rule('.health-density-after .health-row-artwork')).toMatch(/order: 1/);
     expect(rule('.health-density-after .health-row-name')).toMatch(/order: 2/);
     expect(rule('.health-density-after .health-density-badge')).toMatch(/order: 3/);
+  });
+
+  it('centers a cap-height triangle inside the branch cell', () => {
+    expect(rule('.health-row__branch .health-row__expand')).toContain('width: 100%');
+    expect(rule('.health-row__branch .health-row__expand')).not.toContain('inset:');
+    expect(css).toContain('.health-row__expand { display: flex; align-items: center; justify-content: center;');
+    expect(rule('.health-row__triangle')).toContain('height: 1cap');
+  });
+
+  it('gives all daily metrics the same visible card and inline readout geometry', () => {
+    expect(rule('.health-daily-metric')).toContain('border: 1px solid');
+    expect(rule('.health-daily-metric')).toContain('background: var(--ds-surface)');
+    expect(rule('.health-daily-metric-readout')).toContain('display: flex');
+    expect(rule('.health-daily-metric-readout')).toContain('white-space: nowrap');
+    expect(rule('.health-daily-metric-value')).toContain('font-size: clamp(19px, 2cqi, 24px)');
   });
 
   it('gives populated meals two equal desktop columns', () => {

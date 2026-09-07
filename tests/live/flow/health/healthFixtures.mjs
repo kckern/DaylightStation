@@ -1,5 +1,6 @@
 /** Browser journeys never mutate the household. HTTP persistence has its own isolated suite. */
 import { portionFactor, scaleFoodPortion } from '../../../../shared/contracts/health/foodQuantity.mjs';
+import { numericFoodPatches } from '../../../../shared/contracts/health/foodNumericEdit.mjs';
 export async function installHealthFixtures(page, { items = [], foods = [], budgetBase = 2000, exercise = 0 } = {}) {
   const state = { items: structuredClone(items), foods: structuredClone(foods), requests: [], unexpected: [], deleted: new Map(), holdCapture: null };
   const budget = date => {
@@ -78,7 +79,11 @@ export async function installHealthFixtures(page, { items = [], foods = [], budg
           const factor = portionFactor({ ...row, children }, body.portion);
           for (const member of [row, ...children]) Object.assign(member, scaleFoodPortion(member, factor));
         }
-        const { portion, operationId, expectedVersion, expectedVersions, ...fields } = body;
+        if (body.numericEdit) {
+          const patches = numericFoodPatches({ ...row, children }, body.numericEdit);
+          for (const member of [row, ...children]) Object.assign(member, patches.get(member.uuid));
+        }
+        const { portion, numericEdit, operationId, expectedVersion, expectedVersions, ...fields } = body;
         Object.assign(row, fields);
         for (const member of [row, ...children]) member.version++;
         return reply({ data: row, versions: Object.fromEntries([row, ...children].map(member => [member.uuid, member.version])), cascadedIds: children.map(child => child.uuid), affectedIds: [id] });

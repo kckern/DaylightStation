@@ -172,6 +172,7 @@ export class LogFoodFromVoice {
         userId,
         conversationId,
         text: transcription,
+        interpretText: input.interpretText,
         // The spoken words are parsed against the day the person is LOOKING
         // AT, not the server's today — a memo recorded while viewing yesterday
         // must land on yesterday.

@@ -20,7 +20,7 @@ it('keeps level names and density value available without relying on color', () 
   const target = screen.getByLabelText('Lean · 1 kcal/g');
   expect(target).toHaveClass('health-density-badge');
   expect(target.style.backgroundColor).toBeFalsy();
-  expect(target.querySelector('.health-density-badge__visual')).toHaveTextContent('3');
+  expect(target.querySelector('.health-density-badge__visual')).toHaveTextContent('1.0');
   expect(target.querySelector('.health-density-badge__visual').style.backgroundColor).toBeTruthy();
 });
 
@@ -40,4 +40,22 @@ it('uses a read-only complete child rollup for a meal group', () => {
 it('shows visible P/C/F labels in meal totals', () => {
   render(<MantineProvider><MacroBadges rows={[{ protein: 10, carbs: 20, fat: 5 }]} showLabels /></MantineProvider>);
   expect([...document.querySelectorAll('.health-macro-badge--labelled')].map(node => node.dataset.shortLabel)).toEqual(['P', 'C', 'F']);
+});
+
+it('shows actual density with one decimal and selects only nine discrete colors', () => {
+  expect(densityPresentation(0).marker).toBe('0.0');
+  expect(densityPresentation(1.7).marker).toBe('1.7');
+  const colors = new Set(Array.from({ length: 1001 }, (_, i) => densityPresentation(i / 100).color));
+  expect(colors.size).toBe(9);
+  expect(densityPresentation(0.39).color).toBe(densityPresentation(0.2).color);
+  expect(densityPresentation(0.4).color).toBe(densityPresentation(0.6).color);
+  expect(densityPresentation(0).color).toBe(densityPresentation(0.2).color);
+  expect(densityPresentation(12).color).toBe(densityPresentation(8.5).color);
+});
+
+it('uses configured anchors for nearest-color boundaries', () => {
+  const levels = Array.from({ length: 9 }, (_, i) => ({ level: i + 1, label: `Level ${i + 1}`, kcal_per_g: i * 2 }));
+  expect(densityPresentation(0.99, levels).color).toBe(densityPresentation(0, levels).color);
+  expect(densityPresentation(1, levels).color).toBe(densityPresentation(2, levels).color);
+  expect(densityPresentation(null, levels)).toBeNull();
 });

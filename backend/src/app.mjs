@@ -1541,15 +1541,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Lazy proxy for webNutribotAdapter — filled after nutribot services are created below
-  const webNutribotAdapterProxy = {
-    process: (...args) => webNutribotAdapterProxy._delegate?.process?.(...args)
-      ?? Promise.reject(new Error('webNutribotAdapter not yet initialized')),
-    processCallback: (...args) => webNutribotAdapterProxy._delegate?.processCallback?.(...args)
-      ?? Promise.reject(new Error('webNutribotAdapter not yet initialized')),
-    listPendingByDate: (...args) => webNutribotAdapterProxy._delegate?.listPendingByDate?.(...args)
-      ?? Promise.reject(new Error('webNutribotAdapter not yet initialized')),
-    _delegate: null,
-  };
+  const { createWebNutribotProxy } = await import('#composition/modules/webNutribotProxy.mjs');
+  const webNutribotAdapterProxy = createWebNutribotProxy();
 
   let nutritionCleanup = null;
   let nutritionReceiptPublisher = null;
