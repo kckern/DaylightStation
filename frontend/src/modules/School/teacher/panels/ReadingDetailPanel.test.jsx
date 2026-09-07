@@ -160,6 +160,14 @@ describe('identity — the silent corrections', () => {
     }));
   });
 
+  it('refuses to save a page count that is not a number of pages, rather than silently clearing it', async () => {
+    seed();
+    mount();
+    fireEvent.change(await screen.findByLabelText('Page count'), { target: { value: 'about 200' } });
+    expect(within(band('Identity')).getByRole('button', { name: 'Save the book' }).disabled).toBe(true);
+    expect(screen.getByText(/whole number of pages/)).toBeTruthy();
+  });
+
   it('an identity correction needs no reason — nothing about it reaches the child', async () => {
     seed();
     mount();
@@ -191,6 +199,30 @@ describe('what was read — one row per day of evidence', () => {
     await waitFor(() => expect(teacherWorkspaceApi.addReadingEntry).toHaveBeenCalled());
     expect(teacherWorkspaceApi.addReadingEntry).toHaveBeenCalledWith('learner_a', 'rd_1', expect.objectContaining({
       on: '2026-09-04', page: 120, baseRevisionCount: 1,
+    }), expect.any(String));
+  });
+
+  it('will not save an edit that changes nothing', async () => {
+    seed();
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Sep 3' }));
+    expect(screen.getByRole('button', { name: 'Save this day' }).disabled).toBe(true);
+  });
+
+  it('writes evidence against the mode the record is STORED with, not an unsaved radio', async () => {
+    seed();
+    mount();
+    // The radio moves to minutes but nothing is saved; the day added below is
+    // still a page-mode day, because that is what the record says it is.
+    fireEvent.click(await screen.findByRole('radio', { name: 'minutes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add a day they read' }));
+    expect(screen.getByLabelText('Page reached')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Day they read'), { target: { value: '2026-09-04' } });
+    fireEvent.change(screen.getByLabelText('Page reached'), { target: { value: '120' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add this day' }));
+    await waitFor(() => expect(teacherWorkspaceApi.addReadingEntry).toHaveBeenCalled());
+    expect(teacherWorkspaceApi.addReadingEntry).toHaveBeenCalledWith('learner_a', 'rd_1', expect.objectContaining({
+      page: 120, minutes: null,
     }), expect.any(String));
   });
 
