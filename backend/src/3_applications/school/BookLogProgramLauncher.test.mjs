@@ -235,10 +235,26 @@ describe('BookLogProgramLauncher', () => {
         bookRepository: library({ hatchet: { title: 'Hatchet', authors: ['Gary Paulsen'], pageCount: 184 } }),
       }).featuredBook({ userId: 'kid' });
       expect(result.state).toBe('reading');
-      expect(result.book).toEqual({ title: 'Hatchet', authors: ['Gary Paulsen'], pageCount: 184 });
+      expect(result.book).toEqual({ title: 'Hatchet', authors: ['Gary Paulsen'] });
       expect(result.page).toBe(84);
       // 84/184 = 45.65, rounded — the bar the card draws.
       expect(result.percent).toBe(46);
+      // The denominator the bar used, from the shelf item — not the catalog's.
+      expect(result.pageCount).toBe(184);
+    });
+
+    it('prints the denominator the BAR used, not the catalog length', async () => {
+      // The child's own record says 200 pages; the catalog says 184. `percentFor`
+      // divided by 200, so the card must print 200 or the fraction lies about
+      // the bar beside it.
+      const result = await launcher(enrolled(), [
+        shelfBook('hatchet', { pageCount: 200, events: [read('2026-08-09T18:00:00Z', 100)] }),
+      ], {
+        bookRepository: library({ hatchet: { title: 'Hatchet', authors: [], pageCount: 184 } }),
+      }).featuredBook({ userId: 'kid' });
+      expect(result.percent).toBe(50);
+      expect(result.pageCount).toBe(200);
+      expect(result.book).toEqual({ title: 'Hatchet', authors: [] });
     });
 
     it('answers for an UNENROLLED learner — the shelf never needed an enrollment', async () => {
@@ -301,6 +317,96 @@ describe('BookLogProgramLauncher', () => {
       // Nearest the end leads; the rest are named newest-first, capped at two.
       expect(result.book.title).toBe('Frindle');
       expect(result.alsoReading).toEqual(['Hatchet', 'The Hobbit']);
+    });
+
+    it('survives a store that rejects with a non-object', async () => {
+      // `throw null` makes `error.message` throw inside the catch, which would
+      // escape and take the whole card down instead of degrading it.
+      const nullThrower = { async listForLearner() { throw null; } }; // eslint-disable-line no-throw-literal
+      const result = await launcher(enrolled(), [], { bookLog: nullThrower })
+        .featuredBook({ userId: 'kid' });
+      expect(result.state).toBe('unreadable');
+      expect(result.book).toBeNull();
+    });
+
+    it('survives a repository that rejects with a non-object', async () => {
+      // Same escape, one layer down: this one runs inside `Promise.all`.
+      const result = await launcher(enrolled(), [
+        shelfBook('hatchet', { pageCount: 184, events: [read('2026-08-09T18:00:00Z', 84)] }),
+      ], {
+        bookRepository: { async findByIsbn() { throw null; } }, // eslint-disable-line no-throw-literal
+      }).featuredBook({ userId: 'kid' });
+      expect(result.state).toBe('reading');
+      expect(result.book).toBeNull();
+      expect(result.page).toBe(84);
+    });
+
+    it('collapses a record it cannot NAME to no book at all', async () => {
+      // `createBookRecord` stubs every field for an unresolved ISBN, so a
+      // record can come back with no title. A titleless record carries nothing
+      // a headline can use, so `book !== null` must keep meaning "I have a name".
+      const result = await launcher(enrolled(), [
+        shelfBook('hatchet', { pageCount: 184, events: [read('2026-08-09T18:00:00Z', 84)] }),
+      ], {
+        bookRepository: library({ hatchet: { title: null, authors: [], pageCount: null } }),
+      }).featuredBook({ userId: 'kid' });
+      expect(result.book).toBeNull();
+      expect(result.state).toBe('reading');
+      expect(result.page).toBe(84);
+    });
+
+    it('says EMPTY for a shelf with no books', async () => {
+      // Every child is here before their first book, and there is no featured
+      // row to read a page off.
+      const result = await launcher(enrolled(), [], {
+        bookRepository: library({ hatchet: { title: 'Hatchet', authors: [] } }),
+      }).featuredBook({ userId: 'kid' });
+      expect(result.state).toBe('empty');
+      expect(result.book).toBeNull();
+      expect(result.page).toBeNull();
+      expect(result.pageCount).toBeNull();
+      expect(result.alsoReading).toEqual([]);
+    });
+
+    it('headlines the most recent FINISHED book when nothing is in progress', async () => {
+      const result = await launcher(enrolled(), [
+        shelfBook('frindle', { events: [{ kind: 'finished', at: '2026-02-01T18:00:00Z' }] }),
+        shelfBook('hatchet', { events: [{ kind: 'finished', at: '2026-08-08T18:00:00Z' }] }),
+      ], {
+        bookRepository: library({
+          frindle: { title: 'Frindle', authors: [] },
+          hatchet: { title: 'Hatchet', authors: [] },
+        }),
+      }).featuredBook({ userId: 'kid' });
+      expect(result.state).toBe('finished');
+      expect(result.book.title).toBe('Hatchet');
+      expect(result.percent).toBe(100);
+    });
+
+    it('says SET-ASIDE for a book a child put down on purpose', async () => {
+      const result = await launcher(enrolled(), [
+        shelfBook('hobbit', { events: [read('2026-08-01T18:00:00Z', 30), { kind: 'set-aside', at: '2026-08-02T18:00:00Z' }] }),
+      ], {
+        bookRepository: library({ hobbit: { title: 'The Hobbit', authors: [] } }),
+      }).featuredBook({ userId: 'kid' });
+      expect(result.state).toBe('set-aside');
+      expect(result.book.title).toBe('The Hobbit');
+    });
+
+    it('drops a co-read book the repository could not name, rather than a null', async () => {
+      const result = await launcher(enrolled(), [
+        shelfBook('frindle', { pageCount: 100, events: [read('2026-08-05T18:00:00Z', 90)] }),
+        shelfBook('hatchet', { pageCount: 184, events: [read('2026-08-09T18:00:00Z', 84)] }),
+        shelfBook('hobbit', { pageCount: 300, events: [read('2026-08-08T18:00:00Z', 30)] }),
+      ], {
+        // No entry for `hatchet` — the middle co-read book has no name.
+        bookRepository: library({
+          frindle: { title: 'Frindle', authors: [] },
+          hobbit: { title: 'The Hobbit', authors: [] },
+        }),
+      }).featuredBook({ userId: 'kid' });
+      expect(result.book.title).toBe('Frindle');
+      expect(result.alsoReading).toEqual(['The Hobbit']);
     });
 
     it('takes { userId } — a bare string fails loudly, as status() does', async () => {
