@@ -21,7 +21,10 @@ const groups = [
   { group: 'Brass', voices: [{ pc: 56, bank: 0, name: 'Trumpet' }] },
 ];
 const setEffect = vi.fn();
-vi.mock('./usePianoSound.js', () => ({ usePianoSound: () => ({ setEffect, device: { voiceGroups: groups, effects: { reverb: { types: [{ value: 4, label: 'Hall' }, { value: 5, label: 'Large Hall' }] }, chorus: { types: [{ value: 2, label: 'Chorus 3' }] } } } }) }));
+// The mock instrument CAN change algorithm; the MDG-400 cannot (typeAddressable
+// false), which is covered by its own test below.
+let typeAddressable = true;
+vi.mock('./usePianoSound.js', () => ({ usePianoSound: () => ({ setEffect, device: { voiceGroups: groups, effects: { reverb: { typeAddressable, types: [{ value: 4, label: 'Hall' }, { value: 5, label: 'Large Hall' }] }, chorus: { typeAddressable, types: [{ value: 2, label: 'Chorus 3' }] } } } }) }));
 const setPianoLevel = vi.fn();
 vi.mock('./usePianoMix.js', () => ({ usePianoMix: () => ({ pianoLevel: 0.75, setPianoLevel }) }));
 const midi = vi.hoisted(() => ({ sendNote: vi.fn(() => true) }));
@@ -39,7 +42,7 @@ const grid = () => screen.getByRole('group', { name: 'Instruments' });
 const rail = () => screen.getByRole('group', { name: 'Instrument families' });
 
 beforeEach(() => {
-  applyBundle.mockReset(); setEffect.mockReset(); log.info.mockClear(); saveFavorite.mockClear(); removeFavorite.mockClear(); setPianoLevel.mockClear(); midi.sendNote.mockReset().mockReturnValue(true);
+  applyBundle.mockReset(); setEffect.mockReset(); typeAddressable = true; log.info.mockClear(); saveFavorite.mockClear(); removeFavorite.mockClear(); setPianoLevel.mockClear(); midi.sendNote.mockReset().mockReturnValue(true);
   connection.health = { state: 'ready', output: { state: 'up' } };
   shortlist = [{ pc: 0, name: 'Grand' }, { pc: 40, bank: 0, name: 'Violin' }];
   currentBundle = { voice: { pc: 0, bank: 0, name: 'Grand' }, reverb: { type: 4, level: 50, on: true }, chorus: { type: 2, level: 64, on: false } };
@@ -123,6 +126,18 @@ describe('SoundPanel', () => {
     expect(applyBundle).not.toHaveBeenCalled();
     expect(setEffect).toHaveBeenCalledTimes(1);
     expect(setEffect.mock.calls[0][0]).toBe('reverb');
+  });
+
+  it('hides both type rows on an instrument whose algorithm is fixed in hardware', () => {
+    // The MDG-400 ignores every effect-type message — GM2 GPC, GM2 GPC after
+    // System On, and the Roland GS macro were all A/B'd silent on 2026-09-06.
+    // A picker that cannot move the hardware is worse than no picker.
+    typeAddressable = false;
+    render(<SoundPanel open onClose={vi.fn()} />);
+    expect(screen.getByRole('group', { name: 'Reverb' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Chorus' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Reverb type' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Chorus type' })).toBeNull();
   });
 
   it('always shows Chorus with its type row and no More-effects toggle', () => {

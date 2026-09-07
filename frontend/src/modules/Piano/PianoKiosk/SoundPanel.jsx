@@ -42,7 +42,10 @@ function EffectRows({ name, icon, value, config, onChange }) {
   // Off is Off whatever level the bundle still remembers; only the lit steps need an exact level.
   const activeIndex = value.on ? EFFECT_STEPS.findIndex((step) => step.on && step.level === value.level) : 0;
   const percent = value.on ? Math.round((value.level || 0) / 127 * 100) : 0;
-  const types = config?.types || [];
+  // No type row unless the instrument can actually change algorithm. The
+  // MDG-400 cannot (devices/suzukiMdg400.js) — the picker used to render and
+  // every tap was discarded by the engine.
+  const types = config?.typeAddressable ? (config.types || []) : [];
   const typeIndex = types.findIndex((type) => type.value === value.type);
   return <>
     <div className="piano-settings__tonehead"><Icon name={icon} /><span>{name}</span>{activeIndex < 0 && <small>now {percent}%</small>}</div>
