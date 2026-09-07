@@ -145,7 +145,7 @@ function TeacherShell() {
       courses: <CoursesView learnerId={learner.id} learnerName={learner.name} courseId={route.courseId} kids={kids} />,
       history: <HistoryView learnerId={learner.id} learnerName={learner.name}
         onOpenSession={(sessionId) => goSession(sessionId, { from: 'history' })} />,
-      reading: <ReadingView learnerId={learner.id} learnerName={learner.name} />,
+      reading: <ReadingView learnerId={learner.id} learnerName={learner.name} kids={kids} />,
       reports: <ReportsView learnerId={learner.id} kids={kids} />,
       operations: <LearnerOperationsView learnerId={learner.id} learnerName={learner.name} kids={kids} />,
     };

@@ -146,12 +146,21 @@ the index; Operations is one click away via the global nav rail from any page.
 The eight-entry chooser drawn in §14 is therefore the *student* Operations
 view — School Operations draws the school-scoped four.
 
-**Reading** is observation only in this pass: a grown-up's view of what a
-child is reading, how much, and how consistently, over the same
-`GetBookShelf` the child's own panel reads. Nothing on it writes. The
-correction verbs live in
-`docs/_wip/plans/2026-09-06-teacher-reading-admin-design.md` §3 and land
-against the v2 book-log storage model, not here.
+**Reading** is two surfaces over one record. The shelf observes — what a child
+is reading, how much, and how consistently, over the same `GetBookShelf` the
+child's own panel reads — and nothing on it writes. Each row's `⋯` opens that
+reading's **detail** (`?reading=<id>`, so the URL stays complete workspace
+state), where every correction verb lives: identity, what was read, state,
+danger, then the full revision history with an undo per row. Five of those
+verbs make the child's record smaller — a deleted day of evidence, an
+un-finish, a re-date out of the counted window, a move to a sibling, a deleted
+reading — and each requires a reason that is *delivered* to the child
+(invariant 1). Move and delete are the two step-ups in §1's table. Every write
+carries `baseRevisionCount` and a stale one is refused, never merged
+(invariant 5). A shelf that could not be read shows a named error and **no edit
+controls at all**, deep link included: a damaged year of evidence must never
+present as a shelf a grown-up starts "fixing". Full design:
+`docs/_wip/plans/2026-09-06-teacher-reading-admin-design.md`.
 
 `/students/:id` is the canonical short form for the Day; `/students/:id/overview`
 is a retired alias that the shell redirects there rather than 404ing (trim

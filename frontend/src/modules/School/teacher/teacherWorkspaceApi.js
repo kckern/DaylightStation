@@ -53,6 +53,46 @@ export const teacherWorkspaceApi = {
   // through `/books/:learnerId/shelf` with a launch grant; a grown-up holds no
   // launch, so the learner is the URL's and the console capability is the gate.
   readingShelf: (learnerId) => request(`/learners/${encodeURIComponent(learnerId)}/reading`),
+  // One reading, every entry, and the full `revisions` list the editor undoes
+  // from — plus the `baseRevisionCount` every write below must carry back.
+  // Served here rather than counted on the client: a second way to derive the
+  // value a stale save is judged on is a second way to be wrong about it.
+  readingDetail: (learnerId, readingId) => request(
+    `/learners/${encodeURIComponent(learnerId)}/reading/${encodeURIComponent(readingId)}`,
+  ),
+  // The nine edit verbs. Every one of them carries `baseRevisionCount` in its
+  // body — the router reads it off `req.body`, so it belongs in the body and
+  // not in a header, and a DELETE therefore sends one too.
+  updateReading: (learnerId, readingId, body) => request(
+    `/learners/${encodeURIComponent(learnerId)}/reading/${encodeURIComponent(readingId)}`,
+    { method: 'PATCH', body },
+  ),
+  addReadingEntry: (learnerId, readingId, body, idempotencyKey = null) => request(
+    `/learners/${encodeURIComponent(learnerId)}/reading/${encodeURIComponent(readingId)}/entries`,
+    { method: 'POST', body, ...(idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {}) },
+  ),
+  updateReadingEntry: (learnerId, readingId, entryId, body) => request(
+    `/learners/${encodeURIComponent(learnerId)}/reading/${encodeURIComponent(readingId)}/entries/${encodeURIComponent(entryId)}`,
+    { method: 'PATCH', body },
+  ),
+  deleteReadingEntry: (learnerId, readingId, entryId, body) => request(
+    `/learners/${encodeURIComponent(learnerId)}/reading/${encodeURIComponent(readingId)}/entries/${encodeURIComponent(entryId)}`,
+    { method: 'DELETE', body },
+  ),
+  undoReadingRevision: (learnerId, readingId, body, grantToken = null) => request(
+    `/learners/${encodeURIComponent(learnerId)}/reading/${encodeURIComponent(readingId)}/undo`,
+    { method: 'POST', body, headers: grantToken ? { 'X-Teacher-Step-Up': grantToken } : {} },
+  ),
+  // The two step-up verbs. The grant rides in `X-Teacher-Step-Up`, is one-use,
+  // and is scoped to this reading id alone (teacher.md §1).
+  moveReading: (learnerId, readingId, body, grantToken = null) => request(
+    `/learners/${encodeURIComponent(learnerId)}/reading/${encodeURIComponent(readingId)}/reassign`,
+    { method: 'POST', body, headers: grantToken ? { 'X-Teacher-Step-Up': grantToken } : {} },
+  ),
+  deleteReading: (learnerId, readingId, body, grantToken = null) => request(
+    `/learners/${encodeURIComponent(learnerId)}/reading/${encodeURIComponent(readingId)}`,
+    { method: 'DELETE', body, headers: grantToken ? { 'X-Teacher-Step-Up': grantToken } : {} },
+  ),
   session: (sessionId) => request(`/sessions/${encodeURIComponent(sessionId)}`),
   course: (courseId) => request(`/curriculum/${encodeURIComponent(courseId)}`),
   lesson: (courseId, lessonId) => request(`/curriculum/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(lessonId)}`),

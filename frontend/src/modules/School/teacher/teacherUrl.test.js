@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseTeacherPath, teacherDayPath, teacherLearnerPath, teacherSessionPath }  from './teacherUrl.js';
+import { parseTeacherPath, teacherDayPath, teacherLearnerPath, teacherReadingPath, teacherSessionPath } from './teacherUrl.js';
 
 describe('teacher workspace URL model', () => {
   it('lands roots on the dashboard and rejects malformed paths', () => {
@@ -84,5 +84,21 @@ describe('learner day route', () => {
   });
   it('falls back to the dashboard without a learner', () => {
     expect(teacherDayPath(null, '2026-08-25')).toBe('/school/teacher/dashboard');
+  });
+});
+
+describe('teacherReadingPath — the open reading is part of the URL', () => {
+  it('is the bare Reading workspace with no reading open', () => {
+    expect(teacherReadingPath('learner_a')).toBe('/school/teacher/students/learner_a/reading');
+  });
+
+  it('carries the open reading as ?reading=, so a deep link restores it', () => {
+    expect(teacherReadingPath('learner_a', 'rd_1'))
+      .toBe('/school/teacher/students/learner_a/reading?reading=rd_1');
+  });
+
+  it('encodes both, so an id with a slash cannot invent a route', () => {
+    expect(teacherReadingPath('learner a', 'rd/1'))
+      .toBe('/school/teacher/students/learner%20a/reading?reading=rd%2F1');
   });
 });
