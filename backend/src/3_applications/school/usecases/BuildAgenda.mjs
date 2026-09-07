@@ -40,6 +40,7 @@ import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display
 import { curriculumPosterRef } from '#apps/common/resources/publicResourceRefs.mjs';
 import { lessonProgressRowsFromPlan } from '#domains/school/lessonProgress.mjs';
 import { BOOK_LOG_PROGRAM_ID, DEFAULT_BOOK_LOG_SUBJECT } from '#domains/school/bookLog.mjs';
+import { programStatusFor } from '#domains/school/agenda.mjs';
 import { DEFAULT_ACCESS_CODE_MAX_USES } from '#domains/school/sessions/accessCode.mjs';
 
 const DEFAULT_SUBJECT_TOKEN_TTL_HOURS = 168;
@@ -48,6 +49,27 @@ const HOUR_MS = 3_600_000;
 // calls it without one (its own default) — kept in step so "yesterday's
 // note" and "served today" roll over on the exact same instant.
 const BOUNDARY_HOUR = 4;
+
+/**
+ * How many times a printed reading code may be typed before it is spent.
+ *
+ * FAR LOOSER THAN A LESSON'S, AND STILL NOT ABSENT. A subject code is spent
+ * after three (`DEFAULT_ACCESS_CODE_MAX_USES`) because a lesson is done once. A
+ * log is not a task: "I finished another one" is a thing a child may honestly
+ * do several times in a day, and a cap near three would break the very feature
+ * this code exists for. Attribution, not frequency, is still the real question
+ * on the shelf, and the shelf answers it with the learner chip at the top.
+ *
+ * But an uncapped code is worth unlimited opens to whoever picks the slip up
+ * off the counter — `accessCode.mjs` records one code typed THIRTEEN times in
+ * five hours. Twelve sits above any real day of logging and under that, so it
+ * bounds the abuse without bounding the honest use.
+ *
+ * A spent code answers `USED_UP`, a sentence the panel already understands.
+ * This is deliberately the ONLY new bound: the two expiry clocks are argued in
+ * `tokens.mjs` ("Do not 'align' them.") and stay exactly as they are.
+ */
+const READING_CODE_MAX_USES = 12;
 
 /**
  * Stand-ins that let `previewOnly` render a real-shaped lesson card — QR box and
@@ -226,7 +248,7 @@ export class BuildAgenda {
     // programs appended, `planDailyAgenda` fed the RAW history — because this
     // is the surface that prints the paper a child is holding, so it is the
     // one every other surface has to converge on.
-    const { plan, sections, activeExceptions, projection } = await this.#planProjection.project({
+    const { plan, sections, activeExceptions, projection, programStatuses } = await this.#planProjection.project({
       learnerId,
       // A study-day preview plans against the midpoint of that day's window,
       // not the clock.
@@ -544,11 +566,10 @@ export class BuildAgenda {
           expiresAt,
           accessCode: readingAccessCode,
           accessCodeExpiresAt: this.#accessCodeExpiryFor(nowIso, expiresAt),
-          // NO `maxUses`, deliberately. A log is not a task: "I finished
-          // another one" is a thing a child may honestly do several times in a
-          // day, and a cap here would break the very feature this code exists
-          // for. Attribution, not frequency, is the real question on the shelf,
-          // and the shelf answers it with the learner chip at the top of it.
+          // A LOOSE CAP, NOT NO CAP. See `READING_CODE_MAX_USES`: a log really
+          // is repeatable, so three (a lesson's) would break it — but leaving
+          // it uncapped made a slip left on the counter worth unlimited opens.
+          maxUses: READING_CODE_MAX_USES,
         });
         await this.#tokens.put(readingRecord);
         readingToken = readingRecord.token;
@@ -560,6 +581,51 @@ export class BuildAgenda {
         });
       }
     }
+
+    // WHAT THE READING CARD HEADLINES.
+    //
+    // Once per agenda, from the launcher's agenda-only `featuredBook()` — never
+    // from `status()`, which `collectProgramStatuses` runs for the teacher
+    // board, the status board, DoNow and the completion recompute. Titles are
+    // per-book repository reads and none of those surfaces asked to pay for
+    // them.
+    //
+    // GUARDED WHOLE. Book facts are decoration: a launcher that is not wired, a
+    // composition with no books API, a cold cache, or a `featuredBook` that
+    // throws outright all yield `null`, and `null` is the card's `unreadable`
+    // shape — a card that prints, saying it could not read the shelf. Never one
+    // card fewer.
+    let readingFeature = null;
+    try {
+      readingFeature = (await this.#launchers?.get?.(BOOK_LOG_PROGRAM_ID)?.featuredBook?.({
+        userId: learnerId,
+      })) ?? null;
+    } catch (error) {
+      this.#logger.warn?.('school.agenda.featured-book-failed', { learnerId, error: error.message });
+      readingFeature = null;
+    }
+    // TWO THINGS `featuredBook()` CANNOT ANSWER, supplied by the caller because
+    // an obligation is measured against an enrollment neither that method nor
+    // the pure receipt builder ever sees: whether it is MET (the card's `Done`
+    // rail) and how far along it is (the second bar).
+    //
+    // Both come off the shelf status `PlanProjection` ALREADY collected for
+    // this build — a second `status()` call here would re-read the whole log to
+    // learn something already in hand. An unenrolled learner has no shelf
+    // status and no obligation, which is the honest answer: no rail, no bar.
+    const shelfStatus = shelfStatusFrom(programStatuses);
+    if (readingFeature) {
+      readingFeature = {
+        ...readingFeature,
+        obligationMet: shelfStatus?.error === true ? false : shelfStatus?.doneToday === true,
+        progressRows: obligationProgressRows(shelfStatus),
+      };
+    }
+    // The author line the shelf's own card wears, so the SECTION card (below)
+    // and the standalone one cannot name the same book two different ways.
+    const featuredAuthor = (Array.isArray(readingFeature?.book?.authors)
+      ? readingFeature.book.authors
+      : []).find((name) => typeof name === 'string' && name.trim())?.trim() ?? null;
 
     // `agendaDocument` composes its own "{title} — {actionLabel}" line, so the
     // document sees only the SUFFIX here — the offer above carries the full
@@ -595,7 +661,16 @@ export class BuildAgenda {
         ? {
           subject: subjectLabel,
           course: entry.programContext.course?.title ?? entry.programContext.course?.id ?? 'Piano course',
-          unit: entry.programContext.unit?.title ?? entry.programContext.unit?.id ?? 'Unit',
+          // THE SHELF HAS NO UNIT, AND 'Unit' IS NOT A NAME. `bookLogContext()`
+          // supplies a course and a lesson and nothing between them, so this
+          // fallback printed the literal word "Unit" on every reading section
+          // card — and `DocumentEscPosRenderer` prints the taxonomy verbatim
+          // (`Unit · Unit`). The book's author is the real parent of a book,
+          // which is exactly what the standalone card uses; `Books` when we
+          // cannot name one. Never the placeholder.
+          ...(entry.program === BOOK_LOG_PROGRAM_ID
+            ? { unit: featuredAuthor ?? 'Books' }
+            : { unit: entry.programContext.unit?.title ?? entry.programContext.unit?.id ?? 'Unit' }),
           lesson: entry.programContext.lesson?.title ?? entry.title,
         }
         : {
@@ -663,7 +738,7 @@ export class BuildAgenda {
         learnerId, learnerName, generatedAt: nowIso, timeZone: this.#timezone,
         sections: sectionsForDocument, tokensBySubject, accessCodesByToken,
         bulkToken, bulkAccessCode,
-        readingToken, readingAccessCode,
+        readingToken, readingAccessCode, readingFeature, readingSubject,
         notes,
       }),
     };
@@ -820,6 +895,71 @@ function subjectsWithReadingShelf(assignment) {
   return new Set((assignment?.programs ?? [])
     .filter((program) => program?.programId === BOOK_LOG_PROGRAM_ID)
     .map((program) => program.subject ?? DEFAULT_BOOK_LOG_SUBJECT));
+}
+
+/**
+ * The book-log shelf's collected status, if this learner has one.
+ *
+ * BY PROGRAM ID ALONE, deliberately. `programStatusFor` keys on the program AND
+ * its instance, and `assignedProgramPlan` gives the shelf the fixed instance
+ * `'shelf'` — so an exact-key lookup for a bare `{ program: 'book-log' }` finds
+ * nothing and the card silently loses its rail and its bar. There is ONE shelf
+ * per learner (`BOOK_LOG_SHELF_UNIT_ID`), so the id is a complete address here;
+ * `programStatusFor` still handles the object-keyed compatibility shape.
+ *
+ * Null for a learner with no book-log enrollment — which is not a failure. The
+ * shelf is open to them; they simply owe nothing, so there is nothing to draw.
+ */
+function shelfStatusFrom(programStatuses) {
+  if (Array.isArray(programStatuses)) {
+    return programStatuses.find((row) => row?.programId === BOOK_LOG_PROGRAM_ID)?.status ?? null;
+  }
+  return programStatusFor(programStatuses, { program: BOOK_LOG_PROGRAM_ID }) ?? null;
+}
+
+/** What the obligation bar is called, by metric. */
+const OBLIGATION_NOUN = Object.freeze({
+  pages: 'Pages', minutes: 'Minutes', books: 'Books', checkins: 'Check-ins',
+});
+
+/** ...and over what window. `once` is cumulative since enrollment. */
+const OBLIGATION_WINDOW_WORD = Object.freeze({
+  day: 'today', week: 'this week', month: 'this month', once: 'so far',
+});
+
+/**
+ * The reading card's SECOND bar: how far along today's obligation is.
+ *
+ * Built here rather than in `featuredBook()` because an obligation is measured
+ * against an ENROLLMENT, and the featured book is read from the log alone — the
+ * shelf is open to a child with no enrollment at all, and that child has no bar
+ * to draw. The numbers come from the shelf status the projection already
+ * collected, so this costs no second read of anything.
+ *
+ * The label names the metric and its window (`Pages this week`) rather than
+ * repeating the tally: the bar itself carries `4` and `7`, and
+ * `status.progressLabel` already says "4 of 7 pages" in words for the panel.
+ *
+ * Returns `[]` for no obligation, an unreadable shelf, or a target of zero —
+ * a bar with nothing to fill is noise on a narrow tape, and
+ * `usableProgressRows` would drop it anyway.
+ */
+function obligationProgressRows(shelfStatus) {
+  const progress = shelfStatus && shelfStatus.error !== true ? shelfStatus.obligationProgress : null;
+  if (!progress) return [];
+  const total = Math.round(Number(progress.target));
+  const completed = Math.round(Number(progress.actual));
+  if (!Number.isInteger(total) || total <= 0 || !Number.isInteger(completed)) return [];
+  const noun = OBLIGATION_NOUN[progress.metric] ?? 'Reading';
+  const when = OBLIGATION_WINDOW_WORD[progress.per];
+  return [{
+    label: when ? `${noun} ${when}` : noun,
+    // Clamp the BAR, never the count: a child who read ten pages against a
+    // seven-page target has met it, and a bar wider than its track draws off
+    // the edge of the card.
+    completed: Math.max(0, Math.min(total, completed)),
+    total,
+  }];
 }
 
 function formatStudyCode(code) {
