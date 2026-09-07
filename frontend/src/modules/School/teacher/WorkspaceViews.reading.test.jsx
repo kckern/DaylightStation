@@ -51,8 +51,9 @@ const shelf = (over = {}) => ({
   ...over,
 });
 
-const detail = () => ({
+const detail = (countedWindow = { state: 'window', per: 'week', from: '2026-08-31', to: '2026-09-06' }) => ({
   learnerId: 'learner_a',
+  countedWindow,
   reading: {
     id: 'rd_1', book: { isbn: '9780000000001', pageCount: 184 }, isbn: '9780000000001',
     progressMode: 'page', status: 'reading', finishedOn: null, openedOn: '2026-09-01',
@@ -98,12 +99,13 @@ describe('opening a reading from the shelf', () => {
     expect(screen.queryByRole('heading', { name: 'Identity', level: 3 })).toBeNull();
   });
 
-  it('hands the detail the counted window the obligation is measured over', async () => {
+  it('judges a re-date on the window the DETAIL\u2019s own read carried', async () => {
     window.history.replaceState({}, '', '/school/teacher/students/learner_a/reading?reading=rd_1');
     teacherWorkspaceApi.readingShelf.mockResolvedValue(ok(shelf()));
     mount();
     // A weekly obligation on Sep 6 counts back to Aug 31, so re-dating this
-    // day to Aug 1 leaves the window and the child has to be told.
+    // day to Aug 1 leaves the window and the child has to be told. The shelf
+    // hands the detail nothing but the go-ahead to render.
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Sep 3' }));
     fireEvent.change(screen.getByLabelText('Day they read'), { target: { value: '2026-08-01' } });
     expect(await screen.findByText(/takes it off learner_a’s total/)).toBeTruthy();

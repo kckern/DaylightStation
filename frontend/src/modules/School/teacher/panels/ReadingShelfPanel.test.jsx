@@ -105,23 +105,21 @@ describe('ReadingShelfPanel — what a grown-up sees', () => {
     expect(onOpenReading).toHaveBeenCalledWith('itm_1');
   });
 
-  it('reports the shelf state and its obligation upward, so the workspace can lock the edit surface', async () => {
+  it('reports the shelf STATE upward, so the workspace can lock the edit surface — and nothing else', async () => {
     const onShelf = vi.fn();
     teacherWorkspaceApi.readingShelf.mockResolvedValue(ok(shelf()));
     render(<ReadingShelfPanel learnerId="User_4" onShelf={onShelf} />);
     await screen.findByText(/A Borrowed Title/);
-    await waitFor(() => expect(onShelf).toHaveBeenCalledWith({
-      state: 'ok',
-      obligation: expect.objectContaining({ per: 'week' }),
-      studyDay: '2026-09-06',
-    }));
+    // No obligation and no study day travel upward: the detail's own read
+    // carries the counted window, computed once, on the server.
+    await waitFor(() => expect(onShelf).toHaveBeenCalledWith({ state: 'ok' }));
   });
 
-  it('reports a shelf that could NOT be read as an error carrying no obligation', async () => {
+  it('reports a shelf that could NOT be read as an error', async () => {
     const onShelf = vi.fn();
     teacherWorkspaceApi.readingShelf.mockResolvedValue({ ok: false, status: 500, data: null });
     render(<ReadingShelfPanel learnerId="User_4" onShelf={onShelf} />);
-    await waitFor(() => expect(onShelf).toHaveBeenCalledWith({ state: 'error', obligation: null, studyDay: null }));
+    await waitFor(() => expect(onShelf).toHaveBeenCalledWith({ state: 'error' }));
   });
 
   it('says "No books yet" when the child has no readings', async () => {

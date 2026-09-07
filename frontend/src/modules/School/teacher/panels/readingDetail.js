@@ -16,9 +16,10 @@
  *    requirement of the verb its inverse turns out to be — undoing an ADDED
  *    day deletes a day, and the child hears about that.
  *
- * The wordings below are the server's own, deliberately. A different sentence
- * for the same refusal would mean the grown-up reads one thing before tapping
- * and another after, and only one of them is true.
+ * Questions 1 and 3 are answered against the counted window the SERVER serves
+ * with the reading; question 2 is answered by the server outright, and this
+ * file only reads its sentence. Nothing here re-derives a decision the server
+ * already owns.
  *
  * @module School/teacher/panels/readingDetail
  */
@@ -50,31 +51,32 @@ export const OPS = Object.freeze({
 
 export const UNDO_VERB = 'reading.undo';
 
-/** Move a `YYYY-MM-DD` day by whole days, noon-anchored so DST cannot eat one. */
-function shift(day, delta) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(day ?? ''))) return null;
-  const date = new Date(`${day}T12:00:00`);
-  date.setDate(date.getDate() + delta);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
+/**
+ * The window the obligation counts over, as the SERVER computed it — the same
+ * `obligationWindow` the write path judges a re-date against. The console does
+ * not derive it: one rule with two implementations is a rule that drifts, and
+ * the client copy went quiet (stopped pre-requiring a reason at all) exactly
+ * when the shelf read carried no obligation.
+ *
+ * `GET /:readingId` answers in three states, and `null` here means "no window
+ * to judge against" for both of the two that carry none.
+ */
+export const countedWindowOf = (served) => (served?.state === 'window'
+  ? { from: served.from ?? null, to: served.to ?? null }
+  : null);
 
 /**
- * The window the obligation counts over — the mirror of
- * `BookLogProgramLauncher.obligationWindow`, so the console asks for a reason
- * on exactly the re-dates the server would ask for one on.
+ * Could the server tell at all?
  *
- * A shelf with no obligation has no counted window, and therefore no day a
- * correction can drop out of. `null` means "cannot tell" and the console then
- * lets the server be the one to refuse — which it does, by name.
+ * `none` (this child owes no reading) and `unknown` (the obligation could not
+ * be read) both mean no pre-required reason — the server stays the one that
+ * refuses — but only `unknown` is worth saying out loud, and an answer that is
+ * missing entirely is `unknown` too.
  */
-export function countedWindow(obligation, studyDay) {
-  const per = obligation?.per ?? null;
-  if (!per || !studyDay) return null;
-  if (per === 'once') return { from: null, to: studyDay };
-  if (per === 'week') return { from: shift(studyDay, -6), to: studyDay };
-  if (per === 'month') return { from: shift(studyDay, -29), to: studyDay };
-  return { from: studyDay, to: studyDay };
-}
+export const countedWindowUnknown = (served) => !served || served.state === 'unknown';
+
+/** Said under a re-date the console cannot judge, so nobody reads silence as "fine". */
+export const WINDOW_UNKNOWN_NOTE = 'The counted window couldn’t be read, so whether this takes the day off their total is the server’s call — it will ask for a reason if it needs one.';
 
 export const inWindow = (day, window) => {
   if (!window) return true;

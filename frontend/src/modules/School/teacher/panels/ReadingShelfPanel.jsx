@@ -167,11 +167,11 @@ const isShelf = (data) => Boolean(data) && typeof data === 'object' && Array.isA
  * @param {Function|null} props.onOpenReading - opens one reading's detail.
  *   Absent means a read-only shelf, which is what an install with no edit
  *   surface gets.
- * @param {Function|null} props.onShelf - reports `{state, obligation, studyDay}`
- *   upward as the read settles. The workspace needs BOTH: the state, because a
- *   shelf that cannot be read must lock the edit surface entirely (design §6),
- *   and the obligation, because the window it is measured over is what decides
- *   whether re-dating a day takes it off the child's total.
+ * @param {Function|null} props.onShelf - reports `{state}` upward as the read
+ *   settles, because a shelf that cannot be read must lock the edit surface
+ *   entirely (design §6). It reports nothing else: the reading detail's own
+ *   read carries the counted window, so no obligation travels through here to
+ *   be turned into a window a second time.
  */
 export default function ReadingShelfPanel({
   learnerId, refreshToken = 0, onOpenReading = null, onShelf = null,
@@ -219,13 +219,7 @@ export default function ReadingShelfPanel({
   // report on every render of the workspace above.
   const reportRef = useRef(onShelf);
   reportRef.current = onShelf;
-  useEffect(() => {
-    reportRef.current?.({
-      state,
-      obligation: isShelf(data) ? data.obligation ?? null : null,
-      studyDay: isShelf(data) ? data.studyDay ?? null : null,
-    });
-  }, [state, data]);
+  useEffect(() => { reportRef.current?.({ state }); }, [state]);
 
   useEffect(() => { teacherLog.read('reading-opened', { learnerId }); }, [learnerId]);
   useEffect(() => {

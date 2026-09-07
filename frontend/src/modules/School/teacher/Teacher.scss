@@ -2133,6 +2133,9 @@
 
   &__lookup { margin: 0; font-size: 13px; color: var(--ds-text-mid); }
 
+  /* Said when the console cannot judge a correction the server still can. */
+  &__note { margin: 0; font-size: 12px; color: var(--ds-text-mid); }
+
   /* The sentence above a reason box. When the reason is REQUIRED it is the
    * sentence the child will read, so it is set apart from the optional one. */
   &__ask {
