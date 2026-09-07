@@ -360,3 +360,65 @@ describe('through the real thermal adapter', () => {
     }
   });
 });
+
+describe('the reading card in the operator transcript', () => {
+  // This renderer is NOT dead code, and that is the whole reason this suite
+  // exists for the reading card. `schoolLifecycle` runs it alongside the raster
+  // path purely to harvest its words, and it is the ONLY renderer when the
+  // canvas one fails to build. It reads `presentation: 'lesson'` blocks through
+  // their TAXONOMY — `Course · / Unit · / Lesson ·` — and never looks at
+  // `block.unit`, `block.rail` or `block.progress`. So the four taxonomy
+  // strings are not filler to satisfy a validator; three of them are the only
+  // words an operator ever reads about this card.
+  const reading = () => agendaDocument({
+    learnerId: 'learner_a',
+    learnerName: 'Test Learner',
+    generatedAt: '2026-09-06T16:05:00.000Z',
+    timeZone: 'UTC',
+    sections: [{ subject: 'math', next: { title: 'Equivalent Fractions', unitId: 'u1', actionLabel: 'watch or listen' } }],
+    tokensBySubject: { math: TOKEN },
+    readingToken: 'sch:READINGTOKEN00001',
+    readingAccessCode: '204517',
+    readingSubject: 'english',
+    readingFeature: {
+      state: 'reading',
+      book: { title: 'Hatchet', authors: ['Gary Paulsen'] },
+      page: 84, percent: 46, pageCount: 184, alsoReading: [],
+    },
+  });
+
+  it('names the course, the author and the book, in that order', () => {
+    const text = textOf(renderer.render(reading()));
+    expect(text).toContain('Course · Reading log');
+    expect(text).toContain('Unit · Gary Paulsen');
+    expect(text).toContain('Lesson · Hatchet');
+  });
+
+  it('never prints the literal placeholder a missing taxonomy unit would leave', () => {
+    // `bookLogContext()` supplies no `unit`, so the program-taxonomy branch's
+    // `?? 'Unit'` fallback would print the bare word. An operator reading
+    // "Unit · Unit" learns nothing and cannot tell it from a real unit name.
+    const text = textOf(renderer.render(reading()));
+    expect(text).not.toMatch(/Unit · Unit\b/);
+  });
+
+  it('still reads correctly when nothing has been logged yet', () => {
+    const document = agendaDocument({
+      learnerId: 'learner_a',
+      learnerName: 'Test Learner',
+      generatedAt: '2026-09-06T16:05:00.000Z',
+      timeZone: 'UTC',
+      sections: [{ subject: 'math', next: { title: 'Equivalent Fractions', unitId: 'u1', actionLabel: 'watch or listen' } }],
+      tokensBySubject: { math: TOKEN },
+      readingToken: 'sch:READINGTOKEN00001',
+      readingAccessCode: '204517',
+      readingSubject: 'english',
+      readingFeature: { state: 'empty', book: null, alsoReading: [] },
+    });
+    const text = textOf(renderer.render(document));
+    expect(text).toContain('Course · Reading log');
+    // Never a titleless book, and never an empty segment where one belongs.
+    expect(text).not.toMatch(/Lesson · \s*$/m);
+    expect(text).not.toContain('Unit · \n');
+  });
+});
