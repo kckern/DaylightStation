@@ -137,6 +137,11 @@ export default function ReadingDetailPanel({
   const book = presentation.title;
   const names = { book, child };
 
+  // Evidence is written against the mode the record is STORED with, not the
+  // radio the grown-up may have just moved and not saved: an entry added
+  // under an unsaved "minutes" would carry minutes onto a page-mode reading.
+  const savedMode = record?.progressMode ?? 'page';
+
   const { run, busy, errors } = useTeacherWrite({ panel: PANEL });
   const [stale, setStale] = useState(null);
   const locked = Boolean(stale);
@@ -234,6 +239,9 @@ export default function ReadingDetailPanel({
     if (nextCount !== wasCount) identityPatch.pageCount = nextCount;
   }
   const identityChanged = Object.keys(identityPatch).length > 0;
+  // Typed nonsense reads as "clear the page count" once it parses to null, and
+  // a silently blanked length is a correction nobody asked for.
+  const pageCountBroken = !blank(pageCount) && wholeNumber(pageCount) === null;
 
   const relookup = async () => {
     const id = trimmed(isbn);
@@ -273,24 +281,30 @@ export default function ReadingDetailPanel({
   const addEntry = () => write('entry-add', OPS.ENTRY_ADD, ({ actorId }) => (
     teacherWorkspaceApi.addReadingEntry(learnerId, readingId, body({
       on: form.on,
-      page: mode === 'page' ? wholeNumber(form.value) : null,
-      minutes: mode === 'minutes' ? wholeNumber(form.value) : null,
+      page: savedMode === 'page' ? wholeNumber(form.value) : null,
+      minutes: savedMode === 'minutes' ? wholeNumber(form.value) : null,
       note: blank(form.note) ? null : trimmed(form.note),
       by: actorId,
     }, form.reason), form.key)
   ));
 
-  const saveEntry = () => {
-    const patch = { by: undefined };
+  /** What this edit would actually change. Empty means there is nothing to save. */
+  const entryPatch = () => {
+    if (!editing) return {};
+    const patch = {};
     if (form.on && form.on !== editing.on) patch.on = form.on;
-    if (mode === 'page') {
+    if (savedMode === 'page') {
       const next = blank(form.value) ? null : wholeNumber(form.value);
       if (next !== (Number.isFinite(editing.page) ? editing.page : null)) patch.page = next;
-    } else if (mode === 'minutes') {
+    } else if (savedMode === 'minutes') {
       const next = blank(form.value) ? null : wholeNumber(form.value);
       if (next !== (Number.isFinite(editing.minutes) ? editing.minutes : null)) patch.minutes = next;
     }
-    delete patch.by;
+    return patch;
+  };
+
+  const saveEntry = () => {
+    const patch = entryPatch();
     return write('entry-edit', OPS.ENTRY_UPDATE, ({ actorId }) => (
       teacherWorkspaceApi.updateReadingEntry(learnerId, readingId, editing.id, body({ ...patch, by: actorId }, form.reason))
     ));
@@ -452,11 +466,12 @@ export default function ReadingDetailPanel({
             />
             <button
               type="button"
-              disabled={locked || !identityChanged || busy === 'identity'}
+              disabled={locked || !identityChanged || pageCountBroken || busy === 'identity'}
               onClick={saveIdentity}
             >
               Save the book
             </button>
+            {pageCountBroken && <p className="teacher-panel__empty">A page count is a whole number of pages, or nothing at all.</p>}
             {fault('identity') && <p className="teacher-panel__error">{fault('identity')}</p>}
           </Band>
 
@@ -505,9 +520,9 @@ export default function ReadingDetailPanel({
                     onChange={(event) => setForm((value) => ({ ...value, on: event.target.value }))}
                   />
                 </div>
-                {mode !== 'check' && (
+                {savedMode !== 'check' && (
                   <div className="teacher-reading-detail__field">
-                    <label htmlFor="entry-value">{mode === 'minutes' ? 'Minutes read' : 'Page reached'}</label>
+                    <label htmlFor="entry-value">{savedMode === 'minutes' ? 'Minutes read' : 'Page reached'}</label>
                     <input
                       id="entry-value"
                       inputMode="numeric"
@@ -527,7 +542,9 @@ export default function ReadingDetailPanel({
                 />
                 <button
                   type="button"
-                  disabled={locked || busy === 'entry-edit' || (redates && blank(form.reason))}
+                  disabled={locked || busy === 'entry-edit'
+                    || Object.keys(entryPatch()).length === 0
+                    || (redates && blank(form.reason))}
                   onClick={saveEntry}
                 >
                   Save this day
@@ -571,9 +588,9 @@ export default function ReadingDetailPanel({
                     onChange={(event) => setForm((value) => ({ ...value, on: event.target.value }))}
                   />
                 </div>
-                {mode !== 'check' && (
+                {savedMode !== 'check' && (
                   <div className="teacher-reading-detail__field">
-                    <label htmlFor="entry-value">{mode === 'minutes' ? 'Minutes read' : 'Page reached'}</label>
+                    <label htmlFor="entry-value">{savedMode === 'minutes' ? 'Minutes read' : 'Page reached'}</label>
                     <input
                       id="entry-value"
                       inputMode="numeric"
@@ -594,7 +611,7 @@ export default function ReadingDetailPanel({
                 <button
                   type="button"
                   disabled={locked || blank(form.on) || busy === 'entry-add'
-                    || (mode !== 'check' && !wholeNumber(form.value))}
+                    || (savedMode !== 'check' && !wholeNumber(form.value))}
                   onClick={addEntry}
                 >
                   Add this day
