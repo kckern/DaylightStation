@@ -156,7 +156,7 @@ export function isPlausiblePage(page, pageCount, { factor = PAGE_PLAUSIBILITY_FA
 }
 
 /** Is a study day inside the window? The v2 shape asks this directly. */
-const inDayWindow = (day, window) => {
+export const inDayWindow = (day, window) => {
   if (!window) return true;
   if (!day) return false;
   return (!window.from || day >= window.from) && (!window.to || day <= window.to);
