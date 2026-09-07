@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   PROGRESS_MODES, inferProgressMode, projectShelfItem, measureObligation, isDayKey, noonOf,
+  selectFeaturedShelfItem,
 } from './bookShelf.mjs';
 
 const item = (overrides = {}) => ({
@@ -283,5 +284,125 @@ describe('measureObligation', () => {
     expect(measureObligation(checkins, [backdated], { from: '2026-08-25', to: '2026-08-25' }).actual).toBe(1);
     expect(measureObligation({ metric: 'books', quantity: 1, per: 'day' }, [backdated], { from: '2026-08-25', to: '2026-08-25' }).actual).toBe(1);
     expect(projectShelfItem(backdated).daysRead).toBe(1);
+  });
+});
+
+describe('selectFeaturedShelfItem', () => {
+  const reading = (itemId, at, page, overrides = {}) => item({
+    itemId, events: [ev('progress', at, { page })], ...overrides,
+  });
+
+  it('features the in-progress book nearest the end', () => {
+    const selection = selectFeaturedShelfItem([
+      reading('a', '2026-09-05T10:00:00Z', 40),   // 22%, and the most recent
+      reading('b', '2026-09-01T10:00:00Z', 170),  // 92%, and the oldest
+      reading('c', '2026-09-03T10:00:00Z', 90),   // 49%
+    ]);
+    expect(selection.state).toBe('reading');
+    expect(selection.featured.item.itemId).toBe('b');
+    expect(selection.featured.projection.percent).toBe(92);
+  });
+
+  it('falls back to the most recently touched book when none has a percent', () => {
+    // Check mode has no denominator, so every percent here is null — the
+    // ordinary case, not a corner one.
+    const check = (itemId, at) => item({
+      itemId, progressMode: 'check', pageCount: null, events: [ev('progress', at)],
+    });
+    const selection = selectFeaturedShelfItem([
+      check('a', '2026-09-01T10:00:00Z'),
+      check('b', '2026-09-04T10:00:00Z'),
+      check('c', '2026-09-02T10:00:00Z'),
+    ]);
+    expect(selection.featured.projection.percent).toBeNull();
+    expect(selection.featured.item.itemId).toBe('b');
+  });
+
+  it('prefers a book with a percent over a more recent one without', () => {
+    const selection = selectFeaturedShelfItem([
+      item({ itemId: 'audiobook', progressMode: 'minutes', pageCount: null,
+        events: [ev('progress', '2026-09-05T10:00:00Z', { minutes: 40 })] }),
+      reading('paged', '2026-09-01T10:00:00Z', 10), // 5% — barely started, but measurable
+    ]);
+    expect(selection.featured.item.itemId).toBe('paged');
+  });
+
+  it('ranks a book at 0% above one with no denominator at all', () => {
+    const selection = selectFeaturedShelfItem([
+      item({ itemId: 'audiobook', progressMode: 'minutes', pageCount: null,
+        events: [ev('progress', '2026-09-05T10:00:00.000Z', { minutes: 90 })] }),
+      reading('barely', '2026-09-01T10:00:00.000Z', 1, { pageCount: 500 }), // 0%, but measurable
+    ]);
+    expect(selection.featured.projection.percent).toBe(0);
+    expect(selection.featured.item.itemId).toBe('barely');
+  });
+
+  it('threads the household day rule through to the projection', () => {
+    const at = (t) => ev('progress', t, { page: 40 });
+    // 11pm and 1am are one study day under the 4am rule, two under ISO midnight.
+    const selection = selectFeaturedShelfItem(
+      [reading('a', '2026-09-04T23:00:00.000Z', 40, {
+        events: [at('2026-09-04T23:00:00.000Z'), at('2026-09-05T01:00:00.000Z')] })],
+      { dayOf: (t) => new Date(Date.parse(t) - 4 * 3600_000).toISOString().slice(0, 10) },
+    );
+    expect(selection.featured.projection.daysRead).toBe(1);
+  });
+
+  it('breaks a tie on itemId, so two prints of one day agree', () => {
+    const same = ['b', 'a'].map((itemId) => reading(itemId, '2026-09-04T10:00:00Z', 40));
+    expect(selectFeaturedShelfItem(same).featured.item.itemId).toBe('a');
+    expect(selectFeaturedShelfItem([...same].reverse()).featured.item.itemId).toBe('a');
+  });
+
+  it('lists the other in-progress books newest first, capped at two', () => {
+    const selection = selectFeaturedShelfItem([
+      reading('a', '2026-09-01T10:00:00Z', 180), // 98% — the headline
+      reading('b', '2026-09-05T10:00:00Z', 10),
+      reading('c', '2026-09-04T10:00:00Z', 100),
+      reading('d', '2026-09-03T10:00:00Z', 50),
+    ]);
+    expect(selection.featured.item.itemId).toBe('a');
+    // Recency, not percentage: by percent this would read c, d, b.
+    expect(selection.alsoReading.map((entry) => entry.item.itemId)).toEqual(['b', 'c']);
+  });
+
+  it('features the most recently finished book when nothing is open', () => {
+    const finished = (itemId, at) => item({ itemId, events: [ev('finished', at)] });
+    const selection = selectFeaturedShelfItem([
+      finished('a', '2026-08-20T10:00:00Z'),
+      finished('b', '2026-09-02T10:00:00Z'),
+    ]);
+    expect(selection.state).toBe('finished');
+    expect(selection.featured.item.itemId).toBe('b');
+    expect(selection.alsoReading).toEqual([]);
+  });
+
+  it('features a set-aside book rather than claiming the shelf is empty', () => {
+    const selection = selectFeaturedShelfItem([item({ itemId: 'a', events: [
+      ev('started', '2026-08-01T10:00:00Z'), ev('set-aside', '2026-08-05T10:00:00Z'),
+    ] })]);
+    expect(selection.state).toBe('set-aside');
+    expect(selection.featured.item.itemId).toBe('a');
+  });
+
+  it('prefers a finished book over a set-aside one, however recent the shelving', () => {
+    const selection = selectFeaturedShelfItem([
+      item({ itemId: 'shelved', events: [
+        ev('started', '2026-08-01T10:00:00Z'), ev('set-aside', '2026-09-05T10:00:00Z'),
+      ] }),
+      item({ itemId: 'done', events: [ev('finished', '2026-08-10T10:00:00Z')] }),
+    ]);
+    expect(selection.state).toBe('finished');
+    expect(selection.featured.item.itemId).toBe('done');
+  });
+
+  it('reports an empty shelf as empty', () => {
+    expect(selectFeaturedShelfItem([])).toEqual({ state: 'empty', featured: null, alsoReading: [] });
+  });
+
+  it('never throws on junk — a damaged log must not stop the page printing', () => {
+    expect(selectFeaturedShelfItem(null)).toEqual({ state: 'empty', featured: null, alsoReading: [] });
+    expect(selectFeaturedShelfItem([null, undefined, {}]))
+      .toEqual({ state: 'empty', featured: null, alsoReading: [] });
   });
 });

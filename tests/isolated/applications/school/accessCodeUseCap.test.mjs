@@ -86,7 +86,7 @@ function projectionFor() {
           status: {
             enrolled: true, error: false, doneToday: false, terminal: false, reopenable: true,
             context: {
-              course: { id: `program:${BOOK_LOG_PROGRAM_ID}`, title: 'Independent study' },
+              course: { id: `program:${BOOK_LOG_PROGRAM_ID}`, title: 'Reading log' },
               lesson: { id: BOOK_LOG_SHELF_UNIT_ID, title: 'Reading' },
             },
             progressLabel: null, score: null,
