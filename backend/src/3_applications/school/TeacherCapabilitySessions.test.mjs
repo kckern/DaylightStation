@@ -150,4 +150,68 @@ describe('TeacherCapabilitySessions', () => {
     expect(() => f.gate.assert({ userId: 'parent', pin: { ...proof, stepUpToken: grant.grantToken },
       action: 'companion.finish-code.reveal', context: { sessionId: 'ses_1' } })).toThrow(/PIN/);
   });
+
+  // The two reading verbs that are not corrections. One changes WHOSE record a
+  // book is, the other destroys the record; both are the same class of
+  // consequence as `sessions.reassign` and a superseding report-card close.
+  // Asserted as a pair — Set membership without a resource branch requires
+  // nothing at all, and reads from the console exactly like a working gate.
+  it('scopes a reading reassignment to the one reading being moved', () => {
+    expect(requiresTeacherStepUp('books.reading.reassign', { readingId: 'rdg_1' })).toBe(true);
+    expect(teacherResource('books.reading.reassign', { readingId: 'rdg_1' })).toBe('rdg_1');
+    expect(requiresTeacherStepUp('books.reading.reassign', {})).toBe(false);
+
+    const f = fixture();
+    const unlocked = f.sessions.unlock({ userId: 'parent', pin: '4321' });
+    const proof = { capabilityToken: unlocked.capabilityToken };
+    // The console cookie alone moves nothing.
+    expect(() => f.gate.assert({ userId: 'parent', pin: proof,
+      action: 'books.reading.reassign', context: { readingId: 'rdg_1' } })).toThrow(/PIN/);
+    // Nor does a grant minted for a different reading.
+    const other = f.sessions.stepUp({ capabilityToken: unlocked.capabilityToken, pin: '4321',
+      action: 'books.reading.reassign', resource: 'rdg_2' });
+    expect(() => f.gate.assert({ userId: 'parent', pin: { ...proof, stepUpToken: other.grantToken },
+      action: 'books.reading.reassign', context: { readingId: 'rdg_1' } })).toThrow(/PIN/);
+    const grant = f.sessions.stepUp({ capabilityToken: unlocked.capabilityToken, pin: '4321',
+      action: 'books.reading.reassign', resource: 'rdg_1' });
+    expect(() => f.gate.assert({ userId: 'parent', pin: { ...proof, stepUpToken: grant.grantToken },
+      action: 'books.reading.reassign', context: { readingId: 'rdg_1' } })).not.toThrow();
+    // One use: moving a second book is a second deliberate decision.
+    expect(() => f.gate.assert({ userId: 'parent', pin: { ...proof, stepUpToken: grant.grantToken },
+      action: 'books.reading.reassign', context: { readingId: 'rdg_1' } })).toThrow(/PIN/);
+  });
+
+  it('scopes deleting a reading to the one reading being destroyed', () => {
+    expect(requiresTeacherStepUp('books.reading.delete', { readingId: 'rdg_1' })).toBe(true);
+    expect(teacherResource('books.reading.delete', { readingId: 'rdg_1' })).toBe('rdg_1');
+    expect(requiresTeacherStepUp('books.reading.delete', {})).toBe(false);
+
+    const f = fixture();
+    const unlocked = f.sessions.unlock({ userId: 'parent', pin: '4321' });
+    const proof = { capabilityToken: unlocked.capabilityToken };
+    expect(() => f.gate.assert({ userId: 'parent', pin: proof,
+      action: 'books.reading.delete', context: { readingId: 'rdg_1' } })).toThrow(/PIN/);
+    const grant = f.sessions.stepUp({ capabilityToken: unlocked.capabilityToken, pin: '4321',
+      action: 'books.reading.delete', resource: 'rdg_1' });
+    expect(() => f.gate.assert({ userId: 'parent', pin: { ...proof, stepUpToken: grant.grantToken },
+      action: 'books.reading.delete', context: { readingId: 'rdg_1' } })).not.toThrow();
+  });
+
+  // The ordinary corrections stay on the capability cookie. A console that
+  // asked for a grant on one of these would be asking the server to mint a
+  // name it has no definition for (teacher.md §1: the list is CLOSED).
+  it('leaves every ordinary reading correction on the capability alone', () => {
+    for (const action of ['books.shelf.read', 'books.reading.update', 'books.reading.add',
+      'books.reading.entry.add', 'books.reading.entry.update', 'books.reading.entry.delete']) {
+      expect(requiresTeacherStepUp(action, { readingId: 'rdg_1', learnerId: 'learner_a' })).toBe(false);
+      expect(teacherResource(action, { readingId: 'rdg_1' })).toBe(null);
+    }
+    const f = fixture();
+    const unlocked = f.sessions.unlock({ userId: 'parent', pin: '4321' });
+    expect(() => f.gate.assert({ userId: 'parent', pin: { capabilityToken: unlocked.capabilityToken },
+      action: 'books.reading.entry.delete', context: { readingId: 'rdg_1' } })).not.toThrow();
+    // And a grant cannot even be minted for one of them.
+    expect(() => f.sessions.stepUp({ capabilityToken: unlocked.capabilityToken, pin: '4321',
+      action: 'books.reading.entry.delete', resource: 'rdg_1' })).toThrow(/valid step-up action/);
+  });
 });

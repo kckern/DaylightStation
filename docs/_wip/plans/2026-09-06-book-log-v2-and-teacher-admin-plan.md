@@ -228,7 +228,25 @@ move in the same commit or the tree is broken between them.
 - [x] Migration verified by projection equality, with a `.v1.bak` beside each file
       (`school booklog migrate <learnerId> [--apply]`; dry run verified against
       the live tree, nothing written)
-- [ ] Every teacher verb works, is attributed, and is undoable
-- [ ] The five shrinking verbs deliver a reason to the child; the rest are silent
-- [ ] Two new step-up actions, both with a resource, both tested
-- [ ] No real child names anywhere in the diff
+- [x] Every teacher verb works, is attributed, and is undoable — except the two
+      the design already names: a move the receiving child has logged against,
+      and (added here) the opening of a reading, whose inverse is destroying it
+- [x] The five shrinking verbs deliver a reason to the child; the rest are silent
+- [x] Two new step-up actions, both with a resource, both tested
+- [x] No real child names anywhere in the diff
+- [ ] The console (Phase D)
+
+### Two shapes the store could not carry (Phase C, 2026-09-06)
+
+Both handled in `readingEdits.mjs`, both worth knowing before the next edit:
+
+- **`appendEntry` takes no `revision`.** It writes evidence, not an edit to the
+  reading, so an added entry's revision rides a no-op `status` patch through
+  `updateReading` on the same reading (`assertPatch` refuses an empty patch, and
+  re-asserting the status it already has changes nothing). Without it the one
+  verb that ADDS evidence would be the one verb with no history.
+- **`deleteReading` takes no `revision`, and could not use one.** The revisions
+  list lives ON the reading, so destroying the reading destroys the history that
+  would have been the route home. The revision comes back to the caller and is
+  logged (`school.teacher-reading.deleted`); that is the whole trail there can
+  be, and it is why delete is the one verb with no undo.

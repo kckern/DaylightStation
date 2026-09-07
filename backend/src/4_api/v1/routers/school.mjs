@@ -7,6 +7,7 @@ import express from 'express';
 import { splatPath } from '#api/utils/wildcard.mjs';
 import { sendLocalFileResource } from '#system/http/streamFile.mjs';
 import { presentPublicResources } from '../presenters/publicResourceRefs.mjs';
+import { mountTeacherReadingRoutes } from './school.teacherReading.mjs';
 
 export function createSchoolRouter({
   schoolErrors = {},
@@ -44,6 +45,18 @@ export function createSchoolRouter({
   // child's grant-gated panel reads (`schoolBooks.mjs`) — a second projection
   // of a child's reading year would be a second thing to be wrong about it.
   getBookShelf = null,
+  // The teacher's reading workspace (design §5), mounted from
+  // `school.teacherReading.mjs`. Every gate, reason requirement and stale-save
+  // refusal lives in the use case, never in the route.
+  getLearnerReadings = null,
+  updateReading = null,
+  addReadingEntry = null,
+  updateReadingEntry = null,
+  deleteReadingEntry = null,
+  addReadingForLearner = null,
+  moveReading = null,
+  deleteReading = null,
+  undoReadingRevision = null,
   adjustSessionGrade = null,
   retractSessionGradeAdjustment = null,
   invalidateSessionEvidence = null,
@@ -1100,36 +1113,18 @@ export function createSchoolRouter({
       unitId: textQuery(req.query.unitId),
     })));
   }));
-  /**
-   * The reading shelf, for a grown-up (teacher reading admin design §2, §6).
-   *
-   * The child reaches this same view through `/books/:learnerId/shelf`, where a
-   * launch grant names the learner and the URL is only what the grant is
-   * checked against. A grown-up holds no launch, so here the URL IS the
-   * learner and the console capability is the gate — the tier every other
-   * learner-scoped teacher surface runs on, asserted through the one
-   * `TeacherGate` rather than a second gating style invented for books.
-   *
-   * The acting teacher is read off the capability session because a GET
-   * carries no body to name them, exactly as the postview read does.
-   *
-   * Strictly a read: `GetBookShelf` opens nothing, mints nothing and appends
-   * nothing (invariant 7 of teacher.md). `no-store`, because a child's record
-   * must not sit in a shared browser cache on a household screen.
-   */
-  router.get('/teacher/learners/:learnerId/reading', wrap(async (req, res) => {
-    if (!getBookShelf) throw new EntityNotFoundError('teacher reading shelf', 'not configured');
-    if (!teacherGate) throw new EntityNotFoundError('teacher authorization', 'not configured');
-    const proof = capabilityProof(req);
-    const session = proof ? teacherCapabilitySessions?.status(proof.capabilityToken) : null;
-    teacherGate.assert({
-      userId: session?.active ? session.userId : null,
-      pin: proof,
-      action: 'books.shelf.read',
-      context: { learnerId: req.params.learnerId },
-    });
-    res.set('Cache-Control', 'no-store').json(await getBookShelf.execute({ learnerId: req.params.learnerId }));
-  }));
+  // The grown-up's reading workspace — read, correct, account for, undo
+  // (teacher reading admin design §2–§5). Its own module because ten routes
+  // over one child's shelf is a surface, not a stray handler, and because the
+  // two step-up verbs on it are easier to review beside each other.
+  mountTeacherReadingRoutes({
+    router, wrap, capabilityProof,
+    notConfigured: (what) => new EntityNotFoundError(what, 'not configured'),
+    teacherGate, teacherCapabilitySessions,
+    getBookShelf, getLearnerReadings, updateReading,
+    addReadingEntry, updateReadingEntry, deleteReadingEntry,
+    addReadingForLearner, moveReading, deleteReading, undoReadingRevision,
+  });
   // Opened directly by window.open so the popup is created during the click
   // gesture. This signs a five-minute read-only scope and redirects to the
   // existing School launch-card preview; no session or learner action exists.
