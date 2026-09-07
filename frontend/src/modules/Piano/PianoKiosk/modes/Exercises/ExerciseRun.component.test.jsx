@@ -876,6 +876,30 @@ describe('ExerciseRun tier-driven presentation', () => {
     expect(screen.queryByTestId('keyboard')).not.toBeInTheDocument();
   });
 
+  it('a recall stage draws the ASK, so the card is never blank', async () => {
+    // The stage that draws no notation drew nothing at all: the ask lived only
+    // in the header's 1.3rem breadcrumb, leaving the largest region on the
+    // screen empty. A child too young to read the sentence under it had no way
+    // to know what was being asked. On a recall rung the NAME is the flashcard.
+    h.instanceData = { ...h.instance, ordering: 'any', events: [{ id: 'chord', value: 'quarter', notes: [{ midi: 60 }, { midi: 64 }, { midi: 67 }] }] };
+    render(<ExerciseRun {...practice({
+      ask: 'Play a C major chord.',
+      askTuple: { prompt: 'recall', timing: 'free', hints: 'none', judging: 'completion' },
+    })} />);
+    await screen.findByText('Play the first note to begin.');
+    const stage = screen.getByTestId('piano-recall-stage');
+    expect(stage).toHaveTextContent('Play a C major chord.');
+  });
+
+  it('a recall stage with no ask line falls back to the subject title rather than nothing', async () => {
+    h.instanceData = { ...h.instance, ordering: 'any', events: [{ id: 'chord', value: 'quarter', notes: [{ midi: 60 }, { midi: 64 }, { midi: 67 }] }] };
+    render(<ExerciseRun {...practice({
+      askTuple: { prompt: 'recall', timing: 'free', hints: 'none', judging: 'completion' },
+    })} />);
+    await screen.findByText('Play the first note to begin.');
+    expect(screen.getByTestId('piano-recall-stage')).toHaveTextContent(h.instance.title);
+  });
+
   it('an always hint reveals the answer only inside the recall stage', async () => {
     h.instanceData = { ...h.instance, ordering: 'any', events: [{ id: 'chord', value: 'quarter', notes: [{ midi: 60 }, { midi: 64 }, { midi: 67 }] }] };
     render(<ExerciseRun {...practice({
@@ -1510,5 +1534,133 @@ describe('ExerciseRun metronome pre-pulse', () => {
 
     act(() => { vi.advanceTimersByTime(120000); });
     expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: true, bpm: 90 });
+  });
+});
+
+/**
+ * Claiming a pass in a room with no pointer.
+ *
+ * The regression these pin is not hypothetical. On 2026-09-06 a preschooler
+ * cleared the game gate twice in three minutes — 3/3 notes both times, both
+ * attempts persisted — on the office TV, which has no touchscreen and no
+ * mouse. `onPassed` fired from a Continue CLICK and nothing else, so
+ * `gate.passed` never fired and he never reached the game he had earned.
+ *
+ * Every route below therefore asserts the same thing from a different input:
+ * a cleared pass reaches the host. The click is covered by the suites above.
+ */
+describe('ExerciseRun pass claim without a pointer', () => {
+  beforeEach(() => {
+    resetHarness();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  const press = (view, props, midi) => {
+    act(() => { h.activeNotes = new Map([[midi, { velocity: 1 }]]); view.rerender(<ExerciseRun {...props} />); });
+    act(() => { h.activeNotes = new Map(); view.rerender(<ExerciseRun {...props} />); });
+  };
+
+  /** A passing floor challenge, left sitting on its result panel. */
+  const passedChallenge = async () => {
+    const requirement = requirementForLevel(BUILT_IN_FLOOR);
+    const onPassed = vi.fn();
+    const props = { instance: subject(), score: null, intent: 'challenge', requirement, onExit: vi.fn(), onPassed };
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+    press(view, props, 60);
+    press(view, props, 62);
+    expect(await screen.findByText('Passed')).toBeInTheDocument();
+    expect(onPassed).not.toHaveBeenCalled();
+    return { view, props, onPassed };
+  };
+
+  it('takes the pass from Enter, with nothing clicked', async () => {
+    const { onPassed } = await passedChallenge();
+    act(() => { fireEvent.keyDown(window, { key: 'Enter' }); });
+    await waitFor(() => expect(onPassed).toHaveBeenCalledTimes(1));
+  });
+
+  it('takes the pass from Space, with nothing clicked', async () => {
+    const { onPassed } = await passedChallenge();
+    act(() => { fireEvent.keyDown(window, { key: ' ' }); });
+    await waitFor(() => expect(onPassed).toHaveBeenCalledTimes(1));
+  });
+
+  it('takes the pass from a piano key — but only after the passing notes are released', async () => {
+    const requirement = requirementForLevel(BUILT_IN_FLOOR);
+    const onPassed = vi.fn();
+    const props = { instance: subject(), score: null, intent: 'challenge', requirement, onExit: vi.fn(), onPassed };
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+    press(view, props, 60);
+    // The note that COMPLETES the ask, still held down. It must not claim its
+    // own pass — a child who never sees "Passed" was never told they won.
+    act(() => { h.activeNotes = new Map([[62, { velocity: 1 }]]); view.rerender(<ExerciseRun {...props} />); });
+    expect(await screen.findByText('Passed')).toBeInTheDocument();
+    expect(onPassed).not.toHaveBeenCalled();
+
+    // Let go: still not a claim, only the arming of one.
+    act(() => { h.activeNotes = new Map(); view.rerender(<ExerciseRun {...props} />); });
+    expect(onPassed).not.toHaveBeenCalled();
+
+    // A fresh press, after the release, is the child asking to move on.
+    act(() => { h.activeNotes = new Map([[64, { velocity: 1 }]]); view.rerender(<ExerciseRun {...props} />); });
+    await waitFor(() => expect(onPassed).toHaveBeenCalledTimes(1));
+  });
+
+  it('claims itself rather than strand a child on a screen they cleared', async () => {
+    const { onPassed } = await passedChallenge();
+    act(() => { vi.advanceTimersByTime(6000); });
+    await waitFor(() => expect(onPassed).toHaveBeenCalledTimes(1));
+  });
+
+  it('hands the host exactly one pass however many routes fire', async () => {
+    const { view, props, onPassed } = await passedChallenge();
+    act(() => { fireEvent.keyDown(window, { key: 'Enter' }); });
+    act(() => { fireEvent.keyDown(window, { key: ' ' }); });
+    act(() => { h.activeNotes = new Map(); view.rerender(<ExerciseRun {...props} />); });
+    act(() => { h.activeNotes = new Map([[64, { velocity: 1 }]]); view.rerender(<ExerciseRun {...props} />); });
+    act(() => { vi.advanceTimersByTime(30000); });
+    await waitFor(() => expect(onPassed).toHaveBeenCalledTimes(1));
+  });
+
+  it('carries the assessment id, so a claim is the same attempt however it was taken', async () => {
+    const { onPassed } = await passedChallenge();
+    act(() => { fireEvent.keyDown(window, { key: 'Enter' }); });
+    await waitFor(() => expect(onPassed).toHaveBeenCalledTimes(1));
+    expect(onPassed.mock.calls[0][0].assessmentId).toEqual(expect.any(String));
+  });
+
+  it('claims nothing for a practice run, which has no host waiting on one', async () => {
+    const props = { instance: subject(), score: null, intent: 'practice', practiceMode: 'free', onExit: vi.fn() };
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+    press(view, props, 60);
+    press(view, props, 62);
+    expect(await screen.findByText('Passed')).toBeInTheDocument();
+    // No `onPassed` at all: the timer must not throw, and the panel must stay.
+    act(() => { vi.advanceTimersByTime(30000); });
+    expect(screen.getByText('Passed')).toBeInTheDocument();
+  });
+
+  it('does not claim a pass for an attempt that did not clear its bar', async () => {
+    const requirement = withPassScore({ passScore: 0.8 });
+    const onPassed = vi.fn();
+    const onFailed = vi.fn();
+    const props = { instance: subject(), score: null, intent: 'challenge', requirement, onExit: vi.fn(), onPassed, onFailed };
+    const view = render(<ExerciseRun {...props} />);
+    await screen.findByText('Play the first note to begin.');
+    // The arming note is the ask's own first note; the three wrongs land
+    // against event two, leaving cleanliness 2/5 and a score under the bar.
+    press(view, props, 60);
+    press(view, props, 61);
+    press(view, props, 61);
+    press(view, props, 61);
+    press(view, props, 62);
+    await waitFor(() => expect(onFailed).toHaveBeenCalledTimes(1));
+    act(() => { fireEvent.keyDown(window, { key: 'Enter' }); });
+    act(() => { vi.advanceTimersByTime(30000); });
+    expect(onPassed).not.toHaveBeenCalled();
   });
 });

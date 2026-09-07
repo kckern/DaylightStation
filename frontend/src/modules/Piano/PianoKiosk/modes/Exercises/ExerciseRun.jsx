@@ -85,6 +85,16 @@ const FREE_STALL_MS = 20000;
 const HINT_REVEAL_MS = 12000;
 
 /**
+ * How long a cleared pass waits for a child to claim it before claiming itself.
+ *
+ * Long enough to read "Passed" and see that it was earned; short enough that a
+ * room whose only input this run did not anticipate cannot hold a child at a
+ * screen they have already beaten. It is the floor under the button, the
+ * keyboard and the piano — never the intended route.
+ */
+const PASS_CLAIM_TIMEOUT_MS = 6000;
+
+/**
  * How long metronome practice clicks at a piano nobody is sitting at.
  *
  * The pre-pulse exists so the grid is audible BEFORE the first note (the first
@@ -494,6 +504,75 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     // counts only attempts that actually happened.
     if (!passed) onFailed?.(snapshot.result);
   }, [challenge, logger, onFailed, persist, requirement, snapshot, subject]);
+
+  /**
+   * Taking a pass on a screen with no pointer.
+   *
+   * `onPassed` had exactly one trigger: a click on Continue. The office TV that
+   * hosts the game gate has no touchscreen and no mouse — it is driven by a
+   * keyboard and a keypad that both sit out of a child's reach — so a child who
+   * PASSED could not take the pass. On 2026-09-06 that stranded a preschooler
+   * twice in three minutes: two attempts, 3/3 notes each, both persisted, and
+   * `gate.passed` never fired either time. A gate that cannot be walked through
+   * once it has been CLEARED is worse than no gate, because the child did the
+   * work and was punished for finishing it.
+   *
+   * So a cleared pass is claimable three ways, since this run cannot know which
+   * inputs the room has: the button (pointer), Enter or Space (keyboard and
+   * keypad), and a piano key — the one instrument a child sitting at a piano
+   * certainly has. Beneath all three is a timer, for the same reason the gate
+   * keeps a Leave button it hopes never to need: no device configuration may
+   * strand a child on a screen they already cleared.
+   *
+   * The piano route waits for the passing chord to be RELEASED first. Without
+   * that, the very notes that cleared the gate would claim their own pass in
+   * the same breath, and the child would never see that they had won.
+   */
+  const passTakenRef = useRef(false);
+  const releasedSincePassRef = useRef(false);
+  const judgedResult = JUDGED_STATUSES.has(snapshot.result?.status) ? snapshot.result : null;
+  const passAwaitingClaim = Boolean(
+    judgedResult && onPassed && runPassed(judgedResult, { challenge, passScore: requirement?.passScore }),
+  );
+  const takePass = useCallback((via) => {
+    if (passTakenRef.current) return;
+    passTakenRef.current = true;
+    logger.info('piano.exercise-pass-taken', { ...traceFieldsRef.current, via });
+    onPassed?.({ ...judgedResult, assessmentId: assessmentIdRef.current });
+  }, [judgedResult, logger, onPassed]);
+
+  // A retry, or a new subject, is a new pass to claim. Both refs are armed off
+  // the same flag that gates every route below, so none of them can fire on a
+  // run whose result has not been judged a pass.
+  useEffect(() => {
+    if (passAwaitingClaim) return;
+    passTakenRef.current = false;
+    releasedSincePassRef.current = false;
+  }, [passAwaitingClaim]);
+
+  useEffect(() => {
+    if (!passAwaitingClaim) return undefined;
+    const onKey = (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return;
+      event.preventDefault();
+      takePass('keyboard');
+    };
+    window.addEventListener('keydown', onKey, true);
+    const timer = globalThis.setTimeout(() => takePass('timeout'), PASS_CLAIM_TIMEOUT_MS);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      globalThis.clearTimeout(timer);
+    };
+  }, [passAwaitingClaim, takePass]);
+
+  useEffect(() => {
+    if (!passAwaitingClaim) return;
+    if (activeNotes.size === 0) {
+      releasedSincePassRef.current = true;
+      return;
+    }
+    if (releasedSincePassRef.current) takePass('piano');
+  }, [activeNotes, passAwaitingClaim, takePass]);
 
   /**
    * The stall: a free challenge that was started, took real notes, and stopped.
@@ -929,7 +1008,17 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
         {stage === 'recall' && (
           <div className="piano-exercise-run__recall" data-testid="piano-recall-stage">
             <span>From memory</span>
-            <p>Play the named music without looking at the answer.</p>
+            {/* The ask, at the size of the task.
+                A recall stage draws no notation on purpose — being told the
+                NAME and finding the notes yourself is the whole exercise — but
+                "nothing to read" had been built as "nothing to look at": the
+                ask lived only in the header's 1.3rem breadcrumb, so the stage,
+                the largest region on the screen, was blank. A child too young
+                to read the sentence underneath it got an empty card and no way
+                to know what was being asked. On a recall rung the name IS the
+                flashcard, so it is drawn like one. */}
+            <strong className="piano-exercise-run__recall-ask">{ask ?? subject.title}</strong>
+            <p>Play it from memory.</p>
             {hintVisible && (
               <div className="piano-exercise-run__recall-hint" data-testid="piano-recall-hint">
                 <KeysAsk events={instance.events} cursorIndex={visualCursor.index} activeNotes={activeNotes} wrongMidi={lastWrong?.midi ?? null} />
@@ -999,7 +1088,12 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
         {scoreReadout
           ? <dl><div><dt>All notes</dt><dd>{Math.round((result.criteria.completeness ?? 0) * 100)}%</dd></div><div><dt>Clean notes</dt><dd>{Math.round((result.criteria.cleanliness ?? 0) * 100)}%</dd></div>{Number.isFinite(result.criteria.placement) && <div><dt>On the beat</dt><dd>{Math.round(result.criteria.placement * 100)}%</dd></div>}</dl>
           : <p className="piano-exercise-run__result-copy">{passed ? 'You played every note that was asked for.' : 'Some of the notes are still missing. Have another go.'}</p>}
-        <div className="piano-exercise-run__result-actions"><button type="button" className="piano-exercises__quiet-action" onClick={installRuntime}>{challenge ? 'Retry' : 'Again'}</button>{challenge && !passed && <button type="button" onClick={onExit}>Practice first</button>}{passed && <button type="button" onClick={() => onPassed?.({ ...result, assessmentId: assessmentIdRef.current })}>Continue</button>}</div>
+        {/* The way onward, said out loud. A child on the office TV has no
+            pointer and no keyboard — the piano is the whole of their reach —
+            so the panel names the piano rather than pointing at a button they
+            cannot press. */}
+        {passAwaitingClaim && <p className="piano-exercise-run__result-onward">Play any key to keep going.</p>}
+        <div className="piano-exercise-run__result-actions"><button type="button" className="piano-exercises__quiet-action" onClick={installRuntime}>{challenge ? 'Retry' : 'Again'}</button>{challenge && !passed && <button type="button" onClick={onExit}>Practice first</button>}{passed && onPassed && <button type="button" autoFocus onClick={() => takePass('button')}>Continue</button>}</div>
       </section>}
       </div>
       {keyboardFooter && <footer className="piano-exercise-run__keys"><PianoKeyboard activeNotes={activeNotes} targetNotes={targetNotes} wrongNotes={wrongNotes} dimTarget startNote={Math.max(21, Math.min(...expected) - 5)} endNote={Math.min(108, Math.max(...expected) + 5)} /></footer>}

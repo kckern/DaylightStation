@@ -52,6 +52,17 @@ describe('useCenterByWidest', () => {
     expect(text.style.marginLeft).toBe('264px');
   });
 
+  it('honours a left bias instead of true centring', () => {
+    const { ref, text } = buildPanel({ panelWidth: 960, paddingLeft: 32, stanzaWidths: [400, 320] });
+
+    renderHook(() => useCenterByWidest(ref, [], { observeResize: false, bias: 0.35 }));
+
+    // Content box 928 - block 400 = 528px free; 35% of it goes on the left.
+    expect(text.style.marginLeft).toBe('184.8px');
+    // Biased, not flush: the block must still start well inside the panel.
+    expect(parseFloat(text.style.marginLeft)).toBeGreaterThan(0);
+  });
+
   it('never goes negative when the text is wider than the panel', () => {
     const { ref, text } = buildPanel({ panelWidth: 400, paddingLeft: 32, stanzaWidths: [900] });
 

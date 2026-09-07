@@ -70,11 +70,16 @@ test('preview lays out at the selected screen resolution and zooms to 960px', as
   await page.screenshot({ path: 'test-results/preview-player-scale.png' });
 });
 
-// --- Hymn centring -----------------------------------------------------------
-// `.stanza` was a block div, so useCenterByWidest measured the full container
-// width and every hymn rendered flush left. Proves the shrink-wrap: the text
-// block's centre must land on the content box's centre.
-test('singalong stanzas centre in the text panel', async ({ page }) => {
+// --- Hymn placement ----------------------------------------------------------
+// Two failure modes, one test. `.stanza` was once a block div, so
+// useCenterByWidest measured the full container width and every hymn rendered
+// flush left — the shrink-wrap has to hold. And the block is deliberately NOT
+// centred: ragged-right lyrics whose bounding box is centred read as sitting too
+// far right, so SingalongScroller passes bias 0.35 and the block takes 35% of the
+// free space on its left.
+const SINGALONG_BIAS = 0.35;
+
+test('singalong stanzas sit left-of-centre in the text panel', async ({ page }) => {
   // NOT `networkidle`: the admin shell holds a long-lived log WebSocket open, so
   // the network never goes idle. The row selector below is the real readiness gate.
   await page.goto('/admin/content/lists/menus/fhe', { waitUntil: 'domcontentloaded', timeout: 15000 });
@@ -99,14 +104,25 @@ test('singalong stanzas centre in the text panel', async ({ page }) => {
     const padLeft = parseFloat(getComputedStyle(scrolled).paddingLeft) || 0;
     const t = text.getBoundingClientRect();
     const p = panel.getBoundingClientRect();
-    const contentCentre = p.left + padLeft + (p.width - padLeft) / 2;
-    return { delta: Math.abs((t.left + t.width / 2) - contentCentre), textWidth: t.width, panelWidth: p.width };
+    const contentLeft = p.left + padLeft;
+    const contentWidth = p.width - padLeft;
+    return {
+      marginLeft: t.left - contentLeft,
+      freeSpace: contentWidth - t.width,
+      centreDelta: Math.abs((t.left + t.width / 2) - (contentLeft + contentWidth / 2)),
+      textWidth: t.width,
+      panelWidth: p.width
+    };
   });
 
   // Must be narrower than the panel — if it still spans full width the
-  // shrink-wrap did not take and "centred" would be vacuously true.
+  // shrink-wrap did not take and every placement claim below is vacuous.
   expect(geo.textWidth).toBeLessThan(geo.panelWidth * 0.95);
-  expect(geo.delta).toBeLessThanOrEqual(2);
+  // Biased left by the configured share of the free space...
+  expect(Math.abs(geo.marginLeft - geo.freeSpace * SINGALONG_BIAS)).toBeLessThanOrEqual(2);
+  // ...which means indented, not flush left, and visibly off true centre.
+  expect(geo.marginLeft).toBeGreaterThan(0);
+  expect(geo.centreDelta).toBeGreaterThan(2);
 
   await page.screenshot({ path: 'test-results/preview-player-centering.png' });
 });
