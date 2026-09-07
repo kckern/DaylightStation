@@ -1832,3 +1832,132 @@
 .teacher-health__selectors { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin: 0.4rem 0; }
 .teacher-health__versions { margin-top: 0.75rem; }
 .teacher-health__hint { margin: 0 0 0.4rem; color: #8a8272; font-size: 0.85em; }
+
+/* The reading shelf, read by a grown-up (teacher reading admin design §2).
+ * Rows, not the child's tile grid: an adult is scanning a list for the one
+ * book that looks wrong, not finding a cover from across the room. Same
+ * palette as every other panel on the page; the only new shape is the cover. */
+.teacher-reading {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+
+  &__summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e8e1d2;
+  }
+
+  &__obligation { min-width: 190px; flex: 1 1 190px; }
+
+  &__obligation-window {
+    margin: 0;
+    color: #8a7c5c;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  &__obligation-label {
+    margin: 2px 0 6px;
+    font-size: 16px;
+    font-weight: 700;
+    color: #2b2620;
+
+    &[data-met='yes'] { color: #3f5c34; }
+  }
+
+  &__counts {
+    margin: 0;
+    color: #6b6255;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  &__group + &__group { margin-top: 4px; }
+
+  &__group-title {
+    margin: 0 0 6px;
+    color: #8a7c5c;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  &__list {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__row {
+    display: grid;
+    grid-template-columns: 40px 1fr auto;
+    align-items: start;
+    gap: 10px;
+    padding: 8px;
+    border: 1px solid #ece5d6;
+    border-radius: 10px;
+    background: #fffdf8;
+  }
+
+  &__cover {
+    width: 40px;
+    height: 58px;
+    object-fit: contain;
+    border-radius: 4px;
+    background: #f1ece0;
+
+    /* The shared placeholder, sized to this row. `BookCover` renders a div
+     * with the same class when there is no cover or it fails to load — never
+     * an invented one. */
+    display: grid;
+    place-items: center;
+    color: #b6ab93;
+    font-size: 18px;
+  }
+
+  &__row-title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+    color: #2b2620;
+    line-height: 1.3;
+  }
+
+  &__row-author { margin: 1px 0 0; font-size: 13px; color: #5f584c; }
+
+  &__row-meta { margin: 3px 0 0; font-size: 12px; color: #8d8474; }
+
+  &__row-progress {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 700;
+    color: #4a4335;
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  &__bar {
+    margin-top: 6px;
+    height: 6px;
+    max-width: 260px;
+    border-radius: 999px;
+    background: #ece5d6;
+    overflow: hidden;
+  }
+
+  &__bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: #6e4b20;
+  }
+}

@@ -19,6 +19,11 @@ export const teacherLog = {
   nav: (detail, data) => emit('nav', detail, data),                   // mounted | tab | learner
   claim: (detail, data) => emit('claim', detail, data),               // claimed | released | restored
   fetch: (detail, data) => emit('fetch', detail, data, 'warn'),       // fetch-failed | unavailable
+  // A read-only surface OPENING and SETTLING. `fetch` is warn-level and names
+  // only what broke, so a healthy read logged nothing at all and "did anyone
+  // look at this child's record, and what did it say" had no answer. Carries
+  // { learnerId, state, ... } wherever the caller knows them.
+  read: (detail, data) => emit('read', detail, data),                 // opened | settled
   fetchError: (detail, data) => emit('fetch', detail, data, 'error'), // hard failure
   // Teacher-initiated state changes, so the console can answer WHAT was being
   // attempted and not merely that a request failed. Before this category,
