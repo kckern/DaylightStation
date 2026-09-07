@@ -1,12 +1,13 @@
 import { useRef, useState } from 'react';
-import { Button, Checkbox, NumberInput, Select, TextInput } from '@mantine/core';
+import { Button, Checkbox, NumberInput, Select, TextInput, UnstyledButton } from '@mantine/core';
 import { Sheet } from '@/lib/ui';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { createAppLogger } from '@/lib/ui';
 import { BUCKETS } from './mealBuckets.js';
 
 const logger = createAppLogger('health').child('pending-review');
-const nutrients = ['calories', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'sodium', 'cholesterol'];
+const primaryNutrients = ['calories', 'protein', 'carbs', 'fat'];
+const secondaryNutrients = ['fiber', 'sugar', 'sodium', 'cholesterol'];
 const label = key => `${key[0].toUpperCase()}${key.slice(1)} (${key === 'calories' ? 'kcal' : ['sodium', 'cholesterol'].includes(key) ? 'mg' : 'g'})`;
 
 /** Holds the opened version while background refreshes continue. Never overwrite a draft. */
@@ -18,10 +19,11 @@ export function PendingReviewEditor({ entry, onClose, onChanged }) {
   const [nutritionReviewed, setNutritionReviewed] = useState(entry.nutritionLookup?.reviewed || false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const missing = entry.nutritionLookup?.missing || [];
+  const [moreOpen, setMoreOpen] = useState(() => secondaryNutrients.some(key => missing.includes(key)));
   const operation = useRef(null);
   const inFlight = useRef(false);
   const warnings = entry.nutritionLookup?.warnings || [];
-  const missing = entry.nutritionLookup?.missing || [];
   const change = (id, key, value) => setDraft(prev => ({ ...prev, [id]: { ...prev[id], [key]: value } }));
   const submit = async action => {
     if (inFlight.current) return;
@@ -40,42 +42,51 @@ export function PendingReviewEditor({ entry, onClose, onChanged }) {
       setError(err);
     } finally { inFlight.current = false; setBusy(false); }
   };
+  const errorMessage = error && [502, 503, 504].includes(error.status)
+    ? 'The server is temporarily unavailable. Your changes are still here. Try confirming again.'
+    : error?.message;
+  const nutrientInput = (item, values, key) => <NumberInput key={key} label={label(key)} min={0} hideControls
+    placeholder={missing.includes(key) ? 'Unknown — check label' : undefined}
+    value={values[key] ?? (missing.includes(key) ? '' : Math.round((item[key] || 0) * factor * 100) / 100)}
+    onChange={value => change(item.id, key, value)} />;
   return <Sheet open onClose={() => { if (!busy) onClose(); }} title="Review food">
     <div className="health-review">
-      <p>Check the serving and nutrition, then confirm to add this food to your day.</p>
+      <p className="health-review__intro">Check the serving and nutrition before adding this food to your day.</p>
       {warnings.length ? <div role="note" className="health-review__warning">
         {warnings.map(warning => <p key={warning}>{warning}</p>)}
         <Checkbox label="I checked the nutrition against the product label" checked={nutritionReviewed}
           onChange={event => setNutritionReviewed(event.currentTarget.checked)} disabled={busy} />
       </div> : null}
-      <NumberInput label="Servings" value={factor} min={0.01} max={100} decimalScale={2}
-        onChange={setFactor} disabled={busy} />
-      <div className="health-review__fields">
+      <div className="health-review__schedule">
+        <NumberInput label="Servings" value={factor} min={0.01} max={100} decimalScale={2} hideControls
+          onChange={setFactor} disabled={busy} />
         <TextInput type="date" label="Date" value={date} onChange={event => setDate(event.currentTarget.value)} disabled={busy} />
         <Select label="Meal" data={BUCKETS.map(bucket => ({ value: bucket.id, label: bucket.label }))}
           value={mealTime} onChange={setMealTime} allowDeselect={false} disabled={busy} />
       </div>
       {entry.items.filter(item => item.kind !== 'group').map(item => {
         const values = draft[item.id] || {};
-        return <fieldset key={item.id} disabled={busy}>
-          <legend>{item.label}</legend>
-          {item.originalQuantity?.amount ? <p>One serving: {item.originalQuantity.amount} {item.originalQuantity.unit}</p> : null}
+        return <section key={item.id} className="health-review__item" aria-label={`Nutrition for ${item.label}`}>
           <TextInput label="Food name" value={values.label ?? item.label} onChange={event => change(item.id, 'label', event.currentTarget.value)} />
-          <NumberInput label="Weight (g, if known)" value={values.grams ?? (item.grams ? item.grams * factor : '')}
-            min={0.01} max={10000} onChange={value => change(item.id, 'grams', value === '' ? null : value)} />
-          <div className="health-review__fields">
-            {nutrients.map(key => <NumberInput key={key} label={label(key)} min={0}
-              placeholder={missing.includes(key) ? 'Unknown — check label' : undefined}
-              value={values[key] ?? (missing.includes(key) ? '' : Math.round((item[key] || 0) * factor * 100) / 100)}
-              onChange={value => change(item.id, key, value)} />)}
+          <div className="health-review__portion">
+            {item.originalQuantity?.amount ? <p>One serving: <strong>{item.originalQuantity.amount} {item.originalQuantity.unit}</strong></p> : <span />}
+            <NumberInput label="Weight (g, if known)" value={values.grams ?? (item.grams ? item.grams * factor : '')}
+              min={0.01} max={10000} hideControls onChange={value => change(item.id, 'grams', value === '' ? null : value)} />
           </div>
-        </fieldset>;
+          <div className="health-review__macros">
+            {primaryNutrients.map(key => nutrientInput(item, values, key))}
+          </div>
+          <UnstyledButton className="health-review__more" aria-expanded={moreOpen} onClick={() => setMoreOpen(open => !open)}>
+            <span>More nutrients</span><span aria-hidden="true">{moreOpen ? '−' : '+'}</span>
+          </UnstyledButton>
+          {moreOpen ? <div className="health-review__fields">{secondaryNutrients.map(key => nutrientInput(item, values, key))}</div> : null}
+        </section>;
       })}
-      {error ? <div role="alert"><p>{error.message}</p><Button variant="subtle" onClick={() => { onChanged(); onClose(); }}>Reload review</Button></div> : null}
-      <div className="health-pending__actions">
-        <Button disabled={busy || !Number.isFinite(factor) || factor <= 0} loading={busy} onClick={() => submit('confirm')}>Confirm food</Button>
+      {error ? <div role="alert" className="health-review__error"><p>{errorMessage}</p><Button variant="subtle" size="compact-sm" onClick={() => { onChanged(); onClose(); }}>Reload review</Button></div> : null}
+      <div className="health-review__actions">
+        <Button className="health-review__confirm" disabled={busy || !Number.isFinite(factor) || factor <= 0} loading={busy} onClick={() => submit('confirm')}>Confirm food</Button>
         <Button disabled={busy} variant="default" onClick={() => submit('save')}>Save changes</Button>
-        <Button disabled={busy} variant="subtle" color="red" onClick={() => submit('discard')}>Discard</Button>
+        <Button disabled={busy} variant="subtle" color="gray" onClick={() => submit('discard')}>Discard</Button>
       </div>
     </div>
   </Sheet>;

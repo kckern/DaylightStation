@@ -476,11 +476,39 @@ $health-aside-gap: 1.5rem;
   > img, > svg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 }
 .health-review {
-  display: grid; gap: 1rem;
-  fieldset { min-width: 0; border: 1px solid var(--ds-border); border-radius: 6px; display: grid; gap: 0.6rem; }
-  input, button { min-height: 44px; }
-  &__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
-  &__warning { border-left: 2px solid var(--ds-warning); padding-left: 0.75rem; }
+  display: grid; gap: 0.75rem; min-width: 0;
+  &__intro { margin: 0; color: var(--ds-text-mid); font-size: 0.82rem; line-height: 1.4; }
+  &__schedule { display: grid; grid-template-columns: 0.7fr 1.15fr 1fr; gap: 0.55rem; }
+  &__item { display: grid; gap: 0.55rem; min-width: 0; padding-top: 0.2rem; }
+  &__portion { display: grid; grid-template-columns: minmax(0, 1fr) minmax(10rem, 1fr); gap: 0.55rem; align-items: end;
+    p { margin: 0 0 0.45rem; color: var(--ds-text-mid); font-size: 0.76rem; }
+  }
+  &__macros { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem;
+    > :first-child label { color: var(--ds-text-high); font-weight: 700; }
+  }
+  &__fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; }
+  &__warning { border-left: 2px solid var(--ds-warning); padding-left: 0.75rem;
+    p { margin: 0 0 0.35rem; }
+  }
+  &__more { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 44px; padding: 0 0.15rem;
+    border-bottom: 1px solid var(--ds-border); color: var(--ds-text-mid); font-size: 0.8rem; text-align: left;
+  }
+  &__error { border-left: 2px solid var(--ds-danger); padding-left: 0.75rem; color: var(--ds-text-high);
+    p { margin: 0 0 0.25rem; }
+  }
+  &__actions { position: sticky; z-index: 2; bottom: calc(-0.75rem - env(safe-area-inset-bottom)); display: grid;
+    grid-template-columns: 1.3fr 1fr auto; gap: 0.5rem; margin: 0 -1rem -0.75rem; padding: 0.7rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--ds-border); background: var(--ds-surface);
+    button { min-height: 44px; }
+  }
+  @media (max-width: 520px) {
+    &__schedule { grid-template-columns: 0.75fr 1.25fr; }
+    &__schedule > :last-child { grid-column: 1 / -1; }
+    &__portion { grid-template-columns: 1fr 1.2fr; }
+    &__macros, &__fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    &__actions { grid-template-columns: 1.2fr 1fr 0.7fr; gap: 0.35rem; }
+    &__actions button { padding-inline: 0.45rem; }
+  }
 }
 .health-equation__math { flex-wrap: wrap; }
 .health-equation__math small { font-size: 0.7rem; color: var(--ds-text-mid); }
