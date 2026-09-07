@@ -222,4 +222,104 @@ describe('BookLogProgramLauncher', () => {
     expect(instance.dayOf('garbage')).toBe('');
     expect(instance.dayOf(null)).toBe('');
   });
+
+  describe('featuredBook — the printed card, and the only place titles are joined', () => {
+    const shelfBook = (bookId, overrides = {}) => item({ itemId: `item:${bookId}`, bookId, ...overrides });
+    const read = (at, page) => ({ kind: 'progress', at, page });
+    const library = (byId) => ({ async findByIsbn(bookId) { return byId[bookId] ?? null; } });
+
+    it('names the book, its author and its page', async () => {
+      const result = await launcher(enrolled(), [
+        shelfBook('hatchet', { pageCount: 184, events: [read('2026-08-09T18:00:00Z', 84)] }),
+      ], {
+        bookRepository: library({ hatchet: { title: 'Hatchet', authors: ['Gary Paulsen'], pageCount: 184 } }),
+      }).featuredBook({ userId: 'kid' });
+      expect(result.state).toBe('reading');
+      expect(result.book).toEqual({ title: 'Hatchet', authors: ['Gary Paulsen'], pageCount: 184 });
+      expect(result.page).toBe(84);
+      // 84/184 = 45.65, rounded — the bar the card draws.
+      expect(result.percent).toBe(46);
+    });
+
+    it('answers for an UNENROLLED learner — the shelf never needed an enrollment', async () => {
+      // status() short-circuits on no enrollment and must keep doing so. The
+      // card does not: every learner has a shelf, enrolled or not.
+      const result = await launcher(null, [
+        shelfBook('hatchet', { pageCount: 184, events: [read('2026-08-09T18:00:00Z', 84)] }),
+      ], {
+        bookRepository: library({ hatchet: { title: 'Hatchet', authors: [], pageCount: 184 } }),
+      }).featuredBook({ userId: 'kid' });
+      expect(result.state).toBe('reading');
+      expect(result.book.title).toBe('Hatchet');
+    });
+
+    it('degrades to a titleless card when the repository throws', async () => {
+      const result = await launcher(enrolled(), [
+        shelfBook('hatchet', { pageCount: 184, events: [read('2026-08-09T18:00:00Z', 84)] }),
+      ], {
+        bookRepository: { async findByIsbn() { throw new Error('cache cold'); } },
+      }).featuredBook({ userId: 'kid' });
+      expect(result.state).toBe('reading');
+      expect(result.book).toBeNull();
+      expect(result.page).toBe(84);
+      expect(result.percent).toBe(46);
+    });
+
+    it('degrades the same way with no repository wired at all', async () => {
+      // A household with no books API runs this permanently, not just cold.
+      const result = await launcher(enrolled(), [
+        shelfBook('hatchet', { pageCount: 184, events: [read('2026-08-09T18:00:00Z', 84)] }),
+      ], { bookRepository: null }).featuredBook({ userId: 'kid' });
+      expect(result.book).toBeNull();
+      expect(result.state).toBe('reading');
+      expect(result.page).toBe(84);
+    });
+
+    it('reports an unreadable shelf as UNREADABLE, never as empty', async () => {
+      // `empty` would print "no books yet" to a child whose shelf is full.
+      const result = await launcher(enrolled(), [], { bookLog: brokenStore })
+        .featuredBook({ userId: 'kid' });
+      expect(result.state).toBe('unreadable');
+      expect(result.book).toBeNull();
+      expect(result.alsoReading).toEqual([]);
+    });
+
+    it('names up to two other in-progress books, as titles', async () => {
+      const result = await launcher(enrolled(), [
+        shelfBook('frindle', { pageCount: 100, events: [read('2026-08-05T18:00:00Z', 90)] }),
+        shelfBook('hatchet', { pageCount: 184, events: [read('2026-08-09T18:00:00Z', 84)] }),
+        shelfBook('hobbit', { pageCount: 300, events: [read('2026-08-08T18:00:00Z', 30)] }),
+        shelfBook('narnia', { pageCount: 200, events: [read('2026-08-07T18:00:00Z', 20)] }),
+      ], {
+        bookRepository: library({
+          frindle: { title: 'Frindle', authors: ['Andrew Clements'], pageCount: 100 },
+          hatchet: { title: 'Hatchet', authors: ['Gary Paulsen'], pageCount: 184 },
+          hobbit: { title: 'The Hobbit', authors: ['J.R.R. Tolkien'], pageCount: 300 },
+          narnia: { title: 'Prince Caspian', authors: ['C.S. Lewis'], pageCount: 200 },
+        }),
+      }).featuredBook({ userId: 'kid' });
+      // Nearest the end leads; the rest are named newest-first, capped at two.
+      expect(result.book.title).toBe('Frindle');
+      expect(result.alsoReading).toEqual(['Hatchet', 'The Hobbit']);
+    });
+
+    it('takes { userId } — a bare string fails loudly, as status() does', async () => {
+      await expect(launcher(enrolled()).featuredBook('kid')).rejects.toThrow(TypeError);
+      await expect(launcher(enrolled()).featuredBook()).rejects.toThrow(/userId/);
+    });
+  });
+
+  it('status() still makes no repository read — the card must not tax the boards', async () => {
+    // status() runs inside collectProgramStatuses -> PlanProjection, which the
+    // teacher board, the status board, DoNow and the completion recompute all
+    // call. N per-book reads must never ride along with them.
+    let called = false;
+    const status = await launcher(enrolled(), [
+      item({ itemId: 'item:hatchet', events: [{ kind: 'progress', at: '2026-08-09T18:00:00Z', page: 84 }] }),
+    ], {
+      bookRepository: { async findByIsbn() { called = true; throw new Error('nope'); } },
+    }).status({ userId: 'kid' });
+    expect(called).toBe(false);
+    expect(status).toMatchObject({ enrolled: true, error: false });
+  });
 });

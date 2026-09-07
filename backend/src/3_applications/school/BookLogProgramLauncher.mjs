@@ -45,7 +45,7 @@
  * @module applications/school/BookLogProgramLauncher
  */
 import { BOOK_LOG_PROGRAM_ID, bookLogContext } from '#domains/school/bookLog.mjs';
-import { measureObligation, projectShelfItem } from '#domains/school/bookShelf.mjs';
+import { measureObligation, projectShelfItem, selectFeaturedShelfItem } from '#domains/school/bookShelf.mjs';
 import { studyDayForInstant } from '#domains/school/studyDay.mjs';
 
 /** Where a child does this, in the words a child reads. */
@@ -72,9 +72,9 @@ export function obligationWindow(per, studyDay) {
 }
 
 export class BookLogProgramLauncher {
-  #assignments; #bookLog; #timezone; #clock; #logger; #grants;
+  #assignments; #bookLog; #timezone; #clock; #logger; #grants; #bookRepository;
 
-  constructor({ assignments, bookLog, timezone = null, clock = () => new Date(), logger = console, grants = null } = {}) {
+  constructor({ assignments, bookLog, timezone = null, clock = () => new Date(), logger = console, grants = null, bookRepository = null } = {}) {
     if (!assignments || typeof assignments.get !== 'function') {
       throw new Error('BookLogProgramLauncher requires an assignments store with get(learnerId)');
     }
@@ -85,6 +85,10 @@ export class BookLogProgramLauncher {
     this.#clock = clock;
     this.#logger = logger;
     this.#grants = grants;
+    // OPTIONAL ON PURPOSE. `schoolLifecycle.mjs` defaults it to null and only
+    // builds `GetBookShelf` when a books API exists, so a household without
+    // one must still get a card — titleless, but printed.
+    this.#bookRepository = bookRepository;
   }
 
   get id() { return BOOK_LOG_PROGRAM_ID; }
@@ -218,6 +222,81 @@ export class BookLogProgramLauncher {
       reading,
       finished,
     };
+  }
+
+  /**
+   * What the printed agenda card headlines. NOT part of `status()`, and it must
+   * not become part of it.
+   *
+   * `status()` runs inside `collectProgramStatuses`, which `PlanProjection`
+   * calls for the teacher board, the status board, DoNow and the completion
+   * recompute. A title is a per-book repository read; putting N of those behind
+   * every one of those surfaces, to decorate one printed card, is a cost none of
+   * them asked for. The agenda calls this once per learner; nothing else calls
+   * it at all.
+   *
+   * It also does not consult the enrollment. Reading the log only for an
+   * enrolled child would leave three of four learners with a bare box — the
+   * shelf is open to everyone (see this file's header) and so is the card.
+   *
+   * ## BOOK FACTS ARE DECORATION
+   *
+   * A cold cache, a throwing repository, an ISBN that never resolved, or a
+   * composition with no books API at all yields `book: null` and a titleless
+   * card. Never fewer cards, and never a card claiming a book it could not name.
+   * The bars, the page and the day count all come from the log itself and
+   * survive every one of those. Only the LOG being unreadable changes the
+   * answer, and that says `unreadable` rather than `empty`, because telling a
+   * child with a full shelf that they have no books is a lie the card can avoid.
+   *
+   * @param {{userId: string}} args
+   * @returns {Promise<{state: 'reading'|'finished'|'set-aside'|'empty'|'unreadable',
+   *   book: {title: string|null, authors: string[], pageCount: number|null}|null,
+   *   page: number|null, percent: number|null, minutes: number|null,
+   *   daysRead: number, at: string|null, alsoReading: string[]}>}
+   */
+  async featuredBook({ userId } = {}) {
+    const learnerId = userId;
+    if (typeof learnerId !== 'string' || !learnerId) throw new TypeError('BookLogProgramLauncher.featuredBook takes { userId }');
+    let items;
+    try {
+      items = (await this.#bookLog.listForLearner(learnerId)) ?? [];
+    } catch (error) {
+      this.#logger.warn?.('school.book-log.shelf-unreadable', { learnerId, error: error.message });
+      return { state: 'unreadable', book: null, page: null, percent: null, minutes: null, daysRead: 0, at: null, alsoReading: [] };
+    }
+
+    const dayOf = (iso) => this.dayOf(iso);
+    const { state, featured, alsoReading } = selectFeaturedShelfItem(items, { dayOf });
+    if (!featured) {
+      return { state, book: null, page: null, percent: null, minutes: null, daysRead: 0, at: null, alsoReading: [] };
+    }
+
+    const facts = await this.#bookFacts(featured.item.bookId, learnerId);
+    const others = await Promise.all(alsoReading.map((entry) => this.#bookFacts(entry.item.bookId, learnerId)));
+
+    return {
+      state,
+      book: facts,
+      page: featured.projection.page,
+      percent: featured.projection.percent,
+      minutes: featured.projection.minutes,
+      daysRead: featured.projection.daysRead,
+      at: featured.projection.lastAt,
+      alsoReading: others.map((book) => book?.title).filter(Boolean),
+    };
+  }
+
+  /** Null on every failure. Decoration must never cost the card. */
+  async #bookFacts(bookId, learnerId) {
+    if (!this.#bookRepository?.findByIsbn) return null;
+    try {
+      const book = await this.#bookRepository.findByIsbn(bookId);
+      return book ? { title: book.title ?? null, authors: book.authors ?? [], pageCount: book.pageCount ?? null } : null;
+    } catch (error) {
+      this.#logger.warn?.('school.book-log.book-facts-failed', { learnerId, bookId, error: error.message });
+      return null;
+    }
   }
 
   /**
