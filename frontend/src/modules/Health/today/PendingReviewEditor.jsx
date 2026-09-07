@@ -20,7 +20,9 @@ export function PendingReviewEditor({ entry, onClose, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const missing = entry.nutritionLookup?.missing || [];
-  const [moreOpen, setMoreOpen] = useState(() => secondaryNutrients.some(key => missing.includes(key)));
+  const [moreOpen, setMoreOpen] = useState(() => Object.fromEntries(
+    entry.items.map(item => [item.id, secondaryNutrients.some(key => missing.includes(key))]),
+  ));
   const operation = useRef(null);
   const inFlight = useRef(false);
   const warnings = entry.nutritionLookup?.warnings || [];
@@ -48,7 +50,7 @@ export function PendingReviewEditor({ entry, onClose, onChanged }) {
   const nutrientInput = (item, values, key) => <NumberInput key={key} label={label(key)} min={0} hideControls
     placeholder={missing.includes(key) ? 'Unknown — check label' : undefined}
     value={values[key] ?? (missing.includes(key) ? '' : Math.round((item[key] || 0) * factor * 100) / 100)}
-    onChange={value => change(item.id, key, value)} />;
+    onChange={value => change(item.id, key, value)} disabled={busy} />;
   return <Sheet open onClose={() => { if (!busy) onClose(); }} title="Review food">
     <div className="health-review">
       <p className="health-review__intro">Check the serving and nutrition before adding this food to your day.</p>
@@ -67,19 +69,22 @@ export function PendingReviewEditor({ entry, onClose, onChanged }) {
       {entry.items.filter(item => item.kind !== 'group').map(item => {
         const values = draft[item.id] || {};
         return <section key={item.id} className="health-review__item" aria-label={`Nutrition for ${item.label}`}>
-          <TextInput label="Food name" value={values.label ?? item.label} onChange={event => change(item.id, 'label', event.currentTarget.value)} />
+          <TextInput label="Food name" value={values.label ?? item.label} disabled={busy}
+            onChange={event => change(item.id, 'label', event.currentTarget.value)} />
           <div className="health-review__portion">
             {item.originalQuantity?.amount ? <p>One serving: <strong>{item.originalQuantity.amount} {item.originalQuantity.unit}</strong></p> : <span />}
             <NumberInput label="Weight (g, if known)" value={values.grams ?? (item.grams ? item.grams * factor : '')}
-              min={0.01} max={10000} hideControls onChange={value => change(item.id, 'grams', value === '' ? null : value)} />
+              min={0.01} max={10000} hideControls disabled={busy}
+              onChange={value => change(item.id, 'grams', value === '' ? null : value)} />
           </div>
           <div className="health-review__macros">
             {primaryNutrients.map(key => nutrientInput(item, values, key))}
           </div>
-          <UnstyledButton className="health-review__more" aria-expanded={moreOpen} onClick={() => setMoreOpen(open => !open)}>
-            <span>More nutrients</span><span aria-hidden="true">{moreOpen ? '−' : '+'}</span>
+          <UnstyledButton className="health-review__more" aria-expanded={Boolean(moreOpen[item.id])} disabled={busy}
+            onClick={() => setMoreOpen(open => ({ ...open, [item.id]: !open[item.id] }))}>
+            <span>More nutrients</span><span aria-hidden="true">{moreOpen[item.id] ? '−' : '+'}</span>
           </UnstyledButton>
-          {moreOpen ? <div className="health-review__fields">{secondaryNutrients.map(key => nutrientInput(item, values, key))}</div> : null}
+          {moreOpen[item.id] ? <div className="health-review__fields">{secondaryNutrients.map(key => nutrientInput(item, values, key))}</div> : null}
         </section>;
       })}
       {error ? <div role="alert" className="health-review__error"><p>{errorMessage}</p><Button variant="subtle" size="compact-sm" onClick={() => { onChanged(); onClose(); }}>Reload review</Button></div> : null}
