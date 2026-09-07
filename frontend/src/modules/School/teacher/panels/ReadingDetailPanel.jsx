@@ -17,6 +17,10 @@
  *    submit without one, and each says WHY it is asking — because the sentence
  *    typed into that box is the sentence the child reads. Everything else
  *    takes an optional reason that only ever reaches this history.
+ * 1b. **The counted window is the server's answer**, served with the reading —
+ *    including whether it could be determined at all, so "this child owes no
+ *    reading" and "the obligation could not be read" are distinguishable on
+ *    screen instead of both reading as silence.
  * 2. **`baseRevisionCount` on every write**, the count that came with the read.
  *    A stale save is REFUSED, and this panel then stops: it shows the server's
  *    reload sentence, disables every write, and retries nothing. Merging would
@@ -45,8 +49,9 @@ import BookCover from '../../books/BookCover.jsx';
 import { presentBook } from '../../books/bookPresentation.js';
 import { formatMinutes, shortDay } from '../../books/ShelfTile.jsx';
 import {
-  MODES, OPS, OPTIONAL_ASK, STATUSES, leavesWindow, reasonAsk,
-  revisionChanges, revisionPhrase, undoRefusal, undoShrinks, unfinishes,
+  MODES, OPS, OPTIONAL_ASK, STATUSES, WINDOW_UNKNOWN_NOTE, countedWindowOf,
+  countedWindowUnknown, leavesWindow, reasonAsk, revisionChanges,
+  revisionPhrase, undoRefusal, undoShrinks, unfinishes,
 } from './readingDetail.js';
 
 const PANEL = 'reading-detail';
@@ -102,7 +107,7 @@ function Band({ title, children }) {
 }
 
 export default function ReadingDetailPanel({
-  learnerId, learnerName = null, readingId, kids = [], countedWindow = null,
+  learnerId, learnerName = null, readingId, kids = [],
   onClose = null, onChanged = null,
 }) {
   const child = learnerName ?? learnerId;
@@ -132,6 +137,13 @@ export default function ReadingDetailPanel({
   });
 
   const record = isReading(detail.data) ? detail.data.reading : null;
+  // The counted window comes WITH the reading, computed by the same
+  // `obligationWindow` the server judges a re-date against. Nothing here
+  // recomputes it from an obligation and a study day — that was one rule with
+  // two implementations, and the client half went silent rather than wrong.
+  const served = isReading(detail.data) ? detail.data.countedWindow ?? null : null;
+  const countedWindow = countedWindowOf(served);
+  const windowUnknowable = countedWindowUnknown(served);
   const base = Number.isInteger(record?.baseRevisionCount) ? record.baseRevisionCount : 0;
   const presentation = presentBook(record ?? {});
   const book = presentation.title;
@@ -531,6 +543,9 @@ export default function ReadingDetailPanel({
                       onChange={(event) => setForm((value) => ({ ...value, value: event.target.value }))}
                     />
                   </div>
+                )}
+                {form.on !== editing.on && windowUnknowable && (
+                  <p className="teacher-reading-detail__note">{WINDOW_UNKNOWN_NOTE}</p>
                 )}
                 <Reason
                   label="Reason for correcting this day"

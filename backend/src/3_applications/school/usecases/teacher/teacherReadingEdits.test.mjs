@@ -92,6 +92,35 @@ describe('GetLearnerReadings', () => {
     const view = await new GetLearnerReadings(deps({ bookRepository: null })).execute({ learnerId: LEARNER });
     expect(view.readings[0]).toMatchObject({ title: null, isbn: '9780000000001' });
   });
+
+  it('serves the counted window the obligation is measured over, so no client re-derives it', async () => {
+    const view = await new GetLearnerReadings(deps()).execute({ learnerId: LEARNER, readingId: 'rdg_a' });
+    // The SAME `obligationWindow` the re-date rule is judged with: a weekly
+    // obligation on Sep 6 counts back to Aug 31.
+    expect(view.countedWindow).toEqual({ state: 'window', per: 'week', from: '2026-08-31', to: '2026-09-06' });
+  });
+
+  it('says "none" for a child who owes no reading — which is not the same as not knowing', async () => {
+    const view = await new GetLearnerReadings(deps({ bookLogLauncher: fakeLauncher({ per: null }) }))
+      .execute({ learnerId: LEARNER, readingId: 'rdg_a' });
+    expect(view.countedWindow).toEqual({ state: 'none', per: null, from: null, to: null });
+  });
+
+  it('says "unknown" when the obligation could not be read, rather than omitting the answer', async () => {
+    const broken = { studyDay: () => '2026-09-06', status: async () => { throw new Error('shelf unreadable'); } };
+    const refused = await new GetLearnerReadings(deps({ bookLogLauncher: broken }))
+      .execute({ learnerId: LEARNER, readingId: 'rdg_a' });
+    expect(refused.countedWindow).toEqual({ state: 'unknown', per: null, from: null, to: null });
+    // An install with no launcher wired cannot tell either, and says so.
+    const unwired = await new GetLearnerReadings(deps({ bookLogLauncher: null }))
+      .execute({ learnerId: LEARNER, readingId: 'rdg_a' });
+    expect(unwired.countedWindow).toEqual({ state: 'unknown', per: null, from: null, to: null });
+  });
+
+  it('carries the window on the whole-shelf read too', async () => {
+    const view = await new GetLearnerReadings(deps()).execute({ learnerId: LEARNER });
+    expect(view.countedWindow).toMatchObject({ state: 'window', from: '2026-08-31' });
+  });
 });
 
 describe('UpdateReading', () => {

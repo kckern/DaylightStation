@@ -52,7 +52,9 @@ const KIDS = [
   { id: 'learner_a', name: 'learner_a' },
   { id: 'learner_b', name: 'learner_b' },
 ];
-const WINDOW = { from: '2026-08-31', to: '2026-09-06' };
+// What the SERVER answers with the reading. The console holds no second
+// derivation of it, so a test that wants a different window says so here.
+const WINDOW = { state: 'window', per: 'week', from: '2026-08-31', to: '2026-09-06' };
 const ok = (data) => ({ ok: true, status: 200, data });
 
 const reading = (over = {}) => ({
@@ -84,8 +86,10 @@ const reading = (over = {}) => ({
   ...over,
 });
 
-const seed = (over = {}) => {
-  teacherWorkspaceApi.readingDetail.mockResolvedValue(ok({ learnerId: 'learner_a', reading: reading(over) }));
+const seed = (over = {}, countedWindow = WINDOW) => {
+  teacherWorkspaceApi.readingDetail.mockResolvedValue(
+    ok({ learnerId: 'learner_a', countedWindow, reading: reading(over) }),
+  );
 };
 
 const mount = (props = {}) => render(
@@ -94,7 +98,6 @@ const mount = (props = {}) => render(
     learnerName="learner_a"
     readingId="rd_1"
     kids={KIDS}
-    countedWindow={WINDOW}
     onClose={props.onClose ?? vi.fn()}
     onChanged={props.onChanged ?? vi.fn()}
   />,
@@ -291,6 +294,29 @@ describe('the five verbs that make a child’s record smaller', () => {
     fireEvent.change(screen.getByLabelText('Day they read'), { target: { value: '2026-09-02' } });
     expect(screen.getByRole('button', { name: 'Save this day' }).disabled).toBe(false);
     expect(screen.queryByText(/takes it off/)).toBeNull();
+  });
+
+  it('an obligation the server could not read says so, rather than pre-requiring nothing in silence', async () => {
+    // The failure the served window exists to make visible: with no window,
+    // the console cannot judge the re-date, and the old client-side mirror
+    // simply stopped asking — with nothing on screen to say why.
+    seed({}, { state: 'unknown', per: null, from: null, to: null });
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Sep 3' }));
+    fireEvent.change(screen.getByLabelText('Day they read'), { target: { value: '2026-08-01' } });
+    expect(screen.getByText(/counted window couldn’t be read/)).toBeTruthy();
+    // The decision itself is unchanged: the server is still the one that refuses.
+    expect(screen.getByRole('button', { name: 'Save this day' }).disabled).toBe(false);
+  });
+
+  it('a child who owes no reading has no window and no note — that is a settled answer', async () => {
+    seed({}, { state: 'none', per: null, from: null, to: null });
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Sep 3' }));
+    fireEvent.change(screen.getByLabelText('Day they read'), { target: { value: '2026-08-01' } });
+    expect(screen.queryByText(/counted window couldn’t be read/)).toBeNull();
+    expect(screen.queryByText(/takes it off/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save this day' }).disabled).toBe(false);
   });
 
   it('will not move the reading to a sibling without a reason', async () => {

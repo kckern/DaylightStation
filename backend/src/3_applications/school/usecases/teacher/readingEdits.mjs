@@ -193,20 +193,42 @@ export class ReadingEditContext {
   }
 
   /**
-   * The window the obligation is measured over, so a re-date can be judged on
-   * whether it leaves it. No launcher or no obligation means no counted
-   * window, and therefore no day a correction can drop out of.
+   * The window the obligation is measured over, in the THREE answers a reader
+   * has to be able to tell apart:
+   *
+   * - `window` — there is one, and here it is;
+   * - `none` — this child owes no reading, so no day can drop out of a count;
+   * - `unknown` — the obligation could not be read (or no launcher is wired).
+   *
+   * `none` and `unknown` both mean "no window to judge against", and the write
+   * path treats them identically — but a CONSOLE that cannot tell them apart
+   * silently stops asking for a reason it should still be asking for, and says
+   * nothing about why. Hence the state, served rather than inferred from a
+   * missing field.
    */
-  async countedWindow(learnerId) {
-    if (!this.#bookLogLauncher) return null;
+  async countedWindowView(learnerId) {
+    const unknown = { state: 'unknown', per: null, from: null, to: null };
+    if (!this.#bookLogLauncher) return unknown;
     try {
       const status = await this.#bookLogLauncher.status({ userId: learnerId });
       const per = status?.obligationProgress?.per ?? null;
-      return per ? obligationWindow(per, this.#bookLogLauncher.studyDay()) : null;
+      if (!per) return { state: 'none', per: null, from: null, to: null };
+      const { from = null, to = null } = obligationWindow(per, this.#bookLogLauncher.studyDay()) ?? {};
+      return { state: 'window', per, from, to };
     } catch (error) {
       this.#logger.warn?.('school.teacher-reading.obligation-unreadable', { learnerId, error: error.message });
-      return null;
+      return unknown;
     }
+  }
+
+  /**
+   * Just the bounds, for the write path that judges whether a re-date leaves
+   * them. One derivation, two readers: `countedWindowView` is what the console
+   * is served and this is what `leavesWindow` is handed.
+   */
+  async countedWindow(learnerId) {
+    const view = await this.countedWindowView(learnerId);
+    return view.state === 'window' ? { from: view.from, to: view.to } : null;
   }
 
   /**
