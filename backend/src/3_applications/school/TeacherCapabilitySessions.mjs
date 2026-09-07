@@ -11,6 +11,7 @@ const STEP_UP_ACTIONS = new Set([
   'sessions.evidence-invalidate', 'sessions.attribution-recover',
   'sessions.grade-adjustment.retract', 'artifact.postview', 'report-card.close',
   'sessions.settle', 'companion.finish-code.reveal',
+  'books.reading.reassign', 'books.reading.delete',
 ]);
 
 // Every action in the Set above needs a branch below, and vice versa:
@@ -39,6 +40,14 @@ export function teacherResource(action, context = {}) {
     const adjustmentId = text(context.adjustmentId);
     return sessionId && adjustmentId ? `${sessionId}/${adjustmentId}` : null;
   }
+  // The two reading verbs that are not corrections (teacher reading admin
+  // design §3). Correcting an ISBN or a page a child typed wrong is repair and
+  // runs on the cookie; these two change WHOSE record a book is, and whether
+  // the record exists at all — the same class as `sessions.reassign` and a
+  // superseding report-card close. Scoped to the one reading in front of the
+  // grown-up, so one confirmation moves one book and not a shelf.
+  if (action === 'books.reading.reassign') return text(context.readingId);
+  if (action === 'books.reading.delete') return text(context.readingId);
   if (action === 'artifact.postview') return text(context.artifactId);
   if (action === 'report-card.close') return context.supersede === true
     ? `${context.learnerId ?? ''}/${context.periodId ?? ''}` : null;
