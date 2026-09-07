@@ -364,9 +364,12 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
       {wideViewport && sidebarTarget ? createPortal(history, sidebarTarget) : null}
       <QuickCaptureBar hideVoice active={active} onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
         onOpenBarcode={openBarcode} onAddTo={setAddingTo} busy={nutrition.busy} date={date} />
+      {preview.control.draft?.validationError ? <div role="alert" className="health-portion-error">
+        {preview.control.draft.validationError}<Button onClick={() => preview.control.cancel()}>Discard change</Button>
+      </div> : null}
       {preview.control.draft?.status === 'error' ? <div className="health-portion-error" role="alert">
-        <span>{preview.control.draft.error} Intended portion: {preview.control.draft.portion.value} {preview.control.draft.portion.unit}.</span>
-        <Button onClick={() => preview.control.retry()}>{preview.control.draft.conflict ? 'Reload & apply intended portion' : 'Retry same change'}</Button>
+        <span>{preview.control.draft.error} Intended {preview.control.draft.numericEdit ? `${preview.control.draft.numericEdit.field}: ${preview.control.draft.numericEdit.value}` : `portion: ${preview.control.draft.portion.value} ${preview.control.draft.portion.unit}`}.</span>
+        <Button onClick={() => preview.control.retry()}>{preview.control.draft.conflict ? 'Reload & apply intended change' : 'Retry same change'}</Button>
         <Button variant="subtle" onClick={() => { preview.control.cancel(); day.reload(); }}>Discard draft &amp; reload</Button>
       </div> : null}
       {mealUndo ? <div className="health-pending" role="status"><span>{mealUndo.label}</span>

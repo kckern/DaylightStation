@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { HealthOperations } from './HealthOperations.mjs';
 import { YamlNutriListDatastore } from '#adapters/persistence/yaml/YamlNutriListDatastore.mjs';
+import { numericFoodPatches } from '#shared/contracts/health/foodNumericEdit.mjs';
 
 let store, ops;
 const now = '2026-09-05T23:00:00Z';
@@ -19,6 +20,48 @@ beforeEach(async () => {
 });
 const changes = { portion: { value: 400, unit: 'g' }, expectedVersion: 1, expectedVersions: { group: 1, a: 1, b: 1 } };
 describe('versioned Health portion commands', () => {
+  it.each([['grams', 400], ['calories', 600], ['density', 3], ['protein', 45], ['carbs', 60], ['fat', 20]])('saves group %s exactly as previewed', async (field, value) => {
+    for (const id of ['a', 'b']) await store.update('u', id, { protein: id === 'a' ? 20 : 10, carbs: 20, fat: 5 });
+    const children = await Promise.all(['a', 'b'].map(id => store.findByUuid('u', id)));
+    const numericEdit = { field, value };
+    const patches = numericFoodPatches({ ...group, children }, numericEdit);
+    await ops.updateNutritionItem('u', 'group', { numericEdit, expectedVersions: { group: 1, a: 2, b: 2 } });
+    for (const row of [group, ...children]) expect(await store.findByUuid('u', row.uuid)).toMatchObject(patches.get(row.uuid));
+    expect((await store.findByUuid('u', 'group')).calories).toBe(0);
+  });
+  it('rejects mixing a semantic numeric edit with unrelated overrides', async () => {
+    await expect(ops.updateNutritionItem('u', 'a', { numericEdit: { field: 'density', value: 3 }, calories: 999 })).rejects.toMatchObject({ status: 400 });
+    expect((await store.findByUuid('u', 'a')).calories).toBe(200);
+  });
+  it('recovers a numeric group edit after response loss without applying its calorie delta twice', async () => {
+    for (const id of ['a', 'b']) await store.update('u', id, { protein: 10 });
+    const command = { numericEdit: { field: 'protein', value: 40 }, expectedVersions: { group: 1, a: 2, b: 2 } };
+    const payload = { operation: 'entry-update', id: 'group', ...command };
+    await expect(store.runOperation('u', 'numeric-lost', payload, async () => {
+      await ops.updateNutritionItem('u', 'group', command);
+      throw new Error('lost');
+    })).rejects.toThrow('lost');
+    const action = vi.fn();
+    await store.runOperation('u', 'numeric-lost', payload, action);
+    expect(action).not.toHaveBeenCalled();
+    for (const id of ['a', 'b']) expect(await store.findByUuid('u', id)).toMatchObject({ calories: 240, protein: 20, version: 3 });
+  });
+  it('persists a group density correction atomically with fixed ingredient weights', async () => {
+    const result = await ops.updateNutritionItem('u', 'group', { numericEdit: { field: 'density', value: 3 }, expectedVersions: changes.expectedVersions });
+    expect(result.versions).toEqual({ group: 1, a: 2, b: 2 });
+    expect(await store.findByUuid('u', 'a')).toMatchObject({ grams: 100, calories: 300, protein: null,
+      nutrientProvenance: { calories: { source: 'user' } } });
+    expect((await store.findByUuid('u', 'group')).calories).toBe(0);
+  });
+  it('rejects the whole numeric edit when an ingredient version is stale', async () => {
+    await store.update('u', 'b', { calories: 150 });
+    await expect(ops.updateNutritionItem('u', 'group', { numericEdit: { field: 'density', value: 3 }, expectedVersions: changes.expectedVersions })).rejects.toMatchObject({ status: 409 });
+    expect((await store.findByUuid('u', 'a')).calories).toBe(200);
+  });
+  it('reports a conflict before interpreting a numeric edit against changed or now-unknown nutrition', async () => {
+    await store.update('u', 'b', { calories: null });
+    await expect(ops.updateNutritionItem('u', 'group', { numericEdit: { field: 'density', value: 3 }, expectedVersions: changes.expectedVersions })).rejects.toMatchObject({ status: 409 });
+  });
   it('scales a whole group atomically while preserving its review deadline and unknowns', async () => {
     const result = await ops.updateNutritionItem('u', 'group', changes);
     expect(result.versions).toEqual({ group: 2, a: 2, b: 2 });

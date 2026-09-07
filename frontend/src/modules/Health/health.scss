@@ -467,6 +467,8 @@ $health-aside-gap: 1.5rem;
 .health-row__macros { grid-column: 3 / 6; }
 .health-row__portion-cell { grid-column: 6; text-align: right; }
 .health-row__kcal { grid-column: 7; }
+.health-numeric-control { cursor: ew-resize; touch-action: pan-y; user-select: none; }
+.health-numeric-control:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
 .health-row__action { grid-column: 8; }
 .health-row-line--group { background: var(--ds-surface); border-radius: 6px; font-weight: 600; }
 .health-row-line--child .health-row__visual { opacity: 0.75; }

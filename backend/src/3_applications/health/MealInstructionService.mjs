@@ -56,7 +56,7 @@ For ordinary NEW foods return intent add and let the established food parser han
 ${preview ? 'Suggest useful disjoint dishes from existing foods. Return {intent:"groups",groups:[{name,targetIds:[existing IDs]}]}; each group requires at least two individual foods and each ID may occur only once. Leave unrelated foods ungrouped. Return groups:[] when no useful grouping exists. This is a read-only preview.' : ''}
 Context: ${JSON.stringify({ date, bucket, selectedIds, confirmedTargetId: clarification || null, recentInput, items: rows })}
 Instruction: ${JSON.stringify(input.text || 'Suggest a grouping')}`;
-    const raw = await this.aiGateway.chat(prompt, { maxTokens: 2500 });
+    const raw = await this.aiGateway.chat([{ role: 'user', content: prompt }], { maxTokens: 2500 });
     let result;
     try { result = typeof raw === 'string' ? JSON.parse(raw.replace(/^\s*```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '')) : raw; }
     catch { throw fail('Could not interpret the meal instruction; please try again'); }
