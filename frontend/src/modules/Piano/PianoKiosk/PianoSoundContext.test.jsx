@@ -74,8 +74,11 @@ describe('PianoSoundContext', () => {
     fireEvent.click(screen.getByText('resync'));
     expect(midi.sendLocalControl).toHaveBeenCalledWith(true);
     expect(midi.sendVoice).toHaveBeenCalledWith(secondVoice.pc, secondVoice.bank || 0);
-    expect(midi.sendControlChange).toHaveBeenCalledWith(device.effects.reverb.typeCC, device.effects.reverb.defaultType);
     expect(midi.sendControlChange).toHaveBeenCalledWith(device.effects.reverb.levelCC, 64);
+    // The MDG-400's algorithm is fixed in hardware (typeAddressable: false), so a
+    // resync asserts the send level and nothing else — a type write it discards
+    // is not worth a message on a hop that drops them.
+    expect(midi.sendControlChange).not.toHaveBeenCalledWith(device.effects.reverb.typeCC, expect.anything());
   });
 
   it('fails loudly outside the canonical provider instead of exposing retired engine stubs', () => {
