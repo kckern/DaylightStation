@@ -272,6 +272,10 @@ export function useSelfService({
   // written synchronously closes that window. (`busy` remains, for disabling
   // the buttons visually.)
   const workRef = useRef(false);
+  // `submit` runs the single action of a card with nothing to decide, and
+  // `runAction` is defined below it. A ref, not a reordering: naming it in
+  // `submit`'s dependency array would read it before its `const` initialises.
+  const runActionRef = useRef(null);
 
   /** Claim the single in-flight slot. `false` means someone else has it. */
   const beginWork = useCallback(() => {
@@ -370,6 +374,35 @@ export function useSelfService({
       setView('identity');
       schoolLog.selfService('identity.asked', { userId: learnerId });
       return { resolved: true, sentence: null, degraded: false };
+    }
+
+    // A CARD WITH NOTHING TO DECIDE IS A TAP THIS CHILD DOES NOT OWE.
+    //
+    // The server sets `openImmediately` for a card carrying one action, that
+    // action being a `program` — the reading shelf's card is one button
+    // reading "Open Reading" over a "Go back", asked of a child who just
+    // spelled out the code that means it. Run it and let the runner be the
+    // next thing they see.
+    //
+    // The claim comes FIRST here, for the same reason it is held back on the
+    // identity path: whatever this action opens has to record against the
+    // learner the code named, and claiming afterwards would attribute the work
+    // second. `endWork` already ran above, so the action's own double-tap
+    // guard is free to take it.
+    //
+    // The view stays on the keypad meanwhile — busy, as it already is during
+    // the resolve — rather than flashing the card we are removing. A refusal
+    // or a dispatch answers with words through `runAction`'s own paths, which
+    // set the view themselves.
+    if (res.data.presentation?.openImmediately) {
+      const work = (Array.isArray(res.data.actions) ? res.data.actions : [])
+        .find((candidate) => candidate?.kind !== 'exit');
+      if (work) {
+        if (learnerId && claim) claim(learnerId);
+        schoolLog.selfService('card.skipped', { kind: work.kind });
+        await runActionRef.current?.(work);
+        return { resolved: true, sentence: null, degraded: false };
+      }
     }
 
     setView('card');
@@ -527,6 +560,7 @@ export function useSelfService({
     // a grown-up has to say yes first, or which room the work just started in.
     say(said);
   }, [beginWork, endWork, onLaunch, say, toLock]);
+  runActionRef.current = runAction;
 
   /**
    * "Did it print?" — Yes closes the interaction, No offers it again.
