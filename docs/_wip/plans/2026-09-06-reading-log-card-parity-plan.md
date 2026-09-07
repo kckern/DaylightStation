@@ -737,4 +737,4 @@ Expected: all pass.
 - [ ] `status()` makes no repository reads
 - [ ] Reading code: `maxUses: 12`, rollover expiry unchanged, token TTL unchanged
 - [ ] `Reading log` everywhere; story time no longer claims the name
-- [ ] A real rendered page looked at with human eyes
+- [x] A real rendered page looked at with human eyes (2026-09-06: 580x1049, card ~400px, "also reading" costs one line)
