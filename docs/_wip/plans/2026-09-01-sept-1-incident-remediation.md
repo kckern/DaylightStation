@@ -433,7 +433,7 @@ const GLOBAL_ZONES = [
   { id: 'hot', name: 'Hot', min: 140, color: 'orange', rings: 3 },
   { id: 'fire', name: 'Fire', min: 160, color: 'red', rings: 5 },
 ];
-const MILO_PROFILE = { id: 'user_4', zoneConfig: [
+const LEARNER_PROFILE = { id: 'user_4', zoneConfig: [
   { id: 'cool', min: 0 }, { id: 'active', min: 120 }, { id: 'warm', min: 140 }, { id: 'hot', min: 160 }, { id: 'fire', min: 180 },
 ] };
 
@@ -450,7 +450,7 @@ describe('FitnessTreasureBox.resolveZone with a late ZoneProfileStore profile', 
     const profiles = new Map();
     const { box } = boxWithStore(profiles);
     expect(box.resolveZone('user_4', 105).id).toBe('active');   // no profile yet: global
-    profiles.set('user_4', MILO_PROFILE);                        // store catches up
+    profiles.set('user_4', LEARNER_PROFILE);                        // store catches up
     expect(box.resolveZone('user_4', 105).id).toBe('cool');      // personal active=120
   });
 
@@ -458,7 +458,7 @@ describe('FitnessTreasureBox.resolveZone with a late ZoneProfileStore profile', 
     const profiles = new Map([['user_4', { id: 'user_4', zoneConfig: [{ id: 'cool', min: 0 }, { id: 'active', min: 100 }] }]]);
     const { box } = boxWithStore(profiles);
     expect(box.resolveZone('user_4', 105).id).toBe('active');
-    profiles.set('user_4', MILO_PROFILE);
+    profiles.set('user_4', LEARNER_PROFILE);
     expect(box.resolveZone('user_4', 105).id).toBe('active');    // still cached — by design, until told
     box.invalidateZoneOverrideCache();
     expect(box.resolveZone('user_4', 105).id).toBe('cool');
