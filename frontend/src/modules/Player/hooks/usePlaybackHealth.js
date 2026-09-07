@@ -43,8 +43,55 @@ const DEFAULT_SIGNALS = Object.freeze({
   ended: false,
   buffering: false,
   readyState: null,
-  networkState: null
+  networkState: null,
+  // MediaError.code from the last 'error' event. A dead pipeline fires 'error'
+  // with no starvation signals — no waiting, no stalled — and may or may not
+  // fire 'pause', so this is the only signal that distinguishes it from a
+  // deliberate pause. It LATCHES until playback demonstrably recovers: it is
+  // cleared on 'playing', on re-seeding against a new element, and on a waitKey
+  // change.
+  errorCode: null,
+  // Was the element actually PLAYING when that error arrived? An error that
+  // stops playback is an incident to recover from; an error that lands on an
+  // element someone already paused is not — remounting that one would restart
+  // a deliberately-paused track by itself (`<audio src autoPlay>`). Latches and
+  // clears with `errorCode`.
+  errorWhilePlaying: false
 });
+
+/**
+ * MediaError codes worth a recovery attempt. 1 (ABORTED) is raised by our own
+ * teardown/`load()` calls, and 4 (SRC_NOT_SUPPORTED) means the media is simply
+ * unplayable — jolting either one only burns the recovery ledger.
+ */
+const RECOVERABLE_MEDIA_ERROR_CODES = Object.freeze([2, 3]);
+
+/**
+ * How close to the 'error' a 'pause' has to land to count as caused BY it.
+ *
+ * The browser dispatches the error/pause pair inside the same task (or the very
+ * next queued one), so the real gap is ~0ms; this window exists only to absorb
+ * event-task scheduling, NOT human reaction time. It is deliberately far below
+ * any plausible interval between a person pressing pause and a server dying.
+ *
+ * The window is what makes the classification immune to the DISPATCH ORDER of
+ * 'error' vs 'pause', which is not something we have verified across browsers:
+ * whichever arrives first, a pause this close to an error is the error's.
+ */
+const ERROR_PAUSE_COINCIDENCE_MS = 500;
+
+/**
+ * Monotonic clock for measuring the pause's age. `Date.now()` is the WRONG tool
+ * for a duration: an NTP step backwards makes the elapsed time negative, which
+ * satisfies the coincidence window and would classify a long-parked element as
+ * error-stopped — resuming a paused track by itself, the exact regression the
+ * narrowing exists to prevent. `performance.now()` cannot step backwards.
+ */
+const monotonicNowMs = () => (
+  typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now()
+);
 
 const NO_FRAME_INFO = Object.freeze({
   supported: false,
@@ -343,6 +390,11 @@ export function usePlaybackHealth({
     }
 
     let destroyed = false;
+    // When this element last parked, on the MONOTONIC clock (see
+    // monotonicNowMs). Compared against the error's arrival to tell an
+    // error-induced pause from a pre-existing one. Per-element, so it resets
+    // with the listener effect.
+    let pausedAtMs = null;
     const safeUpdate = (patch) => {
       if (!destroyed) {
         updateElementSignals(patch);
@@ -400,14 +452,58 @@ export function usePlaybackHealth({
     const handleWaiting = () => safeUpdate({ waiting: true, buffering: true });
     const handlePlaying = () => {
       const sampledSeconds = sampleCurrentTime();
-      safeUpdate({ playing: true, waiting: false, stalled: false, buffering: false, paused: false });
+      safeUpdate({
+        playing: true, waiting: false, stalled: false, buffering: false, paused: false,
+        // The pipeline is alive again — a stale code would keep isStuck latched
+        // through a rung-0 recovery, which hard-resets this element in place and
+        // therefore never re-seeds. See plan decision 4a.
+        errorCode: null,
+        errorWhilePlaying: false
+      });
+      pausedAtMs = null;
       recordProgress('event', { details: 'playing', seconds: sampledSeconds });
       logHealthEvent('media-playing', { currentTime: sampledSeconds }, { level: 'debug' });
       updateBufferRunway();
     };
     const handleStalled = () => safeUpdate({ stalled: true, waiting: false });
-    const handlePause = () => safeUpdate({ paused: true, playing: false });
+    const handlePause = () => {
+      pausedAtMs = monotonicNowMs();
+      safeUpdate({ paused: true, playing: false });
+    };
     const handleEnded = () => safeUpdate({ ended: true, playing: false, waiting: false });
+
+    const handleError = () => {
+      // Read from the element, not the event: that is where the spec puts it,
+      // and it is what Chromium leaves behind for a mid-playback pipeline error.
+      const code = mediaEl.error?.code ?? null;
+      // `paused` comes off the element, not from a sibling 'pause' event: the
+      // spec does not require one alongside 'error', and the fleet is not all
+      // Chromium.
+      // Did this error STOP playback, or land on an element that was already
+      // parked? Either the element is still un-paused (the error beat the pause
+      // event), or it parked within a hair of now (the pause beat the error) —
+      // both mean the error is what stopped it. A pause older than the
+      // coincidence window was somebody's deliberate one; leave it alone.
+      const parkedForMs = pausedAtMs === null ? null : monotonicNowMs() - pausedAtMs;
+      const errorWhilePlaying = mediaEl.paused !== true
+        || (parkedForMs !== null && parkedForMs <= ERROR_PAUSE_COINCIDENCE_MS);
+      safeUpdate({
+        errorCode: code,
+        errorWhilePlaying,
+        playing: false,
+        paused: mediaEl.paused === true
+      });
+      logHealthEvent('media-error', {
+        errorCode: code,
+        errorWhilePlaying,
+        parkedForMs,
+        errorMessage: mediaEl.error?.message ?? null,
+        currentTime: sampleCurrentTime(),
+        // These separate a transient network death from NETWORK_NO_SOURCE,
+        // which is the distinction the recovery response turns on.
+        ...readReadyNetworkState()
+      }, { level: 'warn' });
+    };
 
     const handleStalledWithLog = () => {
       handleStalled();
@@ -421,6 +517,7 @@ export function usePlaybackHealth({
     mediaEl.addEventListener('pause', handlePause);
     mediaEl.addEventListener('stalled', handleStalledWithLog);
     mediaEl.addEventListener('ended', handleEnded);
+    mediaEl.addEventListener('error', handleError);
     bufferEvents.forEach((eventName) => mediaEl.addEventListener(eventName, updateBufferRunway));
 
     const haveFutureData = typeof HTMLMediaElement !== 'undefined'
@@ -435,6 +532,14 @@ export function usePlaybackHealth({
       playing: !mediaEl.paused && !mediaEl.ended,
       waiting: initialWaiting,
       stalled: false,
+      // Adopt THIS element's error state. Without this the seed leaves the
+      // previous element's latched code in place, and a remount that actually
+      // fixed playback would look like it was still broken.
+      errorCode: mediaEl.error?.code ?? null,
+      // A seeded error is adopted as "the pipeline is dead" but never as "the
+      // error stopped playback": we did not observe this element playing, so we
+      // cannot claim it was interrupted.
+      errorWhilePlaying: false,
       ...readReadyNetworkState()
     });
     updateBufferRunway();
@@ -446,6 +551,7 @@ export function usePlaybackHealth({
       mediaEl.removeEventListener('pause', handlePause);
       mediaEl.removeEventListener('stalled', handleStalledWithLog);
       mediaEl.removeEventListener('ended', handleEnded);
+      mediaEl.removeEventListener('error', handleError);
       bufferEvents.forEach((eventName) => mediaEl.removeEventListener(eventName, updateBufferRunway));
     };
   }, [waitKey, elementGeneration, recordProgress, updateElementSignals, logHealthEvent]);
@@ -518,6 +624,15 @@ export function usePlaybackHealth({
     bufferRunwayMs,
     isWaiting: Boolean(elementSignals.waiting || elementSignals.buffering),
     isStalledEvent: Boolean(elementSignals.stalled),
+    // A media error we consider worth retrying (see RECOVERABLE_MEDIA_ERROR_CODES).
+    // Distinct from isWaiting/isStalledEvent: those mean "starved and waiting for
+    // data", this means "the pipeline is dead".
+    hasMediaError: RECOVERABLE_MEDIA_ERROR_CODES.includes(elementSignals.errorCode),
+    // The narrower half of hasMediaError: the pipeline died OUT FROM UNDER
+    // playback. Only this one may override a reported pause — see the
+    // user-intent classification in useMediaResilience.
+    mediaErrorStoppedPlayback: RECOVERABLE_MEDIA_ERROR_CODES.includes(elementSignals.errorCode)
+      && elementSignals.errorWhilePlaying === true,
     isFrameAdvancing: frameInfo.supported ? frameInfo.advancing : null,
     // True when the media clock is genuinely moving forward right now. The
     // authority for "it's playing" — downstream resilience uses it to suppress
