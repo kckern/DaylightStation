@@ -20,6 +20,7 @@
  */
 
 import { SCHOOL_ACCESS_CODE_DIGITS } from '../sessions/accessCode.mjs';
+import { DEFAULT_BOOK_LOG_SUBJECT, bookLogContext } from '../bookLog.mjs';
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 
@@ -192,29 +193,203 @@ function bulkPrintAction({ token, label, subjects, accessCode }) {
   };
 }
 
+/** The other in-progress books the card is willing to name. Two fits the column. */
+const ALSO_READING_LIMIT = 2;
+
 /**
- * The reading-log card — the FOURTH and last designated construction site.
+ * Past this many characters the description already fills the narrow column
+ * beside the QR, and the "also reading" tail is the row that pushes the card
+ * off the bottom of a short tape. It is the first thing dropped.
+ */
+const DESCRIPTION_ROOM = 120;
+
+/** `200` → `3h 20m`, `45` → `45m`. Minutes-mode books carry no page number. */
+function spokenMinutes(minutes) {
+  if (!Number.isFinite(minutes) || minutes <= 0) return null;
+  const whole = Math.round(minutes);
+  const hours = Math.floor(whole / 60);
+  const rest = whole % 60;
+  if (!hours) return `${rest}m`;
+  return rest ? `${hours}h ${rest}m` : `${hours}h`;
+}
+
+/** `['Frindle', 'The Hobbit']` → `Also reading: Frindle and The Hobbit.` */
+function alsoReadingSentence(titles) {
+  const named = (Array.isArray(titles) ? titles : []).filter(isNonEmptyString).slice(0, ALSO_READING_LIMIT);
+  if (!named.length) return null;
+  const list = named.length === 1 ? named[0] : `${named.slice(0, -1).join(', ')} and ${named[named.length - 1]}`;
+  return `Also reading: ${list}.`;
+}
+
+/**
+ * What a reading card SAYS, by state. One table, so the five outcomes cannot
+ * drift apart one branch at a time.
+ *
+ * `set-aside` is a real thing a child chose, not an absence — telling them to
+ * start a book when they have one on the shelf they put down is a lie about
+ * their own log. `unreadable` is likewise not `empty`: a shelf that could not
+ * be read prints no counts and no bars rather than a zero (a damaged year of
+ * evidence must never print as "you have read nothing").
+ *
+ * The second sentence takes the mode's own noun — page, minutes, check-in —
+ * because "save tonight's page" is not something a minutes-mode reader can do.
+ */
+function readingCopy(feature) {
+  const state = isNonEmptyString(feature?.state) ? feature.state : 'unreadable';
+  // `book` is null unless the record HAS a title (the launcher's contract), so
+  // this is the only question the headline has to ask.
+  const title = isNonEmptyString(feature?.book?.title) ? feature.book.title.trim() : null;
+  const author = (Array.isArray(feature?.book?.authors) ? feature.book.authors : [])
+    .find(isNonEmptyString)?.trim() ?? null;
+
+  if (state === 'unreadable') {
+    return { label: 'Reading log', unit: 'Books', description: 'Open your shelf on the panel.', meta: 'OPEN ON THE PANEL' };
+  }
+  if (state === 'empty') {
+    return {
+      label: 'Start a book',
+      unit: 'Books',
+      description: 'Type the number off the back of any book to put it on your shelf.',
+      meta: 'ADD A BOOK ON THE PANEL',
+    };
+  }
+  if (state === 'finished') {
+    return {
+      label: title ?? 'Reading log',
+      unit: author ?? 'Books',
+      description: 'You finished it. Add the next one: type the number off the back.',
+      meta: 'ADD A BOOK ON THE PANEL',
+    };
+  }
+  if (state === 'set-aside') {
+    return {
+      label: title ?? 'Reading log',
+      unit: author ?? 'Books',
+      description: 'Set aside. Pick it back up, or start something new.',
+      meta: 'ADD A BOOK ON THE PANEL',
+    };
+  }
+
+  // `reading` — where they are, then what to do about it tonight.
+  const page = Number.isFinite(feature?.page) ? Math.round(feature.page) : null;
+  const pageCount = Number.isInteger(feature?.pageCount) && feature.pageCount > 0 ? feature.pageCount : null;
+  const minutes = spokenMinutes(feature?.minutes);
+  const days = Number.isInteger(feature?.daysRead) && feature.daysRead > 0 ? feature.daysRead : null;
+  let where = null;
+  let noun = 'reading';
+  if (page !== null) {
+    where = pageCount ? `Page ${page} of ${pageCount}` : `Page ${page}`;
+    if (Number.isFinite(feature?.percent) && feature.percent >= 75) where += ' — nearly there';
+    noun = 'page';
+  } else if (minutes) {
+    where = `${minutes} so far`;
+    noun = 'minutes';
+  } else if (days) {
+    where = `Read on ${days} ${days === 1 ? 'day' : 'days'}`;
+    noun = 'check-in';
+  }
+  const move = `Save tonight's ${noun}, or say you finished it.`;
+  return {
+    label: title ?? 'Reading log',
+    unit: author ?? 'Books',
+    description: where ? `${where}. ${move}` : move,
+    meta: 'UPDATE ON THE PANEL',
+  };
+}
+
+/**
+ * The reading-log card — the FOURTH and last designated construction site, and
+ * as of the 2026-09-06 card-parity change a LESSON card like every other thing
+ * a child is asked to do that day. It was built from the notice shape (a label,
+ * a QR, six digits) and wore it for months beside cards carrying a subject
+ * glyph, a breadcrumb, a title and bars.
  *
  * A card of its own rather than a code on the English lesson's, because it is
  * not that lesson and does not follow it: the reading log is open every day, to
  * every learner, whether or not they are enrolled in anything and whether or
  * not English is finished. Riding on the lesson card would make it vanish on
  * exactly the days the lesson is done — the days a child most wants to record
- * the book they finished with it.
+ * the book they finished with it. (What changed is the presentation, not that
+ * reasoning.)
+ *
+ * ## THE TAXONOMY IS FOUR STRINGS, AND A SECOND RENDERER READS THEM
+ *
+ * `blocks.mjs` rejects a `scan_action` whose taxonomy lacks a non-empty
+ * `subject`, `course`, `unit` AND `lesson`, and one rejected block fails
+ * `validateDocument` for the WHOLE agenda — bit for bit the failure the
+ * `lessonAction` docblock above memorializes. They are not filler either:
+ * `DocumentEscPosRenderer` prints `Course · / Unit · / Lesson ·` FROM THE
+ * TAXONOMY and never reads `unit`, `rail` or `progress`, and it is live — the
+ * operator transcript is harvested from it, and it is the only renderer when
+ * the canvas one fails to build. So all four have to read as prose.
+ *
+ * The course name comes from `bookLogContext()`, the one authority for how the
+ * shelf names itself, so the printed card and the panel cannot disagree.
  *
  * Same well-formed-code contract as `bulkPrintAction`, for the same reason: the
  * caller only builds this when it already holds a good code, so there is no
  * `codeAbsenceBlocks` fallback. No code means no card — a Reading card a child
  * cannot type into is worse than none.
+ *
+ * @param {object} args
+ * @param {string} args.token       the reading token
+ * @param {string} args.accessCode  its six-digit panel alias
+ * @param {object|null} args.feature `BookLogProgramLauncher.featuredBook()`'s
+ *   answer, or null when it could not be had — null prints the `unreadable`
+ *   card, never no card and never "start a book".
+ * @param {string} args.subject     the subject the shelf sits under
  */
-function readingLogAction({ token, label, accessCode }) {
-  return {
-    type: 'scan_action',
-    action: token,
-    label,
-    hideCode: true,
-    ...panelCodeField(accessCode),
-  };
+function readingLogAction({ token, accessCode, feature = null, subject = DEFAULT_BOOK_LOG_SUBJECT }) {
+  const subjectId = isNonEmptyString(subject) ? subject.trim() : DEFAULT_BOOK_LOG_SUBJECT;
+  const subjectTitle = subjectId[0].toUpperCase() + subjectId.slice(1);
+  const copy = readingCopy(feature);
+  const state = isNonEmptyString(feature?.state) ? feature.state : 'unreadable';
+
+  const tail = state === 'unreadable' ? null : alsoReadingSentence(feature?.alsoReading);
+  const description = tail && copy.description.length <= DESCRIPTION_ROOM
+    ? `${copy.description} ${tail}`
+    : copy.description;
+
+  // The book bar only when there is a percentage to draw. `usableProgressRows`
+  // drops any row without an integer total anyway, so a book whose length
+  // nobody knows degrades to the obligation bar alone rather than to a
+  // divide-by-zero wearing a label.
+  const bookRow = state !== 'unreadable' && Number.isFinite(feature?.percent)
+    ? [{ label: copy.label, completed: feature.page ?? null, total: feature.pageCount ?? null }]
+    : [];
+  // The obligation bar comes from the caller — it is measured against an
+  // enrollment this pure builder never sees.
+  const obligationRows = state === 'unreadable' || !Array.isArray(feature?.progressRows)
+    ? []
+    : feature.progressRows;
+  const progress = [...bookRow, ...obligationRows]
+    .filter((row) => row && Number.isInteger(row.total) && row.total > 0);
+
+  return lessonAction({
+    token,
+    // No eyebrow, for the same reason no subject card has one: the breadcrumb
+    // below it already says where this sits.
+    eyebrow: null,
+    // A STATEMENT, NEVER A GATE. A subject card leaves the page when it is
+    // served; this one cannot, because the shelf never closes — a met
+    // obligation prints the same card wearing a rail and a working code.
+    rail: feature?.obligationMet === true ? 'Done' : null,
+    unit: copy.unit,
+    title: copy.label,
+    description,
+    // The SUBJECT the shelf sits under, not a hardcoded `english`: an
+    // enrollment may place it anywhere, and the gutter glyph is drawn from this.
+    icon: subjectId,
+    meta: copy.meta,
+    progress,
+    taxonomy: {
+      subject: subjectTitle,
+      course: bookLogContext().course.title,
+      unit: copy.unit,
+      lesson: isNonEmptyString(feature?.book?.title) ? feature.book.title.trim() : 'Reading log',
+    },
+    accessCode,
+  });
 }
 
 /**
@@ -405,6 +580,20 @@ function appendNoteLines(blocks, noteLines) {
  *   prints and the receipt is byte-identical to one built before the feature.
  * @param {string} [args.readingAccessCode] six-digit panel code aliasing
  *   `readingToken`. A malformed one prints no card at all, like the bulk code.
+ * @param {{state: 'reading'|'finished'|'set-aside'|'empty'|'unreadable',
+ *   book: {title: string, authors: string[]}|null, page?: number|null,
+ *   percent?: number|null, pageCount?: number|null, minutes?: number|null,
+ *   daysRead?: number, alsoReading?: string[], obligationMet?: boolean,
+ *   progressRows?: Array<{label: string, completed: number, total: number}>
+ * }|null} [args.readingFeature] what the reading card headlines —
+ *   `BookLogProgramLauncher.featuredBook()`'s answer. ABSENT OR NULL IS NOT NO
+ *   CARD: it prints the `unreadable` shape, because a shelf that could not be
+ *   read is not an empty one and must never print as a zero. `obligationMet`
+ *   and `progressRows` are the caller's — an obligation is measured against an
+ *   enrollment this pure builder never sees.
+ * @param {string} [args.readingSubject] the subject the shelf sits under, for
+ *   the gutter glyph and the breadcrumb. An enrollment may place it anywhere,
+ *   so this is never hardcoded to English.
  * @param {string} [args.footer]
  * @returns {object} a document ready for `validateDocument`
  */
@@ -413,6 +602,7 @@ export function agendaDocument({
   sections = [], tokensBySubject = {}, accessCodesByToken = {},
   bulkToken = null, bulkAccessCode = null,
   readingToken = null, readingAccessCode = null,
+  readingFeature = null, readingSubject = DEFAULT_BOOK_LOG_SUBJECT,
   footer = null, notes = [],
 } = {}) {
   // The learner's name is the document TITLE, not a text block: the renderers
@@ -578,9 +768,17 @@ export function agendaDocument({
 
   // Whether anything is still open decides the wording of the done tally
   // below: with work left it is a footnote to the page above it; with nothing
-  // left it is the whole answer. Read BEFORE the bulk card goes on, so that
-  // card — which only exists when there IS work — cannot change the verdict.
-  const nothingLeft = blocks.length === 0;
+  // left it is the whole answer.
+  //
+  // THE VERDICT IS THE CURRICULUM'S, AND ONLY THE CURRICULUM'S. It is captured
+  // here — after the section loop, before anything else is pushed — rather than
+  // read off `blocks.length` further down, because the two cards that follow
+  // are unconditional-ish decoration: the bulk card only exists when there IS
+  // work, and the reading card (2026-09-06 card-parity plan, Task 7) prints on
+  // every agenda in every state. Counting either would make "All done today"
+  // unreachable forever, and nothing would say so.
+  const curriculumBlocks = blocks.length;
+  const nothingLeft = curriculumBlocks === 0;
 
   // One extra card at the end, printing every offered subject in one job: an
   // alias for "scan each lesson card in turn," not a fourth kind of session.
@@ -595,10 +793,11 @@ export function agendaDocument({
   // Before the bulk card, so "print all sheets" stays the last action on the
   // page. Unconditional on enrollment by design — see `readingLogAction`.
   if (isNonEmptyString(readingToken) && typeof readingAccessCode === 'string' && PANEL_CODE.test(readingAccessCode)) {
-    blocks.push(readingLogAction({
+    blocks.push(...readingLogAction({
       token: readingToken,
-      label: 'Reading log — add or update a book',
       accessCode: readingAccessCode,
+      feature: readingFeature,
+      subject: readingSubject,
     }));
   }
 
