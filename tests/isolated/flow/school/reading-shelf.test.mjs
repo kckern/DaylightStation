@@ -214,7 +214,12 @@ describe('reading shelf composed journey', () => {
           subtitle: 'Escapes&nbsp;again',
           authors: ['Brown, Peter', 'Peter Brown', 'Jane Illustrator', 'A. Translator'],
           coverUrl: 'https://covers.example.test/wild-robot-landscape.jpg',
-          projection: { status: 'finished', percent: 100, daysRead: 1, lastAt: `${STUDY_DAY}T12:00:00.000Z` },
+          // `lastOn` is the day the child read; `lastAt` is when the tap was
+          // recorded. v1 had one field and had to fake noon of the study day.
+          projection: {
+            status: 'finished', percent: 100, daysRead: 1,
+            lastOn: STUDY_DAY, lastAt: NOW,
+          },
         }],
       });
 
@@ -224,9 +229,15 @@ describe('reading shelf composed journey', () => {
         path.join(root, 'school/records/books', `${LEARNER_ID}.yml`),
         'utf8',
       ));
-      expect(storedLog.items).toHaveLength(1);
-      expect(storedLog.items[0].events.map((event) => [event.kind, event.entryId]))
-        .toEqual([['started', 'open-wild-robot'], ['finished', 'finish-wild-robot']]);
+      expect(storedLog.schema).toBe('school.book-log/v2');
+      expect(storedLog.readings).toHaveLength(1);
+      expect(storedLog.readings[0]).toMatchObject({
+        learnerId: LEARNER_ID, status: 'finished', finishedOn: STUDY_DAY,
+        idempotencyKey: 'open-wild-robot',
+      });
+      // Opening is a field, not a row. The one row is the day it was finished.
+      expect(storedLog.readings[0].entries.map((entry) => [entry.on, entry.idempotencyKey]))
+        .toEqual([[STUDY_DAY, 'finish-wild-robot']]);
       const storedBook = yaml.load(readFileSync(path.join(root, 'books', `${ISBN}.yml`), 'utf8'));
       expect(storedBook).toMatchObject({ isbn13: ISBN, cachedAt: NOW });
 

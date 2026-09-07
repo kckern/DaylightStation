@@ -88,6 +88,10 @@ const NAMESPACES = {
     module: './school/learner.mjs',
     blurb: 'admin: rekey a learner id across both school data roots',
   },
+  booklog: {
+    module: './school/booklog.cli.mjs',
+    blurb: 'admin: convert a learner reading shelf to the v2 storage model (dry run by default)',
+  },
   agenda: {
     module: './school/agenda.mjs',
     blurb: 'inspect and re-render the agenda pages the thermal printer printed',

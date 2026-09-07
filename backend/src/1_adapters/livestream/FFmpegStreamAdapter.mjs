@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { PassThrough } from 'stream';
+import { PassThrough } from 'node:stream';
 import crypto from 'crypto';
 
 /**

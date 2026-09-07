@@ -424,6 +424,44 @@ describe('BookLogProgramLauncher', () => {
     });
   });
 
+  describe('over v2 readings — the shape the store hands back after the re-key', () => {
+    const reading = (overrides = {}) => ({
+      id: 'rdg_1', learnerId: 'kid', book: { isbn: 'b1', pageCount: 184 }, progressMode: 'page',
+      status: 'reading', openedOn: '2026-08-01', finishedOn: null, entries: [], revisions: [], ...overrides,
+    });
+
+    it('measures the daily obligation from the entries\' own days', async () => {
+      const status = await launcher(enrolled({ metric: 'pages', quantity: 20, per: 'day' }), [
+        reading({ entries: [
+          { id: 'ent_1', on: '2026-08-08', at: '2026-08-08T18:00:00Z', page: 40 },
+          { id: 'ent_2', on: '2026-08-09', at: '2026-08-10T04:00:00Z', page: 84 },
+        ] }),
+      ]).status({ userId: 'kid' });
+      // The second row was RECORDED after midnight UTC and still counts today,
+      // because `on` says which day it was.
+      expect(status).toMatchObject({ enrolled: true, doneToday: true });
+    });
+
+    it('counts a finished reading by its stored state', async () => {
+      const status = await launcher(enrolled({ metric: 'books', quantity: 1, per: 'week' }), [
+        reading({ status: 'finished', finishedOn: '2026-08-09' }),
+      ]).status({ userId: 'kid' });
+      expect(status).toMatchObject({ doneToday: true });
+    });
+
+    it('features a reading and names its book from the reading\'s own isbn', async () => {
+      const card = await launcher(enrolled(), [
+        reading({ entries: [{ id: 'ent_1', on: '2026-08-09', at: '2026-08-09T18:00:00Z', page: 92 }] }),
+      ], {
+        bookRepository: { async findByIsbn(isbn) { return isbn === 'b1' ? { title: 'Hatchet', authors: ['Gary Paulsen'] } : null; } },
+      }).featuredBook({ userId: 'kid' });
+
+      expect(card).toMatchObject({
+        state: 'reading', book: { title: 'Hatchet' }, page: 92, percent: 50, pageCount: 184, daysRead: 1,
+      });
+    });
+  });
+
   it('status() still makes no repository read — the card must not tax the boards', async () => {
     // status() runs inside collectProgramStatuses -> PlanProjection, which the
     // teacher board, the status board, DoNow and the completion recompute all
