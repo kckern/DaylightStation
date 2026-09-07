@@ -306,8 +306,11 @@ export function useMediaKeyboardHandler(config) {
     : Boolean(derivedState?.isPaused ?? derivedState?.paused);
   
   if (isPaused) {
-    conditionalOverrides['ArrowUp'] = () => {}; // Let pause overlay handle
-    conditionalOverrides['ArrowDown'] = () => {}; // Let pause overlay handle
+    // Let the pause overlay handle the arrows — unless the caller bound them to
+    // something of its own (e.g. ContentScroller's singalong scroll nudge, which
+    // is most useful precisely while paused). An explicit override always wins.
+    if (!keyboardOverrides.ArrowUp) conditionalOverrides['ArrowUp'] = () => {};
+    if (!keyboardOverrides.ArrowDown) conditionalOverrides['ArrowDown'] = () => {};
     if (!pausedNoticeLogged.current) {
       logger.debug('ui.key.ignored-when-paused', { keys: ['ArrowUp', 'ArrowDown'], queuePosition });
       pausedNoticeLogged.current = true;

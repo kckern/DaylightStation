@@ -10,10 +10,11 @@ function logger() {
 /**
  * useCenterByWidest
  * -----------------
- * Centers a block of text content (e.g., hymn or poetry) by:
+ * Places a block of text content (e.g., hymn or poetry) horizontally by:
  *  1. Measuring the widest ".stanza" child inside the container
  *  2. Setting the container's width to that maximum natural width
- *  3. Applying a left margin so the container is horizontally centered within the nearest .textpanel
+ *  3. Applying a left margin so the container sits at `bias` of the free space
+ *     inside the nearest .textpanel's content box (0.5 = true centre)
  *
  * Advantages over prior inline logic:
  *  - Uses useLayoutEffect to avoid visible reflow flicker
@@ -24,8 +25,12 @@ function logger() {
  * @param {Array<any>} deps - dependency array to trigger recalculation (e.g., [verses])
  * @param {Object} options
  * @param {boolean} [options.observeResize=true] - attach a ResizeObserver to re-center on panel/container size changes
+ * @param {number} [options.bias=0.5] - share of the leftover horizontal space placed on the
+ *   LEFT of the block. 0.5 centres it geometrically; a smaller value pulls the block toward
+ *   the left, which reads better for ragged-right text whose optical centre sits left of its
+ *   bounding box. See SingalongScroller, which uses 0.35.
  */
-export function useCenterByWidest(containerRef, deps = [], { observeResize = true, stanzaSelector = '.stanza', debug = false } = {}) {
+export function useCenterByWidest(containerRef, deps = [], { observeResize = true, stanzaSelector = '.stanza', bias = 0.5, debug = false } = {}) {
   useLayoutEffect(() => {
     // Guard for SSR / non-DOM environments
     if (typeof window === 'undefined' || typeof document === 'undefined') return;
@@ -61,16 +66,16 @@ export function useCenterByWidest(containerRef, deps = [], { observeResize = tru
           currentEl.style.width = `${maxWidth}px`;
         }
 
-        // Centre on the CONTENT box, not the panel. `.scrolled-content` carries
-        // a padding-left the text already starts after, so centring on the raw
-        // panel width parks every block half a padding left of true centre.
+        // Place against the CONTENT box, not the panel. `.scrolled-content`
+        // carries a padding-left the text already starts after, so measuring the
+        // raw panel width parks every block half a padding left of where it belongs.
         const scrolled = currentEl.closest('.scrolled-content');
         const padLeft = scrolled ? parseFloat(getComputedStyle(scrolled).paddingLeft) || 0 : 0;
         const panelWidth = panel.offsetWidth - padLeft;
         const diff = panelWidth - maxWidth;
-        const marginLeft = Math.max(0, diff / 2);
+        const marginLeft = Math.max(0, diff * bias);
         currentEl.style.marginLeft = `${marginLeft}px`;
-        log('recalc', { phase, maxWidth, panelWidth, padLeft, marginLeft });
+        log('recalc', { phase, maxWidth, panelWidth, padLeft, bias, marginLeft });
       } catch (err) {
         log('recalc-error', { message: err?.message });
       }

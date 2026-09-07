@@ -381,6 +381,40 @@ adult tuning the ladder reads it. It does not reach the child: the failure panel
 words, never a percentage, because a percentage with no bar beside it invites comparison
 against a target that does not exist.
 
+### Taking the pass
+
+A pass is **claimed**, not applied: the run shows the child what they earned, and
+`onPassed` fires when they take it. That is deliberate — a pass is good news the player
+should read before the screen moves — but for a long time it had exactly one trigger, a
+click on Continue, and that made the gate unpassable on the screen it mattered most on.
+
+The office TV has no touchscreen and no mouse. It is driven by a keyboard and a keypad
+that both sit out of a child's reach; the piano is the whole of what a child at it can
+touch. On 2026-09-06 a preschooler cleared the gate there twice in three minutes — 3/3
+notes, `passed: true`, both attempts persisted with a 201 — and `gate.passed` never
+fired either time, because there was nothing in the room that could press the button. He
+did the work and was locked out for finishing it.
+
+So a cleared pass is claimable four ways, and the run does not need to know which inputs
+the room has:
+
+| Route | For |
+|---|---|
+| The Continue button | Pointer devices — the tablet |
+| <kbd>Enter</kbd> / <kbd>Space</kbd> | Keyboards and keypads. The button is also autofocused, so the key reaches it either way |
+| Any piano key | The kiosk. **Only after the passing notes are released** — otherwise the chord that cleared the gate would claim its own pass and the child would never see they had won |
+| A 6s timer (`PASS_CLAIM_TIMEOUT_MS`) | The floor under the other three. No device configuration may strand a child on a screen they already cleared |
+
+All four are idempotent through one `passTakenRef`: the host is handed exactly one pass
+per attempt however many routes fire. The panel names the piano rather than the button
+("Play any key to keep going"), because on the kiosk the button is the one thing a child
+cannot use. Each claim logs `piano.exercise-pass-taken` with a `via` field, so which
+route a child actually used is answerable rather than assumed.
+
+This is the same principle as the gate's own Leave button, applied to the happy path:
+**every screen a child can be sent to needs a way out, and the one they reach by
+succeeding needs it most.**
+
 ### The floor cannot fail
 
 The easiest level in **any** resolved repertoire is unfailable, and that is structural
@@ -656,6 +690,8 @@ deliberately absent from it, because setting them today does nothing** — plus 
 | `gameGate.passScore` | **not resolved at all**, at the top level or on a level. Pass is the verdict everywhere; the key is dropped before the gate sees it. |
 | `gameGate.material` | **not resolved at all.** The pre-repertoire shape: one flat material list for the whole gate. Material now belongs to a level. A block carrying only this has no repertoire, so it runs on the built-in fallback. |
 | `gameGate.ladder.*` | **not resolved at all.** The five-axis ladder it configured no longer exists. |
+| `gameGate.users.{id}.path` | **not resolved at all.** `resolveGateConfig` drops it, and `resolveLearnerPath` — which would apply it — has tests and no production caller. The climb walks the GLOBAL tier-ordered repertoire for every child; only `startLevel` is per-learner. A `path` in the config expresses intent and changes nothing. |
+| `gameGate.users.{id}.dailyEscalation.steps` / `capstoneAfter` / `capstoneLevel` | **not consumed.** `dailyChallengeLevel` is likewise tested and uncalled, so a day's completed games never raise the rung. Only `dailyEscalation.enabled` is read, and only to decide whether the host waits on the board-game day before painting. |
 | `gameLimit.source: economy` | Not implemented. It does not open a coin/economy path; use `fixed` or `earned`. |
 
 Neither kind logs anything when set. `every` and `metered` are resolved and then simply

@@ -41,6 +41,9 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
    *  - yStartTime: number => seconds before scrolling starts
    *  - playbackKeys: object => keypad mappings for playback control
    *  - ignoreKeys: boolean => whether to ignore global key handling
+   *  - manualScrollNudge: boolean => rebind ArrowUp/ArrowDown from shader cycling to a
+   *      manual vertical offset on the scrolling text (see nudgePx below). Opt-in per
+   *      renderer; only SingalongScroller sets it.
    */
   
   export default function ContentScroller({
@@ -66,6 +69,7 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
     yStartTime = 15,
     playbackKeys = {},
     ignoreKeys = false,
+    manualScrollNudge = false,
     queuePosition = 0,  // Accept queuePosition from parent (Player)
     onPlaybackMetrics,
     onRegisterMediaAccess,
@@ -99,6 +103,19 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
     const [progress, setProgress] = useState(0);
     const [isSeeking, setIsSeeking] = useState(false);
     const seekTimerRef = useRef(null);
+
+    // Manual scroll offset, in px, added on top of the time-derived yOffset.
+    // The scroll position is otherwise a pure function of the clock, so when the
+    // transcribed text and the recording disagree (a missing or repeated verse, a
+    // lead-in that doesn't match yStartTime) there is no way to re-register them.
+    // This is that way. It never touches the media clock.
+    const [nudgePx, setNudgePx] = useState(0);
+    const nudgeRef = useRef(0);
+    // The range the nudge can usefully take right now, published by the yOffset
+    // memo below. Without it a press at the very top or bottom would still
+    // accumulate into a total the display clamps away, and the next few presses
+    // back the other way would look dead.
+    const nudgeRangeRef = useRef({ min: -Infinity, max: Infinity });
 
     // Seek-bar fill seed. Rather than repaint width every 100ms tick (which steps
     // and freezes when a tick runs late), the fill runs a linear width keyframe
@@ -375,6 +392,45 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
       enabled: !!isVideo
     });
 
+    // Each track starts from the derived position — a nudge corrects ONE
+    // recording's drift and must not carry into the next song.
+    useEffect(() => { nudgeRef.current = 0; setNudgePx(0); }, [mainMediaUrl]);
+
+    // ArrowUp/ArrowDown scoot the text instead of cycling shaders, but only where
+    // the renderer asked for it. componentOverrides is consulted before both
+    // playbackKeys and the default map (keyboardManager.js), so this fully
+    // replaces the shader binding for those two keys on this content.
+    //
+    // Memoized because keyboardManager holds componentOverrides as an
+    // identity-compared useEffect dep. (Its wrapper spreads the map every render
+    // anyway, so this alone does not stop the listener churn — it just keeps this
+    // component from being one more cause of it.)
+    const nudgeOverrides = useMemo(() => {
+      if (!manualScrollNudge) return undefined;
+      const bump = (direction) => {
+        // Measured, not hardcoded: the same markup renders at wildly different
+        // scales (admin preview modal vs. a 4K screen), so one line is whatever a
+        // line currently is. 32px is the 2rem default when nothing is measurable.
+        const el = contentRef.current?.querySelector('.line, p');
+        const stepPx = el?.offsetHeight || 32;
+        // The ref carries the running total so the log stays a plain side effect
+        // rather than something React may replay inside a state updater.
+        const { min, max } = nudgeRangeRef.current;
+        const next = Math.max(min, Math.min(max, nudgeRef.current + (direction * stepPx)));
+        nudgeRef.current = next;
+        setNudgePx(next);
+        playbackLog('player.scroll-nudge', {
+          direction: direction > 0 ? 'up' : 'down',
+          stepPx,
+          nudgePx: next,
+          currentTime: mainRef.current?.currentTime ?? null,
+          assetId,
+          type
+        }, { level: 'info', context: { source: 'ContentScroller' } });
+      };
+      return { ArrowUp: () => bump(1), ArrowDown: () => bump(-1) };
+    }, [manualScrollNudge, contentRef, assetId, type]);
+
     // Use centralized keyboard handler
     useMediaKeyboardHandler({
       mediaRef: mainRef,
@@ -384,6 +440,7 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
       playbackKeys,
       queuePosition, // Use the queuePosition passed from parent
       ignoreKeys,
+      keyboardOverrides: nudgeOverrides,
       setCurrentTime // Pass state setter for time synchronization
     });
 
@@ -403,16 +460,28 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
    
     // Final transform for scrolling with safeguards against jitter
     const yOffset = useMemo(() => {
-      // Ensure we have valid dimensions before calculating
-      if (!contentHeight || !panelHeight) return 0;
+      // Ensure we have valid dimensions before calculating. A manual nudge still
+      // applies — a keypress must move the text whether or not the panel has been
+      // measured yet.
+      if (!contentHeight || !panelHeight) {
+        nudgeRangeRef.current = { min: 0, max: Infinity };
+        return Math.max(0, nudgePx);
+      }
       
       // Calculate base offset
       const baseOffset = (yProgress * contentHeight) - (panelHeight * yProgress);
       
       // Clamp to reasonable bounds to prevent over-scrolling
       const maxOffset = Math.max(0, contentHeight - panelHeight);
-      return Math.max(0, Math.min(maxOffset, baseOffset));
-    }, [yProgress, contentHeight, panelHeight]);
+      const derived = Math.max(0, Math.min(maxOffset, baseOffset));
+
+      // The manual nudge rides ON TOP of the clamped derived position, so it stays
+      // a constant user offset instead of being swallowed by the clamp. Its ceiling
+      // is the full content height (not maxOffset) so the text can still be pushed
+      // at the end of a song, where the derived position already sits at the max.
+      nudgeRangeRef.current = { min: -derived, max: contentHeight - derived };
+      return Math.max(0, Math.min(contentHeight, derived + nudgePx));
+    }, [yProgress, contentHeight, panelHeight, nudgePx]);
 
   // Determine which section heading has scrolled past
   const currentSection = useMemo(() => {

@@ -60,18 +60,25 @@ export const ALL_VOICES = VOICE_GROUPS.flatMap((g) => g.voices);
 
 // Reverb/Chorus over MIDI IN: CC80/CC81 pick the program (type), CC91 the send
 // level. The unit's panel only exposes on/off + level; type select is the GM2
-// algorithm number (best-effort — labels are conventional GM2 names).
+// algorithm number, so every `value` here must be one GM2 actually defines —
+// an undefined number is silently discarded, which reads as a dead button.
+//
+// GM2 reverb types: 0 Small Room, 1 Medium Room, 2 Large Room, 3 Medium Hall,
+// 4 Large Hall, 8 Plate. 5–7 do not exist; 'Large Hall' was 5 until 2026-09-06,
+// so that step sent a number the engine had no algorithm for.
+// GM2 chorus types: 0 Chorus 1, 1 Chorus 2, 2 Chorus 3, 3 Chorus 4,
+// 4 FB Chorus, 5 Flanger — the list below is already exactly that.
 export const EFFECTS = {
   reverb: {
     label: 'Reverb',
     typeCC: 80,
     levelCC: 91,
-    defaultType: 4, // Hall
+    defaultType: 4, // Large Hall
     types: [
-      { value: 0, label: 'Room' },
+      { value: 1, label: 'Room' },
       { value: 2, label: 'Large Room' },
-      { value: 4, label: 'Hall' },
-      { value: 5, label: 'Large Hall' },
+      { value: 3, label: 'Hall' },
+      { value: 4, label: 'Large Hall' },
       { value: 8, label: 'Plate' },
     ],
   },
