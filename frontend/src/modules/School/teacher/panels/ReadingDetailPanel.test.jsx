@@ -52,7 +52,9 @@ const KIDS = [
   { id: 'learner_a', name: 'learner_a' },
   { id: 'learner_b', name: 'learner_b' },
 ];
-const WINDOW = { from: '2026-08-31', to: '2026-09-06' };
+// What the SERVER answers with the reading. The console holds no second
+// derivation of it, so a test that wants a different window says so here.
+const WINDOW = { state: 'window', per: 'week', from: '2026-08-31', to: '2026-09-06' };
 const ok = (data) => ({ ok: true, status: 200, data });
 
 const reading = (over = {}) => ({
@@ -84,8 +86,10 @@ const reading = (over = {}) => ({
   ...over,
 });
 
-const seed = (over = {}) => {
-  teacherWorkspaceApi.readingDetail.mockResolvedValue(ok({ learnerId: 'learner_a', reading: reading(over) }));
+const seed = (over = {}, countedWindow = WINDOW) => {
+  teacherWorkspaceApi.readingDetail.mockResolvedValue(
+    ok({ learnerId: 'learner_a', countedWindow, reading: reading(over) }),
+  );
 };
 
 const mount = (props = {}) => render(
@@ -94,7 +98,6 @@ const mount = (props = {}) => render(
     learnerName="learner_a"
     readingId="rd_1"
     kids={KIDS}
-    countedWindow={WINDOW}
     onClose={props.onClose ?? vi.fn()}
     onChanged={props.onChanged ?? vi.fn()}
   />,
@@ -293,6 +296,29 @@ describe('the five verbs that make a child’s record smaller', () => {
     expect(screen.queryByText(/takes it off/)).toBeNull();
   });
 
+  it('an obligation the server could not read says so, rather than pre-requiring nothing in silence', async () => {
+    // The failure the served window exists to make visible: with no window,
+    // the console cannot judge the re-date, and the old client-side mirror
+    // simply stopped asking — with nothing on screen to say why.
+    seed({}, { state: 'unknown', per: null, from: null, to: null });
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Sep 3' }));
+    fireEvent.change(screen.getByLabelText('Day they read'), { target: { value: '2026-08-01' } });
+    expect(screen.getByText(/counted window couldn’t be read/)).toBeTruthy();
+    // The decision itself is unchanged: the server is still the one that refuses.
+    expect(screen.getByRole('button', { name: 'Save this day' }).disabled).toBe(false);
+  });
+
+  it('a child who owes no reading has no window and no note — that is a settled answer', async () => {
+    seed({}, { state: 'none', per: null, from: null, to: null });
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Sep 3' }));
+    fireEvent.change(screen.getByLabelText('Day they read'), { target: { value: '2026-08-01' } });
+    expect(screen.queryByText(/counted window couldn’t be read/)).toBeNull();
+    expect(screen.queryByText(/takes it off/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save this day' }).disabled).toBe(false);
+  });
+
   it('will not move the reading to a sibling without a reason', async () => {
     seed();
     mount();
@@ -441,11 +467,30 @@ describe('history — every revision, and the undos that are honest', () => {
         id: 'rev_1', by: 'test-user', at: '2026-09-04T10:00:00.000Z',
         verb: 'reading.move', op: 'reading.move',
         before: { learnerId: 'learner_b' }, after: { learnerId: 'learner_a' }, reason: 'mis-scanned', toldChild: true,
+        canUndo: false,
+        undoRefusal: 'A Borrowed Title has been read since it moved — undoing would delete that reading. Move it back instead, which keeps the days.',
       }],
     });
     mount();
     expect(await screen.findByText(/has been read since it moved/)).toBeTruthy();
     expect(screen.getByText(/Move it back instead/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
+  });
+
+  it('renders whatever sentence the server sent, WORD FOR WORD — it holds no copy of them', async () => {
+    // The drift this exists to catch: reword a refusal server-side and the
+    // console must follow without being edited. A sentence no client rule
+    // could have produced proves it is reading, not deriving.
+    seed({
+      revisions: [{
+        id: 'rev_1', by: 'test-user', at: '2026-09-06T17:02:00.000Z',
+        verb: 'reading.update', op: 'reading.update',
+        before: { pageCount: 180 }, after: { pageCount: 184 }, reason: null, toldChild: false,
+        canUndo: false, undoRefusal: 'That one is spoken for, and the server said so.',
+      }],
+    });
+    mount();
+    expect(await screen.findByText('That one is spoken for, and the server said so.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
   });
 
@@ -456,11 +501,13 @@ describe('history — every revision, and the undos that are honest', () => {
           id: 'rev_1', by: 'test-user', at: '2026-09-05T10:00:00.000Z',
           verb: 'reading.update', op: 'reading.update',
           before: { pageCount: 180 }, after: { pageCount: 184 }, reason: null, toldChild: false,
+          canUndo: false, undoRefusal: 'That change has already been undone — undo the undo instead.',
         },
         {
           id: 'rev_2', by: 'test-user', at: '2026-09-06T10:00:00.000Z',
           verb: 'reading.undo', op: 'reading.update', undoes: 'rev_1', undoneVerb: 'reading.update',
           before: { pageCount: 184 }, after: { pageCount: 180 }, reason: null, toldChild: false,
+          canUndo: true, undoRefusal: null,
         },
       ],
       baseRevisionCount: 2,
@@ -477,6 +524,8 @@ describe('history — every revision, and the undos that are honest', () => {
         id: 'rev_1', by: 'test-user', at: '2026-09-01T10:00:00.000Z',
         verb: 'reading.add', op: 'reading.add',
         before: null, after: { id: 'rd_1', isbn: '9780000000001' }, reason: null, toldChild: false,
+        canUndo: false,
+        undoRefusal: 'Undoing the opening of a reading would destroy it and its whole history. Delete the reading instead, which says what it is.',
       }],
     });
     mount();

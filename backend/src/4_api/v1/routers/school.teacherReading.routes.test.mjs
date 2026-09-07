@@ -194,7 +194,22 @@ describe('the teacher reading edit routes', () => {
     await withCookie(request(app(deps)).post(PATH)
       .send({ isbn: '9780000000009', progressMode: 'page', pageCount: 96 })).expect(201);
     expect(deps.addReadingForLearner.execute).toHaveBeenCalledWith(expect.objectContaining({
-      learnerId: LEARNER, isbn: '9780000000009', pageCount: 96,
+      learnerId: LEARNER, isbn: '9780000000009', pageCount: 96, where: 'starting',
+    }));
+  });
+
+  it('carries the door the grown-up chose — where the child is with it', async () => {
+    const deps = EDIT_DEPS();
+    await withCookie(request(app(deps)).post(PATH)
+      .send({ isbn: '9780000000009', where: 'partway', page: 84 })).expect(201);
+    expect(deps.addReadingForLearner.execute).toHaveBeenCalledWith(expect.objectContaining({
+      where: 'partway', page: 84, finishedOn: null,
+    }));
+
+    await withCookie(request(app(deps)).post(PATH)
+      .send({ isbn: '9780000000009', where: 'finished', finishedOn: '2026-08-20' })).expect(201);
+    expect(deps.addReadingForLearner.execute).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: 'finished', finishedOn: '2026-08-20', page: null,
     }));
   });
 

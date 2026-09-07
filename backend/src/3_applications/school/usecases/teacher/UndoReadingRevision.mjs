@@ -22,8 +22,11 @@
  * The gate is INHERITED from the verb being undone: undoing a move needs the
  * same `books.reading.reassign` step-up the move needed.
  *
- * **Two things it refuses by name**, so the console can show the sentence
- * instead of a button that lies:
+ * **Three things it refuses by name**, and those refusals live in
+ * `readingEdits.mjs#undoRefusal` because `GetLearnerReadings` SERVES them on
+ * every revision — so the console shows the sentence rather than a button that
+ * lies, and shows the same sentence this verb would have thrown:
+ * - a revision another undo already inverted — undo the undo instead;
  * - a move the receiving child has logged against — the reading is theirs now,
  *   and rewinding it would delete their evidence;
  * - the opening of a reading, whose inverse is destroying the reading and the
@@ -33,7 +36,7 @@
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import {
   ReadingEditContext, applyReadingOperation, assertFreshRevisions,
-  GATE_ACTIONS, OPS, UNDO_VERB,
+  GATE_ACTIONS, OPS, UNDO_VERB, undoRefusal,
 } from './readingEdits.mjs';
 
 export class UndoReadingRevision {
@@ -53,12 +56,15 @@ export class UndoReadingRevision {
     const revision = revisions.find((row) => row?.id === revisionId);
     if (!revision) throw new EntityNotFoundError('reading revision', revisionId);
 
-    // Linear, per reading: a revision that a later undo already inverted must
-    // not be inverted twice. Undoing the undo is the way back.
-    const undoneBy = revisions.find((row) => row?.undoes === revisionId);
-    if (undoneBy) {
-      throw new ValidationError('That change has already been undone — undo the undo instead.');
-    }
+    // The three refusals, from the one function that also SERVES them on the
+    // read (`GetLearnerReadings`). The console showed the sentence; this is
+    // the same sentence, so the grown-up is not told two different things.
+    const refusal = undoRefusal(reading, revision, {
+      // The label only appears in the move refusal, and looking a book up is a
+      // round trip: ask for it only when it can be part of the answer.
+      ...(revision.op === OPS.READING_MOVE ? { label: await this.#context.label(reading) } : {}),
+    });
+    if (refusal) throw new ValidationError(refusal);
 
     const inverse = await this.#inverse(reading, revision, learnerId);
     this.#context.assert({
@@ -121,23 +127,10 @@ export class UndoReadingRevision {
     }
 
     if (op === OPS.READING_MOVE) {
+      // "Read against since it moved" was already refused above, by name.
       const home = before?.learnerId ?? null;
       if (!home) throw new ValidationError('that move does not say where the reading came from');
-      const since = (reading.entries ?? [])
-        .filter((entry) => String(entry?.at ?? '') > String(revision.at ?? '')).length;
-      if (since > 0) {
-        const label = await this.#context.label(reading);
-        throw new ValidationError(
-          `${label} has been read since it moved — undoing would delete that reading. Move it back instead, which keeps the days.`,
-        );
-      }
       return { op: OPS.READING_MOVE, toLearnerId: home };
-    }
-
-    if (op === OPS.READING_ADD) {
-      throw new ValidationError(
-        'Undoing the opening of a reading would destroy it and its whole history. Delete the reading instead, which says what it is.',
-      );
     }
 
     throw new ValidationError(`that change cannot be undone: ${op ?? 'unknown'}`);

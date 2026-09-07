@@ -35,7 +35,6 @@ import GradedWorksheet from './panels/GradedWorksheet.jsx';
 import LearnerDayView from './panels/LearnerDayView.jsx';
 import ReadingShelfPanel from './panels/ReadingShelfPanel.jsx';
 import ReadingDetailPanel from './panels/ReadingDetailPanel.jsx';
-import { countedWindow } from './panels/readingDetail.js';
 import { LessonIdentity, SubjectIdentity } from './CurriculumIdentity.jsx';
 import { teacherBaseFor, teacherDayPath } from './teacherUrl.js';
 import { curriculumTitles } from './curriculumTitles.js';
@@ -366,7 +365,7 @@ function openReadingParam() {
  */
 export function ReadingView({ learnerId, learnerName, kids = [] }) {
   const [openReading, setOpenReading] = useState(openReadingParam);
-  const [shelf, setShelf] = useState({ state: 'loading', obligation: null, studyDay: null });
+  const [shelf, setShelf] = useState({ state: 'loading' });
   // Bumped by every successful correction, so the shelf's counts and
   // projections come from the server rather than from a guess about what the
   // edit did to them.
@@ -391,12 +390,17 @@ export function ReadingView({ learnerId, learnerName, kids = [] }) {
   }, []);
 
   const readable = shelf.state === 'ok';
-  const readWindow = countedWindow(shelf.obligation, shelf.studyDay);
 
   return (
     <div className="teacher-view">
       <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Reading</p><h2>{learnerName}’s shelf</h2><p>What they are reading, how much, and how consistently — and, from any row, the record itself.</p></div></div>
-      <ReadingShelfPanel learnerId={learnerId} refreshToken={refresh} onShelf={setShelf} onOpenReading={show} />
+      <ReadingShelfPanel
+        learnerId={learnerId}
+        refreshToken={refresh}
+        onShelf={setShelf}
+        onOpenReading={show}
+        onAdded={() => setRefresh((value) => value + 1)}
+      />
       {readable && openReading && (
         <ReadingDetailPanel
           key={openReading}
@@ -404,7 +408,6 @@ export function ReadingView({ learnerId, learnerName, kids = [] }) {
           learnerName={learnerName}
           readingId={openReading}
           kids={kids}
-          countedWindow={readWindow}
           onClose={() => show(null)}
           onChanged={() => setRefresh((value) => value + 1)}
         />
