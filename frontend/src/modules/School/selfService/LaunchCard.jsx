@@ -427,6 +427,7 @@ export default function LaunchCard({
   // you, undefined?" — a card with no resolvable display name still has to be
   // able to ask, and the generic form is a real sentence.
   const identityName = learner?.displayName ?? 'you';
+  const isReading = card?.actions?.some((action) => action.kind === 'program' && action.target === 'book-log');
   const learnerAvatarId = learner?.avatar?.kind === 'learner'
     ? learner.avatar.id : learner?.id;
   const trail = Array.isArray(context?.trail) ? context.trail : [];
@@ -568,7 +569,7 @@ export default function LaunchCard({
                     onClick={() => onConfirmIdentity?.()}
                     disabled={busy}
                   >
-                    <span className="school-selfservice-card__action-label">{IDENTITY_YES}</span>
+                    <span className="school-selfservice-card__action-label">{isReading ? (identityName === 'you' ? 'Open my books' : `Open ${identityName}'s books`) : IDENTITY_YES}</span>
                   </button>
                   <button
                     type="button"

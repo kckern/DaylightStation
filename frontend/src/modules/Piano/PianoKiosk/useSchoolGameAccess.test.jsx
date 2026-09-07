@@ -38,7 +38,7 @@ vi.mock('../../../lib/logging/Logger.js', () => ({
 }));
 
 import { DaylightAPI } from '../../../lib/api.mjs';
-import useSchoolGameAccess, { completionAllowsGames } from './useSchoolGameAccess.js';
+import useSchoolGameAccess, { completionAllowsGames, activePianoGamesDecision } from './useSchoolGameAccess.js';
 
 beforeEach(() => {
   h.response = entitlement();
@@ -222,4 +222,11 @@ describe('useSchoolGameAccess verdict logging', () => {
 
     expect(h.log.info).toHaveBeenCalledTimes(1);
   });
+});
+
+it('selects the school day when a fitness week starts at the same time', () => {
+  const day = entitlement({ decision: 'granted', basisState: 'satisfied' }).items[0];
+  const week = { ...day, period: { ...day.period, id: 'fitness-week:2026-08-30:2026-09-05' }, decision: 'denied', basisState: 'indeterminate' };
+  expect(activePianoGamesDecision({ items: [week, day] })).toBe(day);
+  expect(activePianoGamesDecision({ items: [week] })).toBeNull();
 });

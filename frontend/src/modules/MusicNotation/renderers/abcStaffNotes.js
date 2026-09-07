@@ -7,24 +7,32 @@
  * (e.g. a MIDI follow-along). Index N within a staff maps 1:1 to the Nth played
  * note of that staff's voice (rests excluded), matching a flattened drill hand.
  *
- * @returns {Array<Array<{ midi:number|null, els: SVGElement[] }>>} notes per staff
+ * `eventIndex` counts rests too, so alternating hands still reference the
+ * original exercise event after one voice has waited through a rest.
+ * @returns {Array<Array<{ midi:number|null, eventIndex:number, els: SVGElement[] }>>} notes per staff
  */
 export function collectStaffNotes(tune) {
   const staves = []; // staffIndex → [{ midi, els }]
+  const positions = new Map();
   const lines = tune?.lines || [];
   for (const line of lines) {
     const staff = line.staff;
     if (!Array.isArray(staff)) continue;
     staff.forEach((st, si) => {
       const bucket = staves[si] || (staves[si] = []);
-      (st.voices || []).forEach((voice) => {
+      (st.voices || []).forEach((voice, vi) => {
+        const key = `${si}:${vi}`;
+        let eventIndex = positions.get(key) ?? 0;
         (voice || []).forEach((el) => {
-          if (el.el_type !== 'note' || el.rest) return;
+          if (el.el_type !== 'note') return;
+          const position = eventIndex++;
+          if (el.rest) return;
           const abs = el.abselem;
           const els = (abs?.elemset && abs.elemset.length ? abs.elemset : abs?.heads) || [];
           const midi = el.midiPitches?.[0]?.pitch ?? null;
-          bucket.push({ midi, els: Array.from(els).filter(Boolean) });
+          bucket.push({ midi, eventIndex: position, els: Array.from(els).filter(Boolean) });
         });
+        positions.set(key, eventIndex);
       });
     });
   }

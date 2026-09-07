@@ -615,7 +615,7 @@ export class ParticipantRoster {
 
     const isGuest = guestEntry
       ? (guestEntry.occupantType === 'guest')
-      : (mappedUser ? mappedUser.source === 'Guest' : true);
+      : (mappedUser ? ['Guest', 'Friend', 'Family'].includes(mappedUser.source) : true);
 
     const baseUserName = isGuest
       ? (guestEntry?.metadata?.baseUserName || guestEntry?.metadata?.base_user_name || null)

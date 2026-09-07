@@ -6,7 +6,7 @@ export function receiptCopy(receipt) {
   switch (receipt?.kind) {
     case 'finished': {
       const day = shortDay(receipt.finishedOn);
-      return { heading: 'Book finished!', detail: `Saved in History${day ? ` · ${day}` : ''}` };
+      return { heading: 'Book finished!', detail: `Finished${day ? ` · ${day}` : ''}` };
     }
     case 'progress':
       if (receipt.page) {
@@ -33,11 +33,11 @@ export function receiptCopy(receipt) {
   }
 }
 
-export default function SaveReceipt({ receipt, onBack, onHistory, onUndo, busy = false, error = null }) {
+export default function SaveReceipt({ receipt, onBack, onHistory, onUndo, busy = false, error = null, inline = false }) {
   const presentation = presentBook(receipt?.book);
   const copy = receiptCopy(receipt);
   return (
-    <div className="school-books-receipt" data-testid="book-save-receipt">
+    <div className={`school-books-receipt${inline ? ' school-books-receipt--inline' : ''}`} data-testid="book-save-receipt">
       <div className="school-books-receipt__message" role="status" aria-live="polite">
         <div className="school-books-receipt__mark" aria-hidden="true">✓</div>
         <BookCover book={receipt?.book} className="school-books-receipt__cover" />
@@ -51,10 +51,10 @@ export default function SaveReceipt({ receipt, onBack, onHistory, onUndo, busy =
         </div>
       </div>
       <div className="school-books-receipt__actions">
-        <button type="button" className="school-books-receipt__back" disabled={busy} onClick={() => { if (!busy) onBack?.(); }}>Back to my books</button>
+        {!inline && <button type="button" className="school-books-receipt__back" disabled={busy} onClick={() => { if (!busy) onBack?.(); }}>Back to my books</button>}
         {receipt?.kind === 'finished' && (
           <>
-            <button type="button" className="school-books-receipt__history" disabled={busy} onClick={() => { if (!busy) onHistory?.(); }}>See History</button>
+            {!inline && <button type="button" className="school-books-receipt__history" disabled={busy} onClick={() => { if (!busy) onHistory?.(); }}>See History</button>}
             <button type="button" className="school-books-receipt__undo" disabled={busy} onClick={() => { if (!busy) onUndo?.(); }}>Undo finish</button>
           </>
         )}

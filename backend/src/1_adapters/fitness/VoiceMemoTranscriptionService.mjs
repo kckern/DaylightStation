@@ -68,6 +68,7 @@ export class VoiceMemoTranscriptionService {
 
     // 1. Transcribe with Whisper
     const transcriptRaw = await this.#openaiAdapter.transcribe(buffer, {
+      sessionId,
       filename: `voice-memo.${ext}`,
       contentType: mimeType || 'audio/ogg',
       prompt: whisperPrompt

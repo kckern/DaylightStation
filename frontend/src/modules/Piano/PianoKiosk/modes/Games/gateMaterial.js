@@ -202,7 +202,42 @@ const inCollection = (category, collection) => typeof category === 'string'
  * Every other collection does.
  */
 const SCALES_SEED = 'scales/modes';
-const scaleInstanceId = (root) => `${SCALES_SEED}@root=${root},mode=ionian,direction=up,span_octaves=1`;
+
+/**
+ * The axis values `scales/modes` publishes — see
+ * `data/content/music/scales/modes.yml`, which is the source of truth; this is
+ * a copy and has to be re-synced when that seed's expansion changes.
+ *
+ * They are checked rather than interpolated because an id this module BUILDS
+ * must name something the bank can materialize. An unknown value produces an id
+ * that resolves to nothing, which arrives back here as `instance-unavailable` —
+ * classified as an OUTAGE, and outages fail open. So `direction: updown` would
+ * hand out free matches for as long as the typo survived, silently. Falling
+ * back to the default keeps a child in front of a scale instead.
+ */
+const SCALE_MODES = Object.freeze([
+  'ionian', 'dorian', 'phrygian', 'lydian', 'mixolydian', 'aeolian',
+  'harmonic-minor', 'melodic-minor', 'chromatic', 'locrian',
+  'major-pentatonic', 'minor-pentatonic', 'blues',
+]);
+const SCALE_DIRECTIONS = Object.freeze(['up', 'down', 'up-then-down']);
+const SCALE_SPANS = Object.freeze([1, 2]);
+
+/**
+ * One ascending octave of the major scale: what every scale rung in the live
+ * config resolved to before these axes could be named, and what one still
+ * resolves to when it names none of them.
+ */
+const SCALE_DEFAULTS = Object.freeze({ mode: 'ionian', direction: 'up', span_octaves: 1 });
+
+const onScale = (allowed, value, fallback) => (allowed.includes(value) ? value : fallback);
+
+const scaleInstanceId = (root, spec = {}) => {
+  const mode = onScale(SCALE_MODES, spec.mode, SCALE_DEFAULTS.mode);
+  const direction = onScale(SCALE_DIRECTIONS, spec.direction, SCALE_DEFAULTS.direction);
+  const span = onScale(SCALE_SPANS, Math.floor(Number(spec.span_octaves)), SCALE_DEFAULTS.span_octaves);
+  return `${SCALES_SEED}@root=${root},mode=${mode},direction=${direction},span_octaves=${span}`;
+};
 
 /**
  * How many seeds to try before giving up on a catalog-addressed collection. A
@@ -331,7 +366,7 @@ export async function resolveSpec(spec, { pickIndex, mode }) {
     // Rotation over the roots, driven by the same counter that rotates the
     // level's material list — which is what makes two consecutive gates at a
     // three-root level two different scales rather than the same one twice.
-    if (roots.length) return loadInstance(scaleInstanceId(roots[pickIndex % roots.length]));
+    if (roots.length) return loadInstance(scaleInstanceId(roots[pickIndex % roots.length], spec));
     if (typeof spec.collection === 'string' && spec.collection) return resolveByCatalog(spec, mode);
     return { ok: false, error: 'no-collection-or-instance' };
   }

@@ -376,6 +376,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
                   ? `${currentUserName ?? 'This player'}’s school plan needs a grown-up.`
                   : `${currentUserName ?? 'This player'} still has schoolwork to finish today.`}
           </p>
+          <p>Play the highest key to change player. Hold the lowest and highest keys for 2 seconds to return to free play.</p>
         </div>
       )}
 

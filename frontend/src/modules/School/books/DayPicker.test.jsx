@@ -13,7 +13,7 @@ describe('DayPicker', () => {
   it('confirming while collapsed confirms today', () => {
     const onConfirm = vi.fn();
     render(<DayPicker today="2026-09-02" onConfirm={onConfirm} />);
-    fireEvent.click(screen.getByRole('button', { name: /that's the day/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Save finish/ }));
     expect(onConfirm).toHaveBeenCalledWith('2026-09-02');
   });
 
@@ -42,7 +42,7 @@ describe('DayPicker', () => {
     fireEvent.click(screen.getByRole('button', { name: /pick a day/i }));
     fireEvent.click(screen.getByRole('gridcell', { name: /Sunday 30 August/ }));
     expect(screen.getByRole('gridcell', { name: /Sunday 30 August/ })).toHaveAttribute('aria-selected', 'true');
-    fireEvent.click(screen.getByRole('button', { name: /that's the day/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Save finish/ }));
     expect(onConfirm).toHaveBeenCalledWith('2026-08-30');
   });
 
@@ -52,7 +52,7 @@ describe('DayPicker', () => {
     fireEvent.click(screen.getByRole('button', { name: /pick a day/i }));
     fireEvent.click(screen.getByRole('button', { name: /earlier dates/i }));
     fireEvent.click(screen.getByRole('gridcell', { name: /Sunday 2 August/ }));
-    fireEvent.click(screen.getByRole('button', { name: /that's the day/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Save finish/ }));
     expect(onConfirm).toHaveBeenCalledWith('2026-08-02');
     expect(screen.getByRole('button', { name: /later dates/i })).toBeEnabled();
   });
@@ -76,21 +76,21 @@ describe('DayPicker', () => {
     const onConfirm = vi.fn();
     render(<DayPicker today="2026-09-02" value="2026-09-10" onConfirm={onConfirm} />);
     expect(screen.getByText(/Today · Wed 2/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /that's the day/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Save finish/ }));
     expect(onConfirm).toHaveBeenCalledWith('2026-09-02');
   });
 
   it('a missing onConfirm fails loudly, like a missing today', () => {
     render(<DayPicker today="2026-09-02" />);
-    expect(() => fireEvent.click(screen.getByRole('button', { name: /that's the day/i }))).toThrow();
+    expect(() => fireEvent.click(screen.getByRole('button', { name: /Save finish/ }))).toThrow();
   });
 
   it('freezes the date controls while a write is busy', () => {
     const onConfirm = vi.fn();
     render(<DayPicker today="2026-09-02" busy onConfirm={onConfirm} />);
     expect(screen.getByRole('button', { name: /pick a day/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /that's the day/i })).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: /that's the day/i }));
+    expect(screen.getByRole('button', { name: /Save finish/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /Save finish/ }));
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
@@ -111,7 +111,7 @@ describe('DayPicker', () => {
       fireEvent.click(cell);
       expect(onChange).toHaveBeenCalledTimes(1);
 
-      const confirm = screen.getByRole('button', { name: /that's the day/i });
+      const confirm = screen.getByRole('button', { name: /Save finish/ });
       fireEvent.pointerDown(confirm);
       expect(onConfirm).toHaveBeenCalledWith('2026-08-30');
       fireEvent.click(confirm);
@@ -149,7 +149,7 @@ describe('DayPicker — minDay, the backdate floor', () => {
   it('clamps an initial value that is older than the floor', () => {
     const onConfirm = vi.fn();
     render(<DayPicker today="2026-09-02" minDay="2026-08-26" value="2026-07-01" onConfirm={onConfirm} />);
-    fireEvent.click(screen.getByRole('button', { name: /that's the day/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Save finish/ }));
     expect(onConfirm).toHaveBeenCalledWith('2026-08-26');
   });
 
@@ -164,4 +164,11 @@ describe('DayPicker — minDay, the backdate floor', () => {
       unmount();
     }
   });
+});
+
+it('compact date task keeps the calendar and save visible without a redundant close control', () => {
+  render(<DayPicker today="2026-09-07" initiallyOpen compact onConfirm={() => {}} />);
+  expect(screen.getByRole('grid')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /Save finish/ })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'close' })).toBeNull();
 });

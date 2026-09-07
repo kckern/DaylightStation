@@ -69,6 +69,12 @@ describe('GovernanceEngine — cadence_floor', () => {
     requirement = REQ(engine);
   });
 
+  it('never arms or penalizes a guest rider', () => {
+    engine._captureLatestInputs({ activeParticipants: ['visitor'], guestIds: ['visitor'] });
+    expect(pedal(engine, requirement, 0, 35_000, { rider: 'visitor' })).toBeNull();
+    expect(run(engine, requirement, { rider: 'visitor', rpm: 0, at: 50_000 })).toBeNull();
+  });
+
   it('normalizes the requirement off the policy config', () => {
     expect(requirement).toMatchObject({
       type: 'cadence_floor', equipment: 'tricycle', armSeconds: 30, armMinRpm: 30,

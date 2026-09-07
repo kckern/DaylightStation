@@ -1,35 +1,12 @@
-/**
- * BookShelf — the reading shelf SchoolApp mounts for `program: 'book-log'`
- * (book-shelf UI design §2–§3).
- *
- * A workspace, not a card: the child stays here, so it carries the two guards
- * every other panel action never needs — an always-visible `Done` and the
- * idle close (both in `useBookShelf`). The learner chip is the third guard: a
- * shelf left open on a shared wall panel is one child's books with another
- * child's hands on them, and the name at the top is how the second child
- * notices.
- *
- * Every tap inside the root re-arms the idle timer through `onClickCapture`,
- * the way Keypad does. The shelf owns its scroll: the locked body clips
- * (`.school-app--locked .school-app__body { overflow: hidden }`), so the tile
- * grid scrolls inside a container sized to leave the header and footer in
- * place.
- *
- * All state lives in the hook; this file paints by `view` and hands the
- * overlays (UpdateBook, AddBook) the hook's values as props — it is the
- * hook's only caller. `today` is the household STUDY DAY the server named
- * on the shelf read (`studyDay`, the launcher's 4am-boundary day) — not the
- * panel's local date, which between midnight and 4am is already tomorrow
- * and would land a "Today" finish on the wrong study day. The local date is
- * only the fallback for a server that did not say. Nothing is logged from
- * here — the hook owns the story.
- */
+/** Learner reading workspace: bounded collections, focused editors, and inline save results. */
 import { useBookShelf } from './useBookShelf.js';
 import ShelfTile from './ShelfTile.jsx';
 import History from './History.jsx';
 import UpdateBook from './UpdateBook.jsx';
 import AddBook from './AddBook.jsx';
 import SaveReceipt from './SaveReceipt.jsx';
+import CompletedBook from './CompletedBook.jsx';
+import { recentFinishes } from './readingHistory.js';
 import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
 
 /**
@@ -72,47 +49,57 @@ function LearnerChip({ learner }) {
   );
 }
 
-function AddTile({ first, onSelect }) {
+function AddTile({ first, onSelect, disabled = false }) {
   return (
-    <button type="button" className="school-books-tile school-books-tile--add" onClick={onSelect}>
+    <button type="button" className="school-books-tile school-books-tile--add" disabled={disabled} onClick={onSelect}>
       <span className="school-books-tile__plus" aria-hidden="true">+</span>
       <span className="school-books-tile__add-label">{first ? 'Add your first book' : 'Add a book'}</span>
     </button>
   );
 }
 
-function Fault({ error, onRetry }) {
+function Fault({ error, onRetry, needsRefresh = false, busy = false }) {
   if (!error?.message) return null;
   return (
     <div className="school-books__fault" role="alert">
       <p className="school-books__fault-text">{error.message}</p>
-      <button type="button" className="school-books__retry" onClick={onRetry}>Try again</button>
+      <button type="button" className="school-books__retry" disabled={busy} onClick={onRetry}>{needsRefresh ? 'Retry shelf' : 'Try again'}</button>
     </div>
   );
 }
 
-function Shelf({ shelf, error, actions }) {
+function Shelf({ shelf, error, actions, receipt, busy, needsRefresh }) {
   const items = (shelf?.items ?? []).filter((item) => ON_SHELF.has(item?.projection?.status ?? 'reading'));
+  const finished = recentFinishes(shelf?.items);
+  const awaitingShelf = busy || needsRefresh;
   const obligation = shelf?.obligation ?? null;
   const sentence = obligationSentence(obligation);
   const incompatible = new Set(obligation?.incompatibleBooks ?? []);
   return (
     <>
       {sentence && <p className="school-books__obligation">{sentence}</p>}
-      <Fault error={error} onRetry={actions.retry} />
-      <div className="school-books__grid" data-testid="book-shelf-grid">
-        {items.map((item) => (
-          <ShelfTile
-            key={item.itemId}
-            item={item}
-            onSelect={actions.openItem}
-            incompatibleMetric={incompatible.has(item.bookId) ? obligation.metric : null}
-          />
-        ))}
-        <AddTile first={items.length === 0} onSelect={actions.startAdd} />
+      <Fault error={error} onRetry={actions.retry} needsRefresh={needsRefresh} busy={busy} />
+      {receipt && <SaveReceipt receipt={receipt} busy={busy} inline onUndo={actions.undoFinish} />}
+      <div className="school-books__collections">
+        <div className="school-books__row-heading">
+          <h3>Reading now</h3>
+          <button type="button" className="school-books__retry" disabled={awaitingShelf} onClick={actions.startAdd}>+ Add a book</button>
+        </div>
+        <div className="school-books__grid school-books__row" data-testid="book-shelf-grid">
+          {items.map((item) => <ShelfTile key={item.itemId} item={item} onSelect={awaitingShelf ? null : actions.openItem}
+            incompatibleMetric={incompatible.has(item.bookId) ? obligation.metric : null} />)}
+          {items.length === 0 && (shelf?.items ?? []).length === 0 && <AddTile first disabled={awaitingShelf} onSelect={actions.startAdd} />}
+          {items.length === 0 && (shelf?.items ?? []).length > 0 && <p className="school-books__empty">Ready for your next book</p>}
+        </div>
+        {finished.length > 0 && <section className="school-books__recent" aria-label="Recently finished">
+          <h3>Recently finished</h3>
+          <div className="school-books__row" data-testid="recently-finished-row">
+            {finished.slice(0, 12).map(item => <ShelfTile key={item.itemId} item={item} onSelect={awaitingShelf ? null : actions.openItem} />)}
+          </div>
+        </section>}
       </div>
       <footer className="school-books__footer">
-        <button type="button" className="school-books__history-link" onClick={actions.openHistory}>history ›</button>
+        <button type="button" className="school-books__history-link" disabled={awaitingShelf} onClick={actions.openHistory}>See all history</button>
       </footer>
     </>
   );
@@ -125,8 +112,8 @@ function Shelf({ shelf, error, actions }) {
  * @param {number} [props.idleTimeoutSeconds]
  * @param {(reason: 'done'|'idle') => void} [props.onExit]
  */
-export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit }) {
-  const { view, step, shelf, studyDay, earliestFinishDay, learner, error, busy, current, receipt, add, actions } = useBookShelf({ learnerId, grant, idleTimeoutSeconds, onExit });
+export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit, initialBookEntry }) {
+  const { view, step, shelf, studyDay, earliestFinishDay, learner, error, busy, needsRefresh = false, current, receipt, add, actions } = useBookShelf({ learnerId, grant, idleTimeoutSeconds, onExit, initialBookEntry });
 
   if (view === 'closed') return null;
   // The server's study day, re-read on every shelf fetch; the DayPickers are
@@ -140,28 +127,19 @@ export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit
       ? <Fault error={error} onRetry={actions.retry} />
       : <p className="school-books__loading">Getting your shelf…</p>;
   } else if (view === 'history') {
-    body = <History items={shelf?.items ?? []} onBack={actions.back} />;
+    body = <History items={shelf?.items ?? []} onBack={actions.back} onSelect={needsRefresh ? null : actions.openItem} />;
+  } else if (view === 'completed' && current) {
+    body = <CompletedBook item={current} actions={actions} />;
   } else if (view === 'update' && current) {
-    body = <UpdateBook item={current} today={today} earliestDay={earliestFinishDay} error={error} busy={busy} actions={actions} />;
+    body = <UpdateBook key={current.itemId} item={current} today={today} earliestDay={earliestFinishDay} error={error} busy={busy} actions={actions} />;
   } else if (view === 'add') {
-    body = <AddBook step={step} add={add} today={today} earliestDay={earliestFinishDay} error={error} busy={busy} actions={actions} />;
-  } else if (view === 'receipt' && receipt) {
-    body = (
-      <SaveReceipt
-        receipt={receipt}
-        busy={busy}
-        error={error}
-        onBack={actions.back}
-        onHistory={actions.openHistory}
-        onUndo={actions.undoFinish}
-      />
-    );
+    body = <AddBook key={add.entryId ?? 'isbn'} step={step} add={add} today={today} earliestDay={earliestFinishDay} error={error} busy={busy} actions={actions} />;
   } else {
-    body = <Shelf shelf={shelf} error={error} actions={actions} />;
+    body = <Shelf shelf={shelf} error={error} actions={actions} receipt={receipt} busy={busy} needsRefresh={needsRefresh} />;
   }
 
   return (
-    <section className="school-books" data-testid="book-shelf" onClickCapture={actions.noteActivity}>
+    <section className="school-books" data-testid="book-shelf" onClickCapture={actions.noteActivity} onPointerDownCapture={actions.noteActivity} onInputCapture={actions.noteActivity}>
       <header className="school-books__header">
         <div className="school-books__who">
           <h2 className="school-books__title">Reading</h2>

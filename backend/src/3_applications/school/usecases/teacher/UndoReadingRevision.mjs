@@ -118,6 +118,7 @@ export class UndoReadingRevision {
         // evidence under a new name. The revision records both.
         entry: {
           on: row.on ?? null, at: row.at ?? null,
+          kind: row.kind ?? null, restoredRecordedAt: row.recordedAt ?? null,
           page: row.page ?? null, minutes: row.minutes ?? null,
           ...(row.note ? { note: row.note } : {}),
           source: row.source ?? 'teacher',

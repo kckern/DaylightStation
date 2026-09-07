@@ -9,6 +9,7 @@ import {
 } from '#domains/school/studyDay.mjs';
 import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
+import { projectReadingActivity } from '#domains/school/readingActivity.mjs';
 import { curriculumPosterRef, schoolArtifactRef } from '#apps/common/resources/publicResourceRefs.mjs';
 
 const DEFAULT_BOUNDARY_HOUR = 4;
@@ -83,12 +84,12 @@ function uniqueAttempts(attempts) {
 }
 
 export class GetTeacherToday {
-  #learnerDirectory; #datastore; #sessions; #reviewQueue; #evidence; #curriculum;
+  #learnerDirectory; #datastore; #sessions; #reviewQueue; #evidence; #curriculum; #bookLog;
   #timezone; #boundaryHour; #clock; #logger;
 
   constructor({
     learnerDirectory, datastore, sessions, reviewQueue = null, evidenceRepository = null,
-    curriculum = null, timezone = null, boundaryHour = DEFAULT_BOUNDARY_HOUR,
+    curriculum = null, bookLog = null, timezone = null, boundaryHour = DEFAULT_BOUNDARY_HOUR,
     clock = () => new Date(), logger = console,
   } = {}) {
     if (!learnerDirectory) throw new Error('GetTeacherToday requires learnerDirectory');
@@ -100,6 +101,7 @@ export class GetTeacherToday {
     this.#reviewQueue = reviewQueue;
     this.#evidence = evidenceRepository;
     this.#curriculum = curriculum;
+    this.#bookLog = bookLog;
     this.#timezone = timezone;
     this.#boundaryHour = boundaryHour;
     this.#clock = clock;
@@ -107,6 +109,7 @@ export class GetTeacherToday {
   }
 
   async execute({ studyDay = null, version = 'v1' } = {}) {
+    const isV2 = version === 'v2' || studyDay !== null;
     const nowMs = this.#clock().getTime();
     const selectedStudyDay = studyDay ?? studyDayForInstant(nowMs, {
       timezone: this.#timezone, boundaryHour: this.#boundaryHour,
@@ -218,6 +221,26 @@ export class GetTeacherToday {
       const scoreSessions = sessions.filter((session) => session.effectiveScore?.totalCount > 0);
       const correct = scoreSessions.reduce((sum, session) => sum + session.effectiveScore.correctCount, 0);
       const total = scoreSessions.reduce((sum, session) => sum + session.effectiveScore.totalCount, 0);
+      let readingActivity = { status: 'unavailable', studyDay: selectedStudyDay, hasActivity: null };
+      if (isV2 && this.#bookLog) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const items = await this.#bookLog.listForLearner(learner.id);
+          readingActivity = {
+            status: 'ok',
+            ...projectReadingActivity(items, {
+              studyDay: selectedStudyDay,
+              dayOf: (iso) => studyDayForInstant(Date.parse(iso), {
+                timezone: this.#timezone, boundaryHour: this.#boundaryHour,
+              }),
+            }),
+          };
+        } catch (error) {
+          this.#logger.warn?.('school.teacher-day.reading-activity-failed', {
+            learnerId: learner.id, error: error?.message,
+          });
+        }
+      }
       rows.push({
         learnerId: learner.id,
         learnerName: learner.name ?? learner.id,
@@ -226,6 +249,7 @@ export class GetTeacherToday {
         effectiveScoreTotals: { correct, total, percent: total ? Math.round((correct / total) * 10000) / 100 : null },
         pendingReview: pending.filter((item) => item.learnerId === learner.id).length,
         reflections,
+        ...(isV2 ? { readingActivity } : {}),
         // v1 compatibility fields. Attempt rows stay as the old count until all
         // historical attempts have a reliable work-session identity.
         attemptsToday: attempts.length,
@@ -238,7 +262,7 @@ export class GetTeacherToday {
       });
     }
     this.#logger.debug?.('school.teacher-day.built', { studyDay: selectedStudyDay, learners: rows.length });
-    if (version === 'v2' || studyDay !== null) {
+    if (isV2) {
       return { schema: 'school.teacher-day/v2', studyDay: selectedStudyDay, generatedAt: this.#clock().toISOString(), learners: rows };
     }
     return rows;

@@ -1,41 +1,21 @@
-/**
- * AddBook — the three-step add flow (book-shelf UI design §5), one screen
- * per `step`.
- *
- *   number  → the 13-slot pad with an X key; the hook's hint and verdict
- *             ride along (`add.hint`, `add.canSubmit`), and `unavailable`
- *             adds a `Try again`.
- *   lookup  → "Looking it up…" — never a dead screen while the resolve runs.
- *   cover   → the card: cover, title, author, description, Is this your
- *             book? — or, when the shelf already has it open, the duplicate
- *             card with `Open it`.
- *   where   → the three doors.
- *   page    → the page pad (partway).
- *   when    → the DayPicker (already finished).
- *
- * Presentational. The number is the hook's (`add.entry`) so a failed lookup
- * comes back to the digits already typed; every tappable calls one
- * `actions.*`. A write's error is shown in place: on a pad as its hint,
- * otherwise as a line under the control. `‹ back` is on every step; on
- * `lookup` the hook abandons the round trip and returns the pad with the
- * digits kept. No logging from here; the hook owns the story.
- */
-import { useCallback } from 'react';
+/** ISBN entry, then one cover/action view; progress and alternate dates open focused tasks. */
+import { useCallback, useState } from 'react';
 import NumberPad from './NumberPad.jsx';
 import DayPicker from './DayPicker.jsx';
 import BookCover from './BookCover.jsx';
 import { presentBook } from './bookPresentation.js';
 import useTapFire from '../selfService/useTapFire.js';
 import Icon from '../home/icons/Icon.jsx';
+import FinishContext from './FinishContext.jsx';
 
 // The three doors. A pre-reader typed the number in and then stalled here,
 // because three wide bars of text look the same to a child who cannot read
 // them; each door carries a mark of its own now — a play, a fast-forward, a
 // circled check — and the words stay underneath for the child who can.
 const DOORS = [
-  { where: 'starting', icon: 'book-starting', label: "I'm just starting it" },
-  { where: 'partway', icon: 'book-partway', label: "I'm partway through" },
-  { where: 'finished', icon: 'book-finished', label: 'I already finished it' },
+  { where: 'starting', icon: 'book-starting', label: 'Start reading' },
+  { where: 'partway', icon: 'book-partway', label: 'Update page' },
+  { where: 'finished', icon: 'book-finished', label: 'Finished today' },
 ];
 
 /** The book named once above a step that comes after the cover. */
@@ -43,7 +23,7 @@ function BookLine({ book }) {
   if (!book) return null;
   const presentation = presentBook(book);
   return (
-    <div className="school-books-add__book">
+    <div className="school-books-add__book school-books-task__context">
       <BookCover book={book} className="school-books-add__thumb" />
       <span className="school-books-add__line" title={presentation.title}>
         <strong>{presentation.title}</strong>
@@ -69,6 +49,7 @@ function Fault({ message }) {
  */
 export default function AddBook({ step, add, today, earliestDay = null, error = null, busy = false, actions }) {
   const tap = useTapFire();
+  const [rereading, setRereading] = useState(false);
   const press = useCallback((fn) => tap(() => { if (!busy) fn(); }), [tap, busy]);
   const book = add?.resolved?.book ?? null;
   const presentation = presentBook(book);
@@ -77,87 +58,71 @@ export default function AddBook({ step, add, today, earliestDay = null, error = 
   let body;
   if (step === 'lookup') {
     body = <p className="school-books__loading" role="status">Looking it up…</p>;
-  } else if (step === 'cover') {
+  } else if (step === 'cover' || step === 'where') {
     const duplicate = Boolean(add?.duplicateOf);
-    const metadataMissing = Boolean(add?.metadataMissing);
+    const prior = add?.priorRead;
     body = (
-      <div className="school-books-add__card">
+      <div className="school-books-add__card school-books-task">
+        <div className="school-books-task__context">
         <BookCover book={book} className="school-books-add__cover" />
         <div className="school-books-add__about">
           <h3 className="school-books-add__title" title={presentation.title}>{presentation.title}</h3>
-          {presentation.author && (
-            <p className="school-books-add__author" title={presentation.allAuthors}>{presentation.author}</p>
-          )}
+          {presentation.author && <p className="school-books-add__author" title={presentation.allAuthors}>{presentation.author}</p>}
           {presentation.description && <p className="school-books-add__description">{presentation.description}</p>}
-          {metadataMissing && (
-            <p className="school-books-add__description">
-              We couldn&apos;t find a title or cover. Check that this number matches your book; you can still log it by ISBN.
-            </p>
-          )}
+          {add?.metadataMissing && <p className="school-books-add__description">We couldn&apos;t find a title or cover. Check that this number matches your book; you can still log it by ISBN.</p>}
+          {prior && <FinishContext item={prior} />}
         </div>
-        <p className="school-books-add__prompt">
-          {duplicate
-            ? "You've already got this one"
-            : (metadataMissing ? 'Is this the ISBN on your book?' : 'Is this your book?')}
-        </p>
-        <div className="school-books-add__answers">
-          {duplicate ? (
+        </div>
+        <div className="school-books-add__choices school-books-task__controls">
+          {duplicate ? <>
+            <p className="school-books-add__prompt">You&apos;ve already got this one</p>
             <button type="button" className="school-books-add__yes" disabled={busy} {...press(() => actions.openDuplicate())}>Open it</button>
-          ) : (
-            <button type="button" className="school-books-add__yes" disabled={busy} {...press(() => actions.confirmCover(true))}>
-              {metadataMissing ? 'Yes, log this book' : 'Yes'}
-            </button>
-          )}
-          <button type="button" className="school-books-add__no" disabled={busy} {...press(() => actions.confirmCover(false))}>No, edit number</button>
+          </> : prior && !rereading && !add.rereading ? (
+            <button type="button" className="school-books-add__yes" disabled={busy} {...press(() => setRereading(true))}>Read again</button>
+          ) : <>
+            <div className="school-books-add__doors">
+              {DOORS.map(({ where, icon, label }) => (
+                <button key={where} type="button" className="school-books-add__door" data-where={where} disabled={busy}
+                  {...press(() => where === 'finished' ? actions.choose(where, today) : actions.choose(where))}>
+                  <Icon name={icon} className="school-books-add__door-icon" />
+                  <span className="school-books-add__door-label">{label}</span>
+                </button>
+              ))}
+            </div>
+            <button type="button" className="school-books-update__quiet" disabled={busy} {...press(() => actions.choose('finished'))}>Finished on another day</button>
+          </>}
+          <button type="button" className="school-books-update__quiet" disabled={busy} {...press(() => actions.confirmCover(false))}>Wrong book? Edit number</button>
+          <Fault message={message} />
         </div>
-        <Fault message={message} />
-      </div>
-    );
-  } else if (step === 'where') {
-    body = (
-      <div className="school-books-add__where">
-        <BookLine book={book} />
-        <div className="school-books-add__doors">
-          {DOORS.map(({ where, icon, label }) => (
-            <button
-              key={where}
-              type="button"
-              className="school-books-add__door"
-              data-where={where}
-              disabled={busy}
-              {...press(() => actions.choose(where))}
-            >
-              {/* Decorative: the button's own words are its accessible name. */}
-              <Icon name={icon} className="school-books-add__door-icon" />
-              <span className="school-books-add__door-label">{label}</span>
-            </button>
-          ))}
-        </div>
-        <Fault message={message} />
       </div>
     );
   } else if (step === 'page') {
     body = (
-      <div className="school-books-add__page">
+      <div className="school-books-add__page school-books-task">
         <BookLine book={book} />
+        <div className="school-books-task__controls">
         <NumberPad
           label="What page are you on?"
           maxLength={4}
-          submitLabel="Save"
+          submitLabel="Save page"
           canSubmit={!busy}
           disabled={busy}
           hint={message}
+          onChange={actions.noteActivity}
           onSubmit={(entry) => actions.submitPage(Number(entry))}
         />
+        </div>
       </div>
     );
   } else if (step === 'when') {
     body = (
-      <div className="school-books-add__when">
+      <div className="school-books-add__when school-books-task">
         <BookLine book={book} />
+        <div className="school-books-task__controls">
         <p className="school-books-add__prompt">When did you finish it?</p>
-        <DayPicker key={today} today={today} minDay={earliestDay} busy={busy} onConfirm={(key) => { if (!busy) actions.submitDay(key); }} />
+        <DayPicker key={today} compact initiallyOpen today={today} minDay={earliestDay} busy={busy} onConfirm={(key) => { if (!busy) actions.submitDay(key); }} />
         <Fault message={message} />
+        </div>
       </div>
     );
   } else {
@@ -186,7 +151,7 @@ export default function AddBook({ step, add, today, earliestDay = null, error = 
   }
 
   return (
-    <div className="school-books-add" data-testid="add-book" data-step={step}>
+    <div className={`school-books-add${['cover', 'where', 'page', 'when'].includes(step) ? ' school-books-task-view' : ''}`} data-testid="add-book" data-step={step}>
       <button type="button" className="school-books__back" disabled={busy} onClick={() => { if (!busy) actions.back(); }}>‹ back</button>
       {body}
     </div>

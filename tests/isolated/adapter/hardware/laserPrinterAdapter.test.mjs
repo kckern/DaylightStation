@@ -568,12 +568,32 @@ describe('LaserPrinterAdapter.printPdf — duplex honesty (applied in the raster
     expect(calls.some((c) => c.event === 'laser-printer.duplex-applied')).toBe(false);
   });
 
-  it.runIf(hasGs)('says nothing about duplex when the caller never asked for it', async () => {
+  for (const [label, defaults, job, expected] of [
+    ['default', {}, {}, 3],
+    ['constructor duplex', { duplex: true }, {}, 3],
+    ['constructor simplex', { duplex: false }, {}, 1],
+    ['explicit simplex job', {}, { duplex: false }, 1],
+    ['explicit duplex job', { duplex: false }, { duplex: true }, 3],
+  ]) {
+    it.runIf(hasGs)(`writes the actual raster duplex byte for ${label}`, async () => {
+      const { httpServer, port, printJobs } = await rasterPrinter();
+      try {
+        const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger: { info() {}, warn() {} }, ...defaults });
+        await p.printPdf(REAL_PDF, job);
+        const body = printJobs[0].fullBody;
+        const start = body.indexOf(Buffer.from('UNIRAST'));
+        expect(start).toBeGreaterThan(0);
+        expect(body[start + 14]).toBe(expected);
+      } finally { httpServer.close(); }
+    });
+  }
+
+  it.runIf(hasGs)('says nothing about duplex when the caller explicitly asks for simplex', async () => {
     const { httpServer, port } = await rasterPrinter();
     const { logger, calls } = collectingLogger();
     const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger });
 
-    await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner2' });
+    await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner2', duplex: false });
     httpServer.close();
 
     expect(calls.some((c) => c.event?.startsWith('laser-printer.duplex'))).toBe(false);

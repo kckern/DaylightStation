@@ -563,3 +563,7 @@ after a takeback; replaying cannot.
   slash chords.
 - **The opponent ladder** — 21 personas over the engine's skill levels, promotion by recent form,
   per-user progress. Captured in `docs/_wip/plans/2026-08-12-piano-chess-opponent-ladder.md`.
+
+## Board sizing
+
+InstrumentBoardStage owns the grid tracks and stretches its primary slot. Chess sizes the board against that slot with container units, reserving its axis strips. Do not restore chess-specific auto center tracks or centered grid alignment: size containment makes that combination collapse the primary slot and hide the board. The browser regression in `tests/live/flow/piano/piano-chess-board-geometry.runtime.test.mjs` measures the actual styles at three screen sizes.

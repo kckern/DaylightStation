@@ -1,19 +1,4 @@
-/* Game gate — the chrome around the challenge that stands at a match boundary.
- *
- * This file exists for one reason: `.piano-exercise-run` is
- * `height: 100%; overflow: hidden` (Exercises.scss, "Runner"). Left inside a
- * plain block parent it takes the whole box, and the gate's Leave button — a
- * sibling appended after it — lands below the fold. During an ordinary attempt
- * that is merely untidy, because the run has its own header Exit. In a DEAD END
- * it is the failure: the run has settled into a state it cannot leave, its own
- * chrome is gone, and this button is the only way out. jsdom cannot see layout,
- * so a suite that never measures would be green either way — the numbers here
- * are asserted in Chromium by `GameGate.measure.test.jsx`.
- *
- * Palette: the run's own sheet declares `--ex-*` on `.piano-exercise-run`, and
- * those do not escape it, so the gate reads the kiosk `--piano-*` tokens
- * directly (with the same fallbacks Exercises.scss uses).
- */
+/* Piano-only recovery choices around the gate’s playing challenge. */
 .piano-game-gate {
   --gg-fg: var(--piano-fg, #f1f1f4);
   --gg-muted: var(--piano-muted, #9a9aa6);
@@ -22,33 +7,10 @@
   --gg-accent: var(--piano-accent, #2ec46f);
   --gg-accent-ink: var(--piano-accent-ink, #07210f);
 
-  /* Discrete tap targets, never sliders, and never under 48px: this is a
-     wall-mounted tablet operated by children with the flat of a finger.
 
-     SCOPED, and that is not tidiness. A bare `button` here matches every
-     button INSIDE the embedded ExerciseRun too, at the same specificity as
-     `.piano-exercise-run button` (Exercises.scss) — and this sheet is imported
-     later, so it wins. "Begin challenge" and "Continue" lost their accent and
-     rendered as flat surface chrome (measured: rgb(31,31,38) where the run
-     asks for rgb(46,196,111)). The gate owns its Leave button and the failure
-     panel's actions; the run owns everything inside itself. */
-  > button,
-  .piano-game-gate__actions button {
-    min-height: 48px;
-    padding: 0.55rem 1.15rem;
-    border: 1px solid var(--gg-border);
-    border-radius: var(--r-md, 12px);
-    background: var(--gg-surface);
-    color: var(--gg-fg);
-    font: inherit;
-    cursor: pointer;
-  }
 }
 
-/* The attempt: a column that reserves the footer BEFORE the run gets its share.
-   `height: auto` is load-bearing — a percentage height resolves against the
-   flex container's full height and would overflow the footer straight back off
-   the bottom, which is the bug this rule exists to prevent. */
+/* The run owns the entire attempt stage, including its piano exit gesture. */
 .piano-game-gate--attempt {
   display: flex;
   flex-direction: column;
@@ -63,13 +25,6 @@
   }
 }
 
-.piano-game-gate__leave {
-  flex: 0 0 auto;
-  align-self: center;
-  min-width: 10rem;
-  margin: 0.4rem 0 0.55rem;
-  color: var(--gg-muted) !important;
-}
 
 /* The two panels that replace the run: a failed attempt, and no chosen player.
    Both are non-granting — nothing here reaches a match (D12). */
@@ -98,17 +53,5 @@
   color: var(--gg-accent) !important;
 }
 
-.piano-game-gate__actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.6rem;
-  margin-top: 0.35rem;
-
-  /* "Try again" is the one that keeps them playing; the other two lead away. */
-  button:first-child {
-    border-color: var(--gg-accent);
-    background: var(--gg-accent);
-    color: var(--gg-accent-ink);
-  }
-}
+.piano-game-gate__piano-guidance { font-size: 1.2rem; color: var(--gg-fg) !important; }
+.piano-game-gate__exit-guidance { font-size: .95rem; }

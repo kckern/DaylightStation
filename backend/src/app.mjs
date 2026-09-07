@@ -381,6 +381,9 @@ import { RubiksPacketPlanner } from './3_applications/school/rubiksCube/RubiksPa
 import { YamlDocumentFileStore } from './1_adapters/school/YamlDocumentFileStore.mjs';
 import { RUBIKS_CUBE_COURSE_ID, RUBIKS_CUBE_REVISION } from './3_applications/school/rubiksCube/courseCatalog.mjs';
 import { createRubiksCubeRouter } from './4_api/v1/routers/rubiksCube.mjs';
+import { PrepareBookScan } from '#apps/school/usecases/PrepareBookScan.mjs';
+import { createSchoolBookScansRouter } from '#api/v1/routers/schoolBookScans.mjs';
+import { resolveBookScanTarget } from '#composition/modules/schoolBookScans.mjs';
 import { createSchoolBooksRouter } from './4_api/v1/routers/schoolBooks.mjs';
 import { GetSchoolReport } from './3_applications/school/GetSchoolReport.mjs';
 import { GetLearningProgress } from './3_applications/school/GetLearningProgress.mjs';
@@ -3923,6 +3926,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     schoolLifecycleLogger.error('school.lifecycle.wiring-failed', { error: err.message });
   }
   let schoolStateGatesProducer = null;
+  const bookScanTarget = resolveBookScanTarget({ configService, householdId, getScreenConfig: getSchoolScreenConfig });
+  const bookScans = schoolLifecycle.bookLogLauncher && schoolLifecycle.realtime ? new PrepareBookScan({
+    mintId: () => crypto.randomBytes(32).toString('base64url'),
+    resolveBook: books.resolveBook,
+    roster: () => schoolLearnerDirectory.listLearners(),
+    issueLaunchTarget: args => schoolLifecycle.bookLogLauncher.issueLaunchTarget(args),
+    wake: args => wakeScreenForBroadcast({ ...args, prepareOnly: bookScanTarget?.prepareOnly === true }),
+    notifications: schoolLifecycle.realtime,
+    target: bookScanTarget,
+    logger: schoolLifecycleLogger,
+  }) : null;
+
   if (schoolLifecycle.wired && schoolLifecycle.realtime && schoolLifecycle.getLearnerDayCompletion) {
     try {
       const { SchoolStateGatesProducer } = await import('#apps/school/SchoolStateGatesProducer.mjs');
@@ -4099,6 +4114,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
         evidenceRepository: schoolLearningEvidence ?? null,
         curriculum: schoolLifecycle.stores.curriculum,
+        bookLog: schoolLifecycle.stores.bookLog ?? null,
         timezone: configService.getTimezone?.() || null,
         logger: rootLogger.child({ module: 'school-teacher-today' })
       });
@@ -4356,8 +4372,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // teacher adjustment. That path also creates the corrected receipt
       // artifact; regrading attempts alone must never pretend history changed.
       sessionCorrection: schoolLifecycle.stores?.sessions ? async (args) => new AdjustSessionGrade({
+        realtime: schoolLifecycle.realtime,
         sessions: schoolLifecycle.stores.sessions,
         teacherGate: schoolTeacherGate,
+        passOverrides: schoolLifecycle.passOverrides ?? null,
         worksheetInstances: schoolLifecycle.stores.worksheetInstances ?? null,
         reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
         curriculum: schoolLifecycle.stores.curriculum ?? null,
@@ -4403,8 +4421,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     ...teacherReadingUseCases,
     adjustSessionGrade: schoolLifecycle.stores?.sessions && schoolTeacherGate
       ? new AdjustSessionGrade({
+        realtime: schoolLifecycle.realtime,
         sessions: schoolLifecycle.stores.sessions,
         teacherGate: schoolTeacherGate,
+        passOverrides: schoolLifecycle.passOverrides ?? null,
         worksheetInstances: schoolLifecycle.stores.worksheetInstances ?? null,
         reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
         curriculum: schoolLifecycle.stores.curriculum ?? null,
@@ -4415,6 +4435,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       }) : null,
     retractSessionGradeAdjustment: schoolLifecycle.stores?.sessions && schoolTeacherGate
       ? new RetractSessionGradeAdjustment({
+        realtime: schoolLifecycle.realtime,
         sessions: schoolLifecycle.stores.sessions,
         teacherGate: schoolTeacherGate,
         curriculum: schoolLifecycle.stores.curriculum ?? null,
@@ -4538,11 +4559,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // The School reading shelf. Needs the lifecycle's shelf use cases (absent in
   // a composition without the Books domain deps) and a grant issuer.
   if (schoolLifecycle.wired && schoolBookGrants && schoolLifecycle.useCases?.getBookShelf) {
+    if (bookScans) v1Routers.school.use('/book-scans', createSchoolBookScansRouter({ bookScans }));
     v1Routers.school.use('/books', createSchoolBooksRouter({
       grants: schoolBookGrants,
       getBookShelf: schoolLifecycle.useCases.getBookShelf,
       openBookShelfItem: schoolLifecycle.useCases.openBookShelfItem,
       recordBookProgress: schoolLifecycle.useCases.recordBookProgress,
+      onBookLogChanged: (payload) => eventBus.broadcast('school', payload),
+      logger: rootLogger.child({ module: 'school-books-api' }),
     }));
   }
 
@@ -5071,6 +5095,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { TelegramNutribotIdentity } = await import('#adapters/nutribot/TelegramNutribotIdentity.mjs');
   const scanDispatch = createScanDispatch({
     schoolLifecycle,
+    book: bookScans,
     schoolCalcResultImporter: schoolCalc.resultImporter,
     triggerDispatchService,
     relayInstances: barcodeRelayInstances,

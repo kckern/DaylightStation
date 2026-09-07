@@ -46,6 +46,8 @@ export function fakeBookLog(seed = {}) {
         ...(page !== null ? { page } : {}), ...(minutes !== null ? { minutes } : {}),
         ...(rest.note ? { note: rest.note } : {}),
         source, idempotencyKey,
+        ...(rest.kind === null ? {} : { kind: rest.kind ?? 'progress' }),
+        ...(rest.restoredRecordedAt ? { recordedAt: rest.restoredRecordedAt } : {}),
       };
       reading.entries.push(stored);
       return structuredClone(stored);

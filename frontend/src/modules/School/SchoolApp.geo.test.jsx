@@ -9,6 +9,7 @@ const materialsMock = vi.fn();
 const geoDecksMock = vi.fn();
 vi.mock('./schoolApi.js', () => ({
   schoolApi: {
+    bookScans: { pending: vi.fn(async () => ({ ok: true, data: { intent: null } })), claim: vi.fn(), dismiss: vi.fn() },
     roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'kid1', name: 'Alpha', birthyear: 2016 }] })),
     banks: (...a) => banksMock(...a),
     bank: vi.fn(async (id) => ({ ok: true, status: 200, data: { id, title: 'US Capitals', audience: 'generic', items: [{ id: 'q1', type: 'multiple_choice', prompt: 'WA?', answer: 'Olympia', choices: ['Seattle', 'Olympia'] }] } })),

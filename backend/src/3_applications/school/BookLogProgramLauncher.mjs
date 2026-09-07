@@ -44,7 +44,7 @@
  *
  * @module applications/school/BookLogProgramLauncher
  */
-import { BOOK_LOG_PROGRAM_ID, bookLogContext } from '#domains/school/bookLog.mjs';
+import { BOOK_LOG_PROGRAM_ID, BOOK_LOG_SHELF_UNIT_ID, bookLogContext } from '#domains/school/bookLog.mjs';
 import { measureObligation, projectRecord, selectFeaturedShelfItem, shelfItemView } from '#domains/school/bookShelf.mjs';
 import { studyDayForInstant } from '#domains/school/studyDay.mjs';
 
@@ -177,6 +177,9 @@ export class BookLogProgramLauncher {
       // "subject served" (agenda.mjs:259), which closed the shelf to a child
       // with no target and hid every other English unit behind it.
       doneToday: obligation ? measured.met : null,
+      servedWork: obligation && measured.met
+        ? [{ unitId: BOOK_LOG_SHELF_UNIT_ID, title: bookLogContext(enrollment.title).lesson.title }]
+        : [],
       // Only a cumulative target can ever be finished for good.
       terminal: Boolean(obligation) && obligation.per === 'once' && measured.met,
       // THE SHELF NEVER CLOSES. A met daily target means nothing is OWED; it

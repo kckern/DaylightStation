@@ -199,8 +199,13 @@ function workAction(resolution, { mediaSurface, bankPrintable }) {
  */
 // `now` is supplied by the caller, never read from a clock here — this module
 // is pure by construction (see its header) and that stays true.
-function buildCard(resolution, { mediaSurface = null, bankPrintable = false, now = null } = {}) {
+function buildCard(resolution, { mediaSurface = null, bankPrintable = false, bankIssue = null, now = null } = {}) {
   if (!resolution) return { work: null, sentence: TELL_A_GROWN_UP };
+  // Issued sheets are immutable and can still be reprinted after a bank edit.
+  if (bankIssue && resolution.kind === 'move' && !['issued', 'reprinted'].includes(resolution.state?.state)) {
+    const reason = String(bankIssue).replace(/items\[(\d+)\]/g, (_, index) => `Question ${Number(index) + 1}`);
+    return { work: null, sentence: `Worksheet is invalid. Ask a grown-up. ${reason}` };
+  }
 
   switch (resolution.kind) {
     case 'served':

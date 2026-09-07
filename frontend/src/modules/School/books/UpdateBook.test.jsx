@@ -45,6 +45,8 @@ describe('UpdateBook', () => {
   describe('page mode', () => {
     it('shows the page pad, empty, and no check-in button', () => {
       mount();
+      expect(screen.queryByTestId('numberpad')).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Update page' }));
       expect(screen.getByText('What page are you on?')).toBeInTheDocument();
       expect(entry()).toBe('');
       expect(screen.getAllByTestId('numberpad-slot')).toHaveLength(4);
@@ -53,8 +55,9 @@ describe('UpdateBook', () => {
 
     it('Save with 84 → submitProgress({ page: 84 })', () => {
       const a = mount();
+      fireEvent.click(screen.getByRole('button', { name: 'Update page' }));
       press(8, 4);
-      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Save page' }));
       expect(a.submitProgress).toHaveBeenCalledWith({ page: 84 });
     });
   });
@@ -62,10 +65,11 @@ describe('UpdateBook', () => {
   describe('minutes mode', () => {
     it('asks how long and submits minutes', () => {
       const a = mount({ item: item({ progressMode: 'minutes', pageCount: null }) });
+      fireEvent.click(screen.getByRole('button', { name: 'Log minutes' }));
       expect(screen.getByText('How long did you read?')).toBeInTheDocument();
       expect(screen.getAllByTestId('numberpad-slot')).toHaveLength(3);
       press(2, 5);
-      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Save minutes' }));
       expect(a.submitProgress).toHaveBeenCalledWith({ minutes: 25 });
     });
 
@@ -85,23 +89,18 @@ describe('UpdateBook', () => {
   });
 
   describe('finishing', () => {
-    it('I finished it → the DayPicker, collapsed on today; confirming → finish(today)', () => {
+    it('Finished today saves immediately without a date picker', () => {
       const a = mount();
+      fireEvent.click(screen.getByRole('button', { name: 'Finished today' }));
       expect(screen.queryByTestId('daypicker')).toBeNull();
-      fireEvent.click(screen.getByRole('button', { name: /i finished it/i }));
-      expect(screen.getByTestId('daypicker')).toBeInTheDocument();
-      expect(screen.getByText(/Today · Wed 2/)).toBeInTheDocument();
-      expect(screen.queryByRole('grid')).toBeNull();
-      fireEvent.click(screen.getByRole('button', { name: /that's the day/i }));
       expect(a.finish).toHaveBeenCalledWith(TODAY);
     });
 
     it('picking a past day → finish with that day', () => {
       const a = mount();
-      fireEvent.click(screen.getByRole('button', { name: /i finished it/i }));
-      fireEvent.click(screen.getByRole('button', { name: /pick a day/i }));
+      fireEvent.click(screen.getByRole('button', { name: 'Finished on another day' }));
       fireEvent.click(screen.getByRole('gridcell', { name: /Tuesday 25 August/ }));
-      fireEvent.click(screen.getByRole('button', { name: /that's the day/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Save finish/ }));
       expect(a.finish).toHaveBeenCalledWith('2026-08-25');
     });
   });
@@ -142,20 +141,21 @@ describe('UpdateBook', () => {
 
   it('a blank-entry sentence rides the pad as its hint', () => {
     mount({ error: { message: 'Type a page or tap "I read some today"' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update page' }));
     expect(screen.getByRole('status')).toHaveTextContent('Type a page or tap');
   });
 
   it('busy disables the primary buttons', () => {
     mount({ busy: true, item: item({ progressMode: 'check', pageCount: null }) });
     expect(screen.getByRole('button', { name: /read some today/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /i finished it/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Finished on another day' })).toBeDisabled();
     expect(screen.getByRole('button', { name: /set it aside/i })).toBeDisabled();
   });
 
   it('busy disables Save on the pad', () => {
     mount({ busy: true });
-    press(8, 4);
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Update page' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Finished today' })).toBeDisabled();
   });
 
   it('‹ back → back()', () => {

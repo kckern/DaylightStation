@@ -62,6 +62,7 @@ import { YamlBookLogStore } from '#adapters/persistence/yaml/YamlBookLogStore.mj
 import { YamlTeacherActionReceiptStore } from '#adapters/persistence/yaml/YamlTeacherActionReceiptStore.mjs';
 import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrintDocumentRepository.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
+import { YamlOmrBaselineStore } from '#adapters/school/documents/YamlOmrBaselineStore.mjs';
 import { YamlHeldCardScanStore } from '#adapters/school/documents/YamlHeldCardScanStore.mjs';
 import { RenderPrintDocument } from '#apps/school/documents/RenderPrintDocument.mjs';
 import { RenderIssuedWorksheetArtifact } from '#apps/school/documents/RenderIssuedWorksheetArtifact.mjs';
@@ -906,6 +907,8 @@ export async function createSchoolLifecycle({
   const allocationStore = new YamlAllocationStore({ directory: printDocumentsRoot, timeZone: timezone, logger });
   const heldCardScans = new YamlHeldCardScanStore({ directory: printDocumentsRoot });
   const resolveCardScan = new ResolveCardScan({
+    sessions: stores.sessions,
+    baselineStore: new YamlOmrBaselineStore({ directory: printDocumentsRoot }),
     allocationStore,
     repository: printDocuments,
     banks: createYamlBankReader({ dataDir }),
@@ -1503,6 +1506,7 @@ export async function createSchoolLifecycle({
     // optional-chained-on-shutdown convention as `donowSchoolBridge` above.
     getLearnerDayCompletion,
     realtime: schoolRealtime,
+    bookLogLauncher,
     schoolCompletionBridge,
     pianoLessonCeremonyBridge,
     // The story-time launcher by name, for the living-room reading session.

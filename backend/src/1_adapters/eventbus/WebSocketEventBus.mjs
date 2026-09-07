@@ -38,6 +38,7 @@ const KNOWN_UNCONNECTED_TOPICS = new Set([
   // AgendaStatusBoard.jsx and frontend/src/modules/Piano/PianoKiosk/
   // useSchoolGameAccess.js via useWebSocketSubscription('state-gates', ...).
   'state-gates',
+  'school', // Retained book-scan intentions may arrive before the Portal subscribes.
   // app.mjs's shutdown notifier (`notifier.publishState`) — central kiosk
   // lock/unlock state. Consumed by frontend/src/hooks/useShutdownLock.js via
   // wsService.subscribe('shutdown.state', ...).

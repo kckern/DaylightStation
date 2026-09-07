@@ -73,6 +73,7 @@ function mount(overrides = {}) {
 async function mounted(overrides = {}) {
   const r = mount(overrides);
   await act(async () => {});
+  if (r.result.current.view === 'add') act(() => r.result.current.actions.back());
   expect(r.result.current.view).toBe('shelf');
   return r;
 }
@@ -411,7 +412,7 @@ describe('useBookShelf: the add flow', () => {
     await act(async () => { await r.result.current.actions.choose('starting'); });
     expect(h.open).toHaveBeenCalledWith('kid', 'g1', { bookId: ISBN, entryId, where: 'starting' });
     expect(h.shelf).toHaveBeenCalledTimes(2);
-    expect(r.result.current.view).toBe('receipt');
+    expect(r.result.current.view).toBe('shelf');
     expect(r.result.current.receipt).toEqual({ kind: 'added', book: BOOK });
     expect(r.result.current.step).toBeNull();
     expect(r.result.current.add.entry).toBe('');
@@ -426,7 +427,7 @@ describe('useBookShelf: the add flow', () => {
     const { entryId, progressEntryId } = r.result.current.add;
     await act(async () => { await r.result.current.actions.submitPage(84); });
     expect(h.open).toHaveBeenCalledWith('kid', 'g1', { bookId: ISBN, entryId, where: 'partway', page: 84, progressEntryId });
-    expect(r.result.current.view).toBe('receipt');
+    expect(r.result.current.view).toBe('shelf');
     expect(r.result.current.receipt).toEqual({ kind: 'progress', book: BOOK, page: 84 });
   });
 
@@ -437,9 +438,9 @@ describe('useBookShelf: the add flow', () => {
     expect(r.result.current.step).toBe('when');
     const { entryId, progressEntryId } = r.result.current.add;
     await act(async () => { await r.result.current.actions.submitDay('2026-08-25'); });
-    expect(r.result.current.add.finishedOn === '2026-08-25' || r.result.current.view === 'receipt').toBe(true);
+    expect(r.result.current.add.finishedOn === '2026-08-25' || r.result.current.view === 'shelf').toBe(true);
     expect(h.open).toHaveBeenCalledWith('kid', 'g1', { bookId: ISBN, entryId, where: 'finished', finishedOn: '2026-08-25', progressEntryId });
-    expect(r.result.current.view).toBe('receipt');
+    expect(r.result.current.view).toBe('shelf');
     expect(r.result.current.receipt).toMatchObject({
       kind: 'finished', book: BOOK, finishedOn: '2026-08-25', itemId: ITEM.itemId,
     });
@@ -457,7 +458,7 @@ describe('useBookShelf: the add flow', () => {
     await act(async () => { await r.result.current.actions.choose('starting'); });
     const [first, second] = h.open.mock.calls;
     expect(second[2].entryId).toBe(first[2].entryId);
-    expect(r.result.current.view).toBe('receipt');
+    expect(r.result.current.view).toBe('shelf');
     expect(r.result.current.error).toBeNull();
   });
 
@@ -495,7 +496,7 @@ describe('useBookShelf: the add flow', () => {
     await toWhere(r);
     await act(async () => { await r.result.current.actions.choose('partway'); });
     act(() => r.result.current.actions.back());
-    expect(r.result.current.step).toBe('where');
+    expect(r.result.current.step).toBe('cover');
     act(() => r.result.current.actions.back());
     expect(r.result.current.step).toBe('number');
     expect(r.result.current.add.entry).toBe(ISBN); // the number survives a step back
@@ -518,7 +519,7 @@ describe('useBookShelf: updating a book', () => {
     await act(async () => { await r.result.current.actions.submitProgress({ page: 90 }); });
     expect(h.progress).toHaveBeenCalledWith('kid', 'g1', ITEM.itemId, { kind: 'progress', page: 90, entryId });
     expect(h.shelf).toHaveBeenCalledTimes(2);
-    expect(r.result.current.view).toBe('receipt');
+    expect(r.result.current.view).toBe('shelf');
     expect(r.result.current.receipt).toEqual({ kind: 'progress', book: ITEM, page: 90 });
     expect(h.log).toHaveBeenCalledWith('progress', expect.objectContaining({ kind: 'progress', mode: 'page' }));
 
@@ -589,7 +590,7 @@ describe('useBookShelf: updating a book', () => {
 
     await act(async () => { await r.result.current.actions.submitProgress({ page: 90 }); });
     expect(h.progress).toHaveBeenLastCalledWith('kid', 'g1', ITEM.itemId, { kind: 'progress', page: 90, entryId });
-    expect(r.result.current.view).toBe('receipt');
+    expect(r.result.current.view).toBe('shelf');
     expect(r.result.current.error).toBeNull();
   });
 
@@ -604,7 +605,7 @@ describe('useBookShelf: updating a book', () => {
     expect(h.progress).toHaveBeenLastCalledWith('kid', 'g1', ITEM.itemId, {
       kind: 'reopened', entryId: undoEntryId,
     });
-    expect(r.result.current.view).toBe('receipt');
+    expect(r.result.current.view).toBe('shelf');
     expect(r.result.current.receipt).toEqual({ kind: 'reopened', book: ITEM });
   });
 
@@ -659,7 +660,7 @@ describe('useBookShelf: review hardenings (task 11b)', () => {
     // The write has answered; the re-read has not.
     expect(h.progress).toHaveBeenCalledTimes(1);
     expect(h.shelf).toHaveBeenCalledTimes(2);
-    expect(r.result.current.view).toBe('update');
+    expect(r.result.current.view).toBe('shelf');
     expect(r.result.current.busy).toBe(true);
 
     await act(async () => { await r.result.current.actions.submitProgress({ page: 91 }); });
@@ -667,7 +668,7 @@ describe('useBookShelf: review hardenings (task 11b)', () => {
 
     await act(async () => { releaseShelf(shelfOf()); await pending; });
     expect(r.result.current.busy).toBe(false);
-    expect(r.result.current.view).toBe('receipt');
+    expect(r.result.current.view).toBe('shelf');
   });
 
   it('13b. choose(starting): busy holds until the shelf re-read lands; a tap in that window sends nothing', async () => {
@@ -679,7 +680,7 @@ describe('useBookShelf: review hardenings (task 11b)', () => {
     await act(async () => { pending = r.result.current.actions.choose('starting'); });
     expect(h.open).toHaveBeenCalledTimes(1);
     expect(h.shelf).toHaveBeenCalledTimes(2);
-    expect(r.result.current.view).toBe('add');
+    expect(r.result.current.view).toBe('shelf');
     expect(r.result.current.busy).toBe(true);
 
     await act(async () => { await r.result.current.actions.choose('starting'); });
@@ -687,7 +688,7 @@ describe('useBookShelf: review hardenings (task 11b)', () => {
 
     await act(async () => { releaseShelf(shelfOf()); await pending; });
     expect(r.result.current.busy).toBe(false);
-    expect(r.result.current.view).toBe('receipt');
+    expect(r.result.current.view).toBe('shelf');
   });
 
   // Item 2 — the duplicate guard refuses the mint, and openDuplicate reaches the item.
@@ -700,8 +701,8 @@ describe('useBookShelf: review hardenings (task 11b)', () => {
 
     act(() => r.result.current.actions.confirmCover(true));
     expect(r.result.current.step).toBe('cover');
-    expect(r.result.current.add.entryId).toBeNull();
-    expect(r.result.current.add.progressEntryId).toBeNull();
+    expect(r.result.current.add.entryId).toMatch(UUID);
+    expect(r.result.current.add.progressEntryId).toMatch(UUID);
     expect(h.log).toHaveBeenCalledWith('add.rejected', expect.objectContaining({ reason: 'duplicate', itemId: 'kid:9780064400558:e1' }));
 
     act(() => r.result.current.actions.openDuplicate());
@@ -771,5 +772,27 @@ describe('useBookShelf: review hardenings (task 11b)', () => {
     expect(r.onExit).toHaveBeenCalledTimes(1);
     expect(r.onExit).toHaveBeenCalledWith('done');
     expect(h.log.mock.calls.filter(([event]) => event === 'closed')).toHaveLength(1);
+  });
+});
+
+
+describe('initial scanned book', () => {
+  it.each(['reading', 'finished', 'new'])('opens %s context only after a fresh shelf read without writes', async status => {
+    const item = { ...ITEM, bookId: ISBN, projection: { ...ITEM.projection, status } };
+    h.shelf.mockResolvedValue({ ok: true, data: { items: status === 'new' ? [] : [item] } });
+    const { result } = renderHook(() => useBookShelf({ learnerId: 'child', grant: 'grant', initialBookEntry: { intentId: 'scan', isbn13: ISBN, book: BOOK } }));
+    await act(async () => {});
+    expect(result.current.view).toBe(status === 'new' ? 'add' : status === 'finished' ? 'completed' : 'update');
+    if (status === 'new') { expect(result.current.step).toBe('cover'); expect(result.current.add.resolved.book).toEqual(BOOK); }
+    expect(h.open).not.toHaveBeenCalled(); expect(h.progress).not.toHaveBeenCalled();
+    act(() => result.current.actions.back());
+    expect(result.current.step).not.toBe('cover');
+  });
+  it('waits through a failed shelf load, then consumes the scan once on retry', async () => {
+    h.shelf.mockResolvedValueOnce({ ok: false }).mockResolvedValue({ ok: true, data: { items: [ITEM] } });
+    const { result } = renderHook(() => useBookShelf({ learnerId: 'child', grant: 'grant', initialBookEntry: { intentId: 'scan', isbn13: ISBN, book: BOOK } }));
+    await act(async () => {}); expect(result.current.view).toBe('loading');
+    await act(async () => result.current.actions.retry());
+    expect(result.current.view).toBe('update'); expect(h.open).not.toHaveBeenCalled();
   });
 });

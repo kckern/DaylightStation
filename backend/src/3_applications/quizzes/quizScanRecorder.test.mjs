@@ -116,10 +116,10 @@ describe('decodeQuizSheet', () => {
     expect(decoded.answers).toEqual({ 1: 'B' });
   });
 
-  it('decodes short frames (fewer than 32 columns) without throwing', () => {
+  it('refuses short frames rather than assigning shifted row numbers', () => {
     const decoded = decodeQuizSheet([512, 256, 128, 64, 32, 16, 8, 1024]);
-    expect(decoded.testId).toBe('0123456');
-    expect(decoded.answers).toEqual({ 1: 'A' });
+    expect(decoded.error).toMatchObject({ code: 'OMR_COLUMN_COUNT', expected: 32, actual: 8 });
+    expect(decoded.answers).toEqual({});
   });
 });
 

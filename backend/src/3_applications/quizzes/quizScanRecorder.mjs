@@ -1,3 +1,4 @@
+import { omrFrameError } from '#domains/school/omrFrame.mjs';
 // backend/src/3_applications/quizzes/quizScanRecorder.mjs
 //
 // Quiz-sheet decoder — the form-specific consumer the OMR relay deliberately
@@ -60,6 +61,8 @@ const ID_DIGIT_TOP_BIT = 9;    // digit d = bit (9−d)
  *   testIdCandidates?: Array<number[]> }}
  */
 export function decodeQuizSheet(marks) {
+  const error = omrFrameError(marks);
+  if (error) return { testId: null, answers: {}, error };
   const cols = Array.isArray(marks) ? marks : [];
 
   let anyDigit = false;

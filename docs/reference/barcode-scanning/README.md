@@ -272,15 +272,17 @@ Tests: `tests/unit/domains/scan/ScanCode.test.mjs`,
 
 ---
 
-## Known gap: an unclaimed scan is silent
+## Publisher ISBN scans → School Portal
 
-`ScanDispatcher` guarantees an Outcome for every scan — `{ status, ok, domain, message, physical,
-printed, effect }`, never a fall-through and never a rejection — but `onScan` currently
-**discards** it. So a code nobody claims, or a namespace with no handler registered (an ISBN-13
-today, which parses to `book` with no book handler), does nothing visible at the scanner.
+The book handler owns 13-digit `978`/`979` publisher barcodes on both content and nutrition-default readers. It checks the ISBN checksum before metadata lookup. A bad checksum displays invalid-book feedback on Portal and never falls through to nutrition. Ordinary UPC/EAN and explicit content, School, and nutrition tokens keep their existing routes. ISBN10 remains supported in the typed shelf flow; it is not automatically routed as a book.
 
-That matters because a scanner that appears to do nothing is indistinguishable from a broken one.
-Whoever adds the next handler should give the Outcome's `message` somewhere to go as well.
+`school.bookScan.targetDeviceId` optionally selects the device. Otherwise composition requires exactly one configured device whose `screen_path` resolves to a School screen (`/screen/<id>` or `/screens/<id>`). Missing or ambiguous targets refuse with a structured `school.book-scan.refused` diagnostic; no arbitrary screen is guessed.
+
+Receipt creates a bounded five-minute pending intention, wakes/foregrounds the existing Portal without reload, and broadcasts only `{type:'school.book-scan',screenId,intentId}` on `school`. Portal reads retained state on mount/reconnect and never interrupts active work. The idle preview offers the current learner roster; selection obtains the existing learner-scoped reading grant. Scan and selection perform no reading-credit write. The child must explicitly add, update, or finish in the existing shelf flow.
+
+Source event identities are replay-deduplicated for ten minutes (bounded to 2,048 events); repeated ISBN scans coalesce while pending without extending expiry. At most 32 intention records and one current plus one latest deferred intention are retained. Dismissal and claim retry operate on the exact intention, not a newer scan. Metadata/wake failures preserve retained feedback and invite rescanning. This is the existing household LAN kiosk trust model, not strong scanner or device authentication.
+
+Other unclaimed codes may still produce an Outcome that relay ingress does not render.
 
 ---
 

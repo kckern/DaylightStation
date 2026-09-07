@@ -477,13 +477,12 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     const firstPlaylistId = playlists[0]?.id;
     if (!firstPlaylistId) return;
     hasAutoSelectedRef.current = true;
-    if (!musicEnabled && setMusicOverride) {
-      setMusicOverride(true);
-    }
+    // Selecting a default playlist is automatic, not a manual request to keep
+    // music on after leaving the standalone chart. The provider owns enabling.
     if (setGlobalPlaylistId) {
       setGlobalPlaylistId(firstPlaylistId);
     }
-  }, [selectedPlaylistId, playlists, musicEnabled, setMusicOverride, setGlobalPlaylistId]);
+  }, [selectedPlaylistId, playlists, setGlobalPlaylistId]);
 
   const handleInfoTap = (e) => {
     e.stopPropagation();

@@ -156,11 +156,18 @@ export default function NumberPad({
     onSubmit?.(entry);
   }, [entry, onSubmit, submittable]);
 
+  // Activity can synchronously rerender the parent earlier in the same native
+  // key dispatch. Keep this listener mounted so that render cannot remove it
+  // before its turn; read current actions instead of subscribing on every render.
+  const keyboardRef = useRef(null);
+  keyboardRef.current = { disabled, press, backspace, clear, allowX, submittable, submit };
+
   // The wall panel has a paired HID keyboard, and a barcode scanner presents
   // as one. Keep the handler scoped to the mounted pad; never steal typing
   // from a future real input embedded in the same screen.
   useEffect(() => {
     const onKeyDown = (event) => {
+      const { disabled, press, backspace, clear, allowX, submittable, submit } = keyboardRef.current;
       if (disabled || event.metaKey || event.ctrlKey || event.altKey) return;
       const tag = event.target?.tagName?.toLowerCase?.();
       if (tag === 'input' || tag === 'textarea' || event.target?.isContentEditable) return;
@@ -183,7 +190,7 @@ export default function NumberPad({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [allowX, backspace, clear, disabled, press, submit, submittable]);
+  }, []);
 
   const slots = Array.from({ length: maxLength }, (_, i) => entry[i] ?? '');
 

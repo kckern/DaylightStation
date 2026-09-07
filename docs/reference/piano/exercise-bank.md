@@ -298,6 +298,39 @@ same rubric/gate evaluator in `performance/assessmentSession.js`; only the
 notation cursor, feedback text, and practice/challenge navigation remain local
 to the Exercises workspace.
 
+Exercise notation uses the original sequence cursor from commit `39cf60b81`:
+a rounded yellow overlay behind the current note (30% fill, 50% border).
+Upcoming notes are brown; past and idle current notes are black. While keys
+are held, correct targets are green and missed targets are red; an unexpected
+held pitch appears as a semi-transparent ghost at its actual staff position.
+The engraved exercise renderer follows the same contract, without blue.
+
+### Timed exercise contract
+
+Cued runs use the compiled expectation's tempo map and elapsed musical time for
+their visual cursor. A 50 ms display clock runs even in silence; matching,
+misses, early notes, and held notes cannot change its position. A scored result
+that arrives before the musical duration ends waits for that duration before
+the host advances. The metronome continues with this display and follows tempo
+changes. Free and metronome practice retain their player-driven cursor.
+
+During the count-in, the staff remains visible in gray, the cursor is hidden,
+and played notes reach neither assessment nor visual feedback. Notes held
+through the boundary stay excluded until released and pressed again.
+
+`piano.exercise-visual-cursor` records phase, BPM, musical elapsed milliseconds,
+countdown remaining, count-in beat, musical beat, expected cursor, displayed
+cursor, matcher cursor, held notes, and attempt identity. It emits on cursor,
+phase, beat, or held-note changes. `piano.exercise-input-ignored` records
+countdown note-on events and their reason; the arming key is recorded on
+`piano.exercise-countdown-started`. Cursor telemetry describes the presentation
+state; browser geometry tests separately verify the visible yellow overlay.
+
+Exercise runs have no touch controls. Hold the physical keyboard's lowest and
+highest keys together for two seconds to exit. After a failure, release all
+keys and press any key to retry. A lone outer key waits 300 ms so adding its
+partner can select exit instead of accidentally retrying.
+
 Learner enrollments and pending video checkpoints live under
 `users/<id>/apps/piano/learning.yml`. Teacher assignments live under the
 household piano app with an append-only assignment history and use the existing

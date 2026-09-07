@@ -76,10 +76,14 @@ describe('YamlBookLogStore', () => {
   });
 
   it('is idempotent on the open key — a retried open is not a second reading', async () => {
-    const subject = store();
+    let now = '2026-09-07T18:00:00.000Z';
+    const subject = store({ clock: () => new Date(now) });
     const first = await subject.openReading(opened());
+    now = '2026-09-07T19:00:00.000Z';
     const again = await subject.openReading(opened());
     expect(again.id).toBe(first.id);
+    expect(again.openedRecordedAt).toBe('2026-09-07T18:00:00.000Z');
+    expect(again.entries).toEqual([]);
     expect(await subject.listForLearner('learner_a')).toHaveLength(1);
   });
 
@@ -302,4 +306,30 @@ describe('YamlBookLogStore', () => {
       await expect(store().listForLearner('learner_a')).rejects.toBeInstanceOf(BookLogShelfUnreadableError);
     });
   });
+});
+
+
+it('stamps native recording provenance once, ignoring caller timestamps on retry', async () => {
+  let now = '2026-09-07T18:00:00.000Z';
+  const subject = store({ clock: () => new Date(now) });
+  const reading = await subject.openReading(opened());
+  const input = { learnerId: 'learner_a', readingId: reading.id, kind: 'finished', on: '2026-09-05',
+    at: '2026-09-05T12:00:00Z', recordedAt: '1900-01-01T00:00:00Z', idempotencyKey: 'finish' };
+  const first = await subject.appendEntry(input);
+  now = '2026-09-07T19:00:00.000Z';
+  expect(await subject.appendEntry(input)).toEqual(first);
+  expect(first).toMatchObject({ kind: 'finished', recordedAt: '2026-09-07T18:00:00.000Z' });
+  expect((await subject.listForLearner('learner_a'))[0].entries).toHaveLength(1);
+});
+
+
+it('restores explicit or unknown recording provenance without restamping historical evidence', async () => {
+  const subject = store({ clock: () => new Date('2026-09-07T18:00:00Z') });
+  const reading = await subject.openReading(opened());
+  const base = { learnerId: 'learner_a', readingId: reading.id, on: '2026-09-05' };
+  expect(await subject.appendEntry({ ...base, kind: 'finished', restoredRecordedAt: '2026-09-06T18:00:00Z' }))
+    .toMatchObject({ kind: 'finished', recordedAt: '2026-09-06T18:00:00Z' });
+  const legacy = await subject.appendEntry({ ...base, kind: null, restoredRecordedAt: null });
+  expect(legacy).not.toHaveProperty('recordedAt');
+  expect(legacy).not.toHaveProperty('kind');
 });

@@ -743,3 +743,16 @@ describe('selectFeaturedShelfItem', () => {
       .toEqual({ state: 'empty', featured: null, alsoReading: [] });
   });
 });
+
+
+it('migration preserves explicit recording provenance and finish identity without inventing legacy precision', () => {
+  const converted = readingFromLegacyItem({ itemId: 'legacy', bookId: 'book', events: [
+    { kind: 'started', at: '2026-09-07T18:00:00Z', recordedAt: '2026-09-07T18:00:00Z' },
+    { kind: 'finished', at: '2026-09-05T12:00:00Z', recordedAt: '2026-09-07T18:01:00Z', entryId: 'finish' },
+    { kind: 'progress', at: '2026-09-05T13:00:00Z', entryId: 'check' },
+  ] });
+  expect(converted.openedRecordedAt).toBe('2026-09-07T18:00:00Z');
+  expect(converted.entries[0]).toMatchObject({ kind: 'finished', recordedAt: '2026-09-07T18:01:00Z', on: '2026-09-05' });
+  expect(converted.entries[1]).toMatchObject({ kind: 'progress' });
+  expect(converted.entries[1]).not.toHaveProperty('recordedAt');
+});

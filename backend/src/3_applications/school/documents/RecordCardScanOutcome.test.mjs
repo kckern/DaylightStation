@@ -578,6 +578,11 @@ describe('review queue bridge', () => {
     expect(pending).toEqual([expect.objectContaining({ itemId: 'q2', reason: 'ambiguous', given: ['A', 'B'], prompt: 'P2' })]);
     const resolved = reviewQueue.items.filter((i) => i.verdict);
     expect(resolved).toEqual([expect.objectContaining({ itemId: 'q1', verdict: 'correct', gradedBy: 'engine' })]);
+    const repeat = await useCase.execute({ testId: '1234567', card });
+    expect(repeat).toMatchObject({ recorded: false, session: {
+      sessionId: 'ws-1', reason: 'awaiting-review', pendingReview: 1, items: ['q2'],
+    } });
+    expect((await sessions.readEvents('ws-1')).map(e => e.type)).toEqual(types);
   });
 
   it('write-on questions queue as free_response and hold the session at submitted', async () => {

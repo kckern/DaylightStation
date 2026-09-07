@@ -54,7 +54,7 @@ const stateOf = (result) => (
   result === 'passed' ? 'passed' : result === 'needs_remediation' ? 'needs-retry' : 'pending'
 );
 
-export function summarize(sections, sessions, entries = []) {
+export function summarize(sections, sessions, entries = [], readingActivity = null) {
   const planned = (sections ?? []).filter((section) => !section.suppressed);
   const plannedSubjects = new Set(planned.map((s) => s.subject));
   const byUnit = new Map();
@@ -159,10 +159,10 @@ export function summarize(sections, sessions, entries = []) {
     if (!next?.unitId || byUnit.has(next.unitId)) continue;
     const entry = fromEntries.get(next.unitId);
     const progress = next.obligationProgress;
-    const inProgress = Number.isFinite(progress?.completed)
-      && Number.isFinite(progress?.total)
-      && progress.total > 0
-      && progress.completed > 0;
+    const completed = entry?.program === 'book-log' ? progress?.actual : progress?.completed;
+    const target = entry?.program === 'book-log' ? progress?.target : progress?.total;
+    const inProgress = Number.isFinite(completed) && Number.isFinite(target)
+      && target > 0 && completed > 0;
     byUnit.set(next.unitId, {
       unitId: next.unitId,
       subject: entry?.subject ?? section.subject,
@@ -171,12 +171,25 @@ export function summarize(sections, sessions, entries = []) {
     });
   }
 
-  const segments = [...byUnit.values()];
-  return {
-    total: segments.length,
-    done: segments.filter((s) => s.state === 'passed').length,
-    segments,
-  };
+  const segments = [...byUnit.values()].map((segment) => {
+    const programId = fromEntries.get(segment.unitId)?.program;
+    if (programId === 'book-log' || programId === 'story-time') {
+      return { ...segment, programId, label: programId === 'book-log' ? 'Reading' : 'Story time' };
+    }
+    return segment;
+  });
+  const total = segments.length;
+  const done = segments.filter((segment) => segment.state === 'passed').length;
+  const requiredReadingDone = segments.some((segment) => segment.programId === 'book-log' && segment.state === 'passed');
+  if (readingActivity?.status === 'ok' && readingActivity.hasActivity === true
+    && readingActivity.studyDay && !requiredReadingDone) {
+    segments.push({
+      readingActivity: { bookCount: readingActivity.bookCount, finishedCount: readingActivity.finishedCount, progressCount: readingActivity.progressCount },
+      supplemental: true, programId: 'book-log', subject: 'english', label: 'Reading', state: 'passed',
+      unitId: `book-log:activity:${readingActivity.studyDay}`,
+    });
+  }
+  return { total, done, segments };
 }
 
 /** learnerId -> ring count, from active fitness.weekly-rings gate progress. */

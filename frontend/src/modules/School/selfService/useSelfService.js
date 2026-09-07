@@ -272,10 +272,6 @@ export function useSelfService({
   // written synchronously closes that window. (`busy` remains, for disabling
   // the buttons visually.)
   const workRef = useRef(false);
-  // `submit` runs the single action of a card with nothing to decide, and
-  // `runAction` is defined below it. A ref, not a reordering: naming it in
-  // `submit`'s dependency array would read it before its `const` initialises.
-  const runActionRef = useRef(null);
 
   /** Claim the single in-flight slot. `false` means someone else has it. */
   const beginWork = useCallback(() => {
@@ -306,146 +302,6 @@ export function useSelfService({
     pendingLearnerRef.current = null;
   }, []);
 
-  /**
-   * @returns {Promise<{resolved: boolean, sentence: string|null, skipped?: boolean, degraded?: boolean}>}
-   * — `confirmPrint` needs to tell three cases apart: a card opened, the
-   * resolve failed, and `skipped` (a second tap that never made a request at
-   * all, which must change nothing on screen).
-   *
-   * The KEYPAD reads `degraded` off this too, and it has to come back on the
-   * verdict rather than be read off the hook's state: the keypad's own await
-   * resumes in the microtask right after this one, with no guarantee React has
-   * flushed `setDegraded` yet, so a stale read would play the wrong-code
-   * animation over a backend outage — telling a child their good code was
-   * wrong, which is the one thing rule 1 exists to prevent.
-   */
-  const submit = useCallback(async (code) => {
-    if (!code) return { resolved: false, sentence: null };
-    if (!beginWork()) return { resolved: false, sentence: null, skipped: true };
-    const gen = genRef.current;
-    lastTriedRef.current = code;
-    const res = await schoolApi.selfServiceResolve(code, deviceId);
-    endWork();
-    if (genRef.current !== gen) return { resolved: false, sentence: null, skipped: true }; // rule 4
-
-    // Rule 1: a transport/lifecycle failure is NOT a wrong code.
-    if (!res.ok || !res.data) {
-      setDegraded(true);
-      setMessage(DEGRADED_SENTENCE);
-      schoolLog.selfServiceError('resolve.failed', { status: res.status });
-      return { resolved: false, sentence: DEGRADED_SENTENCE, degraded: true };
-    }
-    // `ok` is the ONLY thing separating a REFUSAL (bad code — stay on the
-    // keypad) from a REAL CARD that simply has no buttons (`served`,
-    // `locked`). Both arrive as a 200 with an empty-ish body, and reading a
-    // `served` card as a refusal would tell a child who finished their maths
-    // that they typed the code wrong.
-    if (res.data.ok === false) {
-      const faulted = isBackendFault(res.data);
-      setDegraded(faulted);
-      setMessage(res.data.sentence || TRY_AGAIN_SENTENCE);
-      if (faulted) {
-        schoolLog.selfServiceError('resolve.failed', {
-          status: res.status, inBody: true, reason: res.data.reason ?? null,
-        });
-      } else {
-        schoolLog.selfService('code.rejected', { status: res.status });
-      }
-      return { resolved: false, sentence: res.data.sentence || TRY_AGAIN_SENTENCE, degraded: faulted };
-    }
-
-    codeRef.current = code;
-    setDegraded(false);
-    setMessage(null);
-    setCard(res.data);
-    setSentence(null);
-    schoolLog.selfService('code.resolved', { subject: res.data.subject ?? null });
-    const learnerId = res.data.learnerId
-      ?? (typeof res.data.learner === 'string' ? res.data.learner : res.data.learner?.id)
-      ?? null;
-
-    // AHEAD OF THE CLAIM, NOT AFTER IT. `claim` is what makes everything that
-    // follows record against this learner — a runner, the shelf mount, the
-    // day's history — so confirming afterwards would attribute the work first
-    // and ask about it second. The card is rendered either way; what waits is
-    // the identity, and therefore the writing.
-    if (res.data.presentation?.confirmIdentity && learnerId) {
-      pendingLearnerRef.current = learnerId;
-      setView('identity');
-      schoolLog.selfService('identity.asked', { userId: learnerId });
-      return { resolved: true, sentence: null, degraded: false };
-    }
-
-    // A CARD WITH NOTHING TO DECIDE IS A TAP THIS CHILD DOES NOT OWE.
-    //
-    // The server sets `openImmediately` for a card carrying one action, that
-    // action being a `program` — the reading shelf's card is one button
-    // reading "Open Reading" over a "Go back", asked of a child who just
-    // spelled out the code that means it. Run it and let the runner be the
-    // next thing they see.
-    //
-    // The claim comes FIRST here, for the same reason it is held back on the
-    // identity path: whatever this action opens has to record against the
-    // learner the code named, and claiming afterwards would attribute the work
-    // second. `endWork` already ran above, so the action's own double-tap
-    // guard is free to take it.
-    //
-    // The view stays on the keypad meanwhile — busy, as it already is during
-    // the resolve — rather than flashing the card we are removing. A refusal
-    // or a dispatch answers with words through `runAction`'s own paths, which
-    // set the view themselves.
-    if (res.data.presentation?.openImmediately) {
-      const work = (Array.isArray(res.data.actions) ? res.data.actions : [])
-        .find((candidate) => candidate?.kind !== 'exit');
-      if (work) {
-        if (learnerId && claim) claim(learnerId);
-        schoolLog.selfService('card.skipped', { kind: work.kind });
-        await runActionRef.current?.(work);
-        return { resolved: true, sentence: null, degraded: false };
-      }
-    }
-
-    setView('card');
-    // Claim so a runner mounted from this card records against the learner the
-    // code named — the same soft-claim `useSchoolLaunch` performs. A valid
-    // contextual card confirms that identity; the keypad itself stays
-    // anonymous.
-    if (learnerId && claim) claim(learnerId);
-    return { resolved: true, sentence: null, degraded: false };
-  }, [beginWork, claim, endWork, deviceId]);
-
-  /** The degraded retry — the same code, not a fresh typing exercise. */
-  const retry = useCallback(() => submit(lastTriedRef.current), [submit]);
-
-  /**
-   * "Yes, that's me." The claim that `submit` held back.
-   *
-   * Deliberately the ONLY caller of `claim` on the confirm path: a child who
-   * walks away from the question, or taps "not me", leaves the panel having
-   * recorded nothing against anyone. That is the whole value of asking BEFORE
-   * claiming rather than after.
-   */
-  const confirmIdentity = useCallback(() => {
-    const learnerId = pendingLearnerRef.current;
-    pendingLearnerRef.current = null;
-    if (learnerId && claim) claim(learnerId);
-    schoolLog.selfService('identity.confirmed', { userId: learnerId ?? null });
-    setView('card');
-  }, [claim]);
-
-  /**
-   * "No." Back to the keypad with nothing claimed and nothing opened — and
-   * logged, because a child saying "that is not me" at a shared panel is the
-   * one signal this system can get about a code in the wrong hands.
-   */
-  const denyIdentity = useCallback(() => {
-    const learnerId = pendingLearnerRef.current;
-    pendingLearnerRef.current = null;
-    schoolLog.selfService('identity.denied', { userId: learnerId ?? null });
-    setCard(null);
-    setSentence(null);
-    setView('keypad');
-  }, []);
 
   /** Land on words with a Done. The ending every non-mounting path shares. */
   const say = useCallback((words) => {
@@ -461,8 +317,8 @@ export function useSelfService({
     const gen = genRef.current;
     schoolLog.selfService('action.run', { kind: action.kind });
     const res = await schoolApi.selfServiceAct({ code: codeRef.current, action: action.kind });
-    endWork();
     if (genRef.current !== gen) return; // rule 4
+    endWork();
 
     if (!res.ok || !res.data) {
       schoolLog.selfServiceError('act.failed', { kind: action.kind, status: res.status });
@@ -560,7 +416,128 @@ export function useSelfService({
     // a grown-up has to say yes first, or which room the work just started in.
     say(said);
   }, [beginWork, endWork, onLaunch, say, toLock]);
-  runActionRef.current = runAction;
+
+  /**
+   * @returns {Promise<{resolved: boolean, sentence: string|null, skipped?: boolean, degraded?: boolean}>}
+   * — `confirmPrint` needs to tell three cases apart: a card opened, the
+   * resolve failed, and `skipped` (a second tap that never made a request at
+   * all, which must change nothing on screen).
+   *
+   * The KEYPAD reads `degraded` off this too, and it has to come back on the
+   * verdict rather than be read off the hook's state: the keypad's own await
+   * resumes in the microtask right after this one, with no guarantee React has
+   * flushed `setDegraded` yet, so a stale read would play the wrong-code
+   * animation over a backend outage — telling a child their good code was
+   * wrong, which is the one thing rule 1 exists to prevent.
+   */
+  const submit = useCallback(async (code) => {
+    if (!code) return { resolved: false, sentence: null };
+    if (!beginWork()) return { resolved: false, sentence: null, skipped: true };
+    const gen = genRef.current;
+    lastTriedRef.current = code;
+    const res = await schoolApi.selfServiceResolve(code, deviceId);
+    if (genRef.current !== gen) return { resolved: false, sentence: null, skipped: true }; // rule 4
+    endWork();
+
+    // Rule 1: a transport/lifecycle failure is NOT a wrong code.
+    if (!res.ok || !res.data) {
+      setDegraded(true);
+      setMessage(DEGRADED_SENTENCE);
+      schoolLog.selfServiceError('resolve.failed', { status: res.status });
+      return { resolved: false, sentence: DEGRADED_SENTENCE, degraded: true };
+    }
+    // `ok` is the ONLY thing separating a REFUSAL (bad code — stay on the
+    // keypad) from a REAL CARD that simply has no buttons (`served`,
+    // `locked`). Both arrive as a 200 with an empty-ish body, and reading a
+    // `served` card as a refusal would tell a child who finished their maths
+    // that they typed the code wrong.
+    if (res.data.ok === false) {
+      const faulted = isBackendFault(res.data);
+      setDegraded(faulted);
+      setMessage(res.data.sentence || TRY_AGAIN_SENTENCE);
+      if (faulted) {
+        schoolLog.selfServiceError('resolve.failed', {
+          status: res.status, inBody: true, reason: res.data.reason ?? null,
+        });
+      } else {
+        schoolLog.selfService('code.rejected', { status: res.status });
+      }
+      return { resolved: false, sentence: res.data.sentence || TRY_AGAIN_SENTENCE, degraded: faulted };
+    }
+
+    codeRef.current = code;
+    setDegraded(false);
+    setMessage(null);
+    setCard(res.data);
+    setSentence(null);
+    schoolLog.selfService('code.resolved', { subject: res.data.subject ?? null });
+    const learnerId = res.data.learnerId
+      ?? (typeof res.data.learner === 'string' ? res.data.learner : res.data.learner?.id)
+      ?? null;
+
+    // AHEAD OF THE CLAIM, NOT AFTER IT. `claim` is what makes everything that
+    // follows record against this learner — a runner, the shelf mount, the
+    // day's history — so confirming afterwards would attribute the work first
+    // and ask about it second. The card is rendered either way; what waits is
+    // the identity, and therefore the writing.
+    if (res.data.presentation?.confirmIdentity && learnerId) {
+      pendingLearnerRef.current = learnerId;
+      setView('identity');
+      schoolLog.selfService('identity.asked', { userId: learnerId });
+      return { resolved: true, sentence: null, degraded: false };
+    }
+
+    setView('card');
+    // Claim so a runner mounted from this card records against the learner the
+    // code named — the same soft-claim `useSchoolLaunch` performs. A valid
+    // contextual card confirms that identity; the keypad itself stays
+    // anonymous.
+    if (learnerId && claim) claim(learnerId);
+    // Use this response's action and the code installed above, never a card
+    // captured before React has committed the resolve. The server still owns
+    // authorization and grant issuance through the normal /act path.
+    const readingAction = res.data.presentation?.openImmediately
+      ? res.data.actions?.find(action => action.kind !== 'exit')
+      : res.data.actions?.find(action => action.kind === 'program' && action.target === 'book-log');
+    if (readingAction) await runAction(readingAction);
+    return { resolved: true, sentence: null, degraded: false };
+  }, [beginWork, claim, endWork, deviceId, runAction]);
+
+  /** The degraded retry — the same code, not a fresh typing exercise. */
+  const retry = useCallback(() => submit(lastTriedRef.current), [submit]);
+
+  /**
+   * "Yes, that's me." The claim that `submit` held back.
+   *
+   * Deliberately the ONLY caller of `claim` on the confirm path: a child who
+   * walks away from the question, or taps "not me", leaves the panel having
+   * recorded nothing against anyone. That is the whole value of asking BEFORE
+   * claiming rather than after.
+   */
+  const confirmIdentity = useCallback(async () => {
+    const learnerId = pendingLearnerRef.current;
+    if (!learnerId) return;
+    pendingLearnerRef.current = null;
+    if (learnerId && claim) claim(learnerId);
+    schoolLog.selfService('identity.confirmed', { userId: learnerId ?? null });
+    setView('card');
+    const readingAction = card?.presentation?.openImmediately
+      ? card?.actions?.find(action => action.kind !== 'exit')
+      : card?.actions?.find(action => action.kind === 'program' && action.target === 'book-log');
+    if (readingAction) await runAction(readingAction);
+  }, [claim, card, runAction]);
+
+  /**
+   * "No." Back to the keypad with nothing claimed and nothing opened — and
+   * logged, because a child saying "that is not me" at a shared panel is the
+   * one signal this system can get about a code in the wrong hands.
+   */
+  const denyIdentity = useCallback(() => {
+    const learnerId = pendingLearnerRef.current;
+    pendingLearnerRef.current = null;
+    schoolLog.selfService('identity.denied', { userId: learnerId ?? null });
+    toLock();
+  }, [toLock]);
 
   /**
    * "Did it print?" — Yes closes the interaction, No offers it again.

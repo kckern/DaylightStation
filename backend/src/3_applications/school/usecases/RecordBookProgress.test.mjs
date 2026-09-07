@@ -89,7 +89,7 @@ describe('RecordBookProgress', () => {
     const finished = shelf('page', {
       status: 'finished',
       finishedOn: '2026-09-01',
-      entries: [{ id: 'ent_finish', on: '2026-09-01', at: '2026-09-01T20:00:00.000Z', source: 'panel' }],
+      entries: [{ id: 'ent_finish', kind: 'finished', on: '2026-09-01', at: '2026-09-01T20:00:00.000Z', source: 'panel' }],
     });
     const [uc, store] = useCase(makeStore(finished));
     await uc.execute({ learnerId: 'kid', itemId: 'rdg_one', kind: 'reopened', entryId: 'undo-f1' });
@@ -182,4 +182,23 @@ describe('RecordBookProgress', () => {
     expect(store.updates[0]).toEqual({ learnerId: 'kid', readingId: 'rdg_one', patch: { progressMode: 'check' } });
     expect(out.progressMode).toBe('check');
   });
+});
+
+
+it('undo removes the marked finish and preserves a later independent check-in', async () => {
+  const [uc, store] = useCase(makeStore(shelf('check', {
+    status: 'finished', finishedOn: '2026-09-01', entries: [
+      { id: 'ent_finish', kind: 'finished', on: '2026-09-01' },
+      { id: 'ent_check', kind: 'progress', on: '2026-09-01' },
+    ],
+  })));
+  await uc.execute({ learnerId: 'kid', itemId: 'rdg_one', kind: 'reopened', entryId: 'undo' });
+  expect(store.deleted.map(entry => entry.entryId)).toEqual(['ent_finish']);
+});
+it('undo preserves ambiguous historical v2 check-ins without a finish marker', async () => {
+  const [uc, store] = useCase(makeStore(shelf('check', {
+    status: 'finished', finishedOn: '2026-09-01', entries: [{ id: 'ent_check', on: '2026-09-01' }],
+  })));
+  await uc.execute({ learnerId: 'kid', itemId: 'rdg_one', kind: 'reopened', entryId: 'undo' });
+  expect(store.deleted).toEqual([]);
 });

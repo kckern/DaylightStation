@@ -430,6 +430,11 @@ const useVoiceMemoRecorder = ({
   ]);
 
   const startRecording = useCallback(async () => {
+    // Invalidate queued events from the previous recorder before awaiting the
+    // microphone. The next recorder may not exist yet when old stop events arrive.
+    mediaRecorderRef.current = null;
+    // Cancellation belongs to the previous capture, not the next memo.
+    cancelledRef.current = false;
     setError(null);
     lastAudioPayloadRef.current = null;
     emitState('requesting');
@@ -458,11 +463,17 @@ const useVoiceMemoRecorder = ({
       startLevelMonitor(stream);
       chunksRef.current = [];
       recorder.ondataavailable = (event) => {
+        if (mediaRecorderRef.current !== recorder) return;
         if (event.data && event.data.size > 0) {
           chunksRef.current.push(event.data);
         }
       };
-      recorder.onstop = handleRecordingStop;
+      recorder.onstop = () => {
+        // A cancelled recorder can deliver queued events after a new capture
+        // starts. It must neither upload nor discard the new capture's chunks.
+        if (mediaRecorderRef.current !== recorder) return;
+        handleRecordingStop();
+      };
       recordingStartTimeRef.current = Date.now();
       setRecordingDuration(0);
       recorder.start();

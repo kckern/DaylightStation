@@ -131,7 +131,11 @@ function buildCeremony(payload) {
       return {
         tone: 'error',
         title: "Couldn't read that sheet",
-        detail: "The student number didn't come through. Try scanning again, slowly.",
+        detail: payload.code === 'OMR_COLUMN_COUNT'
+          ? `The scanner read ${payload.actual} columns; this sheet needs ${payload.expected}. No grade was recorded. Scan again; if it repeats, ask a grown-up.`
+          : payload.code === 'OMR_ALIGNMENT'
+            ? 'Scan alignment looks wrong compared with your earlier scan. No grade was recorded. Please rescan; if it repeats, ask a grown-up.'
+            : "The student number didn't come through. Try scanning again, slowly.",
         at,
         code: payload.code ?? null,
       };
@@ -161,8 +165,8 @@ function buildCeremony(payload) {
       // pretending a grade happened.
       return {
         tone: 'error',
-        title: 'Already done',
-        detail: 'I read that sheet, but there was nothing new to mark.',
+        title: 'No new result recorded',
+        detail: 'This scan did not record a new result. Check the agenda; if this work is still unfinished, ask a grown-up.',
         at,
       };
     case 'scan-rows-unmarked': {

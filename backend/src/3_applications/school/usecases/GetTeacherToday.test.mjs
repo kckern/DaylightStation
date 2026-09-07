@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { GetTeacherToday } from './GetTeacherToday.mjs';
 import { schoolArtifactRef } from '#apps/common/resources/publicResourceRefs.mjs';
 
@@ -13,7 +13,7 @@ const events = [
     artifactId: 'receipt_1', kind: 'result-receipt', printed: true },
 ];
 
-function useCase() {
+function useCase(overrides = {}) {
   return new GetTeacherToday({
     learnerDirectory: { listLearners: async () => [{ id: 'learner4', name: 'Learner4' }] },
     datastore: { readAttemptDay: () => [] },
@@ -27,6 +27,7 @@ function useCase() {
     },
     timezone: 'UTC', boundaryHour: 4,
     clock: () => new Date('2026-08-24T18:00:00.000Z'), logger: { debug() {} },
+    ...overrides,
   });
 }
 
@@ -69,6 +70,45 @@ describe('GetTeacherToday v2', () => {
     // yesterday's sheet scanned today without any extra fetch either.
     const august24 = await useCase().execute({ studyDay: '2026-08-24', version: 'v2' });
     expect(august24.learners[0].processedToday[0].artifacts.worksheet.artifactId).toBe('art_1');
+  });
+
+  it('reads one persisted shelf per learner and projects activity on the requested study day', async () => {
+    const bookLog = { listForLearner: vi.fn(async () => [{ itemId: 'learner4:b:open-1', events: [
+      { kind: 'started', at: '2026-08-24T12:00:00.000Z' },
+      { kind: 'progress', at: '2026-08-24T13:00:00.000Z', page: 25 },
+      { kind: 'finished', at: '2026-08-24T14:00:00.000Z' },
+    ] }]) };
+    const digest = await useCase({ bookLog }).execute({ studyDay: '2026-08-24', version: 'v2' });
+
+    expect(bookLog.listForLearner).toHaveBeenCalledTimes(1);
+    expect(bookLog.listForLearner).toHaveBeenCalledWith('learner4');
+    expect(digest.learners[0].readingActivity).toEqual({
+      status: 'ok', studyDay: '2026-08-24', hasActivity: true,
+      progressCount: 1, finishedCount: 1, bookCount: 1,
+    });
+  });
+
+  it('marks activity unavailable and logs the actual shelf read failure', async () => {
+    const failure = new Error('damaged shelf');
+    const logger = { debug: vi.fn(), warn: vi.fn() };
+    const digest = await useCase({
+      bookLog: { listForLearner: vi.fn(async () => { throw failure; }) }, logger,
+    }).execute({ studyDay: '2026-08-24', version: 'v2' });
+
+    expect(digest.learners[0].readingActivity).toEqual({
+      status: 'unavailable', studyDay: '2026-08-24', hasActivity: null,
+    });
+    expect(logger.warn).toHaveBeenCalledWith('school.teacher-day.reading-activity-failed', {
+      learnerId: 'learner4', error: 'damaged shelf',
+    });
+  });
+
+  it('leaves the v1 learner-row contract unchanged and does not read the shelf', async () => {
+    const bookLog = { listForLearner: vi.fn(async () => []) };
+    const rows = await useCase({ bookLog }).execute();
+
+    expect(bookLog.listForLearner).not.toHaveBeenCalled();
+    expect(rows[0]).not.toHaveProperty('readingActivity');
   });
 });
 

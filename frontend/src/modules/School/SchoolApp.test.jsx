@@ -46,6 +46,7 @@ describe('Sentence Ladder route authority', () => {
 });
 vi.mock('./schoolApi.js', () => ({
   schoolApi: {
+    bookScans: { pending: vi.fn(async () => ({ ok: true, data: { intent: null } })), claim: vi.fn(), dismiss: vi.fn() },
     roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'kid1', name: 'Alpha', birthyear: 2016 }, { id: 'dad1', name: 'Papa', birthyear: 1984 }] })),
     wallet: vi.fn(async () => ({ ok: false, status: 503, data: null })),
     banks: (...a) => banksMock(...a),

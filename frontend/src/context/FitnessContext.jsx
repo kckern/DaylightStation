@@ -163,6 +163,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // UI State
   const [selectedPlaylistId, setSelectedPlaylistId] = useState(null);
   const [musicAutoEnabledState, setMusicAutoEnabledState] = useState(false);
+  const [standaloneMusicEnabled, setStandaloneMusicEnabled] = useState(false);
   const [musicOverride, setMusicOverride] = useState(null);
   const [lastPlaylistId, setLastPlaylistId] = useState(null);
   const [videoPlayerPaused, setVideoPlayerPaused] = useState(false);
@@ -1157,7 +1158,15 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return musicPlaylists[0]?.id ?? null;
   }, [lastPlaylistId, musicPlaylists]);
 
-  const musicAutoEnabled = musicAutoEnabledState;
+  const fitnessPlayQueue = propPlayQueue !== undefined ? propPlayQueue : internalPlayQueue;
+  const setFitnessPlayQueue = propSetPlayQueue || setInternalPlayQueue;
+  const queuedMusicLabels = normalizeLabelList(fitnessPlayQueue?.[0]?.labels);
+  // Resolve the current video synchronously: an effect would briefly mount the
+  // old soundtrack before clearing it on an untagged replacement video.
+  const mediaMusicAutoEnabled = fitnessPlayQueue?.length
+    ? queuedMusicLabels.some(label => normalizeLabelList(nomusicLabels).includes(label))
+    : musicAutoEnabledState;
+  const musicAutoEnabled = standaloneMusicEnabled || mediaMusicAutoEnabled;
   const musicEnabled = musicOverride !== null ? musicOverride : musicAutoEnabled;
 
   React.useEffect(() => {
@@ -1199,26 +1208,22 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // Countdown displays now use useDeadlineCountdown hook with deadline timestamp
   // This eliminates ~60 unnecessary forceUpdate calls/min during active sessions
 
-  const fitnessPlayQueue = propPlayQueue !== undefined ? propPlayQueue : internalPlayQueue;
-  const setFitnessPlayQueue = propSetPlayQueue || setInternalPlayQueue;
-
-  // Auto-enable music when queue contains video with nomusic label
+  const previousMusicDecisionRef = useRef(null);
   React.useEffect(() => {
-    if (!fitnessPlayQueue || fitnessPlayQueue.length === 0) return;
-
-    const currentItem = fitnessPlayQueue[0];
-    if (!currentItem?.labels || !Array.isArray(currentItem.labels)) return;
-
-    const nomusicLabelSet = new Set(nomusicLabels.map(l => l.toLowerCase()));
-    const itemLabels = currentItem.labels.map(l =>
-      typeof l === 'string' ? l.trim().toLowerCase() : ''
-    ).filter(Boolean);
-
-    const hasNomusicLabel = itemLabels.some(label => nomusicLabelSet.has(label));
-    if (hasNomusicLabel) {
-      setMusicAutoEnabledState(true);
-    }
-  }, [fitnessPlayQueue, nomusicLabels]);
+    const item = fitnessPlayQueue?.[0];
+    const decision = {
+      contentId: item ? getItemIdentifier(item) : null,
+      labels: normalizeLabelList(item?.labels),
+      source: musicOverride !== null ? 'manual' : standaloneMusicEnabled ? 'standalone-chart' : 'media-label',
+      autoEnabled: musicAutoEnabled,
+      manualOverride: musicOverride,
+      enabled: musicEnabled,
+    };
+    const previous = previousMusicDecisionRef.current;
+    if (JSON.stringify(previous) === JSON.stringify(decision)) return;
+    previousMusicDecisionRef.current = decision;
+    getLogger().info('fitness.music.decision', { previous, current: decision });
+  }, [fitnessPlayQueue, standaloneMusicEnabled, musicAutoEnabled, musicOverride, musicEnabled]);
 
   // Governance Media Update
   const setGovernanceMedia = React.useCallback((input) => {
@@ -2864,6 +2869,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     nomusicLabels,
     musicEnabled,
     setMusicAutoEnabled,
+    setStandaloneMusicEnabled,
     setMusicOverride: setMusicOverrideState,
     selectedPlaylistId,
     setSelectedPlaylistId,

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
@@ -15,6 +15,8 @@ function deps() {
     recordBookProgress: { calls: [], modes: [],
       async execute(input) { this.calls.push(input); return { item: {}, event: { kind: input.kind } }; },
       async setMode(input) { this.modes.push(input); return { itemId: input.itemId, progressMode: input.progressMode }; } },
+    onBookLogChanged: vi.fn(async () => {}),
+    logger: { warn: vi.fn() },
   };
 }
 // The REAL error middleware, so these tests pin the one error shape a client
@@ -70,6 +72,54 @@ describe('school books routes', () => {
     expect(d.recordBookProgress.modes[0]).toEqual({ learnerId: 'kid', itemId: 'kid:b:e1', progressMode: 'check' });
   });
 
+  it.each([
+    ['open', '/school/books/kid/shelf', { bookId: 'b', entryId: 'open-1' }],
+    ['progress', '/school/books/kid/shelf/kid:b:e1/progress', { kind: 'progress', page: 90, entryId: 'p-1' }],
+    ['mode', '/school/books/kid/shelf/kid:b:e1/mode', { progressMode: 'check' }],
+  ])('publishes one grant-scoped learner invalidation after a successful %s', async (_label, url, body) => {
+    const [a, d] = app();
+    const res = await request(a).post(url).set(H, 'ok-kid').send({ ...body, learnerId: 'sibling' });
+
+    expect(res.status).toBe(200);
+    expect(d.onBookLogChanged).toHaveBeenCalledTimes(1);
+    expect(d.onBookLogChanged).toHaveBeenCalledWith({ event: 'book-log-changed', learnerId: 'kid' });
+  });
+
+  it('publishes only after the write reports success', async () => {
+    const order = [];
+    const d = deps();
+    d.openBookShelfItem.execute = async () => { order.push('saved'); return { item: {}, event: null, book: {} }; };
+    d.onBookLogChanged = async () => { order.push('notified'); };
+    const [a] = app(d);
+
+    const res = await request(a).post('/school/books/kid/shelf').set(H, 'ok-kid').send({ bookId: 'b', entryId: 'open-1' });
+    expect(res.status).toBe(200);
+    expect(order).toEqual(['saved', 'notified']);
+  });
+
+  it('does not notify when the persisted mutation is rejected', async () => {
+    const [a, d] = app();
+    d.recordBookProgress.execute = async () => { throw new Error('write refused'); };
+
+    const res = await request(a).post('/school/books/kid/shelf/kid:b:e1/progress')
+      .set(H, 'ok-kid').send({ kind: 'progress', page: 90, entryId: 'p-1' });
+    expect(res.status).toBe(500);
+    expect(d.onBookLogChanged).not.toHaveBeenCalled();
+  });
+
+  it('keeps a saved response successful when notification fails', async () => {
+    const [a, d] = app();
+    d.onBookLogChanged.mockRejectedValue(new Error('bus unavailable'));
+
+    const res = await request(a).post('/school/books/kid/shelf').set(H, 'ok-kid')
+      .send({ bookId: 'b', entryId: 'open-1' });
+    expect(res.status).toBe(200);
+    expect(res.body.item.itemId).toBe('kid:b:new');
+    expect(d.logger.warn).toHaveBeenCalledWith('school.book-log.notification-failed', {
+      learnerId: 'kid', error: 'bus unavailable',
+    });
+  });
+
   it('lets a ValidationError reach the app error middleware as a 400 in the same shape', async () => {
     const [a, d] = app();
     d.recordBookProgress.execute = async () => { const e = new Error('page must be a positive integer'); e.name = 'ValidationError'; throw e; };
@@ -80,7 +130,7 @@ describe('school books routes', () => {
   });
 
   it('names each missing collaborator at construction', () => {
-    for (const name of ['grants', 'getBookShelf', 'openBookShelfItem', 'recordBookProgress']) {
+    for (const name of ['grants', 'getBookShelf', 'openBookShelfItem', 'recordBookProgress', 'onBookLogChanged']) {
       expect(() => createSchoolBooksRouter({ ...deps(), [name]: undefined }), name).toThrow(new RegExp(name));
     }
   });

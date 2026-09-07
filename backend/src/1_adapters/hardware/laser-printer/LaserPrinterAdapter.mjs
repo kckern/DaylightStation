@@ -154,12 +154,12 @@ const PRINTER_STATE = { 3: 'idle', 4: 'processing', 5: 'stopped' };
  */
 export class LaserPrinterAdapter {
   #host; #port; #rawPort; #path; #timeout; #printTimeout; #rawTransport; #logger;
-  #renderPageLimit;
+  #renderPageLimit; #duplex;
   #requestId = 0;
 
   constructor({
     host, port = 631, rawPort = 9100, path = '/ipp/print', timeout = 15000, printTimeout = 60000,
-    rawTransport = false, logger = console, renderPageLimit = null,
+    rawTransport = false, logger = console, renderPageLimit = null, duplex = true,
   } = {}) {
     if (!host) {
       throw new InfrastructureError('LaserPrinterAdapter requires host', {
@@ -167,6 +167,7 @@ export class LaserPrinterAdapter {
       });
     }
     this.#host = host;
+    this.#duplex = duplex === true;
     // Trim, not refuse: see rasterize.mjs. Null in production.
     this.#renderPageLimit = renderPageLimit;
     this.#port = port;
@@ -299,7 +300,7 @@ export class LaserPrinterAdapter {
    * Callers (`IssueDocument`, `school.yml printing.duplex`) just pass intent.
    */
   async printPdf(pdf, {
-    jobName = 'daylight-print', user = 'daylight', copies = 1, duplex = undefined,
+    jobName = 'daylight-print', user = 'daylight', copies = 1, duplex = this.#duplex,
   } = {}) {
     if (!Buffer.isBuffer(pdf) || pdf.length === 0) {
       throw new InfrastructureError('printPdf requires non-empty PDF buffer', { code: 'INVALID_DOCUMENT' });

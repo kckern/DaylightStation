@@ -40,6 +40,11 @@ async function reqAbsolute(path, { timeoutMs = null } = {}) {
 }
 
 export const schoolApi = {
+  bookScans: {
+    pending: screenId => req(`/book-scans/pending?${new URLSearchParams({ screenId })}`),
+    claim: (id, body) => req(`/book-scans/${encodeURIComponent(id)}/claim`, body),
+    dismiss: (id, body) => req(`/book-scans/${encodeURIComponent(id)}/dismiss`, body),
+  },
   /**
    * Roster-wide State Gates query. The filters keep this one request for the
    * whole board; four learner cards must not mean four round trips.

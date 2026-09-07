@@ -11,7 +11,7 @@ describe('SaveReceipt', () => {
     const onUndo = vi.fn();
     render(<SaveReceipt receipt={{ kind: 'finished', book: BOOK, finishedOn: '2026-09-03' }} onBack={onBack} onHistory={onHistory} onUndo={onUndo} />);
     expect(screen.getByRole('status')).toHaveTextContent('Book finished!');
-    expect(screen.getByRole('status')).toHaveTextContent('Saved in History · Sep 3');
+    expect(screen.getByRole('status')).toHaveTextContent('Finished · Sep 3');
     expect(screen.getByRole('img', { name: 'Cover of The Wild Robot' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'See History' }));
     expect(onHistory).toHaveBeenCalledOnce();

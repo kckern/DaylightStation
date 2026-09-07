@@ -8,6 +8,15 @@ export class SchoolServiceBankReader {
     .map((bank) => bank.id)
     .filter(Boolean);
 
+  getBankIssue = (id) => {
+    try {
+      this.schoolService.getBank(id);
+      return null;
+    } catch (error) {
+      return error.code === 'WORKSHEET_INVALID' ? error.message : null;
+    }
+  };
+
   getBank = (id) => {
     try {
       return this.schoolService.getBank(id);

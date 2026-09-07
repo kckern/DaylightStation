@@ -143,7 +143,17 @@ export function materialKey(spec) {
     // Roots are a set, not a sequence — ['C','G'] and ['G','C'] name the same
     // material, so sort before joining rather than trusting authoring order.
     const roots = Array.isArray(spec.roots) ? [...spec.roots].sort().join(',') : '';
-    return `exercise|${spec.collection ?? ''}|${roots}|${spec.hands ?? ''}|${spec.cued ? 'cued' : ''}`;
+    // The bank axes a scales spec may name. They belong in the key because they
+    // change WHICH exercise the spec addresses: same collection, same roots,
+    // `direction: up-then-down` is twice the ask that `up` is. Two specs
+    // differing only here would otherwise share a key, and `pickMaterial` would
+    // read them as one drill and starve whichever it did not serve first.
+    //
+    // Appended, so every key an older build wrote keeps its prefix. A stored
+    // `lastMaterialId` from before this change simply fails to match, which
+    // costs one serve of the anti-repeat rule and heals on the next.
+    const axes = `${spec.mode ?? ''}|${spec.direction ?? ''}|${spec.span_octaves ?? ''}`;
+    return `exercise|${spec.collection ?? ''}|${roots}|${spec.hands ?? ''}|${spec.cued ? 'cued' : ''}|${axes}`;
   }
   if (kind === 'score') {
     return `score|${spec.source ?? ''}|${spec.measures ?? ''}`;

@@ -137,4 +137,19 @@ describe('materialKey (review fix, minor)', () => {
     const b = { kind: 'exercise', collection: 'scales', roots: ['G', 'C'], hands: 'right' };
     expect(materialKey(a)).toBe(materialKey(b));
   });
+
+  it('distinguishes two scale specs that differ only by mode, direction or span', () => {
+    // These name materially different exercises out of the same collection and
+    // roots. Sharing a key would make `pickMaterial`'s anti-repeat rule read
+    // them as the same drill, so a level offering both would serve one of them
+    // and starve the other — the same starvation the rotation exists to avoid.
+    const base = { kind: 'exercise', collection: 'scales', roots: ['C'] };
+    const keys = [
+      materialKey(base),
+      materialKey({ ...base, direction: 'up-then-down' }),
+      materialKey({ ...base, mode: 'blues' }),
+      materialKey({ ...base, span_octaves: 2 }),
+    ];
+    expect(new Set(keys).size).toBe(keys.length);
+  });
 });

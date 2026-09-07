@@ -52,12 +52,14 @@ function logger() {
  *   Reasons: `engrave-failed` | `no-engraved-notes` | `passage-empty` |
  *   `expectation-uncompilable`.
  * @param {number} [props.cursorIndex] Which expectation event the run is on.
+ * @param {boolean} [props.showCursor] Draw the timed run's yellow cursor around
+ *   the current engraved noteheads; negative cursor indices draw nothing.
  * @param {number|null} [props.wrongMidi] A note that was played but not asked
  *   for. The note that WAS asked for flashes — the same thing the ABC stage
  *   says with `exercise-note-wrong`.
  */
 export default function ScorePassage({
-  musicXml, sourceId, measures = null, onExpectation, onUnrunnable, cursorIndex = 0, wrongMidi = null,
+  musicXml, sourceId, measures = null, onExpectation, onUnrunnable, cursorIndex = 0, wrongMidi = null, showCursor = false,
 }) {
   const [layout, setLayout] = useState(null);
   const publishedRef = useRef(null);
@@ -202,6 +204,40 @@ export default function ScorePassage({
     if (!event) return null;
     return { notes: elsByOnset.get(onsetKey(event.onsetQuarter)) ?? [] };
   }, [expectation, cursorIndex, elsByOnset]);
+
+  // Timed passages need a visible clock cursor even before a note is played.
+  // Insert behind the engraved ink, in the SVG's own coordinate system, so
+  // resizing the score scales the cursor with its note. Onsets (above), not
+  // raw step indices, keep tied notes and selected measure ranges aligned.
+  useLayoutEffect(() => {
+    if (!showCursor) return undefined;
+    const rectangles = [];
+    for (const note of currentStep?.notes ?? []) {
+      const el = note.el;
+      const svg = el?.ownerSVGElement;
+      const matrix = svg?.getScreenCTM?.();
+      if (!matrix) continue;
+      const bounds = el.getBoundingClientRect();
+      if (!bounds.width || !bounds.height) continue;
+      const inverse = matrix.inverse();
+      const point = svg.createSVGPoint();
+      point.x = bounds.left; point.y = bounds.top;
+      const start = point.matrixTransform(inverse);
+      point.x = bounds.right; point.y = bounds.bottom;
+      const end = point.matrixTransform(inverse);
+      const rectangle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rectangle.setAttribute('class', 'piano-score-passage__cursor');
+      rectangle.setAttribute('x', start.x - 6);
+      rectangle.setAttribute('y', start.y - 12);
+      rectangle.setAttribute('width', end.x - start.x + 12);
+      rectangle.setAttribute('height', end.y - start.y + 24);
+      rectangle.setAttribute('rx', 4);
+      rectangle.setAttribute('aria-hidden', 'true');
+      svg.insertBefore(rectangle, svg.firstChild);
+      rectangles.push(rectangle);
+    }
+    return () => { for (const rectangle of rectangles) rectangle.remove(); };
+  }, [currentStep, showCursor]);
 
   // Every staff the engraving has is lit; a gate passage has no hands control.
   const activeParts = useMemo(() => {

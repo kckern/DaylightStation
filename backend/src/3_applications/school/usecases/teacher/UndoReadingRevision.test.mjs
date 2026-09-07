@@ -144,6 +144,7 @@ describe('UndoReadingRevision', () => {
   });
 
   it('undoing a deleted day puts the evidence back, silently', async () => {
+    Object.assign(bookLog.shelves.get(LEARNER)[0].entries[0], { kind: 'finished', recordedAt: AT });
     const { revision } = await new DeleteReadingEntry(deps()).execute({
       learnerId: LEARNER, readingId: 'rdg_a', entryId: 'ent_a', by: TEACHER,
       reason: 'logged on the wrong book', baseRevisionCount: 0,
@@ -158,6 +159,7 @@ describe('UndoReadingRevision', () => {
     // the id is new — the store mints entry ids and never re-uses a removed one.
     expect(reading.entries[1]).toMatchObject({ on: '2026-09-02', page: 48, at: '2026-09-02T18:00:00.000Z' });
     expect(reading.entries[1].id).not.toBe('ent_a');
+    expect(reading.entries[1]).toMatchObject({ kind: 'finished', recordedAt: AT });
     expect(notes).not.toHaveBeenCalled();
   });
 

@@ -1,22 +1,7 @@
-/**
- * ShelfTile — one cover and one caption (book-shelf UI design §3).
- *
- * The cover is the recognition cue: a child finds Hatchet by its picture. A
- * book with no cover, or whose cover fails to load, gets the calm placeholder
- * the launch card already uses — never an invented one. The tile is laid out
- * for a ~500px cover and never upscales it (the grid column caps the width).
- *
- * The caption is the mode's own number, straight from `projectShelfItem` on
- * the server: `p. 84` under a bar (page), `3h 20m` (minutes), `read on 12
- * days` (check). The tile derives nothing — status, page, percent and days
- * arrive computed; formatting a duration and a date is all it does itself.
- *
- * On History the same tile shows the day instead of a bar and is not a
- * button: nothing there is editable. No `<h1>`, no logging — the parent owns
- * the story.
- */
+/** A recognizable cover plus server-projected progress or effective finish date. */
 import BookCover from './BookCover.jsx';
 import { presentBook } from './bookPresentation.js';
+import { lastFinish } from './readingHistory.js';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -59,7 +44,7 @@ function captionFor(item) {
 }
 
 function outcomeFor(item) {
-  const day = shortDay(item.projection?.lastAt);
+  const day = shortDay(item.projection?.status === 'finished' ? lastFinish(item).day : item.projection?.lastAt);
   const word = item.projection?.status === 'set-aside' ? 'Set aside' : 'Finished';
   return day ? `${word} ${day}` : word;
 }

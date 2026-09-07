@@ -190,3 +190,98 @@ describe('GovernanceEngine — exemption suspension when no real subject present
     expect(met).toMatchObject({ satisfied: true, requiredCount: 1, actualCount: 1, missingUsers: [] });
   });
 });
+
+
+describe('challenge targets never grow because a visitor joined', () => {
+  it.each(['all', 'most', 'some', 6])('uses subjects for %s while crediting every rider', (rule) => {
+    const eng = new GovernanceEngine();
+    eng.config = { exemptions: ['exempt'] };
+    const people = ['rider', 'guest', 'exempt'];
+    eng._captureLatestInputs({ activeParticipants: people, guestIds: ['guest'], zoneRankMap: { cold: 0, hot: 2 } });
+    const result = eng.evaluateChallengeZone({ zone: 'hot', rule }, people, { rider: 'hot', guest: 'cold', exempt: 'cold' }, 3);
+    expect(result).toMatchObject({ requiredCount: 1, satisfied: true, missingUsers: [] });
+    const guestCredit = eng.evaluateChallengeZone({ zone: 'hot', rule }, people, { rider: 'cold', guest: 'hot', exempt: 'cold' }, 3);
+    expect(guestCredit.satisfied).toBe(true);
+  });
+});
+
+
+describe('guest-only blocking challenge lifecycle', () => {
+  it.each([null, { id: 'ongoing', status: 'pending' }, { id: 'locked', status: 'failed' }])('cancels neutrally without recording a win or failure', (active) => {
+    const eng = new GovernanceEngine();
+    eng._captureLatestInputs({ activeParticipants: ['guest'], guestIds: ['guest'] });
+    eng.challengeState.activeChallenge = active;
+    eng.challengeState.videoLocked = Boolean(active);
+    eng._evaluateChallenges({ challenges: [{ minParticipants: 1, selections: [] }] }, ['guest'], {}, {}, {}, 1);
+    expect(eng.challengeState.activeChallenge).toBeNull();
+    expect(eng.challengeState.nextChallenge).toBeNull();
+    expect(eng.challengeState.videoLocked).toBe(false);
+    expect(eng.challengeState.challengeHistory).toEqual([]);
+  });
+});
+
+
+it('does not select a visiting rider for a blocking cycle, including physical claims', () => {
+  const eng = new GovernanceEngine({ _deviceRouter: { getEquipmentCatalog: () => [{ id: 'bike', eligible_users: ['rider', 'visitor'] }] } });
+  eng._captureLatestInputs({ activeParticipants: ['rider', 'visitor'], guestIds: ['visitor'], equipmentRiderMap: { bike: 'visitor' } });
+  expect(eng._getEligibleUsers('bike')).toEqual(['rider']);
+});
+
+it.each([['all', 4], ['most', 2], ['some', 2]])('ignores extra guests in proportional %s targets', (rule, requiredCount) => {
+  const eng = new GovernanceEngine();
+  const subjects = ['a', 'b', 'c', 'd'];
+  const guests = ['g1', 'g2', 'g3', 'g4'];
+  const people = [...subjects, ...guests];
+  eng._captureLatestInputs({ activeParticipants: people, guestIds: guests });
+  expect(eng._normalizeChallengeRequiredCount(rule, people.length, people)).toBe(requiredCount);
+});
+
+
+it('neutrally cancels a cycle when its rider becomes a guest', () => {
+  const eng = new GovernanceEngine();
+  eng._captureLatestInputs({ activeParticipants: ['resident', 'visitor'], guestIds: ['visitor'] });
+  eng.challengeState.activeChallenge = { id: 'cycle', type: 'cycle', rider: 'visitor', status: 'pending' };
+  eng.challengeState.videoLocked = true;
+  eng._evaluateChallenges({ challenges: [{ selections: [] }] }, ['resident', 'visitor'], {}, {}, {}, 2);
+  expect(eng.challengeState.activeChallenge).toBeNull();
+  expect(eng.challengeState.videoLocked).toBe(false);
+  expect(eng.challengeState.challengeHistory).toEqual([]);
+});
+
+it('uses fresh guest classification and cancels a failed challenge before computing a locked phase', () => {
+  const eng = new GovernanceEngine(null, { now: () => 100000 });
+  eng.configure({ governed_labels: ['cardio'], policies: { default: {
+    base_requirement: [{ active: 'all' }],
+    challenges: [{ interval: [30, 60], selections: [{ zone: 'warm', min_participants: 1, time_allowed: 30 }] }],
+  } } });
+  eng.setMedia({ id: 'video-1', labels: ['cardio'], type: 'episode' });
+  const payload = { activeParticipants: ['visitor'], guestIds: [], userZoneMap: { visitor: 'active' }, zoneRankMap: { cold: 0, active: 1, warm: 2 }, zoneInfoMap: {}, totalCount: 1 };
+  eng.evaluate(payload);
+  eng.challengeState.activeChallenge = { id: 'failed', type: 'zone', status: 'failed' };
+  eng.challengeState.videoLocked = true;
+  eng.evaluate({ ...payload, guestIds: ['visitor'], userZoneMap: { visitor: 'cold' } });
+  expect(eng.phase).toBe('unlocked');
+  expect(eng.challengeState.activeChallenge).toBeNull();
+  expect(eng.challengeState.videoLocked).toBe(false);
+  eng.reset();
+});
+
+it('does not start a blocking cycle for a guest standing claim when another rider is eligible', () => {
+  const eng = new GovernanceEngine({ _deviceRouter: { getEquipmentCatalog: () => [{ id: 'bike', eligible_users: ['resident', 'visitor'] }] } });
+  eng._captureLatestInputs({ activeParticipants: ['resident', 'visitor'], guestIds: ['visitor'], equipmentRiderMap: { bike: 'visitor' } });
+  expect(eng._startCycleChallenge({ equipment: 'bike', explicitPhases: [{ hiRpm: 60, loRpm: 40, rampSeconds: 10, maintainSeconds: 20 }] })).toMatchObject({ ok: false, reason: 'claimed_rider_not_eligible' });
+  expect(eng.challengeState.activeChallenge).toBeNull();
+});
+
+it('retains household enforcement when an exempt resident is present with a guest', () => {
+  const eng = new GovernanceEngine();
+  eng.config = { exemptions: ['resident'] };
+  eng._captureLatestInputs({ activeParticipants: ['resident', 'visitor'], guestIds: ['visitor'] });
+  const active = { id: 'household-cycle', type: 'cycle', rider: 'resident', status: 'failed' };
+  eng.challengeState.activeChallenge = active;
+  eng.challengeState.videoLocked = true;
+  expect(eng._cancelGuestChallenge(['resident', 'visitor'])).toBe(false);
+  expect(eng.challengeState.activeChallenge).toBe(active);
+  expect(eng.challengeState.videoLocked).toBe(true);
+  expect(eng._classifyParticipants(['resident', 'visitor']).subjects).toEqual(['resident']);
+});

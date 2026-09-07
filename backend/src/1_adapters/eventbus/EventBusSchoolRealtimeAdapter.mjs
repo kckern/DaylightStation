@@ -1,3 +1,4 @@
+import { omrFrameError } from '#domains/school/omrFrame.mjs';
 import { ISchoolRealtimeGateway } from '#apps/school/ports/ISchoolRealtimeGateway.mjs';
 
 const DEFAULT_PRINT_TOPIC = 'omr';
@@ -8,6 +9,8 @@ function printTopics(config = {}) {
 }
 
 function decodePrintSheet(marks) {
+  const error = omrFrameError(marks);
+  if (error) return { testId: null, answers: {}, error };
   const columns = Array.isArray(marks) ? marks : [];
   const candidates = [];
   let anyDigit = false;
@@ -56,6 +59,10 @@ export class EventBusSchoolRealtimeAdapter extends ISchoolRealtimeGateway {
   #publish(topic, payload) { return (this.#bus.publish ?? this.#bus.broadcast)?.call(this.#bus, topic, payload); }
   #broadcast(topic, payload) { return (this.#bus.broadcast ?? this.#bus.publish)?.call(this.#bus, topic, payload); }
 
+  bookScanAvailable({ screenId, intentId }) {
+    return this.#broadcast('school', { type: 'school.book-scan', screenId, intentId });
+  }
+
   onLanguageDayCompleted(handler) { return this.#on('school.language.day-complete', handler); }
   onApprovedLaunchDispatched(handler) {
     return this.#on('donow', handler, (wire) => wire?.type === 'donow.dispatched'
@@ -96,6 +103,10 @@ export class EventBusSchoolRealtimeAdapter extends ISchoolRealtimeGateway {
 
   languageDayCompleted(fact) { return this.#publish('school.language.day-complete', fact); }
   sessionOutcomeRecorded(fact) { return this.#publish('school.session.outcome-recorded', fact); }
+  sessionGradeChanged({ learnerId, sessionId }) {
+    this.#publish('school.session.outcome-recorded', { learnerId, sessionId });
+    return this.#broadcast('school', { event: 'session-grade-changed', learnerId, sessionId });
+  }
   assignmentsChanged(fact) { return this.#publish('school.assignments.changed', fact); }
   completionStateObserved(fact) { return this.#publish('school.completion.state-observed', fact); }
   schoolCeremony(announcement) { return this.#broadcast('school', { event: 'piano-lesson-complete', ...announcement }); }

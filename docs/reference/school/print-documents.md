@@ -1472,3 +1472,14 @@ Known, accepted limits (each was reviewed, not overlooked):
 Curriculum units reference a print quiz as `document: print/<id-path>@<rev>`
 — the rev is pinned at authoring time, so a republish never silently changes
 what an assigned unit prints.
+
+### Invalid worksheet on the Portal
+
+A bank that fails question-bank validation must not fall back to an on-screen
+activity. Access-code resolution carries the bank's validation reason to the
+launch card: **Worksheet is invalid. Ask a grown-up.** followed by the specific
+reason, with zero-based item indices rendered as human question numbers. The
+card offers only Go back. The action endpoint re-resolves the card, so an old
+Print/Screen button cannot authorize work that became invalid after display.
+Already-issued immutable sheets remain reprintable even if their source bank
+is later edited. Invalid banks emit `school.selfservice.worksheet-invalid`.

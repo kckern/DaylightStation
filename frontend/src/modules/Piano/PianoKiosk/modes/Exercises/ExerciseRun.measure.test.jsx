@@ -723,7 +723,7 @@ describe('the exercise run, per tier, in a real layout engine at 1280x800', () =
     expect(heading.painted && onCanvas(heading), `the ask line is not legible on canvas: ${say(heading)}`).toBe(true);
 
     // No button starts this: the piano does.
-    expect(await probe.runButtons()).toEqual(['Exit']);
+    expect(await probe.runButtons()).toEqual([]);
   });
 
   it('tier 0 tells a child how it went in words, with no percentage on the screen', async () => {
@@ -988,7 +988,7 @@ describe('the exercise run, per tier, in a real layout engine at 1280x800', () =
     // Nothing to press but the piano — the ready line says so, and there is no
     // button that could be mistaken for a start.
     expect(await probe.text()).toContain('Press any key to start.');
-    expect(await probe.runButtons()).toEqual(['Exit']);
+    expect(await probe.runButtons()).toEqual([]);
   });
 
   it('tier 3 puts the count-in over the music the moment a key is touched', async () => {
@@ -1247,4 +1247,61 @@ describe('the score stage, engraved by the real OSMD in Chromium', () => {
       'the bars either side of the passage were not greyed back').toBeGreaterThan(0);
     expectNoPageErrors();
   }, 120000);
+});
+
+// Both engraving engines must show the same inert count-in and clock-led run.
+describe('timed exercise display in real Chromium', () => {
+  for (const surface of ['notation', 'score']) {
+    it(`${surface} grays the count-in, ignores held keys, and advances the cursor without playing`, async () => {
+      await run(surface === 'notation' ? {
+        instance: SCALE,
+        props: { tier: 3, intent: 'challenge', requirementOverride: CUED_REQUIREMENT },
+      } : {
+        scoreXml: fourBars,
+        props: { material: SCORE_MATERIAL, tier: 3, intent: 'challenge', requirementOverride: CUED_REQUIREMENT },
+      }, CUED_READY);
+      await probe.hold([84]);
+      await page.waitForSelector('.piano-exercise-run.is-countdown');
+      await probe.hold([60, 61]);
+      const feedback = '.exercise-note-hit, .exercise-note-wrong, .sequence-note-hit, .sequence-note-miss, .exercise-notation__ghost, .sequence-staff__ghost, .piano-note-wrong, .piano-key.active, .piano-key.wrong';
+      expect(await probe.count(feedback), 'count-in keys must not paint input feedback').toBe(0);
+      expect(await probe.count('.piano-note-lit, .piano-score-passage__cursor, .exercise-notation__cursor, .sequence-staff__cursor')).toBe(0);
+      expect(await page.locator('.piano-exercise-run').getAttribute('data-displayed-cursor')).toBe('-1');
+      const music = '.piano-exercise-run__stage > :not(.piano-score-countin)';
+      expect(await probe.prop(music, 'filter')).toBe('grayscale(1)');
+      expect(await probe.prop(music, 'opacity')).toBe('0.45');
+      expect(await probe.prop('.piano-exercise-run__keys', 'filter')).toBe('grayscale(1)');
+      expect(await probe.prop('.piano-exercise-run__keys', 'opacity')).toBe('0.45');
+      expect(await probe.prop('.piano-score-countin', 'filter')).toBe('none');
+      expect(await probe.prop('.piano-score-countin', 'opacity')).toBe('1');
+      await page.screenshot({ path: `/tmp/timed-${surface}-countdown.png` });
+
+      await page.waitForSelector('.piano-exercise-run.is-running');
+      const cursorSelector = surface === 'score' ? '.piano-score-passage__cursor' : '.exercise-notation__cursor';
+      await page.waitForSelector(cursorSelector);
+      const firstCursor = await probe.one(cursorSelector);
+      expect(await probe.count(feedback), 'keys held through the count-in must remain excluded').toBe(0);
+      await probe.hold([]);
+      await page.waitForFunction(() => Number(document.querySelector('.piano-exercise-run').dataset.expectedCursor) >= 2);
+      const cursors = await page.locator('.piano-exercise-run').evaluate((node) => ({
+        expected: Number(node.dataset.expectedCursor), displayed: Number(node.dataset.displayedCursor),
+      }));
+      expect(cursors.displayed, 'silent timed runs must follow the clock, not accepted presses').toBe(cursors.expected);
+      expect(cursors.displayed).toBeGreaterThanOrEqual(2);
+      expect(await probe.prop(music, 'filter')).toBe('none');
+      expect(await probe.prop(music, 'opacity')).toBe('1');
+      expect(await probe.count(surface === 'score' ? '.piano-note-lit' : '.exercise-notation__cursor')).toBeGreaterThan(0);
+      const movedCursor = await probe.one(cursorSelector);
+      expect(movedCursor.painted).toBe(true);
+      expect(movedCursor.cx).toBeGreaterThan(firstCursor.cx);
+      if (surface === 'score') {
+        const note = await probe.one('.piano-note-lit');
+        expect(inside(note, movedCursor), 'the score cursor must enclose its engraved note').toBe(true);
+        expect(await probe.prop(cursorSelector, 'fill')).toBe('rgba(255, 200, 60, 0.3)');
+        expect(await probe.prop(cursorSelector, 'stroke')).toBe('rgba(200, 150, 0, 0.5)');
+      }
+      await page.screenshot({ path: `/tmp/timed-${surface}-running.png` });
+      expectNoPageErrors();
+    }, 30000);
+  }
 });

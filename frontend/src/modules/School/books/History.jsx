@@ -1,16 +1,6 @@
-/**
- * History — the year's bookshelf (book-shelf UI design §3).
- *
- * Finished and set-aside books as the same tiles the shelf uses, with a date
- * where the bar was, grouped by the month they were last touched, most recent
- * group first. Nothing on it is editable: the tiles are not buttons, and the
- * only ways out are `‹ back` and the parent's `Done`.
- *
- * The month is read from `projection.lastAt` as a string — the server already
- * decided which day the event belongs to. Items arrive most-recently-touched
- * first from the hook and keep that order inside a group.
- */
+/** Finished and set-aside reads grouped by effective outcome month; finished tiles open details. */
 import ShelfTile from './ShelfTile.jsx';
+import { lastFinish } from './readingHistory.js';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -34,7 +24,7 @@ export function groupByMonth(items = []) {
   const groups = new Map();
   for (const item of items) {
     if (!item || !DONE.has(item.projection?.status)) continue;
-    const key = monthKey(item.projection?.lastAt);
+    const key = monthKey(item.projection?.status === 'finished' ? lastFinish(item).day : item.projection?.lastAt);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(item);
   }
@@ -49,7 +39,7 @@ export function groupByMonth(items = []) {
  * @param {object[]} props.items - every shelf item; this view keeps the done ones.
  * @param {() => void} props.onBack
  */
-export default function History({ items = [], onBack }) {
+export default function History({ items = [], onBack, onSelect = null }) {
   const groups = groupByMonth(items);
   return (
     <div className="school-books-history" data-testid="book-history">
@@ -63,7 +53,7 @@ export default function History({ items = [], onBack }) {
               <h3 className="school-books-history__month">{group.label}</h3>
               <div className="school-books-history__tiles">
                 {group.items.map((item) => (
-                  <ShelfTile key={item.itemId} item={item} finished />
+                  <ShelfTile key={item.itemId} item={item} finished onSelect={item.projection?.status === 'finished' ? onSelect : null} />
                 ))}
               </div>
             </section>

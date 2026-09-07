@@ -93,6 +93,12 @@ export function createSchoolPrintScanConsumer({
       realtime.printScanResolved({ kind, ...announcement });
     };
 
+    if (payload.error?.code === 'OMR_COLUMN_COUNT') {
+      logger.warn?.('school.print.scan-frame-invalid', payload.error);
+      speak({ event: 'scan-unresolved', ...payload.error });
+      return;
+    }
+
     resolveCardScan.execute({ testId, testIdCandidates, answers })
       .then(async (outcome) => {
         // A tracker that any `return` can skip past is not a guarantee. The

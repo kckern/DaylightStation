@@ -48,6 +48,7 @@
 | How do syllabi and frozen enrollments work? | [Enrollment](./enrollment.md) |
 | How do dates, urgency, and catch-up work? | [Timing and priority](./timing-and-priority.md) |
 | How does today's paper and completion gate work? | [Agenda and completion](./agenda-and-completion.md) |
+| How do children add books, finish, reread, and correct a finish? | [Reading shelf](./reading-shelf.md) |
 | How are attempts graded and notes delivered? | [Assessment and feedback](./assessment-and-feedback.md) |
 | What do progress, course grade, and status mean? | [Progress and reporting](./progress-and-reporting.md) |
 | What can a grown-up actually do, and from which state? | [Teacher — every flow](./teacher.md) |
@@ -2596,3 +2597,12 @@ links its spec.
   under `school/records/teacher-action-receipts/`. Completed requests replay
   across restarts; conflicting payloads and crash-indeterminate reservations
   return 409 instead of silently printing twice.
+
+
+### Scanned book entry
+
+A publisher ISBN13 received through scan ingress can wake the configured School Portal and offer an anonymous book preview with learner avatars. It never grants reading credit by itself. The Portal only opens this preview from an idle anonymous keypad; keypad digits, resolved launch cards, quizzes, and shelf drafts/saves retain their current work and show a deferred notice.
+
+The household kiosk API is `GET /api/v1/school/book-scans/pending?screenId=<id>` (`{intent:null}` or a preview with `id,screenId,isbn13,receivedAt,expiresAt,status,book,error`), `POST /:id/claim` (`{screenId,learnerId}`), and `POST /:id/dismiss` (`{screenId}`), all under `/api/v1/school/book-scans` and all `no-store`. Preview status is `loading|ready|not-found|unavailable|invalid`. Only scanner ingress creates random five-minute capabilities. Claim validates the current learner directory before returning `{intentId,launchTarget,bookEntry}` with the existing book-shelf grant. Same-learner retries reuse that grant; expired, dismissed, superseded, mismatched-screen, and other-learner requests refuse. The `school.book-scan` WebSocket event is only an invalidation; retained HTTP state recovers cold mounts and reconnects.
+
+After a fresh successful shelf read, the one-time entry opens the matching active book, the finished/read-again context, or the existing combined cover/actions view. It does not create shelf items. Failed shelf refreshes keep mutation controls blocked. On landscape screens, known-book tasks place the cover/title/context on the left and actions, page/minute keypad, calendar, or tracking-mode chooser on the right. The learner and Done remain visible above every shelf task. ISBN entry stays centered until a book is known; narrow mounts stack. The scan chooser uses the same cleaned book presentation beside a two-column learner grid with 72px portraits. Alternate-date tasks use a compact calendar with direct Save finish. Supplemental Reading circles describe book/finish/progress counts accessibly without changing required totals or daily completion.
