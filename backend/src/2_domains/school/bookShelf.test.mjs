@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  PROGRESS_MODES, inferProgressMode, projectShelfItem, measureObligation, isDayKey, noonOf,
+  PROGRESS_MODES, inferProgressMode, projectShelfItem, projectReading, measureObligation, isDayKey, noonOf,
   selectFeaturedShelfItem,
 } from './bookShelf.mjs';
 
@@ -169,6 +169,102 @@ describe('projectShelfItem', () => {
       ev('progress', 'not-a-date', { page: 6 }),
     ] }), { dayOf: (iso) => (Number.isFinite(Date.parse(iso)) ? String(iso).slice(0, 10) : '') });
     expect(projection.daysRead).toBe(1);
+  });
+});
+
+describe('projectReading', () => {
+  const reading = (overrides = {}) => ({
+    id: 'rdg_one', learnerId: 'learner_a',
+    book: { isbn: '9780064400558', pageCount: 184 },
+    progressMode: 'page', status: 'reading',
+    openedOn: '2026-08-01', finishedOn: null, entries: [], ...overrides,
+  });
+  const entry = (on, at, extra = {}) => ({ id: `ent_${on}`, on, at, source: 'panel', ...extra });
+
+  it('reads status from the stored field, never from where a row sits', () => {
+    for (const status of ['reading', 'finished', 'set-aside']) {
+      // The evidence below says "reading" under every v1 rule; the stored
+      // decision is what a teacher set, and it wins.
+      expect(projectReading(reading({
+        status,
+        entries: [entry('2026-08-03', '2026-08-03T10:00:00.000Z', { page: 40 })],
+      })).status).toBe(status);
+    }
+  });
+
+  it('keeps the FURTHEST page when a later row is lower', () => {
+    const projection = projectReading(reading({ entries: [
+      entry('2026-08-03', '2026-08-03T10:00:00.000Z', { page: 84 }),
+      entry('2026-08-04', '2026-08-04T10:00:00.000Z', { page: 12 }),
+    ] }));
+    expect(projection.page).toBe(84);
+    expect(projection.percent).toBe(46);
+  });
+
+  it('clamps the bar but keeps the page — still the 212-of-184 case', () => {
+    const projection = projectReading(reading({ entries: [
+      entry('2026-08-04', '2026-08-04T10:00:00.000Z', { page: 212 }),
+    ] }));
+    expect(projection.page).toBe(212);
+    expect(projection.percent).toBe(100);
+  });
+
+  it('is 100% when the stored status says finished, with no page ever logged', () => {
+    expect(projectReading(reading({ status: 'finished', finishedOn: '2026-08-09' })).percent).toBe(100);
+  });
+
+  it('has no percentage without a denominator', () => {
+    expect(projectReading(reading({
+      progressMode: 'check', book: { isbn: 'x', pageCount: null },
+      entries: [entry('2026-08-01', '2026-08-01T10:00:00.000Z')],
+    })).percent).toBeNull();
+  });
+
+  it('totals minutes in minutes mode', () => {
+    const projection = projectReading(reading({
+      progressMode: 'minutes', book: { isbn: 'x', pageCount: null },
+      entries: [
+        entry('2026-08-01', '2026-08-01T10:00:00.000Z', { minutes: 20 }),
+        entry('2026-08-02', '2026-08-02T10:00:00.000Z', { minutes: 25 }),
+      ],
+    }));
+    expect(projection.minutes).toBe(45);
+  });
+
+  it('counts DAYS, not rows: `on` is already a study day, so nothing maps it', () => {
+    const projection = projectReading(reading({ entries: [
+      entry('2026-08-03', '2026-08-03T10:00:00.000Z', { page: 20 }),
+      { id: 'ent_b', on: '2026-08-03', at: '2026-08-03T21:00:00.000Z', page: 30 },
+      entry('2026-08-04', '2026-08-04T10:00:00.000Z', { page: 40 }),
+    ] }));
+    expect(projection.daysRead).toBe(2);
+  });
+
+  it('answers BOTH questions: the day they last read and the instant it was touched', () => {
+    // A finish logged today for a day last week. "When did they last read" is
+    // that day; "when was this last touched" is now, and the teacher sees both.
+    const projection = projectReading(reading({
+      status: 'finished', finishedOn: '2026-08-28',
+      entries: [
+        entry('2026-09-02', '2026-09-02T10:00:00.000Z', { page: 40 }),
+        { id: 'ent_late', on: '2026-08-28', at: '2026-09-06T18:00:00.000Z' },
+      ],
+    }));
+    expect(projection.lastOn).toBe('2026-09-02');
+    expect(projection.lastAt).toBe('2026-09-06T18:00:00.000Z');
+  });
+
+  it('projects a reading with no entries at all', () => {
+    expect(projectReading(reading())).toMatchObject({
+      status: 'reading', page: null, percent: null, minutes: null, daysRead: 0, lastOn: null, lastAt: null,
+    });
+  });
+
+  it('never throws on junk — a damaged reading must not stop the page drawing', () => {
+    for (const junk of [null, undefined, {}, { entries: 'nope' }, { entries: [null, 7, { on: 5 }] }]) {
+      expect(() => projectReading(junk)).not.toThrow();
+    }
+    expect(projectReading({ entries: [null, { page: 'x' }] }).page).toBeNull();
   });
 });
 

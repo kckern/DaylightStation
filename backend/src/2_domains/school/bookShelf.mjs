@@ -244,6 +244,63 @@ export function projectShelfItem(item, { dayOf = isoDay } = {}) {
   };
 }
 
+/**
+ * Everything a shelf card or a teacher row needs for one v2 reading.
+ *
+ * ## STATUS IS READ, NOT INFERRED
+ *
+ * `projectShelfItem` above decides the lifecycle state from ARRAY POSITION —
+ * `set-aside` counts only while it is the last event, and a finish holds only
+ * until a `reopened` cancels it. That is the defect v2 exists to remove: a
+ * grown-up could not SET a state, only append an event whose position implied
+ * one. Here the stored `status` is taken verbatim. Nothing about the order of
+ * `entries` can change it.
+ *
+ * ## `daysRead` MAPS NOTHING
+ *
+ * An entry's `on` is already the study day it happened, chosen when the row was
+ * written, so there is no `dayOf` to inject and no instant to reinterpret. That
+ * is the whole point of separating `on` from `at`.
+ *
+ * ## THE FURTHEST PAGE STILL WINS
+ *
+ * `Math.max`, exactly as before: a child re-reading a chapter has still reached
+ * the page they reached. That rule was only ever a trap because a fat-fingered
+ * 250 could not be taken back — v2 gives every entry an id, so the row can be
+ * corrected or removed instead of the projection being weakened.
+ *
+ * @param {{status?: string, progressMode?: string, book?: {pageCount?: number|null},
+ *   entries?: object[]}} reading
+ * @returns {{status: string|null, page: number|null, percent: number|null,
+ *   minutes: number|null, daysRead: number, lastOn: string|null, lastAt: string|null}}
+ */
+export function projectReading(reading) {
+  const entries = Array.isArray(reading?.entries) ? reading.entries.filter(Boolean) : [];
+  const status = typeof reading?.status === 'string' ? reading.status : null;
+  const finished = status === 'finished';
+
+  const pages = entries.map((entry) => entry?.page).filter((page) => Number.isFinite(page));
+  const page = pages.length ? Math.max(...pages) : null;
+  const minutes = entries.reduce((sum, entry) => sum + (Number.isFinite(entry?.minutes) ? entry.minutes : 0), 0);
+
+  const days = entries.map((entry) => entry?.on).filter((day) => typeof day === 'string' && day);
+  const instants = entries.map((entry) => entry?.at).filter((at) => typeof at === 'string' && at);
+
+  return {
+    status,
+    page,
+    percent: percentOf(reading?.progressMode, reading?.book?.pageCount, page, finished),
+    minutes: reading?.progressMode === 'minutes' ? minutes : (minutes || null),
+    daysRead: new Set(days).size,
+    // Two different questions. "When did they last read" is a study day the
+    // child lived; "when was this last touched" is an instant the system
+    // recorded. A finish logged on Sunday for Friday answers them differently,
+    // and the teacher view shows both.
+    lastOn: days.length ? days.reduce((latest, day) => (day > latest ? day : latest)) : null,
+    lastAt: instants.length ? instants.reduce((latest, at) => (at > latest ? at : latest)) : null,
+  };
+}
+
 /** How many other in-progress books the card names. Two fits the narrow column. */
 export const ALSO_READING_LIMIT = 2;
 
@@ -332,12 +389,20 @@ export function selectFeaturedShelfItem(items, { dayOf = isoDay } = {}) {
 }
 
 function percentFor(item, page, finished) {
+  return percentOf(item?.progressMode, item?.pageCount, page, finished);
+}
+
+/**
+ * The one percentage rule, so a v1 item and the v2 reading it converts into
+ * cannot draw two different bars. Where the length lives differs between the
+ * shapes — `item.pageCount`, `reading.book.pageCount` — and that is all.
+ */
+function percentOf(progressMode, pageCount, page, finished) {
   if (finished) return 100;
-  if (item?.progressMode !== 'page') return null;
-  const total = item?.pageCount;
-  if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(page)) return null;
+  if (progressMode !== 'page') return null;
+  if (!Number.isFinite(pageCount) || pageCount <= 0 || !Number.isFinite(page)) return null;
   // Clamp the BAR, keep the page. See the 212-of-184 case.
-  return Math.max(0, Math.min(100, Math.round((page / total) * 100)));
+  return Math.max(0, Math.min(100, Math.round((page / pageCount) * 100)));
 }
 
 /** Which modes can supply which metric. `checkins` works for every book. */
