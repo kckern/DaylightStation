@@ -63,6 +63,8 @@ export class NutribotInputRouter extends BaseInputRouter {
     const result = await run(responseContext);
     const logId = result?.nutrilogUuid || null;
 
+    if (!logId && result?.committed) return { ok: true, result, committed: true, items: result.items || [], mealTime: result.bucket || event.payload.bucket, moved: false };
+
     if (!logId) {
       this.logger.debug?.('nutribot.capture.noLog', { source, conversationId: event.conversationId });
       return { ok: true, result, committed: false, logId: null, items: [], mealTime: null, moved: false };
@@ -235,7 +237,7 @@ export class NutribotInputRouter extends BaseInputRouter {
   // ==================== Event Handlers ====================
 
   async handleText(event, responseContext) {
-    const conversationStateStore = this.container.getConversationStateStore?.();
+    const conversationStateStore = event.platform === 'web' ? null : this.container.getConversationStateStore?.();
 
     if (!conversationStateStore) {
       this.logger.debug?.('nutribot.handleText.noStateStore');
@@ -316,6 +318,7 @@ export class NutribotInputRouter extends BaseInputRouter {
         // relative phrase ("this morning") resolves against that day. A date
         // the utterance names still wins — same precedence as the meal.
         asOfDate: event.payload.date || null,
+        interpretText: event.payload.interpretText,
         responseContext: rc,
       }));
   }
@@ -361,6 +364,7 @@ export class NutribotInputRouter extends BaseInputRouter {
         },
         messageId: event.messageId,
         asOfDate: event.payload.date || null,
+        interpretText: event.payload.interpretText,
         responseContext: rc,
       }));
   }

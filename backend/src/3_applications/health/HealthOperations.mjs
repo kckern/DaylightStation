@@ -1,3 +1,5 @@
+import { MealFoodCommands } from './MealFoodCommands.mjs';
+import { numericFoodPatches } from '#shared/contracts/health/foodNumericEdit.mjs';
 import { presentSettlement } from '#domains/nutrition/services/settlement.mjs';
 import { confirmReview } from '#shared/contracts/nutrition/reviewLifecycle.mjs';
 import { nowTs24 } from '#system/utils/time.mjs';
@@ -54,6 +56,7 @@ export class HealthOperations {
   }) {
     this.healthData = healthData;
     this.nutritionItems = nutritionItems;
+    this.mealCommands = nutritionItems ? new MealFoodCommands({ nutritionItems }) : null;
     this.personalContext = personalContext;
     this.setDailyCoaching = setDailyCoaching;
     this.nutritionInput = nutritionInput;
@@ -183,6 +186,36 @@ export class HealthOperations {
     const ratify = changes.settled === true && options.ratify !== false;
     const siblings = existing.kind === 'group' ? await this.nutritionItems.findByDate(username, existing.date) : [];
     const children = siblings.filter(child => child.parentId != null && [existing.id, existing.uuid].includes(child.parentId));
+    if (changes.numericEdit != null) {
+      // A changed baseline is a conflict even when it would make the intended
+      // arithmetic invalid. The transaction still rechecks versions at commit.
+      const members = [existing, ...children];
+      const scope = members.map(row => row.uuid ?? row.id).sort();
+      const wrongScope = changes.expectedVersions && JSON.stringify(Object.keys(changes.expectedVersions).sort()) !== JSON.stringify(scope);
+      const stale = members.some(row => {
+        const expected = changes.expectedVersions?.[row.uuid ?? row.id] ?? (row === existing ? changes.expectedVersion : null);
+        return expected != null && expected !== (row.version ?? 1);
+      });
+      if (wrongScope || stale) throw Object.assign(new Error('This entry or group changed. Reload it before saving.'), { status: 409, code: 'VERSION_CONFLICT' });
+    }
+    const numericPatches = changes.numericEdit != null
+      ? numericFoodPatches({ ...existing, children }, changes.numericEdit) : null;
+    if (numericPatches && Object.keys(changes).some(key => !['numericEdit', 'expectedVersion', 'expectedVersions'].includes(key))) {
+      throw Object.assign(new Error('A numeric edit cannot be combined with other changes'), { status: 400 });
+    }
+    if (numericPatches && children.length && typeof this.nutritionItems.mutateEntries !== 'function') {
+      throw Object.assign(new Error('Atomic group editing is unavailable'), { status: 503 });
+    }
+    const applyNumeric = (row, patch) => {
+      const numeric = numericPatches?.get(row.uuid ?? row.id);
+      if (!numeric) return;
+      Object.assign(patch, numeric);
+      if (['density', 'protein', 'carbs', 'fat'].includes(changes.numericEdit.field)) {
+        const corrected = NUTRIENT_KEYS.filter(key => Object.hasOwn(numeric, key) && numeric[key] !== row[key]);
+        if (corrected.length) patch.nutrientProvenance = { ...row.nutrientProvenance,
+          ...Object.fromEntries(corrected.map(key => [key, { source: 'user', grams: foodGrams(row), at: nowTs24() }])) };
+      }
+    };
     const factor = changes.portion != null ? portionFactor({ ...existing, children }, changes.portion) : changes.factor;
     if (factor != null && (!Number.isFinite(factor) || factor <= 0)) {
       throw Object.assign(new Error('Portion factor must be positive'), { status: 400 });
@@ -214,6 +247,7 @@ export class HealthOperations {
         && JSON.stringify(patch[key]) !== JSON.stringify(row[key]));
       if (fields.length) patch.manualFields = [...new Set([...(row.manualFields || []), ...fields])];
     };
+    applyNumeric(existing, allowedChanges);
     protect(existing, allowedChanges);
     if (typeof this.nutritionItems.mutateEntries === 'function') {
       const scope = [existing, ...children].map(row => row.uuid ?? row.id).sort();
@@ -228,6 +262,7 @@ export class HealthOperations {
         for (const key of ['mealTime', 'date']) if (Object.hasOwn(allowedChanges, key)) childChanges[key] = allowedChanges[key];
         if (factor != null) Object.assign(childChanges, scaleFoodPortion(child, factor));
         if (ratify && child.settled !== true) Object.assign(childChanges, confirmReview(child, this.clock.now()));
+        applyNumeric(child, childChanges);
         protect(child, childChanges);
         updates.push({ id: child.uuid ?? child.id, changes: childChanges, expectedVersion: version(child) });
       }
@@ -360,8 +395,21 @@ export class HealthOperations {
    *   nutribot input pipeline, where the router seam applies the precedence:
    *   explicit-in-utterance/caption > bucket > clock default.
    */
-  processNutritionInput({ type, content, userId, bucket, date, audioRef, operationId }) {
-    return this.nutritionInput.process({ type, content, userId, bucket, date, audioRef, ...(operationId ? { operationId } : {}) });
+  async attachNutritionCaptureUndo(username, operationId, result) {
+    if (!operationId || result?.undoToken || !(result?.committed || result?.logged)
+      || typeof this.nutritionItems?.recordCaptureUndo !== 'function') return result;
+    const entryIds = result.entryIds || result.items?.map(row => row.uuid || row.id);
+    if (!entryIds?.length) return result;
+    const undo = await this.nutritionItems.recordCaptureUndo(username, { operationId, entryIds, date: result.date, bucket: result.mealTime });
+    return { ...result, ...undo };
+  }
+
+  mealFoodCommand(username, input) { return this.mealCommands.execute(username, input); }
+  undoMealFoodCommand(username, input) { return this.mealCommands.undo(username, input); }
+  suggestMealGroups(input) { return this.nutritionInput.suggestMealGroups(input); }
+
+  processNutritionInput({ type, content, userId, bucket, date, audioRef, operationId, selectedIds, clarification }) {
+    return this.nutritionInput.process({ type, content, userId, bucket, date, audioRef, ...(operationId ? { operationId } : {}), ...(selectedIds !== undefined ? { selectedIds } : {}), ...(clarification !== undefined ? { clarification } : {}) });
   }
 
   runNutritionOperation(userId, operationId, payload, action) {

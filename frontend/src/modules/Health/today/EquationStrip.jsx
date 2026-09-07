@@ -1,7 +1,7 @@
 import { Button } from '@mantine/core';
 import { DateStepper } from '@/lib/ui';
 
-const n = (v) => Number(v || 0).toLocaleString();
+const n = (v) => Math.round(Number(v || 0)).toLocaleString();
 
 function DailyMetric({ label, value, unit, operator, tone, partial, ariaLabel }) {
   const macroTone = ['protein', 'carbs', 'fat'].includes(tone) ? ` health-macro-tone--${tone}` : '';

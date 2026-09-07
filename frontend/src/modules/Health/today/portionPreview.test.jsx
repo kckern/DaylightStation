@@ -16,6 +16,16 @@ const budget = { food: 1539, remaining: 596, macros: { protein: 65 } };
 const day = () => ({ items, budget, reload: vi.fn() });
 
 describe('shared portion draft', () => {
+  it('previews a macro correction and sends one semantic numeric command', async () => {
+    api.mockReset().mockResolvedValue({ data: { version: 2 }, versions: { chia: 2 } });
+    const { result } = renderHook(() => usePortionDraft(day(), date));
+    act(() => { result.current.control.begin(chia, 'protein'); result.current.control.preview(5); });
+    expect(result.current.items[0]).toMatchObject({ grams: 14, protein: 5, calories: 78, carbs: 4.5 });
+    expect(result.current.budget.food).toBe(1547);
+    expect(api).not.toHaveBeenCalled();
+    await act(() => result.current.control.commit());
+    expect(api.mock.calls[0][1]).toMatchObject({ numericEdit: { field: 'protein', value: 5 }, expectedVersions: { chia: 1 } });
+  });
   it('projects the incident sequence into row, meal, day and remaining totals', () => {
     const result = projectPortion(items, budget, { row: chia, portion: { value: 28, unit: 'g' } });
     expect(result.items[0]).toMatchObject({ grams: 28, calories: 140, protein: 6, settled: false });

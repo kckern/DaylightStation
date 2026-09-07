@@ -39,22 +39,24 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, isGroup = fa
   return <div className={['health-row-line', unsettled && confirmation !== 'saved' && 'health-row-line--unsettled', child && 'health-row-line--child', lastChild && 'health-row-line--last-child', isGroup && 'health-row-line--group'].filter(Boolean).join(' ')}>
     <div className="health-row__branch">
       {isGroup ? <UnstyledButton className="health-row__expand" aria-expanded={expanded}
-        aria-label={`${expanded ? 'Collapse' : 'Expand'} ${name}`} onClick={onToggle}>{expanded ? '▾' : '▸'}</UnstyledButton> : null}
+        aria-label={`${expanded ? 'Collapse' : 'Expand'} ${name}`} onClick={onToggle}><svg className="health-row__triangle" viewBox="0 0 10 10" aria-hidden="true" focusable="false">
+          <path d={expanded ? 'M0 0H10L5 10Z' : 'M0 0L10 5L0 10Z'} fill="currentColor" />
+        </svg></UnstyledButton> : null}
     </div>
     <div className={`health-row-identity health-row__identity health-row__visual health-density-${densityPlacement}`}>
+      {densityPlacement === 'before' ? <DensityBadge row={densityRow} editRow={row} /> : null}
       <span className="health-row-artwork">{row.photoRef && brokenPhoto !== row.photoRef ? <img className="health-row__thumb"
         src={nutritionPhotoUrl(row.photoRef, { thumb: true })} alt="" loading="lazy" onError={() => setBrokenPhoto(row.photoRef)} /> : <FoodIcon icon={row.icon} />}</span>
-      <DensityBadge row={densityRow} />
       <UnstyledButton className="health-row-name" disabled={Boolean(portions?.draft)} onClick={() => onTap(row)} aria-label={`Edit ${name}`}>
       <span className="health-row__description" title={name}><span className="health-row__name">{name}</span>{' '}
-        {unsettled && confirmation !== 'saved' ? <span className="health-row__badge" title="Counted now; stabilizes automatically after 72 hours unless you confirm sooner.">Estimated</span> : null}
         {measured ? <span className="health-row__scale" title={measured}> · Scale ✓</span> : null}
       </span>
       </UnstyledButton>
+      {densityPlacement === 'after' ? <DensityBadge row={densityRow} editRow={row} /> : null}
     </div>
-    <MacroBadges rows={isGroup ? row.children : [row]} className="health-row__macros health-row__visual" />
+    <MacroBadges rows={isGroup ? row.children : [row]} editRow={row} className="health-row__macros health-row__visual" />
     <span className="health-row__portion-cell health-row__visual"><PortionControl row={row} /></span>
-    <span className="health-row__kcal health-row__visual" title="Calories">{displayKcal == null ? '—' : Math.round(displayKcal)}<small> kcal</small></span>
+    <PortionControl row={row} field="calories" className="health-row__kcal health-row__visual">{displayKcal == null ? '—' : Math.round(displayKcal)}<small> kcal</small></PortionControl>
     <div className="health-row__action health-row__visual">
       {confirmation === 'saved' ? <span role="status" aria-label={`${name} confirmed`} title="Confirmed">✓</span> : unsettled ?
         <UnstyledButton className="health-row__confirm" aria-label={`Confirm entry: ${name}`} title="Confirm this estimate"
