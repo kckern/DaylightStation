@@ -42,12 +42,31 @@ point.
 - **Confirmation is explicit:** only Confirm ends review early. Editing a name,
   artwork, portion or nutrient protects the changed fields without ratifying the
   rest. Unconfirmed captures count immediately and retain their 72-hour deadline.
-- **Inline portions:** primary-button horizontal drag previews all row, group,
+- **Inline nutrition:** grams, calories, density, protein, carbs and fat are drag
+  targets on foods and grouped dishes. Grams/calories scale the serving; density
+  holds mass fixed and scales calories and known macros. A macro correction holds
+  mass and other macros fixed and changes existing calories by its delta (4 kcal/g
+  for protein/carbs, 9 for fat), preserving any original calorie discrepancy.
+  Groups distribute macro targets in proportion to ingredient macro amounts, or
+  by mass when the macro is known zero throughout. Unknown ingredients require
+  exact values before distributing an edit; unknown nutrition is never filled
+  with zero. Invalid edits explain the missing data or negative result.
+  `shared/contracts/health/foodNumericEdit.mjs` supplies the arithmetic to both
+  preview and server. The `numericEdit: {field, value}` command travels through the
+  existing versioned entry PUT and updates ingredients atomically, without adding
+  nutrients to the group parent. Composition corrections record user provenance.
+  Primary-button horizontal drag previews all row, group,
   meal and day totals from one draft overlay. The threshold is 5px, sensitivity
   1g per 2px (Shift: one tenth speed, still snapping to whole grams); click opens direct entry, arrows adjust and
   Enter commits. Release sends one command; Escape/pointer cancellation sends
   none. Polls preserve the gesture's baseline. Conflicts require explicit reload
   and apply, and unseen group members require discarding the draft first.
+  Density uses 0.01 kcal/g per 2px; other new targets use one unit per 2px.
+  The draft retains its operation ID across response-loss retries.
+- **Voice gateway contract:** meal instruction interpretation wraps its string
+  prompt in a user-message array before calling `IAIGateway.chat`. The Whisper
+  transcription request remains multipart. A regression test exercises the meal
+  service through the real OpenAI adapter and inspects the outgoing request body.
 - **Context:** Today stays mounted across tabs to preserve drafts, capture retries
   and scroll. Hidden Today stops polling; leaving during a recording stops and
   submits that recording to its original target. Closing the app discards unsent

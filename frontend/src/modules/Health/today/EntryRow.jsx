@@ -44,7 +44,7 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, isGroup = fa
         </svg></UnstyledButton> : null}
     </div>
     <div className={`health-row-identity health-row__identity health-row__visual health-density-${densityPlacement}`}>
-      {densityPlacement === 'before' ? <DensityBadge row={densityRow} /> : null}
+      {densityPlacement === 'before' ? <DensityBadge row={densityRow} editRow={row} /> : null}
       <span className="health-row-artwork">{row.photoRef && brokenPhoto !== row.photoRef ? <img className="health-row__thumb"
         src={nutritionPhotoUrl(row.photoRef, { thumb: true })} alt="" loading="lazy" onError={() => setBrokenPhoto(row.photoRef)} /> : <FoodIcon icon={row.icon} />}</span>
       <UnstyledButton className="health-row-name" disabled={Boolean(portions?.draft)} onClick={() => onTap(row)} aria-label={`Edit ${name}`}>
@@ -52,11 +52,11 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, isGroup = fa
         {measured ? <span className="health-row__scale" title={measured}> · Scale ✓</span> : null}
       </span>
       </UnstyledButton>
-      {densityPlacement === 'after' ? <DensityBadge row={densityRow} /> : null}
+      {densityPlacement === 'after' ? <DensityBadge row={densityRow} editRow={row} /> : null}
     </div>
-    <MacroBadges rows={isGroup ? row.children : [row]} className="health-row__macros health-row__visual" />
+    <MacroBadges rows={isGroup ? row.children : [row]} editRow={row} className="health-row__macros health-row__visual" />
     <span className="health-row__portion-cell health-row__visual"><PortionControl row={row} /></span>
-    <span className="health-row__kcal health-row__visual" title="Calories">{displayKcal == null ? '—' : Math.round(displayKcal)}<small> kcal</small></span>
+    <PortionControl row={row} field="calories" className="health-row__kcal health-row__visual">{displayKcal == null ? '—' : Math.round(displayKcal)}<small> kcal</small></PortionControl>
     <div className="health-row__action health-row__visual">
       {confirmation === 'saved' ? <span role="status" aria-label={`${name} confirmed`} title="Confirmed">✓</span> : unsettled ?
         <UnstyledButton className="health-row__confirm" aria-label={`Confirm entry: ${name}`} title="Confirm this estimate"

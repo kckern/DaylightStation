@@ -15,7 +15,7 @@ describe('MealInstructionService', () => {
  it('loads canonical meal context and adds potatoes to existing broth without replacing broth', async () => {
   const { service, calls, prompts } = harness({ intent: 'amend', targetIds: ['broth'], additions: [{ parentId: 'broth', name: 'Potatoes', grams: 80, calories: 62, protein: 2, carbs: 14, fat: 0, fiber: 1, sugar: 1, sodium: 5, cholesterol: 0 }] });
   expect(await service.execute('alice', input)).toMatchObject({ committed: true, undoToken: 'undo' });
-  const context = JSON.parse(prompts[0].split('Context: ')[1].split('\nInstruction:')[0]);
+  const context = JSON.parse(prompts[0][0].content.split('Context: ')[1].split('\nInstruction:')[0]);
   expect(context.items.map(row => row.uuid)).toEqual(['veg', 'broth']);
   expect(context.items.find(row => row.uuid === 'broth')).toMatchObject({ name: 'Vietnamese beef broth', grams: 300 });
   expect(calls[0]).toMatchObject({ action: 'amend', selectedIds: ['broth'], additions: [{ parentId: 'broth', name: 'Potatoes' }] });
@@ -47,8 +47,8 @@ it('includes recent persisted utterances and does not use client-supplied meal c
  const prompts = [];
  const service = new MealInstructionService({ nutritionItems: { findByDate: async () => rows.map(row => ({ ...row, logId: 'saved-log' })) }, foodLogStore: { findById: async () => ({ text: 'I had roast vegetables and Vietnamese beef broth' }) }, aiGateway: { chat: async prompt => { prompts.push(prompt); return '{"intent":"add"}'; } } });
  await service.execute('alice', { ...input, mealContext: [{ name: 'Invented client food' }] });
- expect(prompts[0]).toContain('I had roast vegetables and Vietnamese beef broth');
- expect(prompts[0]).not.toContain('Invented client food');
+ expect(prompts[0][0].content).toContain('I had roast vegetables and Vietnamese beef broth');
+ expect(prompts[0][0].content).not.toContain('Invented client food');
 });
 
 it('persists the observed potatoes correction once and Undo preserves the original broth and vegetables', async () => {
