@@ -7,6 +7,8 @@ import { isISODate } from '#shared/contracts/health/isoDate.mjs';
 import { nutritionLogVersion } from '../nutrition/FoodLogReview.mjs';
 import { serializeNutriLog } from '../nutrition/NutriLogProjection.mjs';
 import { nutritionLookupFor } from '#shared/contracts/nutrition/nutritionLookup.mjs';
+import { DEFAULT_DENSITY_LEVELS } from '#shared-contracts/health/densityLevels.mjs';
+import { densityRevision } from '#shared-contracts/health/foodDensity.mjs';
 
 const NUTRITION_UPDATE_FIELDS = new Set([
   'item', 'name', 'unit', 'amount', 'grams', 'noom_color', 'color',
@@ -45,6 +47,7 @@ export class HealthOperations {
     nutritionInput = null,
     resolveDefaultUsername = () => 'default',
     resolveCoachingUsername = () => null,
+    densityLevels = () => DEFAULT_DENSITY_LEVELS,
     today,
     newId,
     clock = { now: () => Date.now() },
@@ -56,6 +59,7 @@ export class HealthOperations {
     this.nutritionInput = nutritionInput;
     this.resolveDefaultUsername = resolveDefaultUsername;
     this.resolveCoachingUsername = resolveCoachingUsername;
+    this.densityLevels = densityLevels;
     this.today = today;
     this.newId = newId;
     this.clock = clock;
@@ -63,6 +67,15 @@ export class HealthOperations {
 
   defaultUsername() {
     return this.resolveDefaultUsername() || 'default';
+  }
+
+  context() {
+    const densityLevels = this.densityLevels();
+    return {
+      userId: this.defaultUsername(),
+      densityLevels,
+      densityRevision: densityRevision(densityLevels),
+    };
   }
 
   coachingUsername(requestedUsername) {

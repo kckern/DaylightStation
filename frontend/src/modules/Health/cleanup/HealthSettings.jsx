@@ -5,6 +5,7 @@ import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { refreshHealthResources } from '../healthResources.js';
 import { cleanupPath, useCleanup, CleanupQuestions, RepairPreview } from './CleanupQuestions.jsx';
+import HealthDisplaySettings from '../display/HealthDisplaySettings.jsx';
 
 const keyOf = row => row.uuid || row.id;
 function Changes({ record }) {
@@ -19,7 +20,7 @@ function Changes({ record }) {
   return <Table.ScrollContainer minWidth={400}><Table><Table.Thead><Table.Tr><Table.Th>Field</Table.Th><Table.Th>Before</Table.Th><Table.Th>After</Table.Th></Table.Tr></Table.Thead><Table.Tbody>{rows}</Table.Tbody></Table></Table.ScrollContainer>;
 }
 
-export function HealthSettings() {
+export function CleanupSettings() {
   const resource = useCleanup();
   const [offset, setOffset] = useState(0);
   const history = useApiResource(`${cleanupPath}/history?offset=${offset}`, { swr: true });
@@ -80,3 +81,9 @@ export function HealthSettings() {
     </Stack></Sheet> : null}
   </Stack>;
 }
+
+export function HealthSettings() {
+  return <Stack gap="md"><HealthDisplaySettings /><CleanupSettings /></Stack>;
+}
+
+export default HealthSettings;

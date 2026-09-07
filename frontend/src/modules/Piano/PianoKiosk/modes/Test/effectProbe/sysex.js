@@ -57,8 +57,14 @@ export const xgReverbReturn = (level) => xgParam([0x02, 0x01, 0x0c], [level]);
 export const xgChorusType = (msb, lsb) => xgParam([0x02, 0x01, 0x20], [msb, lsb]); // Chorus1 = 41,00
 export const xgChorusReturn = (level) => xgParam([0x02, 0x01, 0x2c], [level]);
 
-// ── GM2 Global Parameter Control (best-effort; reverb/chorus type) ───────────
+// ── GM2 Global Parameter Control (reverb/chorus type) ────────────────────────
+// F0 7F 7F 04 05 <sl=01> <pl=01> <vl=01> <slot path 01 ss> <param 00> <type> F7.
+// The effect is chosen by the SLOT PATH (01 01 reverb, 01 02 chorus); the byte
+// after it is the parameter id, 00 = Type for both. The 2026-06-30 probe put 02
+// in the PARAMETER byte for chorus and left the slot path on reverb, so the
+// "chorus" candidate was writing the reverb block — which is why it scored as a
+// large TAIL gain, and why the shipped picker's reverb row later looked dead.
 export const gm2ReverbType = (type) => [0xf0, 0x7f, 0x7f, 0x04, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, type & 0x7f, 0xf7];
-export const gm2ChorusType = (type) => [0xf0, 0x7f, 0x7f, 0x04, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x02, type & 0x7f, 0xf7];
+export const gm2ChorusType = (type) => [0xf0, 0x7f, 0x7f, 0x04, 0x05, 0x01, 0x01, 0x01, 0x01, 0x02, 0x00, type & 0x7f, 0xf7];
 
 export const isSysex = (bytes) => bytes[0] === 0xf0;

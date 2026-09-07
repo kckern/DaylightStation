@@ -42,7 +42,10 @@ function EffectRows({ name, icon, value, config, onChange }) {
   // Off is Off whatever level the bundle still remembers; only the lit steps need an exact level.
   const activeIndex = value.on ? EFFECT_STEPS.findIndex((step) => step.on && step.level === value.level) : 0;
   const percent = value.on ? Math.round((value.level || 0) / 127 * 100) : 0;
-  const types = config?.types || [];
+  // No type row unless the instrument can actually change algorithm. The
+  // MDG-400 cannot (devices/suzukiMdg400.js) — the picker used to render and
+  // every tap was discarded by the engine.
+  const types = config?.typeAddressable ? (config.types || []) : [];
   const typeIndex = types.findIndex((type) => type.value === value.type);
   return <>
     <div className="piano-settings__tonehead"><Icon name={icon} /><span>{name}</span>{activeIndex < 0 && <small>now {percent}%</small>}</div>
@@ -55,7 +58,7 @@ export default function SoundPanel({ open, onClose }) {
   const { currentBundle, applyBundle } = usePianoSoundBundle();
   const { preset, saveFavorite, removeFavorite, canSave, persistenceState, retryLastSound, maxFavorites, playerName } = usePianoPreset();
   const { config } = usePianoKioskConfig();
-  const { device } = usePianoSound();
+  const { device, setEffect } = usePianoSound();
   const { pianoLevel, setPianoLevel } = usePianoMix();
   const midi = usePianoMidi();
   const { health } = usePianoConnection();
@@ -79,7 +82,13 @@ export default function SoundPanel({ open, onClose }) {
   const currentKey = soundVoiceKey(currentBundle);
   const currentName = currentBundle?.voice?.name || 'Keyboard';
 
-  const applyEffect = (name, patch) => applyBundle({ ...currentBundle, [name]: { ...currentBundle[name], ...patch } });
+  // One knob, one effect. This used to go through applyBundle, which replans the
+  // WHOLE preset — so adjusting reverb also re-sent the Program Change and the
+  // chorus messages (~4 ms later, visible as paired piano.device.effect events).
+  // With the chorus write mis-addressed to the reverb block that made the reverb
+  // type picker look completely dead; even correctly addressed it is six SysEx
+  // messages and a voice retrigger for one tap, over a hop that drops SysEx.
+  const applyEffect = (name, patch) => setEffect(name, { ...currentBundle[name], ...patch });
 
   // Mine = favourites (recalled whole) then the deduped house shortlist (voice
   // only). The memo holds data alone — a tile carries its `sound` or `voice`

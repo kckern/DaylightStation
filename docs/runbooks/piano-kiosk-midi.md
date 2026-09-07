@@ -160,6 +160,75 @@ make the next low-numbered GM Program Change select an unrelated variation. The
 hardware sweep likewise reasserts bank 0 for every sampled program so its results
 cannot inherit state from an earlier session.
 
+Every Program Change goes out this way, not just the Sound sheet's. The Producer's
+onboard-GM tier and the GM probe both target channel 0 — the same channel the
+Sound sheet selects on — so a bare Program Change from either would have been
+served out of whatever bank was last picked there.
+
+### Reverb / chorus: the effect is chosen by the SLOT PATH
+
+The kiosk drives effect type with GM2 Global Parameter Control:
+
+```
+F0 7F 7F 04 05 <sl=01> <pl=01> <vl=01> <slot path 01 ss> <param 00> <type> F7
+      reverb: … 01 01 01 | 01 01 | 00 | tt        chorus: … | 01 02 | 00 | tt
+```
+
+`ss` picks the block (01 reverb, 02 chorus); the byte after the slot path is the
+parameter id, and Type is 00 for **both**. From the 2026-06-30 audit until
+2026-09-06 the chorus message was built with the reverb slot path and 02 in the
+PARAMETER byte, so every chorus write landed on the reverb block.
+
+That produced a symptom that pointed at the wrong control entirely: **the reverb
+type row looked completely dead while the chorus type row appeared to work.** A
+tap on either row replanned the whole preset (voice + reverb + chorus), so a
+correct reverb-type message was always followed ~4 ms later by the mis-addressed
+chorus message overwriting it — while changing the *chorus* type was what actually
+moved the reverb algorithm. Paired `piano.device.effect` events 4 ms apart in the
+log store are the fingerprint:
+
+```bash
+curl -s {env.log_store_url}/select/logsql/query \
+  -d 'query="piano.device.effect" AND _time:1h' -d 'limit=20'
+```
+
+An effect tap now sends that one effect only.
+
+### …but this piano ignores effect type entirely
+
+Fixing the addressing did not make the type pickers work, because **the MDG-400
+has one fixed reverb algorithm and one fixed chorus algorithm.** Only the send
+level (CC91 / CC93) is addressable, and it does work.
+
+Established by a controlled A/B on the instrument, 2026-09-06: send level pinned
+at CC91=127, voice reset to Acoustic Grand, staccato notes so the tail was
+exposed, Small Room vs Plate alternated A/B/A/B through three transports —
+
+1. GM2 Global Parameter Control, as the app shipped it
+2. the same, after **GM2 System On** (`F0 7E 7F 09 03 F7`)
+3. the **Roland GS** reverb macro at `40 01 30`, after a GS Reset
+
+All twelve notes decayed identically. The device profile now carries
+`typeAddressable: false`, which hides both type rows and stops the type message.
+
+**The claim that "sysex works; cc is ignored by this unit" is wrong about type,
+and it came from a confounded experiment.** Every candidate in
+`effectProbe/candidates.js` compares a dry arm at level 0 against a wet arm
+carrying a type message *and* level 127:
+
+```js
+dry: [GM2_SYSTEM_ON, PIANO,                   cc(91, 0)  ],
+wet: [GM2_SYSTEM_ON, PIANO, gm2ReverbType(4), cc(91, 127)],
+```
+
+That measures the level CC and can say nothing about type. **Any future effect
+probe must hold level constant and vary only the algorithm** — a tail/decay
+metric cannot otherwise tell a type change from a level change.
+
+GM2 numbering, kept for a device that does honour type: reverb 0 Small Room,
+1 Medium Room, 2 Large Room, 3 Medium Hall, 4 Large Hall, 8 Plate (5–7 do not
+exist); chorus 0–3 Chorus 1–4, 4 FB Chorus, 5 Flanger.
+
 The APK heartbeat already carries the verdict, once a minute.
 
 ```bash
