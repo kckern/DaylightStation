@@ -32,6 +32,9 @@ CACHE_DIR="$BASE_DIR/cache"
 CACHE_MAX_BYTES=$((2*1024*1024*1024))  # 2 GB orphan-sweep backstop
 ORPHAN_TTL_DAYS=7
 MEMBERSHIP_INTERVAL=60
+MEMBERSHIP_HEARTBEAT_FILE="$BASE_DIR/.membership-heartbeat"
+MEMBERSHIP_STALE_SEC=180
+MEMBERSHIP_RESTART_COOLDOWN=300
 HEAD_FULL_PASS=900
 SWEEP_INTERVAL=3600
 STALL_REVALIDATE_COOLDOWN=120  # min seconds between stall revalidations of the SAME plex_id (anti-thrash)
@@ -2298,7 +2301,26 @@ membership_tick() {
             logev "$tag" reconcile.fail slot="$slot" reason=membership_tick
         fi
     done
+    membership_heartbeat
 }
+
+membership_heartbeat() { mkdir -p "$BASE_DIR"; date +%s > "$MEMBERSHIP_HEARTBEAT_FILE"; }
+
+membership_health_tick() {
+    local now last restart=0
+    now=$(date +%s); last=$(cat "$MEMBERSHIP_HEARTBEAT_FILE" 2>/dev/null || echo 0)
+    restart=$(cat "$BASE_DIR/.membership-restart" 2>/dev/null || echo 0)
+    [[ "$last" =~ ^[0-9]+$ ]] || last=0; [[ "$restart" =~ ^[0-9]+$ ]] || restart=0
+    if (( now - last > MEMBERSHIP_STALE_SEC && now - restart >= MEMBERSHIP_RESTART_COOLDOWN )); then
+        mkdir -p "$BASE_DIR"
+        logev monitor membership_stale age_sec="$((now-last))"
+        dispatch_alert critical membership_stale "membership reconcile worker stale for $((now-last))s; restarting hub"
+        echo "$now" > "$BASE_DIR/.membership-restart"
+        systemctl --user restart playback-hub.service >/dev/null 2>&1 &
+    fi
+}
+
+membership_health_loop() { while true; do sleep 30; membership_health_tick || true; done; }
 
 # Background loop: membership self-heal every MEMBERSHIP_INTERVAL seconds.
 membership_loop() {
@@ -2917,6 +2939,9 @@ monitor() {
     # membership/order drift every MEMBERSHIP_INTERVAL)
     membership_loop &
     MEMBERSHIP_PID=$!
+    membership_heartbeat
+    membership_health_loop &
+    MEMBERSHIP_HEALTH_PID=$!
 
     # Start rolling HEAD content-change loop (Unit F): bounded round-robin HEADs
     # over the live cache set, ~HEAD_FULL_PASS per full pass. Staggered (sleep 30)
