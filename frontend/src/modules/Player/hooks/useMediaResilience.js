@@ -157,6 +157,44 @@ export function useMediaResilience({
     epsilonSeconds
   });
 
+  // A fatal pipeline error is consulted in TWO places below, at two different
+  // widths, so both are derived once here next to their source.
+  //
+  // `hasMediaError` — the pipeline is dead — feeds `isStuck` (see there).
+  //
+  // `mediaErrorStoppedPlayback` — the pipeline died OUT FROM UNDER playback —
+  // is the only one allowed to override the user-intent classification just
+  // below. An element the error stopped is not a user-paused element: on the
+  // audio/video path `pauseIntent` is never supplied (only ContentScroller's
+  // useMediaReporter sets it, via classifyPauseIntent), so the pause that
+  // follows the error arrives unclassified and would otherwise read as the
+  // user's — hard-returning the monitoring effect and disarming the recovery
+  // ladder on the very failure it exists for. See plan decision 4d.
+  //
+  // The narrow signal is what keeps that override off an element somebody had
+  // ALREADY paused when the error landed: rung 0 for audio falls through to a
+  // remount of `<audio src autoPlay>`, so overriding there would restart a
+  // paused track by itself every time a deploy killed the stream.
+  //
+  // That quiet branch is a DELIBERATE TRADE, not a free one — do not read it as
+  // "recovery is merely deferred". The deferral is real only where metrics are
+  // pause-driven: `useMediaReporter` (ContentScroller) reports from the element's
+  // own `play`/`pause` listeners, so `isPaused` flips back to false on play and
+  // the latched error arms the ladder then. On the audio/video path there is no
+  // such listener — `isPaused` reaches this hook ONLY through
+  // `SinglePlayer.handleProgress` <- `onProgress` <- `onTimeUpdate`
+  // (useCommonMediaController.js:874-889, its sole call site), and a dead
+  // pipeline cannot fire `timeupdate`. So `isPaused` is frozen true, pressing
+  // play cannot unfreeze it, `userIntent` stays `paused`, the monitoring effect
+  // hard-returns below, and a paused-then-errored audio element stays quiet
+  // until the item is re-dispatched. That is the status quo for that case rather
+  // than something this guard broke, and it is the better half of the trade
+  // against self-resuming a paused track — but it IS still broken there. The
+  // durable fix is real pause provenance plumbed from the controller, tracked as
+  // a follow-up; until it lands, this branch deserves worry.
+  const hasMediaError = playbackHealth.hasMediaError === true;
+  const mediaErrorStoppedPlayback = playbackHealth.mediaErrorStoppedPlayback === true;
+
   const { targetTimeSeconds, consumeTargetTimeSeconds } = usePlaybackSession({
     sessionKey: playbackSessionKey
   });
@@ -175,12 +213,12 @@ export function useMediaResilience({
   useEffect(() => {
     if (isSeeking) {
       setUserIntent(USER_INTENT.seeking);
-    } else if (isPaused && pauseIntent !== 'system') {
+    } else if (isPaused && pauseIntent !== 'system' && !mediaErrorStoppedPlayback) {
       setUserIntent(USER_INTENT.paused);
     } else {
       setUserIntent(USER_INTENT.playing);
     }
-  }, [isPaused, isSeeking, pauseIntent]);
+  }, [isPaused, isSeeking, pauseIntent, mediaErrorStoppedPlayback]);
 
   // Stable boolean for dep array — avoids re-runs from meta object reference changes
   const hasMediaMeta = shouldArmStartupDeadline({ meta, disabled });
@@ -610,8 +648,19 @@ export function useMediaResilience({
   const atEnd = playbackHealth.elementSignals?.ended === true
     || (!!atEndEl && (atEndEl.ended === true || isNearEnd(atEndEl.currentTime, atEndEl.duration)));
 
+  // `hasMediaError` (declared up by usePlaybackHealth) is a FOURTH way to be
+  // stuck, and the only one that produces no starvation signal at all: Chromium
+  // fires error + pause and never fires waiting or stalled, so the three flags
+  // above all stay false. Without this term the ladder sits idle while a dead
+  // proxy stream never resumes (2026-09-03: a container redeploy killed the
+  // proxy mid-audiobook and the player went silent for 5 minutes with 284s
+  // still buffered).
+  //
+  // It belongs INSIDE the !clockAdvancing conjunct: once playback resumes the
+  // clock advances and isStuck goes false even if the code has not cleared yet.
+  // Hoisting it out would make a recovered stream read as permanently stuck.
   const isStuck = hasEverPlayedRef.current && !isUserPaused && !clockAdvancing && !atEnd
-    && (isStalled || isBuffering || effectiveSeeking);
+    && (isStalled || isBuffering || effectiveSeeking || hasMediaError);
 
   // Snapshot everything the ladder needs so its effect can depend only on `isStuck`
   // (and not tear down/rebuild — resetting the ladder — when a callback identity or
