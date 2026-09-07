@@ -120,6 +120,7 @@ flowchart TD
         DAY["/day/:studyDay<br/>The Learner Day"]
         COURSES["/courses<br/>Courses and enrollment"]
         HIST["/history<br/>Sessions and feedback"]
+        READING["/reading<br/>The reading shelf"]
         REPORTS["/reports<br/>Records and grades"]
         LOPS["/operations<br/>Repair this child's record"]
     end
@@ -142,6 +143,13 @@ inspects published curriculum and links to Operations rather than re-rendering
 the index; Operations is one click away via the global nav rail from any page.
 The eight-entry chooser drawn in §14 is therefore the *student* Operations
 view — School Operations draws the school-scoped four.
+
+**Reading** is observation only in this pass: a grown-up's view of what a
+child is reading, how much, and how consistently, over the same
+`GetBookShelf` the child's own panel reads. Nothing on it writes. The
+correction verbs live in
+`docs/_wip/plans/2026-09-06-teacher-reading-admin-design.md` §3 and land
+against the v2 book-log storage model, not here.
 
 `/students/:id` is the canonical short form for the Day; `/students/:id/overview`
 is a retired alias that the shell redirects there rather than 404ing (trim

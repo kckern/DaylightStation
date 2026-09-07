@@ -153,12 +153,21 @@ evidence. The history says so instead of offering a button that lies.
 
 ## 5. Reads — the routes
 
-All under `/api/v1/school/teacher/students/:learnerId/reading`, all
-capability-gated.
+All under `/api/v1/school/teacher/learners/:learnerId/reading`, all
+capability-gated. (`learners`, not `students`: every learner-scoped teacher API
+route already reads `/teacher/learners/:learnerId/…` — timeline, courses,
+answer-sheets, agenda dispatch. The console's own URL keeps saying `students`;
+the two vocabularies already differ and one more split inside the router would
+be a second convention to remember. The `GET /` half is built.)
 
 | Route | Answers |
 |---|---|
 | `GET /` | the whole workspace: readings grouped by status, the obligation, the counts, each with its projection |
+
+`GET /` is served by the SAME `GetBookShelf` the child's grant-gated panel
+reads, gated through `TeacherGate` (`action: books.shelf.read`, context the
+URL's learner) with the acting teacher read off the capability session — a GET
+carries no body to name them, exactly as the artifact postview read does.
 | `GET /:readingId` | one reading with every entry and its full `revisions` list |
 | `PATCH /:readingId` | identity and state fields — ISBN, mode, pageCount, status, finishedOn |
 | `POST /:readingId/entries` | add a day they read |

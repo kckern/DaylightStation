@@ -53,6 +53,15 @@ vi.mock('./teacherWorkspaceApi.js', () => ({ teacherWorkspaceApi: {
   retractGradeAdjustment: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   artifactOriginal: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   artifactPostview: vi.fn(async () => ({ ok: false, status: 404, data: null })),
+  readingShelf: vi.fn(async () => ({ ok: true, status: 200, data: {
+    learnerId: 'user_4', studyDay: '2026-09-06', earliestFinishDay: '2026-08-23',
+    obligation: { label: '4 of 7 days', per: 'week', met: false, actual: 4, target: 7, metric: 'checkins', incompatibleBooks: [] },
+    items: [{
+      itemId: 'itm_1', bookId: '9780000000001', progressMode: 'page', pageCount: 184,
+      title: 'A Borrowed Title', authors: ['Paulsen, Gary'], coverUrl: null,
+      projection: { status: 'reading', page: 84, percent: 46, minutes: null, daysRead: 6, lastAt: '2026-09-03T18:00:00.000Z' },
+    }],
+  } })),
 } }));
 const { teacherWorkspaceApi } = await import('./teacherWorkspaceApi.js');
 const { schoolApi } = await import('../schoolApi.js');
@@ -282,6 +291,25 @@ describe('TeacherConsole workspace', () => {
     expect(window.location.search).toBe('');
   });
 
+  it('opens the reading workspace from its own URL, read-only', async () => {
+    window.history.pushState({}, '', '/school/teacher/students/user_4/reading');
+    render(<TeacherConsole />);
+    expect(await screen.findByText('User_4’s shelf')).toBeTruthy();
+    expect(await screen.findByText('A Borrowed Title')).toBeTruthy();
+    expect(teacherWorkspaceApi.readingShelf).toHaveBeenCalledWith('user_4');
+    // Observation costs nothing: the shelf read is the only call this view makes.
+    expect(screen.getByText('p. 84 / 184')).toBeTruthy();
+  });
+
+  it('reaches the reading workspace from the learner tab strip', async () => {
+    window.history.pushState({}, '', '/school/teacher/students/user_4/day');
+    render(<TeacherConsole />);
+    const strip = await screen.findByRole('navigation', { name: 'User_4 workspace' });
+    fireEvent.click(within(strip).getByRole('button', { name: 'Reading' }));
+    expect(window.location.pathname).toBe('/school/teacher/students/user_4/reading');
+    expect(await screen.findByText('User_4’s shelf')).toBeTruthy();
+  });
+
   it('shows Day first in the learner tab strip', async () => {
     window.history.pushState({}, '', '/school/teacher/students/user_4/day');
     render(<TeacherConsole />);
@@ -290,6 +318,6 @@ describe('TeacherConsole workspace', () => {
     const strip = await screen.findByRole('navigation', { name: 'User_4 workspace' });
     const tabs = within(strip).getAllByRole('button');
     expect(tabs[0]).toHaveTextContent('Day');
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['Day', 'Courses', 'History', 'Reports', 'Operations']);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['Day', 'Courses', 'History', 'Reading', 'Reports', 'Operations']);
   });
 });

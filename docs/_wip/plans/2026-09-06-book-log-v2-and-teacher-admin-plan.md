@@ -148,7 +148,23 @@ One per verb, in `backend/src/3_applications/school/usecases/teacher/`:
 
 Each: validates, writes a `revisions` entry (`by`, `at`, `verb`, `before`, `after`,
 `reason`, `toldChild`), and — where the record got SMALLER — delivers a
-child-readable note through the same path review notes and settle reasons use.
+child-readable note.
+
+**The delivery path already exists; do not build a second one.**
+`RecordTeacherNote` (`3_applications/school/usecases/RecordTeacherNote.mjs`)
+appends to the notes store and is read by both surfaces a child actually looks
+at: the student panel's Feedback list and the agenda's "Notes for you" section
+(`BuildAgenda` `#collectNotes`). Inject it and call it — that keeps one delivery
+path, and its own `school.teacher-note.recorded` line is an honest audit fact.
+
+Two details it imposes, and both are fine:
+- **240 characters.** The note is truncated at `note.trim().slice(0, 240)`, so
+  compose the sentence rather than dumping a diff into it. "A grown-up removed
+  a reading day from Hatchet — logged on the wrong book" is the shape.
+- **It asserts its own gate**, `note.send`, which is NOT in `STEP_UP_ACTIONS`
+  and therefore runs on the capability cookie. That matters for the two step-up
+  verbs: their grant is one-use and is spent by the reading action itself, so
+  the note must not need a second grant. It does not.
 
 **The notification rule:** deleted entry, un-finish, a re-date that leaves the
 counted window, a move, a deleted reading. Those five require a reason and deliver
