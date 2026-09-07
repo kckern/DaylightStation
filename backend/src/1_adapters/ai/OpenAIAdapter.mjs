@@ -673,7 +673,18 @@ export class OpenAIAdapter extends IAIGateway {
       return response.text;
     } catch (error) {
       this.metrics.errors++;
-      this.logger.error?.('openai.transcribe.error', { error: error.message });
+      // Preserve the provider's classification without logging its request
+      // object, headers, audio, or arbitrary response body.
+      const providerError = error.response?.data?.error ?? error.apiError;
+      const failure = {
+        error: error.message,
+        status: error.response?.status ?? error.status ?? null,
+        providerCode: typeof providerError?.code === 'string' ? providerError.code : null,
+        providerType: typeof providerError?.type === 'string' ? providerError.type : null,
+        requestId: error.response?.headers?.['x-request-id'] ?? null,
+        sessionId: options.sessionId ?? null,
+      };
+      this.logger.error?.('openai.transcribe.error', failure);
       this.usageLedger?.record({
         provider: 'openai',
         endpoint: '/audio/transcriptions',

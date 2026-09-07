@@ -304,6 +304,16 @@
    below. */
 .piano-exercise-run__stage { position: relative; min-height: 0; overflow: hidden; }
 
+// The count-in is for listening. Keep its numeral clear while the music and
+// keyboard wait in gray; filtering the stage itself would also dim the overlay.
+.piano-exercise-run.is-countdown {
+  .piano-exercise-run__stage > :not(.piano-score-countin),
+  .piano-exercise-run__keys {
+    filter: grayscale(1);
+    opacity: 0.45;
+  }
+}
+
 .piano-exercise-run__recall {
   display: grid;
   place-content: center;
@@ -345,6 +355,13 @@
   overflow: hidden;
 
   .musicxml-renderer__svg { width: 100%; }
+
+  .piano-score-passage__cursor {
+    fill: rgba(255, 200, 60, 0.3);
+    stroke: rgba(200, 150, 0, 0.5);
+    stroke-width: 1.5;
+    pointer-events: none;
+  }
 
   .piano-score-passage__dim {
     path, rect, ellipse, text { fill: #b6b4ae; }
@@ -437,9 +454,18 @@
 }
 .keys-ask__keys { flex: 1 1 auto; min-height: 0; width: 100%; }
 
-.exercise-note-done { fill: #2b8e59 !important; color: #2b8e59 !important; }
-.exercise-note-next { fill: #1677c8 !important; color: #1677c8 !important; }
-.exercise-note-wrong { fill: #c13d30 !important; color: #c13d30 !important; }
+.exercise-note-done, .exercise-note-next { fill: #000 !important; color: #000 !important; }
+.exercise-note-todo { fill: rgb(120, 66, 22) !important; color: rgb(120, 66, 22) !important; }
+.exercise-note-hit { fill: rgb(0, 150, 70) !important; color: rgb(0, 150, 70) !important; }
+.exercise-note-wrong { fill: rgb(200, 40, 40) !important; color: rgb(200, 40, 40) !important; }
+// Original SvgSequenceStaff cursor, introduced in 39cf60b81: around the current
+// note, behind its ink. Engraved asks use the same treatment as sequence asks.
+.exercise-notation__cursor { fill: rgba(255, 200, 60, .3); stroke: rgba(200, 150, 0, .5); stroke-width: 1; }
+.exercise-notation__ghost {
+  color: rgba(0, 0, 0, .55);
+  ellipse { fill: rgba(0, 0, 0, .45); stroke: rgba(0, 0, 0, .6); }
+  > line { stroke: rgba(0, 0, 0, .35); }
+}
 
 @media (max-width: 1050px) {
   .piano-exercises__filter-panel { grid-template-columns: repeat(3, 1fr) auto; position: static; }

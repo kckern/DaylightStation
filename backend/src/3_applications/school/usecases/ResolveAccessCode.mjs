@@ -326,7 +326,7 @@ export class ResolveAccessCode {
       });
       const options = {
         mediaSurface: this.#mediaSurface,
-        bankPrintable: this.#bankPrintable(resolution.unit),
+        ...this.#bankOptions(resolution.unit),
         // `offeredActions` is pure and reads no clock of its own, so the one
         // time value it needs comes from here.
         now: this.#clock(),
@@ -447,7 +447,7 @@ export class ResolveAccessCode {
       const resolution = await this.#resolve({ learnerId, subject, continueToday });
       const options = {
         mediaSurface: this.#mediaSurface,
-        bankPrintable: this.#bankPrintable(resolution.unit),
+        ...this.#bankOptions(resolution.unit),
         now: this.#clock(),
       };
       const projection = await this.#projectionFor({ resolution, learnerId, subject, options });
@@ -588,6 +588,16 @@ export class ResolveAccessCode {
    * a pure domain module can reach, which is why `offeredActions` takes the
    * answer rather than making it.
    */
+  #bankOptions(unit) {
+    const bankIssue = unit?.bank && !unit.document
+      ? this.#issueDocument?.getBankIssue?.(unit.bank) ?? null : null;
+    if (bankIssue) {
+      this.#logger.warn?.('school.selfservice.worksheet-invalid', { bank: unit.bank, reason: bankIssue });
+      return { bankPrintable: false, bankIssue };
+    }
+    return { bankPrintable: this.#bankPrintable(unit) };
+  }
+
   #bankPrintable(unit) {
     if (!unit?.bank || typeof this.#issueDocument?.canIssueBank !== 'function') return false;
     try {
@@ -669,7 +679,7 @@ export class ResolveAccessCode {
       const move = nextMove(unit, state);
       const actions = offeredActions(
         { kind: 'move', move, sessionId, state, unit, entry },
-        { mediaSurface: this.#mediaSurface, bankPrintable: this.#bankPrintable(unit) },
+        { mediaSurface: this.#mediaSurface, ...this.#bankOptions(unit) },
       );
       const isPrint = actions.some((a) => a.kind === 'print');
       if (!isPrint) continue;

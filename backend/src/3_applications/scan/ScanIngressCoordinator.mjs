@@ -82,20 +82,8 @@
  * grammars with no segments at all. One trim, in the one place a space changes
  * the meaning.
  *
- * ## KNOWN PHASE 1 GAP: an unhandled namespace has no way to answer the person
- *
- * `book` is a real parse outcome with no handler here, so an ISBN-13 resolves,
- * finds nothing registered, and comes back `{ok: false, domain: 'book'}` — which
- * `onScan` discards. The scan is SILENT at the scanner. That is a real loss for
- * the one place it can happen today: scanning a book at the food scale used to
- * reach the UPC lookup and get a "not found" reply in Telegram, which was wrong
- * but was at least an ANSWER. It is user error either way and Phase 1 ships no
- * book handler on purpose, so this is not worth a special case — but whoever
- * builds that handler should know the FEEDBACK path is missing too, not just the
- * handler. The dispatcher's whole premise is that a scanner which appears to do
- * nothing is indistinguishable from a broken one; honouring that here means
- * `onScan` (or a `book` handler) eventually has to render the Outcome it is
- * currently throwing away.
+ * Publisher ISBN13 scans are owned by the injected book intention service.
+ * Bad checksums remain book refusals; they never become nutrition lookups.
  *
  * @module composition/modules/scanDispatch
  */
@@ -306,6 +294,7 @@ const DEP_CONTRACT = Object.freeze({
  * while looking perfectly healthy.
  */
 const OPTIONAL_DEPS = Object.freeze({
+  book: { ok: v => v === null || typeof v?.receive === 'function', want: 'null or a book scan service with receive()' },
   commandNames:  { ok: Array.isArray, want: 'an array of command names' },
   routeFallback: { ok: isObject, want: 'an object mapping reader route -> namespace' },
 });
@@ -453,6 +442,7 @@ export function createScanDispatch(deps = {}) {
 
   const {
     schoolLifecycle,
+    book = null,
     schoolCalcResultImporter,
     triggerDispatchService,
     relayInstances,
@@ -657,6 +647,15 @@ export function createScanDispatch(deps = {}) {
       { namespace: 'school', handle: handleSchool },
       { namespace: 'nutrition', handle: handleNutrition },
       { namespace: 'product', handle: scan => handleProduct({ ...scan, operationId: eventId ? `scan:${scan.device}:${eventId}` : null }) },
+      { namespace: 'book', handle: async ({ raw, device }) => {
+        try {
+          if (!book) throw new Error('School book scanning is not wired. Ask a grown-up, then rescan.');
+          return await book.receive({ code: raw, device, eventId });
+        } catch (error) {
+          emit(barcodeLogger, 'warn', 'school.book-scan.refused', { device, error: errText(error) });
+          return { status: 'refused', ok: false, message: errText(error) };
+        }
+      } },
     ];
   };
 

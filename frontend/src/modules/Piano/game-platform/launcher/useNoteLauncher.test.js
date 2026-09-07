@@ -456,3 +456,21 @@ describe('useNoteLauncher top key vs. combo', () => {
     expect(onRequestUser).not.toHaveBeenCalled();
   });
 });
+
+// A schoolwork denial must never trap the remembered player.
+it('allows changing player while game selection is paused', () => {
+  const onRequestUser = vi.fn();
+  const { result, rerender } = renderHook(
+    ({ activeNotes }) => useNoteLauncher({ activeNotes, slots, selectionPaused: true, onRequestUser }),
+    { initialProps: { activeNotes: new Map() } },
+  );
+  rerender({ activeNotes: notes(21, 108) });
+  rerender({ activeNotes: new Map() });
+  rerender({ activeNotes: notes(60) });
+  expect(result.current.activeGameId).toBeNull();
+  rerender({ activeNotes: new Map() });
+  rerender({ activeNotes: notes(108) });
+  act(() => vi.advanceTimersByTime(301));
+  expect(onRequestUser).toHaveBeenCalledTimes(1);
+  expect(result.current.activeGameId).toBeNull();
+});

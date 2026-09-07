@@ -341,7 +341,7 @@ describe('ExerciseRun shared assessment wiring', () => {
 
     expect(await screen.findByText('Keep working')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Practice first' })).toBeInTheDocument();
+    expect(screen.getByText(/Release the keys, then play any key to try again\./)).toBeInTheDocument();
     expect(props.onPassed).not.toHaveBeenCalled();
 
     // The engine still says "passed" — which is exactly why the surface cannot
@@ -358,7 +358,7 @@ describe('ExerciseRun shared assessment wiring', () => {
     press(view, props, 62); // clean run -> score 1
 
     expect(await screen.findByText('Passed')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
     // The host gets the result rather than a click event, so it can read the
     // score without re-deriving it.
     expect(props.onPassed).toHaveBeenCalledTimes(1);
@@ -514,12 +514,12 @@ describe('ExerciseRun shared assessment wiring', () => {
     press(view, props, 62);
 
     expect(await screen.findByText('Keep working')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Practice first' })).toBeInTheDocument();
+    expect(screen.getByText(/Release the keys, then play any key to try again\./)).toBeInTheDocument();
   });
 
   it('a host that took onFailed still gets the run’s own pass panel', async () => {
     // Only the FAILURE panel is the host's business. `onPassed` is
-    // player-driven, so Continue must still be there to press.
+    // automatic, with no additional input required.
     const requirement = withPassScore({ passScore: 0.8 });
     const props = {
       instance: subject(), score: null, intent: 'challenge', requirement,
@@ -530,7 +530,7 @@ describe('ExerciseRun shared assessment wiring', () => {
     press(view, props, 62); // clean -> score 1
 
     expect(await screen.findByText('Passed')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
     expect(props.onPassed).toHaveBeenCalledTimes(1);
   });
 
@@ -723,8 +723,9 @@ describe('ExerciseRun shared assessment wiring', () => {
     // The arming note is still FIRST — it is the note that started the run and
     // must stay the run's first graded note.
     expect(h.observe.mock.calls.map((call) => call[0].midi)).toEqual([48, 60]);
-    // Two-hand material draws on the grand staff (`sequenceStaffCanDraw`), so
-    // the cursor to read is the ABC path's — same cursor, same `eventIndex`.
+    // Keep the successful chord under the fingers until its keys are released.
+    expect(screen.getByTestId('notation')).toHaveTextContent('0');
+    hold(view, props, []);
     await waitFor(() => expect(screen.getByTestId('notation')).toHaveTextContent('1'));
   });
 
@@ -1001,7 +1002,7 @@ describe('ExerciseRun tier-driven presentation', () => {
     const panel = (await screen.findByText('Keep working')).closest('.piano-exercise-run__result');
     expect(panel.textContent).toContain('Some of the notes are still missing. Have another go.');
     expect(panel.textContent).not.toMatch(/%/);
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.getByText(/Release the keys, then play any key to try again\./)).toBeInTheDocument();
   });
 
   it('shows the staff for a low ask and leaves the clef to the one place that derives it', async () => {
@@ -1328,8 +1329,8 @@ describe('ExerciseRun free-challenge stall', () => {
     // A stalled attempt has no score and no criteria at all; there is no number
     // to show and none is invented.
     expect(panel.textContent).not.toMatch(/%/);
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Practice first' })).toBeInTheDocument();
+    expect(screen.getByText(/Release the keys, then play any key to try again\./)).toBeInTheDocument();
+    expect(screen.getByText(/Release the keys, then play any key to try again\./)).toBeInTheDocument();
   });
 
   it('persists the stall with its own status rather than dressing it as completed', async () => {
@@ -1398,8 +1399,8 @@ describe('ExerciseRun free-challenge stall', () => {
     expect(h.record).not.toHaveBeenCalled();
     expect(screen.getByText('Play the first note to begin.')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Exit' }));
-    expect(props.onExit).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(props.onExit).not.toHaveBeenCalled();
     expect(props.onFailed).not.toHaveBeenCalled();
     view.unmount();
   });
@@ -1549,118 +1550,127 @@ describe('ExerciseRun metronome pre-pulse', () => {
  * Every route below therefore asserts the same thing from a different input:
  * a cleared pass reaches the host. The click is covered by the suites above.
  */
-describe('ExerciseRun pass claim without a pointer', () => {
-  beforeEach(() => {
-    resetHarness();
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+describe('ExerciseRun piano-only completion', () => {
+  beforeEach(resetHarness);
+  const setHeld = (view, props, notes) => act(() => {
+    h.activeNotes = new Map(notes.map(midi => [midi, { velocity: 1 }]));
+    view.rerender(<ExerciseRun {...props} />);
   });
-  afterEach(() => { vi.useRealTimers(); });
-
-  const press = (view, props, midi) => {
-    act(() => { h.activeNotes = new Map([[midi, { velocity: 1 }]]); view.rerender(<ExerciseRun {...props} />); });
-    act(() => { h.activeNotes = new Map(); view.rerender(<ExerciseRun {...props} />); });
-  };
-
-  /** A passing floor challenge, left sitting on its result panel. */
-  const passedChallenge = async () => {
-    const requirement = requirementForLevel(BUILT_IN_FLOOR);
+  it.each(['practice', 'challenge'])('automatically passes %s to its host exactly once', async (intent) => {
     const onPassed = vi.fn();
-    const props = { instance: subject(), score: null, intent: 'challenge', requirement, onExit: vi.fn(), onPassed };
+    const props = { instance: subject(), score: null, intent, requirement: requirementForLevel(BUILT_IN_FLOOR), onPassed };
     const view = render(<ExerciseRun {...props} />);
     await screen.findByText('Play the first note to begin.');
-    press(view, props, 60);
-    press(view, props, 62);
-    expect(await screen.findByText('Passed')).toBeInTheDocument();
-    expect(onPassed).not.toHaveBeenCalled();
-    return { view, props, onPassed };
-  };
-
-  it('takes the pass from Enter, with nothing clicked', async () => {
-    const { onPassed } = await passedChallenge();
-    act(() => { fireEvent.keyDown(window, { key: 'Enter' }); });
-    await waitFor(() => expect(onPassed).toHaveBeenCalledTimes(1));
+    setHeld(view, props, [60]); setHeld(view, props, []); setHeld(view, props, [62]);
+    expect(onPassed).toHaveBeenCalledTimes(1);
+    expect(onPassed).toHaveBeenCalledWith(expect.objectContaining({ assessmentId: expect.any(String) }));
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    setHeld(view, props, []); setHeld(view, props, [64]);
+    expect(onPassed).toHaveBeenCalledTimes(1);
   });
-
-  it('takes the pass from Space, with nothing clicked', async () => {
-    const { onPassed } = await passedChallenge();
-    act(() => { fireEvent.keyDown(window, { key: ' ' }); });
-    await waitFor(() => expect(onPassed).toHaveBeenCalledTimes(1));
-  });
-
-  it('takes the pass from a piano key — but only after the passing notes are released', async () => {
-    const requirement = requirementForLevel(BUILT_IN_FLOOR);
+  it('retries a failed challenge from the piano without reporting a pass', async () => {
     const onPassed = vi.fn();
-    const props = { instance: subject(), score: null, intent: 'challenge', requirement, onExit: vi.fn(), onPassed };
+    const props = { instance: subject(), score: null, intent: 'challenge', requirement: withPassScore({ passScore: 0.8 }), onPassed };
     const view = render(<ExerciseRun {...props} />);
     await screen.findByText('Play the first note to begin.');
-    press(view, props, 60);
-    // The note that COMPLETES the ask, still held down. It must not claim its
-    // own pass — a child who never sees "Passed" was never told they won.
-    act(() => { h.activeNotes = new Map([[62, { velocity: 1 }]]); view.rerender(<ExerciseRun {...props} />); });
-    expect(await screen.findByText('Passed')).toBeInTheDocument();
+    for (const midi of [60, 61, 61, 61]) { setHeld(view, props, [midi]); setHeld(view, props, []); }
+    setHeld(view, props, [62]);
+    expect(screen.getByText('Keep working')).toBeInTheDocument();
     expect(onPassed).not.toHaveBeenCalled();
-
-    // Let go: still not a claim, only the arming of one.
-    act(() => { h.activeNotes = new Map(); view.rerender(<ExerciseRun {...props} />); });
-    expect(onPassed).not.toHaveBeenCalled();
-
-    // A fresh press, after the release, is the child asking to move on.
-    act(() => { h.activeNotes = new Map([[64, { velocity: 1 }]]); view.rerender(<ExerciseRun {...props} />); });
-    await waitFor(() => expect(onPassed).toHaveBeenCalledTimes(1));
+    setHeld(view, props, [62, 60]);
+    expect(screen.getByText('Keep working')).toBeInTheDocument();
+    setHeld(view, props, []); setHeld(view, props, [64]);
+    expect(screen.getByText('Play the first note to begin.')).toBeInTheDocument();
+    setHeld(view, props, []);
+    for (const midi of [60, 62]) { setHeld(view, props, [midi]); setHeld(view, props, []); }
+    expect(onPassed).toHaveBeenCalledTimes(1);
   });
-
-  it('claims itself rather than strand a child on a screen they cleared', async () => {
-    const { onPassed } = await passedChallenge();
-    act(() => { vi.advanceTimersByTime(6000); });
-    await waitFor(() => expect(onPassed).toHaveBeenCalledTimes(1));
-  });
-
-  it('hands the host exactly one pass however many routes fire', async () => {
-    const { view, props, onPassed } = await passedChallenge();
-    act(() => { fireEvent.keyDown(window, { key: 'Enter' }); });
-    act(() => { fireEvent.keyDown(window, { key: ' ' }); });
-    act(() => { h.activeNotes = new Map(); view.rerender(<ExerciseRun {...props} />); });
-    act(() => { h.activeNotes = new Map([[64, { velocity: 1 }]]); view.rerender(<ExerciseRun {...props} />); });
-    act(() => { vi.advanceTimersByTime(30000); });
-    await waitFor(() => expect(onPassed).toHaveBeenCalledTimes(1));
-  });
-
-  it('carries the assessment id, so a claim is the same attempt however it was taken', async () => {
-    const { onPassed } = await passedChallenge();
-    act(() => { fireEvent.keyDown(window, { key: 'Enter' }); });
-    await waitFor(() => expect(onPassed).toHaveBeenCalledTimes(1));
-    expect(onPassed.mock.calls[0][0].assessmentId).toEqual(expect.any(String));
-  });
-
-  it('claims nothing for a practice run, which has no host waiting on one', async () => {
-    const props = { instance: subject(), score: null, intent: 'practice', practiceMode: 'free', onExit: vi.fn() };
+  it.each(['practice', 'challenge'])('retries %s without a host using release then a fresh piano press', async (intent) => {
+    const props = { instance: subject(), score: null, intent, requirement: requirementForLevel(BUILT_IN_FLOOR) };
     const view = render(<ExerciseRun {...props} />);
     await screen.findByText('Play the first note to begin.');
-    press(view, props, 60);
-    press(view, props, 62);
-    expect(await screen.findByText('Passed')).toBeInTheDocument();
-    // No `onPassed` at all: the timer must not throw, and the panel must stay.
-    act(() => { vi.advanceTimersByTime(30000); });
+    setHeld(view, props, [60]); setHeld(view, props, []); setHeld(view, props, [62]);
+    expect(screen.getByText('Passed')).toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    setHeld(view, props, [62, 64]);
+    expect(screen.getByText('Passed')).toBeInTheDocument();
+    setHeld(view, props, []);
+    expect(screen.getByText('Passed')).toBeInTheDocument();
+    setHeld(view, props, [60]);
+    expect(screen.queryByText('Passed')).not.toBeInTheDocument();
+    setHeld(view, props, []); setHeld(view, props, [60]); setHeld(view, props, []); setHeld(view, props, [62]);
     expect(screen.getByText('Passed')).toBeInTheDocument();
   });
+});
 
-  it('does not claim a pass for an attempt that did not clear its bar', async () => {
-    const requirement = withPassScore({ passScore: 0.8 });
-    const onPassed = vi.fn();
-    const onFailed = vi.fn();
-    const props = { instance: subject(), score: null, intent: 'challenge', requirement, onExit: vi.fn(), onPassed, onFailed };
+describe('timed exercise clock and input boundary', () => {
+  beforeEach(() => { resetHarness(); vi.useFakeTimers({ shouldAdvanceTime: true }); });
+  afterEach(() => vi.useRealTimers());
+  const mountTimed = async () => {
+    h.instanceData = { ...h.instance, tempo: { start_bpm: 60 }, events: [60,62,64,65].map((midi,i) => ({ id:`beat-${i}`, value:'quarter', notes:[{midi,hand:'right'}] })) };
+    const props = { instance:subject(), score:null, intent:'challenge', requirement:cuedRequirement({passScore:0.8}), onPassed:vi.fn() };
     const view = render(<ExerciseRun {...props} />);
-    await screen.findByText('Play the first note to begin.');
-    // The arming note is the ask's own first note; the three wrongs land
-    // against event two, leaving cleanliness 2/5 and a score under the bar.
-    press(view, props, 60);
-    press(view, props, 61);
-    press(view, props, 61);
-    press(view, props, 61);
-    press(view, props, 62);
-    await waitFor(() => expect(onFailed).toHaveBeenCalledTimes(1));
-    act(() => { fireEvent.keyDown(window, { key: 'Enter' }); });
-    act(() => { vi.advanceTimersByTime(30000); });
-    expect(onPassed).not.toHaveBeenCalled();
+    await screen.findByText(/Press any key to start/);
+    pressKey(view, props, 55);
+    return {view,props};
+  };
+  it('ignores countdown input, hides feedback, and requires held notes to be repressed', async () => {
+    const {view,props} = await mountTimed();
+    act(() => { h.activeNotes = new Map([[60,{velocity:1}]]); view.rerender(<ExerciseRun {...props}/>); });
+    expect(h.observe).not.toHaveBeenCalled();
+    expect(screen.getByTestId('notation')).toHaveTextContent('-1');
+    expect(h.log.info).toHaveBeenCalledWith('piano.exercise-input-ignored', expect.objectContaining({reason:'countdown',phase:'countdown',ignored:[60]}));
+    act(() => vi.advanceTimersByTime(4050));
+    expect(h.observe).not.toHaveBeenCalled();
+    act(() => { h.activeNotes = new Map(); view.rerender(<ExerciseRun {...props}/>); });
+    pressKey(view,props,60);
+    expect(h.observe).toHaveBeenCalledTimes(1);
   });
+  it('moves on the beat in silence and cannot be pulled backward by held notes', async () => {
+    const {view,props} = await mountTimed();
+    act(() => vi.advanceTimersByTime(4050));
+    expect(screen.getByTestId('notation')).toHaveTextContent('0');
+    act(() => { h.activeNotes = new Map([[60,{velocity:1}]]); view.rerender(<ExerciseRun {...props}/>); });
+    act(() => vi.advanceTimersByTime(1050));
+    expect(screen.getByTestId('notation')).toHaveTextContent('1');
+    act(() => vi.advanceTimersByTime(1000));
+    expect(screen.getByTestId('notation')).toHaveTextContent('2');
+    expect(h.log.info).toHaveBeenCalledWith('piano.exercise-visual-cursor', expect.objectContaining({phase:'running',bpm:60,expectedCursor:2,displayedCursor:2,reason:'clock'}));
+  });
+  it('keeps the clock and clicks running when every note was matched ahead of the musical end', async () => {
+    const {view,props} = await mountTimed();
+    act(() => vi.advanceTimersByTime(4000));
+    pressKey(view,props,60);
+    act(() => vi.advanceTimersByTime(1000));
+    pressKey(view,props,62);
+    act(() => vi.advanceTimersByTime(1000));
+    pressKey(view,props,64);
+    act(() => vi.advanceTimersByTime(900));
+    pressKey(view,props,65);
+    expect(props.onPassed).not.toHaveBeenCalled();
+    expect(screen.getByTestId('notation')).toHaveTextContent('2');
+    expect(h.metronome.mock.calls.at(-1)[0].enabled).toBe(true);
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.getByTestId('notation')).toHaveTextContent('3');
+    expect(props.onPassed).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1000));
+    expect(props.onPassed).toHaveBeenCalledTimes(1);
+    expect(h.metronome.mock.calls.at(-1)[0].enabled).toBe(false);
+  });
+
+  it('preserves completed assessment evidence when leaving before the musical duration ends', async () => {
+    const {view,props} = await mountTimed();
+    act(() => vi.advanceTimersByTime(4000));
+    for (const midi of [60,62,64]) {
+      pressKey(view,props,midi);
+      act(() => vi.advanceTimersByTime(1000));
+    }
+    pressKey(view,props,65);
+    expect(props.onPassed).not.toHaveBeenCalled();
+    expect(h.record).not.toHaveBeenCalled();
+    view.unmount();
+    await waitFor(() => expect(h.record).toHaveBeenCalledTimes(1));
+    expect(props.onPassed).not.toHaveBeenCalled();
+  });
+
 });

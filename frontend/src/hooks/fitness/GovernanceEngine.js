@@ -459,7 +459,8 @@ export class GovernanceEngine {
     // A physical claim grants eligibility for that equipment (authoritative selector).
     const claimed = this._latestInputs?.equipmentRiderMap?.[equipmentId];
     if (claimed && !base.includes(claimed)) base.push(claimed);
-    return base;
+    const guests = new Set(this._latestInputs?.guestIds || []);
+    return base.filter(id => !guests.has(id));
   }
 
   /**
@@ -2416,6 +2417,11 @@ export class GovernanceEngine {
     //   Removing it fixes the startup bug where participants without zone data
     //   (because zones haven't arrived yet) were incorrectly excluded.
 
+    // Classification must use this payload before any requirement or phase
+    // decision, including paths that return before the final input capture.
+    this._latestInputs.guestIds = Array.isArray(guestIds) ? [...guestIds] : [];
+    this._cancelGuestChallenge(activeParticipants);
+
     // Capture zone maps early so _getZoneRank()/_getZoneInfo() work during evaluation
     // (Previously stored only after evaluation, causing first-call misses)
     if (zoneRankMap && Object.keys(zoneRankMap).length > 0) {
@@ -3007,6 +3013,7 @@ export class GovernanceEngine {
       state.zeroSince = null;
     }
     if (!riderId) return standDown('unclaimed');
+    if ((this._latestInputs.guestIds || []).includes(riderId)) return standDown('guest-rider');
 
     const present = (Array.isArray(activeParticipants) ? activeParticipants : []).includes(riderId);
     if (!present) return standDown('rider_absent');
@@ -3327,13 +3334,14 @@ export class GovernanceEngine {
   }
 
   _normalizeChallengeRequiredCount(rule, totalCount, activeParticipants = []) {
-    // Challenge wins are positive-only: every active rider, including a guest
-    // or exempt rider, can fill the tally. Unlike steady-state governance, do
-    // not reduce a numeric target to the subject count or a guest's contribution
-    // becomes irrelevant (and a guest-only challenge can auto-win at zero).
-    const eligibleCount = Array.isArray(activeParticipants) && activeParticipants.length > 0
+    // A visitor's presence must never raise a failure threshold. With subjects
+    // present, all target forms use their count; every rider still earns credit.
+    // Guest-only scoring remains positive-only; the scheduler below never starts
+    // or retains a blocking challenge for that roster.
+    const subjects = activeParticipants.filter(this._buildSubjectFilter(activeParticipants));
+    const eligibleCount = subjects.length || (Array.isArray(activeParticipants) && activeParticipants.length > 0
       ? activeParticipants.length
-      : Math.max(0, Number(totalCount) || 0);
+      : Math.max(0, Number(totalCount) || 0));
     if (typeof rule === 'number' && Number.isFinite(rule)) {
       return Math.min(Math.max(0, Math.round(rule)), eligibleCount);
     }
@@ -3557,6 +3565,12 @@ export class GovernanceEngine {
       // Standing claim: the rider physically claimed this bike. Authoritative —
       // skip the cooldown filter (a deliberate press overrides cooldown).
       const claimedRider = this._latestInputs.equipmentRiderMap[selection.equipment];
+      if (!eligible.includes(claimedRider)) {
+        getLogger().info('governance.cycle.start_skipped', {
+          equipment: selection.equipment, reason: 'claimed_rider_not_eligible', eligibleCount: eligible.length
+        });
+        return { ok: false, reason: 'claimed_rider_not_eligible' };
+      }
       rider = claimedRider;
       riderPool = [claimedRider];
     } else {
@@ -4056,6 +4070,29 @@ export class GovernanceEngine {
     return maxRank;
   }
 
+  _cancelGuestChallenge(activeParticipants) {
+    const classification = this._classifyParticipants(activeParticipants);
+    const activeCycle = this.challengeState.activeChallenge;
+    const guestCycleRider = activeCycle?.type === 'cycle'
+      && (this._latestInputs?.guestIds || []).includes(activeCycle.rider?.id ?? activeCycle.rider);
+    if ((classification.guests.length > 0 && classification.subjects.length === 0) || guestCycleRider) {
+      if (this.challengeState.activeChallenge || this.challengeState.nextChallenge) {
+        getLogger().info('governance.challenge.cancelled', {
+          id: this.challengeState.activeChallenge?.id || null,
+          reason: guestCycleRider ? 'guest-cycle-rider' : 'no-governed-subjects'
+        });
+      }
+      this.challengeState.activeChallenge = null;
+      this.challengeState.nextChallenge = null;
+      this.challengeState.nextChallengeAt = null;
+      this.challengeState.nextChallengeRemainingMs = null;
+      this.challengeState.videoLocked = false;
+      return true;
+    }
+
+    return false;
+  }
+
   _evaluateChallenges(activePolicy, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, evalContext = null) {
     const now = this._now();
     const challengeConfig = Array.isArray(activePolicy.challenges) && activePolicy.challenges.length
@@ -4069,6 +4106,8 @@ export class GovernanceEngine {
       this.challengeState.nextChallengeRemainingMs = null;
       return;
     }
+
+    if (this._cancelGuestChallenge(activeParticipants)) return;
 
     // Guard: don't START new challenges if below minimum participant count.
     // An already-active cycle challenge is preserved — it has its own rider

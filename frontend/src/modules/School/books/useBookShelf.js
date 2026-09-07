@@ -3,7 +3,7 @@
  * §2–§5, §7).
  *
  * A child's code opens the shelf; this hook owns everything that happens on
- * it — the tiles, the update overlay, the three-step add flow, history — so
+ * it — the tiles, the update overlay, the combined cover/action add flow, history — so
  * the components (BookShelf, ShelfTile, UpdateBook, AddBook, History) stay
  * presentational. It mirrors `useSelfService`'s shape on purpose and holds
  * the same rules where they apply:
@@ -23,9 +23,8 @@
  *    an ISBN-10 (`submit: true`), because on the keystroke they are just as
  *    likely the first ten of thirteen.
  *
- * 3. EVERY WRITE IS IDEMPOTENT. The client mints the `entryId` when the
- *    overlay opens (and a second one for the add flow's first progress
- *    event), and the same ids ride every retry of that write. A double tap
+ * 3. EVERY WRITE IS IDEMPOTENT. The client mints the `entryId` when an update opens or an ISBN
+ *    resolves (and a second one for the add flow's first progress event), and the same ids ride every retry of that write. A double tap
  *    or a retried request appends once (`IBookLogStore` contract).
  *
  * 4. A FAILED WRITE LOSES NOTHING. The view stays where it was, the number or
@@ -40,6 +39,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { schoolApi } from '../schoolApi.js';
 import { schoolLog } from '../schoolLog.js';
 import { checkIsbn, hintFor, COPY } from './isbn.js';
+import { recentFinishes } from './readingHistory.js';
 
 /** The shelf could not be read and the server said nothing usable. */
 export const LOAD_FAILED_SENTENCE = 'Could not load your shelf';
@@ -54,6 +54,7 @@ const EMPTY_ADD = Object.freeze({
   entry: '',
   resolved: null,
   duplicateOf: null,
+  priorRead: null,
   entryId: null,
   progressEntryId: null,
   finishedOn: null,
@@ -82,13 +83,23 @@ function compact(obj) {
  * @param {number} [p.idleTimeoutSeconds=90]
  * @param {(reason: 'done'|'idle') => void} [p.onExit]
  */
-export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit }) {
+export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit, initialBookEntry = null }) {
+  const entryRef = useRef(initialBookEntry);
+  entryRef.current = initialBookEntry;
+  const consumedScan = useRef(false);
   const [view, setView] = useState('loading');
   const [step, setStep] = useState(null);
   const [shelf, setShelf] = useState(null);
   const [learner, setLearner] = useState({ id: learnerId, name: learnerId });
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  // Freshness survives unrelated write errors (notably a failed Undo).
+  const [needsRefresh, updateNeedsRefresh] = useState(true);
+  const needsRefreshRef = useRef(true);
+  const setNeedsRefresh = useCallback((needed) => {
+    needsRefreshRef.current = needed;
+    updateNeedsRefresh(needed);
+  }, []);
   const [add, setAdd] = useState(EMPTY_ADD);
   const [currentItemId, setCurrentItemId] = useState(null);
   const [updateEntryId, setUpdateEntryId] = useState(null);
@@ -99,6 +110,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
   // Rule 1. Bumped by every close; an in-flight request whose generation has
   // moved on drops its answer.
   const genRef = useRef(0);
+  const initialLoadRef = useRef(true);
   // Single in-flight write slot — a ref, because two taps land in one React
   // batch and both read the same stale `busy`.
   const workRef = useRef(false);
@@ -146,7 +158,6 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     setAdd(EMPTY_ADD);
     setCurrentItemId(null);
     setUpdateEntryId(null);
-    setReceipt(null);
   }, []);
 
   /** Start the required shelf and optional roster reads together. */
@@ -162,13 +173,19 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     if (genRef.current !== gen) return; // rule 1
 
     if (!shelfRes.ok || !shelfRes.data) {
-      setError({ message: messageOf(shelfRes, LOAD_FAILED_SENTENCE) });
+      setError({
+        message: receiptRef.current ? 'Saved. Your shelf could not refresh.' : messageOf(shelfRes, LOAD_FAILED_SENTENCE),
+      });
       schoolLog.bookShelfError('shelf.failed', { status: shelfRes.status, learnerId });
       return;
     }
     setShelf(shelfRes.data);
-    viewRef.current = 'shelf';
-    setView('shelf');
+    setNeedsRefresh(false);
+    const firstEmpty = initialLoadRef.current && (shelfRes.data.items ?? []).length === 0;
+    initialLoadRef.current = false;
+    viewRef.current = firstEmpty ? 'add' : 'shelf';
+    setView(viewRef.current);
+    setStep(firstEmpty ? 'number' : null);
 
     // A roster outage cannot hold a valid shelf behind the loading screen.
     void rosterRequest.then((rosterRes) => {
@@ -177,43 +194,57 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
       const me = rosterRes?.ok ? members.find((m) => m?.id === learnerId) : null;
       setLearner({ id: learnerId, name: me?.name || learnerId });
     });
-  }, [learnerId, grant]);
+  }, [learnerId, grant, setNeedsRefresh]);
 
-  /** Re-read after a write, then show an unambiguous receipt when supplied. */
+  /** Show persisted success immediately, then refresh the shelf beneath it. */
   const refetch = useCallback(async ({ receipt: nextReceipt = null } = {}) => {
+    setNeedsRefresh(true);
     const gen = genRef.current;
+    if (nextReceipt) {
+      setReceipt(nextReceipt);
+      viewRef.current = 'shelf';
+      setView('shelf');
+    }
     const res = await schoolApi.books.shelf(learnerId, grant);
     if (genRef.current !== gen) return; // rule 1
     if (res.ok && res.data) {
       setShelf(res.data);
+      setNeedsRefresh(false);
       setError(null);
     } else {
       // The write landed; only the re-read failed. Show the shelf as it was
       // and say so, rather than stranding the child on the overlay.
-      setError({ message: messageOf(res, LOAD_FAILED_SENTENCE) });
+      setError({ message: 'Saved. Your shelf could not refresh.' });
       schoolLog.bookShelfError('shelf.failed', { status: res.status, learnerId });
     }
     setStep(null);
     setAdd(EMPTY_ADD);
     setCurrentItemId(null);
     setUpdateEntryId(null);
-    if (nextReceipt) {
-      setReceipt(nextReceipt);
-      viewRef.current = 'receipt';
-      setView('receipt');
-    } else {
-      toShelf();
-    }
-  }, [learnerId, grant, toShelf]);
+    setReceipt(nextReceipt);
+    viewRef.current = 'shelf';
+    setView('shelf');
+  }, [learnerId, grant, setNeedsRefresh]);
 
   useEffect(() => {
+    genRef.current += 1;
+    initialLoadRef.current = true;
+    consumedScan.current = false;
+    setNeedsRefresh(true);
+    workRef.current = false;
+    lookupRef.current = false;
+    viewRef.current = 'loading';
+    setView('loading');
+    setShelf(null);
+    setLearner({ id: learnerId, name: learnerId });
+    setAdd(EMPTY_ADD);
+    setCurrentItemId(null);
+    setReceipt(null);
+    setBusy(false);
     schoolLog.bookShelf('opened', { learnerId });
     load();
-  }, [learnerId, load]);
-
-  // Rule 1 for the unmount: a write answering after the parent tore the shelf
-  // down may neither refetch nor log.
-  useEffect(() => () => { genRef.current += 1; }, []);
+    return () => { genRef.current += 1; };
+  }, [learnerId, load, setNeedsRefresh]);
 
   // Idle close (design §2): 90s with no tap, resets on any interaction, no
   // exemptions — nothing on the shelf runs long. Not armed once closed.
@@ -229,25 +260,35 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
 
   const noteActivity = useCallback(() => { if (!isClosed()) touch(); }, [touch]);
 
+  useEffect(() => {
+    window.addEventListener('keydown', noteActivity);
+    return () => window.removeEventListener('keydown', noteActivity);
+  }, [noteActivity]);
+
   const done = useCallback(() => close('done'), [close]);
 
   const retry = useCallback(async () => {
-    if (isClosed()) return;
+    if (isClosed() || workRef.current) return;
     touch();
+    workRef.current = true;
+    setBusy(true);
+    const gen = genRef.current;
     await load();
+    if (gen !== genRef.current) return;
+    workRef.current = false;
+    setBusy(false);
   }, [load, touch]);
 
   const openHistory = useCallback(() => {
-    if (viewRef.current !== 'shelf' && viewRef.current !== 'receipt') return;
+    if (viewRef.current !== 'shelf' || workRef.current || needsRefreshRef.current) return;
     touch();
-    setReceipt(null);
     viewRef.current = 'history';
     setView('history');
     schoolLog.bookShelf('history-opened', { learnerId });
   }, [learnerId, touch]);
 
   const startAdd = useCallback(() => {
-    if (viewRef.current !== 'shelf') return;
+    if (viewRef.current !== 'shelf' || workRef.current || needsRefreshRef.current) return;
     touch();
     setError(null);
     setAdd(EMPTY_ADD);
@@ -268,11 +309,35 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
   }, [touch]);
 
   const openItem = useCallback((itemId) => {
-    if (viewRef.current !== 'shelf') return;
+    if (!['shelf', 'history'].includes(viewRef.current) || workRef.current || needsRefreshRef.current) return;
     const item = shelfRef.current?.items?.find((i) => i.itemId === itemId);
     if (!item) return;
+    if (item.projection?.status === 'finished') {
+      touch();
+      setCurrentItemId(itemId);
+      viewRef.current = 'completed';
+      setView('completed');
+      return;
+    }
     enterUpdate(item);
-  }, [enterUpdate]);
+  }, [enterUpdate, touch]);
+
+  // Consume only after a successful fresh shelf read. Existing mutations own all writes.
+  useEffect(() => {
+    const entry = entryRef.current;
+    if (consumedScan.current || !entry?.isbn13 || !shelf || needsRefresh || busy || !['shelf', 'add'].includes(view)) return;
+    consumedScan.current = true;
+    const active = shelf.items?.find(item => item.bookId === entry.isbn13 && ['reading', 'unread'].includes(item.projection?.status));
+    const finished = recentFinishes(shelf.items).find(item => item.bookId === entry.isbn13);
+    if (active) { enterUpdate(active); return; }
+    if (finished) {
+      setCurrentItemId(finished.itemId); viewRef.current = 'completed'; setView('completed'); setStep(null); return;
+    }
+    const book = entry.book ?? { isbn13: entry.isbn13, title: null, authors: [], coverUrl: null };
+    setAdd({ ...EMPTY_ADD, entry: entry.isbn13, resolved: { book }, metadataMissing: !entry.book, entryId: mintId(), progressEntryId: mintId() });
+    viewRef.current = 'add'; setView('add'); setStep('cover');
+    schoolLog.bookShelf('scan.seeded', { learnerId });
+  }, [shelf, needsRefresh, busy, view, enterUpdate, learnerId]);
 
   /**
    * The duplicate guard's way out (design §5): the cover step named an item
@@ -295,7 +360,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
   const back = useCallback(() => {
     if (isClosed()) return;
     const v = viewRef.current;
-    if (v === 'update' || v === 'history' || v === 'receipt') { touch(); setError(null); toShelf(); return; }
+    if (v === 'update' || v === 'completed' || v === 'history' || v === 'receipt') { touch(); setError(null); toShelf(); return; }
     if (v !== 'add') return;
     const s = stepRef.current;
     touch();
@@ -310,7 +375,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
       setStep('number');
       return;
     }
-    if (s === 'page' || s === 'when') { setStep('where'); return; }
+    if (s === 'page' || s === 'when') { setStep('cover'); return; }
     if (s === 'where' || s === 'cover') {
       // The number survives; the cover and the ids minted for it do not.
       setAdd((a) => ({ ...EMPTY_ADD, entry: a.entry }));
@@ -371,12 +436,14 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
       // at that item. A finished copy is not a duplicate — a re-read opens a
       // fresh item (PRD S9).
       const dup = shelfRef.current?.items?.find(
-        (i) => i.bookId === book.isbn13 && i.projection?.status === 'reading',
+        (i) => i.bookId === book.isbn13 && ['reading', 'unread'].includes(i.projection?.status),
       ) ?? null;
       setAdd((a) => ({
         ...a,
         resolved: { ...(res.data ?? {}), book },
         duplicateOf: dup?.itemId ?? null,
+        priorRead: recentFinishes(shelfRef.current?.items).find(item => item.bookId === book.isbn13) ?? null,
+        entryId: mintId(), progressEntryId: mintId(),
         metadataMissing,
       }));
       setStep('cover');
@@ -437,8 +504,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
       schoolLog.bookShelf('add.rejected', { reason: 'duplicate', itemId: duplicateOf });
       return;
     }
-    // Rule 3: both ids minted now, before any write, so a retry reuses them.
-    setAdd((a) => ({ ...a, entryId: mintId(), progressEntryId: mintId() }));
+    // IDs were minted when lookup resolved; accepting never replaces them.
     setStep('where');
   }, [touch]);
 
@@ -491,15 +557,34 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     release();
   }, [learnerId, grant, refetch, release]);
 
-  const choose = useCallback(async (where) => {
-    if (viewRef.current !== 'add' || stepRef.current !== 'where') return;
+  const choose = useCallback(async (where, finishedOn) => {
+    if (viewRef.current !== 'add' || !['where', 'cover'].includes(stepRef.current) || workRef.current) return;
+    if (addRef.current.duplicateOf) { openDuplicate(); return; }
     touch();
     setError(null);
     if (where === 'partway') { setStep('page'); return; }
-    if (where === 'finished') { setStep('when'); return; }
+    if (where === 'finished') {
+      if (finishedOn) await openBook('finished', { finishedOn });
+      else setStep('when');
+      return;
+    }
     if (where !== 'starting') return;
     await openBook('starting');
-  }, [openBook, touch]);
+  }, [openBook, openDuplicate, touch]);
+
+  const readAgain = useCallback(() => {
+    if (viewRef.current !== 'completed') return;
+    const item = shelfRef.current?.items?.find(i => i.itemId === itemRef.current);
+    if (!item) return;
+    touch();
+    setError(null);
+    const existing = shelfRef.current.items.find(i => i.bookId === item.bookId && ['reading', 'unread'].includes(i.projection?.status));
+    if (existing) { enterUpdate(existing); return; }
+    setAdd({ ...EMPTY_ADD, entry: item.bookId, resolved: { book: { ...item, isbn13: item.bookId } }, priorRead: item, rereading: true, entryId: mintId(), progressEntryId: mintId() });
+    viewRef.current = 'add';
+    setView('add');
+    setStep('cover');
+  }, [enterUpdate, touch]);
 
   const submitPage = useCallback(async (page) => {
     if (viewRef.current !== 'add' || stepRef.current !== 'page') return;
@@ -587,7 +672,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
 
   /** Correct an accidental finish without deleting or rewriting evidence. */
   const undoFinish = useCallback(async () => {
-    if (viewRef.current !== 'receipt' || workRef.current) return;
+    if (viewRef.current !== 'shelf' || workRef.current) return;
     const currentReceipt = receiptRef.current;
     if (currentReceipt?.kind !== 'finished' || !currentReceipt.itemId || !currentReceipt.undoEntryId) return;
     touch();
@@ -655,16 +740,16 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     () => (currentItemId ? shelf?.items?.find((i) => i.itemId === currentItemId) ?? null : null),
     [shelf, currentItemId],
   );
-  const current = view === 'update' ? currentItem : (view === 'add' ? add.resolved?.book ?? null : null);
+  const current = ['update', 'completed'].includes(view) ? currentItem : (view === 'add' ? add.resolved?.book ?? null : null);
 
   const actions = useMemo(() => ({
     noteActivity, done, retry, openHistory, back, startAdd,
     typeIsbn, lookup, retryLookup, confirmCover, choose, submitPage, submitDay,
-    openItem, openDuplicate, submitProgress, checkIn, finish, setAside, undoFinish, setMode,
+    openItem, openDuplicate, readAgain, submitProgress, checkIn, finish, setAside, undoFinish, setMode,
   }), [
     noteActivity, done, retry, openHistory, back, startAdd,
     typeIsbn, lookup, retryLookup, confirmCover, choose, submitPage, submitDay,
-    openItem, openDuplicate, submitProgress, checkIn, finish, setAside, undoFinish, setMode,
+    openItem, openDuplicate, readAgain, submitProgress, checkIn, finish, setAside, undoFinish, setMode,
   ]);
 
   return {
@@ -683,6 +768,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     learner,
     error,
     busy,
+    needsRefresh,
     current,
     receipt,
     add: {
@@ -693,6 +779,8 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
       canRetry: add.canRetry,
       resolved: add.resolved,
       duplicateOf: add.duplicateOf,
+      priorRead: add.priorRead,
+      rereading: add.rereading,
       entryId: add.entryId,
       progressEntryId: add.progressEntryId,
       finishedOn: add.finishedOn,

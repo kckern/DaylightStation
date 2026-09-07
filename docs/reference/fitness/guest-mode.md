@@ -37,7 +37,7 @@ Not all guests are the same kind of identity. There are three classes, and which
 
 ### Generic Guest is a per-device alias (W2)
 
-The generic "Guest" option carries no `profileId` in the picker. At assignment time, `FitnessSidebarMenu.handleAssignGuest` synthesizes `guest_<deviceId>`, so two simultaneous Guests on different devices are **distinct anonymous participants** — each with their own session entity, timeline series, coins, and saved-YAML row. Governance `min_participants` counts each as a separate person.
+The generic "Guest" option carries no `profileId` in the picker. At assignment time, `FitnessSidebarMenu.handleAssignGuest` synthesizes `guest_<deviceId>`, so two simultaneous Guests on different devices are **distinct anonymous participants** — each with their own session entity, timeline series, coins, and saved-YAML row. Each can contribute toward challenge success; none increases a zone requirement or challenge failure threshold.
 
 The picker matches the identity model: `'guest'` (and `'guest-kid'`) are inherently multi-assignable (`guestOptionsBuilder.js` adds them to `multiAssignableKeys` unconditionally), so the "Guest" option stays available on every device no matter how many anonymous Guests already exist — only the device where a Guest is *currently* assigned hides it. To keep simultaneous Guests distinguishable, display names are numbered at assign time: the first is "Guest", then "Guest 2", "Guest 3", … (`nextGenericGuestName`, which counts adult and kid generics jointly since both display as "Guest").
 
@@ -279,7 +279,7 @@ When a guest is assigned (either flow), the resolved user identity propagates th
 |-----------|--------|
 | **ZoneProfileStore** | Guest can carry zone overrides via assignment `metadata.zones` (logged as `ZONE_OVERRIDE_APPLIED`, `GuestAssignmentService.js:318-327`); otherwise inherits the device's default zone profile. Zone state is tracked by `trackingId = entityId || userId` |
 | **TreasureBox** | Coins accumulate against the guest's identity, not the device owner's; per-user map keyed by userId |
-| **GovernanceEngine** | Lock/unlock evaluates the guest's current zone; guest counts toward `min_participants`. INACTIVE devices (signal-silent ≥ 10 s) are excluded from live governance counts — a grayed-out guest doesn't gate the video |
+| **GovernanceEngine** | Guests contribute zone-challenge success but never enter required/missing counts or raise failure thresholds. Direct configured Friend/Family monitors follow the same policy as borrowed straps. Inactive devices stop contributing live success credit |
 | **FitnessTimeline** | Series keys (`{userId}:hr`, `{userId}:zone`, `{userId}:coins`) use the guest's identity (e.g. `friend-b:hr`, `guest_48291:hr`) |
 | **DisplayNameResolver** | `guest` priority (1) trumps `groupLabel`, `owner`, `profile`, `fallback` |
 | **EventJournal** | Emits `ASSIGN_GUEST`, `GUEST_REPLACED`, `SEGMENT_ABSORBED`, `CLEAR_GUEST` (payloads carry `thresholdMs`). In-memory ring buffer only — see "What does NOT persist" below |
@@ -364,7 +364,7 @@ A guest enters the session at the moment of assignment (borrow flow) or first HR
 | Event | Effect |
 |-------|--------|
 | Guest's HR keeps flowing | Normal participation — zones, coins, governance |
-| No HR for ~10 s (`ant_devices.timeout.inactive`) | Card grays out; excluded from live governance counts (`active: all`, `min_participants`). Still in the roster for session totals |
+| No HR for ~10 s (`ant_devices.timeout.inactive`) | Card grays out; excluded from live challenge success counts. Still in the roster for session totals |
 | No HR for ~30 s (`ant_devices.timeout.remove`) | Card removed from the sidebar. **The assignment survives** — the `deviceAssignments` ledger keeps the binding, so when the strap comes back on, the card returns under the guest's identity automatically. Don't re-tag after a bathroom break |
 | Guest hands strap to someone else silently | Undetectable — data keeps attributing to the guest. Tag the swap in the menu |
 
@@ -396,7 +396,7 @@ See [`assign-guest.md`](./assign-guest.md) § Continuous-Usage Threshold for the
 - **Tag before strap-on when possible.** The threshold model forgives owner-then-guest handoffs under 5 minutes; it cannot forgive an untagged full workout. The picker's transfer note now tells you when a sub-threshold segment will move.
 - **Simultaneous Guests are numbered, not described.** "Guest" vs "Guest 2" plus the sticker-color avatar ring is usually enough to tell cards apart, but the numbers carry no meaning across sessions — if two strangers work out together regularly, prefer tagging them as named friends.
 - **Kid guests need `guest_profiles` configured.** Without a `fitness.yml → guest_profiles.kid.zones` block, the kid Guest option doesn't appear and a kid on a borrowed adult strap inherits the owner's adult zone thresholds (wrong zones, inflated coins).
-- **A guest can block the video.** untagged placeholder/guest cards count toward governance `active: all`. An idle strap someone left on the shelf (still broadcasting) can hold the session hostage — use "⛔ Ignore This Strap".
+- **A guest cannot block the video.** Guest and untagged-placeholder cards never enter `active: all` obligations or challenge failure thresholds. They can contribute toward challenge success and earn rings. Guest-only blocking challenges are skipped or cancelled without awarding a fabricated success.
 - **No guest badge on live sidebar cards.** Sidebar cards render guests identically to household members (intentional); the guest distinction surfaces in the session-detail timeline ("guest" marker) and in the saved data (`is_guest`, `guest_profile`).
 - **Guest transitions are invisible in reports.** If a device changed hands mid-session, the saved chart shows each honored identity's lane but no marker explaining when/why the swap happened — the events that recorded it died with the EventJournal.
 - **Strava attribution goes to the primary.** A session where a guest did most of the work still enriches the primary user's Strava activity.
@@ -481,7 +481,7 @@ BLE_HR_USERS=family-a,friend-a   # comma-separated; consumed by the fitness exte
 - [Unknown HR Monitors](./unknown-hr-monitors.md) — untagged placeholder fallback, ANT+/BLE admission asymmetry, mid-session claiming
 - [BLE Heart Rate](./ble-heart-rate.md) — own-monitor flow technical reference
 - [Display Name Resolver](./display-name-resolver.md) — name resolution priority chain
-- [Governance Engine](./governance-engine.md) — how guests count toward `min_participants` and zone requirements
+- [Governance Engine](./governance-engine.md) — guest success credit and exclusion from failure requirements
 - [Webhook Enrichment](./webhook-enrichment.md) — why guests don't appear in Strava output
 - [Race Session Grouping](./race-session-grouping.md) — roster-union grouping and guest impact
 - [Fitness System Architecture](./fitness-system-architecture.md) — system-wide context

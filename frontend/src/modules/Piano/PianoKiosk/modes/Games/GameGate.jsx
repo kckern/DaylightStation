@@ -45,10 +45,9 @@
  *    Only the *verdict* can hold a child back, and at the floor even that
  *    cannot (D9).
  *
- * 3. **None of the failure buttons reaches a match** (D12). "Practice this"
- *    leaves for the ordinary `intent=practice` route, which is unmetered and
- *    ungated; it is a way out, not a way through. It is offered only when the
- *    material has a bank id to practise — a synthesized lit key has none.
+ * 3. **Neither recovery gesture reaches a match** (D12). A fresh key retries
+ *    the challenge after release. Holding the physical outer keys leaves the
+ *    gate; it never grants a match or moves the difficulty ladder.
  *
  * The gate itself is never metered (D13): it is what you pay with, not what you
  * pay for. Nothing here touches the budget meter.
@@ -59,12 +58,13 @@
  * stops existing.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { SkeletonStage } from '../../Skeleton.jsx';
 import { usePianoKioskConfigOptional } from '../../PianoConfig.jsx';
 import { readKioskDeviceId } from '../../kioskDeviceIdentity.js';
 import { clientStudyDate } from '../../clientStudyDate.js';
+import { usePianoMidiNotes } from '../../PianoMidiContext.jsx';
+import { usePianoExitGesture } from '../../../game-platform/input/usePianoExitGesture.js';
 import AskSession from '../../../ask/AskSession.jsx';
 import {
   climbLevel, degradeLevel, FALLBACK_LEVEL, isFloorLevel, levelById, materialKey, resolveRepertoire,
@@ -244,8 +244,8 @@ export default function GameGate({
   const sessionId = useMemo(() => makeId('gate'), []);
   const config = useMemo(() => resolveGateConfig(gateConfig), [gateConfig]);
   const levels = useMemo(() => resolveRepertoire(config.repertoire), [config.repertoire]);
-  const navigate = useNavigate();
-  const basePath = usePianoKioskConfigOptional()?.basePath ?? '/piano';
+  const { activeNotes } = usePianoMidiNotes();
+  const pianoConfig = usePianoKioskConfigOptional();
   const kioskDeviceId = useMemo(() => deviceId ?? readKioskDeviceId(), [deviceId]);
   // A game nobody named cannot be named in a sentence. The run then wears its
   // own intent label, which is true if less specific. The CONTEXT travels, not
@@ -611,14 +611,6 @@ export default function GameGate({
     setRound((value) => value + 1);
   };
 
-  const practiceDetour = () => {
-    // The ordinary practice route: unmetered, ungated, and NOT a way into the
-    // match (D12). The gate is left behind entirely; the child comes back to
-    // Games when they are ready.
-    emit('gate.practice-detour', context);
-    const target = `${basePath}/exercises/run/${encodeURIComponent(attempt.material.instanceId)}`;
-    navigate(`${target}?intent=practice&mode=${encodeURIComponent(attempt.requirement.mode)}`);
-  };
 
   /**
    * The player walked away rather than finishing — the run's header Exit. There
@@ -664,23 +656,37 @@ export default function GameGate({
     failOpen(`run-${reason}`, context);
   };
 
+  const recoveryPanel = phase === 'failed' || phase === 'no-access';
+  usePianoExitGesture({
+    activeNotes, keyboard: pianoConfig?.config?.keyboard,
+    enabled: phase !== 'attempt' && phase !== 'opened',
+    resetKey: `${phase}:${attempt?.attemptId}`,
+    onExit: handleAbandoned,
+    continueEnabled: recoveryPanel,
+    onContinue: () => {
+      emit('gate.piano-choice', { ...context, choice: phase === 'failed' ? 'retry' : 'leave' });
+      if (phase === 'failed') tryAgain();
+      else handleAbandoned();
+    },
+  });
+  const recoveryChoices = <>
+    <p className="piano-game-gate__piano-guidance">{phase === 'failed'
+      ? 'Release all keys, then press any key to try again.'
+      : 'Release all keys, then press any key to leave.'}</p>
+    <p className="piano-game-gate__exit-guidance">Hold the lowest and highest piano keys together for 2 seconds to leave.</p>
+  </>;
+
   if (phase === 'no-access') {
     return (
       <section className="piano-mode__placeholder piano-game-gate piano-game-gate--blocked" role="status">
         <h2>Choose a player first</h2>
         <p>A challenge is saved to whoever played it, so the piano needs to know who you are.</p>
-        <div className="piano-game-gate__actions">
-          <button type="button" onClick={handleAbandoned}>Leave</button>
-        </div>
+        {recoveryChoices}
       </section>
     );
   }
 
   if (phase === 'failed') {
-    // A synthesized lit key has no id in the exercise bank, so there is nothing
-    // for the practice route to address. Offering the button anyway would send
-    // a child to `/exercises/run/undefined` — a dead end dressed as a way out.
-    const canPractise = Boolean(attempt?.material?.instanceId);
     return (
       <section className="piano-mode__placeholder piano-game-gate piano-game-gate--failed" role="status">
         <h2>Not this time</h2>
@@ -688,7 +694,7 @@ export default function GameGate({
             aborted attempt, and every level below tier 3, which has no numeric
             bar at all), and gating the only words on the panel behind a number
             reduced it to a bare heading over unexplained buttons. */}
-        <p className="piano-game-gate__guidance">Play it once more, work on it first, or come back later.</p>
+        <p className="piano-game-gate__guidance">Try the exercise again, or leave using the piano keys.</p>
         {/* NO PERCENTAGE, and no seam for one. `requirementForLevel` writes
             `passScore: null` for every level a repertoire can express, so a
             numeric-bar branch here could never render — and a percentage with
@@ -696,11 +702,7 @@ export default function GameGate({
             The score still reaches the log, where an adult tuning the ladder
             reads it; what a failing child gets is words. */}
         {eased && <p className="piano-game-gate__eased">We made it a little easier</p>}
-        <div className="piano-game-gate__actions">
-          <button type="button" onClick={tryAgain}>Try again</button>
-          {canPractise && <button type="button" onClick={practiceDetour}>Practice this</button>}
-          <button type="button" onClick={handleAbandoned}>Leave</button>
-        </div>
+        {recoveryChoices}
       </section>
     );
   }
@@ -728,13 +730,7 @@ export default function GameGate({
         onExit={handleAbandoned}
         onUnavailable={handleUnavailable}
       />
-      {/* Belt and braces over `onUnavailable`. The run owns the screen while it
-          is up, and a state neither it nor this component anticipated would
-          otherwise strand a child on a kiosk with no keyboard shortcut and no
-          browser chrome. There is always a way out. */}
-      <button type="button" className="piano-game-gate__leave" onClick={handleAbandoned}>
-        Leave
-      </button>
+
     </div>
   );
 }

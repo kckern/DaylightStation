@@ -104,7 +104,7 @@ export class OpenBookShelfItem {
     let event = null;
     if (where === 'partway') {
       event = await this.#bookLog.appendEntry({
-        learnerId, readingId: reading.id, on: today, at: now, page,
+        learnerId, readingId: reading.id, on: today, at: now, page, kind: 'progress',
         source: 'panel', idempotencyKey: progressEntryId,
       });
     } else if (where === 'finished') {
@@ -113,7 +113,7 @@ export class OpenBookShelfItem {
       // by finishing it again. The other order would claim a finish with
       // nothing behind it.
       event = await this.#bookLog.appendEntry({
-        learnerId, readingId: reading.id, on: finishedOn, at: now,
+        learnerId, readingId: reading.id, on: finishedOn, at: now, kind: 'finished',
         source: 'panel', idempotencyKey: progressEntryId,
       });
       reading = await this.#bookLog.updateReading({

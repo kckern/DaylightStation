@@ -202,7 +202,7 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, onRequ
     // the roster row is up, a key names a PLAYER, and the same press must not
     // also start a game. Seeding above still runs, so the key that chose a
     // player is not read as a fresh strike the moment the game row appears.
-    if (!isOpen || selectionPaused || struck.length === 0) return;
+    if (!isOpen || struck.length === 0) return;
 
     for (const note of struck) {                    // lowest first
       // The board's TOP key changes who is playing. It is the key the player
@@ -229,6 +229,9 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, onRequ
         }, comboWindowMs);
         return;
       }
+      // Pausing games must leave the change-player command available, including
+      // when School has denied the currently remembered player's access.
+      if (selectionPaused) continue;
       const slot = slotForNote(slots, note);
       if (!slot) continue;
       setGame(slot.gameId, 'launcher.game-selected', { slotId: slot.id ?? null });

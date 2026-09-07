@@ -569,6 +569,26 @@ window.__fitnessGovernance = {
 
 ---
 
+## Guest participation
+
+Guests can contribute to challenge success and earn rings, but never cause a
+warning or lock. `ParticipantRoster` identifies both borrowed-device guests and
+configured `Friend`/`Family` visitors using their own monitors. `Primary` and
+`Secondary` household riders retain their existing governance policy.
+
+With governed subjects present, all zone-challenge targets (`all`, `most`,
+`some`, and numeric counts) use only the subject count. Every active rider may
+fill the success tally. Continuous zone requirements are satisfied by subjects
+only; guests never enter their required or missing lists. When only guests
+remain, blocking challenges are skipped or cancelled neutrally, without a
+failure, success record, or reward for zero work.
+
+Guests are excluded from cadence-floor obligations and blocking cycle rider
+selection, including physical equipment claims. A cycle whose rider becomes a
+guest is cancelled neutrally. Guests still contribute to cycle boosts. This
+policy differs from a configured household exemption: the cadence floor can
+hold an exempt household rider to an established ride.
+
 ## Configuration
 
 ### Governance Policies
@@ -840,7 +860,8 @@ warning → grace → lock path runs; there are no new phases. It disarms the mo
 the rider is unassigned, their strap drops, or a new rider takes over — a clean
 dismount can never lock the room, and evidence never transfers between riders.
 
-This is **the one place a non-subject can appear in `missingUsers`**. It is not a
+This is **the one place an exempt household rider can appear in `missingUsers`**.
+Guests are excluded even when they have established riding evidence. It is not a
 hole in the exemption model: blame requires proof, held by this gate alone, that
 the person was riding moments ago.
 

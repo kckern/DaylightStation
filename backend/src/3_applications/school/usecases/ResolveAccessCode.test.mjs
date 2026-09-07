@@ -259,3 +259,23 @@ describe('ResolveAccessCode — a served reading code continues to what the toke
     expect(resolution).toMatchObject({ kind: 'program', programId: 'book-log', unit: { unitId: 'book-log:shelf' } });
   });
 });
+
+it('shows an invalid worksheet reason instead of offering an unusable screen', async () => {
+  const unit = { ...unitA, bank: 'test/worksheet' };
+  const resolver = new ResolveAccessCode({
+    tokens: { async getByAccessCode() { return tokenRecord({ continueToday: false }); } },
+    curriculum: { async listUnits() { return [unit]; }, async listWorks() { return []; } },
+    assignments: { async get() { return { units: [unit.unitId] }; } },
+    sessions: makeSessions({ served: false }),
+    issueDocument: {
+      canIssueBank: () => false,
+      getBankIssue: () => 'items[3]: v2 answer pool must contain 5..10 total answers and decoys',
+    },
+    clock: () => new Date(NOW_ISO), logger: noopLogger,
+  });
+  const { card } = await resolver.resolve({ code: '482913' });
+  expect(card.sentence).toContain('Worksheet is invalid. Ask a grown-up.');
+  expect(card.sentence).toContain('Question 4');
+  expect(card.sentence).toContain('5..10');
+  expect(card.actions.map(a => a.kind)).toEqual(['exit']);
+});

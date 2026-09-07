@@ -4,6 +4,7 @@ import SchoolApp from './SchoolApp.jsx';
 
 vi.mock('./schoolApi.js', () => ({
   schoolApi: {
+    bookScans: { pending: vi.fn(async () => ({ ok: true, data: { intent: null } })), claim: vi.fn(), dismiss: vi.fn() },
     roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'learner3', name: 'Learner3', birthyear: 2016 }] })),
     wallet: vi.fn(async () => ({ ok: false, status: 503, data: null })),
     surfaceProfile: vi.fn(async () => ({ ok: true, status: 200, data: { surfaceId: 'screen-browser' } })),

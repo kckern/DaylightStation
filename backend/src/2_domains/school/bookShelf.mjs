@@ -173,7 +173,7 @@ const sorted = (events) => [...(events ?? [])].filter(Boolean)
  * finish today and then choose the correct date last week; sorting those two
  * by their represented dates would put the correction after the new finish.
  */
-function finishFacts(events) {
+export function finishFacts(events) {
   let active = null;
   const corrected = new Set();
   for (const event of (events ?? []).filter(Boolean)) {
@@ -187,7 +187,7 @@ function finishFacts(events) {
 }
 
 /** Opening/setting aside is not reading; a finish canceled by reopen is not evidence. */
-function readingEvents(events) {
+export function readingEvents(events) {
   const facts = finishFacts(events);
   return sorted(events).filter((event) => (
     event.kind === 'progress' || (event.kind === 'finished' && !facts.corrected.has(event))
@@ -309,6 +309,7 @@ export function readingFromLegacyItem(item, {
     // anything, and a conversion that throws is a shelf a grown-up cannot open.
     status: projectShelfItem({ ...item, events }, { dayOf }).status,
     openedOn: dayOf(item?.openedAt ?? opening?.at ?? '') || null,
+    ...(opening?.recordedAt ? { openedRecordedAt: opening.recordedAt } : {}),
     finishedOn: finish ? (dayOf(finish.at) || null) : null,
     // The client's retry key, doing ONE job now. It named the item as well as
     // deduping the open; only the deduping survives.
@@ -317,6 +318,8 @@ export function readingFromLegacyItem(item, {
       id: entryIdFor(event, index),
       on: dayOf(event.at) || null,
       at: event.at ?? null,
+      kind: event.kind,
+      ...(event.recordedAt ? { recordedAt: event.recordedAt } : {}),
       ...(Number.isFinite(event.page) ? { page: event.page } : {}),
       ...(Number.isFinite(event.minutes) ? { minutes: event.minutes } : {}),
       ...(event.note ? { note: String(event.note) } : {}),

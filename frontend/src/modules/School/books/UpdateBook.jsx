@@ -1,24 +1,4 @@
-/**
- * UpdateBook — the overlay a child updates one book from (book-shelf UI
- * design §4).
- *
- * Cover and title at the top, then ONE control matched to the book's
- * `progressMode`: the page pad, the minutes pad, or a single `I read some
- * today` button. The pad starts EMPTY — a child types what they see, they do
- * not edit the last number. `I finished it` opens the DayPicker collapsed on
- * today, so the common case is still one more tap; `set it aside` is small
- * and low because it is a real outcome but not the thing a thumb lands on.
- *
- * The progress line doubles as the mode switch: tapping it opens a
- * three-button chooser, which is how a book that turned out to have no page
- * numbers moves to minutes or check-ins without rewriting anything.
- *
- * Presentational. Every decision — what a blank Save means, whether a write
- * is in flight, what the server said — arrives as props from `useBookShelf`
- * through BookShelf, the hook's only caller. A write's error is shown in
- * place: on the pad as its hint, otherwise as a line under the control. No
- * logging from here; the hook owns the story.
- */
+/** Compact book details with direct finish/check-in actions and opt-in progress/date tasks. */
 import { useCallback, useState } from 'react';
 import NumberPad from './NumberPad.jsx';
 import DayPicker from './DayPicker.jsx';
@@ -26,6 +6,7 @@ import BookCover from './BookCover.jsx';
 import { presentBook } from './bookPresentation.js';
 import { formatMinutes } from './ShelfTile.jsx';
 import useTapFire from '../selfService/useTapFire.js';
+import Icon from '../home/icons/Icon.jsx';
 
 const MODES = [
   { mode: 'page', label: 'Count pages' },
@@ -59,6 +40,7 @@ export function progressLine(item) {
  * @param {object} props.actions - the hook's actions.
  */
 export default function UpdateBook({ item, today, earliestDay = null, error = null, busy = false, actions }) {
+  const [progressing, setProgressing] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [choosing, setChoosing] = useState(false);
   const tap = useTapFire();
@@ -103,96 +85,99 @@ export default function UpdateBook({ item, today, earliestDay = null, error = nu
     control = (
       <div className="school-books-update__finish">
         <p className="school-books-update__prompt">When did you finish it?</p>
-        <DayPicker key={today} today={today} minDay={earliestDay} busy={busy} onConfirm={(key) => { if (!busy) actions.finish(key); }} />
+        <DayPicker key={today} compact initiallyOpen today={today} minDay={earliestDay} busy={busy} onConfirm={(key) => { if (!busy) actions.finish(key); }} />
         <button type="button" className="school-books-update__quiet" disabled={busy} {...press(() => setFinishing(false))}>never mind</button>
         {message && <p className="school-books-update__fault" role="alert">{message}</p>}
       </div>
     );
-  } else if (mode === 'check') {
-    control = (
-      <div className="school-books-update__check">
-        <button
-          type="button"
-          className="school-books-update__checkin"
-          disabled={busy}
-          {...press(() => actions.checkIn())}
-        >
-          I read some today
-        </button>
-        {message && <p className="school-books-update__fault" role="alert">{message}</p>}
-      </div>
-    );
-  } else {
-    control = (
+  } else if (progressing) {
+    control = <>
       <NumberPad
         label={mode === 'minutes' ? 'How long did you read?' : 'What page are you on?'}
         maxLength={mode === 'minutes' ? 3 : 4}
-        submitLabel="Save"
-        canSubmit={!busy}
-        disabled={busy}
-        hint={message}
-        onSubmit={submitPad}
+        submitLabel={mode === 'minutes' ? 'Save minutes' : 'Save page'}
+        canSubmit={!busy} disabled={busy} hint={message}
+        onChange={actions.noteActivity} onSubmit={submitPad}
       />
-    );
+      <button type="button" className="school-books-update__quiet" disabled={busy} {...press(() => setProgressing(false))}>never mind</button>
+    </>;
+  } else {
+    control = <>
+      <div className="school-books-update__actions">
+        <button type="button" className="school-books-add__door" disabled={busy}
+          {...press(() => mode === 'check' ? actions.checkIn() : setProgressing(true))}>
+          <Icon name="book-partway" className="school-books-add__door-icon" />
+          <span>{mode === 'check' ? 'I read some today' : mode === 'minutes' ? 'Log minutes' : 'Update page'}</span>
+        </button>
+        <button type="button" className="school-books-add__door" disabled={busy} {...press(() => actions.finish(today))}>
+          <Icon name="book-finished" className="school-books-add__door-icon" /><span>Finished today</span>
+        </button>
+      </div>
+      {message && <p className="school-books-update__fault" role="alert">{message}</p>}
+    </>;
   }
 
   return (
-    <div className="school-books-update" data-testid="update-book">
+    <div className="school-books-update school-books-task-view" data-testid="update-book" data-task={choosing ? 'mode' : finishing ? 'date' : progressing ? 'progress' : 'book'}>
       <button type="button" className="school-books__back" disabled={busy} onClick={() => { if (!busy) actions.back(); }}>‹ back</button>
 
-      <div className="school-books-update__book">
-        <BookCover book={item} className="school-books-update__cover" />
-        <div className="school-books-update__meta">
-          <h3 className="school-books-update__title" title={title}>{title}</h3>
-          {presentation.author && (
-            <p className="school-books-update__author" title={presentation.allAuthors}>{presentation.author}</p>
-          )}
-          <button
-            type="button"
-            className="school-books-update__progress"
-            aria-expanded={choosing}
-            disabled={busy}
-            onClick={() => { if (!busy) { setChoosing((c) => !c); setFinishing(false); } }}
-          >
-            {showBar && (
-              <span
-                className="school-books-tile__bar school-books-update__bar"
-                role="progressbar"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={percent}
-                aria-label={`${percent}% read`}
-              >
-                <span className="school-books-tile__fill" style={{ width: `${percent}%` }} />
-              </span>
+      <div className="school-books-task">
+        <div className="school-books-update__book school-books-task__context">
+          <BookCover book={item} className="school-books-update__cover" />
+          <div className="school-books-update__meta">
+            <h3 className="school-books-update__title" title={title}>{title}</h3>
+            {presentation.author && (
+              <p className="school-books-update__author" title={presentation.allAuthors}>{presentation.author}</p>
             )}
-            <span className="school-books-update__caption">{progressLine(item)}</span>
-          </button>
+            <button
+              type="button"
+              className="school-books-update__progress"
+              aria-expanded={choosing}
+              disabled={busy}
+              onClick={() => { if (!busy) { setChoosing((c) => !c); setFinishing(false); setProgressing(false); } }}
+            >
+              {showBar && (
+                <span
+                  className="school-books-tile__bar school-books-update__bar"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={percent}
+                  aria-label={`${percent}% read`}
+                >
+                  <span className="school-books-tile__fill" style={{ width: `${percent}%` }} />
+                </span>
+              )}
+              <span className="school-books-update__caption">{progressLine(item)}</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="school-books-task__controls">
+        {control}
+
+        {!choosing && !finishing && !progressing && (
+          <div className="school-books-update__outcomes">
+            <button
+              type="button"
+              className="school-books-update__quiet"
+              disabled={busy}
+              {...press(() => setFinishing(true))}
+            >
+              Finished on another day
+            </button>
+            <button
+              type="button"
+              className="school-books-update__aside"
+              disabled={busy}
+              {...press(() => actions.setAside())}
+            >
+              set it aside
+            </button>
+          </div>
+        )}
         </div>
       </div>
-
-      {control}
-
-      {!choosing && !finishing && (
-        <div className="school-books-update__outcomes">
-          <button
-            type="button"
-            className="school-books-update__finished"
-            disabled={busy}
-            {...press(() => setFinishing(true))}
-          >
-            I finished it
-          </button>
-          <button
-            type="button"
-            className="school-books-update__aside"
-            disabled={busy}
-            {...press(() => actions.setAside())}
-          >
-            set it aside
-          </button>
-        </div>
-      )}
     </div>
   );
 }

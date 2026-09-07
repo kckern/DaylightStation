@@ -207,3 +207,15 @@ describe('NumberPad', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 });
+
+it('keeps a digit listener through an earlier activity listener that synchronously rerenders the pad', async () => {
+  const { flushSync } = await import('react-dom');
+  let view;
+  const activity = () => flushSync(() => view.rerender(<NumberPad label="ISBN" maxLength={13} onSubmit={() => {}} />));
+  window.addEventListener('keydown', activity);
+  try {
+    view = render(<NumberPad label="ISBN" maxLength={13} onSubmit={() => {}} />);
+    fireEvent.keyDown(document.body, { key: '9' });
+    expect(entry()).toBe('9');
+  } finally { window.removeEventListener('keydown', activity); }
+});

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 
 // ── Doubles ─────────────────────────────────────────────────────────────────
@@ -35,6 +35,8 @@ const h = vi.hoisted(() => {
   logger.child = () => logger;
   return {
     logger,
+    activeNotes: new Map(),
+    midiListeners: new Set(),
     askProps: [],
     resolved: [],
     // Off, the session never answers — which is how the boundary test observes
@@ -47,6 +49,15 @@ const h = vi.hoisted(() => {
 });
 
 vi.mock('../../../../../lib/logging/Logger.js', () => ({ default: () => h.logger, getLogger: () => h.logger }));
+vi.mock('../../PianoMidiContext.jsx', async () => {
+  const { useSyncExternalStore } = await import('react');
+  return {
+    usePianoMidiNotes: () => ({ activeNotes: useSyncExternalStore(
+      (listener) => { h.midiListeners.add(listener); return () => h.midiListeners.delete(listener); },
+      () => h.activeNotes,
+    ) }),
+  };
+});
 vi.mock('../Exercises/pianoLearningApi.js', () => ({
   pianoLearningApi: { catalog: h.catalog, instances: h.instances, instance: h.instance },
 }));
@@ -250,6 +261,7 @@ function eventNamed(name) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  h.activeNotes = new Map();
   h.askProps.length = 0;
   h.resolved.length = 0;
   h.sessionResolves = true;
@@ -274,7 +286,8 @@ describe('GameGate — contract 1: the level persists per learner', () => {
     expect(requirementForLevel(h.askProps.at(-1).ask).mode).toBe('cued');
     expect(h.askProps.at(-1).ask.tier).toBe(3);
 
-    h.askProps.length = 0;
+    h.activeNotes = new Map();
+  h.askProps.length = 0;
     renderGate({ learnerId: 'kid2' });
     await waitFor(() => expect(h.askProps.length).toBeGreaterThan(0));
     expect(requirementForLevel(h.askProps.at(-1).ask).mode).toBe('free');
@@ -603,8 +616,8 @@ describe('GameGate — contract 5: failing offers ways out, none of them the mat
     fireEvent.click(await screen.findByText('stub-fail'));
 
     const panel = await screen.findByRole('status');
-    const labels = [...panel.querySelectorAll('button')].map((b) => b.textContent);
-    expect(labels).toEqual(['Try again', 'Practice this', 'Leave']);
+    expect(panel.querySelector('button')).toBeNull();
+    expect(panel.textContent).toContain('Release all keys, then press any key to try again.');
     expect(onPassed).not.toHaveBeenCalled();
     // The score reaches the LOG, where an adult tuning the ladder can read it.
     expect(eventNamed('gate.failed')[1].score).toBe(0.62);
@@ -614,7 +627,7 @@ describe('GameGate — contract 5: failing offers ways out, none of them the mat
     // invite comparison against a target that does not exist — "62%" reads as
     // failing something, and the words are what say what to do instead.
     expect(panel.textContent).not.toContain('%');
-    expect(panel.textContent).toContain('Play it once more, work on it first, or come back later.');
+    expect(panel.textContent).toContain('Try the exercise again, or leave using the piano keys.');
   });
 
   it('still says what to do when the result carries no usable score', async () => {
@@ -625,10 +638,9 @@ describe('GameGate — contract 5: failing offers ways out, none of them the mat
     fireEvent.click(await screen.findByText('stub-fail-scoreless'));
 
     const panel = await screen.findByRole('status');
-    expect(panel.textContent).toContain('Play it once more, work on it first, or come back later.');
+    expect(panel.textContent).toContain('Try the exercise again, or leave using the piano keys.');
     expect(panel.textContent).not.toContain('%');
-    expect([...panel.querySelectorAll('button')].map((b) => b.textContent))
-      .toEqual(['Try again', 'Practice this', 'Leave']);
+    expect(panel.querySelector('button')).toBeNull();
   });
 
   it('drops Practice this at the lit-key floor, where there is no exercise to go practise', async () => {
@@ -642,13 +654,14 @@ describe('GameGate — contract 5: failing offers ways out, none of them the mat
     fireEvent.click(await screen.findByText('stub-fail'));
 
     const panel = await screen.findByRole('status');
-    expect([...panel.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Try again', 'Leave']);
+    expect(panel.querySelector('button')).toBeNull();
+    expect(panel.textContent).toContain('press any key to try again');
   });
 
   it('Try again re-runs the challenge without granting the match', async () => {
     const { onPassed } = renderGate();
     fireEvent.click(await screen.findByText('stub-fail'));
-    fireEvent.click(await screen.findByText('Try again'));
+    playGateKey(60);
 
     await screen.findByTestId('ask-session');
     expect(onPassed).not.toHaveBeenCalled();
@@ -666,7 +679,7 @@ describe('GameGate — contract 5: failing offers ways out, none of them the mat
       fireEvent.click(await screen.findByText('stub-fail'));
       expect(await screen.findByText('We made it a little easier')).toBeTruthy();
       walk.push(readStored('kid1').levelId);
-      fireEvent.click(screen.getByText('Try again'));
+      playGateKey(60);
       await screen.findByTestId('ask-session');
     }
     // A third miss at the floor moves nothing, and must not promise it did.
@@ -702,7 +715,7 @@ describe('GameGate — contract 5: failing offers ways out, none of them the mat
       expect(await screen.findByText('Not this time')).toBeTruthy();
       expect(screen.queryByText('We made it a little easier')).toBeNull();
       expect(readStored('kid1')).toMatchObject({ levelId: 'L2', failuresAtLevel: attempt + 1 });
-      fireEvent.click(screen.getByText('Try again'));
+      playGateKey(60);
       await screen.findByTestId('ask-session');
     }
 
@@ -730,24 +743,21 @@ describe('GameGate — contract 5: failing offers ways out, none of them the mat
     await screen.findByTestId('ask-session');
     expect(requirementForLevel(h.askProps.at(-1).ask).mode).toBe('cued'); // L3
     fireEvent.click(screen.getByText('stub-fail'));
-    fireEvent.click(await screen.findByText('Try again'));
+    playGateKey(60);
 
     await screen.findByTestId('ask-session');
     expect(requirementForLevel(h.askProps.at(-1).ask)).toEqual(requirementForLevel(LEVELS[2]));
     expect(h.askProps.at(-1).ask.tier).toBe(2);
   });
 
-  it('D12: Practice this leaves for the unmetered practice route and never grants the match', async () => {
-    const { onPassed } = renderGate({ learnerId: 'kid1' });
+  it('D12: any interior key retries instead of navigating away or granting', async () => {
+    const { onPassed, onLeave } = renderGate();
     fireEvent.click(await screen.findByText('stub-fail'));
-    fireEvent.click(await screen.findByText('Practice this'));
-
-    expect(screen.getByTestId('location').textContent)
-      .toBe(`/piano/exercises/run/${encodeURIComponent(scaleId('C'))}?intent=practice&mode=free`);
+    playGateKey(62);
+    await screen.findByTestId('ask-session');
+    expect(screen.getByTestId('location').textContent).toBe('/piano/games/tetris');
     expect(onPassed).not.toHaveBeenCalled();
-    const [, data] = eventNamed('gate.practice-detour');
-    expect(data.material).toBe(scaleId('C'));
-    expect(data.mode).toBe('free');
+    expect(onLeave).not.toHaveBeenCalled();
   });
 
   it('walking away is NOT a failure: the ladder does not move, however many times you Exit', async () => {
@@ -774,7 +784,8 @@ describe('GameGate — contract 5: failing offers ways out, none of them the mat
     const { onLeave, onPassed } = renderGate();
     await screen.findByTestId('ask-session');
 
-    fireEvent.click(screen.getByText('Leave'));
+    expect(document.querySelector('.piano-game-gate__leave')).toBeNull();
+    fireEvent.click(screen.getByText('stub-exit'));
     expect(onLeave).toHaveBeenCalledTimes(1);
     expect(onPassed).not.toHaveBeenCalled();
     expect(eventNamed('gate.abandoned')).toBeTruthy();
@@ -783,7 +794,7 @@ describe('GameGate — contract 5: failing offers ways out, none of them the mat
   it('Leave calls onLeave and logs gate.abandoned — still not the match', async () => {
     const { onPassed, onLeave } = renderGate();
     fireEvent.click(await screen.findByText('stub-fail'));
-    fireEvent.click(await screen.findByText('Leave'));
+    playGateExit();
 
     expect(onLeave).toHaveBeenCalledTimes(1);
     expect(onPassed).not.toHaveBeenCalled();
@@ -855,7 +866,7 @@ describe('GameGate — contract 6: what the child is asked, in words they can re
 
     for (let go = 0; go < 2; go += 1) {
       fireEvent.click(screen.getByText('stub-fail'));
-      fireEvent.click(await screen.findByText('Try again'));
+      playGateKey(60);
       await screen.findByTestId('ask-session');
       expect(h.resolved.at(-1).material.instanceId, `retry ${go + 1}`).toBe(served);
       expect(h.resolved.at(-1).instance.axes.root, `retry ${go + 1}`).toBe('G');
@@ -881,7 +892,7 @@ describe('GameGate — contract 6: what the child is asked, in words they can re
     await screen.findByTestId('ask-session');
     expect(h.resolved.at(-1).material.instanceId).toBe(scaleId('G'));
     fireEvent.click(screen.getByText('stub-fail'));
-    fireEvent.click(await screen.findByText('Try again'));
+    playGateKey(60);
 
     await screen.findByTestId('ask-session');
     expect(h.resolved.at(-1).material.instanceId).toBe(scaleId('C')); // L1
@@ -896,7 +907,7 @@ describe('GameGate — contract 6: what the child is asked, in words they can re
     await screen.findByTestId('ask-session');
     const lit = h.resolved.at(-1).material.instance.events[0].notes[0].midi;
     fireEvent.click(screen.getByText('stub-fail'));
-    fireEvent.click(await screen.findByText('Try again'));
+    playGateKey(60);
 
     await screen.findByTestId('ask-session');
     expect(h.resolved.at(-1).material.instance.events[0].notes[0].midi).toBe(lit);
@@ -950,7 +961,7 @@ describe('GameGate — the run’s own dead ends fail open too', () => {
     expect(eventNamed('gate.blocked')[1].reason).toBe('no-access');
 
     // …and the panel is escapable, which is what makes refusing to grant fair.
-    fireEvent.click(screen.getByText('Leave'));
+    playGateKey(60);
     expect(onLeave).toHaveBeenCalledTimes(1);
     expect(onPassed).not.toHaveBeenCalled();
   });
@@ -974,7 +985,7 @@ describe('GameGate — contract 7: the floor is announced once per arrival', () 
     expect(readStored('kid1').levelId).toBe(BUILT_IN_FLOOR.id);
     expect(events().filter(([name]) => name === 'gate.floor-reached')).toHaveLength(1);
 
-    fireEvent.click(screen.getByText('Try again'));
+    playGateKey(60);
     fireEvent.click(await screen.findByText('stub-fail'));
     expect(events().filter(([name]) => name === 'gate.floor-reached')).toHaveLength(1);
   });
@@ -988,7 +999,7 @@ describe('GameGate — contract 8: every event is reconstructable from one query
 
     renderGate({ learnerId: 'kid1' });
     fireEvent.click(await screen.findByText('stub-fail'));
-    fireEvent.click(await screen.findByText('Leave'));
+    playGateExit();
 
     const gateEvents = events().filter(([name]) => name.startsWith('gate.'));
     expect(gateEvents.length).toBeGreaterThanOrEqual(4); // presented, attempt, failed, abandoned
@@ -1208,5 +1219,60 @@ describe('GameGate — config defaults', () => {
     // …and nothing re-resolved behind it: one mount, one bank read, one attempt.
     expect(h.instance).toHaveBeenCalledTimes(1);
     expect(events().filter(([name]) => name === 'gate.attempt')).toHaveLength(1);
+  });
+});
+
+const holdGateNotes = (notes) => act(() => {
+  h.activeNotes = new Map(notes.map(midi => [midi, { velocity: 1 }]));
+  for (const listener of h.midiListeners) listener();
+});
+const playGateKey = (midi) => { holdGateNotes([]); holdGateNotes([midi]); holdGateNotes([]); };
+
+const playGateExit = () => {
+  vi.useFakeTimers();
+  try { holdGateNotes([]); holdGateNotes([21, 108]); act(() => vi.advanceTimersByTime(2000)); }
+  finally { vi.useRealTimers(); }
+};
+
+describe('GameGate physical piano recovery', () => {
+  it('waits for full release, then any fresh interior key retries without granting', async () => {
+    const { onPassed, onLeave } = renderGate();
+    await screen.findByTestId('ask-session');
+    holdGateNotes([60, 67]);
+    fireEvent.click(screen.getByText('stub-fail'));
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.getByText('Release all keys, then press any key to try again.')).toBeTruthy();
+    holdGateNotes([67]); holdGateNotes([63, 67]);
+    expect(screen.getByText('Not this time')).toBeTruthy();
+    holdGateNotes([]); holdGateNotes([63]);
+    await screen.findByTestId('ask-session');
+    expect(events().filter(([name]) => name === 'gate.attempt')).toHaveLength(2);
+    expect(onPassed).not.toHaveBeenCalled(); expect(onLeave).not.toHaveBeenCalled();
+  });
+  it('lets the outer-key exit combo win before any retry starts', async () => {
+    const { onPassed, onLeave } = renderGate();
+    fireEvent.click(await screen.findByText('stub-fail'));
+    vi.useFakeTimers();
+    try {
+      holdGateNotes([]); holdGateNotes([21]); act(() => vi.advanceTimersByTime(200));
+      expect(screen.getByText('Not this time')).toBeTruthy();
+      holdGateNotes([21, 108]); act(() => vi.advanceTimersByTime(1999));
+      expect(onLeave).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(1));
+      expect(onLeave).toHaveBeenCalledTimes(1);
+      expect(events().filter(([name]) => name === 'gate.attempt')).toHaveLength(1);
+      expect(onPassed).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+  it('retries from a lone outer-key tap after the combo window', async () => {
+    renderGate(); fireEvent.click(await screen.findByText('stub-fail'));
+    vi.useFakeTimers();
+    try {
+      holdGateNotes([]); holdGateNotes([108]); holdGateNotes([]);
+      act(() => vi.advanceTimersByTime(299)); expect(screen.getByText('Not this time')).toBeTruthy();
+      act(() => vi.advanceTimersByTime(1));
+    } finally { vi.useRealTimers(); }
+    await screen.findByTestId('ask-session');
+    expect(events().filter(([name]) => name === 'gate.attempt')).toHaveLength(2);
   });
 });

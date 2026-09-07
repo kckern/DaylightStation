@@ -327,3 +327,17 @@ describe('LaunchCard actions', () => {
       .toHaveAccessibleName('Go back');
   });
 });
+
+
+it('makes the reading identity confirmation the books launch button', () => {
+  render(<LaunchCard card={{ ...FULL_CARD, actions: [{ kind: 'program', target: 'book-log' }] }} view="identity" onConfirmIdentity={noop} />);
+  expect(screen.getByRole('button', { name: "Open Alpha's books" })).toBeInTheDocument();
+});
+
+it('shows the invalid worksheet reason on the tablet with a way back and no work action', () => {
+  const message = 'Worksheet is invalid. Ask a grown-up. Question 4: v2 answer pool must contain 5..10 total answers and decoys';
+  render(<LaunchCard card={{ ...FULL_CARD, presentation: { status: 'waiting', message }, actions: [{ kind: 'exit', label: 'Go back', role: 'secondary' }] }} onAction={noop} onConfirm={noop} onExit={noop} />);
+  expect(screen.getByText(message)).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Go back' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /print|answer on/i })).toBeNull();
+});

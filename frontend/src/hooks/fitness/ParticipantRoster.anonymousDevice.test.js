@@ -95,3 +95,23 @@ describe('ParticipantRoster — anonymous HR device rendering', () => {
     expect(after[0].isGuest).toBe(true);
   });
 });
+
+
+describe('configured visitors on their own monitors', () => {
+  it.each(['friends', 'family'])('keeps %s outside governance subjects without a ledger assignment', (category) => {
+    const { roster, deviceManager, userManager } = buildRoster();
+    userManager.configure({ [category]: [{ id: 'visitor', name: 'Visitor', hr: '12345' }] });
+    Object.assign(userManager.users.get('visitor').currentData, { heartRate: 90, hrInactive: false });
+    deviceManager.registerDevice({ id: '12345', type: 'heart_rate', heartRate: 90, lastSeen: Date.now() });
+    expect(roster.getRoster()[0]).toMatchObject({ id: 'visitor', isGuest: true });
+    expect(roster.getActiveParticipantState().guestIds).toEqual(['visitor']);
+  });
+});
+
+
+it.each(['primary', 'secondary'])('keeps configured %s household riders governed', (category) => {
+  const { roster, deviceManager, userManager } = buildRoster();
+  userManager.configure({ [category]: [{ id: 'resident', name: 'Resident', hr: '12345' }] });
+  deviceManager.registerDevice({ id: '12345', type: 'heart_rate', heartRate: 90, lastSeen: Date.now() });
+  expect(roster.getRoster()[0]).toMatchObject({ id: 'resident', isGuest: false });
+});

@@ -77,6 +77,59 @@ Agenda service, program daily status, teacher-today digest, and daily completion
 share the same household-local 4am-to-4am boundary. A pass at 1am still belongs
 to the previous evening's School day.
 
+## Persisted reading activity
+
+The v2 teacher-day learner row includes `readingActivity`, projected directly
+from that learner's persisted book-event log with the requested study day and
+the same household-local boundary. Progress/check-in events and effective
+finishes count even when the book is not enrolled or present in the catalog.
+Starting or setting aside a book does not count. A `reopened` event removes the
+finish it corrects in append order while leaving independent progress intact.
+
+An available shelf reports `status: ok` with `hasActivity`, `progressCount`,
+`finishedCount`, and the number of distinct shelf items with evidence as
+`bookCount`. A missing shelf is an available empty shelf. A damaged or
+unreadable shelf reports `status: unavailable` and `hasActivity: null`, so a
+read failure cannot be mistaken for no reading. The v1 teacher-today response
+remains unchanged.
+
+New shelf events carry a server-generated `recordedAt` as well as their
+effective `at`. Backdated finishes are attributed by `at`; `recordedAt` records
+when the write reached the server. Legacy events without `recordedAt` remain
+valid. After a saved shelf mutation, the School event bus broadcasts
+`{ event: 'book-log-changed', learnerId }` so readers can reload the whole
+learner shelf; a broadcast failure is logged without changing the saved HTTP
+result.
+
+## Reading on the status board
+
+The live board requests the teacher-day digest without a browser-derived date
+and uses the response's household `studyDay` for learner agenda previews and
+study-day event comparisons. Explicit day props still support historical
+consumers. Each learner settles separately after the shared digest; weekly
+rings load independently.
+
+Available persisted `readingActivity` with `hasActivity: true` adds one
+supplemental **Reading** circle, regardless of the number of events or books.
+It appears even with zero required assignments or a failed plan read. Missing,
+unavailable, or empty activity creates no credit. Supplemental circles affect
+layout only: required totals, completed-required counts, daily gates, and
+**Done for the day** remain unchanged.
+
+Required program identity comes from agenda `entries[].program`, not the
+shared English subject. Story time retains its own state and accessible label.
+An unmet reading obligation can show partial `actual/target` progress alongside
+the supplemental circle. Once a real reading obligation is met,
+`BookLogProgramLauncher.status()` supplies `servedWork` for `book-log:shelf`,
+so the required Reading circle remains visible after its next action disappears.
+That completed required circle suppresses redundant supplemental credit.
+
+The board remains static and noninteractive. It reloads on
+`book-log-changed` for displayed learners without filtering by event date:
+backdating and undo can change evidence on another day. Event payloads trigger
+reads; they never supply optimistic credit. Returning from the shelf remounts
+the board and reloads the same persisted sources.
+
 ## Learner-day completion
 
 Completion folds section obligations and planner faults into four states:

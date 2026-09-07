@@ -338,6 +338,15 @@ export class RecordCardScanOutcome {
       this.#logger.info?.('school.print.scan-already-recorded', {
         testId, recordId: card.recordId, learnerId,
       });
+      if (preReadState?.state === 'submitted' && this.#reviewQueue) {
+        const pending = (await this.#reviewQueue.listForSession(card.sessionId))
+          .filter(row => !['correct', 'incorrect', 'void'].includes(row.verdict));
+        if (pending.length) return { recorded: false, reason: 'duplicate-scan', session: {
+          sessionId: card.sessionId, advancedTo: 'submitted', reason: 'awaiting-review',
+          pendingReview: pending.length, reasons: [...new Set(pending.map(row => row.reason))],
+          items: pending.map(row => row.itemId),
+        } };
+      }
       return { recorded: false, reason: 'duplicate-scan' };
     }
 

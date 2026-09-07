@@ -31,6 +31,7 @@ import FlashcardProgram from './Programs/Flashcards/FlashcardProgram.jsx';
 import FlashcardDeckBrowser from './Programs/Flashcards/FlashcardDeckBrowser.jsx';
 import RubiksCubeProgram from './Programs/RubiksCube/RubiksCubeProgram.jsx';
 import BookShelf from './books/BookShelf.jsx';
+import BookScanEntry from './books/BookScanEntry.jsx';
 import ReportPanel from './report/ReportPanel.jsx';
 import AdaptiveTutorPanel from './remediation/AdaptiveTutorPanel.jsx';
 import LearningCatalogBrowser from './catalog/LearningCatalogBrowser.jsx';
@@ -474,7 +475,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
         schoolLog.bookShelf('launch-refused', { reason: !target.bookGrant ? 'no-grant' : 'no-learner' });
         return false;
       }
-      setBookLaunch({ learnerId, bookGrant: target.bookGrant });
+      setBookLaunch({ learnerId, bookGrant: target.bookGrant, bookEntry: target.bookEntry ?? null });
       schoolLog.bookShelf('launch', { learnerId });
       openSection('book-shelf');
       return true;
@@ -530,9 +531,10 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // the flip reads them on a tick and must never re-render the panel just
   // because a finger landed on a key.
   const keypadEngagedRef = useRef(false);
+  const [keypadEngaged, setKeypadEngaged] = useState(false);
   const keypadTouchedAtRef = useRef(0);
   const onKeypadActivity = useCallback(() => { keypadTouchedAtRef.current = Date.now(); }, []);
-  const onKeypadEngagedChange = useCallback((engaged) => { keypadEngagedRef.current = engaged; }, []);
+  const onKeypadEngagedChange = useCallback((engaged) => { keypadEngagedRef.current = engaged; setKeypadEngaged(engaged); }, []);
 
   /**
    * The burn-in flip. The two static panes trade sides only while the
@@ -588,7 +590,6 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   const ceremony = useScanCeremony();
 
   // Local date: toISOString flips to tomorrow at 5pm PDT.
-  const statusDay = (() => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; })();
 
   // Going home also clears any guest-refusal notice: the notice belongs to
   // the section visit that produced it and must not greet the next visit.
@@ -812,6 +813,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
         {/* Scan ceremony (Slice D): a sibling of the lock branch below, NOT
             inside it — a scan can land whether the panel is locked or open,
             and this must render either way. */}
+        {screenId !== 'browser' && <BookScanEntry screenId={screenId} roster={roster}
+          safe={lock.locked && !pending && !pickerOpen && !selfService.busy && !active && !section && !launchPreviewLink && !ceremony.current && selfService.view === 'keypad' && !keypadEngaged}
+          onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />}
         {ceremony.current && <ScanCeremony {...ceremony.current} onDismiss={ceremony.clear} />}
         {/* Launch-card preview (teacher-only deep link). A sibling of the lock
             branch below, not inside it: the Portal is the screen most worth
@@ -851,7 +855,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
                   the family's own day board, not a claim affordance; codes
                   remain the only entry path. Never intercepts a tap. */}
               <div className="school-lock-split__board" aria-label="Today's school status">
-                <AgendaStatusBoard kids={roster} day={statusDay} />
+                <AgendaStatusBoard kids={roster} />
               </div>
             </div>
           ) : (
@@ -1099,6 +1103,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
           <BookShelf
             learnerId={bookLaunch.learnerId}
             grant={bookLaunch.bookGrant}
+            initialBookEntry={bookLaunch.bookEntry}
             idleTimeoutSeconds={lock.idleTimeoutSeconds}
             onExit={goHome}
           />

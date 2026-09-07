@@ -101,7 +101,7 @@ export class RecordBookProgress {
     let updated = reading;
     if (kind === 'progress' || kind === 'finished') {
       event = await this.#bookLog.appendEntry({
-        learnerId, readingId: view.itemId, on, at,
+        learnerId, readingId: view.itemId, on, at, kind,
         ...(page !== null ? { page } : {}),
         ...(minutes !== null ? { minutes } : {}),
         ...(note !== null ? { note } : {}),
@@ -152,10 +152,9 @@ export class RecordBookProgress {
    * as the v1 log did. Clearing only the state would leave a check-in behind
    * for a day the child took back, and the undo receipt promises otherwise.
    *
-   * The row is found by shape: on the finish day, carrying neither a page nor
-   * minutes. That is what a finish writes and nothing else does, except a bare
-   * check-in on the same day — and removing either one withdraws exactly one
-   * day's credit, which is the outcome the undo owes.
+   * Explicit finish markers survive v1 migration and distinguish the finish
+   * from a later independent check-in. Historical unmarked v2 rows are
+   * ambiguous; preserve their evidence instead of guessing which to delete.
    *
    * State is cleared FIRST by the caller: interrupted between the two, the
    * shelf shows a book still being read with one row too many, rather than a
@@ -165,7 +164,7 @@ export class RecordBookProgress {
     if (reading.status !== 'finished') return;
     const written = (reading.entries ?? []).filter((entry) => entry
       && entry.on === reading.finishedOn
-      && entry.page === undefined && entry.minutes === undefined);
+      && entry.kind === 'finished');
     const target = written.at(-1);
     if (!target?.id) return;
     await this.#bookLog.deleteEntry({ learnerId, readingId: reading.id, entryId: target.id });

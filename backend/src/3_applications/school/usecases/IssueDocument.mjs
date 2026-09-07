@@ -349,6 +349,11 @@ export class IssueDocument {
     this.#logger = logger;
   }
 
+  /** A schema fault must be shown on the Portal, not mistaken for screen-only work. */
+  getBankIssue(bankId) {
+    return this.#bankReader?.getBankIssue?.(bankId) ?? null;
+  }
+
   /** Whether a bank-only unit uses the immutable paper-instance pipeline. */
   canIssueBank(bankId) {
     if (!this.#worksheetInstances || !this.#assignments || !this.#publishPrintDocument) return false;

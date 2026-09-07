@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useRef, useLayoutEffect } from 'react';
 import PropTypes from 'prop-types';
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { DaylightMediaPath } from '@/lib/api.mjs';
@@ -9,6 +9,7 @@ import { DEFAULT_ANONYMOUS_HR_HARD_FLOOR_BPM } from '@/hooks/fitness/Participant
 import { resolveUserZone } from './resolveUserZone.js';
 import { lookupZoneProgress } from '@/modules/Fitness/domain/zoneProgressIndex.js';
 import './FullscreenVitalsOverlay.scss';
+import { fullscreenVitalsLayout } from './fullscreenVitalsLayout.js';
 
 const RPM_COLOR_MAP = {
   red: '#ff6b6b',
@@ -54,6 +55,8 @@ const getProfileSlug = (user) => {
 const FullscreenVitalsOverlay = ({ visible = false }) => {
   const fitnessCtx = useFitnessContext();
   const [anchor, setAnchor] = useState('right');
+  const overlayRef = useRef(null);
+  const [parentSize, setParentSize] = useState({ width: 0, height: 0 });
   const {
     heartRateDevices = [],
     rpmDevices = [],
@@ -206,6 +209,26 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
       });
   }, [pressureMatActivities, equipment, fitnessCtx?.fitnessSessionInstance]);
 
+  const hasItems = Boolean(hrItems.length || rpmItems.length || matItems.length);
+  useLayoutEffect(() => {
+    const parent = overlayRef.current?.parentElement;
+    if (!visible || !hasItems || !parent) return undefined;
+    const measure = () => {
+      const rect = parent.getBoundingClientRect();
+      setParentSize({ width: parent.clientWidth || rect.width, height: parent.clientHeight || rect.height });
+    };
+    measure();
+    // Observe the unscaled parent, never the transformed overlay itself.
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(parent);
+    return () => observer.disconnect();
+  }, [visible, hasItems]);
+  const layout = fullscreenVitalsLayout({ ...parentSize, heartRates: hrItems.length, equipment: rpmItems.length + matItems.length });
+
   const handleToggleAnchor = useCallback((event) => {
     if (event) {
       event.preventDefault();
@@ -222,7 +245,15 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
 
   return (
     <div
+      ref={overlayRef}
       className={overlayClassName}
+      style={{
+        '--vitals-columns': layout.columns,
+        width: layout.width,
+        height: layout.height,
+        transform: `scale(${layout.scale})`,
+        visibility: layout.scale > 0 ? 'visible' : 'hidden',
+      }}
       aria-hidden={!visible}
       onClick={handleToggleAnchor}
       role="button"
@@ -252,6 +283,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
           ))}
         </div>
       )}
+      {(rpmItems.length > 0 || matItems.length > 0) && <div className="fullscreen-vitals-group equipment-group">
       {rpmItems.length > 0 && (
         <div className={`fullscreen-vitals-group rpm-group count-${rpmItems.length}`}>
           {rpmItems.map((item) => (
@@ -289,6 +321,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
           ))}
         </div>
       )}
+      </div>}
     </div>
   );
 };

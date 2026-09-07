@@ -414,8 +414,10 @@ const SCHEMA = {
   // interpretation used by reports and progression. `adjustmentId` makes a
   // retriable HTTP/CLI command idempotent and is also the retraction target.
   grade_adjusted: {
-    fields: ['adjustmentId', 'percent', 'correctCount', 'totalCount', 'missedItemIds', 'itemVerdicts', 'reason', 'adjustedBy', 'baseSeq'],
+    fields: ['adjustmentId', 'percent', 'passingPercent', 'correctCount', 'totalCount', 'missedItemIds', 'itemVerdicts', 'reason', 'adjustedBy', 'baseSeq'],
     validate: allOf(stringField('adjustmentId'), stringField('reason'), stringField('adjustedBy'), percentIfPresent('percent'), (raw, push) => {
+      if (raw.passingPercent !== undefined && (!Number.isFinite(raw.passingPercent)
+          || raw.passingPercent < 1 || raw.passingPercent > 100)) push('passingPercent: must be a number from 1-100');
       if (raw.percent === undefined && raw.correctCount === undefined) {
         push('percent or correctCount must be supplied');
       }
@@ -1036,6 +1038,7 @@ const APPLY = {
     }
     s.gradeAdjustments.push({
       adjustmentId: e.adjustmentId,
+      passingPercent: e.passingPercent ?? null,
       percent: typeof e.percent === 'number' ? e.percent : null,
       correctCount: Number.isInteger(e.correctCount) ? e.correctCount : null,
       totalCount: Number.isInteger(e.totalCount) ? e.totalCount : null,
@@ -1243,6 +1246,9 @@ export function reduceSession(events) {
   // effective projection and therefore update reports and gates naturally.
   const effective = [...s.gradeAdjustments].reverse().find((row) => !row.retracted);
   if (effective) {
+    if (s.gradedPassingPercent == null && typeof effective.passingPercent === 'number') {
+      s.gradedPassingPercent = effective.passingPercent;
+    }
     if (typeof effective.percent === 'number') s.gradedPercent = effective.percent;
     else if (Number.isInteger(effective.correctCount) && Number.isInteger(effective.totalCount)) {
       s.gradedPercent = Math.round((effective.correctCount / effective.totalCount) * 10000) / 100;

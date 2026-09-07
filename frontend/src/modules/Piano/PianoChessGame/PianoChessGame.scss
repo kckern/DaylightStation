@@ -76,39 +76,13 @@
 
 /* ---- stage -------------------------------------------------------------- */
 
-/* Board, then the one surviving rail. The rail is what flexes: without the
-   min-height:0 / min-width:0 pair the board wins the grid and shoves the rail
-   — and every prompt and refusal message on it — off screen. */
+/* InstrumentBoardStage owns the tracks and stretches its board slot. The old
+   chess-only auto centre track and align-items:center collapsed that
+   size-contained slot to 0 × 0 after migration to the shared frame. */
 .piano-chess__stage {
-  display: grid;
-  /* THE BOARD IS CENTRED, UNCONDITIONALLY. Both rails claim the SAME fixed
-     width and the board takes what is left between them, so centring is a
-     property of the layout rather than something that happens to hold at the
-     current content length. A rail fits the width it is given; it never sets
-     it. This is why every rail row below is clipped or wrapped rather than
-     allowed to size its column — one long refusal message must not shove the
-     board sideways. */
-  /* The platform owns this number, because both rails claiming ONE width is
-     what centres the board, and `.pg-rail` reads it from --pg-rail-w. Two
-     names for one measurement is how a board drifts off centre. */
-  --pc-rail: var(--pg-rail-w);
-  /* The rails FILL. They were fixed, so whatever the board did not use showed
-     as dead space beside it. Equal fractions with a floor: they take the
-     leftover in equal shares, which is also what keeps the board centred — the
-     centring never depended on the rails being a fixed size, only on their
-     being the SAME size. */
-  grid-template-columns:
-    minmax(var(--pc-rail), 1fr)
-    auto
-    minmax(var(--pc-rail), 1fr);
-  align-items: center;
   gap: 0.75rem;
   min-height: 0;
   overflow: hidden;
-  /* The board sizes itself in cq units off this box — the space actually left
-     above the keyboard. Safe as a size container: both axes are already
-     definite (the 1fr row of .piano-chess, full canvas width). */
-  container-type: size;
   padding: 0;
 }
 
@@ -226,25 +200,9 @@
 /* The board itself lives in modules/Chess. Piano only tunes its tokens, so the
    School board and this one stay the same component with different clothes. */
 .piano-chess .chess-board-frame {
-  /* Height-first: the header, keyboard and axes all take a cut, so the board
-     has to fit what is left rather than claim a share of the width.
-     Measured against the STAGE, never the viewport: PianoDesignScale lays the
-     kiosk out at a fixed design size and scales the whole canvas to fit, so vh
-     reports the real screen while the board only ever gets the design box. On a
-     1920x1080 desktop that gap ran the board 200px past the stage and off the
-     bottom of the screen. The 2.5rem is the file-axis strip below the board. */
-  /* cqw is against .piano-chess__stage's FULL width, both rails included, so
-     the board's own room is what is left after the two fixed rails and the two
-     gaps. Written as that subtraction rather than as a tuned fraction: the
-     rails are the same width by construction, so whatever this leaves is
-     centred, and changing --pc-rail can never knock the board off centre or
-     overlap it. */
-  /* The frame is the board PLUS its two rim strips, so both strips come out of
-     the budget on their own axis. Named rather than folded into a constant
-     because the reading vocabulary makes them much bigger. */
-  /* The nearest size container is now InstrumentBoardStage's PRIMARY slot,
-     so rail widths are already out of this budget. Only Chess's rank-axis
-     compensation remains game-owned. */
+  /* The shared primary slot is the nearest size container: its tracks already
+     reserve both rails. Fit inside its measured width and height, allowing
+     room for the rank strip and the file strip on their respective axes. */
   --cb-size: min(
     calc(100cqw - 2 * var(--pc-axis-w)),
     calc(100cqh - var(--pc-axis))

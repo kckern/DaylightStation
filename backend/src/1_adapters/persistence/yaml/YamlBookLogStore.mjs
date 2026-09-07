@@ -239,6 +239,7 @@ export class YamlBookLogStore extends IBookLogStore {
         progressMode,
         status: 'reading',
         openedOn: openedOn ?? this.#dayOf(this.#clock().toISOString()),
+        openedRecordedAt: this.#clock().toISOString(),
         finishedOn: null,
         idempotencyKey,
         entries: [],
@@ -271,6 +272,12 @@ export class YamlBookLogStore extends IBookLogStore {
         id: this.#mint('ent', taken),
         on: on ?? this.#dayOf(this.#clock().toISOString()),
         at: entry.at ?? this.#clock().toISOString(),
+        // Revision restoration carries known provenance or explicit unknown;
+        // ordinary writes always receive the server clock, never caller data.
+        ...(Object.hasOwn(entry, 'restoredRecordedAt')
+          ? (entry.restoredRecordedAt ? { recordedAt: entry.restoredRecordedAt } : {})
+          : { recordedAt: this.#clock().toISOString() }),
+        ...(entry.kind === null ? {} : { kind: entry.kind === 'finished' ? 'finished' : 'progress' }),
         ...(page !== null && page !== undefined ? { page } : {}),
         ...(minutes !== null && minutes !== undefined ? { minutes } : {}),
         ...(entry.note ? { note: String(entry.note) } : {}),

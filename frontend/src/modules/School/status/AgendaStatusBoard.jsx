@@ -48,7 +48,9 @@ import { dayStatus, summarize, ringsByLearner } from './agendaStatusModel.js';
 
 const REFRESH_MS = 5 * 60_000;
 const SCHOOL_REFRESH_EVENTS = new Set([
+  'session-grade-changed',
   'story-read',
+  'book-log-changed',
   'piano-lesson-complete',
   'program-day-bypass-changed',
 ]);
@@ -81,12 +83,17 @@ function labelForSegment(segment) {
   const extra = segment.extraCount > 0
     ? `, ${segment.extraCount} extra ${segment.extraCount === 1 ? 'item' : 'items'} completed`
     : '';
-  return `${segment.label}: ${state}${extra}`;
+  const reading = segment.readingActivity;
+  const activity = reading ? [
+    [reading.bookCount, 'book', 'books'], [reading.finishedCount, 'finish', 'finishes'], [reading.progressCount, 'progress entry', 'progress entries'],
+  ].filter(([count]) => Number.isInteger(count) && count > 0).map(([count, one, many]) => `${count} ${count === 1 ? one : many}`).join(', ') : '';
+  return `${segment.label}: ${state}${extra}${activity ? `, ${activity}` : ''}`;
 }
 
 export default function AgendaStatusBoard({ kids = [], day }) {
   const [rows, setRows] = useState(null);
   const [nonce, setNonce] = useState(0);
+  const [studyDay, setStudyDay] = useState(day ?? null);
   // Kept out of `rows` on purpose: the plan reads settle per-card and this one
   // covers the whole roster, so folding it in would mean re-settling every
   // card when it lands — and a slow State Gates read would hold the plans back.
@@ -112,7 +119,7 @@ export default function AgendaStatusBoard({ kids = [], day }) {
    * failed read now costs that learner's card, not the board.
    */
   useEffect(() => {
-    if (!kids.length || !day) return undefined;
+    if (!kids.length) return undefined;
     let alive = true;
     setRows(kids.map((kid) => ({ kid, summary: null, loading: true })));
 
@@ -123,10 +130,9 @@ export default function AgendaStatusBoard({ kids = [], day }) {
       )));
     };
 
-    // The digest is one read for the whole roster; every learner's plan waits
-    // on it only for the "what is already passed" half, so it is awaited once
-    // and shared rather than refetched per card.
-    const digest = (schoolApi.teacherDay ? schoolApi.teacherDay(day) : Promise.resolve({ ok: false }))
+    // The digest supplies one authoritative study day and the completed
+    // evidence for the whole roster, shared rather than refetched per card.
+    const digest = (schoolApi.teacherDay ? (day ? schoolApi.teacherDay(day) : schoolApi.teacherDay()) : Promise.resolve({ ok: false }))
       .catch((error) => {
         schoolLog.selfServiceError?.('status-board.digest-failed', { error: error?.message });
         return { ok: false };
@@ -146,18 +152,28 @@ export default function AgendaStatusBoard({ kids = [], day }) {
         });
     }
 
-    kids.forEach((kid) => {
-      Promise.all([schoolApi.agendaPreview(kid.id, day), digest])
-        .then(([plan, dayResponse]) => {
-          if (!plan?.ok) return settle(kid.id, null);
-          const learners = dayResponse.ok ? (dayResponse.data?.learners ?? []) : [];
-          const sessions = learners.find((row) => row.learnerId === kid.id)?.sessions ?? [];
-          return settle(kid.id, summarize(plan.data?.sections, sessions, plan.data?.entries));
-        })
-        .catch((error) => {
-          schoolLog.selfServiceError?.('status-board.load-failed', { learnerId: kid.id, error: error?.message });
-          settle(kid.id, null);
-        });
+    // A live board uses the household study day, including its pre-4am
+    // boundary. Each learner settles independently after the shared digest.
+    kids.forEach(async (kid) => {
+      const dayResponse = await digest;
+      if (!alive) return;
+      const effectiveDay = day ?? dayResponse?.data?.studyDay;
+      setStudyDay(effectiveDay ?? null);
+      const learner = dayResponse?.ok
+        ? dayResponse.data?.learners?.find((row) => row.learnerId === kid.id) : null;
+      const readingActivity = learner?.readingActivity ?? null;
+      const settleWithoutPlan = () => {
+        const summary = summarize([], [], [], readingActivity);
+        settle(kid.id, summary.segments.length ? summary : null);
+      };
+      try {
+        const plan = await schoolApi.agendaPreview(kid.id, effectiveDay);
+        if (!plan?.ok) return settleWithoutPlan();
+        settle(kid.id, summarize(plan.data?.sections, learner?.sessions ?? [], plan.data?.entries, readingActivity));
+      } catch (error) {
+        schoolLog.selfServiceError?.('status-board.load-failed', { learnerId: kid.id, error: error?.message });
+        settleWithoutPlan();
+      }
     });
     return () => { alive = false; };
   }, [kids, day, nonce]);
@@ -195,10 +211,10 @@ export default function AgendaStatusBoard({ kids = [], day }) {
     const event = payload?.event;
     if (!event || !String(event).startsWith('scan-')) return;
     schoolLog.scan('status-board.refresh', {
-      source: 'omr', event, learnerId: payload.learnerId ?? null, studyDay: day,
+      source: 'omr', event, learnerId: payload.learnerId ?? null, studyDay,
     });
     setNonce((n) => n + 1);
-  }, [day]);
+  }, [studyDay]);
   useWebSocketSubscription('omr', onScan, [onScan]);
 
   const onSchool = useCallback((payload) => {
@@ -208,13 +224,13 @@ export default function AgendaStatusBoard({ kids = [], day }) {
     if (!learnerId || !rosterIds.has(learnerId)) return;
 
     const eventStudyDay = payload?.studyDay ?? payload?.studyDate ?? null;
-    if (event === 'story-read' && eventStudyDay && eventStudyDay !== day) return;
+    if (event === 'story-read' && eventStudyDay && eventStudyDay !== studyDay) return;
 
     schoolLog.selfService('status-board.refresh', {
-      source: 'school', event, learnerId, studyDay: eventStudyDay ?? day,
+      source: 'school', event, learnerId, studyDay: eventStudyDay ?? studyDay,
     });
     setNonce((n) => n + 1);
-  }, [day, rosterIds]);
+  }, [studyDay, rosterIds]);
   useWebSocketSubscription('school', onSchool, [onSchool]);
 
   const onStateGates = useCallback((event) => {
@@ -302,7 +318,7 @@ export default function AgendaStatusBoard({ kids = [], day }) {
                   ))}
                 </ul>
               )}
-              {summary && summary.total > 0 && (
+              {summary && summary.segments.length > 0 && (
                 <>
                   {/* The segments used to be an anonymous meter, hidden from
                       assistive tech because they said nothing a sighted reader

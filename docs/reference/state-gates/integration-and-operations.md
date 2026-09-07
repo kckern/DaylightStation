@@ -319,3 +319,15 @@ actor provenance, or evidence.
 These checks exercise the State Gates language with isolated principals and fakes plus
 the real School and Fitness translators and the Piano/Agenda consumer models. Chore,
 companion-media, and screen producer/consumer migrations remain separate work.
+
+### Piano office launcher recovery
+
+The office TV visualizer shares the kiosk's `piano.games` entitlement check.
+The client selects an active `school-day:YYYY-MM-DD` interval explicitly;
+other interval types (including fitness weeks) must not supply this decision.
+A missing school-day verdict keeps games locked.
+
+The Games lock pauses game selection, but the highest-key change-player command
+remains available. The lock screen explains that command and the two-second
+lowest/highest-key hold that returns to free play. Returning to free play retains
+the selected profile; changing profiles uses the player picker.

@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import SchoolApp from './SchoolApp.jsx';
+import { schoolApi } from './schoolApi.js';
+import { HmacSchoolBookGrantIssuer } from '../../../../backend/src/1_adapters/school/actions/HmacSchoolBookGrantIssuer.mjs';
 import { DEFAULT_IDLE_TIMEOUT_SECONDS } from './selfService/useSelfService.js';
 
 // Capture the WS subscribers, KEYED BY TOPIC, so these tests can push
@@ -51,6 +53,7 @@ const materialUnitsMock = vi.fn();
 const unitProgressMock = vi.fn();
 vi.mock('./schoolApi.js', () => ({
   schoolApi: {
+    bookScans: { pending: vi.fn(async () => ({ ok: true, data: { intent: null } })), claim: vi.fn(), dismiss: vi.fn() },
     roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'kid1', name: 'Alpha', birthyear: 2016 }] })),
     banks: (...a) => banksMock(...a),
     bank: vi.fn(async (id) => ({
@@ -150,6 +153,7 @@ beforeEach(() => {
   selfServiceErrorMock.mockClear();
   resolveMock.mockReset();
   actMock.mockReset();
+  schoolApi.teacherDay.mockReset().mockResolvedValue({ ok: true, data: { studyDay: '2026-09-07', learners: [] } });
   bookShelfProps.mockClear();
   launchHook.claim = null;
   launchHook.onLaunch = null;
@@ -405,9 +409,10 @@ describe('SchoolApp — the reading code at the locked panel opens the shelf', (
       { kind: 'exit', label: 'Go back', role: 'secondary' },
     ],
   };
+  const bookGrant = new HmacSchoolBookGrantIssuer({ key: 'isolated-school-app-reading-test-key' }).issue({ learnerId: 'kid1' });
   const MOUNT_EFFECT = {
     kind: 'program', program: 'book-log', programId: 'book-log', unitId: null,
-    learnerId: 'kid1', bookGrant: 'signed-book-grant',
+    learnerId: 'kid1', bookGrant,
   };
 
   /** A wall-panel jab: pointerdown lands the key, the click is its own release. */
@@ -417,8 +422,8 @@ describe('SchoolApp — the reading code at the locked panel opens the shelf', (
     fireEvent.click(key);
   };
 
-  async function typeCodeAndOpen() {
-    resolveMock.mockResolvedValue({ ok: true, status: 200, data: READING_CARD });
+  async function typeCodeAndOpen(confirmIdentity = false) {
+    resolveMock.mockResolvedValue({ ok: true, status: 200, data: { ...READING_CARD, presentation: { ...READING_CARD.presentation, confirmIdentity } } });
     actMock.mockResolvedValue({
       ok: true, status: 200,
       data: { outcome: 'mount', sentence: 'Opening it here on the screen.', effect: MOUNT_EFFECT },
@@ -426,8 +431,11 @@ describe('SchoolApp — the reading code at the locked panel opens the shelf', (
     render(<SchoolApp mode="locked" />);
     await screen.findByTestId('selfservice-keypad');
     for (const d of '123456') jab(d);
-    // Auto-submit settles, the card comes up with the domain's own words.
-    fireEvent.click(await screen.findByTestId('selfservice-action-program'));
+    if (confirmIdentity) {
+      const open = await screen.findByRole('button', { name: "Open Alpha's books" });
+      expect(actMock).not.toHaveBeenCalled();
+      fireEvent.click(open);
+    }
     await waitFor(() => expect(actMock).toHaveBeenCalledWith({ code: '123456', action: 'program' }));
   }
 
@@ -437,7 +445,7 @@ describe('SchoolApp — the reading code at the locked panel opens the shelf', (
     expect(await screen.findByRole('heading', { name: 'Reading' })).toBeInTheDocument();
     const props = bookShelfProps.mock.calls.at(-1)[0];
     expect(props.learnerId).toBe('kid1');
-    expect(props.grant).toBe('signed-book-grant');
+    expect(props.grant).toBe(bookGrant);
     expect(props.idleTimeoutSeconds).toBe(DEFAULT_IDLE_TIMEOUT_SECONDS);
     // The card closed (a confirmed mount), the keypad is behind the shelf,
     // and the locked panel's own Done overlay stays off the workspace.
@@ -447,11 +455,25 @@ describe('SchoolApp — the reading code at the locked panel opens the shelf', (
     expect(bookShelfLogMock).toHaveBeenCalledWith('launch', { learnerId: 'kid1' });
   });
 
-  it('the shelf’s Done returns the panel to the keypad', async () => {
+  it('one identity confirmation opens the books directly', async () => {
+    await typeCodeAndOpen(true);
+    expect(await screen.findByRole('heading', { name: 'Reading' })).toBeInTheDocument();
+    expect(actMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('the shelf’s Done reloads persisted reading on the live board', async () => {
     await typeCodeAndOpen();
     await screen.findByRole('heading', { name: 'Reading' });
 
+    const readsBeforeExit = schoolApi.teacherDay.mock.calls.length;
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, data: { studyDay: '2026-09-07', learners: [
+      { learnerId: 'kid1', sessions: [], readingActivity: { status: 'ok', studyDay: '2026-09-07', hasActivity: true, progressCount: 1, finishedCount: 0, bookCount: 1 } },
+    ] } });
     await act(async () => { bookShelfProps.mock.calls.at(-1)[0].onExit('done'); });
+    expect(await screen.findByRole('img', { name: 'Reading: done, 1 book, 1 progress entry' })).toBeInTheDocument();
+    expect(schoolApi.teacherDay.mock.calls.length).toBeGreaterThan(readsBeforeExit);
+    expect(schoolApi.teacherDay).toHaveBeenLastCalledWith();
+    expect(schoolApi.agendaPreview).toHaveBeenCalledWith('kid1', '2026-09-07');
 
     expect(screen.queryByRole('heading', { name: 'Reading' })).toBeNull();
     expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
@@ -475,4 +497,33 @@ describe('SchoolApp — the reading code at the locked panel opens the shelf', (
     expect(document.querySelector('.school-books')).toBeNull();
     expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
   });
+});
+
+it('Portal scan waits for keypad digits, hands returned grant to the shelf and defers the next scan until Done', async () => {
+  const oldUrl = window.location.pathname;
+  window.history.replaceState({}, '', '/screens/portal');
+  const scan = { id: 'portal-scan', screenId: 'portal', isbn13: '9780064400558', status: 'ready', book: { isbn13: '9780064400558', title: 'Hatchet' }, expiresAt: new Date(Date.now() + 300000).toISOString() };
+  schoolApi.bookScans.pending.mockResolvedValue({ ok: true, data: { intent: null } });
+  schoolApi.bookScans.claim.mockResolvedValue({ ok: true, data: { intentId: scan.id, launchTarget: { kind: 'program', program: 'book-log', learnerId: 'kid1', bookGrant: 'returned-scan-grant' }, bookEntry: { isbn13: scan.isbn13, book: scan.book } } });
+  const r = render(<SchoolApp mode="locked" />);
+  try {
+    await screen.findByTestId('selfservice-keypad');
+    fireEvent.click(screen.getByRole('button', { name: '1' }));
+    schoolApi.bookScans.pending.mockResolvedValue({ ok: true, data: { intent: scan } });
+    await act(async () => h.byTopic.school({ type: 'school.book-scan', screenId: 'portal', intentId: scan.id }));
+    expect(screen.queryByRole('dialog', { name: 'This book was just scanned' })).toBeNull();
+    expect(screen.getByText('Book scanned — open when ready')).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'Backspace' });
+    await screen.findByRole('dialog', { name: 'This book was just scanned' });
+    fireEvent.click(screen.getByRole('button', { name: 'Alpha' }));
+    await waitFor(() => expect(bookShelfProps.mock.calls.at(-1)?.[0]).toMatchObject({ learnerId: 'kid1', grant: 'returned-scan-grant', initialBookEntry: { intentId: scan.id, isbn13: scan.isbn13 } }));
+    const next = { ...scan, id: 'next-scan', book: { title: 'Next book' } };
+    schoolApi.bookScans.pending.mockResolvedValue({ ok: true, data: { intent: next } });
+    await act(async () => h.byTopic.school({ type: 'school.book-scan', screenId: 'portal', intentId: next.id }));
+    expect(screen.getByText('Book scanned — open when ready')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'This book was just scanned' })).toBeNull();
+    await act(async () => bookShelfProps.mock.calls.at(-1)[0].onExit('done'));
+    expect(await screen.findByRole('dialog', { name: 'This book was just scanned' })).toBeInTheDocument();
+    expect(screen.getByText('Next book')).toBeInTheDocument();
+  } finally { r.unmount(); window.history.replaceState({}, '', oldUrl); }
 });

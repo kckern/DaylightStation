@@ -563,3 +563,9 @@ describe('resumed work names the day it started', () => {
     expect(cardSentence(fresh, opts({ now: NOW }))).toBeNull();
   });
 });
+
+it.each(['issued', 'reprinted'])('keeps an immutable %s sheet reprintable despite an invalid source bank', (state) => {
+  const actions = offeredActions(move({ bank: BANK }, state), opts({ bankIssue: 'invalid pool' }));
+  expect(kinds(actions)).toEqual(['print', 'exit']);
+  expect(actions[0].label).toBe('Print it again');
+});

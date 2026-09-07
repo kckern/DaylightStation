@@ -1,7 +1,7 @@
 # Reading shelf experience and optional agenda credit
 
 Date: 2026-09-07
-Status: Design direction approved; written specification awaiting review.
+Status: Implemented, including scanned ISBN entry; release verification recorded in the acceptance audit.
 
 ## Purpose
 
@@ -38,7 +38,7 @@ controls together would recreate the crowding that hides finishing today.
 - A valid reading code for the currently recognized learner opens their shelf
   directly. No additional launch card or program-choice step is needed.
 - When identity confirmation is needed, show the learner portrait and a single
-  action such as **Open User_2's books**, plus a way to reject that identity.
+  action such as **Open this learner’s books**, plus a way to reject that identity.
   Confirmation performs the launch without another action screen.
 - Identity rejection returns to code entry without opening another child's shelf.
 - Preserve server-side code validation, signed learner grants, and ownership checks.
@@ -226,3 +226,47 @@ tests for navigation and circle accounting, and a browser flow at the actual Por
 dimensions for tap counts and below-fold visibility. Perform write-based verification
 with isolated test learners/data rather than modifying production reading records.
 Update the School reference documentation alongside implementation.
+
+
+## Approved extension: scanned ISBN entry
+
+The parent can scan the publisher's ISBN barcode to wake the School tablet, see
+the book's cover/title with **This book was just scanned**, and select the learner
+from tappable avatars. The selected learner enters the same reading actions with
+the ISBN already supplied. The prompt should ask **Who's reading this?** so it
+does not imply the book is already finished. A scan, metadata lookup, or avatar
+selection alone must not create a reading record or award agenda credit.
+
+The maintained scanner path is BLE relay → WebSocket ingest → scan vocabulary →
+domain dispatch. The old `_extensions/barcode-scanner` USB/MQTT implementation is
+retired. The scan vocabulary already recognizes a 13-digit `978`/`979` Bookland
+shape before the scanner's nutrition fallback; its missing book handler is the
+integration point. Preserve ordinary product/nutrition, content, and school-token
+routing. Validate the ISBN checksum before metadata lookup. A malformed Bookland
+scan gets clear correction feedback and cannot create a food or reading entry.
+Do not broaden automatic routing to arbitrary ten-digit strings: the physical
+publisher barcode uses ISBN-13, while typed ISBN-10 remains supported in School.
+
+Use existing device wake/foreground wiring and a temporary, server-owned scanned
+book intent. Broadcast no learner write grant. The avatar selection validates the
+learner on the server and obtains the existing learner-scoped reading grant. The
+selected book then enters the regular shelf lookup/action path, preserving active
+book reuse, prior-finish context, and deliberate rereads. Do not implement another
+book-writing workflow.
+
+Wake/reconnect delivery must preserve the pending book without repeatedly opening
+it. Transport retries must reuse the same intent; an intentional later scan is
+allowed. Pending intents expire and cancellation does not save anything. If the
+tablet is already editing or running an activity, present a pending-book notice
+and preserve that work until the learner chooses to open the scan or exits.
+
+Acceptance adds isolated tests for a book scanned on a nutrition-default reader,
+an ordinary product still reaching nutrition, malformed book feedback, wake and
+reconnect delivery, avatar selection without code/ISBN typing, server learner
+validation, repeated transport delivery, cancellation/expiry, busy-screen draft
+preservation, and scan → select learner → finish → independent agenda credit.
+
+
+## Implementation record
+
+Implemented in `feat/reading-shelf-experience`. See [acceptance audit](../audits/2026-09-07-reading-shelf-experience.md) for regression, browser, and hardware-wake evidence and release limitations.

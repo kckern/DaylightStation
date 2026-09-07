@@ -123,6 +123,27 @@ async function publishAndAllocate({
 }
 
 describe('constructor', () => {
+  it('retains alignment evidence through a sparse reread and across resolver instances', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    const letters = ['A','D','B','E','C','A','B','D','E','C','B','A'];
+    const answers = Object.fromEntries(letters.map((v, i) => [i + 1, v]));
+    await publishAndAllocate({ repository, allocationStore,
+      source: sourceDoc('alignment-sheet', letters.map((v, i) => mcQuestion(`item-${i}`, i + 1,
+        { choices: ['A','B','C','D','E'], answer: v }))),
+      context: { cardId: '1234567', startRow: 1, learnerId: 'kid' } });
+    let saved = null;
+    const baselineStore = { get: async () => structuredClone(saved),
+      save: async (_id, value) => { saved = structuredClone(value); } };
+    const create = () => new ResolveCardScan({ repository, allocationStore, baselineStore, logger: {} });
+    await create().execute({ testId: '1234567', answers });
+    await create().execute({ testId: '1234567', answers: { 1: answers[1] } });
+    expect(saved.answers).toEqual(answers);
+    const shifted = Object.fromEntries(Object.entries(answers).map(([r, v]) => [Number(r) + 1, v]));
+    expect(await create().execute({ testId: '1234567', answers: shifted }))
+      .toMatchObject({ error: { code: 'OMR_ALIGNMENT' } });
+    expect(saved.answers).toEqual(answers);
+  });
   it('requires allocationStore and repository', () => {
     expect(() => new ResolveCardScan({})).toThrow(/allocationStore/);
     expect(() => new ResolveCardScan({ allocationStore: {} })).toThrow(/repository/);

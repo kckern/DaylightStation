@@ -229,6 +229,31 @@ Recordings are capped at 5 minutes (`MAX_RECORDING_MS = 5 * 60 * 1000`). The rec
 ### Cancel During Recording
 When user cancels during active recording, `cancelUpload()` is called BEFORE `stopRecording()` to set `cancelledRef.current = true`. This ensures the MediaRecorder's `onstop` handler discards audio chunks instead of uploading them for transcription.
 
+Cancellation belongs to one capture. A fresh `startRecording()` clears the
+previous cancellation, including cancellation after a failed upload whose
+recorder has already stopped. Queued data/stop events from an older recorder
+are ignored after a replacement capture starts. Otherwise closing a failed
+upload silently cancels the next recording when its stop event arrives.
+
+### Diagnosing failed transcription
+
+Distinguish `recording-stop-cancelled` (audio discarded in the browser, before
+any upload) from `openai.transcribe.error` (the provider received the request).
+The latter records HTTP status, provider error code/type, provider request ID,
+and fitness session ID without dumping request headers, credentials, or the
+response body. An HTTP 429 alone cannot distinguish temporary rate limiting
+from exhausted credits; `insufficient_quota` / `credit_balance_exhausted` calls
+for restoring provider credit, not replacing a working API key or repeating
+the same upload. A successful model-listing request validates access but does
+not demonstrate transcription credit availability.
+
+Fitness uploads currently hold raw audio in browser memory and transcribe
+before saving the memo. Retry can reuse the browser payload while it remains
+available, but cancel/close clears that payload. The separate debug audio
+capture endpoint is not an automatic backup. Do not promise recovery from
+session files when only failed or cancelled captures exist: those files save
+successful transcripts, not the original audio.
+
 ### Portal Rendering
 The overlay renders via `ReactDOM.createPortal` to `document.body`, ensuring it appears above all other content regardless of where it's triggered from.
 

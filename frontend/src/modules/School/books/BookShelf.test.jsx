@@ -124,7 +124,6 @@ describe('BookShelf', () => {
         expect.stringContaining('Hatchet'),
         expect.stringContaining('Frog and Toad'),
         expect.stringContaining('Not yet opened'),
-        expect.stringContaining('Add a book'),
       ]);
       expect(within(grid).queryByText('Finished in July')).toBeNull();
     });
@@ -285,7 +284,7 @@ describe('BookShelf', () => {
       mount();
       const overlay = screen.getByTestId('update-book');
       expect(within(overlay).getByText('Hatchet')).toBeInTheDocument();
-      expect(within(overlay).getByText('What page are you on?')).toBeInTheDocument();
+      expect(within(overlay).getByRole('button', { name: 'Update page' })).toBeInTheDocument();
       expect(screen.queryByTestId('book-shelf-grid')).toBeNull();
       expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
     });
@@ -312,10 +311,9 @@ describe('BookShelf', () => {
       expect(screen.getByTestId('book-save-receipt')).toHaveTextContent('Book finished!');
       expect(screen.getByTestId('book-save-receipt')).toHaveTextContent('Hatchet');
 
-      fireEvent.click(screen.getByRole('button', { name: 'Back to my books' }));
-      fireEvent.click(screen.getByRole('button', { name: 'See History' }));
+      expect(screen.getByTestId('book-shelf-grid')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'See all history' }));
       fireEvent.click(screen.getByRole('button', { name: 'Undo finish' }));
-      expect(a.back).toHaveBeenCalledTimes(1);
       expect(a.openHistory).toHaveBeenCalledTimes(1);
       expect(a.undoFinish).toHaveBeenCalledTimes(1);
     });
@@ -372,11 +370,11 @@ describe('BookShelf', () => {
       expect(screen.queryByRole('progressbar')).toBeNull();
     });
 
-    it('nothing on it is tappable except back and Done', () => {
+    it('finished history tiles can open details alongside back and Done', () => {
       history([DONE_JULY, DONE_AUG]);
       mount();
       const names = screen.getAllByRole('button').map((b) => b.textContent.trim());
-      expect(names).toHaveLength(2);
+      expect(names).toHaveLength(4);
       expect(names).toEqual(expect.arrayContaining(['Done', expect.stringMatching(/back/i)]));
     });
 

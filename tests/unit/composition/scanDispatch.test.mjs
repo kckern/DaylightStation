@@ -116,7 +116,7 @@ describe('createScanDispatch — construction', () => {
     // fallback assertion above cannot see them. Dropping either registration is
     // otherwise a silent `no handler registered for "school"` at the kiosk.
     expect(harness().scanDispatch.namespaces)
-      .toEqual(['content', 'command', 'school', 'nutrition', 'product']);
+      .toEqual(['content', 'command', 'school', 'nutrition', 'product', 'book']);
   });
 
   it('throws when a route falls back to a namespace with no handler', () => {
@@ -1080,5 +1080,25 @@ describe('the never-reject invariant, at the wiring layer', () => {
     const h = harness();
     await expect(h.scanDispatch.handleScan({ code: 'office:plex:1', route: 'content' }))
       .resolves.toMatchObject({ status: 'failed', ok: false, domain: 'content' });
+  });
+});
+
+
+describe('publisher book scan entry', () => {
+  it.each(['content', 'nutribot'])('owns valid 978/979 on %s without food writes', async route => {
+    const book = { receive: vi.fn(async () => ({ status: 'pending' })) };
+    const h = harness({ book });
+    for (const code of ['9780064400558', '9791234567896']) {
+      await h.scanDispatch.handleScan({ code, route, device: 'reader', eventId: code });
+      expect(book.receive).toHaveBeenLastCalledWith({ code, device: 'reader', eventId: code });
+    }
+    expect(h.execute).not.toHaveBeenCalled();
+  });
+  it('refuses visibly when unwired without food fallback', async () => {
+    const h = harness();
+    const result = await h.scanDispatch.handleScan({ code: '9780064400558', route: 'nutribot' });
+    expect(result.ok).toBe(false);
+    expect(h.barcodeLogger.warn).toHaveBeenCalledWith('school.book-scan.refused', expect.any(Object));
+    expect(h.execute).not.toHaveBeenCalled();
   });
 });

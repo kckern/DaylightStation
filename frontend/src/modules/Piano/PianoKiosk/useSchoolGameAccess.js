@@ -15,6 +15,7 @@ export function activePianoGamesDecision(payload, at = Date.now()) {
     .filter((item) => item?.capabilityId === 'piano.games'
       && item?.subject?.kind === 'learner'
       && item?.period?.kind === 'interval'
+      && /^school-day:\d{4}-\d{2}-\d{2}$/.test(item.period.id ?? '')
       && Number.isFinite(item.period.startsAt)
       && Number.isFinite(item.period.endsAt)
       && at >= item.period.startsAt && at < item.period.endsAt)

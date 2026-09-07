@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, act } from '@testing-library/react';
+import { render, act, waitFor } from '@testing-library/react';
 import useVoiceMemoRecorder from './useVoiceMemoRecorder.js';
 
 vi.mock('@/lib/api.mjs', () => ({
@@ -100,4 +100,56 @@ describe('useVoiceMemoRecorder cancel flow (race with overlay unmount)', () => {
     // 5. The upload must NOT have happened. The cancelledRef must survive the unmount cleanup.
     expect(DaylightAPI).not.toHaveBeenCalled();
   });
+  it('records again after closing a failed upload without inheriting cancellation', async () => {
+    const { DaylightAPI } = await import('@/lib/api.mjs');
+    DaylightAPI.mockReset().mockRejectedValueOnce(new Error('HTTP 429')).mockResolvedValue({ ok: true, memo: { memoId: 'recovered' } });
+    const apiRef = { current: null };
+    render(React.createElement(Host, { apiRef }));
+    await act(async () => { await apiRef.current.startRecording(); });
+    act(() => apiRef.current.stopRecording());
+    await act(async () => MockMediaRecorder.instances[0].fireStop());
+    await waitFor(() => expect(apiRef.current.hasAudioBlob).toBe(true));
+    act(() => apiRef.current.cancelUpload());
+    await act(async () => { await apiRef.current.startRecording(); });
+    act(() => apiRef.current.stopRecording());
+    await act(async () => MockMediaRecorder.instances[1].fireStop());
+    await waitFor(() => expect(DaylightAPI).toHaveBeenCalledTimes(2));
+  });
+
+  it('ignores an old cancelled recorder when its stop arrives during a new recording', async () => {
+    const { DaylightAPI } = await import('@/lib/api.mjs');
+    DaylightAPI.mockReset().mockResolvedValue({ ok: true, memo: { memoId: 'fresh' } });
+    const apiRef = { current: null };
+    render(React.createElement(Host, { apiRef }));
+    await act(async () => { await apiRef.current.startRecording(); });
+    const old = MockMediaRecorder.instances[0];
+    act(() => { apiRef.current.cancelUpload(); apiRef.current.stopRecording(); });
+    await act(async () => { await apiRef.current.startRecording(); });
+    await act(async () => old.fireStop());
+    expect(DaylightAPI).not.toHaveBeenCalled();
+    act(() => apiRef.current.stopRecording());
+    await act(async () => MockMediaRecorder.instances[1].fireStop());
+    await waitFor(() => expect(DaylightAPI).toHaveBeenCalledTimes(1));
+  });
+
+  it('ignores cancelled recorder events while the next microphone request is pending', async () => {
+    const { DaylightAPI } = await import('@/lib/api.mjs');
+    DaylightAPI.mockReset().mockResolvedValue({ ok: true, memo: { memoId: 'fresh' } });
+    const apiRef = { current: null };
+    render(React.createElement(Host, { apiRef }));
+    await act(async () => { await apiRef.current.startRecording(); });
+    const old = MockMediaRecorder.instances[0];
+    act(() => { apiRef.current.cancelUpload(); apiRef.current.stopRecording(); });
+    let resolveMicrophone;
+    navigator.mediaDevices.getUserMedia.mockImplementationOnce(() => new Promise(resolve => { resolveMicrophone = resolve; }));
+    let nextStart;
+    act(() => { nextStart = apiRef.current.startRecording(); });
+    await act(async () => old.fireStop());
+    expect(DaylightAPI).not.toHaveBeenCalled();
+    await act(async () => { resolveMicrophone({ getTracks: () => [{ stop: vi.fn() }] }); await nextStart; });
+    act(() => apiRef.current.stopRecording());
+    await act(async () => MockMediaRecorder.instances[1].fireStop());
+    await waitFor(() => expect(DaylightAPI).toHaveBeenCalledTimes(1));
+  });
+
 });

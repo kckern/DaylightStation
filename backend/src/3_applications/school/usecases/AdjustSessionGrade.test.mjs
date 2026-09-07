@@ -30,6 +30,45 @@ function fixture() {
 }
 
 describe('AdjustSessionGrade', () => {
+  it('refreshes agenda and completion only after persisting a correction', async () => {
+    const f = fixture();
+    const realtime = { sessionGradeChanged: vi.fn(async () => {
+      expect(f.events.at(-1).type).toBe('grade_adjusted');
+    }) };
+    const adjust = new AdjustSessionGrade({ sessions: f.sessions, teacherGate: f.teacherGate, realtime });
+    const args = { sessionId: 'ses_1', percent: 100, reason: 'scan fault', adjustedBy: 'parent' };
+    await adjust.execute(args);
+    expect(realtime.sessionGradeChanged).not.toHaveBeenCalled();
+    await adjust.execute({ ...args, apply: true });
+    expect(realtime.sessionGradeChanged).toHaveBeenCalledWith({ learnerId: 'kid', sessionId: 'ses_1' });
+  });
+  it('stamps the course passing rule when correcting an older grade without a threshold', async () => {
+    const f = fixture();
+    delete f.events.find(e => e.type === 'graded').passingPercent;
+    const adjust = new AdjustSessionGrade({ sessions: f.sessions, teacherGate: f.teacherGate,
+      curriculum: { getUnit: async () => ({ passing: { percent: 80 } }) } });
+    const receipt = await adjust.execute({ sessionId: 'ses_1', percent: 100,
+      reason: 'extra scanner column', adjustedBy: 'parent', apply: true });
+    expect(receipt.outcome.result).toBe('passed');
+    expect(receipt.machineGrade.passingPercent).toBeNull();
+    expect(f.events.at(-1)).toMatchObject({ type: 'grade_adjusted', passingPercent: 80 });
+    const state = reduceSession(f.events);
+    expect(state.gradedPassingPercent).toBe(80);
+    expect(state.errors).toEqual([]);
+    await f.retract.execute({ sessionId: 'ses_1', adjustmentId: receipt.adjustmentId,
+      reason: 'test retraction', retractedBy: 'parent', apply: true });
+    expect(reduceSession(f.events).outcome.result).toBe('needs_remediation');
+    expect(reduceSession(f.events).gradedPassingPercent).toBeNull();
+  });
+  it('preserves the machine threshold over current course rules and overrides', async () => {
+    const f = fixture();
+    const adjust = new AdjustSessionGrade({ sessions: f.sessions, teacherGate: f.teacherGate,
+      passOverrides: { percentFor: () => 50 },
+      curriculum: { getUnit: async () => ({ passing: { percent: 50 } }) } });
+    const receipt = await adjust.execute({ sessionId: 'ses_1', percent: 70,
+      reason: 'corrected marks', adjustedBy: 'parent' });
+    expect(receipt.outcome.result).toBe('needs_remediation');
+  });
   it('issues one immutable correction receipt only after an adjustment is applied', async () => {
     const f = fixture();
     const receiptIssuer = { execute: vi.fn(async () => ({ artifactId: 'receipt/ses_1/correction/adj_1', created: true })) };

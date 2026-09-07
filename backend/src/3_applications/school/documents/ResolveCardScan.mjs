@@ -37,6 +37,8 @@ import { DomainInvariantError, EntityNotFoundError } from '#domains/core/errors/
 import { sha256Text } from '#system/utils/CanonicalFingerprint.mjs';
 import { planRows, resolveAmbiguousCardId } from '#domains/school/documents/allocation.mjs';
 import { gradeAnswer } from '#domains/school/grading.mjs';
+import { omrAlignmentError } from '#domains/school/omrAlignment.mjs';
+import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
 import { creditsAsEraser, leniencyCap } from '#domains/school/documents/ambiguityLeniency.mjs';
 import {
   CODE_LETTERS, GATE_SATISFIED, GATE_BLANK, GATE_WRONG, GATE_EXHAUSTED,
@@ -474,7 +476,7 @@ function gradeRow(item, given, points) {
 }
 
 export class ResolveCardScan {
-  #allocationStore; #repository; #banks; #logger; #heldScanStore; #protectionMode;
+  #allocationStore; #repository; #banks; #logger; #heldScanStore; #protectionMode; #baselineStore; #sessions;
 
   /**
    * @param {object} deps
@@ -498,13 +500,15 @@ export class ResolveCardScan {
    */
   constructor({
     allocationStore, repository, banks = null, heldScanStore = null,
-    protectionMode = 'off', logger = console,
+    protectionMode = 'off', logger = console, baselineStore = null, sessions = null,
   } = {}) {
     if (!allocationStore) throw new Error('ResolveCardScan requires allocationStore');
     if (!repository) throw new Error('ResolveCardScan requires repository');
     this.#allocationStore = allocationStore;
     this.#repository = repository;
     this.#banks = banks;
+    this.#baselineStore = baselineStore;
+    this.#sessions = sessions;
     if (!['off', 'shadow', 'enforce'].includes(protectionMode)) {
       throw new Error(`ResolveCardScan: unknown protectionMode '${protectionMode}'`);
     }
@@ -656,6 +660,21 @@ export class ResolveCardScan {
     this.#logger.info?.('school.scan.decode', decode);
 
     const records = await this.#allocationStore.findByCard(cardId);
+    // Compare before any grading or allocation status changes. Reallocated rows
+    // have a different owner and must not be compared to their former worksheet.
+    const allOwners = resolveRowOwners(records.filter((record) => isLiveOrSatisfied(record.status)));
+    const owners = Object.fromEntries([...allOwners].map(([row, record]) => [row, record.recordId]));
+    let previous = {};
+    if (this.#baselineStore && records.length) {
+      const baseline = await this.#baselineStore.get(cardId);
+      previous = Object.fromEntries(Object.entries(baseline?.answers ?? {})
+        .filter(([row]) => owners[row] && owners[row] === baseline.owners?.[row]));
+      const error = omrAlignmentError(previous, answers);
+      if (error) {
+        this.#logger.warn?.('school.scan.alignment-refused', { cardId, ...error });
+        return { error, results: [], decode };
+      }
+    }
     const answeredRows = new Set(Object.keys(answers).map(Number));
     if (records.some((record) => record.cardRetiredAt) && answeredRows.size > 0) {
       return {
@@ -669,10 +688,23 @@ export class ResolveCardScan {
     const preflight = identityReview ? null : await this.#identityPreflight({ cardId, answers, records });
     if (preflight) return { ...preflight, ...(cardIdInferred ? { cardIdInferred } : {}), decode };
     const live = records.filter((record) => record.status === 'live');
-    // A reused card retains old marks in satisfied rows. While a new worksheet
-    // is live, grade only that live allocation and ignore the settled rows.
+    // Allocation satisfaction means bubble coverage, not school completion.
+    // A covered sheet still awaiting review must remain scannable even while
+    // another allocation is live. The session is authoritative for that state.
+    const unfinished = [];
+    if (this.#sessions) {
+      for (const record of records.filter(r => r.status === 'satisfied')) {
+        const sessionIds = [record.sessionId, ...(record.sections ?? []).map(s => s.sessionId)].filter(Boolean);
+        for (const sessionId of sessionIds) {
+          const state = reduceSession(await this.#sessions.readEvents(sessionId));
+          if (['issued', 'reprinted', 'submitted'].includes(state.state)) {
+            unfinished.push(record); break;
+          }
+        }
+      }
+    }
     const ordinarilyEligible = live.length > 0
-      ? live
+      ? [...live, ...unfinished]
       : records.filter((record) => isLiveOrSatisfied(record.status));
     const eligible = identityReview?.targetRecordId
       ? ordinarilyEligible.filter((record) => record.recordId === identityReview.targetRecordId)
@@ -784,7 +816,7 @@ export class ResolveCardScan {
       // `live`, mirroring the store's own legal-transition rule (a record
       // already `satisfied` needs no re-write on a later re-scan). Rows the
       // record no longer owns don't count against it either way.
-      const fullyAnswered = cardResult.results.every((row) => row.status !== 'blank');
+      const fullyAnswered = cardResult.results.every((row) => !['blank', 'ambiguous'].includes(row.status));
       if (record.status === 'live' && fullyAnswered) {
         // eslint-disable-next-line no-await-in-loop
         await this.#allocationStore.updateStatus({ cardId, recordId: record.recordId, status: 'satisfied' });
@@ -812,6 +844,12 @@ export class ResolveCardScan {
       decode,
     };
     if (!identityReview) await this.#rememberProcessedScan({ cardId, answers, records, outcome });
+    if (!identityReview && this.#baselineStore && results.length && !results.some((result) => result.error)) {
+      // A sparse reread must not erase the evidence used to validate the next
+      // scan. Explicitly marked revisions replace old marks; omissions do not.
+      await this.#baselineStore.save(cardId, { answers: { ...previous, ...answers }, owners,
+        acceptedAt: new Date().toISOString() });
+    }
     return outcome;
   }
 

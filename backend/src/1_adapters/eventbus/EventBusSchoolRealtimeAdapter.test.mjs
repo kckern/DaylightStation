@@ -59,6 +59,7 @@ describe('EventBusSchoolRealtimeAdapter', () => {
     const received = [];
     gateway.onPrintSheet({ scanners: { study: { topic: 'omr-study' } } }, (sheet) => received.push(sheet));
     const marks = [1 << 8, 1 << 7, (1 << 6) | (1 << 5), 0, 1 << 4, 1 << 3, 1 << 2, 1 << 10, 1 << 4];
+    while (marks.length < 32) marks.push(0);
     await bus.handlers.get('omr-study')({ event: 'sheet', marks });
     expect(received).toEqual([decodeQuizSheet(marks)]);
     expect([...bus.handlers.keys()]).toEqual(['omr', 'omr-study']);

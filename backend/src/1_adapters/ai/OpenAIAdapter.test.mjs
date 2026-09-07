@@ -201,3 +201,21 @@ describe('OpenAIAdapter usage observability', () => {
     expect(deps.aiUsageLedger.record).toHaveBeenCalledWith(expect.objectContaining({ costUsd: 0.004 }));
   });
 });
+
+describe('OpenAIAdapter transcription failure diagnostics', () => {
+  it('retains provider quota codes and request identity without logging request secrets', async () => {
+    const failure = Object.assign(new Error('Request failed with status code 429'), {
+      response: { status: 429, data: { error: { type: 'insufficient_quota', code: 'credit_balance_exhausted' } }, headers: { 'x-request-id': 'req-test' } },
+      config: { headers: { Authorization: 'Bearer never-log-this' } },
+    });
+    const deps = makeDeps({ post: vi.fn() });
+    deps.httpClient.postForm = vi.fn().mockRejectedValue(failure);
+    const adapter = new OpenAIAdapter({ apiKey: 'test-key' }, deps);
+    await expect(adapter.transcribe(Buffer.from('synthetic'), { sessionId: 'session-test' })).rejects.toBe(failure);
+    expect(deps.logger.error).toHaveBeenCalledWith('openai.transcribe.error', expect.objectContaining({
+      status: 429, providerCode: 'credit_balance_exhausted', providerType: 'insufficient_quota', requestId: 'req-test', sessionId: 'session-test',
+    }));
+    expect(JSON.stringify(deps.logger.error.mock.calls)).not.toContain('never-log-this');
+    expect(deps.httpClient.postForm).toHaveBeenCalledTimes(1);
+  });
+});

@@ -428,3 +428,15 @@ describe('createSchoolPrintScanConsumer: the funnel itself cannot go silent', ()
     })).toThrow(/broadcast/);
   });
 });
+
+it.each([31, 33])('refuses a %s-column scan before any grade or attempt is written', async (columns) => {
+  const bus = makeBus();
+  const execute = vi.fn(async () => ({ results: [] }));
+  const record = vi.fn();
+  createSchoolPrintScanConsumer({ eventBus: bus, resolveCardScan: { execute }, recordCardScanOutcome: { execute: record }, logger: silentLogger() });
+  bus.broadcast('omr', { ...sheetPayload(), columns, marks: Array(columns).fill(512) });
+  await flush();
+  expect(execute).not.toHaveBeenCalled();
+  expect(record).not.toHaveBeenCalled();
+  expect(eventsNamed(bus, 'scan-unresolved')).toEqual([expect.objectContaining({ code: 'OMR_COLUMN_COUNT', expected: 32, actual: columns })]);
+});

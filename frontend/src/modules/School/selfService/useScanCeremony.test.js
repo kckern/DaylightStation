@@ -129,6 +129,14 @@ describe('useScanCeremony', () => {
     expect(result.current.current.detail).toBe('3 questions had two answers filled in. Ask a grown-up to check it.');
   });
 
+  it.each(['OMR_COLUMN_COUNT', 'OMR_ALIGNMENT'])('prompts a rescan without reporting a grade for %s', (code) => {
+    const { result } = mount();
+    act(() => deliver({ topic: 'omr', event: 'scan-unresolved', code, actual: 33, expected: 32 }));
+    expect(result.current.current).toMatchObject({ tone: 'error', code });
+    expect(result.current.current.detail).toContain('No grade was recorded');
+    expect(result.current.current.detail).toMatch(/rescan|Scan again/);
+  });
+
   it('maps scan-unresolved to an error ceremony carrying the code', () => {
     const { result } = mount();
     act(() => {
@@ -200,8 +208,8 @@ describe('useScanCeremony', () => {
     });
     expect(result.current.current).toMatchObject({
       tone: 'error',
-      title: 'Already done',
-      detail: 'I read that sheet, but there was nothing new to mark.',
+      title: 'No new result recorded',
+      detail: 'This scan did not record a new result. Check the agenda; if this work is still unfinished, ask a grown-up.',
     });
     // `error` drives the double-buzz (scanCeremonySound.js). It is not a score,
     // and the operator's rule is that a scan always makes a noise.

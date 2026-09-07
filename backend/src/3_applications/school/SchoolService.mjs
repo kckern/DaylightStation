@@ -205,7 +205,7 @@ export class SchoolService {
         const r = validateQuestionBank(synth);
         if (!r.ok) {
           this.#logger.warn?.('school.bank.invalid', { bankId, synthesized: true, reason: r.errors.join('; ') });
-          return null;
+          throw new ValidationError(r.errors.join('; '), { code: 'WORKSHEET_INVALID', bankId });
         }
         return r.bank;
       }
@@ -215,7 +215,7 @@ export class SchoolService {
     const r = validateQuestionBank(raw);
     if (!r.ok) {
       this.#logger.warn?.('school.bank.invalid', { file: `${bankId}.yml`, reason: r.errors.join('; ') });
-      return null;
+      throw new ValidationError(r.errors.join('; '), { code: 'WORKSHEET_INVALID', bankId });
     }
     return r.bank;
   }

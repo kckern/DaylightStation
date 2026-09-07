@@ -1,37 +1,5 @@
-// GameGate, MEASURED.
-//
-// The gate's Leave button is the only way out of a dead end: the run has
-// settled into a state it cannot leave, its own header Exit is gone with it,
-// and this button is what remains. `.piano-exercise-run` is
-// `height: 100%; overflow: hidden` (Exercises.scss), so a Leave appended as a
-// plain sibling after it lands below the fold — present in the DOM, tappable by
-// a test, and off the bottom of a 1280x800 tablet.
-//
-// jsdom cannot see layout. `GameGate.test.jsx` therefore passes whether or not
-// that button is reachable, which is precisely the class of regression this
-// repo has shipped fully green before. So the geometry is asserted where a
-// layout engine exists, following the pattern already checked in at
-// `frontend/src/modules/Surround/band.measure.test.jsx`: compile the SHIPPED
-// SCSS with `sass-embedded`, render the REAL component tree, and read pixels
-// off headless Chromium.
-//
-// WHY THE MARKUP IS NOT HAND-WRITTEN. A fixture would drift from the JSX the
-// moment either changed, and a stale fixture that measures fine is worse than
-// no measurement. The DOM here is produced by rendering the real `GameGate`
-// (with the real `ExerciseRun` inside it — only the MIDI/user contexts and the
-// bank HTTP calls are doubled) under happy-dom, then handing that settled
-// `innerHTML` to Chromium. What is measured is what the component builds.
-//
-// WHY THE PARENT BOX IS WHAT IT IS. `.piano-app` is `100vw/100vh`, a flex
-// column, `overflow: hidden`. `GameHost` renders `.piano-game-fullscreen`
-// directly inside it (PianoApp's <Routes> adds no wrapper of its own), and the
-// gate replaces the game INSIDE that same stage (D11) — one route, one box.
-// So that is the parent measured here: an earlier version of this file guessed
-// at a `.piano-mode.piano-mode--games` wrapper that the seam turned out not to
-// have, and a fixture that measures a box the app never builds is worth less
-// than no measurement. The viewport is 1280x800 — the kiosk's declared design
-// canvas (`display.designWidth/designHeight`), i.e. the SM-T590's CSS viewport.
-
+// Measure the real piano-only gate markup on the kiosk canvas.
+// Recovery labels must stay visible and the run must retain its notation space.
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -222,8 +190,10 @@ async function measure(page, css, markup) {
       stage: read('.piano-game-fullscreen'),
       gate: read('.piano-game-gate'),
       run: read('.piano-exercise-run'),
-      leave: read('.piano-game-gate__leave'),
-      actions: [...document.querySelectorAll('.piano-game-gate__actions button')].map((b) => {
+      recovery: read('.piano-game-gate__piano-guidance'),
+      exitHint: read('.piano-game-gate__exit-guidance'),
+      buttonCount: document.querySelectorAll('button').length,
+      actions: [...document.querySelectorAll('.piano-game-gate__actions li')].map((b) => {
         const box = b.getBoundingClientRect();
         const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
         return {
@@ -259,120 +229,33 @@ beforeAll(async () => {
 afterAll(async () => { await browser?.close(); });
 
 describe('GameGate geometry at the kiosk canvas (1280x800, real compiled SCSS)', () => {
-  it('keeps the attempt-phase Leave button on screen, reachable, and a real tap target', async () => {
+  it('uses the full attempt stage without pointer controls', async () => {
     const measured = await measure(page, css, await markupOf());
-
-    expect(measured.leave, 'the Leave button is not in the rendered gate at all').not.toBeNull();
-    expect(measured.leave.withinViewport,
-      `Leave is off the kiosk canvas: bottom ${measured.leave.bottom}px vs viewport ${KIOSK.height}px`).toBe(true);
-    expect(measured.leave.reachable, 'Leave is on screen but something is painted over it').toBe(true);
-    // Touch-UI rule: discrete tap targets, sized for a child's fingertip.
-    expect(measured.leave.height).toBeGreaterThanOrEqual(44);
-    expect(measured.leave.width).toBeGreaterThanOrEqual(44);
-  });
-
-  it('gives the run the rest of the box rather than collapsing it to make room', async () => {
-    // The failure mode on the other side of the fix: reserving the footer by
-    // starving the run would leave a stave nobody can read.
-    const measured = await measure(page, css, await markupOf());
-
-    // The header takes its bite off the top first, and the stage gets the rest
-    // — asserted so a future chrome that grows past the fixture's pessimistic
-    // 70px shows up here rather than quietly shrinking the gate.
+    expect(measured.buttonCount).toBe(0);
     expect(measured.chrome.height).toBeGreaterThanOrEqual(CHROME_WORST_CASE);
     expect(measured.stage.top).toBeGreaterThanOrEqual(measured.chrome.height);
     expect(measured.stage.bottom).toBeLessThanOrEqual(KIOSK.height);
-    expect(measured.run.height).toBeGreaterThan(measured.stage.height * 0.7);
-    // And, at the pessimistic chrome height, still more than 70% of the whole
-    // canvas — the bar this held to before the header was in the fixture.
-    expect(measured.run.height).toBeGreaterThan(KIOSK.height * 0.7);
-    // The run ends above the button, and the two do not overlap.
-    expect(measured.run.bottom).toBeLessThanOrEqual(measured.leave.top + 0.5);
+    expect(measured.run.height).toBeGreaterThan(KIOSK.height * .7);
     expect(measured.gate.bottom).toBeLessThanOrEqual(KIOSK.height);
-    expect(measured.documentScrolls,
-      'the kiosk page scrolls — the canvas is fixed and nothing may push past it').toBe(false);
+    expect(measured.documentScrolls).toBe(false);
   });
 
-  it('leaves the embedded run\'s buttons painted by the RUN, not restyled by the gate', async () => {
-    // Two sheets, one element. `.piano-game-gate button` and
-    // `.piano-exercise-run button` have identical specificity, and the gate's
-    // sheet is imported later — so an unscoped `button` rule here silently
-    // repaints the run's primary action as flat surface chrome. jsdom resolves
-    // no cascade at all, so only a measurement can see it; the gate's own rule
-    // is scoped to `> button` and `__actions button` for this reason.
-    //
-    // The ready phase no longer has a button of its own (the piano starts the
-    // attempt), so the measured action is the other one this always covered:
-    // Continue, on the run's own pass panel, reached by playing a clean run.
-    //
-    // The gate's rung is CUED, so a clean run means playing ON the beat: any
-    // key arms it, one measure of count-in follows (4 beats at 90bpm =
-    // 2666ms), and only then is the performance graded. Fake timers make that
-    // deterministic — real-time sleeps would race the ±220ms match window.
+  it('keeps piano recovery choices visible after a real cued failure', async () => {
     const markup = await markupOf(async (view) => {
       const { act } = await import('@testing-library/react');
-      const press = (midi) => {
-        act(() => { h.activeNotes = new Map([[midi, { velocity: 1 }]]); view.rerender(gateElement()); });
-        act(() => { h.activeNotes = new Map(); view.rerender(gateElement()); });
-      };
-      const advance = async (ms) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
       vi.useFakeTimers();
       try {
-        press(72);          // any key arms the count-in; it is not graded
-        await advance(2667); // the count-in, to the first graded beat
-        press(60);
-        await advance(667);  // one quarter note at 90bpm
-        press(62);
-        await advance(200);  // let the completed snapshot publish
-      } finally {
-        vi.useRealTimers();
-      }
-      await waitFor(() => expect(screen.getByText('Continue')).toBeTruthy());
-    });
-    const measured = await measure(page, css, markup);
-    const dumped = JSON.stringify(measured.runButtons);
-    const primary = measured.runButtons.find((b) => b.label === 'Continue');
-
-    expect(primary, `the run's primary action is not in the markup — ${dumped}`).toBeTruthy();
-    // The run's accent — --ex-accent, i.e. --piano-accent #2ec46f.
-    expect(primary.background, `Continue lost the run's accent — ${dumped}`)
-      .toBe('rgb(46, 196, 111)');
-    // And nothing the run owns is wearing the GATE's surface (--gg-surface
-    // #1f1f26), which is what an unscoped rule here paints them.
-    //
-    // Except the run's own QUIET actions: `.piano-exercises__quiet-action` is
-    // painted `var(--ex-surface) !important` by the run, and both tokens
-    // resolve to the same `--piano-surface` #1f1f26 — so that button's colour
-    // cannot tell the two sheets apart (and its `!important` puts it out of an
-    // unscoped rule's reach anyway). The discriminating button is the accented
-    // primary action asserted above.
-    for (const button of measured.runButtons.filter((b) => !b.classes.includes('piano-exercises__quiet-action'))) {
-      expect(button.background, `${button.label} was repainted by the gate — ${dumped}`)
-        .not.toBe('rgb(31, 31, 38)');
-    }
-  });
-
-  it('puts all three failure buttons on screen as reachable tap targets', async () => {
-    const markup = await markupOf(async (view) => {
-      // Play the attempt to a genuine, completed miss. The first key arms the
-      // cued rung's count-in; everything played during it lands nowhere near
-      // the beat, so both expected notes are missed and the attempt completes
-      // failed. That is the real path to the fail panel.
-      const { act } = await import('@testing-library/react');
-      const press = (midi) => {
-        act(() => { h.activeNotes = new Map([[midi, { velocity: 1 }]]); view.rerender(gateElement()); });
+        act(() => { h.activeNotes = new Map([[60, { velocity: 1 }]]); view.rerender(gateElement()); });
         act(() => { h.activeNotes = new Map(); view.rerender(gateElement()); });
-      };
-      for (const midi of [60, 61, 61, 61, 62]) press(midi);
+        await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+      } finally { vi.useRealTimers(); }
       await waitFor(() => expect(screen.getByText('Not this time')).toBeTruthy());
     });
     const measured = await measure(page, css, markup);
-
-    expect(measured.actions.map((b) => b.label)).toEqual(['Try again', 'Practice this', 'Leave']);
-    for (const button of measured.actions) {
-      expect(button.withinViewport, `${button.label} is off the kiosk canvas`).toBe(true);
-      expect(button.reachable, `${button.label} is covered by something`).toBe(true);
-      expect(button.height, `${button.label} is under the tap-target floor`).toBeGreaterThanOrEqual(44);
-    }
+    expect(measured.buttonCount).toBe(0);
+    expect(measured.recovery.withinViewport).toBe(true);
+    expect(measured.exitHint.withinViewport).toBe(true);
+    expect(measured.recovery.reachable).toBe(true);
+    expect(measured.documentScrolls).toBe(false);
   });
 });

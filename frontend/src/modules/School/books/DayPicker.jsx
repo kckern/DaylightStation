@@ -12,7 +12,7 @@
  * days are absent, not greyed.
  *
  * Collapsed, it shows one answer (`Today · Wed 2`) with `pick a day ›` to
- * open the grid; opened, the same `That's the day` confirms. Every tappable
+ * open the grid; opened, the Save finish action names the chosen date. Every tappable
  * fires on touch-down through `useTapFire`, like the rest of the shelf — a
  * wall panel a child jabs at. Nothing here reads the clock: `today` is the
  * caller's key, always. No `<h1>`, no timers, no logging — the parent owns
@@ -35,7 +35,7 @@ const WINDOW_STEP_DAYS = 21;
 // the preceding 364 days instead of quietly spilling beyond the promised year.
 const MAX_WINDOW_OFFSET_DAYS = 336;
 
-/** `Wed 2` — the short form the collapsed line and the confirm speak. */
+/** `Wed 2` — the short form the collapsed line and the summary speaks. */
 function shortLabel(key) {
   const ms = parseKey(key);
   return `${WEEKDAY_LABELS[isoWeekday(ms) - 1]} ${new Date(ms).getUTCDate()}`;
@@ -56,12 +56,12 @@ function shortLabel(key) {
  *   day the write path will refuse. Null means no floor.
  */
 export default function DayPicker({
-  today, value, onConfirm, onChange = null, busy = false, minDay = null,
+  today, value, onConfirm, onChange = null, busy = false, minDay = null, initiallyOpen = false, compact = false,
 }) {
   // Throws on a bad `today` — from render, so the parent hears about it now.
   parseKey(today);
   const tap = useTapFire();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initiallyOpen);
   const [offsetDays, setOffsetDays] = useState(0);
   const rows = useMemo(() => buildDayGrid(today, { offsetDays, minDay }), [today, offsetDays, minDay]);
   const [selected, setSelected] = useState(() => {
@@ -102,7 +102,7 @@ export default function DayPicker({
     <section className="school-books-days" data-testid="daypicker">
       <p className="school-books-days__summary" aria-live="polite">{summary}</p>
 
-      <button
+      {!compact && <button
         type="button"
         className="school-books-days__toggle"
         aria-expanded={open}
@@ -110,7 +110,7 @@ export default function DayPicker({
         {...tap(() => { if (!busy) setOpen((o) => !o); })}
       >
         {open ? 'close' : 'pick a day ›'}
-      </button>
+      </button>}
 
       {open && (
         <>
@@ -175,7 +175,7 @@ export default function DayPicker({
       )}
 
       <button type="button" className="school-books-days__confirm" disabled={busy} {...tap(confirm)}>
-        That&apos;s the day
+        Save finish · {dayLabel(selected)}
       </button>
     </section>
   );

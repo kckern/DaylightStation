@@ -234,6 +234,57 @@ describe('resolveSpec — one authored spec becomes something the run can grade'
     expect(h.catalog).not.toHaveBeenCalled();
   });
 
+  it('carries a spec\'s mode, direction and span through to the scales-bank id', async () => {
+    // The bank publishes all three axes (content/music/scales/modes.yml), and a
+    // level that names them is asking for a materially different exercise: a
+    // scale played up and back down is twice the ask of one played up.
+    h.instance.mockImplementation(async (id) => ({ ok: true, status: 200, data: { id } }));
+
+    const picked = await resolveSpec({
+      kind: 'exercise',
+      collection: 'scales',
+      roots: ['G'],
+      mode: 'minor-pentatonic',
+      direction: 'up-then-down',
+      span_octaves: 2,
+    }, { pickIndex: 0, mode: 'free' });
+
+    expect(picked.material.instanceId)
+      .toBe('scales/modes@root=G,mode=minor-pentatonic,direction=up-then-down,span_octaves=2');
+  });
+
+  it('keeps the one-octave ascending major default when a spec names no axes', async () => {
+    // Every scale rung in the live config is written without these keys. They
+    // must resolve to exactly the id they resolved to before the axes existed,
+    // or enabling this feature silently re-pitches every child's ladder.
+    h.instance.mockImplementation(async (id) => ({ ok: true, status: 200, data: { id } }));
+
+    const picked = await resolveSpec(
+      { kind: 'exercise', collection: 'scales', roots: ['C'] },
+      { pickIndex: 0, mode: 'free' },
+    );
+
+    expect(picked.material.instanceId).toBe('scales/modes@root=C,mode=ionian,direction=up,span_octaves=1');
+  });
+
+  it('falls back to the default for an axis value the bank does not publish', async () => {
+    // A typo must not become an unresolvable instance id. That would 502 as
+    // `instance-unavailable`, which this module classifies as an OUTAGE and
+    // fails open on — handing out a free match for as long as the typo lives.
+    // Substituting the known-good value keeps the child in front of a scale.
+    h.instance.mockImplementation(async (id) => ({ ok: true, status: 200, data: { id } }));
+
+    const picked = await resolveSpec({
+      kind: 'exercise',
+      collection: 'scales',
+      roots: ['C'],
+      direction: 'sideways',
+      span_octaves: 9,
+    }, { pickIndex: 0, mode: 'free' });
+
+    expect(picked.material.instanceId).toBe('scales/modes@root=C,mode=ionian,direction=up,span_octaves=1');
+  });
+
   it('takes a named instanceId as given', async () => {
     h.instance.mockResolvedValue({ ok: true, status: 200, data: { id: 'scales/modes@root=C', key: 'C' } });
     const picked = await resolveSpec({ kind: 'exercise', instanceId: 'scales/modes@root=C' }, { pickIndex: 0, mode: 'free' });

@@ -381,39 +381,19 @@ adult tuning the ladder reads it. It does not reach the child: the failure panel
 words, never a percentage, because a percentage with no bar beside it invites comparison
 against a target that does not exist.
 
-### Taking the pass
+### Automatic advance and piano recovery
 
-A pass is **claimed**, not applied: the run shows the child what they earned, and
-`onPassed` fires when they take it. That is deliberate — a pass is good news the player
-should read before the screen moves — but for a long time it had exactly one trigger, a
-click on Continue, and that made the gate unpassable on the screen it mattered most on.
+A passing result advances through `onPassed`, carrying the assessment ID. In a
+timed attempt the musical duration finishes first; matching the final note
+early cannot cut the clock short. One `passTakenRef` delivers the result once
+per attempt; telemetry records `piano.exercise-pass-taken` with `via: automatic`.
 
-The office TV has no touchscreen and no mouse. It is driven by a keyboard and a keypad
-that both sit out of a child's reach; the piano is the whole of what a child at it can
-touch. On 2026-09-06 a preschooler cleared the gate there twice in three minutes — 3/3
-notes, `passed: true`, both attempts persisted with a 201 — and `gate.passed` never
-fired either time, because there was nothing in the room that could press the button. He
-did the work and was locked out for finishing it.
-
-So a cleared pass is claimable four ways, and the run does not need to know which inputs
-the room has:
-
-| Route | For |
-|---|---|
-| The Continue button | Pointer devices — the tablet |
-| <kbd>Enter</kbd> / <kbd>Space</kbd> | Keyboards and keypads. The button is also autofocused, so the key reaches it either way |
-| Any piano key | The kiosk. **Only after the passing notes are released** — otherwise the chord that cleared the gate would claim its own pass and the child would never see they had won |
-| A 6s timer (`PASS_CLAIM_TIMEOUT_MS`) | The floor under the other three. No device configuration may strand a child on a screen they already cleared |
-
-All four are idempotent through one `passTakenRef`: the host is handed exactly one pass
-per attempt however many routes fire. The panel names the piano rather than the button
-("Play any key to keep going"), because on the kiosk the button is the one thing a child
-cannot use. Each claim logs `piano.exercise-pass-taken` with a `via` field, so which
-route a child actually used is answerable rather than assumed.
-
-This is the same principle as the gate's own Leave button, applied to the happy path:
-**every screen a child can be sent to needs a way out, and the one they reach by
-succeeding needs it most.**
+ExerciseRun and GameGate have no touch controls. A failed gate asks the player
+to release all keys and press any key to retry; this invokes the same ladder
+and retry policy as before. Holding the physical keyboard's lowest and highest
+keys for two seconds leaves without granting a match. A lone outer key waits
+300 ms to let its partner arrive; a held finishing chord cannot choose retry.
+The no-player panel uses a fresh key to leave, never to grant access.
 
 ### The floor cannot fail
 

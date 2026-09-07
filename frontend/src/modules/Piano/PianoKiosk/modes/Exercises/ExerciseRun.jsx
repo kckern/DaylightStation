@@ -4,6 +4,8 @@ import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import { usePianoMidi, usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import { usePianoUser } from '../../PianoUserContext.jsx';
 import PianoEmpty from '../../PianoEmpty.jsx';
+import { usePianoKioskConfigOptional } from '../../PianoConfig.jsx';
+import { usePianoExitGesture } from '../../../game-platform/input/usePianoExitGesture.js';
 import { SkeletonStage } from '../../Skeleton.jsx';
 import {
   assessmentProgress,
@@ -17,6 +19,7 @@ import {
   pianoPersistenceOutcome,
 } from '../../../performance/attemptEvidence.js';
 import ExerciseNotation from './ExerciseNotation.jsx';
+import { timedRunPresentation } from './timedRunPresentation.js';
 import KeysAsk from './KeysAsk.jsx';
 import ScorePassage from './ScorePassage.jsx';
 import { titleFromScoreId } from '../SheetMusic/scoreTitle.js';
@@ -37,6 +40,7 @@ import CountInOverlay from '../SheetMusic/CountInOverlay.jsx';
 import { countInPlan } from '../SheetMusic/countIn.js';
 import './Exercises.scss';
 
+const NO_FEEDBACK_NOTES = new Map();
 const EMPTY_SNAPSHOT = Object.freeze({ status: 'prepared', result: null, musicalInput: false });
 
 /** The surface's own windows. A requirement's `policy` is layered over these. */
@@ -48,7 +52,7 @@ const DEFAULT_POLICY = Object.freeze({ matchWindowMs: 220, missWindowMs: 420, ti
  *
  * `completed` is every note eventually accounted for. `timeout` is the stall
  * below: a challenge that was started, took real notes, and then stopped. Both
- * are outcomes; `aborted` (the header Exit, an unmount) is not, and is
+ * are outcomes; `aborted` (an unmount) is not, and is
  * deliberately absent — a walk-away has nothing to judge.
  */
 const JUDGED_STATUSES = Object.freeze(new Set(['completed', 'timeout']));
@@ -83,16 +87,6 @@ const JUDGED_STATUSES = Object.freeze(new Set(['completed', 'timeout']));
 const FREE_STALL_MS = 20000;
 /** A recall hint must arrive with enough time left to use it before the stall. */
 const HINT_REVEAL_MS = 12000;
-
-/**
- * How long a cleared pass waits for a child to claim it before claiming itself.
- *
- * Long enough to read "Passed" and see that it was earned; short enough that a
- * room whose only input this run did not anticipate cannot hold a child at a
- * screen they have already beaten. It is the floor under the button, the
- * keyboard and the piano — never the intended route.
- */
-const PASS_CLAIM_TIMEOUT_MS = 6000;
 
 /**
  * How long metronome practice clicks at a piano nobody is sitting at.
@@ -215,8 +209,7 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   had, apart from `ordering:'any'` material, which now gets lit keys.
  * @param {((reason:'no-access'|'instance-not-found'|'unrunnable')=>void)} [props.onUnavailable]
  *   This run has settled into a terminal state it cannot leave under its own
- *   power. All three render a `PianoEmpty` whose only affordance is the header
- *   Exit, so a host that mounted this run WITHOUT its own chrome would strand a
+ *   power. All three render a `PianoEmpty`, so a host without a recovery callback could strand a
  *   player on a dead end. Both callbacks are optional and additive: omit them
  *   and the surface behaves exactly as it did before.
  */
@@ -225,6 +218,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
   const { connected } = usePianoMidi();
+  const keyboardConfig = usePianoKioskConfigOptional()?.config?.keyboard;
   /**
    * RESOLUTION LIVES ABOVE THIS COMPONENT. `AskSession` owns it and hands down
    * a settled `instance`/`score`/`requirement`; this surface presents, grades,
@@ -240,7 +234,8 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   const [scoreExpectation, setScoreExpectation] = useState(null);
   const [runtime, setRuntime] = useState(null);
   const [lastWrong, setLastWrong] = useState(null);
-  const [countInBeat, setCountInBeat] = useState(null);
+  const [clockNow, setClockNow] = useState(() => Date.now());
+  const countdownHeldRef = useRef(new Set());
   const [unrunnable, setUnrunnable] = useState(false);
   // The stall clock's reset signal. Bumped by every note-on the run sees, and
   // read as a dependency by the stall effect below — which is the whole of "the
@@ -249,7 +244,6 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   const [noteOnTick, setNoteOnTick] = useState(0);
   const [prePulseStopped, setPrePulseStopped] = useState(false);
   const [afterStallHint, setAfterStallHint] = useState(false);
-  const countInTimerRef = useRef(null);
   const previousNotesRef = useRef([]);
   // The last held set actually handed to the engine. The held matcher grades the
   // WHOLE set on every observation, so re-sending an unchanged set after the
@@ -260,7 +254,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   const persistedRef = useRef(false);
   // One durable assessment identity per installed runtime. Hosts that grant a
   // stake after a real pass use this same id; retries get a fresh one, while a
-  // repeated Continue tap remains idempotent server-side.
+  // repeated host delivery remains idempotent server-side.
   const assessmentIdRef = useRef(null);
   const runtimeRef = useRef(null);
   const lastVisualCursorRef = useRef(null);
@@ -425,10 +419,9 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
       mode: next.getSnapshot().mode,
       cursor: next.getSnapshot().cursor,
     });
-    globalThis.clearInterval(countInTimerRef.current);
-    countInTimerRef.current = null;
     setLastWrong(null);
-    setCountInBeat(null);
+    countdownHeldRef.current.clear();
+    setClockNow(Date.now());
     // A fresh attempt is a fresh stall clock and a fresh pre-pulse budget:
     // Retry/Again must give a child the same run they were given the first
     // time, not the remainder of the last one's patience.
@@ -444,6 +437,25 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     useCallback(() => runtime?.getStoreSnapshot() || EMPTY_SNAPSHOT, [runtime]),
     () => EMPTY_SNAPSHOT,
   );
+
+  const timed = snapshot.matcher === 'timed';
+  const clockPosition = timed ? timedRunPresentation(snapshot, Math.max(clockNow, Date.now())) : null;
+  // The matcher may finish early. Its result must not end the musical display
+  // before the authored time has elapsed.
+  const awaitingTimeline = timed && snapshot.status === 'completed' && !clockPosition.timelineDone;
+  const timeline = awaitingTimeline ? { ...clockPosition, phase: 'running' } : clockPosition;
+  const resultReady = !awaitingTimeline;
+  useEffect(() => {
+    if (!timed || (snapshot.status !== 'running' && !awaitingTimeline)) return undefined;
+    setClockNow(Date.now());
+    const timer = globalThis.setInterval(() => setClockNow(Date.now()), 50);
+    return () => globalThis.clearInterval(timer);
+  }, [runtime, timed, snapshot.status, awaitingTimeline]);
+  const countingDown = timeline?.phase === 'countdown';
+  const feedbackNotes = timed
+    ? timeline.phase !== 'running' ? NO_FEEDBACK_NOTES
+      : new Map([...activeNotes].filter(([midi]) => !countdownHeldRef.current.has(midi)))
+    : activeNotes;
 
   const persist = useCallback(async (result, status = result?.status || 'completed', { keepalive = false } = {}) => {
     if (persistedRef.current || !subject) return;
@@ -476,7 +488,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   }, [access.persistent, challenge, currentUser, logger, programId, selectedMode, stepId, subject]);
 
   useEffect(() => {
-    if (!snapshot.result || persistedRef.current) return;
+    if (!snapshot.result || !resultReady || persistedRef.current) return;
     persist(snapshot.result);
     // A JUDGED attempt: completed, or stalled after real input. An `aborted`
     // one is persisted above and reported nowhere — there is nothing in it to
@@ -498,81 +510,37 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
       passed,
     });
     // A judged attempt that did not clear its bar. `onPassed` stays
-    // player-driven (the Continue button) because a pass is good news the
-    // player should read first; a failure is reported straight to the host so
+    // automatic for every host;
+    // a failure is reported straight to the host so
     // it can offer its own ways forward — and so a host counting failures
     // counts only attempts that actually happened.
     if (!passed) onFailed?.(snapshot.result);
-  }, [challenge, logger, onFailed, persist, requirement, snapshot, subject]);
+  }, [challenge, logger, onFailed, persist, requirement, resultReady, snapshot, subject]);
 
-  /**
-   * Taking a pass on a screen with no pointer.
-   *
-   * `onPassed` had exactly one trigger: a click on Continue. The office TV that
-   * hosts the game gate has no touchscreen and no mouse — it is driven by a
-   * keyboard and a keypad that both sit out of a child's reach — so a child who
-   * PASSED could not take the pass. On 2026-09-06 that stranded a preschooler
-   * twice in three minutes: two attempts, 3/3 notes each, both persisted, and
-   * `gate.passed` never fired either time. A gate that cannot be walked through
-   * once it has been CLEARED is worse than no gate, because the child did the
-   * work and was punished for finishing it.
-   *
-   * So a cleared pass is claimable three ways, since this run cannot know which
-   * inputs the room has: the button (pointer), Enter or Space (keyboard and
-   * keypad), and a piano key — the one instrument a child sitting at a piano
-   * certainly has. Beneath all three is a timer, for the same reason the gate
-   * keeps a Leave button it hopes never to need: no device configuration may
-   * strand a child on a screen they already cleared.
-   *
-   * The piano route waits for the passing chord to be RELEASED first. Without
-   * that, the very notes that cleared the gate would claim their own pass in
-   * the same breath, and the child would never see that they had won.
-   */
+  // Completion belongs to the host whenever it supplied a callback. Every
+  // host advances automatically; this piano surface has no pointer controls.
   const passTakenRef = useRef(false);
-  const releasedSincePassRef = useRef(false);
-  const judgedResult = JUDGED_STATUSES.has(snapshot.result?.status) ? snapshot.result : null;
-  const passAwaitingClaim = Boolean(
-    judgedResult && onPassed && runPassed(judgedResult, { challenge, passScore: requirement?.passScore }),
-  );
-  const takePass = useCallback((via) => {
-    if (passTakenRef.current) return;
-    passTakenRef.current = true;
-    logger.info('piano.exercise-pass-taken', { ...traceFieldsRef.current, via });
-    onPassed?.({ ...judgedResult, assessmentId: assessmentIdRef.current });
-  }, [judgedResult, logger, onPassed]);
-
-  // A retry, or a new subject, is a new pass to claim. Both refs are armed off
-  // the same flag that gates every route below, so none of them can fire on a
-  // run whose result has not been judged a pass.
+  const judgedResult = resultReady && JUDGED_STATUSES.has(snapshot.result?.status) ? snapshot.result : null;
+  const resultPassed = runPassed(judgedResult, { challenge, passScore: requirement?.passScore });
+  const hostOwnsResult = resultPassed ? Boolean(onPassed) : Boolean(onFailed);
+  const localRetry = Boolean(judgedResult && !hostOwnsResult);
   useEffect(() => {
-    if (passAwaitingClaim) return;
     passTakenRef.current = false;
-    releasedSincePassRef.current = false;
-  }, [passAwaitingClaim]);
-
+  }, [runtime]);
   useEffect(() => {
-    if (!passAwaitingClaim) return undefined;
-    const onKey = (event) => {
-      if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return;
-      event.preventDefault();
-      takePass('keyboard');
-    };
-    window.addEventListener('keydown', onKey, true);
-    const timer = globalThis.setTimeout(() => takePass('timeout'), PASS_CLAIM_TIMEOUT_MS);
-    return () => {
-      window.removeEventListener('keydown', onKey, true);
-      globalThis.clearTimeout(timer);
-    };
-  }, [passAwaitingClaim, takePass]);
-
-  useEffect(() => {
-    if (!passAwaitingClaim) return;
-    if (activeNotes.size === 0) {
-      releasedSincePassRef.current = true;
-      return;
-    }
-    if (releasedSincePassRef.current) takePass('piano');
-  }, [activeNotes, passAwaitingClaim, takePass]);
+    if (!judgedResult || !resultPassed || !onPassed || passTakenRef.current) return;
+    passTakenRef.current = true;
+    logger.info('piano.exercise-pass-taken', { ...traceFieldsRef.current, via: 'automatic' });
+    onPassed({ ...judgedResult, assessmentId: assessmentIdRef.current });
+  }, [judgedResult, resultPassed, onPassed, logger]);
+  const { exitHeld } = usePianoExitGesture({
+    activeNotes, keyboard: keyboardConfig, onExit, enabled: Boolean(onExit) || localRetry,
+    continueEnabled: localRetry, resetKey: runtime,
+    onContinue: () => {
+      logger.info('piano.exercise-retry', { ...traceFieldsRef.current, via: 'piano' });
+      installRuntime();
+    },
+  });
 
   /**
    * The stall: a free challenge that was started, took real notes, and stopped.
@@ -698,6 +666,10 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     return { bpm, leadInMs, periodMs, clicks: Math.max(1, Math.round(leadInMs / periodMs)) };
   }, [beatsPerMeasure, clickBpm, snapshot.expectation]);
 
+  const countInBeat = countingDown && countIn
+    ? Math.min(countIn.clicks, Math.floor(((snapshot.leadInMs ?? 0) - timeline.countdownRemainingMs) / countIn.periodMs) + 1)
+    : null;
+
   /**
    * A cued ask arms on ANY key — the child is saying "I am here", not playing
    * yet — and then hears one measure of clicks before the first graded beat.
@@ -710,21 +682,13 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     // No usable tempo to count at — start anyway. A key that does nothing is a
     // dead surface, and a child cannot tell that apart from a broken piano.
     runtime.start({ leadInMs: countIn?.leadInMs ?? 0, clock: 'date-now' });
-    if (!countIn) return;
-    setCountInBeat(1);
-    globalThis.clearInterval(countInTimerRef.current);
-    countInTimerRef.current = globalThis.setInterval(() => {
-      const state = runtime.getSnapshot();
-      const elapsed = Date.now() - (state.startedAt ?? 0);
-      if (state.status !== 'running' || elapsed >= countIn.leadInMs) {
-        globalThis.clearInterval(countInTimerRef.current);
-        countInTimerRef.current = null;
-        setCountInBeat(null);
-        return;
-      }
-      setCountInBeat(Math.min(countIn.clicks, Math.floor(elapsed / countIn.periodMs) + 1));
-    }, 100);
-  }, [countIn, runtime]);
+    countdownHeldRef.current = new Set(activeNotesRef.current.keys());
+    setClockNow(Date.now());
+    traceEvent('piano.exercise-countdown-started', {
+      ...timedRunPresentation(runtime.getSnapshot(), Date.now()),
+      ignored: [...activeNotesRef.current.keys()], reason: 'arming-key',
+    });
+  }, [countIn, runtime, traceEvent]);
 
   /**
    * The notes that can arm a free ask: the pitches of the event the cursor is
@@ -758,13 +722,13 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   }, [prePulse, prePulseStopped]);
 
   useMetronomeClick({
-    enabled: (snapshot.status === 'running' && ['metronome', 'cued'].includes(snapshot.mode))
+    enabled: ((snapshot.status === 'running' || awaitingTimeline) && ['metronome', 'cued'].includes(snapshot.mode))
       || (prePulse && !prePulseStopped),
     // The tempo the attempt is GRADED at, which is not always `clickBpm`: a
     // cued rung carries no `gates.pace`, so a tempo-less single-event instance
     // (graded at the engine's default) would leave this NaN — the hook then
     // creates no scheduler at all and the count-in counts in silence.
-    bpm: countIn?.bpm ?? clickBpm,
+    bpm: timeline?.phase === 'running' ? timeline.bpm : countIn?.bpm ?? clickBpm,
   });
   const heldKey = held.join(',');
   useEffect(() => {
@@ -783,6 +747,17 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
       status: runtime.getSnapshot().status,
       time,
     });
+    for (const midi of releases) countdownHeldRef.current.delete(midi);
+    if (exitHeld) return;
+    const currentState = runtime.getSnapshot();
+    const inputClock = currentState.matcher === 'timed' ? timedRunPresentation(currentState, time) : null;
+    if (inputClock?.phase === 'countdown') {
+      for (const midi of held) countdownHeldRef.current.add(midi);
+      if (onsets.length) traceEvent('piano.exercise-input-ignored', {
+        ...inputClock, displayedCursor: -1, ignored: onsets, reason: 'countdown', held,
+      });
+      return;
+    }
     // Every note-on the run sees resets the stall clock — including the one
     // that arms it, which is the note the clock should be measured from.
     if (onsets.length) setNoteOnTick((tick) => tick + 1);
@@ -836,13 +811,15 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
       return;
     }
     for (const midi of onsets) runtime.observe({ midi, time, clock: 'date-now' });
-  }, [activeNotes, armingPitches, held, heldKey, runtime, snapshot.cursor, snapshot.matcher, snapshot.mode, snapshot.status, startCountIn, traceEvent]);
+  }, [activeNotes, armingPitches, exitHeld, held, heldKey, runtime, snapshot.cursor, snapshot.matcher, snapshot.mode, snapshot.status, startCountIn, traceEvent]);
 
   useEffect(() => () => {
-    globalThis.clearInterval(countInTimerRef.current);
-    countInTimerRef.current = null;
     const active = runtimeRef.current?.getSnapshot();
-    if (active?.status === 'running' && active.musicalInput && !persistedRef.current) {
+    if (active?.result && !persistedRef.current) {
+      // A completed assessment can be waiting for the musical timeline. Exit
+      // preserves that evidence without treating exit as a passed game gate.
+      persist(active.result, active.status, { keepalive: true });
+    } else if (active?.status === 'running' && active.musicalInput && !persistedRef.current) {
       const interrupted = runtimeRef.current.abort();
       persist(interrupted.result, 'aborted', { keepalive: true });
     }
@@ -862,19 +839,25 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   const progress = runtime ? assessmentProgress(snapshot) : { eventIndex: 0 };
   const askEvents = instance ? instance.events : (snapshot.expectation?.events ?? []);
   const eventIndex = Math.min(progress.eventIndex, askEvents.length);
-  const visualCursor = visualCursorFor(askEvents, eventIndex, activeNotes, snapshot.status);
-  const visualCursorSignature = `${assessmentIdRef.current ?? 'none'}:${eventIndex}:${visualCursor.index}:${visualCursor.reason}:${heldKey}:${snapshot.status}`;
+  const visualCursor = timed
+    ? { index: timeline.phase === 'countdown' || timeline.phase === 'prepared' ? -1 : timeline.expectedCursor, reason: 'clock' }
+    : visualCursorFor(askEvents, eventIndex, activeNotes, snapshot.status);
+  const visualCursorSignature = `${assessmentIdRef.current ?? 'none'}:${eventIndex}:${visualCursor.index}:${visualCursor.reason}:${heldKey}:${snapshot.status}:${timeline?.phase}:${timeline?.beat}:${countInBeat}`;
   useEffect(() => {
     if (lastVisualCursorRef.current === visualCursorSignature) return;
     lastVisualCursorRef.current = visualCursorSignature;
     traceEvent('piano.exercise-visual-cursor', {
+      ...timeline,
+      time: Date.now(),
+      countInBeat,
+      phase: timeline?.phase ?? snapshot.status,
       assessmentCursor: eventIndex,
       displayedCursor: visualCursor.index,
       reason: visualCursor.reason,
       held,
       status: snapshot.status,
     });
-  }, [eventIndex, held, snapshot.status, traceEvent, visualCursor.index, visualCursor.reason, visualCursorSignature]);
+  }, [eventIndex, held, snapshot.status, traceEvent, visualCursor.index, visualCursor.reason, visualCursorSignature, countInBeat]);
 
   if (notFound) return <PianoEmpty message="Exercise not found. It may have been renamed." />;
   if (unrunnable) return <PianoEmpty message="Cannot start this one. It is missing something the challenge needs — try another." />;
@@ -891,25 +874,18 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   // stalled. Leaving a stalled one out would leave the child on the running
   // status line — a run that has ended, still saying "follow the highlighted
   // notes" at a piano nothing is listening to.
-  const result = JUDGED_STATUSES.has(snapshot.result?.status) ? snapshot.result : null;
-  const phase = snapshot.status === 'prepared' ? 'ready' : JUDGED_STATUSES.has(snapshot.status) ? 'done' : countInBeat ? 'countdown' : 'running';
+  const result = resultReady && JUDGED_STATUSES.has(snapshot.result?.status) ? snapshot.result : null;
+  const phase = snapshot.status === 'prepared' ? 'ready' : resultReady && JUDGED_STATUSES.has(snapshot.status) ? 'done' : countingDown ? 'countdown' : 'running';
   const expected = askEvents.flatMap((event) => event.notes.map((note) => note.midi));
   // Two consumers, two different things. ExerciseNotation's `wrong` prop is a
   // FLAG (it only ever colours the cursor note), so it gets a boolean — passing
   // the object would "work" by truthiness and rot the moment either side
   // changes. The keyboard footer wants the pitch itself.
-  const isWrong = lastWrong !== null;
-  const wrongNotes = lastWrong === null ? null : new Set([lastWrong.midi]);
+  const isWrong = !countingDown && lastWrong !== null;
+  const wrongNotes = countingDown || lastWrong === null ? null : new Set([lastWrong.midi]);
   const passed = runPassed(result, { challenge, passScore: requirement?.passScore });
-  /**
-   * A host that took `onFailed` owns what happens after a miss, and it is told
-   * from a PASSIVE effect — which React schedules after paint. Rendering this
-   * run's own result panel as well would flash "Keep working" with two tappable
-   * buttons (Retry, Practice first) for a frame before the host swapped it out.
-   * On a tablet that is a real mis-tap, not a cosmetic blink. A pass is
-   * unaffected: `onPassed` is player-driven, so the panel and its Continue
-   * button are still the only way to take it.
-   */
+  // A host handling failures owns the next screen. Suppress the local result
+  // panel so it cannot flash a retry instruction before that transition.
   const hostOwnsFailure = Boolean(onFailed) && !passed;
   const currentEvent = askEvents[Math.min(visualCursor.index, askEvents.length - 1)] || askEvents[0];
   const targetNotes = new Map((currentEvent?.notes || []).map((note) => [note.midi, { velocity: 1 }]));
@@ -972,9 +948,8 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   const scoreReadout = stage !== 'keys' && Number.isFinite(result?.score);
 
   return (
-    <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}`} data-tier={runTier} data-stage={stage}>
+    <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}`} data-tier={runTier} data-stage={stage} data-phase={phase} data-expected-cursor={timeline?.expectedCursor ?? eventIndex} data-displayed-cursor={visualCursor.index}>
       <header className="piano-exercise-run__head">
-        <button type="button" className="piano-exercise-run__back" onClick={onExit}>Exit</button>
         <div><span>{framing ?? (challenge ? 'Pass challenge' : 'Practice')}</span><h1>{ask ?? subject.title}</h1></div>
         <div className="piano-exercise-run__context">
           {/* Each chip only where it means something: a key names how a STAFF is
@@ -995,8 +970,8 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
           <KeysAsk
             events={instance.events}
             cursorIndex={visualCursor.index}
-            activeNotes={activeNotes}
-            wrongMidi={lastWrong?.midi ?? null}
+            activeNotes={feedbackNotes}
+            wrongMidi={countingDown ? null : lastWrong?.midi ?? null}
             showStaff={askStaff}
             accidental={accidental}
             // No `clef` prop: KeysAsk's own default IS `clefForAsk(events)` on
@@ -1021,7 +996,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
             <p>Play it from memory.</p>
             {hintVisible && (
               <div className="piano-exercise-run__recall-hint" data-testid="piano-recall-hint">
-                <KeysAsk events={instance.events} cursorIndex={visualCursor.index} activeNotes={activeNotes} wrongMidi={lastWrong?.midi ?? null} />
+                <KeysAsk events={instance.events} cursorIndex={visualCursor.index} activeNotes={feedbackNotes} wrongMidi={countingDown ? null : lastWrong?.midi ?? null} />
               </div>
             )}
           </div>
@@ -1045,14 +1020,14 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
             <SvgSequenceStaff
               notes={staffNotes}
               cursorIndex={visualCursor.index}
-              activeNotes={activeNotes}
+              activeNotes={feedbackNotes}
               clef={clefForInstance(instance)}
               accidental={accidental}
             />
           </div>
         )}
         {stage === 'notation' && (
-          <ExerciseNotation instance={instance} eventIndex={eventIndex} wrong={isWrong} complete={phase === 'done' && passed} />
+          <ExerciseNotation activeNotes={feedbackNotes} instance={instance} eventIndex={visualCursor.index} wrong={isWrong} complete={phase === 'done' && passed} />
         )}
         {stage === 'score' && (
           /* The passage is BOTH the stage and the source of the ask: it engraves
@@ -1060,16 +1035,17 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
              built from. It is mounted before there is a runtime, deliberately —
              see the guard above. */
           <ScorePassage
+            showCursor={timed}
             musicXml={score.musicXml}
             sourceId={score.id}
             measures={score.measures}
             onExpectation={takeScoreExpectation}
             onUnrunnable={handleScoreUnrunnable}
             cursorIndex={visualCursor.index}
-            wrongMidi={lastWrong?.midi ?? null}
+            wrongMidi={countingDown ? null : lastWrong?.midi ?? null}
           />
         )}
-        <CountInOverlay active={countInBeat != null} beat={countInBeat} />
+        <CountInOverlay active={countingDown} beat={countInBeat} />
       </div>
       {/* No button: the piano starts the run. A cued ask arms on any key and
           counts a measure; every other ask arms on the note it is asking for. */}
@@ -1079,7 +1055,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
           broken one. */}
       <div className="piano-exercise-run__rail">
       {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{!runtime ? 'Getting the music ready…' : snapshot.mode === 'cued' ? `Press any key to start. You'll hear ${countIn?.clicks ?? beatsPerMeasure} clicks, then play at that speed.` : 'Play the first note to begin.'}</p>{!connected && <span>Waiting for the piano…</span>}</div>}
-      {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : isWrong ? 'That note was not expected — keep going.' : stage === 'recall' ? 'Play the named music from memory.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.'}</p>}
+      {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : isWrong ? 'That note was not expected — keep going.' : stage === 'recall' ? 'Play the named music from memory.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.'}{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
       {phase === 'done' && result && !hostOwnsFailure && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}`}>
         <div><span>{passed ? 'Passed' : challenge ? 'Keep working' : 'Practice complete'}</span>{scoreReadout && <strong>{Math.round(result.score * 100)}%</strong>}</div>
         {/* A percentage is a reading task of its own, and the tiers below 2 are
@@ -1088,15 +1064,10 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
         {scoreReadout
           ? <dl><div><dt>All notes</dt><dd>{Math.round((result.criteria.completeness ?? 0) * 100)}%</dd></div><div><dt>Clean notes</dt><dd>{Math.round((result.criteria.cleanliness ?? 0) * 100)}%</dd></div>{Number.isFinite(result.criteria.placement) && <div><dt>On the beat</dt><dd>{Math.round(result.criteria.placement * 100)}%</dd></div>}</dl>
           : <p className="piano-exercise-run__result-copy">{passed ? 'You played every note that was asked for.' : 'Some of the notes are still missing. Have another go.'}</p>}
-        {/* The way onward, said out loud. A child on the office TV has no
-            pointer and no keyboard — the piano is the whole of their reach —
-            so the panel names the piano rather than pointing at a button they
-            cannot press. */}
-        {passAwaitingClaim && <p className="piano-exercise-run__result-onward">Play any key to keep going.</p>}
-        <div className="piano-exercise-run__result-actions"><button type="button" className="piano-exercises__quiet-action" onClick={installRuntime}>{challenge ? 'Retry' : 'Again'}</button>{challenge && !passed && <button type="button" onClick={onExit}>Practice first</button>}{passed && onPassed && <button type="button" autoFocus onClick={() => takePass('button')}>Continue</button>}</div>
+        {localRetry && <p className="piano-exercise-run__result-onward">Release the keys, then play any key to try again.{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
       </section>}
       </div>
-      {keyboardFooter && <footer className="piano-exercise-run__keys"><PianoKeyboard activeNotes={activeNotes} targetNotes={targetNotes} wrongNotes={wrongNotes} dimTarget startNote={Math.max(21, Math.min(...expected) - 5)} endNote={Math.min(108, Math.max(...expected) + 5)} /></footer>}
+      {keyboardFooter && <footer className="piano-exercise-run__keys"><PianoKeyboard activeNotes={feedbackNotes} targetNotes={targetNotes} wrongNotes={wrongNotes} dimTarget startNote={Math.max(21, Math.min(...expected) - 5)} endNote={Math.min(108, Math.max(...expected) + 5)} /></footer>}
     </section>
   );
 }

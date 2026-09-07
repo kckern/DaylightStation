@@ -96,10 +96,9 @@ describe('AddBook', () => {
       expect(screen.getByText('Hatchet')).toBeInTheDocument();
       expect(screen.getByText('Gary Paulsen')).toBeInTheDocument();
       expect(screen.getByText('A boy, a plane, a hatchet.')).toBeInTheDocument();
-      expect(screen.getByText(/is this your book/i)).toBeInTheDocument();
-      fireEvent.click(screen.getByRole('button', { name: 'Yes' }));
-      expect(a.confirmCover).toHaveBeenCalledWith(true);
-      fireEvent.click(screen.getByRole('button', { name: 'No, edit number' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Start reading' }));
+      expect(a.choose).toHaveBeenCalledWith('starting');
+      fireEvent.click(screen.getByRole('button', { name: 'Wrong book? Edit number' }));
       expect(a.confirmCover).toHaveBeenCalledWith(false);
     });
 
@@ -110,7 +109,7 @@ describe('AddBook', () => {
       expect(screen.queryByRole('button', { name: 'Yes' })).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: 'Open it' }));
       expect(a.openDuplicate).toHaveBeenCalledTimes(1);
-      fireEvent.click(screen.getByRole('button', { name: 'No, edit number' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Wrong book? Edit number' }));
       expect(a.confirmCover).toHaveBeenCalledWith(false);
     });
 
@@ -125,9 +124,8 @@ describe('AddBook', () => {
       expect(screen.getByText(/couldn't find a title or cover/i)).toBeInTheDocument();
       expect(screen.getByText(/you can still log it by ISBN/i)).toBeInTheDocument();
       expect(screen.queryByText(/fill in the book details later/i)).toBeNull();
-      expect(screen.getByText(/is this the ISBN on your book/i)).toBeInTheDocument();
-      fireEvent.click(screen.getByRole('button', { name: 'Yes, log this book' }));
-      expect(a.confirmCover).toHaveBeenCalledWith(true);
+      fireEvent.click(screen.getByRole('button', { name: 'Start reading' }));
+      expect(a.choose).toHaveBeenCalledWith('starting');
     });
   });
 
@@ -136,12 +134,12 @@ describe('AddBook', () => {
 
     it('three doors → choose(where)', () => {
       const a = mount('where', { add: add({ resolved }) });
-      fireEvent.click(screen.getByRole('button', { name: /just starting it/i }));
-      fireEvent.click(screen.getByRole('button', { name: /partway through/i }));
-      fireEvent.click(screen.getByRole('button', { name: /already finished it/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Start reading/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Update page/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Finished today/i }));
       expect(a.choose).toHaveBeenNthCalledWith(1, 'starting');
       expect(a.choose).toHaveBeenNthCalledWith(2, 'partway');
-      expect(a.choose).toHaveBeenNthCalledWith(3, 'finished');
+      expect(a.choose).toHaveBeenNthCalledWith(3, 'finished', TODAY);
     });
 
     // A pre-reader got the number typed and then stalled on three identical
@@ -149,13 +147,13 @@ describe('AddBook', () => {
     // made by sight.
     it('each door is a mark of its own, not three lines of text', () => {
       mount('where', { add: add({ resolved }) });
-      const marks = [/just starting it/i, /partway through/i, /already finished it/i]
+      const marks = [/Start reading/i, /Update page/i, /Finished today/i]
         .map((name) => screen.getByRole('button', { name }).querySelector('.school-icon svg'));
       expect(marks.every(Boolean)).toBe(true);
       expect(new Set(marks.map((mark) => mark.outerHTML)).size).toBe(3);
       // The words stay: the mark is for the child who cannot read them yet,
       // not instead of them.
-      expect(screen.getByRole('button', { name: /just starting it/i })).toHaveTextContent("I'm just starting it");
+      expect(screen.getByRole('button', { name: /Start reading/i })).toHaveTextContent('Start reading');
     });
 
     it('names the book above the doors', () => {
@@ -165,7 +163,7 @@ describe('AddBook', () => {
 
     it('busy disables the doors', () => {
       mount('where', { add: add({ resolved }), busy: true });
-      expect(screen.getByRole('button', { name: /just starting it/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /Start reading/i })).toBeDisabled();
     });
   });
 
@@ -173,16 +171,15 @@ describe('AddBook', () => {
     const a = mount('page', { add: add({ resolved: { status: 'ok', book: BOOK } }) });
     expect(screen.getByText('What page are you on?')).toBeInTheDocument();
     press(8, 4);
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save page' }));
     expect(a.submitPage).toHaveBeenCalledWith(84);
   });
 
   it('when: the DayPicker → submitDay(key)', () => {
     const a = mount('when', { add: add({ resolved: { status: 'ok', book: BOOK } }) });
     expect(screen.getByText(/when did you finish it/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /pick a day/i }));
     fireEvent.click(screen.getByRole('gridcell', { name: /Tuesday 25 August/ }));
-    fireEvent.click(screen.getByRole('button', { name: /that's the day/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Save finish/ }));
     expect(a.submitDay).toHaveBeenCalledWith('2026-08-25');
   });
 

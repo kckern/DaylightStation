@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import AgendaStatusBoard from './AgendaStatusBoard.jsx';
 import { dayStatus, summarize, ringsByLearner } from './agendaStatusModel.js';
 
@@ -525,7 +525,7 @@ describe('a scan updates the board immediately', () => {
     expect(schoolApi.teacherDay.mock.calls.length).toBe(calls);
   });
 
-  it.each(['story-read', 'piano-lesson-complete', 'program-day-bypass-changed'])(
+  it.each(['story-read', 'piano-lesson-complete', 'program-day-bypass-changed', 'session-grade-changed'])(
     're-reads immediately on a relevant %s event for a displayed learner',
     async (event) => {
       schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
@@ -561,5 +561,88 @@ describe('a scan updates the board immediately', () => {
     school.cb({ event: 'reader-heartbeat', learnerId: 'learner1', studyDay: '2026-08-26' });
 
     expect(schoolApi.teacherDay.mock.calls.length).toBe(before);
+  });
+});
+
+
+const READING_ACTIVITY = { status: 'ok', studyDay: '2026-09-07', hasActivity: true, progressCount: 3, finishedCount: 2, bookCount: 2 };
+describe('independent reading acknowledgment', () => {
+  it('adds one supplemental circle without changing required counts or day completion', () => {
+    expect(summarize([], [], [], READING_ACTIVITY)).toMatchObject({ total: 0, done: 0, segments: [
+      { supplemental: true, programId: 'book-log', label: 'Reading', state: 'passed', unitId: 'book-log:activity:2026-09-07' },
+    ] });
+    expect(dayStatus(summarize([], [], [], READING_ACTIVITY))).toBeNull();
+  });
+  it('leaves Story time pending despite shared English subject', () => {
+    const summary = summarize([{ subject: 'english', next: { unitId: 'story-time:daily' } }], [],
+      [{ unitId: 'story-time:daily', subject: 'english', program: 'story-time' }], READING_ACTIVITY);
+    expect(summary).toMatchObject({ total: 1, done: 0, segments: [
+      { label: 'Story time', state: 'pending' }, { label: 'Reading', supplemental: true, state: 'passed' },
+    ] });
+  });
+  it.each([null, { status: 'unavailable', hasActivity: true }, { ...READING_ACTIVITY, hasActivity: false }])('invents no credit without authoritative activity: %j', activity => {
+    expect(summarize([], [], [], activity).segments).toEqual([]);
+  });
+  it('keeps actual/target required reading partial and independently acknowledges activity', () => {
+    const summary = summarize([{ subject: 'english', next: { unitId: 'book-log:shelf', obligationProgress: { actual: 5, target: 20, met: false, metric: 'pages' } } }], [],
+      [{ unitId: 'book-log:shelf', program: 'book-log', subject: 'english' }], READING_ACTIVITY);
+    expect(summary).toMatchObject({ total: 1, done: 0, segments: [
+      { programId: 'book-log', state: 'in-progress' }, { supplemental: true, state: 'passed' },
+    ] });
+  });
+  it('avoids redundant supplemental credit for completed required reading', () => {
+    const summary = summarize([{ subject: 'english', servedWork: [{ unitId: 'book-log:shelf', title: 'Reading' }] }], [],
+      [{ unitId: 'book-log:shelf', program: 'book-log', subject: 'english' }], READING_ACTIVITY);
+    expect(summary).toMatchObject({ total: 1, done: 1, segments: [{ programId: 'book-log', label: 'Reading', state: 'passed' }] });
+    expect(summary.segments).toHaveLength(1);
+  });
+});
+
+describe('persisted reading on the board', () => {
+  const kids = [KIDS[0]];
+  const digest = (activity = READING_ACTIVITY) => ({ ok: true, data: { studyDay: '2026-09-07', learners: [{ learnerId: 'learner1', sessions: [], readingActivity: activity }] } });
+  beforeEach(() => {
+    vi.clearAllMocks(); wsHandlers.length = 0;
+    schoolApi.stateGates.mockResolvedValue({ ok: false });
+    schoolApi.teacherDay.mockResolvedValue(digest());
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: { sections: [], entries: [] } });
+  });
+  it.each([false, true])('renders optional Reading with no required assignments, plan failed=%s', async failed => {
+    if (failed) schoolApi.agendaPreview.mockRejectedValue(new Error('offline'));
+    render(<AgendaStatusBoard kids={kids} day="2026-09-07" />);
+    expect(await screen.findByRole('img', { name: 'Reading: done, 2 books, 2 finishes, 3 progress entries' })).toBeInTheDocument();
+    expect(screen.queryByText('Done for the day')).toBeNull();
+    expect(document.querySelector('[data-complete="true"]')).toBeNull();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+  it('uses the server study day before the household boundary, not the browser date', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-08T09:00:00Z'));
+    try {
+      render(<AgendaStatusBoard kids={kids} />);
+      expect(await screen.findByRole('img', { name: 'Reading: done, 2 books, 2 finishes, 3 progress entries' })).toBeInTheDocument();
+      expect(schoolApi.teacherDay).toHaveBeenCalledWith();
+      expect(schoolApi.agendaPreview).toHaveBeenCalledWith('learner1', '2026-09-07');
+      const count = schoolApi.teacherDay.mock.calls.length;
+      await act(async () => wsHandlers.filter(h => h.topic === 'school').at(-1).cb({ event: 'story-read', learnerId: 'learner1', studyDay: '2026-09-07' }));
+      expect(schoolApi.teacherDay.mock.calls.length).toBeGreaterThan(count);
+    } finally { now.mockRestore(); }
+  });
+  it('rereads on book changes including backdated undo, ignores unrelated learners, and trusts only persisted evidence', async () => {
+    schoolApi.teacherDay.mockResolvedValue(digest({ ...READING_ACTIVITY, hasActivity: false }));
+    render(<AgendaStatusBoard kids={kids} day="2026-09-07" />);
+    await screen.findByText('No plan to show');
+    const send = payload => act(async () => wsHandlers.filter(h => h.topic === 'school').at(-1).cb(payload));
+    const calls = schoolApi.teacherDay.mock.calls.length;
+    await send({ event: 'book-log-changed', learnerId: 'outsider' });
+    expect(schoolApi.teacherDay).toHaveBeenCalledTimes(calls);
+    await send({ event: 'book-log-changed', learnerId: 'learner1', hasActivity: true });
+    expect(schoolApi.teacherDay).toHaveBeenCalledTimes(calls + 1);
+    expect(screen.queryByRole('img', { name: 'Reading: done, 2 books, 2 finishes, 3 progress entries' })).toBeNull();
+    schoolApi.teacherDay.mockResolvedValue(digest());
+    await send({ event: 'book-log-changed', learnerId: 'learner1' });
+    expect(await screen.findByRole('img', { name: 'Reading: done, 2 books, 2 finishes, 3 progress entries' })).toBeInTheDocument();
+    schoolApi.teacherDay.mockResolvedValue(digest({ ...READING_ACTIVITY, hasActivity: false }));
+    await send({ event: 'book-log-changed', learnerId: 'learner1', studyDay: '2026-09-01', action: 'undo' });
+    await waitFor(() => expect(screen.queryByRole('img', { name: 'Reading: done, 2 books, 2 finishes, 3 progress entries' })).toBeNull());
   });
 });

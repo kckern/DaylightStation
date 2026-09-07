@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { planDailyAgenda } from '../../2_domains/school/agenda.mjs';
+import { summarize } from '../../../../frontend/src/modules/School/status/agendaStatusModel.js';
 import { BookLogProgramLauncher } from './BookLogProgramLauncher.mjs';
 
 const silentLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
@@ -474,5 +476,21 @@ describe('BookLogProgramLauncher', () => {
     }).status({ userId: 'kid' });
     expect(called).toBe(false);
     expect(status).toMatchObject({ enrolled: true, error: false });
+  });
+});
+
+
+describe('required reading reaches the actual agenda and board', () => {
+  const obligation = { metric: 'pages', quantity: 20, per: 'day', scope: null };
+  it('retains a completed required shelf after the agenda removes its next action', async () => {
+    const status = await launcher(enrolled(obligation), [item({ events: [{ kind: 'progress', at: '2026-08-09T18:00:00Z', page: 20 }] })]).status({ userId: 'kid' });
+    const entries = [{ unitId: 'book-log:shelf', subject: 'english', program: 'book-log', programInstance: 'shelf', cadence: 'daily', status: 'available', timingPriority: 3, timingRank: 0 }];
+    const agenda = planDailyAgenda({ plan: { entries }, now: '2026-08-09T18:00:00Z', programStatuses: { 'book-log::shelf': status } });
+    expect(agenda.sections[0].next).toBeNull();
+    expect(agenda.sections[0].servedWork).toEqual([expect.objectContaining({ unitId: 'book-log:shelf', title: 'Reading' })]);
+    expect(summarize(agenda.sections, [], entries, { status: 'ok', hasActivity: true, studyDay: '2026-08-09' })).toMatchObject({ total: 1, done: 1, segments: [{ programId: 'book-log', state: 'passed' }] });
+  });
+  it.each([null, enrolled(), enrolled(obligation)])('supplies no completed work without a met obligation: %j', async enrollment => {
+    expect((await launcher(enrollment).status({ userId: 'kid' })).servedWork ?? []).toEqual([]);
   });
 });

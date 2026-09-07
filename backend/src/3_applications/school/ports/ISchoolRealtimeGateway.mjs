@@ -6,6 +6,7 @@
  * announcements they need to make.
  */
 export class ISchoolRealtimeGateway {
+  bookScanAvailable(_intent) { throw new Error('bookScanAvailable not implemented'); }
   onLanguageDayCompleted(_handler) { throw new Error('onLanguageDayCompleted must be implemented'); }
   onApprovedLaunchDispatched(_handler) { throw new Error('onApprovedLaunchDispatched must be implemented'); }
   onFitnessActivityAccepted(_handler) { throw new Error('onFitnessActivityAccepted must be implemented'); }
@@ -18,6 +19,7 @@ export class ISchoolRealtimeGateway {
   onPrintSheet(_readerConfig, _handler) { throw new Error('onPrintSheet must be implemented'); }
   languageDayCompleted(_fact) { throw new Error('languageDayCompleted must be implemented'); }
   sessionOutcomeRecorded(_fact) { throw new Error('sessionOutcomeRecorded must be implemented'); }
+  sessionGradeChanged(_fact) { throw new Error('sessionGradeChanged must be implemented'); }
   assignmentsChanged(_fact) { throw new Error('assignmentsChanged must be implemented'); }
   completionStateObserved(_fact) { throw new Error('completionStateObserved must be implemented'); }
   schoolCeremony(_announcement) { throw new Error('schoolCeremony must be implemented'); }

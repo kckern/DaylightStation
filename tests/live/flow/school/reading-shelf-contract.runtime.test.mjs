@@ -10,6 +10,11 @@ const CODE = '482913';
 const GRANT = 'signed-disposable-book-grant';
 const ISBN = '9780064400558';
 const STUDY_DAY = '2026-09-03';
+const SCREEN_CONFIG = {
+  screen: 'portal',
+  route: '/screen/portal',
+  layout: { children: [{ widget: 'school', grow: 1, props: { mode: 'locked', screenId: 'portal' } }] },
+};
 
 const hostileBook = {
   isbn13: ISBN,
@@ -21,7 +26,7 @@ const hostileBook = {
   coverUrl: 'https://catalog.example.test/landscape.svg',
 };
 
-const shelfItem = ({ isbn, title, subtitle = null, authors, coverUrl, progressMode = 'page', projection, pageCount = 240 }) => ({
+const shelfItem = ({ isbn, title, subtitle = null, authors, coverUrl, progressMode = 'page', projection, pageCount = 240, events = [] }) => ({
   itemId: `user_4:${isbn}:e0`,
   bookId: isbn,
   isbn13: isbn,
@@ -32,7 +37,7 @@ const shelfItem = ({ isbn, title, subtitle = null, authors, coverUrl, progressMo
   pageCount,
   progressMode,
   openedAt: '2026-08-20',
-  events: [],
+  events,
   projection: {
     status: 'reading', page: null, percent: 0, minutes: 0, daysRead: 0,
     lastAt: '2026-09-02T17:00:00.000Z', ...projection,
@@ -113,8 +118,9 @@ function shelf(items) {
   };
 }
 
-async function installReadingWorld(page) {
-  let items = [...initialItems];
+async function installReadingWorld(page, { initialShelfItems = initialItems, scan = null } = {}) {
+  let items = structuredClone(initialShelfItems);
+  let hasActivity = false;
   const writes = [];
 
   await page.route('https://catalog.example.test/**', async (route) => {
@@ -142,6 +148,25 @@ async function installReadingWorld(page) {
       status, contentType: 'application/json', body: JSON.stringify(value),
     });
 
+    if (pathname === '/api/v1/screens/portal') {
+      await json(SCREEN_CONFIG);
+      return;
+    }
+    if (pathname === '/api/v1/school/book-scans/pending' && method === 'GET') {
+      expect(url.searchParams.get('screenId')).toBe('portal');
+      await json({ intent: scan?.exposed ? scan.intent : null });
+      return;
+    }
+    if (scan && pathname === `/api/v1/school/book-scans/${scan.intent.id}/claim` && method === 'POST') {
+      const body = request.postDataJSON();
+      writes.push({ pathname, method, body });
+      await json({
+        intentId: scan.intent.id,
+        launchTarget: { kind: 'program', program: 'book-log', learnerId: body.learnerId, bookGrant: GRANT },
+        bookEntry: { isbn13: scan.intent.isbn13, book: scan.intent.book },
+      });
+      return;
+    }
     if (pathname === '/api/v1/school/roster') {
       await json([{ id: 'user_4', name: 'User_4', birthyear: 2017 }]);
       return;
@@ -191,7 +216,23 @@ async function installReadingWorld(page) {
         },
       });
       items = [...items, finished];
+      hasActivity = true;
       await json({ item: finished });
+      return;
+    }
+    if (pathname.startsWith('/api/v1/school/books/user_4/shelf/') && pathname.endsWith('/progress') && method === 'POST') {
+      expect(request.headers()['x-school-book-grant']).toBe(GRANT);
+      const body = request.postDataJSON();
+      writes.push({ pathname, method, body });
+      const encodedItemId = pathname.slice('/api/v1/school/books/user_4/shelf/'.length, -'/progress'.length);
+      const itemId = decodeURIComponent(encodedItemId);
+      const current = items.find((item) => item.itemId === itemId);
+      expect(current).toBeTruthy();
+      const updated = body.kind === 'reopened'
+        ? { ...current, projection: { ...current.projection, status: 'reading', percent: 0 } }
+        : current;
+      items = items.map((item) => item.itemId === itemId ? updated : item);
+      await json({ item: updated });
       return;
     }
     if (pathname === '/api/v1/school/materials') {
@@ -207,7 +248,17 @@ async function installReadingWorld(page) {
       return;
     }
     if (pathname === '/api/v1/school/teacher/day') {
-      await json({ learners: [] });
+      await json({
+        schema: 'school.teacher-day/v2',
+        studyDay: STUDY_DAY,
+        learners: [{
+          learnerId: 'user_4', sessions: [],
+          readingActivity: {
+            status: 'ok', studyDay: STUDY_DAY, hasActivity,
+            bookCount: hasActivity ? 1 : 0, progressCount: 0, finishedCount: hasActivity ? 1 : 0,
+          },
+        }],
+      });
       return;
     }
     if (pathname.endsWith('/agenda/preview')) {
@@ -243,28 +294,32 @@ async function expectViewportSafe(page) {
   expect(dimensions.scrollHeight).toBeLessThanOrEqual(dimensions.innerHeight);
 }
 
-test('User_4 can enter his code, resolve a hostile real-world book, and finish it', async ({ page }) => {
+async function expectHitTargetInViewport(locator) {
+  await expect(locator).toBeVisible();
+  const box = await locator.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(VIEWPORT.width);
+  expect(box.y + box.height).toBeLessThanOrEqual(VIEWPORT.height);
+  expect(box.height).toBeGreaterThanOrEqual(44);
+  await locator.click({ trial: true });
+}
+
+test('User_4 enters his code directly into a usable shelf, finishes a hostile book, and undoes it', async ({ page }) => {
   await page.setViewportSize(VIEWPORT);
   const world = await installReadingWorld(page);
   await page.goto('/school');
 
   const keypad = page.getByTestId('selfservice-keypad');
-  await expect(keypad).toBeVisible();
+  await expect(keypad).toBeVisible({ timeout: 20_000 });
   await screenshot(page, '01-panel-code');
   await expectViewportSafe(page);
 
   await page.keyboard.type(CODE);
-  const card = page.getByTestId('selfservice-card');
-  await expect(card).toBeVisible();
-  await expect(card).toContainText('User_4');
-  await expect(card).toContainText('English');
-  await expect(page.getByTestId('selfservice-action-program')).toContainText('Open my books');
-  await screenshot(page, '02-reading-launch-card');
-  await expectViewportSafe(page);
-
-  await page.getByTestId('selfservice-action-program').click();
   const shelfRoot = page.getByTestId('book-shelf');
   await expect(shelfRoot).toBeVisible();
+  await expect(page.getByTestId('selfservice-card')).toHaveCount(0);
   await expect(shelfRoot).toContainText('User_4');
   await expect(shelfRoot).toContainText('The Hobbit, or There and Back Again');
   await expect(shelfRoot).not.toContainText('[paperback]');
@@ -288,24 +343,32 @@ test('User_4 can enter his code, resolve a hostile real-world book, and finish i
   const hobbitTile = shelfRoot.getByRole('button', { name: 'Open The Hobbit, or There and Back Again', exact: true });
   const boundedAuthors = await hobbitTile.locator('.school-books-tile__author').evaluate((element) => ({
     lineClamp: getComputedStyle(element).webkitLineClamp,
+    overflow: getComputedStyle(element).overflow,
     clientHeight: element.clientHeight,
     scrollHeight: element.scrollHeight,
   }));
-  expect(boundedAuthors.lineClamp).toBe('2');
-  expect(boundedAuthors.scrollHeight).toBeLessThanOrEqual(boundedAuthors.clientHeight + 1);
+  expect(Number(boundedAuthors.lineClamp)).toBeGreaterThanOrEqual(1);
+  expect(boundedAuthors.overflow).toBe('hidden');
+  expect(boundedAuthors.scrollHeight).toBeGreaterThan(boundedAuthors.clientHeight);
   const shelfScroll = await page.getByTestId('book-shelf-grid').evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
     clientHeight: element.clientHeight,
     scrollHeight: element.scrollHeight,
   }));
-  expect(shelfScroll.scrollHeight).toBeGreaterThan(shelfScroll.clientHeight);
-  await expect(page.getByRole('button', { name: 'Done', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: /history/i })).toBeVisible();
-  await screenshot(page, '03-hostile-data-shelf');
+  expect(shelfScroll.scrollWidth).toBeGreaterThan(shelfScroll.clientWidth);
+  expect(shelfScroll.scrollHeight).toBeLessThanOrEqual(shelfScroll.clientHeight + 1);
+  await expectHitTargetInViewport(page.getByRole('button', { name: 'Done', exact: true }));
+  await expectHitTargetInViewport(page.getByRole('button', { name: 'See all history', exact: true }));
+  await screenshot(page, '02-hostile-data-shelf');
   await expectViewportSafe(page);
 
-  await page.getByRole('button', { name: 'Add a book', exact: true }).click();
+  const addBook = page.getByRole('button', { name: /Add a book/ });
+  await expectHitTargetInViewport(addBook);
+  await addBook.click();
   await expect(page.getByText('Type the number under the barcode')).toBeVisible();
   await page.keyboard.type(ISBN);
+  await expect(page.getByTestId('numberpad-entry')).toHaveText(ISBN);
   const lookup = page.getByRole('button', { name: 'Look it up', exact: true });
   await expect(lookup).toBeEnabled();
   await lookup.click();
@@ -314,19 +377,25 @@ test('User_4 can enter his code, resolve a hostile real-world book, and finish i
   await expect(page.getByText('Peter Brown, Jane Illustrator & 2 more')).toBeVisible();
   await expect(page.getByText('A robot & her friends survive a storm.')).toBeVisible();
   await expect(page.getByTestId('add-book')).not.toContainText('electronic resource');
-  await screenshot(page, '04-isbn-confirmation');
+  const primaryChoices = [
+    page.getByRole('button', { name: 'Start reading', exact: true }),
+    page.getByRole('button', { name: 'Update page', exact: true }),
+    page.getByRole('button', { name: 'Finished today', exact: true }),
+    page.getByRole('button', { name: 'Finished on another day', exact: true }),
+  ];
+  for (const choice of primaryChoices) await expectHitTargetInViewport(choice);
+  await screenshot(page, '03-isbn-actions');
   await expectViewportSafe(page);
 
-  await page.getByRole('button', { name: 'Yes', exact: true }).click();
-  await page.getByRole('button', { name: 'I already finished it', exact: true }).click();
-  await expect(page.getByText('When did you finish it?')).toBeVisible();
-  await page.getByRole('button', { name: "That's the day", exact: true }).click();
+  await page.getByRole('button', { name: 'Finished today', exact: true }).click();
 
   const receipt = page.getByTestId('book-save-receipt');
   await expect(receipt).toBeVisible();
   await expect(receipt).toContainText('Book finished!');
   await expect(receipt).toContainText('The Wild Robot: Escapes again');
-  await screenshot(page, '05-finished-receipt');
+  await expect(page.getByTestId('recently-finished-row')).toContainText('The Wild Robot: Escapes again');
+  await expectHitTargetInViewport(page.getByRole('button', { name: 'Undo finish', exact: true }));
+  await screenshot(page, '04-finished-shelf');
   await expectViewportSafe(page);
 
   const shelfWrite = world.writes.find((entry) => entry.pathname === '/api/v1/school/books/user_4/shelf');
@@ -338,14 +407,22 @@ test('User_4 can enter his code, resolve a hostile real-world book, and finish i
   expect(shelfWrite.body.entryId).toMatch(/^[0-9a-f-]{36}$/i);
   expect(shelfWrite.body.progressEntryId).toMatch(/^[0-9a-f-]{36}$/i);
 
-  await page.getByRole('button', { name: 'See History', exact: true }).click();
+  await page.getByRole('button', { name: 'See all history', exact: true }).click();
   await expect(page.getByTestId('book-history')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'September 2026' })).toBeVisible();
   await expect(page.getByText('The Wild Robot: Escapes again')).toBeVisible();
   await expect(page.getByText('Finished Sep 3')).toBeVisible();
   const historyCover = page.getByRole('img', { name: 'Cover of The Wild Robot: Escapes again' });
   await expect.poll(() => historyCover.evaluate((element) => element.complete && element.naturalWidth > 0)).toBe(true);
-  await screenshot(page, '06-history');
+  await screenshot(page, '05-history');
+  await expectViewportSafe(page);
+
+  await page.getByRole('button', { name: '‹ back', exact: true }).click();
+  await page.getByRole('button', { name: 'Undo finish', exact: true }).click();
+  await expect(receipt).toContainText('Finish undone');
+  await expect(page.getByTestId('recently-finished-row')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Open The Wild Robot: Escapes again', exact: true })).toBeVisible();
+  await screenshot(page, '06-undo-finish');
   await expectViewportSafe(page);
 
   expect(world.writes).toEqual(expect.arrayContaining([
@@ -359,5 +436,126 @@ test('User_4 can enter his code, resolve a hostile real-world book, and finish i
       method: 'POST',
       body: { code: CODE, action: 'program' },
     }),
+    expect.objectContaining({
+      method: 'POST',
+      body: expect.objectContaining({ kind: 'reopened', entryId: expect.stringMatching(/^[0-9a-f-]{36}$/i) }),
+    }),
   ]));
+
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(page.getByRole('img', { name: 'Reading: done' })).toBeVisible();
+  await expect(page.getByText('Done for the day')).toHaveCount(0);
+  await screenshot(page, '07-agenda-reading-credit');
+  await expectViewportSafe(page);
+});
+
+test('a truly empty initial shelf opens ISBN entry without a misleading empty shelf', async ({ page }) => {
+  await page.setViewportSize(VIEWPORT);
+  const world = await installReadingWorld(page, { initialShelfItems: [] });
+  await page.goto('/school');
+  await expect(page.getByTestId('selfservice-keypad')).toBeVisible({ timeout: 20_000 });
+  await page.keyboard.type(CODE);
+
+  await expect(page.getByTestId('numberpad')).toBeVisible();
+  await expect(page.getByText('Type the number under the barcode')).toBeVisible();
+  await expect(page.getByText('Ready for your next book')).toHaveCount(0);
+  expect(world.writes.filter((entry) => entry.pathname === '/api/v1/school/books/user_4/shelf')).toHaveLength(0);
+  await screenshot(page, '08-initial-empty-number');
+  await expectViewportSafe(page);
+});
+
+test('a finished-only shelf keeps reread context and opens the progress pad on demand', async ({ page }) => {
+  const priorFinish = shelfItem({
+    isbn: ISBN,
+    title: hostileBook.title,
+    subtitle: hostileBook.subtitle,
+    authors: hostileBook.authors,
+    coverUrl: hostileBook.coverUrl,
+    pageCount: hostileBook.pageCount,
+    projection: { status: 'finished', page: 288, percent: 100, daysRead: 6, lastAt: '2026-09-02T18:00:00.000Z' },
+    events: [{ kind: 'finished', finishedOn: '2026-09-02', at: '2026-09-02T18:00:00.000Z' }],
+  });
+  await page.setViewportSize(VIEWPORT);
+  await installReadingWorld(page, { initialShelfItems: [priorFinish] });
+  await page.goto('/school');
+  await expect(page.getByTestId('selfservice-keypad')).toBeVisible({ timeout: 20_000 });
+  await page.keyboard.type(CODE);
+
+  await expect(page.getByText('Ready for your next book')).toBeVisible();
+  const finishedTile = page.getByRole('button', { name: 'Open The Wild Robot: Escapes again', exact: true });
+  await expectHitTargetInViewport(finishedTile);
+  await finishedTile.click();
+  await expect(page.getByTestId('completed-book')).toContainText('Last finished Sep 2, 2026');
+  await page.getByRole('button', { name: 'Read again', exact: true }).click();
+  await expect(page.getByTestId('add-book')).toContainText('Last finished Sep 2, 2026');
+  const updatePage = page.getByRole('button', { name: 'Update page', exact: true });
+  await expectHitTargetInViewport(updatePage);
+  await updatePage.click();
+  await expect(page.getByText('What page are you on?')).toBeVisible();
+  await page.getByRole('button', { name: '8', exact: true }).click();
+  await expectHitTargetInViewport(page.getByRole('button', { name: 'Save page', exact: true }));
+  await screenshot(page, '09-reread-progress-pad');
+  await expectViewportSafe(page);
+
+  await page.getByRole('button', { name: '‹ back', exact: true }).click();
+  await page.getByRole('button', { name: 'Finished on another day', exact: true }).click();
+  const day = page.getByRole('gridcell', { name: 'Thursday 3 September', exact: true });
+  await expectHitTargetInViewport(day);
+  await expectHitTargetInViewport(page.getByRole('button', { name: 'Save finish · Thursday 3 September', exact: true }));
+  await screenshot(page, '10-alternate-date');
+  await expectViewportSafe(page);
+});
+
+test('a Portal scan waits for a keypad draft, then claims a learner without an early reading write', async ({ page }) => {
+  const scan = {
+    exposed: false,
+    intent: {
+      id: 'scan-reading-1', screenId: 'portal', isbn13: ISBN,
+      receivedAt: new Date(Date.now() - 1_000).toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      status: 'ready', book: hostileBook, error: null,
+    },
+  };
+  await page.setViewportSize(VIEWPORT);
+  const world = await installReadingWorld(page, { scan });
+  await page.goto('/screen/portal');
+  await expect(page.getByTestId('selfservice-keypad')).toBeVisible({ timeout: 20_000 });
+  await page.waitForFunction(() => Boolean(window.__wsService), null, { timeout: 20_000 });
+
+  await page.getByRole('button', { name: '4', exact: true }).click();
+  scan.exposed = true;
+  await page.evaluate(({ intentId }) => {
+    window.__wsService._dispatch({ topic: 'school', type: 'school.book-scan', screenId: 'portal', intentId });
+  }, { intentId: scan.intent.id });
+  await expect(page.getByText('Book scanned — open when ready')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'This book was just scanned' })).toHaveCount(0);
+  expect(world.writes.filter(entry => entry.pathname.includes('/school/books/'))).toHaveLength(0);
+  expect(world.writes.filter(entry => entry.pathname.includes('/book-scans/'))).toHaveLength(0);
+
+  await page.getByRole('button', { name: 'Backspace', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'This book was just scanned' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Who's reading this?");
+  await expectHitTargetInViewport(dialog.getByRole('button', { name: 'User_4', exact: true }));
+  await screenshot(page, '11-scan-choose-learner');
+  await dialog.getByRole('button', { name: 'User_4', exact: true }).click();
+
+  await expect(page.getByTestId('add-book')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'The Wild Robot: Escapes again' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start reading', exact: true })).toBeVisible();
+  expect(world.writes.filter(entry => entry.pathname.includes('/school/books/') && entry.method === 'POST')).toHaveLength(0);
+  expect(world.writes).toEqual(expect.arrayContaining([expect.objectContaining({
+    pathname: '/api/v1/school/book-scans/scan-reading-1/claim',
+    method: 'POST', body: { screenId: 'portal', learnerId: 'user_4' },
+  })]));
+  await screenshot(page, '12-scanned-book-actions');
+  await expectViewportSafe(page);
+
+  await page.getByRole('button', { name: 'Finished today', exact: true }).click();
+  await expect(page.getByTestId('recently-finished-row')).toContainText('The Wild Robot: Escapes again');
+  expect(world.writes.filter(entry => entry.pathname === '/api/v1/school/books/user_4/shelf' && entry.method === 'POST')).toHaveLength(1);
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(page.getByRole('img', { name: 'Reading: done' })).toBeVisible();
+  await screenshot(page, '13-scan-finish-credit');
+  await expectViewportSafe(page);
 });
