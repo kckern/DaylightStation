@@ -248,6 +248,17 @@ export class YamlSessionDatastore extends ISessionDatastore {
 
     if (!data.summary || typeof data.summary !== 'object') data.summary = {};
     if (!Array.isArray(data.summary.voiceMemos)) data.summary.voiceMemos = [];
+
+    // Idempotent by memoId. The retry worker can crash between appending a
+    // recovered memo and marking its artifact done; when it comes back it must
+    // find the memo already here rather than add a second copy of the same
+    // sentence. A memo with no id keeps the old append-always behaviour.
+    if (canonicalMemo.memoId) {
+      const existing = data.summary.voiceMemos.find(
+        (entry) => entry && String(entry.memoId) === canonicalMemo.memoId,
+      );
+      if (existing) return existing;
+    }
     data.summary.voiceMemos.push(canonicalMemo);
 
     if (!data.timeline || typeof data.timeline !== 'object') data.timeline = {};

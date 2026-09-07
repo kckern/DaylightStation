@@ -419,6 +419,18 @@
     border-radius: 0.5rem;
   }
 
+  // Reassurance, not alarm: the transcription failed but the recording did
+  // not, so this sits beside the red error in a calmer register.
+  &__notice {
+    font-size: 0.9rem;
+    color: #bae6fd;
+    background: rgba(56, 189, 248, 0.12);
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.5rem;
+    max-width: 32rem;
+    text-align: center;
+  }
+
   &__status {
     font-size: 0.9rem;
     color: rgba(255, 255, 255, 0.8);

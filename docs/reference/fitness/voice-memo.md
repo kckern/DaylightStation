@@ -2,6 +2,8 @@
 
 Voice memos allow users to record audio notes during fitness sessions. Recordings are automatically transcribed and stored with the session for later review.
 
+Capture and transcription are two **separate durable stages**. The audio is written to storage before the transcription provider is called, so a provider outage leaves a retryable recording rather than nothing at all.
+
 ## Use Case
 
 During a workout, users often want to capture thoughts, feedback, or notes without interrupting their exercise:
@@ -60,9 +62,12 @@ Voice memos are transcribed server-side and stored with the fitness session, all
 │           PROCESSING STATE              │   │         CLOSED                │
 ├─────────────────────────────────────────┤   │  • Recording discarded        │
 │  • Audio uploaded (base64)              │   │  • Video resumes              │
-│  • Transcription via Whisper            │   │  • Music resumes              │
-│  • Memo object created                  │   └───────────────────────────────┘
+│  • Audio PERSISTED before transcription │   │  • Music resumes              │
+│  • Transcription via Whisper            │   └───────────────────────────────┘
+│  • Memo object created                  │
 │  • Shows: "Transcribing..." spinner     │
+│  • On provider failure: error + "your   │
+│    recording is saved" notice           │
 └─────────────────────────────────────────┘
                            │
                            │ Transcription complete
@@ -120,13 +125,16 @@ FitnessContext (state management)
 
 | File | Purpose |
 |------|---------|
-| `frontend/src/modules/Fitness/modules/overlays/VoiceMemoOverlayModule.jsx` | Entry point wrapper, passes props to implementation |
-| `frontend/src/modules/Fitness/FitnessPlayerOverlay/VoiceMemoOverlay.jsx` | Main overlay: 3 modes (list, review, redo), UI rendering |
-| `frontend/src/modules/Fitness/FitnessSidebar/useVoiceMemoRecorder.js` | Recording hook: MediaRecorder, audio levels, upload |
-| `frontend/src/modules/Fitness/FitnessSidebar/FitnessVoiceMemo.jsx` | Sidebar component with record/counter buttons |
-| `frontend/src/modules/Fitness/modules/sidebar/VoiceMemoPanel.jsx` | Panel wrapper for sidebar integration |
+| `frontend/src/modules/Fitness/player/overlays/VoiceMemoOverlay.jsx` | Main overlay: 3 modes (list, review, redo), UI rendering |
+| `frontend/src/modules/Fitness/player/panels/hooks/useVoiceMemoRecorder.js` | Recording hook: MediaRecorder, audio levels, upload |
+| `frontend/src/modules/Fitness/player/panels/FitnessVoiceMemo.jsx` | Sidebar component with record/counter buttons |
+| `frontend/src/hooks/fitness/VoiceMemoManager.js` | In-session memo list, duplicate prevention, auto-prompt gate |
 | `frontend/src/context/FitnessContext.jsx` | State: memos array, overlay state, CRUD operations |
-| `backend/src/4_api/v1/routers/fitness.mjs` | API endpoint `/api/v1/fitness/voice_memo` |
+| `backend/src/4_api/v1/routers/fitness.mjs` | API endpoints under `/api/v1/fitness/voice_memo` |
+| `backend/src/1_adapters/fitness/FilesystemVoiceMemoArtifactStore.mjs` | Durable capture store: audio + lifecycle record |
+| `backend/src/2_domains/fitness/services/voiceMemoArtifactLifecycle.mjs` | Failure classification, backoff, retention policy |
+| `backend/src/3_applications/fitness/services/FitnessVoiceMemoService.mjs` | Capture → transcribe → attach pipeline |
+| `backend/src/3_applications/fitness/services/VoiceMemoRetryWorker.mjs` | Retry queue, crash recovery, retention sweep |
 
 ### Data Flow
 
@@ -152,18 +160,25 @@ FitnessContext (state management)
        ├── Blob chunks → base64
        └── POST /api/v1/fitness/voice_memo { audioBase64, sessionId, context }
 
-4. Backend processing
-   └── transcriptionService.transcribeVoiceMemo()
-       ├── Audio decoding
-       ├── Whisper transcription
-       └── Returns memo { memoId, transcriptRaw, transcriptClean, ... }
+4. Backend: capture first
+   ├── Decode + size check (12MB ceiling)
+   ├── Write audio 0600 + open a `pending` lifecycle record
+   └── ONLY THEN call the transcription provider
 
-5. Frontend receives memo
+5. Backend: transcription outcome
+   ├── success  → transcript on the record, raw audio purged, memo returned (200)
+   ├── retryable failure → record moves to `retryable`, audio kept (502 + artifact)
+   └── permanent failure → record moves to `permanently_failed`, audio kept (502 + artifact)
+
+6. Frontend receives memo
    └── onMemoCaptured callback
        ├── addVoiceMemoToSession(memo)
        └── openVoiceMemoReview(memo, { autoAccept: true })
 
-6. Review mode with auto-accept
+   On a 502 the overlay shows the transcription error AND a notice that the
+   recording is saved; the retry worker takes it from there.
+
+7. Review mode with auto-accept
    └── 8-second countdown (VOICE_MEMO_AUTO_ACCEPT_MS)
        ├── User interaction cancels countdown
        └── Countdown complete → handleAccept() → closes overlay
@@ -197,7 +212,8 @@ const VOICE_MEMO_OVERLAY_INITIAL = {
 
 ```javascript
 {
-  memoId: 'uuid',
+  memoId: 'vm_9fKq2mZx7Lp0Ab3T', // the artifact ref; one id for memo + recording
+  artifactRef: 'vm_9fKq2mZx7Lp0Ab3T',
   transcriptRaw: 'raw whisper output',
   transcriptClean: 'cleaned/formatted text',
   sessionElapsedSeconds: 145,  // seconds into session
@@ -235,24 +251,96 @@ recorder has already stopped. Queued data/stop events from an older recorder
 are ignored after a replacement capture starts. Otherwise closing a failed
 upload silently cancels the next recording when its stop event arrives.
 
+### Durable capture
+
+The audio is persisted before transcription is attempted, and every attempt is
+a state transition on that stored record. A record is in exactly one state:
+
+| State | Meaning |
+|-------|---------|
+| `pending` | Audio stored; no transcription attempt has started |
+| `processing` | An attempt holds a lease (5 min); a stale lease is reclaimed |
+| `retryable` | Last attempt failed for a retryable reason; `nextAttemptAt` is set |
+| `transcribed` | Transcript stored and linked to the memo; raw audio purged |
+| `permanently_failed` | Non-retryable failure, or the retry budget ran out |
+| `expired` | Retention elapsed before success; audio purged, record kept |
+
+**Storage.** `data/household[-{id}]/fitness/voice-memos/{ref}.{ext}` for the
+audio (mode 0600) and `{ref}.json` for the record. The ref is opaque
+(`vm_` + 16 chars) and doubles as the memo's `memoId`, so a memo, its
+recording, and its retry history share one id — which is also what makes a
+re-appended memo idempotent. The record holds only what recovery needs: ref,
+session correlation, timestamps, media type/size, sha256 checksum, attempt
+counter, next-attempt time, and a sanitized failure classification.
+
+**Retry worker.** `fitness:voice-memo-retry` runs every minute (agents
+Scheduler, production-gated). Each tick reclaims stale leases, runs up to five
+due artifacts, applies retention, and removes orphan audio left by a crash
+between the two writes.
+
+### Failure classification
+
+An HTTP status alone cannot say whether waiting will help, so every provider
+failure is reduced to one class. Only the retryable classes are scheduled
+automatically; the rest keep their audio so a human can retry once the cause
+is fixed.
+
+| Class | Trigger | Auto-retried |
+|-------|---------|--------------|
+| `network_timeout` | socket codes (ECONNRESET, ETIMEDOUT, …), "socket hang up" | yes |
+| `provider_unavailable` | HTTP 5xx | yes |
+| `rate_limited` | HTTP 429 with no quota marker | yes |
+| `quota_exhausted` | `insufficient_quota` / `credit_balance_exhausted`, HTTP 402 | yes, slowly |
+| `auth_failed` | HTTP 401/403 | no |
+| `invalid_audio` | HTTP 400/413/415/422 | no |
+| `unknown` | anything else | yes |
+
+Backoff is 1m → 5m → 15m → 1h → 3h, six attempts total. `quota_exhausted` uses
+a much slower ladder (30m → 1h → 2h → 6h → 12h) because it does not clear on
+its own — someone has to restore credit, and retrying every minute would burn
+the whole budget before anyone noticed.
+
+### Retention and privacy
+
+Raw voice is personal data. It exists only under the artifact directory, never
+in the repo, the log store, an analytics event, or a debug directory.
+
+| Policy | Value |
+|--------|-------|
+| Max capture | 12 MB (a 5-minute Opus memo is ≈1.2 MB) |
+| Audio after a successful transcript | purged immediately |
+| Audio for an untranscribed capture | 7 days, then the record `expires` |
+| Audio for a permanent failure | 7 days, so a human retry is still possible |
+| Lifecycle record after it settles | 30 days, then deleted |
+| Encryption at rest | none beyond host filesystem permissions (0600) |
+
+Logs carry lengths and classifications, never transcript text, audio bytes,
+API keys, request headers, or provider response bodies.
+
 ### Diagnosing failed transcription
 
 Distinguish `recording-stop-cancelled` (audio discarded in the browser, before
-any upload) from `openai.transcribe.error` (the provider received the request).
-The latter records HTTP status, provider error code/type, provider request ID,
-and fitness session ID without dumping request headers, credentials, or the
-response body. An HTTP 429 alone cannot distinguish temporary rate limiting
-from exhausted credits; `insufficient_quota` / `credit_balance_exhausted` calls
-for restoring provider credit, not replacing a working API key or repeating
-the same upload. A successful model-listing request validates access but does
-not demonstrate transcription credit availability.
+any upload) from `fitness.voice_memo.attempt.failed` (the provider received the
+request). The latter records the classification, HTTP status, provider
+error code/type, provider request ID, and whether a retry is scheduled.
 
-Fitness uploads currently hold raw audio in browser memory and transcribe
-before saving the memo. Retry can reuse the browser payload while it remains
-available, but cancel/close clears that payload. The separate debug audio
-capture endpoint is not an automatic backup. Do not promise recovery from
-session files when only failed or cancelled captures exist: those files save
-successful transcripts, not the original audio.
+Lifecycle events, all keyed by the opaque ref:
+
+| Event | Meaning |
+|-------|---------|
+| `fitness.voice_memo.artifact.captured` | Bytes on disk; size and checksum recorded |
+| `fitness.voice_memo.attempt.started` / `.succeeded` / `.failed` | One transcription attempt |
+| `fitness.voice_memo.artifact.transcribed` | Transcript linked; whether it reached the session |
+| `fitness.voice_memo.artifact.persist_deferred` | Transcript held until the session can accept it |
+| `fitness.voice_memo.artifact.audio_purged` | Raw audio removed, with the reason |
+| `fitness.voice_memo.artifact.lease_reclaimed` | An attempt died mid-flight and was recovered |
+| `fitness.voice_memo.artifact.permanently_failed` | Gave up, with `givenUpReason` |
+| `fitness.voice_memo.artifact.expired` | Aged out before it ever became a memo (logged at error) |
+| `fitness.voice_memo.worker.tick` | Per-sweep counters |
+
+`fitness.voice_memo.artifact.capture_failed` is the one event that means a
+recording is genuinely at risk: the store could not write, so the request falls
+back to transcribing from memory and nothing survives a provider failure.
 
 ### Portal Rendering
 The overlay renders via `ReactDOM.createPortal` to `document.body`, ensuring it appears above all other content regardless of where it's triggered from.
@@ -280,19 +368,55 @@ Transcribe audio and create a memo object.
 }
 ```
 
-**Response:**
+**200 — transcribed:**
 ```json
 {
   "ok": true,
   "memo": {
-    "memoId": "uuid",
+    "memoId": "vm_9fKq2mZx7Lp0Ab3T",
+    "artifactRef": "vm_9fKq2mZx7Lp0Ab3T",
     "transcriptRaw": "...",
     "transcriptClean": "...",
-    "sessionElapsedSeconds": 145,
     "createdAt": 1706123466789
+  },
+  "artifact": { "ref": "vm_9fKq2mZx7Lp0Ab3T", "state": "transcribed", "audioAvailable": false }
+}
+```
+
+**502 — the provider failed, the recording did not:**
+```json
+{
+  "ok": false,
+  "error": "Transcription failed; the recording is saved and will be retried",
+  "retryScheduled": true,
+  "artifact": {
+    "ref": "vm_9fKq2mZx7Lp0Ab3T",
+    "state": "retryable",
+    "attempts": 1,
+    "maxAttempts": 6,
+    "nextAttemptAt": 1706125266789,
+    "audioAvailable": true,
+    "lastFailure": { "classification": "quota_exhausted", "retryable": true, "providerStatus": 429 }
   }
 }
 ```
+
+Other statuses: `400` undecodable payload, `413` past the 12MB ceiling,
+`503` transcription not configured.
+
+### GET /api/v1/fitness/voice_memo/artifacts
+
+Staff view of capture lifecycle — which memos are recorded, awaiting
+transcription, transcribed, or unavailable. Query: `sessionId`, `state`
+(comma-separated), `householdId`, `limit`. Returns state and diagnostics only;
+never the audio or the transcript.
+
+### POST /api/v1/fitness/voice_memo/artifacts/:ref/retry
+
+Runs an attempt immediately, ignoring the record's backoff, and resets the
+retry budget. This is the recovery path for the classes the worker will not
+schedule on its own — a replaced API key, restored credit. `404` for an unknown
+ref, `409` while an attempt already holds the lease, `502` if it fails again.
 
 ## Keyboard Shortcuts
 

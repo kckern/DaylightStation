@@ -793,7 +793,12 @@ export function createFitnessRouter(config) {
   }));
 
   /**
-   * POST /api/fitness/voice_memo - Transcribe voice memo
+   * POST /api/fitness/voice_memo - Persist a capture, then transcribe it.
+   *
+   * The audio is written to durable storage BEFORE the provider is called, so
+   * a 200 is not the only outcome worth having: a transcription failure still
+   * answers with the artifact ref and its lifecycle state, which is the
+   * difference between "we are retrying your memo" and "your memo is gone".
    */
   router.post('/voice_memo', asyncHandler(async (req, res) => {
     if (!voiceMemoOperations?.available) {
@@ -805,22 +810,96 @@ export function createFitnessRouter(config) {
       return res.status(400).json({ ok: false, error: 'audioBase64 required' });
     }
 
-      const result = await voiceMemoOperations.transcribe({
-        audioBase64,
-        mimeType,
-        sessionId,
-        startedAt,
-        endedAt,
-        context: sessionContext,
-      }, defaultHouseholdId);
-      if (result.kind === 'persist_failed') {
-        return sendInternalError(res, {
-          ok: false,
-          error: 'Voice memo transcribed but could not be saved to the session',
-          memo: result.memo,
-        });
-      }
-      return res.json({ ok: true, memo: result.memo });
+    // Decode once, here: the size limit is a property of the request, and the
+    // pipeline downstream should receive bytes rather than re-derive them.
+    const audioBuffer = Buffer.from(audioBase64.replace(/^data:[^;]+;base64,/, ''), 'base64');
+    if (!audioBuffer.length) {
+      return res.status(400).json({ ok: false, error: 'Failed to decode audio data' });
+    }
+    const maxBytes = voiceMemoOperations.maxArtifactBytes;
+    if (maxBytes && audioBuffer.length > maxBytes) {
+      return res.status(413).json({ ok: false, error: 'Recording is too large', maxBytes });
+    }
+
+    const result = await voiceMemoOperations.transcribe({
+      audioBuffer,
+      mimeType,
+      sessionId,
+      startedAt,
+      endedAt,
+      context: sessionContext,
+    }, defaultHouseholdId);
+
+    if (result.kind === 'transcription_failed') {
+      // 502: the provider failed, not the caller. The capture survived, and
+      // the body says so — `artifact.state` tells the UI whether a retry is
+      // already scheduled or a human has to act.
+      return res.status(502).json({
+        ok: false,
+        error: 'Transcription failed; the recording is saved and will be retried',
+        artifact: result.artifact,
+        retryScheduled: result.artifact?.state === 'retryable',
+      });
+    }
+    if (result.kind === 'persist_failed') {
+      return sendInternalError(res, {
+        ok: false,
+        error: 'Voice memo transcribed but could not be saved to the session',
+        memo: result.memo,
+        ...(result.artifact ? { artifact: result.artifact } : {}),
+      });
+    }
+    return res.json({
+      ok: true,
+      memo: result.memo,
+      ...(result.artifact ? { artifact: result.artifact } : {}),
+    });
+  }));
+
+  /**
+   * GET /api/fitness/voice_memo/artifacts - Staff view of capture lifecycle.
+   *
+   * Answers "is this memo recorded, awaiting transcription, transcribed, or
+   * unavailable" — the question a bare "failed" could never answer. Returns
+   * state and diagnostics only: never the audio, never the transcript.
+   */
+  router.get('/voice_memo/artifacts', asyncHandler(async (req, res) => {
+    if (!voiceMemoOperations?.durable) {
+      return res.status(503).json({ ok: false, error: 'Voice memo artifact store not configured' });
+    }
+    const { sessionId, state, householdId, limit } = req.query || {};
+    const artifacts = voiceMemoOperations.listArtifacts({
+      householdId: householdId || defaultHouseholdId,
+      sessionId: sessionId || undefined,
+      states: state ? String(state).split(',').filter(Boolean) : undefined,
+      limit: limit ? Math.min(Number(limit) || 0, 500) : 200,
+    });
+    return res.json({ ok: true, artifacts });
+  }));
+
+  /**
+   * POST /api/fitness/voice_memo/artifacts/:ref/retry - Staff-triggered retry.
+   *
+   * The recovery path for the classes the worker will not schedule on its own
+   * (a replaced API key, restored credit): it runs an attempt right now,
+   * whatever the record's backoff said.
+   */
+  router.post('/voice_memo/artifacts/:ref/retry', asyncHandler(async (req, res) => {
+    if (!voiceMemoOperations?.durable) {
+      return res.status(503).json({ ok: false, error: 'Voice memo artifact store not configured' });
+    }
+    const householdId = req.body?.householdId || defaultHouseholdId;
+    const outcome = await voiceMemoOperations.retryArtifact(householdId, req.params.ref);
+    if (outcome.kind === 'not_found') {
+      return res.status(404).json({ ok: false, error: 'No such voice memo artifact' });
+    }
+    if (outcome.kind === 'busy') {
+      return res.status(409).json({ ok: false, error: 'That recording is already being transcribed' });
+    }
+    if (outcome.kind === 'transcription_failed') {
+      return res.status(502).json({ ok: false, error: 'Transcription failed again', artifact: outcome.artifact });
+    }
+    return res.json({ ok: true, memo: outcome.memo || null, artifact: outcome.artifact || null });
   }));
 
   /**

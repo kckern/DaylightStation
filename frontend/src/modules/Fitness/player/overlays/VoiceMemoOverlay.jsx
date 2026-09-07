@@ -298,7 +298,8 @@ const VoiceMemoOverlay = ({
     stopRecording,
     cancelUpload,
     retryTranscription,
-    hasAudioBlob
+    hasAudioBlob,
+    savedArtifact
   } = useVoiceMemoRecorder({
     sessionId: effectiveSessionId,
     playerRef,
@@ -321,6 +322,11 @@ const VoiceMemoOverlay = ({
   const recorderErrorMessage = typeof recorderError === 'string' ? recorderError : recorderError?.message;
   const recorderErrorRetryable = recorderError?.retryable !== false;
   const isRecorderErrored = recorderState === 'error' || Boolean(recorderError);
+  // The capture is stored before transcription is attempted, so a transcription
+  // failure leaves a durable artifact. When one exists the panel must not read
+  // as data loss, and closing it is a Close, not a Discard.
+  const capturedArtifact = recorderError?.artifact || savedArtifact || null;
+  const captureIsSafe = Boolean(capturedArtifact) && capturedArtifact.state !== 'permanently_failed';
 
   const handleRetryTranscription = useCallback(async () => {
     if (!retryTranscription || !hasAudioBlob) return;
@@ -812,6 +818,13 @@ const VoiceMemoOverlay = ({
                 />
 
                 {recorderErrorMessage ? <div className="voice-memo-overlay__error">{recorderErrorMessage}</div> : null}
+                {capturedArtifact ? (
+                  <div className="voice-memo-overlay__notice">
+                    {captureIsSafe
+                      ? 'Your recording is saved. It will be transcribed and added to this session automatically.'
+                      : 'Your recording is saved, but transcription needs attention before it can be added.'}
+                  </div>
+                ) : null}
 
                 <div className="voice-memo-overlay__redo-controls">
                   {!isRecording && !isRecorderErrored ? (
@@ -850,7 +863,9 @@ const VoiceMemoOverlay = ({
                       ) : recorderErrorRetryable ? (
                         <button type="button" className="voice-memo-overlay__btn" onClick={handleStartRedoRecording}>Re-record</button>
                       ) : null}
-                      <button type="button" className="voice-memo-overlay__btn voice-memo-overlay__btn--ghost" onClick={handleClose}>Discard</button>
+                      <button type="button" className="voice-memo-overlay__btn voice-memo-overlay__btn--ghost" onClick={handleClose}>
+                        {capturedArtifact ? 'Close' : 'Discard'}
+                      </button>
                     </div>
                   ) : null}
                 </div>

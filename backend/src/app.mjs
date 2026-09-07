@@ -5812,6 +5812,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
   }
 
+  // Voice-memo retry worker — the second half of durable capture. Recordings
+  // are written to disk before transcription, so a provider outage leaves a
+  // retryable artifact rather than nothing; this drains that queue, reclaims
+  // leases from attempts that died mid-flight, and enforces the retention that
+  // keeps raw voice from outliving its purpose. Every minute, because the
+  // first backoff rung is 60s and a person is waiting on their memo.
+  if (agentsServices.scheduler && v1Routers.fitness?.voiceMemoRetryWorker) {
+    agentsServices.scheduler.registerTask('fitness:voice-memo-retry', '* * * * *', async () => {
+      await v1Routers.fitness.voiceMemoRetryWorker.tick();
+    });
+  }
+
   // Strava reconciliation sweep — propagates LOCAL session corrections (splits,
   // edited primary media, late voice memos) back to Strava without waiting for
   // the next workout's webhook to opportunistically trigger reconcile(). The
