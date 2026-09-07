@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import NumberPad from './NumberPad.jsx';
 
 // NumberPad logs through nothing at runtime today (see its header); the mock
@@ -13,6 +13,10 @@ vi.mock('../schoolLog.js', () => ({
 
 const press = (...keys) => keys.forEach((k) => fireEvent.click(screen.getByRole('button', { name: String(k) })));
 const entry = () => screen.getByTestId('numberpad-entry').textContent.replace(/\s/g, '');
+const backKey = () => screen.getByRole('button', { name: /backspace/i });
+const tick = (ms) => act(() => { vi.advanceTimersByTime(ms); });
+
+afterEach(() => { vi.useRealTimers(); });
 
 describe('NumberPad', () => {
   it('shows the label and submits only on the explicit button', () => {
@@ -90,13 +94,95 @@ describe('NumberPad', () => {
     expect(onSubmit).toHaveBeenCalledWith('9780064400558');
   });
 
-  it('can clear the full number without thirteen backspaces', () => {
-    const onChange = vi.fn();
-    render(<NumberPad label="ISBN" maxLength={13} value="9780064400558" onChange={onChange} onSubmit={() => {}} />);
-    const clear = screen.getByRole('button', { name: 'Clear number' });
-    expect(clear).toBeEnabled();
-    fireEvent.click(clear);
-    expect(onChange).toHaveBeenCalledWith('');
+  // The `Clear number` key this replaced sat between the slots and the grid,
+  // right above the `3`, and it fires on pointerdown like everything else on
+  // this panel — a child aiming at `3` wiped a half-typed ISBN four times in
+  // 88 seconds. The capability lives on the ⌫ key now, behind a hold.
+  describe('hold ⌫ to clear', () => {
+    it('has no clear key of its own to fat-finger, and names both of ⌫\'s jobs', () => {
+      render(<NumberPad label="ISBN" maxLength={13} value="9780064400558" onSubmit={() => {}} />);
+      // The only thing that mentions clearing is ⌫ itself — no separate key.
+      expect(screen.queryByRole('button', { name: /^clear/i })).toBeNull();
+      expect(backKey()).toHaveAccessibleName(/backspace/i);
+      expect(backKey()).toHaveAccessibleName(/hold.*clear/i);
+    });
+
+    it('clears the full number without thirteen backspaces, exactly once', () => {
+      vi.useFakeTimers();
+      const onChange = vi.fn();
+      render(<NumberPad label="ISBN" maxLength={13} value="9780064400558" onChange={onChange} onSubmit={() => {}} />);
+      const back = backKey();
+      fireEvent.pointerDown(back);
+      expect(onChange).not.toHaveBeenCalled(); // no character goes first
+      tick(600);
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenCalledWith('');
+      // Neither the release nor the click the browser sends after it may take
+      // a character on top of the wipe, and nothing repeats while held.
+      tick(2000);
+      fireEvent.pointerUp(back);
+      fireEvent.click(back);
+      expect(onChange).toHaveBeenCalledTimes(1);
+    });
+
+    it('a press let go before the threshold still takes exactly one character', () => {
+      vi.useFakeTimers();
+      const onChange = vi.fn();
+      render(<NumberPad label="ISBN" maxLength={13} value="9780064400558" onChange={onChange} onSubmit={() => {}} />);
+      const back = backKey();
+      fireEvent.pointerDown(back);
+      tick(200);
+      fireEvent.pointerUp(back);
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenCalledWith('978006440055');
+      fireEvent.click(back); // the compatibility click that follows our own tap
+      tick(2000); // and no timer left armed to wipe the entry later
+      expect(onChange).toHaveBeenCalledTimes(1);
+    });
+
+    it('a finger that slides off ⌫ takes its character and leaves no timer armed', () => {
+      vi.useFakeTimers();
+      const onChange = vi.fn();
+      render(<NumberPad label="ISBN" maxLength={13} value="9780064400558" onChange={onChange} onSubmit={() => {}} />);
+      const back = backKey();
+      fireEvent.pointerDown(back);
+      tick(200);
+      fireEvent.pointerLeave(back);
+      fireEvent.pointerUp(back); // no double action
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenCalledWith('978006440055');
+      tick(2000);
+      expect(onChange).toHaveBeenCalledTimes(1);
+    });
+
+    it('a pointer cancelled mid-hold takes its character, never the whole entry', () => {
+      vi.useFakeTimers();
+      const onChange = vi.fn();
+      render(<NumberPad label="ISBN" maxLength={13} value="9780064400558" onChange={onChange} onSubmit={() => {}} />);
+      fireEvent.pointerDown(backKey());
+      tick(200);
+      fireEvent.pointerCancel(backKey());
+      tick(2000);
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenCalledWith('978006440055');
+    });
+
+    it('unmounting mid-hold disarms the timer', () => {
+      vi.useFakeTimers();
+      const onChange = vi.fn();
+      const { unmount } = render(<NumberPad label="ISBN" maxLength={13} value="9780064400558" onChange={onChange} onSubmit={() => {}} />);
+      fireEvent.pointerDown(backKey());
+      unmount();
+      tick(2000);
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('Escape still clears for the paired keyboard and the barcode scanner', () => {
+      const onChange = vi.fn();
+      render(<NumberPad label="ISBN" maxLength={13} value="9780064400558" onChange={onChange} onSubmit={() => {}} />);
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(onChange).toHaveBeenCalledWith('');
+    });
   });
 
   it('freezes pointer and scanner input while a write is busy', () => {
@@ -104,10 +190,20 @@ describe('NumberPad', () => {
     const onSubmit = vi.fn();
     render(<NumberPad label="ISBN" maxLength={13} value="978" disabled onChange={onChange} onSubmit={onSubmit} />);
     expect(screen.getByRole('button', { name: '1' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Clear number' })).toBeDisabled();
+    expect(backKey()).toBeDisabled();
     fireEvent.keyDown(window, { key: '0' });
     fireEvent.keyDown(window, { key: 'Enter' });
+    fireEvent.keyDown(window, { key: 'Escape' });
     expect(onChange).not.toHaveBeenCalled();
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('a hold on a frozen ⌫ arms nothing', () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    render(<NumberPad label="ISBN" maxLength={13} value="9780064400558" disabled onChange={onChange} onSubmit={() => {}} />);
+    fireEvent.pointerDown(backKey());
+    tick(2000);
+    expect(onChange).not.toHaveBeenCalled();
   });
 });

@@ -244,6 +244,93 @@ export function projectShelfItem(item, { dayOf = isoDay } = {}) {
   };
 }
 
+/** How many other in-progress books the card names. Two fits the narrow column. */
+export const ALSO_READING_LIMIT = 2;
+
+/**
+ * Which book a printed card should headline, and which others it may name.
+ *
+ * The card has room for one book. This picks it from the whole shelf, with no
+ * I/O, no clock and no titles — titles are joined by the caller, which is the
+ * only layer that can resolve a `bookId` into words.
+ *
+ * ## NEAREST THE END WINS, BUT ONLY AMONG BOOKS THAT HAVE AN END
+ *
+ * A child is most likely to finish the book they are closest to finishing, so
+ * the highest `percent` leads. What makes this more than a sort is that
+ * `percent` is null in ordinary cases — minutes mode, check mode, and any book
+ * whose provider gave no `pageCount`, which `isPlausiblePage` above records was
+ * two of three books on one measured day. So a book WITH a denominator outranks
+ * one without, and everything else falls to `lastAt`. That fallback is not the
+ * edge case; on a shelf of audiobooks and reference books it is the only rule
+ * that ever runs.
+ *
+ * ## `itemId` BREAKS THE LAST TIE SO TWO PRINTS OF ONE DAY ARE THE SAME PAGE
+ *
+ * Two books at the same percentage, logged in the same minute, are a real tie.
+ * Without a final key the winner came from whatever order the store handed back
+ * — file order, which nothing guarantees and a rewrite can change. A reprint
+ * would then headline a different book than the sheet already on the fridge,
+ * and a child would be right to say the page lied. `itemId` is arbitrary but
+ * stable, which is exactly what a tiebreak needs to be.
+ *
+ * ## `set-aside` IS A STATE A CHILD CHOSE, NOT AN ABSENCE
+ *
+ * When nothing is open, a finished book leads, then a set-aside one. Folding
+ * `set-aside` into `empty` would print "you have no books" to a child who put
+ * one down on purpose and can see it on the shelf — telling them their own log
+ * is empty when it is not. `empty` is reserved for a shelf that truly holds
+ * nothing.
+ *
+ * @param {object[]|null|undefined} items - raw shelf items, each with `itemId` and `events`
+ * @param {{dayOf?: (at: string) => string}} [options]
+ * @returns {{state: 'reading'|'finished'|'set-aside'|'empty',
+ *   featured: {item: object, projection: object}|null,
+ *   alsoReading: {item: object, projection: object}[]}}
+ */
+export function selectFeaturedShelfItem(items, { dayOf = isoDay } = {}) {
+  const projected = (Array.isArray(items) ? items : [])
+    // A row with no string `itemId` cannot be one of ours: the store builds
+    // `<learner>:<book>:<entry>` at open and refuses to append without it. Dropping
+    // it silently is deliberate — an unreadable shelf throws in the store, one layer
+    // up, so anything reaching here is a hand-edited row, and a card that prints one
+    // fewer book beats a card that does not print. `unread` items land here too.
+    .filter((item) => item && typeof item === 'object' && typeof item.itemId === 'string')
+    .map((item) => ({ item, projection: projectShelfItem(item, { dayOf }) }));
+
+  const withStatus = (status) => projected.filter((entry) => entry.projection.status === status);
+
+  // Newest first, then itemId — the stable order every branch below shares.
+  const byRecency = (a, b) => String(b.projection.lastAt ?? '').localeCompare(String(a.projection.lastAt ?? ''))
+    || String(a.item.itemId).localeCompare(String(b.item.itemId));
+
+  const reading = withStatus('reading');
+  if (reading.length) {
+    const ranked = reading.sort((a, b) => {
+      // -1, not 0: a book at page 1 of 500 IS 0%, and it still has a denominator.
+      // Safe because `percentFor` clamps to 0..100, so no real percent reaches -1.
+      const aPct = Number.isFinite(a.projection.percent) ? a.projection.percent : -1;
+      const bPct = Number.isFinite(b.projection.percent) ? b.projection.percent : -1;
+      return bPct - aPct || byRecency(a, b);
+    });
+    const [featured, ...rest] = ranked;
+    return {
+      state: 'reading',
+      featured,
+      alsoReading: rest.sort(byRecency).slice(0, ALSO_READING_LIMIT),
+    };
+  }
+
+  for (const status of ['finished', 'set-aside']) {
+    const candidates = withStatus(status);
+    if (candidates.length) {
+      return { state: status, featured: candidates.sort(byRecency)[0], alsoReading: [] };
+    }
+  }
+
+  return { state: 'empty', featured: null, alsoReading: [] };
+}
+
 function percentFor(item, page, finished) {
   if (finished) return 100;
   if (item?.progressMode !== 'page') return null;

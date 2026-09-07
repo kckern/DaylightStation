@@ -49,6 +49,10 @@ export const teacherWorkspaceApi = {
     if (continueToday) query.set('continueToday', '1');
     return `${BASE}/learners/${encodeURIComponent(learnerId)}/launch-preview?${query}`;
   },
+  // One child's reading shelf, for a grown-up. The child reads the same view
+  // through `/books/:learnerId/shelf` with a launch grant; a grown-up holds no
+  // launch, so the learner is the URL's and the console capability is the gate.
+  readingShelf: (learnerId) => request(`/learners/${encodeURIComponent(learnerId)}/reading`),
   session: (sessionId) => request(`/sessions/${encodeURIComponent(sessionId)}`),
   course: (courseId) => request(`/curriculum/${encodeURIComponent(courseId)}`),
   lesson: (courseId, lessonId) => request(`/curriculum/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(lessonId)}`),

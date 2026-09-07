@@ -92,7 +92,7 @@ describe('QR / panel-code pairing (Slice H, regression: Learner-Three, 2026-08-2
     // self-service off, or a token class (like `remediation`) that can
     // never carry one.
     const r = resultDocument({
-      sessionId: 'ses_milo',
+      sessionId: 'ses_test-learner',
       unitTitle: 'The United States',
       result: 'passed',
       percent: 100,
@@ -269,7 +269,7 @@ describe('QR / panel-code pairing on the PLAIN (non-lesson) branch — regressio
     expect(flat).not.toContain('Scanning is the only way in.');
   });
 
-  it('builds every scan_action block through exactly one of the four designated helpers (structural guard)', () => {
+  it('builds every scan_action block through exactly one of the three designated helpers (structural guard)', () => {
     // Reads the SOURCE of receipts.mjs, not its behaviour: a future branch
     // that pushes `{type: 'scan_action', ...}` directly — bypassing both
     // `lessonAction` and `plainScanAction`, and therefore `codePairingBlocks`
@@ -286,12 +286,15 @@ describe('QR / panel-code pairing on the PLAIN (non-lesson) branch — regressio
     // leave the inline push standing. Anyone tempted to just increment this
     // should extract a helper instead — that is the invariant, not the count.
     //
-    // 3 TO 4 ON 2026-09-06, under that same rule: the reading-log card is a
-    // fourth card, and it arrived as a named `readingLogAction` helper rather
-    // than an inline push. The count moved because a helper was extracted, not
-    // to make a bypass fit.
+    // 3 TO 4 ON 2026-09-06 and STRAIGHT BACK TO 3 the same day, under that same
+    // rule read in the other direction. The reading-log card briefly authored
+    // its own block; the card-parity change then made it a LESSON card, so
+    // `readingLogAction` now composes `lessonAction` and constructs nothing of
+    // its own. One fewer construction site is the invariant getting stronger,
+    // not weaker — every scan_action on a receipt still comes from a named
+    // helper, and there is now one less place a dead QR could be authored.
     const src = stripComments(readFileSync(RECEIPTS_SRC_PATH, 'utf8'));
     const constructions = src.match(/type:\s*'scan_action'/g) || [];
-    expect(constructions).toHaveLength(4); // lessonAction, plainScanAction, bulkPrintAction, readingLogAction
+    expect(constructions).toHaveLength(3); // lessonAction, plainScanAction, bulkPrintAction
   });
 });
