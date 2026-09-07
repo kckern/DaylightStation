@@ -386,6 +386,39 @@ export function projectReading(reading) {
   };
 }
 
+/**
+ * The four fields a shelf card names about a record, from either shape.
+ *
+ * The panel's wire shape does not change across the re-key: `itemId` is the
+ * reading id, which the client already treats as opaque and never parses. What
+ * moved is where the values LIVE — `reading.book.isbn` rather than
+ * `item.bookId` — and this is the one place that knows it.
+ *
+ * @param {object} record - a v1 shelf item or a v2 reading
+ * @returns {{itemId: string|null, bookId: string|null, progressMode: string|null, pageCount: number|null}}
+ */
+export function shelfItemView(record) {
+  if (isReading(record)) {
+    return {
+      itemId: record.id ?? null,
+      bookId: record.book?.isbn ?? null,
+      progressMode: record.progressMode ?? null,
+      pageCount: record.book?.pageCount ?? null,
+    };
+  }
+  return {
+    itemId: record?.itemId ?? null,
+    bookId: record?.bookId ?? null,
+    progressMode: record?.progressMode ?? null,
+    pageCount: record?.pageCount ?? null,
+  };
+}
+
+/** Project whichever shape a caller was handed. */
+export function projectRecord(record, { dayOf = isoDay } = {}) {
+  return isReading(record) ? projectReading(record) : projectShelfItem(record, { dayOf });
+}
+
 /** How many other in-progress books the card names. Two fits the narrow column. */
 export const ALSO_READING_LIMIT = 2;
 
@@ -432,19 +465,19 @@ export const ALSO_READING_LIMIT = 2;
  */
 export function selectFeaturedShelfItem(items, { dayOf = isoDay } = {}) {
   const projected = (Array.isArray(items) ? items : [])
-    // A row with no string `itemId` cannot be one of ours: the store builds
-    // `<learner>:<book>:<entry>` at open and refuses to append without it. Dropping
-    // it silently is deliberate — an unreadable shelf throws in the store, one layer
-    // up, so anything reaching here is a hand-edited row, and a card that prints one
-    // fewer book beats a card that does not print. `unread` items land here too.
-    .filter((item) => item && typeof item === 'object' && typeof item.itemId === 'string')
-    .map((item) => ({ item, projection: projectShelfItem(item, { dayOf }) }));
+    // A row with no string id cannot be one of ours: the store mints one at open
+    // and refuses to append without it. Dropping it silently is deliberate — an
+    // unreadable shelf throws in the store, one layer up, so anything reaching
+    // here is a hand-edited row, and a card that prints one fewer book beats a
+    // card that does not print. `unread` items land here too.
+    .filter((item) => item && typeof item === 'object' && typeof shelfItemView(item).itemId === 'string')
+    .map((item) => ({ item, projection: projectRecord(item, { dayOf }) }));
 
   const withStatus = (status) => projected.filter((entry) => entry.projection.status === status);
 
   // Newest first, then itemId — the stable order every branch below shares.
   const byRecency = (a, b) => String(b.projection.lastAt ?? '').localeCompare(String(a.projection.lastAt ?? ''))
-    || String(a.item.itemId).localeCompare(String(b.item.itemId));
+    || String(shelfItemView(a.item).itemId).localeCompare(String(shelfItemView(b.item).itemId));
 
   const reading = withStatus('reading');
   if (reading.length) {
