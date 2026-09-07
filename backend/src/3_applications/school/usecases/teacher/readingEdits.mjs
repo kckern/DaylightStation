@@ -259,6 +259,15 @@ export class ReadingEditContext {
     }
   }
 
+  /** The household's study day, or null where no launcher is wired. */
+  studyDay() {
+    try {
+      return this.#bookLogLauncher?.studyDay?.() ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Just the bounds, for the write path that judges whether a re-date leaves
    * them. One derivation, two readers: `countedWindowView` is what the console

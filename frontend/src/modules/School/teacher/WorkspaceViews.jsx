@@ -394,7 +394,13 @@ export function ReadingView({ learnerId, learnerName, kids = [] }) {
   return (
     <div className="teacher-view">
       <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Reading</p><h2>{learnerName}’s shelf</h2><p>What they are reading, how much, and how consistently — and, from any row, the record itself.</p></div></div>
-      <ReadingShelfPanel learnerId={learnerId} refreshToken={refresh} onShelf={setShelf} onOpenReading={show} />
+      <ReadingShelfPanel
+        learnerId={learnerId}
+        refreshToken={refresh}
+        onShelf={setShelf}
+        onOpenReading={show}
+        onAdded={() => setRefresh((value) => value + 1)}
+      />
       {readable && openReading && (
         <ReadingDetailPanel
           key={openReading}

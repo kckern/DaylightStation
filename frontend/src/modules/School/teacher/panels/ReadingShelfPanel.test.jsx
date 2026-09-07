@@ -3,9 +3,22 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ReadingShelfPanel from './ReadingShelfPanel.jsx';
 
 vi.mock('../teacherWorkspaceApi.js', () => ({
-  teacherWorkspaceApi: { readingShelf: vi.fn() },
+  teacherWorkspaceApi: { readingShelf: vi.fn(), addReadingForLearner: vi.fn() },
+}));
+vi.mock('../../schoolApi.js', () => ({
+  schoolApi: { books: { resolve: vi.fn() } },
+}));
+vi.mock('../TeacherProfileContext.jsx', () => ({
+  useTeacherProfile: () => ({
+    currentTeacher: { id: 'test-user', name: 'test-user' },
+    openPicker: vi.fn(),
+    pickerOpen: false,
+    requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: null })),
+    invalidateAuthorization: vi.fn(),
+  }),
 }));
 import { teacherWorkspaceApi } from '../teacherWorkspaceApi.js';
+import { schoolApi } from '../../schoolApi.js';
 
 const item = (over = {}) => ({
   itemId: 'itm_1', bookId: '9780000000001', progressMode: 'page', pageCount: 184,
@@ -161,5 +174,123 @@ describe('ReadingShelfPanel — what a grown-up sees', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy());
     expect(screen.queryByText('No books yet.')).toBeNull();
     expect(screen.getByText(/couldn’t be read/i)).toBeTruthy();
+  });
+});
+
+/**
+ * Adding a book on a child's behalf (design §3 row 11, §6's empty state).
+ *
+ * A shelf-level verb, so it lives here and not in the detail's four bands: it
+ * makes a reading that does not exist yet. It is capability-only, needs no
+ * reason and tells the child nothing — nothing got smaller.
+ */
+describe('adding a book on the child’s behalf', () => {
+  const created = { ok: true, status: 201, data: { reading: { id: 'itm_9' }, created: true } };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    teacherWorkspaceApi.readingShelf.mockResolvedValue(ok(shelf()));
+    teacherWorkspaceApi.addReadingForLearner.mockResolvedValue(created);
+    schoolApi.books.resolve.mockResolvedValue(ok({ status: 'ok', book: { title: 'A Borrowed Title' } }));
+  });
+
+  const open = async (props = {}) => {
+    render(<ReadingShelfPanel learnerId="User_4" onAdded={vi.fn()} {...props} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Add a book' }));
+  };
+
+  it('is offered on a shelf that read, and NOT on one that did not', async () => {
+    teacherWorkspaceApi.readingShelf.mockResolvedValue({ ok: false, status: 500, data: null });
+    render(<ReadingShelfPanel learnerId="User_4" onAdded={vi.fn()} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy());
+    // A damaged year of evidence gets no control that would add to it.
+    expect(screen.queryByRole('button', { name: 'Add a book' })).toBeNull();
+  });
+
+  it('is offered on an EMPTY shelf — that is exactly when a grown-up adds the first one', async () => {
+    teacherWorkspaceApi.readingShelf.mockResolvedValue(ok(shelf({ items: [], obligation: null })));
+    render(<ReadingShelfPanel learnerId="User_4" onAdded={vi.fn()} />);
+    expect(await screen.findByText('No books yet.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Add a book' })).toBeTruthy();
+  });
+
+  it('opens a book the child is just starting', async () => {
+    const onAdded = vi.fn();
+    await open({ onAdded });
+    fireEvent.change(screen.getByLabelText('ISBN'), { target: { value: ' 9780000000002 ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Just starting it' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add this book' }));
+    await waitFor(() => expect(teacherWorkspaceApi.addReadingForLearner).toHaveBeenCalled());
+    const [learnerId, body, key] = teacherWorkspaceApi.addReadingForLearner.mock.calls[0];
+    expect(learnerId).toBe('User_4');
+    expect(body).toMatchObject({ isbn: '9780000000002', where: 'starting', by: 'test-user' });
+    // No reason and no revision count: nothing was loaded, and nothing shrank.
+    expect(body.reason ?? null).toBeNull();
+    expect(body.baseRevisionCount).toBeUndefined();
+    // Idempotent on a key the client mints, so a double tap adds one book.
+    expect(typeof key).toBe('string');
+    await waitFor(() => expect(onAdded).toHaveBeenCalled());
+  });
+
+  it('asks for the page on the partway door, and will not submit without one', async () => {
+    await open();
+    fireEvent.change(screen.getByLabelText('ISBN'), { target: { value: '9780000000002' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Partway through' }));
+    expect(screen.getByRole('button', { name: 'Add this book' }).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Page they are on'), { target: { value: '84' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add this book' }));
+    await waitFor(() => expect(teacherWorkspaceApi.addReadingForLearner).toHaveBeenCalled());
+    expect(teacherWorkspaceApi.addReadingForLearner.mock.calls[0][1])
+      .toMatchObject({ where: 'partway', page: 84 });
+  });
+
+  it('asks for the day on the finished door, and will not submit without one', async () => {
+    await open();
+    fireEvent.change(screen.getByLabelText('ISBN'), { target: { value: '9780000000002' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Already finished it' }));
+    expect(screen.getByRole('button', { name: 'Add this book' }).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Day they finished it'), { target: { value: '2026-08-20' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add this book' }));
+    await waitFor(() => expect(teacherWorkspaceApi.addReadingForLearner).toHaveBeenCalled());
+    expect(teacherWorkspaceApi.addReadingForLearner.mock.calls[0][1])
+      .toMatchObject({ where: 'finished', finishedOn: '2026-08-20' });
+  });
+
+  it('will not send a number that is not a book number', async () => {
+    await open();
+    fireEvent.change(screen.getByLabelText('ISBN'), { target: { value: '123' } });
+    expect(screen.getByRole('button', { name: 'Add this book' }).disabled).toBe(true);
+    expect(teacherWorkspaceApi.addReadingForLearner).not.toHaveBeenCalled();
+  });
+
+  it('looks the number up first, so a grown-up sees which book they are adding', async () => {
+    await open();
+    fireEvent.change(screen.getByLabelText('ISBN'), { target: { value: '9780000000002' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Look it up' }));
+    expect(await screen.findByText(/A Borrowed Title/)).toBeTruthy();
+    // A miss names itself and changes nothing — the number may still be right.
+    schoolApi.books.resolve.mockResolvedValue(ok({ status: 'not-found' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Look it up' }));
+    expect(await screen.findByText(/No book answers to that number/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Add this book' }).disabled).toBe(false);
+  });
+
+  it('a refused add keeps the form and says what the server said', async () => {
+    const onAdded = vi.fn();
+    teacherWorkspaceApi.addReadingForLearner.mockResolvedValue({
+      ok: false, status: 422, data: { error: 'That book is already on this shelf.' },
+    });
+    await open({ onAdded });
+    fireEvent.change(screen.getByLabelText('ISBN'), { target: { value: '9780000000002' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add this book' }));
+    expect(await screen.findByText('That book is already on this shelf.')).toBeTruthy();
+    expect(onAdded).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('ISBN').value).toBe('9780000000002');
+  });
+
+  it('a shelf with no add callback offers nothing that writes', async () => {
+    render(<ReadingShelfPanel learnerId="User_4" />);
+    await screen.findByText(/A Borrowed Title/);
+    expect(screen.queryByRole('button', { name: 'Add a book' })).toBeNull();
   });
 });

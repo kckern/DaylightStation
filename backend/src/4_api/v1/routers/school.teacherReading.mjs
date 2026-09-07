@@ -155,13 +155,20 @@ export function mountTeacherReadingRoutes({
     send(res, 200, result);
   }));
 
-  /** A book opened on the child's behalf. No base revision count — nothing was loaded. */
+  /**
+   * A book opened on the child's behalf. No base revision count — nothing was
+   * loaded. `where` is the child's own three doors (`starting`, `partway` with
+   * a page, `finished` on a day), answered in one call so a book cannot land
+   * on the shelf with half of the answer applied.
+   */
   router.post(BASE, wrap(async (req, res) => {
     const body = req.body ?? {};
     const result = await need(addReadingForLearner, 'teacher reading edit').execute({
       learnerId: req.params.learnerId, ...actor(req),
       isbn: body.isbn, progressMode: body.progressMode ?? 'page',
       pageCount: body.pageCount ?? null, openedOn: body.openedOn ?? null,
+      where: body.where ?? 'starting', page: body.page ?? null,
+      finishedOn: body.finishedOn ?? null,
       reason: body.reason ?? null,
       idempotencyKey: req.get('Idempotency-Key') ?? body.idempotencyKey ?? null,
     });
