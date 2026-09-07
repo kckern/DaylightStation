@@ -40,6 +40,10 @@ export function createSchoolRouter({
   getCompanionFinishCode = null,
   previewTeacherLessonMaterial = null,
   getLearnerTimeline = null,
+  // The learner's reading shelf, read by a grown-up. The SAME use case the
+  // child's grant-gated panel reads (`schoolBooks.mjs`) — a second projection
+  // of a child's reading year would be a second thing to be wrong about it.
+  getBookShelf = null,
   adjustSessionGrade = null,
   retractSessionGradeAdjustment = null,
   invalidateSessionEvidence = null,
@@ -1095,6 +1099,36 @@ export function createSchoolRouter({
       before: textQuery(req.query.before),
       unitId: textQuery(req.query.unitId),
     })));
+  }));
+  /**
+   * The reading shelf, for a grown-up (teacher reading admin design §2, §6).
+   *
+   * The child reaches this same view through `/books/:learnerId/shelf`, where a
+   * launch grant names the learner and the URL is only what the grant is
+   * checked against. A grown-up holds no launch, so here the URL IS the
+   * learner and the console capability is the gate — the tier every other
+   * learner-scoped teacher surface runs on, asserted through the one
+   * `TeacherGate` rather than a second gating style invented for books.
+   *
+   * The acting teacher is read off the capability session because a GET
+   * carries no body to name them, exactly as the postview read does.
+   *
+   * Strictly a read: `GetBookShelf` opens nothing, mints nothing and appends
+   * nothing (invariant 7 of teacher.md). `no-store`, because a child's record
+   * must not sit in a shared browser cache on a household screen.
+   */
+  router.get('/teacher/learners/:learnerId/reading', wrap(async (req, res) => {
+    if (!getBookShelf) throw new EntityNotFoundError('teacher reading shelf', 'not configured');
+    if (!teacherGate) throw new EntityNotFoundError('teacher authorization', 'not configured');
+    const proof = capabilityProof(req);
+    const session = proof ? teacherCapabilitySessions?.status(proof.capabilityToken) : null;
+    teacherGate.assert({
+      userId: session?.active ? session.userId : null,
+      pin: proof,
+      action: 'books.shelf.read',
+      context: { learnerId: req.params.learnerId },
+    });
+    res.set('Cache-Control', 'no-store').json(await getBookShelf.execute({ learnerId: req.params.learnerId }));
   }));
   // Opened directly by window.open so the popup is created during the click
   // gesture. This signs a five-minute read-only scope and redirects to the

@@ -4355,6 +4355,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       }) : null,
     getLearnerTimeline: schoolLifecycle.stores?.sessions
       ? new GetLearnerTimeline({ sessions: schoolLifecycle.stores.sessions, curriculum: schoolLifecycle.stores.curriculum ?? null }) : null,
+    // The very instance the child's shelf panel reads through (built in the
+    // lifecycle module, over the one book log). Null in a composition without
+    // the Books deps, which the teacher route answers as an honest 404.
+    getBookShelf: schoolLifecycle.useCases?.getBookShelf ?? null,
     adjustSessionGrade: schoolLifecycle.stores?.sessions && schoolTeacherGate
       ? new AdjustSessionGrade({
         sessions: schoolLifecycle.stores.sessions,

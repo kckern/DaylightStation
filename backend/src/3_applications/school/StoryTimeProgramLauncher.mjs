@@ -177,7 +177,10 @@ export class StoryTimeProgramLauncher {
       rows = await this.#readingLog.listForDay(userId, day);
     } catch (err) {
       this.#logger.error?.('school.story-time.log-unreadable', { userId, day, error: err.message });
-      return this.#unavailable('Reading log unavailable', target, true);
+      // NOT "Reading log unavailable" — that name now belongs to the book-log
+      // shelf (`bookLogContext`), and two programs answering to it on one board
+      // is exactly the confusion that authority exists to prevent.
+      return this.#unavailable('Story time log unavailable', target, true);
     }
     const count = Array.isArray(rows) ? rows.length : 0;
     const doneToday = count >= target;

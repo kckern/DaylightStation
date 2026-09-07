@@ -26,6 +26,7 @@ The dashboard the URL lands on is the **Today tab**. Reading down the page:
 | "· N to review / N prints / N quiz requests →" strip | `BacklogStrip` | `tabs/TodayTab.jsx` |
 | "N subjects need a grown-up →" strip, above the roster | `GrownUpStrip` | `tabs/TodayTab.jsx` (tally reported up from `panels/RosterStrip.jsx`'s `onNeedsGrownUp`) |
 | The Records tab, day record, session detail | `RecordsTab`, `WorkspaceViews` | `tabs/RecordsTab.jsx`, `WorkspaceViews.jsx`, `panels/LearnerDayView.jsx` |
+| A student's **Reading** tab — the obligation strip, the three counts, and the READING NOW / FINISHED / SET ASIDE rows | `ReadingView` → `ReadingShelfPanel` | `WorkspaceViews.jsx`, `panels/ReadingShelfPanel.jsx` (covers/titles: `../books/BookCover.jsx`, `../books/bookPresentation.js`; day + duration: `../books/ShelfTile.jsx`) |
 
 **Decides Done / Not started / Deferred / Blocked, and which session belongs
 to which planned lesson:** (provenance — `unplanned`, `carriedOver` — is a flag
@@ -61,6 +62,20 @@ curl -s https://daylightlocal.kckern.net/api/v1/school/teacher/day \
 curl -s "https://daylightlocal.kckern.net/api/v1/school/lifecycle/learners/learner-1/agenda/preview?format=json&studyDay=$(date +%F)" \
   | jq '.sections'
 ```
+
+The Reading tab adds one read of its own, capability-gated and non-recording:
+
+```bash
+# One child's shelf, as a grown-up. Needs the console capability cookie; a
+# child's X-School-Book-Grant does NOT open it.
+curl -s --cookie 'daylight_teacher_session=<token>' \
+  https://daylightlocal.kckern.net/api/v1/school/teacher/learners/learner-1/reading \
+  | jq '{obligation, items: [.items[] | {title, progressMode, projection}]}'
+```
+
+Same `GetBookShelf` view the child's own panel reads through
+`/books/:learnerId/shelf` — one projection of a child's reading year, two
+gates. Client wrapper: `teacherWorkspaceApi.readingShelf()`.
 
 Client wrappers: `schoolApi.teacherDay()` and `schoolApi.agendaPreview()` in
 `../schoolApi.js`. (`schoolApi.teacherToday()` still exists and still backs the
