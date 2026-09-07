@@ -1,7 +1,7 @@
 import { lazy, Suspense, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PortionContext, usePortionDraft } from './usePortionDraft.js';
-import { formatNutrients, nutrientSummary } from '@shared-contracts/nutrition/countedRows.mjs';
+import { nutrientSummary } from '@shared-contracts/nutrition/countedRows.mjs';
 import { useSearchParams } from 'react-router-dom';
 import { isISODate } from '@shared-contracts/health/isoDate.mjs';
 import { ActionIcon, Button, Menu } from '@mantine/core';
@@ -322,12 +322,14 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   return (
     <PortionContext.Provider value={preview.control}><div className="health-today">
       <EquationStrip budget={preview.budget} budgetError={day.budgetError}
-        date={date} today={todayISO()} onDateChange={setDate} onSetupGoals={onSetupGoals} />
+        macroCoverage={nutrientSummary(preview.items)} date={date} today={todayISO()}
+        onDateChange={setDate} onSetupGoals={onSetupGoals} />
       {/* Macro / watch-micro bars sit directly under the equation (F4.1). They
           read the SAME day sums the equation does — BudgetService computes both
           over one fold — so the bars and the kcal number can never disagree. */}
       <MacroBarRow macros={preview.budget?.macros} goals={preview.budget?.goals}
-        macroCoverage={nutrientSummary(preview.items)} microCoverage={preview.budget?.microCoverage} />
+        macroCoverage={nutrientSummary(preview.items)} microCoverage={preview.budget?.microCoverage}
+        showIntake={false} />
       {wideViewport && sidebarTarget ? createPortal(history, sidebarTarget) : null}
       <QuickCaptureBar active={active} onVoiceCapture={onVoiceCapture} onPhotoCapture={onPhotoCapture}
         onOpenBarcode={openBarcode} onAddTo={setAddingTo} busy={nutrition.busy} date={date} />

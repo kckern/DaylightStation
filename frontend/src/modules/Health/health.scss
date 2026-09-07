@@ -6,17 +6,49 @@
 // land (today/, capture/, progress/, medical/).
 
 .health-equation {
-  display: flex; align-items: center; justify-content: space-between;
-  flex-wrap: wrap; gap: 0.25rem 0.75rem;
+  display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;
+  gap: 0.25rem 0.75rem;
   padding: 0.25rem 0;
   border-bottom: 1px solid var(--ds-border);
 
-  &__math { display: flex; align-items: baseline; gap: 0.35rem; font-variant-numeric: tabular-nums; color: var(--ds-text-high); }
-  &__op { color: var(--ds-text-low); }
-  &__net { font-size: 1.1rem; }
-  &__status { font-size: 0.75rem; text-transform: uppercase; color: var(--ds-success); }
-  &--over &__status, &--over &__net { color: var(--ds-danger); }
+  &__math { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.3rem; min-width: 0; }
   &__stale { font-size: 0.7rem; color: var(--ds-warning); }
+}
+
+.health-daily-metric {
+  min-width: 0; padding: 0.25rem 0.35rem; border-radius: 6px;
+  color: var(--ds-text-high); text-align: center;
+}
+.health-daily-metric-label,
+.health-daily-metric-unit { display: block; font-size: 0.62rem; color: var(--ds-text-mid); }
+.health-daily-metric-label { text-transform: uppercase; letter-spacing: 0.04em; }
+.health-daily-metric-readout { display: grid; grid-template-columns: 1ch minmax(0, 1fr); align-items: baseline; justify-content: center; }
+.health-daily-metric-value {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.health-daily-metric-number { display: inline-block; min-width: 5ch; }
+.health-daily-metric-operator { width: 1ch; color: var(--ds-text-low); }
+.health-daily-metric-unit { grid-column: 2; min-height: 1em; }
+.health-daily-metric--protein,
+.health-daily-metric--carbs,
+.health-daily-metric--fat { color: var(--health-macro-color); }
+.health-daily-metric--food { background: var(--ds-text-high); color: var(--ds-surface); }
+.health-daily-metric--food .health-daily-metric-label,
+.health-daily-metric--food .health-daily-metric-unit,
+.health-daily-metric--food .health-daily-metric-operator { color: var(--ds-surface-alt); }
+.health-daily-metric--exercise { color: var(--ds-warning); }
+.health-daily-metric--under { color: var(--ds-success); }
+.health-daily-metric--over { color: var(--ds-danger); }
+
+@media (max-width: 760px) {
+  .health-equation { grid-template-columns: 1fr; }
+  .health-equation__math { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .health-daily-metric-value { font-size: 19px; }
+  .health-daily-metric-number { min-width: 4ch; }
 }
 
 // Week strip (Task 8.2) — seven per-day budget bars, plain CSS, no chart
