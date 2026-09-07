@@ -2291,7 +2291,12 @@ membership_tick() {
         # white speaker, slot 5) — reconcile would no-op but better to skip.
         [[ -z "$queue" ]] && continue
 
-        reconcile_slot_membership "$slot" "$tag" "$queue" "$shuffle"
+        # A failed rebuild is recoverable: keep the worker alive so the next
+        # tick can retry it and still reconcile the remaining live slots.
+        # Without this guard, `set -e` terminates membership_loop permanently.
+        if ! reconcile_slot_membership "$slot" "$tag" "$queue" "$shuffle"; then
+            logev "$tag" reconcile.fail slot="$slot" reason=membership_tick
+        fi
     done
 }
 
