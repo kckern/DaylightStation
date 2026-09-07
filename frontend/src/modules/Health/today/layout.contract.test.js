@@ -15,6 +15,7 @@ import { ASIDE_MIN_WIDTH_PX } from './layout.js';
 const css = sass.compile(
   fileURLToPath(new URL('../health.scss', import.meta.url)),
 ).css.replace(/\s+/g, ' ');
+const scss = readFileSync(new URL('../health.scss', import.meta.url), 'utf8');
 
 const rule = (selector) => css.match(
   new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`),
@@ -43,10 +44,45 @@ describe('Today layout stylesheet', () => {
   });
 
   it('keeps the day ledger at its compact type and row rhythm', () => {
-    expect(rule('.health-row-line')).toMatch(/min-height: 48px/);
-    expect(rule('.health-row__identity')).toMatch(/min-height: 44px/);
+    expect(rule('.health-row-line')).toMatch(/min-height: 28px/);
+    expect(rule('.health-row-identity')).toMatch(/min-height: 28px/);
     expect(rule('.health-row__name')).toMatch(/font-size: 0.86rem/);
-    expect(rule('.health-row__icon')).toMatch(/width: 24px/);
+    expect(rule('.health-row-artwork')).toMatch(/width: 24px/);
+    expect(rule('.health-density-badge')).toMatch(/min-height: 28px/);
+    expect(rule('.health-density-badge__visual')).toMatch(/width: 24px/);
+    expect(rule('.health-density-badge__visual')).toMatch(/height: 14px/);
+    expect(css).toMatch(/pointer: coarse[^}]*\.health-row-line[^}]*min-height: 44px/s);
+    expect(scss).toMatch(/@include bp\.mobile-only \{[\s\S]*\.health-row-line, \.health-row-identity,[\s\S]*min-height: 44px/);
+  });
+
+  it('aligns meal headers and rows to shared nutrient tracks while only identity shrinks', () => {
+    expect(rule('.health-meal')).toContain('--health-meal-tracks');
+    expect(rule('.health-row-line')).toContain('var(--health-meal-tracks)');
+    expect(rule('.health-meal__header')).toContain('var(--health-meal-tracks)');
+    expect(rule('.health-row__description')).toMatch(/min-width: 0/);
+  });
+
+  it('dims child visual content while keeping an open popover fully opaque', () => {
+    expect(rule('.health-row-line--child .health-row__visual')).toMatch(/opacity: 0.75/);
+    expect(rule('.health-row-line--child .health-macro-badge')).toMatch(/width: 20px/);
+    expect(rule('.health-row-line--child .health-macro-badge')).toMatch(/height: 20px/);
+    expect(rule('.health-row-line--child .health-macro-badge')).toMatch(/border-radius: 50%/);
+    expect(css).toMatch(/health-row-line--child:has\(\[aria-expanded=true\]\) \.health-row__visual \{[^}]*opacity: 1/);
+  });
+
+  it('indents child identity content without moving nutrient tracks and anchors its tree to parent artwork', () => {
+    expect(rule('.health-row-line--child .health-row-identity')).toMatch(/padding-left: 16px/);
+    expect(rule('.health-row-line--child .health-row__branch::before')).toContain('left: calc(100% + var(--health-row-gap) + 12px)');
+    expect(rule('.health-row-line')).toContain('var(--health-meal-tracks)');
+  });
+
+  it('defines distinct before and after visual orders for all identity siblings', () => {
+    expect(rule('.health-density-before .health-row-artwork')).toMatch(/order: 1/);
+    expect(rule('.health-density-before .health-density-badge')).toMatch(/order: 2/);
+    expect(rule('.health-density-before .health-row-name')).toMatch(/order: 3/);
+    expect(rule('.health-density-after .health-row-artwork')).toMatch(/order: 1/);
+    expect(rule('.health-density-after .health-row-name')).toMatch(/order: 2/);
+    expect(rule('.health-density-after .health-density-badge')).toMatch(/order: 3/);
   });
 
   it('gives populated meals two equal desktop columns', () => {

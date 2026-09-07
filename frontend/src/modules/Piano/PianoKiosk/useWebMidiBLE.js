@@ -579,14 +579,26 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
     bridgeOwnsOut, relinquishWebMidi]);
 
   // ── Outbound (timbre + studio playback) ──────────────────────────────
-  const sendProgramChange = useCallback((program, channel = 0) => {
+  // The one place that knows a Program Change is never sent bare: Bank Select
+  // (MSB+LSB) always precedes it, zero included. See sendVoice for why.
+  const selectProgram = useCallback((program, bank, channel, event) => {
     const out = outputRef.current;
     if (!out && !bridgeOutUp()) return false;
+    emitOut(out, [0xb0 | (channel & 0x0f), 0, bank & 0x7f], 'midi.out.bank-msb', { bank, channel });
+    emitOut(out, [0xb0 | (channel & 0x0f), 32, 0], 'midi.out.bank-lsb', { channel });
     const bytes = [0xc0 | (channel & 0x0f), program & 0x7f];
-    emitOut(out, bytes, 'midi.out.program', { program, channel });
+    emitOut(out, bytes, event, { program, bank, channel });
     flushOut(out, bytes); // re-send to push the PC through BLE (one-turn-late fix)
     return true;
   }, []);
+
+  // Bare GM program select (the Producer's onboard-GM tier, the GM probe). Bank
+  // is not a parameter here, but it is still SENT as 0 — these callers ask for a
+  // GM voice, and the piano would otherwise serve them out of whatever bank the
+  // Sound sheet last selected on that channel.
+  const sendProgramChange = useCallback((program, channel = 0) => (
+    selectProgram(program, 0, channel, 'midi.out.program')
+  ), [selectProgram]);
 
   // Local Control (CC 122): false silences the piano's onboard voice so a
   // rendered instrument (APK) is the only sound; true restores onboard sound.
@@ -603,16 +615,9 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
   // a bank-1 variation fall back to GM, creating the misleading appearance of a
   // partial/offset patch map. Each message is logged with its own seq/timestamp
   // so the send ORDER is visible when diagnosing the one-turn-late bug.
-  const sendVoice = useCallback((program, bank = 0, channel = 0) => {
-    const out = outputRef.current;
-    if (!out && !bridgeOutUp()) return false;
-    emitOut(out, [0xb0 | (channel & 0x0f), 0, bank & 0x7f], 'midi.out.bank-msb', { bank, channel });
-    emitOut(out, [0xb0 | (channel & 0x0f), 32, 0], 'midi.out.bank-lsb', { bank, channel });
-    const bytes = [0xc0 | (channel & 0x0f), program & 0x7f];
-    emitOut(out, bytes, 'midi.out.voice', { program, bank, channel });
-    flushOut(out, bytes); // re-send to push the PC through BLE (one-turn-late fix)
-    return true;
-  }, []);
+  const sendVoice = useCallback((program, bank = 0, channel = 0) => (
+    selectProgram(program, bank, channel, 'midi.out.voice')
+  ), [selectProgram]);
 
   // General Control Change out (effects like reverb/chorus, and the monitor's
   // fireable outputs). Flushed like Program Change: the BLE-MIDI peripheral

@@ -73,6 +73,25 @@ for (const width of [1440, 390]) test(`group and review layout at ${width}px`, a
   expect(state.unexpected).toEqual([]);
 });
 
+for (const width of [1440, 390]) test(`compact review food modal at ${width}px`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width, height: 1000 });
+  await installHealthFixtures(page, { items: [] });
+  const pending = [{ id: 'review-example', version: 1, date, mealTime: 'morning', source: 'scanner',
+    items: [{ id: 'food-1', label: 'Breakfast burrito', grams: 250, originalQuantity: { amount: 1, unit: 'burrito' },
+      calories: 520, protein: 24, carbs: 52, fat: 24, fiber: 6, sugar: 4, sodium: 840, cholesterol: 85 }] }];
+  await page.route('**/api/v1/health/nutrition/pending?*', route => route.fulfill({ json: { pending } }));
+  await page.goto('/health?date=' + date);
+  await page.getByText('1 capture not counted · Review', { exact: true }).click();
+  await page.getByRole('button', { name: 'Review food', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Review food' });
+  await expect(dialog).toBeVisible();
+  await page.waitForTimeout(300);
+  await expect(dialog.getByRole('button', { name: 'Confirm food' })).toBeInViewport();
+  expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath(`review-food-modal-${width}.png`), fullPage: true });
+});
+
 for (const width of [1440, 390]) test(`cleanup questions and settings at ${width}px`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width, height: 1000 });
   const fixture = await installHealthFixtures(page, { items });

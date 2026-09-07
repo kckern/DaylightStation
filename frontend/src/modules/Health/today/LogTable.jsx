@@ -49,7 +49,7 @@ function Section({
     <section className="health-meal">
       <header className="health-meal__header">
         <h4 className="health-meal__label">{label}</h4>
-        {rows.length ? <MacroBadges rows={rows} className="health-meal__macros" /> : null}
+        {rows.length ? <MacroBadges rows={rows} className="health-meal__macros" showLabels /> : null}
         <span className="health-meal__header-right">
           <span className="health-meal__kcal">{rows.length ? `${kcal(rows)} kcal` : '—'}</span>
           {headerAction || null}
@@ -93,7 +93,7 @@ function Section({
                 whatever opens next (EntryEditSheet's group mode needs the
                 full child list to scale/move/delete them together). */}
             <EntryRow
-              row={{ ...row, children }} onTap={onRowTap} onConfirm={onConfirm} measured={measured}
+              row={{ ...row, children }} densityRow={{ kind: 'group', children }} onTap={onRowTap} onConfirm={onConfirm} measured={measured}
               isGroup expanded={isOpen} onToggle={() => toggle(key)} rollupKcal={rollup.calories}
             />
             {isOpen ? children.map((c, index) => (

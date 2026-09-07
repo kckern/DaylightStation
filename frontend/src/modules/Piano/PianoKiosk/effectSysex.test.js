@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { gsChecksum, gsMessage, gm2Message, planEffectSysex, toHex } from './effectSysex.js';
+import { gsChecksum, gsMessage, gm2Message, GM2_SLOT, planEffectSysex, toHex } from './effectSysex.js';
 
 // These bytes are the contract with a physical instrument that has NO read-back —
 // a wrong checksum is silently ignored by the piano, which is indistinguishable
@@ -35,9 +35,23 @@ describe('gsMessage', () => {
 });
 
 describe('gm2Message', () => {
-  it('uses kind 00 for reverb and 02 for chorus, with no checksum', () => {
-    expect(toHex(gm2Message(0x00, 4))).toBe('F0 7F 7F 04 05 01 01 01 01 01 00 04 F7');
-    expect(toHex(gm2Message(0x02, 2))).toBe('F0 7F 7F 04 05 01 01 01 01 01 02 02 F7');
+  // The effect is picked by the SLOT PATH (01 01 reverb / 01 02 chorus); the byte
+  // after it is the parameter id, which is 00 (Type) for both. The reverb form
+  // below is the one confirmed on the wire 2026-08-22.
+  it('addresses reverb and chorus by slot path, parameter 00, no checksum', () => {
+    expect(toHex(gm2Message(GM2_SLOT.reverb, 4))).toBe('F0 7F 7F 04 05 01 01 01 01 01 00 04 F7');
+    expect(toHex(gm2Message(GM2_SLOT.chorus, 2))).toBe('F0 7F 7F 04 05 01 01 01 01 02 00 02 F7');
+  });
+
+  it('never aims a chorus write at the reverb block (the dead reverb-type bug)', () => {
+    // Regression for 2026-09-06: chorus used to be built as slot path 01 01 with
+    // 02 in the parameter byte, so it wrote to reverb. Every reverb-type tap was
+    // undone ~4 ms later by the chorus message that followed it.
+    const reverb = gm2Message(GM2_SLOT.reverb, 8);
+    const chorus = gm2Message(GM2_SLOT.chorus, 8);
+    expect(chorus).not.toEqual(reverb);
+    expect(chorus[9]).toBe(0x02); // slot path low byte = chorus
+    expect(chorus[10]).toBe(0x00); // parameter = Type
   });
 });
 
@@ -45,7 +59,7 @@ describe('planEffectSysex', () => {
   it('gm2 (the configured default) sends type as SysEx and level on its CC', () => {
     const ops = planEffectSysex('reverb', { type: 4, level: 100, on: true }, { levelCC: 91 });
     expect(ops).toEqual([
-      { kind: 'sysex', bytes: gm2Message(0x00, 4) },
+      { kind: 'sysex', bytes: gm2Message(GM2_SLOT.reverb, 4) },
       { kind: 'cc', cc: 91, value: 100 },
     ]);
   });
@@ -61,7 +75,7 @@ describe('planEffectSysex', () => {
     // The UI's toggle has always meant "level 0", not a distinct disable command.
     // Changing that here would silently alter behaviour people are used to.
     const ops = planEffectSysex('reverb', { type: 8, level: 120, on: false }, { levelCC: 91 });
-    expect(ops[0]).toEqual({ kind: 'sysex', bytes: gm2Message(0x00, 8) });
+    expect(ops[0]).toEqual({ kind: 'sysex', bytes: gm2Message(GM2_SLOT.reverb, 8) });
     expect(ops[1]).toEqual({ kind: 'cc', cc: 91, value: 0 });
   });
 

@@ -14,6 +14,7 @@ import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import CoachChat from '../modules/Health/CoachChat';
 import { ChatOverlay } from '../modules/Health/ChatOverlay/index.jsx';
 import { TodayView } from '../modules/Health/today/TodayView.jsx';
+import { HealthDisplayPreferencesProvider } from '../modules/Health/display/HealthDisplayPreferences.jsx';
 import '../modules/Health/health.scss';
 const ProgressView = lazy(() => import('../modules/Health/progress/ProgressView.jsx').then(module => ({ default: module.ProgressView })));
 const MedicalView = lazy(() => import('../modules/Health/medical/MedicalView.jsx').then(module => ({ default: module.MedicalView })));
@@ -48,7 +49,10 @@ function tabForPath(pathname) {
 
 const HealthApp = () => {
   const context = useApiResource('api/v1/health/context', { swr: true });
-  return context.data?.userId ? <HealthShell key={context.data.userId} userId={context.data.userId} />
+  return context.data?.userId ? <HealthDisplayPreferencesProvider key={context.data.userId} userId={context.data.userId}
+    densityLevels={context.data.densityLevels} densityRevision={context.data.densityRevision}>
+    <HealthShell userId={context.data.userId} />
+  </HealthDisplayPreferencesProvider>
     : <AppThemeProvider pack="health">{context.error ? <ErrorState error={context.error} onRetry={context.reload} label="Health" /> : <LoadingState label="Health" />}</AppThemeProvider>;
 };
 

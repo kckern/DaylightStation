@@ -58,20 +58,39 @@ export const VOICE_GROUPS = (() => {
 /** Flat lookup of every voice. */
 export const ALL_VOICES = VOICE_GROUPS.flatMap((g) => g.voices);
 
-// Reverb/Chorus over MIDI IN: CC80/CC81 pick the program (type), CC91 the send
-// level. The unit's panel only exposes on/off + level; type select is the GM2
-// algorithm number (best-effort — labels are conventional GM2 names).
+// Reverb/Chorus over MIDI IN. The SEND LEVEL is addressable and works (CC91 /
+// CC93, confirmed by ear 2026-09-06). The effect TYPE is not addressable at all:
+// this unit has one fixed reverb algorithm and one fixed chorus algorithm.
+//
+// `typeAddressable: false` is why there is no type picker and why no type
+// message is sent. It was established by a controlled A/B on the instrument
+// (2026-09-06): send level pinned at CC91=127, voice reset to Acoustic Grand,
+// staccato notes so the tail was exposed, Small Room vs Plate alternated A/B/A/B
+// through three transports — GM2 Global Parameter Control as shipped, the same
+// after GM2 System On (F0 7E 7F 09 03 F7), and the Roland GS macro at 40 01 30
+// after a GS Reset. All twelve notes decayed identically.
+//
+// The owner's manual chart maps CC80/CC81 to reverb/chorus program, and the
+// 2026-06-30 audit concluded "SysEx works, CC is ignored" — both are wrong about
+// type. That audit compared a dry arm at level 0 against a wet arm carrying a
+// type message AND level 127, so what it measured was the level CC throughout.
+//
+// `types` is retained as documentation of the GM2 numbering (reverb 0 Small
+// Room, 1 Medium Room, 2 Large Room, 3 Medium Hall, 4 Large Hall, 8 Plate —
+// 5-7 undefined; chorus 0-3 Chorus 1-4, 4 FB Chorus, 5 Flanger) so a device that
+// DOES honour type can reuse it. Nothing reads it while typeAddressable is false.
 export const EFFECTS = {
   reverb: {
     label: 'Reverb',
     typeCC: 80,
     levelCC: 91,
-    defaultType: 4, // Hall
+    typeAddressable: false,
+    defaultType: 4, // Large Hall — retained so a bundle always carries a type
     types: [
-      { value: 0, label: 'Room' },
+      { value: 1, label: 'Room' },
       { value: 2, label: 'Large Room' },
-      { value: 4, label: 'Hall' },
-      { value: 5, label: 'Large Hall' },
+      { value: 3, label: 'Hall' },
+      { value: 4, label: 'Large Hall' },
       { value: 8, label: 'Plate' },
     ],
   },
@@ -79,6 +98,7 @@ export const EFFECTS = {
     label: 'Chorus',
     typeCC: 81,
     levelCC: 93, // GM-standard chorus send (chart lists only 91; 93 is best-effort)
+    typeAddressable: false,
     defaultType: 2,
     types: [
       { value: 0, label: 'Chorus 1' },

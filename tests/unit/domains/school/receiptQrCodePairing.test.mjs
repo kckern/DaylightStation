@@ -92,7 +92,7 @@ describe('QR / panel-code pairing (Slice H, regression: Learner-Three, 2026-08-2
     // self-service off, or a token class (like `remediation`) that can
     // never carry one.
     const r = resultDocument({
-      sessionId: 'ses_milo',
+      sessionId: 'ses_test-learner',
       unitTitle: 'The United States',
       result: 'passed',
       percent: 100,

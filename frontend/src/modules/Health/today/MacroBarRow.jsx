@@ -64,9 +64,9 @@ function Bar({ label, value, target, unit, tone, caption, ariaLabel }) {
  * implying a per-micro count; closing the gap properly needs per-key provenance
  * on the row, which the stored shape does not have.
  */
-export function MacroBarRow({ macros, goals, macroCoverage, microCoverage }) {
+export function MacroBarRow({ macros, goals, macroCoverage, microCoverage, showIntake = true }) {
   const macroGoals = goals?.macroGoals || null;
-  const watchMicros = Array.isArray(goals?.watchMicros) ? goals.watchMicros : [];
+  const watchMicros = useMemo(() => (Array.isArray(goals?.watchMicros) ? goals.watchMicros : []), [goals?.watchMicros]);
 
   const macroBars = useMemo(() => {
     if (!macros || !macroGoals) return [];
@@ -145,7 +145,7 @@ export function MacroBarRow({ macros, goals, macroCoverage, microCoverage }) {
   }, [signature]);
 
   const withoutTargets = MACROS.filter(m => !macroBars.some(bar => bar.key === m.key));
-  const intake = withoutTargets.length ? <div className="health-macro-intake" title="+ means some food has unknown macros">
+  const intake = showIntake && withoutTargets.length ? <div className="health-macro-intake" title="+ means some food has unknown macros">
     {withoutTargets.map(m => { const coverage = macroCoverage?.[m.key];
       const value = coverage ? coverage.value : macros?.[m.key];
       return <span key={m.key} className={`health-macro-legend health-macro-tone--${m.key}`}>{m.label} {value == null ? '—' : `${fmt(value)}${coverage && coverage.covered < coverage.total ? '+' : ''} g`}</span>;
