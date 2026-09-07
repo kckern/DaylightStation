@@ -349,3 +349,10 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-05 | feat/piano-cap-agenda-overflow | c21ba38b0 | School agenda overflow cap follow-up; already fully merged into main. |
 | 2026-09-05 | fix/health-reconciliation | 4a4593eae | Quiet provisional capture, durable scale reconciliation, guarded Mastra repairs, selective legacy recovery and 72-hour stabilization; fast-forwarded into main. |
 | 2026-09-05 | fix/nutrition-receipts | fe62028c3f3eb29946e6a9489132108aafde5115 | One mutable Telegram receipt publisher/renderer over the Health ledger, durable in-place retries and guarded versioned revisions; fast-forwarded into main. |
+| 2026-09-06 | school/books-pad-ux | f7b6224c9 | Panel shelf: hold-to-clear on backspace after a fat-finger wipe, and icon door tiles a pre-reader can tell apart; merged to main. |
+| 2026-09-06 | school/reading-card-parity | 3ecfc279a | The reading log prints as a lesson card (one card, never two) and its code gains maxUses 12; merged to main. |
+| 2026-09-06 | school/teacher-reading-view | ac6e4e9fd | Read-only teacher reading workspace, capability-gated over the shared GetBookShelf; merged to main. |
+| 2026-09-06 | school/book-log-v2 | fe4c7e4ec | Book log stores readings on an opaque id, addressable entries, `on` vs `at`, stored status, plus a projection-equality-verified migration; merged to main. |
+| 2026-09-06 | school/teacher-reading-edit | 9430acd0b | Nine teacher verbs over a child's shelf, revisions, undo-as-a-verb, two new step-up actions; merged to main. |
+| 2026-09-06 | school/teacher-reading-ui | 87eb987fa | The reading detail: four bands, enforced reasons, armed danger verbs, served refusal sentences; merged to main. |
+| 2026-09-06 | school/reading-admin-finish | f8e22afb6 | Server owns the counted window and the undo refusals; a grown-up can add a book on a child's behalf; merged to main. |
