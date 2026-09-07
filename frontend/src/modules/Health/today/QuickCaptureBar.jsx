@@ -22,7 +22,7 @@ const PlusIcon = () => (
 /** Central capture toolbar with an explicit meal selector. Per-meal Add reuses
  * it with a fixed target. Historical days default to breakfast, not the clock. */
 const FIRST_BUCKET = 'morning';
-export function QuickCaptureBar({ active = true, onVoiceCapture, onPhotoCapture, onOpenBarcode, onAddTo, busy, date = null, bucketOverride = null }) {
+export function QuickCaptureBar({ hideVoice = false, active = true, onVoiceCapture, onPhotoCapture, onOpenBarcode, onAddTo, busy, date = null, bucketOverride = null }) {
   const [selected, setSelected] = useState(null);
   const isToday = !date || date === localTodayISO();
   const bucket = bucketOverride || selected || (isToday ? bucketForHour(new Date().getHours()) : FIRST_BUCKET);
@@ -40,8 +40,8 @@ export function QuickCaptureBar({ active = true, onVoiceCapture, onPhotoCapture,
         onClick={() => { logger.info('quickbar.add', { bucket, date: date || undefined }); onAddTo(bucket); }}>
         <PlusIcon />
       </UnstyledButton>
-      <VoiceCapture active={active} bucket={bucket} mealLabel={target} labelPrefix="Quick voice log"
-        busy={busy} className="health-quickbar__btn" onCapture={onVoiceCapture} />
+      {!hideVoice ? <VoiceCapture active={active} bucket={bucket} mealLabel={target} labelPrefix="Quick voice log"
+        busy={busy} className="health-quickbar__btn" onCapture={onVoiceCapture} /> : null}
       <PhotoCapture bucket={bucket} mealLabel={target} labelPrefix="Quick photo log"
         busy={busy} className="health-quickbar__btn" onCapture={onPhotoCapture} />
       <ActionIcon aria-label={`Quick scan barcode to ${target}`} className="health-quickbar__btn"

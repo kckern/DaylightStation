@@ -549,6 +549,22 @@ export function createHealthRouter(config) {
   // ==========================================================================
 
   if (healthOperations.nutritionItemsAvailable) {
+    for (const [route, method] of [['meal-command', 'mealFoodCommand'], ['meal-undo', 'undoMealFoodCommand']]) {
+      router.post(`/nutrition/${route}`, asyncHandler(async (req, res) => {
+        const userId = getDefaultUsername();
+        try {
+          if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) return res.status(400).json({ error: 'Command body is required' });
+          const result = await healthOperations[method](userId, req.body);
+          logger.info?.('health.meal.command.complete', { userId, route, operationId: req.body.operationId, affectedIds: result.affectedIds });
+          return res.json(result);
+        } catch (err) {
+          logger.warn?.('health.meal.command.failed', { userId, route, error: err.message });
+          if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
+          return sendInternalError(res, { error: err.message });
+        }
+      }));
+    }
+
     /**
      * GET /health/nutrilist
      * Get today's nutrilist items
@@ -1221,6 +1237,20 @@ export function createHealthRouter(config) {
   // ==========================================================================
 
   if (healthOperations.nutritionInputAvailable) {
+    router.post('/nutrition/meal-suggestions', asyncHandler(async (req, res) => {
+      const { date, bucket, selectedIds } = req.body || {};
+      if (!isISODate(date) || !NUTRITION_MEAL_BUCKETS.includes(bucket) || !Array.isArray(selectedIds) || selectedIds.some(id => typeof id !== 'string' || !ENTRY_UUID_PATTERN.test(id))) {
+        return res.status(400).json({ error: 'A date, meal bucket and selected IDs are required' });
+      }
+      try {
+        return res.json(await healthOperations.suggestMealGroups({ userId: getDefaultUsername(), date, bucket, selectedIds }));
+      } catch (err) {
+        logger.warn?.('health.meal.suggestions.failed', { error: err.message });
+        if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
+        return sendInternalError(res, { error: err.message });
+      }
+    }));
+
     /**
      * POST /health/nutrition/input
      * Submit a nutrition input from the web UI directly into the nutribot pipeline.
@@ -1244,7 +1274,8 @@ export function createHealthRouter(config) {
      */
     router.post('/nutrition/input', asyncHandler(async (req, res) => {
       const userId = getDefaultUsername();
-      const { type, content, bucket, date, audioRef } = req.body;
+      const { type, content, bucket, date, audioRef, selectedIds, clarification } = req.body;
+      if ((selectedIds !== undefined && (!Array.isArray(selectedIds) || selectedIds.some(id => typeof id !== 'string' || !ENTRY_UUID_PATTERN.test(id)))) || (clarification !== undefined && (typeof clarification !== 'string' || !ENTRY_UUID_PATTERN.test(clarification)))) return res.status(400).json({ error: 'Invalid meal selection or clarification' });
       if (!type) {
         return res.status(400).json({ error: 'type is required (text, voice, image, barcode)' });
       }
@@ -1262,10 +1293,12 @@ export function createHealthRouter(config) {
         return res.status(400).json({ error: 'Invalid audioRef', code: 'AUDIO_REF_INVALID' });
       }
       try {
-        const result = await runNutritionOperation(userId, req.body.operationId, { type, content, bucket, date, audioRef }, () => healthOperations.processNutritionInput({
-          type, content, userId, bucket, date, audioRef: audioRef ?? undefined, operationId: req.body.operationId,
+        const result = await runNutritionOperation(userId, req.body.operationId, { type, content, bucket, date, audioRef, ...(selectedIds !== undefined ? { selectedIds } : {}), ...(clarification !== undefined ? { clarification } : {}) }, () => healthOperations.processNutritionInput({
+          type, content, userId, bucket, date, audioRef: audioRef ?? undefined, operationId: req.body.operationId, ...(selectedIds !== undefined ? { selectedIds } : {}), ...(clarification !== undefined ? { clarification } : {}),
         }));
-        return res.json(result);
+        const withUndo = healthOperations.attachNutritionCaptureUndo
+          ? await healthOperations.attachNutritionCaptureUndo(userId, req.body.operationId, result) : result;
+        return res.json(withUndo);
       } catch (err) {
         // A retry pointed at a memo that is not there is the caller's problem
         // and has an answer a person can act on. It is not a 500.

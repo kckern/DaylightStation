@@ -6,6 +6,7 @@
 // land (today/, capture/, progress/, medical/).
 
 .health-equation {
+  container-type: inline-size;
   display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;
   gap: 0.25rem 0.75rem;
   padding: 0.25rem 0;
@@ -17,22 +18,23 @@
 
 .health-daily-metric {
   min-width: 0; padding: 0.25rem 0.35rem; border-radius: 6px;
+  border: 1px solid var(--ds-border); background: var(--ds-surface);
   color: var(--ds-text-high); text-align: center;
 }
 .health-daily-metric-label,
 .health-daily-metric-unit { display: block; font-size: 0.62rem; color: var(--ds-text-mid); }
 .health-daily-metric-label { text-transform: uppercase; letter-spacing: 0.04em; }
-.health-daily-metric-readout { display: grid; grid-template-columns: 1ch minmax(0, 1fr); align-items: baseline; justify-content: center; }
+.health-daily-metric-readout { display: flex; align-items: baseline; justify-content: center; gap: 0.15rem; white-space: nowrap; }
 .health-daily-metric-value {
-  font-size: 24px;
+  font-size: clamp(19px, 2cqi, 24px);
   font-weight: 600;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.health-daily-metric-number { display: inline-block; min-width: 5ch; }
+.health-daily-metric-number { display: inline-block; }
 .health-daily-metric-operator { width: 1ch; color: var(--ds-text-low); }
-.health-daily-metric-unit { grid-column: 2; min-height: 1em; }
+.health-daily-metric-unit { display: inline; }
 .health-daily-metric--protein,
 .health-daily-metric--carbs,
 .health-daily-metric--fat { color: var(--health-macro-color); }
@@ -46,9 +48,17 @@
 
 @media (max-width: 760px) {
   .health-equation { grid-template-columns: 1fr; }
-  .health-equation__math { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .health-daily-metric-value { font-size: 19px; }
-  .health-daily-metric-number { min-width: 4ch; }
+}
+
+// Below the one-line width, keep macros together above the four equation terms.
+@container (max-width: 1050px) {
+  .health-equation__math { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+  .health-daily-metric:nth-child(-n + 3) { grid-column: span 4; }
+  .health-daily-metric:nth-child(n + 4) { grid-column: span 3; }
+}
+@container (max-width: 540px) {
+  .health-daily-metric:nth-child(n + 4) { grid-column: span 6; }
 }
 
 // Week strip (Task 8.2) — seven per-day budget bars, plain CSS, no chart
@@ -434,7 +444,7 @@ $health-aside-gap: 1.5rem;
   &__error { grid-column: 2 / -1; color: var(--ds-danger); font-size: 0.8rem; }
   &__branch { align-self: stretch; position: relative; }
 }
-.health-row-identity { display: flex; align-items: center; gap: 0.4rem; min-width: 0; min-height: 28px; }
+.health-row-identity { display: flex; align-items: center; gap: 0.2rem; min-width: 0; min-height: 28px; }
 .health-row-artwork { display: grid; place-items: center; width: 24px; height: 24px; flex: none; }
 .health-row-name { min-width: 0; min-height: 28px; overflow: hidden; text-align: left; }
 .health-density-badge {
@@ -448,8 +458,8 @@ $health-aside-gap: 1.5rem;
     &--unavailable { border: 1px dashed var(--ds-border); background: transparent; color: var(--ds-text-mid); }
   }
 }
-.health-density-before .health-row-artwork { order: 1; }
-.health-density-before .health-density-badge { order: 2; }
+.health-density-before .health-row-artwork { order: 2; }
+.health-density-before .health-density-badge { order: 1; }
 .health-density-before .health-row-name { order: 3; }
 .health-density-after .health-row-artwork { order: 1; }
 .health-density-after .health-row-name { order: 2; }
@@ -470,7 +480,7 @@ $health-aside-gap: 1.5rem;
   &::after { content: ''; position: absolute; left: calc(100% + var(--health-row-gap) + 12px); right: calc(-1 * (var(--health-row-gap) + 28px)); top: 50%; border-top: 1px solid var(--ds-border); }
 }
 .health-row-line--last-child .health-row__branch::before { bottom: auto; height: 50%; }
-.health-row__branch .health-row__expand { position: absolute; inset: 0 auto auto -12px; }
+.health-row__branch .health-row__expand { width: 100%; height: 100%; }
 @include bp.mobile-only {
   .health-meal { --health-meal-tracks: 12px minmax(0, 1fr) 1.65rem 1.65rem 1.65rem 3rem 2.2rem 44px; }
   .health-row-line { --health-row-gap: 0.1rem; gap: var(--health-row-gap); }
@@ -571,16 +581,18 @@ $health-aside-gap: 1.5rem;
 
 // Expand/collapse control for a group row — a sibling of the row button
 // (see .health-row-line comment: never nested inside it). Real button,
-// min-height/width give the 44px touch target; state is carried by
+// The button fills its branch cell; mobile rules increase its height. State uses
 // `aria-expanded` plus the Expand/Collapse text in its accessible name,
 // never by the chevron glyph's rotation alone.
 .health-row__expand {
   display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
-  min-width: 28px; min-height: 28px;
+  min-width: 0; min-height: 28px; padding: 0;
   border-radius: 8px; color: var(--ds-text-mid); font-size: 0.85rem; line-height: 0.7em;
   &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
   &:hover { background: var(--ds-surface-alt); }
 }
+
+.health-row__triangle { display: block; width: 1cap; height: 1cap; flex: none; }
 
 @media (pointer: coarse) {
   .health-row-line, .health-row-identity, .health-row-name, .health-portion,

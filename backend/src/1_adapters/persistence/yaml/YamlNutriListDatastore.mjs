@@ -13,7 +13,7 @@
 import path from 'path';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4, v5 as uuidv5 } from 'uuid';
 import {
   ensureDir,
   dirExists,
@@ -158,6 +158,16 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     return { date, items, revision: loadYaml(this.#revisionPath(userId))?.revision || 0 };
   }
 
+  /** Read a durable committed reply before retrying interpretation of changed context. */
+  readOperationResult(userId, operationId) {
+    if (typeof operationId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(operationId)) {
+      throw Object.assign(new Error('Invalid operation ID'), { status: 400 });
+    }
+    this.#recover(userId);
+    const operation = (loadYaml(this.#operationsPath(userId)) || {})[operationId];
+    return operation?.result || operation?.mutationResult || null;
+  }
+
   async runOperation(userId, id, payload, action) {
     if (!id) return action(); // compatibility for older transports
     if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(id)) throw Object.assign(new Error('Invalid operation ID'), { status: 400 });
@@ -251,13 +261,34 @@ export class YamlNutriListDatastore extends INutriListDatastore {
   }
 
   /** One validated mutation across active/archive rows and their summaries. */
-  async mutateEntries(userId, { updates = [], deleteIds = [], creates = [], audit = null, validate = null, dryRun = false } = {}) {
+  async mutateEntries(userId, { updates = [], deleteIds = [], creates = [], audit = null, validate = null, dryRun = false, restoreAudit = null, allowFoodCreates = false, resultMeta = null } = {}) {
     const documents = this.#documents(userId);
     const all = [...documents.values()].flat();
     const auditRecords = audit ? (loadYaml(this.#cleanupAuditPath(userId)) || {}) : null;
     if (audit && auditRecords[audit.id]) {
       if (auditRecords[audit.id].fingerprint !== audit.fingerprint) throw Object.assign(new Error('Repair operation was reused'), { status: 409 });
       return auditRecords[audit.id].result;
+    }
+    const replacements = new Map();
+    if (restoreAudit) {
+      const record = (loadYaml(this.#cleanupAuditPath(userId)) || {})[restoreAudit];
+      if (!record || record.type !== 'meal-command') throw Object.assign(new Error('Undo not found'), { status: 404 });
+      const key = row => row.uuid || row.id;
+      const previous = new Map(record.before.map(row => [key(row), row]));
+      const committed = new Map(record.after.map(row => [key(row), row]));
+      for (const id of record.result.affectedIds) {
+        const current = all.find(row => key(row) === id);
+        if (JSON.stringify(current) !== JSON.stringify(committed.get(id))) {
+          throw Object.assign(new Error('These foods changed since this action. Reload before trying Undo.'), { code: 'VERSION_CONFLICT', status: 409 });
+        }
+        if (previous.has(id)) {
+          const snapshot = previous.get(id);
+          const restored = { ...snapshot, version: (current?.version ?? snapshot.version ?? 1) + 1 };
+          if (current) { replacements.set(id, restored); updates.push({ id, changes: restored }); }
+          else creates.push(restored);
+        } else if (current) deleteIds.push(id);
+      }
+      allowFoodCreates = true;
     }
     const matches = (row, id) => row.uuid === id || row.id === id;
     const affectedDates = new Set();
@@ -274,8 +305,8 @@ export class YamlNutriListDatastore extends INutriListDatastore {
       }
       if (changes.date != null && !isISODate(changes.date)) throw Object.assign(new Error('Invalid date'), { status: 400 });
       if (Object.entries(changes).every(([key, value]) => JSON.stringify(original[key]) === JSON.stringify(value))) continue;
-      const next = { ...original, ...changes, version: (original.version ?? 1) + 1 };
-      if (Object.hasOwn(changes, 'name')) Object.assign(next, { item: changes.name, label: changes.name });
+      const next = replacements.get(id) || { ...original, ...changes, version: (original.version ?? 1) + 1 };
+      if (!replacements.has(id) && Object.hasOwn(changes, 'name')) Object.assign(next, { item: changes.name, label: changes.name });
       changed.set(original.uuid || original.id, next);
       affectedIds.add(original.uuid || original.id);
       affectedDates.add(original.date || original.createdAt?.slice(0, 10));
@@ -291,10 +322,10 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     const destination = this.#getPath(userId);
     const relocated = [];
     for (const row of creates) {
-      if (row.kind !== 'group' || all.some(existing => matches(existing, row.uuid || row.id))) {
+      if ((!allowFoodCreates && row.kind !== 'group') || all.some(existing => matches(existing, row.uuid || row.id))) {
         throw Object.assign(new Error('Invalid or duplicate group header'), { status: 409 });
       }
-      relocated.push({ ...row, version: 1 });
+      relocated.push({ ...row, version: restoreAudit ? row.version : 1 });
       affectedIds.add(row.uuid || row.id);
       affectedDates.add(row.date);
     }
@@ -314,7 +345,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     if (relocated.length) writes.set(destination, [...(writes.get(destination) || documents.get(destination)), ...relocated]);
     const finalRows = [...documents].flatMap(([file, rows]) => writes.get(file) || rows);
     validate?.({ before: all, after: finalRows });
-    if (dryRun || !affectedIds.size) return { items: [], affectedIds: [], affectedDates: [], dryRun };
+    if (dryRun || (!affectedIds.size && !audit && !resultMeta)) return { items: [], affectedIds: [], affectedDates: [], dryRun };
     const summaries = this.#readNutriday(userId);
     for (const date of affectedDates) {
       if (!date) continue;
@@ -332,9 +363,15 @@ export class YamlNutriListDatastore extends INutriListDatastore {
       for (const key of removed) deleted[key] = all.find(row => (row.uuid || row.id) === key);
       writes.set(this.#tombstonePath(userId), deleted);
     }
-    const result = { items: [...changed.values(), ...creates].map(row => this.#normalizeItem(row)),
+    const result = { ...resultMeta, items: [...changed.values(), ...relocated.filter(row => creates.some(created => (created.uuid || created.id) === (row.uuid || row.id)))].map(row => this.#normalizeItem(row)),
       affectedIds: [...affectedIds], affectedDates: [...affectedDates].filter(Boolean) };
+    if (resultMeta) result.entryIds = result.affectedIds;
     const operation = operationContext.getStore();
+    if (operation?.userId === userId && resultMeta) {
+      const operations = loadYaml(this.#operationsPath(userId)) || {};
+      operations[operation.id] = { ...operations[operation.id], fingerprint: operation.fingerprint, mutationResult: result };
+      writes.set(this.#operationsPath(userId), operations);
+    }
     if (operation?.userId === userId && operation.operation === 'entry-update' && updates.length) {
       const root = all.find(row => matches(row, updates[0].id));
       const rootId = root.uuid || root.id;
@@ -358,6 +395,32 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     }
     this.#commit(userId, writes);
     return result;
+  }
+
+  /** Attach a durable Undo to freshly committed capture rows, never arbitrary client snapshots. */
+  async recordCaptureUndo(userId, { operationId, date, bucket, entryIds }) {
+    if (typeof operationId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(operationId)
+      || !Array.isArray(entryIds) || !entryIds.length || entryIds.some(id => typeof id !== 'string')) {
+      throw Object.assign(new Error('Capture operation and entry IDs are required'), { status: 400 });
+    }
+    const documents = this.#documents(userId);
+    const undoToken = `meal-${uuidv5(`${userId}:${operationId}:capture`, uuidv5.URL)}`;
+    const audits = loadYaml(this.#cleanupAuditPath(userId)) || {};
+    const fingerprint = createHash('sha256').update(JSON.stringify(entryIds)).digest('hex');
+    if (audits[undoToken]) {
+      if (audits[undoToken].fingerprint !== fingerprint) throw Object.assign(new Error('Capture Undo operation was reused'), { status: 409 });
+      return { undoToken };
+    }
+    const after = [...documents.values()].flat().filter(row => entryIds.includes(row.uuid || row.id));
+    if (new Set(after.map(row => row.uuid || row.id)).size !== new Set(entryIds).size
+      || after.some(row => (row.version ?? 1) !== 1)) {
+      throw Object.assign(new Error('Capture changed before Undo could be recorded'), { status: 409 });
+    }
+    const result = { committed: true, undoToken, affectedIds: entryIds, entryIds, affectedDates: [...new Set(after.map(row => row.date))] };
+    audits[undoToken] = { id: undoToken, type: 'meal-command', userId, date: after[0].date || date,
+      bucket: after[0].mealTime || bucket, fingerprint, before: [], after, result };
+    this.#commit(userId, new Map([[this.#cleanupAuditPath(userId), audits]]));
+    return { undoToken };
   }
 
   /** Restore exactly the deleted snapshots; never reconstruct nutrition. */
@@ -895,14 +958,14 @@ export class YamlNutriListDatastore extends INutriListDatastore {
 
     for (const item of items) {
       if (!isCountedRow(item)) continue;
-      totals.calories += Math.round(item.calories || 0);
-      totals.protein += Math.round(item.protein || 0);
-      totals.carbs += Math.round(item.carbs || 0);
-      totals.fat += Math.round(item.fat || 0);
-      totals.fiber += Math.round(item.fiber || 0);
-      totals.sodium += Math.round(item.sodium || 0);
-      totals.sugar += Math.round(item.sugar || 0);
-      totals.cholesterol += Math.round(item.cholesterol || 0);
+      totals.calories += Number.isFinite(item.calories) ? item.calories : 0;
+      totals.protein += Number.isFinite(item.protein) ? item.protein : 0;
+      totals.carbs += Number.isFinite(item.carbs) ? item.carbs : 0;
+      totals.fat += Number.isFinite(item.fat) ? item.fat : 0;
+      totals.fiber += Number.isFinite(item.fiber) ? item.fiber : 0;
+      totals.sodium += Number.isFinite(item.sodium) ? item.sodium : 0;
+      totals.sugar += Number.isFinite(item.sugar) ? item.sugar : 0;
+      totals.cholesterol += Number.isFinite(item.cholesterol) ? item.cholesterol : 0;
 
       const color = item.color || item.noom_color || 'yellow';
       const emoji = NOOM_EMOJI[color] || '🟡';

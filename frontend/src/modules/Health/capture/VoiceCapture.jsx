@@ -32,16 +32,23 @@ const MicIcon = ({ active }) => (
  * reachable from anywhere). `className` similarly lets QuickCaptureBar apply
  * its own sizing class instead of the meal-row default.
  */
-export function VoiceCapture({ active = true, onCapture, busy, bucket, mealLabel, labelPrefix, className }) {
+export function VoiceCapture({ active = true, onCapture, busy, bucket, mealLabel, labelPrefix, className, onHoldChange }) {
   const recRef = useRef(null);
   const [recording, setRecording] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
   const acquiring = useRef(false);
+  const [acquiringMic, setAcquiringMic] = useState(false);
+  const holdCallback = useRef(onHoldChange);
+  holdCallback.current = onHoldChange;
   const live = useRef(true);
   const activeRef = useRef(active);
   activeRef.current = active;
   const task = useCaptureTask();
+
+  // Keep automatic meal sections mounted until capture or its retry is resolved.
+  const held = acquiringMic || recording || pending || task.pending || Boolean(task.retry) || Boolean(error);
+  useEffect(() => { holdCallback.current?.(held); }, [held]);
 
   useEffect(() => {
     live.current = true;
@@ -49,10 +56,10 @@ export function VoiceCapture({ active = true, onCapture, busy, bucket, mealLabel
       live.current = false;
       const rec = recRef.current;
       if (rec) {
-        rec.onstop = null;
         if (rec.state !== 'inactive') rec.stop();
         rec.stream?.getTracks().forEach(track => track.stop());
       }
+      holdCallback.current?.(false);
     };
   }, []);
 
@@ -65,7 +72,7 @@ export function VoiceCapture({ active = true, onCapture, busy, bucket, mealLabel
   const toggle = async () => {
     if (recording) { if (recRef.current?.state !== 'inactive') recRef.current?.stop(); return; }
     if (!active || acquiring.current || pending || task.pending) return;
-    acquiring.current = true; setError(null);
+    acquiring.current = true; setAcquiringMic(true); setError(null);
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -80,12 +87,17 @@ export function VoiceCapture({ active = true, onCapture, busy, bucket, mealLabel
       };
       rec.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
-        setRecording(false);
+        if (live.current) setRecording(false);
         const reader = new FileReader();
-        setPending(true);
-        reader.onerror = () => { setPending(false); setError('Recording could not be read.'); };
+        if (live.current) setPending(true);
+        reader.onerror = () => { if (live.current) { setPending(false); setError('Recording could not be read.'); } };
         reader.onload = async () => {
-          try { await task.run(() => onCapture(reader.result, bucket)); }
+          try {
+            if (live.current) await task.run(() => onCapture(reader.result, bucket, { isDeparted: () => !live.current }));
+            // Date navigation unmounts this control; the recording still owns
+            // the submit callback (including selected foods/date) from its start.
+            else await onCapture(reader.result, bucket, { departed: true, isDeparted: () => !live.current });
+          } catch (err) { logger.warn('voice.departed_capture_failed', { error: err?.message }); }
           finally { if (live.current) setPending(false); }
         };
         reader.readAsDataURL(new Blob(chunks, { type: rec.mimeType }));
@@ -98,7 +110,7 @@ export function VoiceCapture({ active = true, onCapture, busy, bucket, mealLabel
       stream?.getTracks().forEach(track => track.stop());
       if (live.current) setError('Microphone unavailable. Check permission or type your food.');
       logger.warn('voice.mic_unavailable', { error: err?.message });
-    } finally { acquiring.current = false; }
+    } finally { acquiring.current = false; if (live.current) setAcquiringMic(false); }
   };
 
   const idleLabel = labelPrefix

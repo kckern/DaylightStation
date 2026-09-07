@@ -15,7 +15,7 @@ export function useNutritionInput() {
   const requests = useRef(new Map());
   const activeCount = useRef(0);
 
-  const submit = useCallback(async (type, content, { bucket, date, audioRef } = {}) => {
+  const submit = useCallback(async (type, content, { bucket, date, audioRef, selectedIds, clarification } = {}) => {
     activeCount.current++; setBusy(true); setError(null);
     // `bucket` and `date` are only added to the body when a caller actually
     // names one — omitting the key entirely (not sending `undefined`) keeps
@@ -25,6 +25,8 @@ export function useNutritionInput() {
     // sent instead of `content`, so nothing has to be recorded again.
     const body = {
       type, content,
+      ...(selectedIds ? { selectedIds } : {}),
+      ...(clarification ? { clarification } : {}),
       ...(bucket ? { bucket } : {}),
       ...(date ? { date } : {}),
       ...(audioRef ? { audioRef } : {}),

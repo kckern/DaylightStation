@@ -40,3 +40,19 @@ describe('EquationStrip', () => {
     expect(screen.getByRole('button', { name: /set up goals/i })).toBeTruthy();
   });
 });
+
+it('rounds every summary readout without changing precise budget or macro data', () => {
+  const preciseBudget = Object.freeze({ budget: 2100.4, food: 1280.7, exercise: 320.2, remaining: 1139.9, status: 'under' });
+  const macroCoverage = Object.freeze({
+    protein: Object.freeze({ value: 60.8, covered: 2, total: 3 }),
+    carbs: Object.freeze({ value: 100.2, covered: 3, total: 3 }),
+    fat: Object.freeze({ value: 30.5, covered: 3, total: 3 }),
+  });
+  render(<EquationStrip budget={preciseBudget} macroCoverage={macroCoverage}
+    date="2026-09-02" today="2026-09-02" onDateChange={() => {}} />, { wrapper });
+  expect([...document.querySelectorAll('.health-daily-metric-number')].map(el => el.textContent))
+    .toEqual(['61', '100', '31', '2,100', '1,281', '320', '1,140']);
+  expect(screen.getByLabelText('Protein')).toHaveTextContent('61+');
+  expect(preciseBudget.food).toBe(1280.7);
+  expect(macroCoverage.protein.value).toBe(60.8);
+});

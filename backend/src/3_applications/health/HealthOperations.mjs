@@ -1,3 +1,4 @@
+import { MealFoodCommands } from './MealFoodCommands.mjs';
 import { presentSettlement } from '#domains/nutrition/services/settlement.mjs';
 import { confirmReview } from '#shared/contracts/nutrition/reviewLifecycle.mjs';
 import { nowTs24 } from '#system/utils/time.mjs';
@@ -54,6 +55,7 @@ export class HealthOperations {
   }) {
     this.healthData = healthData;
     this.nutritionItems = nutritionItems;
+    this.mealCommands = nutritionItems ? new MealFoodCommands({ nutritionItems }) : null;
     this.personalContext = personalContext;
     this.setDailyCoaching = setDailyCoaching;
     this.nutritionInput = nutritionInput;
@@ -360,8 +362,21 @@ export class HealthOperations {
    *   nutribot input pipeline, where the router seam applies the precedence:
    *   explicit-in-utterance/caption > bucket > clock default.
    */
-  processNutritionInput({ type, content, userId, bucket, date, audioRef, operationId }) {
-    return this.nutritionInput.process({ type, content, userId, bucket, date, audioRef, ...(operationId ? { operationId } : {}) });
+  async attachNutritionCaptureUndo(username, operationId, result) {
+    if (!operationId || result?.undoToken || !(result?.committed || result?.logged)
+      || typeof this.nutritionItems?.recordCaptureUndo !== 'function') return result;
+    const entryIds = result.entryIds || result.items?.map(row => row.uuid || row.id);
+    if (!entryIds?.length) return result;
+    const undo = await this.nutritionItems.recordCaptureUndo(username, { operationId, entryIds, date: result.date, bucket: result.mealTime });
+    return { ...result, ...undo };
+  }
+
+  mealFoodCommand(username, input) { return this.mealCommands.execute(username, input); }
+  undoMealFoodCommand(username, input) { return this.mealCommands.undo(username, input); }
+  suggestMealGroups(input) { return this.nutritionInput.suggestMealGroups(input); }
+
+  processNutritionInput({ type, content, userId, bucket, date, audioRef, operationId, selectedIds, clarification }) {
+    return this.nutritionInput.process({ type, content, userId, bucket, date, audioRef, ...(operationId ? { operationId } : {}), ...(selectedIds !== undefined ? { selectedIds } : {}), ...(clarification !== undefined ? { clarification } : {}) });
   }
 
   runNutritionOperation(userId, operationId, payload, action) {

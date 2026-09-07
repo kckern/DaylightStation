@@ -17,6 +17,7 @@ export class WebNutribotAdapter {
   #foodLogStore;
   #voiceMemoStore;
   #logger;
+  #mealInstructions;
 
   /**
    * @param {Object} config
@@ -35,6 +36,7 @@ export class WebNutribotAdapter {
   constructor(config) {
     if (!config.inputRouter) throw new Error('WebNutribotAdapter requires inputRouter');
     this.#inputRouter = config.inputRouter;
+    this.#mealInstructions = config.mealInstructions || null;
     this.#foodLogStore = config.foodLogStore || null;
     this.#voiceMemoStore = config.voiceMemoStore || null;
     this.#logger = config.logger || null;
@@ -129,6 +131,14 @@ export class WebNutribotAdapter {
   async process(input) {
     const { type, content, userId, bucket, date, audioRef: retryAudioRef } = input;
     const conversationId = `web:${userId}`;
+    if (date && bucket && ['text', 'voice'].includes(type)) {
+      const replay = await this.#mealInstructions?.replay?.(userId, input);
+      if (replay?.committed) {
+        return this.#presentResponse({ messages: [], photos: [], logged: false }, {
+          result: replay, committed: true, items: replay.items || [], mealTime: replay.bucket || bucket, moved: false,
+        }, type);
+      }
+    }
 
     const event = {
       conversationId,
@@ -138,6 +148,10 @@ export class WebNutribotAdapter {
       messageId: null,
       payload: { bucket: bucket || null, date: date || null, ...(input.operationId ? { operationId: input.operationId } : {}) },
     };
+
+    if (this.#mealInstructions && date && bucket && ['text', 'voice'].includes(type)) {
+      event.payload.interpretText = text => this.#mealInstructions.execute(userId, { ...input, text });
+    }
 
     // Map input type to router event type and payload shape
     let routerType = type;
@@ -225,6 +239,10 @@ export class WebNutribotAdapter {
       throw err;
     }
 
+    return this.#presentResponse(captured, routerResult, routerType);
+  }
+
+  #presentResponse(captured, routerResult, routerType) {
     // Extract final text from last captured message for convenience
     const lastMessage = captured.messages[captured.messages.length - 1];
     const responseText = lastMessage?.text || null;
@@ -269,7 +287,13 @@ export class WebNutribotAdapter {
     response.outcome = response.committed ? 'committed' : response.transcribeFailed ? 'retryable-failure' : response.unknownUpc ? 'unknown-food' : 'no-food';
     response.logId = outcome.nutrilogUuid || null;
     response.entryIds = (routerResult?.items || []).map(item => item.uuid || item.id).filter(Boolean);
-    response.message = responseText;
+    response.message = outcome.message || responseText;
+    for (const key of ['undoToken', 'affectedIds', 'clarification', 'instructionText', 'groups', 'expectedVersions']) {
+      if (outcome[key] !== undefined) response[key] = outcome[key];
+    }
+    if (outcome.entryIds) response.entryIds = outcome.entryIds;
+    if (outcome.outcome) response.outcome = outcome.outcome;
+    if (response.committed && !response.message) response.message = 'Meal updated.';
     return response;
   }
 
@@ -345,6 +369,11 @@ export class WebNutribotAdapter {
     return this.#foodLogStore.findPendingByDate(userId, date);
   }
 
+  suggestMealGroups({ userId, ...input }) {
+    if (!this.#mealInstructions) throw Object.assign(new Error('Meal suggestions are unavailable'), { status: 503 });
+    return this.#mealInstructions.suggest(userId, input);
+  }
+
   reviewPending(input) { return this.#inputRouter.reviewPending(input); }
 
   #createCaptureContext(captured) {
@@ -396,7 +425,7 @@ export class WebNutribotAdapter {
       return {
         messageId,
         kind: 'text',
-        async release() {},
+        async release() { await deleteMessage(messageId); },
 
         async finish(content, finishOptions = {}) {
           await updateMessage(messageId, { text: content, ...finishOptions });

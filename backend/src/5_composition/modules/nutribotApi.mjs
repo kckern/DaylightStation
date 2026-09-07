@@ -1,6 +1,8 @@
 // backend/src/5_composition/modules/nutribotApi.mjs
 // Composition wiring for Nutribot API router(s). Extracted from bootstrap.mjs (Task P2.7-E).
 
+import { MealInstructionService } from '#apps/health/MealInstructionService.mjs';
+import { MealFoodCommands } from '#apps/health/MealFoodCommands.mjs';
 import { WebNutribotAdapter } from '#adapters/nutribot/WebNutribotAdapter.mjs';
 import { NutribotInputRouter } from '#apps/nutribot/services/NutribotInputRouter.mjs';
 import { LegacyNutribotInputRouter } from '#adapters/nutribot/LegacyNutribotInputRouter.mjs';
@@ -76,6 +78,13 @@ export function createNutribotApiRouter(config) {
   // what makes a failed transcription recoverable instead of terminal.
   const webNutribotAdapter = new WebNutribotAdapter({
     inputRouter: applicationInputRouter,
+    mealInstructions: aiGatewayAvailable ? new MealInstructionService({
+      logger,
+      nutritionItems: nutribotServices.nutriListStore,
+      foodLogStore: nutribotServices.foodLogStore,
+      aiGateway: nutribotServices.nutribotContainer.getAIGateway(),
+      mealCommands: new MealFoodCommands({ nutritionItems: nutribotServices.nutriListStore, logger }),
+    }) : null,
     foodLogStore: nutribotServices.foodLogStore,
     voiceMemoStore: new VoiceMemoStore({ dataService, logger }),
     logger,
