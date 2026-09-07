@@ -132,6 +132,65 @@ describe('useVoiceMemoRecorder cancel flow (race with overlay unmount)', () => {
     await waitFor(() => expect(DaylightAPI).toHaveBeenCalledTimes(1));
   });
 
+  // The backend stores the capture before it calls the provider, so a 502 from
+  // the voice-memo route means "transcription failed", not "your memo is gone".
+  // The hook has to carry that distinction to the UI, and the only place the
+  // artifact lives is the error body DaylightAPI folds into its message.
+  it('surfaces the durable artifact behind a failed transcription', async () => {
+    const { DaylightAPI } = await import('@/lib/api.mjs');
+    const body = JSON.stringify({
+      ok: false,
+      error: 'Transcription failed; the recording is saved and will be retried',
+      artifact: { ref: 'vm_abcdefghijklmnop', state: 'retryable', audioAvailable: true },
+    });
+    const failure = Object.assign(new Error(`HTTP 502: Bad Gateway - ${body}`), { status: 502 });
+    DaylightAPI.mockReset().mockRejectedValue(failure);
+
+    const apiRef = { current: null };
+    render(React.createElement(Host, { apiRef }));
+    await act(async () => { await apiRef.current.startRecording(); });
+    act(() => apiRef.current.stopRecording());
+    await act(async () => MockMediaRecorder.instances[0].fireStop());
+
+    await waitFor(() => expect(apiRef.current.savedArtifact).not.toBeNull());
+    expect(apiRef.current.savedArtifact.ref).toBe('vm_abcdefghijklmnop');
+    expect(apiRef.current.error.artifact.state).toBe('retryable');
+    // The message the person reads must not imply the recording was lost.
+    expect(apiRef.current.error.message).toMatch(/saved/i);
+    expect(apiRef.current.error.retryable).toBe(true);
+  });
+
+  it('forgets a previous artifact when a new recording starts', async () => {
+    const { DaylightAPI } = await import('@/lib/api.mjs');
+    const body = JSON.stringify({ ok: false, artifact: { ref: 'vm_abcdefghijklmnop', state: 'retryable' } });
+    DaylightAPI.mockReset().mockRejectedValue(Object.assign(new Error(`HTTP 502: Bad Gateway - ${body}`), { status: 502 }));
+
+    const apiRef = { current: null };
+    render(React.createElement(Host, { apiRef }));
+    await act(async () => { await apiRef.current.startRecording(); });
+    act(() => apiRef.current.stopRecording());
+    await act(async () => MockMediaRecorder.instances[0].fireStop());
+    await waitFor(() => expect(apiRef.current.savedArtifact).not.toBeNull());
+
+    await act(async () => { await apiRef.current.startRecording(); });
+    expect(apiRef.current.savedArtifact).toBeNull();
+  });
+
+  it('reports a plain network failure without inventing a saved recording', async () => {
+    const { DaylightAPI } = await import('@/lib/api.mjs');
+    DaylightAPI.mockReset().mockRejectedValue(new Error('Failed to fetch'));
+
+    const apiRef = { current: null };
+    render(React.createElement(Host, { apiRef }));
+    await act(async () => { await apiRef.current.startRecording(); });
+    act(() => apiRef.current.stopRecording());
+    await act(async () => MockMediaRecorder.instances[0].fireStop());
+
+    await waitFor(() => expect(apiRef.current.error).not.toBeNull());
+    expect(apiRef.current.savedArtifact).toBeNull();
+    expect(apiRef.current.error.artifact).toBeNull();
+  });
+
   it('ignores cancelled recorder events while the next microphone request is pending', async () => {
     const { DaylightAPI } = await import('@/lib/api.mjs');
     DaylightAPI.mockReset().mockResolvedValue({ ok: true, memo: { memoId: 'fresh' } });

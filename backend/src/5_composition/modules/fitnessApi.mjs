@@ -9,6 +9,7 @@ import { FilesystemMenuMusicCatalog } from '#adapters/fitness/FilesystemMenuMusi
 import { FilesystemScreenshotStore } from '#adapters/fitness/FilesystemScreenshotStore.mjs';
 import { FilesystemSessionTrashStore } from '#adapters/fitness/FilesystemSessionTrashStore.mjs';
 import { FilesystemTimelapseArtifactStore } from '#adapters/fitness/FilesystemTimelapseArtifactStore.mjs';
+import { FilesystemVoiceMemoArtifactStore } from '#adapters/fitness/FilesystemVoiceMemoArtifactStore.mjs';
 import { FilesystemVoiceMemoDebugStore } from '#adapters/fitness/FilesystemVoiceMemoDebugStore.mjs';
 import { TemporaryImagePrintGateway } from '#adapters/hardware/thermal-printer/TemporaryImagePrintGateway.mjs';
 import { YamlRecapSnapshotStore } from '#adapters/persistence/yaml/YamlRecapSnapshotStore.mjs';
@@ -45,6 +46,7 @@ import { FitnessWebhookService } from '#apps/fitness/services/FitnessWebhookServ
 import { EmergencyAccessService } from '#apps/fitness/services/EmergencyAccessService.mjs';
 import { EmergencyLockdownService } from '#apps/fitness/services/EmergencyLockdownService.mjs';
 import { FitnessVoiceMemoService } from '#apps/fitness/services/FitnessVoiceMemoService.mjs';
+import { VoiceMemoRetryWorker } from '#apps/fitness/services/VoiceMemoRetryWorker.mjs';
 import { FitnessSessionOperations } from '#apps/fitness/services/FitnessSessionOperations.mjs';
 import { CycleRaceApiService } from '#apps/fitness/services/CycleRaceApiService.mjs';
 import { GetFitnessMenuMusic } from '#apps/fitness/usecases/GetFitnessMenuMusic.mjs';
@@ -325,11 +327,27 @@ export function createFitnessApiRouter(config) {
     manageAccess,
     logger,
   });
+  // Durable capture store: a voice memo is written here BEFORE the provider is
+  // called, which is what makes a provider outage recoverable instead of
+  // terminal. Household-scoped so a memo sits beside the session it belongs to.
+  const voiceMemoArtifactStore = new FilesystemVoiceMemoArtifactStore({
+    configService,
+    logger,
+  });
   const voiceMemoOperations = new FitnessVoiceMemoService({
     transcription: fitnessServices.transcriptionService,
     sessions: fitnessServices.sessionService,
     config: fitnessConfigService,
     enrichment: enrichmentService,
+    artifacts: voiceMemoArtifactStore,
+    logger,
+  });
+  // Drains the retry queue and enforces retention. Registered on the agents
+  // Scheduler in app.mjs (Docker/prod-gated, so a dev instance cannot race
+  // prod for the same leases).
+  const voiceMemoRetryWorker = new VoiceMemoRetryWorker({
+    artifacts: voiceMemoArtifactStore,
+    memos: voiceMemoOperations,
     logger,
   });
   const emergencyOperations = new EmergencyLockdownService({
@@ -390,6 +408,7 @@ export function createFitnessApiRouter(config) {
   // Expose the sweeps so app.mjs can register them on the agents Scheduler.
   fitnessRouter.recapSweep = recapSweep;
   fitnessRouter.trashRetentionSweep = trashRetentionSweep;
+  fitnessRouter.voiceMemoRetryWorker = voiceMemoRetryWorker;
   // Shared with School's lifecycle composition: these are the already-wired
   // Fitness authorities, not second instances with drifting config/caches.
   fitnessRouter.fitnessPlayableService = fitnessPlayableService;

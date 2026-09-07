@@ -43,14 +43,43 @@ export const resolvePlaybackState = (api) => {
   return null;
 };
 
-const normalizeRecorderError = (err, fallbackMessage = 'Recorder error', code = 'recorder_error', retryable = false) => {
+const normalizeRecorderError = (err, fallbackMessage = 'Recorder error', code = 'recorder_error', retryable = false, artifact = null) => {
   const message = (err instanceof Error ? err.message : null) || fallbackMessage;
   return {
     code,
     message,
     retryable,
+    // The backend persists the capture BEFORE transcribing it, so a failure
+    // here is not the end of the recording. When the response names an
+    // artifact, the UI must say so — "failed" and "lost" are different words.
+    artifact,
     error: err instanceof Error ? err : new Error(String(err || fallbackMessage))
   };
+};
+
+/**
+ * DaylightAPI throws `HTTP <status>: <statusText> - <body>` for a non-2xx, so
+ * the structured body a failed voice-memo upload returns (the artifact ref and
+ * its lifecycle state) is only reachable by parsing it back out. Parsed here,
+ * in the one consumer that needs it, rather than by changing the shared client.
+ */
+const parseApiErrorBody = (err) => {
+  const message = typeof err?.message === 'string' ? err.message : '';
+  const start = message.indexOf('{');
+  if (start === -1) return null;
+  try {
+    return JSON.parse(message.slice(start));
+  } catch (_) {
+    return null;
+  }
+};
+
+/** What the person is told when transcription fails but the recording did not. */
+const artifactMessage = (artifact) => {
+  if (artifact?.state === 'retryable') {
+    return "Transcription is unavailable right now — your recording is saved and will be transcribed automatically.";
+  }
+  return 'Transcription failed. Your recording is saved and can be retried.';
 };
 
 // Maximum recording duration: 5 minutes
@@ -170,6 +199,8 @@ const useVoiceMemoRecorder = ({
   const lastAudioPayloadRef = useRef(null);
   const retryAbortRef = useRef(null);
 
+  const savedArtifactRef = useRef(null);
+  const [savedArtifact, setSavedArtifact] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [uploading, setUploading] = useState(false);
@@ -199,14 +230,16 @@ const useVoiceMemoRecorder = ({
     }
   }, [onLevel]);
 
-  const emitError = useCallback((err, fallbackMessage, code, retryable = false) => {
-    const normalized = normalizeRecorderError(err, fallbackMessage, code, retryable);
+  const emitError = useCallback((err, fallbackMessage, code, retryable = false, artifact = null) => {
+    const normalized = normalizeRecorderError(err, fallbackMessage, code, retryable, artifact);
     setError(normalized);
     emitState('error', normalized);
     logVoiceMemo('recorder-error', {
       code: normalized.code,
       message: normalized.message,
-      retryable: normalized.retryable
+      retryable: normalized.retryable,
+      artifactRef: artifact?.ref || null,
+      artifactState: artifact?.state || null
     }, { level: 'warn' });
     if (typeof onError === 'function') {
       try {
@@ -382,6 +415,10 @@ const useVoiceMemoRecorder = ({
         emitError(resp?.error || 'Transcription failed', 'Transcription failed', 'transcription_failed', true);
         return;
       }
+      if (resp.artifact) {
+        savedArtifactRef.current = resp.artifact;
+        setSavedArtifact(resp.artifact);
+      }
       if (timedOut) {
         emitError(new Error('Processing timed out'), 'Processing timed out', 'processing_timeout', true);
         return;
@@ -413,9 +450,26 @@ const useVoiceMemoRecorder = ({
         logVoiceMemo('recording-upload-aborted', { reason: 'user_cancel', phase: 'error' });
         return;
       }
-      emitError(err, timedOut ? 'Processing timed out' : 'Upload failed', timedOut ? 'processing_timeout' : 'upload_failed', true);
+      // A 502 from the voice-memo route means the provider failed AFTER the
+      // capture was safely stored; the body names the artifact. Report that,
+      // not a bare "Upload failed" that implies the recording is gone.
+      const artifact = parseApiErrorBody(err)?.artifact || null;
+      if (artifact) {
+        savedArtifactRef.current = artifact;
+        setSavedArtifact(artifact);
+      }
+      emitError(
+        artifact ? new Error(artifactMessage(artifact)) : err,
+        timedOut ? 'Processing timed out' : 'Upload failed',
+        artifact ? 'transcription_failed_capture_saved' : (timedOut ? 'processing_timeout' : 'upload_failed'),
+        true,
+        artifact
+      );
       logVoiceMemo('recording-upload-error', {
         error: err?.message || String(err),
+        status: err?.status ?? null,
+        artifactRef: artifact?.ref || null,
+        artifactState: artifact?.state || null,
         timedOut
       }, { level: 'warn' });
     } finally {
@@ -437,6 +491,8 @@ const useVoiceMemoRecorder = ({
     cancelledRef.current = false;
     setError(null);
     lastAudioPayloadRef.current = null;
+    savedArtifactRef.current = null;
+    setSavedArtifact(null);
     emitState('requesting');
     emitLevel(null);
     pauseMediaIfNeeded(playerRef, wasPlayingBeforeRecordingRef);
@@ -541,6 +597,8 @@ const useVoiceMemoRecorder = ({
     // Set cancelled flag to prevent handleRecordingStop from processing
     cancelledRef.current = true;
     lastAudioPayloadRef.current = null;
+    savedArtifactRef.current = null;
+    setSavedArtifact(null);
 
     // Abort any in-flight API request
     if (abortControllerRef.current) {
@@ -598,8 +656,17 @@ const useVoiceMemoRecorder = ({
         logVoiceMemo('retry-transcription-aborted', { reason: 'user_cancel', phase: 'error' });
         return null;
       }
-      logVoiceMemo('retry-transcription-error', { error: err?.message || String(err) }, { level: 'warn' });
-      throw err;
+      const artifact = parseApiErrorBody(err)?.artifact || null;
+      if (artifact) {
+        savedArtifactRef.current = artifact;
+        setSavedArtifact(artifact);
+      }
+      logVoiceMemo('retry-transcription-error', {
+        error: err?.message || String(err),
+        artifactRef: artifact?.ref || null,
+        artifactState: artifact?.state || null
+      }, { level: 'warn' });
+      throw artifact ? Object.assign(new Error(artifactMessage(artifact)), { artifact }) : err;
     } finally {
       setUploading(false);
       retryAbortRef.current = null;
@@ -645,7 +712,10 @@ const useVoiceMemoRecorder = ({
     stopRecording,
     cancelUpload,
     retryTranscription,
-    hasAudioBlob
+    hasAudioBlob,
+    // The durable capture behind a failed transcription, when there is one.
+    // Its presence is what lets the overlay promise the recording is safe.
+    savedArtifact
   };
 };
 

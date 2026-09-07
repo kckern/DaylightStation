@@ -34,7 +34,10 @@ export class VoiceMemoTranscriptionService {
    * Transcribe a voice memo with fitness-specific processing
    *
    * @param {Object} params
-   * @param {string} params.audioBase64 - Base64-encoded audio data
+   * @param {Buffer} [params.audioBuffer] - Raw audio bytes. Preferred: the
+   *   durable capture path already holds a Buffer and re-encoding it to base64
+   *   only to decode it again doubles the memory for no gain.
+   * @param {string} [params.audioBase64] - Base64-encoded audio data
    * @param {string} [params.mimeType] - Audio MIME type
    * @param {string} [params.sessionId] - Session ID for logging
    * @param {number} [params.startedAt] - Recording start timestamp
@@ -43,6 +46,7 @@ export class VoiceMemoTranscriptionService {
    * @returns {Promise<Object>} Memo object with transcription
    */
   async transcribeVoiceMemo({
+    audioBuffer,
     audioBase64,
     mimeType,
     sessionId,
@@ -50,9 +54,10 @@ export class VoiceMemoTranscriptionService {
     endedAt,
     context = {}
   }) {
-    // Decode base64 (strip data URI prefix if present)
-    const base64Data = audioBase64.replace(/^data:[^;]+;base64,/, '');
-    const buffer = Buffer.from(base64Data, 'base64');
+    const buffer = Buffer.isBuffer(audioBuffer)
+      ? audioBuffer
+      // Strip the data URI prefix if present.
+      : Buffer.from(String(audioBase64 || '').replace(/^data:[^;]+;base64,/, ''), 'base64');
 
     // Determine file extension
     const ext = this.#resolveExtension(mimeType);
@@ -74,10 +79,13 @@ export class VoiceMemoTranscriptionService {
       prompt: whisperPrompt
     });
 
+    // Lengths, never contents. A transcript is what somebody said out loud
+    // during their workout; shipping it to the log store would put personal
+    // speech in a searchable index that outlives the memo itself.
     this.#logger.info?.('voice-memo.whisper', {
       sessionId,
-      whisperPrompt,
-      transcriptRaw,
+      promptLength: whisperPrompt?.length ?? 0,
+      transcriptLength: transcriptRaw?.length ?? 0,
       audioSize: buffer.length
     });
 
@@ -101,8 +109,8 @@ export class VoiceMemoTranscriptionService {
 
         this.#logger.info?.('voice-memo.gpt-cleanup', {
           sessionId,
-          transcriptRaw,
-          transcriptClean,
+          rawLength: transcriptRaw?.length ?? 0,
+          cleanLength: transcriptClean?.length ?? 0,
           isNoMemo: transcriptClean.toLowerCase().includes('no memo')
         });
       } catch (cleanErr) {
