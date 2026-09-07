@@ -92,6 +92,10 @@ export function createHealthApiRouter(config) {
     logger,
   });
 
+  const scaleConfig = () => normalizeScaleNutribotConfig(
+    configService?.getHouseholdAppConfig?.(null, 'scales') || {},
+  );
+
   const healthOperations = new HealthOperations({
     healthData: healthServices.healthStore,
     nutritionItems: healthServices.nutriListStore,
@@ -102,6 +106,7 @@ export function createHealthApiRouter(config) {
       || configService?.getDefaultUsername?.()
       || 'default',
     resolveCoachingUsername: () => configService?.getHeadOfHousehold?.() || null,
+    densityLevels: () => scaleConfig().densityLevels,
     today: nowDate,
     newId: uuidv4,
   });
@@ -211,9 +216,7 @@ export function createHealthApiRouter(config) {
     // `normalizeScaleNutribotConfig` takes the WHOLE scales config and reads its own
     // `nutribot` block — passing that block directly would find no `nutribot` key inside
     // it and silently fall back to the default container/density tables.
-    scaleConfig: () => normalizeScaleNutribotConfig(
-      configService?.getHouseholdAppConfig?.(null, 'scales') || {},
-    ),
+    scaleConfig,
     logger,
   });
 

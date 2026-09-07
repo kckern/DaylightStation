@@ -3,6 +3,10 @@
 // Reads the `nutribot` block of scales.yml and supplies defaults so the feature
 // works before the real file is edited.
 
+import { DEFAULT_DENSITY_LEVELS } from '#shared-contracts/health/densityLevels.mjs';
+
+export { DEFAULT_DENSITY_LEVELS };
+
 export const DEFAULT_MIN_GRAMS = 5;
 
 // Quiet-commit lull, in seconds, and the floor it is clamped to.
@@ -35,18 +39,6 @@ export const DEFAULT_CONTAINERS = {
 // a WORKING FALLBACK — hand-estimated to be plausible for what each tier
 // describes, not measured. Replace them with real figures in the `nutribot:`
 // block of scales.yml when the table is tuned against actual foods.
-export const DEFAULT_DENSITY_LEVELS = [
-  { level: 1, label: 'Watery', emoji: '🥬', kcal_per_g: 0.2, hint: 'broth, greens', macros: { fat_pct: 10, carb_pct: 60, protein_pct: 30 } },
-  { level: 2, label: 'Light', emoji: '🥗', kcal_per_g: 0.6, hint: 'salad, fruit', macros: { fat_pct: 15, carb_pct: 70, protein_pct: 15 } },
-  { level: 3, label: 'Lean', emoji: '🍲', kcal_per_g: 1.0, hint: 'soup, lean meat', macros: { fat_pct: 20, carb_pct: 45, protein_pct: 35 } },
-  { level: 4, label: 'Mixed', emoji: '🍛', kcal_per_g: 1.4, hint: 'rice + veg + protein', macros: { fat_pct: 25, carb_pct: 50, protein_pct: 25 } },
-  { level: 5, label: 'Hearty', emoji: '🍝', kcal_per_g: 1.9, hint: 'pasta, casserole', macros: { fat_pct: 30, carb_pct: 50, protein_pct: 20 } },
-  { level: 6, label: 'Heavy', emoji: '🍕', kcal_per_g: 2.6, hint: 'pizza, fried', macros: { fat_pct: 40, carb_pct: 45, protein_pct: 15 } },
-  { level: 7, label: 'Rich', emoji: '🧀', kcal_per_g: 3.8, hint: 'cheese, creamy', macros: { fat_pct: 65, carb_pct: 15, protein_pct: 20 } },
-  { level: 8, label: 'Thick', emoji: '🥜', kcal_per_g: 6.0, hint: 'nuts, nut butter', macros: { fat_pct: 75, carb_pct: 15, protein_pct: 10 } },
-  { level: 9, label: 'Oil', emoji: '🫒', kcal_per_g: 8.5, hint: 'oil, butter', macros: { fat_pct: 100, carb_pct: 0, protein_pct: 0 } },
-];
-
 const num = (v, fallback) => (Number.isFinite(Number(v)) ? Number(v) : fallback);
 
 const DEFAULT_MACROS_BY_LEVEL = new Map(
@@ -95,8 +87,10 @@ export function normalizeScaleNutribotConfig(raw = {}, { logger = null } = {}) {
 
   const densityLevels = Array.isArray(nb.density_levels) && nb.density_levels.length
     ? nb.density_levels
-        .filter((l) => l && Number.isFinite(Number(l.level)) && Number.isFinite(Number(l.kcal_per_g)))
         .map((l) => {
+          if (!l || !Number.isFinite(Number(l.level)) || !Number.isFinite(Number(l.kcal_per_g))) {
+            throw new TypeError('Density levels require finite level and kcal_per_g values');
+          }
           const out = {
             level: Number(l.level),
             label: l.label || `L${l.level}`,
@@ -120,6 +114,12 @@ export function normalizeScaleNutribotConfig(raw = {}, { logger = null } = {}) {
         })
         .map(makeWithMacros(logger))
     : DEFAULT_DENSITY_LEVELS;
+
+  for (let index = 1; index < densityLevels.length; index += 1) {
+    if (densityLevels[index].kcal_per_g <= densityLevels[index - 1].kcal_per_g) {
+      throw new TypeError('Density level kcal_per_g values must be strictly increasing');
+    }
+  }
 
   // Common-foods list for the printed fridge sheet. There is NO default table:
   // an absent `foods:` means the block renders empty, which is the honest state
