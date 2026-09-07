@@ -24,12 +24,15 @@ describe('EntryRow', () => {
     let identity = document.querySelector('.health-row-identity');
     expect(identity.classList.contains('health-density-before')).toBe(true);
     expect(identity.querySelector('.health-density-badge').nextElementSibling).toHaveClass('health-row-name');
+    expect(identity.children[0]).toHaveClass('health-row-artwork');
     expect(identity.querySelector('.health-row-name').contains(identity.querySelector('.health-density-badge'))).toBe(false);
     before.unmount();
     withPlacement(<EntryRow row={{ ...baseRow, grams: 100 }} onTap={() => {}} />, 'after');
     identity = document.querySelector('.health-row-identity');
     expect(identity.classList.contains('health-density-after')).toBe(true);
     expect(identity.querySelector('.health-density-badge').nextElementSibling).toHaveClass('health-row-name');
+    expect(identity.children[1]).toHaveClass('health-density-badge');
+    expect(identity.children[2]).toHaveClass('health-row-name');
   });
 
   it('an unsettled row (settled:false) renders the unsettled cue and a confirm button', () => {

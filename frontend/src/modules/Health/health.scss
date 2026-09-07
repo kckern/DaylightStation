@@ -385,8 +385,9 @@ $health-aside-gap: 1.5rem;
 // control — kept as a sibling, never nested inside the row button (a
 // button-in-a-button is invalid and breaks the confirm tap target).
 .health-row-line {
+  --health-row-gap: 0.2rem;
   display: grid; grid-template-columns: var(--health-meal-tracks);
-  align-items: center; gap: 0.2rem; min-height: 28px; position: relative;
+  align-items: center; gap: var(--health-row-gap); min-height: 28px; position: relative;
 }
 .health-row {
   display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; min-height: 44px; gap: 0.5rem;
@@ -405,37 +406,48 @@ $health-aside-gap: 1.5rem;
 .health-row-artwork { display: grid; place-items: center; width: 24px; height: 24px; flex: none; }
 .health-row-name { min-width: 0; min-height: 28px; overflow: hidden; text-align: left; }
 .health-density-badge {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 24px; height: 14px; min-width: 24px; padding-inline: 2px;
-  border-radius: 4px; color: #15191d; font-size: 0.58rem; font-weight: 700; // data-color: legible ink on the approved density palette
-  line-height: 1; white-space: nowrap;
-  &--unavailable { border: 1px dashed var(--ds-border); background: transparent; color: var(--ds-text-mid); }
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  min-width: 28px; min-height: 28px;
+  &__visual {
+    display: inline-flex; align-items: center; justify-content: center;
+    box-sizing: border-box; width: 24px; height: 14px; padding-inline: 2px;
+    border-radius: 4px; color: #15191d; font-size: 0.58rem; font-weight: 700; // data-color: legible ink on the approved density palette
+    line-height: 1; white-space: nowrap;
+    &--unavailable { border: 1px dashed var(--ds-border); background: transparent; color: var(--ds-text-mid); }
+  }
 }
+.health-density-before .health-row-artwork { order: 1; }
+.health-density-before .health-density-badge { order: 2; }
+.health-density-before .health-row-name { order: 3; }
+.health-density-after .health-row-artwork { order: 1; }
 .health-density-after .health-row-name { order: 2; }
-.health-density-after .health-density-badge { order: 3; flex: none; }
-.health-density-before .health-density-badge { flex: 0 0 24px; }
+.health-density-after .health-density-badge { order: 3; }
 .health-row__macros { grid-column: 3 / 6; }
 .health-row__portion-cell { grid-column: 6; text-align: right; }
 .health-row__kcal { grid-column: 7; }
 .health-row__action { grid-column: 8; }
 .health-row-line--group { background: var(--ds-surface); border-radius: 6px; font-weight: 600; }
 .health-row-line--child .health-row__visual { opacity: 0.75; }
+.health-row-line--child .health-row-identity { box-sizing: border-box; padding-left: 16px; }
 .health-row-line--child .health-row__name { font-size: 0.78rem; }
 .health-row-line--child .health-macro-badge { width: 20px; height: 20px; min-height: 20px; justify-self: center; padding: 0; border-radius: 50%; }
 .health-row-line--child:has([aria-expanded='true']) .health-row__visual { opacity: 1; }
 .health-row-line--child .health-row__branch {
-  &::before { content: ''; position: absolute; left: 10px; top: 0; bottom: 0; border-left: 1px solid var(--ds-border); }
-  &::after { content: ''; position: absolute; left: 10px; right: 0; top: 14px; border-top: 1px solid var(--ds-border); }
+  overflow: visible;
+  &::before { content: ''; position: absolute; left: calc(100% + var(--health-row-gap) + 12px); top: 0; bottom: 0; border-left: 1px solid var(--ds-border); }
+  &::after { content: ''; position: absolute; left: calc(100% + var(--health-row-gap) + 12px); right: calc(-1 * (var(--health-row-gap) + 28px)); top: 50%; border-top: 1px solid var(--ds-border); }
 }
-.health-row-line--last-child .health-row__branch::before { bottom: auto; height: 14px; }
+.health-row-line--last-child .health-row__branch::before { bottom: auto; height: 50%; }
 .health-row__branch .health-row__expand { position: absolute; inset: 0 auto auto -12px; }
 @include bp.mobile-only {
   .health-meal { --health-meal-tracks: 12px minmax(0, 1fr) 1.65rem 1.65rem 1.65rem 3rem 2.2rem 44px; }
-  .health-row-line { gap: 0.1rem; }
+  .health-row-line { --health-row-gap: 0.1rem; gap: var(--health-row-gap); }
   .health-macros { grid-template-columns: repeat(3, 1.65rem); gap: 0.15rem; }
   .health-macro-badge { font-size: 0.68rem; }
   .health-row__kcal small { display: none; }
   .health-row__identity { gap: 0.25rem; }
+  .health-row-line, .health-row-identity, .health-row-name, .health-portion,
+  .health-row__confirm, .health-row__expand, .health-density-badge { min-height: 44px; }
 }
 
 .health-exercise {
