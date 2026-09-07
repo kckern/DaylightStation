@@ -114,10 +114,33 @@ export function issueWorksheet({ bank, learnerId, enrollmentId, lessonId, profil
   if (!itemIds && selected.length !== spec.count) throw new Error(`profile ${profile} has insufficient eligible items`);
 
   const items = selected.map((item) => {
-    const correct = item.choices.filter((choice) => choice.correct);
+    const allCorrect = item.choices.filter((choice) => choice.correct);
+    const allDistractors = item.choices.filter((choice) => !choice.correct);
     const visibleCount = spec.visible[Math.floor(random() * spec.visible.length)];
-    if (correct.length > visibleCount) throw new Error(`${item.id}: correct choices exceed visible option count`);
-    const distractors = shuffled(item.choices.filter((choice) => !choice.correct), random)
+    // A SHEET SHOWS A SAMPLE OF THE TRUTH, NOT ALL OF IT (2026-09-07).
+    //
+    // This used to demand that every correct choice fit on the sheet, and
+    // threw when it could not. But "which states border Missouri?" has eight
+    // true answers and `upper` prints five bubbles, so the item was correct,
+    // the profile was correct, and the lesson was permanently unprintable —
+    // deterministically, per learner, because the seed is fixed. A child hit
+    // it, re-fed and re-printed for sixteen hours, and no retry could ever
+    // have worked. Fourteen items across twelve lessons were in this state.
+    //
+    // Sampling is the honest fix: showing four of Missouri's eight neighbours
+    // alongside a non-neighbour still asks exactly the authored question, and
+    // the child still has to know which of the five belong. Reserving one slot
+    // for a distractor is what keeps that true — an all-correct sheet is
+    // answerable by filling every bubble without reading the prompt, which is
+    // how the sixteen zero-distractor items had been grading all along.
+    const correctCap = allDistractors.length ? Math.max(1, visibleCount - 1) : visibleCount;
+    // The ternary matters: `shuffled` draws from `random`, so sampling only
+    // when it is actually needed leaves the stream — and therefore every
+    // already-issued worksheet that was never broken — bit-identical.
+    const correct = allCorrect.length > correctCap
+      ? shuffled(allCorrect, random).slice(0, correctCap)
+      : allCorrect;
+    const distractors = shuffled(allDistractors, random)
       .slice(0, visibleCount - correct.length);
     const visible = shuffled([...correct, ...distractors], random);
     return {

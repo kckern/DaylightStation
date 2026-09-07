@@ -94,6 +94,36 @@ describe('question-bank/v2', () => {
     expect(upper.items.filter((entry) => entry.type === 'multi_select').every((entry) => entry.options.filter((option) => option.correct).length === 2)).toBe(true);
   });
 
+  it('samples a multi_select whose answers outnumber the bubbles, always leaving one distractor', () => {
+    // Regression: "which states border Missouri?" has eight true answers and
+    // `upper` prints five bubbles. This used to throw, which made twelve atlas
+    // lessons permanently unprintable for whichever learners' seeds happened to
+    // select the offending item — a child hit it and no retry could ever work.
+    const crowded = {
+      ...bank,
+      items: [...bank.items, {
+        id: 'borders', type: 'multi_select', prompt: 'Which states border Missouri?',
+        answers: ['Arkansas', 'Iowa', 'Illinois', 'Kansas', 'Kentucky', 'Nebraska', 'Oklahoma', 'Tennessee'],
+        decoys: ['Colorado', 'Indiana', 'Ohio', 'Texas', 'Wisconsin'],
+        levels: ['upper'], source: { page: 'p. 68', zone: 'profile-text' },
+      }],
+    };
+    const issued = issueWorksheet({
+      bank: normalizeQuestionBankV2(crowded), learnerId: 'learner5',
+      enrollmentId: 'e3', lessonId: 'missouri', profile: 'upper', seed: 'borders',
+      itemIds: ['borders'],
+    });
+    const [question] = issued.items;
+    // Never more options than the bubble sheet can carry...
+    expect(question.options).toHaveLength(5);
+    // ...and never an all-correct sheet, which fills in by reflex rather than reading.
+    const correct = question.options.filter((option) => option.correct);
+    expect(correct).toHaveLength(4);
+    expect(question.options.filter((option) => !option.correct)).toHaveLength(1);
+    // Every option shown is genuinely one of the authored labels for its side.
+    expect(correct.every((option) => crowded.items.at(-1).answers.includes(option.label))).toBe(true);
+  });
+
   it('uses a profile prompt override without duplicating the assessed item or its options', () => {
     const shared = item('scaffolded');
     shared.prompt = 'What helps the fishing cat swim?';
