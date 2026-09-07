@@ -63,6 +63,9 @@
     padding-top: 8px;
     display: flex;
     justify-content: center;
+    // The one control that moves the lobby forward: it never shrinks and never
+    // gets displaced by whatever the starting grid is doing above it.
+    flex-shrink: 0;
   }
 
   &__start {
@@ -139,14 +142,23 @@
 }
 
 // ── Starting grid ────────────────────────────────────────────────────────
-.cgh-grid-section { display: flex; flex-direction: column; }
+.cgh-grid-section { display: flex; flex-direction: column; min-height: 0; }
 
 .cgh-grid {
   position: relative;
   display: flex;
-  flex-wrap: wrap;
+  // NEVER wrap. The garage touchscreen is a fixed height with no usable scroll,
+  // so a second row of slots grows this column and pushes "Start race" below the
+  // fold, where it cannot be tapped and the lobby becomes a dead end. Adding a
+  // bike alongside a ghost lane did exactly that (2026-09-07). Slots shrink to
+  // fit instead; an extreme roster scrolls sideways rather than stealing height.
+  flex-wrap: nowrap;
   justify-content: center;
+  justify-content: safe center; // don't clip the leading slot once it overflows
   gap: 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
 
   // Neon start-line: a glowing magenta→cyan bar behind the row of slots.
   &::before {
