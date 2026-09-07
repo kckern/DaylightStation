@@ -61,6 +61,7 @@ resilience hooks, and the recovery library.
 | `Player.jsx` | Entry point + resilience conductor. Holds playback metrics, registers media accessors, drives overlays, owns the remount hammer. |
 | `renderers/VideoPlayer.jsx` | Renders `<dash-video>` (Plex DASH) or `<video>` (files). Wires dash.js diagnostics, the stale-session watchdog, dash-error recovery, autoplay-block detection, and `hardReset`. |
 | `renderers/AudioPlayer.jsx`, `SlideShow.jsx`, `RemuxPlayer.jsx` | Audio, image slideshow, and MSE-remux renderers. |
+| `renderers/ContentScroller.jsx` | Scrolling-text engine shared by `ReadalongScroller` (scripture, talks, poetry) and `SingalongScroller` (hymns, primary songs). See below. |
 | `hooks/useCommonMediaController.js` | The imperative core: DOM/shadow-DOM element access, transport API, seek-to-offset, stall detection, quality/dropped-frame sampling, keyboard. |
 | `hooks/useMediaResilience.js` | Recovery state machine. Maps health signals → reload requests → overlay props. |
 | `hooks/usePlaybackHealth.js` | Telemetry source — progress tokens, element signals, frame info that the state machine resets timers against. |
@@ -71,6 +72,28 @@ resilience hooks, and the recovery library.
 See `frontend/src/modules/Player/README.md` and
 `frontend/src/modules/Player/hooks/README.md` for the in-tree control-flow
 diagrams, and `README.media-resilience.md` for the resilience change log.
+
+#### Scrolling text: placement and the manual nudge
+
+`ContentScroller` derives its scroll position from the clock alone — media time
+becomes a progress fraction, which becomes `translateY`. Two singalong-specific
+behaviours sit on top of that:
+
+- **The lyric block is placed left of centre.** `useCenterByWidest` shrink-wraps
+  the text to its widest stanza and takes a `bias` — the share of the leftover
+  horizontal space placed on its left. `SingalongScroller` passes `0.35`. Ragged-
+  right lyrics whose bounding box is centred read as sitting too far right, so the
+  block is deliberately indented instead of centred. `0.5` is the default and
+  means true centring.
+- **Arrow keys scoot the text, not the audio.** A recording and its transcribed
+  stanzas can disagree — a missing or repeated verse, a lead-in that doesn't match
+  `yStartTime` — and the derived position then has no way back into register. With
+  `manualScrollNudge` (set by `SingalongScroller` only), ArrowUp/ArrowDown add a
+  persistent pixel offset of one rendered line on top of the derived position,
+  logged as `player.scroll-nudge`. The media clock is never touched, the offset
+  resets per track, and presses that would push the text past either end do not
+  accumulate. The cost: on singalong content those two keys no longer cycle
+  shaders. Every other content type keeps the shader binding.
 
 ### `frontend/src/lib/Player/` — leaf helpers
 

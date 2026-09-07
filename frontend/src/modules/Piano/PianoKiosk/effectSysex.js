@@ -41,16 +41,29 @@ const GS_ADDR = {
   chorusLevel: [0x40, 0x01, 0x3b],
 };
 
+/** GM2 Global Parameter Control slot path low byte: which effect block to write. */
+export const GM2_SLOT = { reverb: 0x01, chorus: 0x02 };
+
 /**
- * GM2 effect-type message. Two bytes shorter than GS, no checksum, and — per the
- * config — measurably more reliable across the JamCorder's BLE→DIN hop, which
- * occasionally drops a message from a longer 3-message GS sequence.
- *   F0 7F 7F 04 05 01 01 01 01 01 <kind> <type> F7
- * `kind` is 00 for reverb, 02 for chorus. Level still rides on its CC.
+ * GM2 effect-type message (Universal Real Time "Global Parameter Control",
+ * sub-ID 04 05). Two bytes shorter than GS, no checksum, and — per the config —
+ * measurably more reliable across the JamCorder's BLE→DIN hop, which occasionally
+ * drops a message from a longer 3-message GS sequence.
+ *
+ *   F0 7F 7F 04 05 <sl=01> <pl=01> <vl=01> <slot path 01 ss> <param 00> <type> F7
+ *
+ * The effect is chosen by the SLOT PATH (`01 01` reverb, `01 02` chorus); the
+ * parameter id that follows is 00 (= Type) for both. Until 2026-09-06 this built
+ * the chorus message by hardcoding the reverb slot path and putting 02 in the
+ * PARAMETER byte instead — so every chorus write was aimed at the reverb block.
+ * The visible symptom was the reverb type picker doing nothing at all: each tap
+ * sent a correct reverb-type message and was immediately followed (~4 ms later,
+ * see the SoundPanel note) by the mis-addressed chorus message landing on the
+ * same block. Changing the CHORUS type is what audibly moved the reverb.
  */
-export function gm2Message(kind, type) {
-  return [0xf0, 0x7f, 0x7f, 0x04, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01,
-    kind & 0x7f, type & 0x7f, 0xf7];
+export function gm2Message(slot, type) {
+  return [0xf0, 0x7f, 0x7f, 0x04, 0x05, 0x01, 0x01, 0x01,
+    0x01, slot & 0x7f, 0x00, type & 0x7f, 0xf7];
 }
 
 const clamp7 = (n) => Math.max(0, Math.min(127, Math.round(Number(n) || 0)));
@@ -84,7 +97,7 @@ export function planEffectSysex(name, eff, opts = {}) {
 
   // GM2: SysEx carries the type; the level stays on its Control Change, which the
   // unit DOES honour for send level (only effect TYPE is CC-deaf).
-  ops.push({ kind: 'sysex', bytes: gm2Message(name === 'reverb' ? 0x00 : 0x02, type) });
+  ops.push({ kind: 'sysex', bytes: gm2Message(GM2_SLOT[name], type) });
   if (opts.levelCC != null) ops.push({ kind: 'cc', cc: opts.levelCC, value: level });
   return ops;
 }

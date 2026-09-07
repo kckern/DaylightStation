@@ -160,6 +160,45 @@ make the next low-numbered GM Program Change select an unrelated variation. The
 hardware sweep likewise reasserts bank 0 for every sampled program so its results
 cannot inherit state from an earlier session.
 
+Every Program Change goes out this way, not just the Sound sheet's. The Producer's
+onboard-GM tier and the GM probe both target channel 0 — the same channel the
+Sound sheet selects on — so a bare Program Change from either would have been
+served out of whatever bank was last picked there.
+
+### Reverb / chorus: the effect is chosen by the SLOT PATH
+
+The kiosk drives effect type with GM2 Global Parameter Control:
+
+```
+F0 7F 7F 04 05 <sl=01> <pl=01> <vl=01> <slot path 01 ss> <param 00> <type> F7
+      reverb: … 01 01 01 | 01 01 | 00 | tt        chorus: … | 01 02 | 00 | tt
+```
+
+`ss` picks the block (01 reverb, 02 chorus); the byte after the slot path is the
+parameter id, and Type is 00 for **both**. From the 2026-06-30 audit until
+2026-09-06 the chorus message was built with the reverb slot path and 02 in the
+PARAMETER byte, so every chorus write landed on the reverb block.
+
+That produced a symptom that pointed at the wrong control entirely: **the reverb
+type row looked completely dead while the chorus type row appeared to work.** A
+tap on either row replanned the whole preset (voice + reverb + chorus), so a
+correct reverb-type message was always followed ~4 ms later by the mis-addressed
+chorus message overwriting it — while changing the *chorus* type was what actually
+moved the reverb algorithm. Paired `piano.device.effect` events 4 ms apart in the
+log store are the fingerprint:
+
+```bash
+curl -s {env.log_store_url}/select/logsql/query \
+  -d 'query="piano.device.effect" AND _time:1h' -d 'limit=20'
+```
+
+An effect tap now sends that one effect only. Type numbers must also be ones GM2
+defines — reverb 0 Small Room, 1 Medium Room, 2 Large Room, 3 Medium Hall,
+4 Large Hall, 8 Plate (5–7 do not exist, and the picker offered 5 as "Large Hall"
+until 2026-09-06); chorus 0–3 Chorus 1–4, 4 FB Chorus, 5 Flanger. An undefined
+number is discarded silently, which reads as one dead button in an otherwise
+working row.
+
 The APK heartbeat already carries the verdict, once a minute.
 
 ```bash

@@ -13,7 +13,7 @@ import { getSingalongRenderer } from '../../../lib/contentRenderers.jsx';
  *  - Fetches data from /api/v1/item/singalong/{path}
  *  - Parses stanza content (array of stanzas, each an array of lines)
  *  - Applies style via CSS variables
- *  - Uses useCenterByWidest hook for text centering
+ *  - Uses useCenterByWidest hook for horizontal placement (left-biased, see below)
  *  - Calculates yStartTime for scrolling based on duration/verses
  */
 export function SingalongScroller({
@@ -55,8 +55,12 @@ export function SingalongScroller({
     });
   }, [contentId, initialData]);
 
-  // Center text by widest line
-  useCenterByWidest(textRef, [data?.content?.data]);
+  // Place the lyric block by its widest line, biased LEFT of true centre. The
+  // lines are left-aligned and ragged right (and only each stanza's first line is
+  // flush left — the rest carry a 2rem indent), so the block's bounding box
+  // centres well right of where the text looks centred. 0.35 puts a third of the
+  // free space on the left: clearly indented, never flush.
+  useCenterByWidest(textRef, [data?.content?.data], { bias: 0.35 });
 
   const parseContent = useCallback((contentData) => {
     if (!contentData?.data) return null;
@@ -136,6 +140,7 @@ export function SingalongScroller({
         onSeekRequestConsumed={onSeekRequestConsumed}
         remountDiagnostics={remountDiagnostics}
         listId={listId}
+        manualScrollNudge
       />
     </div>
   );
