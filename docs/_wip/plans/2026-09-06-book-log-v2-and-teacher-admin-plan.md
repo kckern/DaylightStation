@@ -202,10 +202,16 @@ is not undoable — say so in place of the button.
 
 ## Definition of done
 
-- [ ] A reading is identified by an opaque id; `learnerFromItemId` no longer exists
-- [ ] Two readings of one book are two records with two histories
-- [ ] Every entry is addressable, and `on` / `at` are separate fields
-- [ ] Migration verified by projection equality, with a `.v1.bak` beside each file
+Phases A and B landed 2026-09-06. B3 was NOT separable from B1 — the store's
+`listForLearner` hands back readings the moment it is converted, so the callers
+move in the same commit or the tree is broken between them.
+
+- [x] A reading is identified by an opaque id; `learnerFromItemId` no longer exists
+- [x] Two readings of one book are two records with two histories
+- [x] Every entry is addressable, and `on` / `at` are separate fields
+- [x] Migration verified by projection equality, with a `.v1.bak` beside each file
+      (`school booklog migrate <learnerId> [--apply]`; dry run verified against
+      the live tree, nothing written)
 - [ ] Every teacher verb works, is attributed, and is undoable
 - [ ] The five shrinking verbs deliver a reason to the child; the rest are silent
 - [ ] Two new step-up actions, both with a resource, both tested
