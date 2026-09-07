@@ -2,6 +2,8 @@ import { useRef, useState } from 'react';
 import { UnstyledButton } from '@mantine/core';
 import { createAppLogger } from '../../../lib/ui/createAppLogger.js';
 import { MacroBadges } from './MacroBadges.jsx';
+import { DensityBadge } from './DensityBadge.jsx';
+import { useHealthDisplayPreferences } from '../display/HealthDisplayPreferences.jsx';
 import { nutritionPhotoUrl } from './photoUrl.js';
 import { FoodIcon } from './FoodIcon.jsx';
 import { PortionControl } from './PortionControl.jsx';
@@ -10,13 +12,14 @@ import { usePortionControl } from './usePortionDraft.js';
 
 const logger = createAppLogger('health').child('entry-row');
 
-export function EntryRow({ row, onTap, onConfirm, isGroup = false, expanded = false, onToggle, rollupKcal, child = false, lastChild = false, measured = null }) {
+export function EntryRow({ row, densityRow = row, onTap, onConfirm, isGroup = false, expanded = false, onToggle, rollupKcal, child = false, lastChild = false, measured = null }) {
   const [error, setError] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
   const pending = useRef(false);
   const operation = useRef(null);
   const [brokenPhoto, setBrokenPhoto] = useState(null);
   const portions = usePortionControl();
+  const { densityPlacement } = useHealthDisplayPreferences();
   const unsettled = row.settled === false || (isGroup && row.children?.some(item => item.settled === false));
   const name = row.name || row.item || row.label || '';
   const displayKcal = isGroup ? rollupKcal : row.calories;
@@ -38,18 +41,21 @@ export function EntryRow({ row, onTap, onConfirm, isGroup = false, expanded = fa
       {isGroup ? <UnstyledButton className="health-row__expand" aria-expanded={expanded}
         aria-label={`${expanded ? 'Collapse' : 'Expand'} ${name}`} onClick={onToggle}>{expanded ? '▾' : '▸'}</UnstyledButton> : null}
     </div>
-    <UnstyledButton className="health-row__identity" disabled={Boolean(portions?.draft)} onClick={() => onTap(row)} aria-label={`Edit ${name}`}>
-      {row.photoRef && brokenPhoto !== row.photoRef ? <img className="health-row__thumb"
-        src={nutritionPhotoUrl(row.photoRef, { thumb: true })} alt="" loading="lazy" onError={() => setBrokenPhoto(row.photoRef)} /> : <FoodIcon icon={row.icon} />}
+    <div className={`health-row-identity health-row__identity health-row__visual health-density-${densityPlacement}`}>
+      <span className="health-row-artwork">{row.photoRef && brokenPhoto !== row.photoRef ? <img className="health-row__thumb"
+        src={nutritionPhotoUrl(row.photoRef, { thumb: true })} alt="" loading="lazy" onError={() => setBrokenPhoto(row.photoRef)} /> : <FoodIcon icon={row.icon} />}</span>
+      <DensityBadge row={densityRow} />
+      <UnstyledButton className="health-row-name" disabled={Boolean(portions?.draft)} onClick={() => onTap(row)} aria-label={`Edit ${name}`}>
       <span className="health-row__description" title={name}><span className="health-row__name">{name}</span>{' '}
         {unsettled && confirmation !== 'saved' ? <span className="health-row__badge" title="Counted now; stabilizes automatically after 72 hours unless you confirm sooner.">Estimated</span> : null}
         {measured ? <span className="health-row__scale" title={measured}> · Scale ✓</span> : null}
       </span>
-    </UnstyledButton>
-    <MacroBadges rows={isGroup ? row.children : [row]} className="health-row__macros" />
-    <PortionControl row={row} />
-    <span className="health-row__kcal" title="Calories">{displayKcal == null ? '—' : Math.round(displayKcal)}<small> kcal</small></span>
-    <div className="health-row__action">
+      </UnstyledButton>
+    </div>
+    <MacroBadges rows={isGroup ? row.children : [row]} className="health-row__macros health-row__visual" />
+    <span className="health-row__portion-cell health-row__visual"><PortionControl row={row} /></span>
+    <span className="health-row__kcal health-row__visual" title="Calories">{displayKcal == null ? '—' : Math.round(displayKcal)}<small> kcal</small></span>
+    <div className="health-row__action health-row__visual">
       {confirmation === 'saved' ? <span role="status" aria-label={`${name} confirmed`} title="Confirmed">✓</span> : unsettled ?
         <UnstyledButton className="health-row__confirm" aria-label={`Confirm entry: ${name}`} title="Confirm this estimate"
           disabled={confirmation === 'saving' || Boolean(portions?.draft)} aria-busy={confirmation === 'saving'} onClick={confirm}>{confirmation === 'saving' ? '…' : '✓'}</UnstyledButton> : null}

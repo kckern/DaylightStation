@@ -43,10 +43,27 @@ describe('Today layout stylesheet', () => {
   });
 
   it('keeps the day ledger at its compact type and row rhythm', () => {
-    expect(rule('.health-row-line')).toMatch(/min-height: 48px/);
-    expect(rule('.health-row__identity')).toMatch(/min-height: 44px/);
+    expect(rule('.health-row-line')).toMatch(/min-height: 28px/);
+    expect(rule('.health-row-identity')).toMatch(/min-height: 28px/);
     expect(rule('.health-row__name')).toMatch(/font-size: 0.86rem/);
-    expect(rule('.health-row__icon')).toMatch(/width: 24px/);
+    expect(rule('.health-row-artwork')).toMatch(/width: 24px/);
+    expect(rule('.health-density-badge')).toMatch(/width: 24px/);
+    expect(css).toMatch(/pointer: coarse[^}]*\.health-row-line[^}]*min-height: 44px/s);
+  });
+
+  it('aligns meal headers and rows to shared nutrient tracks while only identity shrinks', () => {
+    expect(rule('.health-meal')).toContain('--health-meal-tracks');
+    expect(rule('.health-row-line')).toContain('var(--health-meal-tracks)');
+    expect(rule('.health-meal__header')).toContain('var(--health-meal-tracks)');
+    expect(rule('.health-row__description')).toMatch(/min-width: 0/);
+  });
+
+  it('dims child visual content while keeping an open popover fully opaque', () => {
+    expect(rule('.health-row-line--child .health-row__visual')).toMatch(/opacity: 0.75/);
+    expect(rule('.health-row-line--child .health-macro-badge')).toMatch(/width: 20px/);
+    expect(rule('.health-row-line--child .health-macro-badge')).toMatch(/height: 20px/);
+    expect(rule('.health-row-line--child .health-macro-badge')).toMatch(/border-radius: 50%/);
+    expect(css).toMatch(/health-row-line--child:has\(\[aria-expanded=true\]\) \.health-row__visual \{[^}]*opacity: 1/);
   });
 
   it('gives populated meals two equal desktop columns', () => {
