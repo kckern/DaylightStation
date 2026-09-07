@@ -33,6 +33,7 @@ import CompanionFinishCode from './panels/CompanionFinishCode.jsx';
 import LaunchPreviewAction from './panels/LaunchPreviewAction.jsx';
 import GradedWorksheet from './panels/GradedWorksheet.jsx';
 import LearnerDayView from './panels/LearnerDayView.jsx';
+import ReadingShelfPanel from './panels/ReadingShelfPanel.jsx';
 import { LessonIdentity, SubjectIdentity } from './CurriculumIdentity.jsx';
 import { teacherBaseFor, teacherDayPath } from './teacherUrl.js';
 import { curriculumTitles } from './curriculumTitles.js';
@@ -338,6 +339,20 @@ export function HistoryView({ learnerId, learnerName, onOpenSession }) {
       <SessionList learnerId={learnerId} onOpenSession={onOpenSession} />
       <FeedbackNotes key={feedbackRefresh} learnerId={learnerId} learnerName={learnerName} />
       <NoteComposer learnerId={learnerId} learnerName={learnerName} onSent={() => setFeedbackRefresh((n) => n + 1)} />
+    </div>
+  );
+}
+
+/**
+ * The child's reading shelf, for a grown-up (teacher reading admin design §2).
+ * Observation only this pass: what is being read, how much, how consistently.
+ * The correction verbs (§3) land against the v2 storage model, not here.
+ */
+export function ReadingView({ learnerId, learnerName }) {
+  return (
+    <div className="teacher-view">
+      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Reading</p><h2>{learnerName}’s shelf</h2><p>What they are reading, how much, and how consistently. Nothing on this page changes the record.</p></div></div>
+      <ReadingShelfPanel learnerId={learnerId} />
     </div>
   );
 }
