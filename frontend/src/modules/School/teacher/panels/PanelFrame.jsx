@@ -13,6 +13,9 @@
 export default function PanelFrame({
   title, state, retry, children,
   emptyCopy = 'Nothing here yet.',
+  // The server's own sentence, where a panel has one. Default stays the
+  // generic line: most reads cannot say more than that they failed.
+  errorCopy = null,
   unavailableCopy = 'Not available on this install.',
   suppressUnavailable = false,
   alwaysRender = false,
@@ -23,7 +26,7 @@ export default function PanelFrame({
       {state === 'loading' && <div className="teacher-panel__skeleton" aria-hidden />}
       {state === 'error' && (
         <p className="teacher-panel__error">
-          Couldn&rsquo;t load {title}.
+          {errorCopy ?? <>Couldn&rsquo;t load {title}.</>}
           {retry && <button type="button" className="teacher-panel__retry" onClick={retry}>Retry</button>}
         </p>
       )}

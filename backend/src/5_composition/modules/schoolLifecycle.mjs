@@ -627,8 +627,12 @@ export async function createSchoolLifecycle({
   // obligation is complete on its own, so no service has to exist first.
   // `grants` may be null in a degraded boot; the launcher then refuses to
   // issue a target and /act answers "Ask a grown-up", which is honest.
+  // `bookRepository` is for the PRINTED CARD only (`featuredBook`), never for
+  // `status()` — it is what turns an ISBN into a title, and it may be null
+  // here, in which case the agenda still prints a reading card without one.
   const bookLogLauncher = new BookLogProgramLauncher({
     bookLog: stores.bookLog, assignments: stores.assignments, timezone, clock, logger, grants: bookGrants,
+    bookRepository,
   });
   launchers.set(BOOK_LOG_PROGRAM_ID, bookLogLauncher);
 

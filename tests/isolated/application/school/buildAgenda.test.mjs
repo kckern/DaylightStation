@@ -751,7 +751,13 @@ describe('self-service panel codes', () => {
       (b) => b.type === 'scan_action' && b.action === reading.token,
     );
     expect(card).toBeTruthy();
-    expect(card.label).toMatch(/Reading log/i);
+    // THE HANDLE MOVED (2026-09-06 card-parity plan, Task 9). This used to read
+    // `card.label` — the card was a bare notice whose label WAS the words
+    // "Reading log". Under `lessonAction` the label is the BOOK's title, which
+    // changes with the child's shelf, so the stable name of "this is the
+    // reading card" is its taxonomy course — the one string `bookLogContext`
+    // owns and every reading surface shares.
+    expect(card.taxonomy.course).toBe('Reading log');
     expect(card.panelCode).toBe(reading.accessCode);
     expect(validateDocument(result.document).errors).toEqual([]);
   });
@@ -793,5 +799,140 @@ describe('self-service panel codes', () => {
     expect(readingRecords()).toHaveLength(1);
     expect(transcript(result.document)).not.toContain('PANEL CODE');
     expect(transcript(result.document)).toContain('Enter on calculator.');
+  });
+  it('caps the reading code at 12 uses', async () => {
+    // Subject codes are spent after 3 (DEFAULT_ACCESS_CODE_MAX_USES). A log is
+    // genuinely repeatable — "I finished another one" is a thing a child may
+    // honestly do several times in a day — so the reading cap is far looser.
+    // But it is not ABSENT: a printed slip left on the counter was worth
+    // unlimited opens, and `accessCode.mjs` records one code typed THIRTEEN
+    // times in five hours. Twelve is above any real day of logging and under
+    // that.
+    build({ selfService: { enabled: true } });
+    await useCase.execute({ learnerId: 'kid1' });
+    const [reading] = readingRecords();
+    expect(reading.maxUses).toBe(12);
+  });
+
+  it('still dies at the study-day rollover, with the token keeping its week', async () => {
+    // UNCHANGED, and deliberately so: `tokens.mjs` argues the two clocks and
+    // ends "Do not 'align' them." A shorter TTL was considered and rejected —
+    // an expired code is not a named refusal, it lands on TRY_AGAIN and burns
+    // a throttle strike keyed on the panel. The use cap above is what bounds a
+    // lost slip; the clocks are untouched.
+    build({ selfService: { enabled: true } });
+    await useCase.execute({ learnerId: 'kid1' });
+    const [reading] = readingRecords();
+    expect(reading.accessCodeExpiresAt).toBe(rollover());
+    expect(reading.expiresAt).not.toBe(reading.accessCodeExpiresAt);
+  });
+});
+
+/**
+ * The featured book — what the printed card headlines. The launcher answers it
+ * once per agenda (never from `status()`, which every board calls); this is the
+ * thread from there to the paper.
+ */
+describe('the featured book on the agenda card', () => {
+  const shelfStatus = (extra = {}) => ({
+    enrolled: true, error: false, doneToday: false, terminal: false, reopenable: true,
+    context: { course: { id: 'program:book-log', title: 'Reading log' }, lesson: { id: 'book-log:shelf', title: 'Reading' } },
+    obligationProgress: { met: false, actual: 4, target: 7, metric: 'pages', per: 'week', incompatibleBooks: [] },
+    progressLabel: '4 of 7 pages', score: null, reading: 1, finished: 0,
+    ...extra,
+  });
+
+  const feature = (extra = {}) => ({
+    state: 'reading',
+    book: { title: 'Hatchet', authors: ['Gary Paulsen'], pageCount: 184 },
+    page: 84, percent: 46, pageCount: 184, minutes: null, daysRead: 3, at: null,
+    alsoReading: [],
+    ...extra,
+  });
+
+  const withShelf = ({ status = shelfStatus(), featuredBook = async () => feature() } = {}) => build({
+    assignment: { learnerId: 'kid1', programs: [{ programId: BOOK_LOG_PROGRAM_ID, subject: 'english' }] },
+    launchers: new Map([[BOOK_LOG_PROGRAM_ID, {
+      status: async () => status, featuredBook, mountable: true,
+    }]]),
+    selfService: { enabled: true },
+  });
+
+  const readingCards = (doc) => doc.blocks.filter(
+    (b) => b.type === 'scan_action' && b.taxonomy?.course === 'Reading log',
+  );
+
+  it('gives the section card the featured book\'s author as its unit', async () => {
+    // `bookLogContext()` supplies no `unit`, so the program-taxonomy branch
+    // printed the literal string 'Unit' for the shelf. The author is the real
+    // parent of a book, exactly as it is on the standalone card.
+    withShelf();
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    const [card] = readingCards(result.document);
+    expect(card).toBeTruthy();
+    expect(card.taxonomy.unit).toBe('Gary Paulsen');
+    expect(card.taxonomy.unit).not.toBe('Unit');
+    expect(validateDocument(result.document).errors).toEqual([]);
+  });
+
+  it('falls back to Books, never the literal Unit, when it cannot name an author', async () => {
+    withShelf({ featuredBook: async () => feature({ book: null }) });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    const [card] = readingCards(result.document);
+    expect(card.taxonomy.unit).toBe('Books');
+  });
+
+  it('still prints a card when featuredBook throws', async () => {
+    // Book facts are DECORATION. Losing them must never cost the card.
+    withShelf({ featuredBook: async () => { throw new Error('cache cold'); } });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    expect(readingCards(result.document)).toHaveLength(1);
+    expect(validateDocument(result.document).errors).toEqual([]);
+  });
+
+  it('still prints a card for a launcher with no featuredBook at all', async () => {
+    build({
+      assignment: { learnerId: 'kid1', courses: ['math-fractions'] },
+      launchers: new Map(),
+      selfService: { enabled: true },
+    });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    expect(readingCards(result.document)).toHaveLength(1);
+    expect(validateDocument(result.document).errors).toEqual([]);
+  });
+
+  it('names the book on the STANDALONE card too, for an unenrolled learner', async () => {
+    build({
+      assignment: { learnerId: 'kid1', courses: ['math-fractions'] },
+      launchers: new Map([[BOOK_LOG_PROGRAM_ID, { featuredBook: async () => feature() }]]),
+      selfService: { enabled: true },
+    });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    const [card] = readingCards(result.document);
+    expect(card.label).toBe('Hatchet');
+    expect(card.unit).toBe('Gary Paulsen');
+  });
+
+  it('draws the obligation bar from the status the projection ALREADY collected', async () => {
+    // `featuredBook()` cannot answer this: an obligation is measured against an
+    // enrollment it never reads. The rows come from the shelf's `status()`,
+    // which `PlanProjection` collected for this very build — not a second call.
+    build({
+      assignment: { learnerId: 'kid1', programs: [{ programId: BOOK_LOG_PROGRAM_ID, subject: 'english' }] },
+      launchers: new Map([[BOOK_LOG_PROGRAM_ID, {
+        status: async () => shelfStatus({ doneToday: true, obligationProgress: { met: true, actual: 7, target: 7, metric: 'pages', per: 'week', incompatibleBooks: [] } }),
+        featuredBook: async () => feature(),
+        mountable: true,
+      }]]),
+      selfService: { enabled: true },
+    });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    const [card] = readingCards(result.document);
+    // A met obligation takes the shelf out of the section loop, so this is the
+    // standalone card — wearing its Done rail and its obligation bar.
+    expect(card.rail).toBe('Done');
+    expect(card.progress).toContainEqual(
+      expect.objectContaining({ completed: 7, total: 7 }),
+    );
   });
 });

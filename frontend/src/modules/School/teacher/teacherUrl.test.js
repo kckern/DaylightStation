@@ -23,6 +23,24 @@ describe('teacher workspace URL model', () => {
     expect(parseTeacherPath('/school/teacher/planning/user_4')).toMatchObject({ kind: 'not-found' });
   });
 
+  it('parses the reading workspace, and builds its path', () => {
+    expect(parseTeacherPath('/school/teacher/students/user_4/reading')).toMatchObject({
+      kind: 'learner', section: 'reading', learnerId: 'user_4',
+    });
+    expect(teacherLearnerPath('user_4', 'reading')).toBe('/school/teacher/students/user_4/reading');
+    expect(parseTeacherPath(teacherLearnerPath('a b', 'reading'))).toMatchObject({
+      kind: 'learner', section: 'reading', learnerId: 'a b',
+    });
+  });
+
+  it('keeps reading a bare section — no detail id, no deeper path', () => {
+    // `courses` is the only learner section that takes a detail segment.
+    // A reading path with one is not a route, and must not resolve to the
+    // shelf with the extra segment silently dropped.
+    expect(parseTeacherPath('/school/teacher/students/user_4/reading/itm_1').kind).toBe('not-found');
+    expect(teacherLearnerPath('user_4', 'reading', 'itm_1')).toBe('/school/teacher/students/user_4/reading');
+  });
+
   it('still parses the retired /overview segment instead of 404ing (trim 5.6)', () => {
     // LearnerOverview the component is gone, but the shell redirects this
     // URL rather than 404ing it — which only works if the parser still

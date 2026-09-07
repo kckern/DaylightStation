@@ -45,7 +45,7 @@
  * @module applications/school/BookLogProgramLauncher
  */
 import { BOOK_LOG_PROGRAM_ID, bookLogContext } from '#domains/school/bookLog.mjs';
-import { measureObligation, projectShelfItem } from '#domains/school/bookShelf.mjs';
+import { measureObligation, projectShelfItem, selectFeaturedShelfItem } from '#domains/school/bookShelf.mjs';
 import { studyDayForInstant } from '#domains/school/studyDay.mjs';
 
 /** Where a child does this, in the words a child reads. */
@@ -72,9 +72,9 @@ export function obligationWindow(per, studyDay) {
 }
 
 export class BookLogProgramLauncher {
-  #assignments; #bookLog; #timezone; #clock; #logger; #grants;
+  #assignments; #bookLog; #timezone; #clock; #logger; #grants; #bookRepository;
 
-  constructor({ assignments, bookLog, timezone = null, clock = () => new Date(), logger = console, grants = null } = {}) {
+  constructor({ assignments, bookLog, timezone = null, clock = () => new Date(), logger = console, grants = null, bookRepository = null } = {}) {
     if (!assignments || typeof assignments.get !== 'function') {
       throw new Error('BookLogProgramLauncher requires an assignments store with get(learnerId)');
     }
@@ -85,6 +85,10 @@ export class BookLogProgramLauncher {
     this.#clock = clock;
     this.#logger = logger;
     this.#grants = grants;
+    // OPTIONAL ON PURPOSE. `schoolLifecycle.mjs` defaults it to null and only
+    // builds `GetBookShelf` when a books API exists, so a household without
+    // one must still get a card — titleless, but printed.
+    this.#bookRepository = bookRepository;
   }
 
   get id() { return BOOK_LOG_PROGRAM_ID; }
@@ -205,8 +209,8 @@ export class BookLogProgramLauncher {
       // the catalog gate exists to reject, and enrollment, progress and the
       // gradebook would all try to believe in it.
       //
-      // "Independent study" is not invented copy: it is the wording the
-      // printed agenda already uses for this row.
+      // The course title comes out "Reading log" — see `bookLogContext`, which
+      // is the only place that wording is written down. Do not spell it here.
       context: bookLogContext(enrollment.title),
       // The shelf's obligation line adds the window word (`today`, `this
       // week`) client-side; `per` rides along so it can.
@@ -218,6 +222,123 @@ export class BookLogProgramLauncher {
       reading,
       finished,
     };
+  }
+
+  /**
+   * What the printed agenda card headlines. NOT part of `status()`, and it must
+   * not become part of it.
+   *
+   * `status()` runs inside `collectProgramStatuses`, which `PlanProjection`
+   * calls for the teacher board, the status board, DoNow and the completion
+   * recompute. A title is a per-book repository read; putting N of those behind
+   * every one of those surfaces, to decorate one printed card, is a cost none of
+   * them asked for. It is built to be called once per learner at print time,
+   * by the agenda, and by nothing that runs on every board refresh.
+   *
+   * It also does not consult the enrollment. Reading the log only for an
+   * enrolled child would leave three of four learners with a bare box — the
+   * shelf is open to everyone (see this file's header) and so is the card.
+   *
+   * ## BOOK FACTS ARE DECORATION
+   *
+   * A cold cache, a throwing repository, an ISBN that never resolved, or a
+   * composition with no books API at all yields `book: null` and a titleless
+   * card. Never fewer cards, and never a card claiming a book it could not name.
+   * The bars, the page and the day count all come from the log itself and
+   * survive every one of those. Only the LOG being unreadable changes the
+   * answer, and that says `unreadable` rather than `empty`, because telling a
+   * child with a full shelf that they have no books is a lie the card can avoid.
+   *
+   * A record with no TITLE collapses to `book: null` as well, so `book !== null`
+   * means exactly one thing — "I have a name for it" — which is the one question
+   * the card branches on. `createBookRecord` stubs every field for an ISBN that
+   * never resolved, so without the collapse a caller would be handed
+   * `{title: null, authors: [], pageCount: null}` and have to ask a second
+   * question to reach the answer the docblock already promises.
+   *
+   * A consumer needs an arm for `unreadable` of its own, and one that lacks it
+   * must fall through to the titleless card, never to the "no books yet" copy:
+   * printing "start a book" to a child whose shelf merely could not be read is
+   * the exact failure this state exists to prevent.
+   *
+   * ## THE PRINTED FRACTION AND THE DRAWN BAR COME FROM ONE ROW
+   *
+   * `page`, `percent` and `pageCount` all come from the SAME shelf item, which
+   * is why `pageCount` sits here and not on `book`. The catalog's length and the
+   * child's own record can disagree about a book, and `percentFor` measures the
+   * bar against the item's. A card drawing the bar from `percent` while printing
+   * "of {book.pageCount}" would show a denominator the bar never used.
+   *
+   * @param {{userId: string}} args
+   * @returns {Promise<{state: 'reading'|'finished'|'set-aside'|'empty'|'unreadable',
+   *   book: {title: string, authors: string[]}|null,
+   *   page: number|null, percent: number|null, pageCount: number|null,
+   *   minutes: number|null, daysRead: number, at: string|null, alsoReading: string[]}>}
+   */
+  async featuredBook({ userId } = {}) {
+    const learnerId = userId;
+    if (typeof learnerId !== 'string' || !learnerId) throw new TypeError('BookLogProgramLauncher.featuredBook takes { userId }');
+    let items;
+    try {
+      items = (await this.#bookLog.listForLearner(learnerId)) ?? [];
+    } catch (error) {
+      // `error?.message ?? String(error)` because a store that rejects with a
+      // non-object (`throw null`) would make the SWALLOW throw, and that escape
+      // takes the whole card down — the one outcome this catch exists to deny.
+      this.#logger.warn?.('school.book-log.shelf-unreadable', { learnerId, error: error?.message ?? String(error) });
+      return { state: 'unreadable', book: null, page: null, percent: null, pageCount: null, minutes: null, daysRead: 0, at: null, alsoReading: [] };
+    }
+
+    const dayOf = (iso) => this.dayOf(iso);
+    const { state, featured, alsoReading } = selectFeaturedShelfItem(items, { dayOf });
+    // An empty shelf has no featured row — the state every child is in before
+    // their first book. Without this guard `featured.item` below throws.
+    if (!featured) {
+      return { state, book: null, page: null, percent: null, pageCount: null, minutes: null, daysRead: 0, at: null, alsoReading: [] };
+    }
+
+    const facts = await this.#bookFacts(featured.item.bookId, learnerId);
+    const others = await Promise.all(alsoReading.map((entry) => this.#bookFacts(entry.item.bookId, learnerId)));
+
+    this.#logger.debug?.('school.book-log.featured', { learnerId, state, hasTitle: Boolean(facts) });
+
+    return {
+      state,
+      book: facts,
+      page: featured.projection.page,
+      percent: featured.projection.percent,
+      // The ITEM's length, not the catalog's — the same number `percentFor`
+      // divided by, so the printed fraction and the drawn bar cannot disagree.
+      pageCount: featured.item.pageCount ?? null,
+      minutes: featured.projection.minutes,
+      daysRead: featured.projection.daysRead,
+      at: featured.projection.lastAt,
+      // A co-read book the repository could not name drops out rather than
+      // riding along as a null the card would try to print.
+      alsoReading: others.map((book) => book?.title).filter(Boolean),
+    };
+  }
+
+  /**
+   * Null on every failure. Decoration must never cost the card.
+   *
+   * A TITLELESS record is a failure too: `createBookRecord` stubs every field
+   * for an ISBN that never resolved, and a record carrying no name has nothing
+   * a headline can use. Collapsing it here is what makes `book !== null` mean
+   * "I have a name for it" at the one place that asks.
+   */
+  async #bookFacts(bookId, learnerId) {
+    if (!this.#bookRepository?.findByIsbn) return null;
+    try {
+      const book = await this.#bookRepository.findByIsbn(bookId);
+      return book?.title ? { title: book.title, authors: book.authors ?? [] } : null;
+    } catch (error) {
+      // Not `error.message`: a repository rejecting with a non-object would
+      // throw inside this catch, escape `Promise.all` and take the card down —
+      // the opposite of "null on every failure".
+      this.#logger.warn?.('school.book-log.book-facts-failed', { learnerId, bookId, error: error?.message ?? String(error) });
+      return null;
+    }
   }
 
   /**
@@ -242,6 +363,12 @@ export class BookLogProgramLauncher {
   #unreadable() {
     return {
       enrolled: null, error: true, doneToday: false, terminal: false,
+      // THE SHELF STILL KNOWS ITS OWN NAME. Without a context this branch
+      // answered a card with `course: null` — the blank-artwork case the
+      // poster route exists to refuse, and the same gap the unenrolled branch
+      // above was fixed for. A shelf nobody can read is still the reading log;
+      // what is unknown is what is ON it, and that is what `error` says.
+      context: bookLogContext(),
       progressLabel: null, score: null, obligationProgress: null,
     };
   }

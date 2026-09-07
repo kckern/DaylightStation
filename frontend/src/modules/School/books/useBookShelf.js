@@ -326,6 +326,12 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     if (viewRef.current !== 'add' || stepRef.current !== 'number') return;
     touch();
     const entry = typeof value === 'string' ? value : '';
+    const had = addRef.current.entry.length;
+    // The pad clears on a held ⌫ and on Escape from the scanner's keyboard,
+    // and logs nothing itself (see NumberPad's header). Without this line a
+    // wiped number is indistinguishable in the store from one never typed —
+    // which is exactly what a fat-fingered clear looked like in the field.
+    if (had > 0 && entry.length === 0) schoolLog.bookShelf('pad.cleared', { had });
     const before = checkIsbn(addRef.current.entry);
     const after = checkIsbn(entry);
     // The local-validation copy that fired — once per verdict, not per key.
