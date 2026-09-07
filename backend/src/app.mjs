@@ -4208,6 +4208,50 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const schoolTeacherNotes = new YamlTeacherNotes({ configService, logger: rootLogger.child({ module: 'school-teacher-notes' }) });
   const recordAttestation = new RecordAttestation({ log: schoolAttestations, teacherGate: schoolTeacherGate, notes: schoolTeacherNotes });
   const recordTeacherNote = new RecordTeacherNote({ notes: schoolTeacherNotes, teacherGate: schoolTeacherGate, logger: rootLogger.child({ module: 'school-planning' }) });
+  // The grown-up's reading verbs (teacher reading admin design §3). Wired
+  // only where the shelf itself is: without a book log there is nothing to
+  // correct, and every route answers an honest 404 rather than half-working.
+  // `bookLogLauncher` comes from the lifecycle module by name so the window a
+  // re-dated day is judged against is the same one the agenda counts with.
+  const teacherReadingUseCases = schoolLifecycle.stores?.bookLog && schoolTeacherGate
+    ? await (async () => {
+      const [
+        { GetLearnerReadings }, { UpdateReading }, { AddReadingEntry }, { UpdateReadingEntry },
+        { DeleteReadingEntry }, { AddReadingForLearner }, { MoveReading }, { DeleteReading },
+        { UndoReadingRevision },
+      ] = await Promise.all([
+        import('#apps/school/usecases/teacher/GetLearnerReadings.mjs'),
+        import('#apps/school/usecases/teacher/UpdateReading.mjs'),
+        import('#apps/school/usecases/teacher/AddReadingEntry.mjs'),
+        import('#apps/school/usecases/teacher/UpdateReadingEntry.mjs'),
+        import('#apps/school/usecases/teacher/DeleteReadingEntry.mjs'),
+        import('#apps/school/usecases/teacher/AddReadingForLearner.mjs'),
+        import('#apps/school/usecases/teacher/MoveReading.mjs'),
+        import('#apps/school/usecases/teacher/DeleteReading.mjs'),
+        import('#apps/school/usecases/teacher/UndoReadingRevision.mjs'),
+      ]);
+      const shared = {
+        bookLog: schoolLifecycle.stores.bookLog,
+        teacherGate: schoolTeacherGate,
+        recordTeacherNote,
+        bookRepository: schoolLifecycle.stores?.bookRepository ?? null,
+        bookLogLauncher: schoolLifecycle.bookLogLauncher ?? null,
+        logger: rootLogger.child({ module: 'school-teacher-reading' }),
+      };
+      return {
+        getLearnerReadings: new GetLearnerReadings(shared),
+        updateReading: new UpdateReading(shared),
+        addReadingEntry: new AddReadingEntry(shared),
+        updateReadingEntry: new UpdateReadingEntry(shared),
+        deleteReadingEntry: new DeleteReadingEntry(shared),
+        addReadingForLearner: new AddReadingForLearner(shared),
+        moveReading: new MoveReading(shared),
+        deleteReading: new DeleteReading(shared),
+        undoReadingRevision: new UndoReadingRevision(shared),
+      };
+    })()
+    : {};
+
   // Task 12 (debt M5): reassignments write their own audit trail — a
   // best-effort append that never blocks or unwinds the move itself.
   const schoolReassignmentLog = new YamlReassignmentLog({ configService, logger: rootLogger.child({ module: 'school-reassignments' }) });
@@ -4359,6 +4403,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // lifecycle module, over the one book log). Null in a composition without
     // the Books deps, which the teacher route answers as an honest 404.
     getBookShelf: schoolLifecycle.useCases?.getBookShelf ?? null,
+    // The teacher's reading workspace (design §3, §5). Built over the SAME
+    // book log the child's panel writes through and the SAME notes path every
+    // other teacher verb delivers on — there is no shadow teacher copy of a
+    // child's shelf, and no second way to reach a child's feed.
+    ...teacherReadingUseCases,
     adjustSessionGrade: schoolLifecycle.stores?.sessions && schoolTeacherGate
       ? new AdjustSessionGrade({
         sessions: schoolLifecycle.stores.sessions,
