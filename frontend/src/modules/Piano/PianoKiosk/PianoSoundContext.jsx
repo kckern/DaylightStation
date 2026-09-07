@@ -67,6 +67,13 @@ export function PianoSoundProvider({ children }) {
    * Returns 'sysex' or 'cc' so the log records which route actually carried it.
    */
   const applyEffectToHardware = useCallback((name, eff, fx) => {
+    // Level-only instrument: the algorithm is fixed in hardware, so send the one
+    // thing it honours. Not a fallback — there is nothing to fall back from, and
+    // logging it as one would cry wolf on a healthy link.
+    if (fx.typeAddressable === false) {
+      sendControlChange(fx.levelCC, eff.on ? eff.level : 0);
+      return 'cc-level';
+    }
     if (effectsCfg.transport === 'cc') {
       sendControlChange(fx.typeCC, eff.type);
       sendControlChange(fx.levelCC, eff.on ? eff.level : 0);

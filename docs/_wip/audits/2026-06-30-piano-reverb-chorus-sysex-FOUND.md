@@ -22,6 +22,17 @@ All four effect candidates produce large, consistent, positive tail+decay gains
 in both runs; the CCs and GM Master Volume are flat. Chorus is especially strong
 (it raises the whole note level +14–16 dB at the peak — audible doubling).
 
+> **CORRECTION (2026-09-06).** The headline conclusion below is wrong, and the
+> byte table has an error. Every candidate compares a dry arm at level 0 against
+> a wet arm carrying a type message **and** level 127, so what these runs measured
+> was the CC91/CC93 send level — not SysEx, and not effect type. A later A/B that
+> held level constant at 127 and varied only the algorithm (GM2 GPC, GM2 GPC after
+> System On, and the Roland GS macro) found **all three silent**: this unit has a
+> fixed reverb and chorus algorithm and only the send level is addressable. The
+> GM2 chorus line below is also mis-addressed — the effect is chosen by the SLOT
+> PATH (`01 02` for chorus), not by the parameter byte. See
+> `docs/runbooks/piano-kiosk-midi.md`.
+
 ## The working byte sequences (from `effectProbe/sysex.js` + `candidates.js`)
 
 - **GS reverb:** `F0 41 10 42 12 40 00 7F 00 41 F7` (GS Reset) · `F0 41 10 42 12
