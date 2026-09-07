@@ -2,18 +2,44 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import yaml from 'js-yaml';
 import { BookLogShelfUnreadableError, YamlBookLogStore } from './YamlBookLogStore.mjs';
 
 const silentLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 
 let root;
 const configService = { getHouseholdPath: (suffix) => path.join(root, suffix) };
-const store = () => new YamlBookLogStore({ configService, logger: silentLogger });
+const store = (over = {}) => new YamlBookLogStore({ configService, logger: silentLogger, ...over });
+
+const dir = () => path.join(root, 'school/records/books');
+const fileFor = (learnerId) => path.join(dir(), `${learnerId}.yml`);
+const write = (learnerId, text) => {
+  fs.mkdirSync(dir(), { recursive: true });
+  fs.writeFileSync(fileFor(learnerId), text);
+};
+const read = (learnerId) => yaml.load(fs.readFileSync(fileFor(learnerId), 'utf8'));
 
 const opened = (overrides = {}) => ({
-  learnerId: 'kid', bookId: '9780064400558', progressMode: 'page', pageCount: 184,
-  openedAt: '2026-08-01T10:00:00.000Z', entryId: 'e1', ...overrides,
+  learnerId: 'learner_a', isbn: '9780064400558', progressMode: 'page', pageCount: 184,
+  openedOn: '2026-08-01', idempotencyKey: 'e1', ...overrides,
 });
+
+/** A v1 file, the shape every real shelf is in until the migration runs. */
+const LEGACY_FILE = `items:
+  - itemId: learner_a:9780064400558:e1
+    bookId: '9780064400558'
+    progressMode: page
+    pageCount: 184
+    openedAt: '2026-08-01T10:00:00.000Z'
+    events:
+      - kind: started
+        at: '2026-08-01T10:00:00.000Z'
+        entryId: e1
+      - kind: progress
+        at: '2026-08-03T10:00:00.000Z'
+        page: 84
+        entryId: p1
+`;
 
 beforeEach(() => { root = fs.mkdtempSync(path.join(os.tmpdir(), 'booklog-')); });
 afterEach(() => { fs.rmSync(root, { recursive: true, force: true }); });
@@ -23,152 +49,257 @@ describe('YamlBookLogStore', () => {
     expect(() => new YamlBookLogStore({ logger: silentLogger })).toThrow(/configService/);
   });
 
-  it('opens a shelf item and reads it back', async () => {
+  it('opens a reading and reads it back, keyed by an opaque id', async () => {
     const subject = store();
-    const item = await subject.openItem(opened());
+    const reading = await subject.openReading(opened());
 
-    const items = await subject.listForLearner('kid');
-    expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({
-      itemId: item.itemId, bookId: '9780064400558', progressMode: 'page', pageCount: 184,
+    expect(reading.id).toMatch(/^rdg_/);
+    // The id names NOTHING. Not the learner, not the book, not an entry.
+    expect(reading.id).not.toContain('learner_a');
+    expect(reading.id).not.toContain('9780064400558');
+
+    const readings = await subject.listForLearner('learner_a');
+    expect(readings).toHaveLength(1);
+    expect(readings[0]).toMatchObject({
+      id: reading.id, learnerId: 'learner_a',
+      book: { isbn: '9780064400558', pageCount: 184 },
+      progressMode: 'page', status: 'reading', openedOn: '2026-08-01', finishedOn: null,
+      entries: [], revisions: [],
     });
-    expect(items[0].events).toEqual([expect.objectContaining({ kind: 'started' })]);
   });
 
-  it('writes under records/, per learner', async () => {
-    await store().openItem(opened());
-    const file = path.join(root, 'school/records/books', 'kid.yml');
-    expect(fs.existsSync(file)).toBe(true);
+  it('writes the v2 schema under records/, per learner', async () => {
+    await store().openReading(opened());
+    expect(fs.existsSync(fileFor('learner_a'))).toBe(true);
+    expect(read('learner_a').schema).toBe('school.book-log/v2');
+    expect(Array.isArray(read('learner_a').readings)).toBe(true);
   });
 
-  it('is idempotent on entryId — a retried open is not a second copy', async () => {
+  it('is idempotent on the open key — a retried open is not a second reading', async () => {
     const subject = store();
-    const first = await subject.openItem(opened());
-    const again = await subject.openItem(opened());
-    expect(again.itemId).toBe(first.itemId);
-    expect(await subject.listForLearner('kid')).toHaveLength(1);
+    const first = await subject.openReading(opened());
+    const again = await subject.openReading(opened());
+    expect(again.id).toBe(first.id);
+    expect(await subject.listForLearner('learner_a')).toHaveLength(1);
   });
 
-  it('opens a NEW item for a re-read after finishing — two reads are two reads', async () => {
+  it('opens a SECOND reading of the same book — two passes are two records', async () => {
     const subject = store();
-    const first = await subject.openItem(opened());
-    await subject.appendEvent({ itemId: first.itemId, kind: 'finished', at: '2026-08-09T10:00:00.000Z', entryId: 'f1' });
-
-    const second = await subject.openItem(opened({ entryId: 'e2', openedAt: '2026-09-01T10:00:00.000Z' }));
-
-    expect(second.itemId).not.toBe(first.itemId);
-    expect(await subject.listForLearner('kid')).toHaveLength(2);
-  });
-
-  it('appends progress events in order', async () => {
-    const subject = store();
-    const item = await subject.openItem(opened());
-    await subject.appendEvent({ itemId: item.itemId, kind: 'progress', at: '2026-08-03T10:00:00.000Z', page: 40, entryId: 'p1' });
-    await subject.appendEvent({ itemId: item.itemId, kind: 'progress', at: '2026-08-04T10:00:00.000Z', page: 84, entryId: 'p2' });
-
-    const [stored] = await subject.listForLearner('kid');
-    expect(stored.events.map((e) => e.page)).toEqual([undefined, 40, 84]);
-  });
-
-  it('is idempotent on a repeated finish — a duplicate is a duplicate BOOK', async () => {
-    const subject = store();
-    const item = await subject.openItem(opened());
-    const event = { itemId: item.itemId, kind: 'finished', at: '2026-08-09T10:00:00.000Z', entryId: 'f1' };
-    await subject.appendEvent(event);
-    await subject.appendEvent(event);
-
-    const [stored] = await subject.listForLearner('kid');
-    expect(stored.events.filter((e) => e.kind === 'finished')).toHaveLength(1);
-  });
-
-  it('carries source and externalId, so an Audiobookshelf session dedupes', async () => {
-    const subject = store();
-    const item = await subject.openItem(opened({ progressMode: 'minutes' }));
-    await subject.appendEvent({
-      itemId: item.itemId, kind: 'progress', at: '2026-08-03T10:00:00.000Z',
-      minutes: 25, source: 'abs', externalId: 'session-77', entryId: 'a1',
+    const first = await subject.openReading(opened());
+    await subject.updateReading({
+      learnerId: 'learner_a', readingId: first.id,
+      patch: { status: 'finished', finishedOn: '2026-08-09' },
     });
-    const [stored] = await subject.listForLearner('kid');
-    expect(stored.events.at(-1)).toMatchObject({ source: 'abs', externalId: 'session-77' });
+    const second = await subject.openReading(opened({ idempotencyKey: 'e2', openedOn: '2026-09-01' }));
+
+    expect(second.id).not.toBe(first.id);
+    const readings = await subject.listForLearner('learner_a');
+    expect(readings).toHaveLength(2);
+    // Same book, two histories — the case the old key could only express by accident.
+    expect(readings.map((r) => r.book.isbn)).toEqual(['9780064400558', '9780064400558']);
   });
 
-  it('refuses an event for an item that does not exist', async () => {
-    await expect(store().appendEvent({ itemId: 'nope', kind: 'progress', at: '2026-08-03T10:00:00.000Z', entryId: 'x' }))
-      .rejects.toThrow(/itemId/);
+  it('refuses to reuse an open key for a different book, and still dedupes the same one', async () => {
+    const subject = store();
+    const first = await subject.openReading(opened());
+    await expect(subject.openReading(opened({ isbn: '9780027746723' }))).rejects.toThrow(/different book/);
+    expect((await subject.openReading(opened())).id).toBe(first.id);
+  });
+
+  it('appends an addressable entry, and dedupes a retried one', async () => {
+    const subject = store();
+    const reading = await subject.openReading(opened());
+    const entry = await subject.appendEntry({
+      learnerId: 'learner_a', readingId: reading.id,
+      on: '2026-08-03', at: '2026-08-03T10:00:00.000Z', page: 84, source: 'panel', idempotencyKey: 'p1',
+    });
+    expect(entry.id).toMatch(/^ent_/);
+
+    const again = await subject.appendEntry({
+      learnerId: 'learner_a', readingId: reading.id,
+      on: '2026-08-03', at: '2026-08-03T11:00:00.000Z', page: 90, idempotencyKey: 'p1',
+    });
+    expect(again.id).toBe(entry.id);
+    const [stored] = await subject.listForLearner('learner_a');
+    expect(stored.entries).toHaveLength(1);
+    expect(stored.entries[0]).toMatchObject({ on: '2026-08-03', at: '2026-08-03T10:00:00.000Z', page: 84 });
+  });
+
+  it('gives every entry its own id, so two check-ins on one day are two rows', async () => {
+    const subject = store();
+    const reading = await subject.openReading(opened({ progressMode: 'check', pageCount: null }));
+    const a = await subject.appendEntry({ learnerId: 'learner_a', readingId: reading.id, on: '2026-08-03', idempotencyKey: 'c1' });
+    const b = await subject.appendEntry({ learnerId: 'learner_a', readingId: reading.id, on: '2026-08-03', idempotencyKey: 'c2' });
+    expect(a.id).not.toBe(b.id);
+  });
+
+  it('sets a state instead of appending an event that implies one', async () => {
+    const subject = store();
+    const reading = await subject.openReading(opened());
+    const updated = await subject.updateReading({
+      learnerId: 'learner_a', readingId: reading.id,
+      patch: { status: 'set-aside' },
+      revision: { id: 'rev_1', by: 'test-user', at: '2026-08-10T10:00:00.000Z', verb: 'set-aside', toldChild: false },
+    });
+    expect(updated.status).toBe('set-aside');
+    const [stored] = await subject.listForLearner('learner_a');
+    expect(stored.status).toBe('set-aside');
+    expect(stored.revisions).toHaveLength(1);
+    expect(stored.revisions[0]).toMatchObject({ verb: 'set-aside', by: 'test-user' });
+  });
+
+  it('corrects the book on a reading without touching its identity', async () => {
+    const subject = store();
+    const reading = await subject.openReading(opened());
+    const updated = await subject.updateReading({
+      learnerId: 'learner_a', readingId: reading.id, patch: { book: { isbn: '9780027746723', pageCount: 320 } },
+    });
+    expect(updated.id).toBe(reading.id);
+    expect(updated.book).toEqual({ isbn: '9780027746723', pageCount: 320 });
+  });
+
+  it('refuses a patch that would rewrite identity or evidence wholesale', async () => {
+    const subject = store();
+    const reading = await subject.openReading(opened());
+    for (const patch of [{ id: 'rdg_other' }, { learnerId: 'learner_b' }, { entries: [] }, { revisions: [] }]) {
+      await expect(subject.updateReading({ learnerId: 'learner_a', readingId: reading.id, patch }))
+        .rejects.toThrow(/patch/);
+    }
+  });
+
+  it('edits and removes one entry by its id', async () => {
+    const subject = store();
+    const reading = await subject.openReading(opened());
+    const keep = await subject.appendEntry({ learnerId: 'learner_a', readingId: reading.id, on: '2026-08-03', page: 40, idempotencyKey: 'p1' });
+    const typo = await subject.appendEntry({ learnerId: 'learner_a', readingId: reading.id, on: '2026-08-04', page: 250, idempotencyKey: 'p2' });
+
+    await subject.updateEntry({ learnerId: 'learner_a', readingId: reading.id, entryId: keep.id, patch: { page: 45 } });
+    await subject.deleteEntry({ learnerId: 'learner_a', readingId: reading.id, entryId: typo.id });
+
+    const [stored] = await subject.listForLearner('learner_a');
+    expect(stored.entries.map((entry) => entry.page)).toEqual([45]);
+  });
+
+  it('deletes a whole reading', async () => {
+    const subject = store();
+    const reading = await subject.openReading(opened());
+    await subject.deleteReading({ learnerId: 'learner_a', readingId: reading.id });
+    expect(await subject.listForLearner('learner_a')).toEqual([]);
+  });
+
+  it('moves a reading to the sibling who actually read it', async () => {
+    const subject = store();
+    const reading = await subject.openReading(opened());
+    await subject.appendEntry({ learnerId: 'learner_a', readingId: reading.id, on: '2026-08-03', page: 40, idempotencyKey: 'p1' });
+
+    const moved = await subject.moveReading({ learnerId: 'learner_a', readingId: reading.id, toLearnerId: 'learner_b' });
+
+    expect(moved.learnerId).toBe('learner_b');
+    // The id survives the move: it never named the learner in the first place.
+    expect(moved.id).toBe(reading.id);
+    expect(await subject.listForLearner('learner_a')).toEqual([]);
+    const [arrived] = await subject.listForLearner('learner_b');
+    expect(arrived).toMatchObject({ id: reading.id, learnerId: 'learner_b' });
+    expect(arrived.entries).toHaveLength(1);
+  });
+
+  it('refuses a move into a damaged destination rather than half-completing it', async () => {
+    const subject = store();
+    const reading = await subject.openReading(opened());
+    write('learner_b', 'this: [is: not: valid');
+
+    await expect(subject.moveReading({ learnerId: 'learner_a', readingId: reading.id, toLearnerId: 'learner_b' }))
+      .rejects.toBeInstanceOf(BookLogShelfUnreadableError);
+
+    // The source still holds it. A reading that lands nowhere is worse than one
+    // that did not move.
+    expect(await subject.listForLearner('learner_a')).toHaveLength(1);
+    expect(fs.readFileSync(fileFor('learner_b'), 'utf8')).toBe('this: [is: not: valid');
+  });
+
+  it('every write names its learner — no id is ever parsed for one', async () => {
+    const subject = store();
+    const reading = await subject.openReading(opened());
+    // An id that names nothing still writes to the right file, because the
+    // caller says which learner. Parsing the id was the defect.
+    await subject.appendEntry({ learnerId: 'learner_a', readingId: reading.id, on: '2026-08-03', page: 12, idempotencyKey: 'p1' });
+    expect((await subject.listForLearner('learner_a'))[0].entries).toHaveLength(1);
+
+    await expect(subject.appendEntry({ readingId: reading.id, on: '2026-08-03', idempotencyKey: 'p9' }))
+      .rejects.toThrow(/learnerId/);
   });
 
   it('refuses an unsafe learner id rather than writing outside the tree', async () => {
-    await expect(store().openItem(opened({ learnerId: '../escape' }))).rejects.toThrow(/learnerId/);
+    await expect(store().openReading(opened({ learnerId: '../escape' }))).rejects.toThrow(/learnerId/);
   });
 
   it('answers an empty shelf for a learner with no file — never throws on read', async () => {
     expect(await store().listForLearner('nobody')).toEqual([]);
   });
 
-  it('names a corrupt shelf instead of pretending the learner has no books', async () => {
-    const dir = path.join(root, 'school/records/books');
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, 'kid.yml'), 'this: [is: not: valid');
-    await expect(store().listForLearner('kid')).rejects.toBeInstanceOf(BookLogShelfUnreadableError);
-  });
+  describe('a v1 file', () => {
+    it('reads as v2 without being rewritten', async () => {
+      write('learner_a', LEGACY_FILE);
+      const readings = await store().listForLearner('learner_a');
 
-  it('refuses to replace a corrupt shelf and leaves its evidence byte-for-byte intact', async () => {
-    const dir = path.join(root, 'school/records/books');
-    fs.mkdirSync(dir, { recursive: true });
-    const file = path.join(dir, 'kid.yml');
-    const original = 'this: [is: not: valid';
-    fs.writeFileSync(file, original);
+      expect(readings).toHaveLength(1);
+      expect(readings[0]).toMatchObject({
+        id: 'learner_a:9780064400558:e1', learnerId: 'learner_a',
+        book: { isbn: '9780064400558', pageCount: 184 },
+        progressMode: 'page', status: 'reading', openedOn: '2026-08-01', idempotencyKey: 'e1',
+      });
+      expect(readings[0].entries).toHaveLength(1);
+      expect(readings[0].entries[0]).toMatchObject({ on: '2026-08-03', page: 84, idempotencyKey: 'p1' });
 
-    await expect(store().openItem(opened())).rejects.toBeInstanceOf(BookLogShelfUnreadableError);
-    expect(fs.readFileSync(file, 'utf8')).toBe(original);
-    expect(fs.readdirSync(dir)).toEqual(['kid.yml']);
-  });
+      // Reads do not mutate. A grown-up looking at a shelf must not migrate it.
+      expect(fs.readFileSync(fileFor('learner_a'), 'utf8')).toBe(LEGACY_FILE);
+    });
 
-  it('treats valid YAML with the wrong root shape as damaged data', async () => {
-    const dir = path.join(root, 'school/records/books');
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, 'kid.yml'), 'learner: kid\n');
-    await expect(store().listForLearner('kid')).rejects.toMatchObject({
-      code: 'BOOK_LOG_SHELF_UNREADABLE', status: 'corrupt', learnerId: 'kid',
+    it('maps its instants through the household day rule, not a UTC slice', async () => {
+      write('learner_a', LEGACY_FILE.replace("at: '2026-08-03T10:00:00.000Z'", "at: '2026-08-04T02:00:00.000Z'"));
+      const pacificDay = (iso) => new Date(Date.parse(iso) - 11 * 3_600_000).toISOString().slice(0, 10);
+      const [reading] = await store({ dayOf: pacificDay }).listForLearner('learner_a');
+      expect(reading.entries[0].on).toBe('2026-08-03');
+    });
+
+    it('keeps a copy of the bytes when a write finally converts it', async () => {
+      write('learner_a', LEGACY_FILE);
+      const subject = store();
+      const [before] = await subject.listForLearner('learner_a');
+      await subject.appendEntry({ learnerId: 'learner_a', readingId: before.id, on: '2026-08-05', page: 120, idempotencyKey: 'p2' });
+
+      expect(read('learner_a').schema).toBe('school.book-log/v2');
+      expect(fs.readFileSync(path.join(dir(), 'learner_a.v1.bak'), 'utf8')).toBe(LEGACY_FILE);
+      const [after] = await subject.listForLearner('learner_a');
+      expect(after.entries.map((entry) => entry.page)).toEqual([84, 120]);
     });
   });
-  it('gives two opens of the same book on the same day different itemIds', async () => {
-    const subject = store();
-    const a = await subject.openItem(opened({ entryId: 'e1', openedAt: '2026-08-25T10:00:00.000Z' }));
-    await subject.appendEvent({ itemId: a.itemId, kind: 'finished', at: '2026-08-25T11:00:00.000Z', entryId: 'f1' });
-    const b = await subject.openItem(opened({ entryId: 'e2', openedAt: '2026-08-25T10:00:00.000Z' }));
-    expect(b.itemId).not.toBe(a.itemId);
-    const items = await subject.listForLearner('kid');
-    expect(items.map((i) => i.events.map((e) => e.kind))).toEqual([['started', 'finished'], ['started']]);
-  });
 
-  it('itemId is derived from the started entryId, so it never depends on openedAt', async () => {
-    const item = await store().openItem(opened({ entryId: 'e-abc' }));
-    expect(item.itemId).toBe('kid:9780064400558:e-abc');
-  });
+  describe('damaged is loud', () => {
+    it('names a corrupt shelf instead of pretending the learner has no books', async () => {
+      write('learner_a', 'this: [is: not: valid');
+      await expect(store().listForLearner('learner_a')).rejects.toBeInstanceOf(BookLogShelfUnreadableError);
+    });
 
-  it('switches progressMode without touching a single event', async () => {
-    const subject = store();
-    const item = await subject.openItem(opened());
-    await subject.appendEvent({ itemId: item.itemId, kind: 'progress', at: '2026-08-03T10:00:00.000Z', page: 40, entryId: 'p1' });
-    const updated = await subject.setProgressMode({ itemId: item.itemId, progressMode: 'check' });
-    expect(updated.progressMode).toBe('check');
-    const [stored] = await subject.listForLearner('kid');
-    expect(stored.progressMode).toBe('check');
-    expect(stored.events.map((e) => e.page)).toEqual([undefined, 40]);
-  });
+    it('refuses to replace a corrupt shelf and leaves its evidence byte-for-byte intact', async () => {
+      const original = 'this: [is: not: valid';
+      write('learner_a', original);
 
-  it('refuses an unknown progressMode', async () => {
-    const subject = store();
-    const item = await subject.openItem(opened());
-    await expect(subject.setProgressMode({ itemId: item.itemId, progressMode: 'chapters' })).rejects.toThrow(/progressMode/);
-  });
+      await expect(store().openReading(opened())).rejects.toBeInstanceOf(BookLogShelfUnreadableError);
+      expect(fs.readFileSync(fileFor('learner_a'), 'utf8')).toBe(original);
+      expect(fs.readdirSync(dir())).toEqual(['learner_a.yml']);
+    });
 
-  it('refuses to reuse an entryId for a different book, but still dedupes the same book', async () => {
-    const subject = store();
-    const first = await subject.openItem(opened({ bookId: '9780064400558', entryId: 'e-shared' }));
-    await expect(subject.openItem(opened({ bookId: '9780027746723', entryId: 'e-shared' }))).rejects.toThrow(/different book/);
-    const again = await subject.openItem(opened({ bookId: '9780064400558', entryId: 'e-shared' }));
-    expect(again.itemId).toBe(first.itemId);
+    it('treats valid YAML with the wrong root shape as damaged data', async () => {
+      write('learner_a', 'learner: learner_a\n');
+      await expect(store().listForLearner('learner_a')).rejects.toMatchObject({
+        code: 'BOOK_LOG_SHELF_UNREADABLE', status: 'corrupt', learnerId: 'learner_a',
+      });
+    });
+
+    it('treats a v2 file whose readings are not a list as damaged data', async () => {
+      write('learner_a', 'schema: school.book-log/v2\nreadings: nope\n');
+      await expect(store().listForLearner('learner_a')).rejects.toBeInstanceOf(BookLogShelfUnreadableError);
+    });
   });
 });

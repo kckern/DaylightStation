@@ -717,6 +717,26 @@ describe('selectFeaturedShelfItem', () => {
     expect(selectFeaturedShelfItem([])).toEqual({ state: 'empty', featured: null, alsoReading: [] });
   });
 
+  it('selects over v2 readings too, from the reading id and the reading\'s own book', () => {
+    const rdg = (id, on, page, over = {}) => ({
+      id, learnerId: 'learner_a', book: { isbn: `isbn-${id}`, pageCount: 184 },
+      progressMode: 'page', status: 'reading', openedOn: '2026-09-01', finishedOn: null, revisions: [],
+      entries: [{ id: `ent_${id}`, on, at: `${on}T10:00:00.000Z`, page }], ...over,
+    });
+    const selection = selectFeaturedShelfItem([
+      rdg('rdg_a', '2026-09-05', 40),
+      rdg('rdg_b', '2026-09-01', 170),
+      rdg('rdg_c', '2026-09-03', 90),
+    ]);
+    expect(selection.state).toBe('reading');
+    expect(selection.featured.item.id).toBe('rdg_b');
+    expect(selection.alsoReading.map((entry) => entry.item.id)).toEqual(['rdg_a', 'rdg_c']);
+
+    // And a set-aside reading is still a state a child chose, not an absence.
+    const aside = selectFeaturedShelfItem([rdg('rdg_d', '2026-09-05', 12, { status: 'set-aside' })]);
+    expect(aside.state).toBe('set-aside');
+  });
+
   it('never throws on junk — a damaged log must not stop the page printing', () => {
     expect(selectFeaturedShelfItem(null)).toEqual({ state: 'empty', featured: null, alsoReading: [] });
     expect(selectFeaturedShelfItem([null, undefined, {}]))

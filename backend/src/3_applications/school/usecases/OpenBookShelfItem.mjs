@@ -2,7 +2,7 @@ import { ValidationError } from '#domains/core/errors/index.mjs';
 import { parseBookIdentifier } from '#domains/books/BookIdentifier.mjs';
 import { createBookRecord } from '#domains/books/BookRecord.mjs';
 import {
-  inferProgressMode, isDayKey, noonOf, isBackdateAllowed, isPlausiblePage, MAX_BACKDATE_DAYS,
+  inferProgressMode, isDayKey, isBackdateAllowed, isPlausiblePage, MAX_BACKDATE_DAYS, shelfItemView,
 } from '#domains/school/bookShelf.mjs';
 
 const WHERE = new Set(['starting', 'partway', 'finished']);
@@ -16,11 +16,12 @@ const WHERE = new Set(['starting', 'partway', 'finished']);
  * store writes on open, one for the optional first event — because the store
  * dedupes on entryId per item and a shared id drops the second event (review M1).
  *
- * `openedAt` is NOW for `starting` and `partway` — those are happening now.
- * For `finished` it is noon of the chosen day, so the whole item — the store's
- * `started` event and the `finished` event alike — lives on the day the book
- * was read, and credit goes to that day rather than to today (design §5 step
- * 3). Safe since `itemId` no longer derives from `openedAt`.
+ * `openedOn` IS ALWAYS TODAY, AND THAT IS THE FIX. v1 stamped a backdated
+ * finish's `openedAt` to the chosen day — deliberately falsifying when the item
+ * was opened — because one field had to carry both "when this happened" and
+ * "when this was recorded", and credit had to land on the day the book was
+ * read. v2 has both fields: the finish carries `finishedOn` and its entry
+ * carries `on`, so the day gets its credit while the opening stays truthful.
  *
  * "Not in the future" is judged on the HOUSEHOLD STUDY DAY — `dayOf(now)`,
  * the launcher's 4am-boundary day, injected the way `GetBookShelf` receives
@@ -95,25 +96,32 @@ export class OpenBookShelfItem {
       throw new ValidationError('That page number is too big for this book.');
     }
 
-    // A backdated finish lives ENTIRELY on the day it was finished. The store
-    // stamps the `started` event at `openedAt`. `started` is deliberately not
-    // reading evidence, but co-locating the item's opening and finish still
-    // gives the append-only record one honest historical origin instead of a
-    // misleading "opened today, finished last week" pair. `starting` and
-    // `partway` are genuinely happening now.
-    const openedAt = where === 'finished' ? noonOf(finishedOn) : now;
-    const item = await this.#bookLog.openItem({
-      learnerId, bookId: book.isbn13 ?? bookId, entryId, openedAt,
+    let reading = await this.#bookLog.openReading({
+      learnerId, isbn: book.isbn13 ?? bookId, idempotencyKey: entryId, openedOn: today,
       progressMode, pageCount: book.pageCount ?? null,
     });
 
     let event = null;
     if (where === 'partway') {
-      event = await this.#bookLog.appendEvent({ itemId: item.itemId, kind: 'progress', at: openedAt, page, entryId: progressEntryId });
+      event = await this.#bookLog.appendEntry({
+        learnerId, readingId: reading.id, on: today, at: now, page,
+        source: 'panel', idempotencyKey: progressEntryId,
+      });
     } else if (where === 'finished') {
-      event = await this.#bookLog.appendEvent({ itemId: item.itemId, kind: 'finished', at: noonOf(finishedOn), entryId: progressEntryId });
+      // The EVIDENCE first, then the decision. Interrupted between the two, the
+      // shelf under-reports a book as still being read — which a child can fix
+      // by finishing it again. The other order would claim a finish with
+      // nothing behind it.
+      event = await this.#bookLog.appendEntry({
+        learnerId, readingId: reading.id, on: finishedOn, at: now,
+        source: 'panel', idempotencyKey: progressEntryId,
+      });
+      reading = await this.#bookLog.updateReading({
+        learnerId, readingId: reading.id, patch: { status: 'finished', finishedOn },
+      });
     }
 
+    const item = { ...reading, ...shelfItemView(reading) };
     this.#logger.info?.('school.book-shelf.item-opened', {
       learnerId, bookId: item.bookId, where, progressMode: item.progressMode,
       metadata: resolved.status === 'ok' ? 'resolved' : 'pending',

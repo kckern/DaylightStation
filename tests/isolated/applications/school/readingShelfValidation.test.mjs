@@ -40,16 +40,18 @@ const CLOCK = () => new Date(NOW);
 const dayOf = (iso) => String(iso).slice(0, 10);
 
 /** The real shelf shape the audit was run against: a 192-page book. */
-const item = (over = {}) => ({
-  itemId: 'test-learner:b:e1', bookId: 'b', progressMode: 'page', pageCount: 192,
-  events: [{ kind: 'started', at: '2026-09-06T15:07:00.000Z' }], ...over,
+const item = ({ pageCount = 192, ...over } = {}) => ({
+  id: 'rdg_audited', learnerId: 'test-learner', book: { isbn: 'b', pageCount },
+  progressMode: 'page', status: 'reading', openedOn: '2026-09-06', finishedOn: null,
+  entries: [], revisions: [], ...over,
 });
 
-function progressStore(items = [item()]) {
+function progressStore(readings = [item()]) {
   return {
-    events: [],
-    async listForLearner() { return items; },
-    async appendEvent(event) { this.events.push(event); return event; },
+    entries: [], updates: [],
+    async listForLearner() { return readings; },
+    async appendEntry(entry) { this.entries.push(entry); return { id: 'ent_1', ...entry }; },
+    async updateReading(change) { this.updates.push(change); return { ...readings[0], ...change.patch }; },
   };
 }
 
@@ -59,9 +61,22 @@ const recorder = (store) => new RecordBookProgress({
 
 function openStore() {
   return {
-    events: [], opened: [],
-    async openItem(args) { this.opened.push(args); return { itemId: 'test-learner:b:e2', ...args }; },
-    async appendEvent(event) { this.events.push(event); return event; },
+    entries: [], opened: [], updates: [], reading: null,
+    async openReading(args) {
+      this.opened.push(args);
+      this.reading = {
+        id: 'rdg_opened', learnerId: args.learnerId, book: { isbn: args.isbn, pageCount: args.pageCount ?? null },
+        progressMode: args.progressMode, status: 'reading', openedOn: args.openedOn,
+        finishedOn: null, entries: [], revisions: [],
+      };
+      return this.reading;
+    },
+    async appendEntry(entry) { this.entries.push(entry); return { id: 'ent_1', ...entry }; },
+    async updateReading(change) {
+      this.updates.push(change);
+      this.reading = { ...this.reading, ...change.patch };
+      return this.reading;
+    },
   };
 }
 
@@ -82,17 +97,17 @@ describe('reading shelf — the page ceiling', () => {
     // refusing mispaginated editions, omnibus volumes and other printings.
     const store = progressStore([item({ pageCount: 184 })]);
     await recorder(store).execute({
-      learnerId: 'test-learner', itemId: 'test-learner:b:e1', kind: 'progress', page: 212, entryId: 'p1',
+      learnerId: 'test-learner', itemId: 'rdg_audited', kind: 'progress', page: 212, entryId: 'p1',
     });
-    expect(store.events[0]).toMatchObject({ page: 212 });
+    expect(store.entries[0]).toMatchObject({ page: 212 });
   });
 
   it('refuses the audited 250-of-192', async () => {
     const store = progressStore();
     await expect(recorder(store).execute({
-      learnerId: 'test-learner', itemId: 'test-learner:b:e1', kind: 'progress', page: 500, entryId: 'p1',
+      learnerId: 'test-learner', itemId: 'rdg_audited', kind: 'progress', page: 500, entryId: 'p1',
     })).rejects.toThrow(/too big for this book/);
-    expect(store.events).toHaveLength(0);
+    expect(store.entries).toHaveLength(0);
   });
 
   it('has NO ceiling when the book has no known length', async () => {
@@ -102,9 +117,9 @@ describe('reading shelf — the page ceiling', () => {
     // unbounded is the common path, not the edge case.
     const store = progressStore([item({ pageCount: null })]);
     await recorder(store).execute({
-      learnerId: 'test-learner', itemId: 'test-learner:b:e1', kind: 'progress', page: 9999, entryId: 'p1',
+      learnerId: 'test-learner', itemId: 'rdg_audited', kind: 'progress', page: 9999, entryId: 'p1',
     });
-    expect(store.events[0]).toMatchObject({ page: 9999 });
+    expect(store.entries[0]).toMatchObject({ page: 9999 });
   });
 
   it('applies on the partway door too, after metadata resolves', async () => {
@@ -121,7 +136,7 @@ describe('reading shelf — the page ceiling', () => {
       learnerId: 'test-learner', bookId: '9780000000002', entryId: 'e1', progressEntryId: 'e2',
       where: 'partway', page: 500,
     });
-    expect(store.events[0]).toMatchObject({ kind: 'progress', page: 500 });
+    expect(store.entries[0]).toMatchObject({ page: 500, on: TODAY });
   });
 });
 
@@ -131,16 +146,19 @@ describe('reading shelf — the backdate floor', () => {
 
     const store = progressStore();
     await recorder(store).execute({
-      learnerId: 'test-learner', itemId: 'test-learner:b:e1', kind: 'finished', finishedOn: day, entryId: 'f1',
+      learnerId: 'test-learner', itemId: 'rdg_audited', kind: 'finished', finishedOn: day, entryId: 'f1',
     });
-    expect(store.events[0]).toMatchObject({ kind: 'finished', at: `${day}T12:00:00.000Z` });
+    expect(store.entries[0]).toMatchObject({ on: day, at: NOW });
+    expect(store.updates[0].patch).toEqual({ status: 'finished', finishedOn: day });
 
     const opened = openStore();
     await opener(opened).execute({
       learnerId: 'test-learner', bookId: '9780000000002', entryId: 'e1', progressEntryId: 'e2',
       where: 'finished', finishedOn: day,
     });
-    expect(opened.events[0]).toMatchObject({ kind: 'finished', at: `${day}T12:00:00.000Z` });
+    expect(opened.entries[0]).toMatchObject({ on: day, at: NOW });
+    // The opening stays truthful: it happened today, whatever day the finish names.
+    expect(opened.opened[0].openedOn).toBe(TODAY);
   });
 
   it('refuses a finish 15 days back, on both doors', async () => {
@@ -148,22 +166,22 @@ describe('reading shelf — the backdate floor', () => {
 
     const store = progressStore();
     await expect(recorder(store).execute({
-      learnerId: 'test-learner', itemId: 'test-learner:b:e1', kind: 'finished', finishedOn: day, entryId: 'f1',
+      learnerId: 'test-learner', itemId: 'rdg_audited', kind: 'finished', finishedOn: day, entryId: 'f1',
     })).rejects.toThrow(/days ago/);
-    expect(store.events).toHaveLength(0);
+    expect(store.entries).toHaveLength(0);
 
     const opened = openStore();
     await expect(opener(opened).execute({
       learnerId: 'test-learner', bookId: '9780000000002', entryId: 'e1', progressEntryId: 'e2',
       where: 'finished', finishedOn: day,
     })).rejects.toThrow(/days ago/);
-    expect(opened.events).toHaveLength(0);
+    expect(opened.entries).toHaveLength(0);
   });
 
   it('refuses the audited 2026-08-19 stamp on a book opened 2026-09-06', async () => {
     const store = progressStore();
     await expect(recorder(store).execute({
-      learnerId: 'test-learner', itemId: 'test-learner:b:e1', kind: 'finished', finishedOn: '2026-08-19', entryId: 'f1',
+      learnerId: 'test-learner', itemId: 'rdg_audited', kind: 'finished', finishedOn: '2026-08-19', entryId: 'f1',
     })).rejects.toThrow(/days ago/);
   });
 
@@ -172,7 +190,7 @@ describe('reading shelf — the backdate floor', () => {
     // picked last month have different mistakes to fix.
     const store = progressStore();
     await expect(recorder(store).execute({
-      learnerId: 'test-learner', itemId: 'test-learner:b:e1', kind: 'finished', finishedOn: '2026-09-07', entryId: 'f1',
+      learnerId: 'test-learner', itemId: 'rdg_audited', kind: 'finished', finishedOn: '2026-09-07', entryId: 'f1',
     })).rejects.toThrow(/future/);
   });
 });

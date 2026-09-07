@@ -11,9 +11,26 @@ const UTC_DAY = (iso) => String(iso).slice(0, 10);
 
 function makeStore() {
   return {
-    opened: [], events: [],
-    async openItem(item) { this.opened.push(item); return { itemId: `kid:${item.bookId}:${item.entryId}`, ...item, events: [] }; },
-    async appendEvent(event) { this.events.push(event); return event; },
+    opened: [], entries: [], updates: [], reading: null,
+    async openReading(reading) {
+      this.opened.push(reading);
+      this.reading = {
+        id: `rdg_${reading.idempotencyKey}`, learnerId: reading.learnerId,
+        book: { isbn: reading.isbn, pageCount: reading.pageCount ?? null },
+        progressMode: reading.progressMode, status: 'reading',
+        openedOn: reading.openedOn, finishedOn: null, entries: [], revisions: [],
+      };
+      return this.reading;
+    },
+    async appendEntry(entry) {
+      this.entries.push(entry);
+      return { id: `ent_${entry.idempotencyKey}`, ...entry };
+    },
+    async updateReading(change) {
+      this.updates.push(change);
+      this.reading = { ...this.reading, ...change.patch };
+      return this.reading;
+    },
     async listForLearner() { return []; },
   };
 }
@@ -29,31 +46,34 @@ describe('OpenBookShelfItem', () => {
     const [uc, store] = useCase();
     const out = await uc.execute({ learnerId: 'kid', bookId: '9780064400558', entryId: 'e1', where: 'starting' });
     expect(out.item.progressMode).toBe('page');
-    expect(store.opened[0]).toMatchObject({ learnerId: 'kid', pageCount: 184, entryId: 'e1', openedAt: '2026-09-02T20:00:00.000Z' });
-    expect(store.events).toEqual([]);
+    expect(store.opened[0]).toMatchObject({ learnerId: 'kid', pageCount: 184, idempotencyKey: 'e1', openedOn: '2026-09-02' });
+    expect(store.entries).toEqual([]);
   });
 
-  it('partway: appends a progress event with its OWN entryId', async () => {
+  it('partway: appends an entry with its OWN retry key', async () => {
     const [uc, store] = useCase();
     await uc.execute({ learnerId: 'kid', bookId: '9780064400558', entryId: 'e1', where: 'partway', page: 84, progressEntryId: 'p1' });
-    expect(store.events[0]).toMatchObject({ kind: 'progress', page: 84, entryId: 'p1', at: '2026-09-02T20:00:00.000Z' });
+    expect(store.entries[0]).toMatchObject({
+      page: 84, idempotencyKey: 'p1', on: '2026-09-02', at: '2026-09-02T20:00:00.000Z',
+    });
   });
 
-  it('finished: the whole item lives on the chosen day — openedAt and the finish alike', async () => {
-    // "I already finished it last week" credits LAST WEEK, not today. The
-    // store stamps the started event at openedAt, so openedAt must carry the
-    // chosen day too, or today gets a check-in for a book read days ago.
+  it('finished: the chosen day gets the credit, and the opening stays truthful', async () => {
+    // v1 had to falsify `openedAt` to the finish day so credit landed there —
+    // one field carrying two facts. The entry's `on` carries the day now, so
+    // "opened today, finished last week" is simply what happened.
     const [uc, store] = useCase();
     await uc.execute({ learnerId: 'kid', bookId: '9780064400558', entryId: 'e1', where: 'finished', finishedOn: '2026-08-25', progressEntryId: 'f1' });
-    expect(store.opened[0].openedAt).toBe('2026-08-25T12:00:00.000Z');
-    expect(store.events[0]).toMatchObject({ kind: 'finished', entryId: 'f1', at: '2026-08-25T12:00:00.000Z' });
+    expect(store.opened[0].openedOn).toBe('2026-09-02');
+    expect(store.entries[0]).toMatchObject({ on: '2026-08-25', at: '2026-09-02T20:00:00.000Z', idempotencyKey: 'f1' });
+    expect(store.updates[0].patch).toEqual({ status: 'finished', finishedOn: '2026-08-25' });
   });
 
   it('starting and partway are still opened NOW', async () => {
     const [uc, store] = useCase();
     await uc.execute({ learnerId: 'kid', bookId: '9780064400558', entryId: 'e1', where: 'starting' });
     await uc.execute({ learnerId: 'kid', bookId: '9780064400558', entryId: 'e2', where: 'partway', page: 3, progressEntryId: 'p1' });
-    expect(store.opened.map((o) => o.openedAt)).toEqual(['2026-09-02T20:00:00.000Z', '2026-09-02T20:00:00.000Z']);
+    expect(store.opened.map((o) => o.openedOn)).toEqual(['2026-09-02', '2026-09-02']);
   });
 
   it('refuses a finish in the future', async () => {
@@ -71,12 +91,12 @@ describe('OpenBookShelfItem', () => {
       bookLog: makeStore(), resolveBook, clock: () => new Date('2026-09-03T00:30:00.000Z'), dayOf: dayOfIn('America/Los_Angeles'), logger: silent,
     });
     await expect(finish(pacific, '2026-09-03')).rejects.toThrow(/future/);
-    await expect(finish(pacific, '2026-09-02')).resolves.toMatchObject({ event: { kind: 'finished' } });
+    await expect(finish(pacific, '2026-09-02')).resolves.toMatchObject({ item: { status: 'finished', finishedOn: '2026-09-02' } });
     // 20:00Z on the 2nd is 06:00 on the 3rd in Brisbane — past the 4am boundary, "Today" is the 3rd.
     const east = new OpenBookShelfItem({
       bookLog: makeStore(), resolveBook, clock: () => new Date('2026-09-02T20:00:00.000Z'), dayOf: dayOfIn('Australia/Brisbane'), logger: silent,
     });
-    await expect(finish(east, '2026-09-03')).resolves.toMatchObject({ event: { kind: 'finished' } });
+    await expect(finish(east, '2026-09-03')).resolves.toMatchObject({ item: { status: 'finished', finishedOn: '2026-09-03' } });
   });
 
   it('requires dayOf — the study day is never guessed from the clock alone', () => {
@@ -122,9 +142,9 @@ describe('OpenBookShelfItem', () => {
       sources: ['unresolved-isbn'],
     });
     expect(store.opened[0]).toMatchObject({
-      bookId: '9780027746723', progressMode: 'check', pageCount: null,
+      isbn: '9780027746723', progressMode: 'check', pageCount: null,
     });
-    expect(store.events[0]).toMatchObject({ kind: 'finished', entryId: 'f1' });
+    expect(store.entries[0]).toMatchObject({ on: '2026-09-01', idempotencyKey: 'f1' });
   });
 
   it('does not turn a provider outage into an unresolved placeholder', async () => {
@@ -157,6 +177,6 @@ describe('OpenBookShelfItem', () => {
     });
     expect(out.item.progressMode).toBe('page');
     expect(out.item.pageCount).toBeNull();
-    expect(store.events[0]).toMatchObject({ kind: 'progress', page: 84 });
+    expect(store.entries[0]).toMatchObject({ page: 84, on: '2026-09-02' });
   });
 });
