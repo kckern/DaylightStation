@@ -36,6 +36,9 @@ subject — transport (`play`, `pause`, `next`, `prev`, `rewind`, `restart`),
 |------|------|---------|
 | `back` | `svg/back.svg` | the launch card's "Go back" |
 | `piano` | `svg/piano.svg` | the launch card's "Learn at the piano" |
+| `book-starting` | `svg/book-starting.svg` | the reading shelf's "I'm just starting it" door (SVG Repo 521767, next) |
+| `book-partway` | `svg/book-partway.svg` | the reading shelf's "I'm partway through" door (SVG Repo 521655, fast-forward) |
+| `book-finished` | `svg/book-finished.svg` | the reading shelf's "I already finished it" door (SVG Repo 521562, circle-checkmark) |
 
 ⚠️ **Normalise to the contract, don't just drop the download in.** `piano.svg`
 arrived from SVG Repo carrying `<style>.st0{fill:currentColor}</style>` and a
