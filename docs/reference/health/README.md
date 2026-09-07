@@ -67,6 +67,8 @@ point.
   prompt in a user-message array before calling `IAIGateway.chat`. The Whisper
   transcription request remains multipart. A regression test exercises the meal
   service through the real OpenAI adapter and inspects the outgoing request body.
+  The deferred Web Nutribot proxy forwards capture, callbacks, pending reads and
+  read-only meal suggestions to the initialized adapter.
 - **Context:** Today stays mounted across tabs to preserve drafts, capture retries
   and scroll. Hidden Today stops polling; leaving during a recording stops and
   submits that recording to its original target. Closing the app discards unsent
