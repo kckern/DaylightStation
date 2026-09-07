@@ -600,6 +600,10 @@ export class BuildAgenda {
         }
         : {
           subject: subjectLabel,
+          // "Independent study" here is the GENERIC fallback: this work has no
+          // course at all. It is no longer the book-log shelf's name — that is
+          // "Reading log" (`bookLogContext`) and arrives through the branch
+          // above. The two words mean different things on the same page.
           course: courseDisplay({ work, enrollment, fallback: entry.courseId ?? 'Independent study' }).title,
           unit: moduleLabel.taxonomyLabel,
           lesson: entry.title,
