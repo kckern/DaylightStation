@@ -192,12 +192,42 @@ curl -s {env.log_store_url}/select/logsql/query \
   -d 'query="piano.device.effect" AND _time:1h' -d 'limit=20'
 ```
 
-An effect tap now sends that one effect only. Type numbers must also be ones GM2
-defines — reverb 0 Small Room, 1 Medium Room, 2 Large Room, 3 Medium Hall,
-4 Large Hall, 8 Plate (5–7 do not exist, and the picker offered 5 as "Large Hall"
-until 2026-09-06); chorus 0–3 Chorus 1–4, 4 FB Chorus, 5 Flanger. An undefined
-number is discarded silently, which reads as one dead button in an otherwise
-working row.
+An effect tap now sends that one effect only.
+
+### …but this piano ignores effect type entirely
+
+Fixing the addressing did not make the type pickers work, because **the MDG-400
+has one fixed reverb algorithm and one fixed chorus algorithm.** Only the send
+level (CC91 / CC93) is addressable, and it does work.
+
+Established by a controlled A/B on the instrument, 2026-09-06: send level pinned
+at CC91=127, voice reset to Acoustic Grand, staccato notes so the tail was
+exposed, Small Room vs Plate alternated A/B/A/B through three transports —
+
+1. GM2 Global Parameter Control, as the app shipped it
+2. the same, after **GM2 System On** (`F0 7E 7F 09 03 F7`)
+3. the **Roland GS** reverb macro at `40 01 30`, after a GS Reset
+
+All twelve notes decayed identically. The device profile now carries
+`typeAddressable: false`, which hides both type rows and stops the type message.
+
+**The claim that "sysex works; cc is ignored by this unit" is wrong about type,
+and it came from a confounded experiment.** Every candidate in
+`effectProbe/candidates.js` compares a dry arm at level 0 against a wet arm
+carrying a type message *and* level 127:
+
+```js
+dry: [GM2_SYSTEM_ON, PIANO,                   cc(91, 0)  ],
+wet: [GM2_SYSTEM_ON, PIANO, gm2ReverbType(4), cc(91, 127)],
+```
+
+That measures the level CC and can say nothing about type. **Any future effect
+probe must hold level constant and vary only the algorithm** — a tail/decay
+metric cannot otherwise tell a type change from a level change.
+
+GM2 numbering, kept for a device that does honour type: reverb 0 Small Room,
+1 Medium Room, 2 Large Room, 3 Medium Hall, 4 Large Hall, 8 Plate (5–7 do not
+exist); chorus 0–3 Chorus 1–4, 4 FB Chorus, 5 Flanger.
 
 The APK heartbeat already carries the verdict, once a minute.
 
