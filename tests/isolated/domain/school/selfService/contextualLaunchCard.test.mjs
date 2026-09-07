@@ -201,3 +201,54 @@ describe('contextual launch card lesson media', () => {
     expect(cardWith({ id: 'plex:1', title: 'L', description: short }).description).toBe(short);
   });
 });
+
+describe('a card with nothing to decide', () => {
+  // The reading shelf resolves to one button, "Open Reading", over a "Go back"
+  // — asked of a child who just spelled out the code that means exactly that.
+  const programCard = (extra = {}) => buildContextualLaunchCard({
+    resolution: { kind: 'program', programId: 'book-log', unit: { title: 'Reading log' } },
+    learner: { id: 'learner_a', displayName: 'Alpha' },
+    subjectId: 'english',
+    ...extra,
+  });
+
+  it('says to open a lone program action without asking first', () => {
+    const card = programCard();
+    const work = card.actions.filter((a) => a.kind !== 'exit');
+    expect(work).toHaveLength(1);
+    expect(work[0].kind).toBe('program');
+    expect(card.presentation.openImmediately).toBe(true);
+  });
+
+  it('never skips a card that is still asking whose paper this is', () => {
+    // `confirmIdentity` exists to ask before anything records against a child.
+    // Skipping the card would skip the question, so the two are exclusive.
+    const card = programCard({ confirmIdentity: true });
+    expect(card.presentation.confirmIdentity).toBe(true);
+    expect(card.presentation.openImmediately).toBeUndefined();
+  });
+
+  it('leaves a printing card its tap — the side effect is why it has one', () => {
+    // Auto-running this would fire a thermal printer at a child who typed
+    // their code to see what was next.
+    const card = buildContextualLaunchCard({
+      resolution: { kind: 'move', state: { state: 'created' }, unit: { unitId: 'u1', subject: 'math', bank: 'b1' } },
+      learner: { id: 'learner_a', displayName: 'Alpha' },
+      subjectId: 'math',
+      options: { bankPrintable: true },
+    });
+    const work = card.actions.filter((a) => a.kind !== 'exit');
+    expect(work.map((a) => a.kind)).not.toContain('program');
+    expect(card.presentation.openImmediately).toBeUndefined();
+  });
+
+  it('leaves a card with no action at all alone', () => {
+    const card = buildContextualLaunchCard({
+      resolution: { kind: 'served', subjectLabel: 'math' },
+      learner: { id: 'learner_a', displayName: 'Alpha' },
+      subjectId: 'math',
+    });
+    expect(card.actions.filter((a) => a.kind !== 'exit')).toHaveLength(0);
+    expect(card.presentation.openImmediately).toBeUndefined();
+  });
+});

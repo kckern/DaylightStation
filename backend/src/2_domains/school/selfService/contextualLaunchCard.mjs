@@ -208,9 +208,46 @@ export function buildContextualLaunchCard({
       // not a lock; anyone can tap yes. At a keypad with a soft, self-declared
       // identity there is no stronger honest claim to make.
       ...(confirmIdentity ? { confirmIdentity: true } : {}),
+      // NOTHING TO DECIDE — so do not ask.
+      //
+      // A reading-shelf code resolves to a card whose entire content is one
+      // button reading "Open Reading", above a "Go back". The child typed the
+      // code that means exactly that; the card asks them to confirm the
+      // sentence they just spelled out in digits. That is a tap and a screen
+      // for no decision, on a panel a six-year-old is standing at.
+      //
+      // The claim this flag makes is narrow, and it is NOT "this mounts
+      // locally". `useSelfService` records why that distinction matters: a
+      // `program` action can dispatch to another room, and only `outcome:
+      // 'mount'` says which. This says the CARD has nothing on it to choose
+      // between — one action, and running it is what typing the code asked
+      // for. Whatever the action then answers is unchanged.
+      //
+      // Restricted to `program` on purpose. A `print` card also carries one
+      // button, and auto-running it would fire a thermal printer at a child
+      // who typed their code to see what was next — the side effect is the
+      // reason that one keeps its tap.
+      //
+      // Never set alongside `confirmIdentity`: that flag exists to ask whose
+      // paper this is before anything records against them, and skipping the
+      // card would skip the question. The friction is the point there.
+      ...(openImmediately(actions, confirmIdentity) ? { openImmediately: true } : {}),
     },
     actions,
   };
+}
+
+/**
+ * A card worth skipping: one thing to do, no side effect in doing it, and no
+ * identity question outstanding.
+ *
+ * `offeredCard` returns `[work, EXIT]` or `[EXIT]`, so "one action" means one
+ * action that is not the way out.
+ */
+function openImmediately(actions, confirmIdentity) {
+  if (confirmIdentity) return false;
+  const work = (Array.isArray(actions) ? actions : []).filter((a) => a?.kind !== 'exit');
+  return work.length === 1 && work[0]?.kind === 'program';
 }
 
 export default buildContextualLaunchCard;
