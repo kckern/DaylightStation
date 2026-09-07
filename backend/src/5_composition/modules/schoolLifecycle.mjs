@@ -1514,6 +1514,14 @@ export async function createSchoolLifecycle({
     // this one still read today — the count would never rise and nothing would
     // error. One instance is what makes that impossible.
     storyTimeLauncher: launchers.get(STORY_TIME_PROGRAM_ID) ?? null,
+    // The book-log launcher by name, for the same "one instance" reason as
+    // `storyTimeLauncher` above. The teacher's reading verbs need it to answer
+    // ONE question — what window does this child's obligation count over — so
+    // that re-dating a day out of the counted week can be recognised as making
+    // the record smaller. A second launcher with its own timezone would draw
+    // that window a day off, and the child would be told about a correction
+    // that changed nothing (or, worse, not told about one that did).
+    bookLogLauncher,
     // The SAME gate `gradeSubmission`/`closeSessionOutcome`/`resolveReviewItem`/
     // `setAssignments` already assert through — exposed so `app.mjs` can wire
     // Task 6's `CloseAcademicPeriod` (a parent-only write, same rule) without
