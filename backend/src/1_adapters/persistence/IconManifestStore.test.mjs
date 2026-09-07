@@ -9,7 +9,14 @@ const silent = { debug() {}, info() {}, warn() {}, error() {} };
 
 /** A media tree plus a manifest describing it, both real files on disk. */
 function fixture(manifest, { files = ['img/nutrition/icons/vegetables/carrot.png'] } = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'icon-manifest-'));
+  // REALPATH THE ROOT, or every absolute-path assertion below fails on macOS
+  // only. `os.tmpdir()` there is `/var/folders/...`, and `/var` is a symlink to
+  // `/private/var` — while the store deliberately realpaths before checking
+  // containment (that is the fix for a symlink reaching outside the media
+  // root). So the store honestly answers `/private/var/...` and a test holding
+  // the raw tmpdir compares two spellings of the same file. Linux has no such
+  // symlink, which is why this passed there and only there.
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'icon-manifest-')));
   const mediaRoot = path.join(root, 'media');
   for (const rel of files) {
     const full = path.join(mediaRoot, rel);
@@ -160,7 +167,7 @@ describe('IconManifestStore', () => {
     describe('symlinks out of the media root', () => {
       /** A media tree with `outside/` next to it, holding the secret. */
       function linkFixture(manifest) {
-        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'icon-symlink-'));
+        const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'icon-symlink-')));
         const mediaRoot = path.join(root, 'media');
         const outside = path.join(root, 'outside');
         fs.mkdirSync(path.join(mediaRoot, 'img/nutrition/icons/vegetables'), { recursive: true });
@@ -263,7 +270,7 @@ describe('IconManifestStore', () => {
 
 describe('IconManifestStore over the real installed manifest shape', () => {
   it('parses a manifest written as YAML by the curation script', () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'icon-manifest-yaml-'));
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'icon-manifest-yaml-')));
     const mediaRoot = path.join(root, 'media');
     fs.mkdirSync(path.join(mediaRoot, 'img/nutrition/icons/tea'), { recursive: true });
     fs.writeFileSync(path.join(mediaRoot, 'img/nutrition/icons/tea/matcha.png'), 'x');
@@ -291,7 +298,7 @@ describe('IconManifestStore.resolveRendered', () => {
   }
 
   async function renderFixture() {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'icon-render-'));
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'icon-render-')));
     const mediaRoot = path.join(root, 'media');
     const cacheDir = path.join(root, 'data/household/apps/health/icon-cache');
     const rel = 'img/nutrition/icons/vegetables/carrot.png';
@@ -357,7 +364,7 @@ describe('IconManifestStore.resolveRendered', () => {
   // decode-failure fallback. So it is given a real cache directory and a
   // source that is not an image.
   it('an undecodable source falls back to serving the original, never a 404', async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'icon-render-bad-'));
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'icon-render-bad-')));
     const mediaRoot = path.join(root, 'media');
     const rel = 'img/nutrition/icons/vegetables/carrot.png';
     fs.mkdirSync(path.dirname(path.join(mediaRoot, rel)), { recursive: true });
@@ -581,7 +588,7 @@ describe('IconManifestStore.warmCache', () => {
 describe('IconManifestStore refuses to ship an unrendered multi-megabyte source', () => {
   async function sourceFixture({ bytes, cacheWritable, decodable = true }) {
     const { Jimp } = await import('jimp');
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'icon-refuse-'));
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'icon-refuse-')));
     const mediaRoot = path.join(root, 'media');
     const rel = 'img/nutrition/icons/vegetables/big.png';
     fs.mkdirSync(path.dirname(path.join(mediaRoot, rel)), { recursive: true });
