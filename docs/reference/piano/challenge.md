@@ -119,7 +119,17 @@ rotation index, then resolution selects the concrete instance.
 counts as success. Keep those choices independent. In particular:
 
 - `prompt: recall` hides the answer initially; `hints: after-stall` may reveal it
-  only after the learner stalls.
+  only after the learner stalls. It hides the ANSWER, never the ASK: the recall
+  stage draws the ask line itself at full size, because that name is the whole
+  flashcard. (It used to draw only the words "From memory" over an otherwise
+  empty card, with the ask left in the header's small breadcrumb — a blank
+  screen to anyone not yet reading fluently.)
+- **`recall` is a reading rung.** Being told "play a C major chord" and finding
+  the notes yourself presumes both the vocabulary and the reading. Do not point
+  a pre-reader at one; give them `prompt: follow` and a lit key. A preschooler
+  put on a recall chord rung passed it twice by accident and learned nothing
+  from either pass — the household config carries the corrected entry and the
+  reasoning beside it.
 - `notationStyle: engraved` uses staff engraving even in `timing: free`; free
   means unpaced, not unnotated.
 - `grading.pitchClass: true` accepts the requested chord in any octave or
