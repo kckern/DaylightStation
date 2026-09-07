@@ -363,6 +363,12 @@ export class BookLogProgramLauncher {
   #unreadable() {
     return {
       enrolled: null, error: true, doneToday: false, terminal: false,
+      // THE SHELF STILL KNOWS ITS OWN NAME. Without a context this branch
+      // answered a card with `course: null` — the blank-artwork case the
+      // poster route exists to refuse, and the same gap the unenrolled branch
+      // above was fixed for. A shelf nobody can read is still the reading log;
+      // what is unknown is what is ON it, and that is what `error` says.
+      context: bookLogContext(),
       progressLabel: null, score: null, obligationProgress: null,
     };
   }
