@@ -155,7 +155,7 @@ describe('reading code — a learner with no book-log enrollment', () => {
     // is the blank-artwork case the poster route exists to refuse.
     const { card } = await resolverFor(unenrolledProjection()).resolve({ code: CODE });
     expect(card.context?.taxonomy?.course?.id).toBe(`program:${BOOK_LOG_PROGRAM_ID}`);
-    expect(card.context?.taxonomy?.course?.title).toBe('Independent study');
+    expect(card.context?.taxonomy?.course?.title).toBe('Reading log');
   });
 
   it('offers a button that actually opens it — not a card with only a way out', async () => {
@@ -194,7 +194,7 @@ describe('reading code — an ENROLLED learner is unchanged', () => {
       status: {
         enrolled: true, error: false, doneToday: true, terminal: false, reopenable: true,
         context: {
-          course: { id: `program:${BOOK_LOG_PROGRAM_ID}`, title: 'Independent study' },
+          course: { id: `program:${BOOK_LOG_PROGRAM_ID}`, title: 'Reading log' },
           lesson: { id: BOOK_LOG_SHELF_UNIT_ID, title: 'Reading' },
         },
         progressLabel: null, score: null,

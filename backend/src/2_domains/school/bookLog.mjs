@@ -57,7 +57,7 @@ export const DEFAULT_BOOK_LOG_TITLE = 'Reading';
  * the launcher's `status()`; an UNENROLLED learner has no enrollment, no plan
  * entry and therefore no launcher status, so their card synthesizes the same
  * context from here. Two hand-written copies of these literals would let one
- * child's Reading card say "Independent study" and another's say nothing.
+ * child's Reading card say "Reading log" and another's say nothing.
  *
  * `program:book-log` is a SCHEME, not a course id — the same trick
  * `piano-course` uses with `plex:<ratingKey>`. It is deliberately NOT a
@@ -65,15 +65,19 @@ export const DEFAULT_BOOK_LOG_TITLE = 'Reading';
  * refuses, and enrollment, progress and the gradebook would all try to believe
  * in it.
  *
- * "Independent study" is not invented copy — it is the wording the printed
- * agenda already uses for this row.
+ * The course title is "Reading log" — the shelf's own name, printed and spoken
+ * the same way everywhere. It used to read "Independent study", which is still
+ * the generic "this work has no course" fallback elsewhere in the agenda
+ * (`BuildAgenda.mjs`, `CloseSessionOutcome.mjs`,
+ * `IssueCorrectedResultReceipt.mjs`); borrowing that phrase for a named program
+ * made the shelf indistinguishable from any uncoursed row on the page.
  *
  * @param {string} [title] the enrollment's title, when there is an enrollment
  * @returns {{course: {id: string, title: string}, lesson: {id: string, title: string}}}
  */
 export function bookLogContext(title = DEFAULT_BOOK_LOG_TITLE) {
   return {
-    course: { id: `program:${BOOK_LOG_PROGRAM_ID}`, title: 'Independent study' },
+    course: { id: `program:${BOOK_LOG_PROGRAM_ID}`, title: 'Reading log' },
     lesson: { id: BOOK_LOG_SHELF_UNIT_ID, title: title || DEFAULT_BOOK_LOG_TITLE },
   };
 }
