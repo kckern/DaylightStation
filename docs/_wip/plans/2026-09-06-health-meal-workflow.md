@@ -78,15 +78,32 @@ expect(after.filter(row => row.kind !== 'group').map(row => row.calories))
 - [x] Run Playwright using fixtures and temporary persisted data: Dinner after 18:00, meal boundary, selected/manual/smart/voice grouping, potatoes amendment, ambiguous choices, Undo, slow analysis and failure retry.
 - [x] Inspect desktop/mobile screenshots and numeric geometry; verify inline units, integer summaries, nine density colors and `0.0`, cap-height centered triangle, dimmed children, compact two columns.
 - [x] Review complete diff against each of the seven requirements. Record evidence in this plan; unfinished evidence is not completion.
-- [ ] Update Health reference docs. Merge preserving unrelated work, run deploy gate separately before and after build, deploy and verify served build/API health. Mark goal complete only when all requirements are proven.
+- [x] Update Health reference docs and merge preserving unrelated work. Feature commit `51787178a`; combined main commit `f5b2a1d7c`. Normal architecture, UI, link, parse, SCSS and composition hooks pass.
+- [x] Run deploy gate separately before and after build, deploy and verify served build/API health. Mark goal complete only when all requirements are proven.
 
 
 ## Verification evidence
 
-- Combined frontend/shared/affected backend verification: Initial combined run: 97 files, 939 tests pass. Final expanded run: 943 tests, with six legacy capture-shim failures corrected by preserving the hidden toolbar callback; the affected viewed-date suite then passed all nine tests. All other 937 expanded-run tests passed.
+- Combined frontend/shared/affected backend verification: final fresh run passes all 97 files and 943 tests. This includes the corrected legacy capture shim and the final recording-navigation retry regressions.
 - Actual Chromium summary geometry at 390, 800 and 1440px: inline units, equal number sizes, contained cards, compact height.
 - Temporary YAML command regressions: exact grouping/membership/ungroup snapshots, totals/precision, intervening edit rejection, serving and gram scaling, manual-field protections, recovered operation response/Undo.
 - Contextual voice pipeline regressions: saved bytes before transcription, canonical selected meal context/recent utterances, potatoes amendment without duplicate broth, selected clarification, durable replay without retranscription/reinterpretation.
 - Browser journey `tests/live/flow/health/meal-workflow.verify.mjs`: manual grouping, editable smart preview before atomic application, ungroup, Undo, voice amendment/grouping, choices, slow stripes, failed recording retry with same operation ID, one Dinner mic and no unsolicited catalog. All API routes intercepted; temporary datastore only.
 - UI lifecycle regressions: automatic meal transitions preserve food, active/failed recordings pin their section, date navigation uses original context, saved-audio retry retains selected foods and renders choices.
 - Display-token audit passes without raising baselines. No unrelated workspace files changed.
+
+## Requirement coverage audit
+
+| Requirement | Direct evidence |
+|---|---|
+| Immediate meal logging | LogTable clock/retirement tests, recording pin tests, browser Dinner mic and plus flow |
+| Contextual voice | MealInstructionService and WebNutribotAdapter tests inspect canonical selected/full-meal context and recent logs; browser potatoes amendment/choices/Undo |
+| Grouping | MealFoodCommands temporary-ledger tests prove membership, ungroup, exact Undo and totals; browser manual/smart/voice flows |
+| Analysis feedback | CaptureProgress fake-clock tests, concurrent task tests, browser slow completion and failure/retry |
+| Food rows | DensityBadge/EntryRow/layout tests and desktop/mobile screenshots verify nine colors, decimal density, identity order, triangle and compact children |
+| Daily summary | EquationStrip formatting and browser geometry tests prove integer display, inline units, equal sizes and contained cards; datastore tests preserve precision |
+| Complete flows | 943 passing affected tests plus the isolated Chromium journey using real command services and a temporary YAML datastore |
+
+Production image built successfully for `f5b2a1d7c`. Pre-build gate passed; initial post-build gate detected School Portal activity, so no restart was attempted at that point.
+
+The post-build gate subsequently cleared and deployment completed. Served build metadata matches `f5b2a1d7c`; the container is healthy and Health context returns all nine density levels. The complete isolated browser journey passes against the deployed bundle with no page errors. No Health/Nutribot errors appeared in the post-startup log query. Test requests used temporary data and intercepted APIs. The verification record is a documentation-only follow-up to the deployed source commit.
