@@ -2,10 +2,11 @@
  * ReadingShelfPanel — a grown-up's view of one child's reading shelf
  * (teacher reading admin design §2 and §6).
  *
- * READ ONLY, on purpose. It answers what this child is reading, how much, and
- * how consistently; nothing on it writes. The edit surface (design §3) lands
- * against a storage model that does not exist yet, and drawing its controls
- * now would mean drawing them twice.
+ * Still the observation half of the surface: it answers what this child is
+ * reading, how much, and how consistently, and NOTHING on it writes. Each row
+ * carries one control, and it opens that reading's detail — where every verb
+ * lives, so the list stays scannable and no destructive control sits under a
+ * browsing thumb.
  *
  * It reads the SAME view the child's own panel reads — one `GetBookShelf`,
  * server-computed projections — so the two surfaces cannot disagree about a
@@ -102,7 +103,7 @@ function Bar({ percent, label }) {
   );
 }
 
-function Reading({ item }) {
+function Reading({ item, onOpen }) {
   const presentation = presentBook(item);
   const projection = item.projection ?? {};
   const showBar = statusOf(item) === 'reading'
@@ -119,6 +120,16 @@ function Reading({ item }) {
         {showBar && <Bar percent={projection.percent} label={`${Math.round(projection.percent)}% read`} />}
       </div>
       <p className="teacher-reading__row-progress">{progressLabel(item)}</p>
+      {onOpen && (
+        <button
+          type="button"
+          className="teacher-reading__row-open"
+          aria-label={`Open ${presentation.title}`}
+          onClick={() => onOpen(item.itemId)}
+        >
+          ⋯
+        </button>
+      )}
     </li>
   );
 }
@@ -147,7 +158,24 @@ function ObligationStrip({ obligation, counts }) {
 /** A body that is not a shelf is not an empty shelf. */
 const isShelf = (data) => Boolean(data) && typeof data === 'object' && Array.isArray(data.items);
 
-export default function ReadingShelfPanel({ learnerId }) {
+/**
+ * @param {object} props
+ * @param {string} props.learnerId
+ * @param {number} props.refreshToken - bumped by the workspace after a
+ *   correction, so the shelf re-reads instead of showing counts the edit
+ *   already changed.
+ * @param {Function|null} props.onOpenReading - opens one reading's detail.
+ *   Absent means a read-only shelf, which is what an install with no edit
+ *   surface gets.
+ * @param {Function|null} props.onShelf - reports `{state, obligation, studyDay}`
+ *   upward as the read settles. The workspace needs BOTH: the state, because a
+ *   shelf that cannot be read must lock the edit surface entirely (design §6),
+ *   and the obligation, because the window it is measured over is what decides
+ *   whether re-dating a day takes it off the child's total.
+ */
+export default function ReadingShelfPanel({
+  learnerId, refreshToken = 0, onOpenReading = null, onShelf = null,
+}) {
   // usePanelFetch reports the STATE, not the server's words; the sentence a
   // refusal came with is kept here so the error can name what happened
   // instead of saying only that something did.
@@ -171,7 +199,7 @@ export default function ReadingShelfPanel({ learnerId }) {
   }, [learnerId]);
 
   const { state, data, retry } = usePanelFetch(fetcher, {
-    deps: [learnerId],
+    deps: [learnerId, refreshToken],
     isEmpty: (payload) => isShelf(payload) && payload.items.length === 0,
     notFoundAs: 'unavailable',
     panel: 'reading-shelf',
@@ -186,6 +214,18 @@ export default function ReadingShelfPanel({ learnerId }) {
     }
     return tally;
   }, [items]);
+
+  // Held in a ref so a caller passing an inline arrow does not re-run the
+  // report on every render of the workspace above.
+  const reportRef = useRef(onShelf);
+  reportRef.current = onShelf;
+  useEffect(() => {
+    reportRef.current?.({
+      state,
+      obligation: isShelf(data) ? data.obligation ?? null : null,
+      studyDay: isShelf(data) ? data.studyDay ?? null : null,
+    });
+  }, [state, data]);
 
   useEffect(() => { teacherLog.read('reading-opened', { learnerId }); }, [learnerId]);
   useEffect(() => {
@@ -211,7 +251,9 @@ export default function ReadingShelfPanel({ learnerId }) {
             <section key={group.key} className="teacher-reading__group">
               <h3 className="teacher-reading__group-title">{group.title}</h3>
               <ul className="teacher-reading__list">
-                {rows.map((item) => <Reading key={item.itemId} item={item} />)}
+                {rows.map((item) => (
+                  <Reading key={item.itemId} item={item} onOpen={onOpenReading} />
+                ))}
               </ul>
             </section>
           );

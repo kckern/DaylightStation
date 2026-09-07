@@ -34,6 +34,8 @@ import LaunchPreviewAction from './panels/LaunchPreviewAction.jsx';
 import GradedWorksheet from './panels/GradedWorksheet.jsx';
 import LearnerDayView from './panels/LearnerDayView.jsx';
 import ReadingShelfPanel from './panels/ReadingShelfPanel.jsx';
+import ReadingDetailPanel from './panels/ReadingDetailPanel.jsx';
+import { countedWindow } from './panels/readingDetail.js';
 import { LessonIdentity, SubjectIdentity } from './CurriculumIdentity.jsx';
 import { teacherBaseFor, teacherDayPath } from './teacherUrl.js';
 import { curriculumTitles } from './curriculumTitles.js';
@@ -343,16 +345,70 @@ export function HistoryView({ learnerId, learnerName, onOpenSession }) {
   );
 }
 
+/** Which reading the URL says is open. */
+function openReadingParam() {
+  return new URLSearchParams(window.location.search).get('reading');
+}
+
 /**
  * The child's reading shelf, for a grown-up (teacher reading admin design §2).
- * Observation only this pass: what is being read, how much, how consistently.
- * The correction verbs (§3) land against the v2 storage model, not here.
+ *
+ * Two surfaces over one record: the shelf observes, and the detail a row opens
+ * is where every correction verb lives. The open reading is a QUERY param, so
+ * the URL is complete workspace state (`teacher.md` §2) — a refresh or a
+ * pasted link comes back to the same reading, and closing it leaves the shelf
+ * exactly where it was.
+ *
+ * **The detail renders only over a shelf that actually read.** A damaged year
+ * of a child's evidence must never present as a shelf a grown-up starts
+ * "fixing" (design §6), and a deep link is not an exception to that — which
+ * is why the lockout lives here, above both panels, rather than inside either.
  */
-export function ReadingView({ learnerId, learnerName }) {
+export function ReadingView({ learnerId, learnerName, kids = [] }) {
+  const [openReading, setOpenReading] = useState(openReadingParam);
+  const [shelf, setShelf] = useState({ state: 'loading', obligation: null, studyDay: null });
+  // Bumped by every successful correction, so the shelf's counts and
+  // projections come from the server rather than from a guess about what the
+  // edit did to them.
+  const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    const onPop = () => setOpenReading(openReadingParam());
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  // A different child is a different shelf; the previous child's open reading
+  // must not survive the switch.
+  useEffect(() => { setOpenReading(openReadingParam()); }, [learnerId]);
+
+  const show = useCallback((readingId) => {
+    const url = new URL(window.location.href);
+    if (readingId) url.searchParams.set('reading', readingId);
+    else url.searchParams.delete('reading');
+    window.history.pushState({}, '', `${url.pathname}${url.search}`);
+    setOpenReading(readingId);
+  }, []);
+
+  const readable = shelf.state === 'ok';
+  const readWindow = countedWindow(shelf.obligation, shelf.studyDay);
+
   return (
     <div className="teacher-view">
-      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Reading</p><h2>{learnerName}’s shelf</h2><p>What they are reading, how much, and how consistently. Nothing on this page changes the record.</p></div></div>
-      <ReadingShelfPanel learnerId={learnerId} />
+      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Reading</p><h2>{learnerName}’s shelf</h2><p>What they are reading, how much, and how consistently — and, from any row, the record itself.</p></div></div>
+      <ReadingShelfPanel learnerId={learnerId} refreshToken={refresh} onShelf={setShelf} onOpenReading={show} />
+      {readable && openReading && (
+        <ReadingDetailPanel
+          key={openReading}
+          learnerId={learnerId}
+          learnerName={learnerName}
+          readingId={openReading}
+          kids={kids}
+          countedWindow={readWindow}
+          onClose={() => show(null)}
+          onChanged={() => setRefresh((value) => value + 1)}
+        />
+      )}
     </div>
   );
 }

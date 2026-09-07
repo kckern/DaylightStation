@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ReadingShelfPanel from './ReadingShelfPanel.jsx';
 
 vi.mock('../teacherWorkspaceApi.js', () => ({
@@ -90,6 +90,38 @@ describe('ReadingShelfPanel — what a grown-up sees', () => {
     await screen.findByText(/A Borrowed Title/);
     expect(screen.queryAllByRole('button')).toHaveLength(0);
     expect(screen.queryAllByRole('textbox')).toHaveLength(0);
+  });
+
+  it('carries ONE control per row, and it navigates rather than writes', async () => {
+    const onOpenReading = vi.fn();
+    teacherWorkspaceApi.readingShelf.mockResolvedValue(ok(shelf()));
+    render(<ReadingShelfPanel learnerId="User_4" onOpenReading={onOpenReading} />);
+    const open = await screen.findByRole('button', { name: 'Open A Borrowed Title' });
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0);
+    fireEvent.click(open);
+    // The row names the reading; every verb lives one layer in, where no
+    // browsing thumb lands on it.
+    expect(onOpenReading).toHaveBeenCalledWith('itm_1');
+  });
+
+  it('reports the shelf state and its obligation upward, so the workspace can lock the edit surface', async () => {
+    const onShelf = vi.fn();
+    teacherWorkspaceApi.readingShelf.mockResolvedValue(ok(shelf()));
+    render(<ReadingShelfPanel learnerId="User_4" onShelf={onShelf} />);
+    await screen.findByText(/A Borrowed Title/);
+    await waitFor(() => expect(onShelf).toHaveBeenCalledWith({
+      state: 'ok',
+      obligation: expect.objectContaining({ per: 'week' }),
+      studyDay: '2026-09-06',
+    }));
+  });
+
+  it('reports a shelf that could NOT be read as an error carrying no obligation', async () => {
+    const onShelf = vi.fn();
+    teacherWorkspaceApi.readingShelf.mockResolvedValue({ ok: false, status: 500, data: null });
+    render(<ReadingShelfPanel learnerId="User_4" onShelf={onShelf} />);
+    await waitFor(() => expect(onShelf).toHaveBeenCalledWith({ state: 'error', obligation: null, studyDay: null }));
   });
 
   it('says "No books yet" when the child has no readings', async () => {
