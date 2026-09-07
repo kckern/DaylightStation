@@ -27,7 +27,7 @@ The dashboard the URL lands on is the **Today tab**. Reading down the page:
 | "N subjects need a grown-up →" strip, above the roster | `GrownUpStrip` | `tabs/TodayTab.jsx` (tally reported up from `panels/RosterStrip.jsx`'s `onNeedsGrownUp`) |
 | The Records tab, day record, session detail | `RecordsTab`, `WorkspaceViews` | `tabs/RecordsTab.jsx`, `WorkspaceViews.jsx`, `panels/LearnerDayView.jsx` |
 | A student's **Reading** tab — the obligation strip, the three counts, and the READING NOW / FINISHED / SET ASIDE rows | `ReadingView` → `ReadingShelfPanel` | `WorkspaceViews.jsx`, `panels/ReadingShelfPanel.jsx` (covers/titles: `../books/BookCover.jsx`, `../books/bookPresentation.js`; day + duration: `../books/ShelfTile.jsx`) |
-| The `⋯` on a reading row, and the panel it opens (identity / what was read / state / danger / history) | `ReadingDetailPanel` | `panels/ReadingDetailPanel.jsx` (which verbs need a reason, which undos the server refuses, where the counted window is: `panels/readingDetail.js`) |
+| The `⋯` on a reading row, and the panel it opens (identity / what was read / state / danger / history) | `ReadingDetailPanel` | `panels/ReadingDetailPanel.jsx` (which verbs need a reason, and how the server's counted window and undo refusals are read: `panels/readingDetail.js`) |
 
 **Decides Done / Not started / Deferred / Blocked, and which session belongs
 to which planned lesson:** (provenance — `unplanned`, `carriedOver` — is a flag
@@ -78,6 +78,14 @@ Same `GetBookShelf` view the child's own panel reads through
 `/books/:learnerId/shelf` — one projection of a child's reading year, two
 gates. Client wrapper: `teacherWorkspaceApi.readingShelf()`.
 
+The shelf carries one write of its own: **Add a book**
+(`teacherWorkspaceApi.addReadingForLearner`), offered on an `ok` shelf and on an
+EMPTY one — that is when a grown-up adds the first book — and on neither of the
+other three states. It asks for an ISBN and the child's own three doors
+(starting / partway with a page / finished on a day), judges the number with
+the panel's `checkIsbn` before the network, and is idempotent on a key the
+client mints.
+
 The **detail** a row opens is a second read and nine writes, all under the same
 prefix (`teacherWorkspaceApi.readingDetail` / `updateReading` /
 `addReadingEntry` / `updateReadingEntry` / `deleteReadingEntry` /
@@ -87,7 +95,7 @@ prefix (`teacherWorkspaceApi.readingDetail` / `updateReading` /
 # One reading, every entry, and the full revisions list the editor undoes from.
 curl -s --cookie 'daylight_teacher_session=<token>' \
   https://daylightlocal.kckern.net/api/v1/school/teacher/learners/learner-1/reading/<readingId> \
-  | jq '{status: .reading.status, entries: (.reading.entries|length), baseRevisionCount: .reading.baseRevisionCount}'
+  | jq '{status: .reading.status, entries: (.reading.entries|length), baseRevisionCount: .reading.baseRevisionCount, countedWindow}'
 ```
 
 Three things to know before reading that code:
@@ -98,6 +106,11 @@ Three things to know before reading that code:
 - **`baseRevisionCount` rides on every write.** It is served by the detail read
   and never counted on the client. A stale save is refused with the server's
   own reload sentence and NOTHING is merged or replayed.
+- **`countedWindow` is served, not derived.** The detail read answers
+  `{state: 'window'|'none'|'unknown', per, from, to}` from the same
+  `obligationWindow` the write path judges a re-date against, so the console
+  never rebuilds it from an obligation and a study day — and can tell "this
+  child owes no reading" from "the obligation could not be read".
 - **The lockout lives in `ReadingView`, not in either panel.** A shelf that did
   not read `ok` renders no edit surface at all, deep link or not — a damaged
   year of a child's evidence must never present as a shelf a grown-up starts

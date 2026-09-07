@@ -1,33 +1,35 @@
 import { describe, expect, it } from 'vitest';
 import {
-  countedWindow, inWindow, leavesWindow, reasonAsk, undoRefusal, undoShrinks,
-  revisionPhrase, revisionChanges, unfinishes, OPS, UNDO_VERB,
+  countedWindowOf, countedWindowUnknown, inWindow, leavesWindow, reasonAsk,
+  undoShrinks, revisionPhrase, revisionChanges, unfinishes, OPS, UNDO_VERB,
 } from './readingDetail.js';
 
-describe('the counted window — the mirror of the server’s own', () => {
-  it('a weekly obligation counts the study day and the six before it', () => {
-    expect(countedWindow({ per: 'week' }, '2026-09-06')).toEqual({ from: '2026-08-31', to: '2026-09-06' });
+const WEEK = { state: 'window', per: 'week', from: '2026-08-31', to: '2026-09-06' };
+
+describe('the counted window — read off the server, never re-derived', () => {
+  it('takes the bounds the server computed, and nothing else', () => {
+    expect(countedWindowOf(WEEK)).toEqual({ from: '2026-08-31', to: '2026-09-06' });
+    expect(countedWindowUnknown(WEEK)).toBe(false);
   });
 
-  it('a monthly one counts twenty-nine days back', () => {
-    expect(countedWindow({ per: 'month' }, '2026-09-06')).toEqual({ from: '2026-08-08', to: '2026-09-06' });
+  it('a child who owes no reading has no window — and that IS an answer', () => {
+    const none = { state: 'none', per: null, from: null, to: null };
+    expect(countedWindowOf(none)).toBeNull();
+    expect(countedWindowUnknown(none)).toBe(false);
   });
 
-  it('a daily one counts only the study day', () => {
-    expect(countedWindow({ per: 'day' }, '2026-09-06')).toEqual({ from: '2026-09-06', to: '2026-09-06' });
-  });
-
-  it('“once” has no lower bound', () => {
-    expect(countedWindow({ per: 'once' }, '2026-09-06')).toEqual({ from: null, to: '2026-09-06' });
-  });
-
-  it('no obligation is no window at all — the console cannot tell, so it does not pretend', () => {
-    expect(countedWindow(null, '2026-09-06')).toBeNull();
-    expect(countedWindow({ per: 'week' }, null)).toBeNull();
+  it('an obligation the server could not read is unknown, and so is a missing answer', () => {
+    // The distinction the console needs: "nothing can leave a window that does
+    // not exist" and "I cannot tell whether this leaves one" both mean no
+    // pre-required reason, but only one of them is worth saying out loud.
+    expect(countedWindowOf({ state: 'unknown', per: null, from: null, to: null })).toBeNull();
+    expect(countedWindowUnknown({ state: 'unknown', per: null, from: null, to: null })).toBe(true);
+    expect(countedWindowUnknown(null)).toBe(true);
+    expect(countedWindowUnknown(undefined)).toBe(true);
   });
 
   it('a day inside the window is in it, and a day before it is not', () => {
-    const window = countedWindow({ per: 'week' }, '2026-09-06');
+    const window = countedWindowOf(WEEK);
     expect(inWindow('2026-09-02', window)).toBe(true);
     expect(inWindow('2026-08-30', window)).toBe(false);
     // No window means nothing can leave one.
@@ -35,7 +37,7 @@ describe('the counted window — the mirror of the server’s own', () => {
   });
 
   it('only a re-date OUT of the window shrinks the record', () => {
-    const window = countedWindow({ per: 'week' }, '2026-09-06');
+    const window = countedWindowOf(WEEK);
     expect(leavesWindow(window, '2026-09-02', '2026-08-20')).toBe(true);
     expect(leavesWindow(window, '2026-09-02', '2026-09-01')).toBe(false);
     // Pulling a day back INTO the window makes the record bigger.
@@ -79,41 +81,8 @@ const reading = (over = {}) => ({
   id: 'rd_1', status: 'reading', entries: [], revisions: [], ...over,
 });
 
-describe('the undos the server refuses by name', () => {
-  it('refuses a revision another undo already inverted', () => {
-    const record = reading({ revisions: [{ id: 'rev_1' }, { id: 'rev_2', undoes: 'rev_1' }] });
-    expect(undoRefusal(record, { id: 'rev_1', op: OPS.ENTRY_ADD })).toMatch(/already been undone/);
-  });
-
-  it('refuses undoing the opening of a reading, and names the verb that can', () => {
-    expect(undoRefusal(reading(), { id: 'rev_1', op: OPS.READING_ADD })).toMatch(/Delete the reading instead/);
-  });
-
-  it('refuses undoing a move the receiving child has logged against', () => {
-    const record = reading({
-      entries: [{ id: 'e1', on: '2026-09-05', at: '2026-09-05T10:00:00.000Z' }],
-      revisions: [{ id: 'rev_1', op: OPS.READING_MOVE, at: '2026-09-04T10:00:00.000Z' }],
-    });
-    const refusal = undoRefusal(record, record.revisions[0], { book: 'Hatchet' });
-    expect(refusal).toMatch(/Hatchet has been read since it moved/);
-    expect(refusal).toMatch(/Move it back instead/);
-  });
-
-  it('allows undoing a move nothing has been logged against since', () => {
-    const record = reading({
-      entries: [{ id: 'e1', on: '2026-09-01', at: '2026-09-01T10:00:00.000Z' }],
-      revisions: [{ id: 'rev_1', op: OPS.READING_MOVE, at: '2026-09-04T10:00:00.000Z' }],
-    });
-    expect(undoRefusal(record, record.revisions[0])).toBeNull();
-  });
-
-  it('allows an ordinary correction to be undone', () => {
-    expect(undoRefusal(reading(), { id: 'rev_1', op: OPS.READING_UPDATE })).toBeNull();
-  });
-});
-
 describe('an undo inherits the reason requirement of its inverse', () => {
-  const window = countedWindow({ per: 'week' }, '2026-09-06');
+  const window = countedWindowOf(WEEK);
 
   it('undoing an added day deletes a day, so the child is told', () => {
     expect(undoShrinks(reading(), { op: OPS.ENTRY_ADD })).toBe(true);

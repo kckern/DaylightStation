@@ -54,9 +54,10 @@ export const teacherWorkspaceApi = {
   // launch, so the learner is the URL's and the console capability is the gate.
   readingShelf: (learnerId) => request(`/learners/${encodeURIComponent(learnerId)}/reading`),
   // One reading, every entry, and the full `revisions` list the editor undoes
-  // from — plus the `baseRevisionCount` every write below must carry back.
-  // Served here rather than counted on the client: a second way to derive the
-  // value a stale save is judged on is a second way to be wrong about it.
+  // from — plus the `baseRevisionCount` every write below must carry back, and
+  // the `countedWindow` a re-date is judged against. Both are served rather
+  // than derived here: a second way to compute the value a save is judged on
+  // is a second way to be wrong about it.
   readingDetail: (learnerId, readingId) => request(
     `/learners/${encodeURIComponent(learnerId)}/reading/${encodeURIComponent(readingId)}`,
   ),
@@ -78,6 +79,14 @@ export const teacherWorkspaceApi = {
   deleteReadingEntry: (learnerId, readingId, entryId, body) => request(
     `/learners/${encodeURIComponent(learnerId)}/reading/${encodeURIComponent(readingId)}/entries/${encodeURIComponent(entryId)}`,
     { method: 'DELETE', body },
+  ),
+  // A book opened on the child's behalf: the shelf's own verb, and the one
+  // write here that carries NO `baseRevisionCount` — nothing was loaded,
+  // because the reading does not exist yet. Idempotent on the client's key, so
+  // a double tap adds one book.
+  addReadingForLearner: (learnerId, body, idempotencyKey = null) => request(
+    `/learners/${encodeURIComponent(learnerId)}/reading`,
+    { method: 'POST', body, ...(idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {}) },
   ),
   undoReadingRevision: (learnerId, readingId, body, grantToken = null) => request(
     `/learners/${encodeURIComponent(learnerId)}/reading/${encodeURIComponent(readingId)}/undo`,

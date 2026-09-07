@@ -92,6 +92,35 @@ describe('GetLearnerReadings', () => {
     const view = await new GetLearnerReadings(deps({ bookRepository: null })).execute({ learnerId: LEARNER });
     expect(view.readings[0]).toMatchObject({ title: null, isbn: '9780000000001' });
   });
+
+  it('serves the counted window the obligation is measured over, so no client re-derives it', async () => {
+    const view = await new GetLearnerReadings(deps()).execute({ learnerId: LEARNER, readingId: 'rdg_a' });
+    // The SAME `obligationWindow` the re-date rule is judged with: a weekly
+    // obligation on Sep 6 counts back to Aug 31.
+    expect(view.countedWindow).toEqual({ state: 'window', per: 'week', from: '2026-08-31', to: '2026-09-06' });
+  });
+
+  it('says "none" for a child who owes no reading — which is not the same as not knowing', async () => {
+    const view = await new GetLearnerReadings(deps({ bookLogLauncher: fakeLauncher({ per: null }) }))
+      .execute({ learnerId: LEARNER, readingId: 'rdg_a' });
+    expect(view.countedWindow).toEqual({ state: 'none', per: null, from: null, to: null });
+  });
+
+  it('says "unknown" when the obligation could not be read, rather than omitting the answer', async () => {
+    const broken = { studyDay: () => '2026-09-06', status: async () => { throw new Error('shelf unreadable'); } };
+    const refused = await new GetLearnerReadings(deps({ bookLogLauncher: broken }))
+      .execute({ learnerId: LEARNER, readingId: 'rdg_a' });
+    expect(refused.countedWindow).toEqual({ state: 'unknown', per: null, from: null, to: null });
+    // An install with no launcher wired cannot tell either, and says so.
+    const unwired = await new GetLearnerReadings(deps({ bookLogLauncher: null }))
+      .execute({ learnerId: LEARNER, readingId: 'rdg_a' });
+    expect(unwired.countedWindow).toEqual({ state: 'unknown', per: null, from: null, to: null });
+  });
+
+  it('carries the window on the whole-shelf read too', async () => {
+    const view = await new GetLearnerReadings(deps()).execute({ learnerId: LEARNER });
+    expect(view.countedWindow).toMatchObject({ state: 'window', from: '2026-08-31' });
+  });
 });
 
 describe('UpdateReading', () => {
@@ -342,6 +371,94 @@ describe('AddReadingForLearner', () => {
   it('needs an ISBN to open anything at all', async () => {
     await expect(new AddReadingForLearner(deps()).execute({ learnerId: LEARNER, by: TEACHER }))
       .rejects.toThrow(/isbn/i);
+  });
+
+  // The child's own add flow has three doors — starting, partway with a page,
+  // already finished on a day — and a grown-up adding a book on their behalf
+  // is answering the same question about the same child. One call, so a book
+  // cannot land on the shelf with the answer half applied.
+  it('the starting door opens the reading and logs no day', async () => {
+    const { reading } = await new AddReadingForLearner(deps()).execute({
+      learnerId: LEARNER, isbn: '9780000000009', where: 'starting',
+      by: TEACHER, idempotencyKey: 'teacher-add-1',
+    });
+    expect(reading).toMatchObject({ status: 'reading', finishedOn: null });
+    expect(reading.entries).toHaveLength(0);
+  });
+
+  it('the partway door records the page they are on, stamped teacher', async () => {
+    const { reading } = await new AddReadingForLearner(deps()).execute({
+      learnerId: LEARNER, isbn: '9780000000009', where: 'partway', page: 84,
+      by: TEACHER, idempotencyKey: 'teacher-add-1',
+    });
+    expect(reading.status).toBe('reading');
+    expect(reading.entries).toHaveLength(1);
+    expect(reading.entries[0]).toMatchObject({ on: '2026-09-06', page: 84, source: 'teacher' });
+    // Still ONE revision: the day is part of the opening, not a correction of it.
+    expect(reading.revisions).toHaveLength(1);
+    expect(reading.revisions[0]).toMatchObject({ verb: 'reading.add', toldChild: false });
+    expect(notes).not.toHaveBeenCalled();
+  });
+
+  it('the finished door records the day they finished, and the finish itself', async () => {
+    const { reading } = await new AddReadingForLearner(deps()).execute({
+      learnerId: LEARNER, isbn: '9780000000009', where: 'finished', finishedOn: '2026-08-20',
+      by: TEACHER, idempotencyKey: 'teacher-add-1',
+    });
+    expect(reading).toMatchObject({ status: 'finished', finishedOn: '2026-08-20' });
+    // The EVIDENCE first, then the decision: a finish with nothing behind it
+    // would claim a book against an obligation with no day to show for it.
+    expect(reading.entries).toHaveLength(1);
+    expect(reading.entries[0]).toMatchObject({ on: '2026-08-20', source: 'teacher' });
+    expect(notes).not.toHaveBeenCalled();
+  });
+
+  it('a retried open does not log the day twice', async () => {
+    const use = new AddReadingForLearner(deps());
+    const args = {
+      learnerId: LEARNER, isbn: '9780000000009', where: 'partway', page: 84,
+      by: TEACHER, idempotencyKey: 'teacher-add-1',
+    };
+    await use.execute(args);
+    const second = await use.execute(args);
+    expect(second.created).toBe(false);
+    const shelf = await bookLog.listForLearner(LEARNER);
+    expect(shelf).toHaveLength(2);
+    expect(shelf[1].entries).toHaveLength(1);
+    expect(shelf[1].revisions).toHaveLength(1);
+  });
+
+  it('refuses a door it does not have, a page without one, and a finish with no day', async () => {
+    const add = (args) => new AddReadingForLearner(deps()).execute({
+      learnerId: LEARNER, isbn: '9780000000009', by: TEACHER, idempotencyKey: 'teacher-add-1', ...args,
+    });
+    await expect(add({ where: 'halfway' })).rejects.toThrow(/starting|partway|finished/i);
+    await expect(add({ where: 'starting', page: 84 })).rejects.toThrow(/page/i);
+    await expect(add({ where: 'partway' })).rejects.toThrow(/page/i);
+    await expect(add({ where: 'partway', page: 84, progressMode: 'minutes' })).rejects.toThrow(/page/i);
+    await expect(add({ where: 'finished' })).rejects.toThrow(/day/i);
+    await expect(add({ where: 'finished', finishedOn: 'August' })).rejects.toThrow(/day/i);
+    // Nothing half-opened along the way.
+    expect(await bookLog.listForLearner(LEARNER)).toHaveLength(1);
+  });
+
+  it('takes the book\u2019s length from the books API when the caller sends none', async () => {
+    const { reading } = await new AddReadingForLearner(deps({
+      bookRepository: { findByIsbn: async () => ({ title: 'A Borrowed Title', pageCount: 96 }) },
+    })).execute({
+      learnerId: LEARNER, isbn: '9780000000009', by: TEACHER, idempotencyKey: 'teacher-add-1',
+    });
+    // The console asks a grown-up for an ISBN and a door, not for a page
+    // count — resolving one is the server's job, exactly as it is on the
+    // child's own add flow.
+    expect(reading.book.pageCount).toBe(96);
+  });
+
+  it('opens without a length when the books API is not wired', async () => {
+    const { reading } = await new AddReadingForLearner(deps({ bookRepository: null })).execute({
+      learnerId: LEARNER, isbn: '9780000000009', by: TEACHER, idempotencyKey: 'teacher-add-1',
+    });
+    expect(reading.book.pageCount).toBeNull();
   });
 });
 

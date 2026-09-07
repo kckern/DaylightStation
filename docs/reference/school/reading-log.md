@@ -164,6 +164,30 @@ child has since logged against, an already-undone revision, and adding a book �
 whose inverse is destroying the record, and which would let a capability-only
 undo do a step-up verb's work.
 
+**The console decides nothing the server already decides.** `GET /:readingId`
+serves the counted window an obligation is measured over — as
+`{state: 'window' | 'none' | 'unknown', per, from, to}`, so "this child owes no
+reading" is distinguishable from "the obligation could not be read" — and it
+serves, on each revision, whether it can be undone and the refusal's own
+sentence. Both come from the functions the write path itself uses
+(`obligationWindow`, `readingEdits.mjs#undoRefusal`). The console had copies of
+each; a copy of "does this shrink the child's record?" is a copy free to drift,
+and the window copy went SILENT — stopping asking for a reason entirely — the
+moment a shelf read carried no obligation.
+
+**A grown-up can open a book for a child**, and it is a SHELF verb rather than
+one of the detail's bands — it makes a reading that does not exist yet, so it
+carries no `baseRevisionCount` and no reason, and the child is told nothing: a
+book appearing on their shelf is their record getting bigger. It asks exactly
+what the child's own add flow asks — the number off the back, and where they
+are with it (starting, partway with a page, finished on a day) — and answers it
+in ONE call, so a book cannot land on the shelf with half the answer applied.
+Three things differ from the child's door, all deliberately: the day is stamped
+`source: teacher`, the book's length is resolved server-side rather than typed,
+and the child's backdate floor does not apply, because repairing a record from
+months ago is what this surface is for. The empty shelf offers it, since that is
+when the first book gets added.
+
 **An unreadable shelf shows a named error and no edit controls.** A damaged
 year of a child's evidence presented as "no books yet" invites a grown-up to
 start fixing a file that was merely unreadable.

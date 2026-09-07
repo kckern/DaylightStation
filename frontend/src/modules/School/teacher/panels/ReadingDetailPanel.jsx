@@ -17,10 +17,17 @@
  *    submit without one, and each says WHY it is asking — because the sentence
  *    typed into that box is the sentence the child reads. Everything else
  *    takes an optional reason that only ever reaches this history.
+ * 1b. **The counted window is the server's answer**, served with the reading —
+ *    including whether it could be determined at all, so "this child owes no
+ *    reading" and "the obligation could not be read" are distinguishable on
+ *    screen instead of both reading as silence.
  * 2. **`baseRevisionCount` on every write**, the count that came with the read.
  *    A stale save is REFUSED, and this panel then stops: it shows the server's
  *    reload sentence, disables every write, and retries nothing. Merging would
  *    silently apply one grown-up's edit on top of another's (design §7).
+ * 2b. **Which undos are refused is the server's call**, served on each
+ *    revision by the detail read — the console renders the sentence in place
+ *    of the button rather than offering one that would 400.
  * 3. **Move and delete arm first, and step up.** Both are two-tap, and both
  *    need a one-use grant scoped to this reading — asked for through
  *    `useTeacherWrite`'s replay loop, never a hand-rolled prompt, so a refusal
@@ -45,8 +52,9 @@ import BookCover from '../../books/BookCover.jsx';
 import { presentBook } from '../../books/bookPresentation.js';
 import { formatMinutes, shortDay } from '../../books/ShelfTile.jsx';
 import {
-  MODES, OPS, OPTIONAL_ASK, STATUSES, leavesWindow, reasonAsk,
-  revisionChanges, revisionPhrase, undoRefusal, undoShrinks, unfinishes,
+  MODES, OPS, OPTIONAL_ASK, STATUSES, WINDOW_UNKNOWN_NOTE, countedWindowOf,
+  countedWindowUnknown, leavesWindow, reasonAsk, revisionChanges,
+  revisionPhrase, undoShrinks, unfinishes,
 } from './readingDetail.js';
 
 const PANEL = 'reading-detail';
@@ -102,7 +110,7 @@ function Band({ title, children }) {
 }
 
 export default function ReadingDetailPanel({
-  learnerId, learnerName = null, readingId, kids = [], countedWindow = null,
+  learnerId, learnerName = null, readingId, kids = [],
   onClose = null, onChanged = null,
 }) {
   const child = learnerName ?? learnerId;
@@ -132,6 +140,13 @@ export default function ReadingDetailPanel({
   });
 
   const record = isReading(detail.data) ? detail.data.reading : null;
+  // The counted window comes WITH the reading, computed by the same
+  // `obligationWindow` the server judges a re-date against. Nothing here
+  // recomputes it from an obligation and a study day — that was one rule with
+  // two implementations, and the client half went silent rather than wrong.
+  const served = isReading(detail.data) ? detail.data.countedWindow ?? null : null;
+  const countedWindow = countedWindowOf(served);
+  const windowUnknowable = countedWindowUnknown(served);
   const base = Number.isInteger(record?.baseRevisionCount) ? record.baseRevisionCount : 0;
   const presentation = presentBook(record ?? {});
   const book = presentation.title;
@@ -532,6 +547,9 @@ export default function ReadingDetailPanel({
                     />
                   </div>
                 )}
+                {form.on !== editing.on && windowUnknowable && (
+                  <p className="teacher-reading-detail__note">{WINDOW_UNKNOWN_NOTE}</p>
+                )}
                 <Reason
                   label="Reason for correcting this day"
                   ask={redates ? reasonAsk('entry.redate', names) : OPTIONAL_ASK}
@@ -747,7 +765,11 @@ export default function ReadingDetailPanel({
             {revisions.length === 0 && <p className="teacher-panel__empty">Nothing has been corrected on this reading.</p>}
             <ol className="teacher-reading-detail__history">
               {revisions.map((revision) => {
-                const refusal = undoRefusal(record, revision, { book });
+                // The server's answer, on the revision, in its own words. The
+                // console holds no copy of these sentences: a refusal reworded
+                // server-side would otherwise leave a grown-up reading one
+                // thing before tapping and another after.
+                const refusal = revision.canUndo === false ? (revision.undoRefusal ?? null) : null;
                 const phrase = revisionPhrase(revision);
                 const shrinks = undoShrinks(record, revision, countedWindow);
                 const open = undoing?.revisionId === revision.id;

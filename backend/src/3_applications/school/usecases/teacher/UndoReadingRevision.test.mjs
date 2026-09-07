@@ -9,6 +9,12 @@
  * Two things it refuses by name rather than offering a button that lies: a
  * move the receiving child has since logged against, and the opening of a
  * reading, whose inverse would destroy the record and the history with it.
+ * (Three, with a revision another undo already inverted.)
+ *
+ * Those sentences are also SERVED, on the revision, by the read the console
+ * loads — so a grown-up reads the refusal instead of tapping a button that
+ * would fail. The last describe here is the anti-drift test: the sentence the
+ * read serves must be, character for character, the sentence the verb throws.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fakeBookLog, seedReading, fakeLauncher } from '../../../../../../tests/_lib/school/bookLogTestSupport.mjs';
@@ -19,6 +25,7 @@ import { DeleteReadingEntry } from './DeleteReadingEntry.mjs';
 import { AddReadingForLearner } from './AddReadingForLearner.mjs';
 import { MoveReading } from './MoveReading.mjs';
 import { UndoReadingRevision } from './UndoReadingRevision.mjs';
+import { GetLearnerReadings } from './GetLearnerReadings.mjs';
 
 const LEARNER = 'learner_a';
 const SIBLING = 'learner_b';
@@ -257,5 +264,76 @@ describe('UndoReadingRevision', () => {
       learnerId: LEARNER, readingId: 'rdg_a', revisionId: 'rev_1', by: TEACHER, baseRevisionCount: 0,
     })).rejects.toThrow(/listed teacher/);
     expect(listForLearner).not.toHaveBeenCalled();
+  });
+});
+
+describe('the sentence the read serves is the sentence the verb throws', () => {
+  const served = async (learnerId, readingId, revisionId) => {
+    const view = await new GetLearnerReadings(deps()).execute({ learnerId, readingId });
+    return view.reading.revisions.find((row) => row?.id === revisionId);
+  };
+  const thrown = (promise) => promise.then(() => null, (error) => error.message);
+
+  it('a move the receiving child has logged against', async () => {
+    const { revision } = await new MoveReading(deps()).execute({
+      learnerId: LEARNER, readingId: 'rdg_a', toLearnerId: SIBLING, by: TEACHER,
+      reason: 'wrong shelf', baseRevisionCount: 0,
+    });
+    now = '2026-09-07T17:00:00.000Z';
+    await new AddReadingEntry(deps()).execute({
+      learnerId: SIBLING, readingId: 'rdg_a', by: TEACHER, on: '2026-09-07', page: 100, baseRevisionCount: 1,
+    });
+    const row = await served(SIBLING, 'rdg_a', revision.id);
+    expect(row.canUndo).toBe(false);
+    expect(row.undoRefusal).toMatch(/A Borrowed Title has been read since it moved/);
+    expect(row.undoRefusal).toBe(await thrown(undo().execute({
+      learnerId: SIBLING, readingId: 'rdg_a', revisionId: revision.id, by: TEACHER,
+      reason: 'changed my mind', baseRevisionCount: 2,
+    })));
+  });
+
+  it('the opening of a reading', async () => {
+    const { reading, revision } = await new AddReadingForLearner(deps()).execute({
+      learnerId: LEARNER, isbn: '9780000000009', by: TEACHER, idempotencyKey: 'teacher-add-1',
+    });
+    const view = await new GetLearnerReadings(deps()).execute({ learnerId: LEARNER, readingId: reading.id });
+    const row = view.reading.revisions.find((entry) => entry.id === revision.id);
+    expect(row.canUndo).toBe(false);
+    expect(row.undoRefusal).toBe(await thrown(undo().execute({
+      learnerId: LEARNER, readingId: reading.id, revisionId: revision.id, by: TEACHER,
+      reason: 'added by mistake', baseRevisionCount: 1,
+    })));
+  });
+
+  it('a revision another undo already inverted', async () => {
+    const { revision } = await new UpdateReading(deps()).execute({
+      learnerId: LEARNER, readingId: 'rdg_a', by: TEACHER, patch: { pageCount: 192 }, baseRevisionCount: 0,
+    });
+    await undo().execute({ learnerId: LEARNER, readingId: 'rdg_a', revisionId: revision.id, by: TEACHER, baseRevisionCount: 1 });
+    const row = await served(LEARNER, 'rdg_a', revision.id);
+    expect(row.canUndo).toBe(false);
+    expect(row.undoRefusal).toBe(await thrown(undo().execute({
+      learnerId: LEARNER, readingId: 'rdg_a', revisionId: revision.id, by: TEACHER, baseRevisionCount: 2,
+    })));
+    // And the undo ITSELF is still offered — that is the way back.
+    const back = await served(LEARNER, 'rdg_a', 'rev_2');
+    expect(back).toMatchObject({ canUndo: true, undoRefusal: null });
+  });
+
+  it('an ordinary correction carries no sentence at all', async () => {
+    await new UpdateReading(deps()).execute({
+      learnerId: LEARNER, readingId: 'rdg_a', by: TEACHER, patch: { isbn: '9780000000002' }, baseRevisionCount: 0,
+    });
+    const view = await new GetLearnerReadings(deps()).execute({ learnerId: LEARNER, readingId: 'rdg_a' });
+    expect(view.reading.revisions[0]).toMatchObject({ canUndo: true, undoRefusal: null });
+  });
+
+  it('says nothing about a move that has not been read against since', async () => {
+    const { revision } = await new MoveReading(deps()).execute({
+      learnerId: LEARNER, readingId: 'rdg_a', toLearnerId: SIBLING, by: TEACHER,
+      reason: 'wrong shelf', baseRevisionCount: 0,
+    });
+    const row = await served(SIBLING, 'rdg_a', revision.id);
+    expect(row).toMatchObject({ canUndo: true, undoRefusal: null });
   });
 });
