@@ -174,11 +174,30 @@ all call. The agenda gets its own method:
 ```
 BookLogProgramLauncher.featuredBook({ userId }) → {
   state: 'reading' | 'finished' | 'set-aside' | 'empty' | 'unreadable',
-  book:  { title, authors, pageCount } | null,
-  page, percent, minutes, daysRead, at,
+  book:  { title, authors } | null,       // null unless it has a NAME
+  page, percent, pageCount, minutes, daysRead, at,
   alsoReading: ['Frindle', 'The Hobbit'],
 }
 ```
+
+Two shapes here were corrected during implementation, both to remove a question
+the card would otherwise have to ask twice:
+
+- **`book` is null unless the record has a title.** `createBookRecord` stubs
+  every field for an unresolved ISBN, so a non-null `book` could still be
+  nameless — and every consumer would have to test `book !== null` AND
+  `book.title`. Now `book !== null` means "I have a name for it", which is the
+  only thing the headline branches on.
+- **`pageCount` is the SHELF ITEM's, not the catalog's**, and it sits at the top
+  level beside `page` and `percent`. `percentFor` computes the bar from the
+  item's length; printing "of 184" from the catalog's could show a denominator
+  the bar did not use, for a book whose length the child's own record disagrees
+  about. One number, one source.
+
+**`unreadable` needs its own arm in the card.** A consumer that falls through to
+the `empty` copy prints "start a book" to a child whose shelf merely could not
+be read — the exact failure the state exists to prevent. Default to the titleless
+card, never to empty.
 
 `BuildAgenda` calls it once per agenda; `status()` stays exactly as cheap as it
 is. (An earlier draft claimed `ResolveAccessCode` reads launchers directly as

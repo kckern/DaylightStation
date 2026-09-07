@@ -67,6 +67,15 @@ describe('BookLogProgramLauncher', () => {
         { bookLog: brokenStore }).status({ userId: 'kid' });
       expect(status.error).toBe(true);
     });
+
+    it('an unreadable shelf still names itself, so the card has artwork to draw', async () => {
+      // A `context: null` is the blank-artwork case the poster route refuses.
+      // Not being able to read what is ON the shelf does not make it nameless.
+      const status = await launcher(enrolled({ metric: 'books', quantity: 2, per: 'week', scope: null }), [],
+        { bookLog: brokenStore }).status({ userId: 'kid' });
+      expect(status.context?.course?.title).toBeTruthy();
+      expect(status.context?.course?.id).toBe('program:book-log');
+    });
   });
 
   describe('with no obligation, nothing is ever owed', () => {
