@@ -356,3 +356,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-06 | school/teacher-reading-edit | 9430acd0b | Nine teacher verbs over a child's shelf, revisions, undo-as-a-verb, two new step-up actions; merged to main. |
 | 2026-09-06 | school/teacher-reading-ui | 87eb987fa | The reading detail: four bands, enforced reasons, armed danger verbs, served refusal sentences; merged to main. |
 | 2026-09-06 | school/reading-admin-finish | f8e22afb6 | Server owns the counted window and the undo refusals; a grown-up can add a book on a child's behalf; merged to main. |
+| 2026-09-06 | school/panel-code-straight-to-shelf | 99c9c411e | A panel code opens the shelf directly; the one-button launch card is skipped when there is nothing to decide. Merged to main. |
