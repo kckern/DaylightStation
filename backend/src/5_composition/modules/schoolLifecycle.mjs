@@ -139,6 +139,7 @@ import { EnrollLearner } from '#apps/school/usecases/EnrollLearner.mjs';
 import { UnenrollLearner } from '#apps/school/usecases/UnenrollLearner.mjs';
 import { STORY_TIME_PROGRAM_ID } from '#domains/school/storyTime.mjs';
 import { BOOK_LOG_PROGRAM_ID } from '#domains/school/bookLog.mjs';
+import { studyDayForInstant } from '#domains/school/studyDay.mjs';
 import { validateFitnessActivityDescriptor } from '#domains/school/fitnessCourse.mjs';
 import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
 import { createSchoolLifecycleRouter } from '#api/v1/routers/schoolLifecycle.mjs';
@@ -525,7 +526,14 @@ export async function createSchoolLifecycle({
     readingLog: new YamlReadingLogStore({ configService, logger }),
     // Book-log evidence: the learner-sharded reading shelf (`records/`), one
     // file per learner, read by the launcher for "how much today/this week".
-    bookLog: new YamlBookLogStore({ configService, logger }),
+    // The household's study-day rule, so a v1 shelf file read through this
+    // store maps its instants to the SAME days the launcher measures with.
+    bookLog: new YamlBookLogStore({
+      configService,
+      logger,
+      clock,
+      dayOf: (iso) => studyDayForInstant(Date.parse(iso), { timezone: configService.getTimezone?.() || null }),
+    }),
     teacherActionReceipts: new YamlTeacherActionReceiptStore({ configService }),
   };
   // Long-expired token files are dead weight (a pruned scan resolves to the

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  PROGRESS_MODES, inferProgressMode, projectShelfItem, measureObligation, isDayKey, noonOf,
-  selectFeaturedShelfItem,
+  PROGRESS_MODES, inferProgressMode, projectShelfItem, projectReading, measureObligation, isDayKey, noonOf,
+  selectFeaturedShelfItem, readingFromLegacyItem,
 } from './bookShelf.mjs';
 
 const item = (overrides = {}) => ({
@@ -172,6 +172,102 @@ describe('projectShelfItem', () => {
   });
 });
 
+describe('projectReading', () => {
+  const reading = (overrides = {}) => ({
+    id: 'rdg_one', learnerId: 'learner_a',
+    book: { isbn: '9780064400558', pageCount: 184 },
+    progressMode: 'page', status: 'reading',
+    openedOn: '2026-08-01', finishedOn: null, entries: [], ...overrides,
+  });
+  const entry = (on, at, extra = {}) => ({ id: `ent_${on}`, on, at, source: 'panel', ...extra });
+
+  it('reads status from the stored field, never from where a row sits', () => {
+    for (const status of ['reading', 'finished', 'set-aside']) {
+      // The evidence below says "reading" under every v1 rule; the stored
+      // decision is what a teacher set, and it wins.
+      expect(projectReading(reading({
+        status,
+        entries: [entry('2026-08-03', '2026-08-03T10:00:00.000Z', { page: 40 })],
+      })).status).toBe(status);
+    }
+  });
+
+  it('keeps the FURTHEST page when a later row is lower', () => {
+    const projection = projectReading(reading({ entries: [
+      entry('2026-08-03', '2026-08-03T10:00:00.000Z', { page: 84 }),
+      entry('2026-08-04', '2026-08-04T10:00:00.000Z', { page: 12 }),
+    ] }));
+    expect(projection.page).toBe(84);
+    expect(projection.percent).toBe(46);
+  });
+
+  it('clamps the bar but keeps the page — still the 212-of-184 case', () => {
+    const projection = projectReading(reading({ entries: [
+      entry('2026-08-04', '2026-08-04T10:00:00.000Z', { page: 212 }),
+    ] }));
+    expect(projection.page).toBe(212);
+    expect(projection.percent).toBe(100);
+  });
+
+  it('is 100% when the stored status says finished, with no page ever logged', () => {
+    expect(projectReading(reading({ status: 'finished', finishedOn: '2026-08-09' })).percent).toBe(100);
+  });
+
+  it('has no percentage without a denominator', () => {
+    expect(projectReading(reading({
+      progressMode: 'check', book: { isbn: 'x', pageCount: null },
+      entries: [entry('2026-08-01', '2026-08-01T10:00:00.000Z')],
+    })).percent).toBeNull();
+  });
+
+  it('totals minutes in minutes mode', () => {
+    const projection = projectReading(reading({
+      progressMode: 'minutes', book: { isbn: 'x', pageCount: null },
+      entries: [
+        entry('2026-08-01', '2026-08-01T10:00:00.000Z', { minutes: 20 }),
+        entry('2026-08-02', '2026-08-02T10:00:00.000Z', { minutes: 25 }),
+      ],
+    }));
+    expect(projection.minutes).toBe(45);
+  });
+
+  it('counts DAYS, not rows: `on` is already a study day, so nothing maps it', () => {
+    const projection = projectReading(reading({ entries: [
+      entry('2026-08-03', '2026-08-03T10:00:00.000Z', { page: 20 }),
+      { id: 'ent_b', on: '2026-08-03', at: '2026-08-03T21:00:00.000Z', page: 30 },
+      entry('2026-08-04', '2026-08-04T10:00:00.000Z', { page: 40 }),
+    ] }));
+    expect(projection.daysRead).toBe(2);
+  });
+
+  it('answers BOTH questions: the day they last read and the instant it was touched', () => {
+    // A finish logged today for a day last week. "When did they last read" is
+    // that day; "when was this last touched" is now, and the teacher sees both.
+    const projection = projectReading(reading({
+      status: 'finished', finishedOn: '2026-08-28',
+      entries: [
+        entry('2026-09-02', '2026-09-02T10:00:00.000Z', { page: 40 }),
+        { id: 'ent_late', on: '2026-08-28', at: '2026-09-06T18:00:00.000Z' },
+      ],
+    }));
+    expect(projection.lastOn).toBe('2026-09-02');
+    expect(projection.lastAt).toBe('2026-09-06T18:00:00.000Z');
+  });
+
+  it('projects a reading with no entries at all', () => {
+    expect(projectReading(reading())).toMatchObject({
+      status: 'reading', page: null, percent: null, minutes: null, daysRead: 0, lastOn: null, lastAt: null,
+    });
+  });
+
+  it('never throws on junk — a damaged reading must not stop the page drawing', () => {
+    for (const junk of [null, undefined, {}, { entries: 'nope' }, { entries: [null, 7, { on: 5 }] }]) {
+      expect(() => projectReading(junk)).not.toThrow();
+    }
+    expect(projectReading({ entries: [null, { page: 'x' }] }).page).toBeNull();
+  });
+});
+
 describe('day keys', () => {
   it('accepts a real day and refuses a calendar-impossible one', () => {
     expect(isDayKey('2026-09-02')).toBe(true);
@@ -287,6 +383,227 @@ describe('measureObligation', () => {
   });
 });
 
+describe('measureObligation over v2 readings', () => {
+  const window = { from: '2026-08-03', to: '2026-08-09' };
+  const rdg = (overrides = {}) => ({
+    id: 'rdg_one', learnerId: 'learner_a', book: { isbn: '9780064400558', pageCount: 184 },
+    progressMode: 'page', status: 'reading', openedOn: '2026-08-01', finishedOn: null,
+    entries: [], revisions: [], ...overrides,
+  });
+  const ent = (on, extra = {}) => ({ id: `ent_${on}`, on, at: `${on}T10:00:00.000Z`, source: 'panel', ...extra });
+
+  it('counts pages as a delta across the window, from `on` alone', () => {
+    const readings = [rdg({ entries: [ent('2026-08-01', { page: 20 }), ent('2026-08-05', { page: 60 })] })];
+    expect(measureObligation({ metric: 'pages', quantity: 30, per: 'week' }, readings, window).actual).toBe(40);
+  });
+
+  it('counts a finished reading by its stored finishedOn, not by hunting events', () => {
+    const readings = [
+      rdg({ id: 'rdg_a', status: 'finished', finishedOn: '2026-08-05' }),
+      rdg({ id: 'rdg_b', status: 'finished', finishedOn: '2026-07-01' }),
+      // Set aside on a day inside the window is not a finish, however it got there.
+      rdg({ id: 'rdg_c', status: 'set-aside', finishedOn: null, entries: [ent('2026-08-05', { page: 12 })] }),
+    ];
+    expect(measureObligation({ metric: 'books', quantity: 2, per: 'week' }, readings, window).actual).toBe(1);
+  });
+
+  it('counts check-ins as distinct days across readings', () => {
+    const readings = [
+      rdg({ id: 'rdg_a', progressMode: 'check', book: { isbn: 'a', pageCount: null }, entries: [ent('2026-08-04')] }),
+      rdg({ id: 'rdg_b', book: { isbn: 'b', pageCount: 184 }, entries: [ent('2026-08-04', { page: 5 })] }),
+      rdg({ id: 'rdg_c', book: { isbn: 'c', pageCount: 184 }, entries: [ent('2026-08-06', { page: 9 })] }),
+    ];
+    expect(measureObligation({ metric: 'checkins', quantity: 1, per: 'day' }, readings, window).actual).toBe(2);
+  });
+
+  it('sums minutes inside the window only', () => {
+    const readings = [rdg({
+      progressMode: 'minutes', book: { isbn: 'x', pageCount: null },
+      entries: [ent('2026-08-02', { minutes: 90 }), ent('2026-08-04', { minutes: 25 })],
+    })];
+    expect(measureObligation({ metric: 'minutes', quantity: 20, per: 'day' }, readings, window).actual).toBe(25);
+  });
+
+  it('scopes and reports incompatible books by the reading\'s own isbn', () => {
+    const readings = [
+      rdg({ id: 'rdg_a', book: { isbn: 'narnia-1', pageCount: 184 }, status: 'finished', finishedOn: '2026-08-05' }),
+      rdg({ id: 'rdg_b', book: { isbn: 'other', pageCount: 184 }, status: 'finished', finishedOn: '2026-08-05' }),
+    ];
+    const obligation = { metric: 'books', quantity: 2, per: 'once', scope: { books: ['narnia-1'] } };
+    expect(measureObligation(obligation, readings, window).actual).toBe(1);
+
+    const check = [rdg({ progressMode: 'check', book: { isbn: 'ref-1', pageCount: null }, entries: [ent('2026-08-05')] })];
+    expect(measureObligation({ metric: 'pages', quantity: 10, per: 'day' }, check, window))
+      .toMatchObject({ actual: 0, incompatibleBooks: ['ref-1'] });
+  });
+
+  it('needs no dayOf: a study day is what `on` already holds', () => {
+    // 9pm Pacific on Sep 2 was recorded at 04:00Z on Sep 3, and `on` says Sep 2.
+    // The v1 path needed an injected rule to know that; here there is nothing
+    // left to get wrong.
+    const readings = [rdg({ entries: [{ id: 'ent_x', on: '2026-09-02', at: '2026-09-03T04:00:00.000Z', page: 20 }] })];
+    expect(measureObligation({ metric: 'pages', quantity: 10, per: 'day' }, readings,
+      { from: '2026-09-02', to: '2026-09-02' }).actual).toBe(20);
+  });
+});
+
+describe('a v1 item and its v2 conversion measure identically', () => {
+  // The equality Phase B's migration verifies against. Every metric, every
+  // window: if these two ever disagree, a converted shelf would report a
+  // different year of reading than the one it replaced.
+  const METRICS = ['pages', 'minutes', 'books', 'checkins'];
+  const WINDOWS = {
+    day: { from: '2026-09-06', to: '2026-09-06' },
+    week: { from: '2026-08-31', to: '2026-09-06' },
+    month: { from: '2026-08-08', to: '2026-09-06' },
+    once: { from: null, to: '2026-09-06' },
+  };
+
+  /** Measures both shapes for every metric and window; returns nothing, asserts everything. */
+  const expectSameMeasure = (items, { dayOf = undefined, scope = null } = {}) => {
+    const readings = items.map((entry, index) => readingFromLegacyItem(entry, {
+      learnerId: 'learner_a', ...(dayOf ? { dayOf } : {}), readingId: `rdg_${index}`,
+    }));
+    for (const metric of METRICS) {
+      for (const [per, window] of Object.entries(WINDOWS)) {
+        const obligation = { metric, quantity: 1, per, ...(scope ? { scope } : {}) };
+        const options = dayOf ? { dayOf } : {};
+        expect({ metric, per, ...measureObligation(obligation, readings, window) })
+          .toEqual({ metric, per, ...measureObligation(obligation, items, window, options) });
+      }
+    }
+    // And the projections the shelf card draws from.
+    for (const [index, entry] of items.entries()) {
+      const before = projectShelfItem(entry, dayOf ? { dayOf } : {});
+      const after = projectReading(readings[index]);
+      expect({ id: index, ...pick(after) }).toEqual({ id: index, ...pick(before) });
+    }
+  };
+  const pick = ({ status, page, percent, minutes, daysRead }) => ({ status, page, percent, minutes, daysRead });
+
+  const item = (overrides = {}) => ({
+    itemId: `learner_a:${overrides.bookId ?? '9780064400558'}:e1`,
+    bookId: '9780064400558', progressMode: 'page', pageCount: 184,
+    openedAt: '2026-09-01T10:00:00.000Z', events: [], ...overrides,
+  });
+
+  it('holds for a book being read by page', () => {
+    expectSameMeasure([item({ events: [
+      { kind: 'started', at: '2026-09-01T10:00:00.000Z', entryId: 'e1' },
+      { kind: 'progress', at: '2026-09-03T10:00:00.000Z', page: 40, entryId: 'p1' },
+      { kind: 'progress', at: '2026-09-06T10:00:00.000Z', page: 84, entryId: 'p2' },
+    ] })]);
+  });
+
+  it('holds for a finish backdated out of the window it was logged in', () => {
+    expectSameMeasure([item({ events: [
+      { kind: 'started', at: '2026-09-06T15:07:00.000Z', entryId: 'e1' },
+      { kind: 'progress', at: '2026-09-06T15:08:00.000Z', page: 100, entryId: 'p1' },
+      { kind: 'finished', at: '2026-08-19T12:00:00.000Z', entryId: 'f1' },
+    ] })]);
+  });
+
+  it('holds for a set-aside book, whose state stops being a row', () => {
+    expectSameMeasure([item({ events: [
+      { kind: 'started', at: '2026-09-05T19:13:46.320Z', entryId: 'e1' },
+      { kind: 'progress', at: '2026-09-05T19:13:46.320Z', page: 24, entryId: 'p1' },
+      { kind: 'progress', at: '2026-09-06T15:02:47.747Z', page: 250, entryId: 'p2' },
+      { kind: 'progress', at: '2026-09-06T15:03:02.866Z', page: 5, entryId: 'p3' },
+      { kind: 'set-aside', at: '2026-09-06T15:03:26.078Z', entryId: 's1' },
+    ] })]);
+  });
+
+  it('holds for a finish a child took back — the cancelled finish is not evidence', () => {
+    expectSameMeasure([item({ events: [
+      { kind: 'started', at: '2026-09-01T10:00:00.000Z', entryId: 'e1' },
+      { kind: 'finished', at: '2026-09-04T12:00:00.000Z', entryId: 'f1' },
+      { kind: 'reopened', at: '2026-09-05T10:00:00.000Z', entryId: 'r1' },
+      { kind: 'progress', at: '2026-09-06T10:00:00.000Z', page: 30, entryId: 'p1' },
+    ] })]);
+  });
+
+  it('holds for check mode and for minutes mode', () => {
+    expectSameMeasure([
+      item({ bookId: 'ref-1', progressMode: 'check', pageCount: null, events: [
+        { kind: 'started', at: '2026-09-04T12:00:00.000Z', entryId: 'e1' },
+        { kind: 'progress', at: '2026-09-05T10:00:00.000Z', entryId: 'c1' },
+        { kind: 'finished', at: '2026-09-06T12:00:00.000Z', entryId: 'f1' },
+      ] }),
+      item({ bookId: 'audio-1', progressMode: 'minutes', pageCount: null, events: [
+        { kind: 'started', at: '2026-09-02T12:00:00.000Z', entryId: 'e2' },
+        { kind: 'progress', at: '2026-09-03T10:00:00.000Z', minutes: 25, entryId: 'm1' },
+        { kind: 'progress', at: '2026-09-06T10:00:00.000Z', minutes: 40, entryId: 'm2' },
+      ] }),
+    ]);
+  });
+
+  it('holds for two readings of one book — the case a book-keyed id could not name', () => {
+    expectSameMeasure([
+      item({ itemId: 'learner_a:b:e1', events: [
+        { kind: 'started', at: '2026-09-01T10:00:00.000Z', entryId: 'e1' },
+        { kind: 'finished', at: '2026-09-02T12:00:00.000Z', entryId: 'f1' },
+      ] }),
+      item({ itemId: 'learner_a:b:e2', events: [
+        { kind: 'started', at: '2026-09-05T10:00:00.000Z', entryId: 'e2' },
+        { kind: 'progress', at: '2026-09-06T10:00:00.000Z', page: 12, entryId: 'p1' },
+      ] }),
+    ]);
+  });
+
+  it('holds under a household day rule, because the conversion applies the same one', () => {
+    // 7:20pm Pacific on Sep 6 is 02:20Z on Sep 7. The study day is Sep 6, and a
+    // conversion that filed it under Sep 7 would move real reading into a week
+    // the gradebook has already reported on.
+    const pacificDay = (iso) => {
+      const ms = Date.parse(iso) - 7 * 3_600_000 - 4 * 3_600_000;
+      return Number.isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : '';
+    };
+    expectSameMeasure([item({ events: [
+      { kind: 'started', at: '2026-09-07T02:20:14.112Z', entryId: 'e1' },
+      { kind: 'progress', at: '2026-09-07T02:20:14.112Z', page: 30, entryId: 'p1' },
+    ] })], { dayOf: pacificDay });
+  });
+
+  it('holds with a scope that names only some of the books', () => {
+    expectSameMeasure([
+      item({ bookId: 'narnia-1', events: [{ kind: 'finished', at: '2026-09-06T12:00:00.000Z', entryId: 'f1' }] }),
+      item({ bookId: 'other', events: [{ kind: 'finished', at: '2026-09-06T12:00:00.000Z', entryId: 'f2' }] }),
+    ], { scope: { books: ['narnia-1'] } });
+  });
+
+  it('carries the book, the mode and the retry key across', () => {
+    const converted = readingFromLegacyItem(item({ events: [
+      { kind: 'started', at: '2026-09-01T10:00:00.000Z', entryId: 'e1' },
+      { kind: 'progress', at: '2026-09-03T10:00:00.000Z', page: 40, entryId: 'p1' },
+    ] }), { learnerId: 'learner_a', readingId: 'rdg_x' });
+
+    expect(converted).toMatchObject({
+      id: 'rdg_x', learnerId: 'learner_a',
+      book: { isbn: '9780064400558', pageCount: 184 },
+      progressMode: 'page', status: 'reading', openedOn: '2026-09-01', finishedOn: null,
+      idempotencyKey: 'e1', revisions: [],
+    });
+    // `started` is not evidence, so it is an opening day, not a row.
+    expect(converted.entries).toHaveLength(1);
+    expect(converted.entries[0]).toMatchObject({ on: '2026-09-03', at: '2026-09-03T10:00:00.000Z', page: 40, idempotencyKey: 'p1' });
+  });
+
+  it('records the finish day for a finished reading, and leaves the opening truthful', () => {
+    const converted = readingFromLegacyItem(item({ openedAt: '2026-09-06T19:00:00.000Z', events: [
+      { kind: 'started', at: '2026-09-06T19:00:00.000Z', entryId: 'e1' },
+      { kind: 'finished', at: '2026-09-04T12:00:00.000Z', entryId: 'f1' },
+    ] }), { learnerId: 'learner_a' });
+    expect(converted).toMatchObject({ status: 'finished', finishedOn: '2026-09-04', openedOn: '2026-09-06' });
+    expect(converted.entries.map((entry) => entry.on)).toEqual(['2026-09-04']);
+  });
+
+  it('never throws on junk', () => {
+    for (const junk of [null, undefined, {}, { events: 'no' }, { events: [null, 3] }]) {
+      expect(() => readingFromLegacyItem(junk, { learnerId: 'learner_a' })).not.toThrow();
+    }
+  });
+});
+
 describe('selectFeaturedShelfItem', () => {
   const reading = (itemId, at, page, overrides = {}) => item({
     itemId, events: [ev('progress', at, { page })], ...overrides,
@@ -398,6 +715,26 @@ describe('selectFeaturedShelfItem', () => {
 
   it('reports an empty shelf as empty', () => {
     expect(selectFeaturedShelfItem([])).toEqual({ state: 'empty', featured: null, alsoReading: [] });
+  });
+
+  it('selects over v2 readings too, from the reading id and the reading\'s own book', () => {
+    const rdg = (id, on, page, over = {}) => ({
+      id, learnerId: 'learner_a', book: { isbn: `isbn-${id}`, pageCount: 184 },
+      progressMode: 'page', status: 'reading', openedOn: '2026-09-01', finishedOn: null, revisions: [],
+      entries: [{ id: `ent_${id}`, on, at: `${on}T10:00:00.000Z`, page }], ...over,
+    });
+    const selection = selectFeaturedShelfItem([
+      rdg('rdg_a', '2026-09-05', 40),
+      rdg('rdg_b', '2026-09-01', 170),
+      rdg('rdg_c', '2026-09-03', 90),
+    ]);
+    expect(selection.state).toBe('reading');
+    expect(selection.featured.item.id).toBe('rdg_b');
+    expect(selection.alsoReading.map((entry) => entry.item.id)).toEqual(['rdg_a', 'rdg_c']);
+
+    // And a set-aside reading is still a state a child chose, not an absence.
+    const aside = selectFeaturedShelfItem([rdg('rdg_d', '2026-09-05', 12, { status: 'set-aside' })]);
+    expect(aside.state).toBe('set-aside');
   });
 
   it('never throws on junk — a damaged log must not stop the page printing', () => {

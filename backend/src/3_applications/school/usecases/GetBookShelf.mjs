@@ -1,5 +1,5 @@
 import { ValidationError } from '#domains/core/errors/index.mjs';
-import { projectShelfItem, earliestBackdateDay } from '#domains/school/bookShelf.mjs';
+import { projectReading, shelfItemView, earliestBackdateDay } from '#domains/school/bookShelf.mjs';
 
 /**
  * GetBookShelf — everything the shelf screen needs for one learner, in one read.
@@ -39,26 +39,29 @@ export class GetBookShelf {
 
   async execute({ learnerId } = {}) {
     if (typeof learnerId !== 'string' || !learnerId) throw new ValidationError('learnerId is required');
-    const dayOf = (iso) => this.#bookLogLauncher.dayOf(iso);
-    const studyDay = dayOf(this.#clock().toISOString());
-    const [items, status] = await Promise.all([
+    const studyDay = this.#bookLogLauncher.dayOf(this.#clock().toISOString());
+    const [readings, status] = await Promise.all([
       this.#bookLog.listForLearner(learnerId),
       this.#bookLogLauncher.status({ userId: learnerId }),
     ]);
-    const enriched = await Promise.all(items.map(async (item) => {
+    const enriched = await Promise.all(readings.map(async (reading) => {
+      // The panel's four fields, from wherever the record keeps them. `itemId`
+      // is the reading id: opaque to the client, which never parses it.
+      const view = shelfItemView(reading);
       let book = null;
       try {
-        book = await this.#bookRepository.findByIsbn(item.bookId);
+        book = await this.#bookRepository.findByIsbn(view.bookId);
       } catch (error) {
-        this.#logger.warn?.('school.book-shelf.book-facts-failed', { learnerId, bookId: item.bookId, error: error.message });
+        this.#logger.warn?.('school.book-shelf.book-facts-failed', { learnerId, bookId: view.bookId, error: error.message });
       }
       return {
-        ...item,
+        ...reading,
+        ...view,
         title: book?.title ?? null,
         subtitle: book?.subtitle ?? null,
         authors: book?.authors ?? [],
         coverUrl: book?.coverUrl ?? null,
-        projection: projectShelfItem(item, { dayOf }),
+        projection: projectReading(reading),
       };
     }));
     enriched.sort((a, b) => String(b.projection.lastAt ?? '').localeCompare(String(a.projection.lastAt ?? '')));

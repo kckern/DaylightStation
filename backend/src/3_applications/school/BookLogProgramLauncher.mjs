@@ -45,7 +45,7 @@
  * @module applications/school/BookLogProgramLauncher
  */
 import { BOOK_LOG_PROGRAM_ID, bookLogContext } from '#domains/school/bookLog.mjs';
-import { measureObligation, projectShelfItem, selectFeaturedShelfItem } from '#domains/school/bookShelf.mjs';
+import { measureObligation, projectRecord, selectFeaturedShelfItem, shelfItemView } from '#domains/school/bookShelf.mjs';
 import { studyDayForInstant } from '#domains/school/studyDay.mjs';
 
 /** Where a child does this, in the words a child reads. */
@@ -166,7 +166,7 @@ export class BookLogProgramLauncher {
     const window = obligation ? obligationWindow(obligation.per, this.studyDay()) : null;
     const dayOf = (iso) => this.dayOf(iso);
     const measured = measureObligation(obligation, items, window, { dayOf });
-    const projections = items.map((entry) => projectShelfItem(entry, { dayOf }));
+    const projections = items.map((entry) => projectRecord(entry, { dayOf }));
     const reading = projections.filter((view) => view.status === 'reading').length;
     const finished = projections.filter((view) => view.status === 'finished').length;
 
@@ -297,8 +297,9 @@ export class BookLogProgramLauncher {
       return { state, book: null, page: null, percent: null, pageCount: null, minutes: null, daysRead: 0, at: null, alsoReading: [] };
     }
 
-    const facts = await this.#bookFacts(featured.item.bookId, learnerId);
-    const others = await Promise.all(alsoReading.map((entry) => this.#bookFacts(entry.item.bookId, learnerId)));
+    const view = shelfItemView(featured.item);
+    const facts = await this.#bookFacts(view.bookId, learnerId);
+    const others = await Promise.all(alsoReading.map((entry) => this.#bookFacts(shelfItemView(entry.item).bookId, learnerId)));
 
     this.#logger.debug?.('school.book-log.featured', { learnerId, state, hasTitle: Boolean(facts) });
 
@@ -307,9 +308,9 @@ export class BookLogProgramLauncher {
       book: facts,
       page: featured.projection.page,
       percent: featured.projection.percent,
-      // The ITEM's length, not the catalog's — the same number `percentFor`
+      // THIS COPY's length, not the catalog's — the same number the percentage
       // divided by, so the printed fraction and the drawn bar cannot disagree.
-      pageCount: featured.item.pageCount ?? null,
+      pageCount: view.pageCount ?? null,
       minutes: featured.projection.minutes,
       daysRead: featured.projection.daysRead,
       at: featured.projection.lastAt,

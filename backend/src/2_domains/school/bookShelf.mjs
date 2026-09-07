@@ -155,12 +155,15 @@ export function isPlausiblePage(page, pageCount, { factor = PAGE_PLAUSIBILITY_FA
   return page <= pageCount * factor;
 }
 
-const inWindow = (at, window, dayOf) => {
+/** Is a study day inside the window? The v2 shape asks this directly. */
+const inDayWindow = (day, window) => {
   if (!window) return true;
-  const day = dayOf(at);
   if (!day) return false;
   return (!window.from || day >= window.from) && (!window.to || day <= window.to);
 };
+
+/** The v1 shape must first ask what day an INSTANT belonged to. */
+const inWindow = (at, window, dayOf) => inDayWindow(dayOf(at), window);
 
 const sorted = (events) => [...(events ?? [])].filter(Boolean)
   .sort((left, right) => String(left.at).localeCompare(String(right.at)));
@@ -244,6 +247,178 @@ export function projectShelfItem(item, { dayOf = isoDay } = {}) {
   };
 }
 
+/**
+ * Is this record a v2 reading rather than a v1 shelf item?
+ *
+ * `entries` is the discriminator because it is the field v2 adds and v1 has no
+ * name for. Every function below that must serve both shapes asks here rather
+ * than being called twice from two branches — a store mid-migration hands back
+ * a list, not a promise about what is in it.
+ */
+const isReading = (record) => Array.isArray(record?.entries);
+
+/** The book a record is about, wherever that shape keeps it. */
+const bookIdOf = (record) => (isReading(record) ? record?.book?.isbn : record?.bookId) ?? null;
+
+/**
+ * One v1 shelf item as the v2 reading it means.
+ *
+ * ## WHAT BECOMES A ROW, AND WHAT BECOMES A FIELD
+ *
+ * `started`, `set-aside` and `reopened` are STATE CHANGES, not evidence that a
+ * child read that day — and treating them as rows is what let array position
+ * decide a book's status. They become `openedOn` and `status`. `progress` and
+ * an uncancelled `finished` are evidence and become entries; a finish a child
+ * took back was never evidence under v1 either, so it does not become one now.
+ * That is what keeps `daysRead` identical across the conversion.
+ *
+ * ## THE DAY RULE MUST BE THE HOUSEHOLD'S
+ *
+ * `on` is computed from `at` through the injected `dayOf`. Converting with the
+ * default ISO slice under a household on a 4am boundary would move a 7pm read
+ * to the next day, silently shifting real reading into a week already reported
+ * on. Callers pass the same `dayOf` the launcher measures with.
+ *
+ * Ids are injected, not minted: the store maps a v1 file on READ and must
+ * produce the same ids every time, while the migration deliberately mints
+ * fresh opaque ones.
+ *
+ * @param {object} item - a v1 shelf item
+ * @param {{learnerId?: string|null, dayOf?: (at: string) => string,
+ *   readingId?: string, entryIdFor?: (event: object, index: number) => string}} [options]
+ * @returns {object} a v2 reading
+ */
+export function readingFromLegacyItem(item, {
+  learnerId = null,
+  dayOf = isoDay,
+  readingId = null,
+  entryIdFor = (event, index) => `ent_${event?.entryId ?? index}`,
+} = {}) {
+  const events = (Array.isArray(item?.events) ? item.events : []).filter(
+    (event) => event && typeof event === 'object',
+  );
+  const opening = sorted(events).find((event) => event.kind === 'started') ?? null;
+  const finish = finishFacts(events).active;
+
+  return {
+    id: readingId ?? item?.itemId ?? null,
+    learnerId,
+    book: { isbn: item?.bookId ?? null, pageCount: item?.pageCount ?? null },
+    progressMode: item?.progressMode ?? 'page',
+    // The normalised event list, not the raw one: a hand-edited file can hold
+    // anything, and a conversion that throws is a shelf a grown-up cannot open.
+    status: projectShelfItem({ ...item, events }, { dayOf }).status,
+    openedOn: dayOf(item?.openedAt ?? opening?.at ?? '') || null,
+    finishedOn: finish ? (dayOf(finish.at) || null) : null,
+    // The client's retry key, doing ONE job now. It named the item as well as
+    // deduping the open; only the deduping survives.
+    idempotencyKey: opening?.entryId ?? null,
+    entries: readingEvents(events).map((event, index) => ({
+      id: entryIdFor(event, index),
+      on: dayOf(event.at) || null,
+      at: event.at ?? null,
+      ...(Number.isFinite(event.page) ? { page: event.page } : {}),
+      ...(Number.isFinite(event.minutes) ? { minutes: event.minutes } : {}),
+      ...(event.note ? { note: String(event.note) } : {}),
+      ...(Number.isFinite(event.rating) ? { rating: event.rating } : {}),
+      ...(event.externalId ? { externalId: String(event.externalId) } : {}),
+      source: event.source ? String(event.source) : 'panel',
+      idempotencyKey: event.entryId ?? null,
+    })),
+    revisions: [],
+  };
+}
+
+/**
+ * Everything a shelf card or a teacher row needs for one v2 reading.
+ *
+ * ## STATUS IS READ, NOT INFERRED
+ *
+ * `projectShelfItem` above decides the lifecycle state from ARRAY POSITION —
+ * `set-aside` counts only while it is the last event, and a finish holds only
+ * until a `reopened` cancels it. That is the defect v2 exists to remove: a
+ * grown-up could not SET a state, only append an event whose position implied
+ * one. Here the stored `status` is taken verbatim. Nothing about the order of
+ * `entries` can change it.
+ *
+ * ## `daysRead` MAPS NOTHING
+ *
+ * An entry's `on` is already the study day it happened, chosen when the row was
+ * written, so there is no `dayOf` to inject and no instant to reinterpret. That
+ * is the whole point of separating `on` from `at`.
+ *
+ * ## THE FURTHEST PAGE STILL WINS
+ *
+ * `Math.max`, exactly as before: a child re-reading a chapter has still reached
+ * the page they reached. That rule was only ever a trap because a fat-fingered
+ * 250 could not be taken back — v2 gives every entry an id, so the row can be
+ * corrected or removed instead of the projection being weakened.
+ *
+ * @param {{status?: string, progressMode?: string, book?: {pageCount?: number|null},
+ *   entries?: object[]}} reading
+ * @returns {{status: string|null, page: number|null, percent: number|null,
+ *   minutes: number|null, daysRead: number, lastOn: string|null, lastAt: string|null}}
+ */
+export function projectReading(reading) {
+  const entries = Array.isArray(reading?.entries) ? reading.entries.filter(Boolean) : [];
+  const status = typeof reading?.status === 'string' ? reading.status : null;
+  const finished = status === 'finished';
+
+  const pages = entries.map((entry) => entry?.page).filter((page) => Number.isFinite(page));
+  const page = pages.length ? Math.max(...pages) : null;
+  const minutes = entries.reduce((sum, entry) => sum + (Number.isFinite(entry?.minutes) ? entry.minutes : 0), 0);
+
+  const days = entries.map((entry) => entry?.on).filter((day) => typeof day === 'string' && day);
+  const instants = entries.map((entry) => entry?.at).filter((at) => typeof at === 'string' && at);
+
+  return {
+    status,
+    page,
+    percent: percentOf(reading?.progressMode, reading?.book?.pageCount, page, finished),
+    minutes: reading?.progressMode === 'minutes' ? minutes : (minutes || null),
+    daysRead: new Set(days).size,
+    // Two different questions. "When did they last read" is a study day the
+    // child lived; "when was this last touched" is an instant the system
+    // recorded. A finish logged on Sunday for Friday answers them differently,
+    // and the teacher view shows both.
+    lastOn: days.length ? days.reduce((latest, day) => (day > latest ? day : latest)) : null,
+    lastAt: instants.length ? instants.reduce((latest, at) => (at > latest ? at : latest)) : null,
+  };
+}
+
+/**
+ * The four fields a shelf card names about a record, from either shape.
+ *
+ * The panel's wire shape does not change across the re-key: `itemId` is the
+ * reading id, which the client already treats as opaque and never parses. What
+ * moved is where the values LIVE — `reading.book.isbn` rather than
+ * `item.bookId` — and this is the one place that knows it.
+ *
+ * @param {object} record - a v1 shelf item or a v2 reading
+ * @returns {{itemId: string|null, bookId: string|null, progressMode: string|null, pageCount: number|null}}
+ */
+export function shelfItemView(record) {
+  if (isReading(record)) {
+    return {
+      itemId: record.id ?? null,
+      bookId: record.book?.isbn ?? null,
+      progressMode: record.progressMode ?? null,
+      pageCount: record.book?.pageCount ?? null,
+    };
+  }
+  return {
+    itemId: record?.itemId ?? null,
+    bookId: record?.bookId ?? null,
+    progressMode: record?.progressMode ?? null,
+    pageCount: record?.pageCount ?? null,
+  };
+}
+
+/** Project whichever shape a caller was handed. */
+export function projectRecord(record, { dayOf = isoDay } = {}) {
+  return isReading(record) ? projectReading(record) : projectShelfItem(record, { dayOf });
+}
+
 /** How many other in-progress books the card names. Two fits the narrow column. */
 export const ALSO_READING_LIMIT = 2;
 
@@ -290,19 +465,19 @@ export const ALSO_READING_LIMIT = 2;
  */
 export function selectFeaturedShelfItem(items, { dayOf = isoDay } = {}) {
   const projected = (Array.isArray(items) ? items : [])
-    // A row with no string `itemId` cannot be one of ours: the store builds
-    // `<learner>:<book>:<entry>` at open and refuses to append without it. Dropping
-    // it silently is deliberate — an unreadable shelf throws in the store, one layer
-    // up, so anything reaching here is a hand-edited row, and a card that prints one
-    // fewer book beats a card that does not print. `unread` items land here too.
-    .filter((item) => item && typeof item === 'object' && typeof item.itemId === 'string')
-    .map((item) => ({ item, projection: projectShelfItem(item, { dayOf }) }));
+    // A row with no string id cannot be one of ours: the store mints one at open
+    // and refuses to append without it. Dropping it silently is deliberate — an
+    // unreadable shelf throws in the store, one layer up, so anything reaching
+    // here is a hand-edited row, and a card that prints one fewer book beats a
+    // card that does not print. `unread` items land here too.
+    .filter((item) => item && typeof item === 'object' && typeof shelfItemView(item).itemId === 'string')
+    .map((item) => ({ item, projection: projectRecord(item, { dayOf }) }));
 
   const withStatus = (status) => projected.filter((entry) => entry.projection.status === status);
 
   // Newest first, then itemId — the stable order every branch below shares.
   const byRecency = (a, b) => String(b.projection.lastAt ?? '').localeCompare(String(a.projection.lastAt ?? ''))
-    || String(a.item.itemId).localeCompare(String(b.item.itemId));
+    || String(shelfItemView(a.item).itemId).localeCompare(String(shelfItemView(b.item).itemId));
 
   const reading = withStatus('reading');
   if (reading.length) {
@@ -332,12 +507,20 @@ export function selectFeaturedShelfItem(items, { dayOf = isoDay } = {}) {
 }
 
 function percentFor(item, page, finished) {
+  return percentOf(item?.progressMode, item?.pageCount, page, finished);
+}
+
+/**
+ * The one percentage rule, so a v1 item and the v2 reading it converts into
+ * cannot draw two different bars. Where the length lives differs between the
+ * shapes — `item.pageCount`, `reading.book.pageCount` — and that is all.
+ */
+function percentOf(progressMode, pageCount, page, finished) {
   if (finished) return 100;
-  if (item?.progressMode !== 'page') return null;
-  const total = item?.pageCount;
-  if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(page)) return null;
+  if (progressMode !== 'page') return null;
+  if (!Number.isFinite(pageCount) || pageCount <= 0 || !Number.isFinite(page)) return null;
   // Clamp the BAR, keep the page. See the 212-of-184 case.
-  return Math.max(0, Math.min(100, Math.round((page / total) * 100)));
+  return Math.max(0, Math.min(100, Math.round((page / pageCount) * 100)));
 }
 
 /** Which modes can supply which metric. `checkins` works for every book. */
@@ -366,15 +549,15 @@ export function measureObligation(obligation, items = [], window = null, { dayOf
     return { met: true, actual: 0, target: 0, metric: null, incompatibleBooks: [] };
   }
 
-  const scoped = (items ?? []).filter(Boolean).filter((item) => (
-    !obligation.scope || obligation.scope.books.includes(item.bookId)
+  const scoped = (items ?? []).filter(Boolean).filter((record) => (
+    !obligation.scope || obligation.scope.books.includes(bookIdOf(record))
   ));
 
   const allowedModes = METRIC_MODES[obligation.metric] ?? PROGRESS_MODES;
-  const usable = scoped.filter((item) => allowedModes.includes(item.progressMode));
+  const usable = scoped.filter((record) => allowedModes.includes(record.progressMode));
   const incompatibleBooks = scoped
-    .filter((item) => !allowedModes.includes(item.progressMode))
-    .map((item) => item.bookId);
+    .filter((record) => !allowedModes.includes(record.progressMode))
+    .map((record) => bookIdOf(record));
 
   const actual = countFor(obligation.metric, usable, window, dayOf);
   return {
@@ -386,25 +569,22 @@ export function measureObligation(obligation, items = [], window = null, { dayOf
   };
 }
 
-function countFor(metric, items, window, dayOf) {
+function countFor(metric, records, window, dayOf) {
   if (metric === 'books') {
-    return items.filter((item) => {
-      const finish = finishFacts(item.events).active;
-      return finish && inWindow(finish.at, window, dayOf);
-    }).length;
+    return records.filter((record) => finishedInWindow(record, window, dayOf)).length;
   }
 
   if (metric === 'minutes') {
-    return items.reduce((sum, item) => sum + sorted(item.events)
-      .filter((event) => inWindow(event.at, window, dayOf))
-      .reduce((inner, event) => inner + (Number.isFinite(event.minutes) ? event.minutes : 0), 0), 0);
+    return records.reduce((sum, record) => sum + evidenceOf(record, dayOf)
+      .filter((row) => inDayWindow(row.on, window))
+      .reduce((inner, row) => inner + (Number.isFinite(row.minutes) ? row.minutes : 0), 0), 0);
   }
 
   if (metric === 'checkins') {
     const days = new Set();
-    for (const item of items) {
-      for (const event of readingEvents(item.events)) {
-        if (inWindow(event.at, window, dayOf)) days.add(dayOf(event.at));
+    for (const record of records) {
+      for (const row of evidenceOf(record, dayOf)) {
+        if (row.on && inDayWindow(row.on, window)) days.add(row.on);
       }
     }
     return days.size;
@@ -412,15 +592,52 @@ function countFor(metric, items, window, dayOf) {
 
   // pages: per book, furthest-in-window minus furthest-before-window, floored
   // at zero so a re-read cannot subtract from another book's real reading.
-  return items.reduce((sum, item) => {
-    const events = sorted(item.events).filter((event) => Number.isFinite(event.page));
-    const before = events.filter((event) => !inWindow(event.at, window, dayOf)
-      && (!window?.from || dayOf(event.at) < window.from)).map((event) => event.page);
-    const inside = events.filter((event) => inWindow(event.at, window, dayOf)).map((event) => event.page);
+  return records.reduce((sum, record) => {
+    const rows = evidenceOf(record, dayOf).filter((row) => Number.isFinite(row.page));
+    const before = rows.filter((row) => !inDayWindow(row.on, window)
+      && (!window?.from || row.on < window.from)).map((row) => row.page);
+    const inside = rows.filter((row) => inDayWindow(row.on, window)).map((row) => row.page);
     if (inside.length === 0) return sum;
     const start = before.length ? Math.max(...before) : 0;
     return sum + Math.max(0, Math.max(...inside) - start);
   }, 0);
+}
+
+/**
+ * One record's dated evidence as `{ on, page, minutes }`, whichever shape it is.
+ *
+ * The v2 half is the whole point of the redesign: an entry already knows the
+ * study day it belongs to, so nothing reinterprets an instant. The v1 half
+ * still has to ask `dayOf`, and still has to exclude the events that were only
+ * ever state changes — the two together are why v1 could not be edited.
+ */
+function evidenceOf(record, dayOf) {
+  if (isReading(record)) {
+    return (record.entries ?? []).filter(Boolean).map((entry) => ({
+      on: typeof entry.on === 'string' ? entry.on : null,
+      page: entry.page,
+      minutes: entry.minutes,
+    }));
+  }
+  return readingEvents(record?.events).map((event) => ({
+    on: dayOf(event.at) || null, page: event.page, minutes: event.minutes,
+  }));
+}
+
+/**
+ * Did this record finish inside the window?
+ *
+ * v2 answers from the STORED decision and its `finishedOn`. v1 has to scan for
+ * a `finished` that no later `reopened` cancels — the correction-event pattern
+ * arriving through the back door, and the reason a grown-up could never simply
+ * mark a book done.
+ */
+function finishedInWindow(record, window, dayOf) {
+  if (isReading(record)) {
+    return record.status === 'finished' && inDayWindow(record.finishedOn, window);
+  }
+  const finish = finishFacts(record?.events).active;
+  return Boolean(finish) && inWindow(finish.at, window, dayOf);
 }
 
 export default projectShelfItem;
