@@ -27,6 +27,7 @@ The dashboard the URL lands on is the **Today tab**. Reading down the page:
 | "N subjects need a grown-up →" strip, above the roster | `GrownUpStrip` | `tabs/TodayTab.jsx` (tally reported up from `panels/RosterStrip.jsx`'s `onNeedsGrownUp`) |
 | The Records tab, day record, session detail | `RecordsTab`, `WorkspaceViews` | `tabs/RecordsTab.jsx`, `WorkspaceViews.jsx`, `panels/LearnerDayView.jsx` |
 | A student's **Reading** tab — the obligation strip, the three counts, and the READING NOW / FINISHED / SET ASIDE rows | `ReadingView` → `ReadingShelfPanel` | `WorkspaceViews.jsx`, `panels/ReadingShelfPanel.jsx` (covers/titles: `../books/BookCover.jsx`, `../books/bookPresentation.js`; day + duration: `../books/ShelfTile.jsx`) |
+| The `⋯` on a reading row, and the panel it opens (identity / what was read / state / danger / history) | `ReadingDetailPanel` | `panels/ReadingDetailPanel.jsx` (which verbs need a reason, which undos the server refuses, where the counted window is: `panels/readingDetail.js`) |
 
 **Decides Done / Not started / Deferred / Blocked, and which session belongs
 to which planned lesson:** (provenance — `unplanned`, `carriedOver` — is a flag
@@ -76,6 +77,31 @@ curl -s --cookie 'daylight_teacher_session=<token>' \
 Same `GetBookShelf` view the child's own panel reads through
 `/books/:learnerId/shelf` — one projection of a child's reading year, two
 gates. Client wrapper: `teacherWorkspaceApi.readingShelf()`.
+
+The **detail** a row opens is a second read and nine writes, all under the same
+prefix (`teacherWorkspaceApi.readingDetail` / `updateReading` /
+`addReadingEntry` / `updateReadingEntry` / `deleteReadingEntry` /
+`undoReadingRevision` / `moveReading` / `deleteReading`):
+
+```bash
+# One reading, every entry, and the full revisions list the editor undoes from.
+curl -s --cookie 'daylight_teacher_session=<token>' \
+  https://daylightlocal.kckern.net/api/v1/school/teacher/learners/learner-1/reading/<readingId> \
+  | jq '{status: .reading.status, entries: (.reading.entries|length), baseRevisionCount: .reading.baseRevisionCount}'
+```
+
+Three things to know before reading that code:
+
+- **Which reading is open is in the URL** — `?reading=<id>` on the Reading tab
+  (`teacherReadingPath` in `teacherUrl.js`), so a refresh or a pasted link
+  comes back to the same record.
+- **`baseRevisionCount` rides on every write.** It is served by the detail read
+  and never counted on the client. A stale save is refused with the server's
+  own reload sentence and NOTHING is merged or replayed.
+- **The lockout lives in `ReadingView`, not in either panel.** A shelf that did
+  not read `ok` renders no edit surface at all, deep link or not — a damaged
+  year of a child's evidence must never present as a shelf a grown-up starts
+  "fixing".
 
 Client wrappers: `schoolApi.teacherDay()` and `schoolApi.agendaPreview()` in
 `../schoolApi.js`. (`schoolApi.teacherToday()` still exists and still backs the

@@ -1900,7 +1900,7 @@
 
   &__row {
     display: grid;
-    grid-template-columns: 40px 1fr auto;
+    grid-template-columns: 40px 1fr auto auto;
     align-items: start;
     gap: 10px;
     padding: 8px;
@@ -1960,4 +1960,358 @@
     border-radius: 999px;
     background: #6e4b20;
   }
+
+  /* The one control on a row. It navigates — every verb lives one layer in,
+   * so nothing here can change the record under a browsing thumb. */
+  &__row-open {
+    align-self: center;
+    min-width: 36px;
+    min-height: 36px;
+    border: 1px solid var(--ds-border);
+    border-radius: 8px;
+    background: var(--ds-surface-alt);
+    color: var(--ds-text-mid);
+    font: inherit;
+    font-size: 16px;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+  }
+}
+
+/* The reading detail — four bands in the design's order (identity, evidence,
+ * state, danger), then history. The bands are visually equal EXCEPT danger,
+ * which is set apart on purpose: consequence wears a costume. */
+.teacher-reading-detail {
+  margin-top: 14px;
+
+  &__topline {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--ds-border);
+    border-radius: 12px 12px 0 0;
+    border-bottom: 0;
+    background: var(--ds-surface-alt);
+  }
+
+  &__identity {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  &__cover {
+    width: 44px;
+    height: 64px;
+    object-fit: contain;
+    border-radius: 4px;
+    display: grid;
+    place-items: center;
+    background: var(--ds-background);
+    color: var(--ds-text-low);
+  }
+
+  &__title { margin: 0; font-size: 16px; font-weight: 700; color: var(--ds-text-high); }
+
+  &__author { margin: 1px 0 0; font-size: 13px; color: var(--ds-text-mid); }
+
+  &__meta { margin: 3px 0 0; font-size: 12px; color: var(--ds-text-low); }
+
+  &__done {
+    min-height: 40px;
+    padding: 0 16px;
+    border: 1px solid var(--ds-border);
+    border-radius: 10px;
+    background: var(--ds-surface);
+    color: var(--ds-text-high);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  /* A stale save is refused and NOTHING is merged: the banner is the whole
+   * story, and every write below it is disabled until the grown-up reloads. */
+  &__stale {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 2px solid var(--ds-accent);
+    border-radius: 0;
+    background: var(--ds-surface);
+    color: var(--ds-text-high);
+
+    p { margin: 0; font-weight: 700; }
+
+    button {
+      min-height: 40px;
+      padding: 0 14px;
+      border: 1px solid var(--ds-accent);
+      border-radius: 10px;
+      background: var(--ds-surface-alt);
+      color: var(--ds-text-high);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+  }
+
+  &__bands {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  &__band {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+    padding-top: 10px;
+    border-top: 1px solid var(--ds-border);
+
+    &:first-child { border-top: 0; padding-top: 0; }
+  }
+
+  &__band-title {
+    margin: 0;
+    color: var(--ds-text-low);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  &__field {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+
+    label { font-size: 13px; font-weight: 700; color: var(--ds-text-mid); min-width: 92px; }
+
+    input, select {
+      min-height: 40px;
+      padding: 0 10px;
+      border: 1px solid var(--ds-border);
+      border-radius: 8px;
+      background: var(--ds-surface);
+      color: var(--ds-text-high);
+      font: inherit;
+    }
+
+    button {
+      min-height: 40px;
+      padding: 0 12px;
+      border: 1px solid var(--ds-border);
+      border-radius: 8px;
+      background: var(--ds-surface-alt);
+      color: var(--ds-text-high);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+  }
+
+  &__modes, &__states {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 0;
+    padding: 8px 10px;
+    border: 1px solid var(--ds-border);
+    border-radius: 8px;
+
+    legend { padding: 0 4px; font-size: 12px; font-weight: 800; color: var(--ds-text-low); }
+
+    label { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--ds-text-high); }
+  }
+
+  &__lookup { margin: 0; font-size: 13px; color: var(--ds-text-mid); }
+
+  /* The sentence above a reason box. When the reason is REQUIRED it is the
+   * sentence the child will read, so it is set apart from the optional one. */
+  &__ask {
+    margin: 0 0 4px;
+    font-size: 12px;
+    color: var(--ds-text-low);
+
+    &[data-required='yes'] {
+      color: var(--ds-text-high);
+      font-weight: 700;
+    }
+  }
+
+  &__reason {
+    width: 100%;
+
+    textarea {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--ds-border);
+      border-radius: 8px;
+      background: var(--ds-surface);
+      color: var(--ds-text-high);
+      font: inherit;
+      resize: vertical;
+    }
+  }
+
+  &__entries {
+    width: 100%;
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__entry {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    border: 1px solid var(--ds-border);
+    border-radius: 8px;
+    background: var(--ds-surface);
+
+    button {
+      min-height: 36px;
+      padding: 0 10px;
+      border: 1px solid var(--ds-border);
+      border-radius: 8px;
+      background: var(--ds-surface-alt);
+      color: var(--ds-text-high);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+  }
+
+  &__entry-day { font-weight: 700; color: var(--ds-text-high); min-width: 64px; }
+
+  &__entry-value { color: var(--ds-text-mid); flex: 1 1 auto; }
+
+  &__entry-source { font-size: 12px; color: var(--ds-text-low); }
+
+  &__entry-form {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--ds-border);
+    border-radius: 10px;
+    background: var(--ds-surface-alt);
+
+    button {
+      min-height: 40px;
+      padding: 0 14px;
+      border: 1px solid var(--ds-border);
+      border-radius: 8px;
+      background: var(--ds-surface);
+      color: var(--ds-text-high);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+  }
+
+  &__danger {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px;
+    border: 2px solid var(--ds-border);
+    border-radius: 10px;
+    background: var(--ds-surface);
+  }
+
+  /* Armed. The sentence names the consequence BEFORE the second tap. */
+  &__confirm {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    font-weight: 700;
+    color: var(--ds-text-high);
+
+    button {
+      min-height: 40px;
+      padding: 0 14px;
+      border: 2px solid var(--ds-accent);
+      border-radius: 10px;
+      background: var(--ds-surface-alt);
+      color: var(--ds-text-high);
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+    }
+  }
+
+  &__history {
+    width: 100%;
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__revision {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 8px 10px;
+    border: 1px solid var(--ds-border);
+    border-radius: 8px;
+    background: var(--ds-surface);
+
+    > button {
+      min-height: 36px;
+      padding: 0 12px;
+      border: 1px solid var(--ds-border);
+      border-radius: 8px;
+      background: var(--ds-surface-alt);
+      color: var(--ds-text-high);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+  }
+
+  &__revision-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0;
+    font-size: 13px;
+  }
+
+  &__revision-when { color: var(--ds-text-low); }
+
+  &__revision-who { font-weight: 700; color: var(--ds-text-high); }
+
+  &__revision-verb { color: var(--ds-text-mid); }
+
+  &__revision-change { margin: 0; font-size: 13px; color: var(--ds-text-high); }
+
+  &__revision-reason { margin: 0; font-size: 13px; font-style: italic; color: var(--ds-text-mid); }
+
+  &__revision-told { margin: 0; font-size: 12px; color: var(--ds-text-low); }
+
+  /* A refusal the server would give, rendered INSTEAD of the button, because
+   * a control that is going to fail is worse than no control: the grown-up
+   * has already decided by the time they read the sentence. */
+  &__revision-refusal { margin: 0; font-size: 13px; font-weight: 700; color: var(--ds-text-high); }
 }
