@@ -467,11 +467,30 @@ describe('history — every revision, and the undos that are honest', () => {
         id: 'rev_1', by: 'test-user', at: '2026-09-04T10:00:00.000Z',
         verb: 'reading.move', op: 'reading.move',
         before: { learnerId: 'learner_b' }, after: { learnerId: 'learner_a' }, reason: 'mis-scanned', toldChild: true,
+        canUndo: false,
+        undoRefusal: 'A Borrowed Title has been read since it moved — undoing would delete that reading. Move it back instead, which keeps the days.',
       }],
     });
     mount();
     expect(await screen.findByText(/has been read since it moved/)).toBeTruthy();
     expect(screen.getByText(/Move it back instead/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
+  });
+
+  it('renders whatever sentence the server sent, WORD FOR WORD — it holds no copy of them', async () => {
+    // The drift this exists to catch: reword a refusal server-side and the
+    // console must follow without being edited. A sentence no client rule
+    // could have produced proves it is reading, not deriving.
+    seed({
+      revisions: [{
+        id: 'rev_1', by: 'test-user', at: '2026-09-06T17:02:00.000Z',
+        verb: 'reading.update', op: 'reading.update',
+        before: { pageCount: 180 }, after: { pageCount: 184 }, reason: null, toldChild: false,
+        canUndo: false, undoRefusal: 'That one is spoken for, and the server said so.',
+      }],
+    });
+    mount();
+    expect(await screen.findByText('That one is spoken for, and the server said so.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
   });
 
@@ -482,11 +501,13 @@ describe('history — every revision, and the undos that are honest', () => {
           id: 'rev_1', by: 'test-user', at: '2026-09-05T10:00:00.000Z',
           verb: 'reading.update', op: 'reading.update',
           before: { pageCount: 180 }, after: { pageCount: 184 }, reason: null, toldChild: false,
+          canUndo: false, undoRefusal: 'That change has already been undone — undo the undo instead.',
         },
         {
           id: 'rev_2', by: 'test-user', at: '2026-09-06T10:00:00.000Z',
           verb: 'reading.undo', op: 'reading.update', undoes: 'rev_1', undoneVerb: 'reading.update',
           before: { pageCount: 184 }, after: { pageCount: 180 }, reason: null, toldChild: false,
+          canUndo: true, undoRefusal: null,
         },
       ],
       baseRevisionCount: 2,
@@ -503,6 +524,8 @@ describe('history — every revision, and the undos that are honest', () => {
         id: 'rev_1', by: 'test-user', at: '2026-09-01T10:00:00.000Z',
         verb: 'reading.add', op: 'reading.add',
         before: null, after: { id: 'rd_1', isbn: '9780000000001' }, reason: null, toldChild: false,
+        canUndo: false,
+        undoRefusal: 'Undoing the opening of a reading would destroy it and its whole history. Delete the reading instead, which says what it is.',
       }],
     });
     mount();

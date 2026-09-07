@@ -164,6 +164,17 @@ child has since logged against, an already-undone revision, and adding a book �
 whose inverse is destroying the record, and which would let a capability-only
 undo do a step-up verb's work.
 
+**The console decides nothing the server already decides.** `GET /:readingId`
+serves the counted window an obligation is measured over — as
+`{state: 'window' | 'none' | 'unknown', per, from, to}`, so "this child owes no
+reading" is distinguishable from "the obligation could not be read" — and it
+serves, on each revision, whether it can be undone and the refusal's own
+sentence. Both come from the functions the write path itself uses
+(`obligationWindow`, `readingEdits.mjs#undoRefusal`). The console had copies of
+each; a copy of "does this shrink the child's record?" is a copy free to drift,
+and the window copy went SILENT — stopping asking for a reason entirely — the
+moment a shelf read carried no obligation.
+
 **An unreadable shelf shows a named error and no edit controls.** A damaged
 year of a child's evidence presented as "no books yet" invites a grown-up to
 start fixing a file that was merely unreadable.

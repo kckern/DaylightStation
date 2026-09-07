@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   countedWindowOf, countedWindowUnknown, inWindow, leavesWindow, reasonAsk,
-  undoRefusal, undoShrinks, revisionPhrase, revisionChanges, unfinishes,
-  OPS, UNDO_VERB,
+  undoShrinks, revisionPhrase, revisionChanges, unfinishes, OPS, UNDO_VERB,
 } from './readingDetail.js';
 
 const WEEK = { state: 'window', per: 'week', from: '2026-08-31', to: '2026-09-06' };
@@ -80,39 +79,6 @@ describe('un-finishing is the one shrinking state change', () => {
 
 const reading = (over = {}) => ({
   id: 'rd_1', status: 'reading', entries: [], revisions: [], ...over,
-});
-
-describe('the undos the server refuses by name', () => {
-  it('refuses a revision another undo already inverted', () => {
-    const record = reading({ revisions: [{ id: 'rev_1' }, { id: 'rev_2', undoes: 'rev_1' }] });
-    expect(undoRefusal(record, { id: 'rev_1', op: OPS.ENTRY_ADD })).toMatch(/already been undone/);
-  });
-
-  it('refuses undoing the opening of a reading, and names the verb that can', () => {
-    expect(undoRefusal(reading(), { id: 'rev_1', op: OPS.READING_ADD })).toMatch(/Delete the reading instead/);
-  });
-
-  it('refuses undoing a move the receiving child has logged against', () => {
-    const record = reading({
-      entries: [{ id: 'e1', on: '2026-09-05', at: '2026-09-05T10:00:00.000Z' }],
-      revisions: [{ id: 'rev_1', op: OPS.READING_MOVE, at: '2026-09-04T10:00:00.000Z' }],
-    });
-    const refusal = undoRefusal(record, record.revisions[0], { book: 'Hatchet' });
-    expect(refusal).toMatch(/Hatchet has been read since it moved/);
-    expect(refusal).toMatch(/Move it back instead/);
-  });
-
-  it('allows undoing a move nothing has been logged against since', () => {
-    const record = reading({
-      entries: [{ id: 'e1', on: '2026-09-01', at: '2026-09-01T10:00:00.000Z' }],
-      revisions: [{ id: 'rev_1', op: OPS.READING_MOVE, at: '2026-09-04T10:00:00.000Z' }],
-    });
-    expect(undoRefusal(record, record.revisions[0])).toBeNull();
-  });
-
-  it('allows an ordinary correction to be undone', () => {
-    expect(undoRefusal(reading(), { id: 'rev_1', op: OPS.READING_UPDATE })).toBeNull();
-  });
 });
 
 describe('an undo inherits the reason requirement of its inverse', () => {

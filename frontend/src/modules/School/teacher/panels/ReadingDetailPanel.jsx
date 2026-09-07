@@ -25,6 +25,9 @@
  *    A stale save is REFUSED, and this panel then stops: it shows the server's
  *    reload sentence, disables every write, and retries nothing. Merging would
  *    silently apply one grown-up's edit on top of another's (design §7).
+ * 2b. **Which undos are refused is the server's call**, served on each
+ *    revision by the detail read — the console renders the sentence in place
+ *    of the button rather than offering one that would 400.
  * 3. **Move and delete arm first, and step up.** Both are two-tap, and both
  *    need a one-use grant scoped to this reading — asked for through
  *    `useTeacherWrite`'s replay loop, never a hand-rolled prompt, so a refusal
@@ -51,7 +54,7 @@ import { formatMinutes, shortDay } from '../../books/ShelfTile.jsx';
 import {
   MODES, OPS, OPTIONAL_ASK, STATUSES, WINDOW_UNKNOWN_NOTE, countedWindowOf,
   countedWindowUnknown, leavesWindow, reasonAsk, revisionChanges,
-  revisionPhrase, undoRefusal, undoShrinks, unfinishes,
+  revisionPhrase, undoShrinks, unfinishes,
 } from './readingDetail.js';
 
 const PANEL = 'reading-detail';
@@ -762,7 +765,11 @@ export default function ReadingDetailPanel({
             {revisions.length === 0 && <p className="teacher-panel__empty">Nothing has been corrected on this reading.</p>}
             <ol className="teacher-reading-detail__history">
               {revisions.map((revision) => {
-                const refusal = undoRefusal(record, revision, { book });
+                // The server's answer, on the revision, in its own words. The
+                // console holds no copy of these sentences: a refusal reworded
+                // server-side would otherwise leave a grown-up reading one
+                // thing before tapping and another after.
+                const refusal = revision.canUndo === false ? (revision.undoRefusal ?? null) : null;
                 const phrase = revisionPhrase(revision);
                 const shrinks = undoShrinks(record, revision, countedWindow);
                 const open = undoing?.revisionId === revision.id;
