@@ -153,8 +153,9 @@ describe('TodayView — photo/voice capture: no review phase, day reload instead
 
   it('confirms a Telegram barcode entry in Health and refreshes the pending list and day', async () => {
     let accepted = false;
-    const pending = { id: 'barcode-log', source: 'telegram', mealTime: 'afternoon',
-      items: [{ label: 'Salted Caramel Protein Shake', calories: 160 }] };
+    const pending = { id: 'barcode-log', version: 'v1', date: '2026-09-06',
+      source: 'telegram', mealTime: 'afternoon',
+      items: [{ id: 'shake-item', label: 'Salted Caramel Protein Shake', calories: 160 }] };
     apiMock.mockImplementation(async (path, body, method) => {
       if (path.endsWith('nutrition/pending/barcode-log/review') && method === 'POST') {
         expect(body.action).toBe('confirm');
@@ -175,7 +176,7 @@ describe('TodayView — photo/voice capture: no review phase, day reload instead
     await waitFor(() => {
       expect(screen.queryByText('NEEDS REVIEW')).toBeNull();
       expect(document.querySelector('.health-row__name')?.textContent).toBe('Salted Caramel Protein Shake');
-      expect(screen.getByText('1,840 kcal')).toBeTruthy();
+      expect(screen.getByLabelText('Under calories')).toHaveTextContent('1,840');
     });
   });
 });
