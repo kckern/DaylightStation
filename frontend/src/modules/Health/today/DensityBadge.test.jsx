@@ -17,8 +17,11 @@ it('describes exact, between, and outside ladder values in text', () => {
 
 it('keeps level names and density value available without relying on color', () => {
   mount({ grams: 100, calories: 100 });
-  expect(screen.getByLabelText('Lean · 1 kcal/g')).toHaveTextContent('3');
-  expect(screen.getByLabelText('Lean · 1 kcal/g').style.backgroundColor).toBeTruthy();
+  const target = screen.getByLabelText('Lean · 1 kcal/g');
+  expect(target).toHaveClass('health-density-badge');
+  expect(target.style.backgroundColor).toBeFalsy();
+  expect(target.querySelector('.health-density-badge__visual')).toHaveTextContent('3');
+  expect(target.querySelector('.health-density-badge__visual').style.backgroundColor).toBeTruthy();
 });
 
 it('does not display unknown mass as a false zero-density marker', () => {
