@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 const api = vi.fn();
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...args) => api(...args) }));
@@ -46,5 +46,34 @@ describe('pending review editor', () => {
     renderReview({ entry: { ...entry, nutritionLookup: { missing: ['sodium'] } } });
     expect(screen.getByRole('button', { name: 'More nutrients' })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByLabelText('Sodium (mg)')).toBeVisible();
+  });
+
+  it('locks every per-food input while a review request is pending', async () => {
+    let finish;
+    api.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    renderReview();
+    fireEvent.click(screen.getByRole('button', { name: 'More nutrients' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm food' }));
+
+    await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+    expect(screen.getByLabelText('Food name')).toBeDisabled();
+    expect(screen.getByLabelText('Weight (g, if known)')).toBeDisabled();
+    expect(screen.getByLabelText('Calories (kcal)')).toBeDisabled();
+    expect(screen.getByLabelText('Sodium (mg)')).toBeDisabled();
+    finish({ success: true });
+    await waitFor(() => expect(screen.getByLabelText('Food name')).not.toBeDisabled());
+  });
+
+  it('opens each food item nutrient disclosure independently', () => {
+    renderReview({ entry: { ...entry, items: [
+      entry.items[0],
+      { ...entry.items[0], id: 'item-2', label: 'Banana' },
+    ] } });
+    const shake = screen.getByRole('region', { name: 'Nutrition for Shake' });
+    const banana = screen.getByRole('region', { name: 'Nutrition for Banana' });
+
+    fireEvent.click(within(shake).getByRole('button', { name: 'More nutrients' }));
+    expect(within(shake).getByRole('button', { name: 'More nutrients' })).toHaveAttribute('aria-expanded', 'true');
+    expect(within(banana).getByRole('button', { name: 'More nutrients' })).toHaveAttribute('aria-expanded', 'false');
   });
 });
