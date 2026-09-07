@@ -215,7 +215,7 @@ describe('BookLogProgramLauncher', () => {
     // NOT a curriculum course id. A course with no units is what the catalog
     // gate exists to reject; the scheme lets a program carry art without
     // pretending to be one. Same trick `piano-course` plays with `plex:`.
-    expect(status.context.course).toEqual({ id: 'program:book-log', title: 'Independent study' });
+    expect(status.context.course).toEqual({ id: 'program:book-log', title: 'Reading log' });
     expect(status.context.lesson.id).toBe('book-log:shelf');
   });
 

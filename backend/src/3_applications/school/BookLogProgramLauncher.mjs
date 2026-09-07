@@ -209,8 +209,8 @@ export class BookLogProgramLauncher {
       // the catalog gate exists to reject, and enrollment, progress and the
       // gradebook would all try to believe in it.
       //
-      // "Independent study" is not invented copy: it is the wording the
-      // printed agenda already uses for this row.
+      // The course title comes out "Reading log" — see `bookLogContext`, which
+      // is the only place that wording is written down. Do not spell it here.
       context: bookLogContext(enrollment.title),
       // The shelf's obligation line adds the window word (`today`, `this
       // week`) client-side; `per` rides along so it can.
