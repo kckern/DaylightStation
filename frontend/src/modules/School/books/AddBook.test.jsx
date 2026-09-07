@@ -144,6 +144,20 @@ describe('AddBook', () => {
       expect(a.choose).toHaveBeenNthCalledWith(3, 'finished');
     });
 
+    // A pre-reader got the number typed and then stalled on three identical
+    // bars of text. Each door carries its own mark now, so the choice can be
+    // made by sight.
+    it('each door is a mark of its own, not three lines of text', () => {
+      mount('where', { add: add({ resolved }) });
+      const marks = [/just starting it/i, /partway through/i, /already finished it/i]
+        .map((name) => screen.getByRole('button', { name }).querySelector('.school-icon svg'));
+      expect(marks.every(Boolean)).toBe(true);
+      expect(new Set(marks.map((mark) => mark.outerHTML)).size).toBe(3);
+      // The words stay: the mark is for the child who cannot read them yet,
+      // not instead of them.
+      expect(screen.getByRole('button', { name: /just starting it/i })).toHaveTextContent("I'm just starting it");
+    });
+
     it('names the book above the doors', () => {
       mount('where', { add: add({ resolved }) });
       expect(screen.getByText(/Hatchet/)).toBeInTheDocument();

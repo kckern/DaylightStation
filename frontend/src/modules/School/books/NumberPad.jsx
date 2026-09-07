@@ -26,11 +26,24 @@
  * What IS shared with Keypad is the press itself: every key and the submit
  * fire on pointerdown through `useTapFire`, so a jab that slides or rolls
  * off the key still lands (the panel's "hard to press" complaint).
+ *
+ * The ⌫ key is the one exception, and the reason is the same pointerdown.
+ * There used to be a `Clear number` button between the slots and the grid,
+ * right above the `3` — a right-aligned target that fires the instant a
+ * finger lands and wipes a half-typed ISBN with no chance to slide off it. A
+ * child did exactly that four times in 88 seconds. Clearing now lives on ⌫,
+ * behind a HOLD: the key resolves on release (or on the finger sliding off,
+ * which keeps the jab working), and a press that lasts `HOLD_TO_CLEAR_MS`
+ * wipes the entry instead — once, and the release that follows owes nothing.
+ * `Escape` still clears outright for the paired keyboard and the scanner.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import useTapFire from '../selfService/useTapFire.js';
 
 const DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
+
+/** How long a finger must stay on ⌫ before it wipes the whole entry. */
+const HOLD_TO_CLEAR_MS = 600;
 
 /**
  * @param {object} props
@@ -87,6 +100,53 @@ export default function NumberPad({
     if (disabled) return;
     update('');
   }, [disabled, update]);
+
+  // The hold lives on refs, not state: the timer fires from outside React and
+  // must see the CURRENT entry, and a re-render mid-press must not re-arm it.
+  // `active` says a press is still in progress (so the compatibility click can
+  // be ignored); `owes` says that press still has a backspace to pay.
+  const holdRef = useRef({ active: false, owes: false });
+  const holdTimer = useRef(null);
+  const lastPointerAt = useRef(0);
+  const actionsRef = useRef({ clear, backspace });
+  const [holding, setHolding] = useState(false);
+  useEffect(() => { actionsRef.current = { clear, backspace }; });
+
+  const disarm = useCallback(() => {
+    if (holdTimer.current) {
+      clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
+    setHolding(false);
+  }, []);
+  // Unmount (an aborted lookup, a walk-away) must not leave a wipe armed.
+  useEffect(() => disarm, [disarm]);
+
+  const holdStart = useCallback((event) => {
+    event.preventDefault();
+    if (disabled) return;
+    lastPointerAt.current = Date.now();
+    holdRef.current = { active: true, owes: true };
+    setHolding(true);
+    holdTimer.current = setTimeout(() => {
+      holdTimer.current = null;
+      // The hold has paid for the press: the release owes no character.
+      holdRef.current.owes = false;
+      setHolding(false);
+      actionsRef.current.clear();
+    }, HOLD_TO_CLEAR_MS);
+  }, [disabled]);
+
+  // Release, or the finger sliding off the key, or the browser taking the
+  // gesture. Whichever arrives first ends the press; the rest are no-ops.
+  const holdEnd = useCallback(() => {
+    if (!holdRef.current.active) return;
+    const { owes } = holdRef.current;
+    holdRef.current = { active: false, owes: false };
+    lastPointerAt.current = Date.now();
+    disarm();
+    if (owes) actionsRef.current.backspace();
+  }, [disarm]);
 
   const submittable = !disabled && canSubmit && entry.length > 0;
   const submit = useCallback(() => {
@@ -148,15 +208,6 @@ export default function NumberPad({
         ))}
       </div>
 
-      <button
-        type="button"
-        className="school-books-pad__clear"
-        disabled={disabled || entry.length === 0}
-        {...tap(clear)}
-      >
-        Clear number
-      </button>
-
       <div className="school-books-pad__keys">
         {DIGITS.map((digit) => (
           <button
@@ -171,10 +222,19 @@ export default function NumberPad({
         ))}
         <button
           type="button"
-          className="school-books-pad__key school-books-pad__key--back"
-          aria-label="Backspace"
+          className={`school-books-pad__key school-books-pad__key--back${holding ? ' is-holding' : ''}`}
+          aria-label="Backspace — hold to clear the whole number"
           disabled={disabled}
-          {...tap(backspace)}
+          onPointerDown={holdStart}
+          onPointerUp={holdEnd}
+          onPointerLeave={holdEnd}
+          onPointerCancel={holdEnd}
+          onClick={() => {
+            // Our own tap, arriving again as the compatibility click (the
+            // guard useTapFire uses). A real keyboard activation gets through.
+            if (Date.now() - lastPointerAt.current < 700) return;
+            backspace();
+          }}
         >
           ⌫
         </button>
