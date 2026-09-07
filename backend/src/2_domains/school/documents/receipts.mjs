@@ -20,7 +20,7 @@
  */
 
 import { SCHOOL_ACCESS_CODE_DIGITS } from '../sessions/accessCode.mjs';
-import { DEFAULT_BOOK_LOG_SUBJECT, bookLogContext } from '../bookLog.mjs';
+import { BOOK_LOG_PROGRAM_ID, DEFAULT_BOOK_LOG_SUBJECT, bookLogContext } from '../bookLog.mjs';
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 
@@ -647,6 +647,20 @@ export function agendaDocument({
   // ones a focus day suppressed, and naming those on a "print all sheets"
   // card promises paper that scan would never produce.
   const cardSubjects = [];
+  // ONE READING CARD, NEVER TWO (2026-09-06 card-parity plan, Task 8).
+  //
+  // On a day the obligation is unmet, an enrolled learner's shelf is already
+  // the subject's `next` (`agenda.mjs` picks one candidate per subject and the
+  // shelf can win) and is drawn by the loop below as a full lesson card. The
+  // standalone push at the foot of this function is otherwise unconditional, so
+  // on exactly those days the page got two reading cards.
+  //
+  // The SECTION card is the one that survives: it carries the obligation the
+  // standalone card only describes. What matters is whether a card was actually
+  // EMITTED, not merely that a book-log section exists — a shelf section with no
+  // minted token falls to the plain heading branch and draws nothing, and then
+  // the standalone card is the only reading card the page would ever get.
+  let shelfPrintedAsSection = false;
   offered.forEach((section) => {
     // A focus day deliberately removes flexible work from the CHILD'S paper;
     // the parent preview retains the suppression reason.
@@ -707,6 +721,7 @@ export function agendaDocument({
     const token = tokensBySubject?.[section.subject];
     if (isNonEmptyString(token)) {
       cardSubjects.push(section.subject);
+      if (next.program === BOOK_LOG_PROGRAM_ID) shelfPrintedAsSection = true;
       blocks.push(...lessonAction({
         token,
         // NO EYEBROW. It used to read `Today · <subject>`, which the renderer
@@ -775,8 +790,10 @@ export function agendaDocument({
   // read off `blocks.length` further down, because the two cards that follow
   // are unconditional-ish decoration: the bulk card only exists when there IS
   // work, and the reading card (2026-09-06 card-parity plan, Task 7) prints on
-  // every agenda in every state. Counting either would make "All done today"
-  // unreachable forever, and nothing would say so.
+  // every agenda in every state — as the standalone card below, or, when the
+  // shelf was this subject's own `next`, as one of the section cards above.
+  // Counting either would make "All done today" unreachable forever, and
+  // nothing would say so.
   const curriculumBlocks = blocks.length;
   const nothingLeft = curriculumBlocks === 0;
 
@@ -792,7 +809,16 @@ export function agendaDocument({
   // under the QR — the six digits are the only thing a child should read.
   // Before the bulk card, so "print all sheets" stays the last action on the
   // page. Unconditional on enrollment by design — see `readingLogAction`.
-  if (isNonEmptyString(readingToken) && typeof readingAccessCode === 'string' && PANEL_CODE.test(readingAccessCode)) {
+  //
+  // `shelfPrintedAsSection` is the whole of Task 8's rule: the loop above
+  // already drew this child's shelf as a lesson card today, so this one would
+  // be its second. Only the PUSH is conditional — the token is minted outside
+  // this document entirely (`BuildAgenda`), and deliberately so: that mint runs
+  // even for a subject already served today, which is exactly when a child
+  // wants to log the book they just finished.
+  if (!shelfPrintedAsSection
+    && isNonEmptyString(readingToken)
+    && typeof readingAccessCode === 'string' && PANEL_CODE.test(readingAccessCode)) {
     blocks.push(...readingLogAction({
       token: readingToken,
       accessCode: readingAccessCode,

@@ -262,3 +262,77 @@ describe('agendaDocument reading card', () => {
     expect(card).not.toHaveProperty('progress');
   });
 });
+
+// --- one reading card, never two ---------------------------------------------
+// On a day the obligation is UNMET, an enrolled learner's shelf is already the
+// English section's `next` (`agenda.mjs`) and already renders as a full lesson
+// card through the section loop. The standalone card must stand down on exactly
+// those days. See the 2026-09-06 card-parity plan, Task 8, and design §2.
+
+/** An English section whose `next` IS the book-log shelf entry. */
+const shelfAsSection = () => section({
+  subject: 'english',
+  next: {
+    program: 'book-log',
+    unitId: 'book-log:shelf',
+    title: 'Reading',
+    actionLabel: 'update on the panel',
+    taxonomy: {
+      subject: 'English', course: 'Reading log', unit: 'Gary Paulsen', lesson: 'Hatchet',
+    },
+  },
+});
+
+const readingCards = (doc) => doc.blocks.filter(
+  (b) => b.type === 'scan_action' && b.taxonomy?.course === 'Reading log',
+);
+
+describe('agendaDocument reading card — one, never two', () => {
+  it('prints ONE reading card when the shelf is already the section card', () => {
+    const doc = withReading(
+      {
+        tokensBySubject: { english: 'sch:ENGLISHENGLISH1' },
+        accessCodesByToken: { 'sch:ENGLISHENGLISH1': '111111' },
+        readingFeature: {
+          state: 'reading',
+          book: { title: 'Hatchet', authors: ['Gary Paulsen'] },
+          page: 84, percent: 46, pageCount: 184, alsoReading: [],
+        },
+      },
+      [shelfAsSection()],
+    );
+    expect(readingCards(doc)).toHaveLength(1);
+    // The surviving one is the SECTION card — it carries the obligation the
+    // standalone card only describes.
+    expect(readingCards(doc)[0].action).toBe('sch:ENGLISHENGLISH1');
+    expect(doc.blocks.find((b) => b.action === READING_TOKEN)).toBeUndefined();
+    expect(validateDocument(doc).errors).toEqual([]);
+  });
+
+  it('still prints the standalone card when no section rendered the shelf', () => {
+    const doc = withReading({
+      readingFeature: {
+        state: 'reading',
+        book: { title: 'Hatchet', authors: ['Gary Paulsen'] },
+        page: 84, percent: 46, pageCount: 184, alsoReading: [],
+      },
+    });
+    expect(readingCards(doc)).toHaveLength(1);
+    expect(readingCards(doc)[0].action).toBe(READING_TOKEN);
+  });
+
+  it('still prints the standalone card when the shelf section emitted no card', () => {
+    // A book-log section with no minted token falls to the plain heading branch
+    // — no card was drawn, so the standalone one is the only reading card the
+    // page would ever get.
+    const doc = withReading(
+      {
+        tokensBySubject: {},
+        readingFeature: { state: 'empty', book: null, alsoReading: [] },
+      },
+      [shelfAsSection()],
+    );
+    expect(readingCards(doc)).toHaveLength(1);
+    expect(readingCards(doc)[0].action).toBe(READING_TOKEN);
+  });
+});
