@@ -6,13 +6,31 @@ const apiMock = vi.fn();
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => apiMock(...a) }));
 
 import { EntryRow } from './EntryRow.jsx';
+import { HealthDisplayPreferencesProvider } from '../display/HealthDisplayPreferences.jsx';
 
 function r(ui) { return render(<MantineProvider>{ui}</MantineProvider>); }
+function withPlacement(ui, densityPlacement) {
+  localStorage.setItem('health:display:test-user', JSON.stringify({ densityPlacement }));
+  return render(<MantineProvider><HealthDisplayPreferencesProvider userId="test-user">{ui}</HealthDisplayPreferencesProvider></MantineProvider>);
+}
 
 const baseRow = { uuid: 'row-1', name: 'Apple', calories: 95, amount: 1, unit: 'medium', color: 'green' };
 
 describe('EntryRow', () => {
   beforeEach(() => { apiMock.mockReset(); });
+
+  it('keeps density and the edit-name control as siblings in the selected order', () => {
+    const before = withPlacement(<EntryRow row={{ ...baseRow, grams: 100 }} onTap={() => {}} />, 'before');
+    let identity = document.querySelector('.health-row-identity');
+    expect(identity.classList.contains('health-density-before')).toBe(true);
+    expect(identity.querySelector('.health-density-badge').nextElementSibling).toHaveClass('health-row-name');
+    expect(identity.querySelector('.health-row-name').contains(identity.querySelector('.health-density-badge'))).toBe(false);
+    before.unmount();
+    withPlacement(<EntryRow row={{ ...baseRow, grams: 100 }} onTap={() => {}} />, 'after');
+    identity = document.querySelector('.health-row-identity');
+    expect(identity.classList.contains('health-density-after')).toBe(true);
+    expect(identity.querySelector('.health-density-badge').nextElementSibling).toHaveClass('health-row-name');
+  });
 
   it('an unsettled row (settled:false) renders the unsettled cue and a confirm button', () => {
     r(<EntryRow row={{ ...baseRow, settled: false }} onTap={() => {}} onConfirm={() => {}} />);
