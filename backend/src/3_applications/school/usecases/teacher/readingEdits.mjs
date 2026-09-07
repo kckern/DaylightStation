@@ -113,6 +113,51 @@ export const readingNotes = {
   readingDeleted: ({ label, reason }) => `A grown-up removed ${label} from your shelf — ${reason}`,
 };
 
+/** What to call a book in a sentence somebody reads. Never the raw record. */
+export const bookLabel = (book, isbn) => book?.title || (isbn ? `book ${isbn}` : 'a book');
+
+/**
+ * The three undos that are refused by name, in the server's own words.
+ *
+ * ONE implementation, two readers: `UndoReadingRevision` throws these, and
+ * `GetLearnerReadings` serves them on the revision so the console can render
+ * the sentence instead of a button that would fail. A console holding its own
+ * copy of these words meant a grown-up read one sentence before tapping and
+ * another after, and only one of them was true.
+ *
+ * @param {object} reading - the reading, with its `entries` and `revisions`
+ * @param {object} revision - the row being asked about
+ * @param {{label?: string}} names - what to call the book
+ * @returns {string|null} the refusal, or null if this revision can be undone
+ */
+export function undoRefusal(reading, revision, { label = 'This book' } = {}) {
+  if (!revision) return null;
+  const revisions = Array.isArray(reading?.revisions) ? reading.revisions : [];
+
+  // Linear, per reading: a revision a later undo already inverted must not be
+  // inverted twice. Undoing the undo is the way back.
+  if (revisions.some((row) => row?.undoes === revision.id)) {
+    return 'That change has already been undone — undo the undo instead.';
+  }
+
+  // The inverse of opening a reading is destroying it. That is `DeleteReading`,
+  // it is a step-up, and it should be asked for by its own name.
+  if (revision.op === OPS.READING_ADD) {
+    return 'Undoing the opening of a reading would destroy it and its whole history. Delete the reading instead, which says what it is.';
+  }
+
+  if (revision.op === OPS.READING_MOVE) {
+    // The reading is theirs now; rewinding it would delete their evidence.
+    const since = (reading?.entries ?? [])
+      .filter((entry) => String(entry?.at ?? '') > String(revision.at ?? '')).length;
+    if (since > 0) {
+      return `${label} has been read since it moved — undoing would delete that reading. Move it back instead, which keeps the days.`;
+    }
+  }
+
+  return null;
+}
+
 /**
  * Everything the verbs share: the store, the gate, the note path, the clock
  * and the book facts. Held by each use case rather than inherited, so a use
@@ -171,14 +216,7 @@ export class ReadingEditContext {
   /** What to call the book in a sentence a child reads. */
   async label(reading) {
     const isbn = reading?.book?.isbn ?? null;
-    if (!this.#bookRepository || !isbn) return isbn ? `book ${isbn}` : 'a book';
-    try {
-      const book = await this.#bookRepository.findByIsbn(isbn);
-      return book?.title || `book ${isbn}`;
-    } catch (error) {
-      this.#logger.warn?.('school.teacher-reading.book-facts-failed', { isbn, error: error.message });
-      return `book ${isbn}`;
-    }
+    return bookLabel(await this.facts(isbn), isbn);
   }
 
   /** Book facts for a read, never invented: nulls where the API is not wired. */

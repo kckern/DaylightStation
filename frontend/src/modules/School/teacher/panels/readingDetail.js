@@ -9,17 +9,17 @@
  *    five require a reason that is delivered to the child (design §3). The
  *    form must not let them submit without one, and it must say WHY it is
  *    asking, because the sentence typed there is the sentence the child reads.
- * 2. **Can this revision be undone?** Three cannot, and the server refuses
- *    them by name (`UndoReadingRevision`). The console renders the sentence in
- *    place of the button rather than offering a control that will fail.
+ * 2. **Can this revision be undone?** Three cannot — and the answer, with the
+ *    refusal's own sentence, arrives ON the revision from the server. The
+ *    console renders that sentence in place of the button rather than offering
+ *    a control that will fail, and holds no copy of the words.
  * 3. **Would undoing it shrink the record?** An undo inherits the reason
  *    requirement of the verb its inverse turns out to be — undoing an ADDED
  *    day deletes a day, and the child hears about that.
  *
  * Questions 1 and 3 are answered against the counted window the SERVER serves
- * with the reading; question 2 is answered by the server outright, and this
- * file only reads its sentence. Nothing here re-derives a decision the server
- * already owns.
+ * with the reading; question 2 is answered by the server outright, on the
+ * revision. Nothing here re-derives a decision the server already owns.
  *
  * @module School/teacher/panels/readingDetail
  */
@@ -116,32 +116,6 @@ export const OPTIONAL_ASK = 'Reason (optional) — kept in this reading’s hist
 /** Does un-finishing happen here? The one shrinking state change (design §3). */
 export const unfinishes = (reading, patch) => reading?.status === 'finished'
   && patch?.status !== undefined && patch.status !== 'finished';
-
-/**
- * Why this revision cannot be undone, or null if it can.
- *
- * The three the server refuses by name. Rendered in place of the Undo button:
- * a control that is going to 400 is worse than no control, because the grown-up
- * has already decided by the time they read the sentence.
- */
-export function undoRefusal(reading, revision, { book = 'This book' } = {}) {
-  if (!revision) return null;
-  const revisions = Array.isArray(reading?.revisions) ? reading.revisions : [];
-  if (revisions.some((row) => row?.undoes === revision.id)) {
-    return 'That change has already been undone — undo the undo instead.';
-  }
-  if (revision.op === OPS.READING_ADD) {
-    return 'Undoing the opening of a reading would destroy it and its whole history. Delete the reading instead, which says what it is.';
-  }
-  if (revision.op === OPS.READING_MOVE) {
-    const since = (reading?.entries ?? [])
-      .filter((entry) => String(entry?.at ?? '') > String(revision.at ?? '')).length;
-    if (since > 0) {
-      return `${book} has been read since it moved — undoing would delete that reading. Move it back instead, which keeps the days.`;
-    }
-  }
-  return null;
-}
 
 /**
  * Would undoing this revision make the child's record smaller?
