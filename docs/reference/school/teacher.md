@@ -48,14 +48,14 @@ stateDiagram-v2
 |---|---|---|---|
 | **Claim** | `sessionStorage`, client-side | until the tab closes | attribution on writes — nothing else |
 | **Capability** | HttpOnly `SameSite=Strict` cookie | 10 min idle, 30 min absolute | every ordinary teacher write |
-| **Step-up grant** | `X-Teacher-Step-Up` header | 2 min, **one use**, scoped to one action *and one resource id* | the seven high-consequence actions below |
+| **Step-up grant** | `X-Teacher-Step-Up` header | 2 min, **one use**, scoped to one action *and one resource id* | the nine high-consequence actions below |
 
 The PIN exists only inside the prompt. It is never held in shared state, never
 in `sessionStorage`, never in a log, and never in an ordinary mutation body; it
 exists only in the prompt's own local state while it is being typed, and is
 cleared when the prompt closes.
 
-**The seven step-up actions** (`TeacherCapabilitySessions.mjs#STEP_UP_ACTIONS`),
+**The nine step-up actions** (`TeacherCapabilitySessions.mjs#STEP_UP_ACTIONS`),
 with the resource each is scoped to:
 
 | Action | Scoped to | Why it costs extra |
@@ -67,6 +67,8 @@ with the resource each is scoped to:
 | `sessions.settle` | `sessionId` | writes a mark **no machine produced** |
 | `artifact.postview` | `artifactId` | renders a marked-up copy of a child's work |
 | `report-card.close` | `learnerId/periodId` — **only when `supersede: true`** | replaces a record a family already has |
+| `books.reading.reassign` | `readingId` | changes **whose** reading year a book belongs to |
+| `books.reading.delete` | `readingId` | destroys a record of what a child read |
 
 A first freeze of a period needs the capability only. Re-closing one needs a
 grant, because the record already exists in someone's hands.
@@ -83,7 +85,7 @@ most of those names — `artifact.reprint`, `curriculum-exception.apply`,
 was attempted in the log. A console that asks `POST auth/step-up` for one of
 them is asking the server to mint a grant it has no definition for; the answer
 is 403 and the only correct client behaviour is not to ask. Everything outside
-the seven runs on the capability cookie, which is the full gate the routes
+the nine runs on the capability cookie, which is the full gate the routes
 check.
 
 **A 403 is a loop, not a wall.** `useTeacherWrite` invalidates the capability,
