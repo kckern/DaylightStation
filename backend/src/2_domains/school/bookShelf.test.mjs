@@ -327,6 +327,27 @@ describe('selectFeaturedShelfItem', () => {
     expect(selection.featured.item.itemId).toBe('paged');
   });
 
+  it('ranks a book at 0% above one with no denominator at all', () => {
+    const selection = selectFeaturedShelfItem([
+      item({ itemId: 'audiobook', progressMode: 'minutes', pageCount: null,
+        events: [ev('progress', '2026-09-05T10:00:00.000Z', { minutes: 90 })] }),
+      reading('barely', '2026-09-01T10:00:00.000Z', 1, { pageCount: 500 }), // 0%, but measurable
+    ]);
+    expect(selection.featured.projection.percent).toBe(0);
+    expect(selection.featured.item.itemId).toBe('barely');
+  });
+
+  it('threads the household day rule through to the projection', () => {
+    const at = (t) => ev('progress', t, { page: 40 });
+    // 11pm and 1am are one study day under the 4am rule, two under ISO midnight.
+    const selection = selectFeaturedShelfItem(
+      [reading('a', '2026-09-04T23:00:00.000Z', 40, {
+        events: [at('2026-09-04T23:00:00.000Z'), at('2026-09-05T01:00:00.000Z')] })],
+      { dayOf: (t) => new Date(Date.parse(t) - 4 * 3600_000).toISOString().slice(0, 10) },
+    );
+    expect(selection.featured.projection.daysRead).toBe(1);
+  });
+
   it('breaks a tie on itemId, so two prints of one day agree', () => {
     const same = ['b', 'a'].map((itemId) => reading(itemId, '2026-09-04T10:00:00Z', 40));
     expect(selectFeaturedShelfItem(same).featured.item.itemId).toBe('a');

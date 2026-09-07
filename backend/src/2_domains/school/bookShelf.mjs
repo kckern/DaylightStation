@@ -282,14 +282,19 @@ export const ALSO_READING_LIMIT = 2;
  * is empty when it is not. `empty` is reserved for a shelf that truly holds
  * nothing.
  *
- * @param {object[]} items - raw shelf items, each with `itemId` and `events`
- * @param {{dayOf?: (at: string) => string, alsoReadingLimit?: number}} [options]
+ * @param {object[]|null|undefined} items - raw shelf items, each with `itemId` and `events`
+ * @param {{dayOf?: (at: string) => string}} [options]
  * @returns {{state: 'reading'|'finished'|'set-aside'|'empty',
  *   featured: {item: object, projection: object}|null,
  *   alsoReading: {item: object, projection: object}[]}}
  */
-export function selectFeaturedShelfItem(items, { dayOf = isoDay, alsoReadingLimit = ALSO_READING_LIMIT } = {}) {
+export function selectFeaturedShelfItem(items, { dayOf = isoDay } = {}) {
   const projected = (Array.isArray(items) ? items : [])
+    // A row with no string `itemId` cannot be one of ours: the store builds
+    // `<learner>:<book>:<entry>` at open and refuses to append without it. Dropping
+    // it silently is deliberate — an unreadable shelf throws in the store, one layer
+    // up, so anything reaching here is a hand-edited row, and a card that prints one
+    // fewer book beats a card that does not print. `unread` items land here too.
     .filter((item) => item && typeof item === 'object' && typeof item.itemId === 'string')
     .map((item) => ({ item, projection: projectShelfItem(item, { dayOf }) }));
 
@@ -301,7 +306,9 @@ export function selectFeaturedShelfItem(items, { dayOf = isoDay, alsoReadingLimi
 
   const reading = withStatus('reading');
   if (reading.length) {
-    const ranked = [...reading].sort((a, b) => {
+    const ranked = reading.sort((a, b) => {
+      // -1, not 0: a book at page 1 of 500 IS 0%, and it still has a denominator.
+      // Safe because `percentFor` clamps to 0..100, so no real percent reaches -1.
       const aPct = Number.isFinite(a.projection.percent) ? a.projection.percent : -1;
       const bPct = Number.isFinite(b.projection.percent) ? b.projection.percent : -1;
       return bPct - aPct || byRecency(a, b);
@@ -310,14 +317,14 @@ export function selectFeaturedShelfItem(items, { dayOf = isoDay, alsoReadingLimi
     return {
       state: 'reading',
       featured,
-      alsoReading: rest.sort(byRecency).slice(0, Math.max(0, alsoReadingLimit)),
+      alsoReading: rest.sort(byRecency).slice(0, ALSO_READING_LIMIT),
     };
   }
 
   for (const status of ['finished', 'set-aside']) {
     const candidates = withStatus(status);
     if (candidates.length) {
-      return { state: status, featured: [...candidates].sort(byRecency)[0], alsoReading: [] };
+      return { state: status, featured: candidates.sort(byRecency)[0], alsoReading: [] };
     }
   }
 
