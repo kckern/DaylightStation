@@ -80,6 +80,14 @@ export const teacherWorkspaceApi = {
     `/learners/${encodeURIComponent(learnerId)}/reading/${encodeURIComponent(readingId)}/entries/${encodeURIComponent(entryId)}`,
     { method: 'DELETE', body },
   ),
+  // A book opened on the child's behalf: the shelf's own verb, and the one
+  // write here that carries NO `baseRevisionCount` — nothing was loaded,
+  // because the reading does not exist yet. Idempotent on the client's key, so
+  // a double tap adds one book.
+  addReadingForLearner: (learnerId, body, idempotencyKey = null) => request(
+    `/learners/${encodeURIComponent(learnerId)}/reading`,
+    { method: 'POST', body, ...(idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {}) },
+  ),
   undoReadingRevision: (learnerId, readingId, body, grantToken = null) => request(
     `/learners/${encodeURIComponent(learnerId)}/reading/${encodeURIComponent(readingId)}/undo`,
     { method: 'POST', body, headers: grantToken ? { 'X-Teacher-Step-Up': grantToken } : {} },

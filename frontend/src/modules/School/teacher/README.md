@@ -78,6 +78,14 @@ Same `GetBookShelf` view the child's own panel reads through
 `/books/:learnerId/shelf` — one projection of a child's reading year, two
 gates. Client wrapper: `teacherWorkspaceApi.readingShelf()`.
 
+The shelf carries one write of its own: **Add a book**
+(`teacherWorkspaceApi.addReadingForLearner`), offered on an `ok` shelf and on an
+EMPTY one — that is when a grown-up adds the first book — and on neither of the
+other three states. It asks for an ISBN and the child's own three doors
+(starting / partway with a page / finished on a day), judges the number with
+the panel's `checkIsbn` before the network, and is idempotent on a key the
+client mints.
+
 The **detail** a row opens is a second read and nine writes, all under the same
 prefix (`teacherWorkspaceApi.readingDetail` / `updateReading` /
 `addReadingEntry` / `updateReadingEntry` / `deleteReadingEntry` /

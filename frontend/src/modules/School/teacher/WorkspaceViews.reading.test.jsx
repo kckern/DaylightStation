@@ -17,6 +17,7 @@ vi.mock('./teacherWorkspaceApi.js', () => ({
   teacherWorkspaceApi: {
     readingShelf: vi.fn(),
     readingDetail: vi.fn(),
+    addReadingForLearner: vi.fn(),
     updateReading: vi.fn(),
     addReadingEntry: vi.fn(),
     updateReadingEntry: vi.fn(),
@@ -138,5 +139,31 @@ describe('a shelf that cannot be read', () => {
     mount();
     expect(await screen.findByText('No books yet.')).toBeTruthy();
     expect(teacherWorkspaceApi.readingDetail).not.toHaveBeenCalled();
+  });
+});
+
+describe('adding a book, from the workspace', () => {
+  it('re-reads the shelf once the book is on it', async () => {
+    teacherWorkspaceApi.readingShelf.mockResolvedValue(ok(shelf()));
+    teacherWorkspaceApi.addReadingForLearner.mockResolvedValue({
+      ok: true, status: 201, data: { reading: { id: 'rd_2' }, created: true },
+    });
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Add a book' }));
+    fireEvent.change(screen.getByLabelText('ISBN'), { target: { value: '9780000000002' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add this book' }));
+    await waitFor(() => expect(teacherWorkspaceApi.addReadingForLearner).toHaveBeenCalledWith(
+      'learner_a', expect.objectContaining({ isbn: '9780000000002', where: 'starting' }), expect.any(String),
+    ));
+    // The counts and the projections come from the server, never from a guess
+    // about what the write did to them.
+    await waitFor(() => expect(teacherWorkspaceApi.readingShelf).toHaveBeenCalledTimes(2));
+  });
+
+  it('a shelf that could not be read offers no way to add to it', async () => {
+    teacherWorkspaceApi.readingShelf.mockResolvedValue({ ok: false, status: 500, data: null });
+    mount();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy());
+    expect(screen.queryByRole('button', { name: 'Add a book' })).toBeNull();
   });
 });
