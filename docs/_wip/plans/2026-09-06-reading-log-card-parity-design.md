@@ -355,10 +355,20 @@ Coupled time expiry is deferred to its own change — see §11.
 
 ## 12. Open, unverified
 
-- Card height on tape. `actionOp` (`DocumentReceiptRenderer.mjs:472-500`)
-  measures band by band with no cap, and the description sits in the narrow
-  column beside the QR. The "also reading" tail is the most expensive rows on
-  the card; measure a real render before settling its cap of two titles.
+**Card height — measured 2026-09-06, and it is fine.** A real render (one
+science lesson card plus the reading card, `reading` state, both bars, two
+titles in the "also reading" tail) came out **580 × 1049**, of which the
+reading card is roughly 400px. The tail costs ONE wrapped line, not a band, so
+the cap of two titles stands. `actionOp` (`DocumentReceiptRenderer.mjs:472-500`)
+still measures band by band with no cap, so a much longer description could
+still grow the card without limit — the cap on the tail is what keeps it
+bounded, and that is why it exists.
+
+Verified visually at the same time: the breadcrumb reads `English › Reading
+log`, the author sits on the ■ line above the title, both bars draw with their
+own labels and fractions, and the footer verb reads `UPDATE ON THE PANEL`. The
+card is structurally indistinguishable from the lesson card above it, which was
+the entire point.
 Settled since the review: production **does** wire the repository —
 `app.mjs:3864` builds the books module unconditionally and `:3918` passes
 `bookRepository` into `schoolLifecycle`, and `booksApi.mjs:37` constructs a
