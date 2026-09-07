@@ -26,11 +26,16 @@ import DayPicker from './DayPicker.jsx';
 import BookCover from './BookCover.jsx';
 import { presentBook } from './bookPresentation.js';
 import useTapFire from '../selfService/useTapFire.js';
+import Icon from '../home/icons/Icon.jsx';
 
+// The three doors. A pre-reader typed the number in and then stalled here,
+// because three wide bars of text look the same to a child who cannot read
+// them; each door carries a mark of its own now — a play, a fast-forward, a
+// circled check — and the words stay underneath for the child who can.
 const DOORS = [
-  { where: 'starting', label: "I'm just starting it" },
-  { where: 'partway', label: "I'm partway through" },
-  { where: 'finished', label: 'I already finished it' },
+  { where: 'starting', icon: 'book-starting', label: "I'm just starting it" },
+  { where: 'partway', icon: 'book-partway', label: "I'm partway through" },
+  { where: 'finished', icon: 'book-finished', label: 'I already finished it' },
 ];
 
 /** The book named once above a step that comes after the cover. */
@@ -113,15 +118,18 @@ export default function AddBook({ step, add, today, earliestDay = null, error = 
       <div className="school-books-add__where">
         <BookLine book={book} />
         <div className="school-books-add__doors">
-          {DOORS.map(({ where, label }) => (
+          {DOORS.map(({ where, icon, label }) => (
             <button
               key={where}
               type="button"
               className="school-books-add__door"
+              data-where={where}
               disabled={busy}
               {...press(() => actions.choose(where))}
             >
-              {label}
+              {/* Decorative: the button's own words are its accessible name. */}
+              <Icon name={icon} className="school-books-add__door-icon" />
+              <span className="school-books-add__door-label">{label}</span>
             </button>
           ))}
         </div>

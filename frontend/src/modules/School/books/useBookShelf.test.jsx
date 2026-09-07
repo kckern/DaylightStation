@@ -296,6 +296,22 @@ describe('useBookShelf: the add flow', () => {
     expect(h.resolve).not.toHaveBeenCalled();
   });
 
+  it('5e. an entry wiped back to nothing says so in the log', async () => {
+    // The pad clears on a held ⌫ and on Escape from the scanner's keyboard,
+    // and neither leaves a trace of its own (the pad logs nothing). Without
+    // this line a wiped ISBN looks exactly like a child who never typed.
+    const r = await mounted();
+    act(() => r.result.current.actions.startAdd());
+    act(() => r.result.current.actions.typeIsbn('978006'));
+    expect(h.log).not.toHaveBeenCalledWith('pad.cleared', expect.anything());
+    act(() => r.result.current.actions.typeIsbn(''));
+    expect(h.log).toHaveBeenCalledWith('pad.cleared', { had: 6 });
+
+    h.log.mockClear();
+    act(() => r.result.current.actions.typeIsbn('')); // already empty: not a wipe
+    expect(h.log).not.toHaveBeenCalledWith('pad.cleared', expect.anything());
+  });
+
   it('5b. lookup() with an unsubmittable number does nothing', async () => {
     const r = await mounted();
     act(() => r.result.current.actions.startAdd());
