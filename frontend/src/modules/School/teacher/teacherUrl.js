@@ -96,6 +96,20 @@ export function teacherDayPath(learnerId, studyDay = null, base = TEACHER_BASE) 
   return `${base}/students/${encodeURIComponent(learnerId)}/day${suffix}`;
 }
 
+/**
+ * A learner's Reading workspace, optionally with one reading open.
+ *
+ * The open reading is a QUERY param, not a path segment, because the detail
+ * is a layer over the shelf rather than a different page: closing it must
+ * leave the shelf exactly where it was, and refreshing on a deep link must
+ * bring both back. Every console URL is complete workspace state
+ * (`teacher.md` §2), and "which reading is open" is part of that state.
+ */
+export function teacherReadingPath(learnerId, readingId = null, base = TEACHER_BASE) {
+  const path = teacherLearnerPath(learnerId, 'reading', null, base);
+  return readingId ? `${path}?reading=${encodeURIComponent(readingId)}` : path;
+}
+
 export function teacherSessionPath(learnerId, sessionId, base = TEACHER_BASE, { from = null, studyDay = null } = {}) {
   const path = learnerId
     ? `${teacherLearnerPath(learnerId, 'history', null, base)}/sessions/${encodeURIComponent(sessionId)}`
