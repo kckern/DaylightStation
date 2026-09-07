@@ -88,6 +88,20 @@ status, page, percent, daysRead, and every obligation measurement.
 
 ## 3. The child's shelf
 
+**The code opens the shelf directly.** A reading code used to resolve to a
+launch card whose entire content was one button reading "Open Reading" over a
+"Go back" — asked of a child who had just spelled out, in six digits, the
+sentence that button said. The backend marks such a card
+`presentation.openImmediately` and the panel runs its single action instead of
+rendering it, so the child goes keypad → shelf.
+
+The rule is narrow on purpose: exactly one action, and that action a `program`.
+A printing card also carries one button, and auto-running it would fire a
+thermal printer at a child who typed their code to see what was next. And it is
+never set alongside `confirmIdentity` — that question exists to ask whose paper
+this is *before* anything records against them, so a re-entered code still stops
+to ask.
+
 `useBookShelf.js` owns the whole state machine; the components paint. Its four
 rules, each earned:
 
