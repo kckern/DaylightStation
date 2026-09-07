@@ -58,6 +58,7 @@
 | How does the sentence sequence work? | [Sentence Ladder](./sentence-ladder.md) |
 | What happens when content or a collaborator is missing? | [Failure policy](./failure-policy.md) |
 | What happens when a preschooler taps their card on the living-room reader? | [Reading sessions](./reading-sessions.md) |
+| How does a child log a physical book they read off-screen, and how does a grown-up correct it? | [Reading log](./reading-log.md) |
 
 The remainder of this file is the detailed subsystem inventory. The focused
 pages above are authoritative for lifecycle vocabulary and current behavior;

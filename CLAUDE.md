@@ -222,6 +222,7 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 | School / Portal homeschool | `docs/reference/school/README.md` |
 | Teacher flows (what a grown-up can do, from which state) | `docs/reference/school/teacher.md` |
 | School print documents (worksheets/quizzes + OMR card grading) | `docs/reference/school/print-documents.md` |
+| Reading log (physical books: child shelf, printed card, teacher admin, v2 store) | `docs/reference/school/reading-log.md` |
 | School media lessons (living-room video/audio with hard comprehension checkpoints) | `docs/reference/school/media-lessons.md` |
 | School day-to-day operations (troubleshooting, logs, hardware, HA grading hook) | `docs/runbooks/school/README.md` |
 | NewsReporter framework (scheduled reports) | `docs/reference/newsreporter/newsreporter-framework.md` |
