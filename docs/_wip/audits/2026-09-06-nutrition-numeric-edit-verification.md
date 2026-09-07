@@ -12,6 +12,9 @@ drives previews and atomic, versioned saves.
 - `MealInstructionService.gateway.test.mjs` reproduces the string-message failure
   through the real OpenAI adapter and checks the outgoing provider body after the
   fix. Whisper and Mastra were not changed.
+- `webNutribotProxy.test.mjs` verifies deferred meal-suggestion wiring. A live
+  read-only probe exposed the missing forwarder before deployment; the proxy now
+  exposes that method alongside capture, callbacks and pending reads.
 - `foodNumericEdit.test.mjs` checks serving versus composition relationships,
   group allocation, known-zero macros, unknowns, negative results and rounding.
 - `HealthOperations.portion.test.mjs` persists each group field and compares it
