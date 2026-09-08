@@ -454,8 +454,12 @@
 }
 .keys-ask__keys { flex: 1 1 auto; min-height: 0; width: 100%; }
 
-.exercise-note-done, .exercise-note-next { fill: #000 !important; color: #000 !important; }
-.exercise-note-todo { fill: rgb(120, 66, 22) !important; color: rgb(120, 66, 22) !important; }
+// Brown is everything PLAYED and the note you are on; ebony is what is still
+// ahead. The boundary between the two colours is the reader's position, which
+// is why `done` and `next` share one colour: the cursor lane marks the note
+// itself, and a third colour there only competed with it.
+.exercise-note-done, .exercise-note-next { fill: rgb(120, 66, 22) !important; color: rgb(120, 66, 22) !important; }
+.exercise-note-todo { fill: #171210 !important; color: #171210 !important; }
 .exercise-note-hit { fill: rgb(0, 150, 70) !important; color: rgb(0, 150, 70) !important; }
 .exercise-note-wrong { fill: rgb(200, 40, 40) !important; color: rgb(200, 40, 40) !important; }
 // Original SvgSequenceStaff cursor, introduced in 39cf60b81: around the current
