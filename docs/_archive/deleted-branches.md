@@ -392,3 +392,6 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
      main, or by provenance) rather than by git's merged/unmerged flag, which
      would have said "unmerged" for all six. -->
 
+| 2026-09-07 | preimplementation/application-modules | e43985ee6 | The 2026-09-06 application-module preparation. NOT lost — folded together with `audit/application-module-review-evidence` (the 2026-09-07 review of this same work) and landed on main as `74b7926a2`. Sequential phases of one initiative held as separate branches: same merge base, zero overlapping files, zero conflicts. |
+| 2026-09-07 | audit/application-module-review-evidence | dfcb37e8d | The review evidence for the above, and the surviving half of that fold. Landed on main as `74b7926a2` after main was merged in and the pair was squashed — the 323 generated JSON ledgers (3.19M lines, 121MB) were dropped in the squash and are now gitignored, since a commit inside the range had added them and no later commit could clear the push guard while it remained. |
+
