@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useContext, useState, Suspense } from 'react';
+import { useMemo, useCallback, useContext, useEffect, useState, Suspense } from 'react';
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { getGameIds, getGameEntry } from '../../../gameRegistry.js';
@@ -21,6 +21,36 @@ import { gameSubRouteTarget } from './gameSubRoute.js';
 import usePianoChallengeProfile from '../../../ask/usePianoChallengeProfile.js';
 import { creditPianoChallengeGameTime } from '../../../ask/pianoChallengeEarnedTime.js';
 import useBoardGameDay from './useBoardGameDay.js';
+
+
+/**
+ * The one place a game is recorded as having actually STARTED.
+ *
+ * This lived in `useAddressedBoardGame`, which is one FAMILY: Connect Four and
+ * Checkers logged a mount and Chess, Space Invaders, Tetris and the rest logged
+ * nothing at all. So "did the game the child asked for ever appear?" — the
+ * first question you ask about any report of a stuck kiosk — was answerable for
+ * two games out of nine, and for the others the only available evidence was the
+ * child giving up and picking something else. That is what made a stuck gate
+ * curtain take a log reconstruction instead of a query.
+ *
+ * It renders nothing and sits INSIDE the Suspense boundary on purpose: a
+ * boundary mounts its children once the lazy chunk has resolved, so this fires
+ * when the game is genuinely on screen rather than when the host decided to
+ * render one. `key` is the match, so a rematch is a new mount and says so.
+ */
+function GameMountWitness({ gameId, matchId, learnerId, logger }) {
+  useEffect(() => {
+    const startedAt = Date.now();
+    logger.info('game.mount', { game: gameId, matchId, learnerId: learnerId ?? 'guest' });
+    return () => {
+      logger.info('game.unmount', {
+        game: gameId, matchId, learnerId: learnerId ?? 'guest', playedMs: Date.now() - startedAt,
+      });
+    };
+  }, [gameId, learnerId, logger, matchId]);
+  return null;
+}
 
 /**
  * Games mode — picks a registered piano game and mounts it fullscreen, fed by the
@@ -367,6 +397,7 @@ function GameHost() {
               else (the office screen has no provider) read null and restart
               themselves exactly as they always have. */}
           <MatchGateContext.Provider value={matchGate}>
+            <GameMountWitness gameId={gameId} matchId={matchId} learnerId={learnerId} logger={logger} />
             <entry.LazyComponent
               key={matchId}
               activeNotes={activeNotes}

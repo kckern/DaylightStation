@@ -729,20 +729,41 @@ reconstructing — the fail-open ones — are not the ones missing an anchor.
 | `gate.presented` | info | the gate mounts, before any decision |
 | `gate.attempt` | info | material resolved; the run is about to take the screen |
 | `gate.passed` | info | a genuine pass, with its score |
+| `gate.ceremony-start` | info | the "Cleared" curtain went up, carrying the `plannedMs` it is meant to last |
+| `gate.ceremony-done` | info / warn | the curtain parted and the game was handed control, with `actualMs` and `overranMs` against that plan. **warn** above a second of overrun |
 | `gate.failed` | info | a judged attempt that missed its bar: completed below it, or stalled. `score` is `null` for a stall, which carries no number |
 | `gate.rung-changed` | info | the ladder moved, with `{ from, to, direction }` — both level ids and `climb` \| `degrade` |
 | `gate.floor-reached` | info | the ladder arrived at the floor — once per arrival |
-| `gate.practice-detour` | info | the child left for the practice route |
 | `gate.abandoned` | info | the child walked away; the ladder did not move |
 | `gate.unavailable` | warn | infrastructure failed and the gate opened anyway |
 | `gate.blocked` | warn | no player is chosen; the gate refuses without granting |
 | `gate.material-skipped` | info | a configured material entry was declined, with its reason |
 | `gate.material-config-invalid` | warn | every entry in a level failed for a config-class reason; the built-in C major fallback was served instead |
 
+`gate.ceremony-start` / `gate.ceremony-done` bracket the one step of this flow that has
+no other witness. The curtain stands between `gate.passed` and the game's own mount, so
+when it stopped parting — its hand-over timeout was being re-armed by every re-render,
+and a child resting a hand on the keys held it shut indefinitely — the only trace was an
+unexplained gap between those two events, and it took a reconstruction to read. A curtain
+that overruns its plan now says so on its own line, at `warn`.
+
 `gate.rung-changed` and `gate.floor-reached` are the pair that says whether the ladder is
 calibrated: a child who reaches the floor every time is being asked for material above
 their level. The retry-count default is tuned from these, which is why the move carries
 both ends — a line with only the destination cannot say which level the child left.
+
+### `piano-games`
+
+| Event | Level | Fires when |
+|---|---|---|
+| `game.mount` | info | a game is really on screen — logged from inside the Suspense boundary, so it means the chunk resolved and the game mounted, not that the host decided to render one |
+| `game.unmount` | info | the match ended, with `playedMs` |
+
+**These are the "did it actually work" pair, and they cover every game.** `game.mount`
+used to live in the addressed-board family, so Connect Four and Checkers logged a mount
+and Chess, Space Invaders, Tetris and the rest logged nothing — which made the first
+question anyone asks about a stuck kiosk answerable for two games out of nine. Both
+carry `matchId`, so a rematch is a new mount and a bounce is a short `playedMs`.
 
 ### `piano-game-budget`
 

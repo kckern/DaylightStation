@@ -23,6 +23,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, act, renderHook } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { CEREMONY_MS } from './GateCeremony.jsx';
 
 const h = vi.hoisted(() => {
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), sampled: vi.fn() };
@@ -37,6 +38,19 @@ vi.mock('../../../../../lib/logging/Logger.js', () => ({
   default: () => h.logger,
   getLogger: () => h.logger,
 }));
+// The gate reads live notes (its retry gesture and its exit gesture both do),
+// so a harness without this provider throws on every render — which is what
+// had this whole file red. Notes are never driven here; what is asserted is
+// the EVENTS, and an empty board is the right resting state for that.
+vi.mock('../../PianoMidiContext.jsx', async () => {
+  const { useSyncExternalStore } = await import('react');
+  const empty = new Map();
+  return {
+    usePianoMidi: () => ({ activeNotes: empty, connected: true }),
+    usePianoMidiNotes: () => ({ activeNotes: useSyncExternalStore(() => () => {}, () => empty) }),
+  };
+});
+
 vi.mock('../Exercises/pianoLearningApi.js', () => ({
   pianoLearningApi: { catalog: h.catalog, instances: h.instances, instance: h.instance },
 }));
@@ -131,12 +145,17 @@ const DECLARED = {
   'gate.presented': [...GATE_IDENTITY, 'rung', 'material', 'mode', 'attemptId'],
   'gate.attempt': [...GATE_IDENTITY, 'rung', 'material', 'mode', 'attemptId'],
   'gate.passed': [...GATE_IDENTITY, 'rung', 'attemptId', 'score'],
+  // THE CURTAIN, timed. It sits between `gate.passed` and the game's own
+  // mount, and it is the one step of this flow with no other witness — when it
+  // stopped parting, the only trace was an unexplained gap between those two.
+  // `actualMs` against `plannedMs` is what makes that self-reporting.
+  'gate.ceremony-start': [...GATE_IDENTITY, 'rung', 'attemptId', 'plannedMs'],
+  'gate.ceremony-done': [...GATE_IDENTITY, 'rung', 'attemptId', 'plannedMs', 'actualMs', 'overranMs'],
   'gate.failed': [...GATE_IDENTITY, 'rung', 'attemptId', 'score'],
   // `from` and `to` are the pair that makes the ladder reconstructible: a line
   // carrying only the destination cannot say which level the child left.
   'gate.rung-changed': [...GATE_IDENTITY, 'rung', 'from', 'to', 'direction'],
   'gate.floor-reached': [...GATE_IDENTITY, 'rung'],
-  'gate.practice-detour': [...GATE_IDENTITY, 'rung', 'material', 'mode'],
   'gate.abandoned': [...GATE_IDENTITY, 'rung'],
   'gate.unavailable': [...GATE_IDENTITY, 'rung', 'error'],
   'gate.blocked': [...GATE_IDENTITY, 'rung', 'reason'],
@@ -305,6 +324,32 @@ describe('gate events', () => {
     expect(passed.learnerId).toBe('kid1');
   });
 
+  it('the curtain reports what it actually took, against what it was told to take', async () => {
+    // The bug this exists for: the hand-over timeout was re-armed on every
+    // render, so the curtain never parted and the child sat on "Cleared". The
+    // only trace at the time was a gap between gate.passed and the game's own
+    // mount. These two lines close it — and `overranMs` makes a curtain that
+    // drifts say so itself rather than waiting to be reconstructed.
+    vi.useFakeTimers();
+    try {
+      renderGate({ learnerId: 'kid1' });
+      fireEvent.click(await vi.waitFor(() => screen.getByText('stub-pass')));
+
+      const started = expectEvent('gate.ceremony-start');
+      expect(started.plannedMs).toBe(CEREMONY_MS);
+      expect(started.rung).toBe('L1');
+      expect(started.attemptId).toEqual(expect.any(String));
+
+      act(() => vi.advanceTimersByTime(CEREMONY_MS));
+
+      const done = expectEvent('gate.ceremony-done');
+      expect(done.plannedMs).toBe(CEREMONY_MS);
+      expect(done.actualMs).toBeGreaterThanOrEqual(0);
+      expect(done.overranMs).toBe(0);
+      expect(done.attemptId).toBe(started.attemptId);
+    } finally { vi.useRealTimers(); }
+  });
+
   it('a completed miss carries its score, and the ladder move it caused is its own line', async () => {
     // retriesBeforeDegrade: 1 — one miss moves the rung, so both events land
     // on the same click.
@@ -355,16 +400,6 @@ describe('gate events', () => {
     // Once per ARRIVAL. A child sitting at the floor must not re-announce it
     // on every subsequent miss, or the calibration signal drowns itself.
     expect(lines().filter(([event]) => event === 'gate.floor-reached')).toHaveLength(1);
-  });
-
-  it('the practice detour is logged as leaving, with the material it detoured to', async () => {
-    renderGate({ learnerId: 'kid1', gateConfig: { ...CONFIG, retriesBeforeDegrade: 3 } });
-    fireEvent.click(await screen.findByText('stub-fail'));
-    fireEvent.click(await screen.findByText('Practice this'));
-
-    const detour = expectEvent('gate.practice-detour');
-    expect(detour.material).toBe(scaleId('C'));
-    expect(detour.mode).toBe('free');
   });
 
   it('walking away is a distinct event from failing — the ladder did not move', async () => {
