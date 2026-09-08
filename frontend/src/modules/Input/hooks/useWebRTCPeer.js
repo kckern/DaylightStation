@@ -33,9 +33,9 @@ export const useWebRTCPeer = (localStream) => {
       tracks.forEach(track => {
         pc.addTrack(track, localStream);
       });
-      logger().debug('pc-created', { tracks: tracks.map(t => ({ kind: t.kind, label: t.label, enabled: t.enabled })) });
+      logger().info('pc-created', { tracks: tracks.map(t => ({ kind: t.kind, label: t.label, enabled: t.enabled })) });
     } else {
-      logger().debug('pc-created', { tracks: [] });
+      logger().info('pc-created', { tracks: [] });
     }
 
     const remote = new MediaStream();
@@ -63,9 +63,17 @@ export const useWebRTCPeer = (localStream) => {
       }
     };
 
+    // INFO, not debug. Debug never leaves the browser (the shipped level is
+    // info), so a call that never connected used to reach the log store as
+    // silence — the one transition that says whether media came up at all was
+    // invisible in production. There are a handful of these per call, and a
+    // `failed`/`disconnected` is by definition worth a warn.
     pc.onconnectionstatechange = () => {
-      setConnectionState(pc.connectionState);
-      logger().debug('connection-state', { state: pc.connectionState });
+      const state = pc.connectionState;
+      setConnectionState(state);
+      const detail = { state, ice: pc.iceConnectionState, signaling: pc.signalingState, gathering: pc.iceGatheringState };
+      if (state === 'failed' || state === 'disconnected') logger().warn('connection-state', detail);
+      else logger().info('connection-state', detail);
     };
 
     return pc;

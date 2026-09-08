@@ -4,13 +4,46 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 const callerId = req => req.user?.sub || req.user?.id || null;
 const required = value => typeof value === 'string' && value.length > 0;
 
-export function createHomelineRouter({ leaseService, canCall = () => false } = {}) {
+export function createHomelineRouter({ leaseService, canCall = () => false, logger = null } = {}) {
   if (!leaseService) throw new Error('createHomelineRouter requires leaseService');
   const router = express.Router();
 
+  /**
+   * Refusing a caller is a decision, and it used to leave no trace.
+   *
+   * A phone that was told "Sign in to place a Home Line call" produced exactly
+   * one backend-visible fact — an HTTP 401 — and the caller's own browser
+   * logged it as a generic `api.response.error`. Reconstructing WHY (no token
+   * at all? a token whose roles lack `call`?) meant reading this file. These
+   * two events answer it directly:
+   *
+   *   query=homeline.call.denied AND _time:24h
+   *
+   * `cause` separates the two: `no_caller` is an unauthenticated request —
+   * the phone holds no JWT, and the fix is signing in; `no_permission` is a
+   * real user whose roles do not expand to `call`/`homeline`/`*`, and the fix
+   * is in data/system/config/auth.yml. `roles` is what the request actually
+   * carried, including the network-trust roles that deliberately do NOT grant
+   * call authority (docs/reference/call/README.md).
+   */
   const requireCaller = (req, res, next) => {
-    if (!callerId(req)) return res.status(401).json({ ok: false, code: 'AUTH_REQUIRED', error: 'Authentication required' });
-    if (!canCall(req)) return res.status(403).json({ ok: false, code: 'CALL_FORBIDDEN', error: 'Call permission required' });
+    if (!callerId(req)) {
+      logger?.info?.('homeline.call.denied', {
+        cause: 'no_caller', status: 401, path: req.path, method: req.method,
+        deviceId: req.body?.deviceId ?? req.params?.deviceId ?? null,
+        isLocal: req.isLocal === true, roles: req.roles || [], hasBearer: Boolean(req.headers?.authorization),
+      });
+      return res.status(401).json({ ok: false, code: 'AUTH_REQUIRED', error: 'Authentication required' });
+    }
+    if (!canCall(req)) {
+      logger?.info?.('homeline.call.denied', {
+        cause: 'no_permission', status: 403, path: req.path, method: req.method,
+        deviceId: req.body?.deviceId ?? req.params?.deviceId ?? null,
+        callerId: callerId(req), isLocal: req.isLocal === true, roles: req.user?.roles || [],
+      });
+      return res.status(403).json({ ok: false, code: 'CALL_FORBIDDEN', error: 'Call permission required' });
+    }
+    logger?.debug?.('homeline.call.authorized', { callerId: callerId(req), path: req.path });
     return next();
   };
 

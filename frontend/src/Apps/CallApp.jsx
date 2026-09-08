@@ -5,9 +5,18 @@ import getLogger, { configure as configureLogger } from '../lib/logging/Logger.j
 import { useWebRTCPeer } from '../modules/Input/hooks/useWebRTCPeer.js';
 import { useIndependentMedia } from '../modules/Input/hooks/useIndependentMedia.js';
 import { useCallController } from './call/useCallController.js';
+import { clearToken } from '../lib/auth.js';
 import './CallApp.scss';
 
 const BUSY_COPY = 'This TV is already in a call.';
+
+/**
+ * A 401 here means the stored token expired or belongs to no one — the route's
+ * AuthGate let us in on a token the backend has since stopped accepting.
+ * Dropping it and reloading lands on the login form, which is what the copy
+ * has always told the caller to do.
+ */
+const signOutAndSignIn = () => { clearToken(); window.location.reload(); };
 const statusCopy = state => ({
   reserving: 'Reserving the TV…', probing: 'Checking the TV…', waking: state.reason === 'hard_recovery'
     ? 'Restarting the TV…' : state.reason === 'soft_recovery' ? 'Reloading the call app…' : 'Waking the TV…',
@@ -59,6 +68,34 @@ export default function CallApp() {
     configureLogger({ level: 'info', context: { app: 'homeline-phone', sessionLog: true } });
     return () => configureLogger({ level: 'info', context: { sessionLog: false } });
   }, []);
+
+  // What screen this actually rendered on. The session trace carries a user
+  // agent, which does not say how wide the viewport was, whether the phone was
+  // rotated, or whether the caller had pinch-zoomed to read the thing — so a
+  // report of "I had to zoom in" had nothing in the log to check it against.
+  // Emitted once on mount and again on rotation/resize, never per frame.
+  useEffect(() => {
+    const report = reason => logger.info('call.surface', {
+      reason,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      devicePixelRatio: window.devicePixelRatio,
+      // >1 means the page is not being read at the size we laid it out at.
+      visualScale: window.visualViewport ? Number(window.visualViewport.scale.toFixed(2)) : null,
+      orientation: window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait',
+      touch: navigator.maxTouchPoints > 0,
+    });
+    report('mount');
+    let timer = null;
+    const onResize = () => { clearTimeout(timer); timer = setTimeout(() => report('resize'), 400); };
+    window.addEventListener('resize', onResize);
+    window.visualViewport?.addEventListener('resize', onResize);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', onResize);
+      window.visualViewport?.removeEventListener('resize', onResize);
+    };
+  }, [logger]);
   const media = useIndependentMedia();
   const peer = useWebRTCPeer(media.stream);
   const localVideoRef = useRef(null);
@@ -74,9 +111,29 @@ export default function CallApp() {
   const loadDevices = useCallback(() => {
     setDevices({ status: 'loading', items: [], error: null });
     DaylightAPI('/api/v1/device').then(data => {
-      const items = (data.devices || []).filter(device => device.capabilities?.contentControl);
+      // `videoCall`, not `contentControl`. Content control is what every kiosk
+      // panel in the house has; it listed the office PC and two cameraless
+      // tablets alongside the one TV that can actually take a call. A device
+      // opts in with `video_call: true` in devices.yml.
+      const all = data.devices || [];
+      const items = all.filter(device => device.capabilities?.videoCall);
       setDevices({ status: 'ready', items, error: null });
-      logger.info('devices.loaded', { count: items.length });
+      // A bare count cannot explain a wrong lobby. Naming what was offered and
+      // what was withheld makes "why is the office TV in my call list" (or
+      // "why is the living room missing") answerable from the log alone —
+      // `withheld` is a devices.yml declaration, not a bug, and says so.
+      logger.info('devices.loaded', {
+        count: items.length,
+        offered: items.map(device => device.id),
+        // Only the plausible candidates — a screen someone could reasonably
+        // expect in this list. Speakers, printers and cameras are not near
+        // misses and would bury the answer under eighteen ids.
+        withheld: all.filter(device => device.capabilities?.contentControl && !device.capabilities?.videoCall)
+          .map(device => device.id),
+        // A device offered under its raw slug means devices.yml declares no
+        // `name` for it — the defect that put "yellow-room-tablet" on screen.
+        unnamed: items.filter(device => !device.name).map(device => device.id),
+      });
     }).catch(error => {
       setDevices({ status: 'failed', items: [], error: error.message });
       logger.warn('devices.failed', { reason: error.message });
@@ -144,10 +201,16 @@ export default function CallApp() {
     <main className={`call-app ${inCall ? 'call-app--connected' : active ? 'call-app--connecting' : 'call-app--preview'}`}>
       <section className={`call-app__local ${inCall ? 'call-app__local--pip' : 'call-app__local--inset'}`} aria-label="Your camera preview">
         <video ref={localVideoRef} autoPlay muted playsInline className="call-app__video call-app__video--tall" />
-        {media.status === 'loading' && <p className="call-app__camera-loading">Starting camera and microphone…</p>}
-        {media.errors.video && <p className="call-app__camera-error">{mediaKindErrorCopy('video', media.errors.video)}</p>}
-        {media.errors.audio && <p className="call-app__camera-error">{mediaKindErrorCopy('audio', media.errors.audio)}</p>}
-        {partialMediaNote && <p className="call-app__camera-note">{partialMediaNote}</p>}
+        {/* One stack. Each of these used to be absolutely centred in the same
+            spot, so a camera failure and a microphone failure — the common
+            case, since one denial usually denies both — rendered on top of
+            each other and neither could be read. */}
+        <div className="call-app__camera-status">
+          {media.status === 'loading' && <p className="call-app__camera-loading">Starting camera and microphone…</p>}
+          {media.errors.video && <p className="call-app__camera-error">{mediaKindErrorCopy('video', media.errors.video)}</p>}
+          {media.errors.audio && <p className="call-app__camera-error">{mediaKindErrorCopy('audio', media.errors.audio)}</p>}
+          {partialMediaNote && <p className="call-app__camera-note">{partialMediaNote}</p>}
+        </div>
       </section>
 
       <section className="call-app__remote" aria-label="TV camera">
@@ -182,16 +245,23 @@ export default function CallApp() {
 
           {state.value === 'occupied' && <button ref={primaryActionRef} className="call-app__device-btn" onClick={() => controller.dispatch({ type: 'DISMISS' })}>Back</button>}
           {state.value === 'failed' && <div role="alert" className="call-app__device-list"><p>{state.reason === 'boot_failed' ? mediaErrorCopy(media.errors) : state.error}</p>
-            <button ref={primaryActionRef} className="call-app__device-btn" onClick={() => controller.dispatch({ type: 'DISMISS' })}>Back</button></div>}
+            {state.reason === 'auth_required'
+              ? <button ref={primaryActionRef} className="call-app__device-btn" onClick={signOutAndSignIn}>Sign in</button>
+              : <button ref={primaryActionRef} className="call-app__device-btn" onClick={() => controller.dispatch({ type: 'DISMISS' })}>Back</button>}</div>}
 
           {['idle', 'ended'].includes(state.value) && (
             <div className="call-app__device-list">
               {devices.status === 'loading' && <p role="status">Loading TVs…</p>}
               {devices.status === 'failed' && <div role="alert"><p>Could not load TVs.</p><button ref={primaryActionRef} className="call-app__device-btn" onClick={loadDevices}>Retry</button></div>}
-              {devices.status === 'ready' && devices.items.length === 0 && <p>No video call TVs are configured.</p>}
+              {devices.status === 'ready' && devices.items.length === 0 && <p>No screen in the house is set up to take a call.</p>}
+              {devices.items.length > 0 && <h1 className="call-app__title">Call a screen</h1>}
               {devices.items.map((device, index) => <button key={device.id} ref={index === 0 ? primaryActionRef : undefined}
-                className="call-app__device-btn" disabled={media.status !== 'ready'} onClick={() => controller.start(device)}>
-                {devices.items.length === 1 ? `Call ${device.name || device.id}` : device.name || device.id}
+                className="call-app__device-btn call-app__device-btn--device" disabled={media.status !== 'ready'} onClick={() => controller.start(device)}>
+                {device.icon && <span className="call-app__device-icon" aria-hidden="true">{device.icon}</span>}
+                <span className="call-app__device-label">
+                  <span className="call-app__device-name">{device.name || device.id}</span>
+                  {device.location && <span className="call-app__device-location">{device.location}</span>}
+                </span>
               </button>)}
               {media.status === 'failed' && <div role="alert"><p>{mediaErrorCopy(media.errors)}</p><button className="call-app__device-btn" onClick={media.retry}>Retry media</button></div>}
               <button className="call-app__device-btn" onClick={() => window.history.back()}>Exit call screen</button>

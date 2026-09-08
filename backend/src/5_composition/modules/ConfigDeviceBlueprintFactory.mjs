@@ -44,6 +44,23 @@ export class ConfigDeviceBlueprintFactory extends IDeviceBlueprintFactory {
       descriptor: {
         id: deviceId,
         type: source.type,
+        // How a person names this device. devices.yml has carried `name`,
+        // `location` and `icon` from the start; nothing read them, so every
+        // picker built on GET /api/v1/device showed the raw slug
+        // ("yellow-room-tablet") instead of "Piano Tablet · Yellow Room".
+        name: source.name ?? null,
+        location: source.location ?? null,
+        icon: source.icon ?? null,
+        // Whether this device may be the far end of a Home Line call.
+        //
+        // DECLARED, never inferred. A call needs a camera and a microphone at
+        // the far end, and nothing else in this file reliably implies either:
+        // `content_control` is what every kiosk panel has, which is why /call
+        // used to offer the office PC and two cameraless tablets alongside the
+        // one TV that can actually answer. A device opts in with
+        // `video_call: true`; anything silent is not a call target, so a new
+        // screen is never offered a camera it does not have.
+        videoCall: source.video_call === true,
         defaultVolume: source.default_volume,
         screenPath: source.screen_path,
         notifyService: source.notify_service ?? null,

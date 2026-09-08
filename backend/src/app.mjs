@@ -4613,6 +4613,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   v1Routers.homeline = createHomelineRouter({
     leaseService: callLeaseService,
+    logger: rootLogger.child({ app: 'homeline', module: 'homeline-api' }),
     canCall: req => {
       if (!req.user) return false;
       const apps = expandRolesToApps(req.user.roles || [], authConfig?.roles || {});
