@@ -30,6 +30,9 @@ import { gateAppliesTo, gateConfigForLearner } from './PianoKiosk/modes/Games/ga
 import PianoUserContext from './PianoKiosk/PianoUserContext.jsx';
 import { ExternalPianoMidiProvider } from './PianoKiosk/PianoMidiContext.jsx';
 
+/** How long the school-lock verdict stays up before it dismisses itself. */
+const SCHOOL_LOCK_DISMISS_MS = 8000;
+
 const formatDuration = (seconds) => {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
@@ -220,6 +223,16 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
     getLogger().child({ component: 'piano-launcher' }).warn('launcher.slots-overflow', { dropped });
   }, [dropped]);
 
+  // The school lock reads itself out and then goes. It is a verdict, not a
+  // prompt: there is nothing to answer, and leaving it on screen turns a locked
+  // afternoon into a piano that looks broken.
+  const schoolLocked = launcherOpen && !rosterVisible && !schoolGameAccess.unlocked;
+  useEffect(() => {
+    if (!schoolLocked) return undefined;
+    const timer = setTimeout(() => dismiss('school-locked-timeout'), SCHOOL_LOCK_DISMISS_MS);
+    return () => clearTimeout(timer);
+  }, [schoolLocked, dismiss]);
+
   const quitGame = useCallback(() => exitGame('game-exit'), [exitGame]);
   const quitCrashedGame = useCallback(() => exitGame('crash'), [exitGame]);
 
@@ -362,21 +375,39 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
 
       {launcherOpen && !rosterVisible && !schoolGameAccess.unlocked && (
         <div className="note-launcher note-launcher--school-locked" role="status">
-          <h2>Games are locked</h2>
-          <p>
-            {/* NAMED. The old copy said "finish today's schoolwork" to whoever
-                was standing there, which is how five days of one child's lock
-                read as a broken piano rather than as his lock. Who the verdict
-                belongs to is the first thing the reader needs. */}
-            {schoolGameAccess.status === 'error'
-              ? 'School status is unavailable. Games stay locked until it can be checked.'
-              : schoolGameAccess.status === 'loading'
-                ? 'Checking today’s schoolwork…'
-                : schoolGameAccess.state === 'indeterminate'
-                  ? `${currentUserName ?? 'This player'}’s school plan needs a grown-up.`
-                  : `${currentUserName ?? 'This player'} still has schoolwork to finish today.`}
-          </p>
-          <p>Play the highest key to change player. Hold the lowest and highest keys for 2 seconds to return to free play.</p>
+          <div className="nl-lock">
+            <span className="nl-lock__badge" aria-hidden="true">
+              {/* Inline SVG, never a glyph font: this screen also runs on the
+                  kiosk WebView, where a Unicode padlock renders as tofu. */}
+              <svg viewBox="0 0 24 24">
+                <rect x="4" y="10.5" width="16" height="10.5" rx="2.5" />
+                <path d="M8 10.5V7a4 4 0 0 1 8 0v3.5" strokeLinecap="round" />
+              </svg>
+            </span>
+            <h2 className="nl-lock__title">Games are locked</h2>
+            <p className="nl-lock__reason">
+              {/* NAMED. The old copy said "finish today's schoolwork" to whoever
+                  was standing there, which is how five days of one child's lock
+                  read as a broken piano rather than as his lock. Who the verdict
+                  belongs to is the first thing the reader needs. */}
+              {schoolGameAccess.status === 'error'
+                ? 'School status is unavailable. Games stay locked until it can be checked.'
+                : schoolGameAccess.status === 'loading'
+                  ? 'Checking today’s schoolwork…'
+                  : schoolGameAccess.state === 'indeterminate'
+                    ? `${currentUserName ?? 'This player'}’s school plan needs a grown-up.`
+                    : `${currentUserName ?? 'This player'} still has schoolwork to finish today.`}
+            </p>
+            <p className="nl-lock__hint">
+              Play the highest key to change player, or hold the lowest and highest keys to return to free play.
+            </p>
+            {/* The screen leaves on its own. A verdict that has been read has
+                nothing left to say, and a locked player should not have to know
+                a key combination to get their piano back. */}
+            <span className="nl-lock__timer" aria-hidden="true">
+              <i style={{ animationDuration: `${SCHOOL_LOCK_DISMISS_MS}ms` }} />
+            </span>
+          </div>
         </div>
       )}
 
