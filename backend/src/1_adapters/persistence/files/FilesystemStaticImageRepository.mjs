@@ -51,20 +51,36 @@ export class FilesystemStaticImageRepository extends IStaticImageRepository {
     if (kind === 'art') return [path.join('art', relative)];
     if (kind === 'user') return [path.join('users', relative), path.join('users', 'default')];
     if (kind === 'equipment') {
-      // A declared filename wins; otherwise the id names the file, as it always has.
-      // Own-property only: an id like `constructor` must not inherit a
-      // "filename" from Object.prototype and blow up path.join.
-      const declared = Object.prototype.hasOwnProperty.call(this.#equipmentImages, relative)
-        ? this.#equipmentImages[relative]
-        : null;
-      const names = typeof declared === 'string' && declared ? [declared] : [relative];
-      return names.flatMap((name) => [
+      return this.#equipmentNames(relative).flatMap((name) => [
         path.join('equipment', name),
         path.join('fitness', 'equipment', name),
       ]);
     }
-    if (kind === 'image') return [relative];
+    if (kind === 'image') {
+      // The fitness UI asks for equipment through the GENERIC image route
+      // (/static/img/equipment/{id}), not /static/equipment/{id}, so the
+      // declared-filename rule has to apply here too — otherwise it applies to
+      // nothing any surface actually calls.
+      const equipment = /^equipment\/([^/]+)$/.exec(relative);
+      if (equipment) {
+        return this.#equipmentNames(equipment[1]).map((name) => path.join('equipment', name));
+      }
+      return [relative];
+    }
     return [];
+  }
+
+  /**
+   * The filename(s) to try for an equipment id: the one fitness config
+   * declares, else the id itself — the convention that predates declarations.
+   * Own-property only, so an id like `constructor` cannot inherit a
+   * "filename" from Object.prototype and blow up path.join.
+   */
+  #equipmentNames(id) {
+    const declared = Object.prototype.hasOwnProperty.call(this.#equipmentImages, id)
+      ? this.#equipmentImages[id]
+      : null;
+    return typeof declared === 'string' && declared ? [declared] : [id];
   }
 
   #resolve(relativePath) {

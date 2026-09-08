@@ -51,3 +51,34 @@ describe('equipment image resolution', () => {
     expect(image).toBeNull();
   });
 });
+
+// The fitness UI builds `/static/img/equipment/{id}`, which reaches the generic
+// `/img/*splat` route as kind 'image' with id 'equipment/{id}' — NOT the
+// `/equipment/:id` route. A declaration honoured only under kind 'equipment'
+// is honoured on no screen at all, which is exactly how the first version of
+// this shipped and still showed the generic icon.
+describe('equipment under the generic image route', () => {
+  it('honours the declared filename for /img/equipment/{id}', async () => {
+    const image = await repo({ generic_pedaler: 'peddler.jpg' })
+      .getImage('image', 'equipment/generic_pedaler');
+    expect(image?.identity).toBe('equipment/peddler.jpg');
+  });
+
+  it('still resolves undeclared equipment by id on that route', async () => {
+    const image = await repo({ generic_pedaler: 'peddler.jpg' })
+      .getImage('image', 'equipment/niceday');
+    expect(image?.identity).toBe('equipment/niceday.jpg');
+  });
+
+  it('leaves non-equipment image paths alone', async () => {
+    fs.writeFileSync(path.join(root, 'plain.png'), Buffer.from([0x89, 0x50, 0x4e]));
+    const image = await repo({ plain: 'other.png' }).getImage('image', 'plain');
+    expect(image?.identity).toBe('plain.png');
+  });
+
+  it('does not treat a deeper path as an equipment id', async () => {
+    // `equipment/sub/thing` is a real nested path, not an id to alias.
+    const image = await repo({ thing: 'peddler.jpg' }).getImage('image', 'equipment/sub/thing');
+    expect(image).toBeNull();
+  });
+});
