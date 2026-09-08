@@ -162,17 +162,26 @@ describe('KeysAsk', () => {
     expect(screen.getByTestId('keyboard')).toHaveAttribute('data-wrong', '');
   });
 
-  it('ranges the keyboard to the whole ask, +/-3 semitones', () => {
-    const events = [event(60), event(64)];
-    render(<KeysAsk events={events} cursorIndex={0} />);
+  it('draws the WHOLE configured board, not a window around the ask', () => {
+    // The ask is one note; the keyboard is still the 76-key board the child is
+    // sitting at. Cropping to the ask (this drew 57..67 for a middle-C ask —
+    // four white keys) removes every landmark that makes a keyboard readable,
+    // and a preschooler could not tell which key was lit (2026-09-08).
+    render(<KeysAsk events={[event(60)]} cursorIndex={0} keyboard={{ startNote: 28, endNote: 103 }} />);
     const kb = screen.getByTestId('keyboard');
-    expect(kb).toHaveAttribute('data-start', '57'); // 60 - 3
-    expect(kb).toHaveAttribute('data-end', '67'); // 64 + 3
+    expect(kb).toHaveAttribute('data-start', '28');
+    expect(kb).toHaveAttribute('data-end', '103');
   });
 
-  it('clamps the range at the ends of the piano, exactly like ExerciseRun', () => {
-    const events = [event(22), event(107)];
-    render(<KeysAsk events={events} cursorIndex={0} />);
+  it('falls back to the full 88 when no board is configured', () => {
+    render(<KeysAsk events={[event(60), event(64)]} cursorIndex={0} />);
+    const kb = screen.getByTestId('keyboard');
+    expect(kb).toHaveAttribute('data-start', '21');
+    expect(kb).toHaveAttribute('data-end', '108');
+  });
+
+  it('ignores a malformed board rather than drawing an empty keyboard', () => {
+    render(<KeysAsk events={[event(60)]} cursorIndex={0} keyboard={{ startNote: 90, endNote: 40 }} />);
     const kb = screen.getByTestId('keyboard');
     expect(kb).toHaveAttribute('data-start', '21');
     expect(kb).toHaveAttribute('data-end', '108');
