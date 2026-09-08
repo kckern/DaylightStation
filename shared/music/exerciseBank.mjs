@@ -40,6 +40,13 @@ export function axisValues(name, axis) {
 const valueId = (value) => (value && typeof value === 'object' ? value.id : value);
 
 /**
+ * Which staff a hand reads from. `grand` is not a clef — it is the two-staff
+ * system, and the engravers key off it to draw both. An explicit `staff` axis
+ * still wins, so notation-only clef variation stays possible independently.
+ */
+const STAFF_FOR_HAND = { R: 'treble', L: 'bass', RL: 'grand' };
+
+/**
  * Every combination of axis values, in declared order.
  *
  * Declaration order is load-bearing: it fixes the id string, so the same
@@ -189,6 +196,34 @@ export function materialize(seed, axes = {}) {
     events = [...events, ...clone(events).reverse().slice(1)];
   }
 
+  // 6. Hands. Clef maps to hand: R reads treble, L reads bass, RL is both at
+  //    once. Applied AFTER span and direction so both hands get the finished
+  //    sequence rather than the prototype.
+  //
+  //    L is not "the same notes in another clef" — a left hand does not play
+  //    from middle C upward, so it takes the octave below, which is also where
+  //    the bass staff draws it without ledger lines. RL keeps the right hand
+  //    where it was and puts the left an octave under it: the way scales are
+  //    actually practised hands-together, and one octave rather than two so
+  //    the grand staff holds both without a ledger-line thicket.
+  const hand = valueId(axes.hand);
+  if (hand) {
+    const tag = (note, side, shift = 0) => ({ ...note, midi: note.midi + shift, hand: side });
+    if (hand === 'L') {
+      events = events.map((e) => ({ ...e, notes: e.notes.map((n) => tag(n, 'left', -12)) }));
+    } else if (hand === 'RL') {
+      events = events.map((e) => ({
+        ...e,
+        notes: [
+          ...e.notes.map((n) => tag(n, 'right')),
+          ...e.notes.map((n) => tag(n, 'left', -12)),
+        ],
+      }));
+    } else {
+      events = events.map((e) => ({ ...e, notes: e.notes.map((n) => tag(n, 'right')) }));
+    }
+  }
+
   const pitches = events.flatMap((e) => e.notes.map((n) => n.midi));
   if (pitches.some((midi) => !Number.isFinite(midi) || midi < 21 || midi > 108)) return null;
 
@@ -203,7 +238,7 @@ export function materialize(seed, axes = {}) {
     key: valueId(axes.root) ?? seed.key ?? null,
     // Notational only: the same pitches read in another clef are a real reading
     // difference, but they are not different pitches.
-    staff: valueId(axes.staff) ?? seed.staff ?? 'treble',
+    staff: valueId(axes.staff) ?? STAFF_FOR_HAND[valueId(axes.hand)] ?? seed.staff ?? 'treble',
     meter: seed.meter ?? null,
     tempo: seed.tempo ?? null,
     ordering: seed.ordering ?? 'strict',

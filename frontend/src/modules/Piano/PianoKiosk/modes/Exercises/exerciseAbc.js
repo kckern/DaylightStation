@@ -82,8 +82,12 @@ export function instanceToAbc(instance) {
       const naturalClef = hasRight ? 'treble' : 'bass';
       return singleVoiceAbc(hasRight ? right : left, staff ?? naturalClef, instance);
     }
+    // `none` for the same reason singleVoiceAbc uses it: a meter promises
+    // tempo, and nothing on this surface is scored on tempo. Both staves have
+    // to agree, or a hands-together ask would print a time signature its
+    // one-handed siblings do not.
     return generateMelodyAbc({
-      meter: instance.meter ?? '4/4',
+      meter: 'none',
       hands: { right: [{ notes: right }], left: [{ notes: left }] },
     }, instance.key ?? 'C');
   }

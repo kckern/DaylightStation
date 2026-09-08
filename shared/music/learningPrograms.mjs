@@ -1,7 +1,86 @@
-import { expandSeed, instanceId } from './exerciseBank.mjs';
+import { expandSeed, instanceId, materializeById } from './exerciseBank.mjs';
 
 export const HANON_PROGRAM_ID = 'hanon-virtuoso-pianist';
+export const SCALE_DRILL_PROGRAM_ID = 'scale-drill-3x3';
 export const LEARNING_SCHEMA_VERSION = 1;
+
+/**
+ * The three-by-three scale drill: three sets of three reps, one key and one
+ * hand per set.
+ *
+ * WHY THE DEAL IS FIXED. `requirementEvidence` counts attempts against ONE
+ * `exercise_id`; a key that re-rolled per session would never accumulate its
+ * three passes and the drill could never complete. So the deal is made here,
+ * once, and held — the target does not move while the learner is aiming at it.
+ *
+ * WHY THESE THREE. One set per hand, deliberately, rather than three random
+ * draws: a random deal can hand out RL three times and never ask for the left
+ * hand alone. The keys climb the sharp side of the circle so each set adds one
+ * accidental to read — G (1 sharp), D (2), A (3).
+ */
+const SCALE_DRILL_SETS = Object.freeze([
+  { root: 'G', hand: 'R', hand_label: 'right hand' },
+  { root: 'D', hand: 'L', hand_label: 'left hand' },
+  { root: 'A', hand: 'RL', hand_label: 'both hands' },
+]);
+
+/** Reps per set. This IS the rep counter — see requirementEvidence. */
+export const SCALE_DRILL_REPS_PER_SET = 3;
+
+export function scaleDrillRequirement({ root, hand }) {
+  return {
+    exercise_id: instanceId('scales/modes', {
+      root, mode: 'ionian', direction: 'up-then-down', span_octaves: 1, hand,
+    }),
+    mode: 'free',
+    rubric: {
+      id: 'scale-clean-v1',
+      version: '1',
+      // No `placement`: nothing here is scored on tempo, which is also why the
+      // engraving prints no time signature.
+      criteria: { completeness: 1, cleanliness: 0.9 },
+    },
+    required_passes: SCALE_DRILL_REPS_PER_SET,
+  };
+}
+
+/**
+ * A set is one instance plus a pass requirement — which is exactly a program
+ * step, so the drill needs no concept the program layer does not already have.
+ * Reps and sets are deliberately NOT bank axes: an axis changes what the
+ * material IS, and three reps of G major are the same fifteen notes three
+ * times.
+ */
+function buildScaleDrill(exerciseBank) {
+  const seed = exerciseBank.getSeed?.('scales/modes');
+  if (!seed) return null;
+  const steps = SCALE_DRILL_SETS.map((set, index) => {
+    const requirement = scaleDrillRequirement(set);
+    // Validate the one instance, not all 2,808 of them: expandSeed on a seed
+    // this wide is a real cost to pay on every projection.
+    if (!materializeById(seed, requirement.exercise_id)) return null;
+    return {
+      id: `scale-set-${index + 1}`,
+      order: index + 1,
+      title: `${set.root} major — ${set.hand_label}`,
+      subtitle: `Bottom to top and back, ${SCALE_DRILL_REPS_PER_SET} times.`,
+      seed_id: 'scales/modes',
+      requirement,
+    };
+  }).filter(Boolean);
+
+  if (steps.length !== SCALE_DRILL_SETS.length) return null;
+  return {
+    schema_version: LEARNING_SCHEMA_VERSION,
+    id: SCALE_DRILL_PROGRAM_ID,
+    title: 'Scale drill',
+    subtitle: 'Three keys, three hands, three times each.',
+    description: 'Nine round trips: bottom to top and back. The key and the hand change with every set.',
+    featured: true,
+    ordered: true,
+    steps,
+  };
+}
 
 const clone = (value) => structuredClone(value);
 const finite = (value) => Number.isFinite(Number(value)) ? Number(value) : null;
@@ -45,17 +124,24 @@ export function buildLearningPrograms(exerciseBank) {
     };
   }).filter(Boolean);
 
-  if (!steps.length) return [];
-  return [{
-    schema_version: LEARNING_SCHEMA_VERSION,
-    id: HANON_PROGRAM_ID,
-    title: category?.title ?? 'Hanon — The Virtuoso Pianist',
-    subtitle: category?.subtitle ?? 'Exercises 1–30',
-    description: 'Thirty progressive studies for evenness, finger independence, and control.',
-    featured: true,
-    ordered: true,
-    steps,
-  }];
+  // Every program the bank can offer, not just Hanon. A builder that returned
+  // one program hard-coded its only caller's assumption into the shape.
+  const programs = [];
+  if (steps.length) {
+    programs.push({
+      schema_version: LEARNING_SCHEMA_VERSION,
+      id: HANON_PROGRAM_ID,
+      title: category?.title ?? 'Hanon — The Virtuoso Pianist',
+      subtitle: category?.subtitle ?? 'Exercises 1–30',
+      description: 'Thirty progressive studies for evenness, finger independence, and control.',
+      featured: true,
+      ordered: true,
+      steps,
+    });
+  }
+  const scaleDrill = buildScaleDrill(exerciseBank);
+  if (scaleDrill) programs.push(scaleDrill);
+  return programs;
 }
 
 export function normalizeRequirement(input) {
