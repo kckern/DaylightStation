@@ -367,6 +367,25 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-07 | backup/pre-pii-rewrite | 72a7add82 | Pre-scrub history from the 2026-09-06 PII rewrite. DELETED DELIBERATELY: the scrubbed version is in main, and this branch was one of the last local copies of three commits carrying a learner's real name. |
 | 2026-09-07 | backup/pre-pii-scrub-20260906 | 2275f65b6 | Companion backup from the same 2026-09-06 scrub, holding two more commits with a learner's real name. Deleted for the same reason — content preserved in main in scrubbed form. |
 
+| 2026-09-07 | backup/pre-squash-20260907 | e3e020ce7 | The 50-commit granular history of the deploy tree before the 2026-09-07 squash. Content all in main; this preserved the individual messages. **Archived as a git bundle, not kept as a ref** — see the note below. |
+
+<!-- BACKUPS ARE NOT BRANCHES (2026-09-07 policy).
+     A branch kept "just in case" clutters `git branch` forever and outlives
+     its purpose. Archive it to `{dataDir}/_backups/git-branches/` as a git
+     BUNDLE instead, then delete the ref.
+
+     A bundle, not a zip of the working tree: a zip captures only the tip
+     commit and throws away the history, which is the one thing a backup of a
+     branch is for. Bundle the RANGE (`git bundle create f.bundle ^main
+     refs/heads/<branch>`) — a full bundle of this repo is 701MB, the range is
+     273KB, and the prerequisites are all reachable from origin/main.
+
+     Verify the restore BEFORE deleting the ref:
+       git bundle verify <file>
+       git fetch <abs-path-to-bundle> refs/heads/<branch>:refs/heads/check
+     then compare tips. The archive folder is outside the repo deliberately —
+     some bundles hold commits with household names, and this repo is public. -->
+
 <!-- Deleted with `-D`, not `-d`: a squash or rebase leaves the original branch
      unreachable from main by ancestry even when every line of its content is
      in main. Each was therefore checked by PATCH (subject-by-subject against
