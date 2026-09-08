@@ -77,8 +77,10 @@ export function useCallController({ peer, mediaStatus, retryLocalMedia, remoteVi
       } catch (error) {
         if (controller.signal.aborted || !isAttemptActive(stateRef.current, attemptId)) return;
         if (error.status === 409) dispatch({ type: 'BUSY', attemptId });
-        else if (error.status === 401) dispatch({ type: 'FAIL', attemptId, reason: 'auth_required', error: 'Sign in to place a Home Line call.' });
-        else if (error.status === 403) dispatch({ type: 'FAIL', attemptId, reason: 'call_forbidden', error: 'This account does not have permission to place a Home Line call.' });
+        // Home Line asks nobody to sign in. The only refusal left is reaching
+        // it from off the house network, so the copy names that, not an account.
+        else if (error.status === 401) dispatch({ type: 'FAIL', attemptId, reason: 'off_network', error: 'Home Line only works on the home network or over the VPN.' });
+        else if (error.status === 403) dispatch({ type: 'FAIL', attemptId, reason: 'call_forbidden', error: 'This device is not allowed to place a Home Line call.' });
         else dispatch({ type: 'FAIL', attemptId, error: error.message, reason: 'reservation_failed' });
       }
     };

@@ -284,7 +284,7 @@ import { DataServiceAuthAccountRepository } from '#adapters/auth/DataServiceAuth
 import { NodeAuthenticationPrimitives } from '#adapters/auth/NodeAuthenticationPrimitives.mjs';
 import { networkTrustResolver } from '#api/middleware/networkTrustResolver.mjs';
 import { tokenResolver } from '#api/middleware/tokenResolver.mjs';
-import { expandRolesToApps, permissionGate } from '#api/middleware/permissionGate.mjs';
+import { permissionGate } from '#api/middleware/permissionGate.mjs';
 import { createAuthRouter } from '#api/v1/routers/auth.mjs';
 import { householdResolver } from '#api/middleware/householdResolver.mjs';
 import { deviceResolver } from '#api/middleware/deviceResolver.mjs';
@@ -4611,14 +4611,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'device-api' })
   });
 
+  // Home Line has no user provisioning, no sign-in and no identification by
+  // design: it is a tin can between two ends of the house, reachable only on
+  // the LAN or over the VPN. Whoever reaches it can talk into it. There is
+  // deliberately no role check here — access control is the VPN, and adding
+  // one back would mean asking a person at a wall phone to log in.
   v1Routers.homeline = createHomelineRouter({
     leaseService: callLeaseService,
     logger: rootLogger.child({ app: 'homeline', module: 'homeline-api' }),
-    canCall: req => {
-      if (!req.user) return false;
-      const apps = expandRolesToApps(req.user.roles || [], authConfig?.roles || {});
-      return apps.includes('*') || apps.includes('call') || apps.includes('homeline');
-    },
   });
 
   const barcodeRelayConfig = configService.getHouseholdAppConfig(householdId, 'barcode-relay') || {};

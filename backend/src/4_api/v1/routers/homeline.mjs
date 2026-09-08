@@ -1,45 +1,54 @@
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 
-const callerId = req => req.user?.sub || req.user?.id || null;
+/**
+ * Who is calling.
+ *
+ * Home Line is a tin can on a string: two ends, no user provisioning, no
+ * sign-in, no identification. It is reachable only from the house network or
+ * over the VPN, and THAT is the access boundary — not anything in this file.
+ * A caller therefore needs an identity only so the lease has an owner: it is
+ * what stops a stray tab from ending a call it did not place, and what lets a
+ * phone that refreshed mid-call resume its own.
+ *
+ * `trusted-local-network` is the same anonymous identity the state-gates
+ * ingress adapter already uses for an unauthenticated local request. A JWT is
+ * still honoured if one happens to be present, so an authenticated household
+ * member keeps a distinct owner, but nobody is ever asked for one.
+ */
+const callerId = req => req.user?.sub || req.user?.id || (req.isLocal ? 'trusted-local-network' : null);
 const required = value => typeof value === 'string' && value.length > 0;
 
-export function createHomelineRouter({ leaseService, canCall = () => false, logger = null } = {}) {
+export function createHomelineRouter({ leaseService, canCall = () => true, logger = null } = {}) {
   if (!leaseService) throw new Error('createHomelineRouter requires leaseService');
   const router = express.Router();
 
   /**
-   * Refusing a caller is a decision, and it used to leave no trace.
+   * The only thing that can refuse a caller now is arriving from off the
+   * network — and behind the reverse proxy every request already presents a
+   * private peer, so in practice this refuses nobody. It is kept as the shape
+   * of the boundary, not as the boundary itself; the real one is the VPN.
    *
-   * A phone that was told "Sign in to place a Home Line call" produced exactly
-   * one backend-visible fact — an HTTP 401 — and the caller's own browser
-   * logged it as a generic `api.response.error`. Reconstructing WHY (no token
-   * at all? a token whose roles lack `call`?) meant reading this file. These
-   * two events answer it directly:
+   * A refusal used to leave NO trace: the only backend-visible fact was an
+   * HTTP status, and the caller's browser logged it as a generic
+   * `api.response.error`. Reconstructing why meant reading this file.
    *
    *   query=homeline.call.denied AND _time:24h
-   *
-   * `cause` separates the two: `no_caller` is an unauthenticated request —
-   * the phone holds no JWT, and the fix is signing in; `no_permission` is a
-   * real user whose roles do not expand to `call`/`homeline`/`*`, and the fix
-   * is in data/system/config/auth.yml. `roles` is what the request actually
-   * carried, including the network-trust roles that deliberately do NOT grant
-   * call authority (docs/reference/call/README.md).
    */
   const requireCaller = (req, res, next) => {
     if (!callerId(req)) {
       logger?.info?.('homeline.call.denied', {
-        cause: 'no_caller', status: 401, path: req.path, method: req.method,
+        cause: 'off_network', status: 401, path: req.path, method: req.method,
         deviceId: req.body?.deviceId ?? req.params?.deviceId ?? null,
-        isLocal: req.isLocal === true, roles: req.roles || [], hasBearer: Boolean(req.headers?.authorization),
+        isLocal: req.isLocal === true,
       });
-      return res.status(401).json({ ok: false, code: 'AUTH_REQUIRED', error: 'Authentication required' });
+      return res.status(401).json({ ok: false, code: 'NOT_ON_HOME_NETWORK', error: 'Home Line is only reachable from the home network' });
     }
     if (!canCall(req)) {
       logger?.info?.('homeline.call.denied', {
         cause: 'no_permission', status: 403, path: req.path, method: req.method,
         deviceId: req.body?.deviceId ?? req.params?.deviceId ?? null,
-        callerId: callerId(req), isLocal: req.isLocal === true, roles: req.user?.roles || [],
+        callerId: callerId(req), isLocal: req.isLocal === true,
       });
       return res.status(403).json({ ok: false, code: 'CALL_FORBIDDEN', error: 'Call permission required' });
     }

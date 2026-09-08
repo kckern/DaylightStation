@@ -175,8 +175,8 @@ describe('useCallController cancellation and budgets', () => {
   });
 
   it.each([
-    [401, 'auth_required', 'Sign in to place a Home Line call.'],
-    [403, 'call_forbidden', 'does not have permission'],
+    [401, 'off_network', 'home network'],
+    [403, 'call_forbidden', 'not allowed'],
   ])('maps caller access failure %s to actionable copy', async (status, reason, copy) => {
     mocks.api.mockRejectedValue(Object.assign(new Error('raw response'), { status }));
     const { result } = renderHook(() => useCallController({ peer: peer(), mediaStatus: 'ready',

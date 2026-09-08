@@ -5,18 +5,12 @@ import getLogger, { configure as configureLogger } from '../lib/logging/Logger.j
 import { useWebRTCPeer } from '../modules/Input/hooks/useWebRTCPeer.js';
 import { useIndependentMedia } from '../modules/Input/hooks/useIndependentMedia.js';
 import { useCallController } from './call/useCallController.js';
-import { clearToken } from '../lib/auth.js';
+import { deviceLabel } from './call/deviceLabel.js';
+import { PhoneIcon, PowerIcon, HangupIcon, MicIcon, CameraIcon } from './call/callIcons.jsx';
+import { AppThemeProvider } from '@/lib/ui';
 import './CallApp.scss';
 
 const BUSY_COPY = 'This TV is already in a call.';
-
-/**
- * A 401 here means the stored token expired or belongs to no one — the route's
- * AuthGate let us in on a token the backend has since stopped accepting.
- * Dropping it and reloading lands on the login form, which is what the copy
- * has always told the caller to do.
- */
-const signOutAndSignIn = () => { clearToken(); window.location.reload(); };
 const statusCopy = state => ({
   reserving: 'Reserving the TV…', probing: 'Checking the TV…', waking: state.reason === 'hard_recovery'
     ? 'Restarting the TV…' : state.reason === 'soft_recovery' ? 'Reloading the call app…' : 'Waking the TV…',
@@ -53,8 +47,30 @@ const mediaErrorCopy = (errors) => {
   return 'Camera and microphone could not be started.';
 };
 
+/**
+ * Hold the viewport fixed for as long as the call screen is mounted.
+ *
+ * The app-wide meta tag allows pinch-zoom, which is right for a dense page and
+ * wrong here: every control is already thumb-sized, and a caller who pinches
+ * ends up panning a fixed-height layout with the controls off-screen. Scoped to
+ * this surface and restored on unmount, so no other app inherits the lock.
+ * `viewport-fit=cover` is what makes the safe-area insets this layout pads with
+ * resolve to real values on a notched phone.
+ */
+const FIXED_VIEWPORT = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
+function useFixedViewport() {
+  useEffect(() => {
+    const meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) return undefined;
+    const previous = meta.getAttribute('content');
+    meta.setAttribute('content', FIXED_VIEWPORT);
+    return () => meta.setAttribute('content', previous);
+  }, []);
+}
+
 export default function CallApp() {
   useDocumentTitle('Call');
+  useFixedViewport();
   const logger = useMemo(() => getLogger().child({ component: 'CallApp' }), []);
 
   // Route this surface's events to the durable phone-side session trace under
@@ -103,6 +119,7 @@ export default function CallApp() {
   const primaryActionRef = useRef(null);
   const [devices, setDevices] = useState({ status: 'loading', items: [], error: null });
   const [hardConfirm, setHardConfirm] = useState(false);
+  const [muted, setMuted] = useState({ audio: false, video: false });
   const [countdown, setCountdown] = useState(5);
   const resumeCheckedRef = useRef(false);
   const controller = useCallController({ peer, mediaStatus: media.status, remoteVideoRef });
@@ -189,89 +206,144 @@ export default function CallApp() {
       : null;
   const degradedLabel = state.media.audio && !state.media.video ? 'Audio-only call'
     : state.media.video && !state.media.audio ? 'Video-only call' : null;
+  // Mute is mirrored in state, not read off the track. `track.enabled = false`
+  // mutates an object React never re-renders for, so an icon driven straight
+  // off the track would keep showing "live" after the caller muted — the one
+  // thing a mute control must never get wrong.
+  const audioMuted = muted.audio;
+  const videoMuted = muted.video;
   const toggleTrack = kind => {
     const track = media.stream?.getTracks().find(item => item.kind === kind);
     if (!track) return;
     track.enabled = !track.enabled;
-    controller.sendMuteState({ audioMuted: media.stream.getAudioTracks().every(item => !item.enabled),
-      videoMuted: media.stream.getVideoTracks().every(item => !item.enabled) });
+    const next = { audio: media.stream.getAudioTracks().every(item => !item.enabled),
+      video: media.stream.getVideoTracks().every(item => !item.enabled) };
+    setMuted(next);
+    controller.sendMuteState({ audioMuted: next.audio, videoMuted: next.video });
   };
 
   return (
-    <main className={`call-app ${inCall ? 'call-app--connected' : active ? 'call-app--connecting' : 'call-app--preview'}`}>
-      <section className={`call-app__local ${inCall ? 'call-app__local--pip' : 'call-app__local--inset'}`} aria-label="Your camera preview">
-        <video ref={localVideoRef} autoPlay muted playsInline className="call-app__video call-app__video--tall" />
-        {/* One stack. Each of these used to be absolutely centred in the same
-            spot, so a camera failure and a microphone failure — the common
-            case, since one denial usually denies both — rendered on top of
-            each other and neither could be read. */}
-        <div className="call-app__camera-status">
-          {media.status === 'loading' && <p className="call-app__camera-loading">Starting camera and microphone…</p>}
-          {media.errors.video && <p className="call-app__camera-error">{mediaKindErrorCopy('video', media.errors.video)}</p>}
-          {media.errors.audio && <p className="call-app__camera-error">{mediaKindErrorCopy('audio', media.errors.audio)}</p>}
-          {partialMediaNote && <p className="call-app__camera-note">{partialMediaNote}</p>}
-        </div>
-      </section>
-
-      <section className="call-app__remote" aria-label="TV camera">
-        <video ref={remoteVideoRef} autoPlay playsInline className="call-app__video call-app__video--wide" />
-      </section>
-
-      {inCall ? (
-        <section className="call-app__controls" aria-live="polite">
-          {degradedLabel && <div className="call-app__status-text call-app__status-text--error" role="status">{degradedLabel}</div>}
-          {!state.controlConnected && <div className="call-app__status-text call-app__status-text--error" role="status">Controls reconnecting; media can continue.</div>}
-          <button className="call-app__control-btn" onClick={() => toggleTrack('audio')} disabled={!media.stream?.getAudioTracks().length}>Microphone</button>
-          <button className="call-app__control-btn" onClick={() => toggleTrack('video')} disabled={!media.stream?.getVideoTracks().length}>Camera</button>
-          {state.value === 'degraded' && <button className="call-app__device-btn" onClick={controller.retryMedia}>Retry media</button>}
-          <button className="call-app__hangup" onClick={() => controller.end('user_hangup')}>End call</button>
+    <AppThemeProvider pack="home">
+      <main className={`call-app ${inCall ? 'call-app--connected' : active ? 'call-app--connecting' : 'call-app--lobby'}`}>
+        {/* The caller's own camera is the surface, not a thumbnail parked in
+            dead space. It fills everything the controls do not need, so the
+            lobby, the connecting state and the call all share one silhouette
+            and nothing jumps when the state changes. */}
+        <section className="call-app__stage" aria-label="Your camera preview">
+          <video ref={localVideoRef} autoPlay muted playsInline className="call-app__video call-app__video--tall" />
+          <div className="call-app__camera-status">
+            {media.status === 'loading' && <p className="call-app__camera-loading">Starting camera and microphone…</p>}
+            {media.errors.video && <p className="call-app__camera-error">{mediaKindErrorCopy('video', media.errors.video)}</p>}
+            {media.errors.audio && <p className="call-app__camera-error">{mediaKindErrorCopy('audio', media.errors.audio)}</p>}
+            {partialMediaNote && <p className="call-app__camera-note">{partialMediaNote}</p>}
+          </div>
         </section>
-      ) : (
-        <section className="call-app__connecting-overlay" aria-live="polite">
-          {(active || state.value === 'occupied') && <p className={`call-app__status-text${state.value === 'occupied' ? ' call-app__status-text--error' : ''}`} role={state.value === 'occupied' ? 'alert' : 'status'}>{statusCopy(state)}</p>}
 
-          {state.value === 'recovery_prompt' && (
-            <div role="alert" className="call-app__device-list">
-              <p>The TV or media link did not recover.</p>
-              {!hardConfirm ? <button ref={primaryActionRef} className="call-app__device-btn" onClick={() => setHardConfirm(true)} disabled={state.hardRecoveryUsed}>Restart TV…</button>
-                : <button ref={primaryActionRef} className="call-app__device-btn" disabled={countdown > 0 || state.hardRecoveryUsed}
-                    onClick={() => controller.dispatch({ type: 'HARD_RECOVERY', attemptId: state.attemptId })}>
-                    {countdown > 0 ? `Confirm restart in ${countdown}` : 'Confirm restart'}
-                  </button>}
-              <button className="call-app__device-btn" onClick={() => controller.end('retry_requested')}>Try a new call</button>
-              <button className="call-app__device-btn" onClick={() => controller.end('recovery_cancelled')}>End call</button>
-            </div>
-          )}
-
-          {state.value === 'occupied' && <button ref={primaryActionRef} className="call-app__device-btn" onClick={() => controller.dispatch({ type: 'DISMISS' })}>Back</button>}
-          {state.value === 'failed' && <div role="alert" className="call-app__device-list"><p>{state.reason === 'boot_failed' ? mediaErrorCopy(media.errors) : state.error}</p>
-            {state.reason === 'auth_required'
-              ? <button ref={primaryActionRef} className="call-app__device-btn" onClick={signOutAndSignIn}>Sign in</button>
-              : <button ref={primaryActionRef} className="call-app__device-btn" onClick={() => controller.dispatch({ type: 'DISMISS' })}>Back</button>}</div>}
-
-          {['idle', 'ended'].includes(state.value) && (
-            <div className="call-app__device-list">
-              {devices.status === 'loading' && <p role="status">Loading TVs…</p>}
-              {devices.status === 'failed' && <div role="alert"><p>Could not load TVs.</p><button ref={primaryActionRef} className="call-app__device-btn" onClick={loadDevices}>Retry</button></div>}
-              {devices.status === 'ready' && devices.items.length === 0 && <p>No screen in the house is set up to take a call.</p>}
-              {devices.items.length > 0 && <h1 className="call-app__title">Call a screen</h1>}
-              {devices.items.map((device, index) => <button key={device.id} ref={index === 0 ? primaryActionRef : undefined}
-                className="call-app__device-btn call-app__device-btn--device" disabled={media.status !== 'ready'} onClick={() => controller.start(device)}>
-                {device.icon && <span className="call-app__device-icon" aria-hidden="true">{device.icon}</span>}
-                <span className="call-app__device-label">
-                  <span className="call-app__device-name">{device.name || device.id}</span>
-                  {device.location && <span className="call-app__device-location">{device.location}</span>}
-                </span>
-              </button>)}
-              {media.status === 'failed' && <div role="alert"><p>{mediaErrorCopy(media.errors)}</p><button className="call-app__device-btn" onClick={media.retry}>Retry media</button></div>}
-              <button className="call-app__device-btn" onClick={() => window.history.back()}>Exit call screen</button>
-              {media.status === 'ready' && (media.errors.audio || media.errors.video) && <p role="status">You can call with {media.errors.audio ? 'video only' : 'audio only'}.</p>}
-            </div>
-          )}
-
-          {active && state.value !== 'recovery_prompt' && <button ref={primaryActionRef} className="call-app__device-btn" onClick={() => controller.end('user_cancelled')}>Cancel</button>}
+        <section className="call-app__remote" aria-label="TV camera">
+          <video ref={remoteVideoRef} autoPlay playsInline className="call-app__video call-app__video--wide" />
         </section>
-      )}
-    </main>
+
+        {inCall ? (
+          <section className="call-app__panel call-app__panel--in-call" aria-live="polite">
+            {degradedLabel && <p className="call-app__notice call-app__notice--warn" role="status">{degradedLabel}</p>}
+            {!state.controlConnected && <p className="call-app__notice call-app__notice--warn" role="status">Controls reconnecting; media can continue.</p>}
+            <div className="call-app__call-controls">
+              <button type="button" className="call-app__round-btn" aria-label={audioMuted ? 'Unmute microphone' : 'Mute microphone'}
+                aria-pressed={audioMuted} onClick={() => toggleTrack('audio')} disabled={!media.stream?.getAudioTracks().length}>
+                <MicIcon off={audioMuted} />
+              </button>
+              <button type="button" className="call-app__round-btn call-app__round-btn--hangup" aria-label="End call"
+                onClick={() => controller.end('user_hangup')}>
+                <HangupIcon size={26} />
+              </button>
+              <button type="button" className="call-app__round-btn" aria-label={videoMuted ? 'Turn camera on' : 'Turn camera off'}
+                aria-pressed={videoMuted} onClick={() => toggleTrack('video')} disabled={!media.stream?.getVideoTracks().length}>
+                <CameraIcon off={videoMuted} />
+              </button>
+            </div>
+            {state.value === 'degraded' && <button type="button" className="call-app__text-btn" onClick={controller.retryMedia}>Retry media</button>}
+          </section>
+        ) : (
+          <section className="call-app__panel" aria-live="polite">
+            {(active || state.value === 'occupied') && (
+              <p className={`call-app__notice${state.value === 'occupied' ? ' call-app__notice--warn' : ''}`}
+                role={state.value === 'occupied' ? 'alert' : 'status'}>{statusCopy(state)}</p>
+            )}
+
+            {state.value === 'recovery_prompt' && (
+              <div role="alert" className="call-app__stack">
+                <p className="call-app__notice call-app__notice--warn">The TV or media link did not recover.</p>
+                {!hardConfirm
+                  ? <button type="button" ref={primaryActionRef} className="call-app__wide-btn" onClick={() => setHardConfirm(true)} disabled={state.hardRecoveryUsed}>Restart TV…</button>
+                  : <button type="button" ref={primaryActionRef} className="call-app__wide-btn" disabled={countdown > 0 || state.hardRecoveryUsed}
+                      onClick={() => controller.dispatch({ type: 'HARD_RECOVERY', attemptId: state.attemptId })}>
+                      {countdown > 0 ? `Confirm restart in ${countdown}` : 'Confirm restart'}
+                    </button>}
+                <button type="button" className="call-app__wide-btn" onClick={() => controller.end('retry_requested')}>Try a new call</button>
+                <button type="button" className="call-app__wide-btn call-app__wide-btn--danger" onClick={() => controller.end('recovery_cancelled')}>
+                  <HangupIcon size={20} />End call
+                </button>
+              </div>
+            )}
+
+            {state.value === 'occupied' && <button type="button" ref={primaryActionRef} className="call-app__wide-btn" onClick={() => controller.dispatch({ type: 'DISMISS' })}>Back</button>}
+
+            {state.value === 'failed' && (
+              <div role="alert" className="call-app__stack">
+                <p className="call-app__notice call-app__notice--warn">{state.reason === 'boot_failed' ? mediaErrorCopy(media.errors) : state.error}</p>
+                <button type="button" ref={primaryActionRef} className="call-app__wide-btn" onClick={() => controller.dispatch({ type: 'DISMISS' })}>Back</button>
+              </div>
+            )}
+
+            {['idle', 'ended'].includes(state.value) && (
+              <div className="call-app__stack">
+                {devices.status === 'loading' && <p className="call-app__notice" role="status">Looking for screens…</p>}
+                {devices.status === 'failed' && (
+                  <div role="alert" className="call-app__stack">
+                    <p className="call-app__notice call-app__notice--warn">Could not load TVs.</p>
+                    <button type="button" ref={primaryActionRef} className="call-app__wide-btn" onClick={loadDevices}>Retry</button>
+                  </div>
+                )}
+                {devices.status === 'ready' && devices.items.length === 0 && <p className="call-app__notice">No screen in the house is set up to take a call.</p>}
+                {devices.items.length > 0 && <h1 className="call-app__heading">Call a screen</h1>}
+
+                {devices.items.map((device, index) => (
+                  <button type="button" key={device.id} ref={index === 0 ? primaryActionRef : undefined}
+                    className="call-app__target" disabled={media.status !== 'ready'} onClick={() => controller.start(device)}>
+                    <span className="call-app__target-icon" aria-hidden="true">{device.icon || '📺'}</span>
+                    <span className="call-app__target-label">
+                      <span className="call-app__target-name">{deviceLabel(device)}</span>
+                      {device.location && <span className="call-app__target-room">{device.location}</span>}
+                    </span>
+                    <span className="call-app__target-action" aria-hidden="true"><PhoneIcon /></span>
+                  </button>
+                ))}
+
+                {media.status === 'failed' && (
+                  <div role="alert" className="call-app__stack">
+                    <p className="call-app__notice call-app__notice--warn">{mediaErrorCopy(media.errors)}</p>
+                    <button type="button" className="call-app__wide-btn" onClick={media.retry}>Retry media</button>
+                  </div>
+                )}
+                {media.status === 'ready' && (media.errors.audio || media.errors.video) && (
+                  <p className="call-app__notice" role="status">You can call with {media.errors.audio ? 'video only' : 'audio only'}.</p>
+                )}
+
+                <button type="button" className="call-app__wide-btn call-app__wide-btn--danger" onClick={() => window.history.back()}>
+                  <PowerIcon />Exit
+                </button>
+              </div>
+            )}
+
+            {active && state.value !== 'recovery_prompt' && (
+              <button type="button" ref={primaryActionRef} className="call-app__wide-btn call-app__wide-btn--danger"
+                onClick={() => controller.end('user_cancelled')}>
+                <HangupIcon size={20} />Cancel
+              </button>
+            )}
+          </section>
+        )}
+      </main>
+    </AppThemeProvider>
   );
 }
