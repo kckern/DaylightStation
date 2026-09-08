@@ -130,6 +130,109 @@
   }
 }
 
+// ── The school lock ────────────────────────────────────────────────────────
+// A verdict, not a form. This reused `.note-launcher` for its full-bleed ground
+// and inherited `justify-content: flex-end` with it, so the whole message piled
+// into the bottom-left corner of a 4K screen and read as a layout accident.
+// It gets its own centred stage, and it leaves on its own.
+.note-launcher--school-locked {
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 2rem;
+  // A vignette rather than a flat field: it puts the eye in the middle, which
+  // is where the only thing on this screen is.
+  background:
+    radial-gradient(ellipse at 50% 42%,
+      color-mix(in srgb, var(--ebony) 92%, transparent) 0%,
+      var(--case) 62%),
+    var(--case);
+
+  .nl-lock {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.15rem;
+    max-width: 34rem;
+    animation: nl-lock-arrive 520ms cubic-bezier(0.22, 0.9, 0.28, 1) both;
+
+    &__badge {
+      width: 4.5rem;
+      height: 4.5rem;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: color-mix(in srgb, var(--brass) 12%, transparent);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brass) 34%, transparent);
+
+      svg { width: 2rem; height: 2rem; fill: none; stroke: var(--brass); stroke-width: 2; }
+    }
+
+    &__title {
+      margin: 0;
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--ivory);
+    }
+
+    // The verdict itself — who it belongs to and why. The largest reading on
+    // the screen after the title, because it is the only thing that answers
+    // "why can I not play".
+    &__reason {
+      margin: 0;
+      font-size: 1.2rem;
+      line-height: 1.5;
+      color: var(--ivory);
+      opacity: 0.86;
+      text-wrap: balance;
+    }
+
+    &__hint {
+      margin: 0;
+      font-size: 0.92rem;
+      line-height: 1.6;
+      color: var(--ivory);
+      opacity: 0.48;
+      text-wrap: balance;
+    }
+
+    // The way out, drawn rather than counted. It says the screen will leave on
+    // its own without printing a number to stare at.
+    &__timer {
+      width: 12rem;
+      height: 2px;
+      margin-top: 0.35rem;
+      border-radius: 2px;
+      background: color-mix(in srgb, var(--brass) 20%, transparent);
+      overflow: hidden;
+
+      i {
+        display: block;
+        height: 100%;
+        width: 100%;
+        background: var(--brass);
+        transform-origin: 0 50%;
+        animation: nl-lock-drain linear forwards;
+      }
+    }
+  }
+}
+
+@keyframes nl-lock-arrive {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes nl-lock-drain {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .note-launcher--school-locked .nl-lock { animation-duration: 1ms !important; }
+}
+
 @keyframes nl-hold-sweep {
   from { stroke-dashoffset: 276.5; }
   to   { stroke-dashoffset: 0; }
