@@ -216,6 +216,45 @@ describe('Games mode', () => {
     expect(document.querySelector('.piano-game-fullscreen')).toBeNull();
   });
 
+  describe('a player games are not offered to', () => {
+    const offConfig = { ...testConfig, gameAccess: { disabledFor: ['kid-off'] } };
+
+    it('closes the DIRECT route, not just the tile', () => {
+      // The tile is the discoverable door; /piano/games/tetris is the one a
+      // bookmark or a typed URL reaches. Hiding a tile is a decoration.
+      renderGames('/games/tetris', 'kid-off', offConfig);
+      expect(screen.getByText('Games are off')).toBeTruthy();
+      expect(document.querySelector('.piano-game-fullscreen')).toBeNull();
+    });
+
+    it('closes the picker too', () => {
+      renderGames('/games', 'kid-off', offConfig);
+      expect(screen.getByText('Games are off')).toBeTruthy();
+    });
+
+    it('says nothing about schoolwork — there is no route to unlock', () => {
+      // A lock names the thing that would open it. This is not a lock, and
+      // telling him to finish his schoolwork would be a promise the piano
+      // cannot keep — he would go and keep his side of it.
+      schoolAccess.unlocked = true;
+      renderGames('/games/tetris', 'kid-off', offConfig);
+      expect(screen.queryByText(/schoolwork/i)).toBeNull();
+      expect(screen.queryByText('Games are locked')).toBeNull();
+    });
+
+    it('holds even once the schoolwork IS done — this does not expire', () => {
+      schoolAccess.unlocked = true;
+      renderGames('/games/tetris', 'kid-off', offConfig);
+      expect(screen.getByText('Games are off')).toBeTruthy();
+    });
+
+    it('leaves every other player alone', () => {
+      renderGames('/games/tetris', 'learner1', offConfig);
+      expect(screen.queryByText('Games are off')).toBeNull();
+      expect(document.querySelector('.piano-game-fullscreen')).not.toBeNull();
+    });
+  });
+
   // 2026-09-03 regression: Games() is the one call site of useSchoolGameAccess
   // that omitted the `schoolLearner` escape-hatch option, so a grown-up School
   // does not track queried an entitlement that does not exist for them,
