@@ -2741,7 +2741,14 @@ mpv_watchdog() {
             if is_armed_for_play "$slot"; then
                 local armed_queue
                 armed_queue=$(armed_field "$slot" "queue")
-                [[ -n "$armed_queue" ]] && eff_queue="$armed_queue"
+                # RESOLVE IT. `selected_queue` returns a fully-qualified URL, but an
+                # armed slot stores whatever /api/play was given — normally a bare
+                # ratingKey like "591918". Overriding with it unresolved handed curl a
+                # bare id, so `fetch_and_cache` failed with "No API and no cached
+                # playlist" and the slot never played. Config-driven queues were fine,
+                # which is why this only ever bit slots armed through the API.
+                # resolve_queue_url passes a full http(s) URL through untouched.
+                [[ -n "$armed_queue" ]] && eff_queue="$(resolve_queue_url "$armed_queue")"
             fi
             [[ -z "$eff_queue" ]] && continue
 
@@ -2908,7 +2915,14 @@ monitor() {
                 if is_armed_for_play "$slot"; then
                     local armed_queue
                     armed_queue=$(armed_field "$slot" "queue")
-                    [[ -n "$armed_queue" ]] && eff_queue="$armed_queue"
+                    # RESOLVE IT. `selected_queue` returns a fully-qualified URL, but an
+                    # armed slot stores whatever /api/play was given — normally a bare
+                    # ratingKey like "591918". Overriding with it unresolved handed curl a
+                    # bare id, so `fetch_and_cache` failed with "No API and no cached
+                    # playlist" and the slot never played. Config-driven queues were fine,
+                    # which is why this only ever bit slots armed through the API.
+                    # resolve_queue_url passes a full http(s) URL through untouched.
+                    [[ -n "$armed_queue" ]] && eff_queue="$(resolve_queue_url "$armed_queue")"
                 fi
                 if [[ -n "$eff_queue" ]]; then
                     log "$tag" "Already connected, starting playback (queue=$eff_queue armed=$(is_armed_for_play "$slot" && echo yes || echo no))"
@@ -3019,7 +3033,14 @@ monitor() {
                             if is_armed_for_play "$slot"; then
                                 local armed_queue
                                 armed_queue=$(armed_field "$slot" "queue")
-                                [[ -n "$armed_queue" ]] && eff_queue="$armed_queue"
+                                # RESOLVE IT. `selected_queue` returns a fully-qualified URL, but an
+                                # armed slot stores whatever /api/play was given — normally a bare
+                                # ratingKey like "591918". Overriding with it unresolved handed curl a
+                                # bare id, so `fetch_and_cache` failed with "No API and no cached
+                                # playlist" and the slot never played. Config-driven queues were fine,
+                                # which is why this only ever bit slots armed through the API.
+                                # resolve_queue_url passes a full http(s) URL through untouched.
+                                [[ -n "$armed_queue" ]] && eff_queue="$(resolve_queue_url "$armed_queue")"
                             fi
                             if [[ -n "$eff_queue" ]]; then
                                 start_playback "$slot" "$name" "$(jq -r '.mac' <<< "$device_json")" "$eff_queue" "$shuffle" "$resume_queue" "$resume_track" || true
