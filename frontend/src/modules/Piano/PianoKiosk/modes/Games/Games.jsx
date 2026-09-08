@@ -326,6 +326,7 @@ function GameHost() {
           }}
           // What the child calls this game, so the challenge can say what it is
           // for ("Play this to start Chess") instead of standing there unexplained.
+          gameId={gameId}
           gameLabel={entry?.label ?? gameId}
           completedGames={boardGameDay.completedGames}
           studyDate={boardGameDay.studyDate}

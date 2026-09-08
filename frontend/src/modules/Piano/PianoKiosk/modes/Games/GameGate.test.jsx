@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { CEREMONY_MS } from './GateCeremony.jsx';
 
 // ── Doubles ─────────────────────────────────────────────────────────────────
 // `AskSession` is the boundary this gate now speaks across, so it is what is
@@ -584,10 +585,23 @@ describe('GameGate — contract 3: infrastructure fails OPEN', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 describe('GameGate — contract 4: passing', () => {
   it('opens the match, logs gate.passed with the score, and banks a clean pass', async () => {
-    const { onPassed } = renderGate({ learnerId: 'kid1', gateConfig: CONFIG });
-    fireEvent.click(await screen.findByText('stub-pass'));
+    const { onPassed, container } = renderGate({ learnerId: 'kid1', gateConfig: CONFIG });
+    const pass = await screen.findByText('stub-pass');
 
+    // THE CURTAIN IS THE TRANSITION. The pass is banked and logged at once, but
+    // the match opens when the ceremony finishes parting — so the reward and
+    // the navigation are one gesture rather than a card in front of one.
+    // Fake timers go in BEFORE the click: the ceremony registers its hand-over
+    // timeout on mount, and one installed afterwards cannot advance it.
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(pass);
+      expect(container.querySelector('.gate-ceremony')).toBeTruthy();
+      expect(onPassed).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(CEREMONY_MS));
+    } finally { vi.useRealTimers(); }
     expect(onPassed).toHaveBeenCalledTimes(1);
+
     const [, data] = eventNamed('gate.passed');
     expect(data.score).toBe(0.91);
     expect(data.attemptId).toEqual(expect.any(String));
