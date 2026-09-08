@@ -225,6 +225,14 @@ export const normalizeRequirements = (rawReqs, comparator = compareSeverity, opt
   return Array.from(grouped.values());
 };
 
+/**
+ * How long a configured requirement may produce no summary before it is called
+ * inert. Long enough that ordinary start-up — waiting for participants, for a
+ * first cadence reading — never trips it; short enough to land in the log while
+ * the session it describes is still running.
+ */
+const INERT_REQUIREMENT_GRACE_MS = 60_000;
+
 export class GovernanceEngine {
   constructor(session = null, options = {}) {
     // Injectable clock and RNG for deterministic testing.
@@ -1397,6 +1405,11 @@ export class GovernanceEngine {
       normalized.push({
         id: policyId,
         name: policyValue.name || policyId,
+        // Default TRUE: live step-platform activity satisfies a zone
+        // requirement for the person doing it. Set false to make the
+        // heart-rate gate mean heart rate and nothing else.
+        activitySatisfiesZone: policyValue.activity_satisfies_zone !== false
+          && policyValue.activitySatisfiesZone !== false,
         minParticipants,
         baseRequirement,
         requirements,
@@ -1500,7 +1513,13 @@ export class GovernanceEngine {
           contentId: this.media?.id,
           deadline: this.meta?.deadline,
           satisfiedOnce: this.meta?.satisfiedOnce,
+          // ACTIVE requirements, not configured ones — a requirement that stands
+          // down produces no summary and vanishes from this number. The pair is
+          // what makes that visible: 2 configured, 1 active means one rule is
+          // silently inert, which is exactly the state that hid a tricycle gate
+          // for a whole session.
           requirementCount: this.requirementSummary?.requirements?.length || 0,
+          configuredRequirementCount: this._configuredRequirementCount ?? null,
           firstRequirement: firstReq ? {
             zone: firstReq.zone,
             zoneLabel: firstReq.zoneLabel,
@@ -2616,6 +2635,10 @@ export class GovernanceEngine {
 
     // 3. Choose Policy
     const activePolicy = this._chooseActivePolicy(totalCount);
+    // Held for the zone evaluator, which is called far below and takes its
+    // arguments positionally — threading one more flag through six call sites
+    // would be a worse trade than remembering which policy is in force.
+    this._activePolicy = activePolicy;
     if (!activePolicy) {
       this.reset();
       this._setPhase('pending', evalContext);
@@ -2861,6 +2884,77 @@ export class GovernanceEngine {
     }).filter(Boolean);
   }
 
+  /**
+   * Everyone who is demonstrably working RIGHT NOW on a step platform.
+   *
+   * Only counts a mat that is both `online` (the sensor is reporting) and
+   * `active` (a step inside its own activity window) — a mat that saw two
+   * hundred steps an hour ago is not evidence about this moment. The rider is
+   * the claimed one, the same claim a `cadence_floor` uses, so equipment with a
+   * `rider:` in config credits its rider without anyone pressing a selector.
+   *
+   * Opt-in per policy: `activity_satisfies_zone: false` turns it off for a
+   * household that wants the heart-rate gate to mean heart rate and nothing
+   * else.
+   */
+  _activityParticipants() {
+    const credited = new Set();
+    if (this._activePolicy?.activitySatisfiesZone === false) return credited;
+    const metrics = this._latestInputs?.activityMetricMap || {};
+    const riders = this._latestInputs?.equipmentRiderMap || {};
+    Object.entries(metrics).forEach(([equipmentId, snapshot]) => {
+      if (!snapshot?.online || !snapshot?.active) return;
+      const rider = riders[equipmentId];
+      if (rider) credited.add(String(rider));
+    });
+    return credited;
+  }
+
+  /**
+   * A configured rule that has NEVER been able to apply is a wiring fault, and
+   * it used to be indistinguishable from a rule that does not exist.
+   *
+   * The distinction that matters is not "did this stand down" — standing down
+   * is healthy and happens constantly, every time a rider gets off. It is "has
+   * this rule produced a summary even ONCE since the session began". A
+   * cadence_floor that never armed reports nothing at all: `standDown()` only
+   * logs when the latch was already armed, so a requirement wired to equipment
+   * nobody can claim is silent forever. That is how a tricycle gate sat inert
+   * for twenty-four minutes with a live sensor and a rider on it.
+   *
+   * At most one line per requirement per session, after a grace window — a
+   * report of a broken rule, not a per-tick stream.
+   */
+  _noteRequirementInert(definition) {
+    const id = definition?.id;
+    if (!id) return;
+    if (!this._requirementLiveness) this._requirementLiveness = new Map();
+    const now = Date.now();
+    const record = this._requirementLiveness.get(id)
+      || { firstSeenAt: now, everActive: false, reported: false };
+    this._requirementLiveness.set(id, record);
+    if (record.everActive || record.reported) return;
+    if (now - record.firstSeenAt < INERT_REQUIREMENT_GRACE_MS) return;
+    record.reported = true;
+    getLogger().warn('governance.requirement.inert', {
+      requirementId: id,
+      type: definition?.type || 'zone',
+      equipment: definition?.equipment ?? null,
+      inertForMs: now - record.firstSeenAt,
+    });
+  }
+
+  /** A requirement that produced a summary is alive; it can never be inert. */
+  _noteRequirementActive(definition) {
+    const id = definition?.id;
+    if (!id) return;
+    if (!this._requirementLiveness) this._requirementLiveness = new Map();
+    const record = this._requirementLiveness.get(id)
+      || { firstSeenAt: Date.now(), everActive: false, reported: false };
+    record.everActive = true;
+    this._requirementLiveness.set(id, record);
+  }
+
   _evaluateRequirementSet(requirementMap, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount) {
     const definitions = Array.isArray(requirementMap)
       ? requirementMap
@@ -2875,6 +2969,7 @@ export class GovernanceEngine {
     const summaries = [];
     let allSatisfied = true;
     let justEngaged = false;
+    this._configuredRequirementCount = definitions.length;
     definitions.forEach((definition) => {
       let summary = null;
       const definitionType = definition?.type || 'zone';
@@ -2893,10 +2988,13 @@ export class GovernanceEngine {
         if (summary) summary.type = 'zone';
       }
       if (summary) {
+        this._noteRequirementActive(definition);
         summaries.push(summary);
         if (!summary.satisfied) {
           allSatisfied = false;
         }
+      } else {
+        this._noteRequirementInert(definition);
       }
     });
     // BUG FIX: If we have requirement entries but produced no summaries, zoneRankMap may be
@@ -3114,7 +3212,9 @@ export class GovernanceEngine {
 
     const isSubject = this._buildSubjectFilter(activeParticipants);
     const metUsers = [];
+    const metViaActivity = [];
     let subjectMetCount = 0;
+    const activityMet = this._activityParticipants();
     activeParticipants.forEach((participantId) => {
       const participantZoneId = userZoneMap[participantId];
       if (!participantZoneId) {
@@ -3125,7 +3225,18 @@ export class GovernanceEngine {
         });
       }
       const participantRank = this._getZoneRank(participantZoneId) ?? 0;
-      if (participantRank >= requiredRank) {
+      // STEPPING COUNTS. A zone is a heart-rate band, and a heart-rate band is
+      // a proxy for "is this person working" that fails exactly where it is
+      // needed most: the youngest riders wear the least reliable straps, and a
+      // dropped strap read as "not participating" while they stepped. Live mat
+      // activity answers the same question directly, so it satisfies the
+      // requirement — but it does NOT invent a zone. Writing a nominal band
+      // onto someone with no pulse reading would put "Active" beside an empty
+      // heart rate on every readout downstream. The credit stays here, in
+      // governance, and says so in `metViaActivity`.
+      const met = participantRank >= requiredRank || activityMet.has(participantId);
+      if (met) {
+        if (participantRank < requiredRank) metViaActivity.push(participantId);
         metUsers.push(participantId);
         if (isSubject(participantId)) subjectMetCount++;
       }
