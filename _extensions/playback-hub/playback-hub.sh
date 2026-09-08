@@ -1434,6 +1434,27 @@ selected_queue() {
     fi
 }
 
+# The lead-in bumper for the ACTIVE window: one track that always plays first,
+# ahead of whatever shuffle would otherwise put there.
+#
+# Same precedence as selected_queue — an active schedule's `bumper` wins, and a
+# device-level `bumper` is the fallback for slots with no schedules. Returns
+# empty when none is configured, which is the overwhelmingly common case.
+#
+# The value is a queue reference like any other (`plex:622760`), so it goes
+# through resolve_queue_url and a bare ratingKey works.
+selected_bumper() {
+    local device_json="$1"
+    local schedule_json raw=""
+
+    if schedule_json=$(active_schedule_json "$device_json"); then
+        raw=$(jq -r '.bumper // ""' <<< "$schedule_json")
+    fi
+    [[ -z "$raw" ]] && raw=$(jq -r '.bumper // ""' <<< "$device_json")
+    [[ -z "$raw" ]] && return 0
+    resolve_queue_url "$raw"
+}
+
 selected_shuffle() {
     local device_json="$1"
     local schedule_json
@@ -1573,7 +1594,10 @@ end_session() {
 # Reused by Unit E (membership reconcile). Returns 1 if nothing primed.
 #   args: slot name queue_json shuffle
 rebuild_playlist_from_queue() {
-    local slot="$1" name="$2" queue_json="$3" shuffle="${4:-false}"
+    # `bumper_url` is optional and defaults empty: a membership reconcile
+    # rebuilding this playlist mid-session must NOT re-prepend the lead-in,
+    # which is why it is a parameter here rather than read from config.
+    local slot="$1" name="$2" queue_json="$3" shuffle="${4:-false}" bumper_url="${5:-}"
     local dir; dir="$(slot_dir "$slot")"
     local playlist_tmp="$dir/playlist.m3u.tmp"
     mkdir -p "$dir"
@@ -1611,6 +1635,45 @@ rebuild_playlist_from_queue() {
         track_urls+=("${API_BASE}${media_path}")
         track_titles+=("$safe_title")
     done
+
+    # THE LEAD-IN BUMPER goes to the head of the list, after the shuffle has
+    # already decided the order — that is the whole point of it: a fixed way in,
+    # whatever random order follows. A copy already inside the queue is removed
+    # so the track is not heard twice in the first few minutes.
+    #
+    # A bumper that cannot be fetched is not fatal. Silence beats refusing to
+    # play someone's bedtime music because one lead-in track 404'd.
+    if [[ -n "$bumper_url" ]]; then
+        local bumper_json b_id b_path b_title
+        if bumper_json=$(curl_api "$bumper_url") && is_valid_queue_json "$bumper_json"; then
+            b_id=$(jq -r '.items[0].contentId // ""' <<< "$bumper_json" | sed 's/plex://')
+            b_path=$(jq -r '.items[0].mediaUrl // ""' <<< "$bumper_json")
+            b_title=$(jq -r '.items[0].title // ""' <<< "$bumper_json" | tr '\t\n\r' '   ')
+            if [[ -n "$b_id" && -n "$b_path" && "$b_id" != "null" ]]; then
+                local -a keep_ids=() keep_urls=() keep_titles=()
+                local k
+                for ((k=0; k<${#track_ids[@]}; k++)); do
+                    [[ "${track_ids[$k]}" == "$b_id" ]] && continue
+                    keep_ids+=("${track_ids[$k]}")
+                    keep_urls+=("${track_urls[$k]}")
+                    keep_titles+=("${track_titles[$k]}")
+                done
+                track_ids=("$b_id" ${keep_ids[@]+"${keep_ids[@]}"})
+                track_urls=("${API_BASE}${b_path}" ${keep_urls[@]+"${keep_urls[@]}"})
+                track_titles=("${b_title:-$b_id}" ${keep_titles[@]+"${keep_titles[@]}"})
+                # Marks the bumper for removal once it has been heard, so the
+                # looping playlist does not serve it again every lap.
+                echo "$b_id" > "$dir/.bumper_pending"
+                logev "$name" bumper.leading slot="$slot" plex_id="$b_id"
+            fi
+        else
+            log "$name" "bumper fetch failed ($bumper_url); playing the queue without it"
+            logev "$name" bumper.fetch_failed slot="$slot"
+        fi
+    else
+        rm -f "$dir/.bumper_pending"
+    fi
+
     local total=${#track_ids[@]}
 
     # Phase 1: synchronously prime the first LAZY_PRIME_COUNT tracks into the
@@ -1665,7 +1728,7 @@ fetch_and_cache() {
     # .bg_remaining). Does NOT fork the background downloader — that now happens
     # in start_playback AFTER mpv is up, so the bg's playlist appends can be
     # reconciled into a live mpv instead of racing a not-yet-existent socket.
-    local slot="$1" name="$2" queue_url="$3" shuffle="${4:-false}"
+    local slot="$1" name="$2" queue_url="$3" shuffle="${4:-false}" bumper_url="${5:-}"
     local dir; dir="$(slot_dir "$slot")"
 
     mkdir -p "$dir"
@@ -1698,7 +1761,7 @@ fetch_and_cache() {
     fi
     log "$name" "Fetched queue from API"
 
-    rebuild_playlist_from_queue "$slot" "$name" "$queue_json" "$shuffle" || return 1
+    rebuild_playlist_from_queue "$slot" "$name" "$queue_json" "$shuffle" "$bumper_url" || return 1
     # Record the queue that built this playlist so a warm reconnect (same queue,
     # within WARM_REUSE_WINDOW) can reuse playlist.m3u instead of re-fetching +
     # rebuilding. See warm_reconnect_ok / start_playback.
@@ -1933,6 +1996,59 @@ sanitize_resume() { # playlist_file track pos -> "track pos"
 # Reload playlist.m3u into mpv (replace) while keeping the current track if it
 # survives the new list. loadlist resets pos to 0, so we re-seek to the
 # surviving entry's new index. Logs a reconcile.loadlist event.
+# A bumper leads the window in ONCE. The playlist loops forever, so left in
+# place the lead-in would come back every lap — roughly every two hours, through
+# the night, which is worse than not having one at all.
+#
+# So it is dropped the moment mpv moves past it: rewrite the playlist without it
+# and reload in place, preserving the track and position that are already
+# playing. Runs from the watchdog, which is already talking to this socket.
+# No-op for every slot with no bumper, which is nearly all of them.
+drop_bumper_if_passed() { # slot name
+    local slot="$1" name="$2" dir; dir="$(slot_dir "$slot")"
+    [[ -f "$dir/.bumper_pending" ]] || return 0
+    local socket="$dir/mpv-socket"
+    [[ -S "$socket" ]] || return 0
+
+    local pos; pos="$(mpv_get_prop "$socket" playlist-pos)"
+    [[ "$pos" =~ ^[0-9]+$ ]] || return 0
+    (( pos < 1 )) && return 0
+
+    local b_id; b_id="$(cat "$dir/.bumper_pending" 2>/dev/null)"
+    rm -f "$dir/.bumper_pending"
+    [[ -n "$b_id" ]] || return 0
+    [[ -f "$dir/playlist.m3u" ]] || return 0
+
+    # Strip the bumper's #EXTINF/path pair. A path is identified the same way
+    # playlist_index_of does it — basename minus .mp3 IS the plex id — so this
+    # cannot accidentally match a title that happens to contain the digits.
+    local tmp="$dir/playlist.m3u.bumperdrop"
+    awk -v id="$b_id" '
+        /^#EXTM3U/ { print; next }
+        /^#EXTINF/ { ext = $0; next }
+        /^[[:space:]]*$/ { next }
+        {
+            path = $0
+            n = split(path, parts, "/")
+            base = parts[n]
+            sub(/\.mp3$/, "", base)
+            if (base != id) { if (ext != "") print ext; print path }
+            ext = ""
+        }
+    ' "$dir/playlist.m3u" > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 0; }
+
+    # Never leave a slot with an empty playlist: if the bumper was somehow the
+    # only entry, keep what was there and let the queue refresh sort it out.
+    if ! grep -qE '^/' "$tmp" 2>/dev/null; then
+        rm -f "$tmp"
+        logev "$name" bumper.drop_skipped slot="$slot" reason=would_empty_playlist
+        return 0
+    fi
+    mv "$tmp" "$dir/playlist.m3u"
+    loadlist_replace_preserving_pos "$slot" "$name" || true
+    logev "$name" bumper.dropped slot="$slot" plex_id="$b_id"
+}
+
 loadlist_replace_preserving_pos() { # slot name -> 0 on reconcile, 1 on skip/fail
     local slot="$1" name="$2" dir; dir="$(slot_dir "$slot")"
     local socket="$dir/mpv-socket"
@@ -1959,7 +2075,7 @@ loadlist_replace_preserving_pos() { # slot name -> 0 on reconcile, 1 on skip/fai
 }
 
 start_playback() {
-    local slot="$1" name="$2" mac="$3" queue="$4" shuffle="$5" resume_queue="${6:-true}" resume_track="${7:-true}"
+    local slot="$1" name="$2" mac="$3" queue="$4" shuffle="$5" resume_queue="${6:-true}" resume_track="${7:-true}" bumper="${8:-}"
     local dir=$(slot_dir "$slot")
     local start_track=0 start_pos=0
     local audio_device
@@ -2009,7 +2125,7 @@ start_playback() {
     # shuffle while the winning caller's mpv has already loaded the
     # earlier content — producing playlist drift (mpv plays one order,
     # file shows another).
-    elif ! fetch_and_cache "$slot" "$name" "$queue" "$shuffle"; then
+    elif ! fetch_and_cache "$slot" "$name" "$queue" "$shuffle" "$bumper"; then
         log "$name" "fetch_and_cache failed; not starting mpv"
         exec 9>&-
         return 1
@@ -2202,6 +2318,7 @@ refresh_loop() {
                 [[ -n "$armed_queue" ]] && queue=$(resolve_queue_url "$armed_queue")
             fi
             shuffle=$(selected_shuffle "$device_json")
+            bumper=$(selected_bumper "$device_json")
             local dir=$(slot_dir "$slot")
 
             # Only refresh if mpv is running for this slot. Acquire the
@@ -2274,6 +2391,7 @@ membership_tick() {
         mac=$(jq -r '.mac' <<< "$device_json")
         tag=$(device_tag "$slot" "$mac" "$name")
         shuffle=$(selected_shuffle "$device_json")
+            bumper=$(selected_bumper "$device_json")
         dir=$(slot_dir "$slot")
 
         # Only touch slots with a live mpv (idle slots have nothing to reconcile
@@ -2727,6 +2845,7 @@ mpv_watchdog() {
             tag=$(device_tag "$slot" "$mac" "$name")
             queue=$(selected_queue "$device_json")
             shuffle=$(selected_shuffle "$device_json")
+            bumper=$(selected_bumper "$device_json")
             # jq // operator triggers on null OR false — so `.x // true`
             # returns true when .x is the literal value false. Use the
             # explicit has() check so `resume_queue: false` is honored.
@@ -2800,6 +2919,11 @@ mpv_watchdog() {
                     # cooldown-guarded so it can't thrash. `|| true` keeps the
                     # watchdog loop unbreakable even under set -e.
                     mpv_check_stall "$slot" "$tag" "$dir/mpv-socket" || true
+                    # Retire a lead-in bumper the moment mpv has moved past it,
+                    # so the looping playlist does not replay it every lap. A
+                    # no-op for every slot without one. `|| true` for the same
+                    # reason as the line above: nothing here may break the loop.
+                    drop_bumper_if_passed "$slot" "$tag" || true
                     # Positive liveness sample (self-throttled to HEARTBEAT_INTERVAL).
                     emit_heartbeat "$slot" "$tag" "$dir/mpv-socket" || true
                     # GUARDRAIL: mpv is alive → this slot is healthy, reset the
@@ -2837,7 +2961,7 @@ mpv_watchdog() {
             note_silent_slot "$slot" "$tag"
             log "$tag" "watchdog: BT connected but mpv missing/dead — respawning (queue=$eff_queue)"
             local start_rc=0 start_failures=0
-            start_playback "$slot" "$tag" "$mac" "$eff_queue" "$shuffle" "$resume_queue" "$resume_track" || start_rc=$?
+            start_playback "$slot" "$tag" "$mac" "$eff_queue" "$shuffle" "$resume_queue" "$resume_track" "$bumper" || start_rc=$?
             if (( start_rc == 0 )) && [[ -f "$dir/mpv.pid" ]] && \
                 kill -0 "$(cat "$dir/mpv.pid" 2>/dev/null)" 2>/dev/null; then
                 # A healthy launch clears only this slot's audio-recovery
@@ -2891,6 +3015,7 @@ monitor() {
         dbus_id=$(mac_to_dbus_path "$mac")
         queue=$(selected_queue "$device_json")
         shuffle=$(selected_shuffle "$device_json")
+            bumper=$(selected_bumper "$device_json")
         resume_queue=$(jq -r 'if has("resume_queue") then .resume_queue else true end' <<< "$device_json")
         resume_track=$(jq -r 'if has("resume_track") then .resume_track else true end' <<< "$device_json")
 
@@ -2926,7 +3051,7 @@ monitor() {
                 fi
                 if [[ -n "$eff_queue" ]]; then
                     log "$tag" "Already connected, starting playback (queue=$eff_queue armed=$(is_armed_for_play "$slot" && echo yes || echo no))"
-                    start_playback "$slot" "$tag" "$mac" "$eff_queue" "$shuffle" "$resume_queue" "$resume_track" || true
+                    start_playback "$slot" "$tag" "$mac" "$eff_queue" "$shuffle" "$resume_queue" "$resume_track" "$bumper" || true
                 else
                     log "$tag" "No queue configured"
                 fi
@@ -2993,6 +3118,7 @@ monitor() {
                 local resume_track
                 queue=$(selected_queue "$device_json")
                 shuffle=$(selected_shuffle "$device_json")
+            bumper=$(selected_bumper "$device_json")
                 resume_queue=$(jq -r 'if has("resume_queue") then .resume_queue else true end' <<< "$device_json")
                 resume_track=$(jq -r 'if has("resume_track") then .resume_track else true end' <<< "$device_json")
 
@@ -3043,7 +3169,7 @@ monitor() {
                                 [[ -n "$armed_queue" ]] && eff_queue="$(resolve_queue_url "$armed_queue")"
                             fi
                             if [[ -n "$eff_queue" ]]; then
-                                start_playback "$slot" "$name" "$(jq -r '.mac' <<< "$device_json")" "$eff_queue" "$shuffle" "$resume_queue" "$resume_track" || true
+                                start_playback "$slot" "$name" "$(jq -r '.mac' <<< "$device_json")" "$eff_queue" "$shuffle" "$resume_queue" "$resume_track" "$bumper" || true
                             else
                                 log "$name" "No queue configured"
                             fi
