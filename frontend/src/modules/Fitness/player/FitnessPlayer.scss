@@ -1642,9 +1642,13 @@ dash-video {
 
 }
 
+// The session voice-memo control. Rendered ONLY in fullscreen, where the
+// sidebar (and its red ● record button beside the camera) is hidden. Anchored
+// top-right so it clears the fullscreen vitals overlay in the bottom corners —
+// FullscreenVitalsOverlay.measure.test.jsx asserts the two never overlap.
 .fitness-player__voice-memo-fab {
   position: absolute;
-  bottom: 6rem;
+  top: 2rem;
   right: 2rem;
   width: 56px;
   height: 56px;
@@ -1670,9 +1674,3 @@ dash-video {
   }
 }
 
-// Reserve the bottom corners for fullscreen vitals. Chart mode retains its
-// existing bottom-right memo control.
-.fitness-player.mode-fullscreen .fitness-player__voice-memo-fab {
-  top: 2rem;
-  bottom: auto;
-}

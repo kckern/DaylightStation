@@ -14,7 +14,6 @@ import { resolvePause, PAUSE_REASON } from '@/lib/Player/gate/pauseArbiter.js';
 import { GATE_ID } from '@/lib/Player/gate/gateIds.js';
 import FitnessChart from '@/modules/Fitness/widgets/FitnessChart/index.jsx';
 import FitnessChartBackButton from './FitnessChartBackButton.jsx';
-import FitnessChartVoiceMemoFab from './FitnessChartVoiceMemoFab.jsx';
 import { resolvePostEpisodeRedirect } from './postEpisodeRedirect.js';
 import { makeCloseGuard } from './closeGuard.js';
 import { useCloseWatchdog } from '@/modules/Player/hooks/useCloseWatchdog.js';
@@ -2026,12 +2025,11 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         <div className="fitness-chart-overlay">
           <FitnessChartBackButton onReturn={() => setShowChart(false)} />
           <FitnessChart mode="sidebar" onClose={() => {}} />
-          <FitnessChartVoiceMemoFab
-            sessionActive={Boolean(fitnessSessionInstance?.isActive)}
-            onRecord={() => openVoiceMemoCapture?.(null)}
-          />
         </div>
       )}
+      {/* Fullscreen hides the sidebar, taking the red ● record button in the
+          camera panel with it — so fullscreen needs its own memo affordance.
+          In every other mode that sidebar button is the only one. */}
       {playerMode === 'fullscreen' && fitnessSessionInstance?.isActive && (
         <button
           type="button"
