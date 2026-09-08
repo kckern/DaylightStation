@@ -23,6 +23,16 @@ vi.mock('./call/useCallController.js', () => ({ useCallController: () => ({
 
 import CallApp from './CallApp.jsx';
 
+// The call surface renders inside AppThemeProvider (design-system tokens), and
+// Mantine reads matchMedia on mount. jsdom has no implementation.
+if (typeof window.matchMedia !== 'function') {
+  window.matchMedia = query => ({
+    matches: false, media: query, onchange: null,
+    addListener: () => {}, removeListener: () => {},
+    addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false,
+  });
+}
+
 describe('CallApp presentation', () => {
   beforeEach(() => {
     mocks.api.mockReset(); mocks.start.mockReset(); mocks.end.mockReset(); mocks.dispatch.mockReset(); mocks.retryMedia.mockReset(); mocks.loggerConfigure.mockReset();
@@ -40,7 +50,7 @@ describe('CallApp presentation', () => {
     expect(mocks.loggerConfigure).toHaveBeenCalledWith(expect.objectContaining({ context: expect.objectContaining({ app: 'homeline-phone', sessionLog: true }) }));
     const button = await screen.findByRole('button', { name: /Living Room TV/ });
     expect(button).toHaveTextContent('Living Room');
-    expect(screen.getByRole('button', { name: 'Exit call screen' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Exit/ })).toBeTruthy();
     expect(mocks.start).not.toHaveBeenCalled();
     fireEvent.click(button);
     expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ id: 'livingroom-tv' }));
@@ -60,10 +70,13 @@ describe('CallApp presentation', () => {
     expect(screen.queryByRole('button', { name: /Office Screen/ })).toBeNull();
   });
 
-  it('falls back to the id only when no name is declared', async () => {
-    mocks.api.mockResolvedValue({ devices: [{ id: 'livingroom-tv', capabilities: { videoCall: true } }] });
+  // A missing `name` in devices.yml is a config gap to fill, but it must never
+  // put a kebab-case slug in front of a person.
+  it('humanises the id when no name is declared, never showing the slug', async () => {
+    mocks.api.mockResolvedValue({ devices: [{ id: 'yellow-room-tablet', capabilities: { videoCall: true } }] });
     render(<CallApp />);
-    expect(await screen.findByRole('button', { name: 'livingroom-tv' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /Yellow Room Tablet/ })).toBeTruthy();
+    expect(screen.queryByText('yellow-room-tablet')).toBeNull();
   });
 
   it('distinguishes device fetch failure and provides a retry', async () => {
@@ -75,15 +88,16 @@ describe('CallApp presentation', () => {
     expect(mocks.api).toHaveBeenCalledTimes(2);
   });
 
-  // The 401 that told a caller to sign in used to offer only "Back".
-  it('offers a sign-in when the backend refuses the caller', async () => {
-    mocks.state = { value: 'failed', reason: 'auth_required', error: 'Sign in to place a Home Line call.',
+  // Home Line asks nobody to sign in — a refusal names the network, not an
+  // account, and never offers a login the tin can does not have.
+  it('names the network when the backend refuses the caller', async () => {
+    mocks.state = { value: 'failed', reason: 'off_network', error: 'Home Line only works on the home network or over the VPN.',
       media: { audio: false, video: false }, controlConnected: true };
     mocks.api.mockResolvedValue({ devices: [] });
     render(<CallApp />);
-    expect(screen.getByRole('alert')).toHaveTextContent('Sign in to place a Home Line call.');
-    expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
+    expect(screen.getByRole('alert')).toHaveTextContent('home network');
+    expect(screen.queryByRole('button', { name: /sign in/i })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
   });
 
   it('presents Busy as an alert with a focused safe exit', async () => {

@@ -1,6 +1,6 @@
 # Home Line Call System
 
-Home Line is an authenticated, one-to-one LAN WebRTC call between `/call` and
+Home Line is an unauthenticated, one-to-one LAN WebRTC call between `/call` and
 the TV `videocall` screen. Media remains peer-to-peer. The backend controls an
 in-memory call lease, device wake/recovery, signaling authorization, and safe
 restoration. There is no TURN service, group calling, recording, or durable
@@ -14,19 +14,44 @@ device action and returns an unguessable `homeline-call:{callId}` topic plus a
 memory-only phone credential. A second caller receives `409 DEVICE_BUSY` and
 does not wake or change the TV.
 
-The caller must have a valid user JWT whose configured application permissions
-include `homeline` (or `call`/`*`). Device-local or kiosk identity alone never
-grants caller authority — being on the house network grants `sysadmin` in
-`req.roles`, and that deliberately does not open a camera in the living room.
-The TV bootstrap route is the sole exception: it is limited to a local request
-with an exact `X-Daylight-Device` match, then rotates to its short-lived call
-credential.
+There is no user provisioning, no sign-in and no identification. Home Line is a
+tin can on a string: two ends, and whoever picks one up can talk into it. The
+access boundary is the network — the house LAN or the VPN — not anything in the
+call code, and `/call` is deliberately served ungated.
 
-Because of that, `/call` is served behind the auth gate: a caller without a
-token gets the sign-in form, not the lobby. A refusal is logged as
-`homeline.call.denied`, whose `cause` separates the two failures — `no_caller`
-(no usable JWT; the caller signs in) from `no_permission` (a real user whose
-roles do not expand to `call`; the fix is in `auth.yml`).
+A caller still gets an identity, but only so the lease has an owner: an
+unidentified local request is `trusted-local-network` (the same anonymous
+identity the state-gates ingress adapter uses), which is what stops a stray tab
+from ending a call it did not place and lets a phone that refreshed mid-call
+resume its own. A JWT is honoured if one happens to be present, giving that
+caller a distinct owner, but nobody is ever asked for one.
+
+The only remaining refusal is a request that is not local at all, logged as
+`homeline.call.denied` with `cause: off_network`. Behind the reverse proxy every
+request presents a private peer, so in practice this refuses nobody; it is the
+shape of the boundary, not the boundary. The TV bootstrap route is stricter: it
+requires a local request with an exact `X-Daylight-Device` match, then rotates
+to its short-lived call credential.
+
+## The phone surface
+
+`/call` is a fixed phone UI: it occupies the viewport exactly, does not scroll,
+and locks pinch-zoom while mounted (restored on unmount, so no other app
+inherits it). The caller's own camera is the surface — it takes every pixel the
+controls do not — and the same two bands carry the lobby, the connecting state
+and the live call, so nothing jumps between them.
+
+Colours come from the design-system tokens (`AppThemeProvider`, pack `home`);
+the stylesheet defines no raw values. Green marks the one action that places a
+call, red marks leaving or ending, and nothing else is coloured. Chrome icons
+are inline SVG rather than unicode, so an unsupported codepoint in a kiosk
+WebView cannot silently erase an affordance; the per-device icon is whatever
+`icon:` in devices.yml declares.
+
+A screen is never labelled with its id. `name` in devices.yml is the label; a
+device missing one is humanised (`yellow-room-tablet` → "Yellow Room Tablet")
+and reported in `devices.loaded`'s `unnamed`, which is the cue to enrich the
+config rather than leave a slug on screen.
 
 ## Who can be called
 
@@ -45,7 +70,7 @@ otherwise have no duration limit.
 
 The API surface is:
 
-- `POST /calls` — reserve a TV for an authenticated caller.
+- `POST /calls` — reserve a TV for a caller on the home network.
 - `POST /calls/:callId/wake` — run one correlated wake/load dispatch with its
   deferred retry disabled.
 - `POST /devices/:deviceId/join-active` — local TV bootstrap; the explicit
@@ -138,11 +163,11 @@ _time:2h AND callId:"{callId}" AND (outcome:"failed" OR level:"error")
 _time:2h AND deviceId:"{deviceId}" AND _msg:"homeline.lease.conflict"
 ```
 
-When a call never reached a lease at all, the caller was refused or the lobby
-offered the wrong thing. Neither has a `callId`, so start from the event:
+When a call never reached a lease at all, the lobby offered the wrong thing or
+the caller was off the network. Neither has a `callId`, so start from the event:
 
 ```text
-_time:24h AND _msg:"homeline.call.denied"        # cause: no_caller | no_permission
+_time:24h AND _msg:"homeline.call.denied"        # cause: off_network
 _time:24h AND _msg:"devices.loaded"              # offered / withheld / unnamed
 _time:24h AND _msg:"call.surface"                # viewport, DPR, zoom, orientation
 _time:24h AND _msg:"connection-state"            # peer connection, warn on failed

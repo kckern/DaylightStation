@@ -1,356 +1,306 @@
+// Home Line call surface.
+//
+// A fixed phone UI: it occupies the viewport exactly, never scrolls, never
+// zooms, and never reflows when the call state changes. Colours come from the
+// design-system tokens on the surrounding .ds-root (AppThemeProvider) — this
+// sheet defines no raw values of its own.
+//
+// The layout is two bands in one column:
+//   __stage  — the caller's own camera, taking every pixel the controls don't
+//   __panel  — the decisions: who to call, or the controls for a live call
+// Both are present in every state, so nothing jumps between lobby and call.
+
 .call-app {
-  width: 100vw;
-  height: 100dvh;
-  height: 100vh;
-  @supports (height: 100dvh) {
-    height: 100dvh;
-  }
-  background: #000;
-  color: #fff;
+  // `fixed`, not `height: 100dvh`: on a phone this also stops the rubber-band
+  // scroll that let the panel slide out from under a thumb.
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: calc(0.75rem + env(safe-area-inset-top, 0px)) 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  background: var(--ds-surface-alt);
+  color: var(--ds-text-high);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   overflow: hidden;
-  position: relative;
   overscroll-behavior: none;
-  touch-action: manipulation;
+  touch-action: manipulation; // no double-tap zoom
   -webkit-user-select: none;
   user-select: none;
 
-  // Preview mode (lobby): centered inset camera with device list below
-  &--preview {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-  }
+  // ── Bands ────────────────────────────────────────────────────────────────
 
-  // Connecting mode: small camera inset + centered status
-  &--connecting {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-  }
-
-  // Connected mode: remote top, self middle, controls bottom
-  &--connected {
-    display: flex;
-    flex-direction: column;
-    gap: 1ex;
-    padding: 1ex;
-    padding-bottom: 0; // controls handle bottom padding
-  }
-
-  // Local camera — two modes
-  &__local {
+  &__stage {
+    position: relative; // camera-status overlays this
+    flex: 1 1 auto;
+    min-height: 0;
+    border-radius: 1rem;
     overflow: hidden;
-    position: relative; // for camera-error/loading overlays
+    background: var(--ds-background);
+  }
 
-    &--full {
-      flex: 1;
+  &__remote {
+    display: none; // only a live call has a far end to show
+  }
+
+  &--connected {
+    .call-app__remote {
+      order: 1;
+      display: block;
+      flex: 1 1 auto;
       min-height: 0;
-      width: 100%;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-
-    &--pip {
-      // Connected mode: flex child in the middle row (NOT absolute)
-      order: 2;
-      flex: 1;
-      min-height: 0;
-      width: 100%;
-      border-radius: 1ex;
-    }
-
-    &--inset {
-      // Connecting mode: small rounded camera preview, centered
-      width: 40vw;
-      max-width: 200px;
-      aspect-ratio: 3 / 4;
-      border-radius: 1ex;
+      border-radius: 1rem;
       overflow: hidden;
-      flex-shrink: 0;
-      margin-bottom: 2rem;
+      background: var(--ds-background);
+    }
+
+    // In a call the caller's own camera steps down to a strip: the person on
+    // the other end is what matters, but a self-view you cannot see is how
+    // people end up talking to a ceiling.
+    .call-app__stage {
+      order: 2;
+      flex: 0 0 26%;
+    }
+
+    .call-app__panel {
+      order: 3;
     }
   }
 
   &__video {
-    background: #111;
-
-    &--wide {
-      width: 100%;
-      display: block;
-      object-fit: contain;
-      border-radius: 1ex;
-    }
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: var(--ds-background);
 
     &--tall {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      border-radius: 1ex;
+      object-fit: cover; // fill the stage; a letterboxed self-view looks broken
+    }
+
+    &--wide {
+      object-fit: contain; // never crop the far end
     }
   }
 
-  // Connecting overlay — centered below the camera inset
-  &__connecting-overlay {
+  &__panel {
+    flex: 0 0 auto;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    text-align: center;
-    gap: 0.75rem;
-    // `.call-app` is overflow:hidden so a call can never scroll under the
-    // caller's thumb. That also silently CLIPS a tall lobby — a phone in
-    // portrait with several screens listed loses the last button off the
-    // bottom edge with nothing to reveal it. The lobby scrolls on its own.
-    width: 100%;
-    max-height: 100%;
-    overflow-y: auto;
-    padding: 0 1rem calc(1rem + env(safe-area-inset-bottom, 0px));
-    -webkit-overflow-scrolling: touch;
+    gap: 0.6rem;
   }
 
-  // Bottom overlay — sits over the camera preview
-  &__overlay-bottom {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background: linear-gradient(transparent, rgba(0, 0, 0, 0.85) 30%);
-    padding: 3rem 2rem calc(2.5rem + env(safe-area-inset-bottom, 0px));
-    text-align: center;
-    z-index: 10;
+  &__stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
   }
 
-  &__title {
-    font-size: 1.8rem;
-    font-weight: 300;
-    margin: 0 0 1rem;
+  // ── Type ─────────────────────────────────────────────────────────────────
+
+  &__heading {
+    margin: 0.25rem 0 0.1rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ds-text-mid);
   }
 
-  &__message {
-    color: #aaa;
-    font-size: 1rem;
+  &__notice {
     margin: 0;
-  }
+    text-align: center;
+    font-size: 0.95rem;
+    color: var(--ds-text-mid);
 
-  &__status-text {
-    color: #ccc;
-    font-size: 1.2rem;
-    margin: 0 0 0.5rem;
-
-    &--error {
-      color: #ff9f43;
+    &--warn {
+      color: var(--ds-warning);
     }
   }
 
-  &__device-list {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    margin-top: 1.5rem;
-    // A fixed measure so every button is the same width and reads as one
-    // column, instead of each shrink-wrapping to the length of its own label.
-    width: min(360px, 100%);
-    margin-inline: auto;
-  }
+  // ── A screen you can call ────────────────────────────────────────────────
 
-  &__device-btn {
-    background: rgba(255, 255, 255, 0.15);
-    color: #fff;
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 8px;
-    padding: 1rem 2rem;
-    font-size: 1.1rem;
-    cursor: pointer;
-    backdrop-filter: blur(4px);
+  &__target {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 0.9rem;
     width: 100%;
-    min-height: 56px; // comfortable thumb target
+    min-height: 72px;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid var(--ds-border);
+    border-radius: 1rem;
+    background: var(--ds-surface);
+    color: inherit;
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+    transition: background var(--ds-motion-fast) var(--ds-motion-easing);
 
     &:active {
-      background: rgba(255, 255, 255, 0.25);
+      background: var(--ds-border);
     }
 
     &:disabled {
-      opacity: 0.4;
+      opacity: 0.45;
       cursor: not-allowed;
     }
   }
 
-  // A screen you can call: its declared icon, name and room.
-  &__device-btn--device {
+  &__target-icon {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    text-align: left;
-    padding: 0.9rem 1.25rem;
-  }
-
-  &__device-icon {
-    font-size: 1.9rem;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 0.85rem;
+    background: var(--ds-surface-alt);
+    font-size: 1.6rem;
     line-height: 1;
-    flex-shrink: 0;
   }
 
-  &__device-label {
+  &__target-label {
     display: flex;
     flex-direction: column;
     gap: 0.15rem;
     min-width: 0;
   }
 
-  &__device-name {
-    font-size: 1.2rem;
-  }
-
-  &__device-location {
-    font-size: 0.85rem;
-    opacity: 0.65; // secondary line, no new raw colour (see audit:ui)
-  }
-
-  // Remote video (always mounted, shown in connected state)
-  &__remote {
-    display: none;
-  }
-
-  &--connected &__remote {
-    order: 1;
-    display: block;
-    flex: 0 0 auto;
-    width: 100%;
-    border-radius: 1ex;
+  &__target-name {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--ds-text-high);
     overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  // Zoomed remote video — fullscreen takeover
-  &__remote--zoomed {
-    position: fixed;
-    inset: 0;
-    z-index: 100;
-    border-radius: 0;
-    background: #000;
-    overflow: hidden;
-    touch-action: none;
-
-    .call-app__video--wide {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      border-radius: 0;
-      transform-origin: center;
-      will-change: transform;
-    }
+  &__target-room {
+    font-size: 0.8rem;
+    color: var(--ds-text-mid);
   }
 
-  // Back button overlay in zoom mode
-  &__zoom-back {
-    position: absolute;
-    top: calc(0.5rem + env(safe-area-inset-top, 0px));
-    left: 0.5rem;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    border: none;
-    background: rgba(0, 0, 0, 0.5);
-    color: #fff;
-    font-size: 1.2rem;
+  // The green handset: what this row DOES, said once, on the row itself.
+  &__target-action {
     display: flex;
     align-items: center;
     justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--ds-success);
+    color: var(--ds-surface-alt);
+    flex-shrink: 0;
+  }
+
+  // ── Buttons ──────────────────────────────────────────────────────────────
+
+  &__wide-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    min-height: 52px;
+    padding: 0.8rem 1rem;
+    border: 1px solid var(--ds-border);
+    border-radius: 0.85rem;
+    background: var(--ds-surface);
+    color: var(--ds-text-high);
+    font: inherit;
+    font-size: 1rem;
+    font-weight: 500;
     cursor: pointer;
-    z-index: 101;
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
+    transition: background var(--ds-motion-fast) var(--ds-motion-easing);
 
     &:active {
-      background: rgba(0, 0, 0, 0.7);
-    }
-  }
-
-  // Call controls (always mounted, shown in connected state)
-  &__controls {
-    display: none;
-  }
-
-  &--connected &__controls {
-    order: 3;
-    display: flex;
-    flex: 0 0 auto;
-    width: 100%;
-    gap: 1ex;
-    align-items: center;
-    justify-content: center;
-    padding: 1ex 0 calc(1ex + env(safe-area-inset-bottom, 0px));
-    background: rgba(0, 0, 0, 0.4);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border-radius: 1ex 1ex 0 0;
-  }
-
-  &__ctrl-btn {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    &--active {
-      background: rgba(255, 50, 50, 0.5);
-      border-color: rgba(255, 50, 50, 0.7);
+      background: var(--ds-border);
     }
 
-    &--hangup {
-      width: auto;
-      border-radius: 24px;
-      padding: 0.8rem 2rem;
-      background: #d32f2f;
-      border: none;
+    &:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    // Leaving, or ending. Outlined in danger so it can never be mistaken for
+    // the thing above it — the old screen used one grey pill for both.
+    &--danger {
+      border-color: var(--ds-danger);
+      color: var(--ds-danger);
+      background: transparent;
 
       &:active {
-        background: #b71c1c;
+        background: var(--ds-surface);
       }
     }
-
-    &:active {
-      opacity: 0.7;
-    }
   }
 
-  &__remote-muted {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    background: rgba(0, 0, 0, 0.6);
-    color: #ccc;
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    z-index: 10;
-  }
-
-  &__cancel {
-    background: transparent;
-    color: #ddd;
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    border-radius: 24px;
-    padding: 0.6rem 2rem;
-    font-size: 1rem;
+  &__text-btn {
+    align-self: center;
+    padding: 0.4rem 0.6rem;
+    border: none;
+    background: none;
+    color: var(--ds-info);
+    font: inherit;
+    font-size: 0.9rem;
     cursor: pointer;
-    margin-top: 1rem;
+  }
+
+  // ── Live-call controls ───────────────────────────────────────────────────
+
+  &__call-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.4rem;
+    padding: 0.3rem 0;
+  }
+
+  &__round-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 58px;
+    height: 58px;
+    border: 1px solid var(--ds-border);
+    border-radius: 50%;
+    background: var(--ds-surface);
+    color: var(--ds-text-high);
+    cursor: pointer;
+    transition: background var(--ds-motion-fast) var(--ds-motion-easing);
+
+    &[aria-pressed='true'] {
+      background: var(--ds-text-high);
+      color: var(--ds-surface-alt);
+    }
 
     &:active {
-      background: rgba(255, 255, 255, 0.1);
-      color: #fff;
+      background: var(--ds-border);
+    }
+
+    &:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    // Hang up is the biggest target on the screen and the only filled red one.
+    &--hangup {
+      width: 68px;
+      height: 68px;
+      border-color: var(--ds-danger);
+      background: var(--ds-danger);
+      color: var(--ds-text-high);
+
+      &:active {
+        opacity: 0.85;
+      }
     }
   }
 
-  // The one centred box every camera/microphone message stacks inside.
+  // ── Camera / microphone messages ─────────────────────────────────────────
+  // One centred stack. These used to be absolutely positioned at the same
+  // point, so a camera failure and a microphone failure — the common case,
+  // since one denial denies both — rendered on top of each other.
+
   &__camera-status {
     position: absolute;
     inset: 0;
@@ -359,206 +309,54 @@
     align-items: center;
     justify-content: center;
     gap: 0.4rem;
-    padding: 0.5rem;
+    padding: 1rem;
     pointer-events: none;
-    z-index: 5;
 
     &:empty {
       display: none;
     }
   }
 
-  &__camera-error {
-    color: #ff6b6b;
-    font-size: 0.9rem;
+  &__camera-error,
+  &__camera-note,
+  &__camera-loading {
     margin: 0;
     padding: 0.5rem 0.75rem;
-    background: rgba(0, 0, 0, 0.7);
-    border-radius: 8px;
+    border-radius: 0.6rem;
     text-align: center;
+    font-size: 0.9rem;
+    background: var(--ds-surface);
   }
 
-  &__camera-loading {
-    color: #aaa;
-    font-size: 0.9rem;
-    margin: 0;
-    text-align: center;
+  &__camera-error {
+    color: var(--ds-danger);
   }
 
   &__camera-note {
-    font-size: 0.85rem;
-    margin: 0;
-    padding: 0.4rem 0.75rem;
-    border-radius: 8px;
-    text-align: center;
-    opacity: 0.85;
+    color: var(--ds-text-mid);
   }
 
-  &__timeout-msg {
-    color: #ff9f43;
-    font-size: 0.9rem;
-    margin-top: 1rem;
-    text-align: center;
+  &__camera-loading {
+    color: var(--ds-text-mid);
+    background: none;
   }
+}
 
-  &__retry-btn {
-    margin-top: 0.75rem;
-    padding: 0.5rem 1.5rem;
-    border: 1px solid #ff9f43;
-    border-radius: 8px;
-    background: transparent;
-    color: #ff9f43;
-    font-size: 0.9rem;
-    cursor: pointer;
+// Landscape (a phone turned sideways): the camera and the decisions sit next
+// to each other rather than stacking into nothing.
+@media (orientation: landscape) and (max-height: 500px) {
+  .call-app {
+    flex-direction: row;
+    align-items: stretch;
 
-    &:active {
-      background: rgba(255, 159, 67, 0.15);
-    }
-  }
-
-  &__ice-error {
-    position: absolute;
-    top: 1rem;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(255, 50, 50, 0.85);
-    color: white;
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
-    font-size: 0.85rem;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    z-index: 10;
-  }
-
-  &__ice-error-btn {
-    padding: 0.25rem 0.75rem;
-    border: 1px solid white;
-    border-radius: 4px;
-    background: transparent;
-    color: white;
-    cursor: pointer;
-    font-size: 0.8rem;
-    white-space: nowrap;
-  }
-
-  // Vertical stepper — segmented line with icon nodes
-  &__stepper {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-  }
-
-  &__stepper-track {
-    display: flex;
-    align-items: center;
-    gap: 0;
-  }
-
-  // Segment between nodes
-  &__stepper-seg {
-    width: 28px;
-    height: 2px;
-
-    &--filled {
-      background: rgba(255, 255, 255, 0.6);
+    &__stage {
+      flex: 1 1 auto;
     }
 
-    &--empty {
-      background: rgba(255, 255, 255, 0.15);
-    }
-  }
-
-  // Circle node
-  &__stepper-node {
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    transition: background 0.25s, border-color 0.25s, transform 0.25s;
-    border: 2px solid rgba(255, 255, 255, 0.15);
-    background: rgba(255, 255, 255, 0.05);
-    color: rgba(255, 255, 255, 0.3);
-
-    &--done {
-      border-color: #4caf50;
-      background: rgba(76, 175, 80, 0.15);
-      color: #4caf50;
-    }
-
-    &--running {
-      border-color: #fff;
-      background: rgba(255, 255, 255, 0.12);
-      color: #fff;
-    }
-
-    &--current {
-      transform: scale(1.15);
-    }
-
-    &--running#{&}--current {
-      animation: call-pulse 1.8s ease-in-out infinite;
-    }
-
-    &--failed {
-      border-color: #ff5252;
-      background: rgba(255, 82, 82, 0.15);
-      color: #ff5252;
-    }
-  }
-
-  &__stepper-icon,
-  &__stepper-check,
-  &__stepper-x {
-    width: 18px;
-    height: 18px;
-  }
-
-  // Status label beneath the track
-  &__stepper-label {
-    font-size: 0.95rem;
-    text-align: center;
-    color: #ccc;
-    min-height: 1.4em;
-
-    &--done { color: #4caf50; }
-    &--running { color: #fff; }
-    &--failed { color: #ff5252; }
-  }
-
-  // Spinning SVG indicator next to "running" label
-  &__stepper-spinner {
-    display: inline-block;
-    vertical-align: middle;
-    margin-left: 0.4em;
-    animation: call-spin 0.9s linear infinite;
-  }
-
-  @keyframes call-spin {
-    to { transform: rotate(360deg); }
-  }
-
-  @keyframes call-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.3); }
-    50%      { box-shadow: 0 0 0 6px rgba(255, 255, 255, 0); }
-  }
-
-  // State transition: cross-fade between preview and connected
-  &--preview,
-  &--connected {
-    transition: opacity 0.2s ease;
-  }
-
-  // Landscape: same vertical stack but controls more compact
-  @media (orientation: landscape) {
-    &__controls {
-      padding-bottom: 0.5rem;
+    &__panel {
+      flex: 0 0 46%;
+      justify-content: center;
+      overflow-y: auto;
     }
   }
 }
