@@ -71,6 +71,8 @@ import {
   startLevelFor,
 } from './gateRepertoire.js';
 import { isConfigOnlyDecline, materialOrder } from './gateMaterial.js';
+import { resolveLearnerPath } from './gateDailyEscalation.js';
+import GateCeremony from './GateCeremony.jsx';
 import './GameGate.scss';
 
 /** The design's `gameGate` block. A household that sets none of it gets these. */
@@ -238,12 +240,28 @@ export function materialName(material) {
  * @param {()=>void} props.onLeave The child chose not to play.
  */
 export default function GameGate({
-  learnerId = null, deviceId, gateConfig = null, gameLabel = null, onPassed, onLeave,
+  learnerId = null, deviceId, gateConfig = null,
+  // The label is what the gate PRINTS; the id is what the ceremony LOOKS UP in
+  // the game registry for the icon it opens onto. Both optional: a gate with
+  // neither still runs, it just reveals a plain word.
+  gameId = null, gameLabel = null,
+  onPassed, onLeave,
 }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-game-gate' }), []);
   const sessionId = useMemo(() => makeId('gate'), []);
   const config = useMemo(() => resolveGateConfig(gateConfig), [gateConfig]);
-  const levels = useMemo(() => resolveRepertoire(config.repertoire), [config.repertoire]);
+  // THE LEARNER'S OWN LADDER, not the household's whole shelf. `climbLevel`
+  // walks this array by index, so an unfiltered repertoire means three clean
+  // passes eventually carry a child off the end of the material meant for them
+  // and into the next tier-2 rung that happens to be listed — which is how an
+  // adult practising scales was served a preschooler's spoken chord rung.
+  // `resolveLearnerPath` has existed (with tests) since the
+  // paths were authored; it simply had no caller, so every `path:` in the
+  // config was decoration. It is the caller now.
+  const levels = useMemo(
+    () => resolveLearnerPath(resolveRepertoire(config.repertoire), config.path),
+    [config.repertoire, config.path],
+  );
   const { activeNotes } = usePianoMidiNotes();
   const pianoConfig = usePianoKioskConfigOptional();
   const kioskDeviceId = useMemo(() => deviceId ?? readKioskDeviceId(), [deviceId]);
@@ -254,6 +272,8 @@ export default function GameGate({
   const framing = useMemo(() => (gameLabel ? { kind: 'gate', gameLabel } : null), [gameLabel]);
 
   const [state, setState] = useState(() => readGateState(learnerId, levels, config));
+  /** Set the instant a pass lands; cleared by handing the game control. */
+  const [ceremony, setCeremony] = useState(null);
   /**
    * The attempt this gate is currently making, in STATE rather than in a memo
    * over render-scoped values: that is what makes `level` and `spec` stable
@@ -544,6 +564,10 @@ export default function GameGate({
   const handlePassed = (result) => {
     const score = typeof result?.score === 'number' ? result.score : null;
     emit('gate.passed', { ...context, score });
+    // The curtain is the transition, not a card in front of one: the game is
+    // handed control when the panels finish parting, so the reveal and the
+    // navigation are the same gesture. `onPassed` is deferred to that moment.
+    setCeremony({ result, score });
     const cleanPasses = state.cleanPasses + 1;
     let next = { ...state, failuresAtLevel: 0, cleanPasses };
     if (cleanPasses >= config.climbAfterCleanPasses) {
@@ -556,7 +580,6 @@ export default function GameGate({
       }
     }
     commitState(next);
-    onPassed?.(result);
   };
 
   /**
@@ -708,6 +731,17 @@ export default function GameGate({
   }
 
   if (phase !== 'attempt' || !attempt) return <SkeletonStage />;
+
+  if (ceremony) {
+    return (
+      <GateCeremony
+        gameId={gameId}
+        gameLabel={gameLabel}
+        score={ceremony.score}
+        onDone={() => { setCeremony(null); onPassed?.(ceremony.result); }}
+      />
+    );
+  }
 
   return (
     <div className="piano-game-gate piano-game-gate--attempt">

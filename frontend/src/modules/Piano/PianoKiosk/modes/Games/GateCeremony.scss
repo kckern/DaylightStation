@@ -1,0 +1,169 @@
+// GateCeremony — the curtain between clearing the gate and playing the game.
+//
+// TIMING IS SHARED WITH THE COMPONENT. GateCeremony.jsx hands control to the
+// game at CEREMONY_MS (3400). Every number below is a fraction of the 3000ms
+// curtain that starts at 400ms, so the two must move together:
+//
+//   0      400ms          1060ms            2200ms           3400ms
+//   |  still  |  closing   |   verdict held   |    opening     |
+//              curtain 0%      22%                60%            100%
+//
+// MOTION: transform and opacity only. Animated `filter` is a known trap in this
+// codebase — low fps, zero long tasks, invisible to every profiler.
+
+.gate-ceremony {
+  --case: var(--pg-case, #16161b);
+  --ivory: var(--pg-ivory, #f1f1f4);
+  --gold: #c9a227;
+  --gold-bright: #e8cf7a;
+  --mahogany: #6b2a1e;
+  --mahogany-deep: #3d1610;
+
+  position: absolute;
+  inset: 0;
+  // Above the gate's own attempt surface and any game beneath it: the whole
+  // point is that it covers the practice and uncovers the reward.
+  z-index: 160;
+  overflow: hidden;
+  pointer-events: none;
+  font-family: 'Roboto Condensed', sans-serif;
+
+  &__behind {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 0.6rem;
+    background: #1b120e;
+    opacity: 0;
+    // Stepped, not eased: it must be fully opaque BEFORE the panels part, or
+    // the practice screen shows through the opening gap.
+    animation: gate-behind-in 3000ms 400ms steps(1, end) both;
+  }
+
+  &__icon {
+    font-size: 5.5rem;
+    line-height: 1;
+    color: var(--gold);
+  }
+
+  &__unlocked {
+    font-size: 0.78rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--gold-bright) 62%, transparent);
+  }
+
+  &__game {
+    font-size: 1.8rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--ivory);
+  }
+
+  // ── The curtain ──────────────────────────────────────────────────────────
+  &__curtain { position: absolute; inset: 0; }
+
+  &__panel {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    // Slightly over half so the two meet with no seam of stage showing through.
+    width: 51%;
+    background:
+      repeating-linear-gradient(90deg,
+        rgb(0 0 0 / 34%) 0px,
+        rgb(0 0 0 / 0%) 9px,
+        rgb(255 225 190 / 9%) 19px,
+        rgb(0 0 0 / 0%) 30px,
+        rgb(0 0 0 / 34%) 38px),
+      linear-gradient(180deg, var(--mahogany) 0%, #552016 58%, var(--mahogany-deep) 100%);
+
+    &--l { left: 0; animation: gate-draw-l 3000ms 400ms cubic-bezier(0.45, 0.05, 0.25, 1) both; }
+    &--r { right: 0; animation: gate-draw-r 3000ms 400ms cubic-bezier(0.45, 0.05, 0.25, 1) both; }
+  }
+
+  // The detail that makes it a theatre rather than two brown rectangles.
+  &__valance {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 10px;
+    background: linear-gradient(180deg, var(--gold-bright), var(--gold) 45%, #8c6f18);
+    transform: scaleX(0);
+    transform-origin: 50% 0;
+    animation: gate-valance 3000ms 400ms cubic-bezier(0.45, 0.05, 0.25, 1) both;
+  }
+
+  // ── The verdict, announced on the closed curtain ─────────────────────────
+  &__verdict {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 0.4rem;
+    opacity: 0;
+    animation: gate-verdict 1140ms 1060ms ease both;
+  }
+
+  &__word {
+    font-family: Spectral, Georgia, 'Times New Roman', serif;
+    font-style: italic;
+    font-weight: 600;
+    font-size: clamp(2.2rem, 7vw, 3.6rem);
+    letter-spacing: 0.01em;
+    color: var(--gold-bright);
+  }
+
+  &__score {
+    font-size: 1rem;
+    letter-spacing: 0.14em;
+    font-variant-numeric: tabular-nums;
+    color: color-mix(in srgb, var(--ivory) 72%, transparent);
+  }
+}
+
+@keyframes gate-behind-in {
+  0%  { opacity: 0; }
+  20% { opacity: 1; }
+  100% { opacity: 1; }
+}
+
+// One keyframe closes AND opens: the hold between them is a plateau, so the
+// verdict can never be announced onto a curtain that has already left.
+@keyframes gate-draw-l {
+  0%   { transform: translateX(-101%); }
+  22%  { transform: translateX(0); }
+  60%  { transform: translateX(0); }
+  100% { transform: translateX(-101%); }
+}
+@keyframes gate-draw-r {
+  0%   { transform: translateX(101%); }
+  22%  { transform: translateX(0); }
+  60%  { transform: translateX(0); }
+  100% { transform: translateX(101%); }
+}
+@keyframes gate-valance {
+  0%   { transform: scaleX(0); }
+  22%  { transform: scaleX(1); }
+  60%  { transform: scaleX(1); }
+  100% { transform: scaleX(0); }
+}
+@keyframes gate-verdict {
+  0%   { opacity: 0; transform: scale(0.94); }
+  22%  { opacity: 1; transform: scale(1); }
+  76%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+
+// The ceremony still has to HAND OVER — the game mounts on its timer either
+// way — so reduced motion keeps the reveal and drops the theatre.
+@media (prefers-reduced-motion: reduce) {
+  .gate-ceremony {
+    &__panel, &__valance, &__verdict { animation-duration: 1ms !important; }
+    &__behind { animation: none !important; opacity: 1; }
+  }
+}

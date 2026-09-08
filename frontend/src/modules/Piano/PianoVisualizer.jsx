@@ -190,8 +190,15 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   // the same Chess component, not an exemption from Chess's match boundary.
   // Hold the game while its config is still unknown; briefly mounting it before
   // the config response is a bypass just as surely as never checking.
+  // ONE GATE PER LAUNCH, unless the config says otherwise. `regate: 'per-day'`
+  // keys on the game and the player, so clearing it once holds for the rest of
+  // the session; the default 'per-launch' folds the launch nonce in, so leaving
+  // a game and opening it again asks again. Back-to-back games were free before
+  // this: the key could not tell a second launch from the first.
+  const regate = appConfig?.gameGate?.regate ?? 'per-launch';
   const gateKey = activeGameEntry?.exerciseGate && activeGameId
-    ? `${activeGameId}:${currentUser ?? 'guest'}` : null;
+    ? `${activeGameId}:${currentUser ?? 'guest'}${regate === 'per-launch' ? `:${launchNonce}` : ''}`
+    : null;
   const gateConfigLoading = Boolean(gateKey) && appConfig === null;
   const gameGateEnabled = Boolean(gateKey) && !gateConfigLoading
     && gateAppliesTo(appConfig?.gameGate, { learnerId: currentUser, gameId: activeGameId });
@@ -470,6 +477,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
                 <GameGate
                   learnerId={currentUser}
                   gateConfig={gateConfigForLearner(appConfig?.gameGate, currentUser)}
+                  gameId={activeGameId}
                   gameLabel={activeGameEntry.label ?? activeGameId}
                   onPassed={() => { setPassedGateKey(gateKey); setOfficeMatchId((value) => value + 1); }}
                   onLeave={quitGame}
