@@ -18,6 +18,7 @@ import {
   pianoAttemptClient,
   pianoPersistenceOutcome,
 } from '../../../performance/attemptEvidence.js';
+import DrillProgress from './DrillProgress.jsx';
 import ExerciseNotation from './ExerciseNotation.jsx';
 import { timedRunPresentation } from './timedRunPresentation.js';
 import KeysAsk from './KeysAsk.jsx';
@@ -931,6 +932,30 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   // `Math.min()` of nothing is Infinity, and a keyboard drawn from that is a
   // blank strip where the piano should be.
   const keyboardFooter = ['sequence', 'notation', 'score'].includes(stage) && expected.length > 0;
+
+  /**
+   * The drill chrome, when this run is one set of a multi-set program.
+   *
+   * The re-read signal lives inside DrillProgress, keyed on `phase`: the
+   * projection only moves when a rep banks, and this component cannot own that
+   * effect because the code here sits below an early return — a hook added at
+   * this point changes the hook COUNT between renders, which is what "rendered
+   * fewer hooks than expected" means and how it took out 114 tests at once.
+   * A redone rep drains its ring without help, since `noteProgress` returns to
+   * zero with the cursor.
+   */
+  const noteProgress = askEvents.length
+    ? Math.min(Math.max(eventIndex, 0), askEvents.length) / askEvents.length
+    : 0;
+  const drillProgress = programId && stepId ? (
+    <DrillProgress
+      programId={programId}
+      stepId={stepId}
+      userId={currentUser}
+      phase={phase}
+      noteProgress={noteProgress}
+    />
+  ) : null;
   const hintVisible = hintPolicy === 'always' || afterStallHint;
   /**
    * A percentage belongs to a STAGE, not to a tier.
@@ -1054,8 +1079,20 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
           listening, and a piano that ignores you is indistinguishable from a
           broken one. */}
       <div className="piano-exercise-run__rail">
-      {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{!runtime ? 'Getting the music ready…' : snapshot.mode === 'cued' ? `Press any key to start. You'll hear ${countIn?.clicks ?? beatsPerMeasure} clicks, then play at that speed.` : 'Play the first note to begin.'}</p>{!connected && <span>Waiting for the piano…</span>}</div>}
-      {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : isWrong ? 'That note was not expected — keep going.' : stage === 'recall' ? 'Play the named music from memory.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.'}{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
+      {/* A DRILL SAYS WHERE YOU ARE, NOT WHAT TO DO. Inside a multi-set program
+          the pills carry the position and the placard carries the subject, and
+          the standing instruction underneath them ("Play the first note to
+          begin", "Follow the highlighted notes") was telling a child something
+          the staff and the cursor already say — nine times over, once per rep.
+          It is kept for a lone exercise, which has no pills to read instead. */}
+      {drillProgress ?? (<>
+        {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{!runtime ? 'Getting the music ready…' : snapshot.mode === 'cued' ? `Press any key to start. You'll hear ${countIn?.clicks ?? beatsPerMeasure} clicks, then play at that speed.` : 'Play the first note to begin.'}</p>{!connected && <span>Waiting for the piano…</span>}</div>}
+        {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : isWrong ? 'That note was not expected — keep going.' : stage === 'recall' ? 'Play the named music from memory.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.'}{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
+      </>)}
+      {/* The piano still starts the run; only the sentence about it is gone.
+          A disconnected piano is the one thing the pills cannot say, so it
+          keeps its own line whatever the surface. */}
+      {drillProgress && !connected && <span className="piano-exercise-run__waiting">Waiting for the piano…</span>}
       {phase === 'done' && result && !hostOwnsFailure && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}`}>
         <div><span>{passed ? 'Passed' : challenge ? 'Keep working' : 'Practice complete'}</span>{scoreReadout && <strong>{Math.round(result.score * 100)}%</strong>}</div>
         {/* A percentage is a reading task of its own, and the tiers below 2 are

@@ -1,0 +1,183 @@
+// DrillProgress — the placard and the rep/set pills around a drill's staff.
+//
+// PALETTE: the instrument, not the app's default green. Mahogany case, ivory
+// paper, antique gold for what has been earned. Declared here as local tokens
+// rather than by rewriting --ex-accent, so this surface can carry the new
+// direction without restyling every other piano screen at the same time.
+//
+// MOTION: transform and opacity only. Animated CSS `filter` is a known trap in
+// this codebase — low fps, zero long tasks, invisible to every profiler — so
+// the gilding is a pre-baked box-shadow that toggles, never an animated blur.
+
+.drill-progress {
+  --drill-gold: #c9a227;
+  --drill-gold-bright: #e8cf7a;
+  --drill-socket: #1c130f;
+  --drill-track: #3b2b22;
+  --drill-fg: #f2e9dc;
+  --drill-muted: #b8a493;
+  --drill-dim: #8a7565;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+// ── Placard ────────────────────────────────────────────────────────────────
+// Score directions are traditionally set in italic serif; that convention is
+// what this borrows, and it is the only characterful type on the stage.
+.drill-placard {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.55rem;
+  font-family: Spectral, Georgia, 'Times New Roman', serif;
+  font-style: italic;
+  transform-origin: 50% 0%;
+  transition: opacity 420ms ease;
+
+  &__key { font-size: 1.35rem; font-weight: 600; color: var(--drill-fg); }
+  &__sep { color: var(--drill-dim); }
+  &__hand { font-size: 1rem; color: var(--drill-muted); }
+}
+
+// Once the run is under way the staff carries the clef and key signature
+// itself, so the placard is a reminder rather than a readout.
+.drill-progress[data-phase='running'] .drill-placard,
+.drill-progress[data-phase='countdown'] .drill-placard { opacity: 0.35; }
+
+// The opening flourish: the placard IS the ceremony. It arrives large and
+// centred, holds, then settles into its resting place.
+.drill-progress[data-phase='opening'] .drill-placard {
+  animation: drill-placard-arrive 1150ms cubic-bezier(0.22, 0.9, 0.28, 1) both;
+}
+@keyframes drill-placard-arrive {
+  0%   { transform: translateY(22vh) scale(2.1); opacity: 0; }
+  16%  { transform: translateY(22vh) scale(2.1); opacity: 1; }
+  56%  { transform: translateY(22vh) scale(2.1); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+// ── Rail ───────────────────────────────────────────────────────────────────
+.drill-progress__rail {
+  display: flex;
+  justify-content: center;
+  gap: clamp(1rem, 4vw, 2.75rem);
+  flex-wrap: wrap;
+}
+
+.drill-cluster {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+
+  &__label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--drill-dim);
+    white-space: nowrap;
+    transition: color 300ms ease;
+  }
+
+  // RH / LH / RH+LH. Text, not a clef glyph: U+1D11E tofus in the kiosk
+  // WebView, and two letters read faster than a glyph at this size anyway.
+  &__badge {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    padding: 0.05rem 0.3rem;
+    border-radius: 3px;
+    background: var(--drill-track);
+    color: var(--drill-muted);
+  }
+
+  &[data-active] &__label { color: var(--drill-fg); }
+  &[data-done] &__label { color: var(--drill-gold-bright); }
+  &[data-done] &__badge { color: var(--drill-gold-bright); }
+
+  &__pills { display: flex; gap: 0.5rem; }
+
+  // The set roll-up: an underline that fills as reps bank. No number — the
+  // pills already say how many, and a count beside them is the same fact twice.
+  &__rollup {
+    width: 100%;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--drill-track);
+    overflow: hidden;
+
+    i {
+      display: block;
+      height: 100%;
+      background: var(--drill-gold);
+      transition: width 420ms cubic-bezier(0.3, 0.8, 0.4, 1);
+    }
+  }
+}
+
+// ── Pills ──────────────────────────────────────────────────────────────────
+.drill-pill {
+  position: relative;
+  width: 26px;
+  height: 26px;
+
+  svg { width: 100%; height: 100%; display: block; transform: rotate(-90deg); }
+
+  &__track { fill: none; stroke: var(--drill-track); stroke-width: 3; }
+
+  &__ring {
+    fill: none;
+    stroke: var(--drill-gold-bright);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-dasharray: 88;
+    transition: stroke-dashoffset 220ms linear;
+  }
+
+  // To do: a socket punched into the case.
+  &__core {
+    position: absolute;
+    inset: 6px;
+    border-radius: 50%;
+    background: var(--drill-socket);
+    box-shadow:
+      inset 0 2px 3px rgba(0, 0, 0, 0.8),
+      inset 0 -1px 1px rgba(255, 236, 200, 0.07);
+    transition: background 260ms ease, box-shadow 260ms ease, transform 260ms ease;
+  }
+
+  // Current: a slow breath. A blink rate reads as an alarm next to a staff
+  // somebody is trying to read.
+  &[data-state='current'] &__core {
+    background: var(--drill-track);
+    animation: drill-breathe 1400ms ease-in-out infinite;
+  }
+
+  // Banked: raised and gilded.
+  &[data-state='banked'] &__core {
+    background: var(--drill-gold);
+    box-shadow: 0 0 0 1px var(--drill-gold-bright), 0 0 12px 2px rgba(201, 162, 39, 0.5);
+    animation: none;
+  }
+}
+
+@keyframes drill-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.75; }
+  50%      { transform: scale(1.14); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drill-progress[data-phase='opening'] .drill-placard,
+  .drill-pill[data-state='current'] .drill-pill__core {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  .drill-pill__ring,
+  .drill-cluster__rollup i { transition-duration: 1ms !important; }
+}

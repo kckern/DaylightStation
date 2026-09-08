@@ -24,6 +24,13 @@ export default function HoldRing({ holdMs = 2000 }) {
         {/* The track it fills against — without it the arc has no context and a
             quarter-turn reads as an accident rather than as one quarter. */}
         <circle className="nl-hold__track" cx="50" cy="50" r="44" />
+        {/* The glow rides under the arc on the same sweep — see the note in
+            NoteLauncher.scss for why it is a stroke and not a drop-shadow. */}
+        <circle
+          className="nl-hold__glow"
+          cx="50" cy="50" r="44"
+          style={{ animationDuration: `${holdMs}ms` }}
+        />
         <circle
           className="nl-hold__arc"
           cx="50" cy="50" r="44"
