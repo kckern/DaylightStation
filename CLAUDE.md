@@ -158,7 +158,8 @@ docs/
 ├── _wip/             # Work in progress
 │   ├── plans/        # Implementation plans (date-prefixed)
 │   ├── audits/       # Code audits
-│   └── bugs/         # Bug investigations
+│   ├── bugs/         # Bug investigations
+│   └── refactors/    # Structural-change initiatives — index + status per refactor
 └── _archive/         # Obsolete docs (preserved for reference)
 ```
 
@@ -187,7 +188,11 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 ### Rules
 
 1. **New work goes to `_wip/`** - Bug investigations, audits, plans, temporary analysis
-2. **Use appropriate subfolder** - `_wip/plans/`, `_wip/bugs/`, `_wip/audits/`
+2. **Use appropriate subfolder** - `_wip/plans/`, `_wip/bugs/`, `_wip/audits/`, `_wip/refactors/`
+   - A **refactor** spans all three and needs a home of its own: one index page
+     per initiative saying whether it is live, what has actually changed in the
+     codebase, and where every plan and packet lives. Link the material, do not
+     move it. See `_wip/refactors/README.md`.
 3. **Always date-prefix** - Format: `YYYY-MM-DD-topic-name.md`
 4. **Archive when obsolete** - Move to `_archive/` when superseded or no longer relevant
 5. **Keep reference docs current** - Update existing docs rather than creating new point-in-time snapshots
