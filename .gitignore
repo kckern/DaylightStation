@@ -206,3 +206,17 @@ _extensions/ti86-app/dist/
 
 # Playwright screenshot artifacts (visual gates)
 tests/_artifacts/
+
+# The same PIXELS argument, for the two file types it does not cover.
+#
+# `*.png` above already catches every audit screenshot. It does NOT catch the
+# machine-readable sidecar an audit writes beside them, which holds the same
+# telemetry as TEXT — the 2026-09-05 health audit's measurements.json carries a
+# real weight series, body-fat percentage and dated calorie history. Nor does it
+# catch AUDIO: a room recording is household telemetry too, and no scrub can
+# read it.
+#
+# Scratch analysis output, both of them, regenerable from the source capture.
+recording-analysis/
+*.wav
+docs/_wip/audits/**/measurements.json
