@@ -924,7 +924,15 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   // `instanceKeySignature` re-joins them, so a minor instance is not spelled
   // with the sharps of its relative major.
   const accidental = accidentalForKey(instanceKeySignature(instance));
-  const staffNotes = eventsToStaffNotes(instance?.events);
+  const allStaffNotes = eventsToStaffNotes(instance?.events);
+  // A FLASHCARD DECK SHOWS ONE CARD. The single-note stage draws the event at
+  // the cursor and nothing else, so a nine-card drill is nine big notes in a
+  // row in TIME rather than nine small ones in a row in SPACE. For a deck of
+  // length one — every single-note ask that existed before reps — the window is
+  // the whole deck and this is exactly what it drew before.
+  const deckIndex = Math.min(Math.max(visualCursor.index, 0), Math.max(allStaffNotes.length - 1, 0));
+  const staffNotes = stage === 'single-note' ? allStaffNotes.slice(deckIndex, deckIndex + 1) : allStaffNotes;
+  const staffCursor = stage === 'single-note' ? 0 : visualCursor.index;
   const staffViewBox = sequenceStaffViewBox(staffNotes.length);
   const cued = selectedMode === 'cued';
   // Only the ordered stages carry a keyboard footer: KeysAsk brings its own
@@ -932,7 +940,13 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   // An empty `expected` is the score stage before its engraving has landed —
   // `Math.min()` of nothing is Infinity, and a keyboard drawn from that is a
   // blank strip where the piano should be.
-  const keyboardFooter = ['sequence', 'notation', 'score'].includes(stage) && expected.length > 0;
+  // A flashcard deck carries one too, when its level asked for it: a child
+  // being taught to READ needs both halves of the mapping on screen — the note
+  // on the staff and the key it means — and the ghost the staff draws under a
+  // wrong key only teaches the staff half.
+  const keyboardFooter = (['sequence', 'notation', 'score'].includes(stage)
+    || (stage === 'single-note' && presentation?.secondary === 'keyboard-strip'))
+    && expected.length > 0;
 
   /**
    * The drill chrome, when this run is one set of a multi-set program.
@@ -971,7 +985,13 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
    * has no number to show either; it takes the words, which are the right ones
    * for it ("Some of the notes are still missing").
    */
-  const scoreReadout = stage !== 'keys' && Number.isFinite(result?.score);
+  // A DECLARED FLASHCARD DECK takes the same exemption, for the same reason one
+  // step further on: it is a drill a pre-reader is given to practise finding a
+  // note, not a measurement of them. The level says so (`notationStyle:
+  // flashcard`); the stage alone cannot, because an adult's one-note ask lands
+  // on the same stage and a number is fine there.
+  const scoreReadout = stage !== 'keys' && presentation?.notationStyle !== 'flashcard'
+    && Number.isFinite(result?.score);
 
   return (
     <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}`} data-tier={runTier} data-stage={stage} data-phase={phase} data-expected-cursor={timeline?.expectedCursor ?? eventIndex} data-displayed-cursor={visualCursor.index}>
@@ -1046,7 +1066,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
                 rule this component now follows exists to forbid. */}
             <SvgSequenceStaff
               notes={staffNotes}
-              cursorIndex={visualCursor.index}
+              cursorIndex={staffCursor}
               activeNotes={feedbackNotes}
               clef={clefForInstance(instance)}
               accidental={accidental}

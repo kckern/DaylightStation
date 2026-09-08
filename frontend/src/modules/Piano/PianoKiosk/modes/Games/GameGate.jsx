@@ -125,6 +125,17 @@ export function resolveGateConfig(raw) {
     metered: source.metered === true,
     climbAfterCleanPasses: positiveInt(source.climbAfterCleanPasses, GATE_CONFIG_DEFAULTS.climbAfterCleanPasses),
     repertoire: source.repertoire ?? null,
+    // THE LEARNER'S OWN LADDER. `resolveLearnerPath` has been the caller of
+    // this for as long as it has existed, but the key never survived this
+    // function, so every `path:` a household authored was decoration and the
+    // climb walked the whole tier-ordered shelf instead. That is not cosmetic:
+    // it is how an adult practising scales was carried into a preschooler's
+    // spoken-chord rung, and how a preschooler on a reading rung would be
+    // carried into C major scales three clean passes later. Passed through
+    // UNVALIDATED, exactly like `repertoire` and for the same reason — the
+    // resolver owns the shape, and it already falls back to the full shelf for
+    // anything it cannot use.
+    path: source.path ?? null,
     // A non-string startLevel cannot name a level, and `startLevelFor` would
     // fall through to its own default anyway — normalize it here so a caller
     // reading the config sees the same answer the resolver will give.

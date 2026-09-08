@@ -37,7 +37,9 @@ export const AXES = Object.freeze({
   }),
   prompt: Object.freeze(['follow', 'recall', 'read']),
   secondary: Object.freeze(['none', 'staff', 'keyboard-strip']),
-  notationStyle: Object.freeze(['sequence', 'engraved', 'score']),
+  // `flashcard` — one card on the staff at a time, advanced by the cursor. The
+  // deck may be any length; what it never is, is a line of notes read across.
+  notationStyle: Object.freeze(['sequence', 'engraved', 'score', 'flashcard']),
   timing: Object.freeze(['free', 'pulsed', 'cued']),
   // Ordered, cumulative: `clean` implies `completion`'s bar was cleared too;
   // `placed` implies `clean`'s. The ordering itself isn't enforced here — it
@@ -342,6 +344,10 @@ export function deriveStage(tuple, instance) {
   // Recall's target is named in language, not shown as answer lights. It must
   // win before unordered material's ordinary keys-stage fallback.
   if (t.prompt === 'recall') return 'recall';
+  // A FLASHCARD DECK is declared, never inferred. "Every event is one note" is
+  // also true of a C major scale, and a scale must be read as a LINE — so the
+  // level says `notationStyle: flashcard` when it wants one card at a time.
+  if (t.notationStyle === 'flashcard') return 'single-note';
   if (t.prompt === 'read' && instance?.events?.length === 1 && instance.events[0]?.notes?.length === 1) return 'single-note';
   if (instance?.ordering === 'any') return 'keys';
   if (t.prompt === 'follow') return 'keys';
