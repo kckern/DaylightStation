@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
+import { resolveBoardRange } from '../../../noteUtils.js';
 import { usePianoMidi, usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import { usePianoUser } from '../../PianoUserContext.jsx';
 import PianoEmpty from '../../PianoEmpty.jsx';
@@ -999,6 +1000,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
             wrongMidi={countingDown ? null : lastWrong?.midi ?? null}
             showStaff={askStaff}
             accidental={accidental}
+            keyboard={keyboardConfig}
             // No `clef` prop: KeysAsk's own default IS `clefForAsk(events)` on
             // the same events, which is also what `staffFitsAsk` above asked.
             // Computing it a second time here would be a second place for the
@@ -1021,7 +1023,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
             <p>Play it from memory.</p>
             {hintVisible && (
               <div className="piano-exercise-run__recall-hint" data-testid="piano-recall-hint">
-                <KeysAsk events={instance.events} cursorIndex={visualCursor.index} activeNotes={feedbackNotes} wrongMidi={countingDown ? null : lastWrong?.midi ?? null} />
+                <KeysAsk events={instance.events} cursorIndex={visualCursor.index} activeNotes={feedbackNotes} wrongMidi={countingDown ? null : lastWrong?.midi ?? null} keyboard={keyboardConfig} />
               </div>
             )}
           </div>
@@ -1104,7 +1106,19 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
         {localRetry && <p className="piano-exercise-run__result-onward">Release the keys, then play any key to try again.{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
       </section>}
       </div>
-      {keyboardFooter && <footer className="piano-exercise-run__keys"><PianoKeyboard activeNotes={feedbackNotes} targetNotes={targetNotes} wrongNotes={wrongNotes} dimTarget startNote={Math.max(21, Math.min(...expected) - 5)} endNote={Math.min(108, Math.max(...expected) + 5)} /></footer>}
+      {keyboardFooter && (
+        /* The whole board, for the same reason KeysAsk draws it: a strip
+           cropped to the ask ± 5 semitones has no black-key groups and no ends,
+           so it cannot be read as a keyboard and the highlighted key cannot be
+           located on the instrument. `resolveBoardRange` is the one rule for
+           what this board physically is. */
+        <footer className="piano-exercise-run__keys">
+          <PianoKeyboard
+            activeNotes={feedbackNotes} targetNotes={targetNotes} wrongNotes={wrongNotes} dimTarget
+            {...resolveBoardRange(keyboardConfig)}
+          />
+        </footer>
+      )}
     </section>
   );
 }

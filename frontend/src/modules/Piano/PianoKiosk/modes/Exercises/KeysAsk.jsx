@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
+import { resolveBoardRange } from '../../../noteUtils.js';
 import { SvgSequenceStaff } from '../../../../MusicNotation/renderers/SvgSequenceStaff.jsx';
 import { clefForAsk } from './runPresentation.js';
 import './Exercises.scss';
@@ -38,6 +39,7 @@ export default function KeysAsk({
   showStaff = false,
   accidental = 'sharp',
   clef = null,
+  keyboard = null,
 }) {
   const isSequence = events.length > 1;
   const currentEvent = isSequence
@@ -50,12 +52,21 @@ export default function KeysAsk({
   );
   const wrongNotes = wrongMidi == null ? null : new Set([wrongMidi]);
 
-  // The keyboard's range covers the WHOLE ask (every event), not just the
-  // current one — the child needs to see where the next lit key can land,
-  // same clamped idiom ExerciseRun's footer keyboard uses.
-  const expected = events.flatMap((ev) => ev.notes.map((note) => note.midi));
-  const startNote = expected.length ? Math.max(21, Math.min(...expected) - 3) : 21;
-  const endNote = expected.length ? Math.min(108, Math.max(...expected) + 3) : 108;
+  // THE WHOLE BOARD, ALWAYS — not a window around the ask.
+  //
+  // This drew `min(expected) - 3 .. max(expected) + 3`, which for the one-note
+  // floor rung is seven semitones: four white keys, filling the screen. A child
+  // who has just been shown a lit key on THAT has no way to tell which key it
+  // is, because every landmark that makes a keyboard readable — the twos and
+  // threes of the black-key groups, the ends of the board — is cropped out of
+  // frame. A preschooler reported exactly this: he could not tell what was
+  // being asked of him (2026-09-08).
+  //
+  // The board's real range comes from the same `devices.yml` fact the launcher
+  // combo reads (`resolveBoardRange`), so the drawn keyboard is a picture of
+  // the instrument actually under the child's hands — the lit key sits where
+  // the real key sits. Unconfigured degrades to the full 88.
+  const { startNote, endNote } = resolveBoardRange(keyboard);
 
   // The staff's own note shape: one entry per event, a chord entry when an
   // event carries more than one note.
