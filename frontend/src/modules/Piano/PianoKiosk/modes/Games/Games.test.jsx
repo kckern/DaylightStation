@@ -23,6 +23,20 @@ const gameBudgetMeter = vi.hoisted(() => vi.fn());
 const probe = vi.hoisted(() => ({ mounts: 0, armed: null, sawContext: false }));
 const gateProps = vi.hoisted(() => ({ last: null, mounts: 0 }));
 const gatePassResult = vi.hoisted(() => ({ value: { score: 1 } }));
+const log = vi.hoisted(() => {
+  const lines = [];
+  const logger = {
+    info: (event, data) => lines.push([event, data]),
+    warn: (event, data) => lines.push([event, data]),
+    error: (event, data) => lines.push([event, data]),
+    debug: () => {}, sampled: () => {},
+  };
+  logger.child = () => logger;
+  return { lines, logger };
+});
+vi.mock('../../../../../lib/logging/Logger.js', () => ({
+  default: () => log.logger, getLogger: () => log.logger,
+}));
 
 // Keep the games-config fetch hermetic (no real network).
 vi.mock('../../../../../lib/api.mjs', () => ({
@@ -147,6 +161,7 @@ beforeEach(() => {
   gameBudget.warn = false;
   gameBudgetMeter.mockImplementation(() => gameBudget);
   probe.mounts = 0;
+  log.lines.length = 0;
   probe.armed = null;
   probe.sawContext = false;
   gateProps.last = null;
@@ -391,6 +406,31 @@ describe('Games mode — match gate (gate 2)', () => {
     fireEvent.click(screen.getByText('gate-pass'));
     // A remount, not a re-render: the match is new, keyed by matchId.
     expect(probe.mounts).toBe(2);
+  });
+
+  it('records game.mount for ANY game, once the chunk is really on screen', () => {
+    // This lived in the addressed-board family, so two of nine games logged a
+    // mount and the rest logged nothing — and "did the game the child asked
+    // for ever appear?" was unanswerable for Chess, Space Invaders and Tetris.
+    // probe-game is in no family at all, which is the point of asserting here.
+    renderGames('/games/probe-game', 'learner1', gatedConfig);
+    expect(log.lines.some(([event]) => event === 'game.mount')).toBe(false);
+
+    fireEvent.click(screen.getByText('gate-pass'));
+    const mount = log.lines.find(([event]) => event === 'game.mount');
+    expect(mount).toBeTruthy();
+    expect(mount[1]).toMatchObject({ game: 'probe-game', learnerId: 'learner1', matchId: expect.any(Number) });
+  });
+
+  it('records game.unmount with how long the match lasted, so a bounce is visible', () => {
+    renderGames('/games/probe-game', 'learner1', gatedConfig);
+    fireEvent.click(screen.getByText('gate-pass'));
+    fireEvent.click(screen.getByText('probe-rematch'));
+
+    const unmount = log.lines.find(([event]) => event === 'game.unmount');
+    expect(unmount).toBeTruthy();
+    expect(unmount[1].game).toBe('probe-game');
+    expect(unmount[1].playedMs).toBeGreaterThanOrEqual(0);
   });
 
   it('tells the mounted game the gate is armed', () => {

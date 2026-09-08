@@ -85,7 +85,8 @@ export function useAddressedBoardGame({
 
   useEffect(() => {
     let cancelled = false;
-    logger.info('game.mount', { gameId, userId: userId ?? 'guest' });
+    // `game.mount` is the HOST's event now (Games.jsx), so it covers every
+    // game rather than this one family.
     client.readConfig(userId).then((value) => {
       if (cancelled || !value) return;
       setConfig((old) => ({ ...old, ...value }));

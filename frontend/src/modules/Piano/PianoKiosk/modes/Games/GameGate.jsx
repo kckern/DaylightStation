@@ -72,7 +72,7 @@ import {
 } from './gateRepertoire.js';
 import { isConfigOnlyDecline, materialOrder } from './gateMaterial.js';
 import { resolveLearnerPath } from './gateDailyEscalation.js';
-import GateCeremony from './GateCeremony.jsx';
+import GateCeremony, { CEREMONY_MS } from './GateCeremony.jsx';
 import './GameGate.scss';
 
 /** The design's `gameGate` block. A household that sets none of it gets these. */
@@ -578,7 +578,14 @@ export default function GameGate({
     // The curtain is the transition, not a card in front of one: the game is
     // handed control when the panels finish parting, so the reveal and the
     // navigation are the same gesture. `onPassed` is deferred to that moment.
-    setCeremony({ result, score });
+    // THE CURTAIN IS TIMED, because it is the one part of this flow with no
+    // other witness. It sits between `gate.passed` and the game's own mount,
+    // and when it stopped parting (an effect that re-armed its hand-over on
+    // every render) the only trace was an unexplained gap between those two —
+    // reconstructed by subtraction, days later. `gate.ceremony-done` carries
+    // what it actually took, so the next time it drifts it says so itself.
+    setCeremony({ result, score, startedAt: Date.now() });
+    emit('gate.ceremony-start', { ...context, plannedMs: CEREMONY_MS });
     const cleanPasses = state.cleanPasses + 1;
     let next = { ...state, failuresAtLevel: 0, cleanPasses };
     if (cleanPasses >= config.climbAfterCleanPasses) {
@@ -749,7 +756,18 @@ export default function GameGate({
         gameId={gameId}
         gameLabel={gameLabel}
         score={ceremony.score}
-        onDone={() => { setCeremony(null); onPassed?.(ceremony.result); }}
+        onDone={() => {
+          const actualMs = Date.now() - ceremony.startedAt;
+          const overranMs = Math.max(0, actualMs - CEREMONY_MS);
+          // A curtain that took a second longer than it was told to is not a
+          // slow frame; it is the hand-over being restarted by something. That
+          // is a warning, so it surfaces without anyone going to look for it.
+          emit('gate.ceremony-done', {
+            ...context, plannedMs: CEREMONY_MS, actualMs, overranMs,
+          }, overranMs > 1000 ? 'warn' : 'info');
+          setCeremony(null);
+          onPassed?.(ceremony.result);
+        }}
       />
     );
   }
