@@ -103,6 +103,7 @@ import { createHealthApiRouter, createHealthDashboardApiRouter, createTemplateCu
 import { createEntropyApiRouter } from '#composition/modules/entropyApi.mjs';
 import { createLifelogApiRouter } from '#composition/modules/lifelogApi.mjs';
 import { createStaticApiRouter } from '#composition/modules/staticApi.mjs';
+import { equipmentImageMap } from '#apps/fitness/equipmentImages.mjs';
 import { createCalendarApiRouter } from '#composition/modules/calendarApi.mjs';
 import { createScreenPresenceService } from '#composition/modules/screenPresence.mjs';
 import { createPianoScreenPowerSync } from '#composition/modules/pianoScreenPowerSync.mjs';
@@ -1979,10 +1980,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Lifeplan domain router
   v1Routers.life = lifeplanResult.router;
 
-  // Static assets router
+  // Static assets router. Equipment pictures are found by equipment id; the
+  // fitness config may name a file instead, for equipment whose picture does
+  // not share its id's spelling.
   v1Routers.static = createStaticApiRouter({
     imgBasePath,
     dataBasePath,
+    equipmentImages: equipmentImageMap(configService.getHouseholdAppConfig(null, 'fitness')),
     logger: rootLogger.child({ module: 'static-api' })
   });
 

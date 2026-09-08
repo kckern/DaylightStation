@@ -13,21 +13,29 @@ import { fileExists, readBinary } from '#system/utils/FileIO.mjs';
  *
  * - Avatars live at   `{avatarsDir}/{slug}.{ext}`   (media/img/users)
  * - Equipment lives at `{equipmentDir}/{name}.{ext}` (media/img/equipment)
+ *
+ * Equipment whose picture is not named after its id declares the filename in
+ * fitness config; `equipmentImages` carries that id → filename map so the recap
+ * footer shows the same picture the live UI does.
  */
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'];
 
 export class FitnessAssetResolver {
   #avatarsDir;
   #equipmentDir;
+  #equipmentImages;
 
   /**
    * @param {Object} config
    * @param {string} config.avatarsDir - Directory of user avatar images
    * @param {string} config.equipmentDir - Directory of equipment images
+   * @param {Object<string,string>} [config.equipmentImages] - Equipment id →
+   *   picture filename, for equipment whose picture is not named after its id
    */
-  constructor({ imgDir, avatarsDir = imgDir && path.join(imgDir, 'users'), equipmentDir = imgDir && path.join(imgDir, 'equipment') } = {}) {
+  constructor({ imgDir, avatarsDir = imgDir && path.join(imgDir, 'users'), equipmentDir = imgDir && path.join(imgDir, 'equipment'), equipmentImages = {} } = {}) {
     this.#avatarsDir = avatarsDir;
     this.#equipmentDir = equipmentDir;
+    this.#equipmentImages = equipmentImages || {};
   }
 
   #resolveImage(dir, name) {
@@ -54,6 +62,15 @@ export class FitnessAssetResolver {
    * @returns {Buffer|null}
    */
   getEquipmentImage(name) {
+    const declared = Object.prototype.hasOwnProperty.call(this.#equipmentImages, name)
+      ? this.#equipmentImages[name]
+      : null;
+    if (typeof declared === 'string' && declared) {
+      // A declared filename already carries its extension.
+      const exact = path.join(this.#equipmentDir || '', declared);
+      if (this.#equipmentDir && fileExists(exact)) return readBinary(exact);
+      return this.#resolveImage(this.#equipmentDir, declared.replace(/\.[^.]+$/, ''));
+    }
     return this.#resolveImage(this.#equipmentDir, name);
   }
 

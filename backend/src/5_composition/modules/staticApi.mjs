@@ -11,13 +11,16 @@ import { resizeStaticImage } from '#rendering/static-assets/resizeStaticImage.mj
  * @param {Object} config
  * @param {string} config.imgBasePath - Base path for images
  * @param {string} config.dataBasePath - Base path for data files
+ * @param {Object<string,string>} [config.equipmentImages] - Equipment id →
+ *   picture filename from fitness config, for equipment whose picture is not
+ *   named after its id.
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createStaticApiRouter(config) {
-  const { imgBasePath, logger = console } = config;
+  const { imgBasePath, equipmentImages, logger = console } = config;
   const staticAssetService = new StaticAssetService({
-    repository: new FilesystemStaticImageRepository({ imgBasePath }),
+    repository: new FilesystemStaticImageRepository({ imgBasePath, equipmentImages }),
     resizeImage: resizeStaticImage,
     logger,
   });
