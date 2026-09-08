@@ -357,3 +357,6 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-06 | school/teacher-reading-ui | 87eb987fa | The reading detail: four bands, enforced reasons, armed danger verbs, served refusal sentences; merged to main. |
 | 2026-09-06 | school/reading-admin-finish | f8e22afb6 | Server owns the counted window and the undo refusals; a grown-up can add a book on a child's behalf; merged to main. |
 | 2026-09-06 | school/panel-code-straight-to-shelf | 99c9c411e | A panel code opens the shelf directly; the one-button launch card is skipped when there is nothing to decide. Merged to main. |
+| 2026-09-06 | health-row-ux | a40c856c1ab4cbb6971b141274e8c54297188097 | Whole-number portions, inline macro badges and exercise posters/session links; fast-forwarded into main. Deployment deferred while video playback is active. |
+| 2026-09-06 | feat/health-meal-workflow | 84e3fd55c58aa5e79c8ba89b823c0a132030fe5b | Merged and deployed meal voice amendments, grouping, Undo and compact Health display; final commit records verification. |
+| 2026-09-06 | fix/nutrition-number-drag | c8d0212c1 | Voice gateway message contract, shared numeric food edits, atomic ingredient updates and deferred meal-suggestion wiring; fast-forwarded into local main. |
