@@ -107,6 +107,12 @@ export class DeviceService {
     return Array.from(this.#devices.entries()).map(([id, device]) => ({
       id,
       type: device.type,
+      // Presentation identity, so a picker can say "📺 Living Room TV" rather
+      // than the slug. Null when devices.yml declares none — a caller that
+      // falls back to `id` is then showing the only name there is.
+      name: device.name,
+      location: device.location,
+      icon: device.icon,
       defaultVolume: device.defaultVolume,
       capabilities: device.getCapabilities()
     }));

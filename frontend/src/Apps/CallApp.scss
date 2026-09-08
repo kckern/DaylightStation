@@ -100,6 +100,15 @@
     align-items: center;
     text-align: center;
     gap: 0.75rem;
+    // `.call-app` is overflow:hidden so a call can never scroll under the
+    // caller's thumb. That also silently CLIPS a tall lobby — a phone in
+    // portrait with several screens listed loses the last button off the
+    // bottom edge with nothing to reveal it. The lobby scrolls on its own.
+    width: 100%;
+    max-height: 100%;
+    overflow-y: auto;
+    padding: 0 1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+    -webkit-overflow-scrolling: touch;
   }
 
   // Bottom overlay — sits over the camera preview
@@ -141,6 +150,10 @@
     flex-direction: column;
     gap: 1rem;
     margin-top: 1.5rem;
+    // A fixed measure so every button is the same width and reads as one
+    // column, instead of each shrink-wrapping to the length of its own label.
+    width: min(360px, 100%);
+    margin-inline: auto;
   }
 
   &__device-btn {
@@ -152,6 +165,8 @@
     font-size: 1.1rem;
     cursor: pointer;
     backdrop-filter: blur(4px);
+    width: 100%;
+    min-height: 56px; // comfortable thumb target
 
     &:active {
       background: rgba(255, 255, 255, 0.25);
@@ -161,6 +176,37 @@
       opacity: 0.4;
       cursor: not-allowed;
     }
+  }
+
+  // A screen you can call: its declared icon, name and room.
+  &__device-btn--device {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    text-align: left;
+    padding: 0.9rem 1.25rem;
+  }
+
+  &__device-icon {
+    font-size: 1.9rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  &__device-label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+  }
+
+  &__device-name {
+    font-size: 1.2rem;
+  }
+
+  &__device-location {
+    font-size: 0.85rem;
+    opacity: 0.65; // secondary line, no new raw colour (see audit:ui)
   }
 
   // Remote video (always mounted, shown in connected state)
@@ -304,29 +350,48 @@
     }
   }
 
-  &__camera-error {
+  // The one centred box every camera/microphone message stacks inside.
+  &__camera-status {
     position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.5rem;
+    pointer-events: none;
+    z-index: 5;
+
+    &:empty {
+      display: none;
+    }
+  }
+
+  &__camera-error {
     color: #ff6b6b;
-    font-size: 1rem;
-    padding: 0.75rem 1.5rem;
+    font-size: 0.9rem;
+    margin: 0;
+    padding: 0.5rem 0.75rem;
     background: rgba(0, 0, 0, 0.7);
     border-radius: 8px;
     text-align: center;
-    z-index: 5;
   }
 
   &__camera-loading {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
     color: #aaa;
     font-size: 0.9rem;
+    margin: 0;
     text-align: center;
-    z-index: 5;
+  }
+
+  &__camera-note {
+    font-size: 0.85rem;
+    margin: 0;
+    padding: 0.4rem 0.75rem;
+    border-radius: 8px;
+    text-align: center;
+    opacity: 0.85;
   }
 
   &__timeout-msg {

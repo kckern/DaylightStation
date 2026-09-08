@@ -32,15 +32,38 @@ describe('CallApp presentation', () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it('shows one explicit Call action and never auto-starts it', async () => {
-    mocks.api.mockResolvedValue({ devices: [{ id: 'tv', name: 'Living Room', capabilities: { contentControl: true } }] });
+  it('names each callable screen by its room and never auto-starts a call', async () => {
+    mocks.api.mockResolvedValue({ devices: [
+      { id: 'livingroom-tv', name: 'Living Room TV', location: 'Living Room', icon: '\u{1F4FA}', capabilities: { contentControl: true, videoCall: true } },
+    ] });
     render(<CallApp />);
     expect(mocks.loggerConfigure).toHaveBeenCalledWith(expect.objectContaining({ context: expect.objectContaining({ app: 'homeline-phone', sessionLog: true }) }));
-    const button = await screen.findByRole('button', { name: 'Call Living Room' });
+    const button = await screen.findByRole('button', { name: /Living Room TV/ });
+    expect(button).toHaveTextContent('Living Room');
     expect(screen.getByRole('button', { name: 'Exit call screen' })).toBeTruthy();
     expect(mocks.start).not.toHaveBeenCalled();
     fireEvent.click(button);
-    expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ id: 'tv' }));
+    expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ id: 'livingroom-tv' }));
+  });
+
+  // A screen with content control but no camera cannot be the far end of a
+  // call. Offering one is what put "office-tv" and "portal" in the lobby.
+  it('offers only screens that can actually take a call', async () => {
+    mocks.api.mockResolvedValue({ devices: [
+      { id: 'livingroom-tv', name: 'Living Room TV', capabilities: { contentControl: true, videoCall: true } },
+      { id: 'portal', name: 'Portal', capabilities: { contentControl: true, videoCall: false } },
+      { id: 'office-tv', name: 'Office Screen', capabilities: { contentControl: true } },
+    ] });
+    render(<CallApp />);
+    expect(await screen.findByRole('button', { name: /Living Room TV/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Portal/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Office Screen/ })).toBeNull();
+  });
+
+  it('falls back to the id only when no name is declared', async () => {
+    mocks.api.mockResolvedValue({ devices: [{ id: 'livingroom-tv', capabilities: { videoCall: true } }] });
+    render(<CallApp />);
+    expect(await screen.findByRole('button', { name: 'livingroom-tv' })).toBeTruthy();
   });
 
   it('distinguishes device fetch failure and provides a retry', async () => {
@@ -48,8 +71,19 @@ describe('CallApp presentation', () => {
     render(<CallApp />);
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load TVs.');
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    await waitFor(() => expect(screen.getByText('No video call TVs are configured.')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('No screen in the house is set up to take a call.')).toBeTruthy());
     expect(mocks.api).toHaveBeenCalledTimes(2);
+  });
+
+  // The 401 that told a caller to sign in used to offer only "Back".
+  it('offers a sign-in when the backend refuses the caller', async () => {
+    mocks.state = { value: 'failed', reason: 'auth_required', error: 'Sign in to place a Home Line call.',
+      media: { audio: false, video: false }, controlConnected: true };
+    mocks.api.mockResolvedValue({ devices: [] });
+    render(<CallApp />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Sign in to place a Home Line call.');
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
   });
 
   it('presents Busy as an alert with a focused safe exit', async () => {

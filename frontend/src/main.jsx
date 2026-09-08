@@ -15,6 +15,7 @@ import FitnessApp from './Apps/FitnessApp.jsx';
 import FeedApp from './Apps/FeedApp.jsx';
 import AdminApp from './Apps/AdminApp.jsx';
 import CallApp from './Apps/CallApp.jsx';
+import AuthGate from './modules/Auth/AuthGate.jsx';
 import MediaApp from './Apps/MediaApp.jsx';
 import LiveStreamApp from './Apps/LiveStreamApp.jsx';
 import PianoApp from './Apps/PianoApp.jsx';
@@ -192,7 +193,12 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/invite/:token" element={<InviteAccept />} />
         <Route path="/filter-poc" element={<FilterPoc />} />
         <Route path="/feed/*" element={<FeedApp />} />
-        <Route path="/call" element={<CallApp />} />
+        {/* Home Line requires a real user JWT — docs/reference/call/README.md:
+            "Device-local or kiosk identity alone never grants caller authority."
+            Ungated, that requirement surfaced only as a 401 at the moment of
+            dialling, worded "Sign in to place a Home Line call" on a screen
+            that offered no way to sign in. The gate makes the sign-in real. */}
+        <Route path="/call" element={<AuthGate app="call"><CallApp /></AuthGate>} />
         <Route path="*" element={<Blank />} />
       </Routes>
     </SetupCheck>

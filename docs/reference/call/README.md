@@ -16,9 +16,27 @@ does not wake or change the TV.
 
 The caller must have a valid user JWT whose configured application permissions
 include `homeline` (or `call`/`*`). Device-local or kiosk identity alone never
-grants caller authority. The TV bootstrap route is the sole exception: it is
-limited to a local request with an exact `X-Daylight-Device` match, then rotates
-to its short-lived call credential.
+grants caller authority — being on the house network grants `sysadmin` in
+`req.roles`, and that deliberately does not open a camera in the living room.
+The TV bootstrap route is the sole exception: it is limited to a local request
+with an exact `X-Daylight-Device` match, then rotates to its short-lived call
+credential.
+
+Because of that, `/call` is served behind the auth gate: a caller without a
+token gets the sign-in form, not the lobby. A refusal is logged as
+`homeline.call.denied`, whose `cause` separates the two failures — `no_caller`
+(no usable JWT; the caller signs in) from `no_permission` (a real user whose
+roles do not expand to `call`; the fix is in `auth.yml`).
+
+## Who can be called
+
+A device is offered as a call target only if it declares `video_call: true` in
+`devices.yml`. It is a declaration, never an inference: `content_control` is
+what every kiosk panel in the house has, so deriving eligibility from it offers
+screens that have no camera or microphone. Anything silent is not a call
+target. `GET /api/v1/device` reports it as `capabilities.videoCall`, alongside
+the `name`, `location` and `icon` a picker needs to name the device to a person
+rather than showing its id.
 
 The setup lease expires after 180 seconds. A confirmed hard recovery may extend
 that setup window once. Participants send five-second heartbeats; an active
@@ -119,6 +137,22 @@ _time:2h AND callId:"{callId}" AND _msg:"homeline.signaling.rejected"
 _time:2h AND callId:"{callId}" AND (outcome:"failed" OR level:"error")
 _time:2h AND deviceId:"{deviceId}" AND _msg:"homeline.lease.conflict"
 ```
+
+When a call never reached a lease at all, the caller was refused or the lobby
+offered the wrong thing. Neither has a `callId`, so start from the event:
+
+```text
+_time:24h AND _msg:"homeline.call.denied"        # cause: no_caller | no_permission
+_time:24h AND _msg:"devices.loaded"              # offered / withheld / unnamed
+_time:24h AND _msg:"call.surface"                # viewport, DPR, zoom, orientation
+_time:24h AND _msg:"connection-state"            # peer connection, warn on failed
+```
+
+`devices.loaded` names the devices offered and the near misses withheld, so a
+wrong lobby is answerable without reading config; `unnamed` lists any device
+shown under its raw id because `devices.yml` declares no `name`. `call.surface`
+records the screen the caller actually used — a report about an unusable layout
+can be checked against the viewport it happened on.
 
 For a wake failure, follow the lease's `dispatchId` into `wake-and-load.*`
 events. For a blank or partial call, compare `peerRevision`, signaling

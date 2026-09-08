@@ -21,6 +21,10 @@ import { ApplicationError } from '#apps/common/errors/index.mjs';
 export class Device {
   #id;
   #type;
+  #name;
+  #location;
+  #icon;
+  #videoCall;
   #defaultVolume;
   #screenPath;
   #notifyService;
@@ -45,6 +49,10 @@ export class Device {
 
     this.#id = config.id;
     this.#type = config.type || 'unknown';
+    this.#name = config.name || null;
+    this.#location = config.location || null;
+    this.#icon = config.icon || null;
+    this.#videoCall = config.videoCall === true;
     this.#defaultVolume = config.defaultVolume ?? null;
     this.#screenPath = config.screenPath || null;
     this.#notifyService = config.notifyService ?? null;
@@ -67,6 +75,30 @@ export class Device {
    */
   get id() {
     return this.#id;
+  }
+
+  /**
+   * How a person names this device ("Living Room TV"), or null
+   * @returns {string|null}
+   */
+  get name() {
+    return this.#name;
+  }
+
+  /**
+   * Where this device physically is, as a person would say it
+   * @returns {string|null}
+   */
+  get location() {
+    return this.#location;
+  }
+
+  /**
+   * Emoji declared for this device in devices.yml
+   * @returns {string|null}
+   */
+  get icon() {
+    return this.#icon;
   }
 
   /**
@@ -347,6 +379,9 @@ export class Device {
       deviceControl: !!this.#deviceControl,
       osControl: !!this.#osControl,
       contentControl: !!this.#contentControl,
+      // A camera-and-microphone screen that can be the far end of a Home Line
+      // call. Content control alone is NOT this: every kiosk panel has it.
+      videoCall: this.#videoCall && !!this.#contentControl,
       volume: this.#volumeProvider,
       audioDevice: !!(this.#osControl?.setAudioDevice)
     };
