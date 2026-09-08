@@ -10,11 +10,21 @@ const CONTENT_TYPES = Object.freeze({
 
 export class FilesystemStaticImageRepository extends IStaticImageRepository {
   #root;
+  #equipmentImages;
 
-  constructor({ imgBasePath }) {
+  /**
+   * @param {Object} config
+   * @param {string} config.imgBasePath - Root of the media image tree.
+   * @param {Object<string,string>} [config.equipmentImages] - Equipment id →
+   *   picture filename, declared in fitness config (see
+   *   `#apps/fitness/equipmentImages.mjs`). Equipment whose id already names
+   *   its file needs no entry; that convention remains the default.
+   */
+  constructor({ imgBasePath, equipmentImages = {} }) {
     super();
     if (!imgBasePath) throw new TypeError('FilesystemStaticImageRepository requires imgBasePath');
     this.#root = path.resolve(imgBasePath);
+    this.#equipmentImages = equipmentImages || {};
   }
 
   async getImage(kind, id) {
@@ -40,7 +50,19 @@ export class FilesystemStaticImageRepository extends IStaticImageRepository {
     if (kind === 'entropy') return [path.join('entropy', relative)];
     if (kind === 'art') return [path.join('art', relative)];
     if (kind === 'user') return [path.join('users', relative), path.join('users', 'default')];
-    if (kind === 'equipment') return [path.join('equipment', relative), path.join('fitness', 'equipment', relative)];
+    if (kind === 'equipment') {
+      // A declared filename wins; otherwise the id names the file, as it always has.
+      // Own-property only: an id like `constructor` must not inherit a
+      // "filename" from Object.prototype and blow up path.join.
+      const declared = Object.prototype.hasOwnProperty.call(this.#equipmentImages, relative)
+        ? this.#equipmentImages[relative]
+        : null;
+      const names = typeof declared === 'string' && declared ? [declared] : [relative];
+      return names.flatMap((name) => [
+        path.join('equipment', name),
+        path.join('fitness', 'equipment', name),
+      ]);
+    }
     if (kind === 'image') return [relative];
     return [];
   }

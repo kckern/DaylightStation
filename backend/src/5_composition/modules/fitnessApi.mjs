@@ -3,6 +3,7 @@
 
 import { PlexPosterProvider } from '#adapters/content/media/plex/PlexPosterProvider.mjs';
 import { FitnessAssetResolver } from '#adapters/fitness/FitnessAssetResolver.mjs';
+import { equipmentImageMap } from '#apps/fitness/equipmentImages.mjs';
 import { ProviderFitnessContentCatalog } from '#adapters/fitness/ProviderFitnessContentCatalog.mjs';
 import { FitnessConfigProjection } from '#adapters/config/ApplicationConfigProjections.mjs';
 import { FilesystemMenuMusicCatalog } from '#adapters/fitness/FilesystemMenuMusicCatalog.mjs';
@@ -172,6 +173,9 @@ export function createFitnessApiRouter(config) {
   const fitnessImgDir = configService.getPath('img') || path.join(configService.getMediaDir(), 'img');
   const fitnessAssetResolver = new FitnessAssetResolver({
     imgDir: fitnessImgDir,
+    // Equipment whose picture is not named after its id declares the filename
+    // in fitness config — same map the live /static/img/equipment route uses.
+    equipmentImages: equipmentImageMap(fitnessConfig),
   });
   const generateSessionTimelapse = new GenerateSessionTimelapse({
     sessionDatastore: fitnessServices.sessionStore,
