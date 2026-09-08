@@ -1,0 +1,1380 @@
+# Application ownership and behavior-preserving migration
+
+**Status:** Full execution design under adversarial review; no source relocation implemented.
+**Date:** 2026-09-05
+**Source baseline:** `2144f762a`
+**Parent:** [Full-Stack Application Modules roadmap](../../roadmap/2026-08-31-full-stack-application-modules.md)
+
+This is the immediate migration plan. It supersedes the runtime draft and the
+roadmap's later functional phases wherever they imply new behavior is required
+for the structural cutover. The goal is semi-enclosed workspaces for experienced
+contributors, not a new plugin runtime, deployment model, or application feature.
+
+**Working name:** *owner-first product modules in a layered modular monolith*.
+Use "product module" for the full stack and "application layer" only for use
+cases/ports. This avoids giving `application` two meanings in the same path.
+
+**Reading map:** Sections 1–2 define ownership and compatibility; 3–6 establish
+verification and release strategy; 7–9 specify the destination, binding layer
+policy, and packages; 10–12 cover integration/data and contributor workflows;
+13–16 are executable work packages, certification, rollback, and risk decisions.
+The [source inventory](2026-09-05-application-module-source-inventory.md) is the
+starting classification, not permission to move mixed folders wholesale. The
+[review record](2026-09-05-application-module-adversarial-reviews.md) records the
+five required review/revision rounds and finding dispositions.
+
+**Authority:** The [layer reference directory](../../reference/core/layers-of-abstraction)
+and its decision register remain core requirements. This document changes where
+layers live, not what dependencies they may have. Where an old example, current
+scanner, or proposed public export is less restrictive, it does not authorize
+weakening those rules. See section 8 for explicit conflicts and resolution gates.
+
+## 1. Partition by responsibility, not by how many callers a file has
+
+Use three primary ownership categories. Public visibility, implementation role,
+and execution environment are separate properties of an artifact.
+
+| Owner category | Responsibility | Examples and limits |
+|---|---|---|
+| Platform core | Operating the system and supplying domain-neutral infrastructure | Process startup, HTTP transport, authentication enforcement, configuration loading, persistence mechanisms, logging, realtime transport, build/test machinery. It does not own every domain concept used by several apps. |
+| Shared capability | A named, independently maintained facility serving multiple products | Playback, gaming, screen hosting, household identity, music notation, printing. A capability can contain pure libraries, UI, server operations, contracts, and adapters; it need not be a network service or require a loader. |
+| Product module | A coherent user-facing application and its policy | Piano, School, Health, Fitness, Automotive, Gratitude, Party Games. An application can export useful artifacts while remaining their owner. A configured screen need not be a separate application. |
+
+"Shared" alone is not an owner. "Library", "component", "API", "adapter", and
+"surface" describe artifact roles, not competing product categories. A tiny
+domain-neutral library can belong to the platform; a notation library belongs
+to a named notation owner. The larger roadmap's `libraries/` and `integrations/`
+roots remain packaging options, not reasons to create more top-level buckets
+before the responsibilities are understood.
+
+An application boundary is an ownership and dependency boundary, not a security
+sandbox, independent deployment guarantee, or promise that every other app can
+be removed. Contributors still write domain schemas, components, APIs, and use
+cases; platform facilities and tested adapter patterns supply the mechanics.
+
+### 1.1 Source-backed classifications
+
+| Current artifact | Proposed responsibility | What must not migrate with it indiscriminately |
+|---|---|---|
+| [`Player.jsx`](../../../frontend/src/modules/Player/Player.jsx), queue/controller/rendering support | Shared **playback** capability; outside every consuming application | Piano video selection, Fitness governance, School lesson policy, and living-room navigation remain with their products. A standalone playback surface can compose the same capability. |
+| [`shared/gaming/kernel`](../../../shared/gaming/kernel) and [`mechanics`](../../../shared/gaming/mechanics) | Shared **gaming** capability: session contracts, authority, scoring mechanics, turn order, deterministic dice | Which activity earns points, which child may play, and how musical performance affects a match are product rules. |
+| [`rulesets/chess`](../../../shared/gaming/rulesets/chess), checkers, other reusable rulesets | Named domain libraries within the gaming owner initially | A particular game's kiosk, curriculum, household policy, or branding. A later independently owned Chess product may publish its engine without becoming platform core. |
+| [`Gaming/platform`](../../../frontend/src/modules/Gaming/platform) | Candidate reusable gaming browser runtime and UI, classified file by file | Existing experiences, Party Games environment wiring, and any game-specific assumptions. A directory named `platform` is not evidence that all its contents are platform core. |
+| [`GamingApp.jsx`](../../../frontend/src/Apps/GamingApp.jsx), Party Games environment | Product/launch composition consuming gaming | The generic runtime must not select installed product implementations itself. Current routing and launch behavior remain unchanged. |
+| [`PianoChessGame/chordAddress.js`](../../../frontend/src/modules/Piano/PianoChessGame/chordAddress.js) | Piano-owned translation from chords to board squares | The chess engine must remain unaware of MIDI and teaching policy. The source explicitly documents this boundary already. |
+| [`createPianoChordProvider`](../../../frontend/src/modules/Piano/challenge/provider/createPianoChordProvider.jsx) | Piano-owned public integration candidate implementing the gaming challenge contract | Piano's assessment semantics do not become generic gaming logic because gaming invokes them. |
+| [`screen-framework/widgets/builtins.js`](../../../frontend/src/screen-framework/widgets/builtins.js) | Installed-screen composition of published widgets | Neutral host/layout contracts must not import the particular Piano, School, or Health presentations they host. |
+
+`backend/shared` is a symlink to root `shared`; `backend/shared/gaming` and
+`shared/gaming` are not two implementations. Record one canonical source path
+and audit every resolver that reaches it.
+
+The Player boundary includes more than its main JSX file. Fitness and School
+also import its controller, and consumers reach utilities, logging, overlays,
+and hooks. Inventory these imports before deciding which are supported public
+entries and which belong behind an internal facade. Do not rewrite Player's
+recovery behavior or media-provider protocol while moving it.
+
+Gaming also contains a seam to examine:
+[`prepareGamingSessionSetup`](../../../backend/src/3_applications/gaming/runtime/gamingSessionSetup.mjs)
+gets household candidates through `partyGamesCatalog`. A reusable setup contract
+could receive those candidates from composition; current candidate selection,
+authorization, and errors must remain identical during extraction. This is not
+permission to redesign household identity as part of the move.
+
+### 1.2 Sharing without surrendering ownership
+
+Applications may publish named, supported entry points: a widget, embeddable
+view, pure domain value, query/command facade, or implementation of a shared
+contract. For example, Screens can consume Piano's visualizer, and a game can
+use Piano's challenge provider. Those remain Piano exports, not platform code.
+
+The source dependency pattern is:
+
+```text
+Family Games composition -> gaming public API + household identity public API
+Screens composition      -> host contracts + Piano's public widget
+Piano provider           -> gaming challenge contract + Piano private logic
+Gaming runtime           -> challenge contract; provider supplied by composition
+```
+
+Family Games is not confined to a "gaming stack". It chooses its dependencies
+directly. Prefer passing a small participant projection into the rules engine
+over making that engine load a universal household `User`. Identity owns member
+identity; Piano owns musical progress; School owns learning progress. A common
+identifier does not imply one common object containing all of them.
+
+Allowed cross-owner imports must satisfy **both** visibility and layer rules:
+
+- A public export is permission to consume that contract, not permission for
+  domain code to import another app's workflow or persistence implementation.
+- Server workflows consume injected ports/facades. Composition may bind another
+  owner's public operation. Existing DDD rulings still apply inside each owner.
+- Browser hosts consume public web entries. Imports must not drag server-only
+  configuration, dependencies, or startup effects into the browser bundle.
+- Only owner/installed composition selects concrete apps or registers providers.
+  Platform core and reusable capability implementations do not import their
+  concrete application consumers. An adapter's permitted import of the existing
+  application-owned port it implements is a contract edge, not a concrete
+  consumer import; preserve D3/D7 and the rules in section 8. Callback invocation
+  is not a reverse import.
+- Public barrels must not eagerly load an entire application. Use explicit web,
+  server, and portable subentries with declared dependency closures.
+- Contract tests cover props/ref methods, required contexts, callbacks, styles,
+  assets, error behavior, ownership of state, and cleanup—not just symbol names.
+- Required public app dependencies remain required. Removal means removing the
+  dependent set or supplying an already-supported alternative; no new runtime
+  "unavailable" behavior is invented for the structural migration.
+
+Promote an app-owned export into a shared capability only when its meaning is
+independent of that product, its consumers agree on a stable contract, and a
+maintainer accepts responsibility for it across consumers. A second caller alone
+is insufficient. Conversely, already-established facilities such as Player and
+the gaming kernel need not stay inside an arbitrary application.
+
+### 1.3 Physical shape follows the ownership decision
+
+The directional destination is `modules/<product>/` for product stacks and
+`capabilities/<name>/` for named shared facilities, with owner-local `server/`,
+`web/`, and portable `shared/` code as needed. Platform entrypoints can remain in
+`backend/` and `frontend/`; established platform/shared directories need not all
+move simply for symmetry. No empty layers or production activation manifests
+are required. Source-tooling metadata and package manifests follow sections 7–9.
+
+Within a server owner, retain domain, application/ports, adapters, rendering,
+API, and composition distinctions. Preserve the
+[DDD decision register](../../reference/core/layers-of-abstraction/decision-register.md):
+in particular, application containers do not import adapters/renderers/FileIO,
+and production filesystem access remains behind the approved system mechanism.
+"Public" does not override these rules.
+
+Piano, Health, Fitness, Automotive, and School are separate candidate product
+owners; generic screen hosting is a shared capability. Do not bundle Piano into
+a hypothetical Music product or move every
+current `gaming` file into one capability merely because the roadmap uses those
+names. Final moves require a per-file ownership ledger.
+
+### 1.4 Screen framework: generic host versus its installed composition
+
+The intended generic `frontend/src/screen-framework` belongs with reusable
+facilities, not inside a particular room or application stack. Its artifact role
+is a **UI framework/host**; in the ownership taxonomy it is a shared capability,
+provisionally `screen-host`. It can render a complete screen, own a generic
+launch entry, and still be reusable. Being visible to users does not by itself
+make an artifact application-specific.
+
+Separate three things currently colocated:
+
+| Concern | Responsibility | Current examples |
+|---|---|---|
+| Generic host mechanisms | Screen-host capability | Layout/panel rendering, widget registry, scene/overlay contracts, input/action dispatch, reusable data coordination and session interfaces |
+| Daylight integration and installed selection | Explicit composition and adapters | Config loading, route/menu/app catalog binding, playback binding, device transport integration, selecting the built-in widget set |
+| Product contributions and instance configuration | Their product/data owners | Piano visualizer, School reading/lesson panels, Health weight view; the selected widgets/layout for a particular room |
+
+These are responsibility boundaries, not a mandate for three new packages or
+an application per room. A living-room layout may just be private configuration
+consumed by the same generic host. Only create a Screens application owner if
+there is actual separately maintained product behavior beyond hosting/config.
+
+The current implementation is not yet entirely generic:
+
+- [`WidgetRegistry`](../../../frontend/src/screen-framework/widgets/registry.js)
+  registers supplied components without knowing their domains; this is the
+  reusable seam. Panel rendering consumes that registry.
+- [`builtins.js`](../../../frontend/src/screen-framework/widgets/builtins.js)
+  chooses concrete Piano, School, Health, Finance, and Party Games components.
+  That selection belongs outside the generic host implementation.
+- [`ScreenRenderer.jsx`](../../../frontend/src/screen-framework/ScreenRenderer.jsx)
+  imports built-ins and registers them at module evaluation, alongside kiosk
+  back-button/key-capture setup. It also binds routing, configuration, menus,
+  and session integration. Extract its integration shell from reusable rendering
+  without changing the current route behavior or when setup takes effect.
+- [`index.js`](../../../frontend/src/screen-framework/index.js) re-exports that
+  renderer and built-ins alongside generic APIs. A generic import must not
+  accidentally link all applications or execute device setup through this barrel.
+- `ScreenActionHandler` binds MenuStack, AppContainer, app discovery, and Player
+  internals. Preserve those as explicit host integrations; generic action
+  dispatch should not need knowledge of every launchable product.
+
+Piano's use of `useScreenOverlay` is a legitimate dependency on the public host
+contract. Host composition selecting Piano's public widget is also legitimate.
+There is no source cycle if the **generic host** does not import that composition
+or the Piano implementation in return. The same reasoning applies to shared
+session publication used by both standalone kiosks and hosted widgets.
+
+The boundary proof is a minimal screen with a synthetic widget and fake external
+services that builds/renders without linking Piano, School, Fitness, or the
+installed built-ins. Add a negative dependency fixture that imports a concrete
+app from the host and must fail. Separately run the existing installed-screen
+composition tests to preserve widget IDs, input behavior, context/registry
+identity, session publication, route semantics, and device setup. This tests
+the generic boundary without introducing new production module enablement.
+
+## 2. Freeze externally observable behavior
+
+The migration may move files, update imports/resolvers, expose narrow facades,
+relocate existing wiring, and update build/test tooling. It must preserve:
+
+| Contract | Preservation requirement |
+|---|---|
+| HTTP | Methods, paths and aliases, mount/middleware order, parameters, validation, status, body/error shapes, relevant headers, streaming/range behavior, existing access and household selection |
+| Browser | Routes, app/content IDs, standalone and embedded launches, public props/ref methods, navigation, state persistence, media controls and completion behavior |
+| Data/config | File paths, storage namespaces, YAML record shapes and read/write semantics, config lookup/default/reload behavior, stable IDs and serialization |
+| Realtime/jobs/devices | Topic names, payloads, subscriptions, side effects, scheduler registration and existing startup/shutdown semantics; one active registration per current feature |
+| Build/runtime | All source/assets shipped, real Node resolution, web chunks and URLs, package/module type, dependency identity, and watched development roots |
+
+New enablement, household instance scoping, capability negotiation, authorization
+policy, endpoints, provider replacement, satellite deployment mechanisms, and
+data migrations are deferred. Existing issues should be recorded, not silently
+fixed under the label "reorganization". A prerequisite bug fix gets its own
+behavioral review and green baseline before the relocation commits.
+
+## 3. Establish a baseline that cannot pass by omission
+
+Every moved production file needs a ledger entry: old/new path, owner, role,
+runtime, visibility, incoming/outgoing imports, route/registration contributions,
+data and asset paths, package scope, and the tests that cover it. Many files may
+share an owner-level entry, but file coverage must be machine-checkable.
+
+Capture the actual discovered test files **and cases**, their runner, skips,
+failures, and renamed-path mapping. Equal test counts alone do not prove that the
+same tests ran. Track scanned production files too. Unknown production paths
+and lost test discovery must fail, including staged and full-tree audit modes.
+
+Current gaps found at the source baseline:
+
+- Layer and filesystem audits are rooted in today's backend/shared paths.
+  An in-memory probe containing `import fs from 'node:fs'` produces violations
+  as `backend/src/3_applications/probe/Work.mjs`, but **none** when classified as
+  `modules/probe/server/application/Work.mjs`. Extend the classifier before moves.
+- [`gate-vitest.mjs`](../../../scripts/gate-vitest.mjs) discovers only its listed
+  tests/backend/frontend roots. The
+  [isolated harness](../../../tests/_infrastructure/harnesses/isolated.harness.mjs)
+  has separate discovery, including frontend colocated tests. Neither presently
+  makes proposed owner roots safe simply because a direct Vitest command works.
+- The [integrated harness](../../../tests/_infrastructure/harnesses/integrated.harness.mjs)
+  does not list `api` among its targets. The existing
+  [v1 regression test](../../../tests/integrated/api/parity/v1-regression.test.mjs)
+  can return early for missing samples or endpoint failures. Its filename and
+  comments do not establish complete API coverage.
+- [SCSS checking](../../../scripts/check-scss-build.mjs), UI token checks,
+  [ESM link checking](../../../scripts/audit-esm-links.mjs), and gaming's own
+  [boundary tests](../../../shared/gaming/testing/importBoundaries.test.mjs)
+  have independent root/path assumptions. Preserve each check's intended scope
+  and include its moved files; do not simply lower its population baseline.
+
+### 3.1 Diagnostics actually run
+
+These are targeted diagnostics, not a complete release certification:
+
+- Six Vitest files passed, **89 tests**: layer-import, direct-filesystem and
+  ESM-link tooling; Gratitude and Health stored-shape characterizations; and
+  composition-contract registry tests.
+- Isolated capability-route characterization passed **6 tests**.
+- Piano route-contract tests failed **2 tests** before route assertions:
+  [`piano.routes.contract.test.mjs`](../../../backend/src/4_api/v1/routers/piano.routes.contract.test.mjs)
+  supplies an older service-based fixture, while the current router requires
+  `pianoContainer`, `idFactory`, and `producerRecords`. This is a baseline
+  fixture/composition mismatch, not evidence of a migration regression.
+- The ESM link gate passed with **3,588 modules checked**, without evaluating
+  entrypoints. Existing layer-import counts stayed within their baseline
+  (`apps-success-false`: 44); the filesystem gate checked **2,542 runtime files**.
+
+The HTTP tests were rerun with permission for local temporary sockets after the
+sandbox denied Supertest's listener. They use isolated routers/fakes; the live
+household controller was not started. The resulting test sample is **95 passing,
+2 failing**, not a green baseline. Fix the Piano fixture against current wiring,
+then investigate any remaining behavioral failures without weakening assertions.
+
+## 4. Prove the gates red, then green
+
+Add controlled negative fixtures/mutations to the test tooling. They must fail
+for the intended reason and pass after restoration. Never introduce faults into
+production, private household records, or a live controller.
+
+| Gate | Required red proof | Green evidence |
+|---|---|---|
+| Classification and architecture | Unknown production path; forbidden fs/private-app/server-to-web import under destination paths | Same policy verdict before/after path relocation; every tracked source classified |
+| Imports and exports | Missing moved target, missing named export, disallowed deep import, import cycle | Real server resolution plus web build and test-runner checks; not aliases alone |
+| Test discovery | Move a sentinel test beyond known roots; deliberately omit a previously discovered test | Discovery fails on loss; file/case inventory reconciles through the rename ledger |
+| HTTP and public operations | Remove one mount/handler or alter a field/status/error | Required route inventory and representative valid/invalid/unauthorized cases match the baseline |
+| Storage and config | Change a YAML key, path, default, or hydration rule | Old fixtures read identically; new writes read correctly by the old release |
+| UI and assets | Omit an exported component, change a required callback, break an asset URL | Standalone and embedded consumers pass; produced chunks/styles/assets load |
+| Lifecycle/realtime | Duplicate an existing job/subscription or omit its cleanup | Fake-backed composition asserts registrations, payloads, effects, and teardown |
+| Shipped artifact | Omit an owner root/dependency, change a frozen toolchain input, include an undeclared context file, or omit a supported client's lazy chunk | Certified image/content manifest and dependency provenance match; forward and rollback browser handoff work |
+
+For behavioral comparisons, run the old and new versions against identical
+synthetic fixtures and deterministic clocks/IDs. Compare response contracts,
+persisted output, and captured external calls/events. Normalize only documented
+nondeterministic fields; never normalize away missing fields, route failures, or
+differences in authorization. Record uncovered paths rather than claiming every
+API has been proven by a small sample.
+
+Player gets dedicated consumer coverage: Piano videos/singalong, Fitness,
+School lessons, Screens, and other ledger-listed hosts. Gaming covers shared
+rules/authority plus Piano and Party Games composition. Preserve input routing,
+resume keys, completion callbacks, and media/session identity through moves.
+
+## 5. Settle real import resolution before mass relocation
+
+Prefer short relative imports **within an owner** and explicit public aliases
+or package entrypoints **between owners**. Aliases improve stability; they do
+not enforce ownership or make private code public.
+
+The repository has root, backend, and frontend package scopes. Root and backend
+have separate Node `imports` maps; Vite, Vitest, Jest, and Sass checking have
+their own resolution rules. A test-only alias is not a production solution.
+
+First build a minimal resolver fixture crossing all affected scopes. Choose
+the public import spelling only after it works in:
+
+1. Real Node entrypoints in each affected package scope, without test aliases.
+2. Vite development and production builds, including JSX, CSS, lazy chunks and
+   assets; Vitest, Jest, and any existing Node-test suites retain their runners.
+3. Static dependency/architecture checks, including package re-exports and
+   local workspace packages that an ESM scanner might otherwise treat as external.
+4. A clean production image with its actual dependency installation procedure.
+
+The proposed destination uses npm workspace package exports (section 9), subject
+to a dedicated resolution/lockfile proof before source moves. Do not invent
+aliases that only work in Vite, assume root `imports` are inherited by backend
+code, or bulk-copy mappings across incompatible package scopes. Any
+temporary composition import is explicit and tracked, not a global compatibility
+barrel. Preserve `.js` module interpretation and shared dependency identity
+(especially React and native modules) when changing package boundaries.
+
+Also inventory non-import paths: `import.meta.url`, worker/asset URLs, Sass
+references, glob discovery, fonts, native assets, fixture paths, watcher roots,
+Docker `COPY` inputs, scripts, and documented entry commands. The current
+[Dockerfile](../../../docker/Dockerfile) will not automatically include a new
+`modules/` or `capabilities/` root.
+
+## 6. Execution: reviewable preparation, one production cutover
+
+1. **Ownership and contract ledger.** Classify platform/capability/application
+   responsibilities, settle Player/gaming public entries and Screens/Piano
+   composition, inventory each existing registration and consumer. Keep current
+   product identities unless an explicit ownership decision changes them.
+2. **Green/red foundation.** Repair baseline fixtures; extend scanner and test
+   discovery; prove negative cases; validate aliases and the image path. Record
+   inherited failures explicitly. Do not move product code before these gates
+   can see the destination.
+3. **Representative extraction in an isolated worktree.** Use Gratitude as a
+   compact full-stack rehearsal and Player/gaming/Piano/Screens as cross-owner
+   proofs. Move implementations once, update all consumers in the same increment,
+   and compare against the baseline. These are branch milestones, not separate
+   required deployments. Existing HTTP routes and registration policy stay intact.
+4. **Complete the agreed ownership map.** Migrate remaining product stacks in
+   bounded commits with their tests/assets/wiring. Keep unmigrated code at its
+   current path while preparing the release; do not relocate it to `deprecated/`.
+   Every retained production root has a deliberate owner, not an unresolved
+   migration bucket. Temporary bridges have exact consumers and removal gates;
+   remove them before the coordinated cutover.
+5. **Release-candidate certification.** Reconcile source/test/contract ledgers,
+   run static gates and the required complete suites, build the actual artifact,
+   exercise fake-backed assembled flows and real media/device checks where
+   explicitly safe, and rehearse rollback. Refresh the baseline if intervening
+   mainline changes were incorporated; document every intentional delta.
+6. **One controlled cutover.** Retain the known-good image/revision and verify a
+   recoverable data backup. Stop the old controller before starting the new one;
+   do not dual-run hardware loops or write against the same household data.
+   Check prioritized routes, playback, Piano, School, household selection,
+   realtime, and jobs. Roll back on missing critical routes, altered persisted
+   output, duplicate effects, or broken core flows rather than accumulating
+   emergency compatibility shims.
+
+Rollback should be a code/image switch because data formats did not change.
+Test that claim by having the old release read fixture writes produced by the
+new release. Do not restore an old data snapshot over post-cutover user activity
+as an automatic rollback step; reconcile any affected records deliberately.
+
+A short staged-production fallback requires an explicit release decision and
+an exit date. It still has one implementation, one registration, and one data
+authority per feature, with old unmigrated sources left in place. It does not
+create a permanent legacy tree or a second module runtime.
+
+**First implementation package:** source/contract inventory, repair the stale
+Piano router fixture, red/green destination-classification and test-discovery
+fixtures, and the cross-scope public-import experiment. Source moves follow only
+after that package demonstrates a trustworthy baseline.
+
+## 7. Destination structure and naming specification
+
+### 7.1 Repository shape
+
+This is the proposed cutover layout, not an additional runtime architecture.
+Names shown are source owners; existing URL, config, content, event, and package
+consumer identifiers do not change merely because a source directory changes.
+
+```text
+DaylightStation/
+├── modules/                       # User-facing product owners
+│   ├── piano/
+│   ├── school/
+│   ├── fitness/
+│   ├── health/
+│   ├── automotive/
+│   ├── gratitude/
+│   ├── party-games/
+│   ├── game-experiences/           # Existing portable game products, not engine
+│   └── ...                        # Inventory names the remaining products
+├── capabilities/                  # Named reusable facilities
+│   ├── playback/
+│   ├── gaming/
+│   ├── screen-host/
+│   ├── household-identity/
+│   ├── content/
+│   ├── music-notation/
+│   ├── print-output/
+│   └── ...
+├── platform/                      # Domain-neutral facilities; layers still apply
+│   ├── server/
+│   │   ├── system/                # Existing 0_system responsibilities only
+│   │   ├── domain/                # Documented foundational domain primitives
+│   │   ├── application/ports/
+│   │   ├── adapters/
+│   │   ├── rendering/             # Domain-neutral drawing primitives
+│   │   └── api/                   # Shared HTTP translation/middleware utilities
+│   └── web/                       # Design system, logging, transport clients
+├── shared/                        # Retained universal portable contracts/kernel
+├── backend/
+│   ├── index.js                   # Stable process entrypoint
+│   ├── src/app.mjs                # Thin installed-system composition entry
+│   ├── src/composition/           # Cross-owner bindings and route assembly
+│   └── config/                    # Runtime setup assets, not private records
+├── frontend/
+│   ├── src/main.jsx               # Stable browser entrypoint
+│   ├── src/composition/           # Installed routes/widgets/admin registration
+│   ├── src/dev/                   # Shared harness shell, no product internals
+│   └── public/                    # Only assets with intentionally stable URLs
+├── cli/                           # Stable dispatch entrypoints/shared CLI shell
+├── tooling/                       # Architecture, owner discovery, test/dev tools
+├── scripts/                       # Stable operator/build/deploy entrypoints
+├── tests/                         # Cross-owner, acceptance, platform fixtures
+├── docker/                        # Controller image and deployment support
+├── docs/                          # Canonical references/runbooks + this plan
+└── _extensions/                   # Explicit external-runtime owners; see 11.3
+```
+
+No root `legacy/`, `deprecated/`, or universal `components/` bucket. The current
+numbered backend trees and `frontend/src/modules/` disappear as product-code
+locations by cutover. Retained directories must be named permanent platform or
+composition locations, not ambiguous leftovers. Use existing `shared/` for
+universal portable source; do not duplicate it under `platform/shared/`.
+
+`game-experiences` is initially one product-family workspace containing named
+experience subowners, preserving the existing `environment → experience → gaming`
+direction. Each experience has its own public entry and boundary classification.
+Cross-subowner private imports are forbidden even inside this one workspace
+family. An experience exposes deliberate public entries; the presenter registry
+is composition that selects those entries. Shared experience utilities need a
+declared common boundary, not access to every sibling's private files.
+It is not an engine escape hatch. Splitting experiences into independent
+workspace packages later is optional; contributors already get a focused
+experience directory. Pure shared chess rules can remain a named gaming
+subcontext while Piano/School presenters remain product-owned.
+
+### 7.2 Anatomy of an owner
+
+```text
+modules/piano/
+├── owner.json                     # Build/dev/architecture metadata, not loader
+├── README.md                      # Contribution map + verified local commands
+├── public/
+│   ├── package.json               # @daylight/piano facade; explicit export map
+│   └── ...                        # Narrow forwarding entries, no mixed barrel
+├── server/
+│   ├── package.json               # Private server facet and dependency scope
+│   ├── domain/                    # Entities, values, timeless rules
+│   ├── application/
+│   │   ├── ports/                 # I{Noun}{Role}.mjs
+│   │   ├── usecases/              # {Verb}{Noun}.mjs
+│   │   └── PianoContainer.mjs     # Receives adapters; never imports them
+│   ├── adapters/                  # Persistence/provider translation for Piano
+│   ├── rendering/                 # Piano-owned print/output presentation
+│   ├── api/v1/                    # Routers/handlers, dependency-injected
+│   ├── composition/               # Wires this owner's layers
+│   └── public/                    # Explicit entry files; classified by export
+├── web/
+│   ├── package.json               # Private browser facet and dependency scope
+│   ├── surfaces/                  # Kiosk, embedded views, admin panels
+│   ├── components/                # Private UI unless deliberately exported
+│   ├── hooks/
+│   ├── styles/
+│   ├── assets/
+│   └── public/                    # Separate widget/provider/surface entries
+├── shared/                        # Portable facet if needed; retains real layer
+├── config/                        # Schemas and sanitized defaults/examples
+├── tests/                         # Owner integration/contract tests and fixtures
+├── dev/                           # Synthetic composition, scenarios, fake MIDI
+├── cli/                           # Optional private CLI facet + stable dispatch
+└── satellites/                    # Only independently built Piano-owned targets
+```
+
+Capabilities use the same applicable layers, not a flattened `services/` folder.
+Do not generate empty directories. Tests already colocated with implementation
+can remain colocated after moves. Shared fixtures used by multiple owners stay
+under the central test infrastructure; production must never import test/dev
+entries. Canonical reference docs remain in `docs/reference/`; owner READMEs
+link to them rather than fork their content.
+
+`public/` is an export surface, **not** a layer. Each export resolves to exactly
+one classified layer/runtime/context, or an explicitly approved declarative
+contract classification under section 8.2. Prefer separate entry files over a mixed
+barrel. `shared/` is portable, **not** universally importable: a shared domain
+model remains domain code; a portable application port remains application code.
+Physical `server/` denotes the existing server implementation, not proof of
+purity; only explicitly portable exports may be shared with the browser.
+
+The owner root is not itself a workspace package: its public facade and runtime
+facets are non-overlapping sibling packages. This is necessary to preserve
+different dependency scopes without ancestor/descendant workspace overlap;
+section 9 specifies the tested mechanism. One contributor owner does not imply
+one npm dependency scope. Add only facets containing actual code.
+
+### 7.3 Naming and identifiers
+
+| Thing | Convention | Migration rule |
+|---|---|---|
+| Owner directories/IDs | Lowercase kebab-case nouns: `piano`, `screen-host`, `party-games` | One canonical source ID; no case-only competing owners |
+| Public workspace name | `@daylight/<owner-id>` | IDs unique across modules, capabilities and platform; reserve `platform` and `contracts` |
+| Private facet name | `@daylight-internal/<owner-id>--<facet>` | Reserve double hyphens as separator; reject owner IDs containing them; no consumer imports of another owner's private facet |
+| Product identity | Existing externally visible ID | Preserve `auto` route vs `automotive` owner, `finance` vs existing `Finances` JSX paths, existing config keys |
+| Server classes/use cases/ports | Existing layer reference conventions | Preserve symbol names on move; new names follow `{Verb}{Noun}`, `I{Noun}{Role}`, `{Owner}Container` |
+| React components/hooks | PascalCase `.jsx`; `useX.js` hooks | Preserve case in imports; validate on Linux, not only case-insensitive workstations |
+| Utilities/styles/assets | Existing local convention; new utilities camelCase | No unrelated rename or formatting sweep in move commits |
+| HTTP versions | `server/api/v1/` directories | Not `V1` in new class names; no new API version for source migration |
+| Public exports | Named subpaths: `/web/player`, `/web/widget`, `/server/compose`, `/domain`, `/ports/...` | No wildcard private-source exports; runtime/environment explicitly classified |
+| Persistent/event identifiers | Current exact strings | Do not rename YAML keys, localStorage keys, WS topics or log event IDs for cosmetic consistency |
+
+Retain existing public symbol spelling even where it predates a convention.
+Prefer rename-only commits followed by import/wiring commits when both snapshots
+can be tested, or atomic move-plus-consumer-update commits when they cannot.
+Do not require an intermediate broken commit merely to maximize rename detection.
+
+## 8. Binding layers, context ranks, and enforceable classification
+
+### 8.1 Authority and conflict policy
+
+Read the [decision register](../../reference/core/layers-of-abstraction/decision-register.md),
+[DDD reference](../../reference/core/layers-of-abstraction/ddd-reference.md),
+[domain](../../reference/core/layers-of-abstraction/domain-layer-guidelines.md),
+[application](../../reference/core/layers-of-abstraction/application-layer-guidelines.md),
+[API](../../reference/core/layers-of-abstraction/api-layer-guidelines.md),
+[rendering](../../reference/core/layers-of-abstraction/rendering-layer-guidelines.md),
+[system](../../reference/core/layers-of-abstraction/system-layer-guidelines.md),
+and linked [adapter guidelines](../../reference/core/adapter-layer-guidelines.md)
+before moving their code. Preserve final D1–D10 rulings. More general examples do
+not supersede an explicit ruling; new policy disagreements require a recorded
+maintainer decision in the reference, not a migration waiver hidden in a script.
+
+The existing references have disagreements that WP-02 must resolve without
+weakening their intent:
+
+- Some old snippets use `#applications`/`#infrastructure`, direct config access,
+  or describe bootstrap under system; current rules reject those arrangements.
+- The domain guideline's shorter hierarchy omits contexts listed in the DDD
+  reference. `books` exists in source but is absent from the scanner's rank map.
+- Domain prose permits lower-level cross-context imports only; the scanner
+  currently rejects only upward imports and ignores unknown context levels.
+  Inventory equal-level edges and unknown contexts. Assign explicit ranks and
+  repair or obtain explicit reference rulings before migration—do not silently
+  declare all reusable code Level 1.
+- System isolation preserves the documented D4 pure shared-kernel time-utility
+  exception and separately sanctioned naming-contract consumption, including
+  `shared/contracts/householdConfig.mjs` in the system reference. Neither is
+  permission to import arbitrary platform-owned domains or a whole shared tree.
+- Rendering cannot import application ports merely because an application
+  injects the renderer. D7's `extends` requirement is for gateway/datastore
+  adapters with existing ports; it does not grant renderers an upward import.
+
+Updating physical-path examples and restoring consistency belongs in the
+migration. Altering business error behavior, domain ranks, or allowed dependency
+semantics needs a separately reviewed correction. The goal is not to preserve
+an audit blind spot because it happens to exist in the baseline.
+
+### 8.2 Semantic matrix, independent of owner category
+
+| Source classification | Allowed dependencies | Explicit prohibitions |
+|---|---|---|
+| System | System runtime facilities and approved external runtime packages; D4 kernel exception; explicitly sanctioned naming contracts below | Domains/applications/adapters/API/rendering/composition otherwise; product policy |
+| Domain | Same context; published lower-ranked contexts; documented pure kernel utilities | Ports, clocks, data paths, serialization, Node I/O, provider SDKs, workflows |
+| Application | Domain logic, application-owned ports, approved pure helpers; injected operations | Concrete adapters/renderers/API, config internals, raw transport/filesystem/process mechanics |
+| Adapter | Implemented application port; domain hydration types; system I/O mechanisms | Other adapter implementations, renderer/workflow imports, config singleton, bypassing HTTP/FileIO services |
+| Rendering | Precomputed models; allowed domain values, pure helpers, same-layer drawing primitives | Application-port/workflow imports, adapter imports, fetching or storing business data |
+| API | API/shared HTTP utilities and permitted pure helpers; factory-injected operations | Runtime imports of application ports/workflows, domain types, adapters, renderers, config internals |
+| Composition | Concrete factories/public compose entries solely to assemble current behavior | Domain policy, data read/write operations, raw filesystem/process work |
+| Browser | Public browser/portable entries appropriate to its role | Server implementation, private peer imports, runtime access to test fixtures/secrets |
+
+Browser rendering is not `1_rendering`, which is server-side presentation.
+Portable browser domain code still obeys domain rules. Tests/dev scaffolding are
+separately classified, but a production import of either fails regardless of
+their location or filename.
+
+**Declarative contracts are an artifact kind, not a universal executable layer.**
+Alongside executable layer classification, record approved naming/wire contract
+exports with their owner, purpose, consumer allowlist, permitted operations,
+import closure and exact reference basis. This is not inferred from `contracts/`
+or a package name. Pure lookups and schema-only validation can qualify when
+explicitly reviewed; literal-only classification would break existing lookup
+APIs. Clock access, ID generation, I/O, persistence serialization, workflow,
+domain policy and port implementations do not qualify. Unknown contract exports
+fail classification until decided; no all-layers default exists.
+
+| Existing artifact | Required treatment |
+|---|---|
+| `shared/contracts/householdConfig.mjs` | Retain one canonical universal naming registry plus its pure `appConfigRelPath`/`allAppNames` lookups. The system guide's configuration section sanctions use by config loading/service and admin application/UI consumers; record exact consumers/exports in policy. Preserve every mapping and unknown-key result. This does not grant application access to ConfigService internals or arbitrary data paths |
+| `shared/contracts/media/commands.mjs`, topics and shapes | Review declarative constants and schema validators export by export with explicit transport/client consumers; no approval of the sibling barrel or whole tree by association |
+| `shared/contracts/media/envelopes.mjs` | Clock-reading envelope builders are transport/application operations, not pure domain or declarative data. Separate pure wire definitions/validators from effectful builders and give each the appropriate executable role; preserve timestamp/default/error behavior |
+| `shared/contracts/nutrition/foodItemRecord.mjs` | Record serialization belongs to the owning nutrition transport/persistence adapter boundary, not domain or universally importable declarations. Preserve the conditional `settled` field and full existing shape; use injected translation where a consumer's layer cannot import the serializer |
+| `shared/gaming/kernel/coordinator.mjs` | Gaming application orchestration over injected stores, clocks and rules, despite its current `kernel` name; portable location does not imply domain purity. Classify its dependencies separately, preserving state/replay/authorization behavior |
+
+WP-01 splits other mixed shared files by behavior, and WP-02 records any required
+reference clarification before approving new classifications. Public re-exports
+retain their real provenance: a contract re-exporting a domain class, application
+port/workflow or adapter does not gain contract-only import privileges. A mixed
+barrel includes all runtime-linked targets in its checks. Add positive fixtures
+for the real household registry and authorized consumers, negatives for
+clock-reading "declarations" and re-export laundering, and mapping/unknown-key
+read-write tests. Keep that policy aligned with the binding reference rather
+than inventing an undocumented shared-code exemption.
+
+Ownership never overrides this matrix. A capability has application and adapter
+layers just as a product does. Platform-owned HTTP code remains API code, not
+system code. `domainContext` and `domainLevel` apply to the semantic context,
+not the package: moving Level 2 gaming code under `capabilities/` does not lower
+its rank. Existing reusable code under `shared/` must also receive real context
+classifications rather than escape the hierarchy.
+
+Cross-owner dependencies require a public export and a permitted layer edge.
+API receives plain input/output projections through injection; exporting a
+domain class as `/contracts` cannot make its import legal. A consumer-side
+adapter can implement its own application's port and call an injected peer
+facade, but cannot import a peer workflow or adapter to bind that facade itself.
+Installed composition performs the binding. If shared provider and domain code
+need a common helper, move only genuinely pure/mechanical content into an
+appropriate lower layer, not business policy into system.
+
+### 8.3 Metadata and classifier contract
+
+Add `owner.json` for source organization/tooling only. Required fields: schema
+revision, owner ID/category, domain contexts with explicit path/rank assignments,
+public-export semantic classifications (including approved declarative contracts), supported test/dev targets, and owned
+satellite references. Include the owner's facade/facet package locations.
+Dependencies and export paths come from those packages' `package.json` files;
+do not maintain a conflicting second dependency list. This metadata is not
+interpreted by the production process to enable/disable apps.
+
+The canonical architecture policy owns allowed layers/edges. Owners cannot
+redefine `application`, lower their own domain ranks, or mark arbitrary code as
+system/test/generated. Changes to classification require platform architecture
+review. Source discovery starts from tracked source plus the production build
+closure and reports untracked local requirements separately. A CLI, worker,
+generated bundle input, symlink target, or JSX file is not exempt by location.
+
+For every source artifact record: canonical path, owner/subowner, runtime,
+semantic layer, domain context/rank where relevant, production/test/tool/generated
+status, artifact kind/contract permissions, declared public export(s), and migration disposition. Resolve relative
+imports, package exports, `#` mappings, re-exports, literal dynamic imports,
+CommonJS references, and symlinks before checking edges. Computed import targets
+need a declared finite loader set plus tests; do not classify an unresolved
+edge as external and pass it silently.
+
+Report file-level import cycles with paths; also check owner/subowner runtime
+dependency cycles. Contract-only relationships and composition-to-provider
+bindings must be identified explicitly, not misreported as an engine importing
+its consumer. Contract extraction is allowed only at the right semantic layer;
+moving types into `shared/` is not an automatic cycle fix.
+
+Visibility is checked across both **owners and declared subowners**. Being in
+one npm package/facet or the same owner directory does not permit a private
+sibling-subowner import. This applies to game experience code and its assets,
+through aliases/re-exports as well as relative paths. Add a failing same-owner
+cross-experience private import, a legal public-export consumer, and a legal
+composition-owned presenter registry fixture. Generic gaming still cannot select
+any concrete experience/environment. Helpers shared by experiences get an
+explicit common subowner/public surface with the same rules.
+
+For dependency inversion, a port class can be a runtime import while still being
+a contract-only ownership edge. Include it in the actual file import graph;
+exclude neither the file nor its transitive imports from layer checks. A lawful
+adapter→implemented-port edge must not be confused with adapter→workflow, and
+must not cause generic engines to load an app's composition. Prefer an app-owned
+bridge implementing its app-specific port and consuming an injected capability
+facade; genuinely shared adapters implement shared capability application ports.
+Any cross-owner adapter→app-port binding is explicit in metadata and is wired
+by outer composition. No mixed public barrel qualifies as a port-only edge.
+
+Waivers are not baseline counts. Any pre-existing exception records exact
+source/target/rule, reason, owner, evidence, and approved removal or permanent
+reference ruling. No new violations or silent baseline inflation. D10 has no
+grandfathered filesystem exception. Distinguish the 44 existing failure-object
+findings from compatibility bridges introduced by this migration; migration
+bridges must be zero at final cutover.
+
+## 9. Package and dependency implementation decision
+
+**Proposed choice:** npm workspaces for non-overlapping owner public/facet
+packages and the existing backend/frontend executable packages, with one
+reviewed root lockfile/install graph and explicit dependency-identity policy.
+Retain npm and existing runtime versions; do not add Nx, Turborepo, another
+package manager, or a custom production import loader. This is dependency
+plumbing needed to make the destination work, not a module activation system.
+
+The root becomes a private orchestration package. Workspace membership names
+actual sibling package roots: for example `modules/fitness/public`, `server`,
+`web`, and `cli` beneath that owner. Use the same arrangement for capabilities
+and platform. Never make both an owner ancestor and its descendant facets
+workspace/local-link packages. Metadata discovery validates the checked-in
+workspace list; arbitrary nested manifests do not become members automatically.
+The existing universal `shared` source may be the single `@daylight/contracts`
+workspace when it has no conflicting facets. Satellites with independent
+builds/locks do not join this workspace automatically.
+
+Each facet declares the runtime dependencies it directly uses; root hoisting
+must not hide an undeclared dependency. Browser libraries use host-compatible
+React peers and share one React/context identity in the built application.
+The backend/frontend packages declare the public owners they compose. The
+platform package must not depend on the backend composition package, which
+would reverse the architecture.
+
+The public facade declares its private facet packages as dependencies and
+forwards only deliberate subentries. For example `@daylight/fitness/web/widget`
+forwards `@daylight-internal/fitness--web/public-widget`; the web facet owns the
+source and dependencies. These are permanent supported public entries, not
+old-path compatibility bridges. Forwarders retain their target's layer/context
+and transitive closure; facade packaging does not legalize an import. Only the
+same owner may name its internal facet packages, through declared facet exports
+and legal layer and subowner-visibility edges. Cross-owner private-facet imports fail architecture
+checks even when npm/Node can technically resolve them.
+
+Do not infer dependency compatibility from one owner name. Fitness currently
+resolves `moment-timezone` as 0.5.47 from browser `SessionSerializerV3.js`, 0.6.0
+from server `FitnessReceiptRenderer.mjs`, and 0.5.46 from CLI `stravaCrud.mjs`.
+Those packages also resolve separate mutable `moment@2.30.1` instances in the
+existing installations. A single full-stack manifest cannot preserve the three
+bare-import meanings; default hoisting can also merge the transitive singleton.
+
+Use npm's **nested installation strategy** as the initial private-dependency
+isolation mechanism, set consistently for lock generation, development, CI and
+image installation. Preserve intentional shared identities through explicit
+host-owned peers/resolver deduplication, not accidental hoisting. Capture both
+must-share and must-separate identities (including within a facet) before
+adoption: nested installation can separate packages that currently share state,
+so it is not automatically correct for every dependency. React/context identity
+is unified within one browser graph, not across unrelated server/CLI runtimes.
+Any dependency requiring special identity treatment gets an explicit reviewed
+peer/dependency arrangement and behavioral proof before moving its consumers.
+
+A planning-time offline fixture with three versioned packages and a same-version
+mutable transitive dependency passes `npm install` and clean `npm ci` using
+non-overlapping sibling workspaces and `--install-strategy=nested` on Node
+22.22.0/npm 10.9.4. Both import orders preserve separate variants, direct and
+facade imports preserve the same facet instance, and an unexported deep subpath
+is rejected. An ancestor-facade/descendant-facet variant installed incompletely
+despite exit zero; that shape is rejected. These are synthetic representability
+results, not proof of real Moment, React, browser, native-module, or image parity.
+WP-03 turns the probe into a repository fixture, tests real dependencies, and
+pins the verified npm version rather than relying on workstation defaults.
+
+Example export spelling, not implemented code:
+
+```javascript
+// Browser composition
+import { Player } from '@daylight/playback/web/player';
+import { PianoVisualizer } from '@daylight/piano/web/widget';
+
+// Backend composition only
+import { composePiano } from '@daylight/piano/server/compose';
+
+// Piano application/adapter code as allowed by its role
+import { IAttemptRepository } from './ports/IAttemptRepository.mjs';
+```
+
+Public API wrappers may preserve current default/named exports and signatures;
+do not force the Player example's named form onto all consumers without a
+compatibility test. Internal imports can remain local relative paths within
+their permitted layer; cross-layer owner-internal aliases use scoped `#` entries
+defined in the importing facet's package, never a global deep-private shortcut.
+Each facet declares its own `type` and any `imports` mappings; these are not
+inherited from the public facade or a sibling package.
+
+WP-03 first resolves these concrete risks before adopting the package graph:
+
+1. Root/backend/frontend currently install separately and contain different
+   versions of dependencies including `uuid`, `moment-timezone`, and provider
+   SDKs. Record the resolved version used by each importer before movement.
+   Preserve that version/behavior and required instance sharing/separation;
+   do not "deduplicate" by choosing the newest.
+2. Consolidate lockfiles in a reviewed dependency-only change. Keep necessary
+   version multiplicity. Pin the repository's npm version after testing the
+   chosen install procedure. Preserve required install scripts/native builds;
+   do not use broad `ignore-scripts` as a fix.
+3. The clean image must copy all facade/facet workspace manifests before install and every
+   runtime source root before build. No cached local `node_modules`, symlink
+   outside the checkout, or undeclared backend-local dependency may be required.
+4. Test real Node import resolution from backend, CLI, a moved owner's server
+   code, and tests. Validate package `type`, extension handling, default/named
+   exports, conditional exports if used, and negative deep-import rejection.
+5. Prove one React instance in each browser graph and the captured sharing/
+   separation of other singleton/context/state identities across old/new paths.
+   Test real server/CLI timezone variants in both import orders and browser
+   resolution without test-only aliases; exercise native canvas and Stockfish assets in
+   the Linux image. Preserve the image's existing native tools and artifact
+   selection rather than treating every dependency as ordinary JS.
+6. Generate or centralize Vite/Vitest/Jest/Sass/tool resolver projections from
+   actual package exports where needed. Editors get matching path support;
+   they are not a separate source of resolution truth.
+7. Freeze non-npm inputs too. The current Dockerfile uses a tagged Node/Alpine
+   base, unpinned APK packages, yt-dlp from Git HEAD and an unpinned global
+   `forever`. Capture the known-good base digest/architecture, OS/native package
+   versions, yt-dlp commit/version, supervisor, fonts/soundfont/engine artifacts
+   and relevant install flags. Pin them or reuse a verified immutable toolchain
+   layer for both sides of the comparison. Do not certify a structural refactor
+   with two clean builds that independently resolve floating upstream inputs.
+   An unavoidable toolchain upgrade is a separate reviewed change with its own
+   behavioral baseline, not an incidental consequence of a source move.
+
+If this preparatory package cannot preserve dependency behavior, stop that work
+package for a design amendment. Do not silently switch to symlink forests,
+generated private re-export trees, or shipping the old folder layout. A package
+experiment can fail without invalidating the ownership goal, but implementation
+cannot proceed with an unspecified resolver.
+
+## 10. Integrations and existing registration seams
+
+### 10.1 Who owns an integration?
+
+Integration is not a fourth ownership class. Provider translation is an adapter
+role; installed registrations, executable provider manifests, and cross-owner
+bindings are composition. Put a provider adapter beside
+the owner of the port it implements: a product-specific YAML adapter under that
+product; a reusable Plex content adapter under content; the raw HTTP/FileIO
+mechanism under platform system. One provider serving several capabilities
+gets explicitly classified facet adapters and shared provider mechanics—not
+copies of the same client, broad cross-adapter imports, or a new global vendor
+bucket. Existing peer-adapter issues need injection/lower-layer extraction.
+
+Keep separately deployed companions beside their logical owner when safe,
+while retaining their independent build identity. The source inventory names
+their proposed owners; section 11.3 defines what moves in this cutover.
+
+### 10.2 Registration migration checklist
+
+| Existing seam | Concrete source | Required handling |
+|---|---|---|
+| Main backend assembly | `backend/src/app.mjs`, `5_composition/bootstrap.mjs`, `5_composition/modules/` | Extract owner composition, retain cross-owner bindings centrally, preserve evaluation/start order |
+| v1 mounts and aliases | `4_api/v1/routers/api.mjs` routeMap plus direct mounts in `app.mjs` | Preserve full composed paths, alias pairs, nested mounts and middleware order; router-map count alone is insufficient |
+| Provider discovery | `0_system/modules/FileModuleManifestDiscovery.mjs`, `5_composition/integrations/AdapterRegistry.mjs`, `IntegrationLoader.mjs`, parser and manifests | Split system enumeration from composition loading/selection as specified below; preserve provider IDs, defaults, precedence, cache and no-op semantics |
+| Browser routing | `frontend/src/main.jsx` | Preserve standalone/deep-link URLs and route order, including `/screen` and `/screens` aliases |
+| AppContainer launches | `frontend/src/lib/appRegistry.js` | Move imports to public entries, preserve IDs, lazy loading, `clear`, parameter resolvers and icons |
+| Backend content-app list | `createContentRegistry` / `AppRegistryAdapter` | Preserve its actual list separately; it is not currently identical to the browser catalog |
+| Widgets/hosts | `screen-framework/widgets/builtins.js`, `ScreenRenderer.jsx`, Fitness host registration | Move installed selection to composition; preserve registry identity, keys and setup timing |
+| Administration | `AdminNav.jsx`, `AppConfigEditor.jsx`, product editors, backend admin routers | Platform admin shell consumes product-owned editor contributions; retain URLs, ordering, authorization and config semantics |
+| Config paths | `shared/contracts/householdConfig.mjs`, ConfigService/config loader | Preserve the authoritative path mapping, read/write symmetry and unknown-key behavior; no parallel config discovery |
+| Jobs and event facades | `5_composition/modules/applicationScheduledJobs.mjs`, `3_applications/events/RealtimePublications.mjs`, startup/stop blocks | Move product handlers with owners, bind centrally; preserve schedules, topic strings, targets, cleanup and singleton scope |
+| CLI/native commands | root `package.json`, `cli/dscli.mjs`, owner-specific CLIs and scripts | Stable operator command names; move handlers with owners and keep dispatch-only entrypoints |
+
+Every row receives a concrete before/after inventory in WP-01. Do not replace
+all existing registries with one generated catalog during this migration:
+their populations and semantics differ. A later unified catalog requires its
+own behavior design. Source metadata may generate developer navigation without
+changing production registration.
+
+The current discovery chain requires a specific boundary repair, not just new
+search roots. `FileModuleManifestDiscovery.load()` currently performs a computed
+import from system; `AdapterRegistry` delegates to it; executable manifests
+under `1_adapters/` can themselves lazily import concrete adapters. Those edges
+cannot survive as system→composition or adapter→peer-adapter exceptions.
+
+Destination split for WP-04:
+
+- `platform/server/system/modules/FileModuleManifestDiscovery.mjs` enumerates
+  paths only. Route enumeration I/O through approved system FileIO as required
+  by D10; importing modules is not part of its interface.
+- `backend/src/composition/integrations/AdapterRegistry.mjs` owns module loading,
+  selection and indexing. Inject a loader for tests; production loading happens
+  in composition. `IntegrationLoader` stays in that composition area.
+- Executable provider manifests move to the owning facility's
+  `server/composition/providers/<provider>/manifest.mjs`, with public composition
+  entries where another owner loads them. For example, the OpenAI factory
+  registration belongs under `capabilities/ai/server/composition/providers/openai/`;
+  the concrete adapter remains under `capabilities/ai/server/adapters/`.
+  Data-only provider schemas stay with their owner and retain data classification.
+- Installed composition supplies the finite provider target set/discovery roots.
+  Preserve the captured discovery sequence, duplicate last-registration behavior,
+  provider ordering/defaults, config precedence, lazy adapter construction,
+  missing/invalid-manifest logging and failure/no-op behavior. A new directory
+  traversal order must not silently choose a different provider. Do not add a
+  new runtime activation catalog.
+
+Required proofs: reject a computed system import into a composition/adapter
+target; reject an executable manifest mislabeled adapter that imports a concrete
+peer; accept the corrected chain with no dynamic-import exemption; replay
+ordered/duplicate/invalid discovery and lazy construction using fake modules.
+This source split is required before relocating discovery infrastructure.
+
+### 10.3 Cross-product cases the plan must exercise
+
+- **Gratitude/identity/Feed/Homebot:** preserve the existing bootstrap endpoint
+  while allowing identity consumers to receive the same projection through a
+  public identity boundary. Feed's direct Gratitude YAML reads move behind an
+  injected public query; Homebot receives only its required command. Preserve
+  write semantics and return values, not hypothetical disabled-module outcomes.
+- **Piano/gaming/School:** preserve assessment, match budget, game-state authority
+  and School evidence handoffs. Generic game code cannot import MIDI or course
+  policy. Preserve the existing gaming taxonomy and experience manifests.
+- **Health/nutrition/Nutribot/Fitness:** distinguish nutritional records,
+  medical/health projections, workout records and conversational UI. Keep each
+  write authority explicit. Shared concepts do not justify merging these
+  products or importing one owner's persistence from another.
+- **Playback/content/screens:** retain content IDs, proxy/range behavior,
+  queue/session/resume identity and host controls. Public player use does not
+  grant direct access to Plex secrets or provider internals.
+- **School/printing/devices:** keep curriculum/worksheet policy and owned
+  renderers in School. Shared print delivery, scan transport and device dispatch
+  have separate capabilities. Never relocate school data into a shared print
+  adapter because it calls a printer.
+- **Admin/platform:** admin can expose other owners' settings through injected
+  public editors/operations; platform core does not import Admin to load config.
+
+### 10.4 Concrete integration register
+
+These are proposed move/binding targets for the representative cross-owner
+edges, not names of a new production capability protocol. WP-01 expands this
+register to every incoming/outgoing edge in the source ledger.
+
+| Consumer → provider | Current seam/behavior | Destination and binding owner | Compatibility proof |
+|---|---|---|---|
+| Feed → Gratitude | `GratitudeFeedAdapter` reads selections YAML | Feed-owned adapter implements Feed port; injected Gratitude selections query comes from Gratitude application public facade; backend composition binds both | Identical Feed items/filter/order for fixture selections; Feed imports neither Gratitude datastore nor YAML shape |
+| Homebot → Gratitude | Injected broad service exposes `addSelections` | Homebot application receives its narrow command port; Homebot-owned bridge delegates to injected Gratitude command; backend composition binds | Same assignment effects, validation, duplicates and return behavior |
+| Family Selector / app parameter resolver → household identity | Calls `/api/v1/gratitude/bootstrap` | Identity capability owns the reusable projection/client seam; preserve old endpoint and payload, with existing selection behavior; composition supplies query to Gratitude API | Existing URL and clients remain supported; synthetic user options match exactly; no endpoint removal or new auth scope |
+| Installed screens → Piano/School/Health | Built-ins import concrete components | `frontend/src/composition/screens/` registers each owner's public web export; screen-host registry stays generic | Same widget IDs/context/props; generic host with fake widget has no application import |
+| Piano → gaming | Rule/authority helpers plus challenge provider | Piano-owned challenge adapter and presenters; gaming owns protocol/authority; outer product composition supplies provider | Seed/revision/score, MIDI evidence, budget and completion parity; no gaming→Piano implementation import |
+| School → Piano/Fitness | Lifecycle consumes learning/challenge/session evidence | School-owned port/translation bridge; backend composition supplies peer public queries/commands | Same assignment completion/evidence and unavailable dependency behavior as baseline |
+| Product renderer → physical printer | Gratitude-specific `TemporaryImagePrintGateway` implements its port | `modules/gratitude/server/adapters/`; generic fleet/transport under print-output; composition injects renderer and transport separately | Unchanged rendered fixture and print calls; renderer imports neither port nor adapter |
+| Media/Piano/Fitness/School → Player | Main component plus deep controller/helper imports | Playback publishes minimal supported web subentries; each product keeps host policy wrapper | Consumer-specific playback/control/clear/completion/resume tests, including current callback defaults |
+| Admin → product settings | Hardcoded editor imports/config operations | Product owns editor/operations; Admin shell uses public entries selected in composition | Same editor route/order/config read-write behavior and permissions |
+
+The old Gratitude bootstrap URL is an intentional external contract, not a
+permitted permanent private-code dependency. Preserving that URL can mean the
+router delegates to an injected identity query; it does not require a new public
+identity endpoint. The initial refactor preserves the projection exactly,
+including current household selection behavior, rather than silently fixing it.
+
+## 11. Data, assets, and external runtimes
+
+### 11.1 Storage ownership without a data migration
+
+Product schemas, record codecs and semantic datastore ports live with the
+product. The supplied YAML/FileIO mechanism remains platform-maintained.
+Application authors may add fields and repositories in later feature work;
+this migration only moves existing schemas/codecs unchanged. Schema ownership
+does not mean exposing file paths or YAML libraries to use cases.
+
+For each writer enumerate: storage scope, canonical path resolver, read/write
+methods, atomicity/locking, serialization/hydration, archive paths, retention,
+and every external reader. Capture missing/null/default handling and key order
+where byte-sensitive consumers exist. Preserve config caches, reload, timezone
+defaults (D8), deep-merge null behavior (D9), permissions and file modes.
+
+No tests may use production household data as writable fixtures. Create
+synthetic fixtures or explicitly sanitized copies in an isolated temporary
+root; fail if a fixture resolves outside it. Store usernames, recordings,
+student/health records, credentials and household configurations outside source
+packages. Do not embed a real dataset merely to make a module self-contained.
+
+### 11.2 Source assets and artifact closure
+
+Move product-owned icons, CSS, worker source and templates with their product;
+retain shared fonts/tokens/primitives with their named owner. Preserve public
+asset URLs through the build/static routing configuration where clients or
+stored records reference them. An intentional public route is not a migration
+compatibility shim; a private source-path re-export is.
+
+Inventory dynamic-import globs, `import.meta.url`, URL constructors, Sass
+imports, CSS `url()`, worker/WASM/audio/font files, symlink realpaths, executable
+modes, generated data and test snapshots. Verify the actual Docker context:
+`.dockerignore` excludes YAML broadly and has a specific School course exception
+that must follow its moved file. A successful Vite build does not prove that
+backend-readable YAML, shaders, native engines or generated artifacts shipped.
+
+Move snapshots with tests without regenerating expected output simply to get
+green. Hash assets intended to stay byte-identical. Compare browser behavior
+and representative screenshots where styling/asset paths changed; use existing
+reference baselines rather than approving every post-move image blindly.
+
+**Already-loaded clients are part of the artifact contract.** AppContainer
+loads apps lazily; the controller serves the current image's `frontend/dist`.
+The service worker caches only fetched resources and bounds its cache at 120
+entries, while the HTML boot-repair handler disarms after React mounts. An old
+kiosk can therefore request an uncached old chunk after a successful cutover;
+fresh-page smoke tests and startup recovery do not cover it. Rollback creates
+the same risk for clients that already loaded candidate bundles.
+
+Default handoff: build a certified **candidate delivery artifact** and a
+**rollback delivery artifact** containing the immutable hashed asset closure
+needed by supported loaded client builds, including lazy chunks, their imported
+chunks, workers, styles and referenced resources. Preserve the original
+known-good image unchanged. The rollback delivery variant starts from that
+immutable image and adds only the required hashed assets; record its own digest
+and prove previous server code, HTML, service-worker script, native tools and
+configuration behavior are unchanged. No old controller runs concurrently.
+
+Never blindly merge entire `dist` trees. An identical hashed URL must have
+identical bytes or certification fails. Stable-name assets, HTML and SW scripts
+remain revision-specific and receive separate compatibility tests; retain their
+existing URL/cache semantics. If the existing static routing cannot safely
+serve the required closure, amend delivery packaging before release rather than
+assuming every client will reload or inventing new application recovery logic.
+
+Inventory supported client build IDs and define closure retention/retirement
+evidence, including long-lived/offline kiosks. Quiesce or complete/checkpoint
+active sessions using existing behavior before authorized reloads. A client
+closure may be retired only after its supported clients are safely refreshed
+or explicitly retired. Retained immutable public build assets are release
+compatibility artifacts, not duplicate source implementations or prohibited
+private-path migration bridges. No new offline feature is required: an uncached
+feature while offline need only preserve its baseline behavior.
+
+WP-10 must test baseline-loaded UI → candidate server → previously unopened
+lazy application, and candidate-loaded UI → rollback delivery → lazy application.
+Include warm/cold caches, SW-controlled clients, reconnects and worker/style
+loading. Verify existing persisted browser state and resume/cleanup behavior
+across both directions; a successful reload alone is not equivalent evidence.
+
+### 11.3 Satellites and operational scripts
+
+Full-stack ownership includes associated device/worker source, but does not
+require reflashing hardware or changing deployed service paths. Product-owned
+targets such as the Piano recorder and Fitness bridge should appear in the
+owner's contribution map immediately. Source relocation is a work package with
+build-script/include-path tests, not an unreviewed consequence of moving JSX.
+
+For the coordinated controller cutover, move a satellite's source beside its
+owner only when its independent build/release references can be updated and
+verified. Otherwise retain its `_extensions/<target>` source location as a
+**permanent explicit external-runtime mapping** in `owner.json`, not an unknown
+legacy bucket. Record whether it is product-owned, a reusable capability
+integration, or an independently maintained service. No root `_satellites/`
+rename is required. Do not hide unfinished primary server/web extraction under
+this exception.
+
+For every target inventory language/toolchain, standalone dependency lock,
+firmware/package ID, transport protocol, consumers, build inputs/artifacts,
+operator command paths and deployment data. Preserve wire versions and artifact
+names. Exercise recorded/synthetic MIDI, ANT+, OBD, button/scan and audio events
+against the moved controller. Real device tests require an explicit safe test
+window; no simultaneous controllers or automated surprise deployments.
+
+## 12. Contributor experience and open-source readiness
+
+The contributor contract is: **one documented owner directory, the dependencies
+it uses, and a working focused test/dev loop**. It is not "you never encounter an
+API". Experienced contributors may own APIs, UI, domain rules, fixtures and
+product adapters; they should not need to learn global startup, household data
+layout, provider credentials or unrelated products to change a domain rule.
+
+### 12.1 Required owner README and development target
+
+Each moved owner gets: purpose/non-goals, domain glossary, source map, public
+exports and consumers, layer rules, data ownership, supported scenarios,
+prerequisites, exact working commands, and who reviews boundary changes. Include
+one small end-to-end example showing UI → owner API → use case → port → fake or
+real existing adapter, with composition visibly outside application/API layers.
+
+Proposed commands below are deliverables of WP-09, **not commands available
+today**:
+
+```text
+npm run owner:dev -- piano --scenario=practice
+npm run owner:test -- piano
+npm run owner:check -- piano --consumers
+npm run owner:graph -- piano
+```
+
+`owner:dev` runs the actual product with synthetic household identity and
+fake/replayed device/provider ports using the normal composition seam. It must
+not start the global household controller, read private paths, connect to
+configured household devices, or make paid/provider calls by default. Selecting
+real providers is an explicit opt-in with clear configuration and logging.
+No custom parallel implementation of the product is allowed in the harness.
+
+Focused dependency installation is a later optimization if needed; a clean
+checkout may install the monorepo dependencies once. Focused development must
+still build/run without configuring unrelated applications or services.
+
+| Contributor | Required local scenario | Must not require |
+|---|---|---|
+| Musician | Simulated MIDI, practice/game fixture, optional sample video, widget preview | A physical piano, production recordings, Plex account, household controller |
+| Fitness contributor | Replayed sensor session, workout UI and receipt fixture | ANT hardware or production session history |
+| Health contributor | Synthetic food/measurement timeline and fake nutrition lookup | Private medical records or live external provider |
+| Automotive contributor | Recorded synthetic OBD/trip events and vehicle fixture | A connected car or personal location history |
+| School contributor | Synthetic learner/course/worksheet, fake printer/scan evidence | Child records, paid content, a physical kiosk or printer |
+| Game author | One experience with fake participants/input and deterministic authority | Piano or Party Games hardware; unrelated presenters |
+| Screen/widget author | Synthetic registry, layout, actions and playback binding | Installed product catalog or device key capture at import |
+
+### 12.2 Changes contributors can make locally
+
+- Add a component/domain rule with colocated tests inside the owner.
+- Add an endpoint in owner API, inject its operation through owner composition,
+  and contribute the existing-style mount through central composition review.
+- Add a datastore port/codec with the supplied FileIO-backed adapter pattern;
+  schema evolution is separately tested feature work, not a migration step.
+- Publish an export with documentation, layer/runtime metadata and consumer
+  contract tests. Private files remain private even if the editor can import them.
+- Implement a provider at the adapter boundary. Provider configuration stays in
+  deployment data; vendor SDKs never leak into domain/application code.
+
+Platform maintainers review package/layer changes, new public contracts,
+cross-owner writes and new provider permissions. Product maintainers review
+their domain policy. This is a maintenance responsibility model, not mandatory
+exclusive individual ownership or a license restriction.
+
+### 12.3 Clean-checkout and publication gate
+
+Update `CONTRIBUTING.md`, root setup commands, owner READMEs and relevant agent
+instructions together. Current CONTRIBUTING names Node 20.11, while package
+engines require at least 22.13; it references missing `config/*.example.yml`
+files. Root `smoke:yaml` references an absent script. Replace stale instructions
+with commands actually exercised from a clean source checkout. Audit every
+documented command, not just the ones used on the maintainer's workstation.
+
+The repository already has a root LICENSE. Do not select or change licensing as
+part of the move. Before public release, review dependency/native/font/content
+licenses, attribution and redistribution constraints; package manifest license
+fields must agree with the intended owner licensing. Private source workspace
+packages are not automatically published npm packages.
+
+Check tracked files and history for secrets/private household data, filesystem
+paths and fixture recordings; report findings privately without copying values
+into migration docs. Define a sanitized public fixture/content policy. Confirm
+build/dev docs do not require local ignored scripts, mounted directories,
+proprietary definitions or generated files available only on one machine.
+Public release approval and history rewriting are separate authorized actions;
+this migration plan does not authorize either.
+
+## 13. Detailed work packages and dependencies
+
+Work in an isolated migration worktree after capturing/synchronizing the chosen
+baseline. Rebase/merge mainline changes deliberately and refresh compatibility
+evidence for affected owners. Do not estimate readiness by elapsed days or the
+number of moved folders. Each package below has a verifiable exit.
+
+| Package | Depends on | Deliverables | Exit evidence |
+|---|---|---|---|
+| WP-01 Inventory | Approved plan direction | Machine-readable tracked/build source inventory, owner decisions, registrations, dependency/asset/storage/test ledgers; source appendix reconciled | Every source bucket accounted for; unresolved per-file splits listed with owner and blocking package |
+| WP-02 Policy and baseline | WP-01 | Reference-conflict rulings; path-independent classifier/resolver; red fixtures; repaired baseline tests; runner inventory | Binding matrix/ranks cover old/new paths; negative fixtures fail; no lost tests or silent skips |
+| WP-03 Package foundation | WP-01/02 | Sibling facade/facet proof, dependency/instance and non-npm toolchain provenance, reviewed nested install/lock change, Linux/image fixture, resolver projections | Clean installation and real Node/Vite/runner resolution; no accidental upgrades, unwanted singleton merging or duplication |
+| WP-04 Platform/capability foundation | WP-02/03 | Existing system/public helpers relocated; domain/port classifications retained; common storage/transport entries; existing provider discovery adapted | Old/new platform contract tests; no upward/system or peer-layer loopholes |
+| WP-05 Gratitude rehearsal | WP-04 | Whole product including render/print adapter/API/editor/assets/fixtures; identity/Feed/Homebot seams | URL, storage, printing effects and external consumer parity; zero old-source references |
+| WP-06 Shared-host proofs | WP-04, WP-05 lessons | Playback and screen-host; gaming kernel/browser platform; installed composition and experience exports | Synthetic isolated host plus all existing critical consumers; no app import from generic engine |
+| WP-07 Product migration batches | WP-05/06 | Remaining owner stacks and native/CLI ownership map, per-owner ledger completion | Each batch passes affected layer/contract/storage/consumer tests with actual new paths |
+| WP-08 Registration/tooling closure | Every moved batch | All remaining routes/config/admin/jobs/provider roots/test discovery/build/watch/editor/operator paths updated; old private aliases removed | Full source/export/test reconciliation; no migration bridges or ambiguous production leftovers |
+| WP-09 Contributor experience | WP-04 onward; completes after WP-07 | Owner README, safe harness/scenarios, focused commands, updated CONTRIBUTING/reference paths | Clean-checkout task trials for the personas in section 12; zero implicit private-service requirements |
+| WP-10 Release certification | WP-01–09 | Full required tests, source/image/toolchain and wire/data parity, bidirectional loaded-client asset handoff, critical real-flow checks, rollback rehearsal | Signed evidence bundle meeting section 14; certified candidate/rollback delivery digests; implementation review has no unresolved blocker |
+| WP-11 Production cutover | WP-10 and explicit deploy approval | Known-good image/backup, single-controller switch, smoke evidence, observation/rollback record | Critical flows and side effects healthy; final cleanup/doc handoff complete |
+
+WP-07 batch order follows the **actual dependency graph**, not this example list:
+compact independent products (Automotive, Finance, Weekly Review); household
+products and bots; Health/nutrition/Fitness; Piano/game experiences; School and
+remaining content-heavy products. Existing cycles or shared writers are resolved
+before their batch. The full primary source inventory is in scope, not just
+these named examples. Do not declare the migration complete after the pilot.
+
+For each move: capture pre-move tests/exports → establish public seams → relocate
+implementation/tests/assets once → update every consumer and registration → run
+focused positive and negative tests → reconcile inventory → review the diff for
+logic changes. Any behavior fix is a separate commit and approval item. Stable
+external APIs may remain aliases by design; old private source paths may not.
+
+## 14. Certification evidence and acceptance
+
+### 14.1 Evidence bundle produced during implementation
+
+Store non-sensitive reports under a dated migration audit directory. Required
+artifacts (names proposed):
+
+- `source-ledger.json`: baseline/current canonical path, owner/role/runtime,
+  context/rank, disposition; explicit handling for generated/untracked inputs.
+- `dependency-ledger.json`: resolved edges and public subentries; runtime
+  dependency/version provenance; rejected/approved exception records.
+- `contracts.json`: HTTP mounts/route order/aliases, config keys, data paths,
+  event topics, jobs, content/app/widget IDs, provider IDs, public component APIs.
+- `test-population.json`: runner, test file/case IDs, rename mapping, assertions,
+  outcomes and any approved inherited failures with accountable follow-up.
+- `red-green-results.json`: negative fixture ID, expected diagnostic, failing
+  run, restored passing run; no unexplained failure counts accepted.
+- `artifact-manifest.json`: production image/revision, workspace installs,
+  required runtime files/assets, checksums where applicable, platform/native
+  build inputs and separate satellite artifact references; base/OS/toolchain
+  provenance and immutable known-good/candidate/rollback-delivery digests.
+- `build-context.json`, `client-asset-closure.json`: exact authorized source/
+  generated input hashes, ignored/local-input handling, supported client builds,
+  hashed asset dependencies/collision checks, stable-asset compatibility and
+  retention/retirement evidence.
+- `parity-results.md`, `contributor-trials.md`, `rollback-rehearsal.md`: scenarios,
+  commands, environment kind, expected/actual result and links to safe evidence.
+
+These are deliverables of the migration, not artifacts claimed to exist now.
+Reports must link to their generating command/version and baseline commit.
+
+### 14.2 Required test layers
+
+1. Parse/link/architecture checks over the full classified source and staged
+   content, with failing unknown-source/private-import/runtime-boundary probes.
+2. Unit/domain/codec tests and application tests with fakes; preserve each
+   suite's runner. Testing a router factory alone does not test process wiring.
+3. Router and assembled-route tests against fake-backed real composition.
+   Assert full mounted paths, ordered middleware, valid/invalid/unauthorized
+   inputs, required headers/status/errors, alias and streaming behavior.
+4. Old/new fixture replay for stateful workflows, writes, emitted events and
+   external effects; normalize only specifically documented nondeterminism.
+5. Browser standalone/embedded/admin/host flows, input/focus/keyboard behavior,
+   media resume/completion, CSS and public asset loading from the built artifact;
+   old-loaded/new-server and new-loaded/rollback-server lazy navigation under
+   section 11.2's cache/SW/reconnect matrix.
+6. Clean Linux production build plus runtime dependency/native asset checks;
+   verify absent dev dependencies/fixtures never become production requirements,
+   and match frozen source/content and upstream toolchain provenance.
+7. Isolated provider/satellite contract tests and explicitly authorized real
+   device/media checks for behavior that fakes cannot certify.
+8. Clean-checkout contributor trials without private data, followed by a
+   rollback rehearsal using the previous artifact and new fixture writes.
+
+Existing commands include `audit:fs`, `audit:layers`, `audit:ui`, `audit:links`,
+`check:parse`, `check:scss`, `test:refactor`, `test:composition-contracts`, and
+the runner-specific harnesses in root package scripts. Revalidate their current
+populations and all referenced scripts before declaring them release gates.
+`npm test` currently has a port-cleaning pretest; do not run it casually against
+an occupied development environment. `test:live` can access real systems and
+is not the default owner check.
+
+`scripts/audit-api-route-surface.mjs` is a useful starting check, but counts
+slash-prefixed literal method calls in fixed old roots; it does not resolve
+composed mounts/routeMap, omits explicit HEAD/OPTIONS methods, ignores ordering,
+and fails only on removals. Extend it or supplement it with assembled contract
+inventory, not a claim of complete API parity from its current output.
+
+| Current command/tool | Current coverage/limit | Required migration extension and release status |
+|---|---|---|
+| `npm run audit:fs` | Listed backend roots and filesystem import AST | All production owners/targets, strict D10; blocking |
+| `npm run audit:layers` | Numbered-path layer/rank/import checks, baseline ratchets | Semantic classifier + all resolutions/public exports, reference conflicts settled; blocking |
+| `npm run audit:links` | Server/CLI local ESM links, not every workspace package or browser asset | Track workspace edges and production closure; add real Node/browser/image checks; blocking |
+| `npm run check:parse` | Existing source discovery/parser | All moved JS/JSX plus applicable target-language checks; blocking |
+| `npm run check:scss` / `audit:ui` | Frontend/source-specific roots and alias/token policies | Preserve intended scope for all relocated styles/UI; verify built assets; blocking for regressions |
+| `node scripts/audit-api-route-surface.mjs --base=<baseline>` | Literal registration inventory, removal-oriented | Full mounted/ordered/aliased inventory + assembled HTTP characterization; blocking for contract delta |
+| `npm run test:refactor` | Explicit characterization file list | Relocated equivalents plus untested critical contracts; no lost file/case; blocking for affected scenarios |
+| `npm run test:composition-contracts` | Selected factory composition | Owner and cross-owner construction/registration/cleanup using fakes; blocking |
+| `npm run test:unit:vitest` | Listed roots and baseline failures | Include all owner roots; preserve cases and runner ownership; regressions block |
+| `test:isolated`, `test:backend`, `test:integrated`, `test:integration` | Different central discovery/runner rules | Reconcile duplicates/omissions, include owner tests, explicit assembled API targets; required scenario failures block |
+| Existing Playwright configs / `test:live:*` | Target-specific browser/provider/live flows | Safe synthetic deployment by default; authorized real checks separately recorded; critical consumer failures block |
+| Frontend build + controller Docker build | Current explicit source copies and three installs | Workspace install, Linux case sensitivity, all code/assets/native resources and no private inputs; blocking |
+
+Resolve command aliases through `package.json` at the frozen implementation
+baseline. Store expanded commands, versions, roots and results in the evidence
+bundle. Do not run a missing script (such as today's `smoke:yaml` target) and
+record it as skipped success; repair/remove the stale documentation entry in
+WP-09 and replace any required coverage explicitly.
+
+Build from a clean pinned source revision with declared generated inputs.
+Alternatively, an explicit content manifest must prove every authorized delta;
+this is not permission to include arbitrary workstation files. The current
+`scripts/build-daylight.sh` stamps `git rev-parse HEAD` but builds the current
+directory under a mutable tag, so its revision label alone is not provenance.
+Capture the effective Docker context after ignore rules; fail on missing or
+undeclared required inputs. Negative certification fixtures must detect a
+changed base/tool version and an undeclared context file. Compare old/new using
+the frozen toolchain, and run native/media/printing checks against those actual
+certified images. Never rebuild the old source at rollback against today's
+upstream packages.
+
+CI must execute the same verifiers as local checks and record their populations.
+No checked-in workflow currently supplies that guarantee. Establish the chosen
+CI runner and required-check enforcement during implementation; local hooks
+alone are not a release gate. CI jobs use synthetic data/no production secrets.
+
+### 14.3 Definition of migration complete
+
+All primary product stacks and shared capability implementations have deliberate
+owner homes and public boundaries; every runtime source is classified; old
+product locations and temporary bridges are gone; existing layer rules still
+hold; every registration/asset/test is reconciled; APIs/data/wire/UI behavior are
+preserved; the actual image and contributor workflows pass; rollback is tested.
+Explicit external-runtime mappings are allowed only under section 11.3.
+Supported immutable client assets may remain under section 11.2's release
+retention policy; they are not permission to retain old product source roots.
+
+Inherited behavior issues cannot be swept into "parity" if they block a required
+scenario. Repair baseline fixtures first. A genuinely unrelated inherited test
+failure can be recorded with a maintainer decision and equivalent before/after
+evidence; it cannot justify skipping a moved owner's acceptance case.
+
+## 15. Cutover and rollback runbook specification
+
+Before deployment, preserve the known-good immutable image before replacing
+mutable tags. Record candidate, original known-good and certified rollback
+delivery digests, approved source/context and frozen toolchain manifests,
+loaded-client asset support/retention, config/data compatibility report, backup identifier and
+restore verification, execution owner, permitted device checks, and rollback
+triggers. Confirm no outstanding code, household config or provider changes
+are being bundled without review. Keep the stable entrypoint commands usable.
+
+1. Finish synthetic tests and image certification before touching production.
+2. Schedule a brief controlled stop; inventory loaded clients, quiesce active
+   sessions/jobs using existing supported shutdown/checkpoint behavior, and
+   verify old process/loops have stopped. Authorize any client reload only after
+   preserving/completing its active work; keep required old hashed assets served.
+3. Start the candidate alone, using unchanged data/config mounts and provider
+   configuration. Verify startup logs, expected route registrations, scheduled
+   job count/identity and absence of duplicate subscriptions.
+4. Exercise a pre-agreed read-only-first smoke list: household selection, public
+   screen route, Piano practice view, School launch, Health/Fitness views,
+   content lookup/playback, admin config read. Explicitly approve any printing,
+   writes, game-session mutations, device dispatch or media playback effects.
+   GET alone is not proof of safety: some current endpoints have side effects.
+5. Verify critical stateful flows in the agreed test window and observe through
+   the next relevant scheduled-event interval. Set the actual observation window
+   from the job/usage inventory, not an arbitrary universal five-minute timer.
+6. On a rollback trigger, stop the candidate, start the certified rollback
+   delivery artifact alone, and verify recovery for both previously loaded and
+   newly loaded clients. Its server code is the known-good revision; its additive
+   asset closure supports candidate-loaded browsers. Retain evidence and reconcile any affected writes;
+   do not overwrite new user activity with an old snapshot automatically.
+7. Record release outcome and post-cutover checks, remove branch-only tooling
+   and obsolete source mappings, and update canonical reference/runbook paths.
+
+Rollback triggers include missing critical routes/assets, broken core playback
+or household access, changed persisted shape/path, duplicate device/job effects,
+unrecoverable session regressions, or an unexplained increase in errors on the
+critical scenario list. Small unrelated cosmetic defects may be follow-up work
+only after explicit triage; they do not justify accepting a violated contract.
+
+If a staged production rollout is chosen instead, document exactly which owner
+groups are deployed, remaining legacy locations, cross-boundary adapters and
+their deletion condition/date. No writable old/new dual execution. This is an
+explicit alternative release decision, not the default plan quietly becoming
+a perpetual mixed architecture.
+
+## 16. Decision and risk register
+
+| Decision/risk | Default in this plan | Evidence or authority needed before affected work |
+|---|---|---|
+| Product naming | `modules/` + existing product identities; no speculative Music umbrella | WP-01 owner map; preserve external IDs |
+| Shared facilities | `capabilities/`; UI frameworks and pure libraries are supported roles | Public-contract and layer/rank review, not caller count |
+| Framework vs application | Generic screen-host reusable; room instances are configuration | Isolated-host proof and current installed-screen parity |
+| Packages | Non-overlapping sibling public/facet workspaces; nested install and explicit identity policy; one reviewed controller lock graph | WP-03 real resolution/version/instance/native/React proof |
+| Domain hierarchy drift | No silent promotions or unknown-domain passes | WP-02 reference reconciliation and exact policy fixtures |
+| Migration scope | Structure and public seams; no new production module runtime | Review diffs against section 2 and contract ledger |
+| Source-only satellite moves | Owner-local when independent build is verified; explicit mapping otherwise | Section 11.3 build/protocol/operator inventory |
+| Disappearing tests/routes/assets | Population and assembled-artifact checks, bidirectional loaded-client handoff | WP-02/08/10 negative fixtures, asset closures and reconciled ledgers |
+| Floating build inputs/context | Pin/reuse known-good toolchain; clean revision plus declared generated inputs; immutable delivery artifacts | WP-03/10 provenance, changed-input negatives, actual-image checks |
+| Hidden private setup | Synthetic dev composition, clean-checkout trials | WP-09; setup commands exercised without workstation extras |
+| License/private-data exposure | Preserve existing license; publication audit separate | Maintainer publication approval; no automatic history rewrite |
+| Release | Incremental preparation; one controller cutover | Full certification and explicit deployment approval |
+| Plan completion | Five adversarial review rounds with revisions and dispositions | Review record; no unresolved blocking architectural finding |
+
+The five-round review validates this **plan**, not the future implementation.
+Completing the plan does not claim any migration gate has already passed or
+authorize deployment. New evidence during implementation can require a design
+amendment; preserve the recorded decisions and explain the change.

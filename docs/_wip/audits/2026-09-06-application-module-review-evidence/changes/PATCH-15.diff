@@ -1,0 +1,101 @@
+--- docs/_wip/plans/2026-09-05-application-module-migration-plan.md
++++ docs/_wip/plans/2026-09-05-application-module-migration-plan.md
+@@ -467,0 +468,4 @@
++Cross-subowner private imports are forbidden even inside this one workspace
++family. An experience exposes deliberate public entries; the presenter registry
++is composition that selects those entries. Shared experience utilities need a
++declared common boundary, not access to every sibling's private files.
+@@ -518 +522,2 @@
+-one classified layer/runtime/context. Prefer separate entry files over a mixed
++one classified layer/runtime/context, or an explicitly approved declarative
++contract classification under section 8.2. Prefer separate entry files over a mixed
+@@ -578,2 +583,4 @@
+-- System isolation has exactly the documented D4 pure shared-kernel time-utility
+-  exception. It is not permission to import arbitrary platform-owned domains.
++- System isolation preserves the documented D4 pure shared-kernel time-utility
++  exception and separately sanctioned naming-contract consumption, including
++  `shared/contracts/householdConfig.mjs` in the system reference. Neither is
++  permission to import arbitrary platform-owned domains or a whole shared tree.
+@@ -593 +600 @@
+-| System | System runtime facilities and approved external runtime packages; exact D4 exception | Domains/applications/adapters/API/rendering/composition otherwise; product knowledge |
++| System | System runtime facilities and approved external runtime packages; D4 kernel exception; explicitly sanctioned naming contracts below | Domains/applications/adapters/API/rendering/composition otherwise; product policy |
+@@ -605,0 +613,28 @@
++
++**Declarative contracts are an artifact kind, not a universal executable layer.**
++Alongside executable layer classification, record approved naming/wire contract
++exports with their owner, purpose, consumer allowlist, permitted operations,
++import closure and exact reference basis. This is not inferred from `contracts/`
++or a package name. Pure lookups and schema-only validation can qualify when
++explicitly reviewed; literal-only classification would break existing lookup
++APIs. Clock access, ID generation, I/O, persistence serialization, workflow,
++domain policy and port implementations do not qualify. Unknown contract exports
++fail classification until decided; no all-layers default exists.
++
++| Existing artifact | Required treatment |
++|---|---|
++| `shared/contracts/householdConfig.mjs` | Retain one canonical universal naming registry plus its pure `appConfigRelPath`/`allAppNames` lookups. The system guide's configuration section sanctions use by config loading/service and admin application/UI consumers; record exact consumers/exports in policy. Preserve every mapping and unknown-key result. This does not grant application access to ConfigService internals or arbitrary data paths |
++| `shared/contracts/media/commands.mjs`, topics and shapes | Review declarative constants and schema validators export by export with explicit transport/client consumers; no approval of the sibling barrel or whole tree by association |
++| `shared/contracts/media/envelopes.mjs` | Clock-reading envelope builders are transport/application operations, not pure domain or declarative data. Separate pure wire definitions/validators from effectful builders and give each the appropriate executable role; preserve timestamp/default/error behavior |
++| `shared/contracts/nutrition/foodItemRecord.mjs` | Record serialization belongs to the owning nutrition transport/persistence adapter boundary, not domain or universally importable declarations. Preserve the conditional `settled` field and full existing shape; use injected translation where a consumer's layer cannot import the serializer |
++| `shared/gaming/kernel/coordinator.mjs` | Gaming application orchestration over injected stores, clocks and rules, despite its current `kernel` name; portable location does not imply domain purity. Classify its dependencies separately, preserving state/replay/authorization behavior |
++
++WP-01 splits other mixed shared files by behavior, and WP-02 records any required
++reference clarification before approving new classifications. Public re-exports
++retain their real provenance: a contract re-exporting a domain class, application
++port/workflow or adapter does not gain contract-only import privileges. A mixed
++barrel includes all runtime-linked targets in its checks. Add positive fixtures
++for the real household registry and authorized consumers, negatives for
++clock-reading "declarations" and re-export laundering, and mapping/unknown-key
++read-write tests. Keep that policy aligned with the binding reference rather
++than inventing an undocumented shared-code exemption.
+@@ -627 +662 @@
+-public-export semantic classifications, supported test/dev targets, and owned
++public-export semantic classifications (including approved declarative contracts), supported test/dev targets, and owned
+@@ -642 +677 @@
+-status, declared public export(s), and migration disposition. Resolve relative
++status, artifact kind/contract permissions, declared public export(s), and migration disposition. Resolve relative
+@@ -652,0 +688,9 @@
++
++Visibility is checked across both **owners and declared subowners**. Being in
++one npm package/facet or the same owner directory does not permit a private
++sibling-subowner import. This applies to game experience code and its assets,
++through aliases/re-exports as well as relative paths. Add a failing same-owner
++cross-experience private import, a legal public-export consumer, and a legal
++composition-owned presenter registry fixture. Generic gaming still cannot select
++any concrete experience/environment. Helpers shared by experiences get an
++explicit common subowner/public surface with the same rules.
+@@ -704 +748 @@
+-and legal layer edges. Cross-owner private-facet imports fail architecture
++and legal layer and subowner-visibility edges. Cross-owner private-facet imports fail architecture
+--- docs/_wip/plans/2026-09-05-application-module-source-inventory.md
++++ docs/_wip/plans/2026-09-05-application-module-source-inventory.md
+@@ -269,0 +270,6 @@
++- `shared/`: universal declarative naming contracts remain canonical; product
++  and capability-specific code follows its actual owner. Main §8.2 explicitly
++  distinguishes approved declarations/lookups, wire builders/serializers,
++  domain rules and application orchestration. In particular, gaming's coordinator
++  is application logic despite `kernel/`, and the media envelope builder is not
++  pure because it reads the clock. No whole-directory contracts/kernel exemption.
+--- docs/_wip/plans/2026-09-05-application-module-adversarial-reviews.md
++++ docs/_wip/plans/2026-09-05-application-module-adversarial-reviews.md
+@@ -68 +68,19 @@
+-## Round 3 — Pending
++## Round 3 — Declarative contracts and subowner enforcement
++
++**Reviewer:** `architecture_review_r1`, reviewing the revised 1,259-line plan
++after Round 2, inventory/review record, layer references and representative code.
++**Result:** Two findings, both addressed; prior package/port/provider repairs
++were found materially sound at plan level.
++
++| ID | Severity | Finding | Disposition and evidence |
++|---|---|---|---|
++| R3-01 | High | Executable-layer matrix omitted sanctioned naming contracts and could misclassify mixed shared/kernel code | Main §7.2/8.1–8.3 explicitly models approved declarative-contract artifacts with closed permissions/reference provenance; concrete household registry, media builder, nutrition serializer and gaming coordinator classifications; source inventory §7 updated |
++| R3-02 | Medium | Experiences promised subowner boundaries but private-import enforcement only crossed owner IDs | Main §7.1/8.3/9 now applies visibility across subowners, classifies presenter registry as composition, and requires same-owner private-import negatives plus public-consumer positives |
++
++Evidence inspected: system reference explicitly sanctions the household naming
++registry and its actual consumers; the registry exposes pure lookup functions.
++Media envelopes read the clock, nutrition's food record helper serializes data,
++and gaming's coordinator orchestrates injected stores and time. The plan no
++longer labels these uniformly as declarations or domain merely by directory.
++Acceptance fixtures and authoritative-policy reconciliation are named WP-01/02
++deliverables, not claimed implemented checks.

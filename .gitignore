@@ -220,3 +220,20 @@ tests/_artifacts/
 recording-analysis/
 *.wav
 docs/_wip/audits/**/measurements.json
+
+# Generated audit LEDGERS. An audit's findings are its markdown; the JSON
+# beside it is machine output from the tooling in
+# tests/preimplementation/*/tooling/, which is committed — so the ledgers are
+# regenerable and do not belong in history.
+#
+# Concretely: the 2026-09-05 application-module audit carried 323 JSON files,
+# 3.19M lines, 121MB, against 42 markdown files totalling 7k lines. Beyond the
+# size, millions of lines of machine-generated NUMBERS collide with the numeric
+# device-id patterns in the push guard: a `"bytes":` field in one ledger
+# happened to equal a real ANT+ sensor id and blocked an unrelated commit on
+# main, because the guard scans every unpushed ref. Each collision costs a full
+# investigation to clear, forever. Keep the findings, drop the ledgers.
+#
+# Already-tracked files are unaffected (gitignore only governs new adds), so
+# the small curated evidence indexes committed alongside an audit stay.
+docs/_wip/audits/**/*.json

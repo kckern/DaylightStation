@@ -1,0 +1,49 @@
+--- docs/_wip/plans/2026-09-05-application-module-migration-plan.md
++++ docs/_wip/plans/2026-09-05-application-module-migration-plan.md
+@@ -733 +733,3 @@
+-An integration is an adapter role, not a fourth ownership class. Put it beside
++Integration is not a fourth ownership class. Provider translation is an adapter
++role; installed registrations, executable provider manifests, and cross-owner
++bindings are composition. Put a provider adapter beside
+@@ -751 +753 @@
+-| Provider discovery | `5_composition/integrations/AdapterRegistry.mjs`, `IntegrationLoader.mjs`, parser and manifests | Supply relocated discovery roots/entries without changing provider IDs, selection defaults, config precedence, cache behavior or no-op semantics |
++| Provider discovery | `0_system/modules/FileModuleManifestDiscovery.mjs`, `5_composition/integrations/AdapterRegistry.mjs`, `IntegrationLoader.mjs`, parser and manifests | Split system enumeration from composition loading/selection as specified below; preserve provider IDs, defaults, precedence, cache and no-op semantics |
+@@ -765,0 +768,33 @@
++
++The current discovery chain requires a specific boundary repair, not just new
++search roots. `FileModuleManifestDiscovery.load()` currently performs a computed
++import from system; `AdapterRegistry` delegates to it; executable manifests
++under `1_adapters/` can themselves lazily import concrete adapters. Those edges
++cannot survive as system→composition or adapter→peer-adapter exceptions.
++
++Destination split for WP-04:
++
++- `platform/server/system/modules/FileModuleManifestDiscovery.mjs` enumerates
++  paths only. Route enumeration I/O through approved system FileIO as required
++  by D10; importing modules is not part of its interface.
++- `backend/src/composition/integrations/AdapterRegistry.mjs` owns module loading,
++  selection and indexing. Inject a loader for tests; production loading happens
++  in composition. `IntegrationLoader` stays in that composition area.
++- Executable provider manifests move to the owning facility's
++  `server/composition/providers/<provider>/manifest.mjs`, with public composition
++  entries where another owner loads them. For example, the OpenAI factory
++  registration belongs under `capabilities/ai/server/composition/providers/openai/`;
++  the concrete adapter remains under `capabilities/ai/server/adapters/`.
++  Data-only provider schemas stay with their owner and retain data classification.
++- Installed composition supplies the finite provider target set/discovery roots.
++  Preserve the captured discovery sequence, duplicate last-registration behavior,
++  provider ordering/defaults, config precedence, lazy adapter construction,
++  missing/invalid-manifest logging and failure/no-op behavior. A new directory
++  traversal order must not silently choose a different provider. Do not add a
++  new runtime activation catalog.
++
++Required proofs: reject a computed system import into a composition/adapter
++target; reject an executable manifest mislabeled adapter that imports a concrete
++peer; accept the corrected chain with no dynamic-import exemption; replay
++ordered/duplicate/invalid discovery and lazy construction using fake modules.
++This source split is required before relocating discovery infrastructure.
+--- docs/_wip/plans/2026-09-05-application-module-source-inventory.md
++++ docs/_wip/plans/2026-09-05-application-module-source-inventory.md
+@@ -229 +229 @@
+-| `5_composition/integrations` | Platform composition infrastructure with supplied provider entries | Does not become an import of adapters from system runtime |
++| `5_composition/integrations` | `backend/src/composition/integrations`, supplied owner-public provider entries | System enumerates paths only; composition loads/selects executable manifests; see main §10.2 |

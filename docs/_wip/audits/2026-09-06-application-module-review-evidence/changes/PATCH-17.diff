@@ -1,0 +1,16 @@
+--- docs/roadmap/2026-08-31-full-stack-application-modules.md
++++ docs/roadmap/2026-08-31-full-stack-application-modules.md
+@@ -77,2 +77,3 @@
+-  `/api/v1/gratitude/bootstrap` for household users. Move that projection to
+-  `household-identity` before claiming Gratitude can be absent.
++  `/api/v1/gratitude/bootstrap` for household users. Give the reusable projection
++  a `household-identity` boundary while preserving that URL and its semantics.
++  Making Gratitude removable is a separate runtime objective.
+@@ -80,2 +81,2 @@
+-  reads Gratitude's stored YAML directly. Feed needs a narrow selection query,
+-  with explicit unavailability when Gratitude is disabled.
++  reads Gratitude's stored YAML directly. Feed needs an injected narrow selection
++  query with unchanged behavior; disabled-module semantics are deferred.
+@@ -91 +92 @@
+-  and external consumers must participate in removal tests, not just the API
++  and external consumers must participate in migration parity tests, not just the API

@@ -1,0 +1,30 @@
+{
+  "schema": "daylight.preimplementation.server-foundation/v1",
+  "scope": "Unchanged original baseline error middleware/logging suites; no listeners, controller or package candidate",
+  "files": [
+    {
+      "path": "tests/unit/system/errorHandlerString.test.mjs",
+      "expectedCases": 10,
+      "effects": "In-memory response objects; original logger fallback writes only diagnostic stdout/stderr; generated trace IDs remain real",
+      "contracts": "Name/status mapping, hidden unexpected message, string webhook response and object trace ID fallbacks"
+    },
+    {
+      "path": "tests/unit/system/logging/localTimestampOffset.test.mjs",
+      "expectedCases": 8,
+      "effects": "Intl and Date only; explicit date/timezones or format-only clock assertions",
+      "contracts": "Offset, same instant, UTC, DST, positive zone, millisecond precision and runtime-zone default"
+    },
+    {
+      "path": "tests/isolated/assembly/infrastructure/logging/dispatcher.test.mjs",
+      "expectedCases": 26,
+      "effects": "Original global Vitest declarations and local fake transports; reset flushes only empty/mock transport lists",
+      "contracts": "Level priorities, constructors, transports, dispatch/filter/metrics/validation, level setters and singleton initialization/reset"
+    },
+    {
+      "path": "tests/isolated/assembly/infrastructure/logging/logger.test.mjs",
+      "expectedCases": 20,
+      "effects": "In-memory fake transports, restored stdout/stderr spies and bounded fake timers; no real logging transport loaded",
+      "contracts": "Fallback channels, levels/context/child behavior, sampling budget/aggregation/window/cap and context snapshots"
+    }
+  ]
+}

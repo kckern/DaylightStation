@@ -1,0 +1,141 @@
+--- docs/_wip/plans/2026-09-05-application-module-migration-plan.md
++++ docs/_wip/plans/2026-09-05-application-module-migration-plan.md
+@@ -304 +304 @@
+-| Shipped artifact | Omit a new owner root from image inputs or a runtime dependency | Clean production build contains and resolves the complete selected dependency closure |
++| Shipped artifact | Omit an owner root/dependency, change a frozen toolchain input, include an undeclared context file, or omit a supported client's lazy chunk | Certified image/content manifest and dependency provenance match; forward and rollback browser handoff work |
+@@ -827,0 +828,9 @@
++7. Freeze non-npm inputs too. The current Dockerfile uses a tagged Node/Alpine
++   base, unpinned APK packages, yt-dlp from Git HEAD and an unpinned global
++   `forever`. Capture the known-good base digest/architecture, OS/native package
++   versions, yt-dlp commit/version, supervisor, fonts/soundfont/engine artifacts
++   and relevant install flags. Pin them or reuse a verified immutable toolchain
++   layer for both sides of the comparison. Do not certify a structural refactor
++   with two clean builds that independently resolve floating upstream inputs.
++   An unavoidable toolchain upgrade is a separate reviewed change with its own
++   behavioral baseline, not an incidental consequence of a source move.
+@@ -997,0 +1007,39 @@
++**Already-loaded clients are part of the artifact contract.** AppContainer
++loads apps lazily; the controller serves the current image's `frontend/dist`.
++The service worker caches only fetched resources and bounds its cache at 120
++entries, while the HTML boot-repair handler disarms after React mounts. An old
++kiosk can therefore request an uncached old chunk after a successful cutover;
++fresh-page smoke tests and startup recovery do not cover it. Rollback creates
++the same risk for clients that already loaded candidate bundles.
++
++Default handoff: build a certified **candidate delivery artifact** and a
++**rollback delivery artifact** containing the immutable hashed asset closure
++needed by supported loaded client builds, including lazy chunks, their imported
++chunks, workers, styles and referenced resources. Preserve the original
++known-good image unchanged. The rollback delivery variant starts from that
++immutable image and adds only the required hashed assets; record its own digest
++and prove previous server code, HTML, service-worker script, native tools and
++configuration behavior are unchanged. No old controller runs concurrently.
++
++Never blindly merge entire `dist` trees. An identical hashed URL must have
++identical bytes or certification fails. Stable-name assets, HTML and SW scripts
++remain revision-specific and receive separate compatibility tests; retain their
++existing URL/cache semantics. If the existing static routing cannot safely
++serve the required closure, amend delivery packaging before release rather than
++assuming every client will reload or inventing new application recovery logic.
++
++Inventory supported client build IDs and define closure retention/retirement
++evidence, including long-lived/offline kiosks. Quiesce or complete/checkpoint
++active sessions using existing behavior before authorized reloads. A client
++closure may be retired only after its supported clients are safely refreshed
++or explicitly retired. Retained immutable public build assets are release
++compatibility artifacts, not duplicate source implementations or prohibited
++private-path migration bridges. No new offline feature is required: an uncached
++feature while offline need only preserve its baseline behavior.
++
++WP-10 must test baseline-loaded UI → candidate server → previously unopened
++lazy application, and candidate-loaded UI → rollback delivery → lazy application.
++Include warm/cold caches, SW-controlled clients, reconnects and worker/style
++loading. Verify existing persisted browser state and resume/cleanup behavior
++across both directions; a successful reload alone is not equivalent evidence.
++
+@@ -1120 +1168 @@
+-| WP-03 Package foundation | WP-01/02 | Sibling facade/facet proof, dependency/instance provenance, reviewed nested install/lock change, Linux/image fixture, resolver projections | Clean installation and real Node/Vite/runner resolution; no accidental upgrades, unwanted singleton merging or duplication |
++| WP-03 Package foundation | WP-01/02 | Sibling facade/facet proof, dependency/instance and non-npm toolchain provenance, reviewed nested install/lock change, Linux/image fixture, resolver projections | Clean installation and real Node/Vite/runner resolution; no accidental upgrades, unwanted singleton merging or duplication |
+@@ -1127 +1175 @@
+-| WP-10 Release certification | WP-01–09 | Full required tests, image and wire/data parity, critical real-flow checks, rollback rehearsal | Signed evidence bundle meeting section 14; implementation review has no unresolved blocker |
++| WP-10 Release certification | WP-01–09 | Full required tests, source/image/toolchain and wire/data parity, bidirectional loaded-client asset handoff, critical real-flow checks, rollback rehearsal | Signed evidence bundle meeting section 14; certified candidate/rollback delivery digests; implementation review has no unresolved blocker |
+@@ -1162 +1210,6 @@
+-  build inputs and separate satellite artifact references.
++  build inputs and separate satellite artifact references; base/OS/toolchain
++  provenance and immutable known-good/candidate/rollback-delivery digests.
++- `build-context.json`, `client-asset-closure.json`: exact authorized source/
++  generated input hashes, ignored/local-input handling, supported client builds,
++  hashed asset dependencies/collision checks, stable-asset compatibility and
++  retention/retirement evidence.
+@@ -1181 +1234,3 @@
+-   media resume/completion, CSS and public asset loading from the built artifact.
++   media resume/completion, CSS and public asset loading from the built artifact;
++   old-loaded/new-server and new-loaded/rollback-server lazy navigation under
++   section 11.2's cache/SW/reconnect matrix.
+@@ -1183 +1238,2 @@
+-   verify absent dev dependencies/fixtures never become production requirements.
++   verify absent dev dependencies/fixtures never become production requirements,
++   and match frozen source/content and upstream toolchain provenance.
+@@ -1223,0 +1280,12 @@
++Build from a clean pinned source revision with declared generated inputs.
++Alternatively, an explicit content manifest must prove every authorized delta;
++this is not permission to include arbitrary workstation files. The current
++`scripts/build-daylight.sh` stamps `git rev-parse HEAD` but builds the current
++directory under a mutable tag, so its revision label alone is not provenance.
++Capture the effective Docker context after ignore rules; fail on missing or
++undeclared required inputs. Negative certification fixtures must detect a
++changed base/tool version and an undeclared context file. Compare old/new using
++the frozen toolchain, and run native/media/printing checks against those actual
++certified images. Never rebuild the old source at rollback against today's
++upstream packages.
++
+@@ -1236,0 +1305,2 @@
++Supported immutable client assets may remain under section 11.2's release
++retention policy; they are not permission to retain old product source roots.
+@@ -1245,2 +1315,4 @@
+-Before deployment, record the candidate/previous immutable image identifiers,
+-source revisions, config/data compatibility report, backup identifier and
++Before deployment, preserve the known-good immutable image before replacing
++mutable tags. Record candidate, original known-good and certified rollback
++delivery digests, approved source/context and frozen toolchain manifests,
++loaded-client asset support/retention, config/data compatibility report, backup identifier and
+@@ -1252,2 +1324,4 @@
+-2. Schedule a brief controlled stop; quiesce active sessions/jobs using existing
+-   supported shutdown behavior and verify old process/loops have stopped.
++2. Schedule a brief controlled stop; inventory loaded clients, quiesce active
++   sessions/jobs using existing supported shutdown/checkpoint behavior, and
++   verify old process/loops have stopped. Authorize any client reload only after
++   preserving/completing its active work; keep required old hashed assets served.
+@@ -1265,2 +1339,4 @@
+-6. On a rollback trigger, stop the candidate, start the known-good image alone,
+-   and verify recovery. Retain evidence and reconcile any affected writes;
++6. On a rollback trigger, stop the candidate, start the certified rollback
++   delivery artifact alone, and verify recovery for both previously loaded and
++   newly loaded clients. Its server code is the known-good revision; its additive
++   asset closure supports candidate-loaded browsers. Retain evidence and reconcile any affected writes;
+@@ -1294 +1370,2 @@
+-| Disappearing tests/routes/assets | Population and assembled-artifact checks, not raw pass counts | WP-02/08/10 negative fixtures and reconciled ledgers |
++| Disappearing tests/routes/assets | Population and assembled-artifact checks, bidirectional loaded-client handoff | WP-02/08/10 negative fixtures, asset closures and reconciled ledgers |
++| Floating build inputs/context | Pin/reuse known-good toolchain; clean revision plus declared generated inputs; immutable delivery artifacts | WP-03/10 provenance, changed-input negatives, actual-image checks |
+--- docs/_wip/plans/2026-09-05-application-module-adversarial-reviews.md
++++ docs/_wip/plans/2026-09-05-application-module-adversarial-reviews.md
+@@ -88 +88,18 @@
+-## Round 4 — Pending
++## Round 4 — Release artifacts, clients and rollback
++
++**Reviewer:** `architecture_review_r2`, after Round 3 revisions; inspected
++Docker/build scripts, browser lazy imports/SW/boot recovery, gates and runbook.
++**Result:** Two high-severity gaps addressed. Earlier architecture, contract,
++subowner, provider-loader and package amendments remained sound at plan level.
++
++| ID | Severity | Finding | Disposition and evidence |
++|---|---|---|---|
++| R4-01 | High | Old loaded clients can request missing lazy chunks after cutover; rollback breaks candidate-loaded clients symmetrically | Main §11.2/14/15 specifies certified candidate/rollback asset closures, immutable baseline preservation, collision/stable-name rules, client retention/reload policy and bidirectional cache/SW/reconnect tests |
++| R4-02 | High | Floating base/APK/yt-dlp/global supervisor and dirty build context can change behavior despite npm parity and a HEAD label | Main §9/WP-03/14/15 freezes upstream toolchain provenance and exact source/content inputs, adds changed-input negatives, and uses immutable certified artifacts without rebuilding during rollback |
++
++Evidence: AppContainer has lazy imports; Express serves the current dist;
++SW retains at most 120 fetched entries; boot repair disarms after mount.
++Docker resolves a tagged base, unpinned native packages, yt-dlp Git HEAD and
++global forever; the build script labels the current directory with HEAD without
++proving context equivalence. These facts motivate explicit implementation gates,
++not a claim those future deployment artifacts have already been built.

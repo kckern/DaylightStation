@@ -1,0 +1,23 @@
+{
+  "schema": "daylight.preimplementation.rendering-identity-selection/v1",
+  "probeIds": ["REND-EXPORTS", "REND-BINDINGS", "REND-NATIVE", "REND-FONT-ROOT", "REND-ASSETS", "REND-DEFAULT-FONTS", "REND-OVERRIDE", "REND-OPTIONAL-FONTS", "REND-DRAWING", "REND-PURE-HELPERS"],
+  "mutations": {
+    "duplicate-layout": ["REND-BINDINGS"],
+    "wrong-font-root": ["REND-FONT-ROOT", "REND-DEFAULT-FONTS"],
+    "missing-font": ["REND-ASSETS", "REND-DEFAULT-FONTS"],
+    "missing-notice": ["REND-ASSETS"],
+    "root-canvas-fallback": ["REND-NATIVE"]
+  },
+  "originals": [
+    {
+      "path": "tests/unit/rendering/lib/TextRenderer.test.mjs",
+      "suite": "wrapText",
+      "titles": ["returns single line when text fits", "wraps text exceeding maxWidth", "returns empty array for empty string", "handles null/undefined text", "handles single long word exceeding maxWidth"]
+    },
+    {
+      "path": "tests/unit/rendering/lib/LayoutHelpers.test.mjs",
+      "suite": "formatDuration",
+      "titles": ["formats minutes and seconds", "formats minutes only when no seconds", "formats hours and minutes", "returns -- for null", "returns -- for undefined"]
+    }
+  ]
+}

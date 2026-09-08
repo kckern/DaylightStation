@@ -1,0 +1,16 @@
+{
+  "name": "@proof/fitness",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./server/value": "./server.mjs",
+    "./web/value": "./web.mjs",
+    "./cli/value": "./cli.mjs"
+  },
+  "dependencies": {
+    "@proof/fitness-server": "0.0.0",
+    "@proof/fitness-web": "0.0.0",
+    "@proof/fitness-cli": "0.0.0"
+  }
+}

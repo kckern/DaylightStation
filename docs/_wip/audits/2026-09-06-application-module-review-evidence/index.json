@@ -1,0 +1,437 @@
+{
+  "schema": 1,
+  "recovered_on": "2026-09-06 (workspace date)",
+  "source_baseline": "2144f762a37408b906efc0e359dc4649078d5ab4",
+  "author_session": "01a0737c-8a54-7a12-919e-231597eceec8",
+  "initial": {
+    "docs/roadmap/2026-08-31-full-stack-application-modules.md": {
+      "sha256": "0168d02cf4c44635dbbb575334fa2ae194b531f13fd4579834a6f1dab4299153",
+      "lines": 2829,
+      "artifact": "snapshots/0168d02cf4c44635dbbb575334fa2ae194b531f13fd4579834a6f1dab4299153.txt"
+    }
+  },
+  "rounds": [
+    {
+      "round": 1,
+      "reviewer": "architecture_review_r1",
+      "reviewer_session": "01a07391-5e06-7cd1-9787-ac5ffc796a97",
+      "dispatched_at": "2026-09-05T21:55:01.755Z",
+      "revision_window_end": "2026-09-05T22:02:37.189Z",
+      "input": {
+        "docs/roadmap/2026-08-31-full-stack-application-modules.md": {
+          "sha256": "b9912039431019a2c223794716d3fedf190228eced57bb308c76f2155ffee862",
+          "lines": 3122,
+          "artifact": "snapshots/b9912039431019a2c223794716d3fedf190228eced57bb308c76f2155ffee862.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-runtime-design.md": {
+          "sha256": "e5eb2b291b996e31929ecddbc56df86c80228c5a70bd41b36fa7e31624dac847",
+          "lines": 643,
+          "artifact": "snapshots/e5eb2b291b996e31929ecddbc56df86c80228c5a70bd41b36fa7e31624dac847.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-migration-plan.md": {
+          "sha256": "1dec3bf77b21796bde0a0e70bef07a30ddd4e80866ee92b3eb1515967ee54023",
+          "lines": 375,
+          "artifact": "snapshots/1dec3bf77b21796bde0a0e70bef07a30ddd4e80866ee92b3eb1515967ee54023.txt"
+        }
+      },
+      "revised": {
+        "docs/roadmap/2026-08-31-full-stack-application-modules.md": {
+          "sha256": "b9912039431019a2c223794716d3fedf190228eced57bb308c76f2155ffee862",
+          "lines": 3122,
+          "artifact": "snapshots/b9912039431019a2c223794716d3fedf190228eced57bb308c76f2155ffee862.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-runtime-design.md": {
+          "sha256": "e5eb2b291b996e31929ecddbc56df86c80228c5a70bd41b36fa7e31624dac847",
+          "lines": 643,
+          "artifact": "snapshots/e5eb2b291b996e31929ecddbc56df86c80228c5a70bd41b36fa7e31624dac847.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-migration-plan.md": {
+          "sha256": "2b4881702716b936670fafa7700b73b70589ed86daa2ba8795d4c719a7959766",
+          "lines": 1162,
+          "artifact": "snapshots/2b4881702716b936670fafa7700b73b70589ed86daa2ba8795d4c719a7959766.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-source-inventory.md": {
+          "sha256": "ddbf2e5f0afb9255bc8dbe39a0d0ab8037af8a21e96bc0f0808efbe8435a3c12",
+          "lines": 319,
+          "artifact": "snapshots/ddbf2e5f0afb9255bc8dbe39a0d0ab8037af8a21e96bc0f0808efbe8435a3c12.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-adversarial-reviews.md": {
+          "sha256": "54de1822db3f7f30583e73bcf1fa739562a9dbaa2d01e7604ecedc1352e103d4",
+          "lines": 53,
+          "artifact": "snapshots/54de1822db3f7f30583e73bcf1fa739562a9dbaa2d01e7604ecedc1352e103d4.txt"
+        }
+      },
+      "changes": [
+        "PATCH-06",
+        "PATCH-07",
+        "PATCH-08"
+      ],
+      "responses": [
+        {
+          "timestamp": "2026-09-05T21:57:12.121Z",
+          "source_line": 118,
+          "source_message_id": "msg_023a0a16469a7ae2016a9c90146aa487d09b5ae6801454bec4",
+          "artifact": "reviews/round-1-1.md",
+          "sha256": "1a5ea2448331c5985d090c918d6c5ba639daa1db405acf7f5c79363a47eb0822"
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "reviewer": "architecture_review_r2",
+      "reviewer_session": "01a07398-5111-7663-83c2-eb3cd47a29f0",
+      "dispatched_at": "2026-09-05T22:02:37.189Z",
+      "revision_window_end": "2026-09-05T22:12:15.072Z",
+      "input": {
+        "docs/roadmap/2026-08-31-full-stack-application-modules.md": {
+          "sha256": "b9912039431019a2c223794716d3fedf190228eced57bb308c76f2155ffee862",
+          "lines": 3122,
+          "artifact": "snapshots/b9912039431019a2c223794716d3fedf190228eced57bb308c76f2155ffee862.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-runtime-design.md": {
+          "sha256": "e5eb2b291b996e31929ecddbc56df86c80228c5a70bd41b36fa7e31624dac847",
+          "lines": 643,
+          "artifact": "snapshots/e5eb2b291b996e31929ecddbc56df86c80228c5a70bd41b36fa7e31624dac847.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-migration-plan.md": {
+          "sha256": "2b4881702716b936670fafa7700b73b70589ed86daa2ba8795d4c719a7959766",
+          "lines": 1162,
+          "artifact": "snapshots/2b4881702716b936670fafa7700b73b70589ed86daa2ba8795d4c719a7959766.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-source-inventory.md": {
+          "sha256": "ddbf2e5f0afb9255bc8dbe39a0d0ab8037af8a21e96bc0f0808efbe8435a3c12",
+          "lines": 319,
+          "artifact": "snapshots/ddbf2e5f0afb9255bc8dbe39a0d0ab8037af8a21e96bc0f0808efbe8435a3c12.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-adversarial-reviews.md": {
+          "sha256": "54de1822db3f7f30583e73bcf1fa739562a9dbaa2d01e7604ecedc1352e103d4",
+          "lines": 53,
+          "artifact": "snapshots/54de1822db3f7f30583e73bcf1fa739562a9dbaa2d01e7604ecedc1352e103d4.txt"
+        }
+      },
+      "revised": {
+        "docs/roadmap/2026-08-31-full-stack-application-modules.md": {
+          "sha256": "b3e3ca46f6869e586bd606cd53f340eb26e9baec50796057fb33a0806234d3b5",
+          "lines": 3122,
+          "artifact": "snapshots/b3e3ca46f6869e586bd606cd53f340eb26e9baec50796057fb33a0806234d3b5.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-runtime-design.md": {
+          "sha256": "e5eb2b291b996e31929ecddbc56df86c80228c5a70bd41b36fa7e31624dac847",
+          "lines": 643,
+          "artifact": "snapshots/e5eb2b291b996e31929ecddbc56df86c80228c5a70bd41b36fa7e31624dac847.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-migration-plan.md": {
+          "sha256": "2ee720a1c1511870206f057500f75ad3dd08f03708fdb6dffb045ba4cf85cc82",
+          "lines": 1259,
+          "artifact": "snapshots/2ee720a1c1511870206f057500f75ad3dd08f03708fdb6dffb045ba4cf85cc82.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-source-inventory.md": {
+          "sha256": "a48cbd8bbe0184596d7168d6b154a87935aa06fedd56e3ae1ccd68bf34a5d03c",
+          "lines": 319,
+          "artifact": "snapshots/a48cbd8bbe0184596d7168d6b154a87935aa06fedd56e3ae1ccd68bf34a5d03c.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-adversarial-reviews.md": {
+          "sha256": "9173f93d508d007dcffa759ca2bc814df7905c467296f02013994ba41e3d9a2a",
+          "lines": 81,
+          "artifact": "snapshots/9173f93d508d007dcffa759ca2bc814df7905c467296f02013994ba41e3d9a2a.txt"
+        }
+      },
+      "changes": [
+        "PATCH-09",
+        "PATCH-10",
+        "PATCH-11",
+        "PATCH-12",
+        "PATCH-13",
+        "PATCH-14"
+      ],
+      "responses": [
+        {
+          "timestamp": "2026-09-05T22:06:47.915Z",
+          "source_line": 200,
+          "source_message_id": "msg_0245d4b40cbe0505016a9c926356d887d0ac15d9a6fdc78adc",
+          "artifact": "reviews/round-2-1.md",
+          "sha256": "a015e3b335a9ab8178d85c4d4887e552c2459b4ac6dcf08a610b7882189b549d"
+        },
+        {
+          "timestamp": "2026-09-05T22:11:30.425Z",
+          "source_line": 260,
+          "source_message_id": "msg_0245d4b40cbe0505016a9c938a0ecc87d0a253e5f2262de6a4",
+          "artifact": "reviews/round-2-2.md",
+          "sha256": "380cb3eff836d6243f97309ff381bdf1ff8485464783d05a7cb17571778ecbd1"
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "reviewer": "architecture_review_r1",
+      "reviewer_session": "01a07391-5e06-7cd1-9787-ac5ffc796a97",
+      "dispatched_at": "2026-09-05T22:12:15.072Z",
+      "revision_window_end": "2026-09-05T22:15:38.536Z",
+      "input": {
+        "docs/roadmap/2026-08-31-full-stack-application-modules.md": {
+          "sha256": "b3e3ca46f6869e586bd606cd53f340eb26e9baec50796057fb33a0806234d3b5",
+          "lines": 3122,
+          "artifact": "snapshots/b3e3ca46f6869e586bd606cd53f340eb26e9baec50796057fb33a0806234d3b5.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-runtime-design.md": {
+          "sha256": "e5eb2b291b996e31929ecddbc56df86c80228c5a70bd41b36fa7e31624dac847",
+          "lines": 643,
+          "artifact": "snapshots/e5eb2b291b996e31929ecddbc56df86c80228c5a70bd41b36fa7e31624dac847.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-migration-plan.md": {
+          "sha256": "2ee720a1c1511870206f057500f75ad3dd08f03708fdb6dffb045ba4cf85cc82",
+          "lines": 1259,
+          "artifact": "snapshots/2ee720a1c1511870206f057500f75ad3dd08f03708fdb6dffb045ba4cf85cc82.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-source-inventory.md": {
+          "sha256": "a48cbd8bbe0184596d7168d6b154a87935aa06fedd56e3ae1ccd68bf34a5d03c",
+          "lines": 319,
+          "artifact": "snapshots/a48cbd8bbe0184596d7168d6b154a87935aa06fedd56e3ae1ccd68bf34a5d03c.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-adversarial-reviews.md": {
+          "sha256": "9173f93d508d007dcffa759ca2bc814df7905c467296f02013994ba41e3d9a2a",
+          "lines": 81,
+          "artifact": "snapshots/9173f93d508d007dcffa759ca2bc814df7905c467296f02013994ba41e3d9a2a.txt"
+        }
+      },
+      "revised": {
+        "docs/roadmap/2026-08-31-full-stack-application-modules.md": {
+          "sha256": "b3e3ca46f6869e586bd606cd53f340eb26e9baec50796057fb33a0806234d3b5",
+          "lines": 3122,
+          "artifact": "snapshots/b3e3ca46f6869e586bd606cd53f340eb26e9baec50796057fb33a0806234d3b5.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-runtime-design.md": {
+          "sha256": "e5eb2b291b996e31929ecddbc56df86c80228c5a70bd41b36fa7e31624dac847",
+          "lines": 643,
+          "artifact": "snapshots/e5eb2b291b996e31929ecddbc56df86c80228c5a70bd41b36fa7e31624dac847.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-migration-plan.md": {
+          "sha256": "9f520f5dfc874403404732f3a0655ab285f38f428580e533dfbbc2148a8815f6",
+          "lines": 1303,
+          "artifact": "snapshots/9f520f5dfc874403404732f3a0655ab285f38f428580e533dfbbc2148a8815f6.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-source-inventory.md": {
+          "sha256": "1bc4f97c0da2c738f45fb6cb82abb39d172da72bc5a125902d26803b013a3bd5",
+          "lines": 325,
+          "artifact": "snapshots/1bc4f97c0da2c738f45fb6cb82abb39d172da72bc5a125902d26803b013a3bd5.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-adversarial-reviews.md": {
+          "sha256": "646d557c596eac00e3e7d040c4223768f2a564f0057e38a23b80eb8b8643b8cb",
+          "lines": 99,
+          "artifact": "snapshots/646d557c596eac00e3e7d040c4223768f2a564f0057e38a23b80eb8b8643b8cb.txt"
+        }
+      },
+      "changes": [
+        "PATCH-15"
+      ],
+      "responses": [
+        {
+          "timestamp": "2026-09-05T22:14:46.056Z",
+          "source_line": 220,
+          "source_message_id": "msg_023a0a16469a7ae2016a9c9448bbec87d0995fa47d967a447f",
+          "artifact": "reviews/round-3-1.md",
+          "sha256": "d3fd9b4c3770161ad092b8b621d4d349c940bc65603010e9893d1aa462af75c0"
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "reviewer": "architecture_review_r2",
+      "reviewer_session": "01a07398-5111-7663-83c2-eb3cd47a29f0",
+      "dispatched_at": "2026-09-05T22:15:38.536Z",
+      "revision_window_end": "2026-09-05T22:19:01.523Z",
+      "input": {
+        "docs/roadmap/2026-08-31-full-stack-application-modules.md": {
+          "sha256": "b3e3ca46f6869e586bd606cd53f340eb26e9baec50796057fb33a0806234d3b5",
+          "lines": 3122,
+          "artifact": "snapshots/b3e3ca46f6869e586bd606cd53f340eb26e9baec50796057fb33a0806234d3b5.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-runtime-design.md": {
+          "sha256": "e5eb2b291b996e31929ecddbc56df86c80228c5a70bd41b36fa7e31624dac847",
+          "lines": 643,
+          "artifact": "snapshots/e5eb2b291b996e31929ecddbc56df86c80228c5a70bd41b36fa7e31624dac847.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-migration-plan.md": {
+          "sha256": "9f520f5dfc874403404732f3a0655ab285f38f428580e533dfbbc2148a8815f6",
+          "lines": 1303,
+          "artifact": "snapshots/9f520f5dfc874403404732f3a0655ab285f38f428580e533dfbbc2148a8815f6.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-source-inventory.md": {
+          "sha256": "1bc4f97c0da2c738f45fb6cb82abb39d172da72bc5a125902d26803b013a3bd5",
+          "lines": 325,
+          "artifact": "snapshots/1bc4f97c0da2c738f45fb6cb82abb39d172da72bc5a125902d26803b013a3bd5.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-adversarial-reviews.md": {
+          "sha256": "646d557c596eac00e3e7d040c4223768f2a564f0057e38a23b80eb8b8643b8cb",
+          "lines": 99,
+          "artifact": "snapshots/646d557c596eac00e3e7d040c4223768f2a564f0057e38a23b80eb8b8643b8cb.txt"
+        }
+      },
+      "revised": {
+        "docs/roadmap/2026-08-31-full-stack-application-modules.md": {
+          "sha256": "b3e3ca46f6869e586bd606cd53f340eb26e9baec50796057fb33a0806234d3b5",
+          "lines": 3122,
+          "artifact": "snapshots/b3e3ca46f6869e586bd606cd53f340eb26e9baec50796057fb33a0806234d3b5.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-runtime-design.md": {
+          "sha256": "e5eb2b291b996e31929ecddbc56df86c80228c5a70bd41b36fa7e31624dac847",
+          "lines": 643,
+          "artifact": "snapshots/e5eb2b291b996e31929ecddbc56df86c80228c5a70bd41b36fa7e31624dac847.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-migration-plan.md": {
+          "sha256": "fd9523b3a759a7ceca9c7139a6e356da0273c49310d9824b5f1d5408c319939c",
+          "lines": 1380,
+          "artifact": "snapshots/fd9523b3a759a7ceca9c7139a6e356da0273c49310d9824b5f1d5408c319939c.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-source-inventory.md": {
+          "sha256": "1bc4f97c0da2c738f45fb6cb82abb39d172da72bc5a125902d26803b013a3bd5",
+          "lines": 325,
+          "artifact": "snapshots/1bc4f97c0da2c738f45fb6cb82abb39d172da72bc5a125902d26803b013a3bd5.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-adversarial-reviews.md": {
+          "sha256": "bfd41d7749b22ea19011fb7e39ce29d2119bcf9693b40f4ec79d784bf9409552",
+          "lines": 116,
+          "artifact": "snapshots/bfd41d7749b22ea19011fb7e39ce29d2119bcf9693b40f4ec79d784bf9409552.txt"
+        }
+      },
+      "changes": [
+        "PATCH-16"
+      ],
+      "responses": [
+        {
+          "timestamp": "2026-09-05T22:18:04.119Z",
+          "source_line": 344,
+          "source_message_id": "msg_0245d4b40cbe0505016a9c9509ceb487d0a67710723c5b21e5",
+          "artifact": "reviews/round-4-1.md",
+          "sha256": "65d0ff516e990e67ce3bfe2086a0bc7fb453e180ae1e32a4c14d1e59e972d1b5"
+        }
+      ]
+    },
+    {
+      "round": 5,
+      "reviewer": "architecture_review_r5",
+      "reviewer_session": "01a073a7-5616-7201-a83f-484da28abef6",
+      "dispatched_at": "2026-09-05T22:19:01.523Z",
+      "revision_window_end": "2026-09-05T22:23:15Z",
+      "input": {
+        "docs/roadmap/2026-08-31-full-stack-application-modules.md": {
+          "sha256": "b3e3ca46f6869e586bd606cd53f340eb26e9baec50796057fb33a0806234d3b5",
+          "lines": 3122,
+          "artifact": "snapshots/b3e3ca46f6869e586bd606cd53f340eb26e9baec50796057fb33a0806234d3b5.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-runtime-design.md": {
+          "sha256": "e5eb2b291b996e31929ecddbc56df86c80228c5a70bd41b36fa7e31624dac847",
+          "lines": 643,
+          "artifact": "snapshots/e5eb2b291b996e31929ecddbc56df86c80228c5a70bd41b36fa7e31624dac847.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-migration-plan.md": {
+          "sha256": "fd9523b3a759a7ceca9c7139a6e356da0273c49310d9824b5f1d5408c319939c",
+          "lines": 1380,
+          "artifact": "snapshots/fd9523b3a759a7ceca9c7139a6e356da0273c49310d9824b5f1d5408c319939c.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-source-inventory.md": {
+          "sha256": "1bc4f97c0da2c738f45fb6cb82abb39d172da72bc5a125902d26803b013a3bd5",
+          "lines": 325,
+          "artifact": "snapshots/1bc4f97c0da2c738f45fb6cb82abb39d172da72bc5a125902d26803b013a3bd5.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-adversarial-reviews.md": {
+          "sha256": "bfd41d7749b22ea19011fb7e39ce29d2119bcf9693b40f4ec79d784bf9409552",
+          "lines": 116,
+          "artifact": "snapshots/bfd41d7749b22ea19011fb7e39ce29d2119bcf9693b40f4ec79d784bf9409552.txt"
+        }
+      },
+      "revised": {
+        "docs/roadmap/2026-08-31-full-stack-application-modules.md": {
+          "sha256": "c0cff64af4b34fc74f1999c72a233b3fb1c6a20daf39cb1ded2a48c6ef6ac0c3",
+          "lines": 3128,
+          "artifact": "snapshots/c0cff64af4b34fc74f1999c72a233b3fb1c6a20daf39cb1ded2a48c6ef6ac0c3.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-runtime-design.md": {
+          "sha256": "e5eb2b291b996e31929ecddbc56df86c80228c5a70bd41b36fa7e31624dac847",
+          "lines": 643,
+          "artifact": "snapshots/e5eb2b291b996e31929ecddbc56df86c80228c5a70bd41b36fa7e31624dac847.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-migration-plan.md": {
+          "sha256": "0a201ac91558f2709d2a151855052036a3a8bee8de23b355c12b3310d96234fe",
+          "lines": 1382,
+          "artifact": "snapshots/0a201ac91558f2709d2a151855052036a3a8bee8de23b355c12b3310d96234fe.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-source-inventory.md": {
+          "sha256": "1bc4f97c0da2c738f45fb6cb82abb39d172da72bc5a125902d26803b013a3bd5",
+          "lines": 325,
+          "artifact": "snapshots/1bc4f97c0da2c738f45fb6cb82abb39d172da72bc5a125902d26803b013a3bd5.txt"
+        },
+        "docs/_wip/plans/2026-09-05-application-module-adversarial-reviews.md": {
+          "sha256": "033ac03f10b2ab8ad0908e6595ec3dff3a8e3f1fbd3a12ca2f1430cda14458b6",
+          "lines": 165,
+          "artifact": "snapshots/033ac03f10b2ab8ad0908e6595ec3dff3a8e3f1fbd3a12ca2f1430cda14458b6.txt"
+        }
+      },
+      "changes": [
+        "PATCH-17",
+        "PATCH-18",
+        "PATCH-19"
+      ],
+      "responses": [
+        {
+          "timestamp": "2026-09-05T22:21:44.253Z",
+          "source_line": 155,
+          "source_message_id": "msg_09770b63b92b356d016a9c95f1f4a487d0ad3a4afd90a3c072",
+          "artifact": "reviews/round-5-1.md",
+          "sha256": "a52dcc4b817fcea16610a8a70b772f60d808de9c8506f15a21305b57aa6b3d72"
+        },
+        {
+          "timestamp": "2026-09-05T22:22:38.161Z",
+          "source_line": 171,
+          "source_message_id": "msg_09770b63b92b356d016a9c962d02d887d08d24208b44debf38",
+          "artifact": "reviews/round-5-2.md",
+          "sha256": "5f81ed21ce615953cb299c136b29f14c6a7e92d50f94c39ea751689747e8a7f5"
+        }
+      ]
+    }
+  ],
+  "recovered_at": "2026-09-07T06:07:42.665770+00:00",
+  "binding_references": [
+    {
+      "path": "docs/reference/core/layers-of-abstraction/api-layer-guidelines.md",
+      "commit": "2144f762a37408b906efc0e359dc4649078d5ab4",
+      "sha256": "69eefa7416187f2075f10e1851cdd6dc20960d38da385fc1c8804082d28d05ec"
+    },
+    {
+      "path": "docs/reference/core/layers-of-abstraction/application-layer-guidelines.md",
+      "commit": "2144f762a37408b906efc0e359dc4649078d5ab4",
+      "sha256": "69ce17b71fc0e1145b50b7c6e7b3bacc75ec6ecb3f8af363d2510a7740b448da"
+    },
+    {
+      "path": "docs/reference/core/layers-of-abstraction/ddd-reference.md",
+      "commit": "2144f762a37408b906efc0e359dc4649078d5ab4",
+      "sha256": "41a583095aea0d4591eb4339538bcfcdc86419cc5f387ea30688c9877f5da9b1"
+    },
+    {
+      "path": "docs/reference/core/layers-of-abstraction/decision-register.md",
+      "commit": "2144f762a37408b906efc0e359dc4649078d5ab4",
+      "sha256": "590002bf645fe1e64ede41489f68576e28222ef701125c959b9e82b47790c5c8"
+    },
+    {
+      "path": "docs/reference/core/layers-of-abstraction/domain-layer-guidelines.md",
+      "commit": "2144f762a37408b906efc0e359dc4649078d5ab4",
+      "sha256": "61af8de8f7aebeb96eb756bb50671eb53f68a2de18bf75bbbbd965256f99c5b2"
+    },
+    {
+      "path": "docs/reference/core/layers-of-abstraction/rendering-layer-guidelines.md",
+      "commit": "2144f762a37408b906efc0e359dc4649078d5ab4",
+      "sha256": "76f47d2c60062f26c2702465143b06e1340aa989cf1e77031857b62b3cdd0792"
+    },
+    {
+      "path": "docs/reference/core/layers-of-abstraction/system-layer-guidelines.md",
+      "commit": "2144f762a37408b906efc0e359dc4649078d5ab4",
+      "sha256": "de036e870a9437aeb3ce42aec60120c5b3e77a2dd7bd3558d89bb062285625ae"
+    },
+    {
+      "path": "docs/reference/core/adapter-layer-guidelines.md",
+      "commit": "2144f762a37408b906efc0e359dc4649078d5ab4",
+      "sha256": "048519fb28a4ec08a4e2308492980040a2b62559de8e583224f3d08cd0905be6"
+    }
+  ],
+  "consolidated_commit": "a7035c49fc02c5fdf47292f3f68e1e97364c358d"
+}

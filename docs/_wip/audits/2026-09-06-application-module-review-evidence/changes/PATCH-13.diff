@@ -1,0 +1,123 @@
+--- docs/_wip/plans/2026-09-05-application-module-migration-plan.md
++++ docs/_wip/plans/2026-09-05-application-module-migration-plan.md
+@@ -477 +476,0 @@
+-├── package.json                   # Private workspace, explicit export map
+@@ -479,0 +479,3 @@
++├── public/
++│   ├── package.json               # @daylight/piano facade; explicit export map
++│   └── ...                        # Narrow forwarding entries, no mixed barrel
+@@ -480,0 +483 @@
++│   ├── package.json               # Private server facet and dependency scope
+@@ -491,0 +495 @@
++│   ├── package.json               # Private browser facet and dependency scope
+@@ -498 +502 @@
+-├── shared/                        # Portable code; retains its semantic layer
++├── shared/                        # Portable facet if needed; retains real layer
+@@ -502 +506 @@
+-├── cli/                           # Piano commands behind stable root dispatch
++├── cli/                           # Optional private CLI facet + stable dispatch
+@@ -519,0 +524,6 @@
++The owner root is not itself a workspace package: its public facade and runtime
++facets are non-overlapping sibling packages. This is necessary to preserve
++different dependency scopes without ancestor/descendant workspace overlap;
++section 9 specifies the tested mechanism. One contributor owner does not imply
++one npm dependency scope. Add only facets containing actual code.
++
+@@ -525 +535,2 @@
+-| Workspace name | `@daylight/<owner-id>` | IDs unique across modules, capabilities and platform; reserve `platform` and `contracts` |
++| Public workspace name | `@daylight/<owner-id>` | IDs unique across modules, capabilities and platform; reserve `platform` and `contracts` |
++| Private facet name | `@daylight-internal/<owner-id>--<facet>` | Reserve double hyphens as separator; reject owner IDs containing them; no consumer imports of another owner's private facet |
+@@ -617 +628,2 @@
+-satellite references. Dependencies and export paths come from `package.json`;
++satellite references. Include the owner's facade/facet package locations.
++Dependencies and export paths come from those packages' `package.json` files;
+@@ -661,2 +673,3 @@
+-**Proposed choice:** npm workspaces for owner packages and the existing backend
+-and frontend executable packages, with one reviewed root lockfile/install graph.
++**Proposed choice:** npm workspaces for non-overlapping owner public/facet
++packages and the existing backend/frontend executable packages, with one
++reviewed root lockfile/install graph and explicit dependency-identity policy.
+@@ -667,7 +680,11 @@
+-The root becomes a private orchestration package. `modules/*`, `capabilities/*`,
+-`platform`, `shared`, `backend`, and `frontend` are workspace candidates.
+-`shared` publishes private workspace `@daylight/contracts` with narrowly
+-classified entries; owner-local portable code stays with its owner. Satellites
+-with independent builds/locks do not join this workspace automatically.
+-
+-Each owner declares the runtime dependencies it directly uses; root hoisting
++The root becomes a private orchestration package. Workspace membership names
++actual sibling package roots: for example `modules/fitness/public`, `server`,
++`web`, and `cli` beneath that owner. Use the same arrangement for capabilities
++and platform. Never make both an owner ancestor and its descendant facets
++workspace/local-link packages. Metadata discovery validates the checked-in
++workspace list; arbitrary nested manifests do not become members automatically.
++The existing universal `shared` source may be the single `@daylight/contracts`
++workspace when it has no conflicting facets. Satellites with independent
++builds/locks do not join this workspace automatically.
++
++Each facet declares the runtime dependencies it directly uses; root hoisting
+@@ -679,0 +697,39 @@
++The public facade declares its private facet packages as dependencies and
++forwards only deliberate subentries. For example `@daylight/fitness/web/widget`
++forwards `@daylight-internal/fitness--web/public-widget`; the web facet owns the
++source and dependencies. These are permanent supported public entries, not
++old-path compatibility bridges. Forwarders retain their target's layer/context
++and transitive closure; facade packaging does not legalize an import. Only the
++same owner may name its internal facet packages, through declared facet exports
++and legal layer edges. Cross-owner private-facet imports fail architecture
++checks even when npm/Node can technically resolve them.
++
++Do not infer dependency compatibility from one owner name. Fitness currently
++resolves `moment-timezone` as 0.5.47 from browser `SessionSerializerV3.js`, 0.6.0
++from server `FitnessReceiptRenderer.mjs`, and 0.5.46 from CLI `stravaCrud.mjs`.
++Those packages also resolve separate mutable `moment@2.30.1` instances in the
++existing installations. A single full-stack manifest cannot preserve the three
++bare-import meanings; default hoisting can also merge the transitive singleton.
++
++Use npm's **nested installation strategy** as the initial private-dependency
++isolation mechanism, set consistently for lock generation, development, CI and
++image installation. Preserve intentional shared identities through explicit
++host-owned peers/resolver deduplication, not accidental hoisting. Capture both
++must-share and must-separate identities (including within a facet) before
++adoption: nested installation can separate packages that currently share state,
++so it is not automatically correct for every dependency. React/context identity
++is unified within one browser graph, not across unrelated server/CLI runtimes.
++Any dependency requiring special identity treatment gets an explicit reviewed
++peer/dependency arrangement and behavioral proof before moving its consumers.
++
++A planning-time offline fixture with three versioned packages and a same-version
++mutable transitive dependency passes `npm install` and clean `npm ci` using
++non-overlapping sibling workspaces and `--install-strategy=nested` on Node
++22.22.0/npm 10.9.4. Both import orders preserve separate variants, direct and
++facade imports preserve the same facet instance, and an unexported deep subpath
++is rejected. An ancestor-facade/descendant-facet variant installed incompletely
++despite exit zero; that shape is rejected. These are synthetic representability
++results, not proof of real Moment, React, browser, native-module, or image parity.
++WP-03 turns the probe into a repository fixture, tests real dependencies, and
++pins the verified npm version rather than relying on workstation defaults.
++
+@@ -698 +754,3 @@
+-defined in that owner's package, never a global deep-private shortcut.
++defined in the importing facet's package, never a global deep-private shortcut.
++Each facet declares its own `type` and any `imports` mappings; these are not
++inherited from the public facade or a sibling package.
+@@ -705 +763,2 @@
+-   Preserve that version/behavior; do not "deduplicate" by choosing the newest.
++   Preserve that version/behavior and required instance sharing/separation;
++   do not "deduplicate" by choosing the newest.
+@@ -710 +769 @@
+-3. The clean image must copy all workspace manifests before install and every
++3. The clean image must copy all facade/facet workspace manifests before install and every
+@@ -716,2 +775,4 @@
+-5. Prove one React instance and equivalent singleton/context/state identity
+-   across old/new entry paths; exercise native canvas and Stockfish assets in
++5. Prove one React instance in each browser graph and the captured sharing/
++   separation of other singleton/context/state identities across old/new paths.
++   Test real server/CLI timezone variants in both import orders and browser
++   resolution without test-only aliases; exercise native canvas and Stockfish assets in
+@@ -1015 +1076 @@
+-| WP-03 Package foundation | WP-01/02 | Workspace/export proof, dependency provenance, reviewed install/lock change, Linux/image fixture, resolver projections | Clean installation and real Node/Vite/runner resolution; no accidental upgrades or duplicate runtime singleton |
++| WP-03 Package foundation | WP-01/02 | Sibling facade/facet proof, dependency/instance provenance, reviewed nested install/lock change, Linux/image fixture, resolver projections | Clean installation and real Node/Vite/runner resolution; no accidental upgrades, unwanted singleton merging or duplication |
+@@ -1185 +1246 @@
+-| Packages | npm workspaces/explicit exports; one reviewed controller lock graph | WP-03 real resolution/version/native/React proof |
++| Packages | Non-overlapping sibling public/facet workspaces; nested install and explicit identity policy; one reviewed controller lock graph | WP-03 real resolution/version/instance/native/React proof |

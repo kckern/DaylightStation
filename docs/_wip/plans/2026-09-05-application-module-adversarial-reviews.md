@@ -1,6 +1,7 @@
 # Product-module migration: adversarial review record
 
 **Parent:** [Migration execution design](2026-09-05-application-module-migration-plan.md)
+**Current handoff:** [PRE-1 — Establish scope, baseline and safe execution](2026-09-05-application-module-preimplementation-plan.md#phase-1--establish-scope-baseline-and-safe-execution).
 **Requirement:** Five adversarial agent review rounds, with revisions between
 rounds, covering implementation architecture, names, classification, binding
 layers, integration, migration safety, and contributor focus.
@@ -11,6 +12,30 @@ complete only after its finding dispositions are recorded and revisions are
 present in the working documents. Later rounds must inspect the revised text.
 Do not count the author's own review or several simultaneous reads of one
 unchanged draft as five completed rounds.
+
+## Evidence and reviewed revisions
+
+The [recovered evidence packet](../audits/2026-09-06-application-module-review-evidence/README.md)
+preserves the original reviewer responses, reconstructed draft snapshots,
+timestamped revision patches, and a fresh reproduction of the synthetic package
+experiment. Its verifier checks snapshot hashes, patch replay, sequential review
+windows, and the captured package assertions. Recovery did not conduct additional
+review rounds or complete implementation gates.
+
+| Round | Plan lines at dispatch | Preserved evidence |
+|---|---:|---|
+| 1 | 375 | [Input, revisions and reviewer response](../audits/2026-09-06-application-module-review-evidence/README.md#round-1) |
+| 2 | 1,162 | [Input, revisions, findings and package follow-up](../audits/2026-09-06-application-module-review-evidence/README.md#round-2) |
+| 3 | 1,259 | [Input, revisions and reviewer response](../audits/2026-09-06-application-module-review-evidence/README.md#round-3) |
+| 4 | 1,303 | [Input, revisions and reviewer response](../audits/2026-09-06-application-module-review-evidence/README.md#round-4) |
+| 5 | 1,380 | [Input, revisions and explicit final closure](../audits/2026-09-06-application-module-review-evidence/README.md#round-5) |
+
+Snapshots were reconstructed from recorded edits, not saved contemporaneously
+as commits. Changes made during a review are retained with timestamps; the
+dispatch snapshot is not a claim that every document stayed unchanged throughout
+that round. The packet also separates post-review preparation-scope additions
+from the text reviewed in Round 5. Current planning scope is controlled by the
+pre-implementation checklist, not by the historical reviewers' WP-01 handoffs.
 
 ## Round 1 — Foundational architecture and completeness
 
@@ -50,7 +75,7 @@ Reviewer also reconciled all 74 application, 43 domain, 35 frontend module and
 | R2-01 | High | One full-stack package cannot preserve three resolved timezone versions; hoisting can merge mutable transitive instances | Main §7.2/7.3/9 selects non-overlapping sibling facade/runtime-facet workspaces, nested install plus explicit identity policy, manifest/type/imports/install closure rules. Real dependency/native/browser parity remains a named WP-03 gate |
 | R2-02 | High | System discovery dynamically loads higher layers; executable provider manifests under adapters import peers | Main §10.1/10.2 and source inventory §5 split system enumeration from composition loading, give provider manifests concrete composition destinations, and require dynamic-edge negatives plus ordered discovery replay |
 
-R2-01 verification: actual existing Fitness importers resolve `moment-timezone`
+R2-01 historical source inspection: existing Fitness importers resolved `moment-timezone`
 0.5.47 (web), 0.6.0 (server), 0.5.46 (CLI) and distinct `moment@2.30.1` instances.
 A synthetic offline sibling-workspace fixture using Node 22.22.0/npm 10.9.4
 passes install and clean reinstall, both import orders, cross-facet mutable
@@ -59,6 +84,16 @@ The author reran both import orders successfully. An ancestor/descendant-package
 variant returned successful install status but failed runtime imports; that
 layout was rejected. The fixture's no-script installation is not a production
 install policy, and its success does not claim the real dependency graph passed.
+
+[Recovered fixture sources and reproduction instructions](../../../tests/preimplementation/application-modules/experiments/review-package-resolution/README.md)
+now accompany the [original reviewer result](../audits/2026-09-06-application-module-review-evidence/reviews/round-2-2.md).
+The [fresh captured run](../audits/2026-09-06-application-module-review-evidence/package-results.json)
+reproduces both import orders after install and clean reinstall: all four sibling
+cases pass, and all four recovered ancestor/local-link cases fail specifically
+with `ERR_MODULE_NOT_FOUND` for `@probe/timezone` despite successful installation.
+That rejection is an expected negative result. Other historical ancestor-layout
+variants and real dependency/native/browser/image parity are not certified by
+this reproduction.
 
 R2-02 verification basis: `FileModuleManifestDiscovery.load` invokes dynamic
 import, `AdapterRegistry._import` delegates to it, and the OpenAI manifest lazily
@@ -144,22 +179,32 @@ independent review; none was cleared merely by renaming it future work.
 | Open-source contribution readiness | Main §12: synthetic scenarios, clean-checkout commands, maintained public contracts, licensing/private-data review distinct from publication authorization |
 | Five rounds, not five parallel reviews of one draft | Rounds 1–5 above, with each subsequent review inspecting the prior revisions |
 
-Final document audit passed: 100 local links/anchors, balanced fences, no trailing
+The original exit-audit report, before the pre-implementation checklist and later
+scope links were added, recorded: 100 local links/anchors, balanced fences, no trailing
 whitespace, five recorded rounds, 14 unique finding IDs, source-folder coverage,
 and documentation-only worktree changes. `git diff --check` passed. The inventory
 contains all tracked names in the four enumerated groups: 74 application folders,
 43 domain contexts, 35 frontend module folders and 19 extensions. This does not
 pretend that the implementation's required per-file ledger already exists.
 
-Only the roadmap and four planning Markdown files changed. No application code
+That review-stage report covered the roadmap and four planning Markdown files;
+the consolidated commit also added the later pre-implementation checklist. These
+historical file/link counts are not current evidence-packet counts. No application code
 was relocated, no implementation gate was declared passed, and no live
 controller or deployment was run for these reviews. Planning-time evidence
 includes source inspection and the synthetic package-resolution experiment;
 main §3.1 separately reports the existing diagnostic sample, including its two
 failing Piano fixtures.
 
-**Handoff:** Start WP-01 inventory and the explicitly ordered WP-02/03
-prerequisites. Real package/native/browser parity, authoritative-reference
+**Handoff:** Start [PRE-1](2026-09-05-application-module-preimplementation-plan.md#phase-1--establish-scope-baseline-and-safe-execution),
+beginning with PRE-1.1.1 source identity, then follow the preparation checklist's
+dependencies and scope boundaries. It permits investigation, documentation and
+isolated tests/experiments. Existing-file repairs, authoritative-reference edits,
+package/lock adoption, extraction and the Gratitude rehearsal remain later,
+separately authorized changes; do not execute WP-02/03 from this review record.
+This evidence recovery does not check off any PRE item.
+
+Real package/native/browser parity, authoritative-reference
 reconciliation, full file classification, CI enforcement, contributor trials
 and release certification are unexecuted implementation gates. Completing this
 plan neither claims production readiness nor grants deployment authority.

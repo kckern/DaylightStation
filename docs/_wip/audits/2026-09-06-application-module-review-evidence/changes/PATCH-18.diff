@@ -1,0 +1,90 @@
+--- docs/_wip/plans/2026-09-05-application-module-migration-plan.md
++++ docs/_wip/plans/2026-09-05-application-module-migration-plan.md
+@@ -3 +3 @@
+-**Status:** Full execution design under adversarial review; no source relocation implemented.
++**Status:** Five-round-reviewed proposed execution design; no source relocation implemented.
+@@ -632,2 +632,4 @@
+-WP-01 splits other mixed shared files by behavior, and WP-02 records any required
+-reference clarification before approving new classifications. Public re-exports
++WP-01 records and classifies required splits of other mixed shared files and
++assigns their execution packages; extraction follows the WP-02/03 gates.
++WP-02 records any required reference clarification before approving new
++classifications. Public re-exports
+--- docs/_wip/plans/2026-09-05-application-module-adversarial-reviews.md
++++ docs/_wip/plans/2026-09-05-application-module-adversarial-reviews.md
+@@ -107 +107 @@
+-## Round 5 — Pending
++## Round 5 — Fresh final adversarial audit
+@@ -109 +109,5 @@
+-## Final exit audit — Pending
++**Reviewer:** `architecture_review_r5`, a fresh independent agent, after all
++Round 4 revisions. Read the complete plan/inventory/review record, all seven
++layer reference files and adapter guidance; checked representative source.
++**Result:** No remaining blocking architectural design finding. One low-severity
++ordering clarification is incorporated before handoff.
+@@ -111,6 +115,48 @@
+-Five rounds must be recorded with revised-document evidence. All blocking
+-architectural findings must be addressed or explicitly rejected with rationale
+-and verification; simply relabeling them as future work is not resolution.
+-Implementation prerequisites can remain unexecuted because the requested
+-deliverable is a migration plan, but their scope, owner, acceptance evidence and
+-ordering must be explicit.
++| ID | Severity | Finding | Disposition and evidence |
++|---|---|---|---|
++| R5-01 | Low | §8.2 could imply WP-01 performs mixed-file extraction before policy/package gates | Corrected §8.2: WP-01 records/classifies required splits and assigns execution packages; extraction follows WP-02/03, consistent with §6/13 |
++
++The reviewer confirmed prior fixes are materially specified: export/layer
++provenance, subowner visibility, provider loading in composition, dependency
++identity, closed declarative contracts, loaded-client rollback assets and build
++provenance. Actual screen-host/Piano imports support the proposed separation of
++generic host from installed widget composition without reversing the dependency.
++Acceptance is for the plan and handoff to inventory work, not a production move.
++
++## Final exit audit
++
++Five **sequential** adversarial review/revision rounds were completed across
++three reviewer agents. Fourteen findings have explicit dispositions. Earlier
++high-severity findings received substantive design amendments and subsequent
++independent review; none was cleared merely by renaming it future work.
++
++| User requirement | Design coverage and evidence |
++|---|---|
++| A focused full-stack space for experienced contributors | Main §1/7/12: product ownership, applicable server/web/CLI facets, safe real-product dev composition, domain-expert task trials |
++| Platform vs shared capability vs product, including app-owned public exports | Main §1/7–10 plus source inventory; ownership, role, runtime, layer and visibility are separate axes |
++| Generic screen-framework and reusable Player/gaming | Main §1.1–1.4/7/10: generic host vs installed selection, supported playback entries, experience subowners and one-way engine dependencies |
++| Existing abstraction requirements remain binding | Main §8: final D1–D10, context ranks, reference reconciliation, export provenance, closed contract permissions and destination-path negative fixtures |
++| Migration/integration plan, not new functionality | Main §2/6/10/11/13: behavior freeze, incoming/outgoing bridges, all-primary-source scope, explicit external-runtime ownership; runtime exploration clearly deferred |
++| Fast coordinated cutover without permanent cruft | Main §6/13/15: incremental branch preparation, one controller cutover, no deprecated source tree/duplicate writers, certified rollback and client asset retention |
++| Red/green contracts and reliable import migration | Main §3–5/9/14: discovered test/case and artifact populations, deliberately failing fixtures, real resolver/image gates, package prototype and preserved dependency identity |
++| Open-source contribution readiness | Main §12: synthetic scenarios, clean-checkout commands, maintained public contracts, licensing/private-data review distinct from publication authorization |
++| Five rounds, not five parallel reviews of one draft | Rounds 1–5 above, with each subsequent review inspecting the prior revisions |
++
++Final document audit checks local links/anchors, balanced fences, trailing
++whitespace, unique review IDs and source-folder inventory coverage. The inventory
++contains all tracked names in the four enumerated groups: 74 application folders,
++43 domain contexts, 35 frontend module folders and 19 extensions. This does not
++pretend that the implementation's required per-file ledger already exists.
++
++Only the roadmap and four planning Markdown files changed. No application code
++was relocated, no implementation gate was declared passed, and no live
++controller or deployment was run for these reviews. Planning-time evidence
++includes source inspection and the synthetic package-resolution experiment;
++main §3.1 separately reports the existing diagnostic sample, including its two
++failing Piano fixtures.
++
++**Handoff:** Start WP-01 inventory and the explicitly ordered WP-02/03
++prerequisites. Real package/native/browser parity, authoritative-reference
++reconciliation, full file classification, CI enforcement, contributor trials
++and release certification are unexecuted implementation gates. Completing this
++plan neither claims production readiness nor grants deployment authority.
+--- docs/roadmap/2026-08-31-full-stack-application-modules.md
++++ docs/roadmap/2026-08-31-full-stack-application-modules.md
+@@ -6 +6 @@
+-**Status:** Ownership and structural migration design proposed — no source migration implemented | **Last updated:** 2026-09-05
++**Status:** Structural migration plan reviewed through five adversarial rounds; proposed, not implemented | **Last updated:** 2026-09-05
+@@ -13,0 +14,5 @@
++
++The [source inventory](../_wip/plans/2026-09-05-application-module-source-inventory.md)
++and [five-round review record](../_wip/plans/2026-09-05-application-module-adversarial-reviews.md)
++support the immediate plan. Layer requirements remain binding; review completion
++authorizes neither source moves before their gates nor a production deployment.

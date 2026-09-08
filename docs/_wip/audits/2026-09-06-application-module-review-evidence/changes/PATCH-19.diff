@@ -1,0 +1,11 @@
+--- docs/_wip/plans/2026-09-05-application-module-adversarial-reviews.md
++++ docs/_wip/plans/2026-09-05-application-module-adversarial-reviews.md
+@@ -124,0 +125,2 @@
++The reviewer rechecked the corrected §8.2 against §13 and explicitly closed
++R5-01 and Round 5 with no unresolved blocking architectural plan finding.
+@@ -145,2 +147,3 @@
+-Final document audit checks local links/anchors, balanced fences, trailing
+-whitespace, unique review IDs and source-folder inventory coverage. The inventory
++Final document audit passed: 100 local links/anchors, balanced fences, no trailing
++whitespace, five recorded rounds, 14 unique finding IDs, source-folder coverage,
++and documentation-only worktree changes. `git diff --check` passed. The inventory

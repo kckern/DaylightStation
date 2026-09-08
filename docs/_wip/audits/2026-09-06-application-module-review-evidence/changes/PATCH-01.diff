@@ -1,0 +1,149 @@
+--- docs/roadmap/2026-08-31-full-stack-application-modules.md
++++ docs/roadmap/2026-08-31-full-stack-application-modules.md
+@@ -6 +6,7 @@
+-**Status:** Proposed architecture and migration roadmap — no implementation implied | **Last updated:** 2026-08-31
++**Status:** Proposed architecture; first runtime design drafted — no implementation implied | **Last updated:** 2026-09-05
++
++**Design draft:** [Module runtime v0 and Gratitude extraction](../_wip/plans/2026-09-05-application-module-runtime-design.md).
++That draft turns the near-term roadmap into proposed contracts, a source-backed
++pilot boundary, and delivery gates. Its v0 contracts take precedence over the
++illustrative manifest examples below for the first implementation; the larger
++capability and satellite catalog remains a later direction.
+@@ -12 +18,2 @@
+-**Reading map:** Sections 1–3 state the decision and vocabulary. Sections 4–10
++**Reading map:** Section 0 records the codebase review and proposed first decisions.
++Sections 1–3 state the decision and vocabulary. Sections 4–10
+@@ -16,0 +24,102 @@
++
++---
++
++## 0. Codebase review and proposed first design
++
++Reviewed on 2026-09-05 against commit `2144f762a`, after synchronizing the clean
++checkout with the deployed source. Findings below describe inspected source
++and static checks, not a live deployment test. The external Kitchen providers
++and every satellite have not been audited in this pass.
++
++The central proposal holds up: application ownership is scattered, while useful
++composition, adapter, persistence, and presentation boundaries already exist.
++The next step should be a small runtime around those boundaries. A complete
++capability ecosystem is not a prerequisite for proving one removable module.
++
++### 0.1 What exists, and what still needs design
++
++| Area | Current evidence | Design consequence |
++|---|---|---|
++| Composition | [`app.mjs`](../../backend/src/app.mjs) is 6,591 lines; [`bootstrap.mjs`](../../backend/src/5_composition/bootstrap.mjs) is 3,705. Feature composers already exist under `5_composition/modules/`, but `app.mjs` still selects, starts, mounts, and stops individual features. | Reuse factories behind a module runtime; a folder named `modules` is not yet an installation or lifecycle contract. |
++| Adapter selection | [`AdapterRegistry`](../../backend/src/5_composition/integrations/AdapterRegistry.mjs) discovers capability/provider manifests; [`IntegrationLoader`](../../backend/src/5_composition/integrations/IntegrationLoader.mjs) constructs household adapters. [`HouseholdAdapters.get`](../../backend/src/5_composition/integrations/HouseholdAdapters.mjs) can return a no-op. | Add an explicit versioned resolution result. A returned object is insufficient proof of a required capability. Preserve the existing provider loader behind the boundary. |
++| Configuration | [`HOUSEHOLD_APP_CONFIGS`](../../shared/contracts/householdConfig.mjs) already owns grouped paths, including `gratitude/config`, `school/school`, and `hardware/scales`. [`ConfigService`](../../backend/src/0_system/config/ConfigService.mjs) and the config loader use that registry; unknown config keys do not fall back to flat paths. | Generate contributions into the existing registry before config loading. Preserve its read/write symmetry and authorization restrictions; do not introduce a parallel file-discovery convention. |
++| Browser discovery | [`main.jsx`](../../frontend/src/main.jsx) owns top-level routes; [`appRegistry.js`](../../frontend/src/lib/appRegistry.js) owns AppContainer launch entries; [`AdminNav`](../../frontend/src/modules/Admin/AdminNav.jsx) and [`AppConfigEditor`](../../frontend/src/modules/Admin/Apps/AppConfigEditor.jsx) add further lists. | A pilot must cover its launch surface and its admin editor, as well as normal route registration. |
++| Content discovery | `createContentRegistry` in `bootstrap.mjs` passes a separate hardcoded `appDefs` map to [`AppRegistryAdapter`](../../backend/src/1_adapters/content/app-registry/AppRegistryAdapter.mjs). It is not identical to the browser map. | Derive pilot entries from one installed surface catalog and preserve existing `app:gratitude` IDs. |
++| Household scope | Global [`householdResolver`](../../backend/src/4_api/middleware/householdResolver.mjs) sets `req.householdId`, but the [`Gratitude router`](../../backend/src/4_api/v1/routers/gratitude.mjs) selects `req.query.household` or the default household. Integration startup initially loads the default household. | Specify one module instance per household and use the authorized request context consistently. A global module singleton would preserve this mismatch. |
++| Access | [`permissionGate`](../../backend/src/4_api/middleware/permissionGate.mjs) checks configured app-route mappings; unmapped routes pass through. | Module routes need explicit access declarations validated before mounting. Hiding a surface cannot enforce access to its API. |
++| Lifecycle | `app.mjs` starts schedulers, subscriptions, and hardware-facing loops in separate sections and attaches feature-specific `SIGTERM` handlers. | Separate composition from activation; track cleanup centrally, including partial startup failure. Apply v0 enablement changes on restart. |
++| Architecture | [`audit-layer-imports.mjs`](../../scripts/audit-layer-imports.mjs) scans `.mjs` under `backend/src` and `shared`, with `cli` added for port analysis. [`audit-direct-fs-imports.mjs`](../../scripts/audit-direct-fs-imports.mjs) has separate backend root rules. | Both must recognize vertical modules before source moves. An ignored directory can appear compliant. |
++| Delivery gates | [The commit hook](../../.githooks/pre-commit) runs architecture, link, parse, and composition checks. No checked-in `.github/workflows` jobs were found. | Add automated CI and confirm required-check enforcement separately; a local hook alone does not provide it. |
++| Build and packages | [The Dockerfile](../../docker/Dockerfile) explicitly copies `shared`, `backend`, `frontend`, and `cli`. Root, backend, and frontend have separate dependency installations; [Vite](../../frontend/vite.config.js) has explicit aliases. | New source roots need image, resolver, watcher, and test integration. A module that works through test aliases may still be absent from the shipped image. |
++
++The static checks passed at the reviewed revision:
++
++- `node scripts/audit-layer-imports.mjs`: all reported counts are zero except
++  `apps-success-false`, which remains at its existing baseline of 44.
++- `node scripts/audit-direct-fs-imports.mjs`: passed, 2,542 runtime files checked.
++
++These results establish the existing baseline, not module-boundary coverage.
++The broad dependency table in the older backend architecture overview permits
++imports that the current audit rejects. The pilot must preserve the stricter
++executable rules and reconcile the reference prose when the policy is extracted.
++
++### 0.2 Gratitude is the pilot, with explicit outgoing and incoming edges
++
++Gratitude remains the best first candidate reviewed here. It exercises domain
++objects, a datastore port, YAML persistence, card rendering, printing, HTTP,
++realtime publication, a launchable UI, and configuration without School's
++hardware and learning lifecycle. It is not isolated today:
++
++- Family Selector and the generic app parameter resolver both call
++  `/api/v1/gratitude/bootstrap` for household users. Move that projection to
++  `household-identity` before claiming Gratitude can be absent.
++- [`GratitudeFeedAdapter`](../../backend/src/1_adapters/feed/sources/GratitudeFeedAdapter.mjs)
++  reads Gratitude's stored YAML directly. Feed needs a narrow selection query,
++  with explicit unavailability when Gratitude is disabled.
++- [`HomeBotContainer`](../../backend/src/3_applications/homebot/HomeBotContainer.mjs)
++  receives the concrete Gratitude service. Its assignment workflow needs a
++  narrow command contract, not access to all Gratitude operations.
++- [`TemporaryImagePrintGateway`](../../backend/src/1_adapters/hardware/thermal-printer/TemporaryImagePrintGateway.mjs)
++  implements a Gratitude-owned port despite its generic hardware location.
++  Keep it with that owner during extraction; a later public `print-output`
++  implementation may replace it after the provider-neutral artifact contract
++  is established.
++- The admin editor, configuration registry, backend content list, event facade,
++  and external consumers must participate in removal tests, not just the API
++  router and launch screen.
++
++School confirms why a large application should follow the pilot:
++[`schoolLifecycle.mjs`](../../backend/src/5_composition/modules/schoolLifecycle.mjs)
++assembles learning, printing, device dispatch, Piano handoffs, Fitness evidence,
++and policy bridges. Its School-specific surface certification also includes
++paper and calculator targets; it is not the platform's browser surface registry.
++Those contracts need individual ownership decisions before extraction.
++
++### 0.3 Proposed v0 decisions
++
++The [design draft](../_wip/plans/2026-09-05-application-module-runtime-design.md)
++proposes these concrete defaults for implementation review:
++
++1. Plain owner directories initially, with build-generated catalogs and explicit
++   public entry points. Defer a workspace-package migration until dependency
++   resolution is proven from both Node and the production web build.
++2. Validate declarative manifests without executing application entries. Produce
++   separate server loaders, browser loaders, and portable config metadata from
++   the same installed set.
++3. Compose once per `(moduleId, householdId)` and share that instance across its
++   surfaces. Freeze selected capability bindings for that activation.
++4. Require exact capability contract revisions for v0; distinguish contract
++   support, configured availability, and transient health.
++5. Treat enabling, disabling, and changing providers as restart-required in v0.
++   Compose inert objects, activate with owned cleanup, then admit requests.
++6. Preserve `/api/v1/gratitude`, `/app/gratitude`, `app:gratitude`, the admin
++   route, config paths, and stored record shapes. Route ownership and access
++   declarations become part of the manifest immediately.
++7. Require the pilot to run with a fake printer, without a printer, in two
++   synthetic households, and completely absent from the build.
++
++The ordering needs one correction to the original phases: pilot removal cannot
++be the Phase 3 exit while frontend discovery and config integration arrive in
++Phases 5–6. Phase 3 proves an inert, composed slice; final removal is a combined
++runtime, catalog, configuration, and consumer-compatibility gate. The design
++draft groups that work into reviewable increments.
+@@ -996,0 +1106,6 @@
++For household-scoped modules, "composed once" means once per
++`(moduleId, householdId)`, shared by all of that household's surfaces. It does
++not mean one mutable instance for the entire process. The v0 design also
++separates inert composition from activation and defers runtime re-composition
++to a later lifecycle design.
++
+@@ -1113 +1228,2 @@
+-9. dispose modules during shutdown or reload;
++9. dispose modules during shutdown or failed activation (hot reload is deferred
++   in v0);
+@@ -2223 +2339,3 @@
+-- platform code cannot depend on an application module;
++- handwritten platform code cannot depend on an application implementation;
++  generated catalog loaders may reference declared composition and surface
++  entries, as the explicit discovery exception;
+@@ -2502,2 +2620,5 @@
+-**Exit condition:** removing the pilot manifest removes the application without
+-leaving broken imports, routes, jobs, or navigation.
++**Exit condition:** the pilot composes through its declared entry with synthetic
++dependencies, preserving storage and API behavior. Any temporary compatibility
++wiring is recorded explicitly. Complete removal without broken consumers,
++routes, jobs, or navigation is the combined exit gate after Phases 4–6, as
++detailed in the v0 design.
+@@ -2794,2 +2915,4 @@
+-The pilot extraction should answer these questions with code rather than
+-speculation:
++The pilot extraction should answer these questions with code. Section 0 and the
++v0 design propose defaults for catalog generation, directory packaging,
++household scope, API injection, and restart-based enablement. They remain
++proposals until the pilot demonstrates them:

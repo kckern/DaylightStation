@@ -1,0 +1,66 @@
+--- docs/_wip/plans/2026-09-05-application-module-migration-plan.md
++++ docs/_wip/plans/2026-09-05-application-module-migration-plan.md
+@@ -117 +117,4 @@
+-  concrete application consumers. Callback invocation is not a reverse import.
++  concrete application consumers. An adapter's permitted import of the existing
++  application-owned port it implements is a contract edge, not a concrete
++  consumer import; preserve D3/D7 and the rules in section 8. Callback invocation
++  is not a reverse import.
+@@ -637,0 +641,10 @@
++For dependency inversion, a port class can be a runtime import while still being
++a contract-only ownership edge. Include it in the actual file import graph;
++exclude neither the file nor its transitive imports from layer checks. A lawful
++adapter→implemented-port edge must not be confused with adapter→workflow, and
++must not cause generic engines to load an app's composition. Prefer an app-owned
++bridge implementing its app-specific port and consuming an injected capability
++facade; genuinely shared adapters implement shared capability application ports.
++Any cross-owner adapter→app-port binding is explicit in metadata and is wired
++by outer composition. No mixed public barrel qualifies as a port-only edge.
++
+@@ -777,0 +791,24 @@
++### 10.4 Concrete integration register
++
++These are proposed move/binding targets for the representative cross-owner
++edges, not names of a new production capability protocol. WP-01 expands this
++register to every incoming/outgoing edge in the source ledger.
++
++| Consumer → provider | Current seam/behavior | Destination and binding owner | Compatibility proof |
++|---|---|---|---|
++| Feed → Gratitude | `GratitudeFeedAdapter` reads selections YAML | Feed-owned adapter implements Feed port; injected Gratitude selections query comes from Gratitude application public facade; backend composition binds both | Identical Feed items/filter/order for fixture selections; Feed imports neither Gratitude datastore nor YAML shape |
++| Homebot → Gratitude | Injected broad service exposes `addSelections` | Homebot application receives its narrow command port; Homebot-owned bridge delegates to injected Gratitude command; backend composition binds | Same assignment effects, validation, duplicates and return behavior |
++| Family Selector / app parameter resolver → household identity | Calls `/api/v1/gratitude/bootstrap` | Identity capability owns the reusable projection/client seam; preserve old endpoint and payload, with existing selection behavior; composition supplies query to Gratitude API | Existing URL and clients remain supported; synthetic user options match exactly; no endpoint removal or new auth scope |
++| Installed screens → Piano/School/Health | Built-ins import concrete components | `frontend/src/composition/screens/` registers each owner's public web export; screen-host registry stays generic | Same widget IDs/context/props; generic host with fake widget has no application import |
++| Piano → gaming | Rule/authority helpers plus challenge provider | Piano-owned challenge adapter and presenters; gaming owns protocol/authority; outer product composition supplies provider | Seed/revision/score, MIDI evidence, budget and completion parity; no gaming→Piano implementation import |
++| School → Piano/Fitness | Lifecycle consumes learning/challenge/session evidence | School-owned port/translation bridge; backend composition supplies peer public queries/commands | Same assignment completion/evidence and unavailable dependency behavior as baseline |
++| Product renderer → physical printer | Gratitude-specific `TemporaryImagePrintGateway` implements its port | `modules/gratitude/server/adapters/`; generic fleet/transport under print-output; composition injects renderer and transport separately | Unchanged rendered fixture and print calls; renderer imports neither port nor adapter |
++| Media/Piano/Fitness/School → Player | Main component plus deep controller/helper imports | Playback publishes minimal supported web subentries; each product keeps host policy wrapper | Consumer-specific playback/control/clear/completion/resume tests, including current callback defaults |
++| Admin → product settings | Hardcoded editor imports/config operations | Product owns editor/operations; Admin shell uses public entries selected in composition | Same editor route/order/config read-write behavior and permissions |
++
++The old Gratitude bootstrap URL is an intentional external contract, not a
++permitted permanent private-code dependency. Preserving that URL can mean the
++router delegates to an injected identity query; it does not require a new public
++identity endpoint. The initial refactor preserves the projection exactly,
++including current household selection behavior, rather than silently fixing it.
++
+@@ -1023,0 +1061,21 @@
++
++| Current command/tool | Current coverage/limit | Required migration extension and release status |
++|---|---|---|
++| `npm run audit:fs` | Listed backend roots and filesystem import AST | All production owners/targets, strict D10; blocking |
++| `npm run audit:layers` | Numbered-path layer/rank/import checks, baseline ratchets | Semantic classifier + all resolutions/public exports, reference conflicts settled; blocking |
++| `npm run audit:links` | Server/CLI local ESM links, not every workspace package or browser asset | Track workspace edges and production closure; add real Node/browser/image checks; blocking |
++| `npm run check:parse` | Existing source discovery/parser | All moved JS/JSX plus applicable target-language checks; blocking |
++| `npm run check:scss` / `audit:ui` | Frontend/source-specific roots and alias/token policies | Preserve intended scope for all relocated styles/UI; verify built assets; blocking for regressions |
++| `node scripts/audit-api-route-surface.mjs --base=<baseline>` | Literal registration inventory, removal-oriented | Full mounted/ordered/aliased inventory + assembled HTTP characterization; blocking for contract delta |
++| `npm run test:refactor` | Explicit characterization file list | Relocated equivalents plus untested critical contracts; no lost file/case; blocking for affected scenarios |
++| `npm run test:composition-contracts` | Selected factory composition | Owner and cross-owner construction/registration/cleanup using fakes; blocking |
++| `npm run test:unit:vitest` | Listed roots and baseline failures | Include all owner roots; preserve cases and runner ownership; regressions block |
++| `test:isolated`, `test:backend`, `test:integrated`, `test:integration` | Different central discovery/runner rules | Reconcile duplicates/omissions, include owner tests, explicit assembled API targets; required scenario failures block |
++| Existing Playwright configs / `test:live:*` | Target-specific browser/provider/live flows | Safe synthetic deployment by default; authorized real checks separately recorded; critical consumer failures block |
++| Frontend build + controller Docker build | Current explicit source copies and three installs | Workspace install, Linux case sensitivity, all code/assets/native resources and no private inputs; blocking |
++
++Resolve command aliases through `package.json` at the frozen implementation
++baseline. Store expanded commands, versions, roots and results in the evidence
++bundle. Do not run a missing script (such as today's `smoke:yaml` target) and
++record it as skipped success; repair/remove the stale documentation entry in
++WP-09 and replace any required coverage explicitly.

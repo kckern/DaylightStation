@@ -1,0 +1,14 @@
+--- docs/_wip/plans/2026-09-05-application-module-source-inventory.md
++++ docs/_wip/plans/2026-09-05-application-module-source-inventory.md
+@@ -109 +109 @@
+-| `proxy` | S platform application or C `content` | Pure proxy operation vs content-provider translation; classify per port |
++| `proxy` | C `content`/`playback` | MintPlaybackStream is playback; thumbnails/assets are content. Generic HTTP mechanics alone belong to system |
+@@ -111 +111 @@
+-| `quizzes` | C `assessment` or P `school` | Shared quiz primitives vs School policy; resolve before extracting, no rank promotion |
++| `quizzes` | P `school` | quizScanRecorder decodes the School assessment form; raw OMR transport remains scan capability |
+@@ -173 +173 @@
+-| `Chess` | Gaming chess presentation or product presenter | Shared board vs Piano/School policy must be separated |
++| `Chess` | `capabilities/gaming/web/chess` | Board accepts labels/colors and knows squares, not Piano/School policy; retain neutral presentation |
+@@ -185 +185 @@
+-| `Input` | Platform web or named input capability | Classify generic event mechanics vs game/device semantics |
++| `Input` | Camera/speech capture capabilities + Homeline calling product | Contains Webcam and VideoCall, not keyboard/game input; shared device hooks split from calling policy |
