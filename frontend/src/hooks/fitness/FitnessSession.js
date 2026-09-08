@@ -946,6 +946,7 @@ export class FitnessSession {
     this._deviceRouter.setEquipmentCatalog(equipmentList);
     this.initVibrationTrackers(equipmentList);
     this.initPressureMatTrackers(equipmentList);
+    this.seedConfiguredRiders(equipmentList);
 
     // Build a minimal equipmentId -> entry lookup used by accessors such as
     // getEquipmentCadence. The router already keeps cadence-id -> entry maps,
@@ -983,6 +984,37 @@ export class FitnessSession {
           config: item.activity || {}
         });
       }
+    });
+  }
+
+  /**
+   * Claim the riders that config already knows about.
+   *
+   * A `cadence_floor` (and a mat participation credit) needs to know WHOSE ride
+   * it is watching, and the only way to answer that was a physical selector
+   * press. Equipment with exactly one possible rider therefore sat permanently
+   * unclaimed: on 2026-09-07 the tricycle produced a full RPM series for
+   * twenty-four minutes while its governance rule stood down as `unclaimed` on
+   * every single tick.
+   *
+   * `rider:` on the equipment is that standing answer. It seeds the claim and
+   * nothing more — a selector press, an on-screen assignment, or the
+   * one-rider-one-machine guardrail all still move it, because a declared
+   * rider is a DEFAULT, not a lock. Re-seeding is therefore skipped for any
+   * equipment already claimed, or a config refresh mid-session would drag a
+   * rider back off the bike they had just moved to.
+   *
+   * @param {Array} equipmentList - Equipment config array
+   */
+  seedConfiguredRiders(equipmentList = []) {
+    if (!Array.isArray(equipmentList) || !this._equipmentRider) return;
+    equipmentList.forEach((entry) => {
+      const equipmentId = entry?.id == null ? null : String(entry.id).trim();
+      const rider = typeof entry?.rider === 'string' ? entry.rider.trim() : '';
+      if (!equipmentId || !rider) return;
+      if (this._equipmentRider.has(equipmentId)) return;
+      this._equipmentRider.set(equipmentId, rider);
+      getLogger().info('fitness.rider.seeded_from_config', { equipmentId, userId: rider });
     });
   }
 
