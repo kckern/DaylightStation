@@ -1,0 +1,206 @@
+{
+  "path_normalization": {
+    "__ANCESTOR_ROOT__": "disposable ancestor fixture root",
+    "__SIBLING_ROOT__": "disposable sibling fixture root"
+  },
+  "files": [
+    {
+      "layout": "ancestor",
+      "path": "package.json",
+      "original_sha256": "8ca2ef45160eb9061f9a2813bd6b176d9c450acbb91c868bf7f195efa961293d",
+      "template_sha256": "8ca2ef45160eb9061f9a2813bd6b176d9c450acbb91c868bf7f195efa961293d"
+    },
+    {
+      "layout": "ancestor",
+      "path": "package-lock.json",
+      "original_sha256": "e98d7057c7047420a9c97a8b5d2b00f9c5a92eb3c1377bbe6e389ebb373df1a0",
+      "template_sha256": "1f01495b13ae60566e0e08ccbcbedcc5305c1639f6cd3713be376a6430f40f1b"
+    },
+    {
+      "layout": "ancestor",
+      "path": "backend/probe.mjs",
+      "original_sha256": "59cfb7290db134d60f62ccbfdcd76a1f423d5ad23a26b47d67101e9c1ebaaf27",
+      "template_sha256": "59cfb7290db134d60f62ccbfdcd76a1f423d5ad23a26b47d67101e9c1ebaaf27"
+    },
+    {
+      "layout": "ancestor",
+      "path": "backend/package.json",
+      "original_sha256": "ec8d187385a56592a29e5251fff55ddd6e674f21db8530a8f3d2776c8a871dbd",
+      "template_sha256": "ec8d187385a56592a29e5251fff55ddd6e674f21db8530a8f3d2776c8a871dbd"
+    },
+    {
+      "layout": "ancestor",
+      "path": "modules/fitness/package.json",
+      "original_sha256": "3cdbcf4bf02e06b3ea6d4e360bae52db4c3d133ac84491462ebabc4ca18c7ea0",
+      "template_sha256": "3cdbcf4bf02e06b3ea6d4e360bae52db4c3d133ac84491462ebabc4ca18c7ea0"
+    },
+    {
+      "layout": "ancestor",
+      "path": "modules/fitness/web/package.json",
+      "original_sha256": "283f56c7f74a69cc1932a7a73891b13d864b0fde5c067fdd2ee61c5c2c4ff64f",
+      "template_sha256": "fce55fcac3d58923425b66bf46c93f8773ec5403cd995be73520595193dc71ce"
+    },
+    {
+      "layout": "ancestor",
+      "path": "modules/fitness/web/value.mjs",
+      "original_sha256": "3a68277c5ff577b2b06d3d4e0a377ce6b87ff685e0ec591059d017e5f7ac1a5c",
+      "template_sha256": "3a68277c5ff577b2b06d3d4e0a377ce6b87ff685e0ec591059d017e5f7ac1a5c"
+    },
+    {
+      "layout": "ancestor",
+      "path": "modules/fitness/server/package.json",
+      "original_sha256": "dd81f6a251b40825df8b5c0284ef79e0377e53207fd80fd79eeded197639e02d",
+      "template_sha256": "bf1b0524a8780d96aa57e58f3806793cd3d114466aaba006e96709f960690596"
+    },
+    {
+      "layout": "ancestor",
+      "path": "modules/fitness/server/value.mjs",
+      "original_sha256": "3a68277c5ff577b2b06d3d4e0a377ce6b87ff685e0ec591059d017e5f7ac1a5c",
+      "template_sha256": "3a68277c5ff577b2b06d3d4e0a377ce6b87ff685e0ec591059d017e5f7ac1a5c"
+    },
+    {
+      "layout": "ancestor",
+      "path": "modules/fitness/cli/package.json",
+      "original_sha256": "5862ed405a0ce4636b4b52c5f981cd15d0b476139d28288227168ac1b93a7b7b",
+      "template_sha256": "0e356a5fb3c4f0f8cee50ffb1bd678a8e04bfe42c3b6323a594f42ece32dc08c"
+    },
+    {
+      "layout": "ancestor",
+      "path": "modules/fitness/cli/value.mjs",
+      "original_sha256": "3a68277c5ff577b2b06d3d4e0a377ce6b87ff685e0ec591059d017e5f7ac1a5c",
+      "template_sha256": "3a68277c5ff577b2b06d3d4e0a377ce6b87ff685e0ec591059d017e5f7ac1a5c"
+    },
+    {
+      "layout": "ancestor",
+      "path": "fixtures/mutable/package.json",
+      "original_sha256": "003fbb22136ee800c9fcfd2c55426f8caaa6082ba12bc7e02b102ab35fe5a3bf",
+      "template_sha256": "003fbb22136ee800c9fcfd2c55426f8caaa6082ba12bc7e02b102ab35fe5a3bf"
+    },
+    {
+      "layout": "ancestor",
+      "path": "fixtures/mutable/index.mjs",
+      "original_sha256": "449599b06e90c35793959bdf6833ca4ac6c2943e3845cccdfc5f5c263cd04450",
+      "template_sha256": "449599b06e90c35793959bdf6833ca4ac6c2943e3845cccdfc5f5c263cd04450"
+    },
+    {
+      "layout": "ancestor",
+      "path": "fixtures/web/package.json",
+      "original_sha256": "e01ac3de4df48be243536ffd7e7c326753754897ed929650374dc7839431dc92",
+      "template_sha256": "da9e28f86e390a3322308203395eff651e959bc2bc873c0ab8acbf3df17ead34"
+    },
+    {
+      "layout": "ancestor",
+      "path": "fixtures/web/index.mjs",
+      "original_sha256": "baf91c77035bdd46c02a96165b89a65c383618db48a422e255a5d77acfb943b1",
+      "template_sha256": "baf91c77035bdd46c02a96165b89a65c383618db48a422e255a5d77acfb943b1"
+    },
+    {
+      "layout": "ancestor",
+      "path": "fixtures/server/package.json",
+      "original_sha256": "5b95531a936722bb064f1aa4ae69f3069ca73546498150f450ee35ccc605e434",
+      "template_sha256": "face4df6131b50292fb9f0d856ce87b53672609b283716876091daecfbadc385"
+    },
+    {
+      "layout": "ancestor",
+      "path": "fixtures/server/index.mjs",
+      "original_sha256": "1d285fcc1f5856c3ed802a8a7ad22f42ece66ec2de4c6943aedcf143d591676d",
+      "template_sha256": "1d285fcc1f5856c3ed802a8a7ad22f42ece66ec2de4c6943aedcf143d591676d"
+    },
+    {
+      "layout": "ancestor",
+      "path": "fixtures/cli/package.json",
+      "original_sha256": "abce0b01aef3896f7d647f1008ac369553c24b384687dde419714519f43ec68e",
+      "template_sha256": "8b895037a2f38aaacc09de7b41319a038abece58d900888c66a07751932cd351"
+    },
+    {
+      "layout": "ancestor",
+      "path": "fixtures/cli/index.mjs",
+      "original_sha256": "8d9d701304afcd50ce758773f6bba777bd5a814951acab06b9bf16596ae93c6d",
+      "template_sha256": "8d9d701304afcd50ce758773f6bba777bd5a814951acab06b9bf16596ae93c6d"
+    },
+    {
+      "layout": "sibling",
+      "path": "package.json",
+      "original_sha256": "a3b5e418572e316fe9dae02bf0c481f1e4040580cea3c01df5dcf777c5dffe40",
+      "template_sha256": "a3b5e418572e316fe9dae02bf0c481f1e4040580cea3c01df5dcf777c5dffe40"
+    },
+    {
+      "layout": "sibling",
+      "path": "package-lock.json",
+      "original_sha256": "e8ccac62590ad29e400ddcc759857d3d9653fd0ac31f35a72daff6d7dda947be",
+      "template_sha256": "d52def57951b0e6246772fc6777f26fb57931483d6fb7ce48f9da421ba075dad"
+    },
+    {
+      "layout": "sibling",
+      "path": "backend/probe.mjs",
+      "original_sha256": "891f66d8fdf5b3dd7f746b40953684554c89495462cf650a8ada4012a7364504",
+      "template_sha256": "891f66d8fdf5b3dd7f746b40953684554c89495462cf650a8ada4012a7364504"
+    },
+    {
+      "layout": "sibling",
+      "path": "backend/package.json",
+      "original_sha256": "32c36e27dc49b62f2a29be2cc1ee93bfa979a14014005c92c3062ea0479046d2",
+      "template_sha256": "32c36e27dc49b62f2a29be2cc1ee93bfa979a14014005c92c3062ea0479046d2"
+    },
+    {
+      "layout": "sibling",
+      "path": "modules/fitness/web/package.json",
+      "original_sha256": "d83e6ec4998de55108cc1f410e124d94d6d7322b2b6707f7db1c4cf1b9686710",
+      "template_sha256": "a4ebbbc909438047a6f4588c626f546c5de5ebac896a2c9ca47b1c594569335e"
+    },
+    {
+      "layout": "sibling",
+      "path": "modules/fitness/web/value.mjs",
+      "original_sha256": "3a68277c5ff577b2b06d3d4e0a377ce6b87ff685e0ec591059d017e5f7ac1a5c",
+      "template_sha256": "3a68277c5ff577b2b06d3d4e0a377ce6b87ff685e0ec591059d017e5f7ac1a5c"
+    },
+    {
+      "layout": "sibling",
+      "path": "modules/fitness/server/package.json",
+      "original_sha256": "49c4cb9b5c94da2865c7e9e1f894dad39f6582d8e82af170726f3af0e58ef731",
+      "template_sha256": "43d4fc85887e1fce5faa018bc4fb7a32be8a76278f5ee2bc68d7564dd739d451"
+    },
+    {
+      "layout": "sibling",
+      "path": "modules/fitness/server/value.mjs",
+      "original_sha256": "3a68277c5ff577b2b06d3d4e0a377ce6b87ff685e0ec591059d017e5f7ac1a5c",
+      "template_sha256": "3a68277c5ff577b2b06d3d4e0a377ce6b87ff685e0ec591059d017e5f7ac1a5c"
+    },
+    {
+      "layout": "sibling",
+      "path": "modules/fitness/cli/package.json",
+      "original_sha256": "6163cc48f8265b27afd2da09f1d33d47d7a4d39e9ab09bd15d37a8207c8f3987",
+      "template_sha256": "af650c8607337218a2436933f78a88d09c0c0af8c1ed7624f328c3dcf3467d30"
+    },
+    {
+      "layout": "sibling",
+      "path": "modules/fitness/cli/value.mjs",
+      "original_sha256": "3a68277c5ff577b2b06d3d4e0a377ce6b87ff685e0ec591059d017e5f7ac1a5c",
+      "template_sha256": "3a68277c5ff577b2b06d3d4e0a377ce6b87ff685e0ec591059d017e5f7ac1a5c"
+    },
+    {
+      "layout": "sibling",
+      "path": "modules/fitness/public/web.mjs",
+      "original_sha256": "152d07e07294af013d00f18b8d112d82daa26457d6af80c95371cc18b602833c",
+      "template_sha256": "152d07e07294af013d00f18b8d112d82daa26457d6af80c95371cc18b602833c"
+    },
+    {
+      "layout": "sibling",
+      "path": "modules/fitness/public/package.json",
+      "original_sha256": "02c71e39ab0b10044ba0c008844788389ce09d31c426bdafca904ce93d25c94e",
+      "template_sha256": "02c71e39ab0b10044ba0c008844788389ce09d31c426bdafca904ce93d25c94e"
+    },
+    {
+      "layout": "sibling",
+      "path": "modules/fitness/public/server.mjs",
+      "original_sha256": "744a04e7e74a6955a60bc4221de6cf9050185f719e1afd87cd20a1ef1fe547f3",
+      "template_sha256": "744a04e7e74a6955a60bc4221de6cf9050185f719e1afd87cd20a1ef1fe547f3"
+    },
+    {
+      "layout": "sibling",
+      "path": "modules/fitness/public/cli.mjs",
+      "original_sha256": "5371d45fbd772f3927746ad6ad48db2dc458b6412fdfef731e967a66188ab20c",
+      "template_sha256": "5371d45fbd772f3927746ad6ad48db2dc458b6412fdfef731e967a66188ab20c"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "@daylight/fitness",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    "./server/value": "./server/value.mjs",
+    "./web/value": "./web/value.mjs",
+    "./cli/value": "./cli/value.mjs"
+  },
+  "dependencies": {
+    "@daylight-internal/fitness-server": "0.0.0",
+    "@daylight-internal/fitness-web": "0.0.0",
+    "@daylight-internal/fitness-cli": "0.0.0"
+  }
+}

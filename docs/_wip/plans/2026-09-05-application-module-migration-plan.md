@@ -781,8 +781,15 @@ facade imports preserve the same facet instance, and an unexported deep subpath
 is rejected. An ancestor-facade/descendant-facet variant installed incompletely
 despite exit zero; that shape is rejected. These are synthetic representability
 results, not proof of real Moment, React, browser, native-module, or image parity.
-WP-03 turns the probe into a repository fixture, tests real dependencies, and
+WP-03 extends the recovered synthetic fixture to test real dependencies and
 pins the verified npm version rather than relying on workstation defaults.
+
+The [review evidence packet](../audits/2026-09-06-application-module-review-evidence/README.md#package-reproduction)
+now preserves the recovered synthetic fixture and a fresh Node 22.22.0/npm 10.9.4
+reproduction, including the rejected ancestor/local-link layout. This closes the
+planning evidence gap; WP-03's real dependency, native, browser and image gates
+remain unexecuted. The original five-round snapshots and later scope additions
+are distinguished in that packet.
 
 Example export spelling, not implemented code:
 

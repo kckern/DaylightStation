@@ -1,0 +1,37 @@
+{
+  "schema": "daylight.preimplementation.http-middleware-selection/v1",
+  "sourceSeeds": ["backend/src/0_system/http/middleware/index.mjs", "backend/src/0_system/logging/dispatcher.mjs", "backend/src/0_system/utils/errors/InfrastructureError.mjs"],
+  "caseIds": [
+    "CASE-HTTP-ASYNC-IMMEDIATE", "CASE-HTTP-ASYNC-RESOLVE", "CASE-HTTP-ASYNC-REJECTION", "CASE-HTTP-ASYNC-SYNC-THROW", "CASE-HTTP-ASYNC-THENABLE", "CASE-HTTP-ASYNC-NEXT-THROWS",
+    "CASE-HTTP-TRACE-PRESERVE", "CASE-HTTP-TRACE-MINT", "CASE-HTTP-TRACE-ORDER", "CASE-HTTP-TRACE-FAILURE",
+    "CASE-HTTP-LOG-HOOK-ORDER", "CASE-HTTP-LOG-COMPLETION", "CASE-HTTP-LOG-ONCE", "CASE-HTTP-LOG-STATUS", "CASE-HTTP-LOG-ABORT", "CASE-HTTP-LOG-BUDGET", "CASE-HTTP-LOG-PRIVACY", "CASE-HTTP-LOG-GROUP", "CASE-HTTP-LOG-PROVENANCE", "CASE-HTTP-LOG-LATE-FIELDS", "CASE-HTTP-LOG-NEXT-THROW", "CASE-HTTP-LOG-DEFAULT",
+    "CASE-HTTP-ERROR-NAMES", "CASE-HTTP-ERROR-EXPLICIT", "CASE-HTTP-ERROR-INFRA", "CASE-HTTP-ERROR-STRING-SAFE", "CASE-HTTP-ERROR-STRING-HIDE", "CASE-HTTP-ERROR-OBJECT-EXPOSE", "CASE-HTTP-ERROR-STRING-WEBHOOK", "CASE-HTTP-ERROR-OBJECT-WEBHOOK", "CASE-HTTP-ERROR-HEADERS-SENT", "CASE-HTTP-ERROR-TRACE-NULLISH", "CASE-HTTP-ERROR-STRING-TRACE", "CASE-HTTP-ERROR-SHAPE", "CASE-HTTP-ERROR-LOG-CLASSIFICATION", "CASE-HTTP-ERROR-NULL", "CASE-HTTP-ERROR-RETURN"
+  ],
+  "mutations": {
+    "http-async-rejection": {
+      "file": "backend/src/0_system/http/middleware/errorHandler.mjs",
+      "before": "return Promise.resolve(fn(req, res, next)).catch(next);",
+      "after": "return Promise.resolve(fn(req, res, next));",
+      "expectedFailedIds": ["CASE-HTTP-ASYNC-RESOLVE", "CASE-HTTP-ASYNC-REJECTION", "CASE-HTTP-ASYNC-NEXT-THROWS"]
+    },
+    "http-duplicate-response": {
+      "file": "backend/src/0_system/http/middleware/requestLogger.mjs",
+      "before": "if (recorded) return;",
+      "after": "void recorded;",
+      "expectedFailedIds": ["CASE-HTTP-LOG-ONCE"]
+    },
+    "http-trace-overwrite": {
+      "file": "backend/src/0_system/http/middleware/tracing.mjs",
+      "before": "if (!traceId) {",
+      "after": "if (true) {",
+      "expectedFailedIds": ["CASE-HTTP-TRACE-PRESERVE"]
+    },
+    "http-private-fields": {
+      "file": "backend/src/0_system/http/middleware/requestLogger.mjs",
+      "before": "method: req.method,",
+      "after": "method: req.method, body: req.body, query: req.query,",
+      "expectedFailedIds": ["CASE-HTTP-LOG-PRIVACY"]
+    }
+  },
+  "limits": "Thirty-seven explicit cases; loops exercise matrices inside individual cases and are not counted as separately discovered tests. No existing test assertions changed. Response status/json doubles characterize middleware calls and JSON shape, not Express rejection of invalid status values, real headers-sent writes or socket behavior."
+}

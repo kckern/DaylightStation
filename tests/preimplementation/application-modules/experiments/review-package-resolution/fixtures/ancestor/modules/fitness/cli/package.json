@@ -1,0 +1,9 @@
+{
+  "name": "@daylight-internal/fitness-cli",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "dependencies": {
+    "@probe/timezone": "file:__ANCESTOR_ROOT__/tarballs/probe-timezone-0.5.46.tgz"
+  }
+}

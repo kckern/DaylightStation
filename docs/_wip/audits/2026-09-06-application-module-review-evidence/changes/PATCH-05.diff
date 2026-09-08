@@ -1,0 +1,95 @@
+--- docs/_wip/plans/2026-09-05-application-module-migration-plan.md
++++ docs/_wip/plans/2026-09-05-application-module-migration-plan.md
+@@ -21,2 +21,2 @@
+-| Shared capability | A named, independently maintained facility serving multiple products | Playback, gaming, household identity, music notation, printing. A capability can contain pure libraries, UI, server operations, contracts, and adapters; it need not be a network service or require a loader. |
+-| Application | A coherent user-facing product and its policy | Piano, School, Health, Fitness, Automotive, Gratitude, Party Games, Screens. An application can export useful artifacts while remaining their owner. |
++| Shared capability | A named, independently maintained facility serving multiple products | Playback, gaming, screen hosting, household identity, music notation, printing. A capability can contain pure libraries, UI, server operations, contracts, and adapters; it need not be a network service or require a loader. |
++| Application | A coherent user-facing product and its policy | Piano, School, Health, Fitness, Automotive, Gratitude, Party Games. An application can export useful artifacts while remaining their owner. A configured screen need not be a separate application. |
+@@ -47 +47 @@
+-| [`screen-framework/widgets/builtins.js`](../../../frontend/src/screen-framework/widgets/builtins.js) | Screens/product composition of published widgets | Neutral host/layout contracts must not import the particular Piano, School, or Health presentations they host. |
++| [`screen-framework/widgets/builtins.js`](../../../frontend/src/screen-framework/widgets/builtins.js) | Installed-screen composition of published widgets | Neutral host/layout contracts must not import the particular Piano, School, or Health presentations they host. |
+@@ -128,2 +128,3 @@
+-Piano, Health, Fitness, Automotive, School, and Screens are separate candidate
+-owners. Do not bundle Piano into a hypothetical Music product or move every
++Piano, Health, Fitness, Automotive, and School are separate candidate product
++owners; generic screen hosting is a shared capability. Do not bundle Piano into
++a hypothetical Music product or move every
+@@ -131,0 +133,56 @@
++
++### 1.4 Screen framework: generic host versus its installed composition
++
++The intended generic `frontend/src/screen-framework` belongs with reusable
++facilities, not inside a particular room or application stack. Its artifact role
++is a **UI framework/host**; in the ownership taxonomy it is a shared capability,
++provisionally `screen-host`. It can render a complete screen, own a generic
++launch entry, and still be reusable. Being visible to users does not by itself
++make an artifact application-specific.
++
++Separate three things currently colocated:
++
++| Concern | Responsibility | Current examples |
++|---|---|---|
++| Generic host mechanisms | Screen-host capability | Layout/panel rendering, widget registry, scene/overlay contracts, input/action dispatch, reusable data coordination and session interfaces |
++| Daylight integration and installed selection | Explicit composition and adapters | Config loading, route/menu/app catalog binding, playback binding, device transport integration, selecting the built-in widget set |
++| Product contributions and instance configuration | Their product/data owners | Piano visualizer, School reading/lesson panels, Health weight view; the selected widgets/layout for a particular room |
++
++These are responsibility boundaries, not a mandate for three new packages or
++an application per room. A living-room layout may just be private configuration
++consumed by the same generic host. Only create a Screens application owner if
++there is actual separately maintained product behavior beyond hosting/config.
++
++The current implementation is not yet entirely generic:
++
++- [`WidgetRegistry`](../../../frontend/src/screen-framework/widgets/registry.js)
++  registers supplied components without knowing their domains; this is the
++  reusable seam. Panel rendering consumes that registry.
++- [`builtins.js`](../../../frontend/src/screen-framework/widgets/builtins.js)
++  chooses concrete Piano, School, Health, Finance, and Party Games components.
++  That selection belongs outside the generic host implementation.
++- [`ScreenRenderer.jsx`](../../../frontend/src/screen-framework/ScreenRenderer.jsx)
++  imports built-ins and registers them at module evaluation, alongside kiosk
++  back-button/key-capture setup. It also binds routing, configuration, menus,
++  and session integration. Extract its integration shell from reusable rendering
++  without changing the current route behavior or when setup takes effect.
++- [`index.js`](../../../frontend/src/screen-framework/index.js) re-exports that
++  renderer and built-ins alongside generic APIs. A generic import must not
++  accidentally link all applications or execute device setup through this barrel.
++- `ScreenActionHandler` binds MenuStack, AppContainer, app discovery, and Player
++  internals. Preserve those as explicit host integrations; generic action
++  dispatch should not need knowledge of every launchable product.
++
++Piano's use of `useScreenOverlay` is a legitimate dependency on the public host
++contract. Host composition selecting Piano's public widget is also legitimate.
++There is no source cycle if the **generic host** does not import that composition
++or the Piano implementation in return. The same reasoning applies to shared
++session publication used by both standalone kiosks and hosted widgets.
++
++The boundary proof is a minimal screen with a synthetic widget and fake external
++services that builds/renders without linking Piano, School, Fitness, or the
++installed built-ins. Add a negative dependency fixture that imports a concrete
++app from the host and must fail. Separately run the existing installed-screen
++composition tests to preserve widget IDs, input behavior, context/registry
++identity, session publication, route semantics, and device setup. This tests
++the generic boundary without introducing new production module enablement.
+--- docs/roadmap/2026-08-31-full-stack-application-modules.md
++++ docs/roadmap/2026-08-31-full-stack-application-modules.md
+@@ -228 +228,2 @@
+-  and contracts, such as playback, gaming, household identity, and notation.
++  and contracts, such as playback, gaming, screen hosting, household identity,
++  and notation.
+@@ -232 +233 @@
+-  Automotive, Gratitude, Party Games, and Screens. They own product policy and
++  Automotive, Gratitude, and Party Games. They own product policy and
+@@ -255,4 +256,8 @@
+-Screens is a product that composes app-owned exports. Neutral host contracts
+-and layout mechanics can be reusable without moving the configured screen or
+-its built-in product selection into the platform. Composition binds exported
+-widgets/providers; capability implementations do not import their app consumers.
++The screen framework is intended to be generic: classify it as a reusable UI
++framework/host, not wholesale as an application. Its current folder also contains
++installed-widget selection and Daylight-specific integration. Separate those
++from host/layout mechanics. A room screen may simply be configuration, not a
++new application owner; create a Screens product boundary only for actual
++separately owned product policy. Composition binds exported widgets/providers;
++the generic host does not import its app consumers. See the
++[screen-framework partition](../_wip/plans/2026-09-05-application-module-migration-plan.md#14-screen-framework-generic-host-versus-its-installed-composition).

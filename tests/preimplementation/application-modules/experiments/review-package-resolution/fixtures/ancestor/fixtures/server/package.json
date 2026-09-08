@@ -1,0 +1,9 @@
+{
+  "name": "@probe/timezone",
+  "version": "0.6.0",
+  "type": "module",
+  "exports": "./index.mjs",
+  "dependencies": {
+    "@probe/mutable": "file:__ANCESTOR_ROOT__/tarballs/probe-mutable-2.30.1.tgz"
+  }
+}

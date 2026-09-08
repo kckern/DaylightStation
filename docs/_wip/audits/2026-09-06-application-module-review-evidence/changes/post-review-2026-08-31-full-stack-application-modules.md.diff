@@ -1,0 +1,8 @@
+--- round-5-end/docs/roadmap/2026-08-31-full-stack-application-modules.md
++++ committed/docs/roadmap/2026-08-31-full-stack-application-modules.md
+@@ -6,0 +7,5 @@
++
++**Current work plan:** [Numbered pre-implementation checklist](../_wip/plans/2026-09-05-application-module-preimplementation-plan.md).
++Inventory, boundary design, dedicated characterization tests and documentation
++lead to an auditable Gratitude rehearsal plan. Existing application code remains
++unchanged; executing the migration is outside this preparation scope.

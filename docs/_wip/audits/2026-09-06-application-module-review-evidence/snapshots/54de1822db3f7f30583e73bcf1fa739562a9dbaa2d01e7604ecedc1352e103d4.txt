@@ -1,0 +1,53 @@
+# Product-module migration: adversarial review record
+
+**Parent:** [Migration execution design](2026-09-05-application-module-migration-plan.md)
+**Requirement:** Five adversarial agent review rounds, with revisions between
+rounds, covering implementation architecture, names, classification, binding
+layers, integration, migration safety, and contributor focus.
+
+This reviews the plan, not an implemented migration. Findings must identify a
+concrete defect, its consequence, correction, and verification. A round is
+complete only after its finding dispositions are recorded and revisions are
+present in the working documents. Later rounds must inspect the revised text.
+Do not count the author's own review or several simultaneous reads of one
+unchanged draft as five completed rounds.
+
+## Round 1 — Foundational architecture and completeness
+
+**Reviewer:** `architecture_review_r1` (independent agent, read-only).
+**Input:** Original 375-line execution draft, roadmap/runtime context, all layer
+references plus adapter guidance, and representative repository source.
+**Result:** Seven findings; revision adds concrete implementation specification,
+source inventory, and stronger binding policy. No production code changed.
+
+| ID | Severity | Finding | Disposition and evidence |
+|---|---|---|---|
+| R1-01 | High | Layer/reference/checker disagreements could authorize same-rank or unknown-domain imports | Addressed in main §8.1–8.3 and inventory §3: D1–D10 binding, exact context ranks, unknown classification fails, explicit reference reconciliation before moves |
+| R1-02 | High | Public runtime labels lack layer provenance; blanket app-import ban can reject legitimate application-port inversion | Addressed in main §7.2/8.2/8.3: per-export provenance, no API/rendering upward exception, adapter port-contract distinction, re-export resolution and negative fixtures |
+| R1-03 | High | Destination/names and production coverage remain directional | Addressed in main §7/9/13 and complete directory-level source inventory; per-file coverage remains an explicit implementation deliverable |
+| R1-04 | Medium | Existing gaming experience middle abstraction omitted | Addressed in main §7.1/10.3 and inventory §4: experience subowners, environment → experience → platform, independent fake environment test |
+| R1-05 | Medium | Cross-app bridges have no concrete owner/binding treatment | Addressed by integration register in main §10.4; preserves old public URLs and places policy outside composition |
+| R1-06 | Medium | Contributor isolation lacks measurable delivery | Addressed in main §12/WP-09: owner README, safe fake-backed dev target, persona trials and clean-checkout command checks |
+| R1-07 | Medium | Gate execution/adjudication and alias decision unspecified | Addressed in main §9/13/14: selected package experiment, named evidence artifacts, command/coverage matrix, no ignored architecture or moved-owner failures |
+
+Reviewer verified synthetic `piano → gaming` and `books → health` are not
+reported by the old hierarchy scanner. This is a coverage defect, not a new
+permission. The exact reference ruling and implementation repair are prerequisites
+of WP-02, not completed by this documentation update.
+
+## Round 2 — Pending
+
+## Round 3 — Pending
+
+## Round 4 — Pending
+
+## Round 5 — Pending
+
+## Final exit audit — Pending
+
+Five rounds must be recorded with revised-document evidence. All blocking
+architectural findings must be addressed or explicitly rejected with rationale
+and verification; simply relabeling them as future work is not resolution.
+Implementation prerequisites can remain unexecuted because the requested
+deliverable is a migration plan, but their scope, owner, acceptance evidence and
+ordering must be explicit.

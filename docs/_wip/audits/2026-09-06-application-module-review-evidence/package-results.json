@@ -1,0 +1,313 @@
+{
+  "schema": 1,
+  "scope": "synthetic packaging only",
+  "runs": [
+    {
+      "command": [
+        "{node}",
+        "--version"
+      ],
+      "cwd": "{run-root}",
+      "exit_code": 0,
+      "stdout": "v22.22.0\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "{node}",
+        "{npm-cli}",
+        "--version"
+      ],
+      "cwd": "{run-root}",
+      "exit_code": 0,
+      "stdout": "10.9.4\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "{node}",
+        "{npm-cli}",
+        "pack",
+        "--offline",
+        "--ignore-scripts",
+        "--pack-destination",
+        "{run-root}/ancestor/tarballs"
+      ],
+      "cwd": "{run-root}/ancestor/fixtures/mutable",
+      "exit_code": 0,
+      "stdout": "probe-mutable-2.30.1.tgz\n",
+      "stderr": "npm notice\nnpm notice \ud83d\udce6  @probe/mutable@2.30.1\nnpm notice Tarball Contents\nnpm notice 42B index.mjs\nnpm notice 102B package.json\nnpm notice Tarball Details\nnpm notice name: @probe/mutable\nnpm notice version: 2.30.1\nnpm notice filename: probe-mutable-2.30.1.tgz\nnpm notice package size: 235 B\nnpm notice unpacked size: 144 B\nnpm notice shasum: 0003a445e03b71e5342eed951e61101ad1527229\nnpm notice integrity: sha512-oxcVRBgLLzCRM[...]MaPQFO+7ReOew==\nnpm notice total files: 2\nnpm notice\n"
+    },
+    {
+      "command": [
+        "{node}",
+        "{npm-cli}",
+        "pack",
+        "--offline",
+        "--ignore-scripts",
+        "--pack-destination",
+        "{run-root}/ancestor/tarballs"
+      ],
+      "cwd": "{run-root}/ancestor/fixtures/server",
+      "exit_code": 0,
+      "stdout": "probe-timezone-0.6.0.tgz\n",
+      "stderr": "npm notice\nnpm notice \ud83d\udce6  @probe/timezone@0.6.0\nnpm notice Tarball Contents\nnpm notice 103B index.mjs\nnpm notice 279B package.json\nnpm notice Tarball Details\nnpm notice name: @probe/timezone\nnpm notice version: 0.6.0\nnpm notice filename: probe-timezone-0.6.0.tgz\nnpm notice package size: 370 B\nnpm notice unpacked size: 382 B\nnpm notice shasum: ccc59d879a363a7995493025b055c0a4afe14fe6\nnpm notice integrity: sha512-bOibz+Td5qikf[...]fm1DEn7S8NXtw==\nnpm notice total files: 2\nnpm notice\n"
+    },
+    {
+      "command": [
+        "{node}",
+        "{npm-cli}",
+        "pack",
+        "--offline",
+        "--ignore-scripts",
+        "--pack-destination",
+        "{run-root}/ancestor/tarballs"
+      ],
+      "cwd": "{run-root}/ancestor/fixtures/web",
+      "exit_code": 0,
+      "stdout": "probe-timezone-0.5.47.tgz\n",
+      "stderr": "npm notice\nnpm notice \ud83d\udce6  @probe/timezone@0.5.47\nnpm notice Tarball Contents\nnpm notice 104B index.mjs\nnpm notice 280B package.json\nnpm notice Tarball Details\nnpm notice name: @probe/timezone\nnpm notice version: 0.5.47\nnpm notice filename: probe-timezone-0.5.47.tgz\nnpm notice package size: 371 B\nnpm notice unpacked size: 384 B\nnpm notice shasum: 70ba8be58be5026b137a4c9ecc932ae7187e326e\nnpm notice integrity: sha512-PKjyKlN/Bj3wM[...]hf4uuFRjEsE9A==\nnpm notice total files: 2\nnpm notice\n"
+    },
+    {
+      "command": [
+        "{node}",
+        "{npm-cli}",
+        "pack",
+        "--offline",
+        "--ignore-scripts",
+        "--pack-destination",
+        "{run-root}/ancestor/tarballs"
+      ],
+      "cwd": "{run-root}/ancestor/fixtures/cli",
+      "exit_code": 0,
+      "stdout": "probe-timezone-0.5.46.tgz\n",
+      "stderr": "npm notice\nnpm notice \ud83d\udce6  @probe/timezone@0.5.46\nnpm notice Tarball Contents\nnpm notice 104B index.mjs\nnpm notice 280B package.json\nnpm notice Tarball Details\nnpm notice name: @probe/timezone\nnpm notice version: 0.5.46\nnpm notice filename: probe-timezone-0.5.46.tgz\nnpm notice package size: 371 B\nnpm notice unpacked size: 384 B\nnpm notice shasum: 00451aa48355ce40ef216ff5cfa1bfcde7676614\nnpm notice integrity: sha512-+wd0KopdBLFy0[...]I0FUq+SWABsEg==\nnpm notice total files: 2\nnpm notice\n"
+    },
+    {
+      "command": [
+        "{node}",
+        "{npm-cli}",
+        "install",
+        "--offline",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--install-strategy=nested"
+      ],
+      "cwd": "{run-root}/sibling",
+      "exit_code": 0,
+      "stdout": "\nadded 11 packages in 177ms\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "{node}",
+        "backend/probe.mjs",
+        "forward"
+      ],
+      "cwd": "{run-root}/sibling",
+      "exit_code": 0,
+      "stdout": "{\"facets\":[\"server\",\"web\",\"cli\"],\"versions\":{\"server\":\"0.6.0\",\"web\":\"0.5.47\",\"cli\":\"0.5.46\"},\"separateInstances\":true,\"sameFacetIdentity\":true,\"privateImportRejected\":true}\n",
+      "stderr": "",
+      "layout": "sibling",
+      "stage": "install",
+      "order": "forward"
+    },
+    {
+      "command": [
+        "{node}",
+        "backend/probe.mjs",
+        "reverse"
+      ],
+      "cwd": "{run-root}/sibling",
+      "exit_code": 0,
+      "stdout": "{\"facets\":[\"cli\",\"web\",\"server\"],\"versions\":{\"cli\":\"0.5.46\",\"web\":\"0.5.47\",\"server\":\"0.6.0\"},\"separateInstances\":true,\"sameFacetIdentity\":true,\"privateImportRejected\":true}\n",
+      "stderr": "",
+      "layout": "sibling",
+      "stage": "install",
+      "order": "reverse"
+    },
+    {
+      "command": [
+        "{node}",
+        "{npm-cli}",
+        "ci",
+        "--offline",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--install-strategy=nested"
+      ],
+      "cwd": "{run-root}/sibling",
+      "exit_code": 0,
+      "stdout": "\nadded 11 packages in 149ms\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "{node}",
+        "backend/probe.mjs",
+        "forward"
+      ],
+      "cwd": "{run-root}/sibling",
+      "exit_code": 0,
+      "stdout": "{\"facets\":[\"server\",\"web\",\"cli\"],\"versions\":{\"server\":\"0.6.0\",\"web\":\"0.5.47\",\"cli\":\"0.5.46\"},\"separateInstances\":true,\"sameFacetIdentity\":true,\"privateImportRejected\":true}\n",
+      "stderr": "",
+      "layout": "sibling",
+      "stage": "clean-ci",
+      "order": "forward"
+    },
+    {
+      "command": [
+        "{node}",
+        "backend/probe.mjs",
+        "reverse"
+      ],
+      "cwd": "{run-root}/sibling",
+      "exit_code": 0,
+      "stdout": "{\"facets\":[\"cli\",\"web\",\"server\"],\"versions\":{\"cli\":\"0.5.46\",\"web\":\"0.5.47\",\"server\":\"0.6.0\"},\"separateInstances\":true,\"sameFacetIdentity\":true,\"privateImportRejected\":true}\n",
+      "stderr": "",
+      "layout": "sibling",
+      "stage": "clean-ci",
+      "order": "reverse"
+    },
+    {
+      "command": [
+        "{node}",
+        "{npm-cli}",
+        "install",
+        "--offline",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--install-strategy=nested"
+      ],
+      "cwd": "{run-root}/ancestor",
+      "exit_code": 0,
+      "stdout": "\nadded 5 packages in 163ms\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "{node}",
+        "backend/probe.mjs",
+        "forward"
+      ],
+      "cwd": "{run-root}/ancestor",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "node:internal/modules/package_json_reader:314\n  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);\n        ^\n\nError [ERR_MODULE_NOT_FOUND]: Cannot find package '@probe/timezone' imported from /private{run-root}/ancestor/modules/fitness/server/value.mjs\n    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:314:9)\n    at packageResolve (node:internal/modules/esm/resolve:767:81)\n    at moduleResolve (node:internal/modules/esm/resolve:853:18)\n    at defaultResolve (node:internal/modules/esm/resolve:983:11)\n    at #cachedDefaultResolve (node:internal/modules/esm/loader:731:20)\n    at ModuleLoader.resolve (node:internal/modules/esm/loader:708:38)\n    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:310:38)\n    at ModuleJob._link (node:internal/modules/esm/module_job:182:49) {\n  code: 'ERR_MODULE_NOT_FOUND'\n}\n\nNode.js v22.22.0\n",
+      "layout": "ancestor",
+      "stage": "install",
+      "order": "forward"
+    },
+    {
+      "command": [
+        "{node}",
+        "backend/probe.mjs",
+        "reverse"
+      ],
+      "cwd": "{run-root}/ancestor",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "node:internal/modules/package_json_reader:314\n  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);\n        ^\n\nError [ERR_MODULE_NOT_FOUND]: Cannot find package '@probe/timezone' imported from /private{run-root}/ancestor/modules/fitness/cli/value.mjs\n    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:314:9)\n    at packageResolve (node:internal/modules/esm/resolve:767:81)\n    at moduleResolve (node:internal/modules/esm/resolve:853:18)\n    at defaultResolve (node:internal/modules/esm/resolve:983:11)\n    at #cachedDefaultResolve (node:internal/modules/esm/loader:731:20)\n    at ModuleLoader.resolve (node:internal/modules/esm/loader:708:38)\n    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:310:38)\n    at ModuleJob._link (node:internal/modules/esm/module_job:182:49) {\n  code: 'ERR_MODULE_NOT_FOUND'\n}\n\nNode.js v22.22.0\n",
+      "layout": "ancestor",
+      "stage": "install",
+      "order": "reverse"
+    },
+    {
+      "command": [
+        "{node}",
+        "{npm-cli}",
+        "ci",
+        "--offline",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--install-strategy=nested"
+      ],
+      "cwd": "{run-root}/ancestor",
+      "exit_code": 0,
+      "stdout": "\nadded 5 packages in 140ms\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "{node}",
+        "backend/probe.mjs",
+        "forward"
+      ],
+      "cwd": "{run-root}/ancestor",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "node:internal/modules/package_json_reader:314\n  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);\n        ^\n\nError [ERR_MODULE_NOT_FOUND]: Cannot find package '@probe/timezone' imported from /private{run-root}/ancestor/modules/fitness/server/value.mjs\n    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:314:9)\n    at packageResolve (node:internal/modules/esm/resolve:767:81)\n    at moduleResolve (node:internal/modules/esm/resolve:853:18)\n    at defaultResolve (node:internal/modules/esm/resolve:983:11)\n    at #cachedDefaultResolve (node:internal/modules/esm/loader:731:20)\n    at ModuleLoader.resolve (node:internal/modules/esm/loader:708:38)\n    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:310:38)\n    at ModuleJob._link (node:internal/modules/esm/module_job:182:49) {\n  code: 'ERR_MODULE_NOT_FOUND'\n}\n\nNode.js v22.22.0\n",
+      "layout": "ancestor",
+      "stage": "clean-ci",
+      "order": "forward"
+    },
+    {
+      "command": [
+        "{node}",
+        "backend/probe.mjs",
+        "reverse"
+      ],
+      "cwd": "{run-root}/ancestor",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "node:internal/modules/package_json_reader:314\n  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);\n        ^\n\nError [ERR_MODULE_NOT_FOUND]: Cannot find package '@probe/timezone' imported from /private{run-root}/ancestor/modules/fitness/cli/value.mjs\n    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:314:9)\n    at packageResolve (node:internal/modules/esm/resolve:767:81)\n    at moduleResolve (node:internal/modules/esm/resolve:853:18)\n    at defaultResolve (node:internal/modules/esm/resolve:983:11)\n    at #cachedDefaultResolve (node:internal/modules/esm/loader:731:20)\n    at ModuleLoader.resolve (node:internal/modules/esm/loader:708:38)\n    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:310:38)\n    at ModuleJob._link (node:internal/modules/esm/module_job:182:49) {\n  code: 'ERR_MODULE_NOT_FOUND'\n}\n\nNode.js v22.22.0\n",
+      "layout": "ancestor",
+      "stage": "clean-ci",
+      "order": "reverse"
+    }
+  ],
+  "executed_at": "2026-09-07T06:09:55.174647+00:00",
+  "platform": {
+    "system": "Darwin",
+    "architecture": "arm64"
+  },
+  "source_sha256": {
+    "fixtures/ancestor/backend/package.json": "ec8d187385a56592a29e5251fff55ddd6e674f21db8530a8f3d2776c8a871dbd",
+    "fixtures/ancestor/backend/probe.mjs": "59cfb7290db134d60f62ccbfdcd76a1f423d5ad23a26b47d67101e9c1ebaaf27",
+    "fixtures/ancestor/fixtures/cli/index.mjs": "8d9d701304afcd50ce758773f6bba777bd5a814951acab06b9bf16596ae93c6d",
+    "fixtures/ancestor/fixtures/cli/package.json": "8b895037a2f38aaacc09de7b41319a038abece58d900888c66a07751932cd351",
+    "fixtures/ancestor/fixtures/mutable/index.mjs": "449599b06e90c35793959bdf6833ca4ac6c2943e3845cccdfc5f5c263cd04450",
+    "fixtures/ancestor/fixtures/mutable/package.json": "003fbb22136ee800c9fcfd2c55426f8caaa6082ba12bc7e02b102ab35fe5a3bf",
+    "fixtures/ancestor/fixtures/server/index.mjs": "1d285fcc1f5856c3ed802a8a7ad22f42ece66ec2de4c6943aedcf143d591676d",
+    "fixtures/ancestor/fixtures/server/package.json": "face4df6131b50292fb9f0d856ce87b53672609b283716876091daecfbadc385",
+    "fixtures/ancestor/fixtures/web/index.mjs": "baf91c77035bdd46c02a96165b89a65c383618db48a422e255a5d77acfb943b1",
+    "fixtures/ancestor/fixtures/web/package.json": "da9e28f86e390a3322308203395eff651e959bc2bc873c0ab8acbf3df17ead34",
+    "fixtures/ancestor/modules/fitness/cli/package.json": "0e356a5fb3c4f0f8cee50ffb1bd678a8e04bfe42c3b6323a594f42ece32dc08c",
+    "fixtures/ancestor/modules/fitness/cli/value.mjs": "3a68277c5ff577b2b06d3d4e0a377ce6b87ff685e0ec591059d017e5f7ac1a5c",
+    "fixtures/ancestor/modules/fitness/package.json": "3cdbcf4bf02e06b3ea6d4e360bae52db4c3d133ac84491462ebabc4ca18c7ea0",
+    "fixtures/ancestor/modules/fitness/server/package.json": "bf1b0524a8780d96aa57e58f3806793cd3d114466aaba006e96709f960690596",
+    "fixtures/ancestor/modules/fitness/server/value.mjs": "3a68277c5ff577b2b06d3d4e0a377ce6b87ff685e0ec591059d017e5f7ac1a5c",
+    "fixtures/ancestor/modules/fitness/web/package.json": "fce55fcac3d58923425b66bf46c93f8773ec5403cd995be73520595193dc71ce",
+    "fixtures/ancestor/modules/fitness/web/value.mjs": "3a68277c5ff577b2b06d3d4e0a377ce6b87ff685e0ec591059d017e5f7ac1a5c",
+    "fixtures/ancestor/package-lock.json": "1f01495b13ae60566e0e08ccbcbedcc5305c1639f6cd3713be376a6430f40f1b",
+    "fixtures/ancestor/package.json": "8ca2ef45160eb9061f9a2813bd6b176d9c450acbb91c868bf7f195efa961293d",
+    "fixtures/sibling/backend/package.json": "32c36e27dc49b62f2a29be2cc1ee93bfa979a14014005c92c3062ea0479046d2",
+    "fixtures/sibling/backend/probe.mjs": "891f66d8fdf5b3dd7f746b40953684554c89495462cf650a8ada4012a7364504",
+    "fixtures/sibling/modules/fitness/cli/package.json": "af650c8607337218a2436933f78a88d09c0c0af8c1ed7624f328c3dcf3467d30",
+    "fixtures/sibling/modules/fitness/cli/value.mjs": "3a68277c5ff577b2b06d3d4e0a377ce6b87ff685e0ec591059d017e5f7ac1a5c",
+    "fixtures/sibling/modules/fitness/public/cli.mjs": "5371d45fbd772f3927746ad6ad48db2dc458b6412fdfef731e967a66188ab20c",
+    "fixtures/sibling/modules/fitness/public/package.json": "02c71e39ab0b10044ba0c008844788389ce09d31c426bdafca904ce93d25c94e",
+    "fixtures/sibling/modules/fitness/public/server.mjs": "744a04e7e74a6955a60bc4221de6cf9050185f719e1afd87cd20a1ef1fe547f3",
+    "fixtures/sibling/modules/fitness/public/web.mjs": "152d07e07294af013d00f18b8d112d82daa26457d6af80c95371cc18b602833c",
+    "fixtures/sibling/modules/fitness/server/package.json": "43d4fc85887e1fce5faa018bc4fb7a32be8a76278f5ee2bc68d7564dd739d451",
+    "fixtures/sibling/modules/fitness/server/value.mjs": "3a68277c5ff577b2b06d3d4e0a377ce6b87ff685e0ec591059d017e5f7ac1a5c",
+    "fixtures/sibling/modules/fitness/web/package.json": "a4ebbbc909438047a6f4588c626f546c5de5ebac896a2c9ca47b1c594569335e",
+    "fixtures/sibling/modules/fitness/web/value.mjs": "3a68277c5ff577b2b06d3d4e0a377ce6b87ff685e0ec591059d017e5f7ac1a5c",
+    "fixtures/sibling/package-lock.json": "d52def57951b0e6246772fc6777f26fb57931483d6fb7ce48f9da421ba075dad",
+    "fixtures/sibling/package.json": "a3b5e418572e316fe9dae02bf0c481f1e4040580cea3c01df5dcf777c5dffe40",
+    "recovery.json": "6439ecee056f45f0050752d66af7759246e6c27bffbdd5a5c339eb156d689db7",
+    "reproduce.py": "d52304e26b144744d99ddc396990af1d036ce6da4412742e3ae45e5c05c6a096"
+  },
+  "node": "v22.22.0",
+  "npm": "10.9.4",
+  "result": "passed",
+  "limitations": [
+    "Synthetic timezone/mutable packages; no actual Moment/React/native/browser/image parity.",
+    "No install scripts run; ignore-scripts is fixture isolation, not production install policy.",
+    "Ancestor case is the recovered local-link ancestor/facet variant; other historical variants are not certified."
+  ]
+}

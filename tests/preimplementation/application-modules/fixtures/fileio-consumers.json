@@ -1,0 +1,42 @@
+{
+  "schema": "daylight.preimplementation.fileio-consumers/v1",
+  "scope": "Unchanged original baseline tests, not relocated code or package parity",
+  "files": [
+    {
+      "path": "backend/src/1_adapters/fitness/YamlWorkoutRepository.test.mjs",
+      "expectedCases": 16,
+      "effects": "Real YAML reads/writes/rename plus partial FileIO spies; os.tmpdir follows task TMPDIR and each owned mkdtemp directory is removed by the original afterEach",
+      "contracts": "Household path, stored normalization, atomic primitive choice, read absence/corruption, summaries/order, update/delete and five parameterized unsafe IDs"
+    },
+    {
+      "path": "backend/src/1_adapters/persistence/files/FilesystemFreshVideoMediaStore.lock.test.mjs",
+      "expectedCases": 2,
+      "effects": "Hoisted partial FileIO factory; lock and descriptor operations are mocks only",
+      "contracts": "Lock path/record, descriptor close on success/failure and release callback"
+    },
+    {
+      "path": "backend/src/1_adapters/persistence/yaml/YamlComposerSongStore.test.mjs",
+      "expectedCases": 7,
+      "effects": "Mock functions defer access to test-owned YAML/blob maps; random ID and current Date remain original; no provider or real data filesystem",
+      "contracts": "Unknown user, create/read, revisions/version history, stale write conflict, sharing, traversal and removal"
+    },
+    {
+      "path": "backend/src/1_adapters/piano/YamlPianoStudioDatastore.test.mjs",
+      "expectedCases": 3,
+      "effects": "Partial mock factory and injected config with synthetic map; no real MIDI/filesystem or controller",
+      "contracts": "Preset round trip and path, unknown user and empty known-user preset"
+    },
+    {
+      "path": "tests/isolated/adapter/persistence/YamlMediaProgressMemory.readCache.test.mjs",
+      "expectedCases": 4,
+      "effects": "Dynamic FileIO namespace with controlled read/mtime/write functions; per-instance cache; no real data access",
+      "contracts": "One parse until mtime changes, write invalidation and separate storage-path caches"
+    },
+    {
+      "path": "tests/isolated/application/fitness/StravaWebhookJobStore.test.mjs",
+      "expectedCases": 4,
+      "effects": "Dynamic imports and partial FileIO factory; no Strava client, scheduler or provider construction",
+      "contracts": "Pending/unmatched inclusion and completed/abandoned exclusion"
+    }
+  ]
+}

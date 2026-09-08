@@ -1,0 +1,15 @@
+--- docs/_wip/plans/2026-09-05-application-module-migration-plan.md
++++ docs/_wip/plans/2026-09-05-application-module-migration-plan.md
+@@ -41 +41 @@
+-| Application | A coherent user-facing product and its policy | Piano, School, Health, Fitness, Automotive, Gratitude, Party Games. An application can export useful artifacts while remaining their owner. A configured screen need not be a separate application. |
++| Product module | A coherent user-facing application and its policy | Piano, School, Health, Fitness, Automotive, Gratitude, Party Games. An application can export useful artifacts while remaining their owner. A configured screen need not be a separate application. |
+@@ -115 +115 @@
+-- Only product/system composition selects concrete apps or registers providers.
++- Only owner/installed composition selects concrete apps or registers providers.
+@@ -141 +141,2 @@
+-move simply for symmetry. No empty layers or manifest files are required.
++move simply for symmetry. No empty layers or production activation manifests
++are required. Source-tooling metadata and package manifests follow sections 7–9.
+@@ -607 +608 @@
+-System composition performs the binding. If shared provider and domain code
++Installed composition performs the binding. If shared provider and domain code

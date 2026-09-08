@@ -1,0 +1,10 @@
+{
+  "name": "daylight-facet-probe",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "modules/fitness/server",
+    "modules/fitness/web",
+    "modules/fitness/cli"
+  ]
+}

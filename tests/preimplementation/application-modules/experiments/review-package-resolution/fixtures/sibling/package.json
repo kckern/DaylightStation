@@ -1,0 +1,11 @@
+{
+  "name": "sibling-facet-proof",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "modules/fitness/public",
+    "modules/fitness/server",
+    "modules/fitness/web",
+    "modules/fitness/cli"
+  ]
+}

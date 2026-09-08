@@ -1,0 +1,129 @@
+--- docs/_wip/plans/2026-09-05-application-module-runtime-design.md
++++ docs/_wip/plans/2026-09-05-application-module-runtime-design.md
+@@ -6,0 +7,8 @@
++
++**Discussion update:** The user identified contributor ownership and the
++Piano/Screens/shared-component taxonomy as the primary design questions, and
++prefers a coordinated cutover over a prolonged mixed architecture. See roadmap
++sections 0.4–0.5. The runtime below is a candidate design exercise, not an agreed
++Gratitude-first deployment plan. Its increments can be prepared on one branch
++and released together; package boundaries and public UI contributions still
++need to be settled before this becomes an implementation specification.
+@@ -628,4 +636,6 @@
+-The next implementation starts with increment A and its synthetic classifier
+-fixtures. The review checkpoint is whether the source-backed Gratitude boundary,
+-household instance model, and restart-based lifecycle are the intended first
+-contract; directory moves should follow those decisions and their tooling.
++Before implementation, settle the contributor-facing ownership taxonomy and
++Piano/Screens/public-component boundaries described in the roadmap discussion.
++If this runtime is selected, increment A establishes its executable rules.
++Gratitude can prove a small slice within a coordinated migration branch; the
++delivery increments do not require separately deploying each intermediate
++layout. Directory moves follow the chosen boundaries and their tooling.
+--- docs/roadmap/2026-08-31-full-stack-application-modules.md
++++ docs/roadmap/2026-08-31-full-stack-application-modules.md
+@@ -66,3 +66,3 @@
+-### 0.2 Gratitude is the pilot, with explicit outgoing and incoming edges
+-
+-Gratitude remains the best first candidate reviewed here. It exercises domain
++### 0.2 Gratitude as a candidate proof, with explicit outgoing and incoming edges
++
++Gratitude remains a useful small candidate reviewed here. It exercises domain
+@@ -126,0 +127,88 @@
++### 0.4 Contributor ownership comes before the runtime contract
++
++Subsequent design discussion clarified the primary goal: a musician should be
++able to own and develop the complete Piano product without understanding or
++editing unrelated household applications or platform internals. Playback,
++household identity, persistence, logging, and development fixtures should be
++provided through documented dependencies. The runtime above is a candidate
++means of achieving that goal, not the definition of an application.
++
++A working definition is: **a full-stack application is an independently
++understandable product ownership boundary containing its domain behavior and
++the server, UI, configuration, tests, and optional device code needed to deliver
++that behavior, while consuming common facilities through public contracts.**
++It need not implement every layer itself. Its author should own product-specific
++schemas and policy while the platform provides the persistence mechanism.
++
++Three questions must be answered separately:
++
++| Axis | Question | Examples |
++|---|---|---|
++| Ownership | Who maintains and decides the meaning of this code? | Piano/Music, School, Screens, platform, a reusable playback owner |
++| Artifact role | What does this particular artifact do? | Domain rule, use case, port, adapter, public component, widget, host, route, contract |
++| Runtime | Where does it execute? | Server, browser, satellite; portable code is explicitly marked |
++
++Import/export visibility is another explicit property. A product may both
++consume public facilities and export a widget, embeddable surface, or capability.
++That does not change the ownership of its private domain code. Mutual exclusion
++should apply to an artifact's owner and classification within each axis, not
++force an entire product into exactly one of "application", "service", and
++"surface" when it contains several roles.
++
++Screens exposes this problem in the current code:
++[`widgets/builtins.js`](../../frontend/src/screen-framework/widgets/builtins.js)
++imports Piano, School, Finance, Health, and other application presentations;
++Piano imports screen overlay/session utilities in return. A finished configured
++screen is a user-facing composition product. The layout, input, overlay, and
++host contracts it uses may have reusable implementations. The future boundary
++should separate those artifacts rather than label the whole current directory
++either a shared service or an application.
++
++The desired relationship is a host consuming Piano's published widget while
++Piano implements a neutral host contract. It is not a pair of private imports
++between Screens and Piano. Standalone Player and player-in-a-screen similarly
++share an implementation without making every host part of the playback owner.
++General embedding must therefore be investigated while settling the taxonomy,
++even if the first runtime only implements the contracts required by real hosts.
++
++Before treating the runtime draft as the chosen design, define the contributor
++package, the public artifact kinds, the allowed dependency matrix, and a Piano
++development harness that runs without private household data or unrelated
++hardware. Whether Piano belongs under a broader Music owner remains a product
++ownership decision rather than a consequence of sharing MIDI or notation code.
++
++### 0.5 Migration preference: coordinated cutover, incremental preparation
++
++The user's preference is to reach the destination format promptly, with a
++coordinated cutover if feasible. A long-lived mixed architecture is not an
++accepted requirement. Gratitude can serve as a temporary proof on an isolated
++branch without becoming the first of many separately deployed migrations.
++
++Three changes have different readiness requirements: moving source into owner
++directories; replacing private dependencies with public contracts; and changing
++runtime activation/discovery. They can be prepared in ordered commits and
++released together. A directory move alone does not complete the architectural
++change, and a single deployment does not require one giant unreviewable commit.
++
++For a short mixed-layout fallback, create destination roots (`modules/`,
++`capabilities/`, and necessary platform/library roots) beside the existing code.
++Move each owned implementation once, update its consumers, and remove its old
++registration in the same increment. Existing unmigrated code remains at its
++known paths. Do not first move the whole live tree to `deprecated/`: that adds
++another import, tool, and deployment-path migration without resolving ownership.
++
++New code must not gain dependencies on legacy private implementations. Any
++necessary boundary adapter belongs in a small composition-owned migration area,
++with an exact consumer list and removal condition. There must be one runtime
++registration and one writable data authority for each feature. Do not keep
++duplicate old/new implementations or broad re-export trees merely to make
++every historical import continue to work.
++
++The preferred release strategy is to prove a representative owner plus the
++Piano/Screens/playback relationship, migrate remaining ownership on a branch,
++then make one controlled production cutover. Readiness requires the dependency
++matrix, artifact build, configuration/data compatibility, and core user flows
++to be checked. Keep stored formats stable during the structural move so code
++rollback remains practical. Feature redesigns and new satellite deployment
++mechanisms need not be bundled into that cutover.
++
+@@ -237,3 +325,5 @@
+-This should be an incremental extraction, not a repository-wide directory
+-rewrite. The module contract must be proven by extracting one small existing
+-application before it becomes the required shape for large applications.
++The contract should be proven against existing applications before it becomes
++the required shape for the repository. Implementation can proceed in ordered
++extractions on a branch and land in one coordinated cutover; it need not require
++a long period of separately deployed old and new architectures. Section 0.5
++records the preferred migration strategy and the mixed-layout fallback.

@@ -1,0 +1,23 @@
+{
+  "schema": "daylight.preimplementation.http-identity-selection/v1",
+  "probeIds": [
+    "HTTPN-EXPORTS",
+    "HTTPN-MIDDLEWARE-BINDING",
+    "HTTPN-ERROR-BINDING",
+    "HTTPN-LOGGING-BINDING",
+    "HTTPN-NAMESPACE",
+    "HTTPN-UUID-RESOLUTION",
+    "HTTPN-CLASSIFICATION",
+    "HTTPN-ERROR-LOGGING",
+    "HTTPN-REQUEST-LOGGING",
+    "HTTPN-REQUEST-SAMPLING",
+    "HTTPN-CLOCK-AUTHORITY",
+    "HTTPN-ASYNC-CONTRACT"
+  ],
+  "mutations": {
+    "duplicate-middleware": ["HTTPN-MIDDLEWARE-BINDING"],
+    "duplicate-error": ["HTTPN-ERROR-BINDING", "HTTPN-CLASSIFICATION"],
+    "duplicate-dispatcher": ["HTTPN-LOGGING-BINDING", "HTTPN-ERROR-LOGGING", "HTTPN-REQUEST-LOGGING", "HTTPN-REQUEST-SAMPLING"],
+    "leaked-default": ["HTTPN-EXPORTS"]
+  }
+}

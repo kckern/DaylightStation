@@ -1,0 +1,15 @@
+--- round-5-end/docs/_wip/plans/2026-09-05-application-module-migration-plan.md
++++ committed/docs/_wip/plans/2026-09-05-application-module-migration-plan.md
+@@ -8 +8,6 @@
+-This is the immediate migration plan. It supersedes the runtime draft and the
++**Current preparation checklist:** [Pre-implementation work plan](2026-09-05-application-module-preimplementation-plan.md).
++It scopes inventory, boundary design, isolated tests and an auditable rehearsal
++backlog. Existing-code repairs, package adoption, extraction and the rehearsal
++itself remain later, separately authorized work; read it before executing WP-01–05.
++
++This is the structural migration design. It supersedes the runtime draft and the
+@@ -1160,0 +1166,4 @@
++The [pre-implementation checklist](2026-09-05-application-module-preimplementation-plan.md)
++governs the currently authorized preparation. The execution packages below
++describe later changes, not permission to apply them during that preparation.
++
