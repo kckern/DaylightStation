@@ -361,3 +361,15 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-06 | feat/health-meal-workflow | 84e3fd55c58aa5e79c8ba89b823c0a132030fe5b | Merged and deployed meal voice amendments, grouping, Undo and compact Health display; final commit records verification. |
 | 2026-09-06 | fix/nutrition-number-drag | c8d0212c1 | Voice gateway message contract, shared numeric food edits, atomic ingredient updates and deferred meal-suggestion wiring; fast-forwarded into local main. |
 | 2026-09-07 | worktree-player-media-error-recovery | 390ce414d | Player treats a dead pipeline as stuck rather than merely starved, plus the docs freshness marker for that work. Fully contained in main (verified ancestor) before deletion; its worktree at `.claude/worktrees/player-media-error-recovery` was clean and was removed with it. |
+| 2026-09-07 | school-multiselect-sampling | 6b191a416 | Sample multi_select answers instead of refusing them, plus the health/school/playback-hub work that rode along. Every one of its 37 commit subjects was verified present in main before deletion. |
+| 2026-09-07 | homeserver-main | 96b05ecc6 | Fetch ref for the homeserver deploy tree, taken while reconciling it with origin. Its 49 commits were squashed into `b1811fefe`, so the content is in main; redundant with `backup/pre-squash-20260907`, which holds the same history plus one commit. |
+| 2026-09-07 | backup-granular-history | ea75a7497 | Granular commit history preserved before an earlier squash. Content in main; carried no household names. |
+| 2026-09-07 | backup/pre-pii-rewrite | 72a7add82 | Pre-scrub history from the 2026-09-06 PII rewrite. DELETED DELIBERATELY: the scrubbed version is in main, and this branch was one of the last local copies of three commits carrying a learner's real name. |
+| 2026-09-07 | backup/pre-pii-scrub-20260906 | 2275f65b6 | Companion backup from the same 2026-09-06 scrub, holding two more commits with a learner's real name. Deleted for the same reason — content preserved in main in scrubbed form. |
+
+<!-- Deleted with `-D`, not `-d`: a squash or rebase leaves the original branch
+     unreachable from main by ancestry even when every line of its content is
+     in main. Each was therefore checked by PATCH (subject-by-subject against
+     main, or by provenance) rather than by git's merged/unmerged flag, which
+     would have said "unmerged" for all six. -->
+
