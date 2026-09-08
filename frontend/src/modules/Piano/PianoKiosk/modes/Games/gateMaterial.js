@@ -41,6 +41,7 @@ const WHITE_KEYS_IN_ONE_OCTAVE = 7;
 /** Diatonic steps between the notes of a multi-note ask: a third to a fifth. */
 const SPREADS = Object.freeze([2, 3, 4]);
 /** How many keys one ask may light. Single note, dyad, triad — no further. */
+const MAX_REPS = 8;
 const MAX_LIT_KEYS = 3;
 const ROOT_PITCH_CLASSES = Object.freeze({
   C: 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, F: 5, 'F#': 6, Gb: 6,
@@ -84,13 +85,25 @@ export function keysInstance(spec, pickIndex = 0) {
     ? spec.ordering
     : (arrangement === 'sequence' ? 'strict' : 'any');
 
+  // REPS repeat each note of a sequence CONSECUTIVELY — note 1 three times,
+  // then note 2 three times — rather than repeating the whole run. That is what
+  // makes a sight-reading drill a drill: the same card comes back while it is
+  // still fresh, and the pitch changes only once it has been found three times.
+  // Meaningless on a `together` ask (one event by definition), and ignored there.
+  const requestedReps = Math.floor(Number(spec?.reps));
+  const reps = Number.isFinite(requestedReps) && requestedReps >= 1 ? Math.min(requestedReps, MAX_REPS) : 1;
+
   const notesOf = (list) => list.map((midi) => ({ midi, hand: 'right' }));
   const events = arrangement === 'sequence'
-    ? midis.map((midi, i) => ({ id: `lit-${i + 1}`, value: 'quarter', notes: notesOf([midi]) }))
+    ? midis.flatMap((midi, i) => Array.from({ length: reps }, (_, r) => ({
+      id: reps > 1 ? `lit-${i + 1}-${r + 1}` : `lit-${i + 1}`,
+      value: 'quarter',
+      notes: notesOf([midi]),
+    })))
     : [{ id: 'lit-1', value: 'quarter', notes: notesOf(midis) }];
 
   return {
-    id: `keys/lit@notes=${notes},arrangement=${arrangement},pick=${index}`,
+    id: `keys/lit@notes=${notes},arrangement=${arrangement}${reps > 1 ? `,reps=${reps}` : ''},pick=${index}`,
     title: notes === 1 ? 'One key' : `${notes} keys`,
     form: 'keys',
     ordering,

@@ -624,6 +624,21 @@ describe('GameGate — contract 4: passing', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+describe("GameGate — the learner's own ladder", () => {
+  it("keeps a learner on their authored path instead of the whole shelf", () => {
+    // `path` was dropped by resolveGateConfig, so every child walked the global
+    // tier order. That carried an adult off his scales into a preschooler's
+    // chord rung, and would carry a preschooler off a reading rung into scales.
+    const config = resolveGateConfig({ repertoire: CONFIG.repertoire, path: ['L2'] });
+    expect(config.path).toEqual(['L2']);
+  });
+
+  it('survives a household that authored none, and one that authored nonsense', () => {
+    expect(resolveGateConfig({}).path).toBeNull();
+    expect(resolveGateConfig({ path: 'L2' }).path).toBe('L2'); // resolver rejects it, not this
+  });
+});
+
 describe('GameGate — contract 5: failing offers ways out, none of them the match', () => {
   it('shows Try again · Practice this · Leave and no path to the game', async () => {
     const { onPassed } = renderGate();

@@ -423,3 +423,41 @@ describe('isConfigOnlyDecline', () => {
     expect(isConfigOnlyDecline(null)).toBe(false);
   });
 });
+
+describe('keysInstance — reps make a sight-reading drill a drill', () => {
+  it('repeats each note of a sequence CONSECUTIVELY, not the whole run', () => {
+    const inst = keysInstance({ kind: 'keys', notes: 3, arrangement: 'sequence', reps: 3 }, 0);
+    const midis = inst.events.map((ev) => ev.notes[0].midi);
+    expect(midis).toHaveLength(9);
+    // note 1 three times, THEN note 2 three times, then note 3 three times.
+    expect(midis.slice(0, 3)).toEqual([midis[0], midis[0], midis[0]]);
+    expect(midis.slice(3, 6)).toEqual([midis[3], midis[3], midis[3]]);
+    expect(midis.slice(6, 9)).toEqual([midis[6], midis[6], midis[6]]);
+    expect(new Set(midis).size).toBe(3);
+  });
+
+  it('gives every card its own id, so the engine can tell two reps apart', () => {
+    const inst = keysInstance({ kind: 'keys', notes: 2, arrangement: 'sequence', reps: 2 }, 0);
+    expect(new Set(inst.events.map((ev) => ev.id)).size).toBe(4);
+  });
+
+  it('leaves an unrepped sequence exactly as it was', () => {
+    const before = keysInstance({ kind: 'keys', notes: 3, arrangement: 'sequence' }, 0);
+    const explicit = keysInstance({ kind: 'keys', notes: 3, arrangement: 'sequence', reps: 1 }, 0);
+    expect(explicit).toEqual(before);
+    expect(before.events.map((ev) => ev.id)).toEqual(['lit-1', 'lit-2', 'lit-3']);
+  });
+
+  it('ignores reps on a together ask, which is one event by definition', () => {
+    const inst = keysInstance({ kind: 'keys', notes: 3, arrangement: 'together', reps: 3 }, 0);
+    expect(inst.events).toHaveLength(1);
+  });
+
+  it('refuses a nonsense rep count rather than building a deck of NaN', () => {
+    for (const reps of [0, -2, 'lots', null, 1.5]) {
+      const inst = keysInstance({ kind: 'keys', notes: 2, arrangement: 'sequence', reps }, 0);
+      expect(inst.events.length).toBeGreaterThanOrEqual(2);
+      expect(inst.events.every((ev) => Number.isInteger(ev.notes[0].midi))).toBe(true);
+    }
+  });
+});
