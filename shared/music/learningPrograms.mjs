@@ -66,6 +66,17 @@ function buildScaleDrill(exerciseBank) {
       subtitle: `Bottom to top and back, ${SCALE_DRILL_REPS_PER_SET} times.`,
       seed_id: 'scales/modes',
       requirement,
+      // What the run stage prints. Carried on the step rather than parsed back
+      // out of the exercise_id by the component: the id is an address, not a
+      // label, and a surface that reads axes out of it starts depending on how
+      // ids are spelled.
+      display: {
+        key: `${set.root} major`,
+        root: set.root,
+        hand: set.hand,
+        hand_label: set.hand_label,
+        reps: SCALE_DRILL_REPS_PER_SET,
+      },
     };
   }).filter(Boolean);
 
