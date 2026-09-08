@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
+import { gamesDisabledFor } from './gameAccessPolicy.js';
 import { usePianoMidi } from './PianoMidiContext.jsx';
 import { usePianoUser } from './PianoUserContext.jsx';
 import PianoTile from './PianoTile.jsx';
@@ -56,6 +57,11 @@ export function PianoMenu() {
   // Curfew wins outright: after bedtime there is nothing to offer, so the
   // closed-for-the-night view stands rather than a launchable lesson card.
   const lessonGate = usePianoLessonGate(currentUser);
+  // Not a lock — see gameAccessPolicy.js. The tile stays PRESENT and disabled
+  // rather than disappearing: a tile that vanishes for one player and not
+  // another reads as a fault to a child, and invites the hunt for the way back
+  // that a plain "not for you" ends.
+  const gamesOff = gamesDisabledFor(config.gameAccess, currentUser);
   const gated = !curfew && lessonGate.gated;
   // A learner whose verdict has not arrived is PENDING, not free: on
   // 2026-09-01 one walked out through the activity strip 3.5s into an 11.1s
@@ -106,13 +112,16 @@ export function PianoMenu() {
           />
           <ul className="piano-menu__tiles" style={{ '--tile-cols': cols }}>
             {PIANO_MODES.map((m) => {
-              const schoolLocked = m.id === 'games' && !gameAccess.unlocked;
+              const gamesOffTile = m.id === 'games' && gamesOff;
+              const schoolLocked = m.id === 'games' && !gamesOff && !gameAccess.unlocked;
               const videosLocked = m.id === 'videos' && videosCapped;
-              const disabled = m.disabled || schoolLocked || videosLocked || curfew || pending;
+              const disabled = m.disabled || gamesOffTile || schoolLocked || videosLocked || curfew || pending;
               // The count is the whole message. "Videos are locked" invites an
               // argument; "2 of 2 lessons today" is a fact the child can check
               // against the discs on the wall panel, which is the same number.
-              const blurb = videosLocked
+              const blurb = gamesOffTile
+                ? 'Not part of your piano'
+                : videosLocked
                 ? `${lessonGate.videos?.completedToday ?? '?'} of ${lessonGate.videos?.cap ?? '?'} lessons today`
                 : m.id !== 'games' || gameAccess.unlocked
                 ? m.blurb

@@ -24,6 +24,7 @@ import { useSessionTracking } from './useSessionTracking.js';
 import { useSpamDetection } from './useSpamDetection.js';
 import { useScreenOverlay } from '../../screen-framework/overlays/ScreenOverlayProvider.jsx';
 import useSchoolGameAccess from './PianoKiosk/useSchoolGameAccess.js';
+import { gamesDisabledFor } from './PianoKiosk/gameAccessPolicy.js';
 import GameGate from './PianoKiosk/modes/Games/GameGate.jsx';
 import MatchGateContext from './PianoKiosk/modes/Games/MatchGateContext.js';
 import { gateAppliesTo, gateConfigForLearner } from './PianoKiosk/modes/Games/gateScope.js';
@@ -87,6 +88,11 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   // is skipped for a household member School does not track — and skipped on
   // the SERVER's say-so, not the browser's. Undefined until the roster lands,
   // which keeps the gate shut in the meantime.
+  // THE THIRD WAY IN. The tile and the /piano/games route are the other two;
+  // this one is a chord on the piano itself, and a policy enforced on the two
+  // that are visible and not on the one that is discovered would be no policy
+  // at all.
+  const gamesOff = gamesDisabledFor(appConfig?.gameAccess, currentUser ?? null);
   const schoolGameAccess = useSchoolGameAccess(currentUser ?? null, {
     schoolLearner: (users || []).find((u) => u.id === currentUser)?.schoolLearner,
   });
@@ -376,11 +382,30 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
         </div>
       )}
 
-      {launcherOpen && !rosterVisible && schoolGameAccess.unlocked && (
+      {launcherOpen && !rosterVisible && !gamesOff && schoolGameAccess.unlocked && (
         <NoteLauncher slots={slots} timeoutMs={timeoutMs} playerName={currentUserName} playerId={currentUser} />
       )}
 
-      {launcherOpen && !rosterVisible && !schoolGameAccess.unlocked && (
+      {launcherOpen && !rosterVisible && gamesOff && (
+        <div className="note-launcher note-launcher--school-locked" role="status">
+          <div className="nl-lock">
+            <span className="nl-lock__badge" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <rect x="4" y="10.5" width="16" height="10.5" rx="2.5" />
+                <path d="M8 10.5V7a4 4 0 0 1 8 0v3.5" strokeLinecap="round" />
+              </svg>
+            </span>
+            {/* NOT "locked". A lock names something that would open it, and
+                nothing here does; saying "finish your schoolwork" to a player
+                games are not offered to would be a promise the piano cannot
+                keep, and the child would go and keep their side of it. */}
+            <h2 className="nl-lock__title">Games are off</h2>
+            <p className="nl-lock__reason">Games are not part of this player’s piano.</p>
+          </div>
+        </div>
+      )}
+
+      {launcherOpen && !rosterVisible && !gamesOff && !schoolGameAccess.unlocked && (
         <div className="note-launcher note-launcher--school-locked" role="status">
           <div className="nl-lock">
             <span className="nl-lock__badge" aria-hidden="true">

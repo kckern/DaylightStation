@@ -12,6 +12,7 @@ import { SkeletonStage } from '../../Skeleton.jsx';
 import GameBoundary from '../../../game-platform/host/GameBoundary.jsx';
 import { resolvePianoPlayerName } from '../../../game-platform/identity/playerName.js';
 import useSchoolGameAccess from '../../useSchoolGameAccess.js';
+import { gamesDisabledFor } from '../../gameAccessPolicy.js';
 import useGameBudgetMeter from '../../useGameBudgetMeter.js';
 import { readKioskDeviceId } from '../../kioskDeviceIdentity.js';
 import GameGate from './GameGate.jsx';
@@ -70,6 +71,7 @@ function GameMountWitness({ gameId, matchId, learnerId, logger }) {
  */
 export function Games() {
   const pianoUser = useContext(PianoUserContext);
+  const { config } = usePianoKioskConfig();
   // MUST pass `schoolLearner` — same idiom as PianoMenu.jsx and
   // PianoVisualizer.jsx. Without it, `undefined` reads as "gated", so a
   // grown-up School does not track (schoolLearner: false on the roster)
@@ -80,6 +82,21 @@ export function Games() {
   const gameAccess = useSchoolGameAccess(pianoUser?.currentUser ?? null, {
     schoolLearner: (pianoUser?.users || []).find((u) => u.id === pianoUser?.currentUser)?.schoolLearner,
   });
+
+  // BEFORE the school lock, and it is not a lock. A player games are not
+  // offered to is told that, plainly, with no route to unlock and no
+  // suggestion that finishing schoolwork would open one — because it would
+  // not. Checked here as well as on the tile so the direct route
+  // (/piano/games/tetris, which a bookmark or a typed URL reaches) is closed
+  // too; hiding a tile is not a policy, it is a decoration.
+  if (gamesDisabledFor(config.gameAccess, pianoUser?.currentUser ?? null)) {
+    return (
+      <section className="piano-mode__placeholder piano-games__school-lock" role="status">
+        <h2>Games are off</h2>
+        <p>Games are not part of this player’s piano.</p>
+      </section>
+    );
+  }
 
   if (!gameAccess.unlocked) {
     const message = gameAccess.status === 'error'

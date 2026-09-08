@@ -85,6 +85,9 @@ export const PIANO_CONFIG_DEFAULTS = {
   // this projection does not name is dropped in silence — a gate whose config
   // never arrives is a gate that is permanently off while the YAML says on.
   gameGate: { enabled: false },
+  // Players who are not offered games AT ALL. Not locked pending schoolwork,
+  // not gated behind a challenge — not offered. Empty means everyone may.
+  gameAccess: { disabledFor: [] },
   // Managed board vocabulary and its daily/per-turn pressure. Independent of
   // opponent strength and of the PianoChallenge ladder; off unless configured.
   gameAddressing: { enabled: false },
@@ -195,6 +198,7 @@ export function resolvePianoConfig(raw, pianoId) {
     display: { ...PIANO_CONFIG_DEFAULTS.display, ...(shared.display || {}), ...(p.display || {}) },
     gameLimit: { ...PIANO_CONFIG_DEFAULTS.gameLimit, ...(shared.gameLimit || {}), ...(p.gameLimit || {}) },
     gameGate: { ...PIANO_CONFIG_DEFAULTS.gameGate, ...(shared.gameGate || {}), ...(p.gameGate || {}) },
+    gameAccess: { ...PIANO_CONFIG_DEFAULTS.gameAccess, ...(shared.gameAccess || {}), ...(p.gameAccess || {}) },
     gameAddressing: {
       ...PIANO_CONFIG_DEFAULTS.gameAddressing,
       ...(shared.gameAddressing || {}),
