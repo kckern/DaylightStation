@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import Icon from '../../../ui/icons/Icon.jsx';
 import { getGameEntry } from '../../../gameRegistry.js';
 import './GateCeremony.scss';
@@ -30,10 +30,20 @@ export default function GateCeremony({ gameId = null, gameLabel = null, score = 
   const label = gameLabel ?? entry?.label ?? 'Your game';
   const icon = entry?.icon ?? 'game';
 
+  // THE HAND-OVER IS ARMED ONCE, ON MOUNT, AND NOTHING MAY RE-ARM IT.
+  // `onDone` is an inline closure in the gate, so it is a new function on every
+  // render — and the gate re-renders on every MIDI note (`usePianoMidiNotes`)
+  // and on every bridge link change. An effect keyed on it therefore cleared
+  // and restarted this timeout each time, so a child who kept a hand on the
+  // keys (or a note bridge that reconnected) held the curtain shut
+  // indefinitely: "Cleared" on screen, the game never arriving. The callback
+  // lives in a ref so the latest one still runs; only the mount arms the timer.
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
   useEffect(() => {
-    const timer = setTimeout(() => onDone?.(), CEREMONY_MS);
+    const timer = setTimeout(() => onDoneRef.current?.(), CEREMONY_MS);
     return () => clearTimeout(timer);
-  }, [onDone]);
+  }, []);
 
   return (
     <div className="gate-ceremony" role="status" aria-label={`Gate cleared. ${label} unlocked.`}>
