@@ -54,3 +54,64 @@ describe('FitnessSession — equipmentRider', () => {
     expect(session.getEquipmentRider('niceday')).toBe('user_1');
   });
 });
+
+/**
+ * A standing rider declared in config.
+ *
+ * The case it exists for: equipment with exactly one real rider and no physical
+ * selector wired to it. Before this, such equipment was permanently unclaimed,
+ * and a `cadence_floor` stands down as `unclaimed` before it looks at cadence at
+ * all — so a gate could watch a bike being ridden for half an hour and never
+ * once apply.
+ */
+describe('FitnessSession — riders declared in config', () => {
+  const catalog = [
+    { id: 'tricycle', rider: 'rider_a' },
+    { id: 'niceday' },
+    { id: 'step_mat', rider: '  rider_b  ' },
+  ];
+
+  it('claims the declared rider when the catalog is applied', () => {
+    const session = new FitnessSession();
+    session.setEquipmentCatalog(catalog);
+    expect(session.getEquipmentRider('tricycle')).toBe('rider_a');
+  });
+
+  it('trims the declared rider rather than storing the padding', () => {
+    const session = new FitnessSession();
+    session.setEquipmentCatalog(catalog);
+    expect(session.getEquipmentRider('step_mat')).toBe('rider_b');
+  });
+
+  it('leaves equipment without a declared rider unclaimed', () => {
+    const session = new FitnessSession();
+    session.setEquipmentCatalog(catalog);
+    expect(session.getEquipmentRider('niceday')).toBeNull();
+  });
+
+  it('is a DEFAULT, not a lock — a live claim still wins', () => {
+    const session = new FitnessSession();
+    session.setEquipmentCatalog(catalog);
+    session.setEquipmentRider('tricycle', 'rider_c');
+    expect(session.getEquipmentRider('tricycle')).toBe('rider_c');
+  });
+
+  it('does not drag a moved rider back when config is re-applied mid-session', () => {
+    const session = new FitnessSession();
+    session.setEquipmentCatalog(catalog);
+    session.setEquipmentRider('tricycle', 'rider_c');
+    // A config refresh is not a new workout; re-seeding here would yank the
+    // rider off the machine they just moved to.
+    session.setEquipmentCatalog(catalog);
+    expect(session.getEquipmentRider('tricycle')).toBe('rider_c');
+  });
+
+  it('re-seeds after the equipment is explicitly unclaimed', () => {
+    const session = new FitnessSession();
+    session.setEquipmentCatalog(catalog);
+    session.setEquipmentRider('tricycle', null);
+    expect(session.getEquipmentRider('tricycle')).toBeNull();
+    session.setEquipmentCatalog(catalog);
+    expect(session.getEquipmentRider('tricycle')).toBe('rider_a');
+  });
+});
