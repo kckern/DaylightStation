@@ -33,12 +33,24 @@ export function SharpShape() {
   );
 }
 
-/** Engraved flat: tall stem + a bold solid bowl sitting on the notehead's line. */
+/**
+ * Engraved flat: tall stem + a bold solid bowl sitting on the notehead's line.
+ *
+ * REGISTERED ON THE BOWL, not on the glyph's overall extent. Every caller
+ * places an accidental with `translate(x, noteY)` — the contract stated at the
+ * top of this file, "centered on the notehead's y" — and a sharp honours it
+ * because it is symmetric about its own origin. A flat is not symmetric: its
+ * stem rises far above the bowl, so a glyph centred on its bounding box hangs
+ * roughly 2.75 units BELOW the note it modifies, on every surface that draws
+ * one. The coordinates below put the bowl's centre at (0, 0) instead, so the
+ * shared contract is true for both glyphs and neither caller has to know which
+ * one it is holding.
+ */
 export function FlatShape() {
   return (
     <>
-      <line x1="-4.5" y1="-13" x2="-4.5" y2="8.5" stroke="currentColor" strokeWidth="2.4" />
-      <path d="M -4.5 -4 C 4.5 -7.5, 8.5 2.5, -4.5 9.5 Z" fill="currentColor" />
+      <line x1="-6.5" y1="-15.75" x2="-6.5" y2="5.75" stroke="currentColor" strokeWidth="2.4" />
+      <path d="M -6.5 -6.75 C 2.5 -10.25, 6.5 -0.25, -6.5 6.75 Z" fill="currentColor" />
     </>
   );
 }

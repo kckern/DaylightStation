@@ -24,7 +24,12 @@ function singleVoiceAbc(notes, clef, instance) {
     const finger = note.finger != null ? `!${note.finger}!` : '';
     return `${finger}${midiToAbc(note.midi, instance.key ?? 'C')}${ABC_DURATIONS[note.value] ?? ''}`;
   }).join(' ');
-  return `X:1\nL:1/4\nM:${instance.meter ?? '4/4'}\nK:${instance.key ?? 'C'}\nV:MAIN clef=${clef}\n[V:MAIN] ${tokens} |]`;
+  // `M:none` draws no meter. A time signature is a promise about tempo, and
+  // nothing in this surface is scored on tempo — the engine matches note
+  // ORDER, not placement. Printing 4/4 over a scale therefore says something
+  // the exercise does not ask for. It comes back the day a paced exercise
+  // needs it; `instance.meter` is still what sizes the bar internally.
+  return `X:1\nL:1/4\nM:none\nK:${instance.key ?? 'C'}\nV:MAIN clef=${clef}\n[V:MAIN] ${tokens} |]`;
 }
 
 /** Rule 1's last resort: majority of the notes' own pitch range (below middle C → bass). */
