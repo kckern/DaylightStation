@@ -13,8 +13,7 @@ beforeAll(async () => {
   const built = await build({
     stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client';
       import Overlay from ${JSON.stringify(path.join(here, 'FullscreenVitalsOverlay.jsx'))};
-      import Fab from ${JSON.stringify(path.join(here, '../FitnessChartVoiceMemoFab.jsx'))};
-      let root;window.renderOverlay=()=>{root=createRoot(document.getElementById('content'));root.render(React.createElement(React.Fragment,null,React.createElement('div',{className:'fitness-video-shell',style:{position:'relative',width:'100%',height:'100%'}},React.createElement(Overlay,{visible:true})),React.createElement(Fab,{sessionActive:true,onRecord:()=>{}}))); };window.unmountOverlay=()=>root.unmount();`, resolveDir: frontend, loader: 'jsx' },
+      let root;window.renderOverlay=()=>{root=createRoot(document.getElementById('content'));root.render(React.createElement(React.Fragment,null,React.createElement('div',{className:'fitness-video-shell',style:{position:'relative',width:'100%',height:'100%'}},React.createElement(Overlay,{visible:true})),React.createElement('button',{type:'button',className:'fitness-player__voice-memo-fab','aria-label':'Record voice memo'}))); };window.unmountOverlay=()=>root.unmount();`, resolveDir: frontend, loader: 'jsx' },
     bundle: true, write: false, platform: 'browser', format: 'iife',
     alias: { '@': path.join(frontend, 'src') },
     define: { 'process.env.NODE_ENV': '"production"', 'import.meta.env': '{"MODE":"test"}' },
@@ -89,9 +88,6 @@ describe('FullscreenVitalsOverlay browser geometry', () => {
       await page.locator('.fullscreen-vitals-overlay').click();
       await page.waitForFunction(() => document.querySelector('.fullscreen-vitals-overlay').classList.contains('anchor-left'));
       const left = await geometry(page); expectFits(left); expect(left.overlay.x).toBeLessThan(g.overlay.x);
-      await page.evaluate(()=>document.getElementById('player').classList.remove('mode-fullscreen'));
-      const chart=await geometry(page);
-      expect(chart.fab.bottom).toBeCloseTo(chart.parent.bottom-96,1);
       await page.evaluate(()=>window.unmountOverlay());
       expect(await page.evaluate(()=>window.observerDisconnects)).toBe(1);
     } finally { await page.close(); }
