@@ -14,8 +14,8 @@
  * digit number is not holding the library's sticker, so under THIRTEEN
  * characters there is NO verdict yet (`typing`) — ten, eleven and twelve
  * included. Ten is the trap: the first ten digits of a thirteen-digit number
- * pass the ISBN-10 checksum one time in eleven, and `Look it up` would light
- * on the wrong book; the other ten times the child reads "one digit is off"
+ * pass the ISBN-10 checksum one time in eleven, and an advance would land on
+ * the wrong book; the other ten times the child reads "one digit is off"
  * while still typing. So ten is judged as an ISBN-10 only when the entry ends
  * in `X` (a check character only an ISBN-10 has) or when the caller says the
  * child STOPPED there (`submit: true`). Thirteen is judged on the keystroke;
@@ -69,9 +69,12 @@ function isbn10To13(isbn10) {
  *
  * @param {unknown} input - the pad's current value; spaces, hyphens and the
  *   CR/LF a scanner appends are stripped before anything is judged
- * @param {{submit?: boolean}} [options] - `submit: true` means the child
- *   stopped here and tapped `Look it up`: a ten-digit entry is then judged as
- *   an ISBN-10 instead of being read as the first ten of thirteen
+ * @param {{submit?: boolean}} [options] - `submit: true` means the CALLER has
+ *   decided this entry is finished: a ten-digit one is then judged as an
+ *   ISBN-10 instead of being read as the first ten of thirteen. The pad has no
+ *   `Look it up` button any more, so what decides that is the auto-advance in
+ *   `useBookShelf` — which is why a bare ten it accepts must still clear the
+ *   catalog before it moves the child (a lucky checksum names no book)
  * @returns {{state: 'typing'}
  *   | {state: 'valid', isbn13: string}
  *   | {state: 'invalid', reason: 'isbn13-checksum'|'isbn10-checksum'|'not-a-book-prefix'|'not-an-identifier'}}

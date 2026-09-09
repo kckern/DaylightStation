@@ -2743,17 +2743,39 @@
     padding: clamp(1.25rem, 3vw, 3rem); box-sizing: border-box;
   }
 }
+// A COLUMN, not a canvas. The door was absolutely positioned here first and
+// landed on the last learner's card AND on the fixed "Turn off screen" button
+// underneath — neither of which jsdom can see. In flow, the board takes the
+// space that is left and the door keeps its own.
 .school-lock-split__board {
   pointer-events: none;
   user-select: none;
+  display: flex; flex-direction: column; gap: .75rem;
   min-width: 0; min-height: 0;
   padding: clamp(1.25rem, 2.5vw, 2.25rem); box-sizing: border-box;
   border-left: 1px solid var(--school-border);
 }
+.school-lock-split__board > .school-status-board { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+// The one tappable thing in this pane, and NOT part of the board: the status
+// rows stay read-only (see AgendaStatusBoard's header), and this still stands
+// on a day the board itself draws nothing.
+.school-book-door {
+  pointer-events: auto;
+  flex: 0 0 auto; align-self: flex-end;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .35rem;
+  min-width: 7rem; min-height: 6rem; padding: .6rem 1rem;
+  border: 1px solid var(--school-border); border-radius: 16px;
+  background: var(--school-surface); color: inherit; font: inherit; font-weight: 700;
+  cursor: pointer; touch-action: manipulation;
+}
+.school-book-door__icon { font-size: 2.5rem; line-height: 1; }
+.school-book-door__label { font-size: 1rem; text-align: center; }
 .school-lock-split[data-side='keypad-right'] .school-lock-split__board { border-left: 0; border-right: 1px solid var(--school-border); }
 // Keypad-left puts the board under the fixed "Turn off screen" affordance
-// (bottom-right) — reserve a lane so it never sits on the last card.
-.school-lock-split[data-side='keypad-left'] .school-lock-split__board { padding-bottom: clamp(3rem, 6vh, 3.75rem); }
+// (bottom-right) — reserve a lane so neither the last card nor the book door
+// sits on it. The button is ~44px tall on a 1rem inset, so 3rem was already
+// short of clearing it; the door made that visible.
+.school-lock-split[data-side='keypad-left'] .school-lock-split__board { padding-bottom: clamp(4rem, 8vh, 5rem); }
 // The board OWNS its pane: a column of equal-height student cards that split
 // the available height between them, whatever each card has to say. A card
 // with no plan keeps the same footprint — four matching cards are the point.
@@ -3099,7 +3121,12 @@
 .school-books-add__card > .school-books-task__context { display: flex; align-items: center; gap: 1rem; }
 
 // Anonymous scan overlay never replaces an active School workspace.
-.school-book-scan { position: fixed; inset: 0; z-index: 150; display: grid; place-items: center; background: var(--school-bg); overflow: auto; padding: 1.5rem; box-sizing: border-box; }
+// `pointer-events` INHERITS, and the panel door mounts this dialog from inside
+// `.school-lock-split__board`, which is `pointer-events: none`. Fixed
+// positioning and z-index 150 are not enough on their own: without this the
+// faces draw on top of the keypad and every tap falls straight through to the
+// keys behind them.
+.school-book-scan { pointer-events: auto; position: fixed; inset: 0; z-index: 150; display: grid; place-items: center; background: var(--school-bg); overflow: auto; padding: 1.5rem; box-sizing: border-box; }
 .school-book-scan__preview { display: flex; flex-direction: column; gap: 1rem; width: 100%; text-align: center; }
 .school-book-scan__preview h2, .school-book-scan__preview h3, .school-book-scan__preview p { margin: 0; }
 .school-book-scan__layout { display: flex; flex-direction: column; gap: 1.5rem; }
@@ -3113,7 +3140,31 @@
 .school-book-scan__learners button { display: flex; align-items: center; gap: .75rem; background: var(--school-surface); color: inherit; border: 1px solid var(--school-border); border-radius: 12px; padding: .75rem; min-height: 96px; min-width: 0; cursor: pointer; font: inherit; font-weight: 700; font-size: 1.15rem; }
 .school-book-scan__learners button span { overflow-wrap: anywhere; }
 .school-book-scan__learners .piano-avatar { width: 72px; height: 72px; flex: 0 0 72px; }
-.school-book-scan__notice { position: fixed; bottom: .5rem; right: 1rem; z-index: 140; padding: .5rem 1rem; border-radius: .5rem; background: var(--school-surface); pointer-events: none; }
+// The deferred-scan corner card. It sits ABOVE the fixed "Turn off screen"
+// affordance (which is z-index 2 in the same corner), so it lifts clear of it
+// rather than landing on top: a child reaching for one must not hit the other.
+.school-book-scan__notice {
+  position: fixed; right: 1rem; z-index: 140;
+  bottom: max(4rem, calc(env(safe-area-inset-bottom) + 4rem));
+  display: flex; align-items: center; gap: .75rem;
+  width: min(24rem, calc(100% - 2rem)); box-sizing: border-box;
+  padding: .75rem 1rem; border: 1px solid var(--school-border); border-radius: 12px;
+  background: var(--school-surface); box-shadow: 0 6px 24px rgb(0 0 0 / 28%);
+  // The dead sentence this replaced was pointer-events: none. The card IS the
+  // way into the book now, so it must take a tap — but only the card: nothing
+  // here may swallow one meant for the work underneath.
+  pointer-events: auto;
+}
+.school-book-scan__notice .school-book-scan__notice-cover { width: 3rem; flex: 0 0 3rem; max-height: 4.5rem; }
+.school-book-scan__notice-body { display: flex; flex-direction: column; gap: .4rem; min-width: 0; }
+.school-book-scan__notice-title { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
+.school-book-scan__notice-warn { margin: 0; color: var(--school-muted); font-size: .9rem; }
+.school-book-scan__notice-actions { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.school-book-scan__open {
+  min-height: 44px; padding: .4rem 1rem; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--school-border); background: var(--school-accent, var(--school-surface));
+  color: inherit; font: inherit; font-weight: 700; touch-action: manipulation;
+}
 
 @media (min-width: 820px) and (orientation: landscape) {
   .school-books-task-view {

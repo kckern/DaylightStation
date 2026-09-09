@@ -112,8 +112,8 @@ function Shelf({ shelf, error, actions, receipt, busy, needsRefresh }) {
  * @param {number} [props.idleTimeoutSeconds]
  * @param {(reason: 'done'|'idle') => void} [props.onExit]
  */
-export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit, initialBookEntry }) {
-  const { view, step, shelf, studyDay, earliestFinishDay, learner, error, busy, needsRefresh = false, current, receipt, add, actions } = useBookShelf({ learnerId, grant, idleTimeoutSeconds, onExit, initialBookEntry });
+export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit, initialBookEntry, openAdd = false }) {
+  const { view, step, shelf, studyDay, earliestFinishDay, learner, error, busy, needsRefresh = false, current, receipt, add, actions } = useBookShelf({ learnerId, grant, idleTimeoutSeconds, onExit, initialBookEntry, openAdd });
 
   if (view === 'closed') return null;
   // The server's study day, re-read on every shelf fetch; the DayPickers are
