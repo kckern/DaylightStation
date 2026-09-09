@@ -59,6 +59,14 @@
     color: var(--streak-ink);
   }
 
+  /* A DAY NOBODY ASKED ABOUT. Near-transparent rather than grey: a miss has to
+     stay visible, but a weekend is not a miss and a wall that greyed them made
+     a perfectly normal week look like a broken streak. No number — nothing was
+     asked, so there is nothing to report. */
+  &[data-state='rest'] {
+    background: rgba(255, 255, 255, 0.035);
+  }
+
   /* Read, but with no goal on record to judge it against. Coloured, because
      something happened; not green, because nobody can say it was enough. */
   &[data-state='unknown-met'] {

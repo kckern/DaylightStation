@@ -116,21 +116,26 @@ export class StoryTimeProgramLauncher {
   async #enrollmentFor(userId) {
     const assignment = await this.#assignments.get(userId);
     if (!assignment || typeof assignment !== 'object') {
-      return { enrolled: null, target: null, subject: null, unreadable: true };
+      return { enrolled: null, target: null, subject: null, schedule: null, unreadable: true };
     }
     const programs = Array.isArray(assignment.programs) ? assignment.programs : [];
     const entry = programs.find((p) => p?.programId === STORY_TIME_PROGRAM_ID);
-    if (!entry) return { enrolled: false, target: null, subject: null, unreadable: false };
+    if (!entry) return { enrolled: false, target: null, subject: null, schedule: null, unreadable: false };
+    // The days this obligation is actually ASKED on. Validated and persisted
+    // on the entry already (`SchoolProgramEnrollmentValidators#withSchedule`);
+    // it was simply never returned, so every surface downstream had to treat a
+    // Saturday as a day the child failed to read.
+    const schedule = entry.schedule ?? null;
     const subject = typeof entry.subject === 'string' && entry.subject.trim()
       ? entry.subject.trim()
       : null;
     if (entry.target === undefined || entry.target === null) {
-      return { enrolled: true, target: DEFAULT_STORY_TARGET, subject, unreadable: false };
+      return { enrolled: true, target: DEFAULT_STORY_TARGET, subject, schedule, unreadable: false };
     }
     if (Number.isInteger(entry.target) && entry.target > 0) {
-      return { enrolled: true, target: entry.target, subject, unreadable: false };
+      return { enrolled: true, target: entry.target, subject, schedule, unreadable: false };
     }
-    return { enrolled: true, target: null, subject, unreadable: true };
+    return { enrolled: true, target: null, subject, schedule, unreadable: true };
   }
 
   /**
@@ -182,7 +187,7 @@ export class StoryTimeProgramLauncher {
     // No enrollment, no obligation — and no reason to read the log for a count
     // nothing will be compared against.
     if (!enrollment.enrolled) return this.#notEnrolled();
-    const { target, subject } = enrollment;
+    const { target, subject, schedule } = enrollment;
     let rows;
     try {
       rows = await this.#readingLog.listForDay(userId, day);
@@ -207,6 +212,8 @@ export class StoryTimeProgramLauncher {
       // What this reading counts toward, for surfaces that acknowledge credit
       // (the living-room rail). `null` when the household authored none.
       subject,
+      // For the streak wall: which days this child is even asked to read on.
+      schedule,
       reads: rows ?? [],
       obligationProgress: { completed: Math.min(count, target), total: target },
       // Daily story time has no work session, so this is the durable identity

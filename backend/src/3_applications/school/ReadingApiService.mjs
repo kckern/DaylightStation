@@ -1,3 +1,5 @@
+import { isSchoolDay } from '#domains/school/schoolCalendar.mjs';
+
 const YESTERDAY_LIMIT = 4;
 const RECENT_DAYS = 7;
 /** Day groups the shelf can hold side by side on a living-room TV. */
@@ -227,13 +229,24 @@ export class ReadingApiService {
       // day is judged against `target` as it stands today, and a day we cannot
       // judge says so rather than guessing.
       const target = Number.isFinite(status?.target) ? status.target : null;
+      const schedule = status?.schedule ?? null;
       streak = days.map((day, index) => {
         const books = (batches[index] ?? []).length;
-        let state = 'none';
+        // A DAY NOBODY ASKED ABOUT IS NOT A DAY THEY MISSED. Weekends and
+        // holidays used to draw the same grey as a school day with no reading,
+        // which made a normal week look like a broken streak. `rest` is drawn
+        // near-transparent instead: a miss stays visible, a rest recedes.
+        //
+        // Reading on a rest day still counts — the agenda never un-serves work
+        // done on a non-school day — so `met` is checked FIRST and a Saturday
+        // story is a green square.
+        const asked = isSchoolDay(day, schedule);
+        let state;
         if (target === null) state = books > 0 ? 'unknown-met' : 'unknown';
         else if (target > 0 && books >= target) state = 'met';
         else if (books > 0) state = 'partial';
-        return { studyDay: day, books, target, state };
+        else state = asked ? 'none' : 'rest';
+        return { studyDay: day, books, target, asked, state };
       }).reverse();
     }
     let displayName = null;

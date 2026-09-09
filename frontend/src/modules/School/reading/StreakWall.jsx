@@ -23,7 +23,9 @@ import './streak.scss';
  *
  * The server does the judging (`ReadingApiService#summary`): this draws states,
  * it never compares a count to a target itself. A day nobody can judge — no
- * readable target — is drawn as unknown rather than as a failure.
+ * readable target — is drawn as unknown rather than as a failure, and a day
+ * nobody ASKED about (a weekend, a holiday) is drawn as `rest` rather than as a
+ * miss. Greying those made a perfectly normal week look like a broken streak.
  */
 
 /** The states the server emits, and what each one means on the wall. */
@@ -31,6 +33,7 @@ const STATE_LABEL = Object.freeze({
   met: 'met the goal',
   partial: 'read, but under the goal',
   none: 'no reading',
+  rest: 'a day off',
   unknown: 'no goal recorded',
   'unknown-met': 'read',
 });
