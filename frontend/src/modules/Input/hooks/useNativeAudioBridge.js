@@ -277,6 +277,50 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
         const GATE_THRESHOLD = 0.01; // ref energy threshold to trigger (less sensitive)
         const GATE_FLOOR = 0.2;     // -14dB suppression when gate active
 
+        // Diagnostics. Echo cancellation fails silently: the output just still
+        // has the caller's voice in it. Two numbers say why. ERLE is how many
+        // dB the canceller removed while the far end was talking (a healthy
+        // Speex run is 15-25 dB; ~0 means it never converged). The lag is a
+        // cross-correlation of decimated mic against reference: positive =
+        // the reference leads the echo (causal, cancellable if inside the
+        // filter window); negative = the reference has fallen behind the
+        // echo and no adaptive filter can help until it is realigned.
+        const DECIM = 24;                       // 48k -> 2k
+        const DIAG_HIST = 4096;                 // ~2s at 2k
+        const diagMic = new Float32Array(DIAG_HIST);
+        const diagRef = new Float32Array(DIAG_HIST);
+        let diagWP = 0, diagFill = 0, decimPhase = 0;
+        let diagFrames = 0, farFrames = 0, micE = 0, outE = 0;
+        const DIAG_EVERY_FRAMES = 500;          // 5s of 10ms frames
+        const lagEstimate = () => {
+          const N = 1000;                       // last 0.5s of mic
+          const MIN_LAG = -400, MAX_LAG = 1300; // -200ms .. +650ms
+          const SPAN = N + MAX_LAG - MIN_LAG;   // history needed, newest last
+          if (diagFill < SPAN) return null;
+          // Linearize once (newest sample at index SPAN-1) so the loops below
+          // are plain array reads: ~1.7M mult-adds, a few ms on a Shield.
+          const mic = new Float32Array(SPAN), ref = new Float32Array(SPAN);
+          for (let i = 0; i < SPAN; i++) {
+            const idx = ((diagWP - SPAN + i) % DIAG_HIST + DIAG_HIST) % DIAG_HIST;
+            mic[i] = diagMic[idx]; ref[i] = diagRef[idx];
+          }
+          // The mic block sits |MIN_LAG| samples back from the newest edge so a
+          // negative lag (reference newer than mic) still reads inside the span.
+          const micStart = SPAN - N + MIN_LAG;
+          let micSq = 0; for (let n = 0; n < N; n++) micSq += mic[micStart + n] ** 2;
+          if (micSq < 1e-6) return null;
+          let best = 0, bestLag = 0;
+          for (let lag = MIN_LAG; lag <= MAX_LAG; lag++) {
+            const refStart = micStart - lag;    // lag > 0: reference earlier than mic
+            let acc = 0, refSq = 0;
+            for (let n = 0; n < N; n++) { const r = ref[refStart + n]; acc += mic[micStart + n] * r; refSq += r * r; }
+            if (refSq < 1e-6) continue;
+            const c = acc / Math.sqrt(micSq * refSq);
+            if (Math.abs(c) > Math.abs(best)) { best = c; bestLag = lag; }
+          }
+          return { lagMs: Math.round(bestLag * DECIM / 48), peakCorr: Number(best.toFixed(3)) };
+        };
+
         const aecState = {
           get hasRef() { return hasRef; },
 
@@ -303,10 +347,16 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
             const results = [];
             while (micCount >= frameSize && refCount >= frameSize) {
               // Read mic frame → WASM heap (Float32 → Int16)
+              let frameMicEnergy = 0;
               for (let i = 0; i < frameSize; i++) {
+                const m = micRing[micRP];
+                frameMicEnergy += m * m;
+                if (decimPhase === 0) { diagMic[diagWP] = m; }
                 speexMod.HEAP16[(micPtr >> 1) + i] =
-                  Math.max(-32768, Math.min(32767, micRing[micRP] * 32768));
+                  Math.max(-32768, Math.min(32767, m * 32768));
                 micRP = (micRP + 1) % RING_SIZE;
+                if (decimPhase === 0) { diagRef[diagWP] = refRing[(refRP + i) % RING_SIZE]; diagWP = (diagWP + 1) % DIAG_HIST; diagFill = Math.min(diagFill + 1, DIAG_HIST); }
+                decimPhase = (decimPhase + 1) % DECIM;
               }
               micCount -= frameSize;
 
@@ -344,10 +394,24 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
 
               // Int16 → Float32 output, apply gate
               const output = new Float32Array(frameSize);
+              let frameOutEnergy = 0;
               for (let i = 0; i < frameSize; i++) {
-                output[i] = (speexMod.HEAP16[(outPtr >> 1) + i] / 32768) * gateGain;
+                const o = speexMod.HEAP16[(outPtr >> 1) + i] / 32768;
+                frameOutEnergy += o * o;
+                output[i] = o * gateGain;
               }
               results.push(output);
+
+              // ERLE is only meaningful while the far end is audible.
+              if (frameRefEnergy > GATE_THRESHOLD) { farFrames += 1; micE += frameMicEnergy; outE += frameOutEnergy; }
+              diagFrames += 1;
+              if (diagFrames >= DIAG_EVERY_FRAMES) {
+                if (farFrames >= 50) {
+                  const erleDb = Number((10 * Math.log10(Math.max(micE, 1e-9) / Math.max(outE, 1e-9))).toFixed(1));
+                  logger().sampled('bridge-aec-diag', { erleDb, farFrames, gateGain: Number(gateGain.toFixed(2)), ...(lagEstimate() || { lagMs: null, peakCorr: null }) }, { maxPerMinute: 12 });
+                }
+                diagFrames = 0; farFrames = 0; micE = 0; outE = 0;
+              }
             }
             return results;
           },

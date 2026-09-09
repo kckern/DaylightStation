@@ -221,7 +221,18 @@ export default function VideoCall({ deviceId, clear }) {
     };
   }, [peerConnected, deviceId, logger]);
 
-  // AEC reference signal — tap remote audio and feed to main-thread AEC
+  // AEC reference signal — tap remote audio and feed to main-thread AEC.
+  //
+  // The tap runs in an AudioWorklet, not a ScriptProcessorNode. The mic and
+  // reference rings are paired by sample COUNT, so every reference sample the
+  // tap fails to deliver shifts the two streams by that much for the rest of
+  // the call. A ScriptProcessor's callback runs on the main thread and Chrome
+  // drops it whenever that thread is busy (React render, video decode), 512
+  // samples at a time; a few dozen drops push the reference behind the echo
+  // it is meant to predict and Speex has nothing it can subtract. A worklet
+  // process() runs on the audio thread and never skips; its port messages
+  // queue rather than drop. The worklet also watches currentFrame so an
+  // audio-thread underrun is zero-filled instead of silently lost.
   const refTapRef = useRef(null);
 
   useEffect(() => {
@@ -231,43 +242,68 @@ export default function VideoCall({ deviceId, clear }) {
     const audioTracks = remoteStream.getAudioTracks();
     if (audioTracks.length === 0) return;
 
-    // Create a separate AudioContext for the reference tap.
-    // ScriptProcessorNode extracts PCM frames from the remote audio stream
-    // and feeds them to the main-thread AEC via bridge.feedReference().
+    let cancelled = false;
     const ctx = new AudioContext({ sampleRate: 48000 });
-    // Android WebView starts AudioContext suspended — resume or
-    // onaudioprocess never fires and AEC never gets reference data.
+    // Android WebView starts AudioContext suspended — resume or the graph
+    // never runs and AEC never gets reference data.
     ctx.resume().catch(() => {});
     const source = ctx.createMediaStreamSource(new MediaStream(audioTracks));
-
-    // ScriptProcessor to extract frames. Deprecated but universally supported
-    // and simpler than a second AudioWorklet module for this use case.
-    const processor = ctx.createScriptProcessor(512, 1, 1);
-
-    // Mute the tap output — we only need the reference data, not audible output.
-    // ScriptProcessor requires being connected to destination to fire callbacks.
-    const muteGain = ctx.createGain();
-    muteGain.gain.value = 0;
-
-    source.connect(processor);
-    processor.connect(muteGain);
-    muteGain.connect(ctx.destination);
-
-    processor.onaudioprocess = (e) => {
-      const input = e.inputBuffer.getChannelData(0);
-      const copy = new Float32Array(input.length);
-      copy.set(input);
-      bridge.feedReference(copy);
-    };
-
-    logger.info('aec-ref-tap-started', { audioTracks: audioTracks.length });
-    refTapRef.current = { ctx, source, processor, muteGain };
+    const tapSource = `
+class RefTapProcessor extends AudioWorkletProcessor {
+  constructor() { super(); this.expected = null; this.gaps = 0; this.gapSamples = 0; }
+  process(inputs) {
+    const ch = inputs[0] && inputs[0][0];
+    if (!ch) return true;
+    if (this.expected !== null && currentFrame > this.expected) {
+      const missing = currentFrame - this.expected;
+      this.gaps += 1; this.gapSamples += missing;
+      this.port.postMessage({ gap: missing, gaps: this.gaps, gapSamples: this.gapSamples });
+      this.port.postMessage({ ref: new Float32Array(missing) });
+    }
+    this.expected = currentFrame + ch.length;
+    const copy = new Float32Array(ch.length); copy.set(ch);
+    this.port.postMessage({ ref: copy }, [copy.buffer]);
+    return true;
+  }
+}
+registerProcessor('ref-tap', RefTapProcessor);`;
+    const blobUrl = URL.createObjectURL(new Blob([tapSource], { type: 'application/javascript' }));
+    let node = null;
+    let gapsReported = 0;
+    (async () => {
+      try {
+        await ctx.audioWorklet.addModule(blobUrl);
+        if (cancelled) return;
+        node = new AudioWorkletNode(ctx, 'ref-tap', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+        node.port.onmessage = event => {
+          const msg = event.data;
+          if (msg.ref) bridge.feedReference(msg.ref);
+          else if (msg.gap && msg.gaps >= gapsReported + 10) {
+            gapsReported = msg.gaps;
+            logger.warn('aec-ref-gap', { gaps: msg.gaps, gapMs: Math.round(msg.gapSamples / 48) });
+          }
+        };
+        // The worklet must be connected to the destination to be pulled;
+        // its output is silenced so the tap is never audible.
+        const muteGain = ctx.createGain();
+        muteGain.gain.value = 0;
+        source.connect(node);
+        node.connect(muteGain);
+        muteGain.connect(ctx.destination);
+        refTapRef.current = { ctx, source, node, muteGain };
+        logger.info('aec-ref-tap-started', { audioTracks: audioTracks.length, tap: 'worklet' });
+      } catch (error) {
+        logger.error('aec-ref-tap-failed', { error: error.message });
+      } finally {
+        URL.revokeObjectURL(blobUrl);
+      }
+    })();
 
     return () => {
-      processor.onaudioprocess = null;
-      source.disconnect();
-      processor.disconnect();
-      muteGain.disconnect();
+      cancelled = true;
+      const tap = refTapRef.current;
+      if (tap) { tap.node.port.onmessage = null; tap.source.disconnect(); tap.node.disconnect(); tap.muteGain.disconnect(); }
+      else source.disconnect();
       ctx.close().catch(() => {});
       refTapRef.current = null;
       logger.info('aec-ref-tap-stopped');
