@@ -3,7 +3,9 @@
 **Date:** 2026-09-08
 **Fixes:** `docs/_wip/bugs/2026-09-08-homeline-negotiation-deadlock-and-silent-failure.md` §5.1, §5.2, and proposal 3 (silent signalling drops)
 **Out of scope:** §5.3 (TV WebSocket flap — diagnosed separately, see Task 7), §6 (TURN), the two UI asks (mirrored self-view, pull-to-refresh on the phone preview)
-**Status:** planned, not started
+**Status:** Tasks 1–6 shipped in `765a3910b`; live verification then exposed
+the real offer-killer (the controller's peer-identity cleanup, see the bug
+doc's §5 correction), fixed in the follow-up commit
 
 ---
 

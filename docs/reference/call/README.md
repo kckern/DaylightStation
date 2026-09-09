@@ -230,7 +230,12 @@ _time:24h AND _msg:"webcam.access-error-final"   # TV getUserMedia refused
 - `homeline.join.denied` with `declared: browser:…` means the screen is not
   publishing its fleet name (see [Call authority](#call-authority)).
 When the phone reaches `negotiating` and leaves it with `tv_no_answer`, the TV
-joined and sent `waiting` but never answered an offer. Read the attempt from
+joined and sent `waiting` but never answered an offer. If the server holds no
+`homeline.signaling.offer` for the call at all, the phone never sent one:
+look for `pc-reset` on the phone right after `pc-created`, which means
+something closed the peer connection while the offer was still being built
+(Chrome never settles `createOffer` on a closed connection, so nothing else
+will say so). Read the attempt from
 both ends:
 
 ```text
