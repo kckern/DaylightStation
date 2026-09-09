@@ -56,6 +56,28 @@ describe('CallApp presentation', () => {
     expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ id: 'livingroom-tv' }));
   });
 
+  // 2026-09-08: tapping the living-room card made the card vanish and a bare
+  // line of status text take its place, so the whole panel shrank and the
+  // camera stage jumped under the thumb. The row a caller tapped must stay a
+  // row — same device, same shape — and carry the progress itself.
+  it('keeps the tapped screen as a row of the same shape while the call is being placed', async () => {
+    const target = { id: 'livingroom-tv', name: 'Living Room TV', location: 'Living Room', icon: '\u{1F4FA}', capabilities: { contentControl: true, videoCall: true } };
+    mocks.state = { value: 'waking', reason: null, target, media: { audio: false, video: false }, controlConnected: true };
+    mocks.api.mockResolvedValue({ devices: [target,
+      { id: 'kitchen-tv', name: 'Kitchen TV', location: 'Kitchen', capabilities: { contentControl: true, videoCall: true } }] });
+    render(<CallApp />);
+    const row = await screen.findByRole('status');
+    expect(row.className).toContain('call-app__target');
+    expect(row).toHaveTextContent('Living Room TV');
+    expect(row).toHaveTextContent('Waking the TV…');
+    expect(screen.queryByRole('button', { name: /Living Room TV/ })).toBeNull();
+    // Any other screen keeps its row too, merely unavailable.
+    expect(screen.getByRole('button', { name: /Kitchen TV/ })).toBeDisabled();
+    // Cancel stands where Exit stood, so the panel keeps its height.
+    expect(screen.getByRole('button', { name: /Cancel/ }).className).toContain('call-app__wide-btn');
+    expect(screen.queryByRole('button', { name: /Exit/ })).toBeNull();
+  });
+
   // A screen with content control but no camera cannot be the far end of a
   // call. Offering one is what put "office-tv" and "portal" in the lobby.
   it('offers only screens that can actually take a call', async () => {

@@ -108,6 +108,20 @@ function useLayoutScale() {
   return scale;
 }
 
+/** One screen the caller can pick: icon, name, room, and the green handset. */
+const TargetRow = React.forwardRef(function TargetRow({ device, disabled, onClick }, ref) {
+  return (
+    <button type="button" ref={ref} className="call-app__target" disabled={disabled} onClick={onClick}>
+      <span className="call-app__target-icon" aria-hidden="true">{device.icon || '📺'}</span>
+      <span className="call-app__target-label">
+        <span className="call-app__target-name">{deviceLabel(device)}</span>
+        {device.location && <span className="call-app__target-room">{device.location}</span>}
+      </span>
+      <span className="call-app__target-action" aria-hidden="true"><PhoneIcon /></span>
+    </button>
+  );
+});
+
 export default function CallApp() {
   useDocumentTitle('Call');
   useFixedViewport();
@@ -244,6 +258,11 @@ export default function CallApp() {
   useEffect(() => { if (state.value !== 'recovery_prompt') setHardConfirm(false); }, [state.value]);
 
   const active = !['booting', 'idle', 'ended', 'failed', 'occupied'].includes(state.value);
+  // Every row stays put while a call is placed — the tapped one carries the
+  // progress, the rest are merely unavailable — so the panel never changes
+  // height. A resumed call names a target the list may not hold yet.
+  const placingRows = state.target && !devices.items.some(device => device.id === state.target.id)
+    ? [state.target, ...devices.items] : devices.items;
   const inCall = ['connected', 'degraded', 'reconnecting'].includes(state.value);
   const partialMediaNote = media.errors?.audio && !media.errors?.video
     ? 'You can continue with video only.'
@@ -312,9 +331,27 @@ export default function CallApp() {
           </section>
         ) : (
           <section className="call-app__panel" aria-live="polite">
-            {(active || state.value === 'occupied') && (
-              <p className={`call-app__notice${state.value === 'occupied' ? ' call-app__notice--warn' : ''}`}
-                role={state.value === 'occupied' ? 'alert' : 'status'}>{statusCopy(state)}</p>
+            {/* While the call is being placed, the row the caller tapped stays a
+                row — same device, same shape — and carries the progress on its
+                second line. It used to give way to a bare line of text, which
+                shrank the panel and jumped the camera stage under the thumb. */}
+            {active && state.value !== 'recovery_prompt' && (
+              <div className="call-app__stack">
+                <h1 className="call-app__heading">Calling</h1>
+                {placingRows.map(device => device.id === state.target?.id ? (
+                  <div key={device.id} className="call-app__target call-app__target--placing" role="status">
+                    <span className="call-app__target-icon" aria-hidden="true">{device.icon || '📺'}</span>
+                    <span className="call-app__target-label">
+                      <span className="call-app__target-name">{deviceLabel(device)}</span>
+                      <span className="call-app__target-room">{statusCopy(state)}</span>
+                    </span>
+                    <span className="call-app__target-action call-app__target-action--placing" aria-hidden="true"><PhoneIcon /></span>
+                  </div>
+                ) : <TargetRow key={device.id} device={device} disabled />)}
+              </div>
+            )}
+            {state.value === 'occupied' && (
+              <p className="call-app__notice call-app__notice--warn" role="alert">{statusCopy(state)}</p>
             )}
 
             {state.value === 'recovery_prompt' && (
@@ -355,15 +392,8 @@ export default function CallApp() {
                 {devices.items.length > 0 && <h1 className="call-app__heading">Call a screen</h1>}
 
                 {devices.items.map((device, index) => (
-                  <button type="button" key={device.id} ref={index === 0 ? primaryActionRef : undefined}
-                    className="call-app__target" disabled={media.status !== 'ready'} onClick={() => controller.start(device)}>
-                    <span className="call-app__target-icon" aria-hidden="true">{device.icon || '📺'}</span>
-                    <span className="call-app__target-label">
-                      <span className="call-app__target-name">{deviceLabel(device)}</span>
-                      {device.location && <span className="call-app__target-room">{device.location}</span>}
-                    </span>
-                    <span className="call-app__target-action" aria-hidden="true"><PhoneIcon /></span>
-                  </button>
+                  <TargetRow key={device.id} device={device} ref={index === 0 ? primaryActionRef : undefined}
+                    disabled={media.status !== 'ready'} onClick={() => controller.start(device)} />
                 ))}
 
                 {media.status === 'failed' && (
