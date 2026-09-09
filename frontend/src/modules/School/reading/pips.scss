@@ -45,6 +45,50 @@
     color-mix(in srgb, var(--pip-ink, #ffd479) 45%, transparent);
 }
 
+/* THE ONE IN FLIGHT. A ring that fills clockwise as the story runs, and pulses
+   whether or not the position is known — so the pip answers "which book is
+   happening" even before the media element has a duration to divide by.
+   `--pip-sweep` is set inline by the component; unset, the conic gradient is
+   fully transparent and only the pulse shows, which is the honest drawing of an
+   unknown position. A confident zero would be a lie.
+
+   THE PULSE IS THE ONE MOVING THING ON THIS SCREEN, and that is deliberate.
+   The status board next door refuses motion because it sits in peripheral
+   vision all day; this pip is on screen only while a story is actually playing,
+   and its whole job is to say which of the day's books is the one in progress.
+   It scales rather than changing brightness — a blinking dot in a dark room
+   reads as a fault. */
+.reading-pip--live {
+  position: relative;
+  border-color: var(--pip-ink, #ffd479);
+  animation: reading-pip-pulse 2.4s ease-in-out infinite;
+
+  &::after {
+    content: '';
+    position: absolute;
+    /* Inset by the ring's own border so the sweep sits INSIDE it rather than
+       covering it — the hollow ring must stay legible as "not yet done". */
+    inset: max(1.5px, calc(var(--pip-size, 3.4vh) * 0.15));
+    border-radius: 50%;
+    background: conic-gradient(
+      from 0deg,
+      var(--pip-ink, #ffd479) 0deg,
+      var(--pip-ink, #ffd479) var(--pip-sweep, 0deg),
+      transparent var(--pip-sweep, 0deg)
+    );
+  }
+}
+
+@keyframes reading-pip-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+}
+
+/* A wall panel that respects the setting shows the sweep and holds still. */
+@media (prefers-reduced-motion: reduce) {
+  .reading-pip--live { animation: none; }
+}
+
 /* Read past the day's target — credit where a full row of pips would show none. */
 .reading-pip-extra {
   margin-left: 0.4vh;

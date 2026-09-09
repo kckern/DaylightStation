@@ -168,6 +168,14 @@ export function ReadingStage({ store, play, getMediaEl, onMediaRef, onPlaybackCo
         onMediaRef={onMediaRef}
         onPlaybackCompleted={onPlaybackCompleted}
         clear={clear}
+        /* THE FRAME OWNS THE CHROME. `SurroundHost` clones this prop onto the
+           Player it wraps for every enriched item; a DIRECT `SurroundFrame`
+           mount (see the header) has no host to do it, so the reading session
+           was the one surrounded surface still drawing the Player's own
+           progress bar, poster and title UNDER a rail that already says all
+           three. It has to be passed here, not inferred: nothing inside Player
+           can see that it is inside a frame. */
+        forceShader="focused"
       />
     </SurroundFrame>
   );

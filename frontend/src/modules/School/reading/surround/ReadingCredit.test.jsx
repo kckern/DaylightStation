@@ -81,16 +81,35 @@ describe('reading-credit — what it says', () => {
     expect(pips).toHaveAttribute('aria-label', '1 of 2 stories');
   });
 
-  it('shows the COVER and not the title — the pick screen just said it in 6vh type', () => {
-    renderRail();
+  // The rail carries NO copy of the book. The stage a foot to its right is
+  // already showing the same artwork at full size; two of them on one screen
+  // was the rail spending its width on the one question the stage answers best.
+  it('draws the book nowhere — not as a cover, not as a title', () => {
+    const { container } = renderRail();
     expect(screen.queryByTestId('reading-credit-title')).toBeNull();
-    const cover = screen.getByRole('img', { name: 'Frog and Toad' });
-    expect(cover.getAttribute('src')).toBe('/media/img/frog.jpg');
+    expect(container.querySelector('img[src="/media/img/frog.jpg"]')).toBeNull();
   });
 
-  it('falls back to the title only when there is no cover to draw instead', () => {
+  it('still draws nothing of the book when there is no artwork to draw', () => {
     renderRail({ ...READING, image: null });
-    expect(screen.getByTestId('reading-credit-title')).toHaveTextContent('Frog and Toad');
+    expect(screen.queryByTestId('reading-credit-title')).toBeNull();
+  });
+
+  // Two facts about two different things. The subject used to sit directly
+  // under the portrait, where a caption goes, so the rail read as a child
+  // called "English".
+  it('leads with the subject as its own mark, and captions the face with the NAME', () => {
+    const { container } = renderRail();
+    const subject = screen.getByTestId('reading-credit-subject');
+    expect(subject).toHaveTextContent('English');
+    expect(subject.querySelector('.school-icon')).not.toBeNull();
+
+    const who = container.querySelector('.reading-credit__who');
+    expect(who.querySelector('[data-testid="reading-credit-name"]')).toHaveTextContent('Reader');
+    // The subject is NOT inside the identity block.
+    expect(who.querySelector('[data-testid="reading-credit-subject"]')).toBeNull();
+    // And it comes first in the column.
+    expect(subject.compareDocumentPosition(who) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('accepts the payload nested under `reading` or as the payload itself', () => {
@@ -142,18 +161,55 @@ describe('reading-credit — the one rule: it degrades, it never throws', () => 
 });
 
 describe('reading-credit — the clock is deliberately unused', () => {
-  it('renders identically at every position: the obligation is books, never minutes', () => {
+  // The clock drives the live pip's sweep and NOTHING ELSE: no countdown, no
+  // elapsed/total, no bar. A child may re-listen or wander off, and the
+  // obligation is a count of books, never of minutes.
+  it('spends the clock on the live pip alone — no minutes anywhere on the rail', () => {
     const Module = getSurroundRegistry().get('reading-credit');
     const at = (position) => {
       const { container, unmount } = render(
         <Module position={position} duration={900} playing seeking={false}
           data={{ reading: READING }} region={{ slot: 'right' }} logger={makeLogger()} />,
       );
-      const html = container.innerHTML;
+      const live = container.querySelector('[data-testid="reading-pip-live"]');
+      const sweep = live?.getAttribute('style') ?? null;
+      const text = container.textContent;
       unmount();
-      return html;
+      return { sweep, text };
     };
-    expect(at(0)).toBe(at(880));
+    const early = at(0);
+    const late = at(880);
+    expect(early.sweep).not.toBe(late.sweep);
+    // The words on the rail do not move with the clock.
+    expect(early.text).toBe(late.text);
+    expect(late.text).not.toMatch(/\d+\s*:\s*\d+/);
+  });
+
+  it('marks the pip this story will fill, and only while it is playing', () => {
+    const Module = getSurroundRegistry().get('reading-credit');
+    const render1 = (playing) => {
+      const { container, unmount } = render(
+        <Module position={100} duration={900} playing={playing} seeking={false}
+          data={{ reading: READING }} region={{ slot: 'right' }} logger={makeLogger()} />,
+      );
+      const has = Boolean(container.querySelector('[data-testid="reading-pip-live"]'));
+      unmount();
+      return has;
+    };
+    expect(render1(true)).toBe(true);
+    expect(render1(false)).toBe(false);
+  });
+
+  it('pulses without a sweep when the position is not known yet', () => {
+    const Module = getSurroundRegistry().get('reading-credit');
+    const { container } = render(
+      <Module position={0} duration={0} playing seeking={false}
+        data={{ reading: READING }} region={{ slot: 'right' }} logger={makeLogger()} />,
+    );
+    const live = container.querySelector('[data-testid="reading-pip-live"]');
+    expect(live).not.toBeNull();
+    // A confident zero would be a lie about where we are.
+    expect(live.getAttribute('style')).toBeNull();
   });
 });
 
