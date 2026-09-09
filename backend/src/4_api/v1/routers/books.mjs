@@ -45,26 +45,23 @@ export function createBooksRouter({ resolveBook, resolveBookCover = null, logger
       if (!ISBN13.test(String(isbn13 ?? ''))) return res.status(400).json({ status: 'invalid', reason: 'isbn13' });
 
       const art = await resolveBookCover.cover(isbn13, { refresh: req.query.refresh === '1' });
-      if (!art) {
-        // Honest: the ladder ran and nobody had art. The shelf draws its own
-        // placeholder; a generated stand-in served from here would be
-        // indistinguishable from a real cover in every cache between us.
-        res.set('Cache-Control', 'public, max-age=3600');
-        return res.status(404).json({ status: 'not-found', reason: 'no-cover-anywhere' });
-      }
+      if (!art) return res.status(404).json({ status: 'not-found', reason: 'no-cover-anywhere' });
 
+      const body = art.bytes ?? art.svg;
       // Size plus the moment the ladder stored it. Both change together and
       // only when the art is re-saved, which is exactly what a validator has to
       // track — and it costs no hash over bytes we are about to send anyway.
-      const etag = `"${art.bytes.length}-${String(art.checkedAt ?? '0').replace(/[^\dTZ:.-]/g, '')}"`;
+      const etag = `"${body.length}-${String(art.checkedAt ?? '0').replace(/[^\dTZ:.-]/g, '')}"`;
       res.set({
         'Content-Type': art.contentType,
-        'Cache-Control': 'public, max-age=604800',
+        // A drawn cover is a placeholder that should give way the moment real
+        // art turns up, so it is cached for a day rather than a week.
+        'Cache-Control': art.generated ? 'public, max-age=86400' : 'public, max-age=604800',
         ETag: etag,
         'X-Cover-Source': art.source ?? 'unknown',
       });
       if (req.headers['if-none-match'] === etag) return res.status(304).end();
-      return res.status(200).send(art.bytes);
+      return res.status(200).send(body);
     }));
   }
 

@@ -1,4 +1,5 @@
 import { coverCandidates, coverSearchQuery } from '#domains/books/BookCoverArt.mjs';
+import { generateCoverSvg } from '#domains/books/GeneratedCover.mjs';
 
 /**
  * ResolveBookCover — walk the ladder until a real cover falls out, then keep it.
@@ -24,6 +25,14 @@ import { coverCandidates, coverSearchQuery } from '#domains/books/BookCoverArt.m
  * art for, so "it downloaded" is not "it is a cover"; the domain's
  * `judgeCoverImage` is what separates a cover from Amazon's 43-byte dot and
  * Google's 1,269-byte grey rectangle.
+ *
+ * ## THE LADDER ALWAYS ENDS IN A COVER
+ *
+ * When every rung misses, `cover` draws one — see `GeneratedCover`. A grey box
+ * with a star in it made two different books look like the same failure, and
+ * "no art anywhere" is not a thing a child should have to read. The generated
+ * cover is deliberately NOT stored: it is derived from the record, so it costs
+ * nothing to redraw and it improves by itself the day a title is corrected.
  *
  * ## ONE WALK AT A TIME, PER BOOK
  *
@@ -66,21 +75,39 @@ export class ResolveBookCover {
   }
 
   /**
-   * The stored art for a book, finding it first if this is the first ask.
+   * A cover for a book — found, or, failing that, drawn.
+   *
+   * Never null for a real ISBN. Stored art comes back as `bytes`; a drawn one
+   * comes back as `svg`, which is markup rather than a Buffer because encoding
+   * bytes is the transport's business and this layer holds no Node globals.
    *
    * @param {string} isbn13
    * @param {{record?: object, refresh?: boolean}} [options] - pass `record` to
    *   save a repository read; `refresh` re-walks even a settled miss.
-   * @returns {Promise<{bytes: Buffer, contentType: string, source: string|null}|null>}
+   * @returns {Promise<{bytes?: object, svg?: string, contentType: string,
+   *   source: string|null, generated?: boolean, checkedAt?: string|null}|null>}
    */
   async cover(isbn13, { record = null, refresh = false } = {}) {
+    if (!/^\d{13}$/.test(String(isbn13 ?? ''))) return null;
     if (!refresh) {
       const stored = this.#store.read(isbn13);
       if (stored) return stored;
-      if (this.#settledMiss(isbn13)) return null;
+      if (this.#settledMiss(isbn13)) return this.#drawn(isbn13, record);
     }
     await this.execute(isbn13, { record, refresh });
-    return this.#store.read(isbn13);
+    return this.#store.read(isbn13) ?? this.#drawn(isbn13, record);
+  }
+
+  /** The cover nobody had, drawn from what the record does know. */
+  async #drawn(isbn13, record) {
+    const book = record ?? await this.#loadRecord(isbn13) ?? {};
+    return {
+      svg: generateCoverSvg({ ...book, isbn13 }),
+      contentType: 'image/svg+xml; charset=utf-8',
+      source: 'generated',
+      generated: true,
+      checkedAt: null,
+    };
   }
 
   /**
