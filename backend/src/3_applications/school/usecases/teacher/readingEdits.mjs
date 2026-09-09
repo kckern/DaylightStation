@@ -165,11 +165,11 @@ export function undoRefusal(reading, revision, { label = 'This book' } = {}) {
  */
 export class ReadingEditContext {
   #bookLog; #teacherGate; #recordTeacherNote; #bookRepository; #bookLogLauncher;
-  #clock; #idGen; #logger;
+  #coverUrlFor; #clock; #idGen; #logger;
 
   constructor({
     bookLog, teacherGate, recordTeacherNote = null, bookRepository = null,
-    bookLogLauncher = null, clock = () => new Date(),
+    bookLogLauncher = null, coverUrlFor = null, clock = () => new Date(),
     idGen = () => `rev_${Math.random().toString(36).slice(2, 10)}`, logger = console,
   } = {}) {
     if (!bookLog) throw new Error('a teacher reading verb requires bookLog');
@@ -179,12 +179,20 @@ export class ReadingEditContext {
     this.#recordTeacherNote = recordTeacherNote;
     this.#bookRepository = bookRepository;
     this.#bookLogLauncher = bookLogLauncher;
+    this.#coverUrlFor = typeof coverUrlFor === 'function' ? coverUrlFor : null;
     this.#clock = clock;
     this.#idGen = idGen;
     this.#logger = logger;
   }
 
   get bookLog() { return this.#bookLog; }
+
+  /**
+   * Where the grown-up's console renders a cover from — the household's own
+   * address, the same one the child's panel uses, so the two never disagree
+   * about which books have art.
+   */
+  coverUrl(isbn, book = null) { return this.#coverUrlFor?.(isbn) ?? book?.coverUrl ?? null; }
 
   get logger() { return this.#logger; }
 

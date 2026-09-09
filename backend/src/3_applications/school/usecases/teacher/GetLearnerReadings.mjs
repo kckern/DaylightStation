@@ -65,7 +65,7 @@ export class GetLearnerReadings {
       title: book?.title ?? null,
       subtitle: book?.subtitle ?? null,
       authors: book?.authors ?? [],
-      coverUrl: book?.coverUrl ?? null,
+      coverUrl: this.#context.coverUrl(isbn, book),
       projection: projectReading(reading),
       baseRevisionCount: Array.isArray(reading?.revisions) ? reading.revisions.length : 0,
       // Whether each change can be taken back, and — when it cannot — the

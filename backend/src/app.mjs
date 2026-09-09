@@ -3937,6 +3937,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       bookGrants: schoolBookGrants,
       resolveBook: books.resolveBook,
       bookRepository: books.bookRepository,
+      // Shelf and teacher views render covers from OUR address, never the
+      // provider's — see `4_api/v1/routers/books.mjs#bookCoverPath`.
+      bookCoverUrlFor: books.coverUrlFor,
       donow: donowModule?.service ?? null,
       donowSurfaces: donowModule?.surfaces ?? null,
       donowDatastore: donowModule?.datastore ?? null,
@@ -4294,6 +4297,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         recordTeacherNote,
         bookRepository: schoolLifecycle.stores?.bookRepository ?? null,
         bookLogLauncher: schoolLifecycle.bookLogLauncher ?? null,
+        // One cover address for both surfaces: what the grown-up sees in the
+        // console is byte-for-byte what the child sees on the panel.
+        coverUrlFor: books.coverUrlFor,
         logger: rootLogger.child({ module: 'school-teacher-reading' }),
       };
       return {
@@ -4604,7 +4610,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }));
   // Household-wide book resolution (`/api/v1/books/resolve`). `v1Routers` is
   // keyed by path segment, so a top-level router is a property, not a `.use`.
-  v1Routers.books = createBooksApiRouter({ resolveBook: books.resolveBook });
+  v1Routers.books = createBooksApiRouter({
+    resolveBook: books.resolveBook,
+    resolveBookCover: books.resolveBookCover,
+    logger: rootLogger.child({ module: 'books-api' }),
+  });
   // The School reading shelf. Needs the lifecycle's shelf use cases (absent in
   // a composition without the Books domain deps) and a grant issuer.
   if (schoolLifecycle.wired && schoolBookGrants && schoolLifecycle.useCases?.getBookShelf) {
