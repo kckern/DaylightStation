@@ -55,18 +55,18 @@ describe('AddBook', () => {
       expect(a.typeIsbn).toHaveBeenCalledWith('9780');
     });
 
-    it('shows add.hint and keeps Look it up dark until canSubmit', () => {
+    it('shows add.hint', () => {
       mount('number', { add: add({ entry: '9780064400559', hint: 'Check that number — one digit is off', canSubmit: false }) });
       expect(screen.getByRole('status')).toHaveTextContent('Check that number');
-      expect(screen.getByRole('button', { name: 'Look it up' })).toBeDisabled();
     });
 
-    it('Look it up → lookup()', () => {
-      const a = mount('number', { add: add({ entry: '9780064400558', canSubmit: true }) });
-      const button = screen.getByRole('button', { name: 'Look it up' });
-      expect(button).toBeEnabled();
-      fireEvent.click(button);
-      expect(a.lookup).toHaveBeenCalledTimes(1);
+    // The finished number IS the instruction; `useBookShelf`'s auto-advance
+    // fires on it. A button here would be one tap asked of a child who has
+    // just spelled out thirteen digits.
+    it('offers no Look it up button, on any entry', () => {
+      mount('number', { add: add({ entry: '9780064400558', canSubmit: true }) });
+      expect(screen.queryByRole('button', { name: 'Look it up' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Go' })).toBeNull();
     });
 
     it('canRetry → Try again → retryLookup()', () => {

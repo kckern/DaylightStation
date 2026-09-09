@@ -136,6 +136,11 @@ const ABANDONED_ENTRY_MS = 60_000;
  *   ANYWHERE on the panel. The same signal the screen-off timer runs on
  *   (`noteActivity`), published so the owner of the burn-in flip works off one
  *   notion of "someone is here" rather than inventing a second.
+ * @param {number} [props.clearToken] - bump to wipe a half-typed code from
+ *   outside. The pad owns its entry, so nothing else can reach it — and a code
+ *   left standing keeps `engaged` true, which is the very thing that defers a
+ *   book scan. Without this, "Open it" on the deferred card could never lift
+ *   the gate that put it there.
  * @param {(engaged: boolean) => void} [props.onEngagedChange] - the pad is
  *   mid-interaction in a way a CLOCK cannot see: a code partly typed, or a
  *   refusal still playing. Recency alone would call both of those idle.
@@ -153,6 +158,7 @@ export default function Keypad({
   screenOffSuppressed = false,
   onActivity = null,
   onEngagedChange = null,
+  clearToken = 0,
 }) {
   const [entry, setEntry] = useState('');
   const [screenOffFailure, setScreenOffFailure] = useState(null);
@@ -407,6 +413,15 @@ export default function Keypad({
    * pad must not move either — a flip mid-NONONO is the same rug pull as a
    * flip mid-code.
    */
+  // A wipe the panel asked for, not the child (see `clearToken`). Skipped on
+  // the initial 0 so a mount never counts as one.
+  const clearedAt = useRef(clearToken);
+  useEffect(() => {
+    if (clearedAt.current === clearToken) return;
+    clearedAt.current = clearToken;
+    setEntry('');
+  }, [clearToken]);
+
   const engaged = entry.length > 0 || reject !== null;
   const onEngagedRef = useRef(onEngagedChange);
   onEngagedRef.current = onEngagedChange;
