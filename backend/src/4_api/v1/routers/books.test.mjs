@@ -76,7 +76,20 @@ describe('GET /books/:isbn13/cover', () => {
     expect(res.body.length).toBe(ART.length);
   });
 
-  it('404s honestly when the whole ladder found nothing — the panel draws its own placeholder', async () => {
+  it('serves a DRAWN cover when the whole ladder found nothing, and caches it for less', async () => {
+    const drawn = {
+      async cover() { return { svg: '<svg/>', contentType: 'image/svg+xml; charset=utf-8', source: 'generated', generated: true }; },
+      async execute() { return { status: 'none' }; },
+    };
+    const res = await request(coverApp(drawn)).get('/books/9780064400558/cover');
+    expect(res.status).toBe(200);
+    expect(res.headers['x-cover-source']).toBe('generated');
+    expect(res.headers['content-type']).toContain('image/svg+xml');
+    // A day, not a week: it must give way the moment real art turns up.
+    expect(res.headers['cache-control']).toBe('public, max-age=86400');
+  });
+
+  it('404s only when the resolver refuses the id outright', async () => {
     const none = { async cover() { return null; }, async execute() { return { status: 'none' }; } };
     const res = await request(coverApp(none)).get('/books/9780064400558/cover');
     expect(res.status).toBe(404);

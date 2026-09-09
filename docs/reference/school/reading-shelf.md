@@ -74,9 +74,23 @@ than trusted. Providers answer `200` for books they have no art for, so
 
 Art is kept on disk under the household's `books/covers/`, so a cover host
 being down cannot blank a shelf a child is standing in front of. A book nobody
-has art for is recorded as a miss and left alone for two weeks; the panel draws
-its own placeholder, which is a calm neutral box the same size as a cover, not
-a warning.
+has art for is recorded as a miss and left alone for two weeks.
+
+**The ladder always ends in a cover.** When every rung misses, the endpoint
+draws one — a coloured board with a spine, a foil frame, the title in a serif
+and the author under a rule, from
+[`GeneratedCover`](../../../backend/src/2_domains/books/GeneratedCover.mjs).
+The hue is a hash of the ISBN, so the same book is always the same colour and a
+child can pick it out of a row by shape and colour like any other tile. It is
+obviously not the publisher's art and is not meant to be mistaken for it; it
+replaces a grey box with a star that made two different books look like the
+same failure. It is never stored — it is derived from the record, so it costs
+nothing to redraw and improves by itself the day a title is corrected — and it
+is cached for a day rather than a week, so real art takes over as soon as it
+turns up.
+
+The panel keeps its own placeholder for the one case the server cannot cover:
+the request itself failing.
 
 ## Add, update, and finish
 
