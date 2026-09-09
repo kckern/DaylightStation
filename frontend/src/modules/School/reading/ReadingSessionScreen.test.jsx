@@ -6,7 +6,7 @@
  * fetch), the overlay slot and the audio cue are stood in for. A test that
  * mocked the hook would prove the markup and nothing about the machine.
  */
-import { render, screen, act, waitFor } from '@testing-library/react';
+import { render, screen, act, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const h = vi.hoisted(() => ({ handler: null, overlay: { shown: [], dismissed: 0 }, cues: [] }));
@@ -35,7 +35,7 @@ vi.mock('../../../lib/logging/Logger.js', () => ({
   default: () => ({ child: () => ({ info() {}, debug() {}, warn() {}, error() {} }) }),
 }));
 
-import { ReadingSessionScreen } from './ReadingSessionScreen.jsx';
+import { ReadingSessionScreen, Ceremony, clockTime } from './ReadingSessionScreen.jsx';
 
 const SUMMARY = {
   learnerId: 'user_5', displayName: 'User_5', enrolled: true, error: false,
@@ -109,6 +109,34 @@ describe('ReadingSessionScreen', () => {
     expect(screen.getAllByTestId('reading-recent-day')).toHaveLength(2);
     // Repeats are a badge on the cover they happened on, not a count in a caption.
     expect(screen.getByTestId('reading-recent-times')).toHaveTextContent('2');
+  });
+
+  it('the close is a receipt: today\'s covers, the clock time each finished, and the wall', () => {
+    render(<Ceremony tier="day" name="User_5" learner={{ id: 'user_5' }} pick={null} summary={SUMMARY} />);
+    const close = screen.getByTestId('reading-celebrate');
+    expect(close).toHaveAttribute('data-tier', 'day');
+    // The covers of what was read TODAY — the day group matching the study day.
+    expect(within(close).getAllByTestId('reading-done-book')).toHaveLength(1);
+    // A clock time, never a duration.
+    expect(close.textContent).toMatch(/\d{1,2}:\d{2}/);
+    expect(close.textContent).not.toMatch(/\bmin\b/i);
+    // And the wall, so the child watches today's square land.
+    expect(within(close).getByTestId('reading-streak')).toBeInTheDocument();
+  });
+
+  it('the book-done beat shows the one cover that landed, and no receipt', () => {
+    render(<Ceremony tier="book" name="User_5" learner={{ id: 'user_5' }} pick={{ image: '/img/frog.jpg' }} summary={SUMMARY} />);
+    const beat = screen.getByTestId('reading-book-done');
+    expect(beat).toHaveAttribute('data-tier', 'book');
+    expect(screen.queryByTestId('reading-done-books')).toBeNull();
+    expect(screen.queryByTestId('reading-streak')).toBeNull();
+    expect(beat.querySelector('.reading-session__book-done-cover')).toHaveAttribute('src', '/img/frog.jpg');
+  });
+
+  it('clockTime is a time of day, and refuses anything that is not one', () => {
+    expect(clockTime('2026-09-09T21:06:33.000Z')).toMatch(/^\d{1,2}:\d{2}$/);
+    expect(clockTime(null)).toBeNull();
+    expect(clockTime('not a date')).toBeNull();
   });
 
   it('open: the streak wall shows a month of days, coloured by whether the goal was met', async () => {

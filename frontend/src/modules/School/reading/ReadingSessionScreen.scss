@@ -220,8 +220,11 @@
   aspect-ratio: 1;
   border-radius: 0.6vh;
   background: rgba(19, 26, 36, 0.6);
-  transform-origin: 50% 100%;
-  transform: rotate(-0.5deg);
+  /* NO LEAN. A half-degree at 1920 moves a corner about 1.7px, so the edge
+     resamples off the pixel grid into a soft fringe that reads as a mistake
+     rather than as a lean — and on the panel's WebView it is the classic jaggy
+     rounded-corner edge. The shadows carry the object; the tilt only cost
+     sharpness. */
   /* THREE SHADOW LAYERS, doing three different jobs. A single blurred drop is
      what makes a card look like a 2010 widget: it says "floating" and nothing
      else. Tight-and-dark reads as contact, wide-and-soft reads as the room, and
@@ -256,10 +259,6 @@
   }
 }
 
-.reading-session__recent-card:nth-child(even) .reading-session__recent-cover {
-  transform: rotate(0.6deg);
-}
-
 /* THE CONTACT SHADOW — the thing that actually sells "standing on a shelf".
    A tight dark ellipse where the book meets the plank; without it the books
    float and every other trick above is wasted. Sits between the book and the
@@ -269,7 +268,10 @@
   position: absolute;
   left: 4%;
   right: 4%;
-  bottom: -0.9vh;
+  /* Overlapping the plank's lit top edge, not floating above it. A contact
+     shadow that does not touch the surface sells nothing — it was the one
+     detail un-selling the shelf. */
+  bottom: calc(-1 * (var(--plank-band) - var(--plank-h)) / 2 - 0.3vh);
   height: 0.9vh;
   border-radius: 50%;
   background: radial-gradient(50% 100% at 50% 0%, rgba(0, 0, 0, 0.7) 0%, rgba(0, 0, 0, 0) 75%);
@@ -493,4 +495,60 @@
 .reading-session--idle {
   background: none;
   pointer-events: none;
+}
+
+/* ── The ceremony ──────────────────────────────────────────────────────────
+   Both tiers, one layout. `book` is a beat and shows the cover that landed;
+   `day` is the close and shows everything today, with the times. */
+
+.reading-session__ceremony {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.4vh;
+}
+
+/* TODAY'S RECEIPT. Square sleeves again — the same objects the child picked —
+   with the clock time each one finished beneath it. */
+.reading-session__done-books {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 1.8vw;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.reading-session__done-book {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7vh;
+  width: clamp(7vh, 11vw, 14vh);
+}
+
+.reading-session__done-cover {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 0.6vh;
+  overflow: hidden;
+  background: rgba(19, 26, 36, 0.6);
+  box-shadow:
+    0 0.4vh 0.6vh -0.2vh rgba(0, 0, 0, 0.55),
+    0 1.4vh 2vh -0.8vh rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.07);
+
+  img { width: 100%; height: 100%; object-fit: cover; display: block; }
+}
+
+/* The clock times, in the pips' amber so they read as the same currency as
+   everything else on this screen that counts. */
+.reading-session__done-times {
+  font-size: 1.8vh;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #ffd479;
+  font-variant-numeric: tabular-nums;
 }
