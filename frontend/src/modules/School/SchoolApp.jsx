@@ -501,6 +501,53 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     return false;
   }, [courses, banks, openSection, start]);
 
+  /**
+   * The code-free door: `/school/go/<learner>/<program>[/<instance>]`.
+   *
+   * For testing and admin from a grown-up's browser. The Portal is a kiosk with
+   * no address bar, so a child at the panel cannot reach it; a code is still
+   * the only way in from there.
+   *
+   * NO AUTHORITY TRAVELS IN THE URL. The path names a learner and a program and
+   * nothing else; the backend mints the same launch target a six-digit code
+   * would have produced, and it lands in the SAME `onPortalLaunch` a keypad or
+   * a broadcast lands in — so the mounted runner, its session and its grant are
+   * indistinguishable from the ordinary path.
+   */
+  const directLearnerId = section === 'direct-launch' ? (materialPath[0] ?? null) : null;
+  const directProgramId = section === 'direct-launch' ? (materialPath[1] ?? null) : null;
+  const directInstance = section === 'direct-launch' ? (materialPath.slice(2).join('/') || null) : null;
+  const [directError, setDirectError] = useState(null);
+  // Fires once per URL. `onPortalLaunch` replaces `section`, so without this the
+  // effect would re-enter on the way out and mint a second grant.
+  const directAttempted = useRef(null);
+
+  useEffect(() => {
+    if (!directLearnerId || !directProgramId) return;
+    const key = `${directLearnerId}/${directProgramId}/${directInstance ?? ''}`;
+    if (directAttempted.current === key) return;
+    // The courses catalogue gates a sentence-ladder mount inside
+    // `onPortalLaunch`; launching before it lands would be refused as unknown.
+    if (status !== 'ready' || !catalogLoaded) return;
+    directAttempted.current = key;
+    setDirectError(null);
+    (async () => {
+      claim(directLearnerId);
+      const { ok, status: httpStatus, data } = await schoolApi.directLaunch(
+        directLearnerId, directProgramId, directInstance,
+      );
+      if (!ok || !data?.target) {
+        schoolLog.bank('direct-launch-refused', { program: directProgramId, status: httpStatus });
+        setDirectError(httpStatus === 404
+          ? `No ${directProgramId} to open for ${directLearnerId}.`
+          : 'That could not be opened. Check the learner and program in the URL.');
+        return;
+      }
+      const mounted = await onPortalLaunch(data.target, directLearnerId);
+      if (!mounted) setDirectError(`${directProgramId} would not mount for ${directLearnerId}.`);
+    })();
+  }, [directLearnerId, directProgramId, directInstance, status, catalogLoaded, claim, onPortalLaunch]);
+
   // Lock mode is a NARROWING of a surface that is already terminal (the Portal
   // mounts School with no `clear`), not a new cage.
   const lock = useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeoutSeconds });
@@ -826,6 +873,22 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             locked panel is not weakened by being able to draw it. */}
         {launchPreviewLink && !active && (
           <LaunchCardPreview link={launchPreviewLink} onExit={leaveLaunchPreview} />
+        )}
+        {/* The code-free door, mid-flight. It replaces itself with the real
+            runner the moment the target lands, so this is only ever briefly on
+            screen — or permanently, with words, when it could not open. */}
+        {section === 'direct-launch' && (
+          <section className="school-runner">
+            {directError ? (
+              <>
+                <h2>Could not open that</h2>
+                <p role="alert">{directError}</p>
+                <button type="button" className="school-runner__done" onClick={goHome}>Back to School</button>
+              </>
+            ) : (
+              <p role="status">Opening {directProgramId} for {directLearnerId}…</p>
+            )}
+          </section>
         )}
         {/* LOCKED PANEL (design §3). The keypad IS the resting state; a
             resolved code puts the launch card over it. Runners are rendered

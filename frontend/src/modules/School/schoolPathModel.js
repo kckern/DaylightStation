@@ -49,8 +49,19 @@ export function parseSchoolPath(urlBase) {
   // never re-encodes it, because a payload that arrived unreadable must reach
   // the backend unreadable and come back with a sentence saying so.
   if (seg[0] === 'launch-preview' && seg[1]) return { section: `launch-preview:${seg[1]}`, materialPath: [] };
-  // Sentence Ladder authority is memory-only. A direct URL or reload must
-  // return to School rather than reconstructing a learner-scoped launch.
+  // The code-free door (admin/testing): /go/<learner>/<program>[/<instance…>].
+  // The Portal is a kiosk with no address bar, so this is reachable only from a
+  // grown-up's browser. The tail is kept whole because some instance ids carry
+  // slashes of their own (a flashcard deck is `science/cells/organelles`).
+  //
+  // It does NOT reconstruct a grant from the URL — no authority is encoded
+  // here. The app asks the backend to mint one, which is why this can be an
+  // ordinary link while the rule below still holds.
+  if (seg[0] === 'go' && seg[1] && seg[2]) {
+    return { section: 'direct-launch', materialPath: seg.slice(1) };
+  }
+  // Otherwise: program authority is memory-only. A direct URL or reload returns
+  // to School rather than reconstructing a learner-scoped launch from the path.
   return empty;
 }
 
@@ -68,6 +79,7 @@ function sectionPathFor(urlBase, section) {
   if (section === 'rubiks-cube') return `${urlBase}/rubiks-cube`;
   if (section.startsWith('sentence-ladder-preview:')) return `${urlBase}/sentence-ladder-preview/${encodeURIComponent(section.slice(24))}`;
   if (section.startsWith('launch-preview:')) return `${urlBase}/launch-preview/${encodeURIComponent(section.slice(15))}`;
+  if (section === 'direct-launch') return `${urlBase}/go`;
   if (section.startsWith('sentence-ladder:')) return `${urlBase}/sentence-ladder/${encodeURIComponent(section.slice(16))}`;
   return urlBase;
 }
@@ -76,7 +88,7 @@ function sectionPathFor(urlBase, section) {
 // with the `plex:` prefix dropped from each id so the URL stays clean.
 export function schoolPathFor(urlBase, section, materialPath = []) {
   const base = sectionPathFor(urlBase, section);
-  const carriesChain = section && (section.startsWith('subject:') || section === 'library');
+  const carriesChain = section && (section.startsWith('subject:') || section === 'library' || section === 'direct-launch');
   if (!carriesChain || !materialPath.length) return base;
   return `${base}/${materialPath.map((id) => encodeURIComponent(stripSource(id))).join('/')}`;
 }

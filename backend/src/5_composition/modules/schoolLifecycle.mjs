@@ -150,6 +150,7 @@ import { SchoolLifecycleSyllabusService } from '#apps/school/services/SchoolLife
 import { VirtualSchoolDeviceConsole } from '#apps/school/services/VirtualSchoolDeviceConsole.mjs';
 import { createSchoolVirtualDevicesRouter } from '#api/v1/routers/schoolVirtualDevices.mjs';
 import { createSchoolSelfServiceRouter } from '#api/v1/routers/school.selfservice.mjs';
+import { IssueDirectLaunch } from '#apps/school/usecases/IssueDirectLaunch.mjs';
 
 /**
  * Tokens are printed and carried around a house; a predictable stream would let
@@ -1364,6 +1365,15 @@ export async function createSchoolLifecycle({
     });
   }
 
+  // The code-free admin door (see IssueDirectLaunch). Deliberately NOT behind
+  // `selfService.enabled`: that flag governs the child-facing keypad, and an
+  // operator who switches the keypad off needs this MORE, not less.
+  const issueDirectLaunch = new IssueDirectLaunch({
+    launchers: () => launchers,
+    roster: () => schoolRoster.list(),
+    logger,
+  });
+
   const useCases = {
     buildAgenda, issueDocument, issueComposedWorksheet, dispatchMedia, recordMediaCompletion,
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation, replaceRemediation,
@@ -1373,7 +1383,7 @@ export async function createSchoolLifecycle({
     invalidateSessionEvidence, recoverMisattributedWorksheet,
     enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction, recordLessonCompanionProgress,
     getLearnerDayCompletion, teacherAgendaDispatch, reprintIssuedArtifact, reprintResultReceiptArtifact, issueCorrectedResultReceipt, manageCurriculumException,
-    getPianoLessonGate, manageProgramDayBypass, getCompanionFinishCode,
+    getPianoLessonGate, manageProgramDayBypass, getCompanionFinishCode, issueDirectLaunch,
     ...bookShelfUseCases,
   };
 

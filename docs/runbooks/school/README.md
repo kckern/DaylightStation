@@ -74,6 +74,37 @@ See [`operations.md`](../../reference/school/operations.md) for the full CLI
 surface, including the guarded-write repair lanes (`ops abandon`,
 `ops rematerialize`, `ops grade-adjust`, `ops reassign`).
 
+## Opening a program without an access code
+
+For testing and admin. A child at the Portal still needs a code — the panel is a
+kiosk with no address bar, so this door is reachable only from a grown-up's
+browser.
+
+```
+/school/go/<learner>/<program>[/<instance>]
+```
+
+| Example | Opens |
+| --- | --- |
+| `/school/go/<learner>/sentence-ladder/<corpusId>` | that day's sentence queue |
+| `/school/go/<learner>/book-log` | the reading shelf |
+| `/school/go/<learner>/flashcards/<deck/with/slashes>` | a deck (the tail is kept whole) |
+
+`GET /api/v1/school/lifecycle/direct-launch/programs` lists what can be opened
+and which programs need an instance.
+
+**What it does and does not weaken.** It drops the access code, not the
+household: everything under `/api/v1` has already passed `permissionGate`, so
+the code was a second, narrower factor. What is genuinely given up is that an
+authenticated browser can open any learner's queue as that learner — which is
+what an admin door is, and why every use logs `school.direct-launch.issued` at
+**warn** with the learner named.
+
+It mints the same launch target a code produces and hands it to the same
+mounting path, so the runner, its session and its grant are indistinguishable
+from the ordinary route. It does NOT dispatch to the Portal: the work opens in
+the browser that asked, not on the tablet.
+
 ## The single most common "it's broken" false alarm
 
 `school.yml` (`data/household/school/school.yml`) is **boot-cached**. Editing

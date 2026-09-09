@@ -33,6 +33,30 @@ describe('Sentence Ladder route authority', () => {
     });
   });
 
+  it('parses the code-free door, keeping an instance id that has slashes', () => {
+    const at = (path, fn) => {
+      window.history.replaceState({}, '', path);
+      try { return fn(); } finally { window.history.replaceState({}, '', '/'); }
+    };
+    expect(at('/school/go/kid1/sentence-ladder/glossika-korean', () => parseSchoolPath('/school')))
+      .toEqual({ section: 'direct-launch', materialPath: ['kid1', 'sentence-ladder', 'glossika-korean'] });
+    // A program that needs no instance.
+    expect(at('/school/go/kid1/book-log', () => parseSchoolPath('/school')))
+      .toEqual({ section: 'direct-launch', materialPath: ['kid1', 'book-log'] });
+    // A flashcard deck id carries slashes of its own and must survive whole.
+    expect(at('/school/go/kid1/flashcards/science/cells/organelles', () => parseSchoolPath('/school')))
+      .toEqual({ section: 'direct-launch', materialPath: ['kid1', 'flashcards', 'science', 'cells', 'organelles'] });
+  });
+
+  it('needs both a learner and a program before it is a door at all', () => {
+    const at = (path) => {
+      window.history.replaceState({}, '', path);
+      try { return parseSchoolPath('/school'); } finally { window.history.replaceState({}, '', '/'); }
+    };
+    expect(at('/school/go')).toEqual({ section: null, materialPath: [] });
+    expect(at('/school/go/kid1')).toEqual({ section: null, materialPath: [] });
+  });
+
   it('allows only the explicit stateless guest-preview route to deep-link', () => {
     window.history.replaceState({}, '', '/school/sentence-ladder-preview/glossika-korean');
     try {
