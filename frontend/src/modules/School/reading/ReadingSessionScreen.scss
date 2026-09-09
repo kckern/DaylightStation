@@ -61,48 +61,14 @@
   line-height: 1.1;
 }
 
-/* The fallback wording, for the cases Progress cannot draw (an unreadable
-   obligation, or a target too large to count at a glance). */
-.reading-session__count {
-  font-size: 4.4vh;
-  font-weight: 600;
-  color: #ffd479;
-}
-
-/* ── The obligation, as pips ───────────────────────────────────────────────
-   One per story owed, filled as each is finished. Sized to be countable at 3 m
-   without being read: big discs, generous gaps, and a filled/hollow contrast
-   that survives a washed-out TV panel. Deliberately NOT a progress bar — a bar
-   shows a fraction, and the question here is "how many more books", which is a
-   number of things, not a proportion. */
+/* The obligation pips are a SHARED object across all three acts of the
+   ceremony (`ReadingPips.jsx` / `pips.scss`); this screen only says how big
+   they are here. Read from a sofa, so: large. */
 .reading-session__pips {
-  display: flex;
-  align-items: center;
-  gap: 1.4vh;
-}
-
-.reading-session__pip {
-  width: 3.4vh;
-  height: 3.4vh;
-  border-radius: 50%;
-  box-sizing: border-box;
-  /* Hollow = still owed. A ring, not a faint disc: on a bright living-room TV a
-     low-alpha fill washes out into the background and the count reads short. */
-  border: 0.5vh solid rgba(255, 212, 121, 0.55);
-}
-
-.reading-session__pip--done {
-  background: #ffd479;
-  border-color: #ffd479;
-  box-shadow: 0 0 1.6vh rgba(255, 212, 121, 0.45);
-}
-
-/* Read past the day's target — credit where a full row of pips would show none. */
-.reading-session__pip-extra {
-  margin-left: 0.4vh;
-  font-size: 2.6vh;
-  font-weight: 700;
-  color: #ffd479;
+  --pip-size: 3.4vh;
+  --pip-gap: 1.4vh;
+  --pip-ink: #ffd479;
+  --pip-label-size: 4.4vh;
 }
 
 /* ── The Recent shelf ──────────────────────────────────────────────────────
@@ -309,6 +275,31 @@
   color: #ffd479;
   font-weight: 700;
   letter-spacing: 0;
+}
+
+/* ── Tier one: a book is done ──────────────────────────────────────────────
+   The short beat between a story ending and the shelf coming back. It reuses
+   the prompt's vocabulary — a cover, a headline, the pips — so the child reads
+   it as the same screen answering, not as a new one interrupting. */
+
+.reading-session__book-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2.4vh;
+}
+
+.reading-session__book-done-cover {
+  width: 26vh;
+  height: 26vh;
+  object-fit: contain;
+  border-radius: 1vh;
+  box-shadow: 0 1.4vh 3vh rgba(0, 0, 0, 0.55);
+}
+
+.reading-session__book-done-headline {
+  font-size: 5.4vh;
+  font-weight: 700;
 }
 
 /* ── The pick: cover, title, and the change-your-mind clock ─────────────── */

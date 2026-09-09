@@ -103,23 +103,34 @@ export class StoryTimeProgramLauncher {
    * Deliberately not wrapped in a catch — a store that genuinely throws is a
    * real fault, and `status()` turns it into the same honest `error` answer.
    *
-   * @returns {Promise<{enrolled: boolean|null, target: number|null, unreadable: boolean}>}
+   * `subject` is whatever the household authored on the program entry, and
+   * `null` when they authored nothing. It is NOT defaulted: story time's
+   * subject is a fact about this household's curriculum, and the nearest
+   * candidate to borrow — `DEFAULT_BOOK_LOG_SUBJECT` — belongs to `book-log`,
+   * a DIFFERENT program (the Portal's physical-book shelf). Labelling the
+   * living-room reading session with the book log's subject would be stating
+   * something nobody said. A surface that gets `null` shows no subject.
+   *
+   * @returns {Promise<{enrolled: boolean|null, target: number|null, subject: string|null, unreadable: boolean}>}
    */
   async #enrollmentFor(userId) {
     const assignment = await this.#assignments.get(userId);
     if (!assignment || typeof assignment !== 'object') {
-      return { enrolled: null, target: null, unreadable: true };
+      return { enrolled: null, target: null, subject: null, unreadable: true };
     }
     const programs = Array.isArray(assignment.programs) ? assignment.programs : [];
     const entry = programs.find((p) => p?.programId === STORY_TIME_PROGRAM_ID);
-    if (!entry) return { enrolled: false, target: null, unreadable: false };
+    if (!entry) return { enrolled: false, target: null, subject: null, unreadable: false };
+    const subject = typeof entry.subject === 'string' && entry.subject.trim()
+      ? entry.subject.trim()
+      : null;
     if (entry.target === undefined || entry.target === null) {
-      return { enrolled: true, target: DEFAULT_STORY_TARGET, unreadable: false };
+      return { enrolled: true, target: DEFAULT_STORY_TARGET, subject, unreadable: false };
     }
     if (Number.isInteger(entry.target) && entry.target > 0) {
-      return { enrolled: true, target: entry.target, unreadable: false };
+      return { enrolled: true, target: entry.target, subject, unreadable: false };
     }
-    return { enrolled: true, target: null, unreadable: true };
+    return { enrolled: true, target: null, subject, unreadable: true };
   }
 
   /**
@@ -171,7 +182,7 @@ export class StoryTimeProgramLauncher {
     // No enrollment, no obligation — and no reason to read the log for a count
     // nothing will be compared against.
     if (!enrollment.enrolled) return this.#notEnrolled();
-    const { target } = enrollment;
+    const { target, subject } = enrollment;
     let rows;
     try {
       rows = await this.#readingLog.listForDay(userId, day);
@@ -193,6 +204,9 @@ export class StoryTimeProgramLauncher {
       terminal: false,
       count,
       target,
+      // What this reading counts toward, for surfaces that acknowledge credit
+      // (the living-room rail). `null` when the household authored none.
+      subject,
       reads: rows ?? [],
       obligationProgress: { completed: Math.min(count, target), total: target },
       // Daily story time has no work session, so this is the durable identity
