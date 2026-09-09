@@ -6,6 +6,7 @@ import { useAudioProbe } from './hooks/useAudioProbe';
 import { useNativeAudioBridge } from './hooks/useNativeAudioBridge';
 import { useWebRTCPeer } from './hooks/useWebRTCPeer';
 import { useCallSignaling } from './hooks/useCallSignaling.js';
+import { useMediaHealth } from './hooks/useMediaHealth.js';
 import getLogger from '../../lib/logging/Logger.js';
 import './VideoCall.scss';
 
@@ -103,7 +104,7 @@ export default function VideoCall({ deviceId, clear }) {
   const [remoteMuteState, setRemoteMuteState] = useState({ audioMuted: false, videoMuted: false });
   const peerConnected = connectionState === 'connected';
   const status = peerConnected ? 'connected' : callSession ? 'connecting' : 'waiting';
-  useCallSignaling({
+  const signaling = useCallSignaling({
     role: 'tv', session: callSession, peer,
     onEvent: event => {
       if (event.type === 'mute-state') setRemoteMuteState({ audioMuted: !!event.audioMuted, videoMuted: !!event.videoMuted });
@@ -119,6 +120,23 @@ export default function VideoCall({ deviceId, clear }) {
   const [callDuration, setCallDuration] = useState(0);
 
   const remoteVideoRef = useRef(null);
+
+  // The lease only becomes active once BOTH peers have reported live media.
+  // Until 2026-09-08 only the phone did, so every call was still in its
+  // 180s setup window when the server expired it and restored the TV —
+  // a connected call died at three minutes. Same monitor as the phone, one
+  // report per verified result per peer revision.
+  const health = useMediaHealth(peer, peerConnected, remoteVideoRef);
+  const verifiedSentRef = useRef(null);
+  useEffect(() => { verifiedSentRef.current = null; }, [callSession]);
+  useEffect(() => {
+    if (!callSession || !health.verified || !(health.audio || health.video)) return;
+    const key = `${signaling.revisionRef.current}:${health.audio}:${health.video}`;
+    if (verifiedSentRef.current === key) return;
+    verifiedSentRef.current = key;
+    const delivered = signaling.send('media-verified', { audio: health.audio, video: health.video });
+    logger.info('media-verified', { callId: callSession.callId, audio: health.audio, video: health.video, delivered });
+  }, [callSession, health, logger, signaling]);
 
   useEffect(() => {
     let cancelled = false;

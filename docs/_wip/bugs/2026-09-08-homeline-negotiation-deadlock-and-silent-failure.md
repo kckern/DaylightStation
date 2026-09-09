@@ -123,6 +123,17 @@ These were checked and cleared, so nobody re-checks them:
 >
 > The §5.1 re-offer rule and the §5.2 timeout remain correct and shipped; they
 > were simply behind this.
+>
+> **Second finding, same evening (a connected call died at 3:05).** Once the
+> handshake worked, a headless call connected at 19s and was cut at 185s: the
+> lease service only marks a call `active` after `media-verified` from BOTH
+> roles, the phone sent it, and the TV had never been wired to. So every call
+> stayed inside the 180s setup window, expired, revoked its credentials, and
+> `device.restored` put the TV back on its previous content mid-call. The TV
+> now runs the same media monitor as the phone and reports once per verified
+> result per peer revision; the phone's report is deduplicated the same way
+> (it was re-sending every 2s). Verified live: see the reference doc's triage
+> section for the `homeline.lease.active` line to look for.
 
 ### 5.1 The offer can be sent exactly once, and it can be dropped silently
 

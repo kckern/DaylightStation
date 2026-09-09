@@ -170,11 +170,18 @@ export function useCallController({ peer, mediaStatus, retryLocalMedia, remoteVi
   }, [later, peerConnectionRef, state.attemptId, state.value]);
 
   const health = useMediaHealth(peer, ['verifying_media', 'connected', 'degraded', 'reconnecting'].includes(state.value), remoteVideoRef);
+  const verifiedSentRef = useRef(null);
   useEffect(() => {
     if (!health.verified || !state.attemptId) return;
     dispatch({ type: 'MEDIA_HEALTH', attemptId: state.attemptId, audio: health.audio, video: health.video });
-    if (health.audio || health.video) signaling.send('media-verified', { audio: health.audio, video: health.video });
-  }, [health, signaling, state.attemptId]);
+    // One report per verified result per attempt and peer revision. The
+    // monitor re-polls every 2s; re-sending on every poll was 30 signals a
+    // minute for the server to log and nothing for it to learn.
+    const key = `${state.attemptId}:${state.peerRevision}:${health.audio}:${health.video}`;
+    if (!(health.audio || health.video) || verifiedSentRef.current === key) return;
+    verifiedSentRef.current = key;
+    signaling.send('media-verified', { audio: health.audio, video: health.video });
+  }, [health, signaling, state.attemptId, state.peerRevision]);
 
   useEffect(() => {
     if (!state.attemptId || !['connected', 'degraded', 'verifying_media', 'reconnecting'].includes(state.value)) return undefined;
