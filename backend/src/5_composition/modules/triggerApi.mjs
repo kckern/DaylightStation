@@ -69,8 +69,21 @@ export function createTriggerApiRouter(config) {
   let triggerConfig;
   try {
     triggerConfig = triggerConfigRepository.loadRegistry({ loadFile, listDir });
+    // Curated-out inbox stubs are swept AFTER the load, never during it: a read
+    // must not depend on a write succeeding. Fire-and-forget — the registry in
+    // memory is already correct, and a failed sweep only means the same stubs
+    // get swept next boot.
+    Promise.resolve(triggerConfigRepository.sweepInbox())
+      .then(({ swept }) => {
+        if (swept.length) logger.info?.('trigger.inbox.swept', { uids: swept, count: swept.length });
+      })
+      .catch((err) => logger.warn?.('trigger.inbox.sweep-failed', { error: err.message }));
   } catch (err) {
-    logger.warn?.('trigger.config.parse.failed', { error: err.message });
+    // ERROR, not warn. This does not degrade one tag — it leaves EVERY tag in
+    // the house unregistered, so a book card, an identity card and a reading
+    // session all fail with "trigger-not-registered" and nothing on the surface
+    // says why. It has to show up in a `level:error` sweep.
+    logger.error?.('trigger.config.parse.failed', { error: err.message, impact: 'all-tags-unregistered' });
     triggerConfig = { nfc: { locations: {}, tags: {} }, state: { locations: {} }, responses: {}, endpoints: {} };
   }
 

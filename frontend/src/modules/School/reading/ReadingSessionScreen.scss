@@ -61,25 +61,89 @@
   line-height: 1.1;
 }
 
+/* The fallback wording, for the cases Progress cannot draw (an unreadable
+   obligation, or a target too large to count at a glance). */
 .reading-session__count {
   font-size: 4.4vh;
   font-weight: 600;
   color: #ffd479;
 }
 
+/* ── The obligation, as pips ───────────────────────────────────────────────
+   One per story owed, filled as each is finished. Sized to be countable at 3 m
+   without being read: big discs, generous gaps, and a filled/hollow contrast
+   that survives a washed-out TV panel. Deliberately NOT a progress bar — a bar
+   shows a fraction, and the question here is "how many more books", which is a
+   number of things, not a proportion. */
+.reading-session__pips {
+  display: flex;
+  align-items: center;
+  gap: 1.4vh;
+}
+
+.reading-session__pip {
+  width: 3.4vh;
+  height: 3.4vh;
+  border-radius: 50%;
+  box-sizing: border-box;
+  /* Hollow = still owed. A ring, not a faint disc: on a bright living-room TV a
+     low-alpha fill washes out into the background and the count reads short. */
+  border: 0.5vh solid rgba(255, 212, 121, 0.55);
+}
+
+.reading-session__pip--done {
+  background: #ffd479;
+  border-color: #ffd479;
+  box-shadow: 0 0 1.6vh rgba(255, 212, 121, 0.45);
+}
+
+/* Read past the day's target — credit where a full row of pips would show none. */
+.reading-session__pip-extra {
+  margin-left: 0.4vh;
+  font-size: 2.6vh;
+  font-weight: 700;
+  color: #ffd479;
+}
+
+/* ── The Recent shelf ──────────────────────────────────────────────────────
+   A shelf of covers, not a list of titles. The child this screen is for cannot
+   read; they recognise a book by its picture, so the picture is the control and
+   the title is the caption under it. (It WAS a two-column `title …… day` list,
+   which asked a pre-reader to do the one thing they cannot.)
+
+   It is built as an actual SHELF — a lit case with a plank the books stand on,
+   each one tilted a hair off true and casting a contact shadow where it meets
+   the wood. That is not decoration for its own sake: a flat grid of rounded
+   rectangles is the house style of every app on earth, and this screen is
+   furniture in a family's living room. A child recognises "my books, on my
+   shelf" instantly; they have to be taught what a card grid is.
+
+   All of it is CSS on the elements already there — no images to load, no SVG to
+   inline, nothing that can fail to arrive on a cold WebView and leave the shelf
+   half-drawn.
+
+   Geometry is the discipline. Every card is the same book-shaped box from first
+   paint, whether or not its cover has arrived, so covers landing one by one
+   never reflow the shelf under a finger. */
+
 .reading-session__recent {
+  position: relative;
   margin-top: 1vh;
-  width: min(72vw, 110vh);
-  padding: 1.5vh 2vw;
-  border-radius: 1.5vh;
-  background: rgba(246, 242, 232, 0.07);
+  width: min(80vw, 124vh);
+  padding: 2vh 3vw 0;
+  border-radius: 1.5vh 1.5vh 0.6vh 0.6vh;
+  /* The case: a soft pool of light at the back, so the books sit IN something
+     rather than on top of a flat panel. */
+  background:
+    radial-gradient(120% 90% at 50% 8%, rgba(255, 212, 121, 0.10) 0%, rgba(255, 212, 121, 0) 60%),
+    linear-gradient(180deg, rgba(246, 242, 232, 0.09) 0%, rgba(246, 242, 232, 0.04) 100%);
   color: rgba(246, 242, 232, 0.82);
   text-align: left;
 }
 
 .reading-session__recent-label {
   display: block;
-  margin: 0 0 1vh;
+  margin: 0 0 1.6vh;
   font-size: 2.4vh;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -87,31 +151,164 @@
 }
 
 .reading-session__recent-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.8vh 2.4vw;
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 1.6vw;
   list-style: none;
-  padding: 0;
+  padding: 0 0 1vh;
+  margin: 0;
+  position: relative;
 
-  li {
-    display: flex;
-    justify-content: space-between;
-    gap: 1vw;
-    min-width: 0;
-    font-size: 2.8vh;
+  /* The caption zone under the plank, as a FIXED height. Every card reserves
+     exactly this much, which is what lets the plank be positioned off the
+     bottom edge with one number instead of measuring anything: two title lines
+     + the gap + the day row. Cards are all one width and one aspect ratio, so
+     the covers are all one height, so the plank lands flush under every one of
+     them. A title free to be one line or three would put the shelf line at a
+     different height under each book. */
+  --caption-h: 9.2vh;
+
+  /* THE PLANK. A lit front edge over a darker body reads as a board seen
+     slightly from above — the same trick the contact shadows below rely on.
+     `::after` rather than a real element so the markup stays a plain list. */
+  &::after {
+    content: '';
+    position: absolute;
+    left: -3vw;
+    right: -3vw;
+    bottom: calc(var(--caption-h) + 1vh);
+    height: 2.2vh;
+    border-radius: 0.3vh;
+    background:
+      linear-gradient(180deg,
+        rgba(255, 224, 168, 0.55) 0%,
+        rgba(146, 106, 62, 0.85) 22%,
+        rgba(74, 52, 30, 0.95) 100%);
+    box-shadow: 0 1.2vh 2.4vh rgba(0, 0, 0, 0.5);
   }
 }
 
-.reading-session__recent-title {
+/* THE CARD IS CAPPED, NOT STRETCHED.
+   A grid of `1fr` columns divides the shelf among however many books there are,
+   so three books each took a THIRD of a 1431px shelf — a 426px-wide, 639px-tall
+   card that pushed the shelf's bottom edge to y=1138 on a 1080 screen and
+   clipped it off the bottom. (Invisibly: `.reading-session` is `inset: 0`, so
+   there is no scrollbar to notice.)
+   A capped flex item can only ever shrink from the six-up size, so a short
+   shelf is a short shelf — centred, same-sized covers — and never a set of
+   posters. `1fr` here means "at most", never "at least". */
+.reading-session__recent-card {
+  flex: 0 1 clamp(9vh, 14vw, 19vh);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8vh;
+  min-width: 0;
+  text-align: center;
+  position: relative;
+}
+
+/* The book itself. `perspective` on the card plus a small Y-rotation on the
+   cover gives a real vanishing edge rather than a skew — books at the ends lean
+   slightly toward the middle, the way a shelf actually looks from a sofa.
+   Alternating by position, so no two neighbours lean the same way and the row
+   never reads as a mistake. */
+.reading-session__recent-cover {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  border-radius: 0.3vh 0.8vh 0.8vh 0.3vh;  /* spine edge tighter than the fore-edge */
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  background: rgba(19, 26, 36, 0.6);
+  transform-origin: 50% 100%;
+  transform: rotate(-0.5deg);
+  box-shadow:
+    0 1.2vh 1.6vh -0.4vh rgba(0, 0, 0, 0.6),   /* the book's own drop */
+    inset 0.35vh 0 0 rgba(0, 0, 0, 0.28),      /* the spine, in shadow */
+    inset -0.15vh 0 0 rgba(255, 255, 255, 0.1); /* the lit fore-edge */
+
+  img {
+    width: 100%;
+    height: 100%;
+    /* `cover`, not `contain`: these are spines on a shelf, and a uniform block
+       reads as a shelf where letterboxed rectangles read as a broken grid. The
+       pick's own cover stays `contain` — there the whole artwork is the
+       subject. */
+    object-fit: cover;
+    display: block;
+  }
+}
+
+.reading-session__recent-card:nth-child(even) .reading-session__recent-cover {
+  transform: rotate(0.6deg);
+}
+
+/* THE CONTACT SHADOW — the thing that actually sells "standing on a shelf".
+   A tight dark ellipse where the book meets the plank; without it the books
+   float and every other trick above is wasted. Sits between the book and the
+   plank, and is never interactive. */
+.reading-session__recent-cover::after {
+  content: '';
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  bottom: -1.1vh;
+  height: 1.1vh;
+  border-radius: 50%;
+  background: radial-gradient(50% 100% at 50% 0%, rgba(0, 0, 0, 0.7) 0%, rgba(0, 0, 0, 0) 75%);
+  pointer-events: none;
+}
+
+/* Standing in for a cover we do not have: a plain cloth-bound board, not a
+   spinner. It is the resting state for a book with no artwork, so it must look
+   like a book rather than like something still loading. */
+.reading-session__recent-spine {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  background:
+    linear-gradient(105deg, rgba(246, 242, 232, 0.17) 0%, rgba(246, 242, 232, 0.06) 100%);
+  border-left: 0.5vh solid rgba(255, 212, 121, 0.5);
+}
+
+/* The caption floats BELOW the plank, so nothing overlaps the artwork and the
+   shelf line stays unbroken across the whole row. */
+.reading-session__recent-title {
+  width: 100%;
+  margin-top: 3vh;           /* clears the plank the books stand on */
+  font-size: 2.2vh;
+  line-height: 1.15;
+  /* EXACTLY two lines, always — clamped for long titles and reserved for short
+     ones. Unbounded lines made every card a different height, which moved the
+     shelf line under each book. */
+  height: 5.06vh;            /* 2 × 2.2vh × 1.15 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .reading-session__recent-day {
-  flex: none;
-  font-size: 2.2vh;
-  color: rgba(246, 242, 232, 0.52);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6vw;
+  font-size: 1.9vh;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(246, 242, 232, 0.55);
+}
+
+/* "read it four times" — a favourite, in the sheet's one accent colour so it
+   reads as a small badge of honour rather than as metadata. */
+.reading-session__recent-times {
+  padding: 0.1vh 0.7vh;
+  border-radius: 0.6vh;
+  background: rgba(255, 212, 121, 0.16);
+  color: #ffd479;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
 /* ── The pick: cover, title, and the change-your-mind clock ─────────────── */

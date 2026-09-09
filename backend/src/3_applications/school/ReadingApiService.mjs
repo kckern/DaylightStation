@@ -149,18 +149,39 @@ export class ReadingApiService {
       }));
       yesterday = (batches[1] ?? []).slice(0, YESTERDAY_LIMIT)
         .map(row => ({ title: row?.title ?? null, contentId: row?.contentId ?? null }));
-      recent = batches.flat()
-        .sort((a, b) => {
-          const byTime = (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0);
-          if (byTime) return byTime;
-          const byDay = String(b.studyDay).localeCompare(String(a.studyDay));
-          return byDay || b._index - a._index;
-        })
-        .slice(0, RECENT_LIMIT)
-        .map(row => ({
+      // Newest first. `at` is the real clock; the studyDay/index tiebreak only
+      // matters for rows written without one.
+      const ordered = batches.flat().sort((a, b) => {
+        const byTime = (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0);
+        if (byTime) return byTime;
+        const byDay = String(b.studyDay).localeCompare(String(a.studyDay));
+        return byDay || b._index - a._index;
+      });
+
+      // ONE CARD PER BOOK. A four-year-old reads the same story six times in a
+      // week, and six identical covers is not a shelf — it is the same book
+      // filling the screen while the other five they might pick are pushed off
+      // it. The newest read wins (it carries the most recent day label) and the
+      // repeats become a count, so the information is kept rather than dropped.
+      //
+      // Keyed by contentId, falling back to a normalized title: a row with no
+      // contentId still must not duplicate one that has the same name, and two
+      // genuinely untitled rows are left alone rather than collapsed into one.
+      const byBook = new Map();
+      for (const row of ordered) {
+        const key = row?.contentId
+          ? `id:${row.contentId}`
+          : (row?.title ? `title:${String(row.title).trim().toLowerCase()}` : null);
+        if (!key) continue;
+        const seen = byBook.get(key);
+        if (seen) { seen.times += 1; continue; }
+        byBook.set(key, {
           title: row?.title ?? null, contentId: row?.contentId ?? null,
           pickId: row?.pickId ?? null, at: row?.at ?? null, studyDay: row.studyDay,
-        }));
+          times: 1,
+        });
+      }
+      recent = [...byBook.values()].slice(0, RECENT_LIMIT);
     }
     let displayName = null;
     try { displayName = trimmed(this.#resolveLearner?.(learnerId)?.name); } catch { displayName = null; }
