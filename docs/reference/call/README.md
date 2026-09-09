@@ -37,7 +37,18 @@ to its short-lived call credential.
 
 `/call` is a fixed phone UI: it occupies the viewport exactly, does not scroll,
 and locks pinch-zoom while mounted (restored on unmount, so no other app
-inherits it). The caller's own camera is the surface — it takes every pixel the
+inherits it).
+
+Every size is multiplied by `--u`, a scale the component sets from the layout
+viewport width (`innerWidth / 410`, clamped to 1–3). This exists because a
+browser in **"Desktop site" mode ignores `width=device-width`** — that is the
+point of the mode, and no meta tag overrides it. It lays the page out at 980 CSS
+px and zooms the result down to fit the glass: measured on a real phone at
+980x1747, DPR 3, visual scale 0.37, which rendered a 52px button at roughly
+three millimetres. Sizing in fractions of the viewport makes the physical result
+the same either way, so the screen does not depend on a browser setting nobody
+should have to know about. `--u` is 1 on a normal phone. `call.surface` reports
+`layoutScale` and `desktopMode`, which is how this was diagnosed. The caller's own camera is the surface — it takes every pixel the
 controls do not — and the same two bands carry the lobby, the connecting state
 and the live call, so nothing jumps between them.
 
