@@ -128,6 +128,9 @@
   // ── A screen you can call ────────────────────────────────────────────────
 
   &__target {
+    // Explicit: a <button> is border-box by browser default, the placing <div>
+    // is not, and they must be the same height for the panel to hold still.
+    box-sizing: border-box;
     display: grid;
     grid-template-columns: auto 1fr auto;
     align-items: center;
@@ -185,6 +188,18 @@
   &__target-room {
     font-size: calc(0.8rem * var(--u));
     color: var(--ds-text-mid);
+  }
+
+  // The row while its call is being placed: not a button, so no press
+  // affordance, and the handset breathes to say something is happening. Eight
+  // base beats a cycle: slow enough to read as patience, not alarm.
+  &__target--placing {
+    cursor: default;
+    border-color: var(--ds-success);
+  }
+
+  &__target-action--placing {
+    animation: call-app-breathe calc(var(--ds-motion-base) * 8) var(--ds-motion-easing) infinite alternate;
   }
 
   // The green handset: what this row DOES, said once, on the row itself.
@@ -388,5 +403,16 @@
       justify-content: center;
       overflow-y: auto;
     }
+  }
+}
+
+@keyframes call-app-breathe { // --ds-motion: timing comes from the token above
+  from { transform: scale(1); opacity: 1; }
+  to { transform: scale(0.88); opacity: 0.6; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .call-app__target-action--placing {
+    animation: none;
   }
 }
