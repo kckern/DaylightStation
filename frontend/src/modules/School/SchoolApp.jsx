@@ -116,7 +116,7 @@ function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeou
   const [state, setState] = useState(() => (
     explicit
       ? { resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null, screenOffTimeoutSeconds: null }
-      : screenId === 'browser'
+      : !isPanelSurface(screenId)
         ? { resolved: true, locked: browserLocked(), idleTimeoutSeconds: null, screenOffTimeoutSeconds: null }
         : { resolved: false, locked: false, idleTimeoutSeconds: null, screenOffTimeoutSeconds: null }
   ));
@@ -126,7 +126,7 @@ function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeou
       setState({ resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null, screenOffTimeoutSeconds: null });
       return undefined;
     }
-    if (screenId === 'browser') {
+    if (!isPanelSurface(screenId)) {
       setState({ resolved: true, locked: browserLocked(), idleTimeoutSeconds: null, screenOffTimeoutSeconds: null });
       return undefined;
     }
@@ -187,7 +187,7 @@ function schoolUrlBase() {
   if (screen) return screen[1];
   return null;
 }
-import { screenIdFromUrlBase, parseSchoolPath, schoolPathFor } from './schoolPathModel.js';
+import { screenIdFromUrlBase, parseSchoolPath, schoolPathFor, isPanelSurface, deviceIdFor } from './schoolPathModel.js';
 
 function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffTimeoutSeconds = null }) {
   const { status, roster, currentUser, isGuest, pickerOpen, openPicker, closePicker, claim, continueAsGuest } = useSchoolProfile();
@@ -522,9 +522,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     idleTimeoutSeconds: lock.idleTimeoutSeconds,
     claim,
     onLaunch: onPortalLaunch,
-    // 'browser' is the dev/preview identity, not a panel — sending it would
+    // The browser surface is the dev/preview identity, not a panel — sending it would
     // put every developer's tab in one shared throttle bucket.
-    deviceId: screenId && screenId !== 'browser' ? screenId : null,
+    deviceId: deviceIdFor(screenId),
   });
 
   const [lockSide, setLockSide] = useState('keypad-left');
@@ -836,7 +836,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
         {/* Scan ceremony (Slice D): a sibling of the lock branch below, NOT
             inside it — a scan can land whether the panel is locked or open,
             and this must render either way. */}
-        {screenId !== 'browser' && <BookScanEntry screenId={screenId} roster={roster}
+        {isPanelSurface(screenId) && <BookScanEntry screenId={screenId} roster={roster}
           safe={lock.locked && !pending && !pickerOpen && !selfService.busy && !active && !section && !launchPreviewLink && !ceremony.current && selfService.view === 'keypad' && !keypadEngaged}
           onOpen={lock.locked ? openDeferredScan : null}
           confirmExit={gradedRunInFlight}

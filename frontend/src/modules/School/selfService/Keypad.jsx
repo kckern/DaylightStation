@@ -39,6 +39,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { screenOff } from '../../../lib/fkb.js';
+import { deviceIdFor } from '../schoolPathModel.js';
 import useArmedAction from '../../../lib/identity/useArmedAction.js';
 import useTapFire from './useTapFire.js';
 import { schoolLog } from '../schoolLog.js';
@@ -181,7 +182,7 @@ export default function Keypad({
     // but not the kiosk-control bridge (`fully.turnScreenOff`). Its REST API is
     // still reliable, and the device registry already owns its address and
     // credentials, so route the command through the backend instead.
-    const deviceId = screenId && screenId !== 'browser' ? screenId : null;
+    const deviceId = deviceIdFor(screenId);
     if (deviceId) {
       schoolLog.selfService('screen-off.fallback', { source, lever: 'api', deviceId });
       try {
