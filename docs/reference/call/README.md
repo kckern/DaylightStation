@@ -122,6 +122,15 @@ reservation conflict -> occupied -> idle
 unrecoverable error -> failed -> idle
 ```
 
+Every setup state is bounded by a clock. `waiting_tv` expires after 45 seconds
+(75 after a cold wake) and `negotiating` after 20. Both expiries climb the same
+ladder: the first spends the attempt's single automatic soft recovery (the TV
+call page is reloaded and the handshake restarts), the second opens the
+recovery prompt with a reason that names what the TV failed to do —
+`tv_unavailable` when it never joined, `tv_no_answer` when it joined and never
+answered an offer. The prompt's copy reflects that reason. An expiry is never
+recorded as a caller decision; `user_cancelled` only ever means the caller hung up.
+
 There is no one-device auto-start. The user must tap Call after media preview is
 ready. Entering teardown aborts HTTP, clears timers, unsubscribes signaling,
 closes the peer connection, and ends the server lease. Wake orchestration also
@@ -135,7 +144,19 @@ Each signaling envelope carries `callId`, `attemptId`, `role`, `peerId`,
 subscription only after `homeline-authorize`; wildcard subscribers never
 receive call messages. Credentials are removed before relay. Socket reconnect
 reauthorizes the exact subscription and starts a fresh handshake. Signaling is
-ephemeral and never enters the generic WebSocket reconnect queue.
+ephemeral and never enters the generic WebSocket reconnect queue; a message
+that finds the socket closed is dropped and recorded as `signaling.dropped`
+(warn, with the type and sequence), so a lost offer or answer is visible in the
+log store rather than inferred from silence.
+
+The phone answers every fresh `waiting` from the TV with a fresh offer on the
+current revision until an answer for that revision has been accepted. The TV
+sends `waiting` once per (re)subscription, so this is self-throttling; the
+server accepts a repeated offer at the same revision as long as its sequence
+number rises. Once an answer is in, a stray `waiting` from a TV socket flap is
+ignored so that it cannot tear down an ICE attempt that is about to succeed —
+if that attempt fails, the recovery ladder below takes over on a new revision.
+Each offer is logged as `signaling.offer` with whether the socket delivered it.
 
 ICE candidates are scoped to a peer revision. After five seconds disconnected,
 the phone performs one ICE restart with a ten-second deadline, then one full
@@ -208,6 +229,23 @@ _time:24h AND _msg:"webcam.access-error-final"   # TV getUserMedia refused
 
 - `homeline.join.denied` with `declared: browser:…` means the screen is not
   publishing its fleet name (see [Call authority](#call-authority)).
+When the phone reaches `negotiating` and leaves it with `tv_no_answer`, the TV
+joined and sent `waiting` but never answered an offer. Read the attempt from
+both ends:
+
+```text
+_time:1h AND _msg:"call.negotiate.timeout"      # connectionState at expiry
+_time:1h AND _msg:"signaling.dropped"           # the socket ate a message
+_time:1h AND _msg:"signaling.offer"             # delivered:false = never left the phone
+_time:1h AND context.component:useWebRTCPeer    # the TV's pc-created, or its absence
+```
+
+- No `pc-created` on the TV means the offer never reached it, or it never ran
+  the handler: check `signaling.dropped` on the phone and
+  `homeline.signaling.rejected` on the server.
+- `pc-created` on the TV with no answer on the phone means the answer was the
+  message lost; the next `waiting` re-offers.
+
 - `webcam.access-error-final` on a Fully Kiosk TV means FKB's `webcamAccess`
   is off. Call preparation now sets it on every dispatch; if it still fails,
   check the Android-level CAMERA grant for `de.ozerov.fully`. The microphone is

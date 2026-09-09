@@ -11,6 +11,13 @@ import { AppThemeProvider } from '@/lib/ui';
 import './CallApp.scss';
 
 const BUSY_COPY = 'This TV is already in a call.';
+// Why the phone is offering choices. A TV that never joined and a TV that
+// joined and never answered are different repairs (power vs. the call page),
+// so they get different lines.
+const recoveryCopy = reason => ({
+  tv_unavailable: 'The TV did not join the call.',
+  tv_no_answer: 'The TV joined but never answered the call.',
+}[reason] || 'The TV or media link did not recover.');
 const statusCopy = state => ({
   reserving: 'Reserving the TV…', probing: 'Checking the TV…', waking: state.reason === 'hard_recovery'
     ? 'Restarting the TV…' : state.reason === 'soft_recovery' ? 'Reloading the call app…' : 'Waking the TV…',
@@ -356,7 +363,7 @@ export default function CallApp() {
 
             {state.value === 'recovery_prompt' && (
               <div role="alert" className="call-app__stack">
-                <p className="call-app__notice call-app__notice--warn">The TV or media link did not recover.</p>
+                <p className="call-app__notice call-app__notice--warn">{recoveryCopy(state.reason)}</p>
                 {!hardConfirm
                   ? <button type="button" ref={primaryActionRef} className="call-app__wide-btn" onClick={() => setHardConfirm(true)} disabled={state.hardRecoveryUsed}>Restart TV…</button>
                   : <button type="button" ref={primaryActionRef} className="call-app__wide-btn" disabled={countdown > 0 || state.hardRecoveryUsed}

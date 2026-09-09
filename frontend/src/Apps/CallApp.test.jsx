@@ -156,6 +156,18 @@ describe('CallApp presentation', () => {
     expect(screen.getByText(/continue with video only/)).toBeTruthy();
   });
 
+  it.each([
+    ['tv_no_answer', 'The TV joined but never answered the call.'],
+    ['tv_unavailable', 'The TV did not join the call.'],
+    ['recovery_exhausted', 'The TV or media link did not recover.'],
+  ])('tells the caller what actually happened when recovery reason is %s', (reason, copy) => {
+    mocks.state = { value: 'recovery_prompt', attemptId: 'a', reason, hardRecoveryUsed: false,
+      media: { audio: false, video: false }, controlConnected: true };
+    mocks.api.mockReturnValue(new Promise(() => {}));
+    render(<CallApp />);
+    expect(screen.getByRole('alert')).toHaveTextContent(copy);
+  });
+
   it('requires the visible countdown before dispatching hard recovery', async () => {
     vi.useFakeTimers();
     mocks.state = { value: 'recovery_prompt', attemptId: 'a', hardRecoveryUsed: false,

@@ -7,7 +7,7 @@ const SIGNAL_TYPES = new Set(['offer', 'answer', 'candidate', 'mute-state', 'han
 export function useCallSignaling({ role, session, peer, onEvent }) {
   const sequenceRef = useRef(0);
   const revisionRef = useRef(0);
-  const offeredRevisionRef = useRef(null);
+  const answeredRevisionRef = useRef(null);
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
   const peerRef = useRef(peer);
@@ -17,27 +17,37 @@ export function useCallSignaling({ role, session, peer, onEvent }) {
 
   const send = useCallback((type, payload = {}) => {
     if (!session || !SIGNAL_TYPES.has(type)) return false;
-    return wsService.sendEphemeral({
+    const sequence = sequenceRef.current++;
+    const delivered = wsService.sendEphemeral({
       topic: session.topic, callId: session.callId, attemptId: session.attemptId,
       role, peerId: session.peerId, revision: revisionRef.current,
-      sequence: sequenceRef.current++, type, payload,
+      sequence, type, payload,
     });
+    if (!delivered) {
+      // Signalling is ephemeral by design: nothing is queued for a closed
+      // socket. A dropped offer or answer used to vanish here without a
+      // trace, and the call sat in `negotiating` forever (2026-09-08).
+      const detail = { callId: session.callId, type, peerRevision: revisionRef.current, sequence };
+      if (type === 'heartbeat') loggerRef.current.sampled('signaling.dropped', detail, { maxPerMinute: 2, aggregate: true });
+      else loggerRef.current.warn('signaling.dropped', detail);
+    }
+    return delivered;
   }, [role, session]);
 
   useEffect(() => {
     if (!session) return undefined;
     revisionRef.current = session.peerRevision || 0;
     sequenceRef.current = 0;
-    offeredRevisionRef.current = null;
+    answeredRevisionRef.current = null;
     peerRef.current.onIceCandidate(candidate => send('candidate', { candidate }));
     const unsubscribe = wsService.subscribeAuthorized({
       topic: session.topic, credential: session.credential, role, peerId: session.peerId,
     }, async message => {
       if (message.type === 'homeline-authorize-ack' && message.ok) {
         wsService.setAutoReloadEnabled?.(false);
-        // A reconnect receives a fresh authorization while media remains
-        // healthy. Permit one new offer for this revision only when needed.
-        offeredRevisionRef.current = null;
+        // A reconnect receives a fresh authorization and restarts the
+        // handshake. Whether that produces a new offer is decided when the
+        // TV's `waiting` arrives, below, not here.
         send(role === 'phone' ? 'ready' : 'waiting');
         return;
       }
@@ -48,17 +58,24 @@ export function useCallSignaling({ role, session, peer, onEvent }) {
         if (message.type === 'ready' && role === 'tv') send('waiting');
         else if (message.type === 'waiting' && role === 'phone'
           && peerRef.current.connectionState !== 'connected'
-          && offeredRevisionRef.current !== revisionRef.current) {
-          offeredRevisionRef.current = revisionRef.current;
+          && answeredRevisionRef.current !== revisionRef.current) {
+          // Every fresh `waiting` earns a fresh offer until an answer for this
+          // revision has been accepted. The TV sends `waiting` once per
+          // (re)subscription, so this is self-throttling; the old one-offer-
+          // per-revision guard deadlocked the call whenever that single offer
+          // was dropped. Once answered, a stray `waiting` from a TV socket
+          // flap must not tear down an ICE attempt that is about to succeed.
           onEventRef.current?.({ type: 'tv-ready' });
           const offer = await peerRef.current.createOffer({ revision: revisionRef.current });
-          send('offer', { description: offer });
+          const delivered = send('offer', { description: offer });
+          loggerRef.current.info('signaling.offer', { callId: session.callId, peerRevision: revisionRef.current, delivered });
         } else if (message.type === 'offer' && role === 'tv') {
           revisionRef.current = message.revision;
           const answer = await peerRef.current.handleOffer(payload.description, { revision: message.revision });
           send('answer', { description: answer });
         } else if (message.type === 'answer' && role === 'phone') {
           await peerRef.current.handleAnswer(payload.description, { revision: message.revision });
+          answeredRevisionRef.current = message.revision;
           onEventRef.current?.({ type: 'answered' });
         } else if (message.type === 'candidate') await peerRef.current.addIceCandidate(payload.candidate, message.revision);
         else if (message.type === 'hangup') onEventRef.current?.({ type: 'hangup' });
@@ -80,7 +97,7 @@ export function useCallSignaling({ role, session, peer, onEvent }) {
   const rebuild = useCallback(async () => {
     revisionRef.current += 1;
     sequenceRef.current = 0;
-    offeredRevisionRef.current = revisionRef.current;
+    answeredRevisionRef.current = null;
     const offer = await peerRef.current.rebuild(revisionRef.current);
     send('offer', { description: offer, rebuild: true });
     return revisionRef.current;
