@@ -62,18 +62,44 @@
   width: 100%;
 }
 
+/* A CIRCLE, NOT AN OVAL — AND NOT BY AGREEMENT BETWEEN THREE RULES.
+   The portrait rendered 129x143 on the living-room panel: an ellipse, ~11%
+   taller than wide. It was a percentage width plus `aspect-ratio: 1` on the
+   wrapper with the image told to fill it — a cycle (the box sizes from the
+   image, the image sizes from the box) that desktop Chromium resolves via the
+   aspect-ratio and the panel's older WebView evidently does not. The 11% is
+   the giveaway: `.piano-avatar` is `display: inline-flex`, and an inline-level
+   box contributes baseline leading below itself, which is what a block wrapper
+   with no definite height then grows to contain.
+
+   MEASURED, NOT ASSUMED: the source portraits are square (256x256) and the
+   pips beside it on the same screen are round, so this was neither a
+   non-square image nor a stretched display.
+
+   Fixed by construction rather than by reproduction — it does not reproduce in
+   desktop Chromium, so every path by which the box could become non-square is
+   closed instead: the size is stated once as a square on BOTH boxes, the
+   wrapper is a grid (which has no inline formatting context and therefore no
+   leading to grow by), and `flex-shrink: 0` stops a tall column squeezing the
+   height back out. */
 .reading-credit__avatar {
-  width: clamp(3rem, 42%, 5.5rem);
-  aspect-ratio: 1;
-  flex: none;
+  --avatar: clamp(3.25rem, 52cqw, 6.5rem);
+  width: var(--avatar);
+  height: var(--avatar);
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  line-height: 0;
 }
 
 /* `ProfileAvatar` is the household's own round avatar, shared with the reading
-   session screen and the lesson placard. It brings `identity.scss`; only the
-   box it sits in is ours. */
+   session screen and the lesson placard. It brings `identity.scss`, which sizes
+   `.piano-avatar` at 2rem for chips; only the box it sits in is ours. */
 .reading-credit__avatar .piano-avatar {
-  width: 100%;
-  height: 100%;
+  width: var(--avatar);
+  height: var(--avatar);
+  aspect-ratio: 1;
+  flex: 0 0 auto;
   border-radius: 50%;
   object-fit: cover;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--ink, #e9dfc8) 55%, transparent);
@@ -93,51 +119,37 @@
   text-overflow: ellipsis;
 }
 
+/* ── What this counts toward ─────────────────────────────────────────────── */
+
+/* THE SUBJECT LEADS THE COLUMN, above the child, with the subject wall's own
+   icon. It used to sit directly beneath the portrait in the position a caption
+   occupies, which made the rail read as a child called "English" — two facts
+   about two different things, printed as one. */
 .reading-credit__subject {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  flex: none;
+  color: var(--ink-soft, #a89a80);
+}
+
+.reading-credit__subject-icon {
+  display: flex;
+  width: clamp(1.5rem, 20cqw, 2.5rem);
+  height: clamp(1.5rem, 20cqw, 2.5rem);
+  svg { width: 100%; height: 100%; }
+}
+
+.reading-credit__subject-name {
   margin: 0;
   font-size: var(--label-floor, 11.52px);
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--ink-soft, #a89a80);
 }
 
-/* ── What ───────────────────────────────────────────────────────────────── */
-
-.reading-credit__book {
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  min-height: 0;
-  /* The cover may give up height before anything else does: the rail must keep
-     the face and the pips at every rail height, and the book is the one element
-     the child can also see by simply looking at the screen. */
-  flex: 0 1 auto;
-}
-
-.reading-credit__cover {
-  max-width: 78%;
-  /* Capped against the RAIL's width, not its height: an unbounded cover in a
-     screen-tall rail grows until it is the only thing on it. */
-  max-height: clamp(6rem, 120cqw, 18rem);
-  /* `contain`, unlike the shelf's `cover`: there is one book here and its whole
-     artwork is the subject, so it is framed like the pick screen's cover rather
-     than cropped like a spine on a shelf. */
-  object-fit: contain;
-  border-radius: 0.2rem;
-  box-shadow: 0 0.4rem 1rem rgba(0, 0, 0, 0.55);
-}
-
-/* Only when there is no cover to draw instead. */
-.reading-credit__title {
-  margin: 0;
-  font-size: var(--label-floor, 11.52px);
-  line-height: 1.2;
-  color: var(--ink-soft, #a89a80);
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
+/* The book is deliberately absent — see the component header. The stage beside
+   this rail is already showing the same artwork at full size. */
 
 /* ── How far ────────────────────────────────────────────────────────────── */
 
@@ -151,9 +163,12 @@
 /* The pips keep the shelf's amber deliberately — see the header. Sized in rem
    here, not vh: this is a rail whose width the definition sets, and a pip that
    tracked the viewport would swell out of it on a tall screen. */
+/* Bigger than the shelf's, because these are now the only progress on the
+   screen: the frame suppresses the Player's own bar, and a sweep too small to
+   see would have replaced it with nothing. */
 .reading-credit__pips {
-  --pip-size: 0.85rem;
-  --pip-gap: 0.5rem;
+  --pip-size: clamp(1.1rem, 14cqw, 1.8rem);
+  --pip-gap: 0.55rem;
   --pip-ink: #ffd479;
   --pip-label-size: var(--label-floor, 11.52px);
   flex-wrap: wrap;

@@ -25,23 +25,29 @@
 //
 // WHAT IS DELIBERATELY NOT ON IT
 // ------------------------------
-// THE TITLE, as words. The book is present as its COVER — the same artwork the
-// child just picked off the shelf, which is what ties this act to the last one
-// — but the title is not written out. The pick screen showed it in 6vh type
-// seconds ago and the story itself opens on it; a third copy in a narrow rail
-// is the kind of completeness that reads as clutter. The title becomes the
-// cover's `alt`, and it is drawn ONLY when there is no cover to draw instead.
+// THE BOOK, in any form. The rail used to carry the cover, and the stage
+// carries the cover too — the same artwork twice on one screen, once at 78% of
+// a narrow rail and once at full size a foot to its right. The rail's copy was
+// the one adding nothing: the stage's is bigger, is what the child picked off
+// the shelf, and is unmissable. So the rail answers only the questions the
+// stage cannot — WHOSE this is and HOW FAR THROUGH THE DAY they are — and the
+// title, likewise, is never written out here.
 //
-// THE CLOCK. Position and duration arrive on every module (10 Hz while
-// playing) and are used for nothing here. A countdown is a pressure the reading
+// A CLOCK, as words or as a bar. Position and duration arrive on every module
+// (10 Hz while playing) and drive exactly one thing: the sweep on the live pip.
+// No countdown, no elapsed/total, no bar. A countdown is a pressure the reading
 // session deliberately does not apply — a child may re-listen, wander off and
-// come back, and the obligation is a count of books, never of minutes.
+// come back, and the obligation is a count of books, never of minutes. The
+// sweep is a different statement: it says which book is in flight, not how long
+// is left to endure.
 //
 // Module contract: { position, duration, playing, seeking, data, region, logger }.
 
 import { useEffect, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import ProfileAvatar from '../../../../lib/identity/ProfileAvatar.jsx';
+import Icon from '../../home/icons/Icon.jsx';
+import { hasIcon } from '../../home/icons/iconRegistry.js';
 import ReadingPips from '../ReadingPips.jsx';
 import { readingSurroundLogger, readingOf } from './readingSurroundKit.js';
 import './ReadingCredit.scss';
@@ -59,12 +65,25 @@ function subjectLabel(subject) {
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
+/**
+ * The subject as its own MARK, above the child rather than beneath them.
+ *
+ * TWO IDENTITIES, NOT ONE. The subject word used to sit directly under the
+ * portrait, in the position a caption occupies — so the rail read as a child
+ * called "English". They are different facts about different things: the
+ * subject is what this session counts toward, the face and the name are who is
+ * getting the credit. The subject now leads the column with the same icon the
+ * subject wall uses, and the child's own caption is their NAME.
+ */
+function subjectIcon(subject) {
+  if (typeof subject !== 'string') return null;
+  const id = subject.trim().toLowerCase();
+  return id && hasIcon(id) ? id : null;
+}
+
 export default function ReadingCredit({
-  // eslint-disable-next-line no-unused-vars -- part of the fixed module contract
   position = 0,
-  // eslint-disable-next-line no-unused-vars -- part of the fixed module contract
   duration = 0,
-  // eslint-disable-next-line no-unused-vars -- part of the fixed module contract
   playing = false,
   // eslint-disable-next-line no-unused-vars -- part of the fixed module contract
   seeking = false,
@@ -78,8 +97,13 @@ export default function ReadingCredit({
   const learnerId = reading?.learnerId ?? null;
   const name = reading?.learnerName ?? null;
   const subject = subjectLabel(reading?.subject);
-  const cover = reading?.image ?? null;
-  const title = reading?.title ?? null;
+  const mark = subjectIcon(reading?.subject);
+
+  // How far through THIS story, for the live pip. The module contract already
+  // delivers both numbers at 10 Hz; they were previously used for nothing here
+  // (see the header's note on the clock, which held while the Player drew its
+  // own bar). A duration of 0 is "not known yet", never "at the start".
+  const fraction = duration > 0 && position >= 0 ? position / duration : null;
 
   // ATTRIBUTION IS THE WHOLE POINT, so the bar for rendering is a learner and
   // nothing else. A rail with a face and no progress still answers "is this
@@ -95,35 +119,31 @@ export default function ReadingCredit({
       learnerId,
       contentId: reading?.contentId ?? null,
       subject: reading?.subject ?? null,
-      hasCover: Boolean(cover),
+      hasName: Boolean(name),
+      hasSubjectIcon: Boolean(mark),
       slot: region?.slot ?? null,
     });
-  }, [usable, learnerId, cover, region?.slot, reading?.contentId, reading?.subject, log]);
+  }, [usable, learnerId, name, mark, region?.slot, reading?.contentId, reading?.subject, log]);
 
   if (!usable) return null;
 
   return (
     <section className="reading-credit" data-testid="surround-reading-credit">
+      {/* What this counts toward, as a mark. Its own thing, above the child. */}
+      {mark || subject ? (
+        <div className="reading-credit__subject" data-testid="reading-credit-subject">
+          {mark ? <Icon name={mark} className="reading-credit__subject-icon" label={subject || undefined} /> : null}
+          {subject ? <p className="reading-credit__subject-name">{subject}</p> : null}
+        </div>
+      ) : null}
+
+      {/* Who is getting the credit. The name is the caption on the face. */}
       <div className="reading-credit__who">
         <div className="reading-credit__avatar">
-          <ProfileAvatar id={learnerId} name={name || learnerId} size={128} />
+          <ProfileAvatar id={learnerId} name={name || learnerId} size={256} />
         </div>
         {name ? <p className="reading-credit__name" data-testid="reading-credit-name">{name}</p> : null}
-        {subject ? (
-          <p className="reading-credit__subject" data-testid="reading-credit-subject">{subject}</p>
-        ) : null}
       </div>
-
-      {/* The book, as its cover. Falls back to the title only when there is no
-          artwork — a rail with a blank plate where the book should be says less
-          than one that names it. */}
-      {cover ? (
-        <div className="reading-credit__book">
-          <img className="reading-credit__cover" src={cover} alt={title || 'The book being read'} />
-        </div>
-      ) : title ? (
-        <p className="reading-credit__title" data-testid="reading-credit-title">{title}</p>
-      ) : null}
 
       <div className="reading-credit__progress">
         <ReadingPips
@@ -132,6 +152,8 @@ export default function ReadingCredit({
           label={reading?.progressLabel}
           className="reading-credit__pips"
           testId="reading-credit-count"
+          live={playing}
+          progress={fraction}
         />
       </div>
     </section>
