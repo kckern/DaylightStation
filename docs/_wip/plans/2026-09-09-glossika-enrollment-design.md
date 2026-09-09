@@ -38,14 +38,15 @@ Three kinds of work, and only one is code.
 
 **Data** — done (§1), plus two enrollment records (§5).
 
-**Code** — the Hangul composer (§3) and the cold-start fill (§4). Nothing else.
+**Code** — the School-wide Hangul provider (§3) and the cold-start fill (§4).
+Nothing else.
 
 **Not being built:** an alphabet trainer, a second study station, a teacher UI
 for language enrollment, or any change to the ladder's role model. Copy-mode
 dictation covers the beginner's script practice; the learner plan file is
 hand-edited by design, which its own store docstring states.
 
-## 3. Hangul input
+## 3. Hangul input, School-wide
 
 Physical-keyboard text reaches the Portal's WebView with no IME involvement, so
 Korean arrives as Latin. Neither AOSP LatinIME nor fcitx5 with its Hangul
@@ -56,29 +57,60 @@ So the 두벌식 automaton composes in the page. It is a plain module driven off
 `KeyboardEvent.code`, with 17 tests covering compound vowels, compound finals,
 the steal rule, and backspace peeling one jamo at a time.
 
-Three decisions:
+**It is a School-wide capability, not a rung detail.** `ShortAnswerItem` and
+`ClozeItem` take free-text quiz answers, and a Korean quiz needs Hangul in both.
+Scoping the composer to the ladder would leave those unreachable.
 
-**No mode toggle.** `entry.response.language` already says which language the
-learner is expected to type — target for dictation, source for interpretation.
-The composer switches on and off from that. The keyboard's globe key (arriving
-as `code=F6`) stays wired as an escape hatch, but nobody has to remember it.
+### The provider
 
-**A real `<input>`, keeping the native caret.** The automaton's output is
-always valid text, because a partly-composed Hangul syllable is itself a real
-character. A controlled input holds it and keeps caret, selection, and
-accessibility behaviour for free. The prototype drew text into a `<div>` so the
-composing syllable could be underlined; that is a debugging affordance and it
-costs a hand-drawn blinking caret to keep.
+`HangulTypingProvider` wraps `SchoolShell`. It owns the mode, one capture-phase
+`keydown` listener on the School root, and per-element composition state in a
+WeakMap so two fields never share a half-built syllable.
 
-**Composer resolved by language code.** `TypedRung` looks one up for
-`responseLang` and falls back to a plain input when there is none. The ladder's
-premise is that rungs are defined over roles, never language codes, and an
-input method is inherently script-specific — so the seam belongs here, as one
-lookup rather than a plugin system.
+It intercepts only when every condition holds: mode is KR, the target is a
+text-accepting `input`/`textarea`, the field has not opted out, and no modifier
+is down. In English mode the listener does one key comparison looking for F6 and
+passes everything through. That restraint matters: seven components in School
+already own a global `keydown`.
 
-Consequence: `useCapabilities` defaults `textInput: []` because no web API can
-detect a Hangul IME. With an in-page composer the question changes — a device
-with a hardware keyboard can type the target script. That default is rewritten.
+**Opt-outs are declared, never guessed.** `Keypad` and `NumberPad` take digits;
+`useBookShelf` captures a barcode scanner that types like a keyboard, and a
+scanner emitting Hangul would be the most confusing failure available here. The
+teacher subtree is marked once rather than field by field, since those fields
+hold dates, bank ids, and reasons.
+
+**Writing into a controlled input needs the React escape hatch.** Assigning
+`.value` does not fire `onChange`, because React tracks the node's previous
+value. The provider uses the native prototype value setter, dispatches a
+bubbling `input` event, and restores the selection so the caret lands after the
+composed syllable.
+
+### Mode
+
+Fields may declare a language with `data-ime-lang`; the provider adopts it on
+focus and restores the manual mode on blur. `TypedRung` sets it from
+`entry.response.language`, so dictation and interpretation alternate by
+themselves. F6 always overrides, and is the escape hatch for any field nobody
+labelled.
+
+### The indicator
+
+A flag badge, US or KR, showing the live mode. **It cannot live in the School
+header**, which renders only when the panel is unlocked — and the Portal is
+always locked, so the badge would be invisible exactly where it is needed. The
+provider draws it as a fixed corner element, present on the locked panel and the
+browsable app alike.
+
+### Consequences elsewhere
+
+`useCapabilities` defaults `textInput: []` because no web API can detect a
+Hangul IME. With an in-page composer the question changes: a device with a
+hardware keyboard can type the target script. That default is rewritten.
+
+The prototype rendered text into a `<div>` so the composing syllable could be
+underlined, which cost a hand-drawn blinking caret. Composing into the real
+field instead keeps the native caret, selection, and accessibility behaviour,
+and is what makes the provider work in fields it does not own.
 
 ## 4. Cold start
 
@@ -157,11 +189,27 @@ files were moved to `_deleteme/glossika-july-test-data-20260909/` on
 
 ## 6. Verification
 
+**The ladder**
+
 1. `GET /users/{learnerId}/day` for the advanced learner returns
    `dailyLimit: 15`, a four-rung chain, and 60 queue items with the trailing 45
    marked practice; the beginner returns 5 and 20.
 2. A practice attempt logs an event and does not advance that sentence's rung.
-3. On the Portal, dictation composes Hangul from the bonded keyboard and the
-   submitted text matches the corpus target for a known sentence.
-4. Day close fires once the queue is exhausted and records a completion with no
+3. Day close fires once the queue is exhausted and records a completion with no
    reward.
+
+**Typing, on the Portal with the bonded keyboard**
+
+4. Dictation composes Hangul and the submitted text matches the corpus target
+   for a known sentence.
+5. The flag badge is visible on the LOCKED panel, not only in the browsable app.
+6. The mode follows the rung without a keypress: KR for dictation, US for
+   interpretation. F6 overrides both.
+7. A Korean short-answer quiz item composes Hangul, proving the provider reaches
+   fields the ladder does not own.
+
+**Nothing else broke**
+
+8. With the mode left in KR: the barcode scanner still resolves an ISBN, and the
+   Keypad still takes a six-digit code. These are the two opt-outs whose failure
+   would be hardest to diagnose from the symptom.
