@@ -292,6 +292,8 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
         let diagWP = 0, diagFill = 0, decimPhase = 0;
         let diagFrames = 0, farFrames = 0, micE = 0, outE = 0;
         const DIAG_EVERY_FRAMES = 500;          // 5s of 10ms frames
+        const DIAG_FAR_THRESHOLD = 1e-4;        // -40 dBFS mean-square: audible, not just the gate's trip point
+        let diagIdle = 0;                       // windows since the last report
         const lagEstimate = () => {
           const N = 1000;                       // last 0.5s of mic
           const MIN_LAG = -400, MAX_LAG = 1300; // -200ms .. +650ms
@@ -403,12 +405,16 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
               results.push(output);
 
               // ERLE is only meaningful while the far end is audible.
-              if (frameRefEnergy > GATE_THRESHOLD) { farFrames += 1; micE += frameMicEnergy; outE += frameOutEnergy; }
+              if (frameRefEnergy > DIAG_FAR_THRESHOLD) { farFrames += 1; micE += frameMicEnergy; outE += frameOutEnergy; }
               diagFrames += 1;
               if (diagFrames >= DIAG_EVERY_FRAMES) {
-                if (farFrames >= 50) {
-                  const erleDb = Number((10 * Math.log10(Math.max(micE, 1e-9) / Math.max(outE, 1e-9))).toFixed(1));
-                  logger().sampled('bridge-aec-diag', { erleDb, farFrames, gateGain: Number(gateGain.toFixed(2)), ...(lagEstimate() || { lagMs: null, peakCorr: null }) }, { maxPerMinute: 12 });
+                diagIdle += 1;
+                // Report when the far end was audible for >= 0.5s of the window,
+                // and at least every 15s regardless so silence is visible too.
+                if (farFrames >= 50 || diagIdle >= 3) {
+                  const erleDb = farFrames ? Number((10 * Math.log10(Math.max(micE, 1e-9) / Math.max(outE, 1e-9))).toFixed(1)) : null;
+                  logger().info('bridge-aec-diag', { erleDb, farFrames, refEnergy: Number(refEnergy.toExponential(2)), gateGain: Number(gateGain.toFixed(2)), ...(lagEstimate() || { lagMs: null, peakCorr: null }) });
+                  diagIdle = 0;
                 }
                 diagFrames = 0; farFrames = 0; micE = 0; outE = 0;
               }
