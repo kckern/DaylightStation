@@ -187,6 +187,10 @@ export class ReadingApiService {
     try { displayName = trimmed(this.#resolveLearner?.(learnerId)?.name); } catch { displayName = null; }
     return { learnerId, displayName, enrolled: status?.enrolled ?? null, error: status ? status.error === true : true,
       count: status?.count ?? null, target: status?.target ?? null, progressLabel: status?.progressLabel ?? null,
+      // What the reading counts toward, for the surfaces that acknowledge
+      // credit (the living-room surround rail). `null` when the household
+      // authored no subject on the story-time enrollment — never guessed.
+      subject: status?.subject ?? null,
       doneToday: status?.doneToday ?? null, studyDay, yesterday, recent };
   }
 }

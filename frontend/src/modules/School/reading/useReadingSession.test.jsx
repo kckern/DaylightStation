@@ -256,9 +256,26 @@ describe('useReadingSession — playback', () => {
     expect(result.current.summary.progressLabel).toBe('2 of 2 stories');
   });
 
-  it('goes back to the prompt for the next book when stories are still owed', async () => {
+  it('acknowledges the book, THEN goes back to the prompt, when stories are still owed', async () => {
+    // The short tier. This used to drop straight to `open` — a child who read
+    // story 1 of 2 watched their story end and the screen say nothing, which
+    // reads as "that did not count" moments after the read was credited.
     const { result } = await mountAndPick();
     await act(async () => { await result.current.notePlaybackCompleted(); });
+    expect(result.current.view).toBe('book-done');
+    await act(async () => { vi.advanceTimersByTime(3200); });
+    expect(result.current.view).toBe('open');
+  });
+
+  it('holds the day-done celebration for its full length, not the book beat', async () => {
+    stubFetch({ summary: { ...SUMMARY, count: 2, progressLabel: '2 of 2 stories', doneToday: true } });
+    const { result } = await mountAndPick();
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    expect(result.current.view).toBe('celebrating');
+    // Past the short tier, still celebrating — the two timers are not shared.
+    await act(async () => { vi.advanceTimersByTime(3200); });
+    expect(result.current.view).toBe('celebrating');
+    await act(async () => { vi.advanceTimersByTime(9000); });
     expect(result.current.view).toBe('open');
   });
 

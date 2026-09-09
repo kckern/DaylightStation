@@ -68,6 +68,23 @@ Two consequences worth stating plainly:
 
 ## 3. What already exists — read this before building anything
 
+**The story plays inside a SURROUND FRAME, and it is a direct mount.**
+`ReadingSessionScreen` mounts `SurroundFrame` around `Player` in the overlay
+slot (`ReadingStage`), with an inline definition placing `reading-credit` in a
+left rail: avatar, name, subject, the book's cover, and the same progress pips
+the prompt draws. It is NOT a `SurroundHost` mount — the host polls the player
+handle for a backend-attached content sidecar, and a reading session's chrome
+comes from its SESSION, so there is nothing for that poll to find. Two
+consequences the widget owns because `SurroundStage` would otherwise supply
+them: it runs the media clock itself, and it side-effect-imports its own module
+registrations. See `School/reading/surround/registerReadingSurround.js`, and
+`School/lesson/` for the precedent this copies.
+
+Live state reaches the rail through a small external store, not through props:
+`showOverlay` captures props once, and re-calling it to deliver a new progress
+count would remount the Player and restart the story.
+
+
 **The queue already has a change-your-mind window, and it is not the one the
 requirements describe.**
 
@@ -164,7 +181,8 @@ sequenceDiagram
 | `PROMPT` | Launch face visibly acknowledged; "what do you want to read?" |
 | `CONFIRM` | Book picked; countdown running; nothing playing yet |
 | `READING` | The story is playing, attributed to the learner who picked it |
-| `CELEBRATE` | Frontend ceremony while the backend remains non-switchable |
+| `BOOK_DONE` | Frontend beat acknowledging ONE finished book, while the backend remains non-switchable |
+| `CELEBRATE` | Frontend ceremony for the day's target being met, while the backend remains non-switchable |
 | `RETURNING` | Backend has recorded/cleared the story and is waiting for the launch face to become visible again |
 | `TEARDOWN` | Closing the session and powering the TV off |
 
@@ -202,8 +220,10 @@ stateDiagram-v2
     READING --> READING: book — assignment mode refuses, D5
     READING --> CONFIRM: book — browsing mode relaxes, D5
     READING --> CELEBRATE: playback-completed, target met<br/>(backend enters RETURNING)
-    READING --> RETURNING: playback-completed, still owed
+    READING --> BOOK_DONE: playback-completed, still owed<br/>(backend enters RETURNING)
 
+    BOOK_DONE --> RETURNING: beat done, paint launch face
+    BOOK_DONE --> BOOK_DONE: card — refused
     CELEBRATE --> RETURNING: ceremony done, paint launch face
     CELEBRATE --> CELEBRATE: card — refused
     RETURNING --> PROMPT: rendered-face ACK
@@ -454,7 +474,7 @@ Not state transitions, but each must land somewhere visible.
 
 ## 10. Invariants
 
-1. **A read is credited only from Player's semantic natural-end callback** — never on pick, play, skip, back, load failure, or explicit clear.
+1. **A read is credited only from Player's semantic natural-end callback** — never on pick, play, skip, back, load failure, or explicit clear. **Both ceremony tiers hang off that same credited read**, so neither is a second source of it.
 2. **Attribution is decided and stored server-side at pick time**; the client cannot replace it.
 3. **No session, no credit.** An unclaimed book tap plays and counts for nobody.
 4. **Mode is derived, never stored.** It cannot go stale and it flips by itself.
@@ -464,6 +484,12 @@ Not state transitions, but each must land somewhere visible.
 7. **In assignment mode: one story at a time.** No queue, no on-deck, nothing silent.
 8. **Only a visibly acknowledged launch card may hand off learners.** Every
    other state refuses cards without changing learner, session id, pick, or playback.
+9. **Every finished book is acknowledged on screen.** The ceremony is TIERED —
+   a short beat for the book, the full celebration for the day's target being
+   met. It used to fire only on `doneToday`, so finishing story 1 of 2 ended in
+   silence moments after the read was credited, which reads as "that did not
+   count". A `session-close` arriving mid-ceremony is refused for the same
+   reason `READING` refuses it: the ceremony outlives the session.
 
 ---
 

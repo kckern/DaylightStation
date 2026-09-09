@@ -43,6 +43,20 @@ import { readingLog } from './readingLog.js';
 /** How long a child has to change their mind. Long enough to reach the shelf. */
 export const DEFAULT_CONFIRM_MS = 6000;
 /** How long "good reading!" stays up before the screen goes back to the prompt. */
+/**
+ * The two tiers of the closing ceremony.
+ *
+ * EVERY finished book is acknowledged, and the book that finishes the DAY is
+ * celebrated. It used to be only the second: a child who read story 1 of 2
+ * watched their story end and the screen drop straight back to the prompt with
+ * nothing said, which reads as "that did not count" — the exact opposite of
+ * what a session that just credited the read is trying to say.
+ *
+ * The short tier is a beat, not a screen: long enough to see the pip fill and
+ * the cover land, short enough that a child who wants the next book is not made
+ * to wait for a party.
+ */
+const BOOK_DONE_MS = 3200;
 const CELEBRATE_MS = 9000;
 /** How long a refusal or a fault stays on screen. */
 const NOTICE_MS = 7000;
@@ -418,16 +432,16 @@ export function useReadingSession({
     });
     const fresh = await loadSummary(attribution.learnerId);
     if (!mounted.current) return;
-    if (fresh?.doneToday === true) {
-      cue('success');
-      setView('celebrating');
-      clearTimeout(celebrateTimer.current);
-      celebrateTimer.current = setTimeout(() => {
-        if (mounted.current) setView('open');
-      }, CELEBRATE_MS);
-    } else {
-      setView('open');
-    }
+    // BOTH TIERS HANG OFF THE SAME SUCCESSFUL READ, so invariant 1 holds — a
+    // read is credited only from Player's semantic natural-end callback, and
+    // the ceremony is downstream of that credit, never a second source of it.
+    const dayDone = fresh?.doneToday === true;
+    cue('success');
+    setView(dayDone ? 'celebrating' : 'book-done');
+    clearTimeout(celebrateTimer.current);
+    celebrateTimer.current = setTimeout(() => {
+      if (mounted.current) setView('open');
+    }, dayDone ? CELEBRATE_MS : BOOK_DONE_MS);
   }, [cue, loadSummary, rememberPresentation, say]);
 
   const notePlaybackProgress = useCallback((media) => {
@@ -501,7 +515,11 @@ export function useReadingSession({
       }
       case 'session-close': {
         readingLog.session('session-close', { learnerId: payload.learnerId ?? null, reason: payload.reason ?? null });
-        if (viewRef.current === 'playing') return;   // the story outlives the session
+        // The story outlives the session — and so does the ceremony that credits
+        // it. A close arriving mid-ceremony used to drop straight to `idle` and
+        // eat the one moment that tells a child the reading counted.
+        if (viewRef.current === 'playing') return;
+        if (viewRef.current === 'book-done' || viewRef.current === 'celebrating') return;
         learnerRef.current = null;
         pickRef.current = null;
         setLearner(null);
