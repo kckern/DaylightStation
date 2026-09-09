@@ -135,6 +135,9 @@ const capabilityProof = (req) => {
  *   and commands
  * @param {object} [deps.getLearnerDayCompletion] - read-only learner-level
  *   completion projection; gates `GET .../completion`
+ * @param {object} [deps.issueDirectLaunch] - the code-free admin door: opens
+ *   any on-screen program for any learner from a URL. Absent means the routes
+ *   are simply not registered.
  * @param {object} [deps.getPianoLessonGate] - read-only "does this learner owe
  *   a piano lesson right now"; gates `GET .../piano-lesson-gate`, the second
  *   read seam for the piano kiosk
@@ -165,6 +168,7 @@ export function createSchoolLifecycleRouter({
   lifecycleSyllabusService = null,
   getLearnerDayCompletion = null,
   getPianoLessonGate = null,
+  issueDirectLaunch = null,
   issueDocument = null,
   issueComposedWorksheet = null,
   dispatchMedia = null,
@@ -339,6 +343,29 @@ export function createSchoolLifecycleRouter({
   if (getLearnerDayCompletion) {
     router.get('/learners/:learnerId/completion', asyncHandler(async (req, res) => {
       const result = await getLearnerDayCompletion.execute({ learnerId: req.params.learnerId });
+      res.set('Cache-Control', 'no-store').json(result);
+    }));
+  }
+
+  // --- the code-free door (admin/testing) -----------------------------------
+  // Opens any on-screen program for any learner from a URL, with no access
+  // code. The Portal is a kiosk with no address bar, so this is reachable only
+  // from a grown-up's browser; everything under /api/v1 has already passed
+  // permissionGate, so the code was a second factor and only that is dropped.
+  // Every issue is logged at warn with the learner named. See
+  // `IssueDirectLaunch` for the full reasoning.
+  if (issueDirectLaunch) {
+    router.get('/direct-launch/programs', asyncHandler(async (_req, res) => {
+      res.set('Cache-Control', 'no-store').json({ programs: issueDirectLaunch.available() });
+    }));
+
+    router.post('/learners/:learnerId/direct-launch', asyncHandler(async (req, res) => {
+      const result = await issueDirectLaunch.execute({
+        learnerId: req.params.learnerId,
+        programId: req.body?.programId,
+        instance: req.body?.instance ?? null,
+        unitId: req.body?.unitId ?? null,
+      });
       res.set('Cache-Control', 'no-store').json(result);
     }));
   }

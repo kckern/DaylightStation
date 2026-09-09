@@ -315,6 +315,16 @@ export const schoolApi = {
   // non-2xx here means the backend itself is unwell (down, lifecycle disabled
   // → 404, or 500) and the panel shows its degraded message instead of "Try
   // again" — the two must not be confused.
+  /**
+   * The code-free door (admin/testing). Asks the backend to mint the SAME
+   * launch target a six-digit code would produce, for a named learner and
+   * program. No authority travels in the URL — the grant is minted here.
+   */
+  directLaunch: (learnerId, programId, instance = null) => req(
+    `/lifecycle/learners/${encodeURIComponent(learnerId)}/direct-launch`,
+    { programId, ...(instance ? { instance } : {}) },
+  ),
+
   selfServiceResolve: (code, deviceId = null) => req('/self-service/resolve', { code, ...(deviceId ? { deviceId } : {}) }),
   // The same card, opened from a link a grown-up was handed instead of six
   // digits a child typed. Same never-errors-for-a-bad-input contract as
