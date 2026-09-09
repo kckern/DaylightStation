@@ -17,6 +17,7 @@
 // accessibility grant being dropped — the app CANNOT re-grant itself. See README.
 
 import { execSync, execFileSync } from 'node:child_process';
+import yaml from 'js-yaml';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -29,6 +30,48 @@ const OPS_BASE = `http://${DEVICE}:8773`;
 const PW_CACHE = '/tmp/fkb_piano_pw';
 const TOKEN_CACHE = process.env.PK_TOKEN_FILE || join(homedir(), '.config', 'daylight', 'portal-keys-token');
 const LEGACY_TOKEN_CACHE = '/tmp/portal_keys_admin_token';
+
+
+// Keyboard identities are hardware facts, so they live in the household device
+// registry rather than here. `bt` accepts an alias from that file or a literal MAC.
+function dataDir() {
+  if (process.env.DAYLIGHT_DATA_PATH) return process.env.DAYLIGHT_DATA_PATH;
+  const base = process.env.DAYLIGHT_BASE_PATH || envFileValue('DAYLIGHT_BASE_PATH');
+  if (!base) throw new Error('set DAYLIGHT_BASE_PATH or DAYLIGHT_DATA_PATH to locate devices.yml');
+  return join(base, 'data');
+}
+
+function envFileValue(key) {
+  const dotenv = join(process.cwd(), '.env');
+  const repoEnv = join(dirname(new URL(import.meta.url).pathname), '..', '..', '.env');
+  for (const path of [dotenv, repoEnv]) {
+    if (!existsSync(path)) continue;
+    const line = readFileSync(path, 'utf8').split('\n').find((l) => l.startsWith(key + '='));
+    if (line) return line.slice(key.length + 1).trim();
+  }
+  return null;
+}
+
+function keyboards() {
+  const path = join(dataDir(), 'household', 'hardware', 'devices.yml');
+  if (!existsSync(path)) throw new Error(`device registry not found: ${path}`);
+  const registry = yaml.load(readFileSync(path, 'utf8'));
+  const list = registry?.devices?.portal?.bluetooth_input?.keyboards;
+  if (!Array.isArray(list) || !list.length) {
+    throw new Error('no devices.portal.bluetooth_input.keyboards in the registry — see docs/configuration/portal-keys-bluetooth.example.yml');
+  }
+  return list;
+}
+
+/** An explicit MAC wins; otherwise resolve an alias, defaulting to the first entry. */
+function resolveKeyboard(token) {
+  if (token && /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/.test(token)) return { alias: '(literal)', mac: token.toUpperCase() };
+  const list = keyboards();
+  if (!token) return list[0];
+  const hit = list.find((k) => k.alias === token);
+  if (!hit) throw new Error(`no keyboard alias "${token}"; known: ${list.map((k) => k.alias).join(', ')}`);
+  return hit;
+}
 
 async function req(path) {
   const res = await fetch(BASE + path, { signal: AbortSignal.timeout(15000) });
@@ -153,16 +196,49 @@ const commands = {
   },
   async bt([sub, address, ms]) {
     if (!sub || sub === 'status') { pretty(await reqAt(OPS_BASE, '/bluetooth')); return; }
+    if (sub === 'scan-direct') {
+      const duration = Number(address) || 15000;
+      pretty(await reqAt(OPS_BASE, `/bluetooth/scan-direct?ms=${duration}`, { method: 'POST' }));
+      return;
+    }
     if (sub === 'scan') {
       const duration = Number(address) || 15000;
       pretty(await reqAt(OPS_BASE, `/bluetooth/scan?ms=${duration}`, { method: 'POST' }));
       return;
     }
-    if ((sub === 'bond' || sub === 'connect-hid') && address) {
-      pretty(await reqAt(OPS_BASE, `/bluetooth/${sub}?address=${encodeURIComponent(address)}`, { method: 'POST' }));
+    if (sub === 'bond' && address) {
+      const transport = ms || 'le';
+      const mac = resolveKeyboard(address).mac;
+      pretty(await reqAt(OPS_BASE, `/bluetooth/bond?address=${encodeURIComponent(mac)}&transport=${encodeURIComponent(transport)}`, { method: 'POST' }));
       return;
     }
-    console.error('usage: bt [status|scan [ms]|bond <mac>|connect-hid <mac>]');
+    if ((sub === 'gatt' || sub === 'gatt-direct' || sub === 'connect-hid') && address) {
+      const mac = resolveKeyboard(address).mac;
+      pretty(await reqAt(OPS_BASE, `/bluetooth/${sub}?address=${encodeURIComponent(mac)}`, { method: 'POST' }));
+      return;
+    }
+    if (sub === 'diag') { pretty(await reqAt(OPS_BASE, '/bluetooth/diag')); return; }
+    if (sub === 'keyboards') {
+      for (const k of keyboards()) console.log(`${(k.alias || '?').padEnd(10)} ${k.mac}  ${k.name || ''}`);
+      return;
+    }
+    if (sub === 'pair') {
+      // The whole one-time setup: bind GattService, connect, then bond over LE.
+      // After this Android's HID host owns the link — see README "Bluetooth".
+      const kb = resolveKeyboard(address);
+      console.log(`pairing ${kb.alias} ${kb.mac} ${kb.name ? '(' + kb.name + ')' : ''}`);
+      console.log('1/2 binding GattService and connecting…');
+      pretty(await reqAt(OPS_BASE, `/bluetooth/gatt-direct?address=${encodeURIComponent(kb.mac)}`, { method: 'POST' }));
+      console.log('2/2 bonding over LE…');
+      pretty(await reqAt(OPS_BASE, `/bluetooth/bond?address=${encodeURIComponent(kb.mac)}&transport=le`, { method: 'POST' }));
+      console.log('\nVerify with: adb shell dumpsys input | grep -i keyboard');
+      return;
+    }
+    if (sub === 'gatt-disconnect') {
+      pretty(await reqAt(OPS_BASE, '/bluetooth/gatt-disconnect', { method: 'POST' }));
+      return;
+    }
+    console.error('usage: bt [status|diag|keyboards|pair [alias]|scan-direct [ms]|scan [ms]|bond <alias|mac> [le|bredr|auto]|gatt-direct <alias|mac>|gatt-disconnect|connect-hid <alias|mac>]');
     process.exit(1);
   },
   async exec(parts) {
@@ -312,7 +388,7 @@ if (!name || name === 'help' || !commands[name]) {
   console.log('  shell                  persistent shell + payload health (:8772)');
   console.log('  input                  Android InputDevice + USB inventory (:8773)');
   console.log('  hid [status|retry|allow <vid> <pid>]  USB HID bridge diagnostics');
-  console.log('  bt [status|scan [ms]|bond <mac>|connect-hid <mac>] Bluetooth controls');
+  console.log('  bt pair [alias]        one-time BLE keyboard setup (bind + bond); alias from devices.yml\n  bt keyboards           list keyboards in the household device registry\n  bt [status|diag|scan-direct [ms]|bond <alias|mac> [le|bredr|auto]|gatt-direct <alias|mac>]');
   console.log('  exec <command…>        app-UID remote shell (:8773)');
   console.log('  payload [url sha256]   status or zero-tap verified payload swap');
   console.log('  rollback               roll back to the previous payload');

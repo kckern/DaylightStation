@@ -1,0 +1,41 @@
+# Copy the `bluetooth_input` block into the `portal` device entry of the
+# household device registry (`household/hardware/devices.yml` on the data
+# volume). Addresses are hardware identities, so they live on the data volume
+# and never in this repo.
+#
+# `pkctl bt pair <alias>` and `pkctl bt keyboards` read exactly this block, so
+# re-pointing at a different keyboard is a config edit, not a code change.
+#
+# Background on why the Portal needs any of this:
+#   _extensions/portal-keys/README.md — "Bluetooth LE"
+
+devices:
+  portal:
+    bluetooth_input:
+      # Every entry is one keyboard the Portal is allowed to bond with.
+      # The first entry is the default for `pkctl bt pair` with no argument.
+      keyboards:
+        - alias: desk
+          # REQUIRED. The address the keyboard ADVERTISES to the Portal.
+          #
+          # Multi-host keyboards assign a DIFFERENT address to each pairing
+          # slot, so the address another machine shows for its own slot is the
+          # WRONG one here — it will be reachable only while that machine is
+          # disconnected, and never bond. Always read this from
+          # `pkctl bt scan-direct` with the keyboard in pairing mode rather
+          # than from another host's Bluetooth settings.
+          mac: "AA:BB:CC:DD:EE:FF"
+
+          # Advertised GAP name. Display only — matching is by MAC, because a
+          # name is not an access-control boundary.
+          name: "Bluetooth Keyboard"
+
+          # Optional. Recorded so a replacement can be identified later; the
+          # pairing flow does not read them.
+          vendor_id: "0x04E8"
+          product_id: "0x7021"
+
+          # Optional free text for whoever finds this in two years.
+          notes: >
+            Slot 2 of a three-slot keyboard. Pressing its device-switch key
+            moves it to another slot and CHANGES the advertised address.

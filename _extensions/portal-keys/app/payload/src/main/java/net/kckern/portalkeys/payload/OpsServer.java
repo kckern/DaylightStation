@@ -18,8 +18,13 @@ final class OpsServer extends NanoHTTPD{
         if(u.equals("/usb-hid/retry")&&x.getMethod()==Method.POST){if(usbHid==null)return err("USB HID unavailable");usbHid.retry();return json(usbHid.status());}
         if(u.equals("/usb-hid/config")&&x.getMethod()==Method.POST){if(usbHid==null)return err("USB HID unavailable");int vid=numberParam(x,"vid",-1),pid=numberParam(x,"pid",-1);if(vid<0||pid<0||vid>65535||pid>65535)return err("usage: vid=<0..65535> pid=<0..65535>");usbHid.allow(vid,pid);return json(usbHid.status());}
         if(u.equals("/bluetooth"))return json(bluetooth==null?new JSONObject().put("ok",false).put("error","Bluetooth unavailable"):bluetooth.status());
+        if(u.equals("/bluetooth/diag"))return json(bluetooth==null?new JSONObject().put("ok",false).put("error","Bluetooth unavailable"):bluetooth.diag());
         if(u.equals("/bluetooth/scan")&&x.getMethod()==Method.POST){if(bluetooth==null)return err("Bluetooth unavailable");return json(bluetooth.scan(intParam(x,"ms",15000)));}
-        if(u.equals("/bluetooth/bond")&&x.getMethod()==Method.POST){if(bluetooth==null)return err("Bluetooth unavailable");return json(bluetooth.bond(param(x,"address")));}
+        if(u.equals("/bluetooth/bond")&&x.getMethod()==Method.POST){if(bluetooth==null)return err("Bluetooth unavailable");return json(bluetooth.bond(param(x,"address"),param(x,"transport")));}
+        if(u.equals("/bluetooth/scan-direct")&&x.getMethod()==Method.POST){if(bluetooth==null)return err("Bluetooth unavailable");return json(bluetooth.scanDirect(intParam(x,"ms",15000)));}
+        if(u.equals("/bluetooth/gatt-direct")&&x.getMethod()==Method.POST){if(bluetooth==null)return err("Bluetooth unavailable");return json(bluetooth.bindGatt(param(x,"address")));}
+        if(u.equals("/bluetooth/gatt")&&x.getMethod()==Method.POST){if(bluetooth==null)return err("Bluetooth unavailable");return json(bluetooth.gattConnect(param(x,"address")));}
+        if(u.equals("/bluetooth/gatt-disconnect")&&x.getMethod()==Method.POST){if(bluetooth==null)return err("Bluetooth unavailable");return json(bluetooth.gattDisconnect());}
         if(u.equals("/bluetooth/connect-hid")&&x.getMethod()==Method.POST){if(bluetooth==null)return err("Bluetooth unavailable");return json(bluetooth.connectHid(param(x,"address")));}
         if(u.equals("/exec")){String cmd=param(x,"cmd");if(cmd==null&&x.getMethod()==Method.POST)cmd=body(x);if(cmd==null)return err("missing cmd");shell.note("EXEC",cmd.length()>200?cmd.substring(0,200):cmd);return json(ShellExec.run(cmd,intParam(x,"timeout",10000)));}
         if(u.equals("/logcat")){String tag=param(x,"tag");String cmd="logcat -d -v time -t "+intParam(x,"lines",200)+(tag==null?"":" -s "+tag);return json(ShellExec.run(cmd,8000));}
