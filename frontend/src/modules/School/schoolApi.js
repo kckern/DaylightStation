@@ -464,6 +464,9 @@ export const schoolApi = {
   readingSummary: (learnerId) => req(`/reading/summary?learnerId=${encodeURIComponent(learnerId)}`),
   readingSession: (location) => req(`/reading/session?location=${encodeURIComponent(location)}`),
   acknowledgeReadingSession: (presentation) => req('/reading/session/ack', presentation),
+  // The day is done and nobody cancelled the wind-down: close the session and
+  // let the reader's own end policy turn the room off.
+  endReadingSession: (body) => req('/reading/session/end', body),
   readingProgress: (body) => req('/reading/progress', body),
   readingReadStatus: ({ learnerId, studyDay, pickId }) => req(`/reading/read-status?${new URLSearchParams({ learnerId, studyDay, pickId })}`),
   readingPlaying: (body) => req('/reading/playing', body),

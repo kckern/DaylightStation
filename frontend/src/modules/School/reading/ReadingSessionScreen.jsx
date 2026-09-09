@@ -655,6 +655,28 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
         />
       ) : null}
 
+      {/* THE ROOM WINDS DOWN. The day is done and nothing is queued, so the TV
+          is about to turn itself off — and says so, visibly, with time to
+          object. A hard cut reads as a crash; this reads as bedtime.
+
+          NO WORDS A PRE-READER MUST DECODE. The bar is the same countdown the
+          pick screen uses to mean "you have a moment to change your mind",
+          which is exactly what it means here too — one notation, learned once.
+          Any tap, any card, any book cancels it, because every one of those
+          already moves the view off this one. */}
+      {view === 'winding-down' ? (
+        <div className="reading-session__winding-down" data-testid="reading-winding-down">
+          <div className="reading-session__who">
+            <ProfileAvatar id={learner?.id} name={name || learner?.id} size={256} />
+          </div>
+          <h1 className="reading-session__ask">{name ? `All done, ${name}` : 'All done'}</h1>
+          <div className="reading-session__wind-bar" aria-hidden="true">
+            <div className="reading-session__wind-fill" />
+          </div>
+          <p className="reading-session__hint">Tap a book to keep reading</p>
+        </div>
+      ) : null}
+
       {view === 'returning' ? (
         <div className="reading-session__returning" data-testid="reading-returning">
           <div className="reading-session__who">

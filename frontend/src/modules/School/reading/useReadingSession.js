@@ -58,12 +58,26 @@ export const DEFAULT_CONFIRM_MS = 6000;
  */
 const BOOK_DONE_MS = 3200;
 const CELEBRATE_MS = 9000;
+/**
+ * How long the room waits after the closing ceremony before turning itself off.
+ *
+ * Twenty seconds, and the number is argued rather than picked: the pick
+ * screen's change-your-mind window is six, sized for "long enough to reach the
+ * shelf", and a sibling crossing the room to scan their own card needs about
+ * three times that. The thing being fixed is the two-minute idle timeout, which
+ * left a finished child looking at "what do you want to read today?" and the TV
+ * on in an empty room.
+ */
+const WIND_DOWN_MS = 20_000;
 /** How long a refusal or a fault stays on screen. */
 const NOTICE_MS = 7000;
 /** A cold kiosk can mount while the backend is still inside the wake call. */
 const STARTING_HYDRATE_RETRY_MS = 1000;
 /** Stop polling eventually; websocket replay remains available after this. */
 const HYDRATE_RECOVERY_BUDGET_MS = 120_000;
+
+/** Views in which this panel is visibly showing the session to the room. */
+const ACKABLE_VIEWS = new Set(['open', 'winding-down']);
 
 export const readingTopic = (location) => `reading:${location}`;
 
@@ -226,7 +240,11 @@ export function useReadingSession({
   // proof that the child can see it. Wait through two paint opportunities only
   // while the unobscured launch card is the rendered view.
   useEffect(() => {
-    if (view !== 'open' || presentationObscured || !presentation) return undefined;
+    // `winding-down` counts as a rendered face. The ACK is what tells the
+    // server this panel is showing the session, and `beginSwitch` refuses a
+    // sibling's card while it is unacknowledged — so gating this on 'open'
+    // alone would have left every switch refused for the whole wind-down.
+    if (!ACKABLE_VIEWS.has(view) || presentationObscured || !presentation) return undefined;
     const key = presentation.presentationId ?? `legacy:${presentation.sessionId}`;
     if (ackedPresentationRef.current === key || ackInFlightRef.current === key) return undefined;
     let firstFrame = 0;
@@ -234,7 +252,7 @@ export function useReadingSession({
     let cancelled = false;
     firstFrame = requestAnimationFrame(() => {
       secondFrame = requestAnimationFrame(async () => {
-        if (cancelled || presentationRef.current !== presentation || viewRef.current !== 'open') return;
+        if (cancelled || presentationRef.current !== presentation || !ACKABLE_VIEWS.has(viewRef.current)) return;
         ackInFlightRef.current = key;
         const body = presentation.presentationId
           ? {
@@ -440,9 +458,39 @@ export function useReadingSession({
     setView(dayDone ? 'celebrating' : 'book-done');
     clearTimeout(celebrateTimer.current);
     celebrateTimer.current = setTimeout(() => {
-      if (mounted.current) setView('open');
+      if (!mounted.current) return;
+      // A DAY THAT IS DONE DOES NOT GO BACK TO THE SHELF. It used to: both
+      // branches landed on 'open', so a finished child was returned to "what do
+      // you want to read today?" and the room stayed lit until a two-minute
+      // idle timer noticed. Winding down is its own view, and it is cancellable
+      // — a child who wants a third book only has to touch the screen.
+      setView(dayDone ? 'winding-down' : 'open');
     }, dayDone ? CELEBRATE_MS : BOOK_DONE_MS);
   }, [cue, loadSummary, rememberPresentation, say]);
+
+  /**
+   * THE ROOM WINDS DOWN. Twenty seconds after the closing ceremony, unless
+   * somebody says otherwise.
+   *
+   * Cancelling is not a special case: every way of saying "I am still here"
+   * already moves `view` off `winding-down` — a book tapped, a sibling's card,
+   * a session event — so this effect simply stops when the view changes. There
+   * is no separate cancel path to keep in sync with the ones that exist.
+   *
+   * The END is the server's to perform: `endReadingSession` closes the session
+   * and applies the reader's own declared end policy, which is the same path
+   * the idle sweep uses. This panel never turns a TV off itself.
+   */
+  useEffect(() => {
+    if (view !== 'winding-down') return undefined;
+    const timer = setTimeout(() => {
+      if (!mounted.current) return;
+      schoolApi.endReadingSession({ location, reason: 'day-done' })
+        .then(() => readingLog.session('wind-down-ended', { location }))
+        .catch((error) => readingLog.warn('wind-down-end-failed', { location, error: error?.message }));
+    }, WIND_DOWN_MS);
+    return () => clearTimeout(timer);
+  }, [view, location]);
 
   const notePlaybackProgress = useCallback((media) => {
     const attribution = attributionRef.current;
