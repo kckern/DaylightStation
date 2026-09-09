@@ -43,16 +43,56 @@ export function dayStatus({ total, done }) {
  * the first fills that assignment's disc and the rest become its `extraCount`
  * badge instead of inflating the assigned day.
  *
- * Four states, from the two worksheet outcomes, structured program obligation
- * progress, and the absence of either:
+ * Four states:
  *   passed      — scanned and over the pass threshold
  *   needs-retry — scanned and under it
- *   in-progress — a non-worksheet program obligation is partly complete
- *   pending     — no outcome recorded yet
+ *   in-progress — the child has started it: a sheet in their hands, a lesson
+ *                 running, a sheet turned in but not yet graded, or a
+ *                 non-worksheet program obligation partly complete
+ *   pending     — on the plan, not begun
  */
-const stateOf = (result) => (
-  result === 'passed' ? 'passed' : result === 'needs_remediation' ? 'needs-retry' : 'pending'
-);
+
+/**
+ * The session states that are NOT yet the child doing the work.
+ *
+ * `created` is the only pre-start node in the session state machine
+ * (`sessions/sessionEvents.mjs#TRANSITIONS`), and it is reached by PRINTING THE
+ * AGENDA — one agenda print created two of a learner's sessions before they had
+ * touched anything. `abandoned` and `failed` are dead ends with nothing in the
+ * child's hands. Everything else — `issued`, `reprinted`, the `*_dispatched`
+ * lesson states, `submitted`, `graded` — means it is under way.
+ *
+ * Listed as NOT-started rather than as started so the set stays the size of the
+ * exceptions; a state added to the machine after this is a state past `created`
+ * and belongs on the amber side by default.
+ */
+const NOT_STARTED = new Set(['created', 'abandoned', 'failed']);
+
+/**
+ * What one session says about its assignment.
+ *
+ * A session with no outcome used to read `pending`, identical to work never
+ * begun — so a child who typed a code, printed a worksheet and walked back to
+ * the board saw the same grey disc they left. The outcome still wins where
+ * there is one; the session's own state answers when there is not.
+ */
+function stateOf(session) {
+  const result = session?.outcome?.result;
+  if (result === 'passed') return 'passed';
+  if (result === 'needs_remediation') return 'needs-retry';
+  return NOT_STARTED.has(session?.state ?? 'created') ? 'pending' : 'in-progress';
+}
+
+/**
+ * Which of two sessions for one assignment the disc should show.
+ *
+ * A passed retry is a pass, never a lingering amber. Below that, an OPEN sheet
+ * outranks a settled one: a needs-retry whose remediation is already in the
+ * child's hands is being dealt with, and the disc should say so. The bottom two
+ * share a colour, so this decides the spoken label rather than the paint.
+ */
+const RANK = { passed: 3, 'in-progress': 2, 'needs-retry': 1, pending: 0 };
+const better = (a, b) => ((RANK[b] ?? 0) > (RANK[a] ?? 0) ? b : a);
 
 export function summarize(sections, sessions, entries = [], readingActivity = null) {
   const planned = (sections ?? []).filter((section) => !section.suppressed);
@@ -94,15 +134,14 @@ export function summarize(sections, sessions, entries = [], readingActivity = nu
     const served = servedByAssignment.get(assignmentUnitId);
     const subject = session.subject ?? served?.subject ?? null;
     const prior = byUnit.get(assignmentUnitId);
-    const state = stateOf(session.outcome?.result);
-    // Two sessions for one unit (a retry) collapse to the best outcome — a
-    // passed retry is a pass, not a lingering yellow.
-    if (!prior || (prior.state !== 'passed' && state === 'passed')) {
+    const state = stateOf(session);
+    // Two sessions for one unit (a retry) collapse to the stronger reading.
+    if (!prior || better(prior.state, state) === state) {
       byUnit.set(assignmentUnitId, {
         unitId: assignmentUnitId,
         subject,
         label: nameFor(subject),
-        state,
+        state: prior ? better(prior.state, state) : state,
       });
     }
   }

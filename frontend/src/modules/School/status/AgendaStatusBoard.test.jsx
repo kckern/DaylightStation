@@ -47,12 +47,52 @@ describe('AgendaStatusBoard model', () => {
     const sessions = [
       { unitId: 'a', subject: 'math', outcome: { result: 'passed' } },
       { unitId: 'b', subject: 'math', outcome: { result: 'needs_remediation' } },
-      { unitId: 'c', subject: 'math', outcome: null },
+      { unitId: 'c', subject: 'math', state: 'created', outcome: null },
     ];
     const summary = summarize([{ subject: 'math' }], sessions);
     expect(summary.segments.map((s) => s.state)).toEqual(['passed', 'needs-retry', 'pending']);
     // Only a pass counts toward done — a yellow disc is outstanding work.
     expect(summary.done).toBe(1);
+  });
+
+  // 2026-09-09, from the wall: a learner typed a code, printed a scripture
+  // sheet, walked back to the board — and the disc was still the grey it had
+  // been before they started. A session with no outcome used to read exactly
+  // like work never begun.
+  it('turns a disc amber once the child has actually started it', () => {
+    const started = (state) => summarize([{ subject: 'scripture' }],
+      [{ unitId: 'cfm.d2', subject: 'scripture', state, outcome: null }]).segments[0].state;
+    expect(started('issued')).toBe('in-progress');
+    expect(started('reprinted')).toBe('in-progress');
+    expect(started('submitted')).toBe('in-progress');
+    expect(started('graded')).toBe('in-progress');
+    expect(started('media_dispatched')).toBe('in-progress');
+  });
+
+  it('leaves a disc grey for the states that are not the child doing anything', () => {
+    const notStarted = (state) => summarize([{ subject: 'math' }],
+      [{ unitId: 'm.1', subject: 'math', state, outcome: null }]).segments[0].state;
+    // PRINTING THE AGENDA creates sessions. If `created` went amber, a child's
+    // whole day would turn yellow the moment their agenda came off the printer.
+    expect(notStarted('created')).toBe('pending');
+    expect(notStarted('abandoned')).toBe('pending');
+    expect(notStarted('failed')).toBe('pending');
+    expect(notStarted(undefined)).toBe('pending');
+  });
+
+  it('an open remediation outranks the needs-retry it came from', () => {
+    const sessions = [
+      { unitId: 'a', subject: 'math', state: 'outcome_recorded', outcome: { result: 'needs_remediation' } },
+      { unitId: 'a', subject: 'math', state: 'issued', outcome: null },
+    ];
+    // Same colour either way; this decides what the disc is CALLED.
+    expect(summarize([{ subject: 'math' }], sessions).segments[0].state).toBe('in-progress');
+  });
+
+  it('a started sheet is still outstanding work, never counted as done', () => {
+    const summary = summarize([{ subject: 'scripture' }],
+      [{ unitId: 'cfm.d2', subject: 'scripture', state: 'issued', outcome: null }]);
+    expect(summary).toMatchObject({ total: 1, done: 0 });
   });
 
   it('keeps one story-time disc gray, amber, then green for 0/2, 1/2, 2/2', () => {
