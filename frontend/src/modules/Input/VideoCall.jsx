@@ -73,7 +73,7 @@ export default function VideoCall({ deviceId, clear }) {
   const bridgeActive = bridge.status === 'connected';
   const effectiveAudioDevice = bridgeActive ? null : (probe.workingDeviceId || selectedAudioDevice);
 
-  const { videoRef, stream } = useWebcamStream(selectedVideoDevice, effectiveAudioDevice, {
+  const { videoRef, stream, error: cameraError } = useWebcamStream(selectedVideoDevice, effectiveAudioDevice, {
     videoResolution: inputConfig?.video_resolution,
     ready: configLoaded,
   });
@@ -111,6 +111,10 @@ export default function VideoCall({ deviceId, clear }) {
     },
   });
   const [iceError, setIceError] = useState(null);
+  // Why the TV is still waiting. On 2026-09-08 the join was refused 23 times
+  // in a row and the camera denied, and the screen said only "Waiting" — which
+  // from the sofa is indistinguishable from a crash.
+  const [joinError, setJoinError] = useState(null);
   const [, setStatusVisible] = useState(true);
   const [callDuration, setCallDuration] = useState(0);
 
@@ -123,13 +127,18 @@ export default function VideoCall({ deviceId, clear }) {
       try {
         const active = await DaylightAPI(`api/v1/homeline/devices/${deviceId}/join-active`, {}, 'POST');
         if (cancelled) return;
+        setJoinError(null);
         if (active) {
           setCallSession({ ...active, peerId: active.tvPeerId, credential: active.tvCredential, peerRevision: 0 });
           logger.info('lease.joined', { callId: active.callId, attemptId: active.attemptId, dispatchId: active.dispatchId });
           return;
         }
       } catch (error) {
-        if (!cancelled) logger.warn('lease.join.failed', { reason: error.message });
+        if (!cancelled) {
+          logger.warn('lease.join.failed', { reason: error.message });
+          setJoinError(/DEVICE_ID_MISMATCH/.test(error.message) ? 'This screen is not recognised as the call TV'
+            : 'Cannot reach the call service');
+        }
       }
       if (!cancelled) timer = setTimeout(join, 2_000);
     };
@@ -322,6 +331,12 @@ export default function VideoCall({ deviceId, clear }) {
             {status === 'connecting' && 'Connecting...'}
             {status === 'connected' && 'Connected'}
           </span>
+        )}
+        {!peerConnected && joinError && (
+          <span className="videocall-tv__info-error">{joinError}</span>
+        )}
+        {!peerConnected && cameraError && (
+          <span className="videocall-tv__info-error">TV camera unavailable</span>
         )}
         {peerConnected && (
           <span className="videocall-tv__info-duration">{formatDuration(callDuration)}</span>
