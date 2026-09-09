@@ -41,6 +41,26 @@ export function createReadingRouter({ readingService } = {}) {
     return res.json(result);
   }));
 
+  /**
+   * THE DAY IS OVER — wind the room down.
+   *
+   * The panel calls this when the closing ceremony has run and nobody cancelled
+   * it. It closes the session and applies the reader's own end policy, which is
+   * the SAME path the idle sweep takes (`ReadingSessionService#end`): one way to
+   * turn the TV off, not two.
+   *
+   * Before this existed the day ended by returning a finished child to "what do
+   * you want to read today?", where the screen sat until a two-minute idle
+   * timer noticed nobody was there.
+   */
+  router.post('/session/end', asyncHandler(async (req, res) => {
+    const location = trimmed(req.body?.location);
+    if (!location) throw badRequest('location is required');
+    const reason = trimmed(req.body?.reason) || 'day-done';
+    const gone = await readingService.end(location, { reason });
+    return res.json({ ok: Boolean(gone), location, reason });
+  }));
+
   router.get('/events', asyncHandler(async (req, res) => {
     const location = trimmed(req.query?.location);
     if (!location) throw badRequest('location is required');

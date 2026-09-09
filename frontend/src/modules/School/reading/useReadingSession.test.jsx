@@ -275,8 +275,34 @@ describe('useReadingSession — playback', () => {
     // Past the short tier, still celebrating — the two timers are not shared.
     await act(async () => { vi.advanceTimersByTime(3200); });
     expect(result.current.view).toBe('celebrating');
+    // A DONE DAY DOES NOT GO BACK TO THE SHELF. It used to land on 'open',
+    // where a finished child sat in front of "what do you want to read today?"
+    // until a two-minute idle timer turned the room off.
     await act(async () => { vi.advanceTimersByTime(9000); });
-    expect(result.current.view).toBe('open');
+    expect(result.current.view).toBe('winding-down');
+  });
+
+  it('winds the room down after the ceremony, through the reader\'s own end policy', async () => {
+    stubFetch({ summary: { ...SUMMARY, count: 2, progressLabel: '2 of 2 stories', doneToday: true } });
+    const { result } = await mountAndPick();
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    await act(async () => { vi.advanceTimersByTime(9000); });
+    expect(result.current.view).toBe('winding-down');
+    // Nothing has happened to the room yet — there is still time to say no.
+    expect(posted('/reading/session/end')).toHaveLength(0);
+    await act(async () => { vi.advanceTimersByTime(20_000); });
+    expect(posted('/reading/session/end')[0].body).toMatchObject({ reason: 'day-done' });
+  });
+
+  it('a child who wants another book cancels the wind-down by picking one', async () => {
+    stubFetch({ summary: { ...SUMMARY, count: 2, progressLabel: '2 of 2 stories', doneToday: true } });
+    const { result } = await mountAndPick();
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    await act(async () => { vi.advanceTimersByTime(9000); });
+    await act(async () => { h.handler({ event: 'book-selected', learnerId: 'user_5', contentId: 'plex:2' }); });
+    expect(result.current.view).not.toBe('winding-down');
+    await act(async () => { vi.advanceTimersByTime(20_000); });
+    expect(posted('/reading/session/end')).toHaveLength(0);
   });
 
   it('carries the title the info lookup found onto the recorded read', async () => {

@@ -552,3 +552,45 @@
   color: #ffd479;
   font-variant-numeric: tabular-nums;
 }
+
+/* ── Winding down ──────────────────────────────────────────────────────────
+   The day is done, nothing is queued, and the room is about to turn itself
+   off. It is a resting state, not an alert: the same countdown notation the
+   pick screen uses, because it means the same thing — you have a moment. */
+
+.reading-session__winding-down {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2vh;
+}
+
+/* Twenty seconds, drawn. In CSS rather than driven from React: this bar has no
+   state anyone reads back, and a 20s rAF loop to animate a decoration would be
+   the one thing running on a screen that is about to switch off. */
+.reading-session__wind-bar {
+  width: min(46vw, 62vh);
+  height: 1.1vh;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.reading-session__wind-fill {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: #ffd479;
+  transform-origin: 0 50%;
+  animation: reading-wind-down 20s linear forwards;
+}
+
+@keyframes reading-wind-down {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+/* A panel set to reduce motion still gets the state, just not the sweep. */
+@media (prefers-reduced-motion: reduce) {
+  .reading-session__wind-fill { animation: none; transform: scaleX(0.5); }
+}

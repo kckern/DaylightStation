@@ -570,6 +570,33 @@ export class ReadingSessionService {
    *
    * @returns {object|null} the session that was closed, or null if none was open
    */
+  /**
+   * Close a session AND apply the reader's end policy — the same one the idle
+   * sweep applies, deliberately.
+   *
+   * The day-done wind-down and the 2-minute idle timeout are the same event
+   * from the TV's point of view ("nobody is using this room any more"), so they
+   * must not grow two ways to turn it off. `#onTimeout` is that one path:
+   * `makeReadingTimeoutHandler` reads the location's declared `end` policy and
+   * calls `tv.turnOff`. The only difference is the reason, which is why the
+   * ceremony can end a day in twenty seconds instead of waiting two minutes for
+   * a child who has already walked away.
+   *
+   * @returns {object|null} the session that was closed, or null if none was open
+   */
+  async end(location, { reason = 'day-done' } = {}) {
+    const gone = this.close(location, { reason });
+    if (!gone) return null;
+    try {
+      await this.#onTimeout?.(gone);
+    } catch (err) {
+      this.#log('warn', 'school.reading.teardown-failed', {
+        location: gone.location, reason, error: err?.message ?? String(err),
+      });
+    }
+    return gone;
+  }
+
   close(location, { reason = null } = {}) {
     const session = this.#sessions.get(location) ?? null;
     if (!session) return null;
