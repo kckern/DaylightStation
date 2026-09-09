@@ -430,6 +430,8 @@ Set `aec.enabled: false` to disable AEC and rely on volume ducking only.
 - Until AEC is ready, or when no reference signal is available, audio passes through unchanged
 - If processing exceeds 8ms per frame consistently (>10 overruns in 100 frames), AEC auto-disables and falls back to passthrough. Logged as `bridge-aec-status: degraded`
 - Speex adaptive filter converges in 1-3 seconds — first seconds of a call may have some echo
+- **Alignment is by sample count, not time** (2026-09-08). The mic and reference rings are consumed in lockstep, so any reference sample the tap fails to deliver shifts the pair by that much for the rest of the call. The tap is therefore an AudioWorklet (audio thread, never skips; port messages queue), not a ScriptProcessor (main thread, Chrome drops its callback 512 samples at a time under load). Audio-thread underruns are zero-filled and logged as `aec-ref-gap`.
+- **Read the numbers, not the room.** Every 5s while the far end is audible the bridge logs `bridge-aec-diag`: `erleDb` (dB removed; healthy Speex is 15-25, ~0 = never converged), `lagMs` (cross-correlation of mic vs reference: positive = reference leads the echo, cancellable while under the 500ms filter window; negative = reference has fallen behind, uncancellable until realigned) and `peakCorr`.
 
 ### Files
 
