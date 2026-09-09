@@ -1,6 +1,15 @@
 const YESTERDAY_LIMIT = 4;
-const RECENT_LIMIT = 6;
 const RECENT_DAYS = 7;
+/** Day groups the shelf can hold side by side on a living-room TV. */
+const RECENT_DAY_GROUPS = 3;
+/** Books within one day. A fourth cover is where the row stops being countable. */
+const BOOKS_PER_DAY = 4;
+/**
+ * The streak wall: four weeks, so it draws as 7 columns x 4 rows. Longer reads
+ * as a smear at sofa distance, and a month is the span a child can still point
+ * at a square and remember the day.
+ */
+const STREAK_DAYS = 28;
 const trimmed = value => typeof value === 'string' && value.trim() ? value.trim() : null;
 
 function dayBefore(studyDay) {
@@ -129,11 +138,15 @@ export class ReadingApiService {
     try { status = (await this.#storyTime?.status?.({ userId: learnerId })) ?? null; }
     catch (err) { this.#logger.warn?.('school.reading.summary-status-failed', { learnerId, error: err.message }); }
     let yesterday = [];
-    let recent = [];
+    let recentDays = [];
+    let streak = [];
     const studyDay = (() => { try { return this.#storyTime?.studyDay?.() ?? null; } catch { return null; } })();
     if (studyDay && this.#readingLog?.listForDay) {
+      // ONE batch serves both views. The streak wall needs four weeks and the
+      // recent shelf needs one; reading the window twice would double the file
+      // I/O of every session open for the same rows.
       const days = [studyDay];
-      while (days.length < RECENT_DAYS) {
+      while (days.length < STREAK_DAYS) {
         const prior = dayBefore(days.at(-1));
         if (!prior) break;
         days.push(prior);
@@ -150,38 +163,78 @@ export class ReadingApiService {
       yesterday = (batches[1] ?? []).slice(0, YESTERDAY_LIMIT)
         .map(row => ({ title: row?.title ?? null, contentId: row?.contentId ?? null }));
       // Newest first. `at` is the real clock; the studyDay/index tiebreak only
-      // matters for rows written without one.
-      const ordered = batches.flat().sort((a, b) => {
+      // matters for rows written without one. The SHELF looks at one week; the
+      // streak below looks at the whole batch.
+      const ordered = batches.slice(0, RECENT_DAYS).flat().sort((a, b) => {
         const byTime = (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0);
         if (byTime) return byTime;
         const byDay = String(b.studyDay).localeCompare(String(a.studyDay));
         return byDay || b._index - a._index;
       });
 
-      // ONE CARD PER BOOK. A four-year-old reads the same story six times in a
-      // week, and six identical covers is not a shelf — it is the same book
-      // filling the screen while the other five they might pick are pushed off
-      // it. The newest read wins (it carries the most recent day label) and the
-      // repeats become a count, so the information is kept rather than dropped.
+      // THE DAY IS THE PARTITION; the book is only the grouping INSIDE it.
+      //
+      // This used to dedupe by book across the WHOLE seven-day window, which
+      // quietly destroyed the history it was meant to show: a story read on
+      // Monday, Wednesday and again today collapsed into ONE card wearing
+      // today's date, and Monday and Wednesday vanished from the shelf
+      // entirely. The count said `x3` and the shelf said "today", so the two
+      // facts on the card contradicted each other.
+      //
+      // Repeats still collapse — a four-year-old reads the same story six times
+      // and six identical covers is not a shelf — but only WITHIN one day,
+      // where "you read this three times today" is a true sentence.
       //
       // Keyed by contentId, falling back to a normalized title: a row with no
       // contentId still must not duplicate one that has the same name, and two
       // genuinely untitled rows are left alone rather than collapsed into one.
-      const byBook = new Map();
+      const byDay = new Map();
       for (const row of ordered) {
         const key = row?.contentId
           ? `id:${row.contentId}`
           : (row?.title ? `title:${String(row.title).trim().toLowerCase()}` : null);
         if (!key) continue;
-        const seen = byBook.get(key);
-        if (seen) { seen.times += 1; continue; }
-        byBook.set(key, {
+        if (!byDay.has(row.studyDay)) byDay.set(row.studyDay, new Map());
+        const books = byDay.get(row.studyDay);
+        const seen = books.get(key);
+        if (seen) {
+          seen.times += 1;
+          // Every clock time that day, newest first — the card can badge the
+          // count and the celebration screen can print the times themselves.
+          if (row?.at) seen.at.push(row.at);
+          continue;
+        }
+        books.set(key, {
           title: row?.title ?? null, contentId: row?.contentId ?? null,
-          pickId: row?.pickId ?? null, at: row?.at ?? null, studyDay: row.studyDay,
-          times: 1,
+          pickId: row?.pickId ?? null, at: row?.at ? [row.at] : [], times: 1,
         });
       }
-      recent = [...byBook.values()].slice(0, RECENT_LIMIT);
+      // `ordered` is already newest-first, so both the day order and the book
+      // order within a day fall out of insertion order.
+      recentDays = [...byDay.entries()]
+        .slice(0, RECENT_DAY_GROUPS)
+        .map(([day, books]) => ({ studyDay: day, books: [...books.values()].slice(0, BOOKS_PER_DAY) }))
+        .filter((group) => group.books.length > 0);
+
+      // THE STREAK WALL. One square per day, oldest first, so the grid fills
+      // left-to-right and today lands in the last cell. Two channels, one job:
+      // the NUMBER is how many books, the STATE is whether the day's obligation
+      // was met. A child reads the colour from the sofa and the number up close.
+      //
+      // KNOWN LIMITATION, deliberately not hidden: the target is read from the
+      // CURRENT enrollment, because no historical target is stored anywhere. A
+      // household that changes the daily target re-colours its own past. Every
+      // day is judged against `target` as it stands today, and a day we cannot
+      // judge says so rather than guessing.
+      const target = Number.isFinite(status?.target) ? status.target : null;
+      streak = days.map((day, index) => {
+        const books = (batches[index] ?? []).length;
+        let state = 'none';
+        if (target === null) state = books > 0 ? 'unknown-met' : 'unknown';
+        else if (target > 0 && books >= target) state = 'met';
+        else if (books > 0) state = 'partial';
+        return { studyDay: day, books, target, state };
+      }).reverse();
     }
     let displayName = null;
     try { displayName = trimmed(this.#resolveLearner?.(learnerId)?.name); } catch { displayName = null; }
@@ -191,6 +244,10 @@ export class ReadingApiService {
       // credit (the living-room surround rail). `null` when the household
       // authored no subject on the story-time enrollment — never guessed.
       subject: status?.subject ?? null,
-      doneToday: status?.doneToday ?? null, studyDay, yesterday, recent };
+      doneToday: status?.doneToday ?? null, studyDay, yesterday,
+      // Day groups, newest first — NOT a flat list. See the partition above.
+      recentDays,
+      // One entry per day, OLDEST first, so a 7-wide grid reads like a calendar.
+      streak };
   }
 }
