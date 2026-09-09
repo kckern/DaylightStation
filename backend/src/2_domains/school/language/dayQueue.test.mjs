@@ -24,9 +24,17 @@ const build = (over = {}) => buildDayQueue({
   ...over,
 });
 
+/**
+ * The warm-up fill (see dayQueue.mjs, "The cold start") pads a short day with
+ * practice passes over its own new set. Tests about WHICH sentences are
+ * admitted, and at which rung they are CREDITED, read the credited entries —
+ * padding is a separate concern with its own describe block below.
+ */
+const credited = (queue) => queue.filter((entry) => !entry.practice);
+
 describe('new material', () => {
   it('uses an injected ordered admission scope for new material', () => {
-    const queue = build({ admission: [9, 4, 2], dailyLimit: 2 });
+    const queue = credited(build({ admission: [9, 4, 2], dailyLimit: 2 }));
     expect(queue).toEqual([
       { seq: 9, rung: 'repetition', done: false },
       { seq: 4, rung: 'repetition', done: false },
@@ -34,7 +42,7 @@ describe('new material', () => {
   });
 
   it('deduplicates overlapping admission bands after normalization', () => {
-    expect(build({ admission: [6, '6', 7], dailyLimit: 3 }).map((entry) => entry.seq))
+    expect(credited(build({ admission: [6, '6', 7], dailyLimit: 3 })).map((entry) => entry.seq))
       .toEqual([6, 7]);
   });
 
@@ -49,7 +57,7 @@ describe('new material', () => {
   });
 
   it('admits exactly dailyLimit sentences on a fresh start', () => {
-    const queue = build();
+    const queue = credited(build());
     expect(queue).toEqual([
       { seq: 1, rung: 'repetition', done: false },
       { seq: 2, rung: 'repetition', done: false },
@@ -58,13 +66,13 @@ describe('new material', () => {
   });
 
   it('never admits past the end of the corpus', () => {
-    expect(build({ corpusSize: 2 })).toHaveLength(2);
+    expect(credited(build({ corpusSize: 2 }))).toHaveLength(2);
   });
 
   it('counts sentences started today against today\'s limit', () => {
     // Two already done today + one fresh = the limit, not limit + 2.
     const log = [ev(1, 'repetition', 5), ev(2, 'repetition', 5)];
-    const queue = build({ log, day: 5 });
+    const queue = credited(build({ log, day: 5 }));
     expect(queue).toEqual([
       { seq: 1, rung: 'repetition', done: true },
       { seq: 2, rung: 'repetition', done: true },
@@ -182,11 +190,17 @@ describe('undated legacy evidence', () => {
 
   it('places a whole legacy import at the right rung without duplicates', () => {
     const log = [1, 2, 3, 4, 5].map(legacy);
-    const queue = build({ log, day: 1, dailyLimit: 2, corpusSize: 100 });
+    const full = build({ log, day: 1, dailyLimit: 2, corpusSize: 100 });
+    const queue = credited(full);
     const seqs = queue.map((e) => e.seq);
-    expect(new Set(seqs).size).toBe(seqs.length); // no sentence appears twice
+    // No sentence is credited twice. (It may reappear as a PRACTICE pass at
+    // another rung the same day — that is the fill, and it clears nothing.)
+    expect(new Set(seqs).size).toBe(seqs.length);
     expect(queue.filter((e) => e.rung === 'interpretation').map((e) => e.seq)).toEqual([1, 2, 3, 4, 5]);
     expect(queue.filter((e) => e.rung === 'repetition').map((e) => e.seq)).toEqual([6, 7]);
+    // And nothing is offered twice at the same rung, credited or not.
+    const pairs = full.map((e) => `${e.rung}:${e.seq}`);
+    expect(new Set(pairs).size).toBe(pairs.length);
   });
 });
 
@@ -197,7 +211,7 @@ describe('sentences with no audio', () => {
   const playable = new Set([1, 2, 5, 6, 7]);
 
   it('never admits an unplayable sentence as new material', () => {
-    const queue = build({ dailyLimit: 3, playable });
+    const queue = credited(build({ dailyLimit: 3, playable }));
     expect(queue.map((e) => e.seq)).toEqual([1, 2, 5]);
   });
 
@@ -218,7 +232,7 @@ describe('sentences with no audio', () => {
   });
 
   it('treats an absent playable set as "everything is playable"', () => {
-    expect(build({ dailyLimit: 2 }).map((e) => e.seq)).toEqual([1, 2]);
+    expect(credited(build({ dailyLimit: 2 })).map((e) => e.seq)).toEqual([1, 2]);
   });
 });
 
@@ -249,5 +263,154 @@ describe('summarizeQueue', () => {
 
   it('handles an empty queue', () => {
     expect(summarizeQueue([])).toEqual({ total: 0, done: 0, byRung: {} });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The cold start
+// ---------------------------------------------------------------------------
+
+describe('warm-up fill', () => {
+  const languages = { source: 'EN', target: 'KR' };
+  const capabilities = { microphone: true, textInput: ['EN', 'KR'] };
+  const LIMIT = 3;
+  const CHAIN = ['repetition', 'dictation', 'recording', 'interpretation'];
+  const FULL_DAY = LIMIT * CHAIN.length;
+
+  const build = (log, day) => buildDayQueue({
+    log, day, dailyLimit: LIMIT, corpusSize: 100, capabilities, languages,
+  });
+
+  /** Complete every entry a day offered, the way a finished sitting would. */
+  const completeAll = (log, day, queue) => {
+    for (const entry of queue) {
+      log.push({
+        day, seq: entry.seq, rung: entry.rung,
+        ...(entry.practice ? { practice: true } : {}),
+      });
+    }
+    return log;
+  };
+
+  const shape = (queue) => {
+    const of = (practice) => queue
+      .filter((e) => Boolean(e.practice) === practice)
+      .map((e) => `${e.rung}:${e.seq}`);
+    return { credited: of(false), practice: of(true) };
+  };
+
+  it('gives day one a full sitting instead of a quarter of one', () => {
+    const queue = build([], 1);
+    expect(queue).toHaveLength(FULL_DAY);
+    const { credited, practice } = shape(queue);
+    // Only the entry rung is credited on day one — nothing has cleared anything.
+    expect(credited).toEqual(['repetition:1', 'repetition:2', 'repetition:3']);
+    // The same three sentences walk the rest of the ladder as practice.
+    expect(practice).toEqual([
+      'dictation:1', 'dictation:2', 'dictation:3',
+      'recording:1', 'recording:2', 'recording:3',
+      'interpretation:1', 'interpretation:2', 'interpretation:3',
+    ]);
+  });
+
+  it('holds a full sitting every day and reaches steady state on day four', () => {
+    const log = [];
+    const counts = [];
+    for (let day = 1; day <= 6; day += 1) {
+      const queue = build(log, day);
+      counts.push({ day, total: queue.length, practice: queue.filter((e) => e.practice).length });
+      completeAll(log, day, queue);
+    }
+    expect(counts.map((c) => c.total)).toEqual([12, 12, 12, 12, 12, 12]);
+    // The fill shrinks as graduates arrive and is gone once they fill the day.
+    expect(counts.map((c) => c.practice)).toEqual([9, 6, 3, 0, 0, 0]);
+  });
+
+  it('never advances a sentence on a practice pass', () => {
+    const log = [];
+    const dayOne = build(log, 1);
+    completeAll(log, 1, dayOne);
+
+    // Sentence 1 was practised at dictation, recording AND interpretation on
+    // day one. If practice counted, it would have graduated off the ladder.
+    const dayTwo = build(log, 2);
+    const credited = dayTwo.filter((e) => !e.practice).map((e) => `${e.rung}:${e.seq}`);
+    expect(credited).toContain('dictation:1');
+    expect(credited).not.toContain('recording:1');
+    expect(credited).not.toContain('interpretation:1');
+  });
+
+  it('does not re-admit a practised sentence as new material', () => {
+    const log = [];
+    completeAll(log, 1, build(log, 1));
+    const dayTwo = build(log, 2);
+    const newlyAdmitted = dayTwo
+      .filter((e) => !e.practice && e.rung === 'repetition')
+      .map((e) => e.seq);
+    expect(newlyAdmitted).toEqual([4, 5, 6]);
+  });
+
+  it('marks a practice entry done once its own pass is logged', () => {
+    const log = [];
+    const queue = build(log, 1);
+    // Work the day in order: the credited entry-rung passes come first, then
+    // the practice passes behind them.
+    for (const entry of queue.filter((e) => !e.practice)) {
+      log.push({ day: 1, seq: entry.seq, rung: entry.rung });
+    }
+    const target = build(log, 1).find((e) => e.practice);
+    expect(target.done).toBe(false);
+
+    log.push({ day: 1, seq: target.seq, rung: target.rung, practice: true });
+    const again = build(log, 1)
+      .find((e) => e.practice && e.seq === target.seq && e.rung === target.rung);
+    expect(again.done).toBe(true);
+  });
+
+  it('a time gap alone does not bring the fill back', () => {
+    const log = [];
+    for (let day = 1; day <= 5; day += 1) completeAll(log, day, build(log, day));
+    // Due graduates do not expire: a sentence that cleared a rung is still
+    // owed the next one however long the learner was away. So a gap leaves the
+    // day full, and the fill has nothing to add.
+    const later = build(log, 40);
+    expect(later).toHaveLength(FULL_DAY);
+    expect(later.filter((e) => e.practice)).toEqual([]);
+  });
+
+  it('comes back when the day gets longer than the pipeline feeding it', () => {
+    const log = [];
+    for (let day = 1; day <= 5; day += 1) completeAll(log, day, build(log, day));
+    // Raising lessonSize — a real thing to do once a learner settles in —
+    // makes the day bigger than the graduates arriving to fill it, so the
+    // warm-up behaviour returns on its own for as long as it is needed.
+    const raised = buildDayQueue({
+      log, day: 6, dailyLimit: 5, corpusSize: 100, capabilities, languages,
+    });
+    expect(raised).toHaveLength(5 * CHAIN.length);
+    expect(raised.some((e) => e.practice)).toBe(true);
+  });
+
+  it('adds nothing for an established learner whose day is already full', () => {
+    const log = [];
+    for (let day = 1; day <= 8; day += 1) completeAll(log, day, build(log, day));
+    const queue = build(log, 9);
+    expect(queue.filter((e) => e.practice)).toEqual([]);
+    expect(queue).toHaveLength(FULL_DAY);
+  });
+
+  it('sizes the fill to the chain the device can actually serve', () => {
+    // No microphone and no Korean keyboard: two rungs, so a full day is 2x.
+    const queue = buildDayQueue({
+      log: [], day: 1, dailyLimit: LIMIT, corpusSize: 100, languages,
+      capabilities: { microphone: false, textInput: ['EN'] },
+    });
+    expect(queue).toHaveLength(LIMIT * 2);
+    expect(queue.filter((e) => e.practice)).toHaveLength(LIMIT);
+  });
+
+  it('leaves credited entries in their original shape', () => {
+    const credited = build([], 1).filter((e) => !e.practice);
+    for (const entry of credited) expect(entry).not.toHaveProperty('practice');
   });
 });
