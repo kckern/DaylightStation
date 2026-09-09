@@ -3,10 +3,11 @@ import { useWebSocketSubscription } from '../../../hooks/useWebSocket.js';
 import { wsService } from '../../../services/WebSocketService';
 import { schoolApi } from '../schoolApi.js';
 import { schoolLog } from '../schoolLog.js';
+import { isPanelSurface } from '../schoolPathModel.js';
 
 /** Retained anonymous preview. Busy work can defer it, never inherit its authority. */
 export function useBookScanEntry({ screenId, safe, onLaunch }) {
-  const enabled = Boolean(screenId && screenId !== 'browser');
+  const enabled = isPanelSurface(screenId);
   const [intent, setIntent] = useState(null);
   const [claiming, setClaiming] = useState(false);
   const [error, setError] = useState(null);

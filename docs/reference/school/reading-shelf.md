@@ -12,6 +12,13 @@ a large, uncropped cover fills the left column, with the title and author below;
 the reader choices fill the right column. Cover sizing follows viewport height
 to leave room for book details. Narrow screens stack the book above the choices.
 
+The reading code is one of three ways in. A scan of the book asks who is
+reading it; a reading icon beside the panel's day board asks who they are and
+opens that learner's shelf directly on the ISBN pad, with no code and no
+scanned book. A scan arriving while the panel is busy defers to a corner offer
+rather than interrupting, and taking that offer clears the panel and asks the
+same "who's reading this?" question an idle scan asks.
+
 A successfully resolved reading code opens the shelf through the existing
 self-service program action immediately. If the server requires identity
 confirmation, **Open <name>'s books** both confirms the learner and launches
@@ -24,9 +31,9 @@ which reloads persisted reading activity. A reading save can add a completed
 Reading circle without creating or completing any required assignment. See
 [agenda acknowledgment](./agenda-and-completion.md#reading-on-the-status-board).
 
-Only the first successful load of a learner with no shelf records opens the
-ISBN pad directly. Back returns to the shelf and later reads do not reopen the
-pad. A learner with only finished or set-aside records gets the shelf.
+The first successful load opens the ISBN pad directly when the learner has no
+shelf records, or when the panel door asked for it. Back returns to the shelf
+and later reads do not reopen the pad. A learner with only finished or set-aside records gets the shelf.
 
 Reading now contains reading/unread items; Recently finished contains up to
 12 finished items ordered by effective finish date, then recording time when
@@ -39,7 +46,12 @@ or unread item, it opens that item instead.
 ## Add, update, and finish
 
 ISBN input retains checksum validation, scanner/keyboard entry, and manual
-correction. A lookup shows its cover, title, author, and actions together:
+correction. There is no lookup button: thirteen valid digits advance after a
+short settle, and ten fire the catalog immediately but advance only on a real
+hit, after a second of quiet that any further digit cancels. A ten the catalog
+does not know shows `Use this number` rather than stranding the entry, and says
+nothing else — the child may still be typing. A lookup shows its cover, title,
+author, and actions together:
 Start reading, Update page, Finished today, and Finished on another day.
 Selecting an action accepts the displayed book. Wrong book? Edit number keeps
 the typed ISBN. Missing catalog metadata shows an honest ISBN placeholder and

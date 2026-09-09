@@ -512,15 +512,19 @@ it('Portal scan waits for keypad digits, hands returned grant to the shelf and d
     schoolApi.bookScans.pending.mockResolvedValue({ ok: true, data: { intent: scan } });
     await act(async () => h.byTopic.school({ type: 'school.book-scan', screenId: 'portal', intentId: scan.id }));
     expect(screen.queryByRole('dialog', { name: 'This book was just scanned' })).toBeNull();
-    expect(screen.getByText('Book scanned — open when ready')).toBeInTheDocument();
-    fireEvent.keyDown(window, { key: 'Backspace' });
+    // Deferred, but NOT a dead end: the corner card names the book and offers
+    // a way in. Nothing is claimed by tapping it — it clears the panel, and the
+    // dialog that follows is the one place "who's reading?" is asked.
+    expect(screen.getByText('Hatchet was scanned')).toBeInTheDocument();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Open it' })); });
+    expect(schoolApi.bookScans.claim).not.toHaveBeenCalled();
     await screen.findByRole('dialog', { name: 'This book was just scanned' });
     fireEvent.click(screen.getByRole('button', { name: 'Alpha' }));
     await waitFor(() => expect(bookShelfProps.mock.calls.at(-1)?.[0]).toMatchObject({ learnerId: 'kid1', grant: 'returned-scan-grant', initialBookEntry: { intentId: scan.id, isbn13: scan.isbn13 } }));
     const next = { ...scan, id: 'next-scan', book: { title: 'Next book' } };
     schoolApi.bookScans.pending.mockResolvedValue({ ok: true, data: { intent: next } });
     await act(async () => h.byTopic.school({ type: 'school.book-scan', screenId: 'portal', intentId: next.id }));
-    expect(screen.getByText('Book scanned — open when ready')).toBeInTheDocument();
+    expect(screen.getByText('Next book was scanned')).toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: 'This book was just scanned' })).toBeNull();
     await act(async () => bookShelfProps.mock.calls.at(-1)[0].onExit('done'));
     expect(await screen.findByRole('dialog', { name: 'This book was just scanned' })).toBeInTheDocument();

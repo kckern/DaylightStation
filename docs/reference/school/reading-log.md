@@ -88,12 +88,59 @@ status, page, percent, daysRead, and every obligation measurement.
 
 ## 3. The child's shelf
 
+### Three doors, one shelf
+
+| Door | The child has | It asks |
+|---|---|---|
+| **The printed code** | a slip the agenda printed | six digits |
+| **A scanned barcode** | the book | who is reading it |
+| **The panel door** | neither | who they are |
+
+Only the first costs paper. The other two exist because "I am holding a book I
+want to log" should not begin with fetching a printout.
+
 **The code opens the shelf directly.** A reading code used to resolve to a
 launch card whose entire content was one button reading "Open Reading" over a
 "Go back" — asked of a child who had just spelled out, in six digits, the
 sentence that button said. The backend marks such a card
 `presentation.openImmediately` and the panel runs its single action instead of
 rendering it, so the child goes keypad → shelf.
+
+**A scan never takes a screen someone is using.** The panel knows whether it is
+busy — resting on the keypad with nothing running, nothing typed and nothing in
+flight, or not — and a scan that lands on a busy panel does not interrupt. It
+offers instead: a corner card naming the book, with a way in and a way out. The
+intent lives on the server for five minutes, so the offer is real rather than a
+notice; taking it clears the panel and hands over to the same "who's reading
+this?" question an idle scan asks, so that question has one home. Leaving a
+graded run asks first, in the card itself — a locked panel draws no header, so
+the confirm cannot live where the apple's does.
+
+This replaced a dead end. The corner state used to be one sentence with no
+button behind it, while the claim path refused outright whenever the panel was
+busy; a child's only recovery was to finish what they were doing and scan the
+book again.
+
+**The panel door is the mirror of a scan.** A reading icon beside the day board
+asks who is reading, takes one tap on a face, and opens that child's shelf at
+the ISBN pad. It is a door beside the board rather than a row on it: the board
+is deliberately non-interactive, and it draws nothing at all on a settled-empty
+day — which is exactly when a child most needs the way in.
+
+That door skips everything the printed code proves: possession of paper, a cap
+of twelve uses, a wrong-guess throttle, and the "is this you?" re-ask. What
+pays for it is the clock. A shelf opened by tapping a face gets a grant good
+for **twenty minutes**, not the printed card's eight hours — long enough to
+type a number and save a page, short enough that a grant left behind on a
+hallway screen is worth nothing by the time anyone finds it. The other bound is
+the roster: the server, not the client, decides that the learner named is one
+of today's.
+
+The door stands wherever the School panel does, the browser mount included —
+the same place the printed-code keypad already opens a shelf. It briefly also
+required the request to name the configured panel, which was theatre: the
+client names its own screen, so that check turned nobody away except the app's
+own browser mount.
 
 The rule is narrow on purpose: exactly one action, and that action a `program`.
 A printing card also carries one button, and auto-running it would fire a
@@ -111,12 +158,30 @@ rules, each earned:
    previous child's books.
 2. **The number is judged before the network, behind a length gate.** A
    malformed ISBN never costs a round trip. Ten digits are the trap — the first
-   ten of a thirteen-digit number pass the ISBN-10 checksum one time in eleven —
-   so ten is judged only on a tap, or when it ends in `X`.
+   ten of a thirteen-digit number pass the ISBN-10 checksum one time in eleven.
 3. **Every write is idempotent.** The client mints the key before the write, so
    a double tap or a retry appends once.
 4. **A failed write loses nothing.** The digits stay, the fault is named in the
    server's own words, and the next tap retries with the same key.
+
+**The pad has no lookup button.** A finished number is its own instruction, so
+the pad acts on it — and the two lengths are not the same claim:
+
+- **Thirteen digits** are a number a child read off a book. The checksum
+  settles it and nothing is left to confirm, so a short settle and it goes.
+- **Ten digits** are a guess, for the reason above. The pad asks the catalog
+  *at once* — hiding the round trip under the typing — but acts on the answer
+  only after a second of quiet, and only on a real catalog hit. An eleventh
+  digit cancels it.
+
+**A catalog hit is the confirmation, at ten digits.** Thirteen digits carry a
+`not-found` through to the honest-placeholder confirmation, because thirteen
+digits name a book whether or not the catalog knows it. Ten cannot: a number
+that only passes the checksum is as likely the front of someone's thirteen, and
+that names nothing. So a miss at ten moves nobody and — just as deliberately —
+accuses nobody, since the child may still be typing. It offers **Use this
+number** instead, the one button this pad ever shows, and the only way an older
+book the catalog lacks still gets logged.
 
 **Two field-driven corrections, 2026-09-06.** A `Clear number` button sat above
 the `3` and fired on pointerdown; a child wiped a half-typed ISBN four times in
@@ -127,6 +192,10 @@ tell apart; they are square tiles with icons.
 ---
 
 ## 4. The printed card
+
+The card is no longer the only way in (see §3), but it is still the one that
+travels: it names a book, it can be read at the kitchen table, and it works
+when nobody is standing at the panel.
 
 The agenda prints a reading card for **every** learner, enrolled or not — an
 enrollment carries an obligation, not access. It is a full lesson card

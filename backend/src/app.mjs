@@ -383,6 +383,17 @@ import { YamlDocumentFileStore } from './1_adapters/school/YamlDocumentFileStore
 import { RUBIKS_CUBE_COURSE_ID, RUBIKS_CUBE_REVISION } from './3_applications/school/rubiksCube/courseCatalog.mjs';
 import { createRubiksCubeRouter } from './4_api/v1/routers/rubiksCube.mjs';
 import { PrepareBookScan } from '#apps/school/usecases/PrepareBookScan.mjs';
+import { OpenBookShelfAtPanel } from '#apps/school/usecases/OpenBookShelfAtPanel.mjs';
+
+/**
+ * How long a shelf opened by tapping a face at the panel stays open. Long
+ * enough for a child to type an ISBN, find the page they are on and save it;
+ * short enough that a grant left behind on a hallway screen is worth nothing
+ * by the time anyone else finds it. The printed-code door keeps the default
+ * eight hours — it is paid for by paper the agenda printed and a twelve-use
+ * cap (see `OpenBookShelfAtPanel`).
+ */
+const PANEL_BOOK_GRANT_TTL_MS = 20 * 60_000;
 import { createSchoolBookScansRouter } from '#api/v1/routers/schoolBookScans.mjs';
 import { resolveBookScanTarget } from '#composition/modules/schoolBookScans.mjs';
 import { createSchoolBooksRouter } from './4_api/v1/routers/schoolBooks.mjs';
@@ -3293,6 +3304,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   let schoolReelGrants = null;
   let schoolCubeGrants = null;
   let schoolBookGrants = null;
+  let schoolBookPanelGrants = null;
   let schoolLaunchPreviewTokens = null;
   try {
     schoolStudyGrants = new HmacSchoolStudyGrantIssuer({ key: jwtSecret });
@@ -3307,6 +3319,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }
   try { schoolBookGrants = new HmacSchoolBookGrantIssuer({ key: jwtSecret }); } catch (error) {
     rootLogger.error('school.books.grants-unavailable', { error: error.message });
+  }
+  // The panel door's own issuer. Same key context and same `verify`, so the
+  // shelf routes are untouched — only the clock differs. The default eight
+  // hours is priced for a printed code capped at twelve uses; a face tap on a
+  // shared wall panel proves nothing like that much, so it buys minutes.
+  try {
+    schoolBookPanelGrants = new HmacSchoolBookGrantIssuer({ key: jwtSecret, ttlMs: PANEL_BOOK_GRANT_TTL_MS });
+  } catch (error) {
+    rootLogger.error('school.books.panel-grants-unavailable', { error: error.message });
   }
   try { schoolLaunchPreviewTokens = new HmacSchoolLaunchPreviewTokenIssuer({ key: jwtSecret }); } catch (error) {
     rootLogger.error('school.launch-preview.tokens-unavailable', { error: error.message });
@@ -3941,6 +3962,30 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     target: bookScanTarget,
     logger: schoolLifecycleLogger,
   }) : null;
+  // The second door: a learner tapped on the panel, no code and no barcode.
+  // It needs no realtime — nothing is broadcast and nothing waits.
+  const openBookShelfAtPanel = schoolLifecycle.bookLogLauncher && schoolBookPanelGrants && bookScanTarget
+    ? new OpenBookShelfAtPanel({
+      roster: () => schoolLearnerDirectory.listLearners(),
+      issueLaunchTarget: ({ userId }) => ({
+        kind: 'program',
+        program: schoolLifecycle.bookLogLauncher.id,
+        learnerId: userId,
+        bookGrant: schoolBookPanelGrants.issue({ learnerId: userId }),
+      }),
+      target: bookScanTarget,
+      logger: schoolLifecycleLogger,
+    })
+    : null;
+  // A missing door is invisible on the panel — the icon simply is not drawn —
+  // so say which piece was absent rather than leaving it to be rediscovered.
+  if (!openBookShelfAtPanel) {
+    schoolLifecycleLogger.warn('school.book-shelf.panel-door-unavailable', {
+      launcher: Boolean(schoolLifecycle.bookLogLauncher),
+      grants: Boolean(schoolBookPanelGrants),
+      target: Boolean(bookScanTarget),
+    });
+  }
 
   if (schoolLifecycle.wired && schoolLifecycle.realtime && schoolLifecycle.getLearnerDayCompletion) {
     try {
@@ -4563,7 +4608,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // The School reading shelf. Needs the lifecycle's shelf use cases (absent in
   // a composition without the Books domain deps) and a grant issuer.
   if (schoolLifecycle.wired && schoolBookGrants && schoolLifecycle.useCases?.getBookShelf) {
-    if (bookScans) v1Routers.school.use('/book-scans', createSchoolBookScansRouter({ bookScans }));
+    if (bookScans) v1Routers.school.use('/book-scans', createSchoolBookScansRouter({ bookScans, openAtPanel: openBookShelfAtPanel }));
     v1Routers.school.use('/books', createSchoolBooksRouter({
       grants: schoolBookGrants,
       getBookShelf: schoolLifecycle.useCases.getBookShelf,

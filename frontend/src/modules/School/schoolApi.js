@@ -44,6 +44,9 @@ export const schoolApi = {
     pending: screenId => req(`/book-scans/pending?${new URLSearchParams({ screenId })}`),
     claim: (id, body) => req(`/book-scans/${encodeURIComponent(id)}/claim`, body),
     dismiss: (id, body) => req(`/book-scans/${encodeURIComponent(id)}/dismiss`, body),
+    // The panel's second door: no scan, no printed code. `{screenId, learnerId}`
+    // in, a short-lived shelf launch target out (see `OpenBookShelfAtPanel`).
+    open: (body) => req('/book-scans/open', body),
   },
   /**
    * Roster-wide State Gates query. The filters keep this one request for the

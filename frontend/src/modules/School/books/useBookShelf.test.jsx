@@ -283,7 +283,7 @@ describe('useBookShelf: the add flow', () => {
     expect(r.result.current.step).toBe('cover');
   });
 
-  it('5d. eleven and twelve digits are still typing: dark button, no sentence', async () => {
+  it('5d. ten asks the catalog early but moves nothing; eleven and twelve are still typing', async () => {
     const r = await mounted();
     act(() => r.result.current.actions.startAdd());
     for (const n of [10, 11, 12]) {
@@ -292,6 +292,14 @@ describe('useBookShelf: the add flow', () => {
       expect(r.result.current.add.canSubmit).toBe(n === 10);
     }
     expect(h.log).not.toHaveBeenCalledWith('add.rejected', expect.anything());
+    // This fixture's first ten digits are one of the eleven-in-a-hundred that
+    // pass the ISBN-10 checksum, so the speculative fetch goes out — the whole
+    // point of firing early. What it must NOT do is move the child: only the
+    // answer may, and only after the typing goes quiet.
+    expect(h.resolve).toHaveBeenCalledTimes(1);
+    expect(h.resolve).toHaveBeenCalledWith('9789780064402');
+    expect(r.result.current.step).toBe('number');
+    h.resolve.mockClear();
     act(() => r.result.current.actions.typeIsbn(ISBN.slice(0, 11)));
     await act(async () => { await r.result.current.actions.lookup(); });
     expect(h.resolve).not.toHaveBeenCalled();
@@ -362,7 +370,11 @@ describe('useBookShelf: the add flow', () => {
 
     h.resolve.mockResolvedValueOnce({ ok: true, status: 200, data: { status: 'ok', book: BOOK } });
     await act(async () => { await r.result.current.actions.retryLookup(); });
-    expect(h.resolve).toHaveBeenCalledTimes(4);
+    // Four lookups, plus the speculative fetch the ten-digit entry sent before
+    // the first of them. Each lookup pays its own round trip: the speculative
+    // answer reaches `lookup` only as an argument, from the auto-advance that
+    // judged it — never through a cache a retry could pick up by accident.
+    expect(h.resolve).toHaveBeenCalledTimes(5);
     expect(r.result.current.step).toBe('cover');
   });
 
