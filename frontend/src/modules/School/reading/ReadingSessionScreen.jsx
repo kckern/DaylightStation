@@ -37,6 +37,7 @@ import { useReadingSession, DEFAULT_CONFIRM_MS } from './useReadingSession.js';
 import { readingLog } from './readingLog.js';
 import { bookCover } from './bookCovers.js';
 import ReadingPips from './ReadingPips.jsx';
+import StreakWall from './StreakWall.jsx';
 import { useMediaClockState } from '../../../lib/Player/useMediaClock.js';
 // SIDE-EFFECT IMPORT, AND IT IS LOAD-BEARING. `SurroundHost` is what imports
 // `Surround/builtins.js`; `SurroundFrame` imports no registrations at all, so a
@@ -213,7 +214,7 @@ function recentDayLabel(studyDay, currentStudyDay) {
  * placeholder occupies it until the image lands. A shelf that reflows under a
  * child's finger is worse than one that is briefly plain.
  */
-function RecentBook({ read, studyDay }) {
+function RecentBook({ read }) {
   const [cover, setCover] = useState(null);
   const contentId = read?.contentId ?? null;
 
@@ -232,36 +233,52 @@ function RecentBook({ read, studyDay }) {
           /* No alt text and aria-hidden: the title below already names the
              book, so an alt here would make a screen reader say it twice. */
           : <div className="reading-session__recent-spine" aria-hidden="true" />}
+        {/* THE REPEATS, ON THE COVER THEY BELONG TO. A book read three times
+            that day is one cover wearing a 3 — the count and the day it counts
+            for are now the same object, which is what the old shelf could not
+            say (its date and its count came from different scopes). */}
+        {read.times > 1
+          ? <span className="reading-session__recent-times" data-testid="reading-recent-times">{read.times}</span>
+          : null}
       </div>
       <span className="reading-session__recent-title">{read.title}</span>
-      <span className="reading-session__recent-day">
-        {recentDayLabel(read.studyDay, studyDay)}
-        {/* The repeats the shelf deduped away, given back as a fact. A book read
-            once says nothing extra — only a favourite earns the badge. */}
-        {read.times > 1
-          ? <span className="reading-session__recent-times">{`×${read.times}`}</span>
-          : null}
-      </span>
     </li>
   );
 }
 
-function Recent({ reads, studyDay }) {
-  if (!Array.isArray(reads) || reads.length === 0) return null;
-  const named = reads.filter((r) => r?.title);
-  if (named.length === 0) return null;
+/**
+ * One day's shelf: the label, then that day's books.
+ *
+ * THE DAY IS THE PARTITION. The shelf used to be a flat list deduped across a
+ * whole week, so a story read on three days appeared once, wearing the newest
+ * date and a `x3` that counted the other two days it no longer showed.
+ */
+function RecentDay({ group, studyDay }) {
+  const books = (group?.books ?? []).filter((b) => b?.title);
+  if (books.length === 0) return null;
   return (
-    <section className="reading-session__recent" data-testid="reading-recent" aria-label="Recent stories">
-      <h3 className="reading-session__recent-label">Recent</h3>
-      <ul className="reading-session__recent-list" data-count={named.length}>
-        {named.map((read, index) => (
-          <RecentBook
-            key={`${read.pickId ?? read.contentId ?? 'book'}-${read.at ?? index}`}
-            read={read}
-            studyDay={studyDay}
-          />
+    <section className="reading-session__recent-day-group" data-testid="reading-recent-day">
+      <h4 className="reading-session__recent-day">{recentDayLabel(group.studyDay, studyDay)}</h4>
+      <ul className="reading-session__recent-list" data-count={books.length}>
+        {books.map((read, index) => (
+          <RecentBook key={`${read.contentId ?? read.title ?? 'book'}-${index}`} read={read} />
         ))}
       </ul>
+    </section>
+  );
+}
+
+function Recent({ days, studyDay }) {
+  const groups = (Array.isArray(days) ? days : [])
+    .filter((g) => Array.isArray(g?.books) && g.books.some((b) => b?.title));
+  if (groups.length === 0) return null;
+  return (
+    <section className="reading-session__recent" data-testid="reading-recent" aria-label="Recent stories">
+      <div className="reading-session__recent-days">
+        {groups.map((group) => (
+          <RecentDay key={group.studyDay} group={group} studyDay={studyDay} />
+        ))}
+      </div>
     </section>
   );
 }
@@ -505,7 +522,10 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
             label={summary?.progressLabel}
             className="reading-session__pips"
           />
-          <Recent reads={summary?.recent} studyDay={summary?.studyDay} />
+          <Recent days={summary?.recentDays} studyDay={summary?.studyDay} />
+          {/* J7, and only here: a streak wall is for lingering over, and this
+              is the one screen a child lingers on. */}
+          <StreakWall days={summary?.streak} studyDay={summary?.studyDay} className="reading-session__streak" />
         </div>
       ) : null}
 

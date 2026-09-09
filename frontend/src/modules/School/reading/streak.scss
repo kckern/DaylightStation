@@ -1,0 +1,77 @@
+/**
+ * The streak wall. Seven columns so a row is a week and the columns line up as
+ * weekdays; four rows so it is a month, which is as far back as a child can
+ * still point at a square and remember the day.
+ *
+ * HOST-COLOURED like the pips, from the same custom-property idea: the prompt
+ * screen and any future home each set the square size and the palette, and this
+ * file only decides the shape and the states.
+ *
+ * The three colours are the household's existing vocabulary, not new ones:
+ * green is the accent that means done everywhere else in School, amber is the
+ * pips' own colour and means "started, not finished", and an unfilled square is
+ * the same hollow ring idea the pips use for a story still owed.
+ */
+
+.reading-streak {
+  --streak-cell: 3.2vh;
+  --streak-gap: 0.55vh;
+  --streak-met: #2ec46f;
+  --streak-partial: #ffd479;
+  --streak-empty: rgba(255, 255, 255, 0.09);
+  --streak-ink: #07210f;
+}
+
+.reading-streak__grid {
+  display: grid;
+  grid-template-columns: repeat(7, var(--streak-cell));
+  gap: var(--streak-gap);
+  justify-content: center;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.reading-streak__day {
+  width: var(--streak-cell);
+  height: var(--streak-cell);
+  border-radius: 0.5vh;
+  display: grid;
+  place-items: center;
+  /* Not `1em`: the square sets the type, so the number holds its proportion at
+     every host size rather than tracking an inherited font. */
+  font-size: calc(var(--streak-cell) * 0.5);
+  font-weight: 700;
+  line-height: 1;
+  background: var(--streak-empty);
+  color: rgba(255, 255, 255, 0.75);
+
+  /* MET is the streak. A three-book day and a one-book day on a one-book target
+     are the same green, because the obligation was met on both — a wall that
+     graded volume would teach a child that meeting the target is not enough. */
+  &[data-state='met'] {
+    background: var(--streak-met);
+    color: var(--streak-ink);
+  }
+
+  &[data-state='partial'] {
+    background: var(--streak-partial);
+    color: var(--streak-ink);
+  }
+
+  /* Read, but with no goal on record to judge it against. Coloured, because
+     something happened; not green, because nobody can say it was enough. */
+  &[data-state='unknown-met'] {
+    background: color-mix(in srgb, var(--streak-partial) 45%, transparent);
+    color: rgba(255, 255, 255, 0.9);
+  }
+}
+
+/* TODAY IS WHERE THE EYE LANDS. A ring rather than another fill, so it reads as
+   "you are here" on top of whatever state the day is in, instead of becoming a
+   fourth colour nobody can look up. */
+.reading-streak__day--today {
+  box-shadow: 0 0 0 max(2px, calc(var(--streak-cell) * 0.09)) rgba(255, 255, 255, 0.85);
+}
+
+.reading-streak__count { display: block; }

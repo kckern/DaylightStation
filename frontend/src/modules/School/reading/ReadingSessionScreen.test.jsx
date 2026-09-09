@@ -41,9 +41,14 @@ const SUMMARY = {
   learnerId: 'user_5', displayName: 'User_5', enrolled: true, error: false,
   count: 1, target: 2, progressLabel: '1 of 2 stories', doneToday: false,
   studyDay: '2026-09-02',
-  recent: [
-    { title: 'The Three Little Pigs', contentId: 'plex:620707', studyDay: '2026-09-02', at: '2026-09-03T01:26:42.729Z' },
-    { title: 'Corduroy', contentId: 'plex:1', studyDay: '2026-09-01', at: '2026-09-01T18:00:00Z' },
+  recentDays: [
+    { studyDay: '2026-09-02', books: [{ title: 'The Three Little Pigs', contentId: 'plex:620707', at: ['2026-09-03T01:26:42.729Z'], times: 2 }] },
+    { studyDay: '2026-09-01', books: [{ title: 'Corduroy', contentId: 'plex:1', at: ['2026-09-01T18:00:00Z'], times: 1 }] },
+  ],
+  streak: [
+    { studyDay: '2026-08-31', books: 0, target: 2, state: 'none' },
+    { studyDay: '2026-09-01', books: 1, target: 2, state: 'partial' },
+    { studyDay: '2026-09-02', books: 2, target: 2, state: 'met' },
   ],
   yesterday: [{ title: 'Corduroy', contentId: 'plex:1' }],
 };
@@ -92,11 +97,35 @@ describe('ReadingSessionScreen', () => {
     expect(pips).toHaveAttribute('aria-label', '1 of 2 stories');
     expect(pips.querySelectorAll('.reading-pip')).toHaveLength(2);
     expect(pips.querySelectorAll('.reading-pip--done')).toHaveLength(1);
-    expect(screen.getByTestId('reading-recent')).toHaveTextContent('Recent');
+    // No "Recent" heading any more: the day headings say what this is, and a
+    // label above them was a third word for the same fact. It survives as the
+    // section's accessible name.
+    expect(screen.getByTestId('reading-recent')).toHaveAccessibleName('Recent stories');
     expect(screen.getByTestId('reading-recent')).toHaveTextContent('The Three Little Pigs');
     expect(screen.getByTestId('reading-recent')).toHaveTextContent('Today');
     expect(screen.getByTestId('reading-recent')).toHaveTextContent('Corduroy');
     expect(screen.getByTestId('reading-recent')).toHaveTextContent('Yesterday');
+    // The day is the PARTITION: one group per day, each with its own heading.
+    expect(screen.getAllByTestId('reading-recent-day')).toHaveLength(2);
+    // Repeats are a badge on the cover they happened on, not a count in a caption.
+    expect(screen.getByTestId('reading-recent-times')).toHaveTextContent('2');
+  });
+
+  it('open: the streak wall shows a month of days, coloured by whether the goal was met', async () => {
+    render(<ReadingSessionScreen />);
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+    const wall = await screen.findByTestId('reading-streak');
+    const cells = wall.querySelectorAll('.reading-streak__day');
+    expect(cells).toHaveLength(3);
+    expect(cells[0]).toHaveAttribute('data-state', 'none');
+    expect(cells[1]).toHaveAttribute('data-state', 'partial');
+    expect(cells[2]).toHaveAttribute('data-state', 'met');
+    // The colour is the streak; the number is the volume. A zero day is blank,
+    // not a wall of noughts.
+    expect(cells[0].textContent).toBe('');
+    expect(cells[2].textContent).toBe('2');
+    // Today is where the eye lands.
+    expect(screen.getByTestId('reading-streak-today')).toBe(cells[2]);
   });
 
   it('picking: the cover, the title, a visible countdown and how to change your mind', async () => {
