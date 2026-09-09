@@ -23,16 +23,24 @@ export class GetBookShelf {
   #bookLog;
   #bookRepository;
   #bookLogLauncher;
+  #coverUrlFor;
   #clock;
   #logger;
 
-  constructor({ bookLog, bookRepository, bookLogLauncher, clock = () => new Date(), logger = console } = {}) {
+  /**
+   * `coverUrlFor` turns an ISBN into the address the panel renders art from.
+   * Injected rather than built here because an API path is the API layer's to
+   * name; the default keeps the record's own provider URL, which is what a
+   * composition without the cover resolver should still show.
+   */
+  constructor({ bookLog, bookRepository, bookLogLauncher, coverUrlFor = null, clock = () => new Date(), logger = console } = {}) {
     for (const [name, dep] of Object.entries({ bookLog, bookRepository, bookLogLauncher })) {
       if (!dep) throw new Error(`GetBookShelf requires ${name}`);
     }
     this.#bookLog = bookLog;
     this.#bookRepository = bookRepository;
     this.#bookLogLauncher = bookLogLauncher;
+    this.#coverUrlFor = typeof coverUrlFor === 'function' ? coverUrlFor : null;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -60,7 +68,11 @@ export class GetBookShelf {
         title: book?.title ?? null,
         subtitle: book?.subtitle ?? null,
         authors: book?.authors ?? [],
-        coverUrl: book?.coverUrl ?? null,
+        // Our address when the household serves covers itself, so a book
+        // whose art was found on the fourth rung of the ladder renders exactly
+        // like one whose publisher had it all along. A shelf item with no book
+        // record still gets it: the art ladder needs only the ISBN.
+        coverUrl: this.#coverUrlFor?.(view.bookId) ?? book?.coverUrl ?? null,
         projection: projectReading(reading),
       };
     }));

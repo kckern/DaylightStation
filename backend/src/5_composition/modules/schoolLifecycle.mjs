@@ -258,7 +258,7 @@ export async function createSchoolLifecycle({
   // Books domain's resolver and repository come from `booksApi.mjs`. Null for
   // any of them degrades: the launcher still registers (an enrollment with no
   // obligation is complete on its own), only the shelf use cases are skipped.
-  bookGrants = null, resolveBook = null, bookRepository = null,
+  bookGrants = null, resolveBook = null, bookRepository = null, bookCoverUrlFor = null,
   donow = null, donowSurfaces = null, donowDatastore = null,
   tokenRegistry = null, schoolCalcActionResolver = null, schoolCalcStudies = null,
   // A THUNK returning every `learner_action` the household's trigger sources
@@ -1352,7 +1352,7 @@ export async function createSchoolLifecycle({
   // is simply not mounted (app.mjs guards on `useCases.getBookShelf`).
   const bookShelfUseCases = resolveBook && bookRepository
     ? {
-      getBookShelf: new GetBookShelf({ bookLog: stores.bookLog, bookRepository, bookLogLauncher, clock, logger }),
+      getBookShelf: new GetBookShelf({ bookLog: stores.bookLog, bookRepository, bookLogLauncher, coverUrlFor: bookCoverUrlFor, clock, logger }),
       // The launcher's dayOf: the write use cases judge "not in the future" on
       // the same study day GetBookShelf counts with (review m1).
       openBookShelfItem: new OpenBookShelfItem({ bookLog: stores.bookLog, resolveBook, clock, dayOf: (iso) => bookLogLauncher.dayOf(iso), logger }),
