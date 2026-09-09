@@ -303,7 +303,9 @@ export default function CallApp() {
             lobby, the connecting state and the call all share one silhouette
             and nothing jumps when the state changes. */}
         <section className="call-app__stage" aria-label="Your camera preview">
-          <video ref={localVideoRef} autoPlay muted playsInline className="call-app__video call-app__video--tall" />
+          {/* Mirrored like a mirror, not like a camera: the preview is what the
+              caller expects of their own face. The track sent to the TV is untouched. */}
+          <video ref={localVideoRef} autoPlay muted playsInline className="call-app__video call-app__video--tall" style={{ transform: 'scaleX(-1)' }} />
           <div className="call-app__camera-status">
             {media.status === 'loading' && <p className="call-app__camera-loading">Starting camera and microphone…</p>}
             {media.errors.video && <p className="call-app__camera-error">{mediaKindErrorCopy('video', media.errors.video)}</p>}
