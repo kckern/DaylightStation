@@ -19,6 +19,7 @@ vi.mock('@/modules/Fitness/nav/usePersistentVolume.js', () => ({
 }));
 
 import CycleGameContainer from './CycleGameContainer.jsx';
+import { DEFAULT_WHEEL_CIRCUMFERENCE_M } from '@/modules/Fitness/lib/cycleGame/distanceModel.js';
 
 function makeCtx(overrides = {}) {
   const riders = { cycle_ace: 'user_1', tricycle: 'user_2' };
@@ -99,6 +100,50 @@ describe('CycleGameContainer (smoke)', () => {
       'cycle_game.staged',
       expect.objectContaining({ courseId: 'distance', winCondition: 'distance', riders: ['user_1', 'user_2'] })
     );
+  });
+
+  it('defaults a bike with no wheel_circumference_m instead of racing it at 0 m per rev', () => {
+    // 2026-09-08 race 20260908183719: the Generic Pedaler had no wheel size in
+    // config, so a rider spinning 186 rpm scored 0 m for the whole race.
+    mockCtx = makeCtx({
+      equipment: [
+        { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1 },
+        { id: 'tricycle', name: 'Tricycle', cadence: 7153 } // no wheel size
+      ]
+    });
+    const { getByTestId } = render(<CycleGameContainer />);
+    act(() => {
+      fireEvent.click(getByTestId('course-distance'));
+    });
+    act(() => {
+      fireEvent.click(getByTestId('cycle-game-start'));
+    });
+    expect(logSpy.warn).toHaveBeenCalledWith(
+      'cycle_game.wheel_default',
+      expect.objectContaining({ equipmentId: 'tricycle', userId: 'user_2', wheelCircumferenceM: DEFAULT_WHEEL_CIRCUMFERENCE_M })
+    );
+    // The effective wheel size is part of the race config telemetry so a 0-m
+    // race can be diagnosed from the log store alone.
+    expect(logSpy.info).toHaveBeenCalledWith(
+      'cycle_game.config',
+      expect.objectContaining({
+        riders: expect.arrayContaining([
+          expect.objectContaining({ userId: 'user_1', equipmentId: 'cycle_ace', wheelCircumferenceM: 2.1 }),
+          expect.objectContaining({ userId: 'user_2', equipmentId: 'tricycle', wheelCircumferenceM: DEFAULT_WHEEL_CIRCUMFERENCE_M })
+        ])
+      })
+    );
+  });
+
+  it('does not warn about wheel size when every bike is configured', () => {
+    const { getByTestId } = render(<CycleGameContainer />);
+    act(() => {
+      fireEvent.click(getByTestId('course-distance'));
+    });
+    act(() => {
+      fireEvent.click(getByTestId('cycle-game-start'));
+    });
+    expect(logSpy.warn).not.toHaveBeenCalledWith('cycle_game.wheel_default', expect.anything());
   });
 });
 

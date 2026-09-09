@@ -265,7 +265,7 @@ Each cadence bike in the equipment config carries:
 |---|---|
 | `cadence` | The cadence sensor device id — **or an array of ids** for a bike with more than one sensor on the same wheel (e.g. tricycle `cadence: [7153, 7186]`). Multiple sensors are merged as **one unit**: the fastest *currently-live* sensor wins, so a single flaky sensor's dropouts no longer flatline the bike. |
 | `max_rpm` | Gauge dial scale for that equipment (e.g. tricycle **250**, default 120). Display only — never clamps the counted RPM. |
-| `wheel_circumference_m` | Distance per wheel rotation (a larger wheel covers more ground per pedal stroke — the tricycle uses an enlarged wheel so it can keep pace). |
+| `wheel_circumference_m` | Distance per wheel rotation (a larger wheel covers more ground per pedal stroke — the tricycle uses an enlarged wheel so it can keep pace). This is the pace-calibration knob: pick it so a rider's usual cadence on this equipment covers the same meters per second as on the other bikes. **Missing or 0 ⇒ the default (2.1 m)** applies and the race logs a `cycle_game.wheel_default` warning; it never scores 0 m per rev. The effective value per rider is in the `cycle_game.config` event. |
 | `abuse_max_rpm` | Optional clamp on the RPM that *counts* toward distance, for hand-spinnable equipment (e.g. the ab roller). Absent ⇒ uncapped. |
 
 The HR-zone `distance_multiplier`s (cool/active ×1, warm ×2, hot ×3, fire ×5) live
