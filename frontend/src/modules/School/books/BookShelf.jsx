@@ -6,7 +6,8 @@ import UpdateBook from './UpdateBook.jsx';
 import AddBook from './AddBook.jsx';
 import SaveReceipt from './SaveReceipt.jsx';
 import CompletedBook from './CompletedBook.jsx';
-import { recentFinishes } from './readingHistory.js';
+import { recentOutcomes } from './readingHistory.js';
+import Icon from '../home/icons/Icon.jsx';
 import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
 
 /**
@@ -43,17 +44,40 @@ function LearnerChip({ learner }) {
   const avatarId = learner.avatar?.kind === 'learner' ? learner.avatar.id : learner.id;
   return (
     <div className="school-selfservice-card__learner">
-      <ProfileAvatar id={avatarId} name={name} size={96} />
+      <ProfileAvatar id={avatarId} name={name} size={48} />
       <span>{name}</span>
     </div>
   );
 }
 
+/**
+ * Adding a book is a BOOK on the shelf, not a control beside it.
+ *
+ * It used to be a button in the row's heading wearing the error-retry class,
+ * which put the one thing a child comes to this screen to do in the corner and
+ * in the costume of a recovery action. Now it takes a book's own footprint —
+ * the same 2:3 slot every cover letterboxes into, drawn empty with a plus —
+ * and stands in the row beside whatever is already being read. An empty shelf
+ * is then a shelf with one empty book on it, which is an invitation; the
+ * sentence it replaced ("Ready for your next book") was only an observation.
+ */
 function AddTile({ first, onSelect, disabled = false }) {
   return (
-    <button type="button" className="school-books-tile school-books-tile--add" disabled={disabled} onClick={onSelect}>
-      <span className="school-books-tile__plus" aria-hidden="true">+</span>
-      <span className="school-books-tile__add-label">{first ? 'Add your first book' : 'Add a book'}</span>
+    <button
+      type="button"
+      className="school-books-tile school-books-tile--add"
+      disabled={disabled}
+      onClick={onSelect}
+    >
+      <span className="school-books-tile__art">
+        <span className="school-books-tile__cover school-books-tile__slot" aria-hidden="true">
+          <Icon name="plus" className="school-books-tile__plus" />
+        </span>
+      </span>
+      <span className="school-books-tile__text">
+        <span className="school-books-tile__title">{first ? 'Add your first book' : 'Add a book'}</span>
+        <span className="school-books-tile__caption">Tap to type the number</span>
+      </span>
     </button>
   );
 }
@@ -70,7 +94,9 @@ function Fault({ error, onRetry, needsRefresh = false, busy = false }) {
 
 function Shelf({ shelf, error, actions, receipt, busy, needsRefresh }) {
   const items = (shelf?.items ?? []).filter((item) => ON_SHELF.has(item?.projection?.status ?? 'reading'));
-  const finished = recentFinishes(shelf?.items);
+  // Finished AND set aside: one row for everything the child is done with, the
+  // tile's own mark saying which is which.
+  const done = recentOutcomes(shelf?.items);
   const awaitingShelf = busy || needsRefresh;
   const obligation = shelf?.obligation ?? null;
   const sentence = obligationSentence(obligation);
@@ -81,20 +107,21 @@ function Shelf({ shelf, error, actions, receipt, busy, needsRefresh }) {
       <Fault error={error} onRetry={actions.retry} needsRefresh={needsRefresh} busy={busy} />
       {receipt && <SaveReceipt receipt={receipt} busy={busy} inline onUndo={actions.undoFinish} />}
       <div className="school-books__collections">
-        <div className="school-books__row-heading">
-          <h3>Reading now</h3>
-          <button type="button" className="school-books__retry" disabled={awaitingShelf} onClick={actions.startAdd}>+ Add a book</button>
-        </div>
-        <div className="school-books__grid school-books__row" data-testid="book-shelf-grid">
+        <h3 className="school-books__shelf-title">Reading now</h3>
+        <div className="school-books__row" data-testid="book-shelf-grid">
           {items.map((item) => <ShelfTile key={item.itemId} item={item} onSelect={awaitingShelf ? null : actions.openItem}
             incompatibleMetric={incompatible.has(item.bookId) ? obligation.metric : null} />)}
-          {items.length === 0 && (shelf?.items ?? []).length === 0 && <AddTile first disabled={awaitingShelf} onSelect={actions.startAdd} />}
-          {items.length === 0 && (shelf?.items ?? []).length > 0 && <p className="school-books__empty">Ready for your next book</p>}
+          {/* Last, so it stands beside what is already being read — and alone,
+              which is the whole row, when nothing is. */}
+          <AddTile first={(shelf?.items ?? []).length === 0} disabled={awaitingShelf} onSelect={actions.startAdd} />
         </div>
-        {finished.length > 0 && <section className="school-books__recent" aria-label="Recently finished">
-          <h3>Recently finished</h3>
+        {done.length > 0 && <section className="school-books__recent" aria-label="Finished and set aside">
+          <h3 className="school-books__shelf-title">Finished and set aside</h3>
+          {/* This row deliberately runs off the panel edge. It is history: it
+              has no end a child needs to see, and a row that stopped short
+              implied there was nothing more. It scrolls sideways instead. */}
           <div className="school-books__row" data-testid="recently-finished-row">
-            {finished.slice(0, 12).map(item => <ShelfTile key={item.itemId} item={item} onSelect={awaitingShelf ? null : actions.openItem} />)}
+            {done.slice(0, 30).map(item => <ShelfTile key={item.itemId} item={item} onSelect={awaitingShelf ? null : actions.openItem} />)}
           </div>
         </section>}
       </div>

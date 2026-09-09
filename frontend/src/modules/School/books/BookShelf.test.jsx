@@ -125,6 +125,7 @@ describe('BookShelf', () => {
         expect.stringContaining('Hatchet'),
         expect.stringContaining('Frog and Toad'),
         expect.stringContaining('Not yet opened'),
+        expect.stringContaining('Add a book'),
       ]);
       expect(within(grid).queryByText('Finished in July')).toBeNull();
     });
@@ -204,10 +205,44 @@ describe('BookShelf', () => {
       expect(a.noteActivity).toHaveBeenCalledTimes(2);
     });
 
-    it('the grid, not the body, is the scroll container', () => {
+    it('the done row holds set-aside books beside finished ones', () => {
+      arm({ shelf: { learnerId: 'kid', items: [DONE_JULY, ASIDE_JULY, HATCHET], obligation: null } });
+      mount();
+      const done = screen.getByTestId('recently-finished-row');
+      expect(within(done).getAllByText(/Jul|Jun/).length).toBeGreaterThan(1);
+      expect(done.querySelectorAll('.school-books-tile__mark.is-set-aside')).toHaveLength(1);
+      expect(done.querySelectorAll('.school-books-tile__mark.is-finished')).toHaveLength(1);
+    });
+
+    it('the shelf row is a row and nothing else — one layout system per element', () => {
       arm();
       mount();
-      expect(screen.getByTestId('book-shelf-grid')).toHaveClass('school-books__grid');
+      const row = screen.getByTestId('book-shelf-grid');
+      expect(row).toHaveClass('school-books__row');
+      expect(row).not.toHaveClass('school-books__grid');
+    });
+
+    it('the add card takes a book\'s footprint in the row, not a control beside it', () => {
+      arm();
+      const { container } = mount();
+      const row = screen.getByTestId('book-shelf-grid');
+      const add = within(row).getByRole('button', { name: /Add a book/ });
+      // The same card, the same 2:3 art slot: it stands ON the shelf.
+      expect(add).toHaveClass('school-books-tile');
+      expect(add.querySelector('.school-books-tile__art .school-books-tile__cover')).not.toBeNull();
+      expect(add).toHaveTextContent('Tap to type the number');
+      // And nothing outside the row offers it any more.
+      expect(container.querySelectorAll('button')).toHaveLength(
+        container.querySelectorAll('.school-books-tile, .school-books__done, .school-books__history-link').length,
+      );
+    });
+
+    it('offers the add card even when the only books are finished ones', () => {
+      arm({ shelf: { learnerId: 'kid', items: [DONE_JULY], obligation: null } });
+      mount();
+      const row = screen.getByTestId('book-shelf-grid');
+      expect(within(row).getByRole('button', { name: /Add a book/ })).toBeInTheDocument();
+      expect(within(row).queryByText('Ready for your next book')).toBeNull();
     });
   });
 
@@ -367,7 +402,7 @@ describe('BookShelf', () => {
     it('a finished tile shows its day, not a bar', () => {
       history([DONE_JULY]);
       mount();
-      expect(screen.getByText('Finished Jul 14')).toBeInTheDocument();
+      expect(screen.getByText('Jul 14')).toBeInTheDocument();
       expect(screen.queryByRole('progressbar')).toBeNull();
     });
 
