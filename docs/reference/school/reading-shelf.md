@@ -35,13 +35,48 @@ The first successful load opens the ISBN pad directly when the learner has no
 shelf records, or when the panel door asked for it. Back returns to the shelf
 and later reads do not reopen the pad. A learner with only finished or set-aside records gets the shelf.
 
-Reading now contains reading/unread items; Recently finished contains up to
-12 finished items ordered by effective finish date, then recording time when
-available. Both collections use compact horizontal rows, with Add a book above
-the active row. See all history opens finished and set-aside books by month.
-Finished tiles in either place open completed details. Read again creates a
-new read, including on the same study day. If that ISBN already has an active
-or unread item, it opens that item instead.
+Two shelves, both horizontal rows of the same card. **Reading now** holds the
+reading and unread items, with the **add card last** — a book's own footprint,
+the same 2:3 slot a cover letterboxes into, drawn empty with a plus. It is
+always there, so an empty shelf offers a card rather than a sentence.
+**Finished and set aside** holds up to 30 done readings, finished and set-aside
+alike, ordered by effective outcome date and then by recording time.
+
+A row **runs off the panel edge** and scrolls sideways. That is the point: the
+shelf spans the panel and the text column is drawn with padding, so a row
+starts under its heading and is cut by the panel's right edge. A history that
+ended in whitespace said there was nothing more to see.
+
+A done card carries its outcome as a **mark on the art** — a green check for
+finished, an amber bookmark for set aside — so the two are told apart before a
+word is read. A finished card's caption is therefore its day alone; a
+set-aside card keeps its words.
+
+A card sizes to its own text: nothing fixes a height, so a two-line title is
+never cut. The 2:3 box belongs to the art wrapper rather than the image, since
+`aspect-ratio` on a replaced element is negotiated against its intrinsic size.
+
+See all history opens finished and set-aside books grouped by month in a
+vertically scrolling list; the month list is the scroll container and the
+header stays put. Finished tiles in either place open completed details. Read
+again creates a new read, including on the same study day. If that ISBN
+already has an active or unread item, it opens that item instead.
+
+## Covers
+
+Every surface renders a cover from `/api/v1/books/{isbn13}/cover` — the
+household's own address, never a provider's. Behind it is the cascade in
+[`BookCoverArt`](../../../backend/src/2_domains/books/BookCoverArt.mjs): a
+ladder of catalogues ordered so the best art wins rather than the first, with a
+Google image search as the last rung, and every candidate's BYTES judged rather
+than trusted. Providers answer `200` for books they have no art for, so
+"it downloaded" is not "it is a cover".
+
+Art is kept on disk under the household's `books/covers/`, so a cover host
+being down cannot blank a shelf a child is standing in front of. A book nobody
+has art for is recorded as a miss and left alone for two weeks; the panel draws
+its own placeholder, which is a calm neutral box the same size as a cover, not
+a warning.
 
 ## Add, update, and finish
 
