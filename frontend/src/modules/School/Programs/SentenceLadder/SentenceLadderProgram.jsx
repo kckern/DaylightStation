@@ -353,6 +353,12 @@ export default function SentenceLadderProgram({
           </div>
         )}
 
+        {/* While the ladder is still filling up, a day is topped up with extra
+            passes over its own new sentences. Say so: the same sentence
+            arriving at three rungs in one sitting reads as a bug without it. */}
+        {tab === 'study' && !allDone && entry?.practice && (
+          <p className="lang-program__practice" role="status">Extra practice — this one doesn’t move up yet</p>
+        )}
         {tab === 'study' && !allDone && entry && entry.rung === 'repetition' && (
           <RepetitionRung
             key={`${entry.rung}-${entry.seq}`}

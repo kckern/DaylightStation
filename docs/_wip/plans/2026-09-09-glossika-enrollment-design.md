@@ -1,7 +1,10 @@
 # Enrolling Two Learners in the Sentence Ladder — Design
 
-> **Status:** designed 2026-09-09. Content restored and verified live the same
-> day; code work not yet started.
+> **Status:** designed and BUILT 2026-09-09. Content restored and verified
+> live; the in-page IME, the cold-start fill and both enrollment records are
+> committed on `school/glossika-enrollment`. Not yet deployed, and not yet
+> exercised on the Portal with the physical keyboard — §6 items 4-8 are
+> outstanding.
 > Parent docs: [`2026-07-21-glossika-program-design.md`](./2026-07-21-glossika-program-design.md)
 > (the ladder itself), [`2026-08-23-glossika-school-integration-design.md`](./2026-08-23-glossika-school-integration-design.md)
 > (agenda, access codes, day-close credit).
@@ -179,6 +182,10 @@ activity. One line to add later.
 `import-db` carries no `bands` block, so scope-by-band fails validation.
 Integer ranges work and neither learner needs one; both start at sentence 1,
 where the source course begins.
+
+**Written 2026-09-09.** Both records are in place and validated through
+`validateProgramEnrollment`; existing course and program entries were preserved
+byte-for-byte. Originals backed up before the edit.
 
 **Both start clean.** Each carried a `2026-07-22` log of five repetition
 attempts and a `progress.yml` from the July build session. Left in place,
