@@ -341,7 +341,7 @@ export class SentenceLadderService {
 
   #recordAttempt({
     userId, corpusId, seq, rung, given = null, source = null, capabilities = {},
-    allowRecording = false, skipDueCheck = false,
+    allowRecording = false, skipDueCheck = false, practice = false,
   }) {
     this.#requireUser(userId);
     const corpus = this.#requireCorpus(corpusId);
@@ -359,7 +359,9 @@ export class SentenceLadderService {
     if (!sentence) throw new EntityNotFoundError('sentence', `${corpusId}#${seq}`);
 
     const progress = this.#readProgress(userId, corpusId);
-    if (!skipDueCheck) this.#assertOutstanding({ userId, corpus, progress, seq, rung, capabilities });
+    const due = skipDueCheck
+      ? null
+      : this.#assertOutstanding({ userId, corpus, progress, seq, rung, capabilities });
 
     const at = new Date(this.#now()).toISOString();
 
@@ -370,6 +372,13 @@ export class SentenceLadderService {
       rung,
       attributedTo: userId,
     };
+    // Whether this is a warm-up practice pass is the QUEUE's answer, not the
+    // client's: the entry the attempt matched already says so. A practice pass
+    // is recorded in full but clears nothing, so the sentence still climbs one
+    // rung per day for credit. `saveRecording` runs its own due check and then
+    // skips this one, so it passes the same answer in explicitly rather than
+    // losing the flag on every spoken practice pass.
+    if (practice === true || due?.practice === true) event.practice = true;
     if (source) event.source = source;
 
     if (rungDef.response?.modality === 'text') {
@@ -429,6 +438,9 @@ export class SentenceLadderService {
         field: 'attempt', expected: queue.filter((entry) => !entry.done).map(({ seq: dueSeq, rung: dueRung }) => ({ seq: dueSeq, rung: dueRung })),
       });
     }
+    // Returned so the caller can read `practice` off it rather than deriving
+    // the same answer a second time from the same queue.
+    return due;
   }
 
   /**
@@ -444,13 +456,13 @@ export class SentenceLadderService {
       throw new ValidationError('recording is empty', { field: 'audio' });
     }
     const progress = this.#readProgress(userId, corpusId);
-    this.#assertOutstanding({ userId, corpus, progress, seq, rung: 'recording', capabilities });
+    const due = this.#assertOutstanding({ userId, corpus, progress, seq, rung: 'recording', capabilities });
     const language = corpus.languages.target;
     const written = this.#ds.writeRecording(corpusId, userId, seq, language, buffer, ext);
     if (!written) throw new ValidationError('could not store recording', { field: 'audio' });
     return this.#recordAttempt({
       userId, corpusId, seq, rung: 'recording', capabilities,
-      allowRecording: true, skipDueCheck: true,
+      allowRecording: true, skipDueCheck: true, practice: due?.practice === true,
     });
   }
 

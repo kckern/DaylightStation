@@ -13,12 +13,42 @@ import { chainFor } from './ladder.mjs';
  * A day's work is:
  *   1. up to `dailyLimit` brand-new sentences, entering at the first rung; plus
  *   2. every sentence that cleared rung k on an EARLIER day and has not yet
- *      cleared rung k+1.
+ *      cleared rung k+1; plus
+ *   3. PRACTICE, only while (2) cannot yet fill the day — see below.
  *
  * The "earlier day" test is what enforces one-rung-per-day. Without it a
  * sentence drilled at `repetition` this morning would immediately reappear as
  * `dictation` this afternoon, collapsing the whole ladder into a single
  * sitting and destroying the spacing that is the entire point.
+ *
+ * ## The cold start
+ *
+ * On day one nothing has cleared anything, so (2) is empty and the day is a
+ * quarter of its intended size; it only reaches full volume on day four. The
+ * first sitting being the emptiest is the wrong way round for a habit that has
+ * to survive its own beginning.
+ *
+ * So a short day is topped up by walking TODAY'S OWN new set up the remaining
+ * rungs as practice:
+ *
+ *              CREDITED                   PRACTICE
+ *   Day 1  s1@r1                      s1@r2 r3 r4
+ *   Day 2  s2@r1 s1@r2                s2@r2 r3
+ *   Day 3  s3@r1 s2@r2 s1@r3          s3@r2
+ *   Day 4  s4@r1 s3@r2 s2@r3 s1@r4        --      <- steady
+ *
+ * It turns itself off: there is no warm-up flag, no day-number test and no
+ * window to configure, because once credited work fills the day there is
+ * nothing left to extend. A learner who skips a week and drains the pipeline
+ * gets it back automatically, which is right rather than a bug.
+ *
+ * PRACTICE NEVER ADVANCES A SENTENCE. Its events are written with
+ * `practice: true` and `clearedIndex` ignores them when deciding what cleared,
+ * so a sentence still climbs exactly one rung per day for credit and the log
+ * means the same thing on day one as on day four hundred. They ARE written,
+ * though: this queue is derived from the log and re-fetched after every save,
+ * so an attempt that recorded nothing would leave the queue unchanged and pin
+ * the learner on one item forever.
  */
 
 /**
@@ -43,19 +73,27 @@ const UNDATED = 0;
 function clearedIndex(log) {
   const byRung = new Map();
   const everSeen = new Set();
+  const practiced = new Set();
   for (const event of log) {
     if (!event || event.seq == null || !event.rung) continue;
     const seq = Number(event.seq);
     if (!Number.isFinite(seq)) continue;
     const rawDay = Number(event.day);
     const day = Number.isFinite(rawDay) ? rawDay : UNDATED;
+    // A practice pass is still evidence the sentence was touched — it must
+    // never be re-admitted as brand-new material — but it clears nothing, so
+    // it stays out of the rung index that drives graduation.
     everSeen.add(seq);
+    if (event.practice === true) {
+      practiced.add(`${event.rung}:${seq}:${day}`);
+      continue;
+    }
     if (!byRung.has(event.rung)) byRung.set(event.rung, new Map());
     const seqs = byRung.get(event.rung);
     const prior = seqs.get(seq);
     if (prior === undefined || day < prior) seqs.set(seq, day);
   }
-  return { byRung, everSeen };
+  return { byRung, everSeen, practiced };
 }
 
 /**
@@ -90,7 +128,7 @@ export function buildDayQueue({
   rungChain = null,
 }) {
   const canDrill = (seq) => playable === null || playable.has(seq);
-  const { byRung: cleared, everSeen } = clearedIndex(log);
+  const { byRung: cleared, everSeen, practiced } = clearedIndex(log);
   const availableChain = chainFor(capabilities, languages);
   const chain = Array.isArray(rungChain)
     ? rungChain.filter((rung) => availableChain.includes(rung))
@@ -156,6 +194,33 @@ export function buildDayQueue({
     }
     due.sort((a, b) => a.seq - b.seq);
     for (const item of due) queue.push({ seq: item.seq, rung: to, done: item.done });
+  }
+
+  // --- 3. Warm-up fill -----------------------------------------------------
+  // A full day is `dailyLimit` sentences at every rung, which is what the
+  // enrollment's lessonSize already means — so the target needs no parameter of
+  // its own. Short of it, today's own new set climbs the remaining rungs as
+  // practice. Once graduates fill the day this loop adds nothing and stops
+  // mattering, with no flag to turn off.
+  const target = dailyLimit * chain.length;
+  const todaysSet = [...enteredToday, ...admittedSeqs].sort((a, b) => a - b);
+  if (queue.length < target && todaysSet.length > 0) {
+    const held = new Set(queue.map((entry) => `${entry.rung}:${entry.seq}`));
+    for (const rung of chain.slice(1)) {
+      if (queue.length >= target) break;
+      for (const seq of todaysSet) {
+        if (queue.length >= target) break;
+        const key = `${rung}:${seq}`;
+        if (held.has(key)) continue;
+        held.add(key);
+        queue.push({
+          seq,
+          rung,
+          done: practiced.has(`${rung}:${seq}:${day}`),
+          practice: true,
+        });
+      }
+    }
   }
 
   return queue;

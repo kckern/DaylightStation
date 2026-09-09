@@ -9,6 +9,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { LanguageStudyService } from './LanguageStudyService.mjs';
 import { GuestForbiddenError } from '#domains/school/errors.mjs';
+import { EventBusSchoolRealtimeAdapter } from '#adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
 const CORPUS = {
@@ -88,6 +89,28 @@ function makeDue(ds, rung, seq = 1) {
   ds.writeProgress('kckern', 'test-korean', {
     corpus: 'test-korean', day: index + 1, daily_limit: 5, last_activity: null,
   });
+}
+
+/**
+ * Work a day to the end, whatever it contains.
+ *
+ * A day is no longer just its credited entries: while the ladder is still
+ * filling up, `buildDayQueue` tops the day up with practice passes over its own
+ * new set (see dayQueue.mjs, "The cold start"). Anything asserting that a day is
+ * FINISHED has to finish all of it.
+ */
+function finishDay(svc, capabilities = EQUIPPED) {
+  for (let guard = 0; guard < 200; guard += 1) {
+    const { queue } = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities });
+    const next = queue.find((entry) => !entry.done);
+    if (!next) return;
+    const args = { userId: 'kckern', corpusId: 'test-korean', seq: next.seq, capabilities };
+    if (next.rung === 'recording') svc.saveRecording({ ...args, buffer: Buffer.from('audio') });
+    else if (next.rung === 'dictation' || next.rung === 'interpretation') {
+      svc.logAttempt({ ...args, rung: next.rung, given: 'x' });
+    } else svc.logAttempt({ ...args, rung: next.rung });
+  }
+  throw new Error('finishDay did not converge');
 }
 
 describe('courses', () => {
@@ -307,8 +330,15 @@ describe('saveRecording', () => {
   it('does not write audio for a recording that is not currently due', () => {
     const ds = new FakeDatastore();
     const svc = makeService(ds);
+    makeDue(ds, 'recording', 2);
+    // A narrow day, so it is already full and seq 3 is not in it at ANY rung.
+    // On a wide-open day one the warm-up fill offers every admitted sentence at
+    // every rung, so "not due" has to mean a sentence the day never reached.
+    ds.writeProgress('kckern', 'test-korean', {
+      corpus: 'test-korean', day: 3, daily_limit: 1, last_activity: null,
+    });
     expect(() => svc.saveRecording({
-      userId: 'kckern', corpusId: 'test-korean', seq: 1,
+      userId: 'kckern', corpusId: 'test-korean', seq: 3,
       buffer: Buffer.from('audio'), capabilities: EQUIPPED,
     })).toThrow(/outstanding/);
     expect(ds.written).toEqual([]);
@@ -323,9 +353,14 @@ describe('School lifecycle completion emission', () => {
       programId: 'sentence-ladder', corpusId: 'test-korean', lessonSize: 4,
       rungs: ['repetition', 'dictation', 'recording', 'interpretation'],
     };
+    // The service takes a REALTIME GATEWAY, not a bus. This test used to pass a
+    // bare `eventBus`, which the constructor ignores — so its publish assertion
+    // could never fire and day-close went unverified. Wiring the real adapter
+    // keeps the assertion about the published topic and payload while actually
+    // reaching the service.
     const svc = makeService(ds, AT, {
       readProgramEnrollment: () => enrollment,
-      eventBus,
+      realtime: new EventBusSchoolRealtimeAdapter({ eventBus }),
     });
 
     ds.writeProgress('kckern', 'test-korean', {
@@ -397,9 +432,7 @@ describe('rollDay', () => {
     const ds = new FakeDatastore();
     const svc = makeService(ds);
     svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 3 });
-    for (const seq of [1, 2, 3]) {
-      svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq, rung: 'repetition' });
-    }
+    finishDay(svc);
     const result = svc.rollDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
     expect(result.rolled).toBe(false);
     expect(result.reason).toBe('before-boundary');
@@ -410,9 +443,7 @@ describe('rollDay', () => {
     let clock = AT;
     const svc = makeService(ds, () => clock);
     svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 3 });
-    for (const seq of [1, 2, 3]) {
-      svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq, rung: 'repetition' });
-    }
+    finishDay(svc);
     clock = Date.parse('2026-07-22T10:00:00Z');
     const result = svc.rollDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
     expect(result).toEqual({ rolled: true, day: 2, reason: 'earned' });
@@ -423,13 +454,16 @@ describe('rollDay', () => {
     let clock = AT;
     const svc = makeService(ds, () => clock);
     svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 1 });
-    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition' });
+    finishDay(svc);
     clock = Date.parse('2026-07-22T10:00:00Z');
     svc.rollDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
 
     const day = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
     expect(day.day).toBe(2);
-    expect(day.queue.find((e) => e.seq === 1).rung).toBe('dictation');
+    // Seq 1 was PRACTISED at dictation, recording and interpretation on day one.
+    // None of that counts, so it is owed exactly one rung today.
+    const credited = day.queue.filter((e) => !e.practice && e.seq === 1);
+    expect(credited.map((e) => e.rung)).toEqual(['dictation']);
   });
 });
 
