@@ -1,0 +1,161 @@
+// frontend/src/modules/School/reading/surround/ReadingCredit.scss
+//
+// The reading rail, cut for the `right` region at 960x540 (the living room) and
+// holding at 1280 (the office).
+//
+// IT DRESSES IN THE FRAME'S CLOTHES, NOT THE READING SCREEN'S. The prompt this
+// rail continues is charcoal-blue; the surround rail's region re-maps `--ink`,
+// `--ink-soft` and `--programme-edge` over an oxblood ground, and a module that
+// fought that would be a School-coloured rectangle pasted into somebody else's
+// frame. So every colour here is read from the region, exactly as
+// `LessonScore` and the concert-hall modules read it — the ONE exception being
+// the pips, which keep their amber because their whole job is to be the same
+// object the child saw on the shelf and will see again at the close.
+//
+// SIZED FOR A SOFA. The name is the one string that must carry across a room;
+// everything else sits at the frame's published `--label-floor`, which is an
+// ANGULAR measurement (see `Surround/fit.js`) and so holds its apparent size
+// across the 960 living room and the 1280 office alike.
+//
+// The standing law of the frame applies: nothing is ever cut. What will not fit
+// is not shown — hence the clamps below end in ellipsis on a bounded box rather
+// than shrinking type past its floor.
+
+@use "../../../Surround/tokens" as *;
+
+.reading-credit {
+  height: 100%;
+  box-sizing: border-box;
+  /* So the name below can size against THE RAIL IT WAS GIVEN (`cqw`) rather
+     than the viewport. Without this the container query silently resolves to
+     its clamp ceiling, and a 24px name that is right at 1920 overflows the
+     173px rail the living room actually has. `inline-size`, not `size`: only
+     the width is queried, and `size` would require a definite height. */
+  container-type: inline-size;
+  padding: 1rem 0.9rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  /* ONE PLAQUE, CENTRED — not three things pinned to the extremes.
+     `space-between` was the first instinct and it is wrong here: the rail is as
+     tall as the screen (1080px in the office), so it flung the name to the top
+     edge and stranded the pips in the bottom corner with a third of a metre of
+     empty oxblood between them. Three groups that far apart stop reading as one
+     statement about one child. Centred, with air that is bounded rather than
+     distributed, the column reads as a single plaque at any rail height. */
+  justify-content: center;
+  align-items: center;
+  gap: clamp(0.7rem, 4cqw, 1.4rem);
+  overflow: hidden;
+  text-align: center;
+  font-family: var(--surround-annotation, "Roboto Condensed", ui-sans-serif, system-ui, sans-serif);
+  color: var(--ink, #e9dfc8);
+}
+
+/* ── Who ────────────────────────────────────────────────────────────────── */
+
+.reading-credit__who {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.reading-credit__avatar {
+  width: clamp(3rem, 42%, 5.5rem);
+  aspect-ratio: 1;
+  flex: none;
+}
+
+/* `ProfileAvatar` is the household's own round avatar, shared with the reading
+   session screen and the lesson placard. It brings `identity.scss`; only the
+   box it sits in is ours. */
+.reading-credit__avatar .piano-avatar {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ink, #e9dfc8) 55%, transparent);
+}
+
+.reading-credit__name {
+  margin: 0;
+  width: 100%;
+  /* The one string read from the sofa. Above the label register on purpose. */
+  font-size: clamp(1rem, 13cqw, 1.5rem);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  /* One line, ellipsized — a wrapped name in a narrow rail reads as two people. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reading-credit__subject {
+  margin: 0;
+  font-size: var(--label-floor, 11.52px);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft, #a89a80);
+}
+
+/* ── What ───────────────────────────────────────────────────────────────── */
+
+.reading-credit__book {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  min-height: 0;
+  /* The cover may give up height before anything else does: the rail must keep
+     the face and the pips at every rail height, and the book is the one element
+     the child can also see by simply looking at the screen. */
+  flex: 0 1 auto;
+}
+
+.reading-credit__cover {
+  max-width: 78%;
+  /* Capped against the RAIL's width, not its height: an unbounded cover in a
+     screen-tall rail grows until it is the only thing on it. */
+  max-height: clamp(6rem, 120cqw, 18rem);
+  /* `contain`, unlike the shelf's `cover`: there is one book here and its whole
+     artwork is the subject, so it is framed like the pick screen's cover rather
+     than cropped like a spine on a shelf. */
+  object-fit: contain;
+  border-radius: 0.2rem;
+  box-shadow: 0 0.4rem 1rem rgba(0, 0, 0, 0.55);
+}
+
+/* Only when there is no cover to draw instead. */
+.reading-credit__title {
+  margin: 0;
+  font-size: var(--label-floor, 11.52px);
+  line-height: 1.2;
+  color: var(--ink-soft, #a89a80);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ── How far ────────────────────────────────────────────────────────────── */
+
+.reading-credit__progress {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  flex: none;
+}
+
+/* The pips keep the shelf's amber deliberately — see the header. Sized in rem
+   here, not vh: this is a rail whose width the definition sets, and a pip that
+   tracked the viewport would swell out of it on a tall screen. */
+.reading-credit__pips {
+  --pip-size: 0.85rem;
+  --pip-gap: 0.5rem;
+  --pip-ink: #ffd479;
+  --pip-label-size: var(--label-floor, 11.52px);
+  flex-wrap: wrap;
+  justify-content: center;
+}

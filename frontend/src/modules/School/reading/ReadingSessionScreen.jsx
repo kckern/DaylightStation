@@ -26,14 +26,27 @@
  *   `clear`      → the Player is done for ANY reason, which is not the same as
  *                  the story having finished, and must never be read as one.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import PropTypes from 'prop-types';
 import Player from '../../Player/Player.jsx';
+import SurroundFrame from '../../Surround/SurroundFrame.jsx';
 import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
 import { useScreenOverlay } from '../../../screen-framework/overlays/ScreenOverlayProvider.jsx';
 import { playScanCeremonyTone } from '../selfService/scanCeremonySound.js';
 import { useReadingSession, DEFAULT_CONFIRM_MS } from './useReadingSession.js';
 import { readingLog } from './readingLog.js';
 import { bookCover } from './bookCovers.js';
+import ReadingPips from './ReadingPips.jsx';
+import { useMediaClockState } from '../../../lib/Player/useMediaClock.js';
+// SIDE-EFFECT IMPORT, AND IT IS LOAD-BEARING. `SurroundHost` is what imports
+// `Surround/builtins.js`; `SurroundFrame` imports no registrations at all, so a
+// direct mount must bring its own or every region resolves null and warns
+// `surround.module.missing`. `Surround/builtins.js` is deliberately NOT imported
+// — the definition below names only the reading module, and pulling the
+// concert-hall chrome into a school bundle for nothing is the dependency this
+// feature keeps out.
+import './surround/registerReadingSurround.js';
+import getLogger from '../../../lib/logging/Logger.js';
 import './ReadingSessionScreen.scss';
 
 /**
@@ -51,6 +64,124 @@ import './ReadingSessionScreen.scss';
 function cueTone(tone) {
   playScanCeremonyTone(tone);
 }
+
+/**
+ * The reading session's surround definition, INLINE. There is no content
+ * sidecar to resolve it from: a reading session's chrome comes from its
+ * SESSION — who scanned in, what they owe today — which is why this is a direct
+ * `SurroundFrame` mount and not a `SurroundHost` one. See
+ * `surround/registerReadingSurround.js` for the full argument.
+ *
+ * A LEFT RAIL, always up. `side` and `width` are read off the first `right`
+ * entry and belong to the rail as a whole (`SurroundFrame.jsx`). Left because
+ * this is attribution — the thing you check first, and the side a reader's eye
+ * starts on. Always up because the rail's whole job is to keep saying, for the
+ * length of the story, that this one counts; a banner that fades is a banner
+ * that was decoration.
+ */
+const READING_SURROUND_DEFINITION = Object.freeze({
+  regions: { right: { module: 'reading-credit', side: 'left', width: '18%' } },
+});
+
+/**
+ * The smallest thing that can carry live state across the overlay boundary.
+ *
+ * `showOverlay` captures props ONCE and never hands them back, so the rail
+ * cannot learn a new progress count through props — and re-calling
+ * `showOverlay` to deliver one would remount the Player and restart the story.
+ * Deliberately not a context either: the overlay renders outside this
+ * component's tree.
+ *
+ * `set` always notifies — the widget only calls it with a freshly derived
+ * snapshot, and an equality check here would duplicate the `useMemo` that
+ * produced it. Copied in shape from `MediaLessonScreen`'s `createLessonStore`,
+ * which solved this exact problem first.
+ */
+function createReadingStore(initial) {
+  let snapshot = initial;
+  const subscribers = new Set();
+  return {
+    get: () => snapshot,
+    set: (next) => { snapshot = next; subscribers.forEach((fn) => fn()); },
+    subscribe: (fn) => { subscribers.add(fn); return () => subscribers.delete(fn); },
+  };
+}
+
+/** What the rail knows before the widget has published anything. */
+const EMPTY_READING = Object.freeze({
+  learnerId: null, learnerName: null, subject: null,
+  title: null, image: null, contentId: null,
+  count: null, target: null, progressLabel: null,
+});
+
+/**
+ * What sits in the overlay slot: the surround frame, and the Player inside it.
+ *
+ * Every prop is STABLE for the life of the story — they are captured once by
+ * `showOverlay` and never handed back. Everything that moves arrives through
+ * `store`.
+ *
+ * TWO OBLIGATIONS A DIRECT MOUNT INHERITS, both supplied by `SurroundStage`
+ * under the host and by nobody here:
+ *
+ *   1. THE CLOCK. `SurroundFrame` samples nothing; it takes position/duration/
+ *      playing/seeking as props. So this runs `useMediaClockState` itself.
+ *   2. THE REGISTRATIONS — see the side-effect import at the top of this file.
+ *
+ * @param {{get: Function, subscribe: Function}} props.store live session state.
+ * @param {object} props.play the Player's `play` object — ONE object, built once
+ *   per story. An inline literal here is the identity-churn shape that once
+ *   opened 495 Plex transcode sessions.
+ */
+export function ReadingStage({ store, play, getMediaEl, onMediaRef, onPlaybackCompleted, clear, logger = null }) {
+  const reading = useSyncExternalStore(store.subscribe, store.get);
+  const contentId = play?.contentId ?? null;
+  const log = useMemo(
+    () => logger ?? getLogger().child({ app: 'school', component: 'reading-stage' }),
+    [logger],
+  );
+
+  const { position, duration, playing, seeking } = useMediaClockState({
+    getMediaEl, contentId, logger: log,
+  });
+
+  // Memoized on the moving parts only, so a 10 Hz clock tick never churns the
+  // object the module memoizes against.
+  const data = useMemo(
+    () => ({ id: 'reading-session', definition: READING_SURROUND_DEFINITION, reading }),
+    [reading],
+  );
+
+  return (
+    <SurroundFrame
+      active
+      data={data}
+      contentId={contentId}
+      position={position}
+      duration={duration}
+      playing={playing}
+      seeking={seeking}
+      logger={log}
+    >
+      <Player
+        play={play}
+        onMediaRef={onMediaRef}
+        onPlaybackCompleted={onPlaybackCompleted}
+        clear={clear}
+      />
+    </SurroundFrame>
+  );
+}
+
+ReadingStage.propTypes = {
+  store: PropTypes.object.isRequired,
+  play: PropTypes.object.isRequired,
+  getMediaEl: PropTypes.func.isRequired,
+  onMediaRef: PropTypes.func.isRequired,
+  onPlaybackCompleted: PropTypes.func.isRequired,
+  clear: PropTypes.func.isRequired,
+  logger: PropTypes.object,
+};
 
 function recentDayLabel(studyDay, currentStudyDay) {
   if (!studyDay) return '';
@@ -104,49 +235,6 @@ function RecentBook({ read, studyDay }) {
           : null}
       </span>
     </li>
-  );
-}
-
-/**
- * The obligation, as something you can COUNT rather than read.
- *
- * "1 of 2 stories" is a sentence, and the child it is aimed at cannot read a
- * sentence. One pip per story owed, filled as each is finished, says the same
- * thing in the one notation a four-year-old already has — and says it from
- * across a room, which the text never did either.
- *
- * The label survives as the accessible name, so a screen reader and a passing
- * adult still get the words; it is simply no longer the thing on screen.
- *
- * Falls back to the plain label whenever the numbers cannot carry it: an
- * unreadable obligation (`target` null), or a target so large that pips would
- * become a smear of dots nobody can count at a glance.
- */
-const MAX_PIPS = 8;
-
-function Progress({ count, target, label }) {
-  const owed = Number.isFinite(target) ? target : null;
-  const done = Number.isFinite(count) ? count : 0;
-  if (owed === null || owed < 1 || owed > MAX_PIPS) {
-    return label ? <p className="reading-session__count" data-testid="reading-count">{label}</p> : null;
-  }
-  return (
-    <div
-      className="reading-session__pips"
-      data-testid="reading-count"
-      role="img"
-      aria-label={label || `${done} of ${owed} stories`}
-    >
-      {Array.from({ length: owed }, (_, i) => (
-        <span
-          key={i}
-          className={`reading-session__pip${i < done ? ' reading-session__pip--done' : ''}`}
-        />
-      ))}
-      {/* Past the target is worth seeing: a child who read a third story on a
-          two-story day has done something, and a row of full pips hides it. */}
-      {done > owed ? <span className="reading-session__pip-extra">{`+${done - owed}`}</span> : null}
-    </div>
   );
 }
 
@@ -222,6 +310,13 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
     readingLog.playback('media-attached', { tag: el.tagName?.toLowerCase?.() ?? null });
   }, [detachMedia]);
 
+  // Live state for the rail, and the pick's own view of it. `readingSnapshotRef`
+  // is what `onPlay` can see at commit time — `onPlay` is a stable callback and
+  // must not close over session state that moves.
+  const storeRef = useRef(null);
+  if (storeRef.current === null) storeRef.current = createReadingStore(EMPTY_READING);
+  const readingSnapshotRef = useRef(EMPTY_READING);
+
   const onPlay = useCallback((committed) => {
     // Dismiss first, and claim `high` priority: `showOverlay` REFUSES to
     // replace a mounted fullscreen overlay at default priority, so a lingering
@@ -229,8 +324,22 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
     // the same order `ScreenActionHandler.handleMediaPlay` uses for a book
     // tapped with no session open.
     dismissOverlay();
-    showOverlay(Player, {
+    // The rail's first snapshot, from what the pick already knows. It is
+    // published BEFORE the overlay mounts so the rail never paints a frame
+    // without a face on it — the summary numbers arrive with the same object.
+    storeRef.current.set({
+      ...EMPTY_READING,
+      ...readingSnapshotRef.current,
+      contentId: committed.contentId,
+      title: committed.title ?? readingSnapshotRef.current.title ?? null,
+      image: committed.image ?? readingSnapshotRef.current.image ?? null,
+    });
+    showOverlay(ReadingStage, {
+      store: storeRef.current,
+      // ONE object per story. Rebuilding it inline on a re-render is the
+      // identity-churn shape that once opened 495 Plex transcode sessions.
       play: { contentId: committed.contentId },
+      getMediaEl: () => mediaRef.current,
       onMediaRef: attachMedia,
       onPlaybackCompleted: () => handlers.current.notePlaybackCompleted?.(),
       clear: () => {
@@ -263,6 +372,33 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
   handlers.current.notePlaybackStarted = session.notePlaybackStarted;
   handlers.current.notePlaybackCompleted = session.notePlaybackCompleted;
   handlers.current.notePlaybackProgress = session.notePlaybackProgress;
+
+  // THE RAIL'S FEED. Everything the rail shows lives in session state that moves
+  // AFTER `showOverlay` captured its props, so it can only reach the overlay
+  // through the store. Derived here (one place) and published on change.
+  //
+  // The summary is refetched on completion, so the pips tick over WITHOUT the
+  // story restarting — which is the whole reason the store exists rather than a
+  // second `showOverlay`.
+  const readingSnapshot = useMemo(() => ({
+    learnerId: session.learner?.id ?? null,
+    learnerName: session.learner?.name ?? null,
+    subject: session.summary?.subject ?? null,
+    title: session.pick?.title ?? null,
+    image: session.pick?.image ?? null,
+    contentId: session.pick?.contentId ?? null,
+    count: session.summary?.count ?? null,
+    target: session.summary?.target ?? null,
+    progressLabel: session.summary?.progressLabel ?? null,
+  }), [session.learner, session.summary, session.pick]);
+
+  readingSnapshotRef.current = readingSnapshot;
+  useEffect(() => {
+    // Only while a story is up: outside that window nothing is reading the
+    // store, and writing to it would notify subscribers that do not exist.
+    if (session.view !== 'playing') return;
+    storeRef.current.set({ ...storeRef.current.get(), ...readingSnapshot });
+  }, [readingSnapshot, session.view]);
 
   // Named, so an unmount mid-story is distinguishable in the log store from an
   // ordinary element swap. A widget that unmounts while a story is playing has
@@ -355,8 +491,35 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
             {name ? <h2 className="reading-session__name">{name}</h2> : null}
           </div>
           <h1 className="reading-session__ask">What do you want to read today?</h1>
-          <Progress count={summary?.count} target={summary?.target} label={summary?.progressLabel} />
+          <ReadingPips
+            count={summary?.count}
+            target={summary?.target}
+            label={summary?.progressLabel}
+            className="reading-session__pips"
+          />
           <Recent reads={summary?.recent} studyDay={summary?.studyDay} />
+        </div>
+      ) : null}
+
+      {/* TIER ONE — a book is done. A beat, not a screen: the cover the child
+          picked, their pips with one more filled, and their name. It says "that
+          one counted" and gets out of the way. Before this existed, finishing
+          story 1 of 2 showed nothing at all. */}
+      {view === 'book-done' ? (
+        <div className="reading-session__book-done" data-testid="reading-book-done">
+          {pick?.image
+            ? <img className="reading-session__book-done-cover" src={pick.image} alt="" />
+            : null}
+          <h1 className="reading-session__book-done-headline">
+            {name ? `Nice reading, ${name}!` : 'Nice reading!'}
+          </h1>
+          <ReadingPips
+            count={summary?.count}
+            target={summary?.target}
+            label={summary?.progressLabel}
+            className="reading-session__pips"
+            testId="reading-book-done-count"
+          />
         </div>
       ) : null}
 
@@ -366,7 +529,13 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
             <ProfileAvatar id={learner?.id} name={name || learner?.id} size={256} />
           </div>
           <h1 className="reading-session__ask">Great reading{name ? `, ${name}` : ''}!</h1>
-          {summary?.progressLabel ? <p className="reading-session__count">{summary.progressLabel}</p> : null}
+          <ReadingPips
+            count={summary?.count}
+            target={summary?.target}
+            label={summary?.progressLabel}
+            className="reading-session__pips"
+            testId="reading-celebrate-count"
+          />
         </div>
       ) : null}
 
