@@ -163,6 +163,13 @@ the phone performs one ICE restart with a ten-second deadline, then one full
 peer rebuild on a new revision with a fifteen-second deadline. Exhaustion opens
 the recovery prompt; it does not loop.
 
+The server marks the lease `active` only after **both** peers have sent
+`media-verified`; until then the call is inside its 180-second setup window,
+and when that expires the lease is revoked and the TV restored to whatever it
+was showing. Both sides therefore run the same media monitor and each reports
+once per verified result per peer revision — the TV's report was missing until
+2026-09-08, which cut every call at three minutes.
+
 An SDP answer is negotiation progress, not success. The media monitor requires
 live inbound tracks plus increasing inbound RTP bytes, and increasing rendered
 frames for video. After eight seconds both kinds yield `connected`, one kind

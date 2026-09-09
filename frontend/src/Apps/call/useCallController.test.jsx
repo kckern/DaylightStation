@@ -251,6 +251,21 @@ describe('useCallController cancellation and budgets', () => {
     expect(mocks.api).toHaveBeenCalledWith('api/v1/homeline/calls/call-1/recover', { level: 'soft' }, 'POST', expect.anything());
   });
 
+  it('reports verified media to the server once, not on every 2s poll', async () => {
+    mocks.api.mockImplementation(async path => path.endsWith('/end') ? { ok: true } : reserveBody);
+    const { result, rerender } = renderHook(() => useCallController({ peer: peer(), mediaStatus: 'ready', retryLocalMedia: vi.fn(), remoteVideoRef: { current: null } }));
+    await startToProbe(result);
+    act(() => mocks.onSignalEvent({ type: 'tv-ready' }));
+    act(() => mocks.onSignalEvent({ type: 'answered' }));
+    mocks.health = { audio: true, video: true, verified: true }; rerender();
+    mocks.health = { audio: true, video: true, verified: true }; rerender();
+    mocks.health = { audio: true, video: true, verified: true }; rerender();
+    expect(result.current.state.value).toBe('connected');
+    expect(mocks.signaling.send.mock.calls.filter(([type]) => type === 'media-verified')).toHaveLength(1);
+    mocks.health = { audio: true, video: false, verified: true }; rerender();
+    expect(mocks.signaling.send.mock.calls.filter(([type]) => type === 'media-verified')).toHaveLength(2);
+  });
+
   it('cancels the negotiate clock once the TV answers', async () => {
     mocks.api.mockImplementation(async path => path.endsWith('/end') ? { ok: true } : reserveBody);
     const { result } = renderHook(() => useCallController({ peer: peer(), mediaStatus: 'ready', retryLocalMedia: vi.fn(), remoteVideoRef: { current: null } }));
