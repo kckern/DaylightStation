@@ -7,6 +7,12 @@ import { useMediaHealth } from '../../modules/Input/hooks/useMediaHealth.js';
 
 const randomId = prefix => `${prefix}-${crypto.randomUUID()}`;
 
+// Setup budgets. A cold wake is a Shield booting; the others are a page that
+// is already up and only has to answer.
+const WAIT_TIMEOUT_MS = 45_000;
+const COLD_WAIT_TIMEOUT_MS = 75_000;
+const NEGOTIATE_TIMEOUT_MS = 20_000;
+
 export function useCallController({ peer, mediaStatus, retryLocalMedia, remoteVideoRef }) {
   const [state, dispatch] = useReducer(callReducer, initialCallState);
   const stateRef = useRef(state); stateRef.current = state;
@@ -131,9 +137,29 @@ export function useCallController({ peer, mediaStatus, retryLocalMedia, remoteVi
     if (state.value !== 'waiting_tv') return undefined;
     const attemptId = state.attemptId;
     const timers = timersRef.current;
-    const timer = later(() => dispatch({ type: 'WAIT_TIMEOUT', attemptId }), state.coldWake ? 75_000 : 45_000);
+    const timer = later(() => dispatch({ type: 'WAIT_TIMEOUT', attemptId }), state.coldWake ? COLD_WAIT_TIMEOUT_MS : WAIT_TIMEOUT_MS);
     return () => { clearTimeout(timer); timers.delete(timer); };
   }, [later, state.attemptId, state.coldWake, state.value]);
+
+  // `negotiating` used to be the one setup state with no clock on it: an offer
+  // that never got an answer read "Connecting securely…" until the caller hung
+  // up, and the record then blamed the caller. The warn line carries what the
+  // peer was doing at the moment the budget ran out.
+  useEffect(() => {
+    if (state.value !== 'negotiating') return undefined;
+    // Depend on fields, not the state object: a control-socket flap must not
+    // restart this clock.
+    const { attemptId, callId, peerRevision, recoveryCount } = stateRef.current;
+    const timers = timersRef.current;
+    const timer = later(() => {
+      loggerRef.current.warn('call.negotiate.timeout', {
+        callId, attemptId, peerRevision, recoveryCount,
+        connectionState: peerConnectionRef.current?.connectionState ?? null,
+      });
+      dispatch({ type: 'NEGOTIATE_TIMEOUT', attemptId });
+    }, NEGOTIATE_TIMEOUT_MS);
+    return () => { clearTimeout(timer); timers.delete(timer); };
+  }, [later, peerConnectionRef, state.attemptId, state.value]);
 
   const health = useMediaHealth(peer, ['verifying_media', 'connected', 'degraded', 'reconnecting'].includes(state.value), remoteVideoRef);
   useEffect(() => {

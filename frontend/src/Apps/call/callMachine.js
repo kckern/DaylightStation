@@ -17,7 +17,7 @@ const allowed = {
   booting: ['BOOT_READY', 'BOOT_FAILED'], idle: ['START', 'RESUME'],
   reserving: ['RESERVED', 'BUSY', 'FAIL', 'CANCEL'], probing: ['TV_READY', 'PROBE_TIMEOUT', 'CANCEL'],
   waking: ['WAKE_OK', 'FAIL', 'CANCEL'], waiting_tv: ['TV_READY', 'WAIT_TIMEOUT', 'FAIL', 'CANCEL'],
-  negotiating: ['ANSWERED', 'ICE_INTERRUPTED', 'FAIL', 'CANCEL'],
+  negotiating: ['ANSWERED', 'ICE_INTERRUPTED', 'NEGOTIATE_TIMEOUT', 'FAIL', 'CANCEL'],
   verifying_media: ['MEDIA_HEALTH', 'ICE_INTERRUPTED', 'FAIL', 'CANCEL'],
   connected: ['MEDIA_HEALTH', 'ICE_INTERRUPTED', 'CONTROL_STATUS', 'CANCEL'],
   degraded: ['MEDIA_HEALTH', 'ICE_INTERRUPTED', 'RETRY_MEDIA', 'CONTROL_STATUS', 'CANCEL'],
@@ -25,6 +25,12 @@ const allowed = {
   recovery_prompt: ['SOFT_RECOVERY', 'HARD_RECOVERY', 'RETRY_CALL', 'CANCEL'],
   occupied: ['DISMISS', 'RETRY_CALL'], ending: ['ENDED'], ended: ['START'], failed: ['RETRY_CALL', 'DISMISS'],
 };
+
+// One automatic reload of the TV call app per attempt, shared by both setup
+// timeouts. The second time a wait expires the person decides, not the phone.
+const timeoutLadder = (state, terminalReason) => state.recoveryCount < 1
+  ? { ...state, value: 'waking', recoveryCount: 1, reason: 'soft_recovery' }
+  : { ...state, value: 'recovery_prompt', reason: terminalReason };
 
 export function callReducer(state, event) {
   if (!event || typeof event.type !== 'string') return state;
@@ -52,9 +58,8 @@ export function callReducer(state, event) {
     }
     case 'ICE_INTERRUPTED': return { ...state, value: 'reconnecting', reason: event.reason || 'ice_interrupted' };
     case 'CONTROL_STATUS': return { ...state, controlConnected: !!event.connected };
-    case 'WAIT_TIMEOUT': return state.recoveryCount < 1
-      ? { ...state, value: 'waking', recoveryCount: 1, reason: 'soft_recovery' }
-      : { ...state, value: 'recovery_prompt', reason: 'tv_unavailable' };
+    case 'WAIT_TIMEOUT': return timeoutLadder(state, 'tv_unavailable');
+    case 'NEGOTIATE_TIMEOUT': return timeoutLadder(state, 'tv_no_answer');
     case 'SOFT_RECOVERY': return { ...state, value: 'waking', recoveryCount: state.recoveryCount + 1, reason: 'soft_recovery' };
     case 'HARD_RECOVERY': return { ...state, value: 'waking', hardRecoveryUsed: true,
       recoveryCount: state.recoveryCount + 1, reason: 'hard_recovery' };

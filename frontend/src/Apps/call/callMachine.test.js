@@ -24,7 +24,24 @@ describe('callReducer', () => {
       const state = { ...initialCallState, value, attemptId: 'current' };
       expect(callReducer(state, { type: 'FAIL', attemptId: 'stale', error: 'late' })).toBe(state);
       expect(callReducer(state, { type: 'NOT_AN_EVENT', attemptId: 'current' })).toBe(state);
+      if (value !== 'negotiating') expect(callReducer(state, { type: 'NEGOTIATE_TIMEOUT', attemptId: 'current' })).toBe(state);
     }
+  });
+
+  it('gives a stalled negotiation one soft recovery and then prompts with tv_no_answer', () => {
+    let state = { ...initialCallState, value: 'negotiating', attemptId: 'a1', recoveryCount: 0 };
+    state = callReducer(state, { type: 'NEGOTIATE_TIMEOUT', attemptId: 'a1' });
+    expect(state).toMatchObject({ value: 'waking', recoveryCount: 1, reason: 'soft_recovery' });
+    state = { ...state, value: 'negotiating' };
+    expect(callReducer(state, { type: 'NEGOTIATE_TIMEOUT', attemptId: 'a1' })).toMatchObject({ value: 'recovery_prompt', reason: 'tv_no_answer' });
+  });
+
+  it('shares the single automatic reload between the wait and negotiate timeouts', () => {
+    let state = { ...initialCallState, value: 'waiting_tv', attemptId: 'a1', recoveryCount: 0 };
+    state = callReducer(state, { type: 'WAIT_TIMEOUT', attemptId: 'a1' });
+    expect(state.value).toBe('waking');
+    state = { ...state, value: 'negotiating' };
+    expect(callReducer(state, { type: 'NEGOTIATE_TIMEOUT', attemptId: 'a1' })).toMatchObject({ value: 'recovery_prompt', reason: 'tv_no_answer' });
   });
 
   it('permits one automatic soft recovery and then prompts', () => {

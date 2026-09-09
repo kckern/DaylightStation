@@ -209,6 +209,51 @@ describe('useCallController cancellation and budgets', () => {
     expect(result.current.state.value).toBe('ended');
   });
 
+  it('reloads the TV once when negotiation stalls, then prompts with tv_no_answer', async () => {
+    mocks.api.mockImplementation(async path => path.endsWith('/end') ? { ok: true }
+      : path.endsWith('/recover') ? { coldWake: false } : reserveBody);
+    const { result } = renderHook(() => useCallController({ peer: peer(), mediaStatus: 'ready', retryLocalMedia: vi.fn(), remoteVideoRef: { current: null } }));
+    await startToProbe(result);
+    act(() => mocks.onSignalEvent({ type: 'tv-ready' }));
+    expect(result.current.state.value).toBe('negotiating');
+    await act(async () => { await vi.advanceTimersByTimeAsync(19_999); });
+    expect(result.current.state.value).toBe('negotiating');
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(mocks.api).toHaveBeenCalledWith('api/v1/homeline/calls/call-1/recover', { level: 'soft' }, 'POST', expect.anything());
+    await flush();
+    expect(result.current.state).toMatchObject({ value: 'waiting_tv', recoveryCount: 1 });
+    act(() => mocks.onSignalEvent({ type: 'tv-ready' }));
+    expect(result.current.state.value).toBe('negotiating');
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+    expect(result.current.state).toMatchObject({ value: 'recovery_prompt', reason: 'tv_no_answer' });
+    expect(mocks.api.mock.calls.filter(([path]) => path.endsWith('/recover'))).toHaveLength(1);
+  });
+
+  it('cancels the negotiate clock once the TV answers', async () => {
+    mocks.api.mockImplementation(async path => path.endsWith('/end') ? { ok: true } : reserveBody);
+    const { result } = renderHook(() => useCallController({ peer: peer(), mediaStatus: 'ready', retryLocalMedia: vi.fn(), remoteVideoRef: { current: null } }));
+    await startToProbe(result);
+    act(() => mocks.onSignalEvent({ type: 'tv-ready' }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    act(() => mocks.onSignalEvent({ type: 'answered' }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(result.current.state.value).toBe('verifying_media');
+    expect(mocks.api.mock.calls.some(([path]) => path.endsWith('/recover'))).toBe(false);
+  });
+
+  it('files a hangup during negotiation as the caller\'s own reason, never a timeout', async () => {
+    mocks.api.mockImplementation(async path => path.endsWith('/end') ? { ok: true } : reserveBody);
+    const { result } = renderHook(() => useCallController({ peer: peer(), mediaStatus: 'ready', retryLocalMedia: vi.fn(), remoteVideoRef: { current: null } }));
+    await startToProbe(result);
+    act(() => mocks.onSignalEvent({ type: 'tv-ready' }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    act(() => result.current.end('user_cancelled')); await flush();
+    expect(mocks.api).toHaveBeenCalledWith('api/v1/homeline/calls/call-1/end', { reason: 'user_cancelled' }, 'POST');
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(result.current.state.value).toBe('ended');
+    expect(mocks.api.mock.calls.some(([path]) => path.endsWith('/recover'))).toBe(false);
+  });
+
   it('runs the bounded 5s grace, one ICE restart, one rebuild, then prompts', async () => {
     mocks.api.mockImplementation(async path => path.endsWith('/end') ? { ok: true } : reserveBody);
     const localPeer = peer(); localPeer.pcRef.current = { connectionState: 'disconnected' };
