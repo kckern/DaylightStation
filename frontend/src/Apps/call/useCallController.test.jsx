@@ -229,6 +229,28 @@ describe('useCallController cancellation and budgets', () => {
     expect(mocks.api.mock.calls.filter(([path]) => path.endsWith('/recover'))).toHaveLength(1);
   });
 
+  it('keeps its timers and peer when the peer object changes identity mid-negotiation', async () => {
+    // Building the offer calls setRemoteStream, which hands useWebRTCPeer a new
+    // `peer` object. That must not trip the unmount cleanup: it aborted work,
+    // cleared every timer and closed the half-built peer connection, which is
+    // why no phone offer ever reached the server (2026-09-08).
+    mocks.api.mockImplementation(async path => path.endsWith('/end') ? { ok: true }
+      : path.endsWith('/recover') ? { coldWake: false } : reserveBody);
+    const first = peer();
+    const { result, rerender } = renderHook(({ peer: p }) => useCallController({ peer: p, mediaStatus: 'ready', retryLocalMedia: vi.fn(), remoteVideoRef: { current: null } }),
+      { initialProps: { peer: first } });
+    await startToProbe(result);
+    act(() => mocks.onSignalEvent({ type: 'tv-ready' }));
+    expect(result.current.state.value).toBe('negotiating');
+    first.reset.mockClear();
+    const second = { ...first, remoteStream: {} };
+    rerender({ peer: second });
+    expect(first.reset).not.toHaveBeenCalled();
+    expect(second.reset).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+    expect(mocks.api).toHaveBeenCalledWith('api/v1/homeline/calls/call-1/recover', { level: 'soft' }, 'POST', expect.anything());
+  });
+
   it('cancels the negotiate clock once the TV answers', async () => {
     mocks.api.mockImplementation(async path => path.endsWith('/end') ? { ok: true } : reserveBody);
     const { result } = renderHook(() => useCallController({ peer: peer(), mediaStatus: 'ready', retryLocalMedia: vi.fn(), remoteVideoRef: { current: null } }));

@@ -170,6 +170,12 @@ export const useWebRTCPeer = (localStream) => {
 
   const reset = useCallback(() => {
     if (pcRef.current) {
+      // Info, not debug: a close while an offer is still being built is
+      // invisible otherwise, because Chrome never settles createOffer on a
+      // closed connection. This line is what proves it happened.
+      logger().info('pc-reset', {
+        signalingState: pcRef.current.signalingState, connectionState: pcRef.current.connectionState,
+      });
       pcRef.current.close();
       pcRef.current = null;
     }

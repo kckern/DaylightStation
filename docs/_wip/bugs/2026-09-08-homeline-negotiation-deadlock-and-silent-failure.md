@@ -99,6 +99,31 @@ These were checked and cleared, so nobody re-checks them:
 
 ## 5. Root cause (three defects that compound)
 
+> **Correction, 2026-09-08 late evening.** §5.1 below was wrong about *where*
+> the offer was lost. After the first fix deployed, a call still stalled with
+> the phone's socket demonstrably open (its heartbeats kept arriving, and were
+> rejected as `UNAUTHORIZED_SIGNAL` every 5s once the lease expired) and with
+> the new 20s timeout never firing. The log store holds **zero**
+> `homeline.signaling.offer` events in 7 days: the phone has never sent one.
+>
+> The actual defect is in `useCallController.js`. `clearWork` was keyed on the
+> `peer` object's identity, and the unmount cleanup was
+> `useEffect(() => () => clearWork(), [clearWork])`. Building the offer calls
+> `setRemoteStream` inside `createPC`, which hands `useWebRTCPeer` a new
+> `peer` object, which re-ran that cleanup: it aborted in-flight work, cleared
+> **every** timer (including the new negotiate timeout), and called
+> `peer.reset()`, closing the peer connection while `pc.createOffer()` was
+> still pending. Chrome never settles a pending operation on a closed
+> connection, so there was no error, no rejection, and no offer — just
+> `pc-created` followed by silence. Fixed by reading the peer through a ref so
+> `clearWork` is identity-stable and the cleanup runs on unmount only; the ICE
+> recovery ladder, which had been relying on the same accidental timer wipe,
+> now guards itself against re-arming. `pc-reset` is logged at info so a
+> mid-offer close can never hide again.
+>
+> The §5.1 re-offer rule and the §5.2 timeout remain correct and shipped; they
+> were simply behind this.
+
 ### 5.1 The offer can be sent exactly once, and it can be dropped silently
 
 The handshake in `useCallSignaling.js` is:

@@ -20,9 +20,16 @@ export function useCallController({ peer, mediaStatus, retryLocalMedia, remoteVi
   const timersRef = useRef(new Set());
   const loggerRef = useRef(getLogger().child({ component: 'CallController' }));
   const iceRungRef = useRef(0);
+  const ladderRef = useRef(null); // attemptId whose recovery ladder is in flight
   const retryMediaRef = useRef(null);
   const peerConnectionRef = peer.pcRef;
   const previousStateRef = useRef(null);
+  // `peer` is a fresh object whenever useWebRTCPeer's state moves (remote
+  // stream attached, connection state changed). Anything that tears work
+  // down must read it through a ref: a callback keyed on `peer` identity
+  // re-ran the unmount cleanup in the middle of building the offer, which
+  // closed the half-built peer connection and cleared every timer.
+  const peerRef = useRef(peer); peerRef.current = peer;
 
   useEffect(() => {
     const previousState = previousStateRef.current;
@@ -38,8 +45,9 @@ export function useCallController({ peer, mediaStatus, retryLocalMedia, remoteVi
   const clearWork = useCallback(() => {
     abortRef.current?.abort(); abortRef.current = null;
     timersRef.current.forEach(clearTimeout); timersRef.current.clear();
-    peer.reset();
-  }, [peer]);
+    iceRungRef.current = 0; ladderRef.current = null;
+    peerRef.current.reset();
+  }, []);
   const later = useCallback((fn, ms) => {
     const timer = setTimeout(() => { timersRef.current.delete(timer); fn(); }, ms);
     timersRef.current.add(timer); return timer;
@@ -170,12 +178,16 @@ export function useCallController({ peer, mediaStatus, retryLocalMedia, remoteVi
 
   useEffect(() => {
     if (!state.attemptId || !['connected', 'degraded', 'verifying_media', 'reconnecting'].includes(state.value)) return undefined;
-    if (peer.connectionState === 'connected') { iceRungRef.current = 0; return undefined; }
+    if (peer.connectionState === 'connected') { iceRungRef.current = 0; ladderRef.current = null; return undefined; }
     if (peer.connectionState !== 'disconnected' && peer.connectionState !== 'failed') return undefined;
+    // ICE_INTERRUPTED re-runs this effect with the peer still down. The ladder
+    // it started is climbing on its own timers; do not start a second one.
+    if (ladderRef.current === state.attemptId) return undefined;
     const attemptId = state.attemptId;
     const timers = timersRef.current;
     const grace = later(async () => {
       if (!isAttemptActive(stateRef.current, attemptId)) return;
+      ladderRef.current = attemptId;
       dispatch({ type: 'ICE_INTERRUPTED', attemptId });
       try {
         const liveConnection = () => peerConnectionRef.current?.connectionState;
@@ -227,6 +239,7 @@ export function useCallController({ peer, mediaStatus, retryLocalMedia, remoteVi
       loggerRef.current.warn('call.end.failed', { callId, reason: error.message })) : Promise.resolve())
       .finally(() => dispatch({ type: 'ENDED', attemptId }));
   }, [clearWork, state]);
+  // Unmount only. `clearWork` is identity-stable, so this never re-fires.
   useEffect(() => () => clearWork(), [clearWork]);
 
   return useMemo(() => ({ state, start, resume, end, retryMedia, dispatch, sendMuteState: payload => signaling.send('mute-state', payload) }),
