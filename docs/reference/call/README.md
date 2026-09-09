@@ -196,6 +196,24 @@ shown under its raw id because `devices.yml` declares no `name`. `call.surface`
 records the screen the caller actually used — a report about an unusable layout
 can be checked against the viewport it happened on.
 
+When the phone reaches `waiting_tv` and stays there, the TV woke but never
+joined. Two things have to be true on the TV and both were false on
+2026-09-08 — every attempt that day looked like a crash from the sofa:
+
+```text
+_time:24h AND _msg:"homeline.join.denied"        # declared: what the TV sent
+_time:24h AND _msg:"lease.join.failed"           # the TV's own view of the same
+_time:24h AND _msg:"webcam.access-error-final"   # TV getUserMedia refused
+```
+
+- `homeline.join.denied` with `declared: browser:…` means the screen is not
+  publishing its fleet name (see [Call authority](#call-authority)).
+- `webcam.access-error-final` on a Fully Kiosk TV means FKB's `webcamAccess`
+  is off. Call preparation now sets it on every dispatch; if it still fails,
+  check the Android-level CAMERA grant for `de.ozerov.fully`. The microphone is
+  deliberately NOT granted to the WebView — it belongs to the native audio
+  bridge (`_extensions/audio-bridge/DESIGN.md`).
+
 For a wake failure, follow the lease's `dispatchId` into `wake-and-load.*`
 events. For a blank or partial call, compare `peerRevision`, signaling
 milestones, and media-health changes. For teardown, require a `homeline.lease.ended`
