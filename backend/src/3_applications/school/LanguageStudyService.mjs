@@ -322,6 +322,11 @@ export class SentenceLadderService {
       // Copy mode preserves the target-language typing practice while making
       // the text visible. It is an enrollment policy, not a client choice.
       copyPrompt: entry.rung === 'dictation' && dictationMode === 'copy',
+      // A warm-up practice pass, present only while the ladder is still
+      // filling. The screen says so: a sentence coming back three times in one
+      // sitting reads as a glitch otherwise. Absent on an ordinary entry, so
+      // the common shape is unchanged.
+      ...(entry.practice ? { practice: true } : {}),
     };
   }
 

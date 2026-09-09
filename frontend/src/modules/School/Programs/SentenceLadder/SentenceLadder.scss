@@ -76,6 +76,17 @@ $touch-min: 56px;
     background: var(--school-warn); color: #241a05; font-weight: 700;
   }
 
+  // Quieter than __notice on purpose: this is orientation, not a problem. It
+  // appears only while the ladder is filling up and disappears for good once
+  // graduates fill the day on their own.
+  &__practice {
+    margin: 0 0 0.6rem; padding: 0.4rem 0.75rem; border-radius: $radius;
+    border: 1px dashed var(--school-border);
+    background: var(--school-surface);
+    color: var(--school-muted);
+    font-size: 0.85rem; font-weight: 600;
+  }
+
   // min-height: 0 so this is the only scroller — the host body wraps it and
   // two nested overflow:auto containers is the double-scroll trap on touch.
   &__body { flex: 1; min-height: 0; overflow: auto; padding-top: 0.25rem; }
