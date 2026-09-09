@@ -86,7 +86,12 @@ describe('ReadingSessionScreen', () => {
     expect(screen.getByTestId('reading-session')).toHaveAttribute('data-view', 'open');
     expect(screen.getByText('What do you want to read today?')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText('User_5')).toBeInTheDocument());
-    expect(screen.getByTestId('reading-count')).toHaveTextContent('1 of 2 stories');
+    // The obligation is DRAWN now, not written: one pip per story owed, filled
+    // as each is finished. The sentence survives as the accessible name.
+    const pips = screen.getByTestId('reading-count');
+    expect(pips).toHaveAttribute('aria-label', '1 of 2 stories');
+    expect(pips.querySelectorAll('.reading-session__pip')).toHaveLength(2);
+    expect(pips.querySelectorAll('.reading-session__pip--done')).toHaveLength(1);
     expect(screen.getByTestId('reading-recent')).toHaveTextContent('Recent');
     expect(screen.getByTestId('reading-recent')).toHaveTextContent('The Three Little Pigs');
     expect(screen.getByTestId('reading-recent')).toHaveTextContent('Today');

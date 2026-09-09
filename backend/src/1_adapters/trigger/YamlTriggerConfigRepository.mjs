@@ -62,6 +62,9 @@ export class YamlTriggerConfigRepository {
   // the registry is a single legacy file. Drives round-trip writes.
   #tagSource = new Map();
   #tagFileMode = 'single';
+  // uids found in the inbox that a curated file already owns. Collected during
+  // load, cleared by sweepInbox().
+  #promotedFromInbox = new Set();
   // The ONE root, and the paths derived from it. Both reads and writes go
   // through these.
   #root = TRIGGER_ROOT;
@@ -104,6 +107,20 @@ export class YamlTriggerConfigRepository {
    * stale path, 58 in the live one) with nothing to say which was authoritative.
    * Refusing to boot is the cheap version of that lesson.
    *
+   * {@link DEFAULT_TAG_FILE} is the ONE exception, because it is not a peer of
+   * the curated files — it is the inbox they are curated OUT OF. The app writes
+   * a stub there itself on first sight of an unknown tag; a human then pastes
+   * the real entry into books.yml or cards.yml. That workflow PRODUCES a
+   * duplicate every single time, so treating it as ambiguity meant the routine
+   * act of naming a book took the whole tag registry down until someone noticed
+   * and hand-edited the inbox. (It did: a book named at 17:51 left every NFC tag
+   * in the house unregistered from the next boot until 17:59.)
+   *
+   * So a uid in both the inbox and a curated file is not ambiguous at all — the
+   * curated entry wins, and the stub is DELETED from the inbox on the spot.
+   * Ambiguity between two CURATED files is still a hard error: there, nothing
+   * says which the author meant.
+   *
    * Remembers which file each uid came from so a later note write goes back to
    * that file instead of collapsing every group into one.
    */
@@ -133,25 +150,75 @@ export class YamlTriggerConfigRepository {
 
     this.#tagFileMode = 'dir';
     this.#tagSource.clear();
+    this.#promotedFromInbox.clear();
     const merged = {};
-    for (const file of files) {
+    // Read the curated files FIRST and the inbox last, so "already curated" is
+    // always a fact by the time an inbox stub is considered — independent of
+    // readdir order, which is what made the old rule depend on the filesystem.
+    const curated = files.filter((f) => f !== DEFAULT_TAG_FILE);
+    const inbox = files.filter((f) => f === DEFAULT_TAG_FILE);
+    const rawKeyFor = new Map();
+
+    for (const file of [...curated, ...inbox]) {
       const blob = loadFile(`${dirPath}/${file.replace(/\.ya?ml$/i, '')}`);
       for (const [rawUid, entry] of Object.entries(blob || {})) {
         const uid = canonicalizeNfcUid(rawUid);
         const prior = this.#tagSource.get(uid);
-        // Which file wins would otherwise depend on readdir order — i.e. on the
-        // filesystem. Name both files so the fix is obvious.
+
         if (prior !== undefined) {
+          // The inbox never wins and never argues: the curated entry stands and
+          // the stub is swept up below.
+          if (file === DEFAULT_TAG_FILE) {
+            this.#promotedFromInbox.add(uid);
+            continue;
+          }
+          // A curated file colliding with the inbox read earlier is impossible
+          // (the inbox is read last), so this is curated-vs-curated: genuine
+          // ambiguity, and nothing here can say which the author meant. Name
+          // both files so the fix is obvious.
           throw new ValidationError(
             `tag "${rawUid}" appears in both ${dirPath}/${prior} and ${dirPath}/${file}`,
             { code: 'DUPLICATE_TAG_ACROSS_FILES', field: rawUid, files: [prior, file] }
           );
         }
         this.#tagSource.set(uid, file);
+        rawKeyFor.set(uid, rawUid);
         merged[rawUid] = entry;
       }
     }
     return merged;
+  }
+
+  /**
+   * Rewrite the inbox without the stubs that have since been curated elsewhere.
+   *
+   * Called after a successful load, never during one: a read must not depend on
+   * a write having succeeded, and a read-only deployment (no `saveFile`) has to
+   * keep booting. The registry in memory is already correct either way — this
+   * only stops the same stubs being re-swept on every boot, and keeps the inbox
+   * meaning what it says: tags nobody has named yet.
+   *
+   * @returns {Promise<{swept: string[]}>} the uids removed from the inbox.
+   */
+  sweepInbox() {
+    const swept = [...this.#promotedFromInbox];
+    if (!swept.length || !this.#saveFile || this.#tagFileMode !== 'dir') {
+      return Promise.resolve({ swept: [] });
+    }
+    return this.#enqueue(() => {
+      const keep = {};
+      for (const [rawUid, entry] of Object.entries(this.#registry?.nfc?.tags || {})) {
+        if ((this.#tagSource.get(canonicalizeNfcUid(rawUid)) ?? null) === DEFAULT_TAG_FILE) {
+          keep[rawUid] = entry;
+        }
+      }
+      const relPath = `${this.#paths.bindingsNfc}/${DEFAULT_TAG_FILE.replace(/\.ya?ml$/i, '')}`;
+      return Promise.resolve(this.#saveFile(relPath, serializeNfcTags(keep)))
+        .then(() => {
+          this.#promotedFromInbox.clear();
+          return { swept };
+        });
+    });
   }
 
   /**

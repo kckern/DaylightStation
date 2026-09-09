@@ -306,6 +306,55 @@ describe('GET /summary — what the screen puts in front of the child', () => {
     expect(res.body.recent[0]).toMatchObject({ studyDay: '2026-08-25' });
   });
 
+  it('shows ONE card per book, newest first, with the repeats as a count', async () => {
+    // A four-year-old reads the same story all week. Six identical covers is
+    // not a shelf — it is one book filling the screen while the others they
+    // might pick are pushed off it.
+    const readingLog = memoryReadingLog({
+      'user_5 2026-08-26': [
+        { learnerId: 'user_5', studyDay: '2026-08-26', title: 'Corduroy', contentId: 'plex:1', at: '2026-08-26T10:00:00Z' },
+        { learnerId: 'user_5', studyDay: '2026-08-26', title: 'Corduroy', contentId: 'plex:1', at: '2026-08-26T09:00:00Z' },
+      ],
+      'user_5 2026-08-25': [
+        { learnerId: 'user_5', studyDay: '2026-08-25', title: 'Corduroy', contentId: 'plex:1', at: '2026-08-25T10:00:00Z' },
+        { learnerId: 'user_5', studyDay: '2026-08-25', title: 'Blueberries', contentId: 'plex:2', at: '2026-08-25T09:00:00Z' },
+      ],
+    });
+    const { app } = build({ readingLog });
+    const res = await request(app).get('/api/v1/school/reading/summary?learnerId=user_5');
+    expect(res.status).toBe(200);
+    expect(res.body.recent.map((r) => r.title)).toEqual(['Corduroy', 'Blueberries']);
+    // The newest read wins, so the day label is today's, not the first sighting.
+    expect(res.body.recent[0]).toMatchObject({ studyDay: '2026-08-26', times: 3 });
+    expect(res.body.recent[1]).toMatchObject({ times: 1 });
+  });
+
+  it('does not merge two books that merely lack a contentId', async () => {
+    const readingLog = memoryReadingLog({
+      'user_5 2026-08-26': [
+        { learnerId: 'user_5', studyDay: '2026-08-26', title: 'Corduroy', contentId: null, at: '2026-08-26T10:00:00Z' },
+        { learnerId: 'user_5', studyDay: '2026-08-26', title: 'Blueberries', contentId: null, at: '2026-08-26T09:00:00Z' },
+      ],
+    });
+    const { app } = build({ readingLog });
+    const res = await request(app).get('/api/v1/school/reading/summary?learnerId=user_5');
+    expect(res.body.recent.map((r) => r.title)).toEqual(['Corduroy', 'Blueberries']);
+    expect(res.body.recent.every((r) => r.times === 1)).toBe(true);
+  });
+
+  it('collapses the same title read with and without a contentId only by id, never across ids', async () => {
+    const readingLog = memoryReadingLog({
+      'user_5 2026-08-26': [
+        { learnerId: 'user_5', studyDay: '2026-08-26', title: 'Corduroy', contentId: 'plex:1', at: '2026-08-26T10:00:00Z' },
+        { learnerId: 'user_5', studyDay: '2026-08-26', title: 'Corduroy', contentId: 'plex:9', at: '2026-08-26T09:00:00Z' },
+      ],
+    });
+    const { app } = build({ readingLog });
+    const res = await request(app).get('/api/v1/school/reading/summary?learnerId=user_5');
+    // Two different editions are two different books to pick from.
+    expect(res.body.recent).toHaveLength(2);
+  });
+
   it('is still an answer when the obligation cannot be read — the child still gets to pick a book', async () => {
     const { app } = build({
       storyTime: {

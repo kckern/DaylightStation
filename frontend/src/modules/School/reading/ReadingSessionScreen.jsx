@@ -26,13 +26,14 @@
  *   `clear`      → the Player is done for ANY reason, which is not the same as
  *                  the story having finished, and must never be read as one.
  */
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Player from '../../Player/Player.jsx';
 import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
 import { useScreenOverlay } from '../../../screen-framework/overlays/ScreenOverlayProvider.jsx';
 import { playScanCeremonyTone } from '../selfService/scanCeremonySound.js';
 import { useReadingSession, DEFAULT_CONFIRM_MS } from './useReadingSession.js';
 import { readingLog } from './readingLog.js';
+import { bookCover } from './bookCovers.js';
 import './ReadingSessionScreen.scss';
 
 /**
@@ -61,6 +62,94 @@ function recentDayLabel(studyDay, currentStudyDay) {
   return new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(new Date(day));
 }
 
+/**
+ * One book on the Recent shelf: its cover, its title, and when it was read.
+ *
+ * The cover is the point. A child who cannot read picks a book off a shelf by
+ * its picture, and this row of text-only titles was asking them to do the one
+ * thing they cannot do — while the household already had every cover on file.
+ *
+ * The cover arrives asynchronously and the card must not move when it does, so
+ * the frame holds a fixed book-shaped box from the first paint and the spine
+ * placeholder occupies it until the image lands. A shelf that reflows under a
+ * child's finger is worse than one that is briefly plain.
+ */
+function RecentBook({ read, studyDay }) {
+  const [cover, setCover] = useState(null);
+  const contentId = read?.contentId ?? null;
+
+  useEffect(() => {
+    if (!contentId) return undefined;
+    let live = true;
+    bookCover(contentId).then((url) => { if (live && url) setCover(url); });
+    return () => { live = false; };
+  }, [contentId]);
+
+  return (
+    <li className="reading-session__recent-card" data-testid="reading-recent-card">
+      <div className="reading-session__recent-cover">
+        {cover
+          ? <img src={cover} alt="" loading="lazy" />
+          /* No alt text and aria-hidden: the title below already names the
+             book, so an alt here would make a screen reader say it twice. */
+          : <div className="reading-session__recent-spine" aria-hidden="true" />}
+      </div>
+      <span className="reading-session__recent-title">{read.title}</span>
+      <span className="reading-session__recent-day">
+        {recentDayLabel(read.studyDay, studyDay)}
+        {/* The repeats the shelf deduped away, given back as a fact. A book read
+            once says nothing extra — only a favourite earns the badge. */}
+        {read.times > 1
+          ? <span className="reading-session__recent-times">{`×${read.times}`}</span>
+          : null}
+      </span>
+    </li>
+  );
+}
+
+/**
+ * The obligation, as something you can COUNT rather than read.
+ *
+ * "1 of 2 stories" is a sentence, and the child it is aimed at cannot read a
+ * sentence. One pip per story owed, filled as each is finished, says the same
+ * thing in the one notation a four-year-old already has — and says it from
+ * across a room, which the text never did either.
+ *
+ * The label survives as the accessible name, so a screen reader and a passing
+ * adult still get the words; it is simply no longer the thing on screen.
+ *
+ * Falls back to the plain label whenever the numbers cannot carry it: an
+ * unreadable obligation (`target` null), or a target so large that pips would
+ * become a smear of dots nobody can count at a glance.
+ */
+const MAX_PIPS = 8;
+
+function Progress({ count, target, label }) {
+  const owed = Number.isFinite(target) ? target : null;
+  const done = Number.isFinite(count) ? count : 0;
+  if (owed === null || owed < 1 || owed > MAX_PIPS) {
+    return label ? <p className="reading-session__count" data-testid="reading-count">{label}</p> : null;
+  }
+  return (
+    <div
+      className="reading-session__pips"
+      data-testid="reading-count"
+      role="img"
+      aria-label={label || `${done} of ${owed} stories`}
+    >
+      {Array.from({ length: owed }, (_, i) => (
+        <span
+          key={i}
+          className={`reading-session__pip${i < done ? ' reading-session__pip--done' : ''}`}
+        />
+      ))}
+      {/* Past the target is worth seeing: a child who read a third story on a
+          two-story day has done something, and a row of full pips hides it. */}
+      {done > owed ? <span className="reading-session__pip-extra">{`+${done - owed}`}</span> : null}
+    </div>
+  );
+}
+
 function Recent({ reads, studyDay }) {
   if (!Array.isArray(reads) || reads.length === 0) return null;
   const named = reads.filter((r) => r?.title);
@@ -68,12 +157,13 @@ function Recent({ reads, studyDay }) {
   return (
     <section className="reading-session__recent" data-testid="reading-recent" aria-label="Recent stories">
       <h3 className="reading-session__recent-label">Recent</h3>
-      <ul className="reading-session__recent-list">
+      <ul className="reading-session__recent-list" data-count={named.length}>
         {named.map((read, index) => (
-          <li key={`${read.pickId ?? read.contentId ?? 'book'}-${read.at ?? index}`}>
-            <span className="reading-session__recent-title">{read.title}</span>
-            <span className="reading-session__recent-day">{recentDayLabel(read.studyDay, studyDay)}</span>
-          </li>
+          <RecentBook
+            key={`${read.pickId ?? read.contentId ?? 'book'}-${read.at ?? index}`}
+            read={read}
+            studyDay={studyDay}
+          />
         ))}
       </ul>
     </section>
@@ -265,9 +355,7 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
             {name ? <h2 className="reading-session__name">{name}</h2> : null}
           </div>
           <h1 className="reading-session__ask">What do you want to read today?</h1>
-          {summary?.progressLabel
-            ? <p className="reading-session__count" data-testid="reading-count">{summary.progressLabel}</p>
-            : null}
+          <Progress count={summary?.count} target={summary?.target} label={summary?.progressLabel} />
           <Recent reads={summary?.recent} studyDay={summary?.studyDay} />
         </div>
       ) : null}
