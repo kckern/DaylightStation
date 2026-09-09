@@ -40,6 +40,8 @@ subject — transport (`play`, `pause`, `next`, `prev`, `rewind`, `restart`),
 | `book-partway` | `svg/book-partway.svg` | the reading shelf's "I'm partway through" door (SVG Repo 521655, fast-forward) |
 | `book-finished` | `svg/book-finished.svg` | the reading shelf's "I already finished it" door (SVG Repo 521562, circle-checkmark) |
 | `power` | `svg/power.svg` | the locked panel's "Turn off screen" control (standby glyph, drawn to the contract above) |
+| `plus` | `svg/plus.svg` | the reading shelf's add card, in the empty book slot |
+| `bookmark` | `svg/bookmark.svg` | the reading shelf's set-aside mark, beside `book-finished`'s check |
 
 ⚠️ **Normalise to the contract, don't just drop the download in.** `piano.svg`
 arrived from SVG Repo carrying `<style>.st0{fill:currentColor}</style>` and a
