@@ -30,8 +30,13 @@ The only remaining refusal is a request that is not local at all, logged as
 `homeline.call.denied` with `cause: off_network`. Behind the reverse proxy every
 request presents a private peer, so in practice this refuses nobody; it is the
 shape of the boundary, not the boundary. The TV bootstrap route is stricter: it
-requires a local request with an exact `X-Daylight-Device` match, then rotates
-to its short-lived call credential.
+requires a local request whose `X-Daylight-Device` is `fleet:<deviceId>` — the
+name a rendered screen takes from its own served config
+(`websocket.guardrails.device`, published by `useFleetDeviceIdentity`) — then
+rotates to its short-lived call credential. Anonymous `browser:`/`ephemeral:`
+tokens can never match. A refusal is logged as `homeline.join.denied` with the
+declared value; until 2026-09-08 it was recorded nowhere, and no TV had ever
+joined because every screen still declared a browser token.
 
 ## The phone surface
 
@@ -84,8 +89,9 @@ The API surface is:
 - `POST /calls` — reserve a TV for a caller on the home network.
 - `POST /calls/:callId/wake` — run one correlated wake/load dispatch with its
   deferred retry disabled.
-- `POST /devices/:deviceId/join-active` — local TV bootstrap; the explicit
-  `X-Daylight-Device` must exactly match.
+- `POST /devices/:deviceId/join-active` — local TV bootstrap; the request's
+  `X-Daylight-Device` must be `fleet:<deviceId>`. Refusals log
+  `homeline.join.denied`.
 - `POST /calls/:callId/resume` — same-caller refresh recovery and phone
   credential rotation.
 - `POST /calls/:callId/recover` — one soft reload, or one explicitly confirmed
