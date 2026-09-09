@@ -138,6 +138,21 @@ describe('the four bands, in the order the design puts them', () => {
 });
 
 describe('identity — the silent corrections', () => {
+  // The regression that made nine tests in this file red: the form used to be
+  // filled in by an effect, one commit AFTER `PanelFrame` first rendered it.
+  // So there was a moment with an empty form on screen, and anything typed
+  // into it was overwritten by the record landing.
+  it('carries the record the first time the form is on screen, so nothing typed is lost', async () => {
+    seed();
+    mount();
+    const isbn = await screen.findByLabelText('ISBN');
+    expect(isbn.value).toBe('9780000000001');
+    fireEvent.change(isbn, { target: { value: '9780000000002' } });
+    // A pending load must not be able to reach back over the edit.
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
+    expect(screen.getByLabelText('ISBN').value).toBe('9780000000002');
+  });
+
   it('re-looks-up an ISBN without touching the record', async () => {
     seed();
     mount();

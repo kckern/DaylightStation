@@ -72,8 +72,11 @@ Google image search as the last rung, and every candidate's BYTES judged rather
 than trusted. Providers answer `200` for books they have no art for, so
 "it downloaded" is not "it is a cover".
 
-Art is kept on disk under the household's `books/covers/`, so a cover host
-being down cannot blank a shelf a child is standing in front of. A book nobody
+Art is kept on disk under `media/books/covers/` — the media mount, not the data
+tree: a book RECORD is a small hand-editable fact worth syncing, a cover is tens
+of kilobytes of JPEG derived from it and re-fetchable at any time. Keeping it
+locally is what stops a cover host being down from blanking a shelf a child is
+standing in front of. A book nobody
 has art for is recorded as a miss and left alone for two weeks.
 
 **The ladder always ends in a cover.** When every rung misses, the endpoint
