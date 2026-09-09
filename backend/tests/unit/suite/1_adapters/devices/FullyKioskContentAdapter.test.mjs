@@ -66,7 +66,7 @@ describe('FullyKioskContentAdapter', () => {
   });
 
   describe('prepareForContent', () => {
-    it('should send setBooleanSetting for three FKB services after screenOn', async () => {
+    it('should send setBooleanSetting for the four FKB media settings after screenOn', async () => {
       const callOrder = [];
       const httpClient = {
         get: vi.fn(async (url) => {
@@ -85,9 +85,9 @@ describe('FullyKioskContentAdapter', () => {
 
       expect(result.ok).toBe(true);
 
-      // Verify three setBooleanSetting calls exist
+      // Verify four setBooleanSetting calls exist
       const settingCalls = httpClient.get.mock.calls.map(c => c[0]).filter(u => u.includes('cmd=setBooleanSetting'));
-      expect(settingCalls).toHaveLength(3);
+      expect(settingCalls).toHaveLength(4);
 
       // Verify correct settings and values
       const settings = settingCalls.map(url => ({
@@ -98,6 +98,7 @@ describe('FullyKioskContentAdapter', () => {
         { key: 'motionDetection', value: 'false' },
         { key: 'motionDetectionAcoustic', value: 'false' },
         { key: 'acousticScreenOn', value: 'false' },
+        { key: 'webcamAccess', value: 'true' },
       ]);
 
       // Verify password included
@@ -108,7 +109,7 @@ describe('FullyKioskContentAdapter', () => {
       // Verify ordering: screenOn → settings → toForeground
       const screenIdx = callOrder.indexOf('screenOn');
       const firstSettingIdx = callOrder.indexOf('setBooleanSetting:motionDetection');
-      const lastSettingIdx = callOrder.indexOf('setBooleanSetting:acousticScreenOn');
+      const lastSettingIdx = callOrder.indexOf('setBooleanSetting:webcamAccess');
       const fgIdx = callOrder.indexOf('toForeground');
       expect(screenIdx).toBeLessThan(firstSettingIdx);
       expect(lastSettingIdx).toBeLessThan(fgIdx);
@@ -124,7 +125,7 @@ describe('FullyKioskContentAdapter', () => {
 
       expect(result.ok).toBe(true);
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        'fullykiosk.prepareForContent.disableSetting.failed',
+        'fullykiosk.prepareForContent.setSetting.failed',
         expect.objectContaining({ setting: 'motionDetectionAcoustic' }),
       );
     });

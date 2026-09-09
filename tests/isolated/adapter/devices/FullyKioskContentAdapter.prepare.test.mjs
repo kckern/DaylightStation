@@ -172,3 +172,30 @@ describe('FullyKioskContentAdapter foreground verification', () => {
     );
   }, 30_000);
 });
+
+describe('FullyKioskContentAdapter WebView media settings', () => {
+  // 2026-09-08: the living-room Shield had webcamAccess=false, so every
+  // getUserMedia in the call surface was NotAllowedError while this prepare
+  // step reported the camera present (it only counts /dev/video*). The step
+  // already owns FKB's mic-holding settings for the call; it owns this one too.
+  test('turns on WebView webcam access alongside turning off the mic-holding services', async () => {
+    const settings = [];
+    const adapter = makeAdapter((cmd, url) => {
+      if (cmd === 'setBooleanSetting') {
+        const key = url.match(/\bkey=([^&]+)/)[1];
+        const value = url.match(/\bvalue=([^&]+)/)[1];
+        settings.push(`${key}=${value}`);
+      }
+      if (cmd === 'getDeviceInfo' || cmd === 'deviceInfo') {
+        return { status: 200, data: { foreground: 'de.ozerov.fully', screenOn: true } };
+      }
+      return { status: 200, data: { status: 'OK' } };
+    });
+    await adapter.prepareForContent({ skipCameraCheck: true });
+    expect(settings).toEqual(expect.arrayContaining([
+      'motionDetection=false', 'motionDetectionAcoustic=false', 'acousticScreenOn=false', 'webcamAccess=true',
+    ]));
+    // The mic stays with the native audio bridge, never the WebView.
+    expect(settings).not.toContain('microphoneAccess=true');
+  }, 30_000);
+});

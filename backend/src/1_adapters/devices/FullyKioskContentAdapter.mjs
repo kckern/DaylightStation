@@ -156,13 +156,19 @@ export class FullyKioskContentAdapter extends IContentControl {
 
       // Disable FKB background services that hold AUDIO_SOURCE_MIC and Camera 0.
       // These cause AudioRecord init failures and PiP windows.
+      // webcamAccess is what lets the WebView's getUserMedia see the camera at
+      // all; on 2026-09-08 it had drifted to false on the living-room Shield and
+      // every call surface got NotAllowedError while the /dev/video* count
+      // below still passed. The mic is NOT enabled here: it belongs to the
+      // native audio bridge, not the WebView (see _extensions/audio-bridge).
       // Non-blocking: log failures but don't abort prepare.
-      for (const setting of ['motionDetection', 'motionDetectionAcoustic', 'acousticScreenOn']) {
-        const setResult = await this.#sendCommand('setBooleanSetting', { key: setting, value: 'false' });
+      const settings = { motionDetection: 'false', motionDetectionAcoustic: 'false', acousticScreenOn: 'false', webcamAccess: 'true' };
+      for (const [setting, value] of Object.entries(settings)) {
+        const setResult = await this.#sendCommand('setBooleanSetting', { key: setting, value });
         if (setResult.ok) {
-          this.#logger.debug?.('fullykiosk.prepareForContent.disableSetting.ok', { setting });
+          this.#logger.debug?.('fullykiosk.prepareForContent.setSetting.ok', { setting, value });
         } else {
-          this.#logger.warn?.('fullykiosk.prepareForContent.disableSetting.failed', { setting, error: setResult.error });
+          this.#logger.warn?.('fullykiosk.prepareForContent.setSetting.failed', { setting, value, error: setResult.error });
         }
       }
 
