@@ -161,7 +161,8 @@ function TeacherShell() {
   }
 
   return (
-    <div className="teacher-console-page">
+    /* Grown-up admin: dates, bank ids, reasons. Never Hangul. */
+    <div className="teacher-console-page" data-ime="off">
       <div className="teacher-console teacher-workspace">
         <header className="teacher-console__header teacher-workspace__topbar">
           <button type="button" className="teacher-workspace__menu" aria-label="Open navigation" aria-expanded={railOpen} onClick={() => setRailOpen((open) => !open)}>☰</button>

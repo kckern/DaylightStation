@@ -1,0 +1,75 @@
+// The in-page IME's mode badge.
+//
+// It is drawn OUTSIDE `.school-app` — the provider wraps the shell, so the
+// badge is a sibling of it — which means it cannot inherit the `--school-*`
+// tokens defined on that element. It carries its own, in the same local-token
+// style School.scss uses.
+//
+// School.scss bans motion outright on the grounds that the kiosk WebView drops
+// frames. That does not hold for this panel, and a mode flip is precisely the
+// kind of change a learner has to NOTICE, so the badge animates when it
+// changes and stays still the rest of the time.
+
+.school-ime-badge {
+  --ime-bg: #1f1f26;
+  --ime-border: #34343f;
+  --ime-fg: #f1f1f4;
+  --ime-muted: #9a9aa6;
+  --ime-kr: #f472b6;
+  --ime-en: #4ade80;
+
+  position: fixed;
+  // Bottom-LEFT on purpose: a locked panel draws its own "Done" bottom-right
+  // (`.school-app__locked-exit`), and the two must not stack.
+  left: 12px;
+  bottom: 12px;
+  z-index: 60;
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--ime-border);
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: var(--ime-bg);
+  color: var(--ime-fg);
+  font-size: 15px;
+  line-height: 1.2;
+
+  // Replayed on every mode change: the provider keys the badge by mode, so a
+  // flip remounts it and restarts this.
+  animation: school-ime-flip 260ms ease-out;
+
+  // Status only. A learner mid-sentence must never lose a keystroke to it, and
+  // there is nothing here to tap.
+  pointer-events: none;
+  user-select: none;
+
+  &--kr { border-left-color: var(--ime-kr); }
+  &--en { border-left-color: var(--ime-en); }
+
+  &__flag { font-size: 20px; }
+
+  &__label { font-weight: 600; }
+
+  &__hint {
+    color: var(--ime-muted);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    padding: 1px 5px;
+    border: 1px solid var(--ime-border);
+    border-radius: 4px;
+  }
+}
+
+@keyframes school-ime-flip {
+  0%   { transform: scale(0.86); opacity: 0.4; }
+  60%  { transform: scale(1.06); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+// Someone who has asked the OS for less motion gets the colour change alone.
+@media (prefers-reduced-motion: reduce) {
+  .school-ime-badge { animation: none; }
+}

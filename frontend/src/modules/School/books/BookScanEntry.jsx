@@ -9,7 +9,8 @@ export default function BookScanEntry({ screenId, safe, roster, onLaunch }) {
   if (!intent) return error ? <p className="school-book-scan__notice" role="status">{error}</p> : null;
   const book = presentBook(intent.book ?? { isbn13: intent.isbn13 });
   if (!safe) return <p className="school-book-scan__notice" role="status">Book scanned — open when ready</p>;
-  return <section className="school-book-scan" role="dialog" aria-modal="true" aria-label="This book was just scanned">
+  /* A barcode scanner emits keystrokes; nothing here may be composed. */
+  return <section className="school-book-scan" data-ime="off" role="dialog" aria-modal="true" aria-label="This book was just scanned">
     <div className="school-book-scan__preview">
       <h2>This book was just scanned</h2>
       <div className="school-book-scan__layout">

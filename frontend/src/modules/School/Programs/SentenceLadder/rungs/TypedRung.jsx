@@ -120,6 +120,10 @@ export default function TypedRung({ entry, audioUrl, nextEntry, onComplete, savi
         className="lang-rung__input"
         type="text"
         lang={responseLang}
+        /* Drives the School-wide in-page IME: dictation asks for the target
+           script, interpretation for the source, and the mode follows focus
+           with no keypress. F6 still overrides. */
+        data-ime-lang={responseLang}
         autoComplete="off"
         autoCorrect="off"
         spellCheck={false}

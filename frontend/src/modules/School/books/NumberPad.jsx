@@ -195,7 +195,8 @@ export default function NumberPad({
   const slots = Array.from({ length: maxLength }, (_, i) => entry[i] ?? '');
 
   return (
-    <section className="school-books-pad" data-testid="numberpad">
+    /* Digits, and the surface a barcode scanner types into. */
+    <section className="school-books-pad" data-testid="numberpad" data-ime="off">
       <h2 className="school-books-pad__label">{label}</h2>
 
       <div
