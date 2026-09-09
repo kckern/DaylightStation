@@ -43,7 +43,7 @@
 //
 // Module contract: { position, duration, playing, seeking, data, region, logger }.
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import ProfileAvatar from '../../../../lib/identity/ProfileAvatar.jsx';
 import Icon from '../../home/icons/Icon.jsx';
@@ -63,6 +63,55 @@ function subjectLabel(subject) {
   const trimmed = subject.trim();
   if (!trimmed) return null;
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
+/**
+ * The wall clock and the date — J9, the one job on this rail that nothing
+ * depends on.
+ *
+ * IT IS A CLOCK, NOT A COUNTDOWN. The rail deliberately refuses to say how long
+ * is left in a story (see the header): that is a pressure this session does not
+ * apply. The time of day is a different object — it is about the room, not the
+ * book, and it is here for one reason only, which is that a child who looks up
+ * from a story gets to practise reading it.
+ *
+ * Which is also the rule that keeps it honest: the moment anything on this
+ * screen DEPENDS on the time, it has stopped being incidental and has to be
+ * designed as an affordance instead.
+ *
+ * Ticks once a minute, on the minute. No seconds — a digit changing every
+ * second is motion, and the pulse on the live pip is the only motion this
+ * screen gets.
+ */
+function WallClock() {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    let timer = null;
+    const schedule = () => {
+      // Align to the next minute boundary rather than drifting on a 60s
+      // interval, so the rail and the kitchen clock agree.
+      const ms = 60_000 - (Date.now() % 60_000);
+      timer = setTimeout(() => { setNow(new Date()); schedule(); }, ms + 50);
+    };
+    schedule();
+    return () => { if (timer) clearTimeout(timer); };
+  }, []);
+
+  // No AM/PM: it is a second code to learn, and a child knows whether it is
+  // morning. No leading zero, no seconds.
+  const time = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', hour12: true })
+    .format(now).replace(/\s*[AP]M$/i, '');
+  const weekday = new Intl.DateTimeFormat(undefined, { weekday: 'long' }).format(now);
+  const date = new Intl.DateTimeFormat(undefined, { month: 'long', day: 'numeric' }).format(now);
+
+  return (
+    <div className="reading-credit__clock" data-testid="reading-credit-clock">
+      <p className="reading-credit__time">{time}</p>
+      <p className="reading-credit__date">{weekday}</p>
+      <p className="reading-credit__date">{date}</p>
+    </div>
+  );
 }
 
 /**
@@ -161,6 +210,10 @@ export default function ReadingCredit({
           progress={fraction}
         />
       </div>
+
+      {/* Anchored to the foot of the rail, visibly OUTSIDE the plaque above it:
+          J9 costs nothing only while it is not part of the statement. */}
+      <WallClock />
     </section>
   );
 }

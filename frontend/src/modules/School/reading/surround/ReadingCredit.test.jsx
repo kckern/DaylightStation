@@ -180,9 +180,21 @@ describe('reading-credit — the clock is deliberately unused', () => {
     const early = at(0);
     const late = at(880);
     expect(early.sweep).not.toBe(late.sweep);
-    // The words on the rail do not move with the clock.
+    // The words on the rail do not move with the story's clock. (The WALL
+    // clock says the time of day and is a different object — J9 — but it too
+    // must be unmoved by where we are in the book.)
     expect(early.text).toBe(late.text);
-    expect(late.text).not.toMatch(/\d+\s*:\s*\d+/);
+  });
+
+  it('carries a wall clock and a date, and no elapsed or remaining time', () => {
+    const { container } = renderRail();
+    const clock = container.querySelector('[data-testid="reading-credit-clock"]');
+    expect(clock).not.toBeNull();
+    // A time of day, a weekday and a date — three lines, none of them a duration.
+    expect(clock.querySelector('.reading-credit__time').textContent).toMatch(/^\d{1,2}:\d{2}$/);
+    expect(clock.textContent).not.toMatch(/left|remaining|elapsed|min\b/i);
+    // And it is the LAST thing on the rail, outside the credit plaque.
+    expect(container.querySelector('.reading-credit').lastElementChild).toBe(clock);
   });
 
   it('marks the pip this story will fill, and only while it is playing', () => {

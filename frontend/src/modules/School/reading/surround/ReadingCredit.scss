@@ -174,3 +174,41 @@
   flex-wrap: wrap;
   justify-content: center;
 }
+
+/* ── When is it ──────────────────────────────────────────────────────────── */
+
+/* THE WALL CLOCK. `margin-top: auto` pushes it to the foot of the rail so it
+   sits visibly apart from the centred plaque — the credit is one statement
+   about one child, and the date is not part of it. In `--ink-soft`, because
+   nothing on this screen depends on it. */
+.reading-credit__clock {
+  margin-top: auto;
+  padding-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  color: var(--ink-soft, #a89a80);
+  flex: none;
+}
+
+.reading-credit__time {
+  margin: 0;
+  font-size: clamp(1.4rem, 20cqw, 2rem);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  color: var(--ink, #e9dfc8);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The full weekday word is the practice — "Wednesday", not "Wed". It fits the
+   rail's ~144px inner width at this size; a wrapped date would read as two
+   facts, so it is two LINES by construction (weekday, then month and day). */
+.reading-credit__date {
+  margin: 0;
+  font-size: var(--label-floor, 11.52px);
+  line-height: 1.25;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}

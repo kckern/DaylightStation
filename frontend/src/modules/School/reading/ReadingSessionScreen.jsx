@@ -283,6 +283,109 @@ function Recent({ days, studyDay }) {
   );
 }
 
+/** `2026-09-09T21:06:33Z` -> `2:06`. The clock time, never a duration. */
+export function clockTime(iso) {
+  const at = Date.parse(String(iso ?? ''));
+  if (!Number.isFinite(at)) return null;
+  return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', hour12: true })
+    .format(new Date(at)).replace(/\s*[AP]M$/i, '');
+}
+
+/**
+ * One book on the day's receipt: its cover, and when it finished.
+ *
+ * CLOCK TIME, NOT DURATION. "18 min" turns a book into a quantity and invites
+ * exactly the comparison this session refuses — the obligation is a count of
+ * books, never of minutes, and a child who meets it by re-reading one short
+ * story has met it. The clock time teaches something instead, and it is the
+ * same number the rail was showing while the book played.
+ */
+function DoneBook({ book }) {
+  const [cover, setCover] = useState(null);
+  const contentId = book?.contentId ?? null;
+
+  useEffect(() => {
+    if (!contentId) return undefined;
+    let live = true;
+    bookCover(contentId).then((url) => { if (live && url) setCover(url); });
+    return () => { live = false; };
+  }, [contentId]);
+
+  // Newest first, capped: a favourite read five times should say so without
+  // becoming a column of numbers.
+  const times = (Array.isArray(book?.at) ? book.at : []).map(clockTime).filter(Boolean).slice(0, 3);
+
+  return (
+    <li className="reading-session__done-book" data-testid="reading-done-book">
+      <div className="reading-session__done-cover">
+        {cover ? <img src={cover} alt="" /> : <div className="reading-session__recent-spine" aria-hidden="true" />}
+      </div>
+      <span className="reading-session__done-times">
+        {times.join(' · ')}
+        {book?.times > times.length ? ` +${book.times - times.length}` : ''}
+      </span>
+    </li>
+  );
+}
+
+/** Exported for its own tests: the ceremony is driven by a playback callback,
+ *  not by a socket event, so a screen-level test cannot reach it. */
+export function Ceremony({ tier, name, learner, pick, summary }) {
+  const day = tier === 'day';
+  const todaysBooks = day
+    ? ((summary?.recentDays ?? []).find((g) => g.studyDay === summary?.studyDay)?.books ?? [])
+    : [];
+
+  return (
+    <div
+      className={`reading-session__ceremony reading-session__ceremony--${tier}`}
+      data-testid={day ? 'reading-celebrate' : 'reading-book-done'}
+      data-tier={tier}
+    >
+      {day ? (
+        <div className="reading-session__who">
+          <ProfileAvatar id={learner?.id} name={name || learner?.id} size={256} />
+        </div>
+      ) : null}
+
+      <h1 className={day ? 'reading-session__ask' : 'reading-session__book-done-headline'}>
+        {day
+          ? `Great reading${name ? `, ${name}` : ''}!`
+          : (name ? `Nice reading, ${name}!` : 'Nice reading!')}
+      </h1>
+
+      {/* Tier `book` shows the ONE cover that just landed; tier `day` shows
+          everything today, which is a different question. */}
+      {!day && pick?.image
+        ? <img className="reading-session__book-done-cover" src={pick.image} alt="" />
+        : null}
+
+      {day && todaysBooks.length > 0 ? (
+        <ul className="reading-session__done-books" data-testid="reading-done-books">
+          {todaysBooks.map((book, index) => (
+            <DoneBook key={`${book.contentId ?? book.title ?? 'book'}-${index}`} book={book} />
+          ))}
+        </ul>
+      ) : null}
+
+      <ReadingPips
+        count={summary?.count}
+        target={summary?.target}
+        label={summary?.progressLabel}
+        className="reading-session__pips"
+        testId={day ? 'reading-celebrate-count' : 'reading-book-done-count'}
+      />
+
+      {/* The close is now the ONLY moment a child sees today's square turn
+          green — after this the screen winds down rather than returning to the
+          shelf — so the wall belongs here as much as on the way in. */}
+      {day ? (
+        <StreakWall days={summary?.streak} studyDay={summary?.studyDay} className="reading-session__streak" />
+      ) : null}
+    </div>
+  );
+}
+
 function Notice({ notice }) {
   if (!notice) return null;
   return (
@@ -529,42 +632,27 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
         </div>
       ) : null}
 
-      {/* TIER ONE — a book is done. A beat, not a screen: the cover the child
-          picked, their pips with one more filled, and their name. It says "that
-          one counted" and gets out of the way. Before this existed, finishing
-          story 1 of 2 showed nothing at all. */}
-      {view === 'book-done' ? (
-        <div className="reading-session__book-done" data-testid="reading-book-done">
-          {pick?.image
-            ? <img className="reading-session__book-done-cover" src={pick.image} alt="" />
-            : null}
-          <h1 className="reading-session__book-done-headline">
-            {name ? `Nice reading, ${name}!` : 'Nice reading!'}
-          </h1>
-          <ReadingPips
-            count={summary?.count}
-            target={summary?.target}
-            label={summary?.progressLabel}
-            className="reading-session__pips"
-            testId="reading-book-done-count"
-          />
-        </div>
-      ) : null}
+      {/* THE CEREMONY, both tiers. They were two views that shared every
+          element and differed only in WHICH books they show and how long they
+          stay — which is a prop, not a screen. The state names survive because
+          the hook's guards enumerate them.
 
-      {view === 'celebrating' ? (
-        <div className="reading-session__celebrate" data-testid="reading-celebrate">
-          <div className="reading-session__who">
-            <ProfileAvatar id={learner?.id} name={name || learner?.id} size={256} />
-          </div>
-          <h1 className="reading-session__ask">Great reading{name ? `, ${name}` : ''}!</h1>
-          <ReadingPips
-            count={summary?.count}
-            target={summary?.target}
-            label={summary?.progressLabel}
-            className="reading-session__pips"
-            testId="reading-celebrate-count"
-          />
-        </div>
+          TIER `book` — one book landed, the day is not done. A beat, not a
+          screen: the cover just finished, the pips with one more filled. It
+          says "that one counted" and gets out of the way.
+
+          TIER `day` — the day is done. This is the only moment a child sees
+          what they actually did, so it carries today's covers with the clock
+          time each one finished (J6) and the streak wall with today's square
+          newly lit (J7). */}
+      {view === 'book-done' || view === 'celebrating' ? (
+        <Ceremony
+          tier={view === 'celebrating' ? 'day' : 'book'}
+          name={name}
+          learner={learner}
+          pick={pick}
+          summary={summary}
+        />
       ) : null}
 
       {view === 'returning' ? (
