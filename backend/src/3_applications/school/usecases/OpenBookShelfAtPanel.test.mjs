@@ -48,14 +48,14 @@ describe('OpenBookShelfAtPanel', () => {
     expect(f.issueLaunchTarget).not.toHaveBeenCalled();
   });
 
-  it('refuses a screen that is not the household’s school panel', async () => {
+  // This refused any screen but the resolved panel for one commit. The check
+  // was theatre — the client names its own screen — and its only real effect
+  // was locking out the School app's browser mount, where the printed-code
+  // door already works. What bounds this door is the roster and the clock.
+  it('opens from any screen the School app runs on, browser mount included', async () => {
     const f = fixture();
-    expect(await refusal(f.service.open({ screenId: 'livingroom-tv', learnerId: 'child' })))
-      .toMatchObject({ status: 403 });
-    // The roster is not even read: the screen decides first, and it is the
-    // server's own answer, never the client's claim about itself.
-    expect(f.roster).not.toHaveBeenCalled();
-    expect(f.issueLaunchTarget).not.toHaveBeenCalled();
+    const result = await f.service.open({ screenId: 'browser', learnerId: 'child' });
+    expect(f.grants.verify(result.launchTarget.bookGrant, { learnerId: 'child' }).ok).toBe(true);
   });
 
   it('refuses when no panel is configured, rather than opening anywhere', async () => {
