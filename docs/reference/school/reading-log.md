@@ -132,9 +132,15 @@ of twelve uses, a wrong-guess throttle, and the "is this you?" re-ask. What
 pays for it is the clock. A shelf opened by tapping a face gets a grant good
 for **twenty minutes**, not the printed card's eight hours — long enough to
 type a number and save a page, short enough that a grant left behind on a
-hallway screen is worth nothing by the time anyone finds it. The server, not
-the panel, decides both that the learner is on the current roster and that the
-screen asking is the household's one School panel.
+hallway screen is worth nothing by the time anyone finds it. The other bound is
+the roster: the server, not the client, decides that the learner named is one
+of today's.
+
+The door stands wherever the School panel does, the browser mount included —
+the same place the printed-code keypad already opens a shelf. It briefly also
+required the request to name the configured panel, which was theatre: the
+client names its own screen, so that check turned nobody away except the app's
+own browser mount.
 
 The rule is narrow on purpose: exactly one action, and that action a `program`.
 A printing card also carries one button, and auto-running it would fire a

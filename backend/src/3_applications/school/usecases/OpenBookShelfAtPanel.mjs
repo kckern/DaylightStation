@@ -49,9 +49,7 @@ export class OpenBookShelfAtPanel {
    */
   async open({ screenId, learnerId } = {}) {
     if (typeof learnerId !== 'string' || !learnerId) refuse(400, 'Choose who is reading.');
-    const target = this.#deps.target;
-    if (!target) refuse(503, 'No reading panel is configured. Ask a grown-up.');
-    if (screenId !== target.screenId) refuse(403, 'Books do not open from this screen.');
+    if (!this.#deps.target) refuse(503, 'No reading panel is configured. Ask a grown-up.');
 
     const roster = await this.#deps.roster();
     if (!Array.isArray(roster) || !roster.some(learner => learner.id === learnerId)) {

@@ -887,10 +887,8 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
                   nothing. */}
               <div className="school-lock-split__board" aria-label="Today's school status">
                 <AgendaStatusBoard kids={roster} />
-                {screenId !== 'browser' && (
-                  <BookShelfDoor screenId={screenId} roster={roster}
-                    onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />
-                )}
+                <BookShelfDoor screenId={screenId} roster={roster}
+                  onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />
               </div>
             </div>
           ) : (
