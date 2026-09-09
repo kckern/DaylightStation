@@ -1,5 +1,22 @@
 # Reading Shelf Visual Remediation — Implementation Plan
 
+> **STATUS 2026-09-09: ABSORBED, not executed task-by-task.** The shelf was
+> rebuilt in one pass (`the shelf is a shelf — books run off the edge, and
+> adding one is a book`) that carries this plan's fixes for Tasks 1-15 and
+> overrides three of its decisions, at KC's direction:
+>
+> - **Task 8** offered the add card only on an EMPTY row. The add card is now
+>   always in the row, in a book's own footprint with a plus, so it stands
+>   beside whatever is already being read.
+> - **Defect 18**, ruled out of scope here, is the design: the history row is
+>   MEANT to be cut off by the panel edge, and scrolls.
+> - **Task 12** applies, and further — a green check / amber bookmark on the
+>   art now carries the outcome, and set-aside books sit in the shelf row
+>   rather than only in full history.
+>
+> The endstate is `docs/reference/school/reading-shelf.md`. Read this file for
+> WHY each defect existed, not for what to do next.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Fix the 19 catalogued visual defects on the child's reading shelf (`School/books/`), and make the history view scroll vertically on its own terms rather than by inheriting a leaked rule.
