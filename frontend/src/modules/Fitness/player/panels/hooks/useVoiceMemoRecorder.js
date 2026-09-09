@@ -43,8 +43,61 @@ export const resolvePlaybackState = (api) => {
   return null;
 };
 
+/**
+ * THE SENTENCE A PERSON IS ALLOWED TO SEE.
+ *
+ * `DaylightAPI` throws `HTTP <status>: <statusText> - <body>`, and when the
+ * failure came from a PROXY rather than from us, that body is an entire HTML
+ * error page. It was taken as the message verbatim and rendered — which is how
+ * a spent OpenAI balance ended up painting a wall of stylesheet text over
+ * somebody's workout. (Measured 2026-09-09: `credit_balance_exhausted` ->
+ * upstream 429 -> gateway 502 -> `HTTP 502: Bad Gateway - <!DOCTYPE html>...`,
+ * the whole page, straight into the overlay.)
+ *
+ * A provider's words are never the user's words. Unless a message is short and
+ * plainly prose — no markup, no JSON body, no `HTTP <status>` envelope — the
+ * caller's own fallback is used instead. Erring toward the fallback is the
+ * right way to be wrong: a generic sentence someone can act on beats a
+ * specific one they cannot.
+ */
+const MAX_HUMAN_MESSAGE = 160;
+
+export const humanMessage = (raw, fallback) => {
+  if (typeof raw !== 'string') return fallback;
+  const text = raw.trim();
+  if (!text || text.length > MAX_HUMAN_MESSAGE) return fallback;
+  if (/[<>{}]/.test(text)) return fallback;
+  if (/^\s*HTTP\s+\d{3}\b/i.test(text)) return fallback;
+  return text;
+};
+
+/** Statuses that mean the request never reached us, or never came back. */
+const GATEWAY_STATUSES = new Set([502, 503, 504]);
+
+/**
+ * What went wrong, in the terms the person in front of the screen cares about.
+ *
+ * A gateway status is NOT "your recording is gone": the capture is persisted
+ * before transcription is attempted, so the honest thing to say is that the
+ * transcriber is unreachable — not that the memo failed. The wording claims
+ * only what is known.
+ */
+export const uploadFailureCopy = (err) => {
+  const fromField = Number(err?.status);
+  const fromMessage = Number(/^\s*HTTP\s+(\d{3})\b/i.exec(String(err?.message ?? ''))?.[1]);
+  const status = Number.isFinite(fromField) && fromField ? fromField
+    : (Number.isFinite(fromMessage) ? fromMessage : null);
+  if (GATEWAY_STATUSES.has(status)) {
+    return {
+      code: 'transcriber_unreachable',
+      message: "The transcriber didn't answer. Your recording is kept.",
+    };
+  }
+  return { code: 'upload_failed', message: "That memo didn't save. Try again in a moment." };
+};
+
 const normalizeRecorderError = (err, fallbackMessage = 'Recorder error', code = 'recorder_error', retryable = false, artifact = null) => {
-  const message = (err instanceof Error ? err.message : null) || fallbackMessage;
+  const message = humanMessage(err instanceof Error ? err.message : null, fallbackMessage);
   return {
     code,
     message,
@@ -458,10 +511,14 @@ const useVoiceMemoRecorder = ({
         savedArtifactRef.current = artifact;
         setSavedArtifact(artifact);
       }
+      // No artifact in the body means the failure never reached our route — a
+      // gateway gave up, or the request did. Say which, calmly, and never
+      // repeat whatever that gateway put in its body.
+      const failure = uploadFailureCopy(err);
       emitError(
-        artifact ? new Error(artifactMessage(artifact)) : err,
-        timedOut ? 'Processing timed out' : 'Upload failed',
-        artifact ? 'transcription_failed_capture_saved' : (timedOut ? 'processing_timeout' : 'upload_failed'),
+        artifact ? new Error(artifactMessage(artifact)) : new Error(failure.message),
+        timedOut ? 'Processing timed out' : failure.message,
+        artifact ? 'transcription_failed_capture_saved' : (timedOut ? 'processing_timeout' : failure.code),
         true,
         artifact
       );

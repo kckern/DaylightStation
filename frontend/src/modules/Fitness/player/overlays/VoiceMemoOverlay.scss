@@ -411,12 +411,23 @@
     }
   }
 
+  // BOUNDED, ON PURPOSE — the second lock behind `humanMessage`.
+  // A message is one short sentence and the recorder now guarantees it. This
+  // is the box a gateway's HTML error page painted itself over a workout in:
+  // unbounded, it grew to whatever it was handed. No string, however malformed,
+  // gets to do that again.
   &__error {
     font-size: 0.9rem;
     color: #fca5a5;
     background: rgba(239, 68, 68, 0.1);
     padding: 0.5rem 0.75rem;
     border-radius: 0.5rem;
+    max-height: 5em;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
   }
 
   // Reassurance, not alarm: the transcription failed but the recording did

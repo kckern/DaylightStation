@@ -3577,10 +3577,21 @@
     flex-shrink: 0;
   }
 
-  .voice-memo-error { 
-    color: #ff6b6b; 
-    padding: 0 12px 8px; 
-    font-size: 0.75rem; 
+  /* BOUNDED, ON PURPOSE — defence in depth behind `humanMessage`.
+     A message is supposed to be one short sentence, and the recorder now
+     guarantees that. This is the second lock: an unbounded error box is how a
+     gateway's HTML page painted itself over a workout, and no string, however
+     malformed, may do that again. */
+  .voice-memo-error {
+    color: #ff6b6b;
+    padding: 0 12px 8px;
+    font-size: 0.75rem;
+    max-height: 4.5em;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
   }
 
   .voice-memo-list {
