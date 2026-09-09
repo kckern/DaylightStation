@@ -197,7 +197,35 @@ describe('reading-credit — the clock is deliberately unused', () => {
       return has;
     };
     expect(render1(true)).toBe(true);
-    expect(render1(false)).toBe(false);
+    // Paused is NOT gone: a duration means a story is loaded.
+    expect(render1(false)).toBe(true);
+  });
+
+  it('holds the pulse still while paused, without losing the mark or the sweep', () => {
+    const Module = getSurroundRegistry().get('reading-credit');
+    const at = (playing) => {
+      const { container, unmount } = render(
+        <Module position={450} duration={900} playing={playing} seeking={false}
+          data={{ reading: READING }} region={{ slot: 'right' }} logger={makeLogger()} />,
+      );
+      const live = container.querySelector('[data-testid="reading-pip-live"]');
+      const out = { held: live.className.includes('reading-pip--held'), sweep: live.getAttribute('style') };
+      unmount();
+      return out;
+    };
+    expect(at(true)).toMatchObject({ held: false });
+    expect(at(false)).toMatchObject({ held: true });
+    // The position is still drawn either way.
+    expect(at(false).sweep).toBe(at(true).sweep);
+  });
+
+  it('shows no live pip at all before a story is loaded', () => {
+    const Module = getSurroundRegistry().get('reading-credit');
+    const { container } = render(
+      <Module position={0} duration={0} playing={false} seeking={false}
+        data={{ reading: READING }} region={{ slot: 'right' }} logger={makeLogger()} />,
+    );
+    expect(container.querySelector('[data-testid="reading-pip-live"]')).toBeNull();
   });
 
   it('pulses without a sweep when the position is not known yet', () => {

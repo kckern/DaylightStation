@@ -152,7 +152,12 @@ export default function ReadingCredit({
           label={reading?.progressLabel}
           className="reading-credit__pips"
           testId="reading-credit-count"
-          live={playing}
+          // A PAUSED story is still in flight. Gating the live pip on `playing`
+          // made it vanish the moment anyone hit pause, taking the "which book
+          // is this" answer with it — so the mark is on whenever there is a
+          // story loaded, and only the PULSE stops when the audio does.
+          live={playing || duration > 0}
+          moving={playing}
           progress={fraction}
         />
       </div>
