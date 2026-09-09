@@ -69,7 +69,7 @@ describe('shelf experience', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Finished today' }));
     const receipt = await screen.findByTestId('book-save-receipt');
     expect(screen.getByTestId('book-shelf-grid')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Recently finished' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Finished and set aside' })).toBeInTheDocument();
     fireEvent.click(within(receipt).getByRole('button', { name: 'Undo finish' }));
     await waitFor(() => expect(api.progress).toHaveBeenCalledTimes(2));
     expect(api.progress.mock.calls[1][2]).toBe(item.itemId);
@@ -158,7 +158,7 @@ describe('shelf experience', () => {
     render(<BookShelf {...props} />);
     const row = await screen.findByTestId('recently-finished-row');
     expect(within(row).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['Open Recent', 'Open Backdated']);
-    expect(within(row).getByText('Finished Sep 2')).toBeInTheDocument();
+    expect(within(row).getByText('Sep 2')).toBeInTheDocument();
   });
 
   it('blocks the first-book tile after the first save succeeds but its shelf read fails', async () => {

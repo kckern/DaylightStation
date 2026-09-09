@@ -11,12 +11,36 @@ export function lastFinish(item) {
     recordedAt: event?.recordedAt ?? null,
   };
 }
+/**
+ * Everything a child is DONE with, newest first — finished and set aside alike.
+ *
+ * The row this feeds used to hold finished books only, which quietly hid the
+ * set-aside ones until a child opened full history. They are two outcomes of
+ * the same act, they sort on the same dates, and the tile's own mark is what
+ * tells them apart.
+ */
+export function recentOutcomes(items = []) {
+  return sortByOutcome(items.filter(item => DONE.has(item?.projection?.status)));
+}
+
+const DONE = new Set(['finished', 'set-aside']);
+
 export function recentFinishes(items = []) {
-  return items.filter(item => item?.projection?.status === 'finished').sort((a, b) => {
-    const left = lastFinish(a); const right = lastFinish(b);
+  return sortByOutcome(items.filter(item => item?.projection?.status === 'finished'));
+}
+
+function sortByOutcome(items) {
+  return items.sort((a, b) => {
+    const left = outcomeDay(a); const right = outcomeDay(b);
     return String(right.day ?? '').localeCompare(String(left.day ?? ''))
       || String(right.recordedAt ?? '').localeCompare(String(left.recordedAt ?? ''));
   });
+}
+
+/** A set-aside reading has no finish event; its date is when it was last touched. */
+function outcomeDay(item) {
+  if (item?.projection?.status === 'set-aside') return { day: item.projection.lastAt ?? null, recordedAt: item.projection.lastAt ?? null };
+  return lastFinish(item);
 }
 export function finishDate(day) {
   if (!/^\d{4}-\d{2}-\d{2}/.test(day ?? '')) return null;

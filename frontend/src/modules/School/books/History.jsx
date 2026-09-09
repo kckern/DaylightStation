@@ -47,7 +47,7 @@ export default function History({ items = [], onBack, onSelect = null }) {
       {groups.length === 0 ? (
         <p className="school-books__empty">Nothing finished yet</p>
       ) : (
-        <div className="school-books__grid school-books-history__scroll">
+        <div className="school-books-history__scroll" data-testid="book-history-scroll">
           {groups.map((group) => (
             <section key={group.key || 'earlier'} className="school-books-history__group" data-testid="book-history-group">
               <h3 className="school-books-history__month">{group.label}</h3>

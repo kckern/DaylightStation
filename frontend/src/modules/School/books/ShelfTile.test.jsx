@@ -31,6 +31,21 @@ const item = (overrides = {}, projection = {}) => ({
 });
 
 describe('ShelfTile', () => {
+  describe('the text column', () => {
+    it('wraps title, author, bar and caption beside the art, never inside it', () => {
+      const { container } = render(<ShelfTile item={item()} onSelect={() => {}} />);
+      const text = container.querySelector('.school-books-tile__text');
+      expect(text.querySelector('.school-books-tile__title')).not.toBeNull();
+      expect(text.querySelector('.school-books-tile__author')).not.toBeNull();
+      expect(text.querySelector('.school-books-tile__bar')).not.toBeNull();
+      expect(text.querySelector('.school-books-tile__caption')).not.toBeNull();
+      // The cover is the text column's SIBLING: they used to share one fixed
+      // four-row grid, which is what sliced every second title line.
+      expect(text.querySelector('.school-books-tile__cover')).toBeNull();
+      expect(container.querySelector('.school-books-tile__art .school-books-tile__cover')).not.toBeNull();
+    });
+  });
+
   describe('the cover', () => {
     it('renders the cover image named by the title', () => {
       render(<ShelfTile item={item()} onSelect={() => {}} />);
@@ -151,7 +166,7 @@ describe('ShelfTile', () => {
       render(<ShelfTile item={item({}, { status: 'finished', page: 195, percent: 100, lastAt: '2026-07-14T21:00:00Z' })} />);
       expect(screen.queryByRole('progressbar')).toBeNull();
       expect(screen.queryByText(/^p\. /)).toBeNull();
-      expect(screen.getByText('Finished Jul 14')).toBeInTheDocument();
+      expect(screen.getByText('Jul 14')).toBeInTheDocument();
     });
 
     it('a set-aside tile names that outcome', () => {
@@ -162,7 +177,27 @@ describe('ShelfTile', () => {
     it('the finished prop wins over a reading status', () => {
       render(<ShelfTile item={item({}, { lastAt: '2026-07-14' })} finished />);
       expect(screen.queryByRole('progressbar')).toBeNull();
-      expect(screen.getByText('Finished Jul 14')).toBeInTheDocument();
+      expect(screen.getByText('Jul 14')).toBeInTheDocument();
+    });
+
+    it('marks a finished book with the green check, not another sentence', () => {
+      const { container } = render(<ShelfTile item={item({}, { status: 'finished', lastAt: '2026-07-14' })} />);
+      const mark = container.querySelector('.school-books-tile__mark');
+      expect(mark).toHaveClass('is-finished');
+      expect(mark).toHaveAttribute('aria-label', 'Finished');
+      expect(screen.getByText('Jul 14')).toBeInTheDocument();
+      expect(screen.queryByText(/^Finished/)).toBeNull();
+    });
+
+    it('marks a set-aside book differently, and keeps its words', () => {
+      const { container } = render(<ShelfTile item={item({}, { status: 'set-aside', lastAt: '2026-06-02' })} />);
+      expect(container.querySelector('.school-books-tile__mark')).toHaveClass('is-set-aside');
+      expect(screen.getByText('Set aside Jun 2')).toBeInTheDocument();
+    });
+
+    it('a book still being read carries no outcome mark at all', () => {
+      const { container } = render(<ShelfTile item={item()} onSelect={() => {}} />);
+      expect(container.querySelector('.school-books-tile__mark')).toBeNull();
     });
 
     it('is not a button when nothing can be tapped', () => {
