@@ -45,6 +45,7 @@ import { useSchoolLaunch } from './useSchoolLaunch.js';
 import { moduleLaunchAllowed } from './catalog/certification.js';
 import Keypad from './selfService/Keypad.jsx';
 import AgendaStatusBoard from './status/AgendaStatusBoard.jsx';
+import BoardHeader from './status/BoardHeader.jsx';
 import LaunchCard from './selfService/LaunchCard.jsx';
 import LaunchCardPreview from './selfService/LaunchCardPreview.jsx';
 import ScanCeremony from './selfService/ScanCeremony.jsx';
@@ -881,14 +882,16 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
                   the family's own day board, not a claim affordance; codes
                   remain the only entry path. Never intercepts a tap. */}
               {/* The board itself stays read-only — see AgendaStatusBoard's own
-                  header. The door is its NEIGHBOUR, not a row on it, so the
-                  pane's `pointer-events: none` is re-enabled on the button
-                  alone and the door still stands on a day the board draws
-                  nothing. */}
+                  header. The door rides in the HEADER, which is the board's
+                  neighbour rather than a row on it, so the pane's
+                  `pointer-events: none` is re-enabled on the button alone and
+                  both survive a day the board draws nothing. */}
               <div className="school-lock-split__board" aria-label="Today's school status">
+                <BoardHeader>
+                  <BookShelfDoor screenId={screenId} roster={roster}
+                    onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />
+                </BoardHeader>
                 <AgendaStatusBoard kids={roster} />
-                <BookShelfDoor screenId={screenId} roster={roster}
-                  onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />
               </div>
             </div>
           ) : (

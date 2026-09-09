@@ -2299,9 +2299,13 @@
 .school-books-update__outcomes { gap: 0; }
 
 .school-selfservice__screen-off {
-  position: fixed; right: max(1rem, env(safe-area-inset-right));
-  bottom: max(1rem, env(safe-area-inset-bottom)); z-index: 2;
-  min-height: 44px; padding: 0.45rem 1rem; border: 1px solid transparent;
+  // IN FLOW, under the keypad it belongs to. Pinned to the viewport it landed
+  // in the board's corner and forced that pane to reserve a strip for it.
+  margin: 1.5rem auto 0; display: flex; align-items: center; justify-content: center; gap: .5rem;
+  // FIXED WIDTH: the label changes when the control arms, and a button that
+  // resizes under a finger already resting on it is a different button.
+  width: 14rem; box-sizing: border-box;
+  min-height: 44px; padding: 0.45rem 1rem; border: 1px solid var(--school-border);
   border-radius: 10px; background: transparent; color: var(--school-muted);
   font-size: 0.95rem; font-weight: 700; cursor: pointer; touch-action: manipulation;
   &.is-armed {
@@ -2310,10 +2314,10 @@
   }
   &:disabled { opacity: 0.45; cursor: default; }
 }
+.school-selfservice__screen-off-icon { font-size: 1.15rem; line-height: 1; }
 .school-selfservice__screen-off-status {
-  position: fixed; left: 50%; bottom: max(4.75rem, calc(env(safe-area-inset-bottom) + 4.75rem));
-  z-index: 2; width: min(30rem, calc(100% - 2rem)); margin: 0;
-  transform: translateX(-50%); color: var(--school-danger);
+  // Follows the button rather than floating: it is that button's own sentence.
+  width: min(30rem, 100%); margin: .5rem auto 0; color: var(--school-danger);
   font-size: 0.9rem; font-weight: 700; text-align: center;
 }
 .school-selfservice__sleep {
@@ -2756,26 +2760,35 @@
   border-left: 1px solid var(--school-border);
 }
 .school-lock-split__board > .school-status-board { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+// The date and time the board is headed with, and the door that rides right.
+.school-board-header {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  min-width: 0;
+}
+.school-board-header__when { min-width: 0; }
+.school-board-header__time { margin: 0; font-size: clamp(1.6rem, 3.2vw, 2.4rem); line-height: 1.1; }
+.school-board-header__date { margin: .15rem 0 0; color: var(--school-muted); font-size: clamp(.9rem, 1.6vw, 1.05rem); }
+
 // The one tappable thing in this pane, and NOT part of the board: the status
 // rows stay read-only (see AgendaStatusBoard's header), and this still stands
 // on a day the board itself draws nothing.
 .school-book-door {
   pointer-events: auto;
-  flex: 0 0 auto; align-self: flex-end;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .35rem;
-  min-width: 7rem; min-height: 6rem; padding: .6rem 1rem;
-  border: 1px solid var(--school-border); border-radius: 16px;
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center; gap: .5rem;
+  min-height: 3.5rem; padding: .5rem 1rem;
+  border: 1px solid var(--school-border); border-radius: 14px;
   background: var(--school-surface); color: inherit; font: inherit; font-weight: 700;
-  cursor: pointer; touch-action: manipulation;
+  cursor: pointer; touch-action: manipulation; white-space: nowrap;
 }
-.school-book-door__icon { font-size: 2.5rem; line-height: 1; }
-.school-book-door__label { font-size: 1rem; text-align: center; }
+.school-book-door__icon { font-size: 1.75rem; line-height: 1; }
+.school-book-door__label { font-size: 1rem; }
 .school-lock-split[data-side='keypad-right'] .school-lock-split__board { border-left: 0; border-right: 1px solid var(--school-border); }
-// Keypad-left puts the board under the fixed "Turn off screen" affordance
-// (bottom-right) — reserve a lane so neither the last card nor the book door
-// sits on it. The button is ~44px tall on a 1rem inset, so 3rem was already
-// short of clearing it; the door made that visible.
-.school-lock-split[data-side='keypad-left'] .school-lock-split__board { padding-bottom: clamp(4rem, 8vh, 5rem); }
+// No reserved lane any more: "Turn off screen" used to be pinned to the
+// VIEWPORT's bottom-right, which is the board's corner, so the board had to
+// keep a strip clear for a control that is not its own. It sits in the keypad
+// column now (see `.school-selfservice__screen-off`) and overlaps nothing.
 // The board OWNS its pane: a column of equal-height student cards that split
 // the available height between them, whatever each card has to say. A card
 // with no plan keeps the same footprint — four matching cards are the point.
@@ -3140,12 +3153,12 @@
 .school-book-scan__learners button { display: flex; align-items: center; gap: .75rem; background: var(--school-surface); color: inherit; border: 1px solid var(--school-border); border-radius: 12px; padding: .75rem; min-height: 96px; min-width: 0; cursor: pointer; font: inherit; font-weight: 700; font-size: 1.15rem; }
 .school-book-scan__learners button span { overflow-wrap: anywhere; }
 .school-book-scan__learners .piano-avatar { width: 72px; height: 72px; flex: 0 0 72px; }
-// The deferred-scan corner card. It sits ABOVE the fixed "Turn off screen"
-// affordance (which is z-index 2 in the same corner), so it lifts clear of it
-// rather than landing on top: a child reaching for one must not hit the other.
+// The deferred-scan corner card. Nothing else is pinned to this corner any
+// more — "Turn off screen" moved into the keypad column — so it sits at the
+// bottom inset rather than lifted clear of it.
 .school-book-scan__notice {
   position: fixed; right: 1rem; z-index: 140;
-  bottom: max(4rem, calc(env(safe-area-inset-bottom) + 4rem));
+  bottom: max(1rem, calc(env(safe-area-inset-bottom) + 1rem));
   display: flex; align-items: center; gap: .75rem;
   width: min(24rem, calc(100% - 2rem)); box-sizing: border-box;
   padding: .75rem 1rem; border: 1px solid var(--school-border); border-radius: 12px;

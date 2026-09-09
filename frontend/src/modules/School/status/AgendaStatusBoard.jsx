@@ -255,7 +255,6 @@ export default function AgendaStatusBoard({ kids = [], day }) {
   if (!visible.length || settledEmpty) return null;
   return (
     <div className="school-status-board" data-testid="agenda-status-board">
-      <h2 className="school-status-board__title">Today</h2>
       {/* One card per student, equal height whether or not a plan loaded —
           the board is a wall fixture, and four uneven rows read as broken. */}
       <ul className="school-status-board__rows">
