@@ -37,6 +37,7 @@ import { useInitialActionGate } from './hooks/useInitialActionGate.js';
 import { ActionLoadingShell } from './ActionLoadingShell.jsx';
 import { layoutOwnsRouting } from './layoutOwnsRouting.js';
 import { resolveScreenAppPath } from './screenAppPath.js';
+import { rescueGesture, RESCUE_PRESSES, RESCUE_WINDOW_MS } from './input/rescueGesture.js';
 
 // Register built-ins on module load
 registerBuiltinWidgets();
@@ -213,20 +214,48 @@ export function ScreenRenderer({ screenId: propScreenId }) {
     });
   }, [screenId]);
 
-  // Failsafe: digit 4 always reloads if the input system isn't actually handling input.
-  // "Handling" means the adapter attached AND (where relevant) its keymap actually loaded.
-  // If the keymap fetch failed or returned empty, NumpadAdapter silently drops every
-  // keystroke — the failsafe must stay armed in that case so the user can escape.
+  // Failsafe: digit 4 gets the screen back, in two different situations.
+  //
+  // 1. INPUT IS DEAD — one press reloads. "Handling" means the adapter attached
+  //    AND (where relevant) its keymap actually loaded. If the keymap fetch
+  //    failed or returned empty, NumpadAdapter silently drops every keystroke,
+  //    so the failsafe must stay armed for the user to escape at all.
+  //
+  // 2. INPUT IS HEALTHY BUT NOBODY IS LISTENING — {@link RESCUE_PRESSES} presses
+  //    inside {@link RESCUE_WINDOW_MS} reloads anyway. A healthy adapter proves
+  //    the keystroke was DELIVERED; it proves nothing about anyone acting on it.
+  //    A fullscreen piano game registers an escape interceptor that returns
+  //    "handled" and deliberately does nothing (PianoVisualizer.jsx — a stray
+  //    keypress must not quit a game mid-move). That same interceptor also makes
+  //    ScreenActionHandler's `consumeBack` stand down. On a screen whose only
+  //    input is this keypad, that closed every exit at once and stranded the
+  //    office TV on a stuck game with no way to even reload the page.
+  //
+  //    So the escape hatch is deliberate repetition rather than one press: it
+  //    cannot fire by accident, and no interceptor gets a vote on it.
+  //
+  // CAPTURE PHASE, deliberately. NumpadAdapter's own window listener calls
+  // `stopImmediatePropagation()` on a mapped key, which would starve any
+  // same-phase listener registered after it. A capture listener on `window` runs
+  // before that can happen, so the failsafe cannot be disarmed by the very input
+  // path it exists to rescue the user from.
   useEffect(() => {
+    let presses = [];
     const failsafe = (e) => {
       const key = e.key || e.code?.replace(/^(Digit|Numpad)/, '');
       if (key !== '4') return;
-      if (inputHealthyRef.current) return;
+      const healthy = inputHealthyRef.current;
+      const verdict = rescueGesture({ presses, now: Date.now(), inputHealthy: healthy, repeat: e.repeat });
+      presses = verdict.presses;
+      if (!verdict.reload) return;
+      getLogger().child({ component: 'ScreenRenderer', screenId }).warn('screen.rescue-reload', {
+        inputHealthy: healthy, presses: RESCUE_PRESSES, windowMs: RESCUE_WINDOW_MS,
+      });
       window.location.reload();
     };
-    window.addEventListener('keydown', failsafe);
-    return () => window.removeEventListener('keydown', failsafe);
-  }, []);
+    window.addEventListener('keydown', failsafe, true);
+    return () => window.removeEventListener('keydown', failsafe, true);
+  }, [screenId]);
 
   // Focus probe: if the document loses focus, attempt to recover so keyboard input
   // from remotes/keyboards continues to route through the screen input adapters.

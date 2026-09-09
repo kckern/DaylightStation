@@ -33,16 +33,18 @@ import './SvgSequenceStaff.scss';
  * @param {Array<{midi?:number, midis?:number[], accidental?:'sharp'|'flat'}>} notes
  *   Ordered asks. One entry = one column; an entry with `midis` is a
  *   simultaneity (a dyad or triad) and draws as a chord in that column.
- * @param {number} cursorIndex - entries before it are done, this entry is the
- *   black cursor target, and entries after it are brown future notes.
+ * @param {number} cursorIndex - entries before it are done and draw BROWN, this
+ *   entry is the black cursor target, and entries after it are black too —
  *   unless an attempt is in progress at the cursor (see `activeNotes`).
  * @param {Map|null} activeNotes - currently held keys. This is the ONLY signal
  *   the run-state colouring reads:
  *     - opacity never encodes run state — every notehead is drawn at full
  *       opacity always; the visual weight difference between "played" and
- *       "to play" is a COLOUR (jet black vs. brown), never a fade;
- *     - with nothing held, the cursor entry stays black: it is the note the
- *       child is currently reading. Only entries AFTER it are brown;
+ *       "to play" is a COLOUR (brown vs. jet black), never a fade;
+ *     - the run reads left to right as brown behind you, black ahead of you —
+ *       the same direction the ABC exercise stage and the engraved score use.
+ *       With nothing held, the cursor entry stays black along with the music
+ *       ahead of it; the yellow cursor lane is what marks where you are;
  *     - the moment any key is held, the cursor entry's own noteheads colour
  *       per NOTE, not as a group: a target pitch being held is green, a
  *       target pitch not being held is red — a partially-played chord is not
@@ -212,8 +214,12 @@ export function SvgSequenceStaff({
         // missed — which is also what a single-note ask always is) colours the
         // stem; a mixed chord leaves it the plain, no-verdict ink so each
         // notehead's own colour is free to speak for itself.
+        //
+        // `current` gets its own value rather than folding into `done`: since
+        // `done` is the brown "already played" ink, a resting cursor sharing it
+        // would hang a brown stem under a black notehead.
         const stemState =
-          state === 'todo' ? 'todo'
+          state === 'todo' || state === 'current' ? state
           : state === 'active'
             ? (drawn.every((h) => h.noteState === 'hit') ? 'hit'
               : drawn.every((h) => h.noteState === 'miss') ? 'miss'
