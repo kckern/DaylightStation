@@ -438,6 +438,8 @@ export default function Keypad({
     <section
       className="school-selfservice"
       data-testid="selfservice-keypad"
+      /* Digits. The in-page Hangul IME must never touch this pad. */
+      data-ime="off"
       onPointerDownCapture={noteActivity}
       onKeyDownCapture={noteActivity}
       onClickCapture={noteActivity}

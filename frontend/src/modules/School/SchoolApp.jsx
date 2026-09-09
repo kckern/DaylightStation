@@ -51,6 +51,7 @@ import { useSelfService, DEFAULT_IDLE_TIMEOUT_SECONDS } from './selfService/useS
 import { useScanCeremony } from './selfService/useScanCeremony.js';
 import ReadalongPlaylistPlayer from '../Player/ReadalongPlaylistPlayer.jsx';
 import { ShutdownBlackout, useShutdownLock } from '../../hooks/useShutdownLock.js';
+import HangulTypingProvider from './ime/HangulTypingProvider.jsx';
 import './School.scss';
 
 /**
@@ -1159,14 +1160,20 @@ function SchoolAppInner({
 }) {
   return (
     <SchoolProfileProvider>
-      <SchoolBreadcrumbProvider>
-        <SchoolShell
-          clear={clear}
-          mode={mode}
-          idleTimeoutSeconds={idleTimeoutSeconds}
-          screenOffTimeoutSeconds={screenOffTimeoutSeconds}
-        />
-      </SchoolBreadcrumbProvider>
+      {/* Korean typing is a property of the whole school panel, not of one
+          rung: the sentence ladder needs it, and so do the free-text quiz
+          items. It wraps the shell so every field School owns is covered, and
+          it stays inert until a field asks for Korean or someone presses F6. */}
+      <HangulTypingProvider>
+        <SchoolBreadcrumbProvider>
+          <SchoolShell
+            clear={clear}
+            mode={mode}
+            idleTimeoutSeconds={idleTimeoutSeconds}
+            screenOffTimeoutSeconds={screenOffTimeoutSeconds}
+          />
+        </SchoolBreadcrumbProvider>
+      </HangulTypingProvider>
     </SchoolProfileProvider>
   );
 }
