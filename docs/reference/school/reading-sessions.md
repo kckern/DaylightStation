@@ -519,3 +519,69 @@ One known gap remains deliberate:
   screen returns to the prompt after the celebration and the session expires ~2
   minutes later (D6). The TV does power off; it does so on the timeout's clock
   rather than the ceremony's.
+
+
+## The screens, and what each one is for
+
+The full taxonomy — the jobs, which element owns each, and which are
+deliberately absent from which surface — is
+[`_wip/plans/2026-09-09-reading-information-taxonomy.md`](../../_wip/plans/2026-09-09-reading-information-taxonomy.md).
+The short version:
+
+| Surface | Its question | Carries |
+|---|---|---|
+| **open** | *What shall I read?* | face, name, today's pips, the day-partitioned shelf, the streak wall |
+| **picking** | *You picked this — sure?* | the cover, a countdown |
+| **rail** (during) | *Whose is this, how far through today?* | subject mark, face, name, pips with a live one, the wall clock |
+| **stage** (during) | *Which book is this?* | the cover, and nothing else |
+| **ceremony** `book` | *That one counted.* | the cover that landed, the pips |
+| **ceremony** `day` | *Here is what you did.* | today's covers with their clock times, the pips, the streak wall |
+| **winding-down** | *The room is about to turn off.* | face, a countdown, a way to stay |
+
+### The rules that hold it together
+
+- **One element, one job.** The single sanctioned overload is the live pip,
+  which carries both the obligation and the position — allowed because they are
+  the same currency: this story fills this pip. No second position indicator may
+  exist anywhere, which is why the frame forces the Player's focused shader.
+- **The same job wears the same object everywhere.** The obligation is pips on
+  every surface that shows it, never a sentence in one place and dots in another.
+- **A partition and a count on one element share a scope.** The recent shelf
+  partitions by DAY and dedupes only inside a day; the repeat badge sits on the
+  cover it happened on.
+- **The wall clock is never a countdown.** It is on the rail as incidental
+  reading practice and nothing depends on it. The moment something does, it has
+  stopped being incidental.
+
+## The streak wall
+
+Four weeks, seven columns, one square per day, oldest first so today is the last
+cell. **The number is books; the colour is whether the goal was met** — green
+met, amber partial, grey missed, and near-transparent for a day nobody asked
+about. An over-target day is the same green as an exactly-met one, deliberately:
+a wall that graded volume would teach a child that meeting the goal is not
+enough.
+
+Non-school days come from the story-time enrollment's own `schedule`, judged by
+`schoolCalendar#isSchoolDay` — the same function the rest of School uses. Reading
+on a rest day still counts, so a Saturday story is a green square.
+
+**Known limitation:** no historical target is stored, so every past day is judged
+against the target as it stands today. A household that changes its daily target
+re-colours its own past.
+
+## How a day ends
+
+The closing ceremony runs, and then the room winds down: twenty seconds with a
+visible countdown that any tap, any card or any book cancels. If nobody
+objects, the panel calls `POST /reading/session/end`, which closes the session
+and applies the reader's **own declared end policy** — the same
+`ReadingSessionService#onTimeout` path the idle sweep uses, so there is one way
+to turn the TV off rather than two.
+
+Before this, a finished day returned the child to the pick screen and the room
+stayed lit until a two-minute idle timer noticed.
+
+`winding-down` counts as a rendered view for presentation ACK purposes. That is
+load-bearing: the ACK is what lets `beginSwitch` accept a sibling's card, so a
+wind-down that did not ACK would refuse every sibling until the idle timeout.
