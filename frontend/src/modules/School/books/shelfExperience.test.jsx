@@ -50,7 +50,9 @@ describe('shelf experience', () => {
     await screen.findByTestId('numberpad');
     // Scanner keys are individual keyboard events.
     for (const key of ISBN) fireEvent.keyDown(window, { key });
-    fireEvent.click(screen.getByRole('button', { name: 'Look it up' }));
+    // No button to hunt for: thirteen valid digits are their own instruction,
+    // and the pad acts on them after its settle.
+    expect(screen.queryByRole('button', { name: 'Look it up' })).toBeNull();
     await screen.findByRole('button', { name: 'Start reading' });
     expect(screen.getByText('Hatchet')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Update page' })).toBeInTheDocument();
@@ -164,7 +166,6 @@ describe('shelf experience', () => {
     render(<BookShelf {...props} />);
     await screen.findByTestId('numberpad');
     for (const key of ISBN) fireEvent.keyDown(window, { key });
-    fireEvent.click(screen.getByRole('button', { name: 'Look it up' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Start reading' }));
     await screen.findByRole('button', { name: 'Retry shelf' });
     const first = screen.getByRole('button', { name: /Add your first book/ });
@@ -211,6 +212,62 @@ describe('shelf experience', () => {
     expect(result.current.view).toBe('shelf');
     act(() => result.current.actions.openHistory());
     expect(result.current.view).toBe('shelf');
+  });
+
+  // ── Auto-advance: the pad has no button, so the number is the instruction ──
+  //
+  // ISBN10 is the ten-digit form of this fixture's book; TEN_ONLY is a
+  // different valid ISBN-10 used for the case the catalog does not know.
+  describe('the ISBN pad fires itself', () => {
+    const ISBN10 = '0064400557';
+    beforeEach(() => { api.shelf.mockResolvedValue(shelf([])); });
+
+    it('thirteen digits advance with no button anywhere on the pad', async () => {
+      render(<BookShelf {...props} />);
+      await screen.findByTestId('numberpad');
+      expect(screen.queryByRole('button', { name: 'Look it up' })).toBeNull();
+      for (const key of ISBN) fireEvent.keyDown(window, { key });
+      expect(await screen.findByRole('button', { name: 'Start reading' })).toBeTruthy();
+      expect(api.resolve).toHaveBeenCalledWith(ISBN);
+    });
+
+    it('ten digits ask the catalog at once and advance on a hit', async () => {
+      render(<BookShelf {...props} />);
+      await screen.findByTestId('numberpad');
+      for (const key of ISBN10) fireEvent.keyDown(window, { key });
+      // Fired BEFORE anything moved: the round trip runs under the settle.
+      await waitFor(() => expect(api.resolve).toHaveBeenCalledWith(ISBN));
+      expect(screen.getByTestId('numberpad')).toBeTruthy();
+      expect(await screen.findByRole('button', { name: 'Start reading' }, { timeout: 3000 })).toBeTruthy();
+    });
+
+    it('a ten the catalog does not know moves nothing and accuses nobody', async () => {
+      api.resolve.mockResolvedValue({ ok: false, status: 404, data: { status: 'not-found', reason: 'no-source' } });
+      render(<BookShelf {...props} />);
+      await screen.findByTestId('numberpad');
+      for (const key of ISBN10) fireEvent.keyDown(window, { key });
+      // The child may still be typing the front of a thirteen, so a miss here
+      // says nothing — but it must not strand them either.
+      const use = await screen.findByRole('button', { name: 'Use this number' }, { timeout: 3000 });
+      expect(screen.getByTestId('numberpad')).toBeTruthy();
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(screen.queryByText(/one digit is off/)).toBeNull();
+      fireEvent.click(use);
+      expect(await screen.findByRole('button', { name: 'Start reading' })).toBeTruthy();
+    });
+
+    it('an eleventh digit cancels the ten-digit commit', async () => {
+      render(<BookShelf {...props} />);
+      await screen.findByTestId('numberpad');
+      for (const key of ISBN10) fireEvent.keyDown(window, { key });
+      await waitFor(() => expect(api.resolve).toHaveBeenCalledWith(ISBN));
+      fireEvent.keyDown(window, { key: ISBN[10] });
+      await new Promise((resolve) => { setTimeout(resolve, 1400); });
+      // Eleven digits are still typing: no cover, no verdict, no button.
+      expect(screen.getByTestId('numberpad')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Start reading' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Use this number' })).toBeNull();
+    });
   });
 
 });

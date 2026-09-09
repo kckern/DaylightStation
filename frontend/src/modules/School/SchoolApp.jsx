@@ -32,6 +32,7 @@ import FlashcardDeckBrowser from './Programs/Flashcards/FlashcardDeckBrowser.jsx
 import RubiksCubeProgram from './Programs/RubiksCube/RubiksCubeProgram.jsx';
 import BookShelf from './books/BookShelf.jsx';
 import BookScanEntry from './books/BookScanEntry.jsx';
+import BookShelfDoor from './books/BookShelfDoor.jsx';
 import ReportPanel from './report/ReportPanel.jsx';
 import AdaptiveTutorPanel from './remediation/AdaptiveTutorPanel.jsx';
 import LearningCatalogBrowser from './catalog/LearningCatalogBrowser.jsx';
@@ -44,6 +45,7 @@ import { useSchoolLaunch } from './useSchoolLaunch.js';
 import { moduleLaunchAllowed } from './catalog/certification.js';
 import Keypad from './selfService/Keypad.jsx';
 import AgendaStatusBoard from './status/AgendaStatusBoard.jsx';
+import BoardHeader from './status/BoardHeader.jsx';
 import LaunchCard from './selfService/LaunchCard.jsx';
 import LaunchCardPreview from './selfService/LaunchCardPreview.jsx';
 import ScanCeremony from './selfService/ScanCeremony.jsx';
@@ -116,7 +118,7 @@ function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeou
   const [state, setState] = useState(() => (
     explicit
       ? { resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null, screenOffTimeoutSeconds: null }
-      : screenId === 'browser'
+      : !isPanelSurface(screenId)
         ? { resolved: true, locked: browserLocked(), idleTimeoutSeconds: null, screenOffTimeoutSeconds: null }
         : { resolved: false, locked: false, idleTimeoutSeconds: null, screenOffTimeoutSeconds: null }
   ));
@@ -126,7 +128,7 @@ function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeou
       setState({ resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null, screenOffTimeoutSeconds: null });
       return undefined;
     }
-    if (screenId === 'browser') {
+    if (!isPanelSurface(screenId)) {
       setState({ resolved: true, locked: browserLocked(), idleTimeoutSeconds: null, screenOffTimeoutSeconds: null });
       return undefined;
     }
@@ -187,7 +189,7 @@ function schoolUrlBase() {
   if (screen) return screen[1];
   return null;
 }
-import { screenIdFromUrlBase, parseSchoolPath, schoolPathFor } from './schoolPathModel.js';
+import { screenIdFromUrlBase, parseSchoolPath, schoolPathFor, isPanelSurface, deviceIdFor } from './schoolPathModel.js';
 
 function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffTimeoutSeconds = null }) {
   const { status, roster, currentUser, isGuest, pickerOpen, openPicker, closePicker, claim, continueAsGuest } = useSchoolProfile();
@@ -476,7 +478,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
         schoolLog.bookShelf('launch-refused', { reason: !target.bookGrant ? 'no-grant' : 'no-learner' });
         return false;
       }
-      setBookLaunch({ learnerId, bookGrant: target.bookGrant, bookEntry: target.bookEntry ?? null });
+      setBookLaunch({ learnerId, bookGrant: target.bookGrant, bookEntry: target.bookEntry ?? null, openAdd: target.openAdd === true });
       schoolLog.bookShelf('launch', { learnerId });
       openSection('book-shelf');
       return true;
@@ -569,9 +571,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     idleTimeoutSeconds: lock.idleTimeoutSeconds,
     claim,
     onLaunch: onPortalLaunch,
-    // 'browser' is the dev/preview identity, not a panel — sending it would
+    // The browser surface is the dev/preview identity, not a panel — sending it would
     // put every developer's tab in one shared throttle bucket.
-    deviceId: screenId && screenId !== 'browser' ? screenId : null,
+    deviceId: deviceIdFor(screenId),
   });
 
   const [lockSide, setLockSide] = useState('keypad-left');
@@ -580,6 +582,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // because a finger landed on a key.
   const keypadEngagedRef = useRef(false);
   const [keypadEngaged, setKeypadEngaged] = useState(false);
+  // Bumped to wipe a half-typed code the panel is taking back — see
+  // `openDeferredScan`. The pad owns its digits; this is the only way in.
+  const [keypadClearToken, setKeypadClearToken] = useState(0);
   const keypadTouchedAtRef = useRef(0);
   const onKeypadActivity = useCallback(() => { keypadTouchedAtRef.current = Date.now(); }, []);
   const onKeypadEngagedChange = useCallback((engaged) => { keypadEngagedRef.current = engaged; setKeypadEngaged(engaged); }, []);
@@ -796,6 +801,25 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     window.location.reload();
   }, [gradedRunInFlight, confirmLeave, section, active, clear, goHome]);
 
+  /**
+   * Clear the panel back to its resting keypad so a deferred book scan can be
+   * opened. It claims nothing and picks nobody: once this lands, `safe` is
+   * true and `BookScanEntry` draws the same "who's reading this?" dialog an
+   * idle scan gets, so there is exactly one place that question is asked.
+   *
+   * `goHome` alone is not enough — it leaves the self-service view on whatever
+   * card or half-typed code was up, and `safe` reads that too.
+   */
+  const openDeferredScan = useCallback(() => {
+    schoolLog.bookShelf('scan.deferred-opened', { hadRun: Boolean(active || section) });
+    goHome();
+    selfService.exit();
+    // `exit` returns the CARD to rest; the pad's own digits are its own state,
+    // and a half-typed code holds `keypadEngaged` — the very flag that
+    // deferred this scan. Wipe it too, or the offer can never be taken up.
+    setKeypadClearToken((n) => n + 1);
+  }, [active, section, goHome, selfService]);
+
   // The header trail past the apple home anchor. Deep material routes publish
   // their own full sub-trail (section crumb → material → unit, each with its
   // own handler) via the breadcrumb bus; when none is published, the trail is
@@ -861,8 +885,10 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
         {/* Scan ceremony (Slice D): a sibling of the lock branch below, NOT
             inside it — a scan can land whether the panel is locked or open,
             and this must render either way. */}
-        {screenId !== 'browser' && <BookScanEntry screenId={screenId} roster={roster}
+        {isPanelSurface(screenId) && <BookScanEntry screenId={screenId} roster={roster}
           safe={lock.locked && !pending && !pickerOpen && !selfService.busy && !active && !section && !launchPreviewLink && !ceremony.current && selfService.view === 'keypad' && !keypadEngaged}
+          onOpen={lock.locked ? openDeferredScan : null}
+          confirmExit={gradedRunInFlight}
           onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />}
         {ceremony.current && <ScanCeremony {...ceremony.current} onDismiss={ceremony.clear} />}
         {/* Launch-card preview (teacher-only deep link). A sibling of the lock
@@ -914,11 +940,21 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
                 screenOffSuppressed={!!ceremony.current}
                 onActivity={onKeypadActivity}
                 onEngagedChange={onKeypadEngagedChange}
+                clearToken={keypadClearToken}
               />
               {/* Read-only status pane: names appear here by design — this is
                   the family's own day board, not a claim affordance; codes
                   remain the only entry path. Never intercepts a tap. */}
+              {/* The board itself stays read-only — see AgendaStatusBoard's own
+                  header. The door rides in the HEADER, which is the board's
+                  neighbour rather than a row on it, so the pane's
+                  `pointer-events: none` is re-enabled on the button alone and
+                  both survive a day the board draws nothing. */}
               <div className="school-lock-split__board" aria-label="Today's school status">
+                <BoardHeader>
+                  <BookShelfDoor screenId={screenId} roster={roster}
+                    onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />
+                </BoardHeader>
                 <AgendaStatusBoard kids={roster} />
               </div>
             </div>
@@ -1168,6 +1204,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             learnerId={bookLaunch.learnerId}
             grant={bookLaunch.bookGrant}
             initialBookEntry={bookLaunch.bookEntry}
+            openAdd={bookLaunch.openAdd}
             idleTimeoutSeconds={lock.idleTimeoutSeconds}
             onExit={goHome}
           />

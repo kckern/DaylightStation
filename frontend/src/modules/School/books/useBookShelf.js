@@ -19,9 +19,11 @@
  *    runs on every keystroke, so a bad check digit or a library sticker is
  *    named on the panel without a round trip — but not before the child has
  *    typed enough to be wrong (see isbn.js). Ten digits are the exception:
- *    they light `Look it up` without a verdict, and the TAP judges them as
- *    an ISBN-10 (`submit: true`), because on the keystroke they are just as
- *    likely the first ten of thirteen.
+ *    they carry no verdict, because on the keystroke they are just as likely
+ *    the first ten of thirteen. There is no `Look it up` button to judge them
+ *    any more, so the CATALOG does: see the auto-advance below, which asks
+ *    early, moves the child only on a real hit, and offers `Use this number`
+ *    when the catalog cannot settle it.
  *
  * 3. EVERY WRITE IS IDEMPOTENT. The client mints the `entryId` when an update opens or an ISBN
  *    resolves (and a second one for the add flow's first progress event), and the same ids ride every retry of that write. A double tap
@@ -61,9 +63,35 @@ const EMPTY_ADD = Object.freeze({
   metadataMissing: false,
   lookupHint: null,
   canRetry: false,
+  // A ten-digit entry the catalog could not settle. Offers the one button the
+  // pad ever shows, and only for as long as the number stays unresolved.
+  unconfirmed: false,
 });
 
 const mintId = () => crypto.randomUUID();
+
+/**
+ * The pad has no `Look it up` button, so the entry itself says when to go.
+ * Two settles, because thirteen digits and ten are different claims.
+ *
+ * THIRTEEN is a number the child read off a book: the checksum decides it and
+ * nothing is left to confirm, so this is only the pause that keeps the
+ * finishing gesture from being a digit key (the same reason and the same
+ * length as `Keypad`'s `AUTO_SUBMIT_SETTLE_MS`).
+ */
+const AUTO_ADVANCE_SETTLE_MS = 300;
+/**
+ * TEN is a guess. The first ten digits of a thirteen-digit number pass the
+ * ISBN-10 checksum one time in eleven (see `isbn.js`), so a ten-digit entry
+ * fires its lookup at once — hiding the round trip behind the typing — but
+ * waits this long with no further key before it acts on the answer. A child
+ * still typing has cancelled it long before it fires; a child who stopped at
+ * an older book's ten waits about a second. Fire early, commit late.
+ */
+const SPECULATIVE_QUIET_MS = 1000;
+
+/** Digits as `checkIsbn` reads them, so a memo of "already fired" compares like for like. */
+const compactIsbn = (value) => String(value ?? '').replace(/[\s-]/g, '').toUpperCase();
 
 /** The server's own sentence when it gave one; ours otherwise. */
 function messageOf(res, fallback) {
@@ -83,7 +111,13 @@ function compact(obj) {
  * @param {number} [p.idleTimeoutSeconds=90]
  * @param {(reason: 'done'|'idle') => void} [p.onExit]
  */
-export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit, initialBookEntry = null }) {
+export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit, initialBookEntry = null, openAdd = false }) {
+  // The panel door opens the shelf to TYPE a number, so the pad is the landing
+  // — not the tiles with `Add a book` to find. A ref, and read only inside the
+  // first load: it decides where that load lands and must not move the child
+  // again on any later read.
+  const openAddRef = useRef(openAdd);
+  openAddRef.current = openAdd;
   const entryRef = useRef(initialBookEntry);
   entryRef.current = initialBookEntry;
   const consumedScan = useRef(false);
@@ -117,6 +151,19 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
   // Single in-flight lookup slot, for the same reason: two taps on Look Up
   // both read `step === 'number'` before React has painted `lookup`.
   const lookupRef = useRef(false);
+  // The entry auto-advance has already spent. It PERSISTS past the round trip
+  // on purpose: `Wrong book? Edit number` and `back` both return to the pad
+  // with the digits intact, and re-firing on the same number would walk the
+  // child straight back into the cover they just rejected. Any keystroke that
+  // makes the entry differ from this clears it, so deliberately retyping the
+  // same number does fire again.
+  const autoFiredFor = useRef(null);
+  // The number a speculative fetch is already out for, so a rerender does not
+  // ask twice. It is ONLY a de-duplicator: the answer reaches `lookup` as an
+  // argument from the one call site that has decided to use it, never through
+  // a cache `lookup` reads for itself. A shared cache would silently hand a
+  // manual lookup, or a retry, an answer fetched for a different reason.
+  const speculatedFor = useRef(null);
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
 
@@ -181,7 +228,10 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     }
     setShelf(shelfRes.data);
     setNeedsRefresh(false);
-    const firstEmpty = initialLoadRef.current && (shelfRes.data.items ?? []).length === 0;
+    // An empty shelf has nothing else to show; the door said the child came to
+    // type. Either way this is the FIRST load's decision alone.
+    const firstEmpty = initialLoadRef.current
+      && ((shelfRes.data.items ?? []).length === 0 || openAddRef.current);
     initialLoadRef.current = false;
     viewRef.current = firstEmpty ? 'add' : 'shelf';
     setView(viewRef.current);
@@ -291,6 +341,8 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     if (viewRef.current !== 'shelf' || workRef.current || needsRefreshRef.current) return;
     touch();
     setError(null);
+    autoFiredFor.current = null;
+    speculatedFor.current = null;
     setAdd(EMPTY_ADD);
     setView('add');
     setStep('number');
@@ -397,16 +449,22 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     // wiped number is indistinguishable in the store from one never typed —
     // which is exactly what a fat-fingered clear looked like in the field.
     if (had > 0 && entry.length === 0) schoolLog.bookShelf('pad.cleared', { had });
+    // Editing away from the number auto-advance already spent re-arms it, so
+    // a child who backspaces and retypes the same ISBN is not left with a pad
+    // that has no way out (there is no button to fall back on).
+    if (autoFiredFor.current !== null && compactIsbn(entry) !== autoFiredFor.current) {
+      autoFiredFor.current = null;
+    }
     const before = checkIsbn(addRef.current.entry);
     const after = checkIsbn(entry);
     // The local-validation copy that fired — once per verdict, not per key.
     if (after.state === 'invalid' && !(before.state === 'invalid' && before.reason === after.reason)) {
       schoolLog.bookShelf('add.rejected', { reason: after.reason });
     }
-    setAdd((a) => ({ ...a, entry, lookupHint: null, canRetry: false }));
+    setAdd((a) => ({ ...a, entry, lookupHint: null, canRetry: false, unconfirmed: false }));
   }, [touch]);
 
-  const lookup = useCallback(async () => {
+  const lookup = useCallback(async ({ prefetched = null } = {}) => {
     if (viewRef.current !== 'add' || stepRef.current !== 'number') return;
     if (lookupRef.current) return;
     // The child stopped here: ten digits are judged as an ISBN-10 now (rule 2).
@@ -424,7 +482,9 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     setAdd((a) => ({ ...a, lookupHint: null, canRetry: false }));
     setStep('lookup');
     const gen = genRef.current;
-    const res = await schoolApi.books.resolve(check.isbn13);
+    // `prefetched` is the auto-advance handing over the answer it already has
+    // (and has already judged good enough to move on). Nobody else supplies it.
+    const res = await (prefetched ?? schoolApi.books.resolve(check.isbn13));
     if (genRef.current !== gen) return; // rule 1 — back() or close() already freed the slot
     lookupRef.current = false;
 
@@ -486,6 +546,55 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
   }, [touch]);
 
   const retryLookup = useCallback(() => lookup(), [lookup]);
+
+  /**
+   * AUTO-ADVANCE. The ISBN pad has no submit button; a finished number is its
+   * own instruction. `lookupHint` holds this off, so a verdict the child has
+   * not answered yet is never talked over by another round trip.
+   */
+  useEffect(() => {
+    if (view !== 'add' || step !== 'number' || busy || add.lookupHint) return undefined;
+    const compact = compactIsbn(add.entry);
+    if (autoFiredFor.current === compact) return undefined;
+    const settled = checkIsbn(compact, { submit: true });
+    if (settled.state !== 'valid') return undefined;
+
+    // Thirteen digits, or a ten ending in `X` — a length that judges itself.
+    if (checkIsbn(compact).state === 'valid') {
+      const timer = setTimeout(() => {
+        autoFiredFor.current = compact;
+        void lookup();
+      }, AUTO_ADVANCE_SETTLE_MS);
+      return () => clearTimeout(timer);
+    }
+
+    // Ten bare digits. Ask now, decide when the typing stops.
+    let live = true;
+    if (speculatedFor.current?.isbn13 !== settled.isbn13) {
+      speculatedFor.current = { isbn13: settled.isbn13, promise: schoolApi.books.resolve(settled.isbn13) };
+    }
+    const speculative = speculatedFor.current.promise;
+    const timer = setTimeout(() => {
+      void speculative.then((res) => {
+        if (!live) return;
+        // A CATALOG HIT IS THE CONFIRMATION. A ten that only passes the
+        // checksum is as likely to be the front of someone's thirteen, and
+        // that number names no book — so `not-found` advances nothing here,
+        // where thirteen digits would carry it through on a placeholder.
+        if (res?.data?.status === 'ok' && res.data.book) {
+          autoFiredFor.current = compact;
+          void lookup({ prefetched: res });
+          return;
+        }
+        // The catalog cannot settle it, so ask the child instead of guessing.
+        // A miss says NOTHING accusing — they may still be typing, and this is
+        // also how a genuine ISBN-10 the catalog simply lacks gets logged, now
+        // that there is no permanent button to fall back on.
+        setAdd((a) => (compactIsbn(a.entry) === compact ? { ...a, unconfirmed: true } : a));
+      }).catch(() => {});
+    }, SPECULATIVE_QUIET_MS);
+    return () => { live = false; clearTimeout(timer); };
+  }, [view, step, busy, add.entry, add.lookupHint, lookup]);
 
   const confirmCover = useCallback((yes) => {
     if (viewRef.current !== 'add' || stepRef.current !== 'cover') return;
@@ -777,6 +886,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
       hint,
       canSubmit,
       canRetry: add.canRetry,
+      unconfirmed: add.unconfirmed,
       resolved: add.resolved,
       duplicateOf: add.duplicateOf,
       priorRead: add.priorRead,

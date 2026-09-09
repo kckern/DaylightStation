@@ -133,7 +133,9 @@ export default function AddBook({ step, add, today, earliestDay = null, error = 
           label="Type the number under the barcode"
           maxLength={13}
           allowX
-          submitLabel="Look it up"
+          // No `Look it up`: a finished number is its own instruction, and the
+          // hook fires on it. `Enter` still works for the scanner's return.
+          showSubmit={false}
           canSubmit={Boolean(add?.canSubmit) && !busy}
           disabled={busy}
           hint={add?.hint ?? message}
@@ -144,6 +146,18 @@ export default function AddBook({ step, add, today, earliestDay = null, error = 
         {add?.canRetry && (
           <button type="button" className="school-books__retry school-books-add__retry" {...press(() => actions.retryLookup())}>
             Try again
+          </button>
+        )}
+        {/* The only button this pad ever shows, and only for the one entry the
+            machine cannot settle by itself: ten digits the catalog does not
+            know. Thirteen never needs it, and a ten it DOES know has already
+            moved on — so a child sees this exactly when their older book is
+            missing from the catalog, which is also the case that would
+            otherwise have no way forward at all. */}
+        {add?.unconfirmed && !add?.canRetry && (
+          <button type="button" className="school-books-update__quiet school-books-add__use-number"
+            disabled={busy} {...press(() => actions.lookup())}>
+            Use this number
           </button>
         )}
       </div>

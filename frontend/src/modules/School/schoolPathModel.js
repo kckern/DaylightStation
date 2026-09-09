@@ -13,6 +13,31 @@ export function screenIdFromUrlBase(urlBase) {
   return m ? decodeURIComponent(m[1]) : 'browser';
 }
 
+/** The id used for the generic, deviceless mount (`/school`, `/app/school`). */
+export const BROWSER_SURFACE = 'browser';
+
+/**
+ * Is this mount a real household panel, or the deviceless browser surface?
+ *
+ * ONE ANSWER, NOT FOUR. `screenId !== 'browser'` was written out inline at
+ * every call site that cared — the keypad's rate-limit key, the scan
+ * subscription, the self-service device id — so "what does the browser mount
+ * get?" was answered separately, and differently, in each. The book door was
+ * simply the first place the divergence was visible: the same School panel,
+ * opened at `/screen/portal` and at `/app/school`, drew a different set of
+ * controls.
+ *
+ * Ask this instead, and answer the question once.
+ */
+export function isPanelSurface(screenId) {
+  return Boolean(screenId) && screenId !== BROWSER_SURFACE;
+}
+
+/** The device this surface reports as, or null where there is no device. */
+export function deviceIdFor(screenId) {
+  return isPanelSurface(screenId) ? screenId : null;
+}
+
 // Everything after a `subject/<id>` or `library` section is the MATERIALS
 // CHAIN — the raw id segments the breadcrumb descends through (collection →
 // work → track, or show → episode). So the URL matches the breadcrumb all the

@@ -7,8 +7,11 @@
  * digits, the same slots); its behaviour is not, on four counts:
  *
  *   1. Keypad AUTO-SUBMITS at exactly `length` digits after a settle and has
- *      no Go button. A page number has no fixed length, so the child says
- *      when they are done — the submit button is the only way out.
+ *      no Go button. A page number has no fixed length, so the child says when
+ *      they are done and the submit button is the only way out. An ISBN DOES
+ *      have a length, so that pad passes `showSubmit={false}` and its parent
+ *      fires on the finished number instead (`useBookShelf`'s auto-advance);
+ *      the button is retired per-pad, not for everyone.
  *   2. Keypad EMPTIES the entry on submit. A failed ISBN lookup would make a
  *      child retype thirteen digits; here the entry survives a submit and the
  *      parent clears it (via `value`) when it means to.
@@ -51,6 +54,8 @@ const HOLD_TO_CLEAR_MS = 600;
  * @param {number} [props.maxLength] - how many characters the entry holds.
  * @param {boolean} [props.allowX] - offer an `X` key (ISBN-10 check digit).
  * @param {string} [props.submitLabel] - the button's word.
+ * @param {boolean} [props.showSubmit] - false retires the button for this pad.
+ *   `Enter` still submits, so a barcode scanner's trailing return keeps working.
  * @param {boolean} [props.canSubmit] - the parent's verdict on the current
  *   entry; false disables submit. An empty entry is never submittable.
  * @param {boolean} [props.disabled] - freezes every control during a write.
@@ -67,6 +72,7 @@ export default function NumberPad({
   maxLength = 6,
   allowX = false,
   submitLabel = 'Go',
+  showSubmit = true,
   canSubmit = true,
   disabled = false,
   hint = null,
@@ -270,14 +276,16 @@ export default function NumberPad({
         )}
       </div>
 
-      <button
-        type="button"
-        className="school-books-pad__submit"
-        disabled={!submittable}
-        {...tap(submit)}
-      >
-        {submitLabel}
-      </button>
+      {showSubmit && (
+        <button
+          type="button"
+          className="school-books-pad__submit"
+          disabled={!submittable}
+          {...tap(submit)}
+        >
+          {submitLabel}
+        </button>
+      )}
 
       {hint && (
         <p className="school-books-pad__hint" role="status">{hint}</p>
