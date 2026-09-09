@@ -77,13 +77,22 @@
   // (`raw-motion` is not a thing this stylesheet reaches for). The four
   // states below are pure COLOUR, and colour alone answers "have I played
   // this, and if I'm playing it right now, is it right":
-  //   done  — jet black.  Already played; the base `.action-staff__note` ink,
-  //           stated explicitly so `done` never silently rides on "whatever
-  //           the default happens to be".
-  //   current — jet black. The idle cursor target is what the child reads now.
-  //   todo  — brown.      Future entries only. Chosen against the cream
-  //           paper (#f5f0e8) for a hue clearly apart from black at a glance,
-  //           not a faded version of it.
+  //   done  — brown.      Already played. Brown is the instrument's "banked"
+  //           ink everywhere notation is read (the ABC exercise stage's
+  //           `exercise-note-done`, the engraved score's `.piano-note-hit`),
+  //           so a note you have already played recedes into the same warm
+  //           mark on every staff the kiosk draws.
+  //   current — jet black. The idle cursor target is what the child reads now,
+  //           so it carries the page's strongest ink; the yellow cursor lane
+  //           behind it does the finding, the colour does the reading.
+  //   todo  — jet black.  Still to be read, so it is drawn in the same ink as
+  //           the note at the cursor: the music ahead of you is the music, not
+  //           a separate category. Chosen against the cream paper (#f5f0e8).
+  //
+  // PAST IS BROWN, FUTURE IS BLACK — one direction, on every staff in the app.
+  // This sheet used to read the other way round (todo brown, done black) and
+  // was the only surface that did, which made a scale look like it was being
+  // played backwards.
   //   hit   — green.      A target notehead, in the entry currently under an
   //           attempt, that IS being held.
   //   miss  — red.        A target notehead, in the entry currently under an
@@ -98,8 +107,8 @@
   }
 
   .sequence-note-done {
-    fill: rgba(0, 0, 0, 1);
-    stroke: rgba(0, 0, 0, 1);
+    fill: rgba(120, 66, 22, 1);
+    stroke: rgba(120, 66, 22, 1);
   }
 
   .sequence-note-current {
@@ -108,8 +117,8 @@
   }
 
   .sequence-note-todo {
-    fill: rgba(120, 66, 22, 1);
-    stroke: rgba(120, 66, 22, 1);
+    fill: rgba(0, 0, 0, 1);
+    stroke: rgba(0, 0, 0, 1);
   }
 
   .sequence-note-hit {
@@ -123,22 +132,26 @@
   }
 
   .action-staff__accidental {
-    &--todo { color: rgba(120, 66, 22, 1); }
+    &--done { color: rgba(120, 66, 22, 1); }
     &--hit { color: rgba(0, 150, 70, 1); }
     &--miss { color: rgba(160, 20, 20, 1); }
+    // `--todo` and `--current` are deliberately absent: both keep the base
+    // black above, because black is now what "not yet played" looks like.
   }
 
   // The stem is ONE line per entry (see SvgSequenceStaff.jsx for why a mixed
   // chord leaves it at `mixed`, uncoloured): `hit`/`miss` only ever land when
   // every notehead in the column agrees, so a coloured stem is never a
   // verdict a notehead itself doesn't also carry.
-  [data-stem-state='todo'] .action-staff__stem { stroke: rgba(120, 66, 22, 1); }
+  [data-stem-state='done'] .action-staff__stem { stroke: rgba(120, 66, 22, 1); }
   [data-stem-state='hit'] .action-staff__stem { stroke: rgba(0, 150, 70, 1); }
   [data-stem-state='miss'] .action-staff__stem { stroke: rgba(160, 20, 20, 1); }
-  // `done`, `current`, and `mixed` are deliberately absent: all keep the base
-  // `.action-staff__stem` black — `done` because that IS jet black, `mixed`
-  // because a chord split between hit and miss has no single verdict to give
-  // the shared stem, so it stays the plain, no-verdict ink.
+  // `todo`, `current`, and `mixed` are deliberately absent: all keep the base
+  // `.action-staff__stem` black — `todo`/`current` because that IS jet black
+  // now, `mixed` because a chord split between hit and miss has no single
+  // verdict to give the shared stem, so it stays the plain, no-verdict ink.
+  // `current` therefore needs its OWN stem state (it used to share `done`'s),
+  // or the note at the cursor would wear a brown stem under a black head.
 
   // The cursor is a lane, not an outline: it sits behind the notehead so the
   // ink stays the thing being read, and it is wide enough to be found at a

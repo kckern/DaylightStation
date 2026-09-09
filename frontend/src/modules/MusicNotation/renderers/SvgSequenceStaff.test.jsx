@@ -232,6 +232,17 @@ describe('SvgSequenceStaff', () => {
       expect(container.querySelectorAll('.sequence-note-wrong-ghost')).toHaveLength(0);
     });
 
+    it('the resting cursor gets its OWN stem state, never `done`', () => {
+      // `done` is the brown "already played" ink. When the cursor entry shared
+      // that stem state, the note being read wore a brown stem under a black
+      // notehead. Past is brown, present and future are black.
+      const { container } = render(<SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1} />);
+      const at = (i) => container.querySelector(`[data-sequence-index="${i}"]`).getAttribute('data-stem-state');
+      expect(at(0)).toBe('done');     // behind the cursor — brown
+      expect(at(1)).toBe('current');  // the cursor itself — black
+      expect(at(2)).toBe('todo');     // ahead of the cursor — black
+    });
+
     it('a mixed chord leaves the shared stem uncoloured — no verdict for the whole chord', () => {
       const active = new Map([[64, { velocity: 80 }]]); // only the middle note of the triad
       const { container } = render(
