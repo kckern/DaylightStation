@@ -280,24 +280,115 @@ Classic Bluetooth discovery works and Android's HID Host service is loaded. A
 Bluetooth 3.0 BR/EDR keyboard is therefore the clean native path: Android delivers
 its keys normally to Fully and the SPA, including the configured Android input method.
 
-BLE discovery is broken in this vendor build, not merely hidden from Settings. The
-Portal omits `android.hardware.bluetooth_le`, reports zero controller scan filters,
-and every tested application path fails immediately:
+**BLE also works — corrected 2026-09-09.** An earlier version of this section said BLE
+discovery was broken in this vendor build. That was wrong, and the wrong conclusion cost
+real time, so the correction is recorded in full.
 
-- `BluetoothLeScanner.startScan()` unfiltered: `SCAN_FAILED_INTERNAL_ERROR` (`3`)
-- deprecated `BluetoothAdapter.startLeScan()`: start refused
-- p2 scan filtered to the standard HOGP service UUID `0x1812`: error `3`
-- stack log: `bte_scan_filt_param_cfg_evt, 23`
+#### One null explains every LE symptom
 
-Do not turn that evidence into the broader claim that the radio can never connect to
-a BLE keyboard. P2 retains `bt bond <mac>` and `bt connect-hid <mac>` so a known stable
-address can bypass discovery. It does not auto-accept a pairing confirmation.
+The Portal omits `android.hardware.bluetooth_le`, and `BluetoothManagerService`
+consequently never obtains the `IBluetoothGatt` binder. Confirmed by reading the binder
+directly (`pkctl bt diag`):
+
+```
+featureBluetoothLe:   false
+leScannerNull:        false      <- the scanner object exists
+multipleAdvertisement true
+offloadedFiltering:   true       <- the controller claims full LE support
+iBluetoothGattNull:   true       <- the actual wall
+gattServerNull:       true
+```
+
+Every previously catalogued LE failure descends from that single null, because each one
+reads the same binder and gives up when it is missing:
+
+| Symptom | Where the null bites |
+|---|---|
+| `connectGatt()` returns `null` | framework's literal "BLE is not supported" branch |
+| `SCAN_FAILED_INTERNAL_ERROR` (`3`) | `startScan()` posts exactly this when `getBluetoothGatt()` is null |
+| no advertiser, no LE bond | same binder |
+
+The radio and controller are fine. `mMaxScanFilters: 0` and `bte_scan_filt_param_cfg_evt, 23`
+are downstream noise, not the cause.
+
+#### Getting around it — three moves
+
+1. **Bind `GattService` directly.** It runs inside `com.android.bluetooth` and publishes an
+   intent filter for `android.bluetooth.IBluetoothGatt`, which makes it implicitly exported
+   pre-Android-12. Bind it, then reflect `IBluetoothGatt$Stub.asInterface(binder)`.
+   `hidden_api_policy` is already `1` on this Portal, so the reflection is unimpeded.
+2. **Give the scanner that binder.** `IBluetoothManager` is an AIDL *interface*, so a
+   `java.lang.reflect.Proxy` can answer `getBluetoothGatt()` with ours and delegate the rest
+   to the real manager. Construct `BluetoothLeScanner` with the proxy and scanning returns.
+3. **Bond with the transport named.** Plain `createBond()` resolves to `TRANSPORT_AUTO`,
+   picks BR/EDR against an LE-only keyboard, and dies in
+   `btif_dm_auth_cmpl_evt() - Pairing timeout; retrying`. Reflect `createBond(int transport)`
+   with `TRANSPORT_LE`.
 
 ```bash
-node _extensions/portal-keys/pkctl.mjs bt scan 15000
-node _extensions/portal-keys/pkctl.mjs bt bond AA:BB:CC:DD:EE:FF
-node _extensions/portal-keys/pkctl.mjs bt connect-hid AA:BB:CC:DD:EE:FF
+node _extensions/portal-keys/pkctl.mjs bt diag              # is the binder missing?
+node _extensions/portal-keys/pkctl.mjs bt gatt-direct <mac> # bind GattService, connect
+node _extensions/portal-keys/pkctl.mjs bt scan-direct 20000 # LE scan via the proxy
+node _extensions/portal-keys/pkctl.mjs bt bond <mac> le     # createBond(TRANSPORT_LE)
 ```
+
+#### After bonding, this APK is not in the keystroke path
+
+Once the bond exists, Android's own HID host claims the device and it appears in
+`dumpsys input` as a normal `InputDevice`. Keys reach the WebView natively. Portal Keys
+brokers nothing.
+
+That is the only workable design, not merely the tidier one: **an app cannot read HID
+reports over GATT.** `GattService.permissionCheck()` refuses app reads of the HID UUIDs
+(`2A4A`–`2A4E`) and of the `0x1812` service unless the caller holds `BLUETOOTH_PRIVILEGED`
+— `signature|privileged`, and not grantable with `pm grant`. It shows up as:
+
+```
+W/BtGatt.GattService: readCharacteristic() - permission check failed!
+```
+
+So do not design a "sniff the keyboard in the APK and republish it on a loopback
+WebSocket" bridge. It dies one step past the GATT connection.
+
+#### The bond survives both reboots — verified 2026-09-09
+
+Portal rebooted and keyboard power-cycled, together. 44 seconds after boot, with no
+`pkctl` call and nothing bound:
+
+```
+Device 5: Bluetooth Keyboard              # dumpsys input
+AA:BB:CC:DD:EE:FF [  LE  ] Bluetooth Keyboard   # still bonded
+GATT Client Map / Entries: 0              # our client is NOT registered
+```
+
+That last line is the proof: Android's HID host re-established the LE link entirely on
+its own. **The bind/scan/bond dance is one-time setup, not a runtime dependency.** Nothing
+in this APK has to run at boot for the keyboard to work, and a broken payload cannot take
+the keyboard down with it.
+
+#### Two traps that look like hardware faults
+
+- **Android refuses unfiltered LE scans while the display is off**
+  (`Cannot start unfiltered scan in screen-off`). Wake the panel first or the scan returns
+  empty and looks like a dead radio.
+- **A multi-host keyboard uses a different BD address per pairing slot.** The address
+  another machine shows for *its* slot is the wrong one here — it is only reachable while
+  that machine is disconnected, and it will never bond. Always take the address from
+  `bt scan-direct` with the keyboard in pairing mode. Keyboard identities belong in the
+  household device registry, never in this repo: see
+  [`docs/configuration/portal-keys-bluetooth.example.yml`](../../docs/configuration/portal-keys-bluetooth.example.yml).
+
+#### Hangul does not survive the trip — compose in the page
+
+Physical-keyboard text on this Portal reaches the WebView with **no IME involvement at
+all**. AOSP LatinIME has no Hangul, and `fcitx5` with its hangul plugin installed *and set
+as the system default IME* produced zero `compositionstart` events from the physical
+keyboard. Korean typing arrives as raw Latin: `dkssud`, not 안녕.
+
+The working answer is to compose in the page — a 두벌식 automaton reading
+`KeyboardEvent.code` (so it does not depend on the layout Android believes is attached)
+and building syllables itself. The keyboard's globe key arrives cleanly as
+`code=F6 keyCode=117`, which makes a fine Korean/English toggle.
 
 ### USB boot keyboard fallback
 
