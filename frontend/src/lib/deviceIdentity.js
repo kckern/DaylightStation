@@ -17,8 +17,10 @@
  * mean different things to a reader:
  *
  *   fleet:<name>      a named device from the fleet config — the best case,
- *                     joinable to devices.yml. Requires something to have set
- *                     window.__DAYLIGHT_DEVICE_ID; nothing does yet.
+ *                     joinable to devices.yml. A rendered screen sets
+ *                     window.__DAYLIGHT_DEVICE_ID from its served config
+ *                     (screen-framework/hooks/useFleetDeviceIdentity.js);
+ *                     nothing else does.
  *   browser:<token>   a random token persisted in localStorage. Stable across
  *                     reloads and restarts for this browser profile, which is
  *                     one-to-one with a kiosk. Not joinable to fleet config.

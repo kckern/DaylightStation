@@ -34,6 +34,7 @@ import { getApp } from '../lib/appRegistry.js';
 import { bindBackButton, enableGlobalKeyCapture } from '../lib/fkb.js';
 import getLogger from '../lib/logging/Logger.js';
 import { useInitialActionGate } from './hooks/useInitialActionGate.js';
+import { useFleetDeviceIdentity } from './hooks/useFleetDeviceIdentity.js';
 import { ActionLoadingShell } from './ActionLoadingShell.jsx';
 import { layoutOwnsRouting } from './layoutOwnsRouting.js';
 import { resolveScreenAppPath } from './screenAppPath.js';
@@ -182,6 +183,11 @@ export function ScreenRenderer({ screenId: propScreenId }) {
   const [error, setError] = useState(null);
   const inputHealthyRef = React.useRef(false);
   const screenRootRef = React.useRef(null);
+
+  // Sign this screen's requests with its fleet name (X-Daylight-Device:
+  // fleet:<name>) as soon as the served config says which device it is. The
+  // Home Line join depends on it; every backend log line benefits.
+  useFleetDeviceIdentity(config?.websocket?.guardrails?.device);
 
   // Initial-only menu-flash suppression gate. If the URL had ?play=/?queue=/etc
   // on first mount, suppress the YAML layout until an overlay opens or 5s lapse.

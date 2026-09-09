@@ -19,6 +19,21 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 const callerId = req => req.user?.sub || req.user?.id || (req.isLocal ? 'trusted-local-network' : null);
 const required = value => typeof value === 'string' && value.length > 0;
 
+/**
+ * Which fleet device a request says it is.
+ *
+ * `X-Daylight-Device` (minted by frontend/src/lib/deviceIdentity.js) always
+ * carries its provenance as a prefix. Only `fleet:<name>` — the name a rendered
+ * screen took from its own served config — can name a device; `browser:` and
+ * `ephemeral:` tokens are anonymous and so can never match anything. Until
+ * 2026-09-08 this compared the raw header against the bare id, so the
+ * living-room Shield's `browser:968748c03fe14fcc` was refused on every join
+ * and no TV had ever entered a call.
+ */
+const FLEET_PREFIX = 'fleet:';
+const declaredFleetDevice = header => (typeof header === 'string' && header.startsWith(FLEET_PREFIX)
+  && header.length > FLEET_PREFIX.length) ? header.slice(FLEET_PREFIX.length) : null;
+
 export function createHomelineRouter({ leaseService, canCall = () => true, logger = null } = {}) {
   if (!leaseService) throw new Error('createHomelineRouter requires leaseService');
   const router = express.Router();
@@ -76,12 +91,22 @@ export function createHomelineRouter({ leaseService, canCall = () => true, logge
   }));
 
   router.post('/devices/:deviceId/join-active', (req, res) => {
+    const declared = req.get('X-Daylight-Device');
     const result = leaseService.joinActive({
       deviceId: req.params.deviceId,
-      declaredDeviceId: req.get('X-Daylight-Device'),
+      declaredDeviceId: declaredFleetDevice(declared),
       isLocal: req.isLocal === true,
     });
-    if (result.kind === 'forbidden') return res.status(403).json({ ok: false, code: 'DEVICE_ID_MISMATCH' });
+    if (result.kind === 'forbidden') {
+      // The TV is the one client whose browser log is hardest to reach, and a
+      // refused join used to be recorded nowhere else.
+      //
+      //   query=homeline.join.denied AND _time:24h
+      logger?.info?.('homeline.join.denied', {
+        deviceId: req.params.deviceId, declared: declared ?? null, isLocal: req.isLocal === true, status: 403,
+      });
+      return res.status(403).json({ ok: false, code: 'DEVICE_ID_MISMATCH' });
+    }
     if (result.kind === 'empty') return res.status(204).end();
     return res.json(result.body);
   });

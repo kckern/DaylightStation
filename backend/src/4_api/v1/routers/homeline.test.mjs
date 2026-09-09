@@ -51,15 +51,53 @@ describe('homeline router', () => {
     const service = { joinActive: vi.fn(input => input.declaredDeviceId === input.deviceId && input.isLocal
       ? { kind: 'empty' } : { kind: 'forbidden' }) };
     const { app } = appWith(service);
-    const denied = await request(app).post('/api/v1/homeline/devices/tv/join-active').set('X-Daylight-Device', 'other');
+    const denied = await request(app).post('/api/v1/homeline/devices/tv/join-active').set('X-Daylight-Device', 'fleet:other');
     expect(denied.status).toBe(403);
     expect(service.joinActive).toHaveBeenCalledWith({ deviceId: 'tv', declaredDeviceId: 'other', isLocal: true });
+  });
+
+  // The header is minted by lib/deviceIdentity.js and always carries its
+  // provenance as a prefix: a rendered screen declares `fleet:<name>`, an
+  // anonymous browser `browser:<token>`. On 2026-09-08 the living-room Shield
+  // declared `browser:968748c03fe14fcc` against a check that wanted the bare
+  // `livingroom-tv`, so the TV never joined a lease — not once since the
+  // system shipped. Only a fleet declaration can name a device.
+  it('accepts the fleet-prefixed declaration a rendered screen sends', async () => {
+    const service = { joinActive: vi.fn(() => ({ kind: 'empty' })) };
+    const { app } = appWith(service);
+    const response = await request(app).post('/api/v1/homeline/devices/tv/join-active').set('X-Daylight-Device', 'fleet:tv');
+    expect(response.status).toBe(204);
+    expect(service.joinActive).toHaveBeenCalledWith({ deviceId: 'tv', declaredDeviceId: 'tv', isLocal: true });
+  });
+
+  it('never lets an anonymous browser token name a device', async () => {
+    const service = { joinActive: vi.fn(() => ({ kind: 'empty' })) };
+    const { app } = appWith(service);
+    for (const declared of ['browser:968748c03fe14fcc', 'ephemeral:abc', 'fleet:', '']) {
+      service.joinActive.mockClear();
+      await request(app).post('/api/v1/homeline/devices/tv/join-active').set('X-Daylight-Device', declared);
+      expect(service.joinActive).toHaveBeenCalledWith({ deviceId: 'tv', declaredDeviceId: null, isLocal: true });
+    }
+  });
+
+  // A refused join used to leave no backend trace at all; the only record was
+  // the TV browser's own warn line, which is the one client whose logs are
+  // hardest to reach. Now the refusal says what was declared.
+  it('logs a refused join with what the caller declared', async () => {
+    const logger = { info: vi.fn(), debug: vi.fn() };
+    const app = express();
+    app.use((req, _res, next) => { req.isLocal = true; next(); });
+    app.use('/api/v1/homeline', createHomelineRouter({ leaseService: { joinActive: () => ({ kind: 'forbidden' }) }, logger }));
+    await request(app).post('/api/v1/homeline/devices/tv/join-active').set('X-Daylight-Device', 'browser:abc');
+    expect(logger.info).toHaveBeenCalledWith('homeline.join.denied', expect.objectContaining({
+      deviceId: 'tv', declared: 'browser:abc', isLocal: true, status: 403,
+    }));
   });
 
   it('returns 204 for an authorized TV when no active lease exists', async () => {
     const service = { joinActive: vi.fn(() => ({ kind: 'empty' })) };
     const { app } = appWith(service);
-    const response = await request(app).post('/api/v1/homeline/devices/tv/join-active').set('X-Daylight-Device', 'tv');
+    const response = await request(app).post('/api/v1/homeline/devices/tv/join-active').set('X-Daylight-Device', 'fleet:tv');
     expect(response.status).toBe(204);
     expect(response.text).toBe('');
   });
