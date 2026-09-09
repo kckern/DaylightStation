@@ -5,20 +5,28 @@
 // design-system tokens on the surrounding .ds-root (AppThemeProvider) — this
 // sheet defines no raw values of its own.
 //
+// EVERY size is multiplied by --u, the layout scale set by the component. A
+// browser in "Desktop site" mode ignores `width=device-width` and lays out at
+// 980px, then zooms the page to fit the glass; sizing in fractions of the
+// viewport makes a control the same physical size either way. --u is 1 on a
+// normal phone, so nothing changes there.
+//
 // The layout is two bands in one column:
 //   __stage  — the caller's own camera, taking every pixel the controls don't
 //   __panel  — the decisions: who to call, or the controls for a live call
 // Both are present in every state, so nothing jumps between lobby and call.
 
 .call-app {
+  --u: 1; // overridden inline by the component; 1 keeps this sheet standalone
+
   // `fixed`, not `height: 100dvh`: on a phone this also stops the rubber-band
   // scroll that let the panel slide out from under a thumb.
   position: fixed;
   inset: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  padding: calc(0.75rem + env(safe-area-inset-top, 0px)) 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  gap: calc(0.75rem * var(--u));
+  padding: calc(0.75rem * var(--u) + env(safe-area-inset-top, 0px)) calc(0.75rem * var(--u)) calc(0.75rem * var(--u) + env(safe-area-inset-bottom, 0px));
   background: var(--ds-surface-alt);
   color: var(--ds-text-high);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -34,7 +42,7 @@
     position: relative; // camera-status overlays this
     flex: 1 1 auto;
     min-height: 0;
-    border-radius: 1rem;
+    border-radius: calc(1rem * var(--u));
     overflow: hidden;
     background: var(--ds-background);
   }
@@ -49,7 +57,7 @@
       display: block;
       flex: 1 1 auto;
       min-height: 0;
-      border-radius: 1rem;
+      border-radius: calc(1rem * var(--u));
       overflow: hidden;
       background: var(--ds-background);
     }
@@ -86,20 +94,20 @@
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: calc(0.6rem * var(--u));
   }
 
   &__stack {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: calc(0.6rem * var(--u));
   }
 
   // ── Type ─────────────────────────────────────────────────────────────────
 
   &__heading {
-    margin: 0.25rem 0 0.1rem;
-    font-size: 0.78rem;
+    margin: calc(0.25rem * var(--u)) 0 calc(0.1rem * var(--u));
+    font-size: calc(0.78rem * var(--u));
     font-weight: 600;
     letter-spacing: 0.09em;
     text-transform: uppercase;
@@ -109,7 +117,7 @@
   &__notice {
     margin: 0;
     text-align: center;
-    font-size: 0.95rem;
+    font-size: calc(0.95rem * var(--u));
     color: var(--ds-text-mid);
 
     &--warn {
@@ -123,12 +131,12 @@
     display: grid;
     grid-template-columns: auto 1fr auto;
     align-items: center;
-    gap: 0.9rem;
+    gap: calc(0.9rem * var(--u));
     width: 100%;
-    min-height: 72px;
-    padding: 0.7rem 0.8rem;
+    min-height: calc(72px * var(--u));
+    padding: calc(0.7rem * var(--u)) calc(0.8rem * var(--u));
     border: 1px solid var(--ds-border);
-    border-radius: 1rem;
+    border-radius: calc(1rem * var(--u));
     background: var(--ds-surface);
     color: inherit;
     text-align: left;
@@ -150,23 +158,23 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 48px;
-    height: 48px;
-    border-radius: 0.85rem;
+    width: calc(48px * var(--u));
+    height: calc(48px * var(--u));
+    border-radius: calc(0.85rem * var(--u));
     background: var(--ds-surface-alt);
-    font-size: 1.6rem;
+    font-size: calc(1.6rem * var(--u));
     line-height: 1;
   }
 
   &__target-label {
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
+    gap: calc(0.15rem * var(--u));
     min-width: 0;
   }
 
   &__target-name {
-    font-size: 1.05rem;
+    font-size: calc(1.05rem * var(--u));
     font-weight: 600;
     color: var(--ds-text-high);
     overflow: hidden;
@@ -175,7 +183,7 @@
   }
 
   &__target-room {
-    font-size: 0.8rem;
+    font-size: calc(0.8rem * var(--u));
     color: var(--ds-text-mid);
   }
 
@@ -184,8 +192,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 44px;
-    height: 44px;
+    width: calc(44px * var(--u));
+    height: calc(44px * var(--u));
     border-radius: 50%;
     background: var(--ds-success);
     color: var(--ds-surface-alt);
@@ -198,16 +206,16 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
+    gap: calc(0.5rem * var(--u));
     width: 100%;
-    min-height: 52px;
-    padding: 0.8rem 1rem;
+    min-height: calc(52px * var(--u));
+    padding: calc(0.8rem * var(--u)) calc(1rem * var(--u));
     border: 1px solid var(--ds-border);
-    border-radius: 0.85rem;
+    border-radius: calc(0.85rem * var(--u));
     background: var(--ds-surface);
     color: var(--ds-text-high);
     font: inherit;
-    font-size: 1rem;
+    font-size: calc(1rem * var(--u));
     font-weight: 500;
     cursor: pointer;
     transition: background var(--ds-motion-fast) var(--ds-motion-easing);
@@ -236,12 +244,12 @@
 
   &__text-btn {
     align-self: center;
-    padding: 0.4rem 0.6rem;
+    padding: calc(0.4rem * var(--u)) calc(0.6rem * var(--u));
     border: none;
     background: none;
     color: var(--ds-info);
     font: inherit;
-    font-size: 0.9rem;
+    font-size: calc(0.9rem * var(--u));
     cursor: pointer;
   }
 
@@ -251,16 +259,16 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 1.4rem;
-    padding: 0.3rem 0;
+    gap: calc(1.4rem * var(--u));
+    padding: calc(0.3rem * var(--u)) 0;
   }
 
   &__round-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 58px;
-    height: 58px;
+    width: calc(58px * var(--u));
+    height: calc(58px * var(--u));
     border: 1px solid var(--ds-border);
     border-radius: 50%;
     background: var(--ds-surface);
@@ -284,8 +292,8 @@
 
     // Hang up is the biggest target on the screen and the only filled red one.
     &--hangup {
-      width: 68px;
-      height: 68px;
+      width: calc(68px * var(--u));
+      height: calc(68px * var(--u));
       border-color: var(--ds-danger);
       background: var(--ds-danger);
       color: var(--ds-text-high);
@@ -294,6 +302,28 @@
         opacity: 0.85;
       }
     }
+  }
+
+  // The chrome icons carry px width/height attributes from JSX. CSS wins, so
+  // this is what actually sizes them — and keeps them in step with --u.
+  &__target-action svg {
+    width: calc(22px * var(--u));
+    height: calc(22px * var(--u));
+  }
+
+  &__wide-btn svg {
+    width: calc(20px * var(--u));
+    height: calc(20px * var(--u));
+  }
+
+  &__round-btn svg {
+    width: calc(22px * var(--u));
+    height: calc(22px * var(--u));
+  }
+
+  &__round-btn--hangup svg {
+    width: calc(26px * var(--u));
+    height: calc(26px * var(--u));
   }
 
   // ── Camera / microphone messages ─────────────────────────────────────────
@@ -308,8 +338,8 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.4rem;
-    padding: 1rem;
+    gap: calc(0.4rem * var(--u));
+    padding: calc(1rem * var(--u));
     pointer-events: none;
 
     &:empty {
@@ -321,10 +351,10 @@
   &__camera-note,
   &__camera-loading {
     margin: 0;
-    padding: 0.5rem 0.75rem;
-    border-radius: 0.6rem;
+    padding: calc(0.5rem * var(--u)) calc(0.75rem * var(--u));
+    border-radius: calc(0.6rem * var(--u));
     text-align: center;
-    font-size: 0.9rem;
+    font-size: calc(0.9rem * var(--u));
     background: var(--ds-surface);
   }
 

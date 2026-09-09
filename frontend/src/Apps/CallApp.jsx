@@ -68,9 +68,50 @@ function useFixedViewport() {
   }, []);
 }
 
+/**
+ * The width this layout is drawn for. A phone's layout viewport is ~390-430
+ * CSS px; every size in the stylesheet is chosen against that.
+ */
+const DESIGN_WIDTH = 410;
+
+/**
+ * How much to multiply every size by, so a control is the same fraction of the
+ * screen whatever the layout viewport turns out to be.
+ *
+ * A browser in "Desktop site" mode IGNORES `width=device-width` — that is the
+ * point of the mode, and no meta tag can override it. It lays the page out at
+ * 980 CSS px and then zooms the whole thing down to fit the glass: measured on
+ * a real phone at 980x1747, DPR 3, visual scale 0.37. A 52px button then lands
+ * at about 19px — three millimetres, untappable, which is exactly what a
+ * caller reported.
+ *
+ * Nothing here fights the mode. If the page is going to be scaled to fit the
+ * screen, then sizing in FRACTIONS of the viewport makes the physical result
+ * identical either way: a control that is a quarter of a 980px layout is a
+ * quarter of the glass, the same as a quarter of a 410px one. Clamped so a
+ * genuine wide window does not inflate into a cartoon.
+ */
+const scaleForViewport = width => Math.min(3, Math.max(1, (width || DESIGN_WIDTH) / DESIGN_WIDTH));
+
+function useLayoutScale() {
+  const [scale, setScale] = useState(() => scaleForViewport(typeof window === 'undefined' ? 0 : window.innerWidth));
+  useEffect(() => {
+    const apply = () => setScale(scaleForViewport(window.innerWidth));
+    apply();
+    window.addEventListener('resize', apply);
+    window.visualViewport?.addEventListener('resize', apply);
+    return () => {
+      window.removeEventListener('resize', apply);
+      window.visualViewport?.removeEventListener('resize', apply);
+    };
+  }, []);
+  return scale;
+}
+
 export default function CallApp() {
   useDocumentTitle('Call');
   useFixedViewport();
+  const layoutScale = useLayoutScale();
   const logger = useMemo(() => getLogger().child({ component: 'CallApp' }), []);
 
   // Route this surface's events to the durable phone-side session trace under
@@ -96,6 +137,11 @@ export default function CallApp() {
       viewportWidth: window.innerWidth,
       viewportHeight: window.innerHeight,
       devicePixelRatio: window.devicePixelRatio,
+      // >1 means the layout viewport is wider than a phone's, which in
+      // practice means the browser is in desktop-site mode and every control
+      // is being scaled up to compensate.
+      layoutScale: Number(scaleForViewport(window.innerWidth).toFixed(2)),
+      desktopMode: window.innerWidth > 700 && navigator.maxTouchPoints > 0,
       // >1 means the page is not being read at the size we laid it out at.
       visualScale: window.visualViewport ? Number(window.visualViewport.scale.toFixed(2)) : null,
       orientation: window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait',
@@ -224,7 +270,8 @@ export default function CallApp() {
 
   return (
     <AppThemeProvider pack="home">
-      <main className={`call-app ${inCall ? 'call-app--connected' : active ? 'call-app--connecting' : 'call-app--lobby'}`}>
+      <main style={{ '--u': layoutScale }}
+        className={`call-app ${inCall ? 'call-app--connected' : active ? 'call-app--connecting' : 'call-app--lobby'}`}>
         {/* The caller's own camera is the surface, not a thumbnail parked in
             dead space. It fills everything the controls do not need, so the
             lobby, the connecting state and the call all share one silhouette
