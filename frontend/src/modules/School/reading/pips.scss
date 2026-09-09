@@ -84,6 +84,10 @@
   50% { transform: scale(1.18); }
 }
 
+/* Paused: the mark stays, the pulse stops. The sweep still says where we are.
+   A pip that vanished on pause took "which book is this" with it. */
+.reading-pip--held { animation: none; }
+
 /* A wall panel that respects the setting shows the sweep and holds still. */
 @media (prefers-reduced-motion: reduce) {
   .reading-pip--live { animation: none; }

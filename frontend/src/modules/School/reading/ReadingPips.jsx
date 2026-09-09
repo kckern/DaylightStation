@@ -39,7 +39,7 @@ export const MAX_PIPS = 8;
 
 export default function ReadingPips({
   count, target, label, className = '', testId = 'reading-count',
-  live = false, progress = null,
+  live = false, moving = true, progress = null,
 }) {
   const owed = Number.isFinite(target) ? target : null;
   const done = Number.isFinite(count) ? count : 0;
@@ -70,7 +70,7 @@ export default function ReadingPips({
           return (
             <span
               key={i}
-              className="reading-pip reading-pip--live"
+              className={`reading-pip reading-pip--live${moving ? '' : ' reading-pip--held'}`}
               data-testid="reading-pip-live"
               // A conic gradient rather than an SVG ring: one element, no
               // viewBox to keep in sync with `--pip-size`, and the browser
@@ -96,8 +96,10 @@ ReadingPips.propTypes = {
   label: PropTypes.string,
   className: PropTypes.string,
   testId: PropTypes.string,
-  /** A story is playing now: mark the pip it will fill. */
+  /** A story is loaded (playing or paused): mark the pip it will fill. */
   live: PropTypes.bool,
+  /** The audio is actually running. False holds the pulse still. */
+  moving: PropTypes.bool,
   /** 0..1 through that story, or null when the position is not known. */
   progress: PropTypes.number,
 };
