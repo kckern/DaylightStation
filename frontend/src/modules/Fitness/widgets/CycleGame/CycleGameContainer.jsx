@@ -4,7 +4,7 @@ import getLogger from '@/lib/logging/Logger.js';
 import { CycleRaceController } from '@/modules/Fitness/lib/cycleGame/CycleRaceController.js';
 import { buildRaceConfigFromCourse, formatClock as fmtClock } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
 import { buildRaceRecord } from '@/modules/Fitness/lib/cycleGame/raceRecord.js';
-import { zoneMultiplierFor, zoneColorFor, computeDistanceDelta } from '@/modules/Fitness/lib/cycleGame/distanceModel.js';
+import { zoneMultiplierFor, zoneColorFor, computeDistanceDelta, resolveWheelCircumferenceM } from '@/modules/Fitness/lib/cycleGame/distanceModel.js';
 import { playSound } from '@/modules/Fitness/lib/cycleGame/playSound.js';
 import { saveRaceRecord } from '@/modules/Fitness/lib/cycleGame/saveRaceRecord.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
@@ -211,11 +211,23 @@ export default function CycleGameContainer({ onMount } = {}) {
     bikes.forEach((bike) => {
       const userId = session?.getEquipmentRider?.(bike.id) || null;
       if (!userId) return;
+      // A bike whose config has no wheel_circumference_m races on the default
+      // rather than 0 m per rev (which made the 2026-09-08 pedaler race
+      // unwinnable). Warn so the missing config is visible in the log store.
+      const wheelCircumferenceM = resolveWheelCircumferenceM(bike);
+      if (!(Number.isFinite(bike.wheel_circumference_m) && bike.wheel_circumference_m > 0)) {
+        log.warn('cycle_game.wheel_default', {
+          equipmentId: bike.id,
+          userId,
+          configured: bike.wheel_circumference_m ?? null,
+          wheelCircumferenceM
+        });
+      }
       riders.push({
         userId,
         displayName: resolveDisplayName(userId),
         equipmentId: bike.id,
-        wheelCircumferenceM: Number.isFinite(bike.wheel_circumference_m) ? bike.wheel_circumference_m : 0
+        wheelCircumferenceM
       });
     });
     // A selected ghost replays its whole recorded field as competitors.
@@ -238,7 +250,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       });
     }
     return riders;
-  }, [bikes, session, resolveDisplayName, ghost]);
+  }, [bikes, session, resolveDisplayName, ghost, log]);
 
   // ── lifecycle state ──────────────────────────────────────────────────────
   const [phase, setPhase] = useState('idle'); // idle | staging | countdown | racing | results
@@ -817,7 +829,14 @@ export default function CycleGameContainer({ onMount } = {}) {
         countdown: !!sx.countdown, finish: !!sx.finish, end: !!sx.end, racing: !!sx.racing?.dir
       },
       backgroundPlexId: cfg.backgroundPlexId ?? null,
-      riders: riders.map((r) => ({ userId: r.userId, isGhost: Array.isArray(r.ghostSeries) && r.ghostSeries.length > 0, equipmentId: r.equipmentId ?? null }))
+      riders: riders.map((r) => ({
+        userId: r.userId,
+        isGhost: Array.isArray(r.ghostSeries) && r.ghostSeries.length > 0,
+        equipmentId: r.equipmentId ?? null,
+        // The meters-per-rev each live rider actually races on (0 for ghosts,
+        // which replay recorded distance) — a 0-m race is diagnosable from here.
+        wheelCircumferenceM: Number.isFinite(r.wheelCircumferenceM) ? r.wheelCircumferenceM : 0
+      }))
     });
 
     log.info('cycle_game.staged', {
@@ -1790,7 +1809,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       const zoneId = isGhostRider ? (rider.zoneId || null) : (vitals.zoneId || null);
       const wheelM = Number.isFinite(rider.wheelCircumferenceM) && rider.wheelCircumferenceM > 0
         ? rider.wheelCircumferenceM
-        : (bikeById.get(rider.equipmentId)?.wheel_circumference_m || 0);
+        : resolveWheelCircumferenceM(bikeById.get(rider.equipmentId));
       // Ghost speed comes from the engine (windowed distance delta, already 0
       // once finished). Records predating rpm_series have no cadence to replay —
       // synthesize one from speed + wheel size so the needle doesn't park at 0
