@@ -40,6 +40,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { screenOff } from '../../../lib/fkb.js';
 import { deviceIdFor } from '../schoolPathModel.js';
+import Icon from '../home/icons/Icon.jsx';
 import useArmedAction from '../../../lib/identity/useArmedAction.js';
 import useTapFire from './useTapFire.js';
 import { schoolLog } from '../schoolLog.js';
@@ -557,10 +558,16 @@ export default function Keypad({
         type="button"
         className={`school-selfservice__screen-off${screenOffArmed ? ' is-armed' : ''}`}
         aria-live="polite"
+        // The VISIBLE label shortens when armed so both states fit one fixed
+        // width (see the stylesheet) — a button that resizes under a finger
+        // already resting on it is a different button. The spoken name does
+        // not shorten: "Tap again" on its own says nothing about what for.
+        aria-label={screenOffArmed ? 'Tap again to turn off screen' : 'Turn off screen'}
         disabled={busy || screenOffSuppressed}
         {...tap(requestScreenOff)}
       >
-        {screenOffArmed ? 'Tap again to turn off screen' : 'Turn off screen'}
+        <Icon name="power" className="school-selfservice__screen-off-icon" />
+        <span>{screenOffArmed ? 'Tap again' : 'Turn off screen'}</span>
       </button>
       <p className="school-selfservice__screen-off-status" role="status">
         {screenOffFailure ?? ''}
