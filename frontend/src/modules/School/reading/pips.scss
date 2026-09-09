@@ -1,0 +1,63 @@
+/**
+ * The reading obligation, as pips. Shared by all three acts of the ceremony —
+ * the shelf while choosing, the surround rail while the story plays, and the
+ * close — so a child sees ONE object change state rather than three designs
+ * that resemble each other.
+ *
+ * HOST-COLOURED, ON PURPOSE. Every value that could differ between those three
+ * homes is a custom property with a default, so the rail (oxblood, and inside a
+ * frame whose region re-maps `--ink`) and the prompt (charcoal-blue) each get
+ * pips that belong to where they are, from one stylesheet.
+ *
+ *   --pip-size   the disc's diameter. The prompt is read from a sofa and wants
+ *                a big one; the rail is a narrow column and wants a small one.
+ *   --pip-gap    space between discs.
+ *   --pip-ink    the filled colour, and the ring colour at lower alpha.
+ *
+ * Deliberately NOT a progress bar. A bar shows a fraction, and the question a
+ * child is asking is "how many more books" — a number of things, not a
+ * proportion.
+ */
+
+.reading-pips {
+  display: flex;
+  align-items: center;
+  gap: var(--pip-gap, 1.4vh);
+}
+
+.reading-pip {
+  width: var(--pip-size, 3.4vh);
+  height: var(--pip-size, 3.4vh);
+  border-radius: 50%;
+  box-sizing: border-box;
+  flex: none;
+  /* Hollow = still owed. A ring, not a faint disc: on a bright living-room TV a
+     low-alpha FILL washes out into the background and the count reads short,
+     which is the one thing this element must never do. */
+  border: max(1.5px, calc(var(--pip-size, 3.4vh) * 0.15)) solid
+    color-mix(in srgb, var(--pip-ink, #ffd479) 55%, transparent);
+}
+
+.reading-pip--done {
+  background: var(--pip-ink, #ffd479);
+  border-color: var(--pip-ink, #ffd479);
+  box-shadow: 0 0 calc(var(--pip-size, 3.4vh) * 0.45)
+    color-mix(in srgb, var(--pip-ink, #ffd479) 45%, transparent);
+}
+
+/* Read past the day's target — credit where a full row of pips would show none. */
+.reading-pip-extra {
+  margin-left: 0.4vh;
+  font-size: calc(var(--pip-size, 3.4vh) * 0.76);
+  font-weight: 700;
+  color: var(--pip-ink, #ffd479);
+}
+
+/* The fallback wording, for the obligations pips cannot draw (unreadable, or a
+   target past MAX_PIPS). Sized by the host. */
+.reading-pips-label {
+  margin: 0;
+  font-size: var(--pip-label-size, 4.4vh);
+  font-weight: 600;
+  color: var(--pip-ink, #ffd479);
+}
