@@ -10,8 +10,16 @@ import { coverContentType, coverExtension } from '#domains/books/BookCoverArt.mj
 /**
  * BookCoverStore — the household's own copy of every cover it has found.
  *
- *   <householdPath>/books/covers/{isbn13}.{jpg|png|gif|webp}   the art
- *   <householdPath>/books/covers/{isbn13}.yml                  what it is
+ *   <mediaDir>/books/covers/{isbn13}.{jpg|png|gif|webp}   the art
+ *   <mediaDir>/books/covers/{isbn13}.yml                  what it is
+ *
+ * ## MEDIA, NOT DATA
+ *
+ * The book RECORD lives in `data/household/books/{isbn13}.yml` — it is small,
+ * hand-editable, and worth syncing. The ART is neither: tens of kilobytes of
+ * JPEG per book, derived entirely from the record plus a network round trip,
+ * and re-fetchable at any time. It belongs on the media mount with every other
+ * blob the house holds, and the data tree stays a tree of facts.
  *
  * ## THE BYTES ARE KEPT, NOT THE URL
  *
@@ -44,18 +52,18 @@ export class BookCoverStore {
 
   /**
    * @param {object} deps
-   * @param {object} deps.configService - must expose `getHouseholdPath(suffix)`
+   * @param {object} deps.configService - must expose `getMediaDir()`
    */
   constructor({ configService, logger = console, clock = () => new Date() } = {}) {
-    if (!configService || typeof configService.getHouseholdPath !== 'function') {
-      throw new Error('BookCoverStore: configService with getHouseholdPath() is required');
+    if (!configService || typeof configService.getMediaDir !== 'function') {
+      throw new Error('BookCoverStore: configService with getMediaDir() is required');
     }
     this.#configService = configService;
     this.#logger = logger;
     this.#clock = typeof clock === 'function' ? clock : () => new Date();
   }
 
-  #dir() { return path.join(this.#configService.getHouseholdPath('books'), 'covers'); }
+  #dir() { return path.join(this.#configService.getMediaDir(), 'books', 'covers'); }
   #sidecar(isbn13) { return path.join(this.#dir(), `${isbn13}.yml`); }
   #art(isbn13, extension) { return path.join(this.#dir(), `${isbn13}.${extension}`); }
 

@@ -185,10 +185,27 @@ export default function ReadingDetailPanel({
   // History
   const [undoing, setUndoing] = useState(null); // { revisionId, reason }
 
-  // The loaded record is the form's starting point, and every successful write
-  // reloads it — so what is on screen is always what the server last said.
-  useEffect(() => {
-    if (!record) return;
+  // The record this form is currently showing. Compared by IDENTITY: every
+  // successful write refetches, and the new object is a new starting point.
+  const [seededFrom, setSeededFrom] = useState(null);
+
+  // THE STARTING POINT IS SET DURING RENDER, NOT IN AN EFFECT.
+  //
+  // This was a `useEffect` keyed on `record`, and the ordering was wrong in a
+  // way that cost a keystroke: `PanelFrame` renders the form the moment the
+  // fetch resolves, and the effect that fills it in runs one commit LATER. In
+  // between there is a form on screen with empty fields, and anything typed
+  // into it is overwritten by the record landing. Nine tests in this file were
+  // red because of it — they typed an ISBN, the load flushed, and the panel
+  // looked it up under the OLD number.
+  //
+  // Adjusting state during render is the documented fix for "reset state when
+  // a prop changes": React re-runs this component immediately with the new
+  // state and never commits the intermediate one, so the first render that
+  // shows the form already carries the record's values. It must stay
+  // conditional — an unconditional setState here is an infinite loop.
+  if (record && seededFrom !== record) {
+    setSeededFrom(record);
     setIsbn(record.isbn ?? record.book?.isbn ?? '');
     setMode(record.progressMode ?? 'page');
     setPageCount(Number.isFinite(record.book?.pageCount) ? String(record.book.pageCount) : '');
@@ -200,7 +217,7 @@ export default function ReadingDetailPanel({
     setArmed(null);
     setUndoing(null);
     setLookup(null);
-  }, [record]);
+  }
 
   useEffect(() => {
     teacherLog.read('reading-detail-opened', { learnerId, readingId });
