@@ -8,6 +8,7 @@ import RecordingRung from './rungs/RecordingRung.jsx';
 import ReviewPanel from './ReviewPanel.jsx';
 import PacingControl from './PacingControl.jsx';
 import DeviceSettings from './DeviceSettings.jsx';
+import { languageName } from './languageNames.js';
 import ReadingPips from '../../reading/ReadingPips.jsx';
 import './SentenceLadder.scss';
 
@@ -21,33 +22,29 @@ const RUNG_LABELS = {
 const RUNG_ORDER = ['repetition', 'dictation', 'recording', 'interpretation'];
 
 /**
- * The corpus writes its own language codes (`EN`, `KR`) and they are not BCP-47,
- * so `Intl.DisplayNames` cannot name them. An explicit map, falling back to the
- * code itself — a card saying "Needs a KR keyboard" is poor, and a card
- * confidently saying the wrong language is worse.
+ * What a rung this device cannot climb is actually short of — the text under a
+ * dimmed rung. It used to be one hardcoded line, "Needs a microphone", printed
+ * whatever the rung wanted: the yellow-room tablet has a mic and an
+ * English-only keyboard, so the rung it blocks is DICTATION, and the card sent
+ * the child hunting for a microphone already in their hands. The server now
+ * says which capability is missing (`missingCreditNeeds`), because the ladder
+ * domain is the one place that mapping lives.
  */
-const LANGUAGE_NAMES = { EN: 'English', KR: 'Korean' };
-
-/**
- * What a rung this device cannot climb is actually short of. The note used to
- * be one hardcoded sentence, "Needs a microphone", printed under every blocked
- * rung — so the yellow-room tablet, which has a mic but an English-only
- * keyboard, blocked DICTATION and sent the child hunting for a microphone
- * already in their hands. The server now says which capability is missing
- * (`missingCreditNeeds`), because the ladder domain is the one place that
- * mapping lives.
- */
-function needSentence(need) {
+function needNote(need) {
   if (need?.kind === 'microphone') return 'Needs a microphone — on another device';
-  // A textInput requirement whose language the corpus could not resolve is a
-  // corpus fault — `resolveRole` returns null when the languages map has no
-  // entry for the rung's role, and the wrapper object is still truthy, so it
-  // reaches here intact. Fall through rather than print it: whatever a broken
-  // corpus costs us, a child must never be shown a card reading "Needs a null
-  // keyboard".
+  // A textInput requirement can arrive naming no language: `resolveRole` yields
+  // null when the corpus's languages map has no entry for the rung's role, and
+  // the wrapper object around that null is still truthy, so it survives every
+  // check upstream and reaches here intact. Fall through rather than print it —
+  // a child must never be shown a card reading "Needs a null keyboard".
+  //
+  // No matching server-side warning, deliberately: a corpus that cannot name
+  // both its languages is refused outright by `validateCorpus`, so this shape
+  // cannot come from a validated corpus. What it CAN come from is the payload —
+  // an older server, a truncated response — which is exactly why the guard
+  // belongs on this side and not there.
   if (need?.kind === 'textInput' && need.language) {
-    const language = LANGUAGE_NAMES[need.language] ?? need.language;
-    return `Needs a ${language} keyboard — on another device`;
+    return `Needs a ${languageName(need.language)} keyboard — on another device`;
   }
   // A rung the server could not explain still says something true: it is out of
   // reach here. Silence would leave a dimmed rung with no reason at all.
@@ -356,7 +353,7 @@ export default function SentenceLadderProgram({
                   <li key={rung} className="lang-ladder__rung">
                     <div className="lang-ladder__step is-blocked" role="button" aria-disabled="true" aria-label={label}>
                       <span className="lang-ladder__label">{label}</span>
-                      <span className="lang-ladder__note">{needSentence(missingCreditNeeds[rung])}</span>
+                      <span className="lang-ladder__note">{needNote(missingCreditNeeds[rung])}</span>
                     </div>
                   </li>
                 );

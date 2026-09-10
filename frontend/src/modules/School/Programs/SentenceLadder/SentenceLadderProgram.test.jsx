@@ -326,7 +326,11 @@ describe('the day', () => {
 
   it('keeps a device-blocked empty queue escapable without claiming completion', async () => {
     const onExit = vi.fn();
-    dayMock.mockResolvedValue(dayPayload({ queue: [], missingCreditRungs: ['recording'] }));
+    // The key is DELETED, not defaulted: an older server, or any payload
+    // predating `missingCreditNeeds`, is what the `?? {}` guard is for.
+    const payload = dayPayload({ queue: [], missingCreditRungs: ['recording'] });
+    delete payload.data.missingCreditNeeds;
+    dayMock.mockResolvedValue(payload);
     render(
       <SentenceLadderProgram
         studyGrant="test-grant" userId="kckern" corpusId="glossika-korean"
@@ -335,9 +339,8 @@ describe('the day', () => {
     );
 
     expect(await screen.findByRole('status')).toHaveTextContent(/device that can complete Recording/i);
-    // This payload carries no `missingCreditNeeds` at all — an older server, or
-    // a rung it could not explain. The rung still states its own condition
-    // rather than dimming with no reason given.
+    // With no needs map at all, the rung still states its own condition rather
+    // than dimming with no reason given.
     expect(screen.getByText('Not available on this device')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Done' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Leave for now' }));
@@ -562,7 +565,12 @@ describe('dismissal and dead ends', () => {
     await screen.findByText('English 1');
     expect(screen.queryByText('This device can type:')).toBeNull();
     fireEvent.click(screen.getByText('Device'));
-    expect(screen.getByText('KR keyboard')).toBeTruthy();
+    // "Korean keyboard", not "KR keyboard": this panel is where a child lands
+    // after a blocked rung tells them they need one, and for a while the note
+    // said "Korean" while the row here said "KR" — the same object under two
+    // names, two taps apart. Both read from `languageNames.js` now.
+    expect(screen.getByText('Korean keyboard')).toBeTruthy();
+    expect(screen.getByText('English keyboard')).toBeTruthy();
     expect(screen.getByText('Microphone')).toBeTruthy();
   });
 
