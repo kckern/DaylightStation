@@ -80,6 +80,13 @@ export default function SentenceLadderProgram({
   // choice — the hold has to live in the parent because it is the PARENT's
   // queue that swaps the sentence out.
   const [held, setHeld] = useState(null);
+  // The sentence a child has ASKED for by pressing Next, as {rung, seq}. It
+  // starts playing on arrival: Next has to mean what it says, and a child who
+  // then had to find Play would be pressing two buttons for one intention. The
+  // tap on Next is the gesture behind it — which is the whole difference from
+  // the auto-advance this replaced, where sentence followed sentence with no
+  // gesture at all and so could be neither chosen nor gone back to.
+  const [playOnArrival, setPlayOnArrival] = useState(null);
   const loadGeneration = useRef(0);
   const loadController = useRef(null);
   const progressEmission = useRef(null);
@@ -180,6 +187,11 @@ export default function SentenceLadderProgram({
   // Let go when the child leaves the rung, or when the day rolls: a stale hold
   // must never pin a sentence that is no longer the queue's to give.
   useEffect(() => { setHeld(null); }, [activeRung, day?.day]);
+
+  // A request to play carries a gesture, and a gesture does not survive leaving
+  // the surface. Cleared on the way out — including to the Review shelf — so
+  // coming back never plays a sentence nobody just asked for.
+  useEffect(() => { setPlayOnArrival(null); }, [activeRung, day?.day, tab]);
 
   const group = groups.find((g) => g.rung === activeRung) || null;
   const pending = group ? group.items.filter((i) => !i.done) : [];
@@ -457,7 +469,15 @@ export default function SentenceLadderProgram({
             entry={entry} nextEntry={nextEntry} audioUrl={audioUrl}
             onComplete={onComplete} saving={saving}
             onHold={() => setHeld({ rung: entry.rung, seq: entry.seq })}
-            onAdvance={() => setHeld(null)}
+            onRelease={() => setHeld(null)}
+            onAdvance={() => {
+              setHeld(null);
+              // `nextEntry` is the head of the queue while a sentence is held —
+              // the one Next lands on. There may be none: the last sentence of
+              // the day hands over to the complete panel, and nothing plays.
+              if (nextEntry) setPlayOnArrival({ rung: nextEntry.rung, seq: nextEntry.seq });
+            }}
+            startOnArrival={playOnArrival?.rung === entry.rung && playOnArrival?.seq === entry.seq}
           />
         )}
         {tab === 'study' && !allDone && entry && (entry.rung === 'dictation' || entry.rung === 'interpretation') && (
