@@ -106,7 +106,7 @@ export function createReadingRouter({ readingService } = {}) {
     const result = await readingService.read(req.body || {});
     if (result.kind === 'session_expired') return res.status(409).json({ recorded: false, reason: 'session-or-pick-expired' });
     if (result.kind === 'pick_mismatch') return res.status(409).json({ recorded: false, reason: 'pick-mismatch' });
-    return res.json({ recorded: true, read: result.read, presentation: result.presentation ?? null });
+    return res.json({ recorded: true, read: result.read, presentation: result.presentation ?? null, next: result.next ?? null });
   }));
 
   router.get('/summary', asyncHandler(async (req, res) => {
