@@ -45,6 +45,12 @@ export default function RepetitionRung({
     // and the parent's ladder would otherwise step to the next rung in the
     // render between the two.
     onHold?.();
+    // The three states this rung gained when it stopped being a conveyor belt —
+    // held, replayed, advanced — were invisible from the day they shipped.
+    // Without them a session reads as a run of `complete`s and there is no way
+    // to tell a child who listened twice from one who was carried along, which
+    // is the entire question the change was making answerable.
+    languageLog.rung('held', { rung: 'repetition', seq: entry.seq });
     Promise.resolve(onComplete({ seq: entry.seq, rung: 'repetition' })).then((result) => {
       if (result?.ok === false) {
         // Nothing was recorded, so nothing is finished: let the sentence go
@@ -86,9 +92,13 @@ export default function RepetitionRung({
   // audio activation that makes any of this audible, and nothing here plays
   // without one.
   const start = useCallback(() => {
+    // A second pass over a sentence already credited is a REPLAY: the child
+    // asked to hear it again. It climbs nothing, so it is not a `complete`, and
+    // counting the two together would erase the distinction.
+    if (phase === 'done') languageLog.rung('replayed', { rung: 'repetition', seq: entry.seq });
     setPhase('playing');
     playSequence(clipsFor(entry, audioUrl));
-  }, [entry, audioUrl, playSequence]);
+  }, [entry, audioUrl, playSequence, phase]);
 
   // The child pressed Next to get HERE, so this sentence plays without a second
   // tap. Once per mount — the component is keyed by sentence, so the ref is per
@@ -156,7 +166,14 @@ export default function RepetitionRung({
               <Icon name="restart" className="lang-btn__glyph" />
               <span className="lang-btn__word">Play again</span>
             </button>
-            <button type="button" className="lang-btn lang-btn--primary" onClick={() => onAdvance?.()}>
+            <button
+              type="button"
+              className="lang-btn lang-btn--primary"
+              onClick={() => {
+                languageLog.rung('advanced', { rung: 'repetition', seq: entry.seq });
+                onAdvance?.();
+              }}
+            >
               Next
             </button>
           </>

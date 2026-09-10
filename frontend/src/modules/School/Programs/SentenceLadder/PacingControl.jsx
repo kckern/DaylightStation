@@ -6,6 +6,10 @@ import Popover from './Popover.jsx';
  * The whole scheduler has exactly this parameter — no ease factors, no
  * intervals. The steps mirror the 2016 dropdown, which ran 2 to 100; anything
  * finer is false precision for a number the learner tunes by feel.
+ *
+ * Presentational, and logs nothing: a limit is only really changed once the
+ * server has taken it, so the record (from → to, and any refusal) is written by
+ * the program shell's `onPacing`, which is the side of the call that knows.
  */
 const STEPS = [2, 3, 5, 10, 15, 20, 25, 30, 40, 50, 75, 100];
 

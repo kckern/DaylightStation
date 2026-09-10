@@ -8,21 +8,32 @@ const logMock = vi.fn();
 const rollMock = vi.fn();
 const pacingMock = vi.fn();
 const historyMock = vi.fn();
-const { programLogMock } = vi.hoisted(() => ({ programLogMock: vi.fn() }));
+const {
+  programLogMock, programStepMock, rungLogMock, pacingLogMock, pacingWarnMock, capabilityLogMock,
+} = vi.hoisted(() => ({
+  programLogMock: vi.fn(),
+  programStepMock: vi.fn(),
+  rungLogMock: vi.fn(),
+  pacingLogMock: vi.fn(),
+  pacingWarnMock: vi.fn(),
+  capabilityLogMock: vi.fn(),
+}));
 
 vi.mock('./languageLog.js', () => ({
   languageLog: {
     program: (...args) => programLogMock(...args),
+    programStep: (...args) => programStepMock(...args),
     programError: vi.fn(),
-    rung: vi.fn(),
+    rung: (...args) => rungLogMock(...args),
     attempt: vi.fn(),
     attemptError: vi.fn(),
     audio: vi.fn(),
     audioError: vi.fn(),
     capture: vi.fn(),
     captureError: vi.fn(),
-    pacing: vi.fn(),
-    capability: vi.fn(),
+    pacing: (...args) => pacingLogMock(...args),
+    pacingWarn: (...args) => pacingWarnMock(...args),
+    capability: (...args) => capabilityLogMock(...args),
     // The run-id holder. Real in `languageLog.js`; stubbed here because the
     // program mints a run during RENDER, so a mock missing these throws before
     // a single assertion runs.
@@ -91,6 +102,11 @@ function dayPayload({
 beforeEach(() => {
   vi.clearAllMocks();
   programLogMock.mockClear();
+  programStepMock.mockClear();
+  rungLogMock.mockClear();
+  pacingLogMock.mockClear();
+  pacingWarnMock.mockClear();
+  capabilityLogMock.mockClear();
   historyMock.mockReset().mockResolvedValue({
     ok: true,
     status: 200,
@@ -527,12 +543,162 @@ describe('repetition, one sentence at a time', () => {
     expect(screen.queryByRole('button', { name: 'Play again' })).toBeNull();
   });
 
+  // The choice this rung gained — hold, replay, move on — shipped unobservable:
+  // a session read back as a run of `complete`s, with no way to tell a child who
+  // asked to hear a sentence again from one being carried along by a timer.
+  it('records holding, replaying and moving on as three different things', async () => {
+    playsToEnd();
+    liveDay([entry(1, 'repetition'), entry(2, 'repetition')]);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
+    await screen.findByRole('button', { name: 'Play again' }, SEQUENCE);
+    expect(rungLogMock).toHaveBeenCalledWith('held', { rung: 'repetition', seq: 1 });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play again' }));
+    expect(rungLogMock).toHaveBeenCalledWith('replayed', { rung: 'repetition', seq: 1 });
+    await screen.findByRole('button', { name: 'Play again' }, SEQUENCE);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(rungLogMock).toHaveBeenCalledWith('advanced', { rung: 'repetition', seq: 1 });
+    // A replay is not a second climb, in the record as well as in the ledger.
+    expect(rungLogMock.mock.calls.filter(([d]) => d === 'complete')).toHaveLength(1);
+  });
+
   it('Stop actually stops', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     fireEvent.click(await screen.findByText('Play'));
     fireEvent.click(await screen.findByText('Stop'));
     expect(await screen.findByText('Play')).toBeTruthy();
+  });
+});
+
+// Instrumentation is not decoration here: four children share these surfaces,
+// and when one says "it didn't work" the only witness is the log store. Each of
+// these transitions was silent, and each is a thing a child actually reports.
+describe('what the store can answer afterwards', () => {
+  it('records that a day was ASKED for, not only that one arrived', async () => {
+    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')], day: 4 }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    await screen.findByText(/Day 4/);
+
+    // A request that never comes back leaves "Loading…" on the wall and, until
+    // now, nothing at all in the store — indistinguishable from a program
+    // nobody opened. It carries the capabilities it asked WITH, because those
+    // decide which rungs come back.
+    expect(programStepMock).toHaveBeenCalledWith('day-loading', expect.objectContaining({
+      corpus: 'glossika-korean', preview: false,
+    }));
+    const loaded = programLogMock.mock.calls.find(([detail]) => detail === 'day-loaded');
+    expect(loaded[1]).toMatchObject({ day: 4, chain: ['repetition'], blocked: [] });
+    expect(typeof loaded[1].ms).toBe('number');
+  });
+
+  it('records a move to the Review shelf, and says nothing about a tab already open', async () => {
+    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    expect(programStepMock).toHaveBeenCalledWith('tab', {
+      corpus: 'glossika-korean', from: 'study', to: 'review',
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }));
+    expect(programStepMock.mock.calls.filter(([d]) => d === 'tab')).toHaveLength(1);
+  });
+
+  it('says WHY the learner landed on the rung they did', async () => {
+    // Repetition finished earlier today: this is a return, not a start.
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['repetition', 'dictation'],
+      queue: [entry(1, 'repetition', true), entry(2, 'dictation')],
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    await screen.findByLabelText(/Type what you hear/i);
+
+    expect(rungLogMock).toHaveBeenCalledWith('landed', {
+      rung: 'dictation', reason: 'resume', pending: 1, of: 1,
+    });
+  });
+
+  it('records a dimmed rung once, naming the capability the server said was missing', async () => {
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['repetition'],
+      queue: [entry(1, 'repetition')],
+      missingCreditRungs: ['dictation'],
+      missingCreditNeeds: { dictation: { kind: 'textInput', language: 'KR' } },
+    }));
+    const { rerender } = render(
+      <SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />,
+    );
+    await screen.findByText(/Korean keyboard/);
+
+    expect(capabilityLogMock).toHaveBeenCalledWith('rung-blocked', {
+      corpus: 'glossika-korean', day: 1, rungs: ['dictation'],
+      needs: { dictation: 'textInput:KR' },
+    });
+    // A rendered STATE, not an event: re-rendering it must not say it again.
+    rerender(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    expect(capabilityLogMock.mock.calls.filter(([d]) => d === 'rung-blocked')).toHaveLength(1);
+  });
+
+  it('records the extra-practice banner it shows the child', async () => {
+    // A day topped up with second passes over its own new sentences shows the
+    // same sentence three times in a sitting — the most-reported "it repeated
+    // itself" — and the surface said so to the child and to nobody else.
+    dayMock.mockResolvedValue(dayPayload({
+      queue: [entry(1, 'repetition', false, { practice: true })],
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    await screen.findByText(/Extra practice/);
+    expect(rungLogMock).toHaveBeenCalledWith('practice', { rung: 'repetition', seq: 1 });
+  });
+
+  it('records a refused roll — a decline reads exactly like a dead button', async () => {
+    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition', true)] }));
+    rollMock.mockResolvedValue({ ok: true, status: 200, data: { rolled: false, reason: 'before-boundary' } });
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    fireEvent.click(await screen.findByText('Start the next day'));
+    await waitFor(() => expect(pacingWarnMock).toHaveBeenCalledWith('roll-refused', {
+      corpus: 'glossika-korean', reason: 'before-boundary',
+    }));
+  });
+
+  it('records a pacing change as from → to, and a failed one as a failure', async () => {
+    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')], dailyLimit: 5 }));
+    pacingMock.mockResolvedValue({ ok: true, status: 200, data: { dailyLimit: 20 } });
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    fireEvent.click(await screen.findByText('5 / day'));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: '20' }));
+    // "The limit is 20" does not tell you it used to be 5, and a limit quietly
+    // raised is the usual explanation for a morning that became too long.
+    await waitFor(() => expect(pacingLogMock).toHaveBeenCalledWith('changed', {
+      corpus: 'glossika-korean', dailyLimit: 20, from: 5,
+    }));
+
+    pacingMock.mockResolvedValue({ ok: false, status: 503, data: null });
+    fireEvent.click(screen.getByText('5 / day'));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: '10' }));
+    await waitFor(() => expect(pacingWarnMock).toHaveBeenCalledWith('change-failed', {
+      corpus: 'glossika-korean', dailyLimit: 10, from: 5, status: 503,
+    }));
+  });
+
+  it('records a capability override with what it changed FROM', async () => {
+    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'What this device can do' }));
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: /Microphone/ }));
+    // The single most consequential thing a grown-up can do here: it decides
+    // which rungs exist tomorrow and persists in this browser until changed
+    // back. The record has to be readable without diffing against an earlier
+    // event to find out what moved.
+    await waitFor(() => expect(capabilityLogMock).toHaveBeenCalledWith('overridden', expect.objectContaining({
+      corpus: 'glossika-korean', changed: ['microphone'],
+    })));
   });
 });
 
