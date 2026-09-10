@@ -77,6 +77,27 @@ export function ScreenVolumeProvider({
     _publishMasterState(master, effectiveMaster, muted);
   }, [master, effectiveMaster, muted]);
 
+  // Say where the dial is and when it moves. Until this existed the provider
+  // logged nothing but persistence failures, so a panel whose master had reached
+  // 1.0 — where every further key press is a no-op — was indistinguishable in
+  // the logs from one nobody had touched. `atCeiling` is the whole point.
+  const prevRef = useRef(null);
+  useEffect(() => {
+    const prev = prevRef.current;
+    prevRef.current = { master, muted };
+    const shape = {
+      master, effectiveMaster, muted,
+      atCeiling: master >= 1,
+      atFloor: master <= 0,
+    };
+    if (prev === null) {
+      logger().info('master-initialised', { ...shape, fixed, storageKey });
+      return;
+    }
+    if (prev.master === master && prev.muted === muted) return;
+    logger().info('master-changed', { ...shape, from: prev.master });
+  }, [master, muted, effectiveMaster, fixed, storageKey]);
+
   // Persist on every change (skipped in fixed mode — the master is config-driven,
   // not user-driven, so there's nothing to remember across sessions).
   useEffect(() => {
