@@ -151,6 +151,11 @@ import { VirtualSchoolDeviceConsole } from '#apps/school/services/VirtualSchoolD
 import { createSchoolVirtualDevicesRouter } from '#api/v1/routers/schoolVirtualDevices.mjs';
 import { createSchoolSelfServiceRouter } from '#api/v1/routers/school.selfservice.mjs';
 import { IssueDirectLaunch } from '#apps/school/usecases/IssueDirectLaunch.mjs';
+import { validateSchedule } from '#domains/school/schoolCalendar.mjs';
+import { YamlTermVerdictCache } from '#adapters/persistence/yaml/YamlTermVerdictCache.mjs';
+import { TermVerdictService } from '#apps/school/TermVerdictService.mjs';
+import { GetLearnerTerm } from '#apps/school/usecases/GetLearnerTerm.mjs';
+import { RebuildLearnerTerm } from '#apps/school/usecases/RebuildLearnerTerm.mjs';
 
 /**
  * Tokens are printed and carried around a house; a predictable stream would let
@@ -268,6 +273,10 @@ export async function createSchoolLifecycle({
   // means the reachability question is not asked at all, which is the
   // behaviour every composition had before 2026-08-26.
   declaredEntryActions = undefined,
+  // The household's academic periods (`YamlAcademicPeriodStore`, composed in
+  // app.mjs). The term grid's term IS one of these; null leaves the term
+  // read model unwired rather than inventing a calendar of its own.
+  academicPeriods = null,
   clock = () => new Date(), rng = null, logger = console,
 } = {}) {
   const schoolRealtime = realtime ?? (eventBus ? new EventBusSchoolRealtimeAdapter({ eventBus }) : null);
@@ -782,11 +791,19 @@ export async function createSchoolLifecycle({
   //   - `closeSessionOutcome` keeps its own (built inside the use case): it is
   //     wired with no launchers and defaults `timezone` to UTC rather than
   //     null, and a receipt is not the place to discover that those differ.
+  // `school.yml → calendar`: the house's own days off, in the same shape a
+  // course's `schedule` takes (`except` / `also`; `daysOfWeek` permitted but
+  // absent — weekends are ordinary days). Applied INSIDE `planDailyAgenda`, so
+  // the printed agenda and the term grid can never disagree about a vacation.
+  // Fails open with a warn, like every schedule: a typo must not excuse a term.
+  const { errors: calendarErrors, schedule: householdSchedule } = validateSchedule(cfg.calendar);
+  if (calendarErrors.length) logger.warn?.('school.calendar.invalid', { errors: calendarErrors });
+
   const planProjection = new PlanProjection({
     curriculum, assignments: stores.assignments, sessions: stores.sessions,
     attestations, curriculumExceptions: curriculumExceptionStore,
     launchers, timezone, clock, logger,
-    declaredEntryActions,
+    declaredEntryActions, householdSchedule,
   });
 
   // --- use cases -------------------------------------------------------------
@@ -842,7 +859,7 @@ export async function createSchoolLifecycle({
   const previewPlanProjection = new PlanProjection({
     curriculum, assignments: stores.assignments, sessions: previewSessions,
     attestations, curriculumExceptions: curriculumExceptionStore,
-    launchers, timezone, clock,
+    launchers, timezone, clock, householdSchedule,
     planErrorEvent: 'school.agenda.plan-errors',
     launcherFailedEvent: 'school.agenda.launcher-failed',
     logger: logger.child ? logger.child({ preview: true }) : logger,
@@ -1374,6 +1391,30 @@ export async function createSchoolLifecycle({
     logger,
   });
 
+  // --- the term grid (plan 2026-09-09: school board + reading surfaces) -----
+  // One verdict per study day since the term began, replayed honestly through
+  // `getLearnerDayCompletion.execute({studyDay})` and cached as derived,
+  // disposable rows. Unwired without academic periods: a grid needs a term.
+  let termVerdicts = null;
+  let getLearnerTerm = null;
+  let rebuildLearnerTerm = null;
+  if (academicPeriods) {
+    termVerdicts = new TermVerdictService({
+      getLearnerDayCompletion,
+      cache: new YamlTermVerdictCache({ configService, logger }),
+      academicPeriods,
+      // `lifecycle.board.term: {from, to}` narrows the period for the grid —
+      // the Fall semester starts 1 August on paper; the board shows from
+      // 1 September. Never widens.
+      window: lifecycleCfg.board?.term ?? null,
+      timezone, clock, logger,
+    });
+    getLearnerTerm = new GetLearnerTerm({ termVerdicts });
+    rebuildLearnerTerm = new RebuildLearnerTerm({ termVerdicts, teacherGate, clock, logger });
+  } else {
+    logger.info?.('school.term-verdicts.unwired', { reason: 'no academicPeriods' });
+  }
+
   const useCases = {
     buildAgenda, issueDocument, issueComposedWorksheet, dispatchMedia, recordMediaCompletion,
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation, replaceRemediation,
@@ -1384,6 +1425,7 @@ export async function createSchoolLifecycle({
     enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction, recordLessonCompanionProgress,
     getLearnerDayCompletion, teacherAgendaDispatch, reprintIssuedArtifact, reprintResultReceiptArtifact, issueCorrectedResultReceipt, manageCurriculumException,
     getPianoLessonGate, manageProgramDayBypass, getCompanionFinishCode, issueDirectLaunch,
+    getLearnerTerm, rebuildLearnerTerm,
     ...bookShelfUseCases,
   };
 
@@ -1515,6 +1557,7 @@ export async function createSchoolLifecycle({
     // its push-on-transition bridge — same null-when-unwired,
     // optional-chained-on-shutdown convention as `donowSchoolBridge` above.
     getLearnerDayCompletion,
+    termVerdicts,
     realtime: schoolRealtime,
     bookLogLauncher,
     schoolCompletionBridge,

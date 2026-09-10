@@ -4,10 +4,63 @@
  * call; the launcher id alone identifies only the adapter family.
  */
 import { entryActionIsReachable } from '#domains/school/reachability.mjs';
+import { weekWindowFor } from '#domains/measures/weeklyWindow.mjs';
+import { addDays } from '#domains/school/termVerdict.mjs';
+
+/**
+ * A weekly program's status for the day being judged, with the rest of its
+ * Monday→Sunday week folded in.
+ *
+ * The launcher is asked for each earlier day of the week (Monday through the
+ * day before), replayed; the judged day itself is the status already in hand.
+ * The EARLIEST day the program reports done is `servedOn`. Never a future day:
+ * a week is judged as of the day asked, and Thursday cannot be satisfied by
+ * Saturday.
+ *
+ * Only a replayable launcher can be asked about earlier days; one that keeps
+ * no history answers for the judged day alone, and `servedOn` is then only
+ * ever that day. Honest, if blunt: such a program is weekly in name only.
+ */
+async function withWeeklyFold({ launcher, learnerId, programInstance, studyDay, status }) {
+  if (!studyDay) return status;
+  const { from } = weekWindowFor(studyDay);
+  let servedOn = status?.doneToday === true ? studyDay : null;
+  if (launcher.replayable === true) {
+    for (let day = from; day < studyDay; day = addDays(day, 1)) {
+      // eslint-disable-next-line no-await-in-loop
+      const earlier = await launcher.status({ userId: learnerId, programInstance, day });
+      if (earlier?.doneToday === true) { servedOn = day; break; }
+    }
+  }
+  return { ...status, weekly: { weekFrom: from, servedOn, satisfiedBefore: servedOn != null && servedOn < studyDay } };
+}
+
+/**
+ * The status a program answers for a day it cannot replay.
+ *
+ * NOT an error. `error: true` says "this program is broken today" and faults
+ * the day; this says "this program keeps no history, so nobody can say what
+ * happened on that day". `planDailyAgenda` treats an unknowable status as
+ * neither served nor owed, and the term ladder reads the resulting excuse as
+ * `unknown` — grey with a reason, never blue. "Cannot tell" is not "day off".
+ */
+export const UNKNOWABLE_STATUS = Object.freeze({
+  doneToday: null, unknowable: true, reason: 'no_history', progressLabel: null, score: null,
+});
 
 export async function collectProgramStatuses({
   plan, learnerId, launchers = new Map(), logger = console,
   logEvent = 'school.program-status.launcher-failed',
+  // A study-day key (`YYYY-MM-DD`) to replay instead of today. Null (the
+  // default) asks every launcher for its live answer, exactly as before. With
+  // a day, only launchers that declare `replayable` are asked — the rest are
+  // NOT CALLED (their live answer would be a lie about that day) and read
+  // `UNKNOWABLE_STATUS`.
+  day = null,
+  // The study day being judged — `day` when replaying, today otherwise. Only
+  // a WEEKLY entry needs it (to know which Monday its week began); a caller
+  // with no weekly entries may omit it and nothing changes.
+  studyDay = day,
   // Every `learner_action` the household's trigger sources declare.
   //
   // THREE STATES, NOT TWO. `undefined` (the default) means the caller did not
@@ -28,12 +81,13 @@ export async function collectProgramStatuses({
   (plan?.entries ?? []).filter((entry) => entry?.program).forEach((entry) => {
     const key = JSON.stringify([entry.program, entry.programInstance ?? null]);
     if (!programs.has(key)) programs.set(key, {
-      key, programId: entry.program, programInstance: entry.programInstance ?? null,
+      key, programId: entry.program, programInstance: entry.programInstance ?? null, weekly: false,
     });
+    if (entry.cadence === 'weekly') programs.get(key).weekly = true;
   });
 
   const statuses = [];
-  await Promise.all([...programs.values()].map(async ({ programId, programInstance }) => {
+  await Promise.all([...programs.values()].map(async ({ programId, programInstance, weekly }) => {
     let status;
     try {
       const launcher = launchers.get(programId);
@@ -97,7 +151,16 @@ export async function collectProgramStatuses({
         });
         return;
       }
-      status = await launcher.status({ userId: learnerId, programInstance });
+      if (day != null && launcher.replayable !== true) {
+        statuses.push({ programId, programInstance, status: { ...UNKNOWABLE_STATUS } });
+        return;
+      }
+      status = await launcher.status({
+        userId: learnerId, programInstance, ...(day != null ? { day } : {}),
+      });
+      if (weekly && status?.error !== true) {
+        status = await withWeeklyFold({ launcher, learnerId, programInstance, studyDay, status });
+      }
     } catch (err) {
       logger.warn?.(logEvent, {
         learnerId, program: programId, programInstance, error: err?.message ?? String(err),

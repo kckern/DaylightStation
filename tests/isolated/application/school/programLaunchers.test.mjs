@@ -172,14 +172,14 @@ describe('LanguageStudyService.todayStatus', () => {
     // Pacing set (progress exists) but nothing logged yet today.
     svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 3 });
     const status = svc.todayStatus({ userId: 'kckern' });
-    expect(status).toEqual({ doneToday: false, progressLabel: 'Day 1', score: null });
+    expect(status).toMatchObject({ doneToday: false, progressLabel: 'Day 1', score: null });
   });
 
   it('reports doneToday:true once every queued item for today is cleared', () => {
     svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 1 });
     svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition' });
     const status = svc.todayStatus({ userId: 'kckern' });
-    expect(status).toEqual({ doneToday: true, progressLabel: 'Day 1', score: null });
+    expect(status).toMatchObject({ doneToday: true, progressLabel: 'Day 1', score: null });
   });
 
   it('a day completed on a PRIOR study day reports the rolled day, never done today', () => {
@@ -196,7 +196,7 @@ describe('LanguageStudyService.todayStatus', () => {
     });
 
     const status = svc.todayStatus({ userId: 'kckern' }); // now = 2026-07-21
-    expect(status).toEqual({ doneToday: false, progressLabel: 'Day 2', score: null });
+    expect(status).toMatchObject({ doneToday: false, progressLabel: 'Day 2', score: null });
   });
 
   it('reports the null triple for a learner with no corpus/progress at all', () => {
@@ -209,10 +209,13 @@ describe('LanguageStudyService.todayStatus', () => {
     svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 1 });
     svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition' });
 
-    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-spanish' })).toEqual({
-      doneToday: false, progressLabel: null, score: null,
+    // A NAMED but untouched corpus is day one, not nothing (2026-09-09): an
+    // enrolment named it, so the learner is on it — with none of it done, and
+    // none of the Korean evidence borrowed.
+    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-spanish' })).toMatchObject({
+      doneToday: false, progressLabel: 'Day 1', score: null, obligationProgress: { completed: 0 },
     });
-    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' })).toEqual({
+    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' })).toMatchObject({
       doneToday: true, progressLabel: 'Day 1', score: null,
     });
   });
@@ -234,7 +237,7 @@ describe('LanguageStudyService.todayStatus', () => {
     });
 
     const status = svc.todayStatus({ userId: 'kckern' });
-    expect(status).toEqual({ doneToday: true, progressLabel: 'Course complete', score: null });
+    expect(status).toMatchObject({ doneToday: true, progressLabel: 'Course complete', score: null });
   });
 
   it('never throws — a datastore failure yields the null triple', () => {

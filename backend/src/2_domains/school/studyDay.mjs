@@ -104,3 +104,16 @@ export function isSameStudyDay(aMs, bMs, { timezone = null, boundaryHour = 4 } =
   const dayB = studyDayIndex(bMs, { boundaryHour, offsetMinutes: offsetMinutesFor(timezone, bMs) });
   return dayA === dayB;
 }
+
+/**
+ * An instant safely INSIDE a study day: the middle of its window. This is the
+ * "now" a past-day replay hands to code written to compare against the clock
+ * — `isSameStudyDay(stamp, nowMs)` then answers for that day, and any
+ * boundary-hour drift (DST, a stale offset) lands eleven hours from either
+ * edge. Null for an invalid key.
+ */
+export function studyDayMidpointMs(studyDay, { timezone = null, boundaryHour = 4 } = {}) {
+  const window = studyDayWindowForDate(studyDay, { timezone, boundaryHour });
+  if (!window) return null;
+  return window.startAtMs + Math.floor((window.endAtMs - window.startAtMs) / 2);
+}
