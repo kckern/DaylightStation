@@ -3452,6 +3452,47 @@
 .school-books-add__card.school-books-task { display: flex; }
 .school-books-add__card > .school-books-task__context { display: flex; align-items: center; gap: 1rem; }
 
+// THE FOUND BOOK: the cover as the stage. On the landscape Portal the
+// task-view grid puts the stage in column 1 and the words in column 2; here
+// the stage is the cover as tall as the pane allows with the three doors
+// straddling its foot, and the words are a quiet column — title, author,
+// then the blurb left-aligned in a box that scrolls rather than a clamp
+// that cuts.
+.school-books-found {
+  .school-books-found__stage { position: relative; display: flex; flex-direction: column; align-items: center; }
+  // Three selectors deep on purpose: the task-view's landscape rule sizes
+  // every context cover at 10rem, and this one has to outrank it.
+  .school-books-task__context .school-books-found__cover,
+  .school-books-found__cover {
+    width: auto; max-width: 100%;
+    height: clamp(14rem, 58vh, 30rem); max-height: none;
+    aspect-ratio: 2 / 3; object-fit: contain;
+    border-radius: 10px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  }
+  // Straddling: the doors sit half over the cover's bottom edge, on their own
+  // plinth so the cover's art never shows through the gaps between them.
+  .school-books-found__doors {
+    width: min(100%, 21rem); margin-top: -2.4rem; padding: 0.35rem; box-sizing: border-box;
+    border-radius: 16px; background: var(--school-bg);
+    position: relative; z-index: 1;
+  }
+  .school-books-found__doors .school-books-add__door { max-height: 6.5rem; }
+  .school-books-found__about {
+    text-align: left; align-items: stretch; min-height: 0;
+    .school-books-add__title { text-align: left; -webkit-line-clamp: 3; font-size: 1.5rem; }
+    .school-books-add__author { text-align: left; }
+  }
+  .school-books-found__blurb {
+    @include school-scrollbar;
+    flex: 1 1 auto; min-height: 0; max-height: 34vh; overflow-y: auto; overscroll-behavior: contain;
+    padding-right: 0.5rem;
+  }
+  .school-books-found__description {
+    display: block; overflow: visible; -webkit-line-clamp: unset;
+    font-size: 0.95rem; line-height: 1.45; color: var(--school-muted); text-align: left;
+  }
+}
+
 // Anonymous scan overlay never replaces an active School workspace.
 // `pointer-events` INHERITS, and the panel door mounts this dialog from inside
 // `.school-lock-split__board`, which is `pointer-events: none`. Fixed
