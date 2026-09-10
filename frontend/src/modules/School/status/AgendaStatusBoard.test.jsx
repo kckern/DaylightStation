@@ -836,7 +836,8 @@ describe('the four partitions', () => {
     schoolApi.learnerTerm = vi.fn().mockRejectedValue(new Error('boom'));
     render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
     await waitFor(() => expect(screen.getByText('0 of 2')).toBeTruthy());
-    await waitFor(() => expect(screen.getByTestId('board-term').children).toHaveLength(0));
+    // The partition keeps its title; only the grid is absent.
+    await waitFor(() => expect(screen.getByTestId('board-term').querySelector('.school-daygrid, .school-status-board__grid--skeleton')).toBeNull());
   });
 
   it('shows the skeleton grid while the term is in flight', async () => {
