@@ -16,7 +16,22 @@ import { ApplicationError } from '#apps/common/errors/index.mjs';
  * @property {Object|null} deviceControl - IDeviceControl implementation
  * @property {Object|null} osControl - IOsControl implementation
  * @property {Object|null} contentControl - IContentControl implementation
+ * @property {Object|null} volumeControl - IVolumeControl implementation (explicit `volume:` block)
  */
+
+/**
+ * Coerce a configured percentage to an integer 0..100, or null when absent or
+ * unusable. A malformed cap must read as "no cap configured" rather than as 0,
+ * which would silently mute the device.
+ * @param {any} value
+ * @returns {number|null}
+ */
+function clampPercent(value) {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
 
 export class Device {
   #id;
@@ -31,6 +46,9 @@ export class Device {
   #deviceControl;
   #osControl;
   #contentControl;
+  #volumeControl;
+  #volumeCap;
+  #volumeBoostMax;
   #volumeProvider;
   #logger;
 
@@ -59,6 +77,12 @@ export class Device {
     this.#deviceControl = capabilities.deviceControl || null;
     this.#osControl = capabilities.osControl || null;
     this.#contentControl = capabilities.contentControl || null;
+    this.#volumeControl = capabilities.volumeControl || null;
+    this.#volumeCap = clampPercent(config.volumeCap);
+    // The absolute ceiling. Defaults to the cap when unset, so a device that
+    // declares a cap and no boost_max simply cannot be boosted — the safe
+    // reading of a half-filled config.
+    this.#volumeBoostMax = clampPercent(config.volumeBoostMax) ?? this.#volumeCap;
     this.#logger = deps.logger || console;
 
     // Determine volume provider
@@ -256,15 +280,54 @@ export class Device {
       return { ok: false, error: 'Volume control not supported' };
     }
 
-    this.#logger.info?.('device.setVolume', { id: this.#id, level, provider: this.#volumeProvider });
+    // The hard ceiling, enforced HERE rather than only in the fleet service, so
+    // that no present or future caller can route around it. The fleet service
+    // applies the everyday cap (and any live boost) on top of this; this is the
+    // number that a boost itself may never exceed.
+    const requested = level;
+    const ceiling = this.#volumeBoostMax;
+    if (ceiling !== null && typeof level === 'number' && level > ceiling) {
+      level = ceiling;
+    }
+    const capped = level !== requested;
 
-    if (this.#volumeProvider === 'device') {
-      return this.#deviceControl.setVolume(level);
+    this.#logger.info?.('device.setVolume', {
+      id: this.#id, level, provider: this.#volumeProvider,
+      ...(capped && { requested, cappedAt: ceiling }),
+    });
+
+    let result;
+    if (this.#volumeProvider === 'explicit') {
+      result = await this.#volumeControl.setVolume(level);
+    } else if (this.#volumeProvider === 'device') {
+      result = await this.#deviceControl.setVolume(level);
     } else if (this.#volumeProvider === 'os') {
-      return this.#osControl.setVolume(level);
+      result = await this.#osControl.setVolume(level);
+    } else {
+      return { ok: false, error: 'Volume provider not found' };
     }
 
-    return { ok: false, error: 'Volume provider not found' };
+    return capped ? { ...result, level, requested, capped: true, cappedAt: ceiling } : result;
+  }
+
+  /**
+   * Read the device's current hardware volume, where the provider supports it.
+   * @returns {Promise<Object>}
+   */
+  async getVolume() {
+    if (!this.#volumeControl?.getVolume) {
+      return { ok: false, error: 'Volume read not supported' };
+    }
+    const result = await this.#volumeControl.getVolume();
+    return { ...result, cap: this.#volumeCap, boostMax: this.#volumeBoostMax };
+  }
+
+  /**
+   * The device's configured volume policy. Null cap means ungoverned.
+   * @returns {{cap:number|null, boostMax:number|null}}
+   */
+  get volumePolicy() {
+    return { cap: this.#volumeCap, boostMax: this.#volumeBoostMax };
   }
 
   /**
@@ -407,6 +470,13 @@ export class Device {
    * @returns {'device'|'os'|null}
    */
   #determineVolumeProvider() {
+    // An explicit `volume:` block wins. It is the only one of the three that was
+    // configured to control audio and nothing else; the other two are inferred
+    // from a display script or a shell that happens to have a mixer.
+    if (this.#volumeControl?.hasVolumeControl?.()) {
+      return 'explicit';
+    }
+
     // Check device_control first (e.g., HA volume script)
     if (this.#deviceControl?.hasVolumeControl?.()) {
       return 'device';

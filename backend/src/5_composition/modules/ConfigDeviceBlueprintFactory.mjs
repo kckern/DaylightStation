@@ -38,6 +38,7 @@ export class ConfigDeviceBlueprintFactory extends IDeviceBlueprintFactory {
       contentControl: source.content_control
         ? this.#createContentControl(deviceId, source.content_control, source.camera_check)
         : null,
+      volumeControl: source.volume ? this.#createVolumeControl(source) : null,
     };
 
     return {
@@ -62,6 +63,11 @@ export class ConfigDeviceBlueprintFactory extends IDeviceBlueprintFactory {
         // screen is never offered a camera it does not have.
         videoCall: source.video_call === true,
         defaultVolume: source.default_volume,
+        // Volume governance. `cap` is the everyday ceiling; `boost_max` is the
+        // highest a temporary override may ever reach. Absent `volume:` block =
+        // ungoverned, which is how every device behaved before this existed.
+        volumeCap: source.volume?.cap ?? null,
+        volumeBoostMax: source.volume?.boost_max ?? null,
         screenPath: source.screen_path,
         notifyService: source.notify_service ?? null,
       },
@@ -108,6 +114,47 @@ export class ConfigDeviceBlueprintFactory extends IDeviceBlueprintFactory {
       port: config.port,
       commands: config.commands || {},
     }, { remoteExec: this.#remoteExec, logger: this.#logger }) ?? null;
+  }
+
+  /**
+   * Build the explicit volume capability from a `volume:` block.
+   *
+   * `fully-kiosk` reuses the panel's existing content_control credentials rather
+   * than asking for them twice — a panel has one password, and duplicating it in
+   * a second block is how the two drift apart.
+   */
+  #createVolumeControl(source) {
+    const config = source.volume;
+    if (config.provider !== 'fully-kiosk') {
+      this.#logger.warn?.('deviceFactory.unsupportedVolumeProvider', { provider: config.provider });
+      return null;
+    }
+    if (!this.#httpClient) {
+      this.#logger.warn?.('deviceFactory.noHttpClient');
+      return null;
+    }
+
+    const content = source.content_control;
+    if (content?.provider !== 'fully-kiosk') {
+      this.#logger.warn?.('deviceFactory.volumeWithoutFullyKioskContent', {
+        contentProvider: content?.provider ?? null,
+      });
+      return null;
+    }
+
+    let password = config.password || content.password;
+    const authRef = config.auth_ref || content.auth_ref;
+    if (!password && authRef && this.#configService) {
+      password = this.#configService.getHouseholdAuth?.(authRef)?.password;
+      if (!password) this.#logger.warn?.('deviceFactory.noAuthPassword', { auth_ref: authRef });
+    }
+
+    return this.#factories.fullyKioskVolume?.({
+      host: config.host || content.host,
+      port: config.port || content.port,
+      password: password || '',
+      stream: config.stream,
+    }, { httpClient: this.#httpClient, logger: this.#logger }) ?? null;
   }
 
   #createContentControl(deviceId, config, cameraCheck) {

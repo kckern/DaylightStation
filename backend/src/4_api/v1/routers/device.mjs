@@ -281,6 +281,45 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
     return res.json(result.body);
   }));
 
+  // Read the panel's actual hardware level, plus the policy governing it. The
+  // whole reason this exists: the software layers can all read 100 while the
+  // hardware sits at 55, and nothing in the API used to say so.
+  router.get('/:deviceId/volume', asyncHandler(async (req, res) => {
+    const result = await fleetService.volumeState(req.params.deviceId);
+    if (result.kind === 'not_found') return notFound(res);
+    if (result.kind === 'unsupported') return res.status(400).json(buildErrorBody({ error: 'Device does not support volume control' }));
+    return res.json(result.result);
+  }));
+
+  // Time-boxed permission to exceed the everyday cap. Never above the device's
+  // boost_max, and it reverts on its own when the window closes.
+  router.post('/:deviceId/volume/boost', asyncHandler(async (req, res) => {
+    const { level, minutes } = req.body || {};
+    if (!Number.isInteger(level) || level < 0 || level > 100) {
+      return res.status(400).json(buildErrorBody({ error: 'level must be an integer between 0 and 100' }));
+    }
+    if (!Number.isFinite(Number(minutes)) || Number(minutes) <= 0) {
+      return res.status(400).json(buildErrorBody({ error: 'minutes must be a positive number' }));
+    }
+    const result = await fleetService.boostVolume(req.params.deviceId, { level, minutes: Number(minutes) });
+    if (result.kind === 'not_found') return notFound(res);
+    if (result.kind === 'unsupported') return res.status(400).json(buildErrorBody({ error: 'Device does not support volume control' }));
+    if (result.kind === 'ungoverned') {
+      return res.status(409).json(buildErrorBody({
+        error: 'Device has no volume cap to boost past',
+        code: 'NO_VOLUME_POLICY',
+      }));
+    }
+    return res.json(result.result);
+  }));
+
+  router.delete('/:deviceId/volume/boost', asyncHandler(async (req, res) => {
+    const result = await fleetService.clearVolumeBoost(req.params.deviceId);
+    if (result.kind === 'not_found') return notFound(res);
+    if (result.kind === 'unsupported') return res.status(400).json(buildErrorBody({ error: 'Device does not support volume control' }));
+    return res.json(result.result);
+  }));
+
   router.get('/:deviceId/volume/:level', asyncHandler(async (req, res) => {
     const parsedLevel = parseInt(req.params.level, 10);
     const result = await fleetService.volume(req.params.deviceId,
