@@ -233,7 +233,7 @@ describe('BookShelf', () => {
       expect(add).toHaveTextContent('Tap to type the number');
       // And nothing outside the row offers it any more.
       expect(container.querySelectorAll('button')).toHaveLength(
-        container.querySelectorAll('.school-books-tile, .school-books__done, .school-books__history-link').length,
+        container.querySelectorAll('.school-books-tile, .school-screen-header__done, .school-books__history-link').length,
       );
     });
 

@@ -9,6 +9,7 @@ import CompletedBook from './CompletedBook.jsx';
 import { recentOutcomes } from './readingHistory.js';
 import Icon from '../home/icons/Icon.jsx';
 import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
+import ScreenHeader from '../shared/ScreenHeader.jsx';
 
 /**
  * The window word after the launcher's label (design §3): the label carries
@@ -154,7 +155,7 @@ export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit
       ? <Fault error={error} onRetry={actions.retry} />
       : <p className="school-books__loading">Getting your shelf…</p>;
   } else if (view === 'history') {
-    body = <History items={shelf?.items ?? []} onBack={actions.back} onSelect={needsRefresh ? null : actions.openItem} />;
+    body = <History items={shelf?.items ?? []} onSelect={needsRefresh ? null : actions.openItem} />;
   } else if (view === 'completed' && current) {
     body = <CompletedBook item={current} actions={actions} />;
   } else if (view === 'update' && current) {
@@ -167,13 +168,18 @@ export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit
 
   return (
     <section className="school-books" data-testid="book-shelf" onClickCapture={actions.noteActivity} onPointerDownCapture={actions.noteActivity} onInputCapture={actions.noteActivity}>
-      <header className="school-books__header">
-        <div className="school-books__who">
-          <h2 className="school-books__title">Reading</h2>
-          <LearnerChip learner={learner} />
-        </div>
-        <button type="button" className="school-books__done" onClick={actions.done}>Done</button>
-      </header>
+      {/* ONE HEADER, ONE EXIT. `Done` leaves the shelf; `Back` appears only
+          inside a sub-view, as the step back to the shelf. The sub-views draw
+          no back of their own — the header owns it, so every screen puts it
+          in the same place. */}
+      <ScreenHeader
+        className="school-books__header"
+        title="Reading"
+        identity={<LearnerChip learner={learner} />}
+        onBack={['history', 'completed', 'update', 'add'].includes(view) ? actions.back : null}
+        backDisabled={busy}
+        onDone={actions.done}
+      />
       {body}
     </section>
   );
