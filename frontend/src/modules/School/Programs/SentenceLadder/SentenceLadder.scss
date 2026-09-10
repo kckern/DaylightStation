@@ -10,14 +10,16 @@
 //
 // FOUR type sizes, deliberately. An earlier pass had twelve, four of them
 // within 1.6px of each other, which is a scale nobody chose.
-//   0.9   meta / hints
-//   1.05  body, controls
-//   1.35  the source sentence
-//   2.1   the target sentence — the reason this screen exists
-$meta: 0.9rem;
-$body: 1.05rem;
-$source: 1.35rem;
-$target: 2.1rem;
+//   0.95  meta / hints
+//   1.1   body, controls
+//   1.45  the source sentence
+//   3     the target sentence — the reason this screen exists. Read by a
+//         seated child at arm's length on a 10" panel; 2.1 was a body size
+//         standing in for a headline.
+$meta: 0.95rem;
+$body: 1.1rem;
+$source: 1.45rem;
+$target: clamp(2.2rem, 5.2vw, 3.1rem);
 
 // Weight is emphasis, so it is spent, not sprinkled. Controls and statuses
 // carry none; only the target line and active states do.
@@ -45,31 +47,21 @@ $touch-min: 56px;
     display: flex; align-items: center; justify-content: space-between;
     gap: 1rem; min-height: 64px;
   }
-  &__identity { display: flex; flex-direction: column; gap: 0.1rem; }
-  &__eyebrow {
-    color: var(--school-muted); font-size: 0.75rem; font-weight: 700;
-    letter-spacing: 0.08em; text-transform: uppercase;
-  }
-  &__day { margin: 0; font-size: 1.5rem; line-height: 1.1; }
+  // The day and its one line of progress, on a baseline together. No eyebrow:
+  // "TODAY'S SESSION" above "Day 12" told a child nothing "Day 12" had not.
+  &__identity { display: flex; align-items: baseline; gap: 0.9rem; flex-wrap: wrap; }
+  &__day { margin: 0; font-size: 1.6rem; line-height: 1.1; font-weight: 800; }
+  &__steps { margin: 0; color: var(--school-muted); font-size: $body; font-variant-numeric: tabular-nums; }
   &__actions { display: flex; align-items: center; gap: 0.5rem; }
 
-  &__progress-copy {
-    display: flex; justify-content: space-between; align-items: baseline;
-    color: var(--school-muted); font-size: $meta; font-variant-numeric: tabular-nums;
+  // The ladder on the left, the stage on the right. The ladder's width is the
+  // width of its longest rung name plus five pips; the stage takes the rest.
+  &__split {
+    flex: 1; min-height: 0;
+    display: grid; grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr);
+    gap: clamp(1rem, 3vw, 2.5rem); align-items: stretch;
   }
 
-  &__progress {
-    position: relative; height: 8px;
-    border-radius: 999px; overflow: hidden;
-    background: var(--school-surface-2);
-  }
-  &__progress-bar { height: 100%; background: var(--school-accent); }
-
-  &__tabs {
-    display: flex; overflow-x: auto;
-    border: 1px solid var(--school-border); border-radius: $radius;
-    background: var(--school-surface);
-  }
 
   &__notice {
     margin: 0; padding: 0.85rem 1rem; border-radius: $radius;
@@ -89,38 +81,72 @@ $touch-min: 56px;
 
   // min-height: 0 so this is the only scroller — the host body wraps it and
   // two nested overflow:auto containers is the double-scroll trap on touch.
-  &__body { flex: 1; min-height: 0; overflow: auto; padding-top: 0.25rem; }
+  &__body {
+    flex: 1; min-height: 0; overflow: auto; padding-top: 0.25rem;
+    display: flex; flex-direction: column;
+    > .lang-rung { flex: 1; min-height: 0; }
+  }
 
   &__complete {
     box-sizing: border-box;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 1.25rem; min-height: 100%; padding: 2rem;
-    border: 1px solid var(--school-border); border-radius: $radius;
-    background: var(--school-surface); text-align: center;
+    text-align: center;
     p { max-width: 34rem; margin: 0; font-size: $source; line-height: 1.45; }
   }
 }
 
-// --- tabs: a stable mode rail, not a row of decorative pills. ---------------
-.lang-tab {
-  position: relative;
-  flex: 1 0 max-content; min-width: 9rem;
-  min-height: $touch-min; padding: 0 1rem;
-  border: none; border-right: 1px solid var(--school-border);
-  background: transparent; color: var(--school-muted);
-  font-size: 1rem; cursor: pointer;
-  &:last-child { border-right: none; }
-  &:focus-visible { outline: 3px solid var(--school-accent); outline-offset: -3px; }
+// --- the ladder -------------------------------------------------------------
+// Two rails and the rungs between them, drawn with borders rather than an
+// image so they take the School tokens. Each rung is a step: its name, then
+// its pips. The rung in hand is lit in the accent; a rung this device cannot
+// climb is dimmed and says why in one quiet line. Top to bottom is the order
+// a sentence climbs — the reason this is a ladder and not a row of tabs.
+.lang-ladder {
+  display: flex; flex-direction: column; gap: 0.75rem; min-height: 0;
 
-  &.is-active {
-    background: var(--school-surface-2); color: var(--school-fg); font-weight: 700;
-    box-shadow: inset 0 -4px 0 var(--school-accent);
+  &__rungs {
+    list-style: none; margin: 0; padding: 0 0 0 0;
+    display: flex; flex-direction: column;
+    // The rails: one line down each side of the whole run of rungs.
+    border-left: 4px solid var(--school-border); border-right: 4px solid var(--school-border);
+    border-bottom: 4px solid var(--school-border);
+    border-radius: 6px;
   }
-  &__badge {
-    margin-left: 0.45rem; color: var(--school-muted);
-    font-size: $meta; font-variant-numeric: tabular-nums;
+  &__rung { display: flex; }
+  &__step {
+    flex: 1; min-width: 0; min-height: $touch;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 0.45rem;
+    padding: 0.8rem 0.9rem 0.85rem;
+    // The rung itself: a bar across the top of every step, so the run of
+    // steps reads as rungs between the rails.
+    border: none; border-top: 4px solid var(--school-border);
+    background: transparent; color: var(--school-muted);
+    font: inherit; font-size: $body; text-align: left; cursor: pointer;
+    touch-action: manipulation;
+    &:focus-visible { outline: 3px solid var(--school-accent); outline-offset: -3px; }
+
+    &.is-active {
+      color: var(--school-fg); background: var(--school-surface-2);
+      border-top-color: var(--school-accent);
+      .lang-ladder__label { font-weight: 800; }
+    }
+    &.is-done { color: var(--school-muted); }
+    &.is-blocked { opacity: 0.55; cursor: default; }
   }
-  &.is-active &__badge { color: var(--school-accent); }
+  &__label { line-height: 1.2; }
+  &__pips { --pip-size: 0.95rem; --pip-gap: 0.4rem; --pip-ink: var(--school-accent); }
+  &__note { font-size: $meta; line-height: 1.25; color: var(--school-muted); }
+
+  // Review is a shelf under the ladder, not a rung.
+  &__review {
+    min-height: $touch-min; padding: 0 1rem;
+    border: 1px solid var(--school-border); border-radius: $radius;
+    background: transparent; color: var(--school-muted);
+    font: inherit; font-size: $body; cursor: pointer; touch-action: manipulation;
+    &:focus-visible { outline: 3px solid var(--school-accent); outline-offset: 2px; }
+    &.is-active { background: var(--school-surface-2); color: var(--school-fg); font-weight: 700; }
+  }
 }
 
 .lang-btn {
@@ -130,7 +156,21 @@ $touch-min: 56px;
   font-size: $body; cursor: pointer;
 
   &--primary { background: var(--school-accent); color: var(--school-accent-ink); border-color: transparent; font-weight: 700; }
-  &--quiet { min-height: $touch-min; background: transparent; color: var(--school-muted); }
+  // THE PLAY DISC. A kiosk for a child: one round control the size of a
+  // thumb, a glyph in it, the word kept for screen readers and tests. The
+  // quiet variant (Stop, Play again) is the same disc in the surface colour.
+  &--disc {
+    width: 5.5rem; height: 5.5rem; min-height: 0; padding: 0;
+    border-radius: 50%; border-color: transparent;
+    background: var(--school-accent); color: var(--school-accent-ink);
+    display: inline-grid; place-items: center;
+  }
+  &--disc-quiet { background: var(--school-surface-2); color: var(--school-fg); border-color: var(--school-border); }
+  &__glyph { display: flex; font-size: 2.2rem; line-height: 1; svg { width: 1em; height: 1em; } }
+  &__word {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  &--quiet { min-height: $touch-min; background: transparent; border-color: transparent; color: var(--school-muted); }
   &--recording { background: var(--school-danger); color: #fff; border-color: transparent; font-weight: 700; }
   &:focus-visible { outline: 3px solid var(--school-accent); outline-offset: 2px; }
   &:disabled { opacity: 0.5; cursor: default; }
@@ -218,16 +258,18 @@ $touch-min: 56px;
   // Centred vertically so the drill does not sit in a different place than the
   // day-complete state, which made the screen appear to jump between them.
   justify-content: center;
-  width: 100%; min-height: 100%; gap: 1.15rem;
-  padding: clamp(2rem, 6vh, 4rem) clamp(1rem, 5vw, 4rem);
-  border: 1px solid var(--school-border); border-radius: $radius;
-  background: var(--school-surface); text-align: center;
+  width: 100%; min-height: 100%; gap: 1.25rem;
+  padding: clamp(1.5rem, 5vh, 3rem) clamp(1rem, 4vw, 3rem);
+  // NO BORDER. The stage is the page: a bordered rectangle around three lines
+  // of text was the SaaS card with nothing in it, and the sentence is the
+  // hero — it needs air, not a frame.
+  text-align: center;
 
   // The two sentences are one unit; controls are another. Uniform spacing is
   // spacing as default rather than as a decision.
-  &__source { margin: 0 0 -0.5rem; font-size: $source; color: var(--school-muted); }
+  &__source { margin: 0 0 -0.35rem; font-size: $source; color: var(--school-muted); line-height: 1.35; }
   &__target {
-    margin: 0; font-size: $target; font-weight: 700; line-height: 1.35;
+    margin: 0; font-size: $target; font-weight: 800; line-height: 1.3; max-width: 22ch;
     // Hangul must not break mid-syllable.
     word-break: keep-all;
   }
@@ -288,8 +330,11 @@ $touch-min: 56px;
   .lang-program {
     &__header { align-items: flex-start; }
     &__actions { flex-wrap: wrap; justify-content: flex-end; }
+    // Stacked: the ladder becomes a row of rungs above the stage.
+    &__split { grid-template-columns: 1fr; }
   }
-  .lang-tab { flex-basis: 8.5rem; min-width: 8.5rem; }
+  .lang-ladder__rungs { flex-direction: row; border: none; }
+  .lang-ladder__step { border-top-width: 4px; }
   .lang-rung {
     justify-content: flex-start; min-height: 100%;
     padding: 2rem 1rem;
