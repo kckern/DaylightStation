@@ -51,7 +51,11 @@ table in the frontend.
 
 **Files:**
 - Modify: `backend/src/3_applications/school/LanguageStudyService.mjs:251-253`
-- Test: `tests/isolated/application/school/programLaunchers.test.mjs`
+- Test: `backend/src/3_applications/school/LanguageStudyService.test.mjs`
+  (NOT `programLaunchers.test.mjs`, which the first draft of this plan named: its
+  `makeService` has no `readProgramEnrollment` override, so `policy.chain` is null and
+  `missingCreditRungs` is unconditionally `[]` — the case cannot be built there without
+  inventing a second enrollment fixture.)
 - Modify: `frontend/src/modules/School/Programs/SentenceLadder/SentenceLadderProgram.jsx:316-328`
 - Test: `frontend/src/modules/School/Programs/SentenceLadder/SentenceLadderProgram.test.jsx`
 

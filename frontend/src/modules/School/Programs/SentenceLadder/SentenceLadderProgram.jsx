@@ -21,6 +21,40 @@ const RUNG_LABELS = {
 const RUNG_ORDER = ['repetition', 'dictation', 'recording', 'interpretation'];
 
 /**
+ * The corpus writes its own language codes (`EN`, `KR`) and they are not BCP-47,
+ * so `Intl.DisplayNames` cannot name them. An explicit map, falling back to the
+ * code itself — a card saying "Needs a KR keyboard" is poor, and a card
+ * confidently saying the wrong language is worse.
+ */
+const LANGUAGE_NAMES = { EN: 'English', KR: 'Korean' };
+
+/**
+ * What a rung this device cannot climb is actually short of. The note used to
+ * be one hardcoded sentence, "Needs a microphone", printed under every blocked
+ * rung — so the yellow-room tablet, which has a mic but an English-only
+ * keyboard, blocked DICTATION and sent the child hunting for a microphone
+ * already in their hands. The server now says which capability is missing
+ * (`missingCreditNeeds`), because the ladder domain is the one place that
+ * mapping lives.
+ */
+function needSentence(need) {
+  if (need?.kind === 'microphone') return 'Needs a microphone — on another device';
+  // A textInput requirement whose language the corpus could not resolve is a
+  // corpus fault — `resolveRole` returns null when the languages map has no
+  // entry for the rung's role, and the wrapper object is still truthy, so it
+  // reaches here intact. Fall through rather than print it: whatever a broken
+  // corpus costs us, a child must never be shown a card reading "Needs a null
+  // keyboard".
+  if (need?.kind === 'textInput' && need.language) {
+    const language = LANGUAGE_NAMES[need.language] ?? need.language;
+    return `Needs a ${language} keyboard — on another device`;
+  }
+  // A rung the server could not explain still says something true: it is out of
+  // reach here. Silence would leave a dimmed rung with no reason at all.
+  return 'Not available on this device';
+}
+
+/**
  * The sentence-ladder program shell (design §5).
  *
  * Owns the day: fetches it, walks the learner rung by rung through the chain
@@ -245,6 +279,7 @@ export default function SentenceLadderProgram({
   const settled = summary.done === summary.total;
   const allDone = summary.total > 0 && settled;
   const missingCreditRungs = day?.missingCreditRungs ?? [];
+  const missingCreditNeeds = day?.missingCreditNeeds ?? {};
   const blockedByDevice = settled && missingCreditRungs.length > 0;
   const sessionFinished = settled && !blockedByDevice;
   const exitHandler = onExit ?? onSignIn;
@@ -321,7 +356,7 @@ export default function SentenceLadderProgram({
                   <li key={rung} className="lang-ladder__rung">
                     <div className="lang-ladder__step is-blocked" role="button" aria-disabled="true" aria-label={label}>
                       <span className="lang-ladder__label">{label}</span>
-                      <span className="lang-ladder__note">Needs a microphone — on another device</span>
+                      <span className="lang-ladder__note">{needSentence(missingCreditNeeds[rung])}</span>
                     </div>
                   </li>
                 );

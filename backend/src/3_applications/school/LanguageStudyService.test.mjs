@@ -224,6 +224,51 @@ describe('getDay', () => {
   it('404s an unknown corpus', () => {
     expect(() => svc.getDay({ userId: 'kckern', corpusId: 'nope' })).toThrow(EntityNotFoundError);
   });
+
+  // A dimmed rung on the child's card used to carry one hardcoded sentence,
+  // "Needs a microphone", whichever capability was actually absent. The live
+  // case was a tablet with a mic and an English-only keyboard: it blocked
+  // DICTATION, and told the child to go find a microphone. `requirementFor`
+  // has always known the difference; the payload just never carried it, so the
+  // client kept a second, wrong copy of the mapping. These two cases pin the
+  // distinction the card gets wrong when the map is missing.
+  const fullLadder = () => ({
+    readProgramEnrollment: () => ({
+      programId: 'sentence-ladder', corpusId: 'test-korean', lessonSize: 4,
+      rungs: ['repetition', 'dictation', 'recording', 'interpretation'],
+    }),
+  });
+
+  it('names the KEYBOARD a typed rung is short of, not the microphone it already has', () => {
+    svc = makeService(ds, AT, fullLadder());
+    const day = svc.getDay({
+      userId: 'kckern', corpusId: 'test-korean',
+      capabilities: { microphone: true, textInput: ['EN'] },
+    });
+    expect(day.missingCreditRungs).toEqual(['dictation']);
+    expect(day.missingCreditNeeds.dictation).toEqual({ kind: 'textInput', language: 'KR' });
+    // A rung this device CAN climb is not in the map at all.
+    expect(day.missingCreditNeeds).not.toHaveProperty('recording');
+  });
+
+  it('still names the microphone when the microphone is the thing missing', () => {
+    svc = makeService(ds, AT, fullLadder());
+    const day = svc.getDay({
+      userId: 'kckern', corpusId: 'test-korean',
+      capabilities: { microphone: false, textInput: ['EN', 'KR'] },
+    });
+    expect(day.missingCreditRungs).toEqual(['recording']);
+    expect(day.missingCreditNeeds.recording).toEqual({ kind: 'microphone' });
+  });
+
+  it('keeps missingCreditRungs a plain array of ids — other readers index it', () => {
+    svc = makeService(ds, AT, fullLadder());
+    const day = svc.getDay({
+      userId: 'kckern', corpusId: 'test-korean',
+      capabilities: { microphone: false, textInput: ['EN'] },
+    });
+    expect(day.missingCreditRungs).toEqual(['dictation', 'recording']);
+  });
 });
 
 describe('logAttempt', () => {
