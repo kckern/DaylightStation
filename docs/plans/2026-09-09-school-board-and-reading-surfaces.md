@@ -258,6 +258,8 @@ from there; no behaviour change).
 
 ## Stream 4 — The status board card
 
+> **Done 2026-09-09.** Four partitions live on the Portal; measured at 1280×800 (rail 120 · day 164 · week 46 · term 169, no overflow).
+
 **Files:** `frontend/src/modules/School/status/AgendaStatusBoard.jsx`,
 `status/agendaStatusModel.js`, `School.scss` (`.school-status-board__*`, ~2889-3150),
 tests beside.
