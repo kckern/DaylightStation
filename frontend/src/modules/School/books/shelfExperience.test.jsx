@@ -160,7 +160,8 @@ describe('shelf experience', () => {
     expect(within(history).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['Open Recent', 'Open Backdated']);
     const groups = within(history).getAllByTestId('book-history-group');
     expect(groups.map((g) => g.getAttribute('data-day'))).toEqual(['2026-09-07', '2026-09-02']);
-    expect(within(groups[1]).getByRole('heading', { level: 4 })).toHaveTextContent(/Wednesday.*2 Sep/);
+    // Same month as today: the bare number, then the weekday down the spine.
+    expect(within(groups[1]).getByRole('heading', { level: 4 })).toHaveTextContent(/^2Wednesday$/);
   });
 
   it('blocks the first-book tile after the first save succeeds but its shelf read fails', async () => {
