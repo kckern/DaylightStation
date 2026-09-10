@@ -131,26 +131,31 @@ export function createLanguageRouter({
 
   router.get('/courses', wrap((req, res) => res.json(languageStudyService.listCourses())));
 
+  // The day carries which UI cues exist so a rung builds its sound sequence
+  // once, from facts, rather than probing `/cue/*` per sentence. This is
+  // HTTP-layer composition: the study service knows nothing about media.
+  const withCues = (day) => ({ ...day, cues: languageAudioResource.listCues?.() ?? [] });
+
   // A non-recording demonstration for teachers.  It is intentionally NOT a
   // `/users/:userId/*` alias: that namespace carries a study grant and every
   // mutating operation beneath it writes learner evidence.
   router.get('/preview/:corpusId/day', wrap((req, res) => {
     res.set('Cache-Control', 'private, no-store')
       .set('X-School-Preview', 'guest-non-recording')
-      .json(languageStudyService.previewDay({
+      .json(withCues(languageStudyService.previewDay({
         corpusId: req.params.corpusId,
         capabilities: readCapabilities(req.query),
-      }));
+      })));
   }));
 
   router.get('/users/:userId/day', wrap((req, res) => {
     if (!authorized(req, res, req.query.corpus)) return;
-    res.json(languageStudyService.getDay({
+    res.json(withCues(languageStudyService.getDay({
       userId: req.params.userId,
       corpusId: req.query.corpus,
       capabilities: readCapabilities(req.query),
       runId: readRunId(req),
-    }));
+    })));
   }));
 
   router.post('/users/:userId/log', wrap((req, res) => {
@@ -216,6 +221,16 @@ export function createLanguageRouter({
     });
     if (result.kind !== 'found') {
       return res.status(404).json({ error: 'audio not found' });
+    }
+    sendAudioResource(res, result.resource);
+  }));
+
+  // A UI cue by ROLE, never by file name — the household picks the file in
+  // school.yml. Public like prompt audio: it is a ding, not learner evidence.
+  router.get('/cue/:name', wrap(async (req, res) => {
+    const result = await languageAudioResource.getCueAudio({ name: req.params.name });
+    if (result.kind !== 'found') {
+      return res.status(404).json({ error: 'cue not found' });
     }
     sendAudioResource(res, result.resource);
   }));

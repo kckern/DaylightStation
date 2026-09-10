@@ -18,6 +18,8 @@ function appWith({
   verify = () => ({ ok: true }),
   promptAudio = notFound(),
   recordingAudio = notFound(),
+  cueAudio = notFound(),
+  cues = [],
 } = {}) {
   const service = {
     listCourses: vi.fn(() => [{ id: 'korean' }]),
@@ -30,6 +32,8 @@ function appWith({
   const languageAudioResource = {
     getPromptAudio: vi.fn().mockResolvedValue(promptAudio),
     getRecordingAudio: vi.fn().mockResolvedValue(recordingAudio),
+    getCueAudio: vi.fn().mockResolvedValue(cueAudio),
+    listCues: vi.fn(() => cues),
   };
   const app = express();
   app.use(express.json());
@@ -217,5 +221,34 @@ describe('run id correlation', () => {
       expect.any(Object),
       { context: { runId: 'run-abc123' } },
     );
+  });
+});
+
+describe('Sentence Ladder UI cues', () => {
+  it('tells the day which cues exist, so the client never probes for them', async () => {
+    const { app } = appWith({ cues: ['record'] });
+    const res = await request(app)
+      .get('/api/v1/school/sentence-ladder/users/kckern/day?corpus=korean');
+    expect(res.status).toBe(200);
+    expect(res.body.cues).toEqual(['record']);
+    // The preview carries the same fact: a teacher hears what a learner hears.
+    const preview = await request(app).get('/api/v1/school/sentence-ladder/preview/korean/day');
+    expect(preview.body.cues).toEqual(['record']);
+  });
+
+  it('serves a cue by role with the public media headers', async () => {
+    const bytes = Buffer.from('ding');
+    const { app, languageAudioResource } = appWith({ cueAudio: found(bytes, 'audio/mpeg') });
+    const res = await request(app).get('/api/v1/school/sentence-ladder/cue/record');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('audio/mpeg');
+    expect(languageAudioResource.getCueAudio).toHaveBeenCalledWith({ name: 'record' });
+  });
+
+  it('answers an unconfigured cue with its own not-found envelope', async () => {
+    const { app } = appWith();
+    const res = await request(app).get('/api/v1/school/sentence-ladder/cue/record');
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: 'cue not found' });
   });
 });

@@ -4599,6 +4599,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       userExists: (userId) => Boolean(configService.getUserProfile(userId)),
     }),
     languageStudyService,
+    // school.yml `sentence_ladder.cues.{role}: file` — files under media/school/_ux/.
+    cues: configService.getHouseholdAppConfig(null, 'school')?.sentence_ladder?.cues || {},
   });
   const sentenceLadderRouter = createSentenceLadderRouter({ schoolErrors,
     languageStudyService,

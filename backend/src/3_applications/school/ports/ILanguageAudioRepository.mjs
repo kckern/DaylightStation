@@ -10,6 +10,11 @@ export class ILanguageAudioRepository {
   async findRecordingAudio(_query) {
     throw new Error('ILanguageAudioRepository.findRecordingAudio not implemented');
   }
+
+  /** A UI sound cue — the ding before a recording, say — by its configured file name. */
+  async findCueAudio(_query) {
+    throw new Error('ILanguageAudioRepository.findCueAudio not implemented');
+  }
 }
 
 export default ILanguageAudioRepository;

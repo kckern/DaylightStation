@@ -43,6 +43,10 @@ subject — transport (`play`, `pause`, `next`, `prev`, `rewind`, `restart`),
 | `power` | `svg/power.svg` | the locked panel's "Turn off screen" control (standby glyph, drawn to the contract above) |
 | `plus` | `svg/plus.svg` | the reading shelf's add card, in the empty book slot |
 | `bookmark` | `svg/bookmark.svg` | the reading shelf's set-aside mark, beside `book-finished`'s check |
+| `record` | `svg/record.svg` | the Sentence Ladder recording rung's start tile — "Listen, then record" (SVG Repo 524865, record-circle-1; strokes → currentColor) |
+| `stop` | `svg/stop.svg` | the recording rung's live-mic tile — a rounded square, red, the only red on that stage (drawn to the contract) |
+| `record-again` | `svg/record-again.svg` | the recording rung's "Record again" (SVG Repo 506292, redo-circle; strokes → currentColor) |
+| `keep` | `svg/keep.svg` | the recording rung's "Keep it" (SVG Repo 425941, accept; its `<style>`/class moved onto the path as `fill-rule`, per the warning below) |
 
 ⚠️ **Normalise to the contract, don't just drop the download in.** `piano.svg`
 arrived from SVG Repo carrying `<style>.st0{fill:currentColor}</style>` and a

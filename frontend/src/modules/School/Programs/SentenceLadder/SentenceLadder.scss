@@ -175,7 +175,38 @@ $disc: 5.5rem;
     position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
   }
   &--quiet { min-height: $touch-min; background: transparent; border-color: transparent; color: var(--school-muted); }
-  &--recording { background: var(--school-danger); color: #fff; border-color: transparent; font-weight: 700; }
+  &:focus-visible { outline: 3px solid var(--school-accent); outline-offset: 2px; }
+  &:disabled { opacity: 0.5; cursor: default; }
+}
+
+// --- tile: the recording rung's control -------------------------------------
+// A square, not a wide pill and not the play disc: a glyph the size of a thumb
+// with its one word beneath, the way the subject wall's tiles are built. The
+// same square through every phase, so what changes is the picture on it and
+// its colour, never where the child's hand has to go.
+.lang-tile {
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.2rem; box-sizing: border-box;
+  width: $disc; height: $disc; padding: 0;
+  border: 1px solid var(--school-border); border-radius: $radius;
+  background: var(--school-surface-2); color: var(--school-fg);
+  font: inherit; cursor: pointer;
+
+  // The stroke marks arrive drawn at 1.5 for a 24px grid; at thumb size on a
+  // panel across a desk that is a hairline, so they are thickened here rather
+  // than by editing three files.
+  &__glyph { display: flex; font-size: 2.2rem; line-height: 1; svg { width: 1em; height: 1em; } path[stroke] { stroke-width: 1.9; } }
+  &__word { font-size: $meta; line-height: 1; }
+
+  &--primary { background: var(--school-accent); color: var(--school-accent-ink); border-color: transparent; }
+  // The live microphone. The only red on the recording stage, and it is on
+  // the control, never on the child's own sound — a red waveform reads as an
+  // error, and there is nothing wrong.
+  &--live { background: var(--school-danger); color: #fff; border-color: transparent; }
+  // The same square while something SOUNDS — the prompt, the ding, the take.
+  // A span, not a button: nothing to press, so it must not look pressable. The
+  // glyph takes the accent because sound is happening; the ground stays quiet.
+  &--status { cursor: default; background: transparent; border-color: transparent; color: var(--school-accent); }
   &:focus-visible { outline: 3px solid var(--school-accent); outline-offset: 2px; }
   &:disabled { opacity: 0.5; cursor: default; }
 }
@@ -271,6 +302,10 @@ $disc: 5.5rem;
   // it either way. The <=700px block guards the width axis; this is the height.
   justify-content: safe center;
   width: 100%; min-height: 100%; gap: 1.25rem;
+  // The recording rung focuses itself on arrival so its keys work without a
+  // tap first. Programmatic focus on the stage is not a thing to draw a ring
+  // around — the ring belongs on the control the keys will act as.
+  &:focus { outline: none; }
   padding: clamp(1.5rem, 5vh, 3rem) clamp(1rem, 4vw, 3rem);
   // NO BORDER. The stage is the page: a bordered rectangle around three lines
   // of text was the SaaS card with nothing in it, and the sentence is the
@@ -324,7 +359,18 @@ $disc: 5.5rem;
     justify-content: center; margin-top: 0.5rem;
     min-height: $disc;
   }
-  &__playback { max-width: 100%; }
+}
+
+// --- the voice band ---------------------------------------------------------
+// The child's own sound, drawn as it happens (rungs/VoiceBand.jsx). As wide
+// as the typed rungs' input so the stage keeps one measure; tall enough that
+// a normal voice is unmistakably NOT the silent hairline from arm's length.
+// The canvas paints the School tokens it reads off this element, so the
+// colours live here, not in the component.
+.lang-voice {
+  width: min(100%, 720px); height: 4.5rem;
+  color: var(--school-accent);
+  &__canvas { display: block; width: 100%; height: 100%; }
 }
 
 // --- review -----------------------------------------------------------------
