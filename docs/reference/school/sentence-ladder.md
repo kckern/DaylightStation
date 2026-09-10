@@ -221,7 +221,8 @@ The surface says what the child did, not only what the server was asked for.
 with the capabilities it asked with, so a request that never returns is
 distinguishable from a program nobody opened; its `day-loaded` (info) partner
 carries the chain, the blocked rungs and the round trip in milliseconds.
-`school.language.rung.landed` (debug) says which rung the learner was put on
+`school.language.rung.landed` (**info** — the one rung event the store keeps,
+because everything at debug is dropped at ingest) says which rung the learner was put on
 **and why** — `first`, `resume` (work was already done today) or `rung-cleared`
 — and `rung.selected` when they chose one themselves.
 `school.language.program.tab` (debug) records a move to the Review shelf, which
@@ -251,8 +252,11 @@ telemetry of its own; `PacingControl` likewise logs nothing, because a limit is
 only really changed once the server has taken it and only the shell knows
 whether it did.
 
-Per-sentence and per-request events sit at `debug`, which never leaves the
-browser. Load the surface with `?debug=1` to raise it for a launch week or an
-investigation; the level is read at mount and restored on unmount, so no panel
-stays chatty by accident. The log store is shared with every other household
-subsystem and capped.
+Per-sentence and per-request events sit at `debug`. Load the surface with
+`?debug=1` to see them: the level is read at mount and restored on unmount, so
+no panel stays chatty by accident. **They reach the console, not the store** —
+the backend drops `debug` at ingest in production, so a raised level is worth a
+trace at the device and nothing to a query run from elsewhere. The store keeps
+`info` and above, which is why the one rung event a supporter needs first,
+`rung.landed`, is the one that is not at debug. The store is shared with every
+other household subsystem and capped.

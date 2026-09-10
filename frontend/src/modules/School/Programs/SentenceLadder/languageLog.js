@@ -48,7 +48,16 @@ export const languageLog = {
   // store is a 7-day disk cap shared with every other household subsystem.
   programStep: (detail, data) => emit('program', detail, data, 'debug'),  // day-loading | tab
   programError: (detail, data) => emit('program', detail, data, 'error'), // day-failed
-  rung: (detail, data) => emit('rung', detail, data, 'debug'),           // enter | landed | selected | complete | held | replayed | advanced | practice
+  rung: (detail, data) => emit('rung', detail, data, 'debug'),           // enter | selected | complete | held | replayed | advanced | practice
+  /**
+   * The one rung fact the log STORE keeps. Everything else in this category is
+   * `debug`, and debug never reaches the store — it is dropped at ingest,
+   * whatever the browser is set to, so a raised level buys a console at the
+   * device and nothing at all remotely. Which rung a child was standing on,
+   * and why they were put there, is where a support call starts; it is not
+   * allowed to be console-only. A handful per session, so the cost is nil.
+   */
+  rungLanded: (data) => emit('rung', 'landed', data),
   attempt: (detail, data) => emit('attempt', detail, data, 'debug'),     // saved
   attemptError: (detail, data) => emit('attempt', detail, data, 'error'), // record-failed
   audio: (detail, data) => emit('audio', detail, data, 'debug'),         // play | ended | preload

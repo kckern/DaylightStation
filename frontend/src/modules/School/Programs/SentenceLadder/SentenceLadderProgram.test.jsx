@@ -9,11 +9,13 @@ const rollMock = vi.fn();
 const pacingMock = vi.fn();
 const historyMock = vi.fn();
 const {
-  programLogMock, programStepMock, rungLogMock, pacingLogMock, pacingWarnMock, capabilityLogMock,
+  programLogMock, programStepMock, rungLogMock, rungLandedMock, pacingLogMock, pacingWarnMock,
+  capabilityLogMock,
 } = vi.hoisted(() => ({
   programLogMock: vi.fn(),
   programStepMock: vi.fn(),
   rungLogMock: vi.fn(),
+  rungLandedMock: vi.fn(),
   pacingLogMock: vi.fn(),
   pacingWarnMock: vi.fn(),
   capabilityLogMock: vi.fn(),
@@ -25,6 +27,7 @@ vi.mock('./languageLog.js', () => ({
     programStep: (...args) => programStepMock(...args),
     programError: vi.fn(),
     rung: (...args) => rungLogMock(...args),
+    rungLanded: (...args) => rungLandedMock(...args),
     attempt: vi.fn(),
     attemptError: vi.fn(),
     audio: vi.fn(),
@@ -104,6 +107,7 @@ beforeEach(() => {
   programLogMock.mockClear();
   programStepMock.mockClear();
   rungLogMock.mockClear();
+  rungLandedMock.mockClear();
   pacingLogMock.mockClear();
   pacingWarnMock.mockClear();
   capabilityLogMock.mockClear();
@@ -616,7 +620,9 @@ describe('what the store can answer afterwards', () => {
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByLabelText(/Type what you hear/i);
 
-    expect(rungLogMock).toHaveBeenCalledWith('landed', {
+    // At INFO, unlike everything else this rung logs: debug is dropped at
+    // ingest, and "which rung, and why" has to survive to the store.
+    expect(rungLandedMock).toHaveBeenCalledWith({
       rung: 'dictation', reason: 'resume', pending: 1, of: 1,
     });
   });

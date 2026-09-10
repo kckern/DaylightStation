@@ -293,6 +293,16 @@ for the rest of the week. That matters: the store is 7-day retention on a disk
 cap shared with every other household subsystem, fitness telemetry at 5s
 resolution included, and a noisy module evicts other people's data.
 
+**`debug` reaches the console, not the store.** The backend drops incoming
+`debug` at ingest in production (`defaultLevel: info`), whatever the browser is
+set to — so `?debug=1` buys a full trace in a console standing at the device,
+and changes nothing in a query run from somewhere else. What the store keeps is
+`info` and above, which is why `rung.landed` (which rung the child is on, and
+why) sits at `info` while the rest of its category sits at `debug`: it is where
+a support call starts. To follow a live session remotely you need the events
+below marked info/warn/error; to follow one keystroke by keystroke, be at the
+device.
+
 **Typing `window.DAYLIGHT_LOG_LEVEL = 'debug'` into the console does not work
 on its own.** `Logger.js` reads its level only from `configure()`, so the flag
 is consulted at mount and never again — set it and RELOAD, or just use
@@ -308,7 +318,7 @@ correction.
 | `school.language.program.day-loaded` | info | Day, totals, the rung chain, blocked rungs, round-trip ms |
 | `school.language.program.day-failed` | error | The day did not load — the child is looking at "Could not load today's set" |
 | `school.language.program.tab` | debug | Moved to/from the Review shelf. A session that "gave me no sentences" is often this |
-| `school.language.rung.landed` | debug | Which rung, and **why**: `first`, `resume` (work already done today), `rung-cleared` |
+| `school.language.rung.landed` | **info** | Which rung, and **why**: `first`, `resume` (work already done today), `rung-cleared` |
 | `school.language.rung.held` / `.replayed` / `.advanced` | debug | Repetition's choice: the sentence stayed, they asked to hear it again, they moved on. A replay is never a `complete` |
 | `school.language.rung.practice` | debug | The extra-practice banner — why the same sentence keeps arriving |
 | `school.language.capability.rung-blocked` | info | A dimmed rung and what it lacks (`microphone`, `textInput:KR`). Once per day, not per render |
