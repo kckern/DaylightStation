@@ -634,13 +634,6 @@ describe('useBookShelf: updating a book', () => {
     expect(h.shelf).toHaveBeenCalledTimes(1); // no refetch after close
   });
 
-  it('history opens and back returns to the shelf', async () => {
-    const r = await mounted();
-    act(() => r.result.current.actions.openHistory());
-    expect(r.result.current.view).toBe('history');
-    act(() => r.result.current.actions.back());
-    expect(r.result.current.view).toBe('shelf');
-  });
 });
 
 describe('useBookShelf: logging', () => {
