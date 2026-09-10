@@ -112,16 +112,30 @@ function labelForSegment(segment) {
  * Each row is its own list; the disc is decorative and the NAME rides on the
  * icon (Icon's `label` gives it role="img"), which keeps the list semantics.
  */
+/** Rows nest (hex, √3/2) only when they differ by ONE disc: a row two wider
+ * puts its middle disc straight under the one above, so that pair stacks
+ * at a full pitch. The sum of the pitch factors is what the height math
+ * needs; each row carries its own so the CSS can place it. */
+const HEX = 0.8660254;
+function pitchFactors(rows) {
+  return rows.map((width, i) => (i === 0 ? 0 : ((width - rows[i - 1]) % 2 === 1 ? HEX : 1)));
+}
+
 function Pins({ segments }) {
   const rows = triangleRows(segments.length);
+  const factors = pitchFactors(rows);
+  const stack = factors.reduce((sum, f) => sum + f, 0);
   let cursor = 0;
+  // `--base` and `--stack` size the disc: the base row must fit the width and
+  // the stack (disc + Σ pitch) must fit the height; the disc is whichever is
+  // smaller, capped.
   return (
-    <div className="school-status-board__pins" style={{ '--rows': rows.length }}>
+    <div className="school-status-board__pins" style={{ '--base': Math.max(...rows), '--stack': stack }}>
       {rows.map((width, r) => {
         const slice = segments.slice(cursor, cursor + width);
         cursor += width;
         return (
-          <ul key={r} className="school-status-board__pills">
+          <ul key={r} className="school-status-board__pills" style={{ '--pitch': factors[r] }}>
             {slice.map((segment, i) => (
               <li
                 // Two sections can share a subject; the index keeps the key
@@ -154,6 +168,28 @@ function Pins({ segments }) {
  * about a term would be worse than no grid), a term is drawn. The eighth row
  * appears only when a week carries week-level work.
  */
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * The two axes around the term grid, on the SAME column template as the
+ * cells so they line up by construction: week numbers above (every fourth
+ * week — a digit per 8px column is not legible from a doorway), months
+ * below at the column in which each month begins.
+ */
+function termAxes(weeks) {
+  const weekNumbers = weeks.map((w, i) => (i % 4 === 0 ? String(i + 1) : ''));
+  let lastMonth = null;
+  const months = weeks.map((w) => {
+    // The month a week belongs to is the month most of it is in: Thursday's.
+    const thursday = new Date(Date.parse(`${w.weekId}T00:00:00Z`) + 3 * 86_400_000);
+    const month = thursday.getUTCMonth();
+    if (month === lastMonth) return '';
+    lastMonth = month;
+    return MONTH_SHORT[month];
+  });
+  return { weekNumbers, months };
+}
+
 function TermGrid({ term }) {
   if (term === null) return null;
   if (term === undefined || !term.from || !term.to) {
@@ -161,19 +197,60 @@ function TermGrid({ term }) {
   }
   const weeks = Array.isArray(term.weeks) ? term.weeks : [];
   const hasWeeklyWork = weeks.some((w) => (w.asked ?? 0) > 0);
+  const { weekNumbers, months } = termAxes(weeks);
+  const axisStyle = { '--grid-cols': weeks.length };
   return (
-    <DayGrid
-      days={(term.days ?? []).map((d) => ({ studyDay: d.studyDay, state: d.state }))}
-      orientation="weeks-as-columns"
-      from={term.from}
-      to={term.to}
-      studyDay={term.today ?? null}
-      extraRow={hasWeeklyWork ? weeks.map((w) => ({ weekId: w.weekId, state: w.state })) : null}
-      className="school-status-board__grid"
-      testId="board-term-grid"
-      todayTestId="board-term-today"
-      ariaLabel={`${term.label ?? 'This term'}: ${(term.days ?? []).filter((d) => d.state === 'met').length} days met`}
-    />
+    <div className="school-status-board__term-plot">
+      <ol className="school-status-board__term-axis school-status-board__term-axis--weeks" style={axisStyle} aria-hidden="true">
+        {weekNumbers.map((n, i) => <li key={weeks[i].weekId}>{n}</li>)}
+      </ol>
+      <DayGrid
+        days={(term.days ?? []).map((d) => ({ studyDay: d.studyDay, state: d.state }))}
+        orientation="weeks-as-columns"
+        from={term.from}
+        to={term.to}
+        studyDay={term.today ?? null}
+        extraRow={hasWeeklyWork ? weeks.map((w) => ({ weekId: w.weekId, state: w.state })) : null}
+        className="school-status-board__grid"
+        testId="board-term-grid"
+        todayTestId="board-term-today"
+        ariaLabel={`${term.label ?? 'This term'}: ${(term.days ?? []).filter((d) => d.state === 'met').length} days met`}
+      />
+      <ol className="school-status-board__term-axis school-status-board__term-axis--months" style={axisStyle} aria-hidden="true">
+        {months.map((m, i) => <li key={weeks[i].weekId}>{m}</li>)}
+      </ol>
+    </div>
+  );
+}
+
+/**
+ * The day's count as a SEGMENTED BAR — one segment per assignment, filled as
+ * each is done — with the words beneath. A bar is the shape a child reads
+ * from across a room; "2 of 7" is the shape an adult reads up close. At 100%
+ * both give way to one word.
+ */
+function DayMeter({ summary }) {
+  if (!summary || summary.total <= 0) return null;
+  if (summary.done >= summary.total) {
+    return <span className="school-status-board__done-chip" aria-label="Done for the day">Done</span>;
+  }
+  return (
+    <div className="school-status-board__meter" data-testid="board-day-meter">
+      <div
+        className="school-status-board__bar"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={summary.total}
+        aria-valuenow={summary.done}
+        aria-label={`${summary.done} of ${summary.total} done`}
+        style={{ '--segments': summary.total }}
+      >
+        {Array.from({ length: summary.total }, (_, i) => (
+          <span key={i} className={`school-status-board__segment${i < summary.done ? ' is-done' : ''}`} />
+        ))}
+      </div>
+      <span className="school-status-board__status">{summary.done} of {summary.total}</span>
+    </div>
   );
 }
 
@@ -390,6 +467,7 @@ export default function AgendaStatusBoard({ kids = [], day }) {
                 is one thing with its own number inside it, not a count
                 floating away from the thing it counts. */}
             <div className="school-status-board__day" data-testid="board-day">
+              <h3 className="school-status-board__part-title">Today</h3>
               {loading ? (
                 // SKELETON PINS while the plan is in flight — a three-disc
                 // pyramid, the row's height fixed by the disc size rather than
@@ -405,18 +483,12 @@ export default function AgendaStatusBoard({ kids = [], day }) {
               ) : summary && summary.segments.length > 0 ? (
                 <Pins segments={summary.segments} />
               ) : null}
-              {/* THE READOUT, under the pins. At 100% the chip replaces the
-                  count: "5 of 5" makes a reader do the comparison to learn the
-                  one thing that matters. Below 100% the count is the more
-                  useful of the two. */}
+              {/* THE METER, under the pins: a segmented bar with the words
+                  beneath, or one word at 100%. */}
               {loading ? (
                 <span className="school-status-board__status school-status-board__status--none">&nbsp;</span>
               ) : summary && summary.total > 0 ? (
-                summary.done >= summary.total ? (
-                  <span className="school-status-board__done-chip" aria-label="Done for the day">Done</span>
-                ) : (
-                  <span className="school-status-board__status">{summary.done} of {summary.total}</span>
-                )
+                <DayMeter summary={summary} />
               ) : (
                 <span className="school-status-board__status school-status-board__status--none">No plan to show</span>
               )}
@@ -427,9 +499,10 @@ export default function AgendaStatusBoard({ kids = [], day }) {
                 stands alone until a weekly goal is authored (see
                 `ringProgressByLearner`). */}
             <div className="school-status-board__week" data-testid="board-week">
+              <h3 className="school-status-board__part-title">This week</h3>
               {Number.isFinite(rings[kid.id]?.current) && (
                 <span className="school-status-board__rings" title="Rings this week">
-                  <RingIcon size="1em" label={`${rings[kid.id].current} rings this week`} />
+                  <RingIcon size="2.4em" label={`${rings[kid.id].current} rings this week`} />
                   <span className="school-status-board__rings-count">
                     {rings[kid.id].current}
                     {Number.isFinite(rings[kid.id].target) ? ` of ${rings[kid.id].target}` : ''}
@@ -441,6 +514,7 @@ export default function AgendaStatusBoard({ kids = [], day }) {
                 columns. Blank-but-present while loading, so the card is the
                 width it is going to be from the first paint. */}
             <div className="school-status-board__term" data-testid="board-term">
+              <h3 className="school-status-board__part-title">This term</h3>
               <TermGrid term={terms[kid.id]} />
             </div>
           </li>
