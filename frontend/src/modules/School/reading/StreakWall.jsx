@@ -18,8 +18,12 @@ import './streak.scss';
  *
  * The server does the judging (`ReadingApiService#summary`): this draws
  * states, it never compares a count to a target itself. A day nobody asked
- * about (a weekend, a holiday) arrives as `rest` and is drawn near-transparent
- * rather than as a miss.
+ * about is not drawn as a miss — but there are TWO such days and they are not
+ * the same square. A weekend arrives as `rest` and is near-transparent: it is
+ * the ordinary rhythm, and the wall should read straight through it. A day the
+ * household named off arrives as `exempt`, drawn blue and carrying its own
+ * name, because Thanksgiving is a thing that happened and a child looking at a
+ * blank week in late November is owed the reason.
  */
 export default function StreakWall({ days, studyDay = null, className = '', testId = 'reading-streak' }) {
   const cells = Array.isArray(days) ? days.filter(Boolean) : [];
