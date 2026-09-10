@@ -151,6 +151,7 @@ import { VirtualSchoolDeviceConsole } from '#apps/school/services/VirtualSchoolD
 import { createSchoolVirtualDevicesRouter } from '#api/v1/routers/schoolVirtualDevices.mjs';
 import { createSchoolSelfServiceRouter } from '#api/v1/routers/school.selfservice.mjs';
 import { IssueDirectLaunch } from '#apps/school/usecases/IssueDirectLaunch.mjs';
+import { IssueSubjectCode } from '#apps/school/usecases/IssueSubjectCode.mjs';
 import { validateSchedule } from '#domains/school/schoolCalendar.mjs';
 import { YamlTermVerdictCache } from '#adapters/persistence/yaml/YamlTermVerdictCache.mjs';
 import { TermVerdictService } from '#apps/school/TermVerdictService.mjs';
@@ -989,6 +990,7 @@ export async function createSchoolLifecycle({
     // two houses on the same published lesson never share a code.
     companionCodes, householdId,
     issuedArtifacts, renderIssuedArtifact,
+    realtime: schoolRealtime,
     answerSheetPolicy: cfg.answer_sheets ?? null,
     // Same `printing:` block the laser host/port/path and the page-quota
     // policy keys already live in (see the printer construction above and
@@ -1390,6 +1392,14 @@ export async function createSchoolLifecycle({
     roster: () => schoolRoster.list(),
     logger,
   });
+  // The browser's testing door onto the day board: one subject's code,
+  // minted exactly as the printed agenda mints it, without the paper.
+  const issueSubjectCode = new IssueSubjectCode({
+    tokens: stores.tokens, rng: draw, clock, timezone,
+    subjectTokenTtlHours: lifecycleCfg.subjectTokenTtlHours ?? 168,
+    roster: () => schoolRoster.list(),
+    logger,
+  });
 
   // --- the term grid (plan 2026-09-09: school board + reading surfaces) -----
   // One verdict per study day since the term began, replayed honestly through
@@ -1424,7 +1434,7 @@ export async function createSchoolLifecycle({
     invalidateSessionEvidence, recoverMisattributedWorksheet,
     enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction, recordLessonCompanionProgress,
     getLearnerDayCompletion, teacherAgendaDispatch, reprintIssuedArtifact, reprintResultReceiptArtifact, issueCorrectedResultReceipt, manageCurriculumException,
-    getPianoLessonGate, manageProgramDayBypass, getCompanionFinishCode, issueDirectLaunch,
+    getPianoLessonGate, manageProgramDayBypass, getCompanionFinishCode, issueDirectLaunch, issueSubjectCode,
     getLearnerTerm, rebuildLearnerTerm,
     ...bookShelfUseCases,
   };

@@ -58,6 +58,7 @@ import { dayStatus, summarize, ringProgressByLearner, triangleRows } from './age
 
 const REFRESH_MS = 5 * 60_000;
 const SCHOOL_REFRESH_EVENTS = new Set([
+  'session-issued',
   'session-grade-changed',
   'story-read',
   'book-log-changed',
@@ -122,7 +123,27 @@ function pitchFactors(rows) {
   return rows.map((width, i) => (i === 0 ? 0 : ((width - rows[i - 1]) % 2 === 1 ? HEX : 1)));
 }
 
-function Pins({ segments }) {
+/**
+ * The disc, as a DOOR — only where `onOpen` is given, which `SchoolApp` does
+ * solely for a board mounted without a panel screen id (a grown-up's
+ * browser). On the Portal every disc is the inert `<li>` it always was.
+ */
+function Disc({ segment, onOpen }) {
+  const icon = <Icon name={iconFor(segment.subject)} label={labelForSegment(segment)} />;
+  if (!onOpen) return icon;
+  return (
+    <button
+      type="button"
+      className="school-status-board__pill-door"
+      aria-label={`Open ${segment.label}`}
+      onClick={() => onOpen(segment)}
+    >
+      {icon}
+    </button>
+  );
+}
+
+function Pins({ segments, onOpen = null }) {
   const rows = triangleRows(segments.length);
   const factors = pitchFactors(rows);
   const stack = factors.reduce((sum, f) => sum + f, 0);
@@ -148,7 +169,7 @@ function Pins({ segments }) {
                 // selecting on the boolean; the tri-state is the one to read.
                 data-done={segment.state === 'passed' ? 'true' : 'false'}
               >
-                <Icon name={iconFor(segment.subject)} label={labelForSegment(segment)} />
+                <Disc segment={segment} onOpen={onOpen} />
                 {segment.extraCount > 0 && (
                   <span className="school-status-board__extra" aria-hidden="true">
                     +{segment.extraCount}
@@ -290,7 +311,20 @@ function DayMeter({ summary }) {
   );
 }
 
-export default function AgendaStatusBoard({ kids = [], day }) {
+/**
+ * @param {object} props
+ * @param {Array<{id: string, name: string}>} props.kids
+ * @param {string} [props.day]
+ * @param {((learnerId: string, segment: object) => void)|null} [props.onOpenSegment]
+ *   THE BROWSER'S TESTING DOOR. Given, each disc becomes a button that hands
+ *   its learner and subject back — `SchoolApp` then mints that subject's
+ *   code and types it into the keypad path, so the tap is "the child typed
+ *   the code" and nothing else. NEVER passed for a panel: the board on the
+ *   Portal stays the read-only fixture the kiosk spec requires, and the
+ *   decision lives in `SchoolApp` on `isPanelSurface(screenId)`, not in a
+ *   flag this component could be handed by mistake.
+ */
+export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null }) {
   const [rows, setRows] = useState(null);
   const [nonce, setNonce] = useState(0);
   const [studyDay, setStudyDay] = useState(day ?? null);
@@ -517,7 +551,7 @@ export default function AgendaStatusBoard({ kids = [], day }) {
                   ))}
                 </div>
               ) : summary && summary.segments.length > 0 ? (
-                <Pins segments={summary.segments} />
+                <Pins segments={summary.segments} onOpen={onOpenSegment ? (segment) => onOpenSegment(kid.id, segment) : null} />
               ) : null}
               {/* THE METER, under the pins: a segmented bar with the words
                   beneath, or one word at 100%. */}
