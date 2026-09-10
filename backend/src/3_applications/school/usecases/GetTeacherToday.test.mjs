@@ -112,6 +112,63 @@ describe('GetTeacherToday v2', () => {
   });
 });
 
+// Physical education: the learner is enrolled in nothing, so the only evidence
+// is the fitness session log. Sessions are stored by DATE rather than by
+// learner, so the digest reads the roster's day ONCE and projects per child.
+describe('GetTeacherToday physical-education evidence', () => {
+  const workout = (startedAt, participants) => ({ startTime: Date.parse(startedAt), participants });
+  const fitnessSessions = (sessions) => ({ listSessionsInRange: vi.fn(async () => sessions) });
+
+  it('credits rings earned on the requested study day with one roster-wide read', async () => {
+    const port = fitnessSessions([workout('2026-08-24T15:00:00.000Z', { learner4: { rings: 4 } })]);
+    const digest = await useCase({ fitnessSessions: port }).execute({ studyDay: '2026-08-24', version: 'v2' });
+
+    expect(port.listSessionsInRange).toHaveBeenCalledTimes(1);
+    expect(port.listSessionsInRange).toHaveBeenCalledWith('2026-08-24', '2026-08-25');
+    expect(digest.learners[0].fitnessActivity).toEqual({
+      status: 'ok', studyDay: '2026-08-24', hasActivity: true, rings: 4, sessionCount: 1,
+    });
+  });
+
+  it('reports a quiet day rather than unavailable when the log simply holds no workout', async () => {
+    const digest = await useCase({ fitnessSessions: fitnessSessions([]) })
+      .execute({ studyDay: '2026-08-24', version: 'v2' });
+
+    expect(digest.learners[0].fitnessActivity).toEqual({
+      status: 'ok', studyDay: '2026-08-24', hasActivity: false, rings: 0, sessionCount: 0,
+    });
+  });
+
+  it('marks activity unavailable and logs the actual session-log failure', async () => {
+    const logger = { debug: vi.fn(), warn: vi.fn() };
+    const digest = await useCase({
+      fitnessSessions: { listSessionsInRange: async () => { throw new Error('log offline'); } }, logger,
+    }).execute({ studyDay: '2026-08-24', version: 'v2' });
+
+    expect(digest.learners[0].fitnessActivity).toEqual({
+      status: 'unavailable', studyDay: '2026-08-24', hasActivity: null,
+    });
+    expect(logger.warn).toHaveBeenCalledWith('school.teacher-day.fitness-activity-failed', {
+      error: 'log offline',
+    });
+  });
+
+  it('reports unavailable rather than a quiet day when no session log is wired at all', async () => {
+    const digest = await useCase().execute({ studyDay: '2026-08-24', version: 'v2' });
+    expect(digest.learners[0].fitnessActivity).toEqual({
+      status: 'unavailable', studyDay: '2026-08-24', hasActivity: null,
+    });
+  });
+
+  it('leaves the v1 learner-row contract unchanged and does not read the session log', async () => {
+    const port = fitnessSessions([]);
+    const rows = await useCase({ fitnessSessions: port }).execute();
+
+    expect(port.listSessionsInRange).not.toHaveBeenCalled();
+    expect(rows[0]).not.toHaveProperty('fitnessActivity');
+  });
+});
+
 // ---------------------------------------------------------------------------
 // `reviewStatus` is a REVIEW verdict, and a session that was never worked has
 // nothing to render one about. The two-way form answered 'complete' for a

@@ -4167,6 +4167,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         evidenceRepository: schoolLearningEvidence ?? null,
         curriculum: schoolLifecycle.stores.curriculum,
         bookLog: schoolLifecycle.stores.bookLog ?? null,
+        // Physical-education credit on the day board. The same session
+        // summaries the weekly ring measure reads, so the disc and the ring
+        // chip can never disagree about a workout.
+        fitnessSessions: {
+          listSessionsInRange: (from, to) => fitnessServices.sessionService
+            .listSessionsInRange(from, to, householdId),
+        },
         timezone: configService.getTimezone?.() || null,
         logger: rootLogger.child({ module: 'school-teacher-today' })
       });

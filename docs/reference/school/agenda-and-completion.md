@@ -130,6 +130,52 @@ backdating and undo can change evidence on another day. Event payloads trigger
 reads; they never supply optimistic credit. Returning from the shelf remounts
 the board and reloads the same persisted sources.
 
+## Persisted physical-education activity
+
+The v2 teacher-day learner row also includes `fitnessActivity`, projected from
+the fitness session log for the requested study day. Physical education is not
+one of the nine subject shelves and is never assigned: there is no section, no
+work-session, and no obligation behind it, so the only evidence is the workout
+itself.
+
+A learner is credited for a session when that session's summary records
+`participants[learnerId].rings` above zero. Rings are computed at session close
+and stored, so the projection is a field read rather than a re-derivation, and
+requiring rings rather than mere participation keeps a stray heart-rate strap
+from awarding one child credit for another's workout. `rings: null` means no
+ring data was recorded and, like a real zero, earns nothing.
+
+A session belongs to the study day its **start** falls in — the rule the weekly
+ring measure already uses — so a late-evening workout is credited once, on the
+day it began. The digest reads the roster's day once, across the study day and
+its successor, because sessions are stored by date rather than by learner.
+
+An available session log reports `status: ok` with `hasActivity`, the day's
+`rings` total, and `sessionCount`. A day with no qualifying workout is an
+available quiet day, not an outage. A failed read, or no session log wired at
+all, reports `status: unavailable` with `hasActivity: null`, so an outage
+cannot be mistaken for a child who did not exercise. The v1 teacher-today
+response remains unchanged.
+
+## Physical education on the status board
+
+Available `fitnessActivity` with `hasActivity: true` adds one supplemental
+**Fitness** circle carrying the `physical-education` subject icon, however many
+sessions or rings the day held. Like the Reading circle it affects layout only:
+required totals, completed-required counts, daily gates, and **Done for the
+day** are unchanged, so a workout can never finish a day of school work and
+school work can never hide a workout.
+
+The circle has no other state. It is never pending, because a wall panel should
+not nag a child to go and exercise, and never amber, because nothing marks a
+workout wrong. On a day with no qualifying session it is simply absent.
+
+Fitness therefore appears twice on a card, deliberately: the ring chip in the
+readout is the week's cumulative count, the circle is today's yes or no. The
+board needs no new subscription for it — closing a session prompts the
+`fitness.weekly-rings` State Gate producer, and the board already reloads on
+that gate's events.
+
 ## Learner-day completion
 
 Completion folds section obligations and planner faults into four states:

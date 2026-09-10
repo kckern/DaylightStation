@@ -38,6 +38,7 @@ subject — transport (`play`, `pause`, `next`, `prev`, `rewind`, `restart`),
 | `piano` | `svg/piano.svg` | the launch card's "Learn at the piano" |
 | `book-starting` | `svg/book-starting.svg` | the reading shelf's "I'm just starting it" door (SVG Repo 521767, next) |
 | `book-partway` | `svg/book-partway.svg` | the reading shelf's "I'm partway through" door (SVG Repo 521655, fast-forward) |
+| `physical-education` | `svg/physical-education.svg` | the status board's workout disc (SVG Repo 390333, fitness-watch-pulse-smartwatch). Named for a SUBJECT that has no shelf: physical education is credited from fitness sessions, never assigned, so the id exists here and nowhere in `subjects.js` |
 | `book-finished` | `svg/book-finished.svg` | the reading shelf's "I already finished it" door (SVG Repo 521562, circle-checkmark) |
 | `power` | `svg/power.svg` | the locked panel's "Turn off screen" control (standby glyph, drawn to the contract above) |
 | `plus` | `svg/plus.svg` | the reading shelf's add card, in the empty book slot |
