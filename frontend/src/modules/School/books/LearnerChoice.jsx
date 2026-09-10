@@ -22,8 +22,8 @@ export default function LearnerChoice({ roster = [], busy = false, onChoose }) {
           onClick={() => onChoose(learner.id)}
           aria-label={learner.name || learner.id}
         >
-          <ProfileAvatar id={learner.id} name={learner.name || learner.id} size={144} />
-          <span>{learner.name || learner.id}</span>
+          <ProfileAvatar id={learner.id} name={learner.name || learner.id} size={256} />
+          <span className="school-book-scan__learner-name">{learner.name || learner.id}</span>
         </button>
       ))}
     </div>
