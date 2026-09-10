@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import AgendaStatusBoard from './AgendaStatusBoard.jsx';
-import { dayStatus, summarize, ringsByLearner } from './agendaStatusModel.js';
+import { dayStatus, summarize, ringsByLearner, ringProgressByLearner, triangleRows } from './agendaStatusModel.js';
 
 vi.mock('../schoolApi.js', () => ({
   schoolApi: { agendaPreview: vi.fn(), teacherDay: vi.fn(), stateGates: vi.fn() },
@@ -273,6 +273,24 @@ describe('AgendaStatusBoard model', () => {
   });
 });
 
+describe('triangleRows', () => {
+  it('matches the design table, base at the bottom, capped at three rows', () => {
+    const table = { 0: [], 1: [1], 2: [2], 3: [1, 2], 4: [1, 3], 5: [2, 3], 6: [1, 2, 3], 7: [3, 4], 8: [1, 3, 4], 9: [2, 3, 4], 10: [1, 4, 5], 12: [3, 4, 5] };
+    for (const [n, rows] of Object.entries(table)) expect(triangleRows(Number(n))).toEqual(rows);
+    expect(triangleRows(-1)).toEqual([]);
+    expect(triangleRows(2.5)).toEqual([]);
+  });
+});
+
+describe('ringProgressByLearner', () => {
+  it('carries the count and only a real target — a gte-1 gate has none', () => {
+    expect(ringProgressByLearner({ items: [ringGate('user_4', 40, 500, 1500)] }, 1000)).toEqual({ user_4: { current: 40, target: null } });
+    const goal = ringGate('user_4', 3, 500, 1500);
+    goal.evaluation.progress.target = 5;
+    expect(ringProgressByLearner({ items: [goal] }, 1000)).toEqual({ user_4: { current: 3, target: 5 } });
+  });
+});
+
 describe('ringsByLearner', () => {
   it('picks current ring progress out of active State Gate evaluations', () => {
     expect(ringsByLearner({
@@ -387,7 +405,7 @@ describe('AgendaStatusBoard render', () => {
     expect(row.dataset.complete).toBe('true');
     // The chip stands IN PLACE OF "2 of 2" — a reader should not have to
     // compare two numbers to learn the one thing that matters.
-    expect(screen.getByText('Done for the day')).toBeTruthy();
+    expect(screen.getByLabelText('Done for the day')).toBeTruthy();
     expect(screen.queryByText('2 of 2')).toBeNull();
   });
 
@@ -450,10 +468,9 @@ describe('AgendaStatusBoard render', () => {
     const board = screen.getByTestId('agenda-status-board');
     const pills = board.querySelector('.school-status-board__pills');
     expect(pills.querySelectorAll('.school-status-board__pill')).toHaveLength(1);
-    expect(pills.style.getPropertyValue('--count')).toBe('1');
     expect(screen.getByLabelText('Arts & Culture: done, 7 extra items completed')).toBeTruthy();
     expect(board.querySelector('.school-status-board__extra').getAttribute('aria-hidden')).toBe('true');
-    expect(screen.getByText('Done for the day')).toBeTruthy();
+    expect(screen.getByLabelText('Done for the day')).toBeTruthy();
   });
 
   it('every segment draws a subject icon and states its subject and state by name', async () => {
@@ -552,7 +569,7 @@ describe('a scan updates the board immediately', () => {
     omr.cb({ event: 'scan-graded', learnerId: 'learner1', result: 'passed', percent: 100 });
 
     // The chip appears without any timer advancing.
-    await waitFor(() => expect(screen.getByText('Done for the day')).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText('Done for the day')).toBeTruthy());
   });
 
   it('ignores traffic on the topic that is not a scan', async () => {
@@ -753,5 +770,80 @@ describe('persisted physical education on the board', () => {
     expect(await screen.findByText('No plan to show')).toBeInTheDocument();
     expect(screen.queryByRole('img', { name: /Fitness/ })).toBeNull();
     expect(document.querySelector('.school-status-board__pill')).toBeNull();
+  });
+});
+
+describe('the four partitions', () => {
+  const kids = [{ id: 'learner1', name: 'Learner One' }];
+  const plan = (n) => ({ ok: true, status: 200, data: {
+    sections: Array.from({ length: n }, (_, i) => ({ subject: 'math', next: { unitId: `m.${i}` } })),
+    entries: [],
+  } });
+  const term = {
+    ok: true, status: 200, data: {
+      termId: '2026-fall', label: 'Fall 2026', from: '2026-09-01', to: '2026-09-13', today: '2026-09-09',
+      days: [
+        { studyDay: '2026-09-07', state: 'met' }, { studyDay: '2026-09-08', state: 'exempt' }, { studyDay: '2026-09-09', state: 'partial' },
+      ],
+      weeks: [{ weekId: '2026-08-31', state: 'exempt', asked: 0 }, { weekId: '2026-09-07', state: 'unknown', asked: 0 }],
+    },
+  };
+
+  beforeEach(() => {
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+    schoolApi.stateGates.mockResolvedValue({ ok: false, status: 0, data: null });
+  });
+
+  it('packs seven assignments as pins in two rows of 3 and 4, count under the pins', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(plan(7));
+    schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
+    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
+    await waitFor(() => expect(screen.getByText('0 of 7')).toBeTruthy());
+    const day = screen.getByTestId('board-day');
+    const rows = day.querySelectorAll('.school-status-board__pills');
+    expect([...rows].map((row) => row.querySelectorAll('.school-status-board__pill').length)).toEqual([3, 4]);
+    // The count lives INSIDE the day partition, under the pins.
+    expect(day.querySelector('.school-status-board__status').textContent).toBe('0 of 7');
+  });
+
+  it('draws the term as weeks-as-columns with today ringed, and the eighth row only for weekly work', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(plan(1));
+    schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
+    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
+    const grid = await screen.findByTestId('board-term-grid');
+    expect(grid.classList.contains('school-daygrid--weeks-as-columns')).toBe(true);
+    expect(grid.style.getPropertyValue('--grid-cols')).toBe('2');
+    expect(grid.style.getPropertyValue('--grid-rows')).toBe('7');
+    expect(screen.getByTestId('board-term-today')).toHaveAttribute('data-state', 'partial');
+    expect(grid.querySelector('[data-day="2026-09-08"]')).toHaveAttribute('data-state', 'exempt');
+    // A day in the span with no verdict yet is hollow, not a miss.
+    expect(grid.querySelector('[data-day="2026-09-01"]')).toHaveAttribute('data-state', 'unknown');
+    expect(grid.querySelectorAll('.school-daygrid__cell--week')).toHaveLength(0);
+  });
+
+  it('adds the eighth row when a week carries week-level work', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(plan(1));
+    const weekly = { ...term, data: { ...term.data, weeks: [{ weekId: '2026-08-31', state: 'met', asked: 1 }, { weekId: '2026-09-07', state: 'unknown', asked: 1 }] } };
+    schoolApi.learnerTerm = vi.fn().mockResolvedValue(weekly);
+    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
+    const grid = await screen.findByTestId('board-term-grid');
+    expect(grid.querySelectorAll('.school-daygrid__cell--week')).toHaveLength(2);
+    expect(grid.style.getPropertyValue('--grid-rows')).toBe('8');
+  });
+
+  it('a failed term read costs the grid, never the card', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(plan(2));
+    schoolApi.learnerTerm = vi.fn().mockRejectedValue(new Error('boom'));
+    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
+    await waitFor(() => expect(screen.getByText('0 of 2')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('board-term').children).toHaveLength(0));
+  });
+
+  it('shows the skeleton grid while the term is in flight', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(plan(1));
+    schoolApi.learnerTerm = vi.fn(() => new Promise(() => {}));
+    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
+    await waitFor(() => expect(screen.getByText('0 of 1')).toBeTruthy());
+    expect(screen.getByTestId('board-term').querySelector('.school-status-board__grid--skeleton')).toBeTruthy();
   });
 });

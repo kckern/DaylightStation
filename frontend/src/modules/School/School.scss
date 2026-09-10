@@ -59,6 +59,10 @@
   // the room, which rules out anything olive or yellow-green.
   --school-board-retry: #e2a33c;
   --school-board-retry-ink: #2a1a05;
+  // A day the house took off, on the term grid. Blue, the one colour the board
+  // did not already use: a vacation is not a miss (grey) and not done (green),
+  // and it has to read as neither from across the room.
+  --school-board-exempt: #4f8fd6;
   --kind-video: #5b8dd6;  // blue — watch
   --kind-audio: #b085e6;  // violet — listen
   --kind-app:   #3fbfae;  // teal — do
@@ -2899,8 +2903,16 @@
   }
   &__row {
     flex: 1 1 0; min-height: 0;
-    display: flex; align-items: center; gap: clamp(0.9rem, 2vw, 1.4rem);
-    padding: clamp(0.7rem, 1.8vh, 1.2rem) clamp(0.9rem, 2vw, 1.5rem);
+    display: flex; align-items: center; gap: clamp(0.6rem, 1.1vw, 0.9rem);
+    padding: clamp(0.7rem, 1.8vh, 1.2rem) clamp(0.7rem, 1.3vw, 1rem);
+    // ONE DISC SIZE, board-wide, from the height four cards leave a row.
+    // Three rows of pins at 0.78 pitch take 2.56 discs plus the readout line;
+    // on the 1280x800 Portal a card is ~150px, so 4.4vh (~35px) is the largest
+    // disc whose three-row worst case still clears the readout. Capped below
+    // the avatar — the face is who, the discs are what. Declared on the ROW
+    // because the day partition sizes itself from it (four pins wide).
+    --disc: clamp(1.75rem, 4.4vh, 2.5rem);
+    --disc-gap: clamp(0.2rem, 0.6vh, 0.35rem);
     border: 1px solid var(--school-border); border-radius: 16px;
     background: var(--school-surface);
     transition: border-color 400ms ease, background-color 400ms ease;
@@ -2925,15 +2937,34 @@
     display: flex; flex-direction: column; align-items: center;
     padding-bottom: clamp(0.7rem, 1.6vh, 1.05rem);
 
+    // Bigger than it was (13vh → 15vh, 7rem → 8rem): the face is WHO, and on
+    // a board of four it is the one thing a child finds their own row by.
     .piano-avatar {
-      width: clamp(3.5rem, 13vh, 7rem); height: clamp(3.5rem, 13vh, 7rem);
-      font-size: clamp(1.2rem, 4vh, 2rem);
+      width: clamp(4rem, 15vh, 8rem); height: clamp(4rem, 15vh, 8rem);
+      font-size: clamp(1.3rem, 4.6vh, 2.3rem);
     }
   }
-  &__info {
-    flex: 1 1 auto; min-width: 0; align-self: stretch;
-    display: flex; flex-direction: column; justify-content: center;
-    gap: clamp(0.5rem, 1.4vh, 0.9rem);
+  // FOUR PARTITIONS, time widening left to right: who · today · this week ·
+  // the term. Each is a column with its own number INSIDE it. The old card
+  // stacked a count, the rings and a strip of discs in one right-hand block,
+  // so the count sat away from the discs it counted and a busy day made the
+  // strip longer, not taller.
+  &__day {
+    flex: 1 1 auto; align-self: stretch;
+    // Never narrower than a four-pin base row (nine assignments), so the pins
+    // never spill onto the face or the rings whatever the term grid takes.
+    min-width: calc(4 * var(--disc) + 3 * var(--disc-gap));
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: clamp(0.3rem, 0.9vh, 0.6rem);
+  }
+  &__week {
+    flex: 0 0 auto; align-self: stretch;
+    display: flex; align-items: center; justify-content: center;
+    min-width: clamp(2.2rem, 3.6vw, 3.2rem);
+  }
+  &__term {
+    flex: 0 0 auto; align-self: stretch;
+    display: flex; align-items: center; justify-content: flex-end;
   }
   // Anchored to the rail's padded box, then pulled down by half its own height
   // so it sits exactly astride the avatar's bottom edge. `translate(-50%, 50%)`
@@ -2945,7 +2976,7 @@
     bottom: clamp(0.7rem, 1.6vh, 1.05rem);
     transform: translate(-50%, 50%);
     z-index: 1;
-    max-width: calc(clamp(3.5rem, 13vh, 7rem) + 0.8rem);
+    max-width: calc(clamp(4rem, 15vh, 8rem) + 0.8rem);
     padding: 0.18em 0.6em;
     border-radius: 999px;
     background: var(--school-surface);
@@ -2960,56 +2991,36 @@
     border-color: var(--school-board-done);
     background: color-mix(in srgb, var(--school-board-done) 22%, var(--school-surface));
   }
-  // Discs, one per ASSIGNMENT, each wearing its subject's icon off the wall.
+  // Discs, one per ASSIGNMENT, each wearing its subject's icon off the wall,
+  // packed as BOWLING PINS: rows from `triangleRows`, the base at the bottom.
   //
-  // This was a stretched meter — segments sharing the card's width, so every
-  // learner's strip was the same length and only the fill differed. That made
-  // the bars comparable and the day anonymous: nothing on the board said what
-  // the work WAS. Fixed-size discs give that up on purpose. The strip's length
-  // now encodes how much is planned, the icons say which subjects, and the
-  // count below stays for the one fact pictures can't carry.
+  // This was a stretched meter, then a single row that divided the card's
+  // width by the disc count — so the learner with the most work got the
+  // widest, flattest strip, and a two-assignment day sat in a corner. A
+  // triangle is at most five wide where the row was up to nine, so the disc
+  // has ONE size, board-wide, set by the three-row worst case, and a busy day
+  // grows taller inside the card's height rather than longer across it.
   //
   // Circle over rounded-square (the household's own suggestion, taken): these
   // sit inside a 16px-radius card, and a small rounded rectangle in there reads
   // as a nested card rather than a state marker, while a disc reads as a bead
-  // on a string — which is exactly what "3 of 7 done" is. A circle only
-  // inscribes ~71% of its box, so the diameter below is sized for the ICON
-  // rather than the disc, and the disc is simply what's left over.
-  // NEVER WRAPS. The discs are per-ASSIGNMENT now, not per-subject, so a busy
-  // midweek learner can carry eight or more where the old model capped at the
-  // nine subjects and usually showed three. A second line steals height from a
-  // card that has none to give, so the row shrinks the circles instead — see
-  // `&__pill`'s `--disc`, which divides the available width by the count.
+  // — which is exactly what "3 of 7 done" is. A circle only inscribes ~71% of
+  // its box, so the diameter is sized for the ICON and the disc is what's left.
+  &__pins {
+    display: flex; flex-direction: column; align-items: center;
+    // Rows nest: each sits at 0.78 of a disc below the one above, so the
+    // upper row's discs settle into the gaps of the lower — pins, not a
+    // stack. Negative margin rather than a gap, because the pitch is less
+    // than the disc.
+    --pitch: calc(var(--disc) * 0.78);
+  }
   &__pills {
     list-style: none; margin: 0; padding: 0;
-    display: flex; flex-wrap: nowrap; align-items: center; min-width: 0;
-    --disc-gap: clamp(0.25rem, 0.7vh, 0.4rem);
+    display: flex; flex-wrap: nowrap; align-items: center; justify-content: center; min-width: 0;
     gap: var(--disc-gap);
+    & + & { margin-top: calc(var(--pitch) - var(--disc)); }
   }
   &__pill {
-    // TWO ceilings, whichever bites first.
-    //
-    // Height first: four cards share the pane, so the card's height is what's
-    // actually scarce — 5.2vh lands a ~2.6rem disc on the 1280x800 Portal,
-    // which is the smallest circle that still shows a recognisable glyph at
-    // arm's length. Width second: nine subjects is the curriculum's ceiling
-    // (home/subjects.js), and nine discs at 2.6rem are ~12px wider than the
-    // card's text column, so they would wrap. Rather than wrap — a second
-    // line steals the height the count line needs — the row divides itself:
-    // the component hands us the segment count and the disc takes an equal
-    // share when, and only when, that is smaller than the height ceiling.
-    // Measured on the real pane, nine still come out ~2.5rem, so the crowded
-    // day costs a hair of size and never a line. `flex-wrap` stays as the
-    // backstop for anything narrower still; nothing here may scroll, because
-    // the locked panel accepts no touch.
-    // Grown now that the name has moved into the rail and the count line is
-    // gone: the card's text column is free, so the discs take the height those
-    // two rows used to. Still capped below the avatar — the face is who, the
-    // discs are what, and the discs must not outrank the child.
-    --disc: min(
-      clamp(2rem, 8vh, 3.6rem),
-      calc((100% - (var(--count, 1) - 1) * var(--disc-gap)) / var(--count, 1))
-    );
     flex: 0 0 auto;
     position: relative;
     width: var(--disc); aspect-ratio: 1;
@@ -3081,17 +3092,19 @@
   // only the day's own facts shimmer.
   &__row.is-loading .school-status-board__status { opacity: 0.3; }
   &__status {
-    align-self: flex-end; flex: 0 0 auto;
+    flex: 0 0 auto;
     font-size: clamp(0.85rem, 2vh, 1.1rem); font-weight: 700;
     opacity: 0.75; text-transform: uppercase; letter-spacing: 0.05em;
+    font-variant-numeric: tabular-nums;
   }
   &__status--none { text-transform: none; letter-spacing: normal; font-weight: 600; opacity: 0.5; }
 
   // The chip that REPLACES the count at 100%. Green is already carrying the
-  // message on the card; this says it in words, because green is a convention
-  // a child has to be taught and a sentence is not.
+  // message on the card; this says it in a word, because green is a
+  // convention a child has to be taught and a word is not. One word, since
+  // it sits under a column four pins wide.
   &__done-chip {
-    align-self: flex-end; flex: 0 0 auto;
+    flex: 0 0 auto;
     padding: 0.2em 0.7em;
     border-radius: 999px;
     background: var(--school-board-done);
@@ -3106,13 +3119,46 @@
   // school-work count, not a competitor to it. Quieter than the status line on
   // purpose — the discs and their count are still what this board is for.
   &__rings {
-    align-self: flex-end; flex: 0 0 auto;
-    display: flex; align-items: center; gap: 0.3em;
-    font-size: clamp(0.8rem, 1.8vh, 1rem); font-weight: 700;
+    flex: 0 0 auto;
+    display: flex; flex-direction: column; align-items: center; gap: 0.25em;
+    font-size: clamp(0.9rem, 2.2vh, 1.2rem); font-weight: 800;
     color: var(--school-muted);
     line-height: 1;
   }
   &__rings-count { font-variant-numeric: tabular-nums; }
+
+  // THE TERM GRID. Seven rows × one column per week, ~11px cells on the
+  // 1280x800 Portal: eighteen weeks fit in ~230px beside the pins. The grid's
+  // own palette is the household's (green/amber/grey) plus blue for a day
+  // the house took off; the count is never shown here — the card is read from
+  // across a room, and a number in an 11px square is noise.
+  &__grid {
+    --grid-cell: clamp(6px, 1.15vh, 10px);
+    --grid-gap: max(1px, calc(var(--grid-cell) * 0.16));
+    --grid-radius: 2px;
+    --grid-met: var(--school-board-done);
+    --grid-partial: var(--school-board-retry, #e2a33c);
+    --grid-none: var(--school-board-pending);
+    --grid-exempt: var(--school-board-exempt, #4f8fd6);
+    --grid-unknown-edge: color-mix(in srgb, var(--school-board-ink) 22%, transparent);
+    justify-content: flex-end;
+  }
+  // The same footprint as an 18-week grid, so the card does not jump when the
+  // term lands. Shimmers like the pins.
+  &__grid--skeleton {
+    width: calc(16 * (clamp(6px, 1.15vh, 10px) + max(1px, calc(clamp(6px, 1.15vh, 10px) * 0.16))));
+    height: calc(7 * (clamp(6px, 1.15vh, 10px) + max(1px, calc(clamp(6px, 1.15vh, 10px) * 0.16))));
+    border-radius: 3px;
+    background: linear-gradient(
+      100deg,
+      var(--school-board-pending) 40%,
+      color-mix(in srgb, var(--school-board-pending) 55%, var(--school-fg)) 50%,
+      var(--school-board-pending) 60%
+    );
+    background-size: 300% 100%;
+    animation: school-board-shimmer 1.4s ease-in-out infinite;
+    opacity: 0.5;
+  }
 
   // A CLEARED DAY, VISIBLE FROM THE DOORWAY — and STILL.
   //
@@ -3143,7 +3189,7 @@
 // The cleared-day card no longer animates at all, so only the in-flight
 // skeleton shimmer is left to silence here.
 @media (prefers-reduced-motion: reduce) {
-  .school-status-board__pill--skeleton { animation: none; }
+  .school-status-board__pill--skeleton, .school-status-board__grid--skeleton { animation: none; }
 }
 /* On a portrait/narrow mount the split stacks; the board hides on very short
  * viewports so the keypad always fits. */
