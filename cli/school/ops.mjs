@@ -18,6 +18,7 @@ Read-only:
   school ops timeline <learner> --teacher ID --pin-env NAME [--limit 50] [--before ISO] [--unit ID]
   school ops session <session> --teacher ID --pin-env NAME
   school ops gates <learner>
+  school ops term <learner> [--term ID] [--grid]
   school ops audit [--since ISO]
   school ops artifact <artifact> --teacher ID --pin-env NAME [--view manifest|original|postview] [--output FILE]
   school ops agenda-preview <learner> [--name NAME] [--output agenda.png]
@@ -41,6 +42,13 @@ Dry-run/preview by default; add --apply to write:
   school ops completion-credit-retract <entry> --teacher ID --pin-env NAME [--apply]
   school ops regrade <bank> --from-day YYYY-MM-DD --reason TEXT --teacher ID --pin-env NAME [--to-day YYYY-MM-DD] [--apply]
   school ops reassign <assessment> --from ID --to ID --day YYYY-MM-DD --teacher ID --pin-env NAME [--apply]
+  school ops term-rebuild <learner|--all> --teacher ID --pin-env NAME [--term ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--force] [--apply]
+
+term prints one verdict per study day since the term began (the status
+board's grid); --grid draws it as weeks. term-rebuild recomputes the cached
+verdicts — every missing/unknown day by default, every day with --force. The
+cache is derived and disposable; a rebuild is safe at any time and costs
+about a second per day for a learner with a piano course.
 
 read refuses a learner id that is not in school.yml students: a typo is a
 well-formed id, and appending under it would print success while counting the
@@ -254,6 +262,51 @@ export async function runOps({
       requestJson(fetchImpl, base.school, '/pass-overrides').catch((error) => ({ error: error.message })),
     ]);
     print({ schema: 'school.instructional-gates/v1', learnerId, completion, assignment, milestones, passOverrides }, stdout); return 0;
+  }
+  if (command === 'term') {
+    if (!args[0]) throw new Error('term requires a learner id');
+    const suffix = query({ termId: option(rest, '--term') });
+    const term = await requestJson(fetchImpl, base.lifecycle, `/learners/${enc(args[0])}/term${suffix}`);
+    if (!rest.includes('--grid')) { print(term, stdout); return 0; }
+    // Weeks as rows, Monday first; one glyph per day. Legible in a terminal,
+    // and the same layout the board draws rotated.
+    const glyph = { met: '█', partial: '▓', none: '░', exempt: '·', unknown: '?' };
+    const byDay = new Map((term.days ?? []).map((d) => [d.studyDay, d]));
+    stdout.write(`${term.label ?? term.termId ?? 'term'}  ${term.from} → ${term.to}  today ${term.today}\n`);
+    for (const week of term.weeks ?? []) {
+      let line = `${week.weekId}  `;
+      for (let i = 0; i < 7; i += 1) {
+        const day = new Date(Date.parse(`${week.weekId}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10);
+        line += byDay.has(day) ? glyph[byDay.get(day).state] ?? '?' : ' ';
+      }
+      stdout.write(`${line}  ${week.state}${week.reason ? ` (${week.reason})` : ''}\n`);
+    }
+    return 0;
+  }
+  if (command === 'term-rebuild') {
+    const all = rest.includes('--all');
+    if (!args[0] && !all) throw new Error('term-rebuild requires a learner id or --all');
+    const teacher = requiredOption(rest, '--teacher', '--teacher ID is required to rebuild term verdicts');
+    const pin = pinFrom(rest, env);
+    const body = {
+      termId: option(rest, '--term') ?? null, from: option(rest, '--from') ?? null, to: option(rest, '--to') ?? null,
+      force: rest.includes('--force'), userId: teacher, pin,
+    };
+    const learners = all
+      ? (await requestJson(fetchImpl, base.school, '/learners').catch(() => ({ learners: [] }))).learners?.map((l) => l.id ?? l.learnerId ?? l) ?? []
+      : [args[0]];
+    if (!apply) {
+      print({ schema: 'school.term-rebuild-preview/v1', dryRun: true, learners, request: redactedRequest({ method: 'POST', url: `${base.lifecycle}/learners/<id>/term/rebuild`, body }) }, stdout);
+      return 0;
+    }
+    const results = [];
+    for (const learnerId of learners) {
+      // eslint-disable-next-line no-await-in-loop
+      results.push({ learnerId, ...(await requestJson(fetchImpl, base.lifecycle, `/learners/${enc(learnerId)}/term/rebuild`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      })) });
+    }
+    print({ schema: 'school.term-rebuild/v1', results }, stdout); return 0;
   }
   // A LINK GENERATOR, and deliberately nothing more. Hand-rolling base64url
   // for a JSON blob is exactly the friction the preview route exists to

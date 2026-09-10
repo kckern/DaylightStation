@@ -8,6 +8,7 @@ import RecordingRung from './rungs/RecordingRung.jsx';
 import ReviewPanel from './ReviewPanel.jsx';
 import PacingControl from './PacingControl.jsx';
 import DeviceSettings from './DeviceSettings.jsx';
+import ReadingPips from '../../reading/ReadingPips.jsx';
 import './SentenceLadder.scss';
 
 const RUNG_LABELS = {
@@ -16,6 +17,8 @@ const RUNG_LABELS = {
   recording: 'Recording',
   interpretation: 'Interpretation',
 };
+/** The order a sentence climbs; the ladder is drawn in it whatever the chain omits. */
+const RUNG_ORDER = ['repetition', 'dictation', 'recording', 'interpretation'];
 
 /**
  * The sentence-ladder program shell (design §5).
@@ -254,8 +257,20 @@ export default function SentenceLadderProgram({
           first. */}
       <header className="lang-program__header">
         <div className="lang-program__identity">
-          <span className="lang-program__eyebrow">{preview ? 'Sentence Ladder · guest preview — nothing is saved' : 'Today\'s session'}</span>
-          <h2 className="lang-program__day">{preview ? `${day?.corpus?.label ?? 'Sentence Ladder'} · Day ${day?.day}` : `Day ${day?.day}`}</h2>
+          <h2 className="lang-program__day">{preview ? `${day?.corpus?.label ?? 'Sentence Ladder'}, day ${day?.day}` : `Day ${day?.day}`}</h2>
+          {/* ONE statement of the day's progress, beside its name. It used to
+              be three — this line, a "15 left" on the right, and a bar between
+              them — and the ladder below now carries it per rung besides. */}
+          <p
+            className="lang-program__steps"
+            role="progressbar"
+            aria-label={`${summary.done} of ${summary.total} session steps complete`}
+            aria-valuenow={percent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            {preview ? 'Guest preview, nothing is saved · ' : ''}{summary.done} of {summary.total} steps
+          </p>
         </div>
         <div className="lang-program__actions">
           {!preview && !locked && <PacingControl value={day?.dailyLimit} onChange={onPacing} />}
@@ -278,53 +293,77 @@ export default function SentenceLadderProgram({
         </div>
       </header>
 
-      <div className="lang-program__progress-copy">
-        <span>{summary.done} of {summary.total} steps</span>
-        <span>{Math.max(0, summary.total - summary.done)} left</span>
-      </div>
-      <div
-        className="lang-program__progress"
-        role="progressbar"
-        aria-label={`${summary.done} of ${summary.total} session steps complete`}
-        aria-valuenow={percent}
-        aria-valuemin={0}
-        aria-valuemax={100}
-      >
-        <div className="lang-program__progress-bar" style={{ width: `${percent}%` }} />
-      </div>
-      {missingCreditRungs.length > 0 && !settled && (
-        <p className="lang-program__notice" role="alert">
-          Finish {missingCreditRungs.map((rung) => RUNG_LABELS[rung] || rung).join(' and ')} on a device with the needed input.
-        </p>
-      )}
-
-      <nav className="lang-program__tabs" aria-label="Session modes">
-        {groups.map((g) => {
-          const left = g.items.filter((i) => !i.done).length;
-          return (
-            <button
-              key={g.rung}
-              type="button"
-              className={`lang-tab${g.rung === activeRung && tab === 'study' ? ' is-active' : ''}`}
-              aria-pressed={g.rung === activeRung && tab === 'study'}
-              onClick={() => { setTab('study'); setActiveRung(g.rung); }}
-            >
-              {g.label}
-              {left > 0 && <span className="lang-tab__badge">{left}</span>}
-            </button>
-          );
-        })}
-        {!preview && <button
-          type="button"
-          className={`lang-tab${tab === 'review' ? ' is-active' : ''}`}
-          aria-pressed={tab === 'review'}
-          onClick={() => setTab('review')}
-        >
-          Review
-        </button>}
-      </nav>
-
       {notice && <p className="lang-program__notice" role="alert">{notice}</p>}
+
+      <div className="lang-program__split">
+        {/* THE LADDER. The rungs are a SEQUENCE a sentence climbs — hear it,
+            write it, say it, translate it — and the first pass drew them as a
+            row of peer tabs, which said "pick one". Drawn as a ladder they
+            read top to bottom as the order they happen in, each rung wearing
+            its own pips (one per sentence, filled as done — the same notation
+            the reading shelf and the living-room rail use), the rung in hand
+            lit. It is navigation and progress in one object; a rung this
+            device cannot climb says so in a quiet line rather than a banner.
+            The Review shelf sits below the ladder: it is not a rung. */}
+        <nav className="lang-ladder" aria-label="Session modes">
+          <ol className="lang-ladder__rungs">
+            {/* Every rung the day has, in climbing order — including one this
+                device cannot climb. The server's chain omits an unsupported
+                rung, so it never has a group; drawing it anyway, dimmed, is
+                what tells a child on the Portal that the ladder has a rung
+                their device skips, rather than a banner shouting it. */}
+            {RUNG_ORDER.filter((rung) => groups.some((g) => g.rung === rung) || missingCreditRungs.includes(rung)).map((rung) => {
+              const g = groups.find((x) => x.rung === rung) ?? null;
+              const label = RUNG_LABELS[rung] || rung;
+              const blocked = missingCreditRungs.includes(rung);
+              if (!g || blocked) {
+                return (
+                  <li key={rung} className="lang-ladder__rung">
+                    <div className="lang-ladder__step is-blocked" role="button" aria-disabled="true" aria-label={label}>
+                      <span className="lang-ladder__label">{label}</span>
+                      <span className="lang-ladder__note">Needs a microphone — on another device</span>
+                    </div>
+                  </li>
+                );
+              }
+              const done = g.items.filter((i) => i.done).length;
+              const active = g.rung === activeRung && tab === 'study';
+              return (
+                <li key={rung} className="lang-ladder__rung">
+                  <button
+                    type="button"
+                    className={`lang-ladder__step${active ? ' is-active' : ''}${done === g.items.length ? ' is-done' : ''}`}
+                    aria-pressed={active}
+                    onClick={() => { setTab('study'); setActiveRung(g.rung); }}
+                  >
+                    <span className="lang-ladder__label">{label}</span>
+                    {/* The lit rung's next pip is the sentence in hand — held
+                        still: a wall panel does not pulse. */}
+                    <ReadingPips
+                      count={done}
+                      target={g.items.length}
+                      label={`${done} of ${g.items.length} ${label.toLowerCase()} sentences`}
+                      className="lang-ladder__pips"
+                      testId={`ladder-pips-${rung}`}
+                      live={active && !allDone}
+                      moving={false}
+                    />
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+          {!preview && (
+            <button
+              type="button"
+              className={`lang-ladder__review${tab === 'review' ? ' is-active' : ''}`}
+              aria-pressed={tab === 'review'}
+              onClick={() => setTab('review')}
+            >
+              Review
+            </button>
+          )}
+        </nav>
 
       <main className="lang-program__body">
         {tab === 'review' && !preview && <ReviewPanel userId={userId} corpusId={corpusId} studyGrant={studyGrant} />}
@@ -385,7 +424,7 @@ export default function SentenceLadderProgram({
           />
         )}
       </main>
-
+      </div>
     </div>
   );
 }

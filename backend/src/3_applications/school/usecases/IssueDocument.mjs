@@ -257,7 +257,7 @@ const FAILURE_COPY = Object.freeze({
 });
 
 export class IssueDocument {
-  #curriculum; #sessions; #tokens; #renderer; #printer; #formMaps; #bankReader;
+  #curriculum; #sessions; #tokens; #renderer; #printer; #formMaps; #bankReader; #realtime;
   #printDocuments; #renderPrintDocument; #allocationStore;
   #assignments; #worksheetInstances; #publishPrintDocument; #companions;
   #companionCodes; #householdId;
@@ -314,9 +314,14 @@ export class IssueDocument {
     companionCodes = null, householdId = null,
     issuedArtifacts = null, renderIssuedArtifact = null, curriculumExceptions = null,
     answerSheetPolicy = null, printCooldownMinutes = null,
+    // Optional: the room's realtime gateway. A printed sheet is the moment
+    // a disc on the status board should turn amber, and until this the
+    // board only learned of it on its five-minute poll.
+    realtime = null,
     clock = () => new Date(), rng = Math.random, timezone = null,
     newArtifactId = () => `art_${shortId(8)}`, logger = console,
   } = {}) {
+    this.#realtime = realtime;
     if (!curriculum || !sessions || !tokens || !renderer || !printer || !formMaps) {
       throw new Error('IssueDocument requires curriculum, sessions, tokens, renderer, printer and formMaps');
     }
@@ -598,6 +603,7 @@ export class IssueDocument {
     });
     if (errors.length) throw new Error(`IssueDocument: could not record the issue: ${errors.join('; ')}`);
     await this.#sessions.appendEvent(sessionId, event);
+    this.#announceIssued({ learnerId: state.learnerId, sessionId, unitId: state.unitId, type });
 
     this.#logger.info?.('school.issue.printed', {
       sessionId, unitId: state.unitId, artifactId, reprint: false,
@@ -911,6 +917,7 @@ export class IssueDocument {
     });
     if (errors.length) throw new Error(`IssueDocument: could not record worksheet instance: ${errors.join('; ')}`);
     await this.#sessions.appendEvent(sessionId, event);
+    this.#announceIssued({ learnerId: state.learnerId, sessionId, unitId: state.unitId, type });
     return {
       status: type, sessionId, artifactId, worksheetInstanceId: instance.id,
       pageCount: rendered.pageCount, tokens: {}, allocation: rendered.allocation,
@@ -919,6 +926,18 @@ export class IssueDocument {
         ? 'The original of that sheet was not saved, so a fresh copy is being printed.'
         : 'Printing your worksheet.',
     };
+  }
+
+  /**
+   * The sheet is in the child's hands: tell the room. A dead bus costs the
+   * board a few minutes' staleness, never the print.
+   */
+  #announceIssued(fact) {
+    try {
+      this.#realtime?.sessionIssued?.(fact);
+    } catch (err) {
+      this.#logger.warn?.('school.issue.announce-failed', { ...fact, error: err?.message ?? String(err) });
+    }
   }
 
   async #retainIssuedArtifact({ artifactId, rendered, nowIso, sessionId, state,
@@ -1325,6 +1344,7 @@ export class IssueDocument {
     });
     if (errors.length) throw new Error(`IssueDocument: could not record the issue: ${errors.join('; ')}`);
     await this.#sessions.appendEvent(sessionId, event);
+    this.#announceIssued({ learnerId: state.learnerId, sessionId, unitId: state.unitId, type });
 
     this.#logger.info?.('school.issue.printed', {
       sessionId, unitId: state.unitId, artifactId, reprint: false,

@@ -125,7 +125,10 @@ export class BookLogProgramLauncher {
    *   `programInstance` is accepted and ignored; there is one shelf per learner.
    * @returns {Promise<object>} the shape `planDailyAgenda` consumes
    */
-  async status({ userId } = {}) {
+  /** The shelf is a dated log; any day's window can be re-measured. */
+  get replayable() { return true; }
+
+  async status({ userId, day = null } = {}) {
     const learnerId = userId;
     if (typeof learnerId !== 'string' || !learnerId) throw new TypeError('BookLogProgramLauncher.status takes { userId }');
     let enrollment;
@@ -163,7 +166,8 @@ export class BookLogProgramLauncher {
     }
 
     const obligation = enrollment.obligation ?? null;
-    const window = obligation ? obligationWindow(obligation.per, this.studyDay()) : null;
+    // `day` replays a past study day: the window ends there instead of today.
+    const window = obligation ? obligationWindow(obligation.per, day ?? this.studyDay()) : null;
     const dayOf = (iso) => this.dayOf(iso);
     const measured = measureObligation(obligation, items, window, { dayOf });
     const projections = items.map((entry) => projectRecord(entry, { dayOf }));

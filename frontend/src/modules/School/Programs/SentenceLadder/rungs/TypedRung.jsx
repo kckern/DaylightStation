@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSentenceAudio, clipsFor } from '../useSentenceAudio.js';
 import { languageLog } from '../languageLog.js';
+import Icon from '../../../home/icons/Icon.jsx';
 
 /**
  * The two typing rungs, which are one component (design §5).
@@ -94,10 +95,11 @@ export default function TypedRung({ entry, audioUrl, nextEntry, onComplete, savi
             primary, so the screen always answers "what do I do next" once. */}
         <button
           type="button"
-          className={`lang-btn${played ? '' : ' lang-btn--primary'}`}
+          className={`lang-btn lang-btn--disc${played ? ' lang-btn--disc-quiet' : ''}`}
           onClick={play}
         >
-          {played ? 'Play again' : 'Play'}
+          <Icon name="play" className="lang-btn__glyph" />
+          <span className="lang-btn__word">{played ? 'Play again' : 'Play'}</span>
         </button>
       </div>
 

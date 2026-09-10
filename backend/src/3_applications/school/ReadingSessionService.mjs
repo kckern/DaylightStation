@@ -500,7 +500,7 @@ export class ReadingSessionService {
     });
     const returning = Object.freeze({
       ...session, state: RETURNING, revision,
-      pick: null, playing: null, progress: null,
+      pick: null, playing: null, progress: null, onDeck: null,
       presentedAt: null, acknowledgedAt: null,
       pendingPresentation: presentation,
       recovery: reason === 'story-finished' ? session.recovery ?? null : { reason, at: this.#clock().toISOString() },
@@ -563,6 +563,85 @@ export class ReadingSessionService {
     this.#observe('updated', updated, { state: updated.state, progress: updated.progress ?? null });
     this.#broadcast(session.location, { event: 'session-update', ...updated });
     return updated;
+  }
+
+  /**
+   * ON DECK: a second book, tapped mid-story in browsing mode, waiting to play.
+   *
+   * THE QUEUE IS USER-SCOPED. The Player's on-deck slot knows a title; it does
+   * not know a child. Before this, a book queued during a story played to the
+   * end with nobody's name on it and was never credited: the screen's
+   * attribution was frozen to the first pick (rightly — D4), and the second
+   * story finished into a guard that had already fired. So the session keeps
+   * the scope itself:
+   *
+   *   - queued  → scoped to the CURRENT learner by default (whoever is at the
+   *               reader now — the most recent card);
+   *   - a card tapped while it waits RE-SCOPES it to that child (the playing
+   *               story keeps its own attribution untouched, D4 holds);
+   *   - the moment it starts playing it is frozen into `pick`, like any pick.
+   *
+   * The pick id is minted here, at queue time, so a re-scope never changes
+   * the identity of the thing being re-scoped.
+   *
+   * @param {string} location
+   * @param {{contentId: string, title?: string|null, target?: string|null, learnerId?: string|null}} a
+   * @returns {object|null} the updated session, or null with no session
+   */
+  queueNext(location, { contentId, title = null, target = null, learnerId = null } = {}) {
+    const session = this.#sessions.get(location) ?? null;
+    if (!session || typeof contentId !== 'string' || !contentId) return null;
+    const onDeck = Object.freeze({
+      pickId: this.#nextId('pk'), contentId, title,
+      learnerId: (typeof learnerId === 'string' && learnerId) ? learnerId : session.learnerId,
+      target: target ?? session.target ?? null,
+      queuedAt: this.#clock().toISOString(), rescopedAt: null,
+    });
+    const updated = this.update(location, { onDeck });
+    this.#log('info', 'school.reading.on-deck', {
+      location, contentId, learnerId: onDeck.learnerId, pickId: onDeck.pickId, sessionId: session.sessionId,
+    });
+    this.#broadcast(location, { event: 'on-deck', location, sessionId: session.sessionId, ...onDeck });
+    return updated;
+  }
+
+  /**
+   * A card tapped while a book waits on deck: the waiting book becomes that
+   * child's. Nothing about the playing story moves.
+   * @returns {object|null} the updated session, or null when nothing is on deck
+   */
+  rescopeOnDeck(location, learnerId) {
+    const session = this.#sessions.get(location) ?? null;
+    if (!session?.onDeck || typeof learnerId !== 'string' || !learnerId) return null;
+    const onDeck = Object.freeze({ ...session.onDeck, learnerId, rescopedAt: this.#clock().toISOString() });
+    const updated = this.update(location, { onDeck });
+    this.#log('info', 'school.reading.on-deck-rescoped', {
+      location, contentId: onDeck.contentId, pickId: onDeck.pickId,
+      learnerId, from: session.onDeck.learnerId, sessionId: session.sessionId,
+    });
+    this.#broadcast(location, { event: 'on-deck-rescoped', location, sessionId: session.sessionId, ...onDeck });
+    return updated;
+  }
+
+  /**
+   * The waiting book takes the stage: the on-deck scope becomes the session's
+   * pick — frozen from here, exactly as a countdown pick is — and the session
+   * stays open for it rather than returning to the launch card.
+   * @returns {object|null} the pick now in force, or null when nothing was on deck
+   */
+  advanceToOnDeck(location) {
+    const session = this.#sessions.get(location) ?? null;
+    if (!session?.onDeck) return null;
+    const { queuedAt: _q, rescopedAt: _r, ...scope } = session.onDeck;
+    const pick = Object.freeze({
+      ...scope, studyDay: session.pick?.studyDay ?? null, at: this.#clock().toISOString(),
+    });
+    const updated = this.update(location, { state: 'confirm', pick, playing: null, progress: null, onDeck: null });
+    this.#log('info', 'school.reading.on-deck-advanced', {
+      location, contentId: pick.contentId, learnerId: pick.learnerId, pickId: pick.pickId, sessionId: session.sessionId,
+    });
+    this.#broadcast(location, { event: 'on-deck-advanced', location, sessionId: session.sessionId, ...pick });
+    return updated ? pick : null;
   }
 
   /**

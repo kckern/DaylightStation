@@ -41,9 +41,11 @@ export const WEEKDAYS = Object.freeze(['monday', 'tuesday', 'wednesday', 'thursd
  * How often a program unit is handed out. `once` is a standard standalone
  * unit that happens to draw its content from a program instead of a
  * bank/document/media reference; `daily` is re-offered every study day (see
- * Task 3's planner). Only meaningful when `program` is present.
+ * Task 3's planner); `weekly` is owed once per Monday→Sunday week and is
+ * offered every day until the program reports it done on any day of that
+ * week (the term grid's 8th row). Only meaningful when `program` is present.
  */
-export const CADENCES = Object.freeze(['daily', 'once']);
+export const CADENCES = Object.freeze(['daily', 'weekly', 'once']);
 
 // Fields a program unit may never carry, alongside bank/document/media
 // (checked separately since that trio has its own combined message). Each

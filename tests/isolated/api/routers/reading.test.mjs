@@ -495,9 +495,9 @@ describe('the streak wall marks the household s named days off', () => {
   it('paints every day of a named span, and carries the name for the square s label', async () => {
     const body = await summaryWith();
     for (const day of ['2026-08-12', '2026-08-13', '2026-08-14']) {
-      expect(dayIn(body, day)).toMatchObject({ state: 'holiday', holiday: 'Pioneer trek' });
+      expect(dayIn(body, day)).toMatchObject({ state: 'exempt', holiday: 'Pioneer trek' });
     }
-    expect(dayIn(body, '2026-08-19')).toMatchObject({ state: 'holiday', holiday: 'Fair day' });
+    expect(dayIn(body, '2026-08-19')).toMatchObject({ state: 'exempt', holiday: 'Fair day' });
   });
 
   it('leaves a weekend as `rest` — the rhythm is not an occasion', async () => {
@@ -514,7 +514,7 @@ describe('the streak wall marks the household s named days off', () => {
     expect(dayIn(body, '2026-08-15').state).toBe('rest');
     expect(dayIn(body, '2026-08-15')).not.toHaveProperty('holiday');
     // And a named span still wins over the weekday roster on a weekday.
-    expect(dayIn(body, '2026-08-13').state).toBe('holiday');
+    expect(dayIn(body, '2026-08-13').state).toBe('exempt');
   });
 
   it('still calls an ordinary school day with no reading a miss', async () => {
@@ -524,7 +524,7 @@ describe('the streak wall marks the household s named days off', () => {
 
   it('gives an UNNAMED day off no blue square — there is nothing to say about it', async () => {
     const body = await summaryWith();
-    expect(dayIn(body, '2026-08-05').state).not.toBe('holiday');
+    expect(dayIn(body, '2026-08-05').state).not.toBe('exempt');
   });
 
   it('lets reading on a holiday still count, exactly as it does on a rest day', async () => {
@@ -543,6 +543,6 @@ describe('the streak wall marks the household s named days off', () => {
   it('marks nothing without a household calendar, rather than inventing days off', async () => {
     const { app } = build();
     const res = await request(app).get('/api/v1/school/reading/summary?learnerId=user_5');
-    expect(res.body.streak.some((d) => d.state === 'holiday')).toBe(false);
+    expect(res.body.streak.some((d) => d.state === 'exempt')).toBe(false);
   });
 });

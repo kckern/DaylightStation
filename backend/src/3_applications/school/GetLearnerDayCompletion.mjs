@@ -47,7 +47,22 @@
  */
 import { resolveDayCompletion } from '#domains/school/completion.mjs';
 import { PlanProjection } from './PlanProjection.mjs';
-import { studyDayWindow } from '#domains/school/studyDay.mjs';
+import { studyDayWindow, studyDayWindowForDate, studyDayMidpointMs } from '#domains/school/studyDay.mjs';
+
+/**
+ * The part of a section the day's verdict is made of — and nothing a card
+ * would print. The term grid keeps these per day, so the shape is small on
+ * purpose: one row per section, six fields, no `next`, no progress rows.
+ */
+function compactSection(section) {
+  return {
+    subject: section.subject ?? null,
+    state: section.obligation?.state ?? null,
+    reason: section.obligation?.reason ?? null,
+    unknowable: section.obligation?.reason === 'no_history',
+    weekly: (section.weekly ?? []).map(({ unitId, subject, state, servedOn }) => ({ unitId, subject, state, servedOn })),
+  };
+}
 
 export class GetLearnerDayCompletion {
   // No clock field: the instant this read is answered for is the projection's,
@@ -78,15 +93,35 @@ export class GetLearnerDayCompletion {
   /**
    * @param {object} args
    * @param {string} args.learnerId
-   * @returns {Promise<{ learnerId: string, state: 'incomplete'|'complete'|'no_work_today',
-   *                      excused: Array<{subject: string|null, reason: string}> }>}
+   * @param {string|null} [args.studyDay] - a past study day (`YYYY-MM-DD`) to
+   *   REPLAY instead of today. The projection is asked for that day's
+   *   midpoint, sees only evidence stamped before the day's window closed
+   *   (`historyUntil`), and asks only replayable launchers (`day`). Null is
+   *   today, exactly as before. A future day is refused: nothing has happened
+   *   on it yet, and a verdict for it would be a prophecy.
+   * @returns {Promise<{ learnerId: string, studyDate: string,
+   *                      state: 'indeterminate'|'incomplete'|'complete'|'no_work_today',
+   *                      excused: Array<{subject: string|null, reason: string}>,
+   *                      faults: Array<{subject: string|null, reason: string}>,
+   *                      sections: object[], replayed: boolean }>}
    */
-  async execute({ learnerId } = {}) {
+  async execute({ learnerId, studyDay = null } = {}) {
     if (typeof learnerId !== 'string' || !learnerId.trim()) {
       throw new Error('GetLearnerDayCompletion requires learnerId');
     }
+    let replay = null;
+    if (studyDay != null) {
+      const window = studyDayWindowForDate(studyDay, { timezone: this.#timezone });
+      if (!window) throw new TypeError(`GetLearnerDayCompletion: invalid studyDay "${studyDay}"`);
+      replay = {
+        now: new Date(studyDayMidpointMs(studyDay, { timezone: this.#timezone })),
+        historyUntil: new Date(window.endAtMs).toISOString(),
+        day: studyDay,
+      };
+    }
     const { plan, sections, projection } = await this.#planProjection.project({
       learnerId,
+      ...(replay ?? {}),
       // The two that still make this a narrower read than the agenda. See the
       // file header before changing either: each moves the piano-games unlock.
       attested: false,
@@ -105,7 +140,11 @@ export class GetLearnerDayCompletion {
     const studyDate = new Intl.DateTimeFormat('en-CA', {
       timeZone: this.#timezone ?? 'UTC', year: 'numeric', month: '2-digit', day: '2-digit',
     }).format(new Date(startAtMs));
-    return { learnerId, studyDate, state, excused, faults };
+    return {
+      learnerId, studyDate, state, excused, faults,
+      sections: sections.map(compactSection),
+      replayed: replay != null,
+    };
   }
 }
 

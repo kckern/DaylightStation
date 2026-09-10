@@ -158,9 +158,8 @@ describe('UpdateBook', () => {
     expect(screen.getByRole('button', { name: 'Finished today' })).toBeDisabled();
   });
 
-  it('‹ back → back()', () => {
-    const a = mount();
-    fireEvent.click(screen.getByRole('button', { name: '‹ back' }));
-    expect(a.back).toHaveBeenCalledTimes(1);
+  it('draws no back of its own — the shelf header owns it', () => {
+    mount();
+    expect(screen.queryByRole('button', { name: /back/i })).toBeNull();
   });
 });

@@ -1,7 +1,8 @@
 /** Learner reading workspace: bounded collections, focused editors, and inline save results. */
 import { useBookShelf } from './useBookShelf.js';
 import ShelfTile from './ShelfTile.jsx';
-import History from './History.jsx';
+import BookHistory from './BookHistory.jsx';
+import ReadingPips from '../reading/ReadingPips.jsx';
 import UpdateBook from './UpdateBook.jsx';
 import AddBook from './AddBook.jsx';
 import SaveReceipt from './SaveReceipt.jsx';
@@ -9,6 +10,7 @@ import CompletedBook from './CompletedBook.jsx';
 import { recentOutcomes } from './readingHistory.js';
 import Icon from '../home/icons/Icon.jsx';
 import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
+import ScreenHeader from '../shared/ScreenHeader.jsx';
 
 /**
  * The window word after the launcher's label (design §3): the label carries
@@ -63,6 +65,10 @@ function LearnerChip({ learner }) {
  */
 function AddTile({ first, onSelect, disabled = false }) {
   return (
+    // A POSTER FRAME AND NOTHING AROUND IT: the dashed slot a cover would fill,
+    // a plus in it, the words under it. It used to be that slot inside a
+    // dashed card — a box in a box — which read as chrome rather than as the
+    // empty place on the shelf where the next book goes.
     <button
       type="button"
       className="school-books-tile school-books-tile--add"
@@ -92,7 +98,7 @@ function Fault({ error, onRetry, needsRefresh = false, busy = false }) {
   );
 }
 
-function Shelf({ shelf, error, actions, receipt, busy, needsRefresh }) {
+function Shelf({ shelf, error, actions, receipt, busy, needsRefresh, today }) {
   const items = (shelf?.items ?? []).filter((item) => ON_SHELF.has(item?.projection?.status ?? 'reading'));
   // Finished AND set aside: one row for everything the child is done with, the
   // tile's own mark saying which is which.
@@ -103,11 +109,28 @@ function Shelf({ shelf, error, actions, receipt, busy, needsRefresh }) {
   const incompatible = new Set(obligation?.incompatibleBooks ?? []);
   return (
     <>
-      {sentence && <p className="school-books__obligation">{sentence}</p>}
       <Fault error={error} onRetry={actions.retry} needsRefresh={needsRefresh} busy={busy} />
       {receipt && <SaveReceipt receipt={receipt} busy={busy} inline onUndo={actions.undoFinish} />}
       <div className="school-books__collections">
-        <h3 className="school-books__shelf-title">Reading now</h3>
+        {/* TODAY, with the obligation INSIDE its heading as pips — the same
+            notation the living-room rail and the close use, so a child sees
+            one object change state across the whole ceremony. It used to be
+            a sentence in a chip floating above "Reading now": a count sitting
+            apart from the thing it counts. `count`/`target` are the shelf's
+            own `actual`/`target`; the sentence survives as the label the
+            pips fall back to when the target is unreadable or too large. */}
+        <div className="school-books__shelf-heading">
+          <h3 className="school-books__shelf-title">Today</h3>
+          {obligation && (
+            <ReadingPips
+              count={Number.isFinite(obligation.actual) ? obligation.actual : 0}
+              target={Number.isFinite(obligation.target) ? obligation.target : null}
+              label={sentence}
+              className="school-books__pips"
+              testId="shelf-obligation"
+            />
+          )}
+        </div>
         <div className="school-books__row" data-testid="book-shelf-grid">
           {items.map((item) => <ShelfTile key={item.itemId} item={item} onSelect={awaitingShelf ? null : actions.openItem}
             incompatibleMetric={incompatible.has(item.bookId) ? obligation.metric : null} />)}
@@ -115,19 +138,10 @@ function Shelf({ shelf, error, actions, receipt, busy, needsRefresh }) {
               which is the whole row, when nothing is. */}
           <AddTile first={(shelf?.items ?? []).length === 0} disabled={awaitingShelf} onSelect={actions.startAdd} />
         </div>
-        {done.length > 0 && <section className="school-books__recent" aria-label="Finished and set aside">
-          <h3 className="school-books__shelf-title">Finished and set aside</h3>
-          {/* This row deliberately runs off the panel edge. It is history: it
-              has no end a child needs to see, and a row that stopped short
-              implied there was nothing more. It scrolls sideways instead. */}
-          <div className="school-books__row" data-testid="recently-finished-row">
-            {done.slice(0, 30).map(item => <ShelfTile key={item.itemId} item={item} onSelect={awaitingShelf ? null : actions.openItem} />)}
-          </div>
-        </section>}
+        {/* One shelf per day, stacked, scrolling down as far as the record
+            goes. There is no "See all history" any more: this IS all of it. */}
+        <BookHistory items={done} today={today} onSelect={awaitingShelf ? null : actions.openItem} />
       </div>
-      <footer className="school-books__footer">
-        <button type="button" className="school-books__history-link" disabled={awaitingShelf} onClick={actions.openHistory}>See all history</button>
-      </footer>
     </>
   );
 }
@@ -153,8 +167,6 @@ export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit
     body = error
       ? <Fault error={error} onRetry={actions.retry} />
       : <p className="school-books__loading">Getting your shelf…</p>;
-  } else if (view === 'history') {
-    body = <History items={shelf?.items ?? []} onBack={actions.back} onSelect={needsRefresh ? null : actions.openItem} />;
   } else if (view === 'completed' && current) {
     body = <CompletedBook item={current} actions={actions} />;
   } else if (view === 'update' && current) {
@@ -162,18 +174,23 @@ export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit
   } else if (view === 'add') {
     body = <AddBook key={add.entryId ?? 'isbn'} step={step} add={add} today={today} earliestDay={earliestFinishDay} error={error} busy={busy} actions={actions} />;
   } else {
-    body = <Shelf shelf={shelf} error={error} actions={actions} receipt={receipt} busy={busy} needsRefresh={needsRefresh} />;
+    body = <Shelf shelf={shelf} error={error} actions={actions} receipt={receipt} busy={busy} needsRefresh={needsRefresh} today={today} />;
   }
 
   return (
     <section className="school-books" data-testid="book-shelf" onClickCapture={actions.noteActivity} onPointerDownCapture={actions.noteActivity} onInputCapture={actions.noteActivity}>
-      <header className="school-books__header">
-        <div className="school-books__who">
-          <h2 className="school-books__title">Reading</h2>
-          <LearnerChip learner={learner} />
-        </div>
-        <button type="button" className="school-books__done" onClick={actions.done}>Done</button>
-      </header>
+      {/* ONE HEADER, ONE EXIT. `Done` leaves the shelf; `Back` appears only
+          inside a sub-view, as the step back to the shelf. The sub-views draw
+          no back of their own — the header owns it, so every screen puts it
+          in the same place. */}
+      <ScreenHeader
+        className="school-books__header"
+        title="Reading"
+        identity={<LearnerChip learner={learner} />}
+        onBack={['completed', 'update', 'add'].includes(view) ? actions.back : null}
+        backDisabled={busy}
+        onDone={actions.done}
+      />
       {body}
     </section>
   );

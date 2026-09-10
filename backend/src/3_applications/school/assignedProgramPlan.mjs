@@ -73,6 +73,14 @@ export function bookLogShelfEntry({
   });
 }
 
+/**
+ * An enrollment's cadence. `weekly` is the one value an enrollment may
+ * declare (`cadence: weekly` in the assignment); anything else is the
+ * program's default. The book-log shelf does NOT come through here — its
+ * `obligation.per` is a separate, TRAILING-window notion (see below).
+ */
+const cadenceOf = (enrollment, fallback = 'daily') => (enrollment?.cadence === 'weekly' ? 'weekly' : fallback);
+
 /** Mutates the planner result in the same additive way BuildAgenda always has. */
 export function appendAssignedProgramEntries(plan, assignment) {
   if (!plan || !Array.isArray(plan.entries)) return plan;
@@ -87,6 +95,7 @@ export function appendAssignedProgramEntries(plan, assignment) {
         program: 'flashcards',
         programInstance: deckId,
         schedule: enrollment.schedule,
+        cadence: cadenceOf(enrollment),
       }));
     }
     if (enrollment?.programId === STORY_TIME_PROGRAM_ID) {
@@ -99,6 +108,7 @@ export function appendAssignedProgramEntries(plan, assignment) {
         program: STORY_TIME_PROGRAM_ID,
         programInstance: 'daily',
         schedule: enrollment.schedule,
+        cadence: cadenceOf(enrollment),
       }));
     }
     if (enrollment?.programId === BOOK_LOG_PROGRAM_ID) {
@@ -114,6 +124,13 @@ export function appendAssignedProgramEntries(plan, assignment) {
         // launcher says terminal. The launcher reports a met once-obligation
         // as terminal; without the matching cadence a finished series would
         // be offered on every future study day.
+        //
+        // `per: week` DELIBERATELY maps to `daily`, not `weekly`. The shelf's
+        // week is a TRAILING seven days ending today
+        // (`BookLogProgramLauncher#obligationWindow`), re-measured every day;
+        // `cadence: weekly` is a Monday→Sunday week satisfied once. They are
+        // different obligations and this line must not quietly turn one into
+        // the other. Recorded, not fixed — plan 2026-09-09 school board.
         cadence: enrollment.obligation?.per === 'once' ? 'once' : 'daily',
       }));
     }
@@ -127,6 +144,7 @@ export function appendAssignedProgramEntries(plan, assignment) {
         program: 'piano-course',
         programInstance: courseId,
         schedule: enrollment.schedule,
+        cadence: cadenceOf(enrollment),
       }));
     }
     // THE SENTENCE LADDER. Missing from this list until 2026-09-09, which is
@@ -147,6 +165,7 @@ export function appendAssignedProgramEntries(plan, assignment) {
         program: 'sentence-ladder',
         programInstance: corpusId,
         schedule: enrollment.schedule,
+        cadence: cadenceOf(enrollment),
       }));
     }
   }

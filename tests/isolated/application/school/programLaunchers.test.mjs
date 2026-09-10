@@ -231,12 +231,14 @@ describe('LanguageStudyService.todayStatus', () => {
     svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 1 });
     clearTheDay(1, { at: new Date(AT).toISOString() });
 
-    // Spanish answers for SPANISH: day one, untouched — not Korean's finished
-    // day. It is no longer the null triple, because a named corpus with no
-    // history is day one rather than nothing (the 2026-09-09 fix: reporting
-    // nothing is what meant nobody could ever be told to start).
+    // A NAMED but untouched corpus is day one, not nothing (2026-09-09): an
+    // enrolment named it, so the learner is on it — with none of it done, and
+    // none of the Korean evidence borrowed.
     const spanish = svc.todayStatus({ userId: 'kckern', corpusId: 'test-spanish' });
-    expect(spanish).toMatchObject({ doneToday: false, progressLabel: 'Day 1', score: null });
+    expect(spanish).toMatchObject({
+      doneToday: false, progressLabel: 'Day 1', score: null, obligationProgress: { completed: 0 },
+    });
+    // The strongest form of "does not borrow": the answer names SPANISH.
     expect(spanish.context.course).toMatchObject({ title: 'Test Spanish' });
 
     expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' })).toMatchObject({

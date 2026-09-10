@@ -19,49 +19,21 @@
  * hold on any machine in any timezone.
  */
 
-export const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-export const WEEKDAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-export const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
+import {
+  WEEKDAY_LABELS, WEEKDAY_NAMES, MONTH_NAMES, DAY_MS,
+  parseKey, formatKey, isoWeekday, monthLabel, dayLabel,
+} from '../shared/dayGrid/dayGridModel.js';
 
-const KEY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
-export const DAY_MS = 24 * 60 * 60 * 1000;
+// The key arithmetic is the SHARED grid's (`shared/dayGrid/dayGridModel.js`),
+// re-exported so the picker's callers keep their imports. One `isoWeekday`,
+// one `parseKey`: the picker, the streak wall and the term grid cannot
+// disagree about which day a Sunday is.
+export {
+  WEEKDAY_LABELS, WEEKDAY_NAMES, MONTH_NAMES, DAY_MS,
+  parseKey, formatKey, isoWeekday, monthLabel, dayLabel,
+};
+
 const LOOKBACK_DAYS = 20;
-
-/** `YYYY-MM-DD` → UTC midnight in ms. Strict: anything else throws. */
-export function parseKey(key) {
-  const m = typeof key === 'string' ? KEY_RE.exec(key) : null;
-  if (!m) throw new Error('day key must be YYYY-MM-DD');
-  const [, y, mo, d] = m;
-  const ms = Date.UTC(Number(y), Number(mo) - 1, Number(d));
-  // Reject 2026-02-31 and friends: a key that round-trips is a real day.
-  if (formatKey(ms) !== key) throw new Error('day key must be YYYY-MM-DD');
-  return ms;
-}
-
-/** UTC midnight in ms → `YYYY-MM-DD`. */
-export function formatKey(ms) {
-  return new Date(ms).toISOString().slice(0, 10);
-}
-
-/** ISO weekday: Monday = 1 … Sunday = 7. */
-export function isoWeekday(ms) {
-  return ((new Date(ms).getUTCDay() + 6) % 7) + 1;
-}
-
-/** `Jan` … `Dec` for a key. */
-export function monthLabel(key) {
-  return MONTH_NAMES[new Date(parseKey(key)).getUTCMonth()].slice(0, 3);
-}
-
-/** `Saturday 30 August` — the words a cell says for itself. */
-export function dayLabel(key) {
-  const ms = parseKey(key);
-  const d = new Date(ms);
-  return `${WEEKDAY_NAMES[isoWeekday(ms) - 1]} ${d.getUTCDate()} ${MONTH_NAMES[d.getUTCMonth()]}`;
-}
 
 /**
  * Rows of seven cells, Monday first, from the Monday on or before
