@@ -59,6 +59,7 @@ vi.mock('./languageApi.js', () => ({
     recording: vi.fn(async () => ({ ok: true, status: 200, data: {} })),
     recordingBlob: vi.fn(async () => ({ ok: false, status: 404, data: null })),
     audioUrl: (c, seq, lang) => `/audio/${c}/${seq}/${lang}`,
+    cueUrl: (name) => `/cue/${name}`,
     recordingUrl: (u, c, seq) => `/rec/${u}/${c}/${seq}`,
   },
 }));
@@ -82,7 +83,7 @@ const entry = (seq, rung, done = false, options = {}) => ({
 
 function dayPayload({
   queue, chain = ['repetition'], day = 1, dailyLimit = 5,
-  missingCreditRungs = [], missingCreditNeeds = {},
+  missingCreditRungs = [], missingCreditNeeds = {}, cues = [],
 }) {
   const done = queue.filter((e) => e.done).length;
   return {
@@ -97,6 +98,7 @@ function dayPayload({
       summary: { total: queue.length, done, byRung: {} },
       missingCreditRungs,
       missingCreditNeeds,
+      cues,
       rollover: { roll: false, reason: 'queue-incomplete' },
     },
   };
@@ -401,15 +403,137 @@ describe('repetition', () => {
 });
 
 describe('recording', () => {
+  // jsdom has no microphone, no MediaRecorder and no Web Audio. The rung is
+  // written to run without the last (the band stays a baseline); the first two
+  // are stood in for here, minimally: a stream with tracks to stop, and a
+  // recorder whose stop() delivers one chunk and fires onstop.
+  const fakeMic = () => {
+    const track = { stop: vi.fn() };
+    const stream = { getTracks: () => [track] };
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: vi.fn(async () => stream) },
+    });
+    class FakeRecorder {
+      constructor() { this.state = 'inactive'; this.mimeType = 'audio/webm'; FakeRecorder.last = this; }
+      start() { this.state = 'recording'; }
+      stop() {
+        this.state = 'inactive';
+        this.ondataavailable?.({ data: new Blob(['take'], { type: 'audio/webm' }) });
+        this.onstop?.();
+      }
+    }
+    window.MediaRecorder = FakeRecorder;
+    window.URL.createObjectURL = vi.fn(() => 'blob:take');
+    window.URL.revokeObjectURL = vi.fn();
+    window.HTMLCanvasElement.prototype.getContext = vi.fn(() => null);
+    return { track, stream, FakeRecorder };
+  };
+  // Every media element finishes as soon as it starts, and remembers its src,
+  // so a test can read the sequence back in order.
+  const playsToEnd = () => {
+    const played = [];
+    window.HTMLMediaElement.prototype.play = vi.fn(function play() {
+      played.push(this.src);
+      setTimeout(() => this.onended?.(), 0);
+      return Promise.resolve();
+    });
+    return played;
+  };
+  const recordingDay = (cues = ['record']) => dayMock.mockResolvedValue(
+    dayPayload({ chain: ['recording'], queue: [entry(1, 'recording')], cues }),
+  );
+  const renderRung = () => render(
+    <SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />,
+  );
+  const pressKey = (key) => fireEvent.keyDown(document.body, { key });
+
   it('returns to the start control when prompt audio is blocked', async () => {
     window.HTMLMediaElement.prototype.play = vi.fn(() => Promise.reject(new Error('blocked')));
-    dayMock.mockResolvedValue(dayPayload({ chain: ['recording'], queue: [entry(1, 'recording')] }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    recordingDay();
+    renderRung();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Listen, then record' }));
-    expect(await screen.findByText(/Audio was blocked/i)).toBeTruthy();
+    expect(await screen.findByText(/sound didn’t start/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Listen, then record' })).toBeTruthy();
-    expect(screen.queryByText('Listen…')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('runs sentence → ding → live mic from one tap, and plays the take straight back', async () => {
+    const played = playsToEnd();
+    const { track } = fakeMic();
+    recordingDay();
+    renderRung();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Listen, then record' }));
+    // The mic goes live on its own once the ding has sounded — no second tap.
+    const stop = await screen.findByRole('button', { name: 'Stop' });
+    expect(played.map((u) => u.replace(/^https?:\/\/[^/]+/, ''))).toEqual(['/audio/glossika-korean/1/KR', '/cue/record']);
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({ audio: true });
+    expect(screen.getByTestId('voice-band')).toBeTruthy();
+
+    fireEvent.click(stop);
+    // The mic is let go between takes, the take sounds without a player, and
+    // then — and only then — the choice appears.
+    expect(track.stop).toHaveBeenCalled();
+    expect(await screen.findByRole('button', { name: 'Keep it' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Record again' })).toBeTruthy();
+    expect(played.at(-1)).toBe('blob:take');
+    expect(document.querySelector('audio[controls]')).toBeNull();
+  });
+
+  it('leaves the ding out when the household has not configured one', async () => {
+    const played = playsToEnd();
+    fakeMic();
+    recordingDay([]);
+    renderRung();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Listen, then record' }));
+    await screen.findByRole('button', { name: 'Stop' });
+    expect(played.map((u) => u.replace(/^https?:\/\/[^/]+/, ''))).toEqual(['/audio/glossika-korean/1/KR']);
+  });
+
+  it('is driven start to finish by Space, with Backspace for another take', async () => {
+    const played = playsToEnd();
+    fakeMic();
+    recordingDay();
+    renderRung();
+    const { languageApi } = await import('./languageApi.js');
+
+    await screen.findByRole('button', { name: 'Listen, then record' });
+    pressKey(' ');
+    await screen.findByRole('button', { name: 'Stop' });
+    pressKey(' ');
+    await screen.findByRole('button', { name: 'Keep it' });
+
+    // Again is the ding and the mic, not the whole sentence over.
+    const before = played.length;
+    pressKey('Backspace');
+    await screen.findByRole('button', { name: 'Stop' });
+    expect(played.slice(before).map((u) => u.replace(/^https?:\/\/[^/]+/, ''))).toEqual(['/cue/record']);
+
+    pressKey('Enter');
+    await screen.findByRole('button', { name: 'Keep it' });
+    pressKey(' ');
+    await waitFor(() => expect(languageApi.recording).toHaveBeenCalledTimes(1));
+    const [, corpus, seq, blob] = languageApi.recording.mock.calls[0];
+    expect([corpus, seq]).toEqual(['glossika-korean', 1]);
+    expect(blob).toBeInstanceOf(Blob);
+  });
+
+  it('leaves the keys alone while a control has focus', async () => {
+    playsToEnd();
+    fakeMic();
+    recordingDay();
+    renderRung();
+
+    const startButton = await screen.findByRole('button', { name: 'Listen, then record' });
+    startButton.focus();
+    // Native activation handles Enter on a focused button; the rung must not
+    // start a second sequence underneath it.
+    fireEvent.keyDown(startButton, { key: 'Enter' });
+    expect(window.HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Listen, then record' })).toBeTruthy();
   });
 });
 

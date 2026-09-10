@@ -168,6 +168,9 @@ export const languageApi = {
   },
 
   audioUrl: (corpus, seq, lang) => `${BASE}/audio/${enc(corpus)}/${enc(seq)}/${enc(lang)}`,
+  /** A UI cue by role (`record` = the ding before the mic goes live). The day
+   *  says which roles exist; nothing here guesses a file. */
+  cueUrl: (name) => `${BASE}/cue/${enc(name)}`,
   async recordingBlob(userId, corpus, seq, studyGrant) {
     const path = `/recordings/${enc(userId)}/${enc(corpus)}/${enc(seq)}`;
     const startedAt = clock();

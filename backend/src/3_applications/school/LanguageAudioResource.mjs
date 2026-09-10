@@ -5,8 +5,10 @@ export class LanguageAudioResource {
   /** @type {import('./ports/ILanguageAudioRepository.mjs').ILanguageAudioRepository} */
   #repository;
   #languageStudyService;
+  /** cue name → configured file name. Unset means silent, never a guessed file. */
+  #cues;
 
-  constructor({ languageAudioRepository, languageStudyService } = {}) {
+  constructor({ languageAudioRepository, languageStudyService, cues = {} } = {}) {
     if (!languageAudioRepository) {
       throw new Error('LanguageAudioResource requires languageAudioRepository');
     }
@@ -15,6 +17,25 @@ export class LanguageAudioResource {
     }
     this.#repository = languageAudioRepository;
     this.#languageStudyService = languageStudyService;
+    this.#cues = Object.freeze(Object.fromEntries(
+      Object.entries(cues || {}).filter(([, file]) => typeof file === 'string' && file.trim()),
+    ));
+  }
+
+  /**
+   * The cues a client may ask for, by role — `record` is the ding that tells
+   * the learner to start speaking. A role is listed only when the household
+   * configured a file for it, so the client can leave an unconfigured cue out
+   * of its sequence instead of fetching a 404 on every sentence.
+   */
+  listCues() {
+    return Object.keys(this.#cues);
+  }
+
+  async getCueAudio({ name }) {
+    const fileName = this.#cues[name];
+    if (!fileName) return { kind: 'not-found' };
+    return this.#repository.findCueAudio({ fileName });
   }
 
   async getPromptAudio({ corpusId, seq, language }) {

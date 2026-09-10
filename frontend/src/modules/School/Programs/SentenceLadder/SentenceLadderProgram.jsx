@@ -618,6 +618,7 @@ export default function SentenceLadderProgram({
           <RecordingRung
             key={`${entry.rung}-${entry.seq}`}
             entry={entry} audioUrl={audioUrl}
+            cueUrl={day?.cues?.includes('record') ? languageApi.cueUrl('record') : null}
             onComplete={onComplete} saving={saving}
             onDisableMicrophone={toggleMicrophone}
           />

@@ -9,6 +9,9 @@ import { ILanguageAudioRepository } from '#apps/school/ports/ILanguageAudioRepos
 const ID_RE = /^[a-z0-9][a-z0-9_-]*$/i;
 const LANG_RE = /^[A-Za-z]{2,8}$/;
 const EXT_RE = /^[a-z0-9]{2,5}$/i;
+// A cue is one file in one flat folder: a bare name with an audio extension.
+// No separators, so a configured value can never walk out of `_ux/`.
+const CUE_FILE_RE = /^[a-z0-9][a-z0-9_-]*\.(mp3|ogg|wav|m4a|webm)$/i;
 const CONTENT_TYPES = Object.freeze({
   mp3: 'audio/mpeg',
   webm: 'audio/webm',
@@ -80,6 +83,14 @@ export class FilesystemLanguageAudioRepository extends ILanguageAudioRepository 
       if (result.kind === 'found') return result;
     }
     return { kind: 'not-found' };
+  }
+
+  /** UI cues live beside the course media, under `school/_ux/`. */
+  async findCueAudio({ fileName }) {
+    if (!CUE_FILE_RE.test(String(fileName))) return { kind: 'not-found' };
+    const extension = String(fileName).split('.').pop().toLowerCase();
+    const filePath = buildContainedPath(this.#mediaDir, `school/_ux/${fileName}`);
+    return foundResource(filePath, extension);
   }
 }
 

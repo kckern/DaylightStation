@@ -183,6 +183,50 @@ recomputes and emits `school.completion.state-observed`. Canonical
 at this settlement boundary so migrated assignments cannot lose credit or a
 configured reward.
 
+## The recording rung
+
+One gesture runs the rung until the learner has spoken. A tap on the square
+Record tile — or Space or Enter — plays the target sentence, then a short
+**ding**, and the microphone goes live the instant the ding ends. Nothing on
+screen says "listen" or "now"; the ding is the cue to speak. A second tap or
+Space stops the take, and the take plays straight back — there is no inline
+player and nothing to press to hear it. Only then do the two choices appear:
+**Again** (Backspace) and **Keep** (Space or Enter). Again re-sounds the ding
+and reopens the microphone; it does not replay the sentence — hearing the
+prompt again is the Repetition rung's job, and a retry slower than the first
+attempt is backwards. The rung takes keyboard focus on arrival, so the keys
+work without a tap first; a focused control keeps its own keys, so a tabbed-to
+button's Enter still presses that button.
+
+The stage holds three things and no more: the sentence, the **voice band**, and
+one square tile whose picture and colour change with the phase — green Record,
+a quiet speaker while something sounds, red Stop while the mic is live, then
+Again beside Keep. The voice band is the learner's own sound drawn as it
+happens on a canvas the width of the stage: recent levels scroll in from the
+right while recording, loud tall and silence a hairline, so it is also the
+volume meter. On Stop the whole take is decoded in the browser and fitted to
+the band, and a playhead colours it in as it plays back. Nothing is rendered
+server-side and nothing is scored. Two seconds under the noise floor with
+nothing yet heard puts one line in words on the stage: *Nothing's coming
+through — is the microphone on?* Chrome's WebView on the Portal is fine with
+this — it is one canvas repaint at ~30 fps, not CSS animation.
+
+The ding is a household choice, never a guessed file. `school.yml` names it by
+role:
+
+```yaml
+sentence_ladder:
+  cues:
+    record: ding.mp3     # under media/school/_ux/
+```
+
+The day payload lists which roles exist (`cues: ['record']`) so the client
+builds its sequence from facts rather than probing; a role that is unset is
+simply silent, and the rung still runs. The file is served public, like prompt
+audio, at `/api/v1/school/sentence-ladder/cue/{role}` — a cue is a sound, not
+learner evidence. Like the rest of the school config this is boot-cached: a
+changed file name needs a restart.
+
 ## Reading a session back
 
 Every ladder event on both sides of the wire carries a **run id** on
@@ -243,6 +287,10 @@ Repetition's choice is three separate facts: `rung.held` (the sentence stayed),
 logged as `complete`), `rung.advanced` (they moved on). A session of
 `complete`s alone cannot tell a child who listened twice from one being carried
 along, which is the whole difference the hold introduced.
+
+A take leaves `capture.start`, `capture.stop` (with its byte count and whether
+the band ever heard a voice) and, on a retry, `capture.retake`, all at info; a
+denied microphone is `capture.denied` at error.
 
 A capability override is recorded once, by `useCapabilities`, as
 `school.language.capability.overridden` (info) carrying both the new state and
