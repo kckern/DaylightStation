@@ -82,7 +82,9 @@ export class FitnessCourseCurriculumCatalog {
   getDocument(id) { return this.#base.getDocument(id); }
   getManifest(id) { return this.#base.getManifest(id); }
   getCoursePoster(id) { return this.#base.getCoursePoster?.(id) ?? null; }
-  getProgramPoster(id) { return this.#base.getProgramPoster?.(id) ?? null; }
+  // BOTH arguments. A program whose artwork belongs to one instance of it (the
+  // sentence ladder, whose picture is the corpus's) loses it here otherwise.
+  getProgramPoster(id, instanceId = null) { return this.#base.getProgramPoster?.(id, instanceId) ?? null; }
 }
 
 export default FitnessCourseCurriculumCatalog;

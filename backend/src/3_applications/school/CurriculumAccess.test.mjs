@@ -101,3 +101,47 @@ describe('CurriculumAccess — drafts dropped from the publishable set', () => {
     expect(draftLogs[1].data.count).toBe(3);
   });
 });
+
+// The sentence ladder's poster lives at
+// `<media>/school/programs/sentence-ladder/<corpus>/poster.jpg`, because the
+// picture belongs to the corpus and a second language must bring its own. Both
+// routers that serve it pass the corpus; this seam took one argument and
+// dropped the other, so a poster that was on disk answered 404 and the card
+// drew an empty panel. Nothing logged — a dropped parameter never does.
+describe('CurriculumAccess — a program poster that belongs to one instance', () => {
+  it('passes the instance id on rather than asking for the program-wide picture', async () => {
+    const asked = [];
+    const curriculum = new CurriculumAccess({
+      catalog: {
+        listUnits: async () => ({ items: [], errors: [] }),
+        listDocuments: async () => ({ items: [], errors: [] }),
+        listManifests: async () => ({ items: [], errors: [] }),
+        getProgramPoster: async (programId, instanceId) => {
+          asked.push([programId, instanceId]);
+          return instanceId === 'glossika-korean' ? Buffer.from('jpeg') : null;
+        },
+      },
+      logger: { warn: () => {}, info: () => {}, error: () => {} },
+    });
+
+    await expect(curriculum.getProgramPoster('sentence-ladder', 'glossika-korean'))
+      .resolves.toEqual(Buffer.from('jpeg'));
+    expect(asked).toEqual([['sentence-ladder', 'glossika-korean']]);
+  });
+
+  it('still asks for a program-wide picture when there is no instance', async () => {
+    const asked = [];
+    const curriculum = new CurriculumAccess({
+      catalog: {
+        listUnits: async () => ({ items: [], errors: [] }),
+        listDocuments: async () => ({ items: [], errors: [] }),
+        listManifests: async () => ({ items: [], errors: [] }),
+        getProgramPoster: async (programId, instanceId) => { asked.push([programId, instanceId]); return null; },
+      },
+      logger: { warn: () => {}, info: () => {}, error: () => {} },
+    });
+
+    await expect(curriculum.getProgramPoster('book-log')).resolves.toBeNull();
+    expect(asked).toEqual([['book-log', null]]);
+  });
+});

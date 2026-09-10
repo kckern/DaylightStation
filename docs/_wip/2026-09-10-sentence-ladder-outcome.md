@@ -41,7 +41,7 @@ Documented in `docs/reference/school/sentence-ladder.md` ("Reading a session bac
 the three launch-day queries — everything for one run, everything the ladder said in an hour,
 and only what went wrong.
 
-### It has now been watched running (handoff §3b), and that found two bugs
+### It has now been watched running (handoff §3b), and that found three bugs
 
 Both are fixed, both with a test that fails without the fix.
 
@@ -59,6 +59,19 @@ whatever id the URL named, reported a successful launch, changed section — and
 with no error and nothing in the console. It now refuses by name: "grownup is not on the School
 roster", with a way back.
 
+**3. The ladder's card had no picture, and the poster was on disk all along.**
+The plan's own verification step asks for
+`/self-service/programs/sentence-ladder/glossika-korean/poster.jpg` and expects
+`200 image/jpeg`; it answered 404. The file sits exactly where the datastore
+documents it —
+`media/school/programs/sentence-ladder/glossika-korean/poster.jpg`, 734KB — and
+both routes pass the corpus. **Three seams between them took `(programId)`
+alone and dropped the second argument**: `CurriculumAccess`,
+`FitnessCourseCurriculumCatalog` and `SchoolCurriculumQueryService`. A dropped
+parameter is invisible — no error, no log, just a card that draws its calm
+placeholder forever, which is indistinguishable from a program that has no
+artwork. Threaded through, with the seam pinned by a test that fails without it.
+
 The second bug is why the handoff's test rig was never run: it was built for an adult, and an
 adult is not on the School roster. **A blank screen was the rig working as designed.**
 
@@ -74,6 +87,7 @@ learner, mints no grant and writes no evidence:
   is still the one just heard.
 - **Next advances and plays**: the next sentence arrives already sounding, no second tap.
 - A dimmed rung names a keyboard where a keyboard is what is missing.
+- The card's poster is served (after the fix below), rather than 404.
 
 ### The debug events could not be turned on at all — the sweep was shipping dark
 

@@ -77,6 +77,30 @@ describe('school self-service router', () => {
     expect(response.body).toEqual({});
   });
 
+  // A PROGRAM whose artwork belongs to one instance of it: the sentence
+  // ladder, whose picture is the corpus's. The route always passed the corpus;
+  // three seams below it took `(programId)` alone and dropped it, so the
+  // poster on disk answered 404 and the launch card drew an empty panel.
+  it('asks for a program poster WITH the instance the URL names', async () => {
+    const calls = [];
+    const app = appFor({
+      curriculum: {
+        getProgramPoster: async (programId, instanceId) => {
+          calls.push([programId, instanceId]);
+          return instanceId === 'glossika-korean' ? Buffer.from('jpeg-poster') : null;
+        },
+      },
+    });
+
+    const response = await request(app)
+      .get('/api/v1/school/self-service/programs/sentence-ladder/glossika-korean/poster.jpg');
+
+    expect(response.status).toBe(200);
+    expect(calls).toEqual([['sentence-ladder', 'glossika-korean']]);
+    expect(response.headers['content-type']).toMatch(/^image\/jpeg/);
+    expect(response.body).toEqual(Buffer.from('jpeg-poster'));
+  });
+
   it('does not mount the artwork route without curriculum access', async () => {
     const response = await request(appFor())
       .get('/api/v1/school/self-service/curriculum/fractions/poster.jpg');
