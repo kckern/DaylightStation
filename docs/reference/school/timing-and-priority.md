@@ -281,9 +281,17 @@ schedule:
   except:                        # never a school day, whatever daysOfWeek says
     - '2026-11-26'
     - { from: '2026-12-21', to: '2027-01-02' }   # inclusive at both ends
+    - { from: '2026-11-25', to: '2026-11-27', label: Thanksgiving }
   also:                          # always a school day, even if daysOfWeek excludes it
     - '2026-11-28'               #   -> the makeup day
 ```
+
+An `except` span may carry an optional `label`, and a labelled span is a
+**named** day off. The label is the only place a reason can live — `{from, to}`
+has nowhere to put the word "Thanksgiving" — and it is what lets a surface tell
+a child *why* a week is blank instead of leaving them to guess. A span without
+one is still a day off; it simply has no name to say. Everything else about the
+span is unchanged, and nothing in the school-day decision reads the label.
 
 **Precedence is fixed: `also` beats `except` beats `daysOfWeek`.** A makeup day
 named explicitly has to win over the vacation range containing it, or "we'll
@@ -326,8 +334,11 @@ SCHOOL_PIN=... node cli/school.mjs ops rematerialize <learner> \
 Re-materialize is refused while any session on that course is open, and it
 re-shuffles a `shuffle_once` order — do it when nobody is mid-worksheet.
 
-A shared household calendar layered *under* this is a reasonable future
-addition. It is not a substitute: the per-learner statement has to win.
+The household now keeps a calendar of its own, `school.yml → calendar`, in
+exactly this shape. It is not a substitute for the per-learner statement and it
+is not layered under it: a day the house declares off is off for every section,
+whatever a course's own schedule says, because only the house declares
+Christmas. See [the household calendar](./term-grid.md#the-household-calendar).
 
 ### What a non-school day does to the agenda
 

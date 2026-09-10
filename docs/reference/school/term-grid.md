@@ -79,6 +79,42 @@ the grid can never disagree about a vacation. Weekends are ordinary days
 unless a course or the calendar says otherwise. `daysOfWeek` is accepted but
 not used by the household.
 
+### A named day off
+
+An `except` span may carry a `label` (see
+[the school-day calendar](./timing-and-priority.md#7-the-school-day-calendar)),
+and a labelled span is a **named** day off: not merely a day nothing was asked
+on, but a day the house can name. `namedDayOff(day, schedule)` answers with the
+span — label and all — or with nothing.
+
+It follows `scheduleVerdict`'s precedence exactly, which is the point of it
+rather than an implementation note: the two cannot disagree about whether a day
+was a school day, because the naming function reaches the same verdict by the
+same route before it looks for a label. So a makeup Saturday named in `also`
+inside a vacation range is a school day and is therefore **not** a holiday, and
+a weekend is not a named day off at all — a weekend is nobody's `except`, it is
+the ordinary rhythm of the week. Only a day the house wrote down gets a name.
+
+The Fall 2026 term is populated: Labor Day, Veterans Day, the Thanksgiving
+Wednesday-to-Friday (with that Monday and Tuesday still school days), and the
+Christmas break after the semester ends.
+
+### One calendar, one validation
+
+`schoolLifecycle` validates `school.yml → calendar` once, at composition, and
+exposes the value it already produced as `householdSchedule`. Every surface that
+asks whether anyone was asked to work that day is handed that same object —
+the daily agenda, the term grid, and `ReadingApiService` for the streak wall.
+
+That is a consistency fix, not a performance one. `ReadingApiService` briefly
+had its own read of the raw config block, which meant the house held two
+independent readings of when it is on vacation and nothing that would notice if
+they ever diverged — and because an invalid schedule fails open with no
+complaint, neither path would have raised one either. The wall and the printed
+agenda cannot judge Christmas differently now, because there is only one
+judgement. (`validateSchedule` is idempotent by construction, so a schedule
+that has already been normalized survives a second pass unchanged.)
+
 ## The term
 
 The term is one of the household's academic periods (`progress.academicPeriods`,

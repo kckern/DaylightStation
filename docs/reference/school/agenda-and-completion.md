@@ -38,6 +38,14 @@ and `not_a_school_day` — a weekend, holiday or vacation declared by the
 enrollment's [school-day calendar](./timing-and-priority.md#7-the-school-day-calendar).
 Catch-up remains excused even when its worksheet is already open.
 
+A day the whole household is off is excused for the same reason but under its
+own name, `household_calendar`, so a surface can tell a family vacation apart
+from a course that simply does not meet on Thursdays. It comes from
+[the household calendar](./term-grid.md#the-household-calendar), which the
+lifecycle validates once and hands to every surface that asks whether anyone was
+asked to work that day — the agenda, the term grid, and the reading streak
+wall — so none of them can judge Christmas differently.
+
 `not_a_school_day` is applied as an override after the ladder, so it never
 downgrades a section that was already `served`, and the diagnostics below it
 keep firing on a day that is off. The section still offers a `next`: the
