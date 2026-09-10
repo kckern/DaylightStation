@@ -428,15 +428,61 @@ describe('repetition, one sentence at a time', () => {
     expect(screen.queryByText('English 2')).toBeNull();
   });
 
-  it('moves on only when the child says so', async () => {
+  it('moves on only when the child says so — and Next means what it says', async () => {
+    playsToEnd();
+    liveDay([entry(1, 'repetition'), entry(2, 'repetition')]);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
+    const before = window.HTMLMediaElement.prototype.play.mock.calls.length;
+    fireEvent.click(await screen.findByRole('button', { name: 'Next' }, SEQUENCE));
+
+    expect(await screen.findByText('English 2')).toBeTruthy();
+    // Sounding already: the tap on Next is the gesture behind this sentence, so
+    // asking the child to find Play as well would be two taps for one intention.
+    expect(await screen.findByRole('button', { name: 'Stop' })).toBeTruthy();
+    await waitFor(() => expect(window.HTMLMediaElement.prototype.play.mock.calls.length)
+      .toBeGreaterThan(before));
+  });
+
+  it('waits to be asked for the first sentence of a rung', async () => {
+    // Only a sentence arrived at VIA Next has a gesture behind it. Nothing may
+    // sound on arrival at a rung — that is the auto-advance this replaced.
+    playsToEnd();
+    liveDay([entry(1, 'repetition'), entry(2, 'repetition')]);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    expect(await screen.findByRole('button', { name: 'Play' })).toBeTruthy();
+    await waitFor(() => expect(programLogMock).toHaveBeenCalledWith('day-loaded', expect.anything()));
+    expect(window.HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
+  });
+
+  it('starts an arrived-at sentence once, and logs it once', async () => {
+    playsToEnd();
+    liveDay([entry(1, 'repetition'), entry(2, 'repetition'), entry(3, 'repetition')]);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Next' }, SEQUENCE));
+    // Sentence 2 plays itself through to its own choice — one pass, one attempt.
+    await screen.findByText('English 2');
+    await screen.findByRole('button', { name: 'Play again' }, SEQUENCE);
+    expect(logMock.mock.calls.map(([, body]) => body.seq)).toEqual([1, 2]);
+  });
+
+  it('hands the last sentence of the day over to the complete panel', async () => {
+    // Nothing to hold and nothing to play: the day is finished, and the panel
+    // takes the stage — which is also why the replay control goes with it.
     playsToEnd();
     liveDay([entry(1, 'repetition'), entry(2, 'repetition')]);
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Next' }, SEQUENCE));
-    expect(await screen.findByText('English 2')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Play' })).toBeTruthy();
+    expect(await screen.findByText(/Day 1 complete/i, {}, SEQUENCE)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Play again' })).toBeNull();
+    expect(logMock.mock.calls.map(([, body]) => body.seq)).toEqual([1, 2]);
   });
 
   it('replays without climbing the rung twice', async () => {

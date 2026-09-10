@@ -16,20 +16,24 @@ import Icon from '../../../home/icons/Icon.jsx';
  * enter here and why it is the one rung a bare touch panel can always run.
  *
  * A finished sentence STAYS. The learner chooses to hear it again or to move
- * on; the parent holds it on screen until they do. The first pass ran the set
- * hands-free instead — one tap, then a sentence every few seconds — which read
- * as a conveyor belt: the one thing a child could not do was ask for the
- * sentence they had just heard one more time.
+ * on; the parent holds it on screen until they do, and the sentence they move
+ * on to starts playing because they asked for it. The first pass ran the set
+ * hands-free instead — one tap, then a sentence every few seconds, no gesture
+ * behind any of them — which read as a conveyor belt: the one thing a child
+ * could not do was ask for the sentence they had just heard one more time.
  */
 export default function RepetitionRung({
-  entry, audioUrl, nextEntry, onComplete, saving, onHold, onAdvance,
+  entry, audioUrl, nextEntry, onComplete, saving,
+  onHold, onRelease, onAdvance, startOnArrival = false,
 }) {
   const [phase, setPhase] = useState('idle'); // idle | playing | done
   const [highlight, setHighlight] = useState(null);
   // A replay must not climb the rung twice. `handleEnd` runs at the end of
   // EVERY pass, and the second pass is a listen, not a new attempt: logging it
-  // would credit a sentence the learner has already finished.
-  const credited = useRef(false);
+  // would credit a sentence the learner has already finished. Seeded from the
+  // entry, because a held sentence is a FINISHED one and can be mounted afresh
+  // — coming back from the Review shelf, say — with its attempt already saved.
+  const credited = useRef(Boolean(entry.done));
 
   const handleEnd = useCallback(() => {
     setPhase('done');
@@ -47,20 +51,23 @@ export default function RepetitionRung({
         // back to the queue as the attempt it still needs.
         credited.current = false;
         setPhase('idle');
-        onAdvance?.();
+        onRelease?.();
       }
     });
-  }, [entry.seq, onComplete, onHold, onAdvance]);
+  }, [entry.seq, onComplete, onHold, onRelease]);
 
   const { playSequence, preload, stop, step, blocked } = useSentenceAudio({ onSequenceEnd: handleEnd });
 
   useEffect(() => {
     setPhase('idle');
-    credited.current = false;
+    credited.current = Boolean(entry.done);
     setHighlight(null);
     languageLog.rung('enter', { rung: 'repetition', seq: entry.seq });
+    // NOT keyed on `entry.done`: the save flips it true while the sentence is
+    // still on screen, and re-running this would throw away the very choice the
+    // learner just earned. Whether it is already credited is read at mount.
     return () => stop();
-  }, [entry.seq, stop]);
+  }, [entry.seq, stop]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Warm the next sentence while this one is on screen. Without this the gap
   // between sentences reads as the app hanging.
@@ -82,6 +89,17 @@ export default function RepetitionRung({
     setPhase('playing');
     playSequence(clipsFor(entry, audioUrl));
   }, [entry, audioUrl, playSequence]);
+
+  // The child pressed Next to get HERE, so this sentence plays without a second
+  // tap. Once per mount — the component is keyed by sentence, so the ref is per
+  // sentence — and never for a sentence merely arrived at: after Stop, or on the
+  // first sentence of a rung, the disc waits to be pressed like any other.
+  const arrived = useRef(false);
+  useEffect(() => {
+    if (!startOnArrival || arrived.current) return;
+    arrived.current = true;
+    start();
+  }, [startOnArrival, start]);
 
   // A rejected play promise ends the sequence without its normal completion
   // callback. Return to a control the learner can actually use instead of
