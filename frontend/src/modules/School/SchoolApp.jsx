@@ -22,6 +22,7 @@ import GeographyGrid from './geography/GeographyGrid.jsx';
 import ChessLessons from './chess/ChessLessons.jsx';
 import GeoQuizRunner from './geography/GeoQuizRunner.jsx';
 import Icon from './home/icons/Icon.jsx';
+import { configure as configureLogger } from '../../lib/logging/Logger.js';
 import { SchoolBreadcrumbProvider } from './SchoolBreadcrumbContext.jsx';
 import { useSchoolBreadcrumbBar } from './useSchoolBreadcrumb.js';
 import { groupBySubject, subjectLabel } from './home/subjects.js';
@@ -191,6 +192,32 @@ function schoolUrlBase() {
 }
 import { screenIdFromUrlBase, parseSchoolPath, schoolPathFor, isPanelSurface, deviceIdFor } from './schoolPathModel.js';
 
+/**
+ * Turning the diagnostics up, from outside the code.
+ *
+ * Everything School logs per sentence, per rung and per keystroke sits at
+ * `debug`, and `debug` is dropped before the transport — so none of it reaches
+ * the log store on an ordinary morning, which is the point: the store is a
+ * 7-day disk cap shared with fitness telemetry at 5s resolution.
+ *
+ * There has to be a way to turn it up for a launch week or an investigation,
+ * and until now there was not one on this surface. `Logger.js` reads its level
+ * ONLY from `configure()` — it never looks at `window.DAYLIGHT_LOG_LEVEL` — so
+ * the instruction everybody writes down ("set the window flag in the console")
+ * did nothing here, silently, and the events were unreachable in production.
+ * The Feed surface had already solved this; School had not.
+ *
+ * `?debug=1` on the URL is the switch that actually works, because it is read
+ * at mount. The window flag is honoured too, for anyone who sets it and then
+ * reloads.
+ */
+function debugRequested() {
+  try {
+    if (new URLSearchParams(window.location.search).get('debug') === '1') return true;
+  } catch { /* a surface with no parseable query is simply not asking for it */ }
+  return typeof window !== 'undefined' && window.DAYLIGHT_LOG_LEVEL === 'debug';
+}
+
 function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffTimeoutSeconds = null }) {
   const { status, roster, currentUser, isGuest, pickerOpen, openPicker, closePicker, claim, continueAsGuest } = useSchoolProfile();
   const { crumbs: extraCrumbs } = useSchoolBreadcrumbBar();
@@ -215,6 +242,13 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // without this flag the restarted run would silently resume itself.
   const [runFresh, setRunFresh] = useState(false);
   useEffect(() => { setRunFresh(false); }, [active]); // a NEW launch is never a restart
+  // Raised for this surface, and put back on the way out: a panel left at debug
+  // by a diagnostic session would go on evicting other people's telemetry.
+  useEffect(() => {
+    if (!debugRequested()) return undefined;
+    configureLogger({ level: 'debug' });
+    return () => configureLogger({ level: 'info' });
+  }, []);
   const [pending, setPending] = useState(null); // bank/module launch awaiting a claim
   const [notice, setNotice] = useState(null);
   const [materials, setMaterials] = useState([]); // full catalog materials list, unfiltered

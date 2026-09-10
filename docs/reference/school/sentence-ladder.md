@@ -163,6 +163,17 @@ says `Leave for now` while work is outstanding or blocked by device capability;
 `Done` appears only after the full credit chain is complete, or when no work is
 due at all.
 
+The runner needs an identity that the School **roster** knows: every mount is
+gated on the claimed learner being a roster member, because that is where a
+learner's name, avatar and records come from. Two paths follow from that.
+An identity that lapses mid-session (the ten-minute idle gap) ends the session
+and returns the panel to the keypad — the ladder carries its own exit, so the
+locked panel draws no `Done` over it, and a lapse that only dropped the study
+grant would leave the panel showing nothing at all. And the code-free door
+(`/school/go/<learner>/<program>`, a grown-up's browser only) refuses a learner
+the roster does not know, by name, rather than opening a section that can
+never paint.
+
 Completing an enrollment-owned day publishes
 `school.language.day-complete`. `CloseLanguageDay` settles the deterministic
 School program session through the standard outcome/reward path, which in turn
@@ -205,6 +216,43 @@ topic it accompanies; `school.language.launcher.launch` (info) records a
 dispatch decision, its surface, and whether a study grant was issued, while
 `school.language.launcher.status` (debug) records what the agenda was told.
 
-Per-sentence and per-request events sit at `debug` and are filtered out by
-default — raise the level for launch week rather than leaving them on: the log
-store is shared with every other household subsystem and capped.
+The surface says what the child did, not only what the server was asked for.
+`school.language.program.day-loading` (debug) records that a day was ASKED for,
+with the capabilities it asked with, so a request that never returns is
+distinguishable from a program nobody opened; its `day-loaded` (info) partner
+carries the chain, the blocked rungs and the round trip in milliseconds.
+`school.language.rung.landed` (debug) says which rung the learner was put on
+**and why** — `first`, `resume` (work was already done today) or `rung-cleared`
+— and `rung.selected` when they chose one themselves.
+`school.language.program.tab` (debug) records a move to the Review shelf, which
+is what a session that "never gave me any sentences" usually is.
+
+The refusals and the dead ends have their own lines, because from the child's
+side they are indistinguishable from a broken button:
+`school.language.capability.rung-blocked` (info) names each dimmed rung and the
+capability the server said it lacked (`microphone`, `textInput:KR`), once per
+day rather than once per render; `school.language.pacing.roll-refused` and
+`pacing.change-failed` (both warn) record a decline and a failed change;
+`school.language.rung.practice` (debug) records the extra-practice banner —
+the same sentence arriving three times in a sitting is the most-reported
+"it repeated itself".
+
+Repetition's choice is three separate facts: `rung.held` (the sentence stayed),
+`rung.replayed` (they asked to hear it again — not a second climb, and never
+logged as `complete`), `rung.advanced` (they moved on). A session of
+`complete`s alone cannot tell a child who listened twice from one being carried
+along, which is the whole difference the hold introduced.
+
+A capability override is recorded once, by `useCapabilities`, as
+`school.language.capability.overridden` (info) carrying both the new state and
+what it changed `from`. The Device sheet and the Recording rung's
+microphone-off-after-denial both pass through there, so neither carries
+telemetry of its own; `PacingControl` likewise logs nothing, because a limit is
+only really changed once the server has taken it and only the shell knows
+whether it did.
+
+Per-sentence and per-request events sit at `debug`, which never leaves the
+browser. Load the surface with `?debug=1` to raise it for a launch week or an
+investigation; the level is read at mount and restored on unmount, so no panel
+stays chatty by accident. The log store is shared with every other household
+subsystem and capped.

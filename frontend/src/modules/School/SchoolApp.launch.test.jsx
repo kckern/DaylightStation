@@ -144,6 +144,12 @@ vi.mock('./useSchoolLaunch.js', async (importOriginal) => {
   };
 });
 
+const { configureLoggerMock } = vi.hoisted(() => ({ configureLoggerMock: vi.fn() }));
+vi.mock('../../lib/logging/Logger.js', async (importOriginal) => {
+  const mod = await importOriginal();
+  return { ...mod, configure: (...a) => { configureLoggerMock(...a); return mod.configure(...a); } };
+});
+
 const EMPTY_CATALOG = { ok: true, status: 200, data: { sections: [], materials: [] } };
 
 beforeEach(() => {
@@ -168,6 +174,7 @@ beforeEach(() => {
   materialUnitsMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { material: {}, units: [] } });
   coursesMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: [] });
   directLaunchMock.mockReset().mockResolvedValue({ ok: false, status: 404, data: null });
+  configureLoggerMock.mockClear();
   dayMock.mockReset().mockResolvedValue({
     ok: true, status: 200,
     data: {
@@ -573,6 +580,34 @@ describe('SchoolApp — the code-free door', () => {
     } finally {
       window.history.replaceState({}, '', oldUrl);
     }
+  });
+});
+
+// Everything the ladder logs per sentence is at `debug`, and `debug` never
+// leaves the browser. The switch everybody writes down — set
+// `window.DAYLIGHT_LOG_LEVEL` in the console — does nothing on this surface,
+// because `Logger.js` reads its level only from `configure()`. So the events
+// were unreachable in production, silently, which is worse than not having
+// them: the runbook said to turn them on and turning them on did nothing.
+describe('SchoolApp — turning the diagnostics up', () => {
+  it('raises the log level for a ?debug=1 session and puts it back on the way out', async () => {
+    const oldUrl = window.location.pathname + window.location.search;
+    window.history.replaceState({}, '', '/school?debug=1');
+    try {
+      const view = render(<SchoolApp clear={() => {}} mode="open" />);
+      await waitFor(() => expect(configureLoggerMock).toHaveBeenCalledWith({ level: 'debug' }));
+      configureLoggerMock.mockClear();
+      view.unmount();
+      expect(configureLoggerMock).toHaveBeenCalledWith({ level: 'info' });
+    } finally {
+      window.history.replaceState({}, '', oldUrl);
+    }
+  });
+
+  it('leaves an ordinary session alone — the store is shared and capped', async () => {
+    render(<SchoolApp clear={() => {}} mode="open" />);
+    await screen.findByText('Civilization');
+    expect(configureLoggerMock).not.toHaveBeenCalled();
   });
 });
 
