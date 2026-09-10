@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { languageLog } from './languageLog.js';
+import { bindMediaToMaster } from '../../../../lib/volume/bindMediaToMaster.js';
 
 /**
  * Sequenced sentence playback (design §5).
@@ -50,13 +51,22 @@ export function useSentenceAudio({ onSequenceEnd } = {}) {
   useEffect(() => {
     const el = new Audio();
     el.preload = 'auto';
+    // The panel's volume keys step a software master; a bare element ignores
+    // it and plays at full gain. Follow the master for the element's life.
+    const unbindVolume = bindMediaToMaster(el);
     elementRef.current = el;
     preloadRef.current = [new Audio(), new Audio()];
     for (const p of preloadRef.current) p.preload = 'auto';
 
     return () => {
       clearTimeout(timerRef.current);
+      unbindVolume();
       el.pause();
+      // Clearing `src` fires `error` on the element; with the sequence's
+      // handler still attached that logged a phantom `load-failed` for a
+      // clip that loaded fine, on every rung change.
+      el.onended = null;
+      el.onerror = null;
       el.src = '';
       elementRef.current = null;
       preloadRef.current = [];

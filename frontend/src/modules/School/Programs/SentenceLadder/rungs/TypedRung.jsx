@@ -54,6 +54,11 @@ export default function TypedRung({ entry, audioUrl, nextEntry, onComplete, savi
   // their input. Keep only the per-entry enter log and the audio-stop cleanup.
   useEffect(() => {
     languageLog.rung('enter', { rung: entry.rung, seq: entry.seq });
+    // Hands on the keys from the first frame: the tap that brought the child
+    // here left focus on a ladder rung or a Next button, and typing there
+    // goes nowhere. Focus the field so the first keystroke is the first
+    // letter — or the Space that plays the sentence.
+    inputRef.current?.focus?.({ preventScroll: true });
     return () => stop();
   }, [entry.seq, entry.rung, stop]);
 
@@ -82,11 +87,19 @@ export default function TypedRung({ entry, audioUrl, nextEntry, onComplete, savi
       play();
       return;
     }
+    // Space before the first letter is "play", the same key it is on every
+    // other rung. A leading space is never part of an answer (submit trims),
+    // so nothing is lost by giving the key to the audio until typing starts.
+    if (e.key === ' ' && value.length === 0) {
+      e.preventDefault();
+      play();
+      return;
+    }
     if (e.key === 'Enter') {
       e.preventDefault();
       submit();
     }
-  }, [play, submit]);
+  }, [play, submit, value]);
 
   return (
     <div className={`lang-rung lang-rung--${entry.rung}`}>
@@ -143,7 +156,7 @@ export default function TypedRung({ entry, audioUrl, nextEntry, onComplete, savi
       {/* Only where those keys exist. A touch panel may have a Hangul IME on
           its on-screen keyboard and no Tab key at all, and instructions for
           absent hardware are worse than no instructions. */}
-      {showShortcuts && <p className="lang-rung__hint">Tab replays · Enter submits</p>}
+      {showShortcuts && <p className="lang-rung__hint">Space or Tab plays · Enter submits</p>}
 
       <div className="lang-rung__controls">
         <button

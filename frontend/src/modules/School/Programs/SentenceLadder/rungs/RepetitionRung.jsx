@@ -3,6 +3,10 @@ import { useSentenceAudio, clipsFor } from '../useSentenceAudio.js';
 import { languageLog } from '../languageLog.js';
 import Icon from '../../../home/icons/Icon.jsx';
 
+/** A control that owns its own keys — a focused button's Enter. The rung's
+ *  keys never fire over one of these. */
+const ownsKeys = (el) => Boolean(el?.closest?.('button, input, select, textarea, a[href], [contenteditable="true"]'));
+
 /**
  * Repetition — the shadowing rung (design §1).
  *
@@ -28,6 +32,11 @@ export default function RepetitionRung({
 }) {
   const [phase, setPhase] = useState('idle'); // idle | playing | done
   const [highlight, setHighlight] = useState(null);
+  const rootRef = useRef(null);
+  // The key handler reads the phase through a ref so it is bound once per
+  // sentence, not once per phase change.
+  const phaseRef = useRef(phase);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
   // A replay must not climb the rung twice. `handleEnd` runs at the end of
   // EVERY pass, and the second pass is a listen, not a new attempt: logging it
   // would credit a sentence the learner has already finished. Seeded from the
@@ -69,6 +78,10 @@ export default function RepetitionRung({
     credited.current = Boolean(entry.done);
     setHighlight(null);
     languageLog.rung('enter', { rung: 'repetition', seq: entry.seq });
+    // Take the keyboard on arrival. The tap that brought the child here — a
+    // ladder rung, the previous sentence's Next — leaves focus on THAT
+    // control, and a Space pressed there would re-press it, not play this.
+    rootRef.current?.focus?.({ preventScroll: true });
     // NOT keyed on `entry.done`: the save flips it true while the sentence is
     // still on screen, and re-running this would throw away the very choice the
     // learner just earned. Whether it is already credited is read at mount.
@@ -120,11 +133,44 @@ export default function RepetitionRung({
     setPhase('idle');
   }, [blocked, phase, stop]);
 
+  const advance = useCallback(() => {
+    languageLog.rung('advanced', { rung: 'repetition', seq: entry.seq });
+    onAdvance?.();
+  }, [entry.seq, onAdvance]);
+
+  // Hands-free, the whole way through. Space or Enter is "go": play, stop,
+  // then Next. Backspace or the left arrow is "again"; the right arrow is
+  // Next. The first day on the Portal had none of this — Space did nothing on
+  // this rung, and a child with a keyboard in their lap had to reach for the
+  // glass at every sentence.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+      const go = e.key === ' ' || e.key === 'Enter';
+      const again = e.key === 'Backspace' || e.key === 'ArrowLeft';
+      const next = e.key === 'ArrowRight';
+      if (!go && !again && !next) return;
+      if (ownsKeys(e.target)) return;
+      const current = phaseRef.current;
+      if (go) {
+        e.preventDefault();
+        if (current === 'idle') start();
+        else if (current === 'playing') { stop(); setPhase('idle'); }
+        else if (current === 'done' && !saving) advance();
+        return;
+      }
+      if (again && (current === 'done' || current === 'idle')) { e.preventDefault(); start(); return; }
+      if (next && current === 'done' && !saving) { e.preventDefault(); advance(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [start, stop, advance, saving]);
+
   const sourceLang = entry.prompt?.[0]?.language;
   const targetLang = entry.prompt?.find((p) => p.role === 'target')?.language;
 
   return (
-    <div className="lang-rung lang-rung--repetition">
+    <div ref={rootRef} tabIndex={-1} className="lang-rung lang-rung--repetition">
       <p className={`lang-rung__source${highlight === sourceLang ? ' is-sounding' : ''}`}>
         {entry.text?.[sourceLang]}
       </p>
@@ -169,10 +215,7 @@ export default function RepetitionRung({
             <button
               type="button"
               className="lang-btn lang-btn--primary"
-              onClick={() => {
-                languageLog.rung('advanced', { rung: 'repetition', seq: entry.seq });
-                onAdvance?.();
-              }}
+              onClick={advance}
             >
               Next
             </button>

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { bindMediaToMaster } from '../../../../lib/volume/bindMediaToMaster.js';
 import { languageApi } from './languageApi.js';
 import { languageLog } from './languageLog.js';
 import { diffChars } from './textDiff.js';
@@ -42,8 +43,12 @@ function RecordingPlayback({ userId, corpusId, seq, studyGrant }) {
     });
     return () => { alive = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [userId, corpusId, seq, studyGrant]);
+  // The review player obeys the panel's master volume like every other
+  // sound on this surface; bound for as long as the element is on screen.
+  const audioRef = useRef(null);
+  useEffect(() => (src ? bindMediaToMaster(audioRef.current) : undefined), [src]);
   if (status === 'loading') return <span className="lang-review__status-inline">Loading recording…</span>;
-  return src ? <audio controls preload="none" src={src} /> : <span className="lang-review__missing">audio unavailable</span>;
+  return src ? <audio ref={audioRef} controls preload="none" src={src} /> : <span className="lang-review__missing">audio unavailable</span>;
 }
 
 function Item({ item, userId, corpusId, languages, studyGrant }) {

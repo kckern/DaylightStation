@@ -183,6 +183,55 @@ const commands = {
     console.log(`✓ admin token captured securely in ${TOKEN_CACHE}`);
   },
   async shell() { pretty(await reqAt(SHELL_BASE, '/status')); },
+  /**
+   * Read or write an Android settings row through the ops payload (the APK
+   * holds WRITE_SECURE_SETTINGS, so this is the ADB-free way in).
+   *   setting get [secure|system|global] <key>
+   *   setting set [secure|system|global] <key> <value>
+   */
+  async setting([sub, ...rest]) {
+    const ns = ['secure', 'system', 'global'].includes(rest[0]) ? rest.shift() : 'secure';
+    const [key, ...value] = rest;
+    if (sub === 'get' && key) {
+      pretty(await reqAt(OPS_BASE, `/getsetting?ns=${ns}&key=${encodeURIComponent(key)}`));
+      return;
+    }
+    if (sub === 'set' && key && value.length) {
+      pretty(await reqAt(OPS_BASE, `/setsetting?ns=${ns}&key=${encodeURIComponent(key)}&value=${encodeURIComponent(value.join(' '))}`, { method: 'POST' }));
+      return;
+    }
+    console.error('usage: setting get [ns] <key> | setting set [ns] <key> <value>');
+    process.exit(1);
+  },
+  /**
+   * The volume-key beep. Facebook's KeyEventAccessibilityService gets its own
+   * copy of every volume key (accessibility services are not a chain) and its
+   * Control Center answers with a loud tone. Removing it from the enabled
+   * list is the fix, and a reboot or vendor update can put it back — this
+   * shows the list and, with `fix`, removes every non-portalkeys service
+   * that mentions KeyEvent while leaving the Portal's own list intact.
+   *   beep            show the enabled accessibility services
+   *   beep fix        remove the beeping service, keep everything else
+   */
+  async beep([sub]) {
+    const ours = 'net.kckern.portalkeys/net.kckern.portalkeys.PortalKeysService';
+    const res = await reqAt(OPS_BASE, '/getsetting?ns=secure&key=enabled_accessibility_services');
+    const current = String(res?.value ?? '').split(':').filter(Boolean);
+    const beeping = current.filter((c) => /KeyEvent/i.test(c) && !c.startsWith('net.kckern.portalkeys'));
+    console.log('enabled_accessibility_services:');
+    for (const c of current) console.log(`  ${beeping.includes(c) ? '✗ BEEPS ' : c.startsWith('net.kckern') ? '✓ ours  ' : '  keep  '}${c}`);
+    if (!current.some((c) => c === ours || c.startsWith('net.kckern.portalkeys/'))) {
+      console.log('! portal-keys is NOT in the list — run `enable-a11y`');
+    }
+    if (sub !== 'fix') {
+      console.log(beeping.length ? '\nRun `beep fix` to remove the beeping service.' : '\nNo beeping service enabled.');
+      return;
+    }
+    if (!beeping.length) { console.log('nothing to remove'); return; }
+    const next = current.filter((c) => !beeping.includes(c)).join(':');
+    pretty(await reqAt(OPS_BASE, `/setsetting?ns=secure&key=enabled_accessibility_services&value=${encodeURIComponent(next)}`, { method: 'POST' }));
+    console.log(`removed: ${beeping.join(', ')}`);
+  },
   async input() { pretty(await reqAt(OPS_BASE, '/input')); },
   async hid([sub, vid, pid]) {
     if (!sub || sub === 'status') { pretty(await reqAt(OPS_BASE, '/usb-hid')); return; }
@@ -386,6 +435,8 @@ if (!name || name === 'help' || !commands[name]) {
   console.log('Commands:');
   console.log('  bootstrap-token <serial> capture the shell token once over final USB');
   console.log('  shell                  persistent shell + payload health (:8772)');
+  console.log('  setting get|set [ns] <key> [value]  read/write an Android settings row (:8773)');
+  console.log('  beep [fix]             show / remove the volume-key beep accessibility service');
   console.log('  input                  Android InputDevice + USB inventory (:8773)');
   console.log('  hid [status|retry|allow <vid> <pid>]  USB HID bridge diagnostics');
   console.log('  bt pair [alias]        one-time BLE keyboard setup (bind + bond); alias from devices.yml\n  bt keyboards           list keyboards in the household device registry\n  bt [status|diag|scan-direct [ms]|bond <alias|mac> [le|bredr|auto]|gatt-direct <alias|mac>]');

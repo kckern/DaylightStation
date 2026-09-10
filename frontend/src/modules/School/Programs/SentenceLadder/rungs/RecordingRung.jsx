@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSentenceAudio, clipsFor } from '../useSentenceAudio.js';
 import { languageLog } from '../languageLog.js';
+import { bindMediaToMaster } from '../../../../../lib/volume/bindMediaToMaster.js';
 import Icon from '../../../home/icons/Icon.jsx';
 import VoiceBand from './VoiceBand.jsx';
 
@@ -81,6 +82,7 @@ export default function RecordingRung({
   const blobRef = useRef(null);
   const takeUrlRef = useRef(null);
   const playbackRef = useRef(null);
+  const unbindPlaybackRef = useRef(null);
   const silenceRef = useRef({ since: null, heard: false });
   const phaseRef = useRef(phase);
   useEffect(() => { phaseRef.current = phase; }, [phase]);
@@ -97,9 +99,12 @@ export default function RecordingRung({
     const el = playbackRef.current;
     if (el) {
       el.onended = null;
+      el.onerror = null;
       el.pause();
       el.src = '';
     }
+    unbindPlaybackRef.current?.();
+    unbindPlaybackRef.current = null;
     playbackRef.current = null;
   }, []);
 
@@ -137,9 +142,17 @@ export default function RecordingRung({
         // review controls appear and nothing is lost but the listen.
         setPhase('playback');
         const el = new Audio(takeUrlRef.current);
+        // The take plays back at the panel's master volume, like the prompt.
+        unbindPlaybackRef.current = bindMediaToMaster(el);
         playbackRef.current = el;
-        el.onended = () => { playbackRef.current = null; setPhase('review'); };
-        el.onerror = () => { playbackRef.current = null; setPhase('review'); };
+        const finish = () => {
+          unbindPlaybackRef.current?.();
+          unbindPlaybackRef.current = null;
+          playbackRef.current = null;
+          setPhase('review');
+        };
+        el.onended = finish;
+        el.onerror = finish;
         const result = el.play();
         if (result?.catch) {
           result.catch((err) => {

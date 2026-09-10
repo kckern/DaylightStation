@@ -870,12 +870,7 @@ export class SentenceLadderService {
       lastActivity: lastActivity || null,
       headline: `Day ${progress.day} · ${progress.dailyLimit} new a day`,
       next: outstanding.length
-        ? {
-          label: `${outstanding.length} sentences today`,
-          detail: this.#describeOutstanding(outstanding),
-          estimate: { count: outstanding.length, unit: 'sentences' },
-          blocked: false,
-        }
+        ? this.#describeToday(queue, outstanding)
         : { label: 'Done for today', detail: 'Come back tomorrow for the next set', blocked: false },
       metrics,
     };
@@ -944,6 +939,34 @@ export class SentenceLadderService {
       },
       description: this.#describeOutstanding(outstandingEntries) || null,
       progress: [{ scope: 'unit', label: 'Today', completed: summary.done, total: summary.total }],
+    };
+  }
+
+  /**
+   * The day in the learner's own units. The queue is STEPS — one sentence at
+   * one rung — and a day-one set of five sentences is twenty of them, so
+   * counting steps put "18 sentences today" on the agenda for a child holding
+   * five. The label counts sentences; steps stay in the detail, where they
+   * say how much sitting is left rather than how much there is to learn.
+   *
+   * "New" is a sentence that entered the ladder today (it has an entry-rung
+   * step in today's queue); everything else still on the queue is review.
+   */
+  #describeToday(queue, outstanding) {
+    const entryRung = RUNG_IDS[0];
+    const fresh = new Set(queue.filter((e) => e.rung === entryRung && !e.practice).map((e) => e.seq));
+    const left = new Set(outstanding.map((e) => e.seq));
+    const newLeft = [...left].filter((seq) => fresh.has(seq)).length;
+    const reviewLeft = left.size - newLeft;
+    const parts = [];
+    if (newLeft) parts.push(`${newLeft} new`);
+    if (reviewLeft) parts.push(`${reviewLeft} to review`);
+    parts.push(`${outstanding.length} ${outstanding.length === 1 ? 'step' : 'steps'} left`);
+    return {
+      label: `${left.size} ${left.size === 1 ? 'sentence' : 'sentences'} today`,
+      detail: `${parts.join(' · ')} — ${this.#describeOutstanding(outstanding)}`,
+      estimate: { count: outstanding.length, unit: 'steps' },
+      blocked: false,
     };
   }
 
