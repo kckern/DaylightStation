@@ -821,6 +821,23 @@ describe('the four partitions', () => {
     expect(grid.querySelectorAll('.school-daygrid__cell--week')).toHaveLength(0);
   });
 
+  it('this week is the term\'s current column on its side, lettered, with days after today as outlines', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(plan(1));
+    schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
+    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
+    const strip = await screen.findByTestId('board-week-grid');
+    const cells = strip.querySelectorAll('.school-daygrid__cell');
+    expect(cells).toHaveLength(7);
+    expect([...cells].map((c) => c.getAttribute('data-state'))).toEqual(['met', 'exempt', 'partial', 'future', 'future', 'future', 'future']);
+    expect(screen.getByTestId('board-week-today')).toHaveAttribute('data-day', '2026-09-09');
+    expect(screen.getByTestId('board-week').querySelector('.school-status-board__week-letters').textContent).toBe('MTWTFSS');
+    // …and the term marks that same week as a column.
+    const termGrid = screen.getByTestId('board-term-grid');
+    const current = termGrid.querySelectorAll('.school-daygrid__cell--current-week');
+    expect([...current].map((c) => c.getAttribute('data-day'))).toEqual(['2026-09-07', '2026-09-08', '2026-09-09', '2026-09-10', '2026-09-11', '2026-09-12', '2026-09-13']);
+    expect(termGrid.querySelector('[data-day="2026-09-02"]')).not.toHaveClass('school-daygrid__cell--current-week');
+  });
+
   it('adds the eighth row when a week carries week-level work', async () => {
     schoolApi.agendaPreview.mockResolvedValue(plan(1));
     const weekly = { ...term, data: { ...term.data, weeks: [{ weekId: '2026-08-31', state: 'met', asked: 1 }, { weekId: '2026-09-07', state: 'unknown', asked: 1 }] } };

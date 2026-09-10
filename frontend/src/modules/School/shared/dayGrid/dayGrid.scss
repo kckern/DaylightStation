@@ -83,6 +83,20 @@
     box-shadow: inset 0 0 0 1px var(--grid-unknown-edge);
   }
 
+  /* NOT YET. A day after today: the faintest outline, so a week row reads
+     "three done, two to go" rather than "five days nobody could judge". */
+  &[data-state='future'] {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--grid-unknown-edge) 55%, transparent);
+  }
+
+  /* THE CURRENT WEEK: a soft field behind its cells, so the column the week
+     partition is showing sideways stands out from the term around it. */
+  &--current-week {
+    outline: 1px solid color-mix(in srgb, var(--grid-current, #fff) 45%, transparent);
+    outline-offset: 0;
+  }
+
   /* Read, but with no goal on record to judge it against. */
   &[data-state='unknown-met'] {
     background: color-mix(in srgb, var(--grid-partial) 45%, transparent);
