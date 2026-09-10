@@ -65,6 +65,10 @@ function LearnerChip({ learner }) {
  */
 function AddTile({ first, onSelect, disabled = false }) {
   return (
+    // A POSTER FRAME AND NOTHING AROUND IT: the dashed slot a cover would fill,
+    // a plus in it, the words under it. It used to be that slot inside a
+    // dashed card — a box in a box — which read as chrome rather than as the
+    // empty place on the shelf where the next book goes.
     <button
       type="button"
       className="school-books-tile school-books-tile--add"

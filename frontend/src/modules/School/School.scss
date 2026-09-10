@@ -1925,10 +1925,13 @@
 .school-books-pad__keys { @extend .school-selfservice__pad; gap: clamp(0.35rem, 1vh, 0.55rem); }
 // TALLER KEYS, 4:3. The pad is a thing a child holds the panel to reach; a
 // key with real height under the thumb beats a strip of wide bars, and the
-// rows still clear the panel's 800px with the entry above them.
+// rows still clear the panel's 800px with the entry above them. THE GLYPH
+// GROWS WITH THE KEY: sized from the key's own height (a third of the pad's
+// width at 4:3), so a tall key does not carry a small digit in its middle.
 .school-books-pad__key {
   @extend .school-selfservice__key;
   aspect-ratio: 4 / 3; min-height: 0;
+  font-size: clamp(1.6rem, calc(min(32rem, 100vw) / 3 * 0.75 * 0.42), 3.6rem);
   &--blank { visibility: hidden; pointer-events: none; }
   // There is no `Clear number` key any more: it sat above the `3`, fired on
   // pointerdown like everything here, and got fat-fingered mid-ISBN. Clearing
@@ -2157,57 +2160,72 @@
 // The add card is a book with nothing in it yet: same footprint, same 2:3 slot,
 // drawn in the accent so it is the one thing on the shelf that invites a tap.
 .school-books-tile--add {
-  border-style: dashed; border-color: var(--school-accent); background: transparent;
-  &:active { background: var(--school-accent-ink); }
+  // No card: the frame IS the tile. Cover-first, like the history cards, so
+  // the plus stands where the next cover will.
+  border: none; background: transparent; padding: 0.55rem 0.25rem;
+  grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; row-gap: 0.5rem;
+  .school-books-tile__art { width: 6.25rem; }
+  .school-books-tile__text { align-items: center; gap: 0.2rem; }
   .school-books-tile__title { color: var(--school-accent); font-weight: 750; }
+  &:active { background: transparent; .school-books-tile__slot { background: var(--school-accent-ink); } }
 }
 .school-books-tile__slot {
   display: grid; place-items: center;
   border: 2px dashed var(--school-accent); border-radius: 8px;
   background: var(--school-accent-ink);
 }
-.school-books-tile__plus { font-size: 2rem; line-height: 1; color: var(--school-accent); }
+.school-books-tile__plus { font-size: 2.6rem; line-height: 1; color: var(--school-accent); }
 
 // BOOK HISTORY: one wrapping shelf, newest day first, each day opened by a
 // BOOKEND tile carrying its date. The scroll box is THE vertical scroll
 // container for a child's whole reading year (`min-height: 0` is what lets a
 // flex child shrink below its content and actually scroll).
 .school-books-history {
-  flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 0.2rem;
+  flex: none; display: flex; flex-direction: column; gap: 0.2rem;
   margin-top: clamp(0.4rem, 1.2vh, 0.8rem);
 }
-.school-books-history__scroll {
-  @include school-scrollbar;
-  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
-  padding: 0.35rem var(--shelf-inset) 0.7rem;
-}
+.school-books-history__scroll { padding: 0.35rem var(--shelf-inset) 1rem; }
 .school-books-history__flow {
   display: flex; flex-wrap: wrap; align-items: stretch; gap: 0.7rem;
   // Cards are cover-first on this shelf; the tile's own history modifier
-  // does the layout, this only fixes the width the flow wraps by.
-  .school-books-tile { flex: 0 0 9.5rem; min-height: 0; }
+  // does the layout, this only fixes the width the flow wraps by — and the
+  // DAY'S COLOUR runs along the top of every one of them.
+  .school-books-tile {
+    flex: 0 0 9.5rem; min-height: 0;
+    border-top: 5px solid var(--day-colour, var(--school-border));
+    border-top-left-radius: 8px; border-top-right-radius: 8px;
+  }
 }
-// A day keeps its bookend and its books together in the DOM; the flow lays
-// them out as siblings.
+// A day keeps its spine and its books together in the DOM; the flow lays
+// them out as siblings. `--day-colour` is set here and inherits through.
 .school-books-history__day { display: contents; }
-// THE BOOKEND: the height of a card, half its width, the date written as a
-// word a child knows with the day under it. A left rule in the accent says
-// "a new day starts here" from across the row; the extra gap before it keeps
-// two days from reading as one shelf.
+// THE SPINE: a slim partition in the day's colour — the day-of-month large
+// and upright at its top, the weekday running down it. Prominent by colour
+// and size, not by width; the gap before it keeps two days from reading as
+// one shelf.
 .school-books-history__bookend {
-  flex: 0 0 5.9rem; box-sizing: border-box;
-  margin: 0; margin-left: 0.5rem;
-  display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 0.15rem;
-  padding: 0.6rem 0.6rem;
-  border-left: 3px solid var(--school-accent); border-radius: 0 12px 12px 0;
-  background: var(--school-surface);
-  color: var(--school-fg); text-align: left;
+  flex: 0 0 2.75rem; box-sizing: border-box;
+  margin: 0; margin-left: 0.6rem;
+  display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
+  padding: 0.45rem 0.2rem 0.6rem;
+  border-top: 5px solid var(--day-colour, var(--school-border));
+  border-radius: 8px 8px 12px 12px;
+  background: color-mix(in srgb, var(--day-colour, var(--school-border)) 14%, var(--school-surface));
+  color: var(--school-fg);
   &:first-child { margin-left: 0; }
 }
-// "Wednesday" is the widest word this can hold, and it must never break —
-// "Thursd / ay" is not a day a child knows.
-.school-books-history__bookend-top { font-size: 0.95rem; font-weight: 800; line-height: 1.15; white-space: nowrap; }
-.school-books-history__bookend-bottom { font-size: 0.85rem; font-weight: 600; color: var(--school-muted); white-space: nowrap; }
+.school-books-history__bookend-top {
+  font-size: 1.35rem; font-weight: 900; line-height: 1; letter-spacing: -0.02em;
+  color: var(--day-colour, var(--school-fg)); white-space: nowrap; text-align: center;
+  // "19 Aug" stacks; a bare "6" does not.
+  max-width: 2.4rem; overflow-wrap: normal;
+}
+.school-books-history__bookend-bottom {
+  writing-mode: vertical-rl; text-orientation: mixed;
+  font-size: 1rem; font-weight: 800; letter-spacing: 0.06em; line-height: 1;
+  color: var(--school-fg); white-space: nowrap;
+  flex: 1 1 auto; display: flex; align-items: center;
+}
 // The sentinel the history watches to reveal another week of days.
 .school-books-history__more { height: 1px; }
 
@@ -2391,7 +2409,13 @@
 // The Today shelf and, under it, the history stack. The column grows so the
 // history can take the rest of the panel and scroll within it; the Today row
 // is `flex: none`, so the growth is the history's alone.
-.school-books__collections { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+// THE PAGE SCROLLS, not a box inside it: Today's row and the whole history
+// are one column that scrolls under the fixed header.
+.school-books__collections {
+  @include school-scrollbar;
+  flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+  overflow-y: auto; overscroll-behavior: contain;
+}
 .school-books__shelf-title {
   margin: 0.4rem 0 0; font-size: 1.05rem; font-weight: 650; color: var(--school-muted);
   letter-spacing: 0.02em; text-transform: uppercase;
@@ -2411,6 +2435,7 @@
   // row past its own left inset so the first book arrived half off the panel.
   padding: 0.5rem var(--shelf-inset) 0.7rem; min-height: 0; align-items: stretch;
   .school-books-tile { flex: 0 0 17rem; min-height: 9.5rem; }
+  .school-books-tile--add { flex: 0 0 auto; min-height: 0; }
   .school-books-tile__title { font-size: 1rem; }
   .school-books-tile__author { font-size: 0.8rem; -webkit-line-clamp: 1; }
 }
