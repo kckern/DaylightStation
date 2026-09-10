@@ -4834,7 +4834,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // takes. Only the household declares Christmas — a course's own `except`
       // excuses a subject, which is a different statement and a different
       // square on the wall.
-      householdCalendar: schoolFullConfig.calendar ?? null,
+      // Validated once, by the lifecycle, off the same block the agenda and
+      // the term grid plan against — not a second, independent read of the raw
+      // config that could reach a different verdict about the same day.
+      householdCalendar: schoolLifecycle.householdSchedule ?? null,
       logger: readingLogger,
       observationStore: readingTimeline,
     });
