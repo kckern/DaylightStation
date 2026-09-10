@@ -90,16 +90,19 @@ describe('AddBook', () => {
   describe('cover', () => {
     const resolved = { status: 'ok', book: BOOK };
 
-    it('paints the card and asks; Yes / No → confirmCover', () => {
+    it('paints the cover as the stage with the doors at its foot; the words beside it', () => {
       const a = mount('cover', { add: add({ resolved }) });
       expect(screen.getByRole('img', { name: 'Cover of Hatchet' })).toHaveAttribute('src', '/c/h.jpg');
       expect(screen.getByText('Hatchet')).toBeInTheDocument();
       expect(screen.getByText('Gary Paulsen')).toBeInTheDocument();
       expect(screen.getByText('A boy, a plane, a hatchet.')).toBeInTheDocument();
+      // The doors live on the stage, under the cover — not in the words column.
+      const stage = document.querySelector('.school-books-found__stage');
+      expect(stage.querySelector('.school-books-add__doors')).not.toBeNull();
       fireEvent.click(screen.getByRole('button', { name: 'Start reading' }));
       expect(a.choose).toHaveBeenCalledWith('starting');
-      fireEvent.click(screen.getByRole('button', { name: 'Wrong book? Edit number' }));
-      expect(a.confirmCover).toHaveBeenCalledWith(false);
+      // No "wrong book" button: Back returns to the pad with the digits kept.
+      expect(screen.queryByRole('button', { name: /wrong book/i })).toBeNull();
     });
 
     it('with duplicateOf: the duplicate card, Open it → openDuplicate, No → confirmCover(false)', () => {
@@ -109,8 +112,8 @@ describe('AddBook', () => {
       expect(screen.queryByRole('button', { name: 'Yes' })).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: 'Open it' }));
       expect(a.openDuplicate).toHaveBeenCalledTimes(1);
-      fireEvent.click(screen.getByRole('button', { name: 'Wrong book? Edit number' }));
-      expect(a.confirmCover).toHaveBeenCalledWith(false);
+      // A duplicate offers no doors — the shelf already has this book.
+      expect(screen.queryByRole('button', { name: 'Start reading' })).toBeNull();
     });
 
     it('lets a clean catalog miss continue under an honest ISBN placeholder', () => {
