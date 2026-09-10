@@ -246,8 +246,17 @@ export function summarize(sections, sessions, entries = [], readingActivity = nu
   return { total, done, segments };
 }
 
-/** learnerId -> ring count, from active fitness.weekly-rings gate progress. */
-export function ringsByLearner(payload, at = Date.now()) {
+/**
+ * learnerId -> `{current, target}` from active fitness.weekly-rings gate
+ * progress.
+ *
+ * `target` IS NOT A WEEKLY QUOTA TODAY. The gate is `gte 1` — its `target` is
+ * the number 1, and `fitness.yml` authors no weekly ring goal — so the board
+ * shows the count alone. The field is carried anyway: the day a real target
+ * is authored, an "x of y" appears here without a code change, which is the
+ * whole reason to keep the shape rather than the bare number.
+ */
+export function ringProgressByLearner(payload, at = Date.now()) {
   const out = {};
   const chosen = new Map();
   for (const item of payload?.items ?? []) {
@@ -259,9 +268,55 @@ export function ringsByLearner(payload, at = Date.now()) {
       || at < period.startsAt || at >= period.endsAt || !Number.isFinite(progress?.current)) continue;
     const previous = chosen.get(subject.id);
     if (!previous || period.startsAt > previous.startsAt) {
-      chosen.set(subject.id, { startsAt: period.startsAt, value: progress.current });
+      // A `gte 1` gate's target of 1 is the gate's threshold, not a quota;
+      // only a target above that is a goal worth printing beside the count.
+      const target = Number.isFinite(progress.target) && progress.target > 1 ? progress.target : null;
+      chosen.set(subject.id, { startsAt: period.startsAt, current: progress.current, target });
     }
   }
-  for (const [learnerId, value] of chosen) out[learnerId] = value.value;
+  for (const [learnerId, value] of chosen) out[learnerId] = { current: value.current, target: value.target };
   return out;
+}
+
+/** learnerId -> ring count. The bare-number view of `ringProgressByLearner`. */
+export function ringsByLearner(payload, at = Date.now()) {
+  return Object.fromEntries(Object.entries(ringProgressByLearner(payload, at)).map(([id, v]) => [id, v.current]));
+}
+
+/** The most rows a triangle may take: a fourth row shrinks the disc below the
+ * diameter at which its glyph stays readable across the room. */
+export const MAX_TRIANGLE_ROWS = 3;
+
+/**
+ * Bowling-pin rows for `count` discs, top row first.
+ *
+ * The base is the smallest width `b` whose triangle holds them all
+ * (`b(b+1)/2 >= count`); the base takes `b`, the row above `b-1`, and so on
+ * until the discs run out, the top row taking whatever is left. Nine — the
+ * subject wall's ceiling — lands exactly on three rows. Past nine the base
+ * widens instead of a fourth row appearing.
+ *
+ *   1 → [1]   2 → [2]   3 → [1,2]   4 → [1,3]   5 → [2,3]   6 → [1,2,3]
+ *   7 → [3,4]   8 → [1,3,4]   9 → [2,3,4]   10 → [1,4,5]
+ */
+export function triangleRows(count) {
+  const n = Number.isInteger(count) && count > 0 ? count : 0;
+  if (n === 0) return [];
+  let base = 1;
+  while (capacity(base) < n) base += 1;
+  const rows = [];
+  let left = n;
+  for (let width = base; width >= 1 && left > 0; width -= 1) {
+    const take = Math.min(width, left);
+    rows.unshift(take);
+    left -= take;
+  }
+  return rows;
+}
+
+/** How many discs `base` rows-of-decreasing-width hold, at most MAX_TRIANGLE_ROWS deep. */
+function capacity(base) {
+  let total = 0;
+  for (let width = base, rows = 0; width >= 1 && rows < MAX_TRIANGLE_ROWS; width -= 1, rows += 1) total += width;
+  return total;
 }
