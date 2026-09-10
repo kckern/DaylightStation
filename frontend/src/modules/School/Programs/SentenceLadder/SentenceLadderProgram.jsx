@@ -394,6 +394,53 @@ export default function SentenceLadderProgram({
     languageLog.pacingWarn('change-failed', { corpus: corpusId, dailyLimit, from, status });
   }, [userId, corpusId, studyGrant, load, day?.dailyLimit]);
 
+  // The shell's own keys, so the ladder can be climbed without touching the
+  // glass: the up and down arrows walk the rungs (and the Review shelf below
+  // them), and on the day-complete panel Space or Enter presses whichever
+  // button is offered. The rungs handle their own keys; this never fires
+  // over a focused control, and never while a rung has a sentence in hand.
+  const climbable = useMemo(
+    () => RUNG_ORDER.filter((rung) => groups.some((g) => g.rung === rung) && !(day?.missingCreditRungs ?? []).includes(rung)),
+    [groups, day?.missingCreditRungs],
+  );
+  const stops = useMemo(() => (preview ? climbable : [...climbable, 'review']), [climbable, preview]);
+  // Mirrors the complete panel's own logic below; the panel is rendered after
+  // the early returns, and hooks cannot follow those.
+  const keySummary = day?.summary || { total: 0, done: 0 };
+  const keySettled = keySummary.done === keySummary.total;
+  const keyMissing = day?.missingCreditRungs ?? [];
+  const keyBlocked = keySettled && keyMissing.length > 0;
+  const keyExit = onExit ?? onSignIn;
+  const finishAction = keySummary.total > 0 && keySettled && !preview && !keyBlocked && !locked ? onRoll
+    : keySettled && !keyBlocked && locked && keyExit ? keyExit
+      : null;
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.target?.closest?.('button, input, select, textarea, a[href], [contenteditable="true"]')) return;
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        if (stops.length < 2) return;
+        const at = tab === 'review' ? stops.indexOf('review') : stops.indexOf(activeRung);
+        const to = stops[(Math.max(at, 0) + (e.key === 'ArrowDown' ? 1 : stops.length - 1)) % stops.length];
+        e.preventDefault();
+        if (to === 'review') { selectTab('review'); return; }
+        selectTab('study');
+        if (to !== activeRung) {
+          languageLog.rung('selected', { rung: to, from: activeRung, via: 'key' });
+          setActiveRung(to);
+        }
+        return;
+      }
+      if ((e.key === ' ' || e.key === 'Enter') && tab === 'study' && finishAction) {
+        e.preventDefault();
+        finishAction();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [stops, tab, activeRung, selectTab, finishAction]);
+
+
   // A guest is stopped, but never stranded: the picker lives one level up and
   // was previously reachable only by knowing the header chip was tappable.
   if (!preview && (!userId || !corpusId || !studyGrant)) {

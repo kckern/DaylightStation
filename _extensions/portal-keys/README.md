@@ -134,6 +134,30 @@ Toggle (default **on**; unlike `screenToggleEnabled` a wrong value here cannot s
 node _extensions/portal-keys/pkctl.mjs config set blockControlCenter false
 ```
 
+### The volume-key beep
+
+Facebook's own `KeyEventAccessibilityService` gets its own copy of every volume
+key — accessibility services are not a chain, so our consuming the key does not
+reach it — and its Control Center answers with a loud tone on the
+voice-assistant audio path. `sound_effects_enabled=0` does NOT silence it. The
+fix is to take that service out of `enabled_accessibility_services`, and a
+reboot or a vendor update can put it back: the 2026-09-10 school session hit it
+again eleven hours after a reboot, every press a beep at a child studying while
+the house slept.
+
+No ADB needed — the ops payload holds `WRITE_SECURE_SETTINGS`:
+
+```bash
+export PK_HOST=<portal-ip>:8771
+node _extensions/portal-keys/pkctl.mjs beep        # show the list; flags the beeping service
+node _extensions/portal-keys/pkctl.mjs beep fix    # remove it, keep everything else
+```
+
+`beep fix` removes only services that mention `KeyEvent` and are not ours;
+the Portal's other services and `PortalKeysService` stay. Needs the admin
+token (`bootstrap-token`, or `PK_TOKEN`). `setting get|set [ns] <key>
+[value]` is the general form for any other row.
+
 ### It cannot be stopped from opening — don't re-run this list
 
 All measured on hardware 2026-07-21 against `com.facebook.alohaapps.controlcenter`:

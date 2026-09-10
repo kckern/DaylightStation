@@ -128,8 +128,15 @@ what the work is made of:
 |---|---|
 | breadcrumb | the corpus's own name — "Glossika Korean" |
 | unit line | where the teacher's boundaries put today's frontier, and the day — "Fluency 1 · Day 12", or just "Day 12" when no units are declared |
-| title | the work itself — "18 sentences today" |
-| description | what the outstanding queue is made of, counted by rung |
+| title | the work itself — "5 sentences today" |
+| description | new against review, steps left, and what those steps are by rung — "5 new · 18 steps left — 3 repetition, 5 dictation, 5 recording, 5 interpretation" |
+
+The title **counts sentences, not steps**. The queue is steps — one sentence at
+one rung — and a day-one set of five sentences is twenty of them; counted as
+steps the title read "18 sentences today" to a child holding five. A sentence
+is *new* when it entered the ladder today and *review* when it is back for a
+later rung; the step count lives in the description, where it says how long
+the sitting is rather than how much there is to learn.
 
 The title is **the work, not the day**. A card is an offer, and "Day 12" is an
 odometer reading rather than a thing a child can do; the day rides on the unit
@@ -184,6 +191,32 @@ recomputes and emits `school.completion.state-observed`. Canonical
 `sentence-ladder` and legacy `language` identifiers are treated as equivalent
 at this settlement boundary so migrated assignments cannot lose credit or a
 configured reward.
+
+## Hands-free
+
+Every step of the ladder answers the keyboard, so a child with the Portal's
+Bluetooth keyboard in their lap never has to reach for the glass. The keys are
+the same on every rung: **Space or Enter is "go"**, **Backspace is "again"**,
+and the rung takes keyboard focus on arrival so a key pressed straight after
+the tap that opened it acts on the rung rather than re-pressing that button.
+
+| Where | Space / Enter | Backspace | Arrows |
+|---|---|---|---|
+| repetition | play; stop while sounding; Next once held | play again | ← play again · → Next |
+| dictation, interpretation | play, until the first letter is typed (then Space is a space); Enter submits | edits the answer | edit the answer |
+| recording | start; stop the take; keep it | record again | — |
+| the ladder itself | on the day-complete panel: Done, or Start the next day | — | ↑ ↓ walk the rungs and the Review shelf |
+
+Tab still replays on the typed rungs. None of these fire while a button or
+field has focus: a focused control keeps its own keys.
+
+**Volume.** Every sound the ladder makes — the prompt, a recorded take, the
+Review shelf's player — follows the screen's software master, the one the
+Portal's volume keys step. The first day shipped bare `Audio` elements at full
+gain, so the keys moved the master and the sentence stayed at 100%.
+
+**The loop breathes.** On the typed rungs the prompt repeats while the learner
+types, with about two and a half seconds of silence before each restart.
 
 ## The recording rung
 

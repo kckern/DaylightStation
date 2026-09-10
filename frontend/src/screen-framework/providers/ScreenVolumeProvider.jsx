@@ -73,8 +73,16 @@ export function ScreenVolumeProvider({
   const effectiveMaster = shaped * clamp(outputCeiling);
 
   // Mirror state into module scope for non-React consumers (sound effects, etc).
+  // Logged at info, not debug: debug never reaches the store, and the one
+  // question a "the volume keys did nothing" report needs answered is whether
+  // the master moved at all. Rate-limited so a held key cannot flood it.
   useEffect(() => {
     _publishMasterState(master, effectiveMaster, muted);
+    logger().sampled('master-changed', {
+      master: Number(master.toFixed(2)),
+      effectiveMaster: Number(effectiveMaster.toFixed(3)),
+      muted,
+    }, { maxPerMinute: 30, aggregate: true });
   }, [master, effectiveMaster, muted]);
 
   // Persist on every change (skipped in fixed mode — the master is config-driven,

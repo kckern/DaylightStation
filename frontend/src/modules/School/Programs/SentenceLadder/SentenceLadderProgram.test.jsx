@@ -969,14 +969,14 @@ describe('dismissal and dead ends', () => {
     setPointer(false);
     const touch = render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByLabelText(/Type what you hear/i);
-    expect(screen.queryByText(/Tab replays/)).toBeNull();
+    expect(screen.queryByText(/Tab plays/)).toBeNull();
     touch.unmount();
 
     setPointer(true);
     window.localStorage.clear();
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByLabelText(/Type what you hear/i);
-    expect(screen.getByText(/Tab replays/)).toBeTruthy();
+    expect(screen.getByText(/Tab plays/)).toBeTruthy();
   });
 
   it('keeps device capabilities out of the drill surface', async () => {
@@ -1022,5 +1022,103 @@ describe('pacing', () => {
     fireEvent.click(await screen.findByText('5 / day'));
     fireEvent.click(screen.getByRole('menuitemradio', { name: '20' }));
     await waitFor(() => expect(pacingMock).toHaveBeenCalledWith('kckern', 'glossika-korean', 20, 'test-grant'));
+  });
+});
+
+// Day one on the Portal: a keyboard in a child's lap, and Space did nothing on
+// the repetition rung. Every step of the ladder is now reachable without the
+// glass — the rungs by their own keys, the shell by arrows.
+describe('hands-free', () => {
+  const pressKey = (key) => fireEvent.keyDown(document.body, { key });
+  const playsToEnd = () => {
+    window.HTMLMediaElement.prototype.play = vi.fn(function play() {
+      setTimeout(() => this.onended?.(), 0);
+      return Promise.resolve();
+    });
+  };
+  const liveDay = (initial, chain = ['repetition']) => {
+    let queue = initial;
+    dayMock.mockImplementation(async () => dayPayload({ queue, chain }));
+    logMock.mockImplementation(async (_userId, { seq, rung }) => {
+      queue = queue.map((e) => (e.seq === seq && e.rung === rung ? { ...e, done: true } : e));
+      return { ok: true, status: 200, data: {} };
+    });
+  };
+  const SEQUENCE = { timeout: 4000 };
+
+  it('Space plays, Space moves on, Backspace plays again — on the repetition rung', async () => {
+    playsToEnd();
+    liveDay([entry(1, 'repetition'), entry(2, 'repetition')]);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    await screen.findByRole('button', { name: 'Play' });
+    pressKey(' ');
+    await screen.findByRole('button', { name: 'Play again' }, SEQUENCE);
+
+    const before = window.HTMLMediaElement.prototype.play.mock.calls.length;
+    pressKey('Backspace');
+    await waitFor(() => expect(window.HTMLMediaElement.prototype.play.mock.calls.length).toBeGreaterThan(before));
+    await screen.findByRole('button', { name: 'Next' }, SEQUENCE);
+
+    pressKey(' ');
+    expect(await screen.findByText('English 2')).toBeTruthy();
+  });
+
+  it('Space stops a sentence that is sounding', async () => {
+    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    await screen.findByRole('button', { name: 'Play' });
+    pressKey(' ');
+    await screen.findByRole('button', { name: 'Stop' });
+    pressKey(' ');
+    expect(await screen.findByRole('button', { name: 'Play' })).toBeTruthy();
+  });
+
+  it('a typed rung is focused on arrival and Space plays before the first letter', async () => {
+    dayMock.mockResolvedValue(dayPayload({ chain: ['dictation'], queue: [entry(1, 'dictation')] }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    const input = await screen.findByLabelText(/Type what you hear/i);
+    await waitFor(() => expect(document.activeElement).toBe(input));
+
+    fireEvent.keyDown(input, { key: ' ' });
+    await waitFor(() => expect(window.HTMLMediaElement.prototype.play).toHaveBeenCalled());
+    expect(input.value).toBe('');
+
+    // Once typing has begun, Space is a space again.
+    fireEvent.change(input, { target: { value: '한' } });
+    const before = window.HTMLMediaElement.prototype.play.mock.calls.length;
+    const event = fireEvent.keyDown(input, { key: ' ' });
+    expect(event).toBe(true); // not prevented
+    expect(window.HTMLMediaElement.prototype.play.mock.calls.length).toBe(before);
+  });
+
+  it('the arrows walk the ladder, and reach the Review shelf', async () => {
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['repetition', 'dictation'],
+      queue: [entry(1, 'repetition'), entry(1, 'dictation')],
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    await screen.findByRole('button', { name: 'Play' });
+
+    pressKey('ArrowDown');
+    expect(await screen.findByLabelText(/Type what you hear/i)).toBeTruthy();
+    // The field takes focus, so the next arrow belongs to the field, not the
+    // shell — step off it first, as a child would by tapping the stage.
+    document.activeElement.blur();
+    pressKey('ArrowDown');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Review' }).getAttribute('aria-pressed')).toBe('true'));
+    pressKey('ArrowDown');
+    expect(await screen.findByRole('button', { name: 'Play' })).toBeTruthy();
+    pressKey('ArrowUp');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Review' }).getAttribute('aria-pressed')).toBe('true'));
+  });
+
+  it('Enter on the complete panel starts the next day', async () => {
+    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition', true)] }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    rollMock.mockResolvedValue({ ok: true, status: 200, data: { rolled: true } });
+    await screen.findByRole('button', { name: 'Start the next day' });
+    pressKey('Enter');
+    await waitFor(() => expect(rollMock).toHaveBeenCalled());
   });
 });

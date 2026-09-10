@@ -713,3 +713,29 @@ describe('day read observability', () => {
   });
 });
 
+
+describe('summarize — the agenda counts sentences, not steps', () => {
+  // Four sentences at four rungs is sixteen steps on day one (the cold-start
+  // top-up), and the agenda used to print that as "16 sentences today".
+  it('labels day one by its sentences and keeps steps in the detail', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition', capabilities: EQUIPPED });
+    const [course] = svc.summarize({ userId: 'kckern' });
+    expect(course.next.label).toBe('4 sentences today');
+    expect(course.next.detail).toMatch(/^4 new · 15 steps left — /);
+    expect(course.next.estimate).toEqual({ count: 15, unit: 'steps' });
+  });
+
+  it('splits sentences entering today from those back for review', () => {
+    const ds = new FakeDatastore();
+    makeDue(ds, 'dictation', 1);
+    const svc = makeService(ds);
+    const [course] = svc.summarize({ userId: 'kckern' });
+    const { queue } = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    const sentences = new Set(queue.filter((e) => !e.done).map((e) => e.seq)).size;
+    expect(course.next.label).toBe(`${sentences} sentences today`);
+    expect(course.next.detail).toMatch(/1 to review/);
+    expect(course.next.detail).not.toMatch(/\d+ sentences today/);
+  });
+});
