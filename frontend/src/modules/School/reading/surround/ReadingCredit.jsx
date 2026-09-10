@@ -211,6 +211,31 @@ export default function ReadingCredit({
         />
       </div>
 
+      {/* UP NEXT: the book waiting on deck, and WHOSE it is — cover, face,
+          name. The queue is user-scoped, and this is where a child sees that
+          the book they queued is theirs, or that a sibling's card just took it.
+          Small and below the plaque: it is a promise about later, not a fact
+          about now. */}
+      {reading?.onDeck ? (
+        <div className="reading-credit__next" data-testid="reading-credit-next">
+          <p className="reading-credit__next-label">Up next</p>
+          <div className="reading-credit__next-card">
+            {reading.onDeck.image
+              ? <img className="reading-credit__next-cover" src={reading.onDeck.image} alt="" />
+              : <span className="reading-credit__next-cover reading-credit__next-cover--blank" aria-hidden="true" />}
+            {reading.onDeck.learnerId ? (
+              <div className="reading-credit__next-who">
+                <div className="reading-credit__next-face">
+                  <ProfileAvatar id={reading.onDeck.learnerId} name={reading.onDeck.learnerName || reading.onDeck.learnerId} size={96} />
+                </div>
+                {reading.onDeck.learnerName ? <p className="reading-credit__next-name">{reading.onDeck.learnerName}</p> : null}
+              </div>
+            ) : null}
+          </div>
+          {reading.onDeck.title ? <p className="reading-credit__next-title">{reading.onDeck.title}</p> : null}
+        </div>
+      ) : null}
+
       {/* Anchored to the foot of the rail, visibly OUTSIDE the plaque above it:
           J9 costs nothing only while it is not part of the statement. */}
       <WallClock />

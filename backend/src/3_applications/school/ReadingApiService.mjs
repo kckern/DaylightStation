@@ -132,8 +132,19 @@ export class ReadingApiService {
         consequence: 'the story played and the obligation did not move' });
       throw err;
     }
+    // A book waiting on deck takes the stage instead of the launch card: the
+    // Player is already advancing into it, and the session's next pick is the
+    // scope the queue carried — whoever it was queued for, or re-scoped to.
+    // The screen learns the pick from this response AND the broadcast.
+    const next = location ? this.#sessions.advanceToOnDeck?.(location) ?? null : null;
+    if (next) {
+      this.#logger.info?.('school.reading.read-then-advance', {
+        location, learnerId: next.learnerId, contentId: next.contentId, pickId: next.pickId,
+      });
+      return { kind: 'ok', read, presentation: null, next };
+    }
     const returning = location ? this.#sessions.beginReturn(location, { reason: 'story-finished' }) : null;
-    return { kind: 'ok', read, presentation: returning?.presentation ?? null };
+    return { kind: 'ok', read, presentation: returning?.presentation ?? null, next: null };
   }
   async summary(learnerId) {
     let status = null;
