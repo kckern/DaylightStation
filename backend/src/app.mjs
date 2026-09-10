@@ -4827,6 +4827,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // Optional: without it the prompt falls back to the learner id, which is
       // a worse greeting and not a broken one.
       resolveLearner: (id) => configService.getUserProfile?.(id) ?? null,
+      // Days the whole house is off, in the same shape a syllabus schedule
+      // takes. Only the household declares Christmas — a course's own `except`
+      // excuses a subject, which is a different statement and a different
+      // square on the wall.
+      householdCalendar: schoolFullConfig.calendar ?? null,
       logger: readingLogger,
       observationStore: readingTimeline,
     });

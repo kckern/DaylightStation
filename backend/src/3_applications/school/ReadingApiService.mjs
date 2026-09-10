@@ -1,4 +1,4 @@
-import { isSchoolDay } from '#domains/school/schoolCalendar.mjs';
+import { isSchoolDay, namedDayOff } from '#domains/school/schoolCalendar.mjs';
 
 const YESTERDAY_LIMIT = 4;
 const RECENT_DAYS = 7;
@@ -22,13 +22,16 @@ function dayBefore(studyDay) {
 
 export class ReadingApiService {
   #recordStoryRead; #sessions; #storyTime; #readingLog; #resolveLearner; #logger; #observations; #clock; #nowMs;
+  #householdCalendar;
   constructor({ recordStoryRead, sessions, storyTime = null, readingLog = null, resolveLearner = null,
+    householdCalendar = null,
     logger = console, observationStore = null, clock = () => new Date(), nowMs = Date.now } = {}) {
     if (!recordStoryRead) throw new Error('createReadingRouter requires recordStoryRead');
     if (!sessions) throw new Error('createReadingRouter requires a sessions store');
     this.#recordStoryRead = recordStoryRead; this.#sessions = sessions; this.#storyTime = storyTime;
     this.#readingLog = readingLog; this.#resolveLearner = resolveLearner; this.#logger = logger;
     this.#observations = observationStore; this.#clock = clock; this.#nowMs = nowMs;
+    this.#householdCalendar = householdCalendar;
   }
   session(location) { return this.#sessions.snapshot(location); }
   acknowledge(location, proof) {
@@ -240,13 +243,28 @@ export class ReadingApiService {
         // Reading on a rest day still counts — the agenda never un-serves work
         // done on a non-school day — so `met` is checked FIRST and a Saturday
         // story is a green square.
+        // A NAMED DAY OFF IS NOT A WEEKEND, and the wall must not draw them
+        // alike. `rest` recedes on purpose — a Saturday is the ordinary rhythm
+        // and greying it made a normal week look like a broken streak. But
+        // Thanksgiving is a thing that HAPPENED, and a child looking for why
+        // the middle of that week is blank deserves to be told rather than
+        // shown the same near-invisible square a Saturday gets.
+        //
+        // The name comes from the HOUSEHOLD calendar, not the enrollment's own
+        // schedule: a course may excuse a day for its own reasons, but only the
+        // house declares Christmas. Reading still counts on a holiday — `met`
+        // and `partial` are checked first, exactly as they are for a rest day,
+        // because the agenda never un-serves work done on a day off.
         const asked = isSchoolDay(day, schedule);
+        const holiday = namedDayOff(day, this.#householdCalendar);
         let state;
         if (target === null) state = books > 0 ? 'unknown-met' : 'unknown';
         else if (target > 0 && books >= target) state = 'met';
         else if (books > 0) state = 'partial';
+        else if (holiday) state = 'holiday';
         else state = asked ? 'none' : 'rest';
-        return { studyDay: day, books, target, asked, state };
+        return { studyDay: day, books, target, asked, state,
+          ...(holiday ? { holiday: holiday.label } : {}) };
       }).reverse();
     }
     let displayName = null;

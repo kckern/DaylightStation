@@ -19,6 +19,7 @@
   --streak-met: #2ec46f;
   --streak-partial: #ffd479;
   --streak-empty: rgba(255, 255, 255, 0.09);
+  --streak-holiday: #4d9de0;
   --streak-ink: #07210f;
 }
 
@@ -65,6 +66,17 @@
      asked, so there is nothing to report. */
   &[data-state='rest'] {
     background: rgba(255, 255, 255, 0.035);
+  }
+
+  /* A NAMED DAY OFF, and the one day-off square that is meant to be seen.
+     `rest` above recedes because a Saturday is the ordinary rhythm; Christmas
+     is not rhythm, it is an occasion, and a child looking at a blank week in
+     late November should be told why rather than shown the same near-invisible
+     square a weekend gets. Blue because it is the one hue on this wall that is
+     neither the green of a met goal nor the amber of a partial one — it reads
+     as "not scored" rather than as a grade. No number: nothing was asked. */
+  &[data-state='holiday'] {
+    background: color-mix(in srgb, var(--streak-holiday) 55%, transparent);
   }
 
   /* Read, but with no goal on record to judge it against. Coloured, because
