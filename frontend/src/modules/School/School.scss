@@ -3000,10 +3000,13 @@
     // past its share: a nine-pin day needs a four-pin base, and the pins are
     // the one thing here that cannot shrink into illegibility.
     display: grid;
-    grid-template-columns: 1fr minmax(max-content, 1fr) 1fr 1fr;
+    // Not quite even quarters: the face needs less than a fourth, the pins
+    // and the sixteen-week grid need more, and the week strip is seven
+    // squares and a number.
+    grid-template-columns: 0.8fr minmax(max-content, 1.2fr) 0.75fr 1.35fr;
     align-items: stretch; column-gap: 0;
     padding: clamp(0.5rem, 1.4vh, 0.9rem) clamp(0.7rem, 1.3vw, 1rem);
-    --disc-cap: clamp(1.75rem, 4.4vh, 2.5rem);
+    --disc-cap: clamp(1.75rem, 5.2vh, 2.8rem);
     --disc-gap: clamp(0.15rem, 0.5vh, 0.3rem);
     border: 1px solid var(--school-border); border-radius: 16px;
     background: var(--school-surface);
@@ -3032,8 +3035,8 @@
     // Bigger than it was (13vh → 15vh, 7rem → 8rem): the face is WHO, and on
     // a board of four it is the one thing a child finds their own row by.
     .piano-avatar {
-      width: clamp(4rem, 15vh, 8rem); height: clamp(4rem, 15vh, 8rem);
-      font-size: clamp(1.3rem, 4.6vh, 2.3rem);
+      width: clamp(4rem, 14vh, 7.5rem); height: clamp(4rem, 14vh, 7.5rem);
+      font-size: clamp(1.3rem, 4.3vh, 2.2rem);
     }
   }
   // FOUR PARTITIONS, time widening left to right: who · today · this week ·
@@ -3074,7 +3077,7 @@
     bottom: clamp(0.7rem, 1.6vh, 1.05rem);
     transform: translate(-50%, 50%);
     z-index: 1;
-    max-width: calc(clamp(4rem, 15vh, 8rem) + 0.8rem);
+    max-width: calc(clamp(4rem, 14vh, 7.5rem) + 0.8rem);
     padding: 0.18em 0.6em;
     border-radius: 999px;
     background: var(--school-surface);
@@ -3119,8 +3122,8 @@
     // `--stack` is Σ of the per-row pitch factors (√3/2 for a nesting pair,
     // 1 for a pair that cannot nest — see `pitchFactors`), so the stack's
     // height is disc·(1 + stack) + gap·stack.
-    // What the title, the meter and the three gaps between them take.
-    --room-h: calc(100cqh - 3.9rem);
+    // What the title, the meter and the gaps between them take.
+    --room-h: calc(100cqh - 3.7rem);
     --disc-by-height: calc((var(--room-h) - var(--disc-gap) * var(--stack, 0)) / (1 + var(--stack, 0)));
     --disc-by-width: calc((100cqw - (var(--base, 1) - 1) * var(--disc-gap)) / var(--base, 1));
     --disc: min(var(--disc-cap), var(--disc-by-height), var(--disc-by-width));
@@ -3290,7 +3293,7 @@
   // the plot and read by all three, so a month label can only ever sit over
   // its own week.
   &__term-plot {
-    --grid-cell: clamp(6px, 1.35vh, 11px);
+    --grid-cell: clamp(6px, 1.3vh, 12px);
     --grid-gap: 1px;
     flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
   }
@@ -3320,8 +3323,8 @@
   // The same footprint as an 18-week grid, so the card does not jump when the
   // term lands. Shimmers like the pins.
   &__grid--skeleton {
-    width: calc(16 * (clamp(6px, 1.35vh, 11px) + 1px));
-    height: calc(7 * (clamp(6px, 1.35vh, 11px) + 1px));
+    width: calc(16 * (clamp(6px, 1.3vh, 12px) + 1px));
+    height: calc(7 * (clamp(6px, 1.3vh, 12px) + 1px));
     border-radius: 3px;
     background: linear-gradient(
       100deg,
