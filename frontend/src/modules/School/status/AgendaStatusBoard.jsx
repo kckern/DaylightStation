@@ -52,7 +52,8 @@ import Icon from '../home/icons/Icon.jsx';
 import { hasIcon } from '../home/icons/iconRegistry.js';
 import { schoolApi } from '../schoolApi.js';
 import { schoolLog } from '../schoolLog.js';
-import { dayStatus, summarize, ringsByLearner } from './agendaStatusModel.js';
+import DayGrid from '../shared/dayGrid/DayGrid.jsx';
+import { dayStatus, summarize, ringProgressByLearner, triangleRows } from './agendaStatusModel.js';
 
 const REFRESH_MS = 5 * 60_000;
 const SCHOOL_REFRESH_EVENTS = new Set([
@@ -104,6 +105,78 @@ function labelForSegment(segment) {
   return `${segment.label}: ${state}${extra}${activity ? `, ${activity}` : ''}`;
 }
 
+/**
+ * The assignments as bowling pins: rows from `triangleRows`, filled in the
+ * order `summarize` returns them — reading order, top row first — so the
+ * subject a child sees first today is the one they saw first yesterday.
+ * Each row is its own list; the disc is decorative and the NAME rides on the
+ * icon (Icon's `label` gives it role="img"), which keeps the list semantics.
+ */
+function Pins({ segments }) {
+  const rows = triangleRows(segments.length);
+  let cursor = 0;
+  return (
+    <div className="school-status-board__pins" style={{ '--rows': rows.length }}>
+      {rows.map((width, r) => {
+        const slice = segments.slice(cursor, cursor + width);
+        cursor += width;
+        return (
+          <ul key={r} className="school-status-board__pills">
+            {slice.map((segment, i) => (
+              <li
+                // Two sections can share a subject; the index keeps the key
+                // unique without pretending order is meaningful.
+                key={`${segment.unitId ?? segment.subject}-${r}-${i}`}
+                className="school-status-board__pill"
+                data-state={segment.state}
+                // `data-done` kept alongside `data-state` for anything still
+                // selecting on the boolean; the tri-state is the one to read.
+                data-done={segment.state === 'passed' ? 'true' : 'false'}
+              >
+                <Icon name={iconFor(segment.subject)} label={labelForSegment(segment)} />
+                {segment.extraCount > 0 && (
+                  <span className="school-status-board__extra" aria-hidden="true">
+                    +{segment.extraCount}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The term as a grid, weeks as columns. `undefined` is in flight (a skeleton
+ * of the right width), `null` is a failed read (nothing — a grid that lied
+ * about a term would be worse than no grid), a term is drawn. The eighth row
+ * appears only when a week carries week-level work.
+ */
+function TermGrid({ term }) {
+  if (term === null) return null;
+  if (term === undefined || !term.from || !term.to) {
+    return <div className="school-status-board__grid school-status-board__grid--skeleton" aria-hidden="true" />;
+  }
+  const weeks = Array.isArray(term.weeks) ? term.weeks : [];
+  const hasWeeklyWork = weeks.some((w) => (w.asked ?? 0) > 0);
+  return (
+    <DayGrid
+      days={(term.days ?? []).map((d) => ({ studyDay: d.studyDay, state: d.state }))}
+      orientation="weeks-as-columns"
+      from={term.from}
+      to={term.to}
+      studyDay={term.today ?? null}
+      extraRow={hasWeeklyWork ? weeks.map((w) => ({ weekId: w.weekId, state: w.state })) : null}
+      className="school-status-board__grid"
+      testId="board-term-grid"
+      todayTestId="board-term-today"
+      ariaLabel={`${term.label ?? 'This term'}: ${(term.days ?? []).filter((d) => d.state === 'met').length} days met`}
+    />
+  );
+}
+
 export default function AgendaStatusBoard({ kids = [], day }) {
   const [rows, setRows] = useState(null);
   const [nonce, setNonce] = useState(0);
@@ -112,6 +185,11 @@ export default function AgendaStatusBoard({ kids = [], day }) {
   // covers the whole roster, so folding it in would mean re-settling every
   // card when it lands — and a slow State Gates read would hold the plans back.
   const [rings, setRings] = useState({});
+  // The term grid, per learner: `undefined` while in flight, `null` when the
+  // read failed (the card then simply has no term), else the term read model.
+  // Settles independently, like the rings — the server replays today and
+  // yesterday on every read and serves the rest from its cache.
+  const [terms, setTerms] = useState({});
   const rosterIds = useMemo(() => new Set(kids.map((kid) => kid.id)), [kids]);
 
   /**
@@ -158,12 +236,29 @@ export default function AgendaStatusBoard({ kids = [], day }) {
       schoolApi.stateGates({ gateId: 'fitness.weekly-rings', periodKind: 'interval' })
         .then((res) => {
           if (!alive) return;
-          setRings(res?.ok ? ringsByLearner(res.data) : {});
+          setRings(res?.ok ? ringProgressByLearner(res.data) : {});
         })
         .catch((error) => {
           if (alive) setRings({});
           schoolLog.selfServiceError?.('status-board.state-gates-failed', { error: error?.message });
         });
+    }
+
+    // The term, one read per learner, never awaited by the plan. A failed
+    // read costs that card's grid and nothing else.
+    setTerms({});
+    if (schoolApi.learnerTerm) {
+      kids.forEach((kid) => {
+        schoolApi.learnerTerm(kid.id)
+          .then((res) => {
+            if (!alive) return;
+            setTerms((current) => ({ ...current, [kid.id]: res?.ok ? res.data : null }));
+          })
+          .catch((error) => {
+            if (alive) setTerms((current) => ({ ...current, [kid.id]: null }));
+            schoolLog.selfServiceError?.('status-board.term-failed', { learnerId: kid.id, error: error?.message });
+          });
+      });
     }
 
     // A live board uses the household study day, including its pre-4am
@@ -289,93 +384,64 @@ export default function AgendaStatusBoard({ kids = [], day }) {
               <span className="school-status-board__name">{kid.name}</span>
               <ProfileAvatar id={kid.id} name={kid.name} size={192} />
             </div>
-            <div className="school-status-board__info">
-              {/* ONE READOUT, top right. It used to be a status WORD there and
-                  a count below the discs — two lines saying the same thing,
-                  one of them in words the discs already show. The count is
-                  what pictures cannot carry, so the count is what stays. */}
+            {/* THE DAY: the assignments as a bowling-pin triangle, with the
+                count under the pins. Time widens left to right across the
+                card — who, today, this week, the term — and each partition
+                is one thing with its own number inside it, not a count
+                floating away from the thing it counts. */}
+            <div className="school-status-board__day" data-testid="board-day">
+              {loading ? (
+                // SKELETON PINS while the plan is in flight — a three-disc
+                // pyramid, the row's height fixed by the disc size rather than
+                // by how many there turn out to be. They shimmer so the panel
+                // reads as working rather than as broken.
+                <div className="school-status-board__pins" aria-hidden="true">
+                  {[[0], [1, 2]].map((row, r) => (
+                    <ul key={r} className="school-status-board__pills">
+                      {row.map((i) => <li key={i} className="school-status-board__pill school-status-board__pill--skeleton" />)}
+                    </ul>
+                  ))}
+                </div>
+              ) : summary && summary.segments.length > 0 ? (
+                <Pins segments={summary.segments} />
+              ) : null}
+              {/* THE READOUT, under the pins. At 100% the chip replaces the
+                  count: "5 of 5" makes a reader do the comparison to learn the
+                  one thing that matters. Below 100% the count is the more
+                  useful of the two. */}
               {loading ? (
                 <span className="school-status-board__status school-status-board__status--none">&nbsp;</span>
               ) : summary && summary.total > 0 ? (
-                // AT 100% THE CHIP REPLACES THE COUNT. "5 of 5" makes a reader
-                // do the comparison to learn the one thing that matters; the
-                // chip says it. Below 100% the count is the more useful of the
-                // two, because how much is left is exactly the open question.
                 summary.done >= summary.total ? (
-                  <span className="school-status-board__done-chip">Done for the day</span>
+                  <span className="school-status-board__done-chip" aria-label="Done for the day">Done</span>
                 ) : (
                   <span className="school-status-board__status">{summary.done} of {summary.total}</span>
                 )
               ) : (
                 <span className="school-status-board__status school-status-board__status--none">No plan to show</span>
               )}
-              {/* Rings this week. Rendered only once the number has arrived —
-                  a placeholder zero would be a claim we cannot support yet,
-                  and "0" and "not loaded" are different facts. Labelled "this
-                  week" because the shared weekly projection now has one hard
-                  Monday boundary in School and Fitness alike. */}
-              {Number.isFinite(rings[kid.id]) && (
+            </div>
+            {/* THIS WEEK: the fitness rings. Rendered only once the number has
+                arrived — a placeholder zero would be a claim we cannot support
+                yet, and "0" and "not loaded" are different facts. The count
+                stands alone until a weekly goal is authored (see
+                `ringProgressByLearner`). */}
+            <div className="school-status-board__week" data-testid="board-week">
+              {Number.isFinite(rings[kid.id]?.current) && (
                 <span className="school-status-board__rings" title="Rings this week">
-                  <RingIcon size="1.1em" label={`${rings[kid.id]} rings this week`} />
-                  <span className="school-status-board__rings-count">{rings[kid.id]}</span>
+                  <RingIcon size="1em" label={`${rings[kid.id].current} rings this week`} />
+                  <span className="school-status-board__rings-count">
+                    {rings[kid.id].current}
+                    {Number.isFinite(rings[kid.id].target) ? ` of ${rings[kid.id].target}` : ''}
+                  </span>
                 </span>
               )}
-              {/* SKELETON DISCS while the plan is in flight. Three is a guess
-                  at the count and deliberately so — the row's height is what
-                  has to be right, and it is fixed by the disc size, not by how
-                  many there turn out to be. They shimmer so the panel reads as
-                  working rather than as broken. */}
-              {loading && (
-                <ul className="school-status-board__pills" style={{ '--count': 3 }} aria-hidden="true">
-                  {[0, 1, 2].map((i) => (
-                    <li key={i} className="school-status-board__pill school-status-board__pill--skeleton" />
-                  ))}
-                </ul>
-              )}
-              {summary && summary.segments.length > 0 && (
-                <>
-                  {/* The segments used to be an anonymous meter, hidden from
-                      assistive tech because they said nothing a sighted reader
-                      could not get from the count. Carrying a subject icon
-                      makes each one a fact of its own — so it has to be
-                      readable too. The disc is decorative; the NAME rides on
-                      the icon (Icon's `label` gives it role="img"), which
-                      keeps the list semantics of the row intact. */}
-                  {/* The count is a LAYOUT input, not decoration: CSS cannot
-                      count its own children, and the discs divide the row
-                      between themselves so a nine-subject day fits one line
-                      (School.scss, `&__pill`). */}
-                  <ul
-                    className="school-status-board__pills"
-                    style={{ '--count': summary.segments.length }}
-                  >
-                    {summary.segments.map((segment, i) => (
-                      <li
-                        // Two sections can share a subject; the index keeps the
-                        // key unique without pretending order is meaningful.
-                         
-                        key={`${segment.unitId ?? segment.subject}-${i}`}
-                        className="school-status-board__pill"
-                        data-state={segment.state}
-                        // `data-done` kept alongside `data-state` for anything
-                        // still selecting on the boolean; the tri-state is the
-                        // one to read.
-                        data-done={segment.state === 'passed' ? 'true' : 'false'}
-                      >
-                        <Icon
-                          name={iconFor(segment.subject)}
-                          label={labelForSegment(segment)}
-                        />
-                        {segment.extraCount > 0 && (
-                          <span className="school-status-board__extra" aria-hidden="true">
-                            +{segment.extraCount}
-                          </span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
+            </div>
+            {/* THE TERM: every day since September, one square each, weeks as
+                columns. Blank-but-present while loading, so the card is the
+                width it is going to be from the first paint. */}
+            <div className="school-status-board__term" data-testid="board-term">
+              <TermGrid term={terms[kid.id]} />
             </div>
           </li>
         ))}
