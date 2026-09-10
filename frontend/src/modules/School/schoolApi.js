@@ -291,6 +291,11 @@ export const schoolApi = {
   pianoLessonGate: (learnerId) => req(
     `/lifecycle/learners/${encodeURIComponent(learnerId)}/piano-lesson-gate`,
   ),
+  // The board's disc door: a subject's code, minted like the printed agenda's,
+  // for a grown-up's browser to type into the keypad path. Never the Portal.
+  subjectCode: (learnerId, subject, program = null) => req(
+    `/lifecycle/learners/${encodeURIComponent(learnerId)}/subject-code`, { subject, program },
+  ),
   // The status board's term grid: one verdict per study day since the term
   // began, plus one per week for the 8th row. `termId` names a period; absent,
   // the one containing today.

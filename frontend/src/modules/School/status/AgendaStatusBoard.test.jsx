@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import AgendaStatusBoard from './AgendaStatusBoard.jsx';
 import { dayStatus, summarize, ringsByLearner, ringProgressByLearner, triangleRows } from './agendaStatusModel.js';
 
@@ -831,11 +831,31 @@ describe('the four partitions', () => {
     expect([...cells].map((c) => c.getAttribute('data-state'))).toEqual(['met', 'exempt', 'partial', 'future', 'future', 'future', 'future']);
     expect(screen.getByTestId('board-week-today')).toHaveAttribute('data-day', '2026-09-09');
     expect(screen.getByTestId('board-week').querySelector('.school-status-board__week-letters').textContent).toBe('MTWTFSS');
-    // …and the term marks that same week as a column.
+    // …and the term marks that same week as ONE band behind its column.
     const termGrid = screen.getByTestId('board-term-grid');
-    const current = termGrid.querySelectorAll('.school-daygrid__cell--current-week');
-    expect([...current].map((c) => c.getAttribute('data-day'))).toEqual(['2026-09-07', '2026-09-08', '2026-09-09', '2026-09-10', '2026-09-11', '2026-09-12', '2026-09-13']);
-    expect(termGrid.querySelector('[data-day="2026-09-02"]')).not.toHaveClass('school-daygrid__cell--current-week');
+    expect(termGrid).toHaveClass('school-daygrid--has-current');
+    expect(termGrid.style.getPropertyValue('--current-col')).toBe('1');
+    expect(termGrid.querySelectorAll('.school-daygrid__cell--current-week')).toHaveLength(0);
+  });
+
+  it('discs are inert marks by default — the Portal never gets a door', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(plan(2));
+    schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
+    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
+    await waitFor(() => expect(screen.getByText('0 of 2')).toBeTruthy());
+    expect(screen.getByTestId('agenda-status-board').querySelectorAll('button, a')).toHaveLength(0);
+  });
+
+  it('given a door, each disc is a button that hands back its learner and subject', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(plan(2));
+    schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
+    const onOpenSegment = vi.fn();
+    render(<AgendaStatusBoard kids={kids} day="2026-09-09" onOpenSegment={onOpenSegment} />);
+    await waitFor(() => expect(screen.getByText('0 of 2')).toBeTruthy());
+    const doors = screen.getAllByRole('button', { name: /^Open / });
+    expect(doors).toHaveLength(2);
+    fireEvent.click(doors[0]);
+    expect(onOpenSegment).toHaveBeenCalledWith('learner1', expect.objectContaining({ subject: 'math' }));
   });
 
   it('adds the eighth row when a week carries week-level work', async () => {
