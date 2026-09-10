@@ -58,6 +58,7 @@ function build({
   },
   resolveLearner = (id) => ({ id, name: 'User_5' }),
   observationStore = null,
+  householdCalendar = null,
 } = {}) {
   const broadcasts = [];
   const recordStoryRead = new RecordStoryRead({
@@ -70,7 +71,8 @@ function build({
   const app = express();
   app.use(express.json());
   const readingService = new ReadingApiService({
-    recordStoryRead, sessions, storyTime, readingLog, resolveLearner, observationStore, logger: silent,
+    recordStoryRead, sessions, storyTime, readingLog, resolveLearner, observationStore,
+    householdCalendar, logger: silent,
   });
   app.use('/api/v1/school/reading', createReadingRouter({ readingService }));
   return { app, sessions, readingLog, broadcasts };
@@ -466,5 +468,81 @@ describe('POST /read — and the session it leaves behind', () => {
     const { app, readingLog } = build();
     await finish(app, { location: undefined }).expect(200);
     expect(await readingLog.listForDay('user_5', '2026-08-26')).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE BLUE SQUARES. A weekend and Thanksgiving both ask nothing of a child, and
+// the wall must not draw them alike: `rest` recedes because a Saturday is the
+// ordinary rhythm, while a named day off is an occasion worth seeing.
+describe('the streak wall marks the household s named days off', () => {
+  // The study day is 2026-08-26, so the 28-day window reaches back to 07-30.
+  const CALENDAR = {
+    except: [
+      { from: '2026-08-12', to: '2026-08-14', label: 'Pioneer trek' },
+      { from: '2026-08-19', to: '2026-08-19', label: 'Fair day' },
+      { from: '2026-08-05', to: '2026-08-05' },
+    ],
+  };
+  const dayIn = (body, studyDay) => body.streak.find((d) => d.studyDay === studyDay);
+  const summaryWith = async (extra = {}) => {
+    const { app } = build({ householdCalendar: CALENDAR, ...extra });
+    const res = await request(app).get('/api/v1/school/reading/summary?learnerId=user_5');
+    expect(res.status).toBe(200);
+    return res.body;
+  };
+
+  it('paints every day of a named span, and carries the name for the square s label', async () => {
+    const body = await summaryWith();
+    for (const day of ['2026-08-12', '2026-08-13', '2026-08-14']) {
+      expect(dayIn(body, day)).toMatchObject({ state: 'holiday', holiday: 'Pioneer trek' });
+    }
+    expect(dayIn(body, '2026-08-19')).toMatchObject({ state: 'holiday', holiday: 'Fair day' });
+  });
+
+  it('leaves a weekend as `rest` — the rhythm is not an occasion', async () => {
+    // A real weekday schedule, or `isSchoolDay` fails open and a Saturday is
+    // judged as an ordinary school day with no reading.
+    const body = await summaryWith({
+      storyTime: {
+        studyDay: () => '2026-08-26',
+        status: async () => ({ error: false, enrolled: true, count: 1, target: 2,
+          progressLabel: '1 of 2 stories', schedule: { daysOfWeek: [1, 2, 3, 4, 5] } }),
+      },
+    });
+    // 2026-08-15 is a Saturday and belongs to no span.
+    expect(dayIn(body, '2026-08-15').state).toBe('rest');
+    expect(dayIn(body, '2026-08-15')).not.toHaveProperty('holiday');
+    // And a named span still wins over the weekday roster on a weekday.
+    expect(dayIn(body, '2026-08-13').state).toBe('holiday');
+  });
+
+  it('still calls an ordinary school day with no reading a miss', async () => {
+    const body = await summaryWith();
+    expect(dayIn(body, '2026-08-18')).toMatchObject({ state: 'none' });
+  });
+
+  it('gives an UNNAMED day off no blue square — there is nothing to say about it', async () => {
+    const body = await summaryWith();
+    expect(dayIn(body, '2026-08-05').state).not.toBe('holiday');
+  });
+
+  it('lets reading on a holiday still count, exactly as it does on a rest day', async () => {
+    const readingLog = memoryReadingLog({
+      'user_5 2026-08-13': [
+        { learnerId: 'user_5', studyDay: '2026-08-13', title: 'Corduroy', contentId: 'plex:1', at: '2026-08-13T10:00:00Z' },
+        { learnerId: 'user_5', studyDay: '2026-08-13', title: 'Blueberries', contentId: 'plex:2', at: '2026-08-13T11:00:00Z' },
+      ],
+    });
+    const body = await summaryWith({ readingLog });
+    // Target is 2 and the child read 2 — a met goal beats the holiday, because
+    // the agenda never un-serves work done on a day off.
+    expect(dayIn(body, '2026-08-13').state).toBe('met');
+  });
+
+  it('marks nothing without a household calendar, rather than inventing days off', async () => {
+    const { app } = build();
+    const res = await request(app).get('/api/v1/school/reading/summary?learnerId=user_5');
+    expect(res.body.streak.some((d) => d.state === 'holiday')).toBe(false);
   });
 });

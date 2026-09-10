@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSchoolDay, validateSchedule } from '#domains/school/schoolCalendar.mjs';
+import { isSchoolDay, namedDayOff, validateSchedule } from '#domains/school/schoolCalendar.mjs';
 
 describe('isSchoolDay', () => {
   it('is true for every day when there is no schedule', () => {
@@ -125,5 +125,68 @@ describe('validateSchedule', () => {
 
   it('never returns a schedule alongside errors', () => {
     expect(validateSchedule({ daysOfWeek: [1], except: ['nope'] }).schedule).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A NAMED day off. There are two different reasons a day asks nothing of a
+// child, and a wall of squares must not draw them alike: a Saturday is the
+// ordinary rhythm and recedes, while Thanksgiving is a thing that happened and
+// is worth seeing. Only a named span can answer the second.
+describe('namedDayOff', () => {
+  const FALL = {
+    daysOfWeek: [1, 2, 3, 4, 5],
+    except: [
+      { from: '2026-09-07', to: '2026-09-07', label: 'Labor Day' },
+      { from: '2026-11-25', to: '2026-11-27', label: 'Thanksgiving' },
+      { from: '2026-12-21', to: '2026-12-31', label: 'Christmas break' },
+    ],
+  };
+  const nameAt = (day, schedule = FALL) => namedDayOff(day, schedule)?.label ?? null;
+
+  it.each([
+    ['the single day it names', '2026-09-07', 'Labor Day'],
+    ['the first day of a span', '2026-11-25', 'Thanksgiving'],
+    ['a day inside a span', '2026-11-26', 'Thanksgiving'],
+    ['the last day of a span', '2026-11-27', 'Thanksgiving'],
+    ['the last day of the term', '2026-12-31', 'Christmas break'],
+  ])('names %s', (_label, day, expected) => {
+    expect(nameAt(day)).toBe(expected);
+  });
+
+  it.each([
+    ['the school day before a break', '2026-11-24'],
+    ['the school day after one', '2026-11-30'],
+    ['a day past the last span', '2027-01-04'],
+  ])('leaves %s unnamed', (_label, day) => {
+    expect(nameAt(day)).toBeNull();
+  });
+
+  it('does not name a weekend, which is the rhythm rather than an occasion', () => {
+    expect(nameAt('2026-11-28')).toBeNull();          // a Saturday
+    expect(isSchoolDay('2026-11-28', FALL)).toBe(false);
+  });
+
+  it('lets a makeup day beat the vacation containing it, exactly as the verdict does', () => {
+    const withMakeup = { ...FALL, also: ['2026-11-26'] };
+    expect(nameAt('2026-11-26', withMakeup)).toBeNull();
+    expect(isSchoolDay('2026-11-26', withMakeup)).toBe(true);
+  });
+
+  it('ignores an unnamed span — there is nothing to write on a square', () => {
+    expect(nameAt('2026-10-05', { except: [{ from: '2026-10-05', to: '2026-10-05' }] })).toBeNull();
+    expect(isSchoolDay('2026-10-05', { except: [{ from: '2026-10-05', to: '2026-10-05' }] })).toBe(false);
+  });
+
+  it('trims a hand-typed name and refuses a blank one', () => {
+    const named = (label) => ({ except: [{ from: '2026-10-05', to: '2026-10-05', label }] });
+    expect(nameAt('2026-10-05', named('  Fall break  '))).toBe('Fall break');
+    expect(nameAt('2026-10-05', named('   '))).toBeNull();
+  });
+
+  it.each([
+    ['no schedule', null], ['an empty schedule', {}], ['an invalid one', { daysOfWeek: 'weekdays' }],
+  ])('answers null for %s rather than inventing an occasion', (_label, schedule) => {
+    expect(namedDayOff('2026-11-26', schedule)).toBeNull();
   });
 });

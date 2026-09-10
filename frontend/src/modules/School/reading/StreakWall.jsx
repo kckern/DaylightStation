@@ -24,8 +24,15 @@ import './streak.scss';
  * The server does the judging (`ReadingApiService#summary`): this draws states,
  * it never compares a count to a target itself. A day nobody can judge — no
  * readable target — is drawn as unknown rather than as a failure, and a day
- * nobody ASKED about (a weekend, a holiday) is drawn as `rest` rather than as a
- * miss. Greying those made a perfectly normal week look like a broken streak.
+ * nobody ASKED about is drawn as a day off rather than as a miss. Greying those
+ * made a perfectly normal week look like a broken streak.
+ *
+ * There are TWO of those, and they are not the same square. A weekend is `rest`
+ * and recedes — it is the ordinary rhythm, and the wall should read straight
+ * through it. A NAMED day off from the household calendar is `holiday`, drawn
+ * blue and carrying its own name in the title, because Thanksgiving is a thing
+ * that happened: a child looking at a blank week in late November is owed the
+ * reason rather than the same near-invisible square a Saturday gets.
  */
 
 /** The states the server emits, and what each one means on the wall. */
@@ -34,6 +41,7 @@ const STATE_LABEL = Object.freeze({
   partial: 'read, but under the goal',
   none: 'no reading',
   rest: 'a day off',
+  holiday: 'a holiday',
   unknown: 'no goal recorded',
   'unknown-met': 'read',
 });
@@ -71,7 +79,7 @@ export default function StreakWall({ days, studyDay = null, className = '', test
               data-testid={today ? 'reading-streak-today' : undefined}
               // Spoken per square, because the colour is the whole message and
               // a screen reader gets none of it.
-              title={`${dayLabel(day.studyDay)}: ${STATE_LABEL[day.state] ?? day.state}`}
+              title={`${dayLabel(day.studyDay)}: ${day.holiday ?? STATE_LABEL[day.state] ?? day.state}`}
             >
               {/* Zero is drawn as an empty square, not as a `0`. A nought in
                   every gap turns a quiet week into a wall of noughts. */}
@@ -90,6 +98,7 @@ StreakWall.propTypes = {
     studyDay: PropTypes.string,
     books: PropTypes.number,
     state: PropTypes.string,
+    holiday: PropTypes.string,
   })),
   /** Today's study day, so the last square can be marked as theirs. */
   studyDay: PropTypes.string,

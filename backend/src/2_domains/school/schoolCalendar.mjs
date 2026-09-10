@@ -47,7 +47,13 @@ function readSpan(raw, field, errors) {
     return null;
   }
   if (to < from) { errors.push(`${field} range ends before it starts: ${from} → ${to}`); return null; }
-  return { from, to };
+  // An OPTIONAL NAME. A span decides whether a day is a school day; the name
+  // decides what a child is told about it, and "Christmas" and "we're off on
+  // the 24th" are not the same square on a wall. Optional because a course
+  // schedule's own `except` rarely has a name worth printing, and a nameless
+  // span must keep working exactly as it always has.
+  const label = typeof raw.label === 'string' && raw.label.trim() ? raw.label.trim() : null;
+  return { from, to, ...(label ? { label } : {}) };
 }
 
 function readSpanList(raw, field, errors) {
@@ -139,6 +145,31 @@ export function scheduleVerdict(day, schedule) {
   if (covers(normalized.except ?? [], day)) return { schoolDay: false, errors };
   if (!normalized.daysOfWeek) return { schoolDay: true, errors };
   return { schoolDay: normalized.daysOfWeek.includes(isoWeekday(day)), errors };
+}
+
+/**
+ * The NAMED day off covering this day, or null.
+ *
+ * A wall of squares has two different reasons for a day nobody was asked to
+ * work, and they must not look alike: a Saturday is the ordinary rhythm and
+ * recedes, while Thanksgiving is a thing that happened and is worth seeing.
+ * Only a named `except` span can answer the second, which is why `label` is
+ * carried on the span at all.
+ *
+ * Precedence follows `scheduleVerdict` exactly, because the two must never
+ * disagree about the same day: `also` wins, so a makeup Saturday inside a
+ * vacation is a school day and therefore not a holiday. A weekend is NOT a
+ * holiday here — it is nobody's `except`, it is just a day off the roster.
+ *
+ * @returns {{from: string, to: string, label: string}|null}
+ */
+export function namedDayOff(day, schedule) {
+  const { errors, schedule: normalized } = validateSchedule(schedule);
+  if (errors.length || !normalized || !isStudyDay(day)) return null;
+  if (covers(normalized.also ?? [], day)) return null;
+  return (normalized.except ?? []).find(
+    (span) => day >= span.from && day <= span.to && span.label,
+  ) ?? null;
 }
 
 /** `scheduleVerdict` without the diagnostics. */
