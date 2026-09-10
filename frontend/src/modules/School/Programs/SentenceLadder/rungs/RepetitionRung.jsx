@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSentenceAudio, clipsFor } from '../useSentenceAudio.js';
 import { languageLog } from '../languageLog.js';
+import Icon from '../../../home/icons/Icon.jsx';
 
 /**
  * Repetition — the shadowing rung (design §1).
@@ -107,18 +108,20 @@ export default function RepetitionRung({
 
       <div className="lang-rung__controls">
         {phase === 'idle' && (!autoStart || halted) && (
-          <button type="button" className="lang-btn lang-btn--primary" onClick={start}>
-            Play
+          <button type="button" className="lang-btn lang-btn--disc" onClick={start}>
+            <Icon name="play" className="lang-btn__glyph" />
+            <span className="lang-btn__word">Play</span>
           </button>
         )}
         {phase === 'idle' && autoStart && !halted && <span className="lang-rung__status">Next…</span>}
         {phase === 'playing' && (
           <button
             type="button"
-            className="lang-btn"
+            className="lang-btn lang-btn--disc lang-btn--disc-quiet"
             onClick={() => { stop(); setHalted(true); setPhase('idle'); }}
           >
-            Stop
+            <Icon name="pause" className="lang-btn__glyph" />
+            <span className="lang-btn__word">Stop</span>
           </button>
         )}
         {phase === 'done' && (

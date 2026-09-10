@@ -316,6 +316,8 @@ consumers `books/BookShelf.jsx` (header), `books/NumberPad.jsx`, `selfService/Ke
 ## Stream 6 — Reading screen corrections + density
 
 > **Done 2026-09-09** (reading screen + density). Book history groups the shelf's own items by day client-side and reveals a week at a time — no `/shelf/history` endpoint was needed, the shelf read already carries every item. Ladder design review below.
+>
+> **Ladder review done 2026-09-09** (`frontend-design`): the rungs are a ladder (rails + rungs in climbing order, pips per rung, the lit rung holding the sentence in hand, a mic-less rung drawn dimmed with its reason), the sentence is the hero at ~3rem on an open stage, Play is a disc with an SVG glyph. Removed: the ALL-CAPS eyebrow, the progress bar and its "N left" twin, the tab strip, the bordered empty card, the yellow mid-day banner.
 
 **Files:** `books/BookShelf.jsx` + `School.scss` (`.school-books*`), `books/History.jsx`
 (retired), `books/ShelfTile.jsx`, `schoolApi.js`, backend `routers/schoolBooks.mjs` +
