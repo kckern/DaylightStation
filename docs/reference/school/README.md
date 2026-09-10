@@ -258,7 +258,9 @@ date-sharded, mirroring the economy ledger. Every answer is one event carrying
 `attributedTo`.
 
 Rollups are **derived, never stored**. The log is the source of truth, so a
-later reassignment moves the evidence and the statistics together.
+later reassignment moves the evidence and the statistics together. The term
+grid's per-day verdicts follow the same rule — a disposable, versioned cache
+over an honest replay of each day; see [term-grid.md](term-grid.md).
 
 Quiz and flashcard tallies are **never merged**: one is server-graded evidence,
 the other a self-report.

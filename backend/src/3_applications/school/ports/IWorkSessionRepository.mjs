@@ -68,10 +68,15 @@ export class IWorkSessionRepository {
    * late afternoon local, and reading `day` alone files an evening lesson under
    * tomorrow.
    *
+   * `outcome.at` is the stamp of the `outcome_recorded` event — WHEN the result
+   * became true, which a later grade annotation (`updatedAt`) does not move.
+   * A reader replaying a past day filters on this. Null only for a row written
+   * before the stamp existed.
+   *
    * @param {string} learnerId
    * @returns {Promise<Array<{ sessionId: string, learnerId: string, unitId: string|null,
    *                          state: string|null, terminal: boolean,
-   *                          outcome: {result: string}|null, gradedPercent: number|null,
+   *                          outcome: {result: string, at: string|null}|null, gradedPercent: number|null,
    *                          day: string, studyDay: string|null, updatedAt: string|null }>>}
    */
   async listForLearner(learnerId) {
