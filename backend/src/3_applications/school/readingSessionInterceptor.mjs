@@ -114,6 +114,12 @@ export class ReadingSessionInterceptor {
         return null;
       }
       if (mode !== 'assignment') {
+        // Browsing: the book goes to the Player's queue, unclaimed — but the
+        // session records WHOSE it is. The queue is user-scoped: it belongs to
+        // whoever is at the reader now, a later card can re-scope it, and it
+        // freezes when it starts. Without this the second story played and
+        // finished with nobody's name on it.
+        this.#sessions.queueNext?.(location, { contentId, target: response.target ?? null });
         this.#log('info', 'school.reading.book-unclaimed', { location, learnerId, contentId, mode });
         return null;
       }

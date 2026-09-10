@@ -309,7 +309,8 @@ Identical, except:
 | **D2** | A card tapped while unrelated content plays | **Refuse, visibly.** Brief on-screen acknowledgement; the content keeps playing. A reading session never seizes the TV from whoever is already watching. |
 | **D3** | A card during the confirm countdown | **Refuse visibly.** Keep learner, session id, and pick exactly unchanged. |
 | **D4** | A card tapped mid-story | **Refuse visibly.** Keep learner, session id, pick, and playback attribution exactly unchanged, so completion cannot expire underneath the story. |
-| **D5** | A book tapped mid-story | **Mode-dependent.** Assignment: refuse — finish this one first. Browsing: do not claim; the existing queue applies. |
+| **D5** | A book tapped mid-story | **Mode-dependent.** Assignment: refuse — finish this one first. Browsing: do not claim; the existing queue applies — and the session records **whose** the queued book is (D11). |
+| **D11** | Who a queued book belongs to | **The queue is user-scoped.** A browsing-mode second book goes on deck scoped to the child at the reader now; a card tapped while it waits **re-scopes it** to that child (the playing story keeps its own attribution — D4 holds); the moment it takes the stage it is frozen into the pick, exactly as a countdown pick is. The rail shows the waiting book with the face and name it will be credited to. When the first story is credited the server advances into the on-deck pick instead of returning to the launch card, and the screen commits a fresh attribution for it. Before this, a queued story finished into a completion guard that had already fired and was never credited. |
 | **D6** | Nobody picks a book | **~2 minutes quiet → `TEARDOWN` → TV off.** Same teardown as a finished session. The TV never stays on unattended and the next tap always lands in a fresh session. |
 | **D7** | A card racing `CELEBRATE` or `RETURNING` | **Refuse visibly.** The next learner may enter after the launch face has returned and its rendered ACK commits `PROMPT`. |
 | **D8** | Does the TV always power off? | The session **suppresses the location's `end: tv-off`** while open and owns teardown timing, so the ceremony can render first. Not optional — see §3. |
@@ -379,6 +380,12 @@ mid-assignment child's hardening off with nothing anywhere to say so.
 | `POST /read` | `learnerId, contentId, title, tagUid, location, sessionId, pickId` | The only path that writes evidence. `pickId` is the idempotency key. It performs `READING → RETURNING`; rendered-face ACK performs `RETURNING → PROMPT`. Session/pick conflicts remain `409` and are logged with both request and current identities. |
 | `GET /read-status` | `learnerId, studyDay, pickId` | Resolves an ambiguous completion response from the durable idempotency key, without guessing or double-counting. |
 | `GET /summary` | `?learnerId=` | What the prompt puts in front of the child: display name, today's count/target, and the six newest reads across today plus the prior six study days. Every day degrades independently. |
+
+**On deck.** `queueNext` (the interceptor, on an unclaimed browsing-mode tap),
+`rescopeOnDeck` (a learner card mid-story) and `advanceToOnDeck` (`POST /read`,
+when a book was waiting) are the three moves; they broadcast `on-deck`,
+`on-deck-rescoped` and `on-deck-advanced`, and the read response carries the
+advanced pick as `next` so a screen that missed the broadcast still commits it.
 
 **Attribution is minted and owned by the server at pick time.** The client carries
 `sessionId` and `pickId` back as a capability, but the router takes learner,

@@ -171,6 +171,21 @@ export function makeReadingSessionHandler({
       }
     }
 
+    // A card while a book waits on deck re-scopes THAT book to this child —
+    // the playing story keeps its own attribution (D4) — and is not a refusal.
+    if (existing && existing.onDeck && typeof sessions.rescopeOnDeck === 'function') {
+      const rescoped = sessions.rescopeOnDeck(location, learnerId);
+      if (rescoped) {
+        log('info', 'school.reading.on-deck-rescoped-by-card', {
+          location, learnerId, contentId: rescoped.onDeck?.contentId ?? null, currentLearnerId: existing.learnerId,
+        });
+        return {
+          status: 'reading_on_deck_rescoped', learnerId, location,
+          contentId: rescoped.onDeck?.contentId ?? null, sessionId: existing.sessionId,
+        };
+      }
+    }
+
     if (existing && !sessions.isSwitchable(location)) {
       tell(location, {
         event: 'session-switch-refused', reason: 'not-at-launch-card',

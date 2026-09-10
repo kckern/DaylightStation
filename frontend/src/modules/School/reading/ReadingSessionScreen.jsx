@@ -113,6 +113,8 @@ const EMPTY_READING = Object.freeze({
   learnerId: null, learnerName: null, subject: null,
   title: null, image: null, contentId: null,
   count: null, target: null, progressLabel: null,
+  // A book waiting on deck, and whose it is: `{ title, image, learnerId, learnerName }`.
+  onDeck: null,
 });
 
 /**
@@ -509,8 +511,11 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
   // story restarting — which is the whole reason the store exists rather than a
   // second `showOverlay`.
   const readingSnapshot = useMemo(() => ({
-    learnerId: session.learner?.id ?? null,
-    learnerName: session.learner?.name ?? null,
+    // THE CHILD CREDITED, not the child at the reader: a story queued for a
+    // sibling plays under that sibling's face. The two are the same child
+    // for every story except one that was re-scoped while it waited.
+    learnerId: session.pick?.learner?.id ?? session.learner?.id ?? null,
+    learnerName: session.pick?.learner?.name ?? (session.pick?.learner?.id && session.pick.learner.id !== session.learner?.id ? null : session.learner?.name ?? null),
     subject: session.summary?.subject ?? null,
     title: session.pick?.title ?? null,
     image: session.pick?.image ?? null,
@@ -518,7 +523,11 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
     count: session.summary?.count ?? null,
     target: session.summary?.target ?? null,
     progressLabel: session.summary?.progressLabel ?? null,
-  }), [session.learner, session.summary, session.pick]);
+    onDeck: session.onDeck ? {
+      title: session.onDeck.title ?? null, image: session.onDeck.image ?? null,
+      learnerId: session.onDeck.learnerId ?? null, learnerName: session.onDeck.learnerName ?? null,
+    } : null,
+  }), [session.learner, session.summary, session.pick, session.onDeck]);
 
   readingSnapshotRef.current = readingSnapshot;
   useEffect(() => {

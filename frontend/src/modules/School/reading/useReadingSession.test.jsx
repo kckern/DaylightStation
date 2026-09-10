@@ -31,7 +31,7 @@ const SUMMARY = {
 
 let calls;
 
-function stubFetch({ summary = SUMMARY, readOk = true, session = null } = {}) {
+function stubFetch({ summary = SUMMARY, readOk = true, session = null, readNext = null } = {}) {
   calls = [];
   let sessionReads = 0;
   vi.stubGlobal('fetch', vi.fn((url, opts) => {
@@ -45,7 +45,7 @@ function stubFetch({ summary = SUMMARY, readOk = true, session = null } = {}) {
       return Promise.resolve({ ok: true, status: 200, json: async () => ({ location: 'livingroom', session: snapshot }) });
     }
     if (href.includes('/reading/read')) {
-      return Promise.resolve({ ok: readOk, status: readOk ? 200 : 500, json: async () => ({ recorded: readOk }) });
+      return Promise.resolve({ ok: readOk, status: readOk ? 200 : 500, json: async () => ({ recorded: readOk, next: readNext }) });
     }
     if (href.includes('/reading/playing')) {
       return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true, state: 'reading' }) });
@@ -325,5 +325,70 @@ describe('useReadingSession — playback', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
     expect(result.current.confirmRemainingMs).toBeLessThan(1000);
     expect(result.current.confirmRemainingMs).toBeGreaterThan(0);
+  });
+});
+
+describe('useReadingSession — a book on deck is somebody\'s', () => {
+  beforeEach(() => {
+    h.handler = null;
+    stubFetch();
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date',
+        'requestAnimationFrame', 'cancelAnimationFrame'],
+    });
+  });
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  const ON_DECK = { event: 'on-deck', location: 'livingroom', contentId: 'plex:2', pickId: 'pk_2', learnerId: 'user_5' };
+
+  it('shows the waiting book and whose it is, and a card re-scopes it without touching the story', async () => {
+    const { played, result } = await mountAndPick();
+    await act(async () => { h.handler(ON_DECK); });
+    expect(result.current.onDeck).toMatchObject({ contentId: 'plex:2', pickId: 'pk_2', learnerId: 'user_5', learnerName: 'User_5' });
+    await act(async () => { h.handler({ ...ON_DECK, event: 'on-deck-rescoped', learnerId: 'user_3' }); });
+    expect(result.current.onDeck).toMatchObject({ contentId: 'plex:2', learnerId: 'user_3' });
+    // The playing story's attribution is untouched.
+    await act(async () => { await result.current.notePlaybackStarted(); });
+    expect(posted('/reading/playing')[0].body).toMatchObject({ learnerId: 'user_5', contentId: 'plex:620681', pickId: played[0].pickId });
+    expect(result.current.view).toBe('playing');
+  });
+
+  it('when the first story is credited and a book was waiting, the next story is committed to ITS child with a fresh pickId', async () => {
+    stubFetch({ readNext: { contentId: 'plex:2', pickId: 'pk_2', learnerId: 'user_3', sessionId: 'rs_1', studyDay: '2026-09-09' } });
+    const { played, result } = await mountAndPick();
+    await act(async () => { h.handler({ ...ON_DECK, learnerId: 'user_3' }); });
+    await act(async () => { await result.current.notePlaybackStarted(); });
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    // Book one: credited to the child who picked it.
+    expect(posted('/reading/read')).toHaveLength(1);
+    expect(posted('/reading/read')[0].body).toMatchObject({ learnerId: 'user_5', contentId: 'plex:620681', pickId: played[0].pickId });
+    // No ceremony between queued books: straight back to playing, the next story already running.
+    expect(result.current.view).toBe('playing');
+    expect(result.current.onDeck).toBeNull();
+    expect(result.current.pick).toMatchObject({ contentId: 'plex:2', learner: { id: 'user_3' } });
+    // Book two: the once-only guards were reset, so it reports and credits under the sibling.
+    await act(async () => { await result.current.notePlaybackStarted(); });
+    expect(posted('/reading/playing')).toHaveLength(2);
+    expect(posted('/reading/playing')[1].body).toMatchObject({ learnerId: 'user_3', contentId: 'plex:2', pickId: 'pk_2' });
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    expect(posted('/reading/read')).toHaveLength(2);
+    expect(posted('/reading/read')[1].body).toMatchObject({ learnerId: 'user_3', contentId: 'plex:2', pickId: 'pk_2' });
+  });
+
+  it('the same advance arriving by broadcast AND by the read response commits once', async () => {
+    stubFetch({ readNext: { contentId: 'plex:2', pickId: 'pk_2', learnerId: 'user_5', sessionId: 'rs_1' } });
+    const { result } = await mountAndPick();
+    await act(async () => { h.handler(ON_DECK); });
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    await act(async () => { h.handler({ event: 'on-deck-advanced', location: 'livingroom', contentId: 'plex:2', pickId: 'pk_2', learnerId: 'user_5', sessionId: 'rs_1' }); });
+    await act(async () => { await result.current.notePlaybackStarted(); });
+    expect(posted('/reading/playing').filter((c) => c.body.pickId === 'pk_2')).toHaveLength(1);
+  });
+
+  it('with nothing on deck, completion goes to the ceremony as before', async () => {
+    const { result } = await mountAndPick();
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    expect(result.current.view).toBe('book-done');
+    expect(result.current.onDeck).toBeNull();
   });
 });

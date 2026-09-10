@@ -34,6 +34,16 @@
  * the queue or clears a single item, Player synchronously calls
  * `onPlaybackCompleted`; load failures, skips, back, and explicit clear do not.
  * Invariant 1: a read is credited only on completion, never on pick or play.
+ *
+ * ON DECK IS USER-SCOPED. In browsing mode a second book tapped mid-story goes
+ * to the Player's queue, and the SESSION records whose it is (`on-deck`):
+ * the current learner by default, re-scoped by a card tapped while it waits
+ * (`on-deck-rescoped`), frozen the moment it takes the stage. When the first
+ * story is credited the server advances into it (`on-deck-advanced`, and the
+ * same pick in the read response), and this hook commits a FRESH attribution
+ * for it — a new pickId, that child's id — and resets the once-only guards,
+ * so the second story is credited to the child it was queued for rather than
+ * finishing into a guard that had already fired.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWebSocketSubscription } from '../../../hooks/useWebSocket.js';
@@ -155,7 +165,8 @@ export function useReadingSession({
   const [view, setView] = useState('idle');
   const [learner, setLearner] = useState(null);      // { id, name }
   const [summary, setSummary] = useState(null);      // count/target/recent
-  const [pick, setPick] = useState(null);            // { contentId, title, image }
+  const [pick, setPick] = useState(null);            // { contentId, title, image, learner? }
+  const [onDeck, setOnDeck] = useState(null);        // { contentId, title, image, pickId, learnerId, learnerName }
   const [notice, setNotice] = useState(null);        // { tone, title, detail }
   const [deadline, setDeadline] = useState(null);
   const [presentation, setPresentation] = useState(null);
@@ -163,6 +174,7 @@ export function useReadingSession({
   // Refs mirror what the async paths need to read WITHOUT re-subscribing or
   // going stale inside a closure that outlives its render.
   const pickRef = useRef(null);
+  const onDeckRef = useRef(null);
   const learnerRef = useRef(null);
   // `handle` reads the CURRENT view without DEPENDING on it — a dependency
   // would re-subscribe the socket every time the view changed.
@@ -329,6 +341,72 @@ export function useReadingSession({
     }
   }, []);
 
+  /** Cover, title and the child's name for the on-deck card. Best effort. */
+  const decorateOnDeck = useCallback(async (scope) => {
+    if (!scope?.contentId) return;
+    const applies = () => onDeckRef.current?.pickId === scope.pickId;
+    try {
+      const r = await fetch(`/api/v1/info/${encodeURIComponent(scope.contentId)}`, { credentials: 'same-origin' });
+      const data = r.ok ? await r.json() : null;
+      if (applies() && data) {
+        const decorated = { ...onDeckRef.current, title: data.title ?? onDeckRef.current.title ?? null, image: data.image ?? data.thumb ?? null };
+        onDeckRef.current = decorated;
+        setOnDeck(decorated);
+      }
+    } catch (err) {
+      readingLog.warn('on-deck-metadata-failed', { contentId: scope.contentId, error: err?.message ?? String(err) });
+    }
+    if (scope.learnerId && !scope.learnerName) {
+      const res = await schoolApi.readingSummary(scope.learnerId).catch(() => null);
+      if (applies() && res?.ok && res.data?.displayName) {
+        const named = { ...onDeckRef.current, learnerName: res.data.displayName };
+        onDeckRef.current = named;
+        setOnDeck(named);
+      }
+    }
+  }, []);
+
+  /**
+   * The waiting book takes the stage. A FRESH attribution — that child's id,
+   * the queue's own pickId — and the once-only guards reset, so the Player's
+   * next first-frame and natural-end report and credit THIS story. Idempotent
+   * on pickId: the same pick arrives twice, by broadcast and by the read
+   * response, and must commit once.
+   */
+  const commitNext = useCallback((next) => {
+    if (!next?.contentId || !next.pickId) return;
+    if (attributionRef.current?.pickId === next.pickId) return;
+    const queued = onDeckRef.current?.pickId === next.pickId ? onDeckRef.current : null;
+    const learnerName = queued?.learnerName ?? (next.learnerId === learnerRef.current?.id ? learnerRef.current?.name ?? null : null);
+    const attribution = {
+      learnerId: next.learnerId ?? null,
+      contentId: next.contentId,
+      title: queued?.title ?? next.title ?? null,
+      pickId: next.pickId,
+      sessionId: next.sessionId ?? attributionRef.current?.sessionId ?? null,
+      studyDay: next.studyDay ?? attributionRef.current?.studyDay ?? null,
+      location,
+    };
+    attributionRef.current = attribution;
+    endedRef.current = false;
+    startedRef.current = false;
+    onDeckRef.current = null;
+    setOnDeck(null);
+    const shown = {
+      contentId: next.contentId, title: attribution.title, image: queued?.image ?? null, pickId: next.pickId,
+      learner: { id: next.learnerId ?? null, name: learnerName },
+    };
+    pickRef.current = shown;
+    setPick(shown);
+    clearTimeout(celebrateTimer.current);
+    setView('playing');
+    readingLog.pick('on-deck-committed', {
+      learnerId: attribution.learnerId, contentId: attribution.contentId, pickId: attribution.pickId,
+      attributable: Boolean(attribution.learnerId), sessionLearnerId: learnerRef.current?.id ?? null,
+    });
+    if (next.learnerId) loadSummary(next.learnerId);
+  }, [loadSummary, location]);
+
   /**
    * The countdown ran out: commit the pick. This is where attribution and the
    * `pickId` are frozen — everything downstream reads them, nothing rewrites them.
@@ -351,6 +429,8 @@ export function useReadingSession({
     attributionRef.current = attribution;
     endedRef.current = false;
     startedRef.current = false;
+    onDeckRef.current = null;
+    setOnDeck(null);
     setDeadline(null);
     setView('playing');
     // `attributable` is EXPLICIT because a null `learnerId` serialises as an
@@ -450,6 +530,16 @@ export function useReadingSession({
     });
     const fresh = await loadSummary(attribution.learnerId);
     if (!mounted.current) return;
+    // A BOOK WAS WAITING. The Player has already advanced into it; the read
+    // that just landed stays credited to its own child, and the next story
+    // is committed to the child it was queued for. No ceremony between them —
+    // the rail's pip filling is the acknowledgement, and the next story is
+    // already playing over anything this screen could show.
+    if (res.data?.next?.pickId) {
+      cue('success');
+      commitNext(res.data.next);
+      return;
+    }
     // BOTH TIERS HANG OFF THE SAME SUCCESSFUL READ, so invariant 1 holds — a
     // read is credited only from Player's semantic natural-end callback, and
     // the ceremony is downstream of that credit, never a second source of it.
@@ -466,7 +556,7 @@ export function useReadingSession({
       // — a child who wants a third book only has to touch the screen.
       setView(dayDone ? 'winding-down' : 'open');
     }, dayDone ? CELEBRATE_MS : BOOK_DONE_MS);
-  }, [cue, loadSummary, rememberPresentation, say]);
+  }, [commitNext, cue, loadSummary, rememberPresentation, say]);
 
   /**
    * THE ROOM WINDS DOWN. Twenty seconds after the closing ceremony, unless
@@ -573,6 +663,8 @@ export function useReadingSession({
         setLearner(null);
         setSummary(null);
         setPick(null);
+        onDeckRef.current = null;
+        setOnDeck(null);
         setDeadline(null);
         say(null);
         setView('idle');
@@ -626,6 +718,32 @@ export function useReadingSession({
         cue('success');
         setDeadline(Date.now() + confirmMs);
         loadBook(contentId);
+        return;
+      }
+      case 'on-deck':
+      case 'on-deck-rescoped': {
+        if (!payload.contentId || !payload.pickId) return;
+        const previous = onDeckRef.current;
+        const scope = {
+          contentId: payload.contentId, pickId: payload.pickId,
+          learnerId: payload.learnerId ?? null,
+          learnerName: payload.learnerId === learnerRef.current?.id ? learnerRef.current?.name ?? null
+            : (previous?.pickId === payload.pickId && previous.learnerId === payload.learnerId ? previous.learnerName : null),
+          title: previous?.pickId === payload.pickId ? previous.title : null,
+          image: previous?.pickId === payload.pickId ? previous.image : null,
+        };
+        onDeckRef.current = scope;
+        setOnDeck(scope);
+        readingLog.pick(payload.event === 'on-deck' ? 'on-deck' : 'on-deck-rescoped', {
+          contentId: scope.contentId, pickId: scope.pickId, learnerId: scope.learnerId,
+        });
+        cue('success');
+        decorateOnDeck(scope);
+        return;
+      }
+      case 'on-deck-advanced': {
+        if (!payload.contentId || !payload.pickId) return;
+        commitNext(payload);
         return;
       }
       case 'book-refused': {
@@ -687,7 +805,7 @@ export function useReadingSession({
         // own view state, and the session's mirror of it is not an instruction.
         readingLog.screen('event-ignored', { event: payload?.event ?? null });
     }
-  }, [commitPick, confirmMs, cue, loadBook, loadSummary, location, rememberPresentation, say]);
+  }, [commitNext, commitPick, confirmMs, cue, decorateOnDeck, loadBook, loadSummary, location, rememberPresentation, say]);
 
   useWebSocketSubscription(readingTopic(location), handle, [handle]);
 
@@ -736,6 +854,7 @@ export function useReadingSession({
     learner,
     summary,
     pick,
+    onDeck,
     notice,
     confirmRemainingMs,
     confirmTotalMs: confirmRemainingMs === null ? null : confirmMs,
