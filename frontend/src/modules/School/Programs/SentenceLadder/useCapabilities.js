@@ -123,7 +123,23 @@ export function useCapabilities(corpusId, languages) {
     setMicrophone(value.microphone);
     setTextInput(value.textInput);
     saveOverrides(corpusId, value);
-    languageLog.capability('overridden', { corpus: corpusId, ...value });
+    // WHAT CHANGED, not only what the device now claims. An override is the
+    // single most consequential thing a grown-up can do here — it decides which
+    // rungs the ladder has tomorrow, and it persists in this browser's storage
+    // until someone changes it back — so the record has to be readable on its
+    // own, without hunting down the previous event to diff against. The two
+    // affordances that reach here (the Device sheet's rows, and the Recording
+    // rung disabling the mic after a denial) are both covered by instrumenting
+    // this one place; neither has to carry telemetry of its own.
+    languageLog.capability('overridden', {
+      corpus: corpusId,
+      ...value,
+      from: { microphone, textInput },
+      changed: [
+        ...(value.microphone !== microphone ? ['microphone'] : []),
+        ...(value.textInput.join() !== textInput.join() ? ['textInput'] : []),
+      ],
+    });
   }, [corpusId, microphone, textInput]);
 
   const toggleLanguage = useCallback((code) => {

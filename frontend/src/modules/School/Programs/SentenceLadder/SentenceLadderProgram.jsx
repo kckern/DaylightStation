@@ -52,6 +52,19 @@ function needNote(need) {
 }
 
 /**
+ * The same requirement as one short token, for the log store rather than for a
+ * child: `microphone`, `textInput:KR`, or `unspecified`. The note above is a
+ * sentence and would be a poor thing to group or count by; this is what a
+ * `stats by` reads when someone asks which capability is blocking the most
+ * children on the most devices.
+ */
+function needTag(need) {
+  if (need?.kind === 'microphone') return 'microphone';
+  if (need?.kind === 'textInput') return `textInput:${need.language ?? 'unnamed'}`;
+  return 'unspecified';
+}
+
+/**
  * The sentence-ladder program shell (design §5).
  *
  * Owns the day: fetches it, walks the learner rung by rung through the chain
@@ -118,19 +131,41 @@ export default function SentenceLadderProgram({
     loadController.current?.abort();
     const controller = new AbortController();
     loadController.current = controller;
+    // The START of a load, not only its outcome. A day that never arrives
+    // leaves a child looking at "Loading…" and leaves the store with nothing
+    // at all — no line to say the request was even attempted, which reads
+    // identically to a program that never opened. It carries the capabilities
+    // the request was made WITH, because those decide which rungs come back:
+    // a session that arrives short of a rung is answered here, not guessed at.
+    const startedAt = Date.now();
+    languageLog.programStep('day-loading', {
+      corpus: corpusId,
+      preview,
+      microphone: capabilities.microphone,
+      textInput: capabilities.textInput,
+    });
     const { ok, status: httpStatus, data } = preview
       ? await languageApi.previewDay(corpusId, capabilities, controller.signal)
       : await languageApi.day(userId, corpusId, capabilities, studyGrant, controller.signal);
     if (generation !== loadGeneration.current) return;
     if (!ok) {
-      languageLog.programError('day-failed', { corpus: corpusId, status: httpStatus });
+      languageLog.programError('day-failed', {
+        corpus: corpusId, status: httpStatus, ms: Date.now() - startedAt,
+      });
       setStatus('error');
       return;
     }
     setDay(data);
     setStatus(data.queue.length === 0 ? 'empty' : 'ready');
     languageLog.program('day-loaded', {
-      corpus: corpusId, day: data.day, total: data.summary.total, done: data.summary.done,
+      corpus: corpusId,
+      day: data.day,
+      total: data.summary.total,
+      done: data.summary.done,
+      // What the ladder will actually offer, beside how long it took to say so.
+      chain: data.chain ?? [],
+      blocked: data.missingCreditRungs ?? [],
+      ms: Date.now() - startedAt,
     });
   }, [userId, corpusId, capabilities, studyGrant, preview]);
 
@@ -201,6 +236,17 @@ export default function SentenceLadderProgram({
     const stillValid = groups.some((g) => g.rung === activeRung && g.items.some((i) => !i.done));
     if (stillValid) return;
     const nextGroup = groups.find((g) => g.items.some((i) => !i.done)) || groups[0];
+    // WHY the learner is standing on this rung, not merely which one. A first
+    // landing above the foot of the ladder means today already had work done in
+    // it — "they came back" rather than "the ladder started them here" — and a
+    // change once a rung was already held means the one they were on ran out.
+    // Told apart, a report of "it started me in the wrong place" is answerable.
+    languageLog.rung('landed', {
+      rung: nextGroup.rung,
+      reason: activeRung ? 'rung-cleared' : (nextGroup.rung === groups[0].rung ? 'first' : 'resume'),
+      pending: nextGroup.items.filter((i) => !i.done).length,
+      of: nextGroup.items.length,
+    });
     setActiveRung(nextGroup.rung);
   }, [groups, held]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -226,10 +272,50 @@ export default function SentenceLadderProgram({
   // ahead while a finished one is being held.
   const nextEntry = (heldEntry ? pending[0] : pending[1]) || null;
 
+  // A dimmed rung, recorded once per day it is dimmed on. This is the line that
+  // answers "why did it not let me record" without anyone having to stand at
+  // the device: it names the rung AND the capability the server said was
+  // missing, which is the thing a grown-up then goes and changes. Deduplicated
+  // on the day and the rung set, because it is a rendered state, not an event —
+  // every re-render would otherwise repeat it.
+  const blockedEmission = useRef(null);
+  useEffect(() => {
+    const rungs = day?.missingCreditRungs ?? [];
+    if (!day || rungs.length === 0) return;
+    const key = `${day.day}:${rungs.join(',')}`;
+    if (blockedEmission.current === key) return;
+    blockedEmission.current = key;
+    languageLog.capability('rung-blocked', {
+      corpus: corpusId,
+      day: day.day,
+      rungs,
+      needs: Object.fromEntries(rungs.map((rung) => [rung, needTag(day.missingCreditNeeds?.[rung])])),
+    });
+  }, [corpusId, day]);
+
+  // The extra-practice banner. A day topped up with second passes over its own
+  // new sentences shows the same sentence three times in a sitting, which is
+  // the single most reported "it repeated itself" — and until now the surface
+  // said so to the child and to nobody else.
+  useEffect(() => {
+    if (!entry?.practice) return;
+    languageLog.rung('practice', { rung: entry.rung, seq: entry.seq });
+  }, [entry?.rung, entry?.seq, entry?.practice]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const audioUrl = useCallback(
     (seq, lang) => languageApi.audioUrl(corpusId, seq, lang),
     [corpusId],
   );
+
+  // Every tab change goes through here so the move is recorded once, with what
+  // it moved away from. A child who spends a session on the Review shelf and
+  // reports "it never gave me any sentences" is describing this, and nothing
+  // said so. A tap on the tab already shown is not a move and logs nothing.
+  const selectTab = useCallback((next) => {
+    if (tab === next) return;
+    languageLog.programStep('tab', { corpus: corpusId, from: tab, to: next });
+    setTab(next);
+  }, [tab, corpusId]);
 
   /**
    * Save one attempt, then re-derive the day from the server. A failure is
@@ -278,6 +364,12 @@ export default function SentenceLadderProgram({
       languageLog.pacing('rolled', { corpus: corpusId, day: data.day });
       await load();
     } else {
+      // The button did something; it declined. Recorded at warn because from
+      // the child's side this is indistinguishable from a dead button, and a
+      // dead button is exactly what gets reported.
+      languageLog.pacingWarn('roll-refused', {
+        corpus: corpusId, reason: data?.reason ?? (ok ? 'not-rolled' : 'request-failed'),
+      });
       setNotice(
         data?.reason === 'before-boundary'
           ? 'Come back tomorrow for the next set.'
@@ -286,13 +378,21 @@ export default function SentenceLadderProgram({
     }
   }, [userId, corpusId, capabilities, studyGrant, load]);
 
+  // The one pacing knob. `PacingControl` itself stays presentational and logs
+  // nothing: a change is only real once the server has taken it, and only this
+  // side of the call knows whether it did. From AND to — "the limit is 5" does
+  // not tell you it used to be 25, and a limit quietly raised is the usual
+  // explanation for a morning that suddenly became too long.
   const onPacing = useCallback(async (dailyLimit) => {
-    const { ok } = await languageApi.pacing(userId, corpusId, dailyLimit, studyGrant);
+    const from = day?.dailyLimit ?? null;
+    const { ok, status } = await languageApi.pacing(userId, corpusId, dailyLimit, studyGrant);
     if (ok) {
-      languageLog.pacing('changed', { corpus: corpusId, dailyLimit });
+      languageLog.pacing('changed', { corpus: corpusId, dailyLimit, from });
       await load();
+      return;
     }
-  }, [userId, corpusId, studyGrant, load]);
+    languageLog.pacingWarn('change-failed', { corpus: corpusId, dailyLimit, from, status });
+  }, [userId, corpusId, studyGrant, load, day?.dailyLimit]);
 
   // A guest is stopped, but never stranded: the picker lives one level up and
   // was previously reachable only by knowing the header chip was tappable.
@@ -419,7 +519,13 @@ export default function SentenceLadderProgram({
                     type="button"
                     className={`lang-ladder__step${active ? ' is-active' : ''}${done === g.items.length ? ' is-done' : ''}`}
                     aria-pressed={active}
-                    onClick={() => { setTab('study'); setActiveRung(g.rung); }}
+                    onClick={() => {
+                      selectTab('study');
+                      if (g.rung !== activeRung) {
+                        languageLog.rung('selected', { rung: g.rung, from: activeRung });
+                      }
+                      setActiveRung(g.rung);
+                    }}
                   >
                     <span className="lang-ladder__label">{label}</span>
                     {/* The lit rung's next pip is the sentence in hand — held
@@ -443,7 +549,7 @@ export default function SentenceLadderProgram({
               type="button"
               className={`lang-ladder__review${tab === 'review' ? ' is-active' : ''}`}
               aria-pressed={tab === 'review'}
-              onClick={() => setTab('review')}
+              onClick={() => selectTab('review')}
             >
               Review
             </button>

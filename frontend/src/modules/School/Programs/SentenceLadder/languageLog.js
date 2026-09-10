@@ -42,8 +42,13 @@ function emit(category, detail, data, level = 'info') {
 
 export const languageLog = {
   program: (detail, data) => emit('program', detail, data),              // mounted | unmounted | day-loaded
+  // The same category one level down: the transitions BETWEEN those landmarks
+  // — a day-load starting, the Review shelf being opened. Worth having while a
+  // session is being read back, worth nothing the rest of the time, and the
+  // store is a 7-day disk cap shared with every other household subsystem.
+  programStep: (detail, data) => emit('program', detail, data, 'debug'),  // day-loading | tab
   programError: (detail, data) => emit('program', detail, data, 'error'), // day-failed
-  rung: (detail, data) => emit('rung', detail, data, 'debug'),           // enter | advance | complete
+  rung: (detail, data) => emit('rung', detail, data, 'debug'),           // enter | landed | selected | complete | held | replayed | advanced | practice
   attempt: (detail, data) => emit('attempt', detail, data, 'debug'),     // saved
   attemptError: (detail, data) => emit('attempt', detail, data, 'error'), // record-failed
   audio: (detail, data) => emit('audio', detail, data, 'debug'),         // play | ended | preload
@@ -51,7 +56,12 @@ export const languageLog = {
   capture: (detail, data) => emit('capture', detail, data),              // start | stop | saved
   captureError: (detail, data) => emit('capture', detail, data, 'error'), // denied | failed
   pacing: (detail, data) => emit('pacing', detail, data),                // changed | rolled
-  capability: (detail, data) => emit('capability', detail, data),        // detected | overridden
+  // A refusal is not a fault — the server is doing its job when it declines to
+  // roll a day early — but it is the exact shape of "I pressed it and nothing
+  // happened", which is what a child reports. It must not be filtered away with
+  // the per-sentence traffic.
+  pacingWarn: (detail, data) => emit('pacing', detail, data, 'warn'),    // roll-refused | change-failed
+  capability: (detail, data) => emit('capability', detail, data),        // detected | restored | overridden | rung-blocked
   api: (detail, data) => emit('api', detail, data, 'debug'),             // ok | aborted
   apiWarn: (detail, data) => emit('api', detail, data, 'warn'),          // rejected (a non-ok response)
   apiError: (detail, data) => emit('api', detail, data, 'error'),        // failed (nothing came back)

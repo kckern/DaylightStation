@@ -22,6 +22,12 @@ import { languageName } from './languageNames.js';
  * "English keyboard", not "EN keyboard", from the same map the blocked-rung
  * note uses. A child sent here by a note saying "Needs a Korean keyboard" has
  * to find a row wearing that same name; for a while they did not.
+ *
+ * It logs nothing itself, deliberately: every row here toggles through
+ * `useCapabilities.update`, which records the override with what it changed
+ * FROM — and so also covers the other way a capability changes, the Recording
+ * rung switching the microphone off after a denial. Telemetry on the button as
+ * well would be the same fact twice, told once less completely.
  */
 export default function DeviceSettings({ languages, capabilities, onToggleLanguage, onToggleMic }) {
   if (!languages) return null;
