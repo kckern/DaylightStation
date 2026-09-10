@@ -171,6 +171,7 @@ export function createSchoolLifecycleRouter({
   rebuildLearnerTerm = null,
   getPianoLessonGate = null,
   issueDirectLaunch = null,
+  issueSubjectCode = null,
   issueDocument = null,
   issueComposedWorksheet = null,
   dispatchMedia = null,
@@ -368,6 +369,22 @@ export function createSchoolLifecycleRouter({
       const { termId = null, from = null, to = null, force = false, userId = null, pin = null } = req.body ?? {};
       const result = await rebuildLearnerTerm.execute({
         learnerId: req.params.learnerId, termId, from, to, force: force === true, userId, pin,
+      });
+      res.set('Cache-Control', 'no-store').json(result);
+    }));
+  }
+
+  // --- the board's disc door (browser testing) ------------------------------
+  // Mints one subject's six-digit code — the same record the printed agenda
+  // carries — so a disc tapped in a grown-up's browser can TYPE it into the
+  // ordinary keypad path. Reachable only through /lifecycle, which the
+  // locked panel never calls. Logged at warn on every use.
+  if (issueSubjectCode) {
+    router.post('/learners/:learnerId/subject-code', asyncHandler(async (req, res) => {
+      const result = await issueSubjectCode.execute({
+        learnerId: req.params.learnerId,
+        subject: req.body?.subject,
+        program: req.body?.program ?? null,
       });
       res.set('Cache-Control', 'no-store').json(result);
     }));

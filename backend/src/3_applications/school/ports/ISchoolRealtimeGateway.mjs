@@ -20,6 +20,8 @@ export class ISchoolRealtimeGateway {
   languageDayCompleted(_fact) { throw new Error('languageDayCompleted must be implemented'); }
   sessionOutcomeRecorded(_fact) { throw new Error('sessionOutcomeRecorded must be implemented'); }
   sessionGradeChanged(_fact) { throw new Error('sessionGradeChanged must be implemented'); }
+  /** A sheet was printed for a session — the board's disc turns amber on this. Optional. */
+  sessionIssued(_fact) { /* optional */ }
   assignmentsChanged(_fact) { throw new Error('assignmentsChanged must be implemented'); }
   completionStateObserved(_fact) { throw new Error('completionStateObserved must be implemented'); }
   schoolCeremony(_announcement) { throw new Error('schoolCeremony must be implemented'); }
