@@ -41,7 +41,7 @@
  *
  * @module rendering/school/documents/progressBar
  */
-import { activeProgressPosition } from '#domains/school/progressRows.mjs';
+import { activeProgressPosition, informativeProgressRows } from '#domains/school/progressRows.mjs';
 
 /** Height of one label + bar + gap row, so a caller can measure before drawing. */
 export function progressRowHeight(theme) {
@@ -55,12 +55,11 @@ export function progressRowsHeight(theme, rows) {
 }
 
 /**
- * Rows worth drawing: a bar needs a positive total, or it is a divide by zero
- * wearing a label.
+ * Rows worth drawing. The rule itself is the domain's — one answer for every
+ * renderer, rather than a filter each surface re-derives slightly differently.
  */
 export function usableProgressRows(rows) {
-  const list = Array.isArray(rows) ? rows : (rows ? [rows] : []);
-  return list.filter((row) => row && Number.isInteger(row.total) && row.total > 0);
+  return informativeProgressRows(rows);
 }
 
 /**

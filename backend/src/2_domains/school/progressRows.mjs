@@ -56,4 +56,34 @@ export function activeProgressPosition({ completed, total, inProgress } = {}) {
   return Math.min(total, completed + active);
 }
 
+/**
+ * Rows worth drawing at all.
+ *
+ * A bar needs a positive integer total, or it is a divide by zero wearing a
+ * label — that much was already enforced, separately, by each renderer.
+ *
+ * A ONE-UNIT COURSE HAS NO COURSE BAR. Its course row can only ever read
+ * "0 of 1" or "1 of 1": a full-width track that restates the unit bar directly
+ * beneath it in different words, or an empty one that says the child has not
+ * finished the only thing on the card. Neither tells them anything the rest of
+ * the card does not, and both cost a row on paper a child reads at a glance.
+ * Printed live (Reading Music, one unit): a solid COURSE 1 of 1 sitting above
+ * READING MUSIC 29 of 53, where only the second is a journey.
+ *
+ * Keyed on `scope`, not on the total alone, because a one-lesson UNIT bar is a
+ * different statement — "0 of 1" there is a real not-yet — and a producer that
+ * omits `scope` keeps its bar rather than losing one to a rule it never opted
+ * into.
+ *
+ * @param {Array|object|null} rows
+ * @returns {Array}
+ */
+export function informativeProgressRows(rows) {
+  const list = Array.isArray(rows) ? rows : (rows ? [rows] : []);
+  return list.filter((row) => {
+    if (!row || !Number.isInteger(row.total) || row.total <= 0) return false;
+    return !(row.scope === 'course' && row.total === 1);
+  });
+}
+
 export default inProgressSegments;

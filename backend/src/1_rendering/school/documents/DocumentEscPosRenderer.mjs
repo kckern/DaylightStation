@@ -33,7 +33,7 @@
  * @module rendering/school/documents/DocumentEscPosRenderer
  */
 
-import { activeProgressPosition } from '#domains/school/progressRows.mjs';
+import { activeProgressPosition, informativeProgressRows } from '#domains/school/progressRows.mjs';
 
 /** Blocks that can go on tape. Anything else is refused BY NAME, never dropped. */
 const SUPPORTED = new Set(['rich_text', 'scan_action', 'media_action', 'result_summary', 'done_summary']);
@@ -201,7 +201,10 @@ export function createDocumentEscPosRenderer({ width = 32, symbology = 'CODE128'
         // array/object normalisation), and a row missing any of its three
         // fields prints NOTHING rather than a garbled line — a guard on the
         // actual fields used, not on truthiness.
-        (Array.isArray(block.progress) ? block.progress : (block.progress ? [block.progress] : []))
+        // Same rule the drawn bars use, so the thermal text lane and the
+        // raster lane cannot disagree about which rows are worth printing —
+        // including the one-unit course bar neither of them should show.
+        informativeProgressRows(block.progress)
           .forEach((row) => {
             if (!row || typeof row.label !== 'string' || !row.label.trim()
                 || !Number.isFinite(row.completed) || !Number.isFinite(row.total)) return;
