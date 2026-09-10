@@ -255,6 +255,71 @@ the full event set (`school.grading_hook.fired/.skipped/.failed/.circuit_open/.e
 | `school.agenda.plan-errors` | warn | A work is assigned but has no eligible published units — see `known-issues.md` for the current live instance of this |
 | `school.curriculum.drafts-dropped` | warn | Draft-review-state units skipped — per [`failure-policy.md`](../../reference/school/failure-policy.md), this is deliberate, not a defect, but a *large* count every day means a course is stuck in draft |
 
+### Sentence Ladder (language study)
+
+The ladder is the one School surface with **both sides of the wire on one
+correlation key**: every frontend event and every backend event it causes
+carries a run id on `context.runId`, minted per program run and sent on each
+request as `X-School-Run-Id`. These are the three queries worth knowing on a
+morning when a child says the ladder misbehaved.
+
+```bash
+# 1. EVERYTHING ONE CHILD DID, both sides, in order. Find the run id from any
+#    one of their events first (query 2), then follow it.
+curl -s {env.log_store_url}/select/logsql/query \
+  -d 'query=context.runId:"<id>" AND _time:6h | sort by (_time)' -d 'limit=500'
+
+# 2. EVERYTHING THE LADDER SAID in the last hour — start here when you have a
+#    complaint and no run id yet.
+curl -s {env.log_store_url}/select/logsql/query \
+  -d 'query="school.language" AND _time:1h' -d 'limit=200'
+
+# 3. ONLY WHAT WENT WRONG.
+curl -s {env.log_store_url}/select/logsql/query \
+  -d 'query="school.language" AND level:(error OR warn) AND _time:1h'
+```
+
+**Per-sentence events are at `debug`, and `debug` never leaves the browser.**
+Turn them on by loading the School surface with **`?debug=1`**:
+
+```
+https://<host>/school?debug=1
+https://<host>/school/sentence-ladder-preview/<corpus>?debug=1
+```
+
+The level is read once, at mount, and put back to `info` when the surface
+unmounts — so a session raised for an investigation cannot leave a panel chatty
+for the rest of the week. That matters: the store is 7-day retention on a disk
+cap shared with every other household subsystem, fitness telemetry at 5s
+resolution included, and a noisy module evicts other people's data.
+
+**Typing `window.DAYLIGHT_LOG_LEVEL = 'debug'` into the console does not work
+on its own.** `Logger.js` reads its level only from `configure()`, so the flag
+is consulted at mount and never again — set it and RELOAD, or just use
+`?debug=1`. Before 2026-09-10 neither worked here at all, and the ladder's
+debug events could not be reached in production by any means: if you are
+reading an older runbook or handoff that says otherwise, this paragraph is the
+correction.
+
+| Event | Level | Meaning |
+|---|---|---|
+| `school.language.program.mounted` / `.unmounted` | info | The program opened / left. `unmounted` is the last event of a run |
+| `school.language.program.day-loading` | debug | A day was ASKED for, with the capabilities it asked with. No `day-loaded` after this = the request never came back |
+| `school.language.program.day-loaded` | info | Day, totals, the rung chain, blocked rungs, round-trip ms |
+| `school.language.program.day-failed` | error | The day did not load — the child is looking at "Could not load today's set" |
+| `school.language.program.tab` | debug | Moved to/from the Review shelf. A session that "gave me no sentences" is often this |
+| `school.language.rung.landed` | debug | Which rung, and **why**: `first`, `resume` (work already done today), `rung-cleared` |
+| `school.language.rung.held` / `.replayed` / `.advanced` | debug | Repetition's choice: the sentence stayed, they asked to hear it again, they moved on. A replay is never a `complete` |
+| `school.language.rung.practice` | debug | The extra-practice banner — why the same sentence keeps arriving |
+| `school.language.capability.rung-blocked` | info | A dimmed rung and what it lacks (`microphone`, `textInput:KR`). Once per day, not per render |
+| `school.language.capability.overridden` | info | A grown-up changed what this device claims — with what it changed `from`. Decides which rungs exist tomorrow, and persists in that browser |
+| `school.language.pacing.changed` | info | Daily intake, from → to |
+| `school.language.pacing.roll-refused` / `.change-failed` | warn | The button was pressed and declined. Reads as a dead button from the child's side |
+| `school.language.api.rejected` / `.failed` | warn / error | A non-ok response / a request that threw. Bodies are never logged — these are the child's own sentences |
+| `school.language.day-read` | info | **Backend.** Day, queue size, device chain, credit chain, blocked rungs, gate level — the first line to read when the ladder gave the wrong work |
+| `school.language.day-complete` / `.day-rolled` | info | **Backend.** The day settled / the next day was opened |
+| `school.language.launcher.launch` | info | **Backend.** A dispatch decision, its surface, and whether a study grant was issued |
+
 ## 7. Building a fresh trace when nothing here matches
 
 1. Get the ranked event list for the window (§1's third query) — this alone
