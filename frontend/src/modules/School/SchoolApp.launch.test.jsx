@@ -230,29 +230,41 @@ describe('SchoolApp — Portal launch subscription (school.launch)', () => {
   // address bar. The shelf's identical dead end was found and fixed; this one
   // sat one condition away from it in the same expression.
   it('an identity lapse with the ladder up returns the panel to the keypad, never a blank wall', async () => {
+    // Mounted through the code-free door rather than a broadcast, deliberately:
+    // the door's effect waits for the catalogue itself (`status === 'ready' &&
+    // catalogLoaded`), while a `school.launch` delivered before `courses` has
+    // landed is correctly refused and never retried. That race belongs to the
+    // launch tests above; this test is about what happens ten minutes later.
+    const oldUrl = window.location.pathname;
+    window.history.replaceState({}, '', '/school/go/kid1/sentence-ladder/glossika-korean');
     coursesMock.mockResolvedValue({
       ok: true, status: 200,
       data: [{ id: 'glossika-korean', label: 'Glossika Korean', languages: { source: 'EN', target: 'KR' }, size: 3000 }],
     });
-    render(<SchoolApp mode="locked" />);
-    await waitFor(() => expect(coursesMock).toHaveBeenCalled());
-    deliverLaunch('kid1', {
-      kind: 'program', program: 'sentence-ladder', corpusId: 'glossika-korean', studyGrant: 'signed-grant',
+    directLaunchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { target: { kind: 'program', program: 'sentence-ladder', corpusId: 'glossika-korean', studyGrant: 'signed-grant' } },
     });
-    expect(await screen.findByText('Day 1')).toBeInTheDocument();
+    try {
+      render(<SchoolApp mode="locked" />);
+      expect(await screen.findByText('Day 1', undefined, { timeout: 5000 })).toBeInTheDocument();
 
     // The 10-minute lapse is judged on the NEXT input after the gap
     // (useIdleGap), so: the clock jumps, then one touch.
-    const now = Date.now();
-    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 11 * 60_000);
-    try {
-      await act(async () => { fireEvent.pointerDown(window); });
-    } finally {
-      clock.mockRestore();
-    }
+      const now = Date.now();
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 11 * 60_000);
+      try {
+        await act(async () => { fireEvent.pointerDown(window); });
+      } finally {
+        clock.mockRestore();
+      }
 
-    expect(screen.queryByText('Day 1')).toBeNull();
-    expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
+      expect(screen.queryByText('Day 1')).toBeNull();
+      expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
+    } finally {
+      window.history.replaceState({}, '', oldUrl);
+    }
   });
 
   it('a launch for an unavailable corpus does nothing (no crash, no navigation)', async () => {
