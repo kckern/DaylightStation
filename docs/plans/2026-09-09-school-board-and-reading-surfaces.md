@@ -87,7 +87,20 @@ shared header, so three School screens each invented one.
 
 ---
 
-## Stream 0 — Unblock Glossika (independent; ships first)
+## Stream 0 — Unblock Glossika (independent; ships first) — **DONE 2026-09-09**
+
+Turned out to be TWO gaps, not one. `todayStatus` skipping untouched courses was real
+but secondary: `assignedProgramPlan` had never heard of `sentence-ladder` at all, so the
+enrolment produced no plan entry in the first place (the August design routed the ladder
+through an authored curriculum unit that was never written). Both fixed; verified live
+against a fresh dev backend — both learners get an obligated `language` section, Day 1,
+with a queue sized to their `lessonSize`.
+
+**Follow-on (added at the user's request):** the ladder's own screens
+(`Programs/SentenceLadder/`) were early work and read as templated — low consideration
+of layout, spacing, balance, colour and transitions. Add a **design review of the
+sentence-ladder UI** to Stream 6, using the `frontend-design` skill: a rendered pass at
+1280×800 against the same harness, with the header primitive from Stream 5 applied.
 
 **Files:** `backend/src/3_applications/school/LanguageStudyService.mjs` (`todayStatus`),
 its test; `SentenceLadderProgram.test.jsx` unaffected.

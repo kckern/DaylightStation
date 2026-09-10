@@ -495,3 +495,29 @@ describe('history', () => {
     expect(items.find((i) => i.seq === 3).hasAudio).toBe(false);
   });
 });
+
+describe('todayStatus — an enrolled learner who has not started yet', () => {
+  // The chicken-and-egg found live on 2026-09-09: the two learners' Glossika
+  // progress was cleared, `todayStatus` skipped the corpus as "never touched",
+  // the agenda emitted no `language` section, and the board showed nothing —
+  // so nobody could ever be told to START. An enrolment names the corpus, and
+  // a named corpus with no history is day one, not nothing.
+  it('reports day one, obligated, with a real queue — never a skip', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    const status = svc.todayStatus({ userId: 'new-learner', corpusId: 'test-korean' });
+    expect(status).toMatchObject({ doneToday: false, progressLabel: 'Day 1', score: null });
+    expect(status.obligationProgress).toMatchObject({ completed: 0 });
+    expect(status.obligationProgress.total).toBeGreaterThan(0);
+    // Reading the status must not create progress — observation is free.
+    expect(ds.readProgress('new-learner', 'test-korean')).toBeNull();
+  });
+
+  it('still skips untouched corpora on the DISCOVERY path, where nothing named them', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    // No corpusId: iterating every corpus. An untouched one must not claim a
+    // day for a learner nobody enrolled in it.
+    expect(svc.todayStatus({ userId: 'new-learner' })).toMatchObject({ doneToday: false, progressLabel: null });
+  });
+});

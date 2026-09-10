@@ -129,6 +129,26 @@ export function appendAssignedProgramEntries(plan, assignment) {
         schedule: enrollment.schedule,
       }));
     }
+    // THE SENTENCE LADDER. Missing from this list until 2026-09-09, which is
+    // why two enrolled learners had no `language` section: the August
+    // integration design routed the ladder through an authored curriculum
+    // unit (`programInstance` on a `school.unit`), and that unit was never
+    // written, while the September enrolment records landed HERE, under
+    // `programs:` — where nothing knew the program's name. The entry mirrors
+    // piano-course: one per corpus, keyed so `collectProgramStatuses` reaches
+    // `LanguageProgramLauncher.status({userId, programInstance})`.
+    if (enrollment?.programId === 'sentence-ladder') {
+      const corpusId = enrollment.corpusId;
+      if (!corpusId) continue;
+      plan.entries.push(baseEntry({
+        unitId: `sentence-ladder:${corpusId}`,
+        title: enrollment.title ?? 'Language practice',
+        subject: enrollment.subject ?? 'language',
+        program: 'sentence-ladder',
+        programInstance: corpusId,
+        schedule: enrollment.schedule,
+      }));
+    }
   }
   return plan;
 }
