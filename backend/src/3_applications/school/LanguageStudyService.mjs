@@ -653,7 +653,21 @@ export class SentenceLadderService {
 
         const rawProgress = this.#ds.readProgress(userId, candidateCorpusId);
         const log = this.#ds.readAllEvents(userId, candidateCorpusId);
-        if (!rawProgress && log.length === 0) continue; // never touched this course
+        // NEVER TOUCHED. Two different questions hide in that fact.
+        //
+        // On the DISCOVERY path — no corpusId, iterating every corpus — an
+        // untouched course is not this learner's business and is skipped.
+        //
+        // But when a corpus was NAMED, an enrolment named it, and an enrolled
+        // learner with no history is on DAY ONE, not on nothing. Skipping here
+        // was a chicken-and-egg: the agenda emitted no section, the board drew
+        // no disc, and the one child who most needed to be told "start this"
+        // was the one child the board could not see. Found live 2026-09-09,
+        // the day both learners' test progress was cleared. Day one is built
+        // from the corpus alone — `#readProgress` defaults to day 1, and
+        // `#fullDayQueue` fills a fresh queue from the sentences — and NOTHING
+        // is written: a status read is an observation, never an enrolment.
+        if (!rawProgress && log.length === 0 && !corpusId) continue;
 
         const progress = this.#readProgress(userId, candidateCorpusId);
         let day = progress.day;
@@ -688,7 +702,11 @@ export class SentenceLadderService {
         // empty queue counts as complete...").
         const doneToday = outstanding === 0;
         const progressLabel = summary.total === 0 ? 'Course complete' : `Day ${day}`;
-        return { doneToday, progressLabel, score: null };
+        return {
+          doneToday, progressLabel, score: null,
+          // How far through the day, for a board that draws partial progress.
+          obligationProgress: { completed: summary.done, total: summary.total },
+        };
       }
       return { doneToday: false, progressLabel: null, score: null };
     } catch (err) {
