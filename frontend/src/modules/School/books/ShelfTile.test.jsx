@@ -162,22 +162,27 @@ describe('ShelfTile', () => {
   });
 
   describe('on history', () => {
-    it('a finished tile shows the day instead of a bar', () => {
-      render(<ShelfTile item={item({}, { status: 'finished', page: 195, percent: 100, lastAt: '2026-07-14T21:00:00Z' })} />);
+    // NO DATE ON A DONE CARD: the history shelf's day heading carries it, and
+    // a card wearing the same date as the line above it said it twice.
+    it('a finished tile shows neither a bar nor a date — the day heading owns the date', () => {
+      const { container } = render(<ShelfTile item={item({}, { status: 'finished', page: 195, percent: 100, lastAt: '2026-07-14T21:00:00Z' })} />);
       expect(screen.queryByRole('progressbar')).toBeNull();
       expect(screen.queryByText(/^p\. /)).toBeNull();
-      expect(screen.getByText('Jul 14')).toBeInTheDocument();
+      expect(screen.queryByText('Jul 14')).toBeNull();
+      expect(container.querySelector('.school-books-tile__caption')).toBeNull();
+      expect(container.querySelector('.school-books-tile')).toHaveClass('school-books-tile--history');
     });
 
-    it('a set-aside tile names that outcome', () => {
+    it('a set-aside tile names that outcome, without a date', () => {
       render(<ShelfTile item={item({}, { status: 'set-aside', lastAt: '2026-06-02' })} />);
-      expect(screen.getByText('Set aside Jun 2')).toBeInTheDocument();
+      expect(screen.getByText('Set aside')).toBeInTheDocument();
+      expect(screen.queryByText(/Jun 2/)).toBeNull();
     });
 
     it('the finished prop wins over a reading status', () => {
-      render(<ShelfTile item={item({}, { lastAt: '2026-07-14' })} finished />);
+      const { container } = render(<ShelfTile item={item({}, { lastAt: '2026-07-14' })} finished />);
       expect(screen.queryByRole('progressbar')).toBeNull();
-      expect(screen.getByText('Jul 14')).toBeInTheDocument();
+      expect(container.querySelector('.school-books-tile__mark')).toHaveClass('is-finished');
     });
 
     it('marks a finished book with the green check, not another sentence', () => {
@@ -185,14 +190,13 @@ describe('ShelfTile', () => {
       const mark = container.querySelector('.school-books-tile__mark');
       expect(mark).toHaveClass('is-finished');
       expect(mark).toHaveAttribute('aria-label', 'Finished');
-      expect(screen.getByText('Jul 14')).toBeInTheDocument();
       expect(screen.queryByText(/^Finished/)).toBeNull();
     });
 
-    it('marks a set-aside book differently, and keeps its words', () => {
+    it('marks a set-aside book differently, and keeps its word', () => {
       const { container } = render(<ShelfTile item={item({}, { status: 'set-aside', lastAt: '2026-06-02' })} />);
       expect(container.querySelector('.school-books-tile__mark')).toHaveClass('is-set-aside');
-      expect(screen.getByText('Set aside Jun 2')).toBeInTheDocument();
+      expect(screen.getByText('Set aside')).toBeInTheDocument();
     });
 
     it('a book still being read carries no outcome mark at all', () => {

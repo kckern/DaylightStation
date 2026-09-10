@@ -3,7 +3,7 @@
  * §2–§5, §7).
  *
  * A child's code opens the shelf; this hook owns everything that happens on
- * it — the tiles, the update overlay, the combined cover/action add flow, history — so
+ * it — the tiles, the update overlay, the combined cover/action add flow, the day-by-day history — so
  * the components (BookShelf, ShelfTile, UpdateBook, AddBook, History) stay
  * presentational. It mirrors `useSelfService`'s shape on purpose and holds
  * the same rules where they apply:
@@ -329,13 +329,6 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     setBusy(false);
   }, [load, touch]);
 
-  const openHistory = useCallback(() => {
-    if (viewRef.current !== 'shelf' || workRef.current || needsRefreshRef.current) return;
-    touch();
-    viewRef.current = 'history';
-    setView('history');
-    schoolLog.bookShelf('history-opened', { learnerId });
-  }, [learnerId, touch]);
 
   const startAdd = useCallback(() => {
     if (viewRef.current !== 'shelf' || workRef.current || needsRefreshRef.current) return;
@@ -361,7 +354,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
   }, [touch]);
 
   const openItem = useCallback((itemId) => {
-    if (!['shelf', 'history'].includes(viewRef.current) || workRef.current || needsRefreshRef.current) return;
+    if (viewRef.current !== 'shelf' || workRef.current || needsRefreshRef.current) return;
     const item = shelfRef.current?.items?.find((i) => i.itemId === itemId);
     if (!item) return;
     if (item.projection?.status === 'finished') {
@@ -412,7 +405,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
   const back = useCallback(() => {
     if (isClosed()) return;
     const v = viewRef.current;
-    if (v === 'update' || v === 'completed' || v === 'history' || v === 'receipt') { touch(); setError(null); toShelf(); return; }
+    if (v === 'update' || v === 'completed' || v === 'receipt') { touch(); setError(null); toShelf(); return; }
     if (v !== 'add') return;
     const s = stepRef.current;
     touch();
@@ -852,11 +845,11 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
   const current = ['update', 'completed'].includes(view) ? currentItem : (view === 'add' ? add.resolved?.book ?? null : null);
 
   const actions = useMemo(() => ({
-    noteActivity, done, retry, openHistory, back, startAdd,
+    noteActivity, done, retry, back, startAdd,
     typeIsbn, lookup, retryLookup, confirmCover, choose, submitPage, submitDay,
     openItem, openDuplicate, readAgain, submitProgress, checkIn, finish, setAside, undoFinish, setMode,
   }), [
-    noteActivity, done, retry, openHistory, back, startAdd,
+    noteActivity, done, retry, back, startAdd,
     typeIsbn, lookup, retryLookup, confirmCover, choose, submitPage, submitDay,
     openItem, openDuplicate, readAgain, submitProgress, checkIn, finish, setAside, undoFinish, setMode,
   ]);
