@@ -737,6 +737,11 @@ describe('persisted physical education on the board', () => {
     expect(screen.queryByText('Done for the day')).toBeNull();
     expect(document.querySelector('[data-complete="true"]')).toBeNull();
   });
+  it('draws the disc for a ride that scored nothing, and claims no rings for it', async () => {
+    schoolApi.teacherDay.mockResolvedValue(digest({ ...FITNESS_ACTIVITY, rings: 0 }));
+    render(<AgendaStatusBoard kids={kids} day="2026-09-07" />);
+    expect(await screen.findByRole('img', { name: 'Fitness: done' })).toBeInTheDocument();
+  });
   it('says one session in the singular', async () => {
     schoolApi.teacherDay.mockResolvedValue(digest({ ...FITNESS_ACTIVITY, rings: 1 }));
     render(<AgendaStatusBoard kids={kids} day="2026-09-07" />);
