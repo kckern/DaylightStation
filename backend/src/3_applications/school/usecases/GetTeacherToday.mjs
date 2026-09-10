@@ -10,6 +10,7 @@ import {
 import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { projectReadingActivity } from '#domains/school/readingActivity.mjs';
+import { projectFitnessActivity } from '#domains/school/fitnessActivity.mjs';
 import { curriculumPosterRef, schoolArtifactRef } from '#apps/common/resources/publicResourceRefs.mjs';
 
 const DEFAULT_BOUNDARY_HOUR = 4;
@@ -27,6 +28,12 @@ function reviewStatusFor(state, pending, sessionId) {
 }
 
 const PROCESSED_TYPES = new Set(['submitted', 'graded', 'grade_adjusted', 'grade_adjustment_retracted']);
+
+/** Calendar-day arithmetic on a YYYY-MM-DD study day, for range queries. */
+function addStudyDays(day, count) {
+  return new Date(Date.parse(`${day}T00:00:00.000Z`) + count * 86_400_000)
+    .toISOString().slice(0, 10);
+}
 
 function daysTouchedBy({ startAtMs, endAtMs }) {
   const fromDay = new Date(startAtMs).toISOString().slice(0, 10);
@@ -85,11 +92,12 @@ function uniqueAttempts(attempts) {
 
 export class GetTeacherToday {
   #learnerDirectory; #datastore; #sessions; #reviewQueue; #evidence; #curriculum; #bookLog;
-  #timezone; #boundaryHour; #clock; #logger;
+  #fitnessSessions; #timezone; #boundaryHour; #clock; #logger;
 
   constructor({
     learnerDirectory, datastore, sessions, reviewQueue = null, evidenceRepository = null,
-    curriculum = null, bookLog = null, timezone = null, boundaryHour = DEFAULT_BOUNDARY_HOUR,
+    curriculum = null, bookLog = null, fitnessSessions = null,
+    timezone = null, boundaryHour = DEFAULT_BOUNDARY_HOUR,
     clock = () => new Date(), logger = console,
   } = {}) {
     if (!learnerDirectory) throw new Error('GetTeacherToday requires learnerDirectory');
@@ -102,6 +110,7 @@ export class GetTeacherToday {
     this.#evidence = evidenceRepository;
     this.#curriculum = curriculum;
     this.#bookLog = bookLog;
+    this.#fitnessSessions = fitnessSessions;
     this.#timezone = timezone;
     this.#boundaryHour = boundaryHour;
     this.#clock = clock;
@@ -132,6 +141,24 @@ export class GetTeacherToday {
       worksById.set(`${work.subject}/${work.work}`, work);
     });
     const days = daysTouchedBy(window);
+
+    // ONE roster-wide fitness read, before the per-learner loop. Fitness
+    // sessions are stored by DATE, not by learner, so asking per child would
+    // re-read the same day four times. The range spans the calendar day and
+    // its successor because a session filed under tomorrow's folder can still
+    // have STARTED inside today's study window; `projectFitnessActivity`
+    // re-dates each one by its start and drops the rest.
+    let fitnessSessionsToday = null;
+    if (isV2 && this.#fitnessSessions) {
+      try {
+        fitnessSessionsToday = await this.#fitnessSessions.listSessionsInRange(
+          selectedStudyDay, addStudyDays(selectedStudyDay, 1),
+        );
+      } catch (error) {
+        this.#logger.warn?.('school.teacher-day.fitness-activity-failed', { error: error?.message });
+      }
+    }
+
     const rows = [];
 
     for (const learner of learners) {
@@ -241,6 +268,23 @@ export class GetTeacherToday {
           });
         }
       }
+      // Physical education is on nobody's plan, so this is pure evidence: a
+      // learner who earned rings today gets one supplemental green disc on the
+      // status board. `unavailable` (no port wired, or the read threw above)
+      // renders nothing at all rather than an unearned or a scolding disc.
+      let fitnessActivity = { status: 'unavailable', studyDay: selectedStudyDay, hasActivity: null };
+      if (fitnessSessionsToday) {
+        fitnessActivity = {
+          status: 'ok',
+          ...projectFitnessActivity(fitnessSessionsToday, {
+            learnerId: learner.id,
+            studyDay: selectedStudyDay,
+            dayOf: (ms) => studyDayForInstant(ms, {
+              timezone: this.#timezone, boundaryHour: this.#boundaryHour,
+            }),
+          }),
+        };
+      }
       rows.push({
         learnerId: learner.id,
         learnerName: learner.name ?? learner.id,
@@ -249,7 +293,7 @@ export class GetTeacherToday {
         effectiveScoreTotals: { correct, total, percent: total ? Math.round((correct / total) * 10000) / 100 : null },
         pendingReview: pending.filter((item) => item.learnerId === learner.id).length,
         reflections,
-        ...(isV2 ? { readingActivity } : {}),
+        ...(isV2 ? { readingActivity, fitnessActivity } : {}),
         // v1 compatibility fields. Attempt rows stay as the old count until all
         // historical attempts have a reliable work-session identity.
         attemptsToday: attempts.length,

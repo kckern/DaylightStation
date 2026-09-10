@@ -94,7 +94,7 @@ function stateOf(session) {
 const RANK = { passed: 3, 'in-progress': 2, 'needs-retry': 1, pending: 0 };
 const better = (a, b) => ((RANK[b] ?? 0) > (RANK[a] ?? 0) ? b : a);
 
-export function summarize(sections, sessions, entries = [], readingActivity = null) {
+export function summarize(sections, sessions, entries = [], readingActivity = null, fitnessActivity = null) {
   const planned = (sections ?? []).filter((section) => !section.suppressed);
   const plannedSubjects = new Set(planned.map((s) => s.subject));
   const byUnit = new Map();
@@ -226,6 +226,21 @@ export function summarize(sections, sessions, entries = [], readingActivity = nu
       readingActivity: { bookCount: readingActivity.bookCount, finishedCount: readingActivity.finishedCount, progressCount: readingActivity.progressCount },
       supplemental: true, programId: 'book-log', subject: 'english', label: 'Reading', state: 'passed',
       unitId: `book-log:activity:${readingActivity.studyDay}`,
+    });
+  }
+  // PHYSICAL EDUCATION, on the same terms as independent reading. Nobody is
+  // enrolled in it, no section plans it and no sheet grades it — so it is
+  // pushed AFTER the counts, is always `passed`, and exists only on the days a
+  // child actually earned rings. It can never be pending (a wall panel must
+  // not nag a child to go exercise) and it can never be amber (nothing marks
+  // a workout wrong). The weekly ring chip in the card's readout is the other
+  // half of this: that one is cumulative, this one is today, yes or no.
+  if (fitnessActivity?.status === 'ok' && fitnessActivity.hasActivity === true
+    && fitnessActivity.studyDay) {
+    segments.push({
+      fitnessActivity: { rings: fitnessActivity.rings, sessionCount: fitnessActivity.sessionCount },
+      supplemental: true, programId: 'fitness', subject: 'physical-education', label: 'Fitness', state: 'passed',
+      unitId: `fitness:activity:${fitnessActivity.studyDay}`,
     });
   }
   return { total, done, segments };

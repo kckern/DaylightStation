@@ -28,6 +28,14 @@
  * this panel moves. `RingIcon` spins only where motion is already the idiom —
  * inside the fitness app.
  *
+ * FITNESS NOW SPEAKS TWICE, and deliberately (2026-09-09). The chip is the
+ * week's cumulative ring count; the workout DISC is a plain yes-or-no about
+ * today, sitting in the subject row with the school work. They answer
+ * different questions from different places on the card. The disc is
+ * supplemental in the same sense reading is — pushed after the counts, never
+ * pending, never amber, absent entirely on a day nobody worked out — because
+ * physical education is credited, never assigned. See `agendaStatusModel.js`.
+ *
  * Deliberately NON-INTERACTIVE (kiosk spec wave 5): it renders on the locked
  * Portal beside the keypad as a reminder/preview only — codes and printed
  * agendas remain the only entry path, so the rows accept no taps and the
@@ -84,9 +92,15 @@ function labelForSegment(segment) {
     ? `, ${segment.extraCount} extra ${segment.extraCount === 1 ? 'item' : 'items'} completed`
     : '';
   const reading = segment.readingActivity;
-  const activity = reading ? [
+  const fitness = segment.fitnessActivity;
+  const counts = reading ? [
     [reading.bookCount, 'book', 'books'], [reading.finishedCount, 'finish', 'finishes'], [reading.progressCount, 'progress entry', 'progress entries'],
-  ].filter(([count]) => Number.isInteger(count) && count > 0).map(([count, one, many]) => `${count} ${count === 1 ? one : many}`).join(', ') : '';
+  ] : fitness ? [
+    [fitness.rings, 'ring', 'rings'],
+  ] : [];
+  const activity = counts
+    .filter(([count]) => Number.isInteger(count) && count > 0)
+    .map(([count, one, many]) => `${count} ${count === 1 ? one : many}`).join(', ');
   return `${segment.label}: ${state}${extra}${activity ? `, ${activity}` : ''}`;
 }
 
@@ -162,14 +176,15 @@ export default function AgendaStatusBoard({ kids = [], day }) {
       const learner = dayResponse?.ok
         ? dayResponse.data?.learners?.find((row) => row.learnerId === kid.id) : null;
       const readingActivity = learner?.readingActivity ?? null;
+      const fitnessActivity = learner?.fitnessActivity ?? null;
       const settleWithoutPlan = () => {
-        const summary = summarize([], [], [], readingActivity);
+        const summary = summarize([], [], [], readingActivity, fitnessActivity);
         settle(kid.id, summary.segments.length ? summary : null);
       };
       try {
         const plan = await schoolApi.agendaPreview(kid.id, effectiveDay);
         if (!plan?.ok) return settleWithoutPlan();
-        settle(kid.id, summarize(plan.data?.sections, learner?.sessions ?? [], plan.data?.entries, readingActivity));
+        settle(kid.id, summarize(plan.data?.sections, learner?.sessions ?? [], plan.data?.entries, readingActivity, fitnessActivity));
       } catch (error) {
         schoolLog.selfServiceError?.('status-board.load-failed', { learnerId: kid.id, error: error?.message });
         settleWithoutPlan();

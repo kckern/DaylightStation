@@ -13,6 +13,7 @@ vi.mock('../../../hooks/useWebSocket.js', () => ({
   useWebSocketSubscription: (topic, cb) => { wsHandlers.push({ topic, cb }); },
 }));
 import { schoolApi } from '../schoolApi.js';
+import { hasIcon } from '../home/icons/iconRegistry.js';
 
 const KIDS = [{ id: 'learner1', name: 'Learner One' }, { id: 'learner2', name: 'Learner Two' }];
 const ringGate = (learnerId, current, startsAt = 0, endsAt = 4_102_444_800_000) => ({
@@ -638,6 +639,37 @@ describe('independent reading acknowledgment', () => {
   });
 });
 
+const FITNESS_ACTIVITY = { status: 'ok', studyDay: '2026-09-07', hasActivity: true, rings: 3, sessionCount: 1 };
+describe('physical education acknowledgment', () => {
+  it('adds one supplemental circle without changing required counts or day completion', () => {
+    expect(summarize([], [], [], null, FITNESS_ACTIVITY)).toMatchObject({ total: 0, done: 0, segments: [
+      { supplemental: true, programId: 'fitness', subject: 'physical-education', label: 'Fitness', state: 'passed', unitId: 'fitness:activity:2026-09-07' },
+    ] });
+    expect(dayStatus(summarize([], [], [], null, FITNESS_ACTIVITY))).toBeNull();
+  });
+  it('cannot finish a day of school work on a workout alone', () => {
+    const summary = summarize([{ subject: 'math', next: { unitId: 'math:1' } }], [], [], null, FITNESS_ACTIVITY);
+    expect(summary).toMatchObject({ total: 1, done: 0, segments: [
+      { subject: 'math', state: 'pending' }, { subject: 'physical-education', supplemental: true, state: 'passed' },
+    ] });
+    expect(dayStatus(summary)).toBe('Not started');
+  });
+  it('rides alongside a cleared day without inflating it', () => {
+    const summary = summarize([{ subject: 'math', servedWork: [{ unitId: 'math:1' }] }], [], [], null, FITNESS_ACTIVITY);
+    expect(summary).toMatchObject({ total: 1, done: 1 });
+    expect(summary.segments).toHaveLength(2);
+    expect(dayStatus(summary)).toBe('Done for the day');
+  });
+  it.each([null, { status: 'unavailable', hasActivity: true }, { ...FITNESS_ACTIVITY, hasActivity: false }, { ...FITNESS_ACTIVITY, studyDay: null }])('invents no credit without authoritative activity: %j', activity => {
+    expect(summarize([], [], [], null, activity).segments).toEqual([]);
+  });
+  it('acknowledges reading and physical education independently', () => {
+    expect(summarize([], [], [], READING_ACTIVITY, FITNESS_ACTIVITY)).toMatchObject({ total: 0, done: 0, segments: [
+      { programId: 'book-log', label: 'Reading' }, { programId: 'fitness', label: 'Fitness' },
+    ] });
+  });
+});
+
 describe('persisted reading on the board', () => {
   const kids = [KIDS[0]];
   const digest = (activity = READING_ACTIVITY) => ({ ok: true, data: { studyDay: '2026-09-07', learners: [{ learnerId: 'learner1', sessions: [], readingActivity: activity }] } });
@@ -684,5 +716,37 @@ describe('persisted reading on the board', () => {
     schoolApi.teacherDay.mockResolvedValue(digest({ ...READING_ACTIVITY, hasActivity: false }));
     await send({ event: 'book-log-changed', learnerId: 'learner1', studyDay: '2026-09-01', action: 'undo' });
     await waitFor(() => expect(screen.queryByRole('img', { name: 'Reading: done, 2 books, 2 finishes, 3 progress entries' })).toBeNull());
+  });
+});
+
+describe('persisted physical education on the board', () => {
+  const kids = [KIDS[0]];
+  const digest = (activity = FITNESS_ACTIVITY) => ({ ok: true, data: { studyDay: '2026-09-07', learners: [{ learnerId: 'learner1', sessions: [], fitnessActivity: activity }] } });
+  beforeEach(() => {
+    vi.clearAllMocks(); wsHandlers.length = 0;
+    schoolApi.stateGates.mockResolvedValue({ ok: false });
+    schoolApi.teacherDay.mockResolvedValue(digest());
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: { sections: [], entries: [] } });
+  });
+  it('has a real subject icon of its own, not the missing-icon apple', () => {
+    expect(hasIcon('physical-education')).toBe(true);
+  });
+  it('draws the workout disc and speaks the rings it took', async () => {
+    render(<AgendaStatusBoard kids={kids} day="2026-09-07" />);
+    expect(await screen.findByRole('img', { name: 'Fitness: done, 3 rings' })).toBeInTheDocument();
+    expect(screen.queryByText('Done for the day')).toBeNull();
+    expect(document.querySelector('[data-complete="true"]')).toBeNull();
+  });
+  it('says one session in the singular', async () => {
+    schoolApi.teacherDay.mockResolvedValue(digest({ ...FITNESS_ACTIVITY, rings: 1 }));
+    render(<AgendaStatusBoard kids={kids} day="2026-09-07" />);
+    expect(await screen.findByRole('img', { name: 'Fitness: done, 1 ring' })).toBeInTheDocument();
+  });
+  it('draws no disc at all on a day nobody worked out, rather than an empty one to fill', async () => {
+    schoolApi.teacherDay.mockResolvedValue(digest({ status: 'ok', studyDay: '2026-09-07', hasActivity: false, rings: 0, sessionCount: 0 }));
+    render(<AgendaStatusBoard kids={kids} day="2026-09-07" />);
+    expect(await screen.findByText('No plan to show')).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /Fitness/ })).toBeNull();
+    expect(document.querySelector('.school-status-board__pill')).toBeNull();
   });
 });
