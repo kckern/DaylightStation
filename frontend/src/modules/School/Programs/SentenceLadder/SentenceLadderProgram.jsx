@@ -241,7 +241,7 @@ export default function SentenceLadderProgram({
     // it — "they came back" rather than "the ladder started them here" — and a
     // change once a rung was already held means the one they were on ran out.
     // Told apart, a report of "it started me in the wrong place" is answerable.
-    languageLog.rung('landed', {
+    languageLog.rungLanded({
       rung: nextGroup.rung,
       reason: activeRung ? 'rung-cleared' : (nextGroup.rung === groups[0].rung ? 'first' : 'resume'),
       pending: nextGroup.items.filter((i) => !i.done).length,

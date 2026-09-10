@@ -91,6 +91,29 @@ unmount, the way the Feed surface has always done it. A panel cannot be left
 chatty by a diagnostic session. The runbook and the reference both carry the
 correction; assume any older instruction naming the window flag alone is wrong.
 
+**And it only goes as far as the console.** The backend drops incoming `debug`
+at ingest in production (`defaultLevel: info` in the dispatcher), whatever the
+browser is set to — verified by running a session at debug and querying its run
+id: the console showed the full trace, the store held only the info and warn
+rows. So the plan's acceptance criterion ("a single runId query returns the
+whole session … each rung entered and completed, each API call") is not
+reachable as written, and no instruction in a runbook can make it so; it needs
+a container-level config change that would flood the store with every other
+frontend's debug traffic too. What was done instead: **`rung.landed` was
+promoted to `info`** — which rung a child is on and why they were put there is
+where a support call starts, and a handful of events per session costs nothing.
+Everything else per-sentence stays at debug, console-only, and the docs now say
+which is which rather than implying the store has it all.
+
+What a single run id **does** return from the store, confirmed on the live
+deployment: program mounted, each day load with its chain and blocked rungs,
+each progress state, capability detection and overrides, dimmed rungs and what
+they lack, pacing changes and refusals, API warnings and errors, the rung
+landings — and the backend's own events for the same run. The frontend→backend
+half was proved separately with an unauthorized request carrying a run id: the
+403's `study-grant-refused` came back from the store under that same
+`context.runId`, without writing a byte of learner evidence.
+
 ## 2. Three of the handoff's claims that did not survive
 
 1. **"The test rig's audio is shared from the real corpus's media folder."** It is not. Every
