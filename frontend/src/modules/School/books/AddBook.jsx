@@ -61,26 +61,19 @@ export default function AddBook({ step, add, today, earliestDay = null, error = 
   } else if (step === 'cover' || step === 'where') {
     const duplicate = Boolean(add?.duplicateOf);
     const prior = add?.priorRead;
+    // THE COVER IS THE SCREEN. It takes most of the pane, and the three doors
+    // straddle its bottom edge — the thing to look at and the thing to do,
+    // one object. The words are window dressing in a quiet column beside it:
+    // title, author, then the description left-aligned and scrollable rather
+    // than cut off. No "wrong book" button: Back takes the child to the pad
+    // with their digits kept, which is that button's whole job.
+    const doors = !duplicate && !(prior && !rereading && !add.rereading);
     body = (
-      <div className="school-books-add__card school-books-task">
-        <div className="school-books-task__context">
-        <BookCover book={book} className="school-books-add__cover" />
-        <div className="school-books-add__about">
-          <h3 className="school-books-add__title" title={presentation.title}>{presentation.title}</h3>
-          {presentation.author && <p className="school-books-add__author" title={presentation.allAuthors}>{presentation.author}</p>}
-          {presentation.description && <p className="school-books-add__description">{presentation.description}</p>}
-          {add?.metadataMissing && <p className="school-books-add__description">We couldn&apos;t find a title or cover. Check that this number matches your book; you can still log it by ISBN.</p>}
-          {prior && <FinishContext item={prior} />}
-        </div>
-        </div>
-        <div className="school-books-add__choices school-books-task__controls">
-          {duplicate ? <>
-            <p className="school-books-add__prompt">You&apos;ve already got this one</p>
-            <button type="button" className="school-books-add__yes" disabled={busy} {...press(() => actions.openDuplicate())}>Open it</button>
-          </> : prior && !rereading && !add.rereading ? (
-            <button type="button" className="school-books-add__yes" disabled={busy} {...press(() => setRereading(true))}>Read again</button>
-          ) : <>
-            <div className="school-books-add__doors">
+      <div className="school-books-add__card school-books-task school-books-found">
+        <div className="school-books-task__context school-books-found__stage">
+          <BookCover book={book} className="school-books-add__cover school-books-found__cover" />
+          {doors && (
+            <div className="school-books-add__doors school-books-found__doors">
               {DOORS.map(({ where, icon, label }) => (
                 <button key={where} type="button" className="school-books-add__door" data-where={where} disabled={busy}
                   {...press(() => where === 'finished' ? actions.choose(where, today) : actions.choose(where))}>
@@ -89,9 +82,27 @@ export default function AddBook({ step, add, today, earliestDay = null, error = 
                 </button>
               ))}
             </div>
+          )}
+        </div>
+        <div className="school-books-add__choices school-books-task__controls school-books-found__about">
+          <h3 className="school-books-add__title" title={presentation.title}>{presentation.title}</h3>
+          {presentation.author && <p className="school-books-add__author" title={presentation.allAuthors}>{presentation.author}</p>}
+          {add?.metadataMissing && <p className="school-books-add__description">We couldn&apos;t find a title or cover. Check that this number matches your book; you can still log it by ISBN.</p>}
+          {prior && <FinishContext item={prior} />}
+          {duplicate ? <>
+            <p className="school-books-add__prompt">You&apos;ve already got this one</p>
+            <button type="button" className="school-books-add__yes" disabled={busy} {...press(() => actions.openDuplicate())}>Open it</button>
+          </> : prior && !rereading && !add.rereading ? (
+            <button type="button" className="school-books-add__yes" disabled={busy} {...press(() => setRereading(true))}>Read again</button>
+          ) : null}
+          {presentation.description && (
+            <div className="school-books-found__blurb">
+              <p className="school-books-add__description school-books-found__description">{presentation.description}</p>
+            </div>
+          )}
+          {doors && (
             <button type="button" className="school-books-update__quiet" disabled={busy} {...press(() => actions.choose('finished'))}>Finished on another day</button>
-          </>}
-          <button type="button" className="school-books-update__quiet" disabled={busy} {...press(() => actions.confirmCover(false))}>Wrong book? Edit number</button>
+          )}
           <Fault message={message} />
         </div>
       </div>

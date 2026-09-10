@@ -43,7 +43,7 @@ describe('BookShelfDoor', () => {
   it('backs out without opening anything', async () => {
     render(<BookShelfDoor {...props} />);
     fireEvent.click(screen.getByTestId('book-shelf-door'));
-    fireEvent.click(screen.getByRole('button', { name: 'Never mind' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(h.open).not.toHaveBeenCalled();
     expect(props.onLaunch).not.toHaveBeenCalled();
@@ -66,7 +66,7 @@ describe('BookShelfDoor', () => {
     render(<BookShelfDoor {...props} />);
     fireEvent.click(screen.getByTestId('book-shelf-door'));
     fireEvent.click(screen.getByRole('button', { name: 'Child' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Never mind' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     await act(async () => finish({ ok: true, data: { launchTarget: { bookGrant: 'stale' } } }));
     expect(props.onLaunch).not.toHaveBeenCalled();
   });

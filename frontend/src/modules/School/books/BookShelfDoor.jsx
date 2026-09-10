@@ -23,6 +23,7 @@ import Icon from '../home/icons/Icon.jsx';
 import { schoolApi } from '../schoolApi.js';
 import { schoolLog } from '../schoolLog.js';
 import LearnerChoice from './LearnerChoice.jsx';
+import ScreenHeader from '../shared/ScreenHeader.jsx';
 
 export default function BookShelfDoor({ screenId, roster = [], onLaunch }) {
   const [asking, setAsking] = useState(false);
@@ -78,15 +79,22 @@ export default function BookShelfDoor({ screenId, roster = [], onLaunch }) {
     );
   }
 
+  // A SCREEN, not a dialog with a "never mind": the shelf's own header with
+  // Back as the way out, the question as a real title wearing the English
+  // shelf's mark, and the four faces in one row, large, names under them.
   return (
-    <section className="school-book-scan" role="dialog" aria-modal="true" aria-label="Who is logging a book">
-      <div className="school-book-scan__preview">
-        <h2>Who&apos;s reading?</h2>
-        <div className="school-book-scan__actions">
-          <LearnerChoice roster={roster} busy={busy} onChoose={choose} />
-          {error && <p role="alert">{error}</p>}
-          <button type="button" className="school-books__back" onClick={close}>Never mind</button>
+    <section className="school-book-scan school-book-scan--who" role="dialog" aria-modal="true" aria-label="Who is logging a book">
+      <div className="school-book-scan__screen">
+        {/* Back stays live while a pick is in flight: a child who walks away
+            mid-answer must still be able to leave, and `close` drops the
+            late answer. */}
+        <ScreenHeader title="Reading" onBack={close} />
+        <div className="school-book-scan__ask">
+          <Icon name="english" className="school-book-scan__ask-icon" />
+          <h2 className="school-book-scan__ask-title">Who&apos;s reading?</h2>
         </div>
+        <LearnerChoice roster={roster} busy={busy} onChoose={choose} />
+        {error && <p className="school-book-scan__error" role="alert">{error}</p>}
       </div>
     </section>
   );
