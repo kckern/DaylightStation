@@ -1,6 +1,8 @@
 # Sentence-ladder card metadata
 
-**Status:** design agreed 2026-09-09, not yet implemented.
+**Status:** shipped 2026-09-09 (`22a4a6c08`). The behaviour now lives in
+[`reference/school/sentence-ladder.md`](../../reference/school/sentence-ladder.md#what-the-card-says);
+this page is kept for the reasoning behind it.
 **Surfaces:** printed agenda card, self-service launch card.
 
 ## The defect
@@ -135,23 +137,29 @@ must not throw — both already true and both covered by existing tests.
 **`description`** has no route to the card yet: `projectProgramEntry` does not
 carry it and `BuildAgenda` reads `next.description`. One line in each.
 
-**Poster — the one unresolved piece.** The image is ingested at
+**As shipped, one delta from the sketch above:** `description` counts the
+outstanding queue **by rung** ("6 repetition, 12 dictation") rather than by
+new-versus-review. The rung breakdown is what a child is about to do next;
+new-versus-review describes the queue's construction, which is our concern
+rather than theirs.
+
+**Poster.** The image is ingested at
 `media/school/language/glossika-korean/poster.jpg`, matching the
-`<media>/school/{subject}/{work}/poster.jpg` convention. Nothing serves that
-path for a program: `curriculumPosterRef` resolves either to a curriculum work
+`<media>/school/{subject}/{work}/poster.jpg` convention. Nothing served that
+path for a program: `curriculumPosterRef` resolved either to a curriculum work
 (needs a course v2 record, which the ladder has none) or to
 `<media>/school/programs/{programId}/poster.jpg` via the `program:` scheme.
-Options, cheapest first:
 
-1. Move the file to `school/programs/sentence-ladder/poster.jpg` and set
-   `courseId: 'program:sentence-ladder'`. Works today, no code. Wrong the day a
-   second language is enrolled — one program, one picture.
-2. Extend the `program:` scheme to carry an instance
-   (`program:sentence-ladder:glossika-korean`) in the presenter, the route and
-   `YamlCurriculumDatastore#programPoster`. Corpus-scoped, small, and the file
-   stays where it is.
-
-Recommend 2. Decide before implementing; it moves a file either way.
+Two options were weighed — reuse the one-face `program:<id>` form, or extend
+the scheme to carry an instance — and **option 2 was built**. The `program:`
+course-id scheme now takes a second form, `program:<programId>:<instanceId>`,
+served from `<media>/school/programs/<programId>/<instanceId>/poster.jpg`, so
+the ladder's artwork keys to the CORPUS: `program:sentence-ladder:<corpusId>`.
+The first option was rejected for the reason it was listed with — one program,
+one picture puts a Korean cover on a Spanish card the day a second language is
+enrolled. Both id segments are validated by the same curriculum-id rule; a
+program with one face (the reading shelf) keeps the short form. See
+"Where artwork comes from" in [the School README](../../reference/school/README.md).
 
 ## Testing
 

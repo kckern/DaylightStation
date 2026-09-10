@@ -573,6 +573,30 @@ Non-school days come from the story-time enrollment's own `schedule`, judged by
 `schoolCalendar#isSchoolDay` — the same function the rest of School uses. Reading
 on a rest day still counts, so a Saturday story is a green square.
 
+### A day off has its own square, and its own name
+
+The wall had one way to say "nothing was asked of you" and used it for both a
+Saturday and Christmas. `rest` recedes on purpose — greying weekends made a
+normal week read as a broken streak — but that same near-invisible square then
+swallowed Thanksgiving, and a child looking at a blank week in late November was
+told nothing about why.
+
+A [named day off](./term-grid.md#a-named-day-off) is now its own state, `exempt`,
+drawn blue. `exempt` is the term grid's existing word for the same idea, so the
+two surfaces share one state rather than inventing a second name for it, and
+blue is neither the green of a met goal nor the amber of a partial one: it reads
+as *not scored* rather than as a grade. The square carries the calendar's own
+word for the day as its title, so it can say "Thanksgiving" instead of the
+generic "a day off".
+
+The name comes from the **household** calendar rather than the story-time
+enrollment's schedule. A course may excuse a day for its own reasons; only the
+house declares Christmas.
+
+Reading on a holiday still counts. `met` and `partial` are checked before the
+holiday, exactly as they already were for a rest day, because the agenda never
+un-serves work a child actually did.
+
 **Known limitation:** no historical target is stored, so every past day is judged
 against the target as it stands today. A household that changes its daily target
 re-colours its own past.

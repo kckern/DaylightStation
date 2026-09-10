@@ -859,6 +859,16 @@ gate, the gradebook and enrollment. A program therefore keeps its own identity
 and names itself with the `program:` scheme — the same move `piano-course`
 already makes with `plex:`.
 
+The `program:` scheme takes a second, longer form —
+`program:<programId>:<instanceId>` — served one level down from
+`media/school/programs/<programId>/<instanceId>/poster.jpg`. It exists for a
+program whose picture belongs to what a learner is enrolled in rather than to
+the program itself: the sentence ladder is one program with one corpus per
+language, and a single picture on the program would put a Korean cover on a
+Spanish card. Both segments are validated by the same curriculum-id rule,
+because an instance id is a path segment like any other. A program with one
+face (the reading shelf) keeps the short form.
+
 A missing poster is a 404 in every one of the three, never a generated
 substitute, and every surface draws its own calm placeholder instead.
 

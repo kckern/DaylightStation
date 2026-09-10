@@ -963,6 +963,20 @@ does not record an active lesson as completed. A single-lesson unit collapses
 to a compact complete/progress row instead of drawing a meaningless one-segment
 bar.
 
+**A one-unit course has no course bar at all.** Its course row can only ever
+read "0 of 1" or "1 of 1" — a full-width solid track restating the unit bar
+directly beneath it in different words, or an empty one telling a child they
+have not finished the only thing on the card. It printed live: a solid
+`COURSE 1 of 1` sitting above `READING MUSIC 29 of 53`, where only the second
+is a journey, and it cost a row on paper a child reads at a glance. The rule
+keys on the row's `scope`, not on the total alone, because a one-lesson UNIT
+bar is a different statement — "0 of 1" there is a real not-yet — and a
+producer that names no scope keeps its bar rather than losing one to a rule it
+never opted into. It lives in `progressRows.mjs` beside the past/present/future
+rule, for the reason that file already gives: the raster renderer and the
+thermal text renderer were each filtering rows privately, which is how two
+surfaces a child sees minutes apart come to disagree.
+
 **Every thermal surface draws the same progress bar**, from one function, with
 one set of theme values. An outlined track makes the empty remainder visible —
 a fill with no container says "this much" and never "…out of this" — solid ink
