@@ -200,9 +200,19 @@ export class CurriculumAccess {
     return this.#catalog.getCoursePoster?.(courseId) ?? null;
   }
 
-  /** A program's own artwork — see `YamlCurriculumDatastore.getProgramPoster`. */
-  async getProgramPoster(programId) {
-    return this.#catalog.getProgramPoster?.(programId) ?? null;
+  /**
+   * A program's own artwork — see `YamlCurriculumDatastore.getProgramPoster`.
+   *
+   * `instanceId` is not optional decoration: the sentence ladder's picture
+   * belongs to the CORPUS, one directory down, so a second language brings its
+   * own rather than inheriting Korean's. This signature took one argument and
+   * silently dropped the second, so both routers that pass it — and the poster
+   * sitting exactly where the datastore documents it — produced a 404 and a
+   * card with an empty panel. A parameter dropped at a seam is invisible: no
+   * error, no log, just a picture that never appears.
+   */
+  async getProgramPoster(programId, instanceId = null) {
+    return this.#catalog.getProgramPoster?.(programId, instanceId) ?? null;
   }
 
   /** @returns {Promise<object[]>} every publishable unit, normalised */

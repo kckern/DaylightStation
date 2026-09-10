@@ -9,7 +9,12 @@ export class SchoolCurriculumQueryService {
   isConfigured() { return Boolean(this.curriculum); }
   async getCoursePoster(courseId) { return this.curriculum?.getCoursePoster?.(courseId) ?? null; }
 
-  async getProgramPoster(programId) { return this.curriculum?.getProgramPoster?.(programId) ?? null; }
+  // `instanceId` rides along: the ladder's poster is the corpus's, one level
+  // below the program, and a seam that forwards only the first argument turns
+  // a poster that exists into a 404.
+  async getProgramPoster(programId, instanceId = null) {
+    return this.curriculum?.getProgramPoster?.(programId, instanceId) ?? null;
+  }
   async getUnit(unitId) { return this.curriculum?.getUnitSummary?.(unitId) ?? null; }
 
   async getCourse(courseId) {
