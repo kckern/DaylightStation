@@ -1568,6 +1568,13 @@ export async function createSchoolLifecycle({
     // optional-chained-on-shutdown convention as `donowSchoolBridge` above.
     getLearnerDayCompletion,
     termVerdicts,
+    // The house's own days off, validated once above and shared. Every surface
+    // that asks "was anyone asked to work that day?" answers from THIS value —
+    // the agenda, the term grid, and now the reading wall — so a vacation
+    // cannot be in force on one and absent from another. Exposed rather than
+    // left to each caller to re-read `cfg.calendar` for itself, which is how
+    // two surfaces come to disagree about Christmas.
+    householdSchedule,
     realtime: schoolRealtime,
     bookLogLauncher,
     schoolCompletionBridge,

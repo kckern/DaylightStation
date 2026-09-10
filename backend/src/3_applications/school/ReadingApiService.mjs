@@ -1,4 +1,4 @@
-import { isSchoolDay, namedDayOff } from '#domains/school/schoolCalendar.mjs';
+import { isSchoolDay, namedDayOff, validateSchedule } from '#domains/school/schoolCalendar.mjs';
 
 const YESTERDAY_LIMIT = 4;
 const RECENT_DAYS = 7;
@@ -22,8 +22,10 @@ function dayBefore(studyDay) {
 
 export class ReadingApiService {
   #recordStoryRead; #sessions; #storyTime; #readingLog; #resolveLearner; #logger; #observations; #clock; #nowMs;
-  #householdCalendar;
+  #householdSchedule;
   constructor({ recordStoryRead, sessions, storyTime = null, readingLog = null, resolveLearner = null,
+    // Named for the config block, not the field it lands in: the isolated
+    // router tests wire it through under this key.
     householdCalendar = null,
     logger = console, observationStore = null, clock = () => new Date(), nowMs = Date.now } = {}) {
     if (!recordStoryRead) throw new Error('createReadingRouter requires recordStoryRead');
@@ -31,7 +33,14 @@ export class ReadingApiService {
     this.#recordStoryRead = recordStoryRead; this.#sessions = sessions; this.#storyTime = storyTime;
     this.#readingLog = readingLog; this.#resolveLearner = resolveLearner; this.#logger = logger;
     this.#observations = observationStore; this.#clock = clock; this.#nowMs = nowMs;
-    this.#householdCalendar = householdCalendar;
+    // One normalized value for the whole wall, so this surface and the agenda
+    // judge a vacation identically (`validateSchedule` is idempotent, so the
+    // composition root's already-validated schedule passes through unchanged).
+    // `errors` is dropped rather than re-reported: the composition root
+    // validates this same block and logs `school.calendar.invalid` for it, and
+    // an invalid calendar collapses to null here — which is the verdict
+    // `namedDayOff` was already reaching for a schedule it refused.
+    this.#householdSchedule = validateSchedule(householdCalendar).schedule;
   }
   session(location) { return this.#sessions.snapshot(location); }
   acknowledge(location, proof) {
@@ -271,7 +280,7 @@ export class ReadingApiService {
         // and `partial` are checked first, exactly as they are for a rest day,
         // because the agenda never un-serves work done on a day off.
         const asked = isSchoolDay(day, schedule);
-        const holiday = namedDayOff(day, this.#householdCalendar);
+        const holiday = namedDayOff(day, this.#householdSchedule);
         let state;
         if (target === null) state = books > 0 ? 'unknown-met' : 'unknown';
         else if (target > 0 && books >= target) state = 'met';
