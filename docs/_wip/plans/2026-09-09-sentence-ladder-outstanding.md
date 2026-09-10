@@ -569,3 +569,119 @@ no Portal client has opened the ladder in 30 days of logs, and the mic is gated 
 hardware privacy switch wired into Portal's HAL whose state needs a Facebook signature
 permission to read (`_extensions/portal-keys/README.md`). Confirming it needs someone standing
 at the panel. Do not write code that assumes either answer.
+
+---
+
+## Task 8: Observability sweep — the ladder goes live tomorrow
+
+**Why this is its own task and why it is last:** children start using the ladder tomorrow.
+When one of them says "it didn't work", the question is whether the tree can answer. Today it
+half can. This closes the gap — and it runs AFTER Tasks 1–3 because it instruments the control
+flow those tasks are changing, and instrumenting a shape that is about to move means writing
+the events twice.
+
+### What already exists (surveyed 2026-09-09 — do not rebuild it)
+
+`languageLog.js` is a correct facade over the framework: eleven categories, sensible levels
+(`rung`/`attempt`/`audio` at debug, errors at error). Coverage by file:
+
+| File | `languageLog.` calls |
+|---|---|
+| `SentenceLadderProgram.jsx` | 10 |
+| `RecordingRung.jsx`, `useSentenceAudio.js` | 6 each |
+| `useCapabilities.js`, `RepetitionRung.jsx`, `TypedRung.jsx` | 3 each |
+| `ReviewPanel.jsx` | 2 |
+| **`languageApi.js`** | **0** |
+| `DeviceSettings.jsx`, `PacingControl.jsx`, `Popover.jsx` | 0 |
+
+Backend: `LanguageStudyService` 8 events, the router 3, `CloseLanguageDay` 2,
+**`LanguageProgramLauncher` 0**.
+
+### Step 1: The network layer — the hole that matters most
+
+`languageApi.js` has **three bare `catch {}` blocks** (lines ~24, ~82, ~94) that swallow every
+network failure and return `{ok:false, status:0, data:null}`. Nothing is recorded anywhere, and
+`status: 0` is indistinguishable from a genuine HTTP 0. This is the same defect class as the
+`useBookScanEntry` unhandled rejection fixed earlier today: an error path returning a
+plausible-looking value instead of reporting.
+
+Instrument every request in that file:
+- on failure: the path, the method, the status, and `error.message` — at `error` level, never
+  a silent catch.
+- on a non-ok response: path, method, status — at `warn`.
+- request/response pairs with a duration in ms — at `debug`, so they are available when the
+  level is turned up and cost nothing when it is not.
+
+Do NOT log request bodies or response payloads: they contain the child's own sentences and
+their typed answers. Log shapes and counts, never content. This is a public repo and a shared
+data tree.
+
+### Step 2: A run id, so a session can be followed
+
+There is no correlation between a frontend event and the backend event it caused. Add one.
+
+`getLogger().child({...})` merges arbitrary context and the store indexes it as `context.*`
+(CLAUDE.md, "Filter keys"), so a run id needs no new plumbing:
+
+- Mint one id per program mount in `SentenceLadderProgram` (`crypto.randomUUID()`), hold it for
+  the life of the mount, and put it in the child logger's context so EVERY frontend event in
+  the module carries `context.runId` automatically.
+- Send it to the backend as a request header (`X-School-Run-Id`) from `languageApi.js`.
+- Read it in the language router and thread it into the service's log calls, so backend events
+  carry the same field.
+
+Then `context.runId:"<id>"` in the log store returns one child's whole session, both sides, in
+order. That is the difference between "we have events" and traceability.
+
+### Step 3: The transitions that are currently silent
+
+Frontend:
+- **Program:** mount/unmount already logged; add day-load START (not just loaded/failed), tab
+  switch (study ↔ review), and the rung the learner lands on and why (resume vs first).
+- **Interstitials:** day-complete reached, blocked-rung shown (with which capability was
+  missing — Task 1 now supplies it), gate refusal, "extra practice" banner, the empty-queue
+  state.
+- **Controls with zero coverage today:** `DeviceSettings` (a capability override is the single
+  most consequential thing a grown-up can do here — it is what is currently dimming Dictation
+  on a real machine), `PacingControl` (daily limit changed, from → to).
+- **Task 3's new states:** repetition held, replayed, advanced.
+
+Backend:
+- `LanguageProgramLauncher` has NO events: log `status()` calls and their answer, and every
+  `launch()` — decision, surface, whether a grant was issued.
+- `getDay`: the read itself, with day, queue size, chain, and which rungs were blocked.
+- Day rollover already logs `day-rolled`; add the gate refusal path and corpus-not-found.
+
+### Step 4: Level discipline — do not flood the store
+
+The store is 7-day retention with a disk cap and holds every household subsystem. Per-sentence
+events belong at `debug`, which is filtered out by default and can be raised for launch week.
+Only these belong at `info`: program mounted/unmounted, day loaded, day complete, launch
+dispatched, pacing changed, capability override changed. Errors at `error`, recoverable at
+`warn`. Use `logger.sampled(...)` for anything that can fire per audio frame or per keystroke.
+
+### Step 5: Verify against the real store, not against the code
+
+Run the ladder through the test rig (`/app/school/go/kckern/sentence-ladder/glossika-korean-test`
+— a disposable corpus, so no real progress moves), then query:
+
+```bash
+curl -s https://logs.kckern.net/select/logsql/query \
+  -d 'query=context.app:frontend AND "school.language" AND _time:15m' -d 'limit=100'
+```
+
+Then follow one run end to end:
+```bash
+curl -s https://logs.kckern.net/select/logsql/query \
+  -d 'query=context.runId:"<the id>" AND _time:15m | sort by (_time)'
+```
+
+**Acceptance:** a single `context.runId` query returns the whole session — mount, day load,
+each rung entered and completed, each API call, the save, and the day close — with frontend and
+backend events interleaved in order. If it does not, the sweep is not done.
+
+### Step 6: Commit, and write down what a supporter should query
+
+Add a short section to `docs/runbooks/school/README.md` giving the three queries worth knowing
+on launch day: everything for one learner, everything for one run, and all errors in the last
+hour. A runbook nobody can find is the same as no runbook.
