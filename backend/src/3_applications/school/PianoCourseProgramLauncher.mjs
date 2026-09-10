@@ -35,7 +35,7 @@
  *
  * @module applications/school/PianoCourseProgramLauncher
  */
-import { isSameStudyDay, studyDayForInstant } from '#domains/school/studyDay.mjs';
+import { isSameStudyDay, studyDayForInstant, studyDayMidpointMs } from '#domains/school/studyDay.mjs';
 // The present-tense rule (what counts as "the one you are inside") lives in the
 // domain so the agenda card and the result receipt cannot disagree about it.
 import { inProgressSegments, activeProgressPosition } from '#domains/school/progressRows.mjs';
@@ -191,7 +191,10 @@ export class PianoCourseProgramLauncher {
    * @param {{userId: string, programInstance?: string|null}} args
    * @returns {Promise<{doneToday: boolean, excused?: boolean, progressLabel: string|null, score: number|null}>}
    */
-  async status({ userId, programInstance = null }) {
+  /** Lesson completions carry `userCompletedAt`, so any past day can be read. */
+  get replayable() { return true; }
+
+  async status({ userId, programInstance = null, day = null }) {
     if (!programInstance) {
       return { doneToday: false, progressLabel: 'No piano course assigned', score: null };
     }
@@ -216,7 +219,7 @@ export class PianoCourseProgramLauncher {
       return { error: true };
     }
 
-    const nowMs = this.#nowMs();
+    const nowMs = this.#nowMs(day);
     // Reference/practice units give no credit in the kiosk's own progression
     // (piano.yml `reference_units`), so they cannot discharge the obligation
     // either — the two must agree or a child "finishes" school by replaying a
@@ -510,7 +513,18 @@ export class PianoCourseProgramLauncher {
     return rows.filter((entry) => entry.total > 0);
   }
 
-  #nowMs() {
+  /**
+   * The instant to judge "today" against: the clock, or — replaying `day` —
+   * the middle of that study day, so every `isSameStudyDay` above reads the
+   * day asked for. An unparseable day throws rather than silently answering
+   * for today under yesterday's name.
+   */
+  #nowMs(day = null) {
+    if (day != null) {
+      const at = studyDayMidpointMs(day, { timezone: this.#timezone, boundaryHour: BOUNDARY_HOUR });
+      if (at == null) throw new TypeError(`PianoCourseProgramLauncher.status: invalid day "${day}"`);
+      return at;
+    }
     const now = this.#clock();
     return now instanceof Date ? now.getTime() : Number(now);
   }

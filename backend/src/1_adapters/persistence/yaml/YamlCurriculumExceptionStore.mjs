@@ -23,9 +23,33 @@ export class YamlCurriculumExceptionStore {
     const queued = this.#writeChain.then(run); this.#writeChain = queued.catch(() => {}); return queued;
   }
   async active() {
+    return this.activeAsOf(null);
+  }
+
+  /**
+   * The exceptions in force at an instant: applied before `untilIso`, and not
+   * retracted before it. `null` is "now" — every record counts, which is what
+   * `active()` has always answered. A past-day replay passes the end of that
+   * day's window, so an exception granted on Thursday does not re-colour
+   * Tuesday, and one retracted on Friday still counted on Wednesday.
+   *
+   * `applied` rows carry `decidedAt`, `retracted` rows `retractedAt`
+   * (`ManageCurriculumException`). A record with no readable stamp is treated as always in force: the ledger
+   * predates the stamp, and dropping it would silently revoke an excuse.
+   */
+  async activeAsOf(untilIso = null) {
     const records = await this.list();
-    const retracted = new Set(records.filter((record) => record.operation === 'retracted').map((record) => record.exceptionId));
-    return records.filter((record) => record.operation === 'applied' && !retracted.has(record.exceptionId));
+    const untilMs = untilIso == null ? null : Date.parse(untilIso);
+    const before = (record) => {
+      if (untilMs == null || !Number.isFinite(untilMs)) return true;
+      const at = Date.parse(record?.decidedAt ?? record?.retractedAt ?? record?.at ?? '');
+      return !Number.isFinite(at) || at < untilMs;
+    };
+    const retracted = new Set(records
+      .filter((record) => record.operation === 'retracted' && before(record))
+      .map((record) => record.exceptionId));
+    return records.filter((record) => record.operation === 'applied' && before(record)
+      && !retracted.has(record.exceptionId));
   }
 }
 

@@ -291,6 +291,12 @@ export const schoolApi = {
   pianoLessonGate: (learnerId) => req(
     `/lifecycle/learners/${encodeURIComponent(learnerId)}/piano-lesson-gate`,
   ),
+  // The status board's term grid: one verdict per study day since the term
+  // began, plus one per week for the 8th row. `termId` names a period; absent,
+  // the one containing today.
+  learnerTerm: (learnerId, termId = null) => req(
+    `/lifecycle/learners/${encodeURIComponent(learnerId)}/term${termId ? `?termId=${encodeURIComponent(termId)}` : ''}`,
+  ),
   teacherNotes: (learnerId) => req(`/teacher-notes?learnerId=${encodeURIComponent(learnerId)}`),
   postTeacherNote: (body) => req('/teacher-notes', body),
   attemptsSummary: (learnerId, day) => req(

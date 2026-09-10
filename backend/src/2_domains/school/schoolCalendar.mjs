@@ -20,7 +20,7 @@ const isObject = (value) => Boolean(value) && typeof value === 'object' && !Arra
  * ISO-8601 weekday for a study-day key: 1 = Monday … 7 = Sunday.
  * `getUTCDay()` numbers Sunday 0, which is the one value ISO renumbers.
  */
-function isoWeekday(day) {
+export function isoWeekday(day) {
   const [year, month, date] = day.split('-').map(Number);
   const at = new Date(Date.UTC(year, month - 1, date));
   // Date.UTC maps a year under 100 into the 1900s, so year 26 would be read as
