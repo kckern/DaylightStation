@@ -587,6 +587,32 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   const [keypadClearToken, setKeypadClearToken] = useState(0);
   const keypadTouchedAtRef = useRef(0);
   const onKeypadActivity = useCallback(() => { keypadTouchedAtRef.current = Date.now(); }, []);
+
+  /**
+   * THE BOARD'S DISC DOOR, in a browser only. A tapped disc mints that
+   * subject's six-digit code — the same record the printed agenda carries —
+   * and TYPES IT into the keypad path, so what follows is exactly what
+   * follows a child's code: the same card, the same session, the same grant.
+   *
+   * `null` on a panel, by construction: the Portal mounts with a screen id
+   * and `isPanelSurface` says so. The board there never gets a handler and
+   * its discs stay the inert marks the kiosk spec requires.
+   */
+  const openSegmentFromBoard = useMemo(() => {
+    if (isPanelSurface(screenId)) return null;
+    return async (learnerId, segment) => {
+      const subject = segment?.subject ?? null;
+      if (!subject) return;
+      schoolLog.selfService('board.disc-door', { learnerId, subject, program: segment.programId ?? null });
+      const res = await schoolApi.subjectCode(learnerId, subject, segment.programId ?? null);
+      if (!res?.ok || !res.data?.code) {
+        schoolLog.selfServiceError('board.disc-door-failed', { learnerId, subject, status: res?.status ?? null });
+        return;
+      }
+      claim(learnerId);
+      await selfService.submit(res.data.code);
+    };
+  }, [screenId, claim, selfService]);
   const onKeypadEngagedChange = useCallback((engaged) => { keypadEngagedRef.current = engaged; setKeypadEngaged(engaged); }, []);
 
   /**
@@ -955,7 +981,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
                   <BookShelfDoor screenId={screenId} roster={roster}
                     onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />
                 </BoardHeader>
-                <AgendaStatusBoard kids={roster} />
+                <AgendaStatusBoard kids={roster} onOpenSegment={openSegmentFromBoard} />
               </div>
             </div>
           ) : (

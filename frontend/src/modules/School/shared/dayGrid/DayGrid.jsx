@@ -54,11 +54,16 @@ export default function DayGrid({
   const met = present.filter((c) => c.state === 'met').length;
   const withExtra = orientation === 'weeks-as-columns' && Array.isArray(extraRow) && extraRow.length > 0;
   const extraByWeek = withExtra ? new Map(extraRow.map((w) => [w.weekId, w])) : null;
-  const style = { '--grid-rows': rows + (withExtra ? 1 : 0), '--grid-cols': cols };
+  // The current week's column index, for the one band painted behind it.
+  const currentCol = currentWeekId != null ? weekIds.indexOf(currentWeekId) : -1;
+  const style = {
+    '--grid-rows': rows + (withExtra ? 1 : 0), '--grid-cols': cols,
+    ...(currentCol >= 0 ? { '--current-col': currentCol } : {}),
+  };
 
   return (
     <ol
-      className={`school-daygrid school-daygrid--${orientation} ${className}`.trim()}
+      className={`school-daygrid school-daygrid--${orientation}${currentCol >= 0 ? ' school-daygrid--has-current' : ''} ${className}`.trim()}
       style={style}
       data-testid={testId}
       role="img"
@@ -70,11 +75,10 @@ export default function DayGrid({
         // A day after today has not happened: drawn as an outline, never as a
         // verdict nobody could reach.
         const state = studyDay && cell.studyDay > studyDay ? 'future' : cell.state;
-        const inCurrentWeek = currentWeekId != null && cell.weekId === currentWeekId;
         return (
           <li
             key={cell.studyDay}
-            className={`school-daygrid__cell${cell.today ? ' school-daygrid__cell--today' : ''}${inCurrentWeek ? ' school-daygrid__cell--current-week' : ''} ${cellClassName}`.trim()}
+            className={`school-daygrid__cell${cell.today ? ' school-daygrid__cell--today' : ''} ${cellClassName}`.trim()}
             data-state={state}
             data-day={cell.studyDay}
             data-testid={cell.today ? todayTestId : undefined}
