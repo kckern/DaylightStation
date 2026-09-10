@@ -175,6 +175,66 @@
   justify-content: center;
 }
 
+/* ── Up next ─────────────────────────────────────────────────────────────── */
+
+/* The waiting book and whose it is. A cover with a face tucked into its corner,
+   the name under, the title under that — in the rail's own inks, quieter than
+   the plaque above because it is about later. */
+.reading-credit__next {
+  width: 100%;
+  display: flex; flex-direction: column; align-items: center; gap: 0.3rem;
+  padding-top: clamp(0.5rem, 3cqw, 1rem);
+  color: var(--ink-soft, #a89a80);
+  flex: none;
+}
+.reading-credit__next-label {
+  margin: 0;
+  font-size: var(--label-floor, 11.52px);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.reading-credit__next-card {
+  position: relative;
+  width: clamp(3rem, 44cqw, 5.5rem);
+}
+.reading-credit__next-cover {
+  display: block;
+  width: 100%; aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  background: color-mix(in srgb, var(--ink, #e9dfc8) 12%, transparent);
+  &--blank { border: 1px dashed color-mix(in srgb, var(--ink, #e9dfc8) 40%, transparent); box-sizing: border-box; }
+}
+.reading-credit__next-who {
+  position: absolute; right: -0.55rem; bottom: -0.55rem;
+  display: flex; flex-direction: column; align-items: center;
+}
+.reading-credit__next-face {
+  --face: clamp(1.6rem, 22cqw, 2.4rem);
+  width: var(--face); height: var(--face);
+  display: grid; place-items: center; line-height: 0;
+  .piano-avatar {
+    width: var(--face); height: var(--face); aspect-ratio: 1; flex: 0 0 auto;
+    border-radius: 50%; object-fit: cover;
+    box-shadow: 0 0 0 2px var(--programme-edge, #2a0f10);
+  }
+}
+.reading-credit__next-name {
+  margin: 0.4rem 0 0;
+  font-size: var(--label-floor, 11.52px);
+  font-weight: 700;
+  color: var(--ink, #e9dfc8);
+  white-space: nowrap;
+}
+.reading-credit__next-title {
+  margin: 0.55rem 0 0;
+  max-width: 100%;
+  font-size: var(--label-floor, 11.52px);
+  line-height: 1.25;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+
 /* ── When is it ──────────────────────────────────────────────────────────── */
 
 /* THE WALL CLOCK. `margin-top: auto` pushes it to the foot of the rail so it
