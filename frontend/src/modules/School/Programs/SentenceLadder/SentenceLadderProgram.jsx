@@ -66,6 +66,22 @@ function needNote(need) {
 export default function SentenceLadderProgram({
   userId, corpusId, studyGrant, onSignIn, onExit = null, locked = false, preview = false,
 }) {
+  // ONE ID FOR THE WHOLE RUN, minted during RENDER rather than in an effect.
+  //
+  // Every `languageLog` event and every outbound request carries it, so a
+  // child's session reads back from the log store as one thing —
+  // `context.runId:"<id>"` — frontend and backend interleaved, instead of a
+  // pile of events matched up by learner and timestamp.
+  //
+  // It cannot live in an effect. The day-load effect is DECLARED above the
+  // mount effect and effects run in declaration order, so a `startRun()` there
+  // would fire after the first request had already gone out uncorrelated —
+  // losing exactly the event most worth having when a session fails at the
+  // start. `useMemo` runs during render, before any effect, which is the only
+  // place early enough. Re-mints per learner/corpus: a different child or a
+  // different course is a different run.
+  useMemo(() => languageLog.startRun(), [userId, corpusId]);
+
   const [day, setDay] = useState(null);
   const [status, setStatus] = useState('loading'); // loading | ready | error | empty
   const [activeRung, setActiveRung] = useState(null);
@@ -124,6 +140,10 @@ export default function SentenceLadderProgram({
       loadGeneration.current += 1;
       loadController.current?.abort();
       languageLog.program('unmounted', { corpus: corpusId });
+      // Close the run LAST, so 'unmounted' is still correlated. Anything this
+      // module logs afterwards is genuinely outside a session and should say so
+      // by carrying no run id, rather than being filed under the last one.
+      languageLog.endRun();
     };
   }, [corpusId, userId]);
 

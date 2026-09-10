@@ -23,6 +23,13 @@ vi.mock('./languageLog.js', () => ({
     captureError: vi.fn(),
     pacing: vi.fn(),
     capability: vi.fn(),
+    // The run-id holder. Real in `languageLog.js`; stubbed here because the
+    // program mints a run during RENDER, so a mock missing these throws before
+    // a single assertion runs.
+    startRun: vi.fn(() => 'test-run'),
+    setRun: vi.fn(),
+    currentRun: vi.fn(() => 'test-run'),
+    endRun: vi.fn(),
   },
 }));
 
