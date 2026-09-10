@@ -175,9 +175,31 @@ describe('LanguageStudyService.todayStatus', () => {
     expect(status).toMatchObject({ doneToday: false, progressLabel: 'Day 1', score: null });
   });
 
+  /**
+   * Everything one day asks for a sentence, which is not what it looks like.
+   *
+   * A day is `dailyLimit` sentences AT EVERY RUNG (`dayQueue.mjs`, "warm-up
+   * fill"), so one new sentence is four queue rows, not one. Only the first is
+   * a real rung: a rung cleared today cannot graduate today, so the other
+   * three are PRACTICE rows — and a practice row is credited only by an event
+   * that is itself marked `practice: true`. A plain rung event clears the rung
+   * and leaves the practice row outstanding, which is what these tests were
+   * doing when they logged one repetition and expected a finished day.
+   */
+  const clearTheDay = (seq, { at, day = 1 }) => {
+    ds.appendEvent('kckern', 'test-korean', {
+      at, day, seq, rung: 'repetition', attributedTo: 'kckern',
+    });
+    for (const rung of ['dictation', 'recording', 'interpretation']) {
+      ds.appendEvent('kckern', 'test-korean', {
+        at, day, seq, rung, attributedTo: 'kckern', practice: true,
+      });
+    }
+  };
+
   it('reports doneToday:true once every queued item for today is cleared', () => {
     svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 1 });
-    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition' });
+    clearTheDay(1, { at: new Date(AT).toISOString() });
     const status = svc.todayStatus({ userId: 'kckern' });
     expect(status).toMatchObject({ doneToday: true, progressLabel: 'Day 1', score: null });
   });
@@ -188,9 +210,9 @@ describe('LanguageStudyService.todayStatus', () => {
     // long-finished day as "done today" — hiding the subject on the agenda.
     // The stored day only advances when the learner next opens the app, so
     // todayStatus must apply the same rollover the live session applies.
-    ds.appendEvent('kckern', 'test-korean', {
-      at: '2026-07-13T10:00:00Z', day: 1, seq: 1, rung: 'repetition', attributedTo: 'kckern',
-    });
+    // The whole ladder on that day, or the day was never finished and there is
+    // correctly nothing to roll.
+    clearTheDay(1, { at: '2026-07-13T10:00:00Z' });
     ds.writeProgress('kckern', 'test-korean', {
       corpus: 'test-korean', day: 1, daily_limit: 1, last_activity: '2026-07-13T10:00:00Z',
     });
@@ -207,11 +229,16 @@ describe('LanguageStudyService.todayStatus', () => {
   it('does not borrow status from a different corpus when one is requested', () => {
     ds.corpora.set('test-spanish', { ...CORPUS, id: 'test-spanish', label: 'Test Spanish' });
     svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 1 });
-    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition' });
+    clearTheDay(1, { at: new Date(AT).toISOString() });
 
-    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-spanish' })).toEqual({
-      doneToday: false, progressLabel: null, score: null,
-    });
+    // Spanish answers for SPANISH: day one, untouched — not Korean's finished
+    // day. It is no longer the null triple, because a named corpus with no
+    // history is day one rather than nothing (the 2026-09-09 fix: reporting
+    // nothing is what meant nobody could ever be told to start).
+    const spanish = svc.todayStatus({ userId: 'kckern', corpusId: 'test-spanish' });
+    expect(spanish).toMatchObject({ doneToday: false, progressLabel: 'Day 1', score: null });
+    expect(spanish.context.course).toMatchObject({ title: 'Test Spanish' });
+
     expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' })).toMatchObject({
       doneToday: true, progressLabel: 'Day 1', score: null,
     });

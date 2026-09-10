@@ -302,8 +302,9 @@ describe('GET /summary — what the screen puts in front of the child', () => {
       enrolled: true, error: false, count: 1, target: 2, progressLabel: '1 of 2 stories',
     });
     expect(res.body.yesterday.map((r) => r.title)).toEqual(['Corduroy', 'Blueberries']);
-    expect(res.body.recent.map((r) => r.title)).toEqual(['Blueberries', 'Corduroy']);
-    expect(res.body.recent[0]).toMatchObject({ studyDay: '2026-08-25' });
+    expect(res.body.recentDays).toHaveLength(1);
+    expect(res.body.recentDays[0].studyDay).toBe('2026-08-25');
+    expect(res.body.recentDays[0].books.map((r) => r.title)).toEqual(['Blueberries', 'Corduroy']);
   });
 
   it('shows ONE card per book, newest first, with the repeats as a count', async () => {
@@ -323,10 +324,15 @@ describe('GET /summary — what the screen puts in front of the child', () => {
     const { app } = build({ readingLog });
     const res = await request(app).get('/api/v1/school/reading/summary?learnerId=user_5');
     expect(res.status).toBe(200);
-    expect(res.body.recent.map((r) => r.title)).toEqual(['Corduroy', 'Blueberries']);
-    // The newest read wins, so the day label is today's, not the first sighting.
-    expect(res.body.recent[0]).toMatchObject({ studyDay: '2026-08-26', times: 3 });
-    expect(res.body.recent[1]).toMatchObject({ times: 1 });
+    // Newest day first, and the repeats inside a day become its count.
+    expect(res.body.recentDays.map((d) => d.studyDay)).toEqual(['2026-08-26', '2026-08-25']);
+    expect(res.body.recentDays[0].books).toEqual([
+      expect.objectContaining({ title: 'Corduroy', times: 2 }),
+    ]);
+    // And the SAME book on an earlier day keeps that day — collapsing it into
+    // today's card is exactly the history loss the day partition exists to stop.
+    expect(res.body.recentDays[1].books.map((r) => r.title)).toEqual(['Corduroy', 'Blueberries']);
+    expect(res.body.recentDays[1].books.every((r) => r.times === 1)).toBe(true);
   });
 
   it('does not merge two books that merely lack a contentId', async () => {
@@ -338,8 +344,8 @@ describe('GET /summary — what the screen puts in front of the child', () => {
     });
     const { app } = build({ readingLog });
     const res = await request(app).get('/api/v1/school/reading/summary?learnerId=user_5');
-    expect(res.body.recent.map((r) => r.title)).toEqual(['Corduroy', 'Blueberries']);
-    expect(res.body.recent.every((r) => r.times === 1)).toBe(true);
+    expect(res.body.recentDays[0].books.map((r) => r.title)).toEqual(['Corduroy', 'Blueberries']);
+    expect(res.body.recentDays[0].books.every((r) => r.times === 1)).toBe(true);
   });
 
   it('collapses the same title read with and without a contentId only by id, never across ids', async () => {
@@ -352,7 +358,7 @@ describe('GET /summary — what the screen puts in front of the child', () => {
     const { app } = build({ readingLog });
     const res = await request(app).get('/api/v1/school/reading/summary?learnerId=user_5');
     // Two different editions are two different books to pick from.
-    expect(res.body.recent).toHaveLength(2);
+    expect(res.body.recentDays[0].books).toHaveLength(2);
   });
 
   it('is still an answer when the obligation cannot be read — the child still gets to pick a book', async () => {
@@ -385,7 +391,7 @@ describe('GET /summary — what the screen puts in front of the child', () => {
     const res = await request(app).get('/api/v1/school/reading/summary?learnerId=user_5');
     expect(res.status).toBe(200);
     expect(res.body.yesterday).toEqual([]);
-    expect(res.body.recent).toEqual([]);
+    expect(res.body.recentDays).toEqual([]);
   });
 
   it('refuses a summary for nobody', async () => {

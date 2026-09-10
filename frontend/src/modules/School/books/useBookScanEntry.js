@@ -22,9 +22,30 @@ export function useBookScanEntry({ screenId, safe, onLaunch }) {
     if (!enabled) return;
     const seq = ++reads.current;
     const gen = generation.current;
-    const result = await schoolApi.bookScans.pending(screenId);
+    // A POLL MUST NOT BECOME AN UNHANDLED REJECTION. `refresh` is fired from
+    // three effects and a WebSocket handler, all as `void refresh()` — nothing
+    // is holding the promise, so anything thrown in here escapes as an
+    // unhandled rejection rather than an error the panel can report. The
+    // `!result.ok` branch below only ever covered a request that came BACK.
+    //
+    // Caught live in the test run as three unhandled rejections
+    // ("Cannot read properties of undefined (reading 'pending')"), but the
+    // production shape is the same: a fetch that rejects on a dropped kiosk
+    // connection took the same path. A failed poll costs this cycle's scan and
+    // nothing else — the next one is a WebSocket message or 1.5s away.
+    let result;
+    try {
+      result = await schoolApi.bookScans.pending(screenId);
+    } catch (err) {
+      // OPTIONAL CALL on purpose. The logger is real (`schoolLog.js`), but a
+      // never-reject guard whose only statement can itself throw is not a
+      // guard — it just moves the unhandled rejection one line down, which is
+      // exactly what happened the first time this was written.
+      schoolLog.bookShelfError?.('scan.pending-failed', { error: err?.message ?? String(err) });
+      return;
+    }
     if (seq !== reads.current || gen !== generation.current || claimLock.current) return;
-    if (!result.ok) { schoolLog.bookShelfError('scan.pending-failed', { status: result.status }); return; }
+    if (!result?.ok) { schoolLog.bookShelfError?.('scan.pending-failed', { status: result?.status ?? null }); return; }
     const next = result.data?.intent;
     const accepted = next?.screenId === screenId && !seen.current.has(next.id) && Date.parse(next.expiresAt) > Date.now() ? next : null;
     if (accepted && current.current && accepted.id !== current.current.id) {
