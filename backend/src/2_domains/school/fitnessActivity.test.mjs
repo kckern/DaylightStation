@@ -21,16 +21,55 @@ describe('projectFitnessActivity', () => {
     ['a session they earned no rings in', 0],
     ['a session with no ring data recorded', null],
     ['a ring field that is not a number', 'lots'],
-  ])('does not credit %s', (_label, rings) => {
+  ])('does not credit %s on the rings alone', (_label, rings) => {
     expect(project([session('2026-09-07T16:00:00Z', { user_4: { rings } })])).toEqual({
       studyDay: '2026-09-07', hasActivity: false, rings: 0, sessionCount: 0,
     });
   });
 
-  it('does not credit a learner for somebody else s workout', () => {
-    expect(project([session('2026-09-07T16:00:00Z', { user_2: { rings: 9 } })])).toEqual({
-      studyDay: '2026-09-07', hasActivity: false, rings: 0, sessionCount: 0,
-    });
+  // The youngest rider can pedal for twenty real minutes and score nothing;
+  // time is the second way in, and the one that speaks for him.
+  it('credits a long ride that scored no rings at all', () => {
+    expect(project([session('2026-09-07T16:00:00Z', {
+      user_4: { rings: 0, zoneMinutes: { cool: 16.83 } },
+    })])).toEqual({ studyDay: '2026-09-07', hasActivity: true, rings: 0, sessionCount: 1 });
+  });
+
+  it('credits a long ride whose rings were never recorded', () => {
+    expect(project([session('2026-09-07T16:00:00Z', {
+      user_4: { rings: null, zoneMinutes: { cool: 12, active: 8 } },
+    })])).toEqual({ studyDay: '2026-09-07', hasActivity: true, rings: 0, sessionCount: 1 });
+  });
+
+  it('leaves a strap put on and taken off uncredited', () => {
+    expect(project([session('2026-09-07T16:00:00Z', {
+      user_4: { rings: 0, zoneMinutes: { cool: 1 } },
+    })])).toEqual({ studyDay: '2026-09-07', hasActivity: false, rings: 0, sessionCount: 0 });
+  });
+
+  it('counts time across every zone, not just the hardest one', () => {
+    expect(project([session('2026-09-07T16:00:00Z', {
+      user_4: { rings: 0, zoneMinutes: { cool: 4, active: 4, warm: 2.5 } },
+    })]).hasActivity).toBe(true);
+  });
+
+  it('ignores zone entries that are not numbers rather than counting them as time', () => {
+    expect(project([session('2026-09-07T16:00:00Z', {
+      user_4: { rings: 0, zoneMinutes: { cool: 'ages', active: null } },
+    })]).hasActivity).toBe(false);
+  });
+
+  it('still reports zero rings for a day earned entirely on presence', () => {
+    expect(project([
+      session('2026-09-07T07:00:00Z', { user_4: { rings: 0, zoneMinutes: { cool: 20 } } }),
+      session('2026-09-07T18:00:00Z', { user_4: { rings: 0, zoneMinutes: { cool: 15 } } }),
+    ])).toEqual({ studyDay: '2026-09-07', hasActivity: true, rings: 0, sessionCount: 2 });
+  });
+
+  it('does not credit a learner for somebody else s workout, however long it ran', () => {
+    expect(project([session('2026-09-07T16:00:00Z', {
+      user_2: { rings: 9, zoneMinutes: { cool: 45 } },
+    })])).toEqual({ studyDay: '2026-09-07', hasActivity: false, rings: 0, sessionCount: 0 });
   });
 
   it('sums every qualifying session of the day', () => {

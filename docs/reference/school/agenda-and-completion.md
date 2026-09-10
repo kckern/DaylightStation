@@ -138,12 +138,19 @@ one of the nine subject shelves and is never assigned: there is no section, no
 work-session, and no obligation behind it, so the only evidence is the workout
 itself.
 
-A learner is credited for a session when that session's summary records
-`participants[learnerId].rings` above zero. Rings are computed at session close
-and stored, so the projection is a field read rather than a re-derivation, and
-requiring rings rather than mere participation keeps a stray heart-rate strap
-from awarding one child credit for another's workout. `rings: null` means no
-ring data was recorded and, like a real zero, earns nothing.
+A learner is credited for a session two ways. The first is rings: the session
+summary records `participants[learnerId].rings` above zero. Rings are computed
+at session close and stored, so the projection is a field read rather than a
+re-derivation, and requiring rings rather than bare membership in
+`participants` keeps a stray heart-rate strap from awarding one child credit
+for another's workout.
+
+The second is time, and it exists for the youngest riders. Rings scale with
+effort, so a preschooler can spend twenty real minutes on a bike and score
+zero; a participant whose `zoneMinutes` total at least ten minutes across all
+zones is credited whatever the rings say. Ten minutes still excludes a strap
+put on and taken off. `rings: null` means no ring data was recorded and earns
+nothing on its own, but does not bar credit on time.
 
 A session belongs to the study day its **start** falls in — the rule the weekly
 ring measure already uses — so a late-evening workout is credited once, on the
@@ -151,7 +158,9 @@ day it began. The digest reads the roster's day once, across the study day and
 its successor, because sessions are stored by date rather than by learner.
 
 An available session log reports `status: ok` with `hasActivity`, the day's
-`rings` total, and `sessionCount`. A day with no qualifying workout is an
+`rings` total, and `sessionCount`. A day credited entirely on time reports
+`hasActivity: true` with `rings: 0`, and the circle's label then says only that
+fitness is done rather than claiming a ring count it did not earn. A day with no qualifying workout is an
 available quiet day, not an outage. A failed read, or no session log wired at
 all, reports `status: unavailable` with `hasActivity: null`, so an outage
 cannot be mistaken for a child who did not exercise. The v1 teacher-today
