@@ -250,22 +250,18 @@ export class SentenceLadderService {
     // dictation wanted was a Korean keyboard. `requirementFor` is the single
     // place that mapping lives; sending it beats letting the client keep a
     // second copy that drifts.
-    const missing = policy.chain
-      ? policy.chain.filter((rung) => !chainFor(allowed, corpus.languages).includes(rung))
-      : [];
+    const deviceChain = chainFor(allowed, corpus.languages);
+    const missing = policy.chain ? policy.chain.filter((rung) => !deviceChain.includes(rung)) : [];
+    const needs = missing.map((rung) => [rung, requirementFor(rungById(rung), corpus.languages)]);
 
     return {
       corpus: { id: corpus.id, label: corpus.label, languages: corpus.languages, size: corpus.size },
       day: progress.day,
       dailyLimit: policy.dailyLimit,
-      chain: chainFor(allowed, corpus.languages).filter((rung) => !policy.chain || policy.chain.includes(rung)),
+      chain: deviceChain.filter((rung) => !policy.chain || policy.chain.includes(rung)),
       creditChain: policy.chain ?? creditChain(null, corpus.languages),
       missingCreditRungs: missing,
-      missingCreditNeeds: Object.fromEntries(
-        missing
-          .map((rung) => [rung, requirementFor(rungById(rung), corpus.languages)])
-          .filter(([, need]) => need),
-      ),
+      missingCreditNeeds: Object.fromEntries(needs.filter(([, need]) => need)),
       enrollment: policy.enrollment ? {
         lessonSize: policy.enrollment.lessonSize,
         rungs: policy.enrollment.rungs,
@@ -302,9 +298,11 @@ export class SentenceLadderService {
       dailyLimit: DEFAULT_DAILY_LIMIT,
       chain: chainFor(allowed, corpus.languages),
       creditChain: creditChain(null, corpus.languages),
-      // A preview filters no rung, so both of these are always empty. They are
-      // stated anyway so a preview day and a real one are the same shape and a
-      // client never has to ask which endpoint it is reading.
+      // A preview DOES filter rungs by device capability — `allowed` reaches
+      // `buildDayQueue` above — but it has no enrollment chain to fall short
+      // of, so nothing can be missing. Stated anyway so a preview day and a
+      // real one are the same shape and a client never has to ask which
+      // endpoint it is reading.
       missingCreditRungs: [],
       missingCreditNeeds: {},
       enrollment: null,

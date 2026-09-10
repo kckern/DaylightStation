@@ -261,13 +261,26 @@ describe('getDay', () => {
     expect(day.missingCreditNeeds.recording).toEqual({ kind: 'microphone' });
   });
 
-  it('keeps missingCreditRungs a plain array of ids — other readers index it', () => {
+  // The only case with TWO rungs blocked at once, which is the one way a
+  // `{rung: requirement}` map can mis-key — a map that always answers
+  // "microphone" passes every other test in this file.
+  //
+  // `missingCreditRungs` must stay a plain array of ids because
+  // SentenceLadderProgram reads it three ways: `.length` to decide the day is
+  // device-blocked, `.includes(rung)` to dim a rung as it draws the ladder, and
+  // `.map(...).join(' and ')` to name the missing modes in the closing banner.
+  // Turning it into objects breaks all three.
+  it('blocks BOTH unreachable rungs, names each one correctly, and keeps the array shape', () => {
     svc = makeService(ds, AT, fullLadder());
     const day = svc.getDay({
       userId: 'kckern', corpusId: 'test-korean',
       capabilities: { microphone: false, textInput: ['EN'] },
     });
     expect(day.missingCreditRungs).toEqual(['dictation', 'recording']);
+    expect(day.missingCreditNeeds).toEqual({
+      dictation: { kind: 'textInput', language: 'KR' },
+      recording: { kind: 'microphone' },
+    });
   });
 });
 

@@ -1,4 +1,5 @@
 import Popover from './Popover.jsx';
+import { languageName } from './languageNames.js';
 
 /**
  * What this device can do — which decides which rungs exist (design §1).
@@ -17,7 +18,10 @@ import Popover from './Popover.jsx';
  *  3. **The label lied.** "This device can type:" fronted a microphone toggle.
  *
  * It is configuration set once per device, so it lives behind a deliberate
- * affordance with words rather than codes, at full touch size.
+ * affordance with words rather than codes, at full touch size — the rows read
+ * "English keyboard", not "EN keyboard", from the same map the blocked-rung
+ * note uses. A child sent here by a note saying "Needs a Korean keyboard" has
+ * to find a row wearing that same name; for a while they did not.
  */
 export default function DeviceSettings({ languages, capabilities, onToggleLanguage, onToggleMic }) {
   if (!languages) return null;
@@ -25,14 +29,14 @@ export default function DeviceSettings({ languages, capabilities, onToggleLangua
   const rows = [
     {
       key: `text:${languages.source}`,
-      label: `${languages.source} keyboard`,
+      label: `${languageName(languages.source)} keyboard`,
       hint: 'Needed to type meanings',
       on: capabilities.textInput.includes(languages.source),
       toggle: () => onToggleLanguage(languages.source),
     },
     {
       key: `text:${languages.target}`,
-      label: `${languages.target} keyboard`,
+      label: `${languageName(languages.target)} keyboard`,
       hint: 'Needed for dictation',
       on: capabilities.textInput.includes(languages.target),
       toggle: () => onToggleLanguage(languages.target),
