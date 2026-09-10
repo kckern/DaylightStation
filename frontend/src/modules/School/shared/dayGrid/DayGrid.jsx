@@ -34,6 +34,7 @@ const STATE_LABEL = Object.freeze({
   exempt: 'a day off',
   rest: 'a day off',
   unknown: 'not known',
+  future: 'not yet',
   'unknown-met': 'done, no goal recorded',
 });
 
@@ -41,9 +42,13 @@ export default function DayGrid({
   days, orientation = 'weeks-as-rows', from = null, to = null, studyDay = null,
   showCount = false, extraRow = null, className = '', cellClassName = '',
   testId = 'day-grid', todayTestId = 'day-grid-today', ariaLabel = null,
+  highlightCurrentWeek = false,
 }) {
   const { cells, rows, cols, weekIds } = layoutDayGrid(days, { orientation, from, to, todayKey: studyDay });
   if (!cells.length) return null;
+  // THE CURRENT WEEK, as a whole column (or row): so the eye can jump from
+  // the week partition's seven squares to the same seven standing on end.
+  const currentWeekId = studyDay && highlightCurrentWeek ? cells.find((c) => c?.today)?.weekId ?? null : null;
 
   const present = cells.filter(Boolean);
   const met = present.filter((c) => c.state === 'met').length;
@@ -62,11 +67,15 @@ export default function DayGrid({
       {cells.map((cell, index) => {
         if (!cell) return <li key={`blank-${index}`} className="school-daygrid__blank" aria-hidden="true" />;
         const count = showCount && cell.count > 0 ? cell.count : '';
+        // A day after today has not happened: drawn as an outline, never as a
+        // verdict nobody could reach.
+        const state = studyDay && cell.studyDay > studyDay ? 'future' : cell.state;
+        const inCurrentWeek = currentWeekId != null && cell.weekId === currentWeekId;
         return (
           <li
             key={cell.studyDay}
-            className={`school-daygrid__cell${cell.today ? ' school-daygrid__cell--today' : ''} ${cellClassName}`.trim()}
-            data-state={cell.state}
+            className={`school-daygrid__cell${cell.today ? ' school-daygrid__cell--today' : ''}${inCurrentWeek ? ' school-daygrid__cell--current-week' : ''} ${cellClassName}`.trim()}
+            data-state={state}
             data-day={cell.studyDay}
             data-testid={cell.today ? todayTestId : undefined}
             // Spoken per square, because the colour is the whole message and a
@@ -110,6 +119,8 @@ DayGrid.propTypes = {
   showCount: PropTypes.bool,
   /** Week-level verdicts, one per week column: `{weekId, state}`. */
   extraRow: PropTypes.arrayOf(PropTypes.shape({ weekId: PropTypes.string, state: PropTypes.string })),
+  /** Mark every cell of the week containing `studyDay`. */
+  highlightCurrentWeek: PropTypes.bool,
   className: PropTypes.string,
   cellClassName: PropTypes.string,
   testId: PropTypes.string,

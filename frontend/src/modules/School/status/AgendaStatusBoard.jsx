@@ -53,6 +53,7 @@ import { hasIcon } from '../home/icons/iconRegistry.js';
 import { schoolApi } from '../schoolApi.js';
 import { schoolLog } from '../schoolLog.js';
 import DayGrid from '../shared/dayGrid/DayGrid.jsx';
+import { weekStart, addDays } from '../shared/dayGrid/dayGridModel.js';
 import { dayStatus, summarize, ringProgressByLearner, triangleRows } from './agendaStatusModel.js';
 
 const REFRESH_MS = 5 * 60_000;
@@ -210,6 +211,7 @@ function TermGrid({ term }) {
         from={term.from}
         to={term.to}
         studyDay={term.today ?? null}
+        highlightCurrentWeek
         extraRow={hasWeeklyWork ? weeks.map((w) => ({ weekId: w.weekId, state: w.state })) : null}
         className="school-status-board__grid"
         testId="board-term-grid"
@@ -218,6 +220,40 @@ function TermGrid({ term }) {
       />
       <ol className="school-status-board__term-axis school-status-board__term-axis--months" style={axisStyle} aria-hidden="true">
         {months.map((m, i) => <li key={weeks[i].weekId}>{m}</li>)}
+      </ol>
+    </div>
+  );
+}
+
+const WEEKDAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+/**
+ * THIS WEEK as seven squares: the term grid's current column turned on its
+ * side, drawn from the SAME rows so the two cannot disagree, with the
+ * weekday letters under it. Days after today are outlines, not verdicts.
+ * Nothing while the term is in flight; nothing at all without one.
+ */
+function WeekStrip({ term }) {
+  if (!term?.today) return null;
+  const from = weekStart(term.today);
+  const to = addDays(from, 6);
+  const days = (term.days ?? []).filter((d) => d.studyDay >= from && d.studyDay <= to)
+    .map((d) => ({ studyDay: d.studyDay, state: d.state }));
+  return (
+    <div className="school-status-board__week-strip" data-testid="board-week-strip">
+      <DayGrid
+        days={days.length ? days : [{ studyDay: term.today, state: 'unknown' }]}
+        orientation="weeks-as-rows"
+        from={from}
+        to={to}
+        studyDay={term.today}
+        className="school-status-board__grid school-status-board__grid--week"
+        testId="board-week-grid"
+        todayTestId="board-week-today"
+        ariaLabel={`This week: ${days.filter((d) => d.state === 'met').length} days met`}
+      />
+      <ol className="school-status-board__week-letters" aria-hidden="true">
+        {WEEKDAY_LETTERS.map((letter, i) => <li key={i}>{letter}</li>)}
       </ol>
     </div>
   );
@@ -500,9 +536,10 @@ export default function AgendaStatusBoard({ kids = [], day }) {
                 `ringProgressByLearner`). */}
             <div className="school-status-board__week" data-testid="board-week">
               <h3 className="school-status-board__part-title">This week</h3>
+              <WeekStrip term={terms[kid.id]} />
               {Number.isFinite(rings[kid.id]?.current) && (
                 <span className="school-status-board__rings" title="Rings this week">
-                  <RingIcon size="2.4em" label={`${rings[kid.id].current} rings this week`} />
+                  <RingIcon size="1.6em" label={`${rings[kid.id].current} rings this week`} />
                   <span className="school-status-board__rings-count">
                     {rings[kid.id].current}
                     {Number.isFinite(rings[kid.id].target) ? ` of ${rings[kid.id].target}` : ''}
