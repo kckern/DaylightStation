@@ -29,7 +29,7 @@
  * must never count as done — the filter checks `programId === id` by
  * identity, not merely that a row exists (spec §9 row 8).
  */
-import { isSameStudyDay } from '#domains/school/studyDay.mjs';
+import { isSameStudyDay, studyDayMidpointMs } from '#domains/school/studyDay.mjs';
 
 export class SurfaceProgramLauncher {
   #id; #label; #surface; #action; #subject; #locationHint; #donow; #datastore; #timezone; #clock; #logger;
@@ -121,11 +121,20 @@ export class SurfaceProgramLauncher {
    * @param {{userId: string}} args
    * @returns {Promise<{doneToday: boolean, progressLabel: null, score: null}>}
    */
-  async status({ userId }) {
-    const nowMs = this.#nowMs();
+  /** Dispatches are a dated ledger; any day's shards can be re-read. */
+  get replayable() { return true; }
+
+  async status({ userId, day = null }) {
+    const nowMs = this.#nowMs(day);
     // Both UTC shards spanning "today" in the household's local timezone —
     // see the class doc for why one shard is not enough.
-    const dayStamps = [...new Set([this.#utcDay(nowMs), this.#utcDay(nowMs - 24 * 3_600_000)])];
+    // A replay sits at the MIDDLE of its day, so the evening half of a study
+    // day west of UTC lands in the NEXT UTC shard — read that one too. Live,
+    // the clock has usually already crossed into it by then.
+    const dayStamps = [...new Set([
+      this.#utcDay(nowMs - 24 * 3_600_000), this.#utcDay(nowMs),
+      ...(day != null ? [this.#utcDay(nowMs + 24 * 3_600_000)] : []),
+    ])];
 
     let rows;
     try {
@@ -148,7 +157,13 @@ export class SurfaceProgramLauncher {
 
   #utcDay(ms) { return new Date(ms).toISOString().slice(0, 10); }
 
-  #nowMs() {
+  /** The clock, or the middle of a replayed study day (see the piano launcher). */
+  #nowMs(day = null) {
+    if (day != null) {
+      const at = studyDayMidpointMs(day, { timezone: this.#timezone, boundaryHour: 4 });
+      if (at == null) throw new TypeError(`SurfaceProgramLauncher.status: invalid day "${day}"`);
+      return at;
+    }
     const now = this.#clock();
     return now instanceof Date ? now.getTime() : Number(now);
   }

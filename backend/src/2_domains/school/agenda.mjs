@@ -215,13 +215,21 @@ export function programStatusFor(programStatuses, entry) {
  * @param {string} args.now               ISO string — compared against, never stamped
  * @param {string|null} [args.timezone]   IANA zone, or null
  * @param {number} [args.boundaryHour]    study-day rollover hour (default 4am)
+ * @param {object|null} [args.householdSchedule] the household's own calendar
+ *   (`school.yml → calendar`, in `validateSchedule`'s shape). A day it names
+ *   as off is off for EVERY section, whatever each course's own schedule says
+ *   — a family vacation is not something a syllabus gets a vote on. Applied
+ *   here, inside the agenda, so the paper a child is handed and the term grid
+ *   drawn months later can never disagree about it.
  * @returns {{ sections: object[] }}
  */
 export function planDailyAgenda({
   plan, sessions = [], programStatuses = {}, now, timezone = null, boundaryHour = 4,
+  householdSchedule = null,
 } = {}) {
   const nowMs = Date.parse(now ?? '');
   const today = studyDayForInstant(nowMs, { timezone, boundaryHour });
+  const householdOff = householdSchedule != null && !scheduleVerdict(today, householdSchedule).schoolDay;
   const entries = (plan?.entries ?? []).filter((e) => e && typeof e === 'object');
   const order = [...SUBJECT_IDS, 'other'];
 
@@ -272,8 +280,30 @@ export function planDailyAgenda({
       programs.filter((e) => e.cadence === 'once' && programStatusFor(programStatuses, e)?.terminal === true)
         .map(programStatusKey),
     );
+    // A program that keeps no history cannot say what happened on a replayed
+    // day (`collectProgramStatuses` → `UNKNOWABLE_STATUS`). It is neither
+    // offered, nor owed, nor a fault: it simply has no vote. The section then
+    // reads on whatever evidence it DOES have, and a section left with nothing
+    // else required is `excused: no_history` — which the term ladder keeps
+    // grey, never blue.
+    const unknowableProgramKeys = new Set(
+      programs.filter((e) => programStatusFor(programStatuses, e)?.unknowable === true)
+        .map(programStatusKey),
+    );
+    // A WEEKLY program already done earlier this Monday→Sunday week
+    // (`collectProgramStatuses` folds the week into `status.weekly`). Not
+    // offered again, not owed again, not a fault; the day it was done reads
+    // `served` through `doneToday` like any other program, and the rest of
+    // the week reads `excused: weekly_satisfied`.
+    const weeklySatisfiedKeys = new Set(
+      programs.filter((e) => e.cadence === 'weekly'
+        && programStatusFor(programStatuses, e)?.weekly?.satisfiedBefore === true
+        && programStatusFor(programStatuses, e)?.doneToday !== true)
+        .map(programStatusKey),
+    );
     const eligible = list.filter((e) => !(e.program && (
       unavailableProgramKeys.has(programStatusKey(e)) || terminalProgramKeys.has(programStatusKey(e))
+      || unknowableProgramKeys.has(programStatusKey(e)) || weeklySatisfiedKeys.has(programStatusKey(e))
     )));
     const subjectPassedToday = list.some((e) => passedTodayIds.has(e.unitId));
     const curriculumCandidate = [
@@ -354,7 +384,9 @@ export function planDailyAgenda({
       e.program && programStatusFor(programStatuses, e)?.error !== true
       && programStatusFor(programStatuses, e)?.doneToday === true
     ));
-    const requiredPrograms = nonElectiveList.filter((e) => e.program && !terminalProgramKeys.has(programStatusKey(e)));
+    const requiredPrograms = nonElectiveList.filter((e) => e.program
+      && !terminalProgramKeys.has(programStatusKey(e)) && !unknowableProgramKeys.has(programStatusKey(e))
+      && !weeklySatisfiedKeys.has(programStatusKey(e)));
     const hasRequiredCurriculum = nonElectiveList.some((e) => !e.program);
     const curriculumObligationServed = !hasRequiredCurriculum || nonElectivePassedToday;
     const programObligationsServed = requiredPrograms.length === 0 || requiredPrograms.every((entry) => {
@@ -376,7 +408,8 @@ export function planDailyAgenda({
     // weekday-only one keeps the section obligated rather than borrowing its
     // vacation.
     const requiredVerdicts = verdicts.filter(({ entry: e }) => !e.elective);
-    const noSchoolToday = requiredVerdicts.length > 0 && requiredVerdicts.every((v) => !v.schoolDay);
+    const noSchoolToday = householdOff
+      || (requiredVerdicts.length > 0 && requiredVerdicts.every((v) => !v.schoolDay));
     const isBacklog = (e) => e.timing?.mode === 'catch_up' || e.timingState === 'catch_up';
     const hasNonElective = (pred) => nonElectiveList.some(pred);
     let obligation;
@@ -387,6 +420,10 @@ export function planDailyAgenda({
     } else if (actionable.length === 0) {
       let reason;
       if (nonElectiveList.length === 0) reason = 'elective_only';
+      else if (nonElectiveList.every((e) => e.program && unknowableProgramKeys.has(programStatusKey(e)))) reason = 'no_history';
+      else if (hasNonElective((e) => e.program && weeklySatisfiedKeys.has(programStatusKey(e)))
+        && nonElectiveList.every((e) => e.program && (weeklySatisfiedKeys.has(programStatusKey(e))
+          || unknowableProgramKeys.has(programStatusKey(e)) || terminalProgramKeys.has(programStatusKey(e))))) reason = 'weekly_satisfied';
       else if (hasNonElective((e) => e.program && unavailableProgramKeys.has(programStatusKey(e)))) reason = 'program_unavailable';
       else if (hasNonElective((e) => e.status === 'locked')) {
         // The split the 2026-08-25 unlock incident demanded: being blocked by a
@@ -422,8 +459,12 @@ export function planDailyAgenda({
     // 2026-08-25 unlock incident — off the air two days in seven plus every
     // vacation. A broken unlock chain is still broken on a Saturday; only the
     // verdict softens, not the diagnostic.
+    //
+    // The household calendar names itself: a vacation the family declared and
+    // a weekday a course does not meet are both "off", but the term grid
+    // colours only the first as a day the house took off.
     if (!obligationServed && noSchoolToday) {
-      obligation = { state: 'excused', reason: 'not_a_school_day' };
+      obligation = { state: 'excused', reason: householdOff ? 'household_calendar' : 'not_a_school_day' };
     }
 
     return {
@@ -474,6 +515,14 @@ export function planDailyAgenda({
         }),
       ],
       programUnavailable,
+      // The week-level obligations this section carries, for the term grid's
+      // 8th row: one row per weekly program entry, judged for THIS day.
+      weekly: list.filter((e) => e.program && e.cadence === 'weekly').map((e) => {
+        const status = programStatusFor(programStatuses, e);
+        const state = status?.doneToday === true ? 'served'
+          : (status?.weekly?.satisfiedBefore === true ? 'satisfied' : 'open');
+        return { unitId: e.unitId, subject, state, servedOn: status?.weekly?.servedOn ?? null };
+      }),
       focus: next && isFocus ? {
         blocksCompleted: candidatePasses,
         blockBudget: focusBudget(next),

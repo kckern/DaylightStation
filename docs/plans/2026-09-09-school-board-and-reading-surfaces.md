@@ -119,6 +119,8 @@ its test; `SentenceLadderProgram.test.jsx` unaffected.
 
 ## Stream 1 — Honest past-day verdicts (the foundation)
 
+> **Done 2026-09-09.** See `docs/reference/school/term-grid.md`.
+
 **Principle:** evidence is filtered by time; config is not. Replaying day D counts only
 evidence stamped before the end of D's study-day window. A course edited since D
 re-colours D — accepted, per the derived-not-stored convention.
@@ -187,6 +189,8 @@ while D−5 is served from file, `version: 0` discarded, delete-then-rebuild is 
 
 ## Stream 2 — Model: term, weekly cadence, exempt
 
+> **Done 2026-09-09.** See `docs/reference/school/term-grid.md`.
+
 - **Term = the existing academic period.** `school.yml → progress.academicPeriods`
   (validated at boot, promoted to `plans/periods.yml`, served by `GET /periods`). Seed
   `{periodId: '2026-fall', kind: 'term', label: 'Fall 2026', startsAt: '2026-09-01',
@@ -223,6 +227,8 @@ while D−5 is served from file, `version: 0` discarded, delete-then-rebuild is 
   assertion can never disagree.
 
 ## Stream 3 — The shared multi-day grid
+
+> **Done 2026-09-09.** See `docs/reference/school/term-grid.md`.
 
 **Goal:** one component renders both the reading streak (7 cols × 4 rows, column card)
 and the term grid (7 rows × N week cols, row card). Judging stays outside.
