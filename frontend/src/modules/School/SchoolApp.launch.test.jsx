@@ -88,8 +88,10 @@ vi.mock('./schoolApi.js', () => ({
     selfServicePrinterStatus: vi.fn(async () => ({ ok: false, status: 404, data: null })),
     wallet: vi.fn(async () => ({ ok: false, status: 503, data: null })),
     teacherDay: vi.fn(async () => ({ ok: true, status: 200, data: { learners: [] } })),
+    directLaunch: (...a) => directLaunchMock(...a),
   },
 }));
+const directLaunchMock = vi.fn();
 const resolveMock = vi.fn();
 const actMock = vi.fn();
 
@@ -165,6 +167,7 @@ beforeEach(() => {
   materialsMock.mockReset().mockResolvedValue(EMPTY_CATALOG);
   materialUnitsMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { material: {}, units: [] } });
   coursesMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: [] });
+  directLaunchMock.mockReset().mockResolvedValue({ ok: false, status: 404, data: null });
   dayMock.mockReset().mockResolvedValue({
     ok: true, status: 200,
     data: {
@@ -212,6 +215,37 @@ describe('SchoolApp — Portal launch subscription (school.launch)', () => {
     ));
     // Claimed via the launch, not the picker: no dialog ever appeared.
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  // The ladder hides the locked panel's Done overlay because it carries its own
+  // exit — so a lapse that only dropped the launch left `section` set over an
+  // empty panel: no ladder, no keypad, no control at all, on a kiosk with no
+  // address bar. The shelf's identical dead end was found and fixed; this one
+  // sat one condition away from it in the same expression.
+  it('an identity lapse with the ladder up returns the panel to the keypad, never a blank wall', async () => {
+    coursesMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: [{ id: 'glossika-korean', label: 'Glossika Korean', languages: { source: 'EN', target: 'KR' }, size: 3000 }],
+    });
+    render(<SchoolApp mode="locked" />);
+    await waitFor(() => expect(coursesMock).toHaveBeenCalled());
+    deliverLaunch('kid1', {
+      kind: 'program', program: 'sentence-ladder', corpusId: 'glossika-korean', studyGrant: 'signed-grant',
+    });
+    expect(await screen.findByText('Day 1')).toBeInTheDocument();
+
+    // The 10-minute lapse is judged on the NEXT input after the gap
+    // (useIdleGap), so: the clock jumps, then one touch.
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 11 * 60_000);
+    try {
+      await act(async () => { fireEvent.pointerDown(window); });
+    } finally {
+      clock.mockRestore();
+    }
+
+    expect(screen.queryByText('Day 1')).toBeNull();
+    expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
   });
 
   it('a launch for an unavailable corpus does nothing (no crash, no navigation)', async () => {
@@ -496,6 +530,49 @@ describe('SchoolApp — the reading code at the locked panel opens the shelf', (
     expect(screen.queryByRole('heading', { name: 'Reading' })).toBeNull();
     expect(document.querySelector('.school-books')).toBeNull();
     expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
+  });
+});
+
+// The code-free door: `/school/go/<learner>/<program>`, for a grown-up's
+// browser. Every runner behind it gates on `currentUser`, which is a lookup
+// into the ROSTER — so a learner the roster does not know produces a claim
+// nobody matches, a launch that reports success, and a panel that paints
+// nothing. A disposable test rig built for an adult found exactly that: a
+// black screen, no error, nothing in the console.
+describe('SchoolApp — the code-free door', () => {
+  it('says an off-roster learner cannot be opened rather than painting nothing', async () => {
+    const oldUrl = window.location.pathname;
+    window.history.replaceState({}, '', '/school/go/grownup/sentence-ladder/glossika-korean');
+    try {
+      render(<SchoolApp clear={() => {}} mode="open" />);
+      expect(await screen.findByText(/grownup is not on the School roster/i)).toBeInTheDocument();
+      // Refused before anything was minted: no grant was even asked for.
+      expect(directLaunchMock).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Back to School' })).toBeInTheDocument();
+    } finally {
+      window.history.replaceState({}, '', oldUrl);
+    }
+  });
+
+  it('still opens the door for a learner the roster knows', async () => {
+    const oldUrl = window.location.pathname;
+    window.history.replaceState({}, '', '/school/go/kid1/sentence-ladder/glossika-korean');
+    coursesMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: [{ id: 'glossika-korean', label: 'Glossika Korean', languages: { source: 'EN', target: 'KR' }, size: 3000 }],
+    });
+    directLaunchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { target: { kind: 'program', program: 'sentence-ladder', corpusId: 'glossika-korean', studyGrant: 'signed-grant' } },
+    });
+    try {
+      render(<SchoolApp clear={() => {}} mode="open" />);
+      expect(await screen.findByText('Day 1')).toBeInTheDocument();
+      expect(directLaunchMock).toHaveBeenCalledWith('kid1', 'sentence-ladder', 'glossika-korean');
+    } finally {
+      window.history.replaceState({}, '', oldUrl);
+    }
   });
 });
 

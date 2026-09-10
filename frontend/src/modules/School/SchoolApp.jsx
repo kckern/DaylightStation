@@ -533,6 +533,18 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     if (status !== 'ready' || !catalogLoaded) return;
     directAttempted.current = key;
     setDirectError(null);
+    // A learner the roster does not know can NEVER render. Every runner below
+    // gates on `currentUser`, which is `roster.find(...)` — so claiming an
+    // unknown id stores a claim nobody matches, the launch reports success, the
+    // section changes, and the panel paints nothing at all. That is what the
+    // disposable sentence-ladder rig for an adult (not on the School roster)
+    // did on 2026-09-10: a black screen with no error and no way back. A door
+    // that cannot open has to say so.
+    if (!roster.some((u) => u.id === directLearnerId)) {
+      schoolLog.bank('direct-launch-refused', { program: directProgramId, reason: 'not-on-roster' });
+      setDirectError(`${directLearnerId} is not on the School roster.`);
+      return;
+    }
     (async () => {
       claim(directLearnerId);
       const { ok, status: httpStatus, data } = await schoolApi.directLaunch(
@@ -548,7 +560,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       const mounted = await onPortalLaunch(data.target, directLearnerId);
       if (!mounted) setDirectError(`${directProgramId} would not mount for ${directLearnerId}.`);
     })();
-  }, [directLearnerId, directProgramId, directInstance, status, catalogLoaded, claim, onPortalLaunch]);
+  }, [directLearnerId, directProgramId, directInstance, status, catalogLoaded, roster, claim, onPortalLaunch]);
 
   // Lock mode is a NARROWING of a surface that is already terminal (the Portal
   // mounts School with no `clear`), not a new cage.
@@ -764,6 +776,13 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     // only nulled the launch would leave `section` on a blank wall with no
     // way back. A lapse ends the workspace: home, which is the keypad here.
     if (bookLaunch && bookLaunch.learnerId !== currentUser?.id) goHome();
+    // The ladder is the OTHER section that hides the locked panel's Done
+    // overlay (`!courseId`, below), for the same reason: it carries its own
+    // exit. So a lapse that only nulled the launch leaves `section` set with
+    // nothing rendered under it and no control on screen — the same blank wall
+    // the line above exists to prevent, on a panel with no address bar to
+    // escape it. A lapse ends the session: home, which is the keypad here.
+    if (studyLaunch && studyLaunch.learnerId !== currentUser?.id) goHome();
     // Deps are deliberately the identity alone: `bookLaunch`/`goHome` are read,
     // not watched — listing them would re-run this on every launch and clear
     // the notice/panel state it exists to protect. `SchoolApp.launch.test.jsx`
