@@ -121,7 +121,8 @@ describe('fail closed', () => {
     expect(Object.keys(useCases).sort()).toEqual([
       'buildAgenda', 'closeLanguageDay', 'closeSessionOutcome', 'createLostAnswerSheetTicket', 'dispatchMedia',
       'enrollLearner', 'getCompanionFinishCode', 'getLearnerDayCompletion', 'getPianoLessonGate', 'gradeSubmission',
-      'invalidateSessionEvidence', 'issueComposedWorksheet', 'issueCorrectedResultReceipt', 'issueDocument', 'manageCurriculumException',
+      'invalidateSessionEvidence', 'issueComposedWorksheet', 'issueCorrectedResultReceipt', 'issueDirectLaunch',
+      'issueDocument', 'manageCurriculumException',
       'manageProgramDayBypass', 'markSessionAbandoned', 'openRemediation', 'previewAgenda',
       'recordLessonCompanionProgress', 'recordMediaCompletion', 'recoverMisattributedWorksheet', 'replaceLostAnswerSheet', 'replaceRemediation',
       'reprintIssuedArtifact', 'reprintResultReceiptArtifact', 'resolveAccessCode', 'resolveCardScan', 'resolvePersonalCard',
