@@ -315,6 +315,8 @@ consumers `books/BookShelf.jsx` (header), `books/NumberPad.jsx`, `selfService/Ke
 
 ## Stream 6 — Reading screen corrections + density
 
+> **Done 2026-09-09** (reading screen + density). Book history groups the shelf's own items by day client-side and reveals a week at a time — no `/shelf/history` endpoint was needed, the shelf read already carries every item. Ladder design review below.
+
 **Files:** `books/BookShelf.jsx` + `School.scss` (`.school-books*`), `books/History.jsx`
 (retired), `books/ShelfTile.jsx`, `schoolApi.js`, backend `routers/schoolBooks.mjs` +
 `usecases/GetBookShelf.mjs` (history page), `books/NumberPad.jsx`/`selfService/Keypad.jsx`
