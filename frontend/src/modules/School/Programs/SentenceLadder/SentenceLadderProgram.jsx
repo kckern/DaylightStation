@@ -72,9 +72,14 @@ export default function SentenceLadderProgram({
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState(null);
   const [tab, setTab] = useState('study'); // study | review
-  // Sticky for the sitting: the first Play is what grants browser audio
-  // activation, and everything after it can run hands-free.
-  const [armed, setArmed] = useState(false);
+  // The sentence a child has finished but has not yet left, as {rung, seq}.
+  // Repetition is the one rung with nothing to submit, so "done" used to mean
+  // "gone": the save re-derived the queue, the next sentence took its place,
+  // and a timer played it 350ms later. The sentence they had just heard could
+  // not be heard again. Holding it here is what turns a conveyor belt into a
+  // choice — the hold has to live in the parent because it is the PARENT's
+  // queue that swaps the sentence out.
+  const [held, setHeld] = useState(null);
   const loadGeneration = useRef(0);
   const loadController = useRef(null);
   const progressEmission = useRef(null);
@@ -161,17 +166,33 @@ export default function SentenceLadderProgram({
   // Land on the first rung with work outstanding rather than always the first
   // rung — resuming mid-day should not replay finished work.
   useEffect(() => {
+    // A held sentence pins the ladder too. Without this, finishing the LAST
+    // sentence of a rung moved the ladder to the next rung before the child
+    // could choose, which is the same auto-advance wearing a different hat.
+    if (held) return;
     if (!groups.length) { setActiveRung(null); return; }
     const stillValid = groups.some((g) => g.rung === activeRung && g.items.some((i) => !i.done));
     if (stillValid) return;
     const nextGroup = groups.find((g) => g.items.some((i) => !i.done)) || groups[0];
     setActiveRung(nextGroup.rung);
-  }, [groups]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [groups, held]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Let go when the child leaves the rung, or when the day rolls: a stale hold
+  // must never pin a sentence that is no longer the queue's to give.
+  useEffect(() => { setHeld(null); }, [activeRung, day?.day]);
 
   const group = groups.find((g) => g.rung === activeRung) || null;
   const pending = group ? group.items.filter((i) => !i.done) : [];
-  const entry = pending[0] || null;
-  const nextEntry = pending[1] || null;
+  // The held sentence outranks the queue. Matched on rung as well as seq: a seq
+  // is a SENTENCE, and the same sentence appears at every rung it climbs, so a
+  // hold checked by number alone would pin the wrong rung's copy of it.
+  const heldEntry = held && held.rung === activeRung
+    ? group?.items.find((i) => i.seq === held.seq) ?? null
+    : null;
+  const entry = heldEntry ?? pending[0] ?? null;
+  // Whatever comes after what is on screen — so the preload stays a sentence
+  // ahead while a finished one is being held.
+  const nextEntry = (heldEntry ? pending[0] : pending[1]) || null;
 
   const audioUrl = useCallback(
     (seq, lang) => languageApi.audioUrl(corpusId, seq, lang),
@@ -435,8 +456,8 @@ export default function SentenceLadderProgram({
             key={`${entry.rung}-${entry.seq}`}
             entry={entry} nextEntry={nextEntry} audioUrl={audioUrl}
             onComplete={onComplete} saving={saving}
-            autoStart={armed}
-            onActivate={() => setArmed(true)}
+            onHold={() => setHeld({ rung: entry.rung, seq: entry.seq })}
+            onAdvance={() => setHeld(null)}
           />
         )}
         {tab === 'study' && !allDone && entry && (entry.rung === 'dictation' || entry.rung === 'interpretation') && (

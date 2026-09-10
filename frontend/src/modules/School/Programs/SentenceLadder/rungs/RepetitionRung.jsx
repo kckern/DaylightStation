@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSentenceAudio, clipsFor } from '../useSentenceAudio.js';
 import { languageLog } from '../languageLog.js';
 import Icon from '../../../home/icons/Icon.jsx';
@@ -14,34 +14,49 @@ import Icon from '../../../home/icons/Icon.jsx';
  *
  * This is the only rung with no input requirement, which is why new sentences
  * enter here and why it is the one rung a bare touch panel can always run.
+ *
+ * A finished sentence STAYS. The learner chooses to hear it again or to move
+ * on; the parent holds it on screen until they do. The first pass ran the set
+ * hands-free instead — one tap, then a sentence every few seconds — which read
+ * as a conveyor belt: the one thing a child could not do was ask for the
+ * sentence they had just heard one more time.
  */
 export default function RepetitionRung({
-  entry, audioUrl, nextEntry, onComplete, saving, autoStart = false, onActivate,
+  entry, audioUrl, nextEntry, onComplete, saving, onHold, onAdvance,
 }) {
   const [phase, setPhase] = useState('idle'); // idle | playing | done
   const [highlight, setHighlight] = useState(null);
-  // Set when the learner stops on purpose. Without it, Stop would return the
-  // rung to `idle` and the auto-advance effect would restart it 350ms later —
-  // a stop button that does not stop.
-  const [halted, setHalted] = useState(false);
+  // A replay must not climb the rung twice. `handleEnd` runs at the end of
+  // EVERY pass, and the second pass is a listen, not a new attempt: logging it
+  // would credit a sentence the learner has already finished.
+  const credited = useRef(false);
 
   const handleEnd = useCallback(() => {
     setPhase('done');
     setHighlight(null);
+    if (credited.current) return;
+    credited.current = true;
     languageLog.rung('complete', { rung: 'repetition', seq: entry.seq });
+    // Held BEFORE the save resolves, not after: the save re-derives the day,
+    // and the parent's ladder would otherwise step to the next rung in the
+    // render between the two.
+    onHold?.();
     Promise.resolve(onComplete({ seq: entry.seq, rung: 'repetition' })).then((result) => {
       if (result?.ok === false) {
+        // Nothing was recorded, so nothing is finished: let the sentence go
+        // back to the queue as the attempt it still needs.
+        credited.current = false;
         setPhase('idle');
-        setHalted(false);
+        onAdvance?.();
       }
     });
-  }, [entry.seq, onComplete]);
+  }, [entry.seq, onComplete, onHold, onAdvance]);
 
   const { playSequence, preload, stop, step, blocked } = useSentenceAudio({ onSequenceEnd: handleEnd });
 
   useEffect(() => {
     setPhase('idle');
-    setHalted(false);
+    credited.current = false;
     setHighlight(null);
     languageLog.rung('enter', { rung: 'repetition', seq: entry.seq });
     return () => stop();
@@ -60,23 +75,13 @@ export default function RepetitionRung({
     setHighlight(step >= 0 && clips[step] ? clips[step].language : null);
   }, [step, entry, audioUrl]);
 
+  // Every pass starts from a tap — the first one is what grants the browser the
+  // audio activation that makes any of this audible, and nothing here plays
+  // without one.
   const start = useCallback(() => {
     setPhase('playing');
-    setHalted(false);
-    onActivate?.();
     playSequence(clipsFor(entry, audioUrl));
-  }, [entry, audioUrl, playSequence, onActivate]);
-
-  // Once the learner has tapped Play once, the rest of the set runs hands-free.
-  // The first pass demanded a tap per sentence — twenty sentences, twenty taps
-  // — placed in exactly the gap the audio preloading exists to remove. The
-  // first tap is still required and still real: it is what grants the browser
-  // activation that makes any of this audible.
-  useEffect(() => {
-    if (!autoStart || halted || phase !== 'idle') return undefined;
-    const id = window.setTimeout(start, 350);
-    return () => window.clearTimeout(id);
-  }, [autoStart, halted, phase, start]);
+  }, [entry, audioUrl, playSequence]);
 
   // A rejected play promise ends the sequence without its normal completion
   // callback. Return to a control the learner can actually use instead of
@@ -84,7 +89,6 @@ export default function RepetitionRung({
   useEffect(() => {
     if (!blocked || phase !== 'playing') return;
     stop();
-    setHalted(true);
     setPhase('idle');
   }, [blocked, phase, stop]);
 
@@ -107,25 +111,37 @@ export default function RepetitionRung({
       )}
 
       <div className="lang-rung__controls">
-        {phase === 'idle' && (!autoStart || halted) && (
+        {phase === 'idle' && (
           <button type="button" className="lang-btn lang-btn--disc" onClick={start}>
             <Icon name="play" className="lang-btn__glyph" />
             <span className="lang-btn__word">Play</span>
           </button>
         )}
-        {phase === 'idle' && autoStart && !halted && <span className="lang-rung__status">Next…</span>}
         {phase === 'playing' && (
           <button
             type="button"
             className="lang-btn lang-btn--disc lang-btn--disc-quiet"
-            onClick={() => { stop(); setHalted(true); setPhase('idle'); }}
+            onClick={() => { stop(); setPhase('idle'); }}
           >
             <Icon name="pause" className="lang-btn__glyph" />
             <span className="lang-btn__word">Stop</span>
           </button>
         )}
-        {phase === 'done' && (
-          <span className="lang-rung__saved">{saving ? 'Saving…' : 'Done'}</span>
+        {/* The choice. Repeating is the quiet disc beside Play's, because it is
+            the same act; moving on is the deliberate one, so it carries the
+            weight. Both wait for the save — an attempt still in flight has
+            nothing to offer yet. */}
+        {phase === 'done' && saving && <span className="lang-rung__saved">Saving…</span>}
+        {phase === 'done' && !saving && (
+          <>
+            <button type="button" className="lang-btn lang-btn--disc lang-btn--disc-quiet" onClick={start}>
+              <Icon name="restart" className="lang-btn__glyph" />
+              <span className="lang-btn__word">Play again</span>
+            </button>
+            <button type="button" className="lang-btn lang-btn--primary" onClick={() => onAdvance?.()}>
+              Next
+            </button>
+          </>
         )}
       </div>
     </div>
