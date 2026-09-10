@@ -384,11 +384,18 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
    * @param {string} programId
    * @returns {Promise<Buffer|null>}
    */
-  async getProgramPoster(programId) {
+  async getProgramPoster(programId, instanceId = null) {
     if (typeof programId !== 'string' || !CURRICULUM_ID_RE.test(programId)) return null;
+    // A program whose artwork belongs to its INSTANCE keeps it one level down,
+    // at `<media>/school/programs/<programId>/<instanceId>/poster.jpg`. The
+    // sentence ladder is the case: one program, one corpus per language, and
+    // the picture is the corpus's. Validated by the same id rule as the
+    // program — an instance id is a path segment either way.
+    if (instanceId !== null && (typeof instanceId !== 'string' || !CURRICULUM_ID_RE.test(instanceId))) return null;
+    const segments = instanceId ? [programId, instanceId] : [programId];
     try {
       const bytes = await readBinaryFromPathAsync(
-        path.join(this.#configService.getMediaDir(), 'school', 'programs', programId, 'poster.jpg'),
+        path.join(this.#configService.getMediaDir(), 'school', 'programs', ...segments, 'poster.jpg'),
       );
       if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) return null;
       return bytes;

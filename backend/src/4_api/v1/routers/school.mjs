@@ -1031,6 +1031,14 @@ export function createSchoolRouter({
     res.set('Cache-Control', 'private, max-age=3600').set('Content-Type', 'image/jpeg')
       .set('X-Content-Type-Options', 'nosniff').send(bytes);
   }));
+  // A program whose artwork belongs to one INSTANCE of it — the sentence
+  // ladder's corpora, where the picture is the language's and not the ladder's.
+  router.get('/teacher/programs/:programId/:instanceId/poster.jpg', wrap(async (req, res) => {
+    const bytes = await schoolCurriculumQuery?.getProgramPoster?.(req.params.programId, req.params.instanceId);
+    if (!bytes) throw new EntityNotFoundError('program poster', `${req.params.programId}/${req.params.instanceId}`);
+    res.set('Cache-Control', 'private, max-age=3600').set('Content-Type', 'image/jpeg')
+      .set('X-Content-Type-Options', 'nosniff').send(bytes);
+  }));
   router.get('/teacher/curriculum-exceptions', wrap(async (req, res) => {
     if (!manageCurriculumException) throw new EntityNotFoundError('curriculum exceptions', 'not configured');
     res.set('Cache-Control', 'no-store').json(await manageCurriculumException.list());

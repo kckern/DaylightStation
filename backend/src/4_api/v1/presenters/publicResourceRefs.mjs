@@ -21,8 +21,15 @@ const CURRICULUM_POSTER_MOUNTS = Object.freeze({
   selfservice: 'self-service',
 });
 
-/** The one scheme in the course-id vocabulary that is not a curriculum id. */
-const PROGRAM_COURSE_ID = /^program:(.+)$/;
+/**
+ * The one scheme in the course-id vocabulary that is not a curriculum id.
+ *
+ * Two shapes: `program:<id>` for a program with one face (the reading shelf),
+ * and `program:<id>:<instance>` where the artwork belongs to the instance
+ * rather than the program. The sentence ladder is the second kind — one
+ * program, one picture would put a Korean owl on a Spanish card.
+ */
+const PROGRAM_COURSE_ID = /^program:([^:]+)(?::(.+))?$/;
 
 export function publicResourceUrl(ref) {
   switch (ref?.kind) {
@@ -40,9 +47,11 @@ export function publicResourceUrl(ref) {
       // put a unit-less entity in front of the catalog gate, the gradebook and
       // enrollment. The id says which shelf to read; this says where from.
       const program = PROGRAM_COURSE_ID.exec(String(ref.courseId));
-      return program
-        ? `/api/v1/school/${mount}/programs/${segment(program[1])}/poster.jpg`
-        : `/api/v1/school/${mount}/curriculum/${segment(ref.courseId)}/poster.jpg`;
+      if (!program) return `/api/v1/school/${mount}/curriculum/${segment(ref.courseId)}/poster.jpg`;
+      const [, programId, instanceId] = program;
+      return instanceId
+        ? `/api/v1/school/${mount}/programs/${segment(programId)}/${segment(instanceId)}/poster.jpg`
+        : `/api/v1/school/${mount}/programs/${segment(programId)}/poster.jpg`;
     }
     case 'content-stream': return `/api/v1/stream/${segment(ref.source)}/${segment(ref.id)}`;
     case 'stream-proxy': {

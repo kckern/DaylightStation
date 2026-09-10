@@ -1,4 +1,5 @@
 import { RUNG_IDS } from './ladder.mjs';
+import { normalizeUnits } from './units.mjs';
 
 const ID_RE = /^[a-z0-9][a-z0-9_-]*$/i;
 
@@ -9,10 +10,28 @@ export function validateProgramEnrollment(raw, { corpus = null } = {}) {
   if (typeof raw.programId !== 'string' || !raw.programId.trim()) errors.push('programId is required');
   if (raw.programId !== undefined && !ID_RE.test(String(raw.programId))) errors.push('programId must be alphanumeric with - or _');
   if (typeof raw.corpusId !== 'string' || !raw.corpusId.trim()) errors.push('corpusId is required');
-  for (const field of ['lessonSize', 'unitSize']) {
-    if (raw[field] !== undefined && (!Number.isInteger(raw[field]) || raw[field] < 1)) errors.push(`${field} must be an integer >= 1`);
+  if (raw.lessonSize !== undefined && (!Number.isInteger(raw.lessonSize) || raw.lessonSize < 1)) {
+    errors.push('lessonSize must be an integer >= 1');
   }
   if (raw.lessonSize === undefined) errors.push('lessonSize is required');
+  // WHERE THE COURSE DIVIDES, in the teacher's words. Boundaries only: a unit
+  // runs until the next one starts, so a gap or an overlap cannot be written
+  // down. REJECTED rather than dropped — a mistyped chapter should stop an
+  // enrollment, not leave a thousand sentences quietly unnamed on a card.
+  //
+  // Not `scope`, and not corpus `bands`: those SELECT which sentences are
+  // studied, these NAME where the learner is. See `units.mjs`.
+  if (raw.units !== undefined) {
+    if (!Array.isArray(raw.units)) errors.push('units must be a list');
+    else {
+      raw.units.forEach((unit, i) => {
+        if (!Number.isInteger(unit?.from) || unit.from < 1) errors.push(`units[${i}].from must be an integer >= 1`);
+        if (typeof unit?.label !== 'string' || !unit.label.trim()) errors.push(`units[${i}].label is required`);
+      });
+      const starts = raw.units.map((unit) => unit?.from);
+      if (new Set(starts).size !== starts.length) errors.push('units must not share a starting sentence');
+    }
+  }
   if (raw.dictationMode !== undefined && !['listen', 'copy'].includes(raw.dictationMode)) {
     errors.push('dictationMode must be listen or copy');
   }
@@ -43,7 +62,8 @@ export function validateProgramEnrollment(raw, { corpus = null } = {}) {
   if (errors.length) return { errors };
   return { errors, enrollment: {
     programId: String(raw.programId), corpusId: String(raw.corpusId),
-    lessonSize: raw.lessonSize, rungs: [...rungs], unitSize: raw.unitSize ?? 10,
+    lessonSize: raw.lessonSize, rungs: [...rungs],
+    ...(raw.units !== undefined ? { units: normalizeUnits(raw.units) } : {}),
     ...(raw.dictationMode !== undefined ? { dictationMode: raw.dictationMode } : {}),
     ...(raw.reward ? { reward: { amount: raw.reward.amount } } : {}),
     ...(raw.scope !== undefined ? { scope } : {}),

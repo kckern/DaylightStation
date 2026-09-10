@@ -123,6 +123,18 @@ export function createSchoolSelfServiceRouter({
         .set('X-Content-Type-Options', 'nosniff')
         .send(bytes);
     }));
+
+    // And a program whose artwork belongs to one INSTANCE of it. The sentence
+    // ladder is the case: the picture is the corpus's, so a second language
+    // brings its own rather than inheriting Korean's.
+    router.get('/programs/:programId/:instanceId/poster.jpg', asyncHandler(async (req, res) => {
+      const bytes = await curriculum.getProgramPoster?.(req.params.programId, req.params.instanceId);
+      if (!bytes) return res.status(404).end();
+      return res.set('Cache-Control', 'private, max-age=3600')
+        .set('Content-Type', 'image/jpeg')
+        .set('X-Content-Type-Options', 'nosniff')
+        .send(bytes);
+    }));
   }
 
   if (runSelfServiceAction) {

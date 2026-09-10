@@ -12,7 +12,7 @@
 import {
   validateCorpus, indexBySeq, buildDayQueue, summarizeQueue,
   shouldRollDay, chainFor, creditChain, rungById, resolveRole, accuracy,
-  validateProgramEnrollment,
+  validateProgramEnrollment, unitFor, RUNG_IDS,
 } from '#domains/school/language/index.mjs';
 import { resolveGate, capabilitiesUnder, allowsRung, gateMessage } from '#domains/school/accessGate.mjs';
 import { requirementFor } from '#domains/school/language/ladder.mjs';
@@ -706,6 +706,19 @@ export class SentenceLadderService {
           doneToday, progressLabel, score: null,
           // How far through the day, for a board that draws partial progress.
           obligationProgress: { completed: summary.done, total: summary.total },
+          // WHAT A CARD SAYS. `projectProgramEntry` reads `context` and
+          // `progress` off this and feeds the breadcrumb, the unit line, the
+          // title, the bars and the poster. Returning neither is why a Glossika
+          // card printed the word "Korean" three times: with no context,
+          // `BuildAgenda` falls to the branch whose course fallback is the
+          // literal string "Independent study".
+          ...this.#cardProjection({
+            corpus,
+            day,
+            queue,
+            summary,
+            enrollment: this.#queuePolicy(userId, corpus, { ...progress, day }).enrollment,
+          }),
         };
       }
       return { doneToday: false, progressLabel: null, score: null };
@@ -835,6 +848,53 @@ export class SentenceLadderService {
         at: `Day ${day}`,
         value: values.reduce((a, v) => a + v, 0) / values.length,
       }));
+  }
+
+  /**
+   * The three names and one bar a card draws, from state this method already
+   * holds. Shaped as `PianoCourseProgramLauncher`'s projection is, because
+   * `projectProgramEntry` consumes both through the same seam.
+   *
+   * THREE SLOTS, THREE DIFFERENT FACTS. The course is the corpus's own name
+   * ("Glossika Korean", not the enrollment's shorter "Korean"), the unit is
+   * where the teacher's declared boundaries put today's frontier, and the
+   * lesson TITLE is the work rather than the day: this card is an offer, and
+   * "Day 12" is an odometer reading, not a thing a child can do. The day is
+   * still said — it rides on the unit line, which is where a position belongs.
+   *
+   * The frontier is the HIGHEST seq in today's queue: the furthest into the
+   * corpus this day reaches, which is what "where am I" means for a ladder
+   * that reviews backwards. An unpartitioned course has no unit and prints
+   * none — a card must never show the literal word "Unit" where a name goes.
+   *
+   * ONE BAR, and it is today's. The lifetime figure is deliberately absent for
+   * the reason `#summarizeCourse` gives about its own `sentences started`
+   * metric: a bar at 15% that will not visibly move for a year tells a child
+   * they are nowhere.
+   */
+  #cardProjection({ corpus, day, queue, summary, enrollment }) {
+    const outstandingEntries = queue.filter((entry) => !entry.done);
+    const frontier = queue.reduce((max, entry) => (
+      Number.isInteger(entry?.seq) && entry.seq > max ? entry.seq : max
+    ), 0);
+    const unit = unitFor({ units: enrollment?.units, seq: frontier });
+    const title = outstandingEntries.length
+      ? `${outstandingEntries.length} sentence${outstandingEntries.length === 1 ? '' : 's'} today`
+      : 'Done for today';
+    return {
+      context: {
+        // `program:<programId>:<instanceId>` — the course-id scheme a program
+        // uses instead of pretending to be a curriculum work (`bookLogContext`
+        // sets the two-part form). The instance is here because artwork belongs
+        // to the CORPUS, not the ladder: one program, many languages, and a
+        // Korean owl on a Spanish card would be nobody's idea of a fix.
+        course: { id: `program:sentence-ladder:${corpus.id}`, title: corpus.label ?? corpus.id },
+        unit: unit ? { id: `unit-${unit.from}`, title: `${unit.label} · Day ${day}` } : { id: `day-${day}`, title: `Day ${day}` },
+        lesson: { id: `${corpus.id}:day-${day}`, title },
+      },
+      description: this.#describeOutstanding(outstandingEntries) || null,
+      progress: [{ scope: 'unit', label: 'Today', completed: summary.done, total: summary.total }],
+    };
   }
 
   #describeOutstanding(outstanding) {
