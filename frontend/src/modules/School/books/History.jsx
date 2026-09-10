@@ -37,13 +37,11 @@ export function groupByMonth(items = []) {
 /**
  * @param {object} props
  * @param {object[]} props.items - every shelf item; this view keeps the done ones.
- * @param {() => void} props.onBack
  */
-export default function History({ items = [], onBack, onSelect = null }) {
+export default function History({ items = [], onSelect = null }) {
   const groups = groupByMonth(items);
   return (
     <div className="school-books-history" data-testid="book-history">
-      <button type="button" className="school-books__back" onClick={onBack}>‹ back</button>
       {groups.length === 0 ? (
         <p className="school-books__empty">Nothing finished yet</p>
       ) : (

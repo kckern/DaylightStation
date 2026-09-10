@@ -5,7 +5,6 @@ import Icon from '../home/icons/Icon.jsx';
 export default function CompletedBook({ item, actions }) {
   const book = presentBook(item);
   return <div className="school-books-update school-books-task-view" data-testid="completed-book" data-task="completed">
-    <button className="school-books__back" type="button" onClick={actions.back}>‹ back</button>
     <div className="school-books-task">
       <div className="school-books-update__book school-books-task__context">
         <BookCover book={item} className="school-books-update__cover" />
