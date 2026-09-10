@@ -57,7 +57,9 @@ same knob.
 `programs[]` enrollment records may set `dictationMode: copy`. This reveals one
 target-script glyph ahead of the learner's matching typed prefix, while the
 target-language prompt audio loops after the learner presses Play or starts
-typing. It supports script-entry practice before a learner can transcribe from
+typing. On every typing rung the loop pauses for about two and a half seconds
+before the prompt starts over, so the repetition reinforces without becoming
+a siren; clips within one pass stay gapless. It supports script-entry practice before a learner can transcribe from
 audio alone. The default (`listen`) remains audio-only dictation. The mode is
 resolved by the server and is not learner-controlled.
 

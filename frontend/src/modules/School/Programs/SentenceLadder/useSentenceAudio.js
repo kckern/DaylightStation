@@ -24,6 +24,15 @@ import { languageLog } from './languageLog.js';
 
 const REPEAT_GAP_MS = 1000;
 
+/**
+ * Silence before a looping sequence starts over. The typing rungs loop the
+ * prompt as reinforcement while the learner types, but back-to-back repeats
+ * turn support into a siren. This is the breath between repetitions — long
+ * enough to type a few characters in quiet, short enough that the sentence
+ * is still fresh when it returns.
+ */
+const LOOP_GAP_MS = 2500;
+
 export function useSentenceAudio({ onSequenceEnd } = {}) {
   const elementRef = useRef(null);
   const preloadRef = useRef([]);
@@ -84,7 +93,8 @@ export function useSentenceAudio({ onSequenceEnd } = {}) {
 
     if (queue.length === 0) {
       if (loopRef.current?.length) {
-        queueRef.current = [...loopRef.current];
+        const [first, ...rest] = loopRef.current;
+        queueRef.current = [{ ...first, gapMs: Math.max(first.gapMs || 0, LOOP_GAP_MS) }, ...rest];
         setStep(-1);
         advance();
         return;
@@ -157,7 +167,7 @@ export function useSentenceAudio({ onSequenceEnd } = {}) {
     if (urls.length) languageLog.audio('preload', { count: urls.length });
   }, []);
 
-  return { playSequence, preload, stop, playing, step, blocked, REPEAT_GAP_MS };
+  return { playSequence, preload, stop, playing, step, blocked, REPEAT_GAP_MS, LOOP_GAP_MS };
 }
 
 /**
