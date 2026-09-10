@@ -168,6 +168,11 @@ export function projectProgramEntry(entry, status) {
     module: context.unit?.id ?? entry.module,
     programContext: context,
     programProgress: Array.isArray(status?.progress) ? status.progress : [],
+    // The sentence under the title — "6 repetition, 12 dictation", the one line
+    // that says what the day actually asks for. `next` is this entry spread, so
+    // the card reads it as `next.description` with nothing in between.
+    ...(typeof status?.description === 'string' && status.description.trim()
+      ? { description: status.description.trim() } : {}),
   };
 }
 

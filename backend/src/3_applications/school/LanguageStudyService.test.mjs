@@ -521,3 +521,80 @@ describe('todayStatus — an enrolled learner who has not started yet', () => {
     expect(svc.todayStatus({ userId: 'new-learner' })).toMatchObject({ doneToday: false, progressLabel: null });
   });
 });
+
+// ---------------------------------------------------------------------------
+// WHAT A CARD SAYS. `projectProgramEntry` reads `context` and `progress` off
+// `todayStatus` and feeds them to the breadcrumb, the unit line, the title, the
+// bars and the poster. Returning neither is why a Glossika agenda card printed
+// the word "Korean" three times over an empty poster panel: with no context,
+// `BuildAgenda` falls to the branch whose course fallback is the literal string
+// "Independent study".
+describe('todayStatus — the card projection', () => {
+  const UNITS = [
+    { from: 1, label: 'Fluency 1' },
+    { from: 3, label: 'Fluency 2' },
+  ];
+  const enrolled = (units = UNITS) => ({
+    readProgramEnrollment: () => ({
+      programId: 'sentence-ladder', corpusId: 'test-korean', lessonSize: 4,
+      rungs: ['repetition', 'dictation', 'recording', 'interpretation'],
+      ...(units ? { units } : {}),
+    }),
+  });
+
+  it('names three DIFFERENT things — the duplication that started this', () => {
+    const svc = makeService(new FakeDatastore(), AT, enrolled());
+    const { context } = svc.todayStatus({ userId: 'new-learner', corpusId: 'test-korean' });
+
+    expect(context.course.title).toBe('Test Korean');
+    expect(context.unit.title).toMatch(/^Fluency 1 · Day 1$/);
+    expect(context.lesson.title).toMatch(/sentences? today$/);
+    expect(new Set([context.course.title, context.unit.title, context.lesson.title]).size).toBe(3);
+  });
+
+  it('titles the card by the WORK, not by the day — a card is an offer', () => {
+    const svc = makeService(new FakeDatastore(), AT, enrolled());
+    const { context } = svc.todayStatus({ userId: 'new-learner', corpusId: 'test-korean' });
+    expect(context.lesson.title).not.toMatch(/Day/);
+  });
+
+  it('carries the corpus in the course id, so a second language brings its own poster', () => {
+    const svc = makeService(new FakeDatastore(), AT, enrolled());
+    const { context } = svc.todayStatus({ userId: 'new-learner', corpusId: 'test-korean' });
+    expect(context.course.id).toBe('program:sentence-ladder:test-korean');
+  });
+
+  it('says the day alone when the enrollment partitions nothing — never the word "Unit"', () => {
+    const svc = makeService(new FakeDatastore(), AT, enrolled(null));
+    const { context } = svc.todayStatus({ userId: 'new-learner', corpusId: 'test-korean' });
+    expect(context.unit.title).toBe('Day 1');
+    expect(context.unit.title).not.toMatch(/Unit/);
+  });
+
+  it('offers exactly one bar, and it is today s — never the lifetime figure', () => {
+    const svc = makeService(new FakeDatastore(), AT, enrolled());
+    const { progress } = svc.todayStatus({ userId: 'new-learner', corpusId: 'test-korean' });
+    expect(progress).toHaveLength(1);
+    expect(progress[0]).toMatchObject({ scope: 'unit', label: 'Today', completed: 0 });
+    expect(progress[0].total).toBeGreaterThan(0);
+  });
+
+  it('describes what the day actually asks for', () => {
+    const svc = makeService(new FakeDatastore(), AT, enrolled());
+    const { description } = svc.todayStatus({ userId: 'new-learner', corpusId: 'test-korean' });
+    expect(description).toMatch(/repetition/);
+  });
+
+  it('keeps the fields the agenda already depended on', () => {
+    const svc = makeService(new FakeDatastore(), AT, enrolled());
+    const status = svc.todayStatus({ userId: 'new-learner', corpusId: 'test-korean' });
+    expect(status).toMatchObject({ doneToday: false, progressLabel: 'Day 1', score: null });
+    expect(status.obligationProgress.total).toBeGreaterThan(0);
+  });
+
+  it('projects nothing for a learner with no corpus at all, rather than a half card', () => {
+    const svc = makeService(new FakeDatastore(), AT, { readProgramEnrollment: () => null });
+    const status = svc.todayStatus({ userId: 'nobody', corpusId: 'no-such-corpus' });
+    expect(status).toEqual({ doneToday: false, progressLabel: null, score: null });
+  });
+});

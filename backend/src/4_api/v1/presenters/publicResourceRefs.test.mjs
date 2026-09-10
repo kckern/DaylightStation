@@ -23,6 +23,13 @@ describe('public resource URL characterization', () => {
     // curriculum shelf, which would 404 it into a placeholder.
     [curriculumPosterRef('selfservice', 'program:book-log'), '/api/v1/school/self-service/programs/book-log/poster.jpg'],
     [curriculumPosterRef('teacher', 'program:book-log'), '/api/v1/school/teacher/programs/book-log/poster.jpg'],
+    // `program:<id>:<instance>` where the artwork belongs to the INSTANCE. The
+    // sentence ladder is the case: one program, one corpus per language, and a
+    // Korean owl on a Spanish card would be nobody's idea of a fix.
+    [curriculumPosterRef('selfservice', 'program:sentence-ladder:glossika-korean'),
+      '/api/v1/school/self-service/programs/sentence-ladder/glossika-korean/poster.jpg'],
+    [curriculumPosterRef('teacher', 'program:sentence-ladder:glossika-korean'),
+      '/api/v1/school/teacher/programs/sentence-ladder/glossika-korean/poster.jpg'],
     [streamRef('plex', '11'), '/api/v1/stream/plex/11'],
   ])('projects %o to the existing public URL', (ref, expected) => {
     expect(publicResourceUrl(ref)).toBe(expected);
