@@ -8,15 +8,16 @@
  *
  * ONE FLOWING SHELF, NOT ONE ROW PER DAY. A row per day spent a whole shelf
  * on a single book and left most of the panel black. Instead the cards wrap
- * as one flow, and each day opens with a BOOKEND — a narrow tile the height
- * of a card, carrying the date — so a short day shares a row with the next
- * and the partitions stay legible: you read the bookend, then the books
- * after it until the next bookend. The flow reveals itself a week of days
- * at a time as the child scrolls, so a year of reading costs nothing until
- * it is looked at.
+ * as one flow, and the DAYS ARE GROUPED BY COLOUR: each day takes the next
+ * colour from a cycling palette, and that colour runs as a band along the
+ * top of every card of that day — so a day that wraps onto the next row, or
+ * two days sharing a row, still read as their own groups. Each day opens
+ * with a SPINE: a slim partition in the day's colour, the day-of-month large
+ * and upright at its top, the weekday running down it. The flow reveals
+ * itself a week of days at a time as the child scrolls the page.
  *
- * The bookend carries the date, so the cards do not: a card wearing the
- * same date as the tile beside it was saying it twice.
+ * The spine carries the date, so the cards do not: a card wearing the same
+ * date as the spine beside it was saying it twice.
  */
 import { useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
@@ -26,6 +27,15 @@ import { addDays, dayLabel, parseKey, WEEKDAY_NAMES, MONTH_NAMES, isoWeekday } f
 
 const DONE = new Set(['finished', 'set-aside']);
 const PAGE_DAYS = 7;
+/**
+ * The day colours, cycling. The household's own accents, not new ones: a
+ * palette that already sits on this ground, and six of them so two days on
+ * one row never share a colour and a week of days never repeats one.
+ */
+export const DAY_COLOURS = Object.freeze([
+  'var(--school-accent)', 'var(--kind-video)', 'var(--kind-deck)',
+  'var(--kind-audio)', 'var(--kind-app)', 'var(--school-warn)',
+]);
 
 /** `2026-09-05` from an ISO instant or a study-day key; '' when unreadable. */
 function dayKey(value) {
@@ -47,18 +57,24 @@ export function dayHeading(key, today = null) {
 const bookKey = (item) => item.bookId ?? item.isbn13 ?? item.book?.isbn13 ?? String(item.title ?? item.book?.title ?? item.itemId);
 
 /**
- * The bookend's two lines: a word a child recognises on top, the date under.
- *   Today / —,  Yesterday / —,  Sunday / 6 Sep,  Earlier / —
+ * What the spine says: the day-of-month as its number (with the month when
+ * the month is not this one — a "19" in September is not enough on its own),
+ * and the weekday as the word running down it. Today and yesterday keep
+ * their words and no number.
+ *   Today / —,  Yesterday / —,  6 / Sunday,  19 Aug / Wednesday,  Earlier / —
  */
 export function bookendLines(key, today = null) {
   const heading = dayHeading(key, today);
-  if (!key || heading === 'Today' || heading === 'Yesterday') return { top: heading, bottom: null };
+  if (!key || heading === 'Today' || heading === 'Yesterday') return { top: null, bottom: heading };
   try {
     const ms = parseKey(key);
     const d = new Date(ms);
-    return { top: WEEKDAY_NAMES[isoWeekday(ms) - 1], bottom: `${d.getUTCDate()} ${MONTH_NAMES[d.getUTCMonth()].slice(0, 3)}` };
+    let thisMonth = false;
+    try { thisMonth = today ? new Date(parseKey(today)).getUTCMonth() === d.getUTCMonth() : false; } catch { thisMonth = false; }
+    const number = thisMonth ? String(d.getUTCDate()) : `${d.getUTCDate()} ${MONTH_NAMES[d.getUTCMonth()].slice(0, 3)}`;
+    return { top: number, bottom: WEEKDAY_NAMES[isoWeekday(ms) - 1] };
   } catch {
-    return { top: heading, bottom: null };
+    return { top: null, bottom: heading };
   }
 }
 
@@ -110,16 +126,23 @@ export default function BookHistory({ items = [], today = null, onSelect = null,
       <h3 className="school-books__shelf-title">Book history</h3>
       <div className="school-books-history__scroll" data-testid="book-history-scroll">
         <div className="school-books-history__flow">
-          {visible.map((group) => {
+          {visible.map((group, index) => {
             const lines = bookendLines(group.key, today);
             return (
-              // `display: contents`: the section keeps the day's bookend and
+              // `display: contents`: the section keeps the day's spine and
               // books together in the DOM (and for anyone reading it), while
-              // the flow lays them out as one wrapping shelf.
-              <section key={group.key || 'earlier'} className="school-books-history__day" data-testid="book-history-group" data-day={group.key || undefined}>
+              // the flow lays them out as one wrapping shelf. The day's colour
+              // is set here and inherited by the spine and every card.
+              <section
+                key={group.key || 'earlier'}
+                className="school-books-history__day"
+                data-testid="book-history-group"
+                data-day={group.key || undefined}
+                style={{ '--day-colour': DAY_COLOURS[index % DAY_COLOURS.length] }}
+              >
                 <h4 className="school-books-history__bookend" aria-label={dayHeading(group.key, today)}>
-                  <span className="school-books-history__bookend-top">{lines.top}</span>
-                  {lines.bottom ? <span className="school-books-history__bookend-bottom">{lines.bottom}</span> : null}
+                  {lines.top ? <span className="school-books-history__bookend-top">{lines.top}</span> : null}
+                  <span className="school-books-history__bookend-bottom">{lines.bottom}</span>
                 </h4>
                 {group.items.map(({ item, times }) => (
                   <ShelfTile key={item.itemId} item={item} history times={times} onSelect={onSelect} />
