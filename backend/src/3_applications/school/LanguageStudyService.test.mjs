@@ -656,3 +656,60 @@ describe('todayStatus — the card projection', () => {
     expect(status).toEqual({ doneToday: false, progressLabel: null, score: null });
   });
 });
+
+describe('day read observability', () => {
+  it('says what it served — day, size, chain, and what this device could not climb', () => {
+    const ds = new FakeDatastore();
+    const info = vi.fn();
+    const svc = makeService(ds, AT, { logger: { warn() {}, info, debug() {} } });
+
+    svc.getDay({
+      userId: 'kckern',
+      corpusId: 'test-korean',
+      capabilities: { microphone: false, textInput: [] },
+      runId: 'run-xyz',
+    });
+
+    const [event, data, opts] = info.mock.calls.find(([e]) => e === 'school.language.day-read');
+    expect(event).toBe('school.language.day-read');
+    expect(data).toMatchObject({ learnerId: 'kckern', corpus: 'test-korean', day: 1 });
+    expect(typeof data.queueSize).toBe('number');
+    expect(Array.isArray(data.chain)).toBe(true);
+    expect(Array.isArray(data.blockedRungs)).toBe(true);
+    // The chain is the DEVICE's chain: with no mic and no keyboard, the rungs
+    // that need them are absent, and the log is where a teacher finds out why
+    // the child was only asked to repeat. (`blockedRungs` is the enrolled
+    // learner's credit chain minus that — empty here, since an unenrolled
+    // learner has no credit chain to fall short of.)
+    expect(data.chain).not.toContain('recording');
+    expect(data.chain).not.toContain('dictation');
+    // The run id lands on context, not in the payload: that is the field the
+    // log store indexes as `context.runId`.
+    expect(opts).toEqual({ context: { runId: 'run-xyz' } });
+  });
+
+  it('never puts a learner sentence in the log payload', () => {
+    const ds = new FakeDatastore();
+    const info = vi.fn();
+    const svc = makeService(ds, AT, { logger: { warn() {}, info, debug() {} } });
+
+    svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+
+    const serialized = JSON.stringify(info.mock.calls);
+    expect(serialized).not.toContain('오늘 날씨가');
+    expect(serialized).not.toContain("The weather's nice");
+  });
+
+  it('logs without a run id rather than refusing to log', () => {
+    const ds = new FakeDatastore();
+    const info = vi.fn();
+    const svc = makeService(ds, AT, { logger: { warn() {}, info, debug() {} } });
+
+    svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+
+    const call = info.mock.calls.find(([e]) => e === 'school.language.day-read');
+    expect(call).toBeTruthy();
+    expect(call[2]).toBeUndefined();
+  });
+});
+

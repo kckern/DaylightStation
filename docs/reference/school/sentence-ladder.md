@@ -171,3 +171,40 @@ recomputes and emits `school.completion.state-observed`. Canonical
 `sentence-ladder` and legacy `language` identifiers are treated as equivalent
 at this settlement boundary so migrated assignments cannot lose credit or a
 configured reward.
+
+## Reading a session back
+
+Every ladder event on both sides of the wire carries a **run id** on
+`context.runId`. The program shell mints one per run; `languageApi.js` sends it
+on every request as `X-School-Run-Id`; the router validates its shape and
+threads it into the service's log calls. So one query returns a single child's
+whole sitting, browser and backend interleaved in order:
+
+```
+context.runId:"<id>" AND _time:24h
+```
+
+A malformed or absent header degrades to `null` — a child mid-lesson is never
+failed over a diagnostic.
+
+The network layer says something on every outcome. `school.language.api.ok`
+(debug) carries path, method, status and duration; `school.language.api.rejected`
+(warn) a non-ok response; `school.language.api.failed` (error) a request that
+threw, with `error` and `name`, so a dropped connection is no longer
+indistinguishable from a genuine status 0. A cancelled in-flight request is
+`school.language.api.aborted` at debug, because unmounting a rung is routine.
+**Request bodies and response payloads are never logged** — they are the
+child's own sentences and their typed answers. Paths, methods, statuses,
+durations and byte counts only.
+
+Backend events worth knowing: `school.language.day-read` (info — day, queue
+size, device chain, credit chain, blocked rungs, gate level) is the first line
+to read when a child says the ladder gave them the wrong work;
+`school.language.day-complete` (info) is emitted under the same name as the bus
+topic it accompanies; `school.language.launcher.launch` (info) records a
+dispatch decision, its surface, and whether a study grant was issued, while
+`school.language.launcher.status` (debug) records what the agenda was told.
+
+Per-sentence and per-request events sit at `debug` and are filtered out by
+default — raise the level for launch week rather than leaving them on: the log
+store is shared with every other household subsystem and capped.

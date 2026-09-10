@@ -61,7 +61,19 @@ export class SentenceLadderProgramLauncher extends IProgramLauncher {
    * @returns {Promise<{doneToday: boolean, progressLabel: string|null, score: number|null}>}
    */
   async status({ userId, programInstance = null }) {
-    return this.#languageStudyService.todayStatus({ userId, corpusId: programInstance });
+    // This launcher had no log events at all, so "the agenda said Done and the
+    // child had not studied" was unanswerable after the fact: the question and
+    // the answer both vanished. Debug, because an agenda build asks every
+    // launcher on every render — raise the level for a week, not forever.
+    const answer = await this.#languageStudyService.todayStatus({ userId, corpusId: programInstance });
+    this.#logger.debug?.('school.language.launcher.status', {
+      learnerId: userId,
+      corpus: programInstance,
+      doneToday: answer?.doneToday ?? null,
+      score: answer?.score ?? null,
+      progressLabel: answer?.progressLabel ?? null,
+    });
+    return answer;
   }
 
   /**
@@ -69,8 +81,19 @@ export class SentenceLadderProgramLauncher extends IProgramLauncher {
    * @returns {Promise<{decision: 'dispatched'|'pending_approval'|'denied'|'failed', approvalId?: string, message: string}>}
    */
   async launch({ userId, corpusId = null }) {
-    const target = this.issueLaunchTarget({ userId, corpusId });
-    return this.#donow.dispatch({
+    let target;
+    try {
+      target = this.issueLaunchTarget({ userId, corpusId });
+    } catch (err) {
+      // A refused grant is the difference between "the Portal ignored me" and
+      // "the ladder would not let me in", and only this line can tell them
+      // apart afterwards.
+      this.#logger.error?.('school.language.launcher.launch-failed', {
+        learnerId: userId, corpus: corpusId, surface: 'portal', error: err.message,
+      });
+      throw err;
+    }
+    const result = await this.#donow.dispatch({
       surface: 'portal',
       action: { target },
       learnerId: userId,
@@ -82,6 +105,17 @@ export class SentenceLadderProgramLauncher extends IProgramLauncher {
       // refuse; it must never enter the approval queue.
       force: 'never_ask',
     });
+    // Info: a launch is a household event, not a poll — one per child per
+    // sitting. The grant flag is a yes/no; the grant itself is never logged.
+    this.#logger.info?.('school.language.launcher.launch', {
+      learnerId: userId,
+      corpus: corpusId,
+      surface: 'portal',
+      decision: result?.decision ?? null,
+      grantIssued: !!target?.studyGrant,
+      approvalId: result?.approvalId ?? null,
+    });
+    return result;
   }
 
   issueLaunchTarget({ userId, corpusId }) {
