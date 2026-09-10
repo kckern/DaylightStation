@@ -289,6 +289,8 @@ tests beside.
 
 ## Stream 5 — School design system: header + toggle registers
 
+> **Done 2026-09-09.** `shared/ScreenHeader` on the shelf and its four sub-views; `HangulTypingProvider` exposes `register`, `LanguageDisc` sits by the clock; flags are SVG.
+
 **Files:** new `frontend/src/modules/School/shared/ScreenHeader.jsx` + scss;
 consumers `books/BookShelf.jsx` (header), `books/NumberPad.jsx`, `selfService/Keypad.jsx`,
 `books/History.jsx`, `books/UpdateBook.jsx` (back buttons); `ime/HangulTypingProvider.jsx`

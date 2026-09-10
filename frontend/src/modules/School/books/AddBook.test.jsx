@@ -193,9 +193,11 @@ describe('AddBook', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Type the page you are on');
   });
 
-  it.each(['number', 'cover', 'where', 'page', 'when'])('‹ back on %s → back()', (step) => {
-    const a = mount(step, { add: add({ resolved: { status: 'ok', book: BOOK } }) });
-    fireEvent.click(screen.getByRole('button', { name: '‹ back' }));
-    expect(a.back).toHaveBeenCalledTimes(1);
+  // ONE EXIT RULE: the shelf's `ScreenHeader` owns Back for every sub-view,
+  // so this view must not draw a second one of its own.
+  it.each(['number', 'cover', 'where', 'page', 'when'])('draws no back of its own on %s — the header owns it', (step) => {
+    mount(step, { add: add({ resolved: { status: 'ok', book: BOOK } }) });
+    // The pad's backspace key is not a Back: it edits the number.
+    expect(screen.queryByRole('button', { name: /^back$|‹ back/i })).toBeNull();
   });
 });

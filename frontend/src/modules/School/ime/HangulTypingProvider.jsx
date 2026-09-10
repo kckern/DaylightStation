@@ -4,6 +4,7 @@ import {
 import { FieldComposer, declaredLanguage, isComposableField } from './fieldComposer.js';
 import { modeForLanguage } from './languages.js';
 import { imeLog } from './imeLog.js';
+import Icon from '../home/icons/Icon.jsx';
 import './ime.scss';
 
 /**
@@ -28,12 +29,37 @@ import './ime.scss';
 
 const TOGGLE_CODE = 'F6'; // the keyboard's globe key, which arrives as F6
 
-const HangulTypingContext = createContext({ mode: 'EN', setMode: () => {}, toggle: () => {} });
+const HangulTypingContext = createContext({
+  mode: 'EN', register: 'status', setMode: () => {}, toggle: () => {},
+});
 
 export function useHangulTyping() { return useContext(HangulTypingContext); }
 
-const FLAGS = { EN: '🇺🇸', KR: '🇰🇷' };
-const NAMES = { EN: 'English', KR: '한국어' };
+/**
+ * The flags are INLINE SVG, not emoji. The Portal's WebView draws emoji flags
+ * as tofu (two letters in a box), which on a language toggle is exactly the
+ * one glyph that has to be legible. The two files live with the subject
+ * icons so they render through the same `Icon`.
+ */
+export const FLAG_ICON = { EN: 'flag-us', KR: 'flag-kr' };
+export const NAMES = { EN: 'English', KR: '한국어' };
+
+/**
+ * TWO REGISTERS FOR ONE FACT (2026-09-09). The typing language matters at two
+ * very different moments. While a child is typing into a field, it is the
+ * thing that decides whether their keystrokes come out as Korean, and it
+ * has to be prominent — a labelled badge with the F6 hint. The rest of the
+ * time it is a background fact, and a labelled badge floating over the
+ * board's corner was reading as a control on a screen that has none. So:
+ *
+ *   prominent  a composable text field has focus — the badge is drawn
+ *   status     nothing is typing — the badge is not; the board's header
+ *              shows a small flag disc beside the clock instead
+ *
+ * The register is derived from focus, not declared by screens, so a new
+ * text field anywhere in School gets the prominent badge for free.
+ */
+export const REGISTERS = Object.freeze(['status', 'prominent']);
 
 /**
  * The live mode, drawn by the provider itself rather than by the School header.
@@ -49,7 +75,7 @@ function ModeBadge({ mode, declared }) {
       aria-live="polite"
       aria-label={`Typing ${NAMES[mode]}`}
     >
-      <span className="school-ime-badge__flag" aria-hidden>{FLAGS[mode]}</span>
+      <span className="school-ime-badge__flag" aria-hidden><Icon name={FLAG_ICON[mode]} /></span>
       <span className="school-ime-badge__label">{NAMES[mode]}</span>
       {/* Only worth saying when the learner could act on it. While a field is
           driving the mode, F6 would be overridden on the next focus change. */}
@@ -63,6 +89,7 @@ export default function HangulTypingProvider({ children, enabled = true }) {
   // field is asking for something else.
   const [manualMode, setManualMode] = useState('EN');
   const [declared, setDeclared] = useState(null);
+  const [register, setRegister] = useState('status');
   const composer = useRef(null);
   if (composer.current === null) composer.current = new FieldComposer();
 
@@ -93,6 +120,7 @@ export default function HangulTypingProvider({ children, enabled = true }) {
   useEffect(() => {
     if (!enabled) return undefined;
     const onFocusIn = (event) => {
+      setRegister(isComposableField(event.target) ? 'prominent' : 'status');
       // A field naming ANY language is driving the mode — one we cannot
       // compose means "plain text here", which is how the ladder's
       // interpretation rung turns Korean back off.
@@ -103,8 +131,18 @@ export default function HangulTypingProvider({ children, enabled = true }) {
       });
       composer.current.end();
     };
+    // Focus leaving a field for nothing at all (a tap on the backdrop, a
+    // screen change) fires no focusin; focusout with no `relatedTarget` is
+    // that moment, and the badge must step back.
+    const onFocusOut = (event) => {
+      if (event.relatedTarget == null) setRegister('status');
+    };
     document.addEventListener('focusin', onFocusIn);
-    return () => document.removeEventListener('focusin', onFocusIn);
+    document.addEventListener('focusout', onFocusOut);
+    return () => {
+      document.removeEventListener('focusin', onFocusIn);
+      document.removeEventListener('focusout', onFocusOut);
+    };
   }, [enabled]);
 
   useEffect(() => {
@@ -135,14 +173,37 @@ export default function HangulTypingProvider({ children, enabled = true }) {
   // Nothing in flight survives the mode changing under it.
   useEffect(() => { composer.current.end(); }, [mode]);
 
-  const value = useMemo(() => ({ mode, setMode, toggle }), [mode, setMode, toggle]);
+  const value = useMemo(() => ({ mode, register, setMode, toggle }), [mode, register, setMode, toggle]);
 
   return (
     <HangulTypingContext.Provider value={value}>
       {children}
       {/* Keyed by mode so a flip remounts the badge and replays its animation
-          — the learner has to notice the language changed under them. */}
-      {enabled && <ModeBadge key={mode} mode={mode} declared={declared !== null} />}
+          — the learner has to notice the language changed under them. Drawn
+          only in the prominent register; the status register is the
+          header's flag disc (`LanguageDisc`). */}
+      {enabled && register === 'prominent' && <ModeBadge key={mode} mode={mode} declared={declared !== null} />}
     </HangulTypingContext.Provider>
+  );
+}
+
+/**
+ * The status register: a small flag disc, no label, no hint. Sits right of
+ * the clock in the board's header (and anywhere else a screen wants the
+ * fact without the badge). Reads the live mode from context; draws nothing
+ * outside a provider that is enabled.
+ */
+export function LanguageDisc({ className = '' }) {
+  const { mode } = useHangulTyping();
+  return (
+    <span
+      className={`school-ime-disc school-ime-disc--${mode.toLowerCase()} ${className}`.trim()}
+      data-testid="school-ime-disc"
+      role="img"
+      aria-label={`Typing ${NAMES[mode]}`}
+      title={`Typing ${NAMES[mode]} — F6 to switch`}
+    >
+      <Icon name={FLAG_ICON[mode]} />
+    </span>
   );
 }

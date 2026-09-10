@@ -2033,12 +2033,8 @@
 }
 .school-books__who { display: flex; align-items: center; gap: 1rem; min-width: 0; }
 .school-books__title { margin: 0; font-size: 1.6rem; font-weight: 800; }
-// The chip is a walk-away safeguard here, not a card header: no bottom margin.
-.school-books__who .school-selfservice-card__learner { margin-bottom: 0; }
-.school-books__done {
-  @extend .school-selfservice__key;
-  min-height: 64px; font-family: inherit; font-size: 1.2rem; font-weight: 700; padding: 0 1.5rem;
-}
+// The shelf's header is the shared `ScreenHeader` (shared/screenHeader.scss);
+// only the text-column inset above is the shelf's own.
 // The day's whole question, in one line. It read as a footnote in muted grey
 // while being the only thing on this screen that says whether the child is done.
 .school-books__obligation {
@@ -2865,7 +2861,8 @@
   min-width: 0;
 }
 .school-board-header__when { min-width: 0; }
-.school-board-header__time { margin: 0; font-size: clamp(1.6rem, 3.2vw, 2.4rem); line-height: 1.1; }
+.school-board-header__time { margin: 0; font-size: clamp(1.6rem, 3.2vw, 2.4rem); line-height: 1.1; display: flex; align-items: center; gap: 0.45em; }
+.school-board-header__lang { font-size: 0.5em; }
 .school-board-header__date { margin: .15rem 0 0; color: var(--school-muted); font-size: clamp(.9rem, 1.6vw, 1.05rem); }
 
 // The one tappable thing in this pane, and NOT part of the board: the status
