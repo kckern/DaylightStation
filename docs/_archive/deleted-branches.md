@@ -400,3 +400,5 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-09 | portal/ble-keyboard-hangul | bba41d72d | BLE keyboard bonded natively on the Portal; merged to main |
 | 2026-09-09 | school/glossika-enrollment | 629e3127c | In-page Hangul IME, cold-start fill, two enrollments; merged to main |
 | 2026-09-09 | school/pe-supplemental-credit | 72e4f5f75 | Physical-education credit disc on the agenda status board (rings, or ten minutes of zone time). Fast-forwarded onto main, so every commit survives there by ancestry. |
+| 2026-09-09 | school/print-card-metadata | e7dae7bfe | The sentence-ladder card metadata, the household calendar's blue squares, the blocked-rung note and the two control-row jitter fixes, plus the merge that reconciled a deploy tree which had rebased under it. Fast-forwarded onto main, so every commit survives there by ancestry. |
+| 2026-09-09 | backup/pre-deploy-merge-20260909 | e5ca025b8 | Safety ref taken before merging the rebased deploy tree. Its commit is an ancestor of main; kept only until that merge was pushed and verified. |
