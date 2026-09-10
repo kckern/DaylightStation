@@ -2920,7 +2920,12 @@
  * ------------------------------------------------------------------------- */
 .school-lock-split {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  // ONE THIRD KEYPAD, TWO THIRDS BOARD. Four learner cards in four quarters
+  // each need the width; a six-digit pad does not. The keypad is the first
+  // child and column 1 in flow order on both sides of the burn-in flip (the
+  // flip is `direction: rtl`, which mirrors placement, not the template), so
+  // the 1fr always lands on the pad and the 2fr on the board.
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
   width: 100%; height: 100%;
 
   &[data-side='keypad-right'] { direction: rtl; > * { direction: ltr; } }
@@ -3285,7 +3290,7 @@
   // the plot and read by all three, so a month label can only ever sit over
   // its own week.
   &__term-plot {
-    --grid-cell: clamp(6px, 1.05vh, 9px);
+    --grid-cell: clamp(6px, 1.35vh, 11px);
     --grid-gap: 1px;
     flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
   }
@@ -3315,8 +3320,8 @@
   // The same footprint as an 18-week grid, so the card does not jump when the
   // term lands. Shimmers like the pins.
   &__grid--skeleton {
-    width: calc(16 * (clamp(6px, 1.05vh, 9px) + 1px));
-    height: calc(7 * (clamp(6px, 1.05vh, 9px) + 1px));
+    width: calc(16 * (clamp(6px, 1.35vh, 11px) + 1px));
+    height: calc(7 * (clamp(6px, 1.35vh, 11px) + 1px));
     border-radius: 3px;
     background: linear-gradient(
       100deg,
