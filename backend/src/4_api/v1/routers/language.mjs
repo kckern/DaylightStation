@@ -8,6 +8,29 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
 import express from 'express';
 
 const AUDIO_CACHE = 'public, max-age=31536000, immutable';
+const RUN_HEADER = 'X-School-Run-Id';
+
+/**
+ * The client mints one run id per program run and sends it on every request
+ * (see `languageApi.js`). Stamping it on this side is what makes a single
+ * `context.runId:"<id>"` query in the log store return one child's whole
+ * session — the browser's events and the events they caused here — in order.
+ *
+ * It is an opaque correlation token, never an identity: it is validated for
+ * shape only, and a missing or malformed one degrades to null rather than
+ * failing the request. A child mid-lesson is not made to care about a header.
+ */
+function readRunId(req) {
+  const raw = req.get(RUN_HEADER);
+  if (!raw) return null;
+  const value = String(raw).trim().slice(0, 64);
+  return /^[A-Za-z0-9._:-]+$/.test(value) ? value : null;
+}
+
+/** Log options that put the run id on `context.*`, where the store indexes it. */
+function runCtx(runId) {
+  return runId ? { context: { runId } } : undefined;
+}
 
 /**
  * Capabilities describe the LEARNER'S DEVICE, so they arrive from the client
@@ -62,7 +85,7 @@ export function createLanguageRouter({
 
   router.use((req, res, next) => {
     if (req.baseUrl?.endsWith('/language')) {
-      logger.info?.('school.sentence-ladder.legacy-route', { method: req.method, path: req.path });
+      logger.info?.('school.sentence-ladder.legacy-route', { method: req.method, path: req.path }, runCtx(readRunId(req)));
       res.setHeader('Deprecation', 'true');
     }
     next();
@@ -80,7 +103,7 @@ export function createLanguageRouter({
     if (!result.ok) {
       logger.warn?.('school.sentence-ladder.study-grant-refused', {
         learnerId: req.params.userId, corpusId, reason: result.reason,
-      });
+      }, runCtx(readRunId(req)));
       res.status(403).json({ error: 'A current learner-scoped School launch is required' });
       return false;
     }
@@ -101,7 +124,7 @@ export function createLanguageRouter({
         if (GuestForbiddenError && err instanceof GuestForbiddenError) return res.status(403).json({ error: err.message });
         if (EntityNotFoundError && err instanceof EntityNotFoundError) return res.status(404).json({ error: err.message });
         if (ValidationError && err instanceof ValidationError) return res.status(400).json({ error: err.message });
-        logger.error?.('school.language.router.error', { path: req.path, error: err.message });
+        logger.error?.('school.language.router.error', { path: req.path, error: err.message }, runCtx(readRunId(req)));
         return sendInternalError(res, { error: 'internal' });
       });
   };
@@ -126,6 +149,7 @@ export function createLanguageRouter({
       userId: req.params.userId,
       corpusId: req.query.corpus,
       capabilities: readCapabilities(req.query),
+      runId: readRunId(req),
     }));
   }));
 
@@ -135,6 +159,7 @@ export function createLanguageRouter({
     res.json(languageStudyService.logAttempt({
       userId: req.params.userId, corpusId: corpus, seq, rung, given,
       capabilities: readCapabilities(req.query),
+      runId: readRunId(req),
     }));
   }));
 
@@ -142,7 +167,7 @@ export function createLanguageRouter({
     const { corpus, dailyLimit } = req.body || {};
     if (!authorized(req, res, corpus)) return;
     res.json(languageStudyService.setPacing({
-      userId: req.params.userId, corpusId: corpus, dailyLimit,
+      userId: req.params.userId, corpusId: corpus, dailyLimit, runId: readRunId(req),
     }));
   }));
 
@@ -153,6 +178,7 @@ export function createLanguageRouter({
       userId: req.params.userId,
       corpusId: corpus,
       capabilities: readCapabilities(req.query),
+      runId: readRunId(req),
     }));
   }));
 
@@ -175,6 +201,7 @@ export function createLanguageRouter({
     res.json(languageStudyService.saveRecording({
       userId: req.params.userId, corpusId: corpus, seq, buffer: req.body, ext,
       capabilities: readCapabilities(req.query),
+      runId: readRunId(req),
     }));
   }));
 

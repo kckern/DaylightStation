@@ -54,6 +54,16 @@ export class SentenceLadderService {
     this.#realtime = realtime;
   }
 
+  /**
+   * Every log call goes through here so a client-supplied run id lands on
+   * `context.runId`, which the log store indexes — one query then returns a
+   * child's whole session, the browser's events and the events they caused
+   * here, in order. Without one the event is still logged, just uncorrelated.
+   */
+  #log(level, event, data, runId = null) {
+    this.#logger[level]?.(event, data, runId ? { context: { runId } } : undefined);
+  }
+
   /** The resolved gate, for diagnosis. */
   describeGate() {
     const gate = this.#gate();
@@ -180,7 +190,7 @@ export class SentenceLadderService {
     return { enrollment, chain, dailyLimit, admission };
   }
 
-  #emitDayComplete(userId, corpus, day, policy) {
+  #emitDayComplete(userId, corpus, day, policy, runId = null) {
     if (!policy.enrollment || !this.#realtime?.languageDayCompleted) return;
     const queue = buildDayQueue({
       log: this.#ds.readAllEvents(userId, corpus.id), day,
@@ -190,6 +200,10 @@ export class SentenceLadderService {
       admission: policy.admission, rungChain: policy.chain,
     });
     if (queue.length > 0 && summarizeQueue(queue).done === queue.length) {
+      this.#log('info', 'school.language.day-complete', {
+        learnerId: userId, corpus: corpus.id, day,
+        programId: policy.enrollment.programId, queueSize: queue.length,
+      }, runId);
       this.#realtime.languageDayCompleted({
         learnerId: userId, corpusId: corpus.id, day, programId: policy.enrollment.programId,
       });
@@ -209,7 +223,7 @@ export class SentenceLadderService {
    * @param {string} args.corpusId
    * @param {{microphone?: boolean, textInput?: string[]}} [args.capabilities]
    */
-  getDay({ userId, corpusId, capabilities = {} }) {
+  getDay({ userId, corpusId, capabilities = {}, runId = null }) {
     this.#requireUser(userId);
     const corpus = this.#requireCorpus(corpusId);
     const progress = this.#readProgress(userId, corpusId);
@@ -241,7 +255,7 @@ export class SentenceLadderService {
       boundaryHour: this.#boundaryHour,
       offsetMinutes: this.#offsetMinutes(now),
     });
-    if (roll.roll) this.#emitDayComplete(userId, corpus, progress.day, policy);
+    if (roll.roll) this.#emitDayComplete(userId, corpus, progress.day, policy, runId);
 
     // The rungs today's credit needs that this device cannot climb, and — for
     // each — WHAT it is short of. The card used to hardcode one sentence,
@@ -254,11 +268,31 @@ export class SentenceLadderService {
     const missing = policy.chain ? policy.chain.filter((rung) => !deviceChain.includes(rung)) : [];
     const needs = missing.map((rung) => [rung, requirementFor(rungById(rung), corpus.languages)]);
 
+    const chain = deviceChain.filter((rung) => !policy.chain || policy.chain.includes(rung));
+
+    // The single most useful line to read when a child says "it didn't work":
+    // which day they were served, how much was in it, what this device could
+    // climb, and what today's credit needs that it could not. Shapes and
+    // counts only — a sentence is the child's work, not diagnostics.
+    this.#log('info', 'school.language.day-read', {
+      learnerId: userId,
+      corpus: corpusId,
+      day: progress.day,
+      dailyLimit: policy.dailyLimit,
+      queueSize: queue.length,
+      chain,
+      creditChain: policy.chain ?? creditChain(null, corpus.languages),
+      blockedRungs: missing,
+      gate: gate.level,
+      enrolled: !!policy.enrollment,
+      rollover: roll.roll,
+    }, runId);
+
     return {
       corpus: { id: corpus.id, label: corpus.label, languages: corpus.languages, size: corpus.size },
       day: progress.day,
       dailyLimit: policy.dailyLimit,
-      chain: deviceChain.filter((rung) => !policy.chain || policy.chain.includes(rung)),
+      chain,
       creditChain: policy.chain ?? creditChain(null, corpus.languages),
       missingCreditRungs: missing,
       missingCreditNeeds: Object.fromEntries(needs.filter(([, need]) => need)),
@@ -353,16 +387,16 @@ export class SentenceLadderService {
    * otherwise; accuracy is computed for text responses but **gates nothing**
    * (design §3) — it exists for the learner's own diff on the Review surface.
    */
-  logAttempt({ userId, corpusId, seq, rung, given = null, source = null, capabilities = {} }) {
+  logAttempt({ userId, corpusId, seq, rung, given = null, source = null, capabilities = {}, runId = null }) {
     if (rung === 'recording') {
       throw new ValidationError('recording evidence requires an audio upload', { field: 'rung' });
     }
-    return this.#recordAttempt({ userId, corpusId, seq, rung, given, source, capabilities });
+    return this.#recordAttempt({ userId, corpusId, seq, rung, given, source, capabilities, runId });
   }
 
   #recordAttempt({
     userId, corpusId, seq, rung, given = null, source = null, capabilities = {},
-    allowRecording = false, skipDueCheck = false, practice = false,
+    allowRecording = false, skipDueCheck = false, practice = false, runId = null,
   }) {
     this.#requireUser(userId);
     const corpus = this.#requireCorpus(corpusId);
@@ -421,16 +455,16 @@ export class SentenceLadderService {
     // one a learner cannot detect until their history turns up empty.
     const stored = this.#ds.appendEvent(userId, corpusId, event);
     if (!stored) {
-      this.#logger.error?.('school.language.attempt-unrecorded', {
+      this.#log('error', 'school.language.attempt-unrecorded', {
         userId, corpus: corpusId, seq, rung,
-      });
+      }, runId);
       throw new EntityNotFoundError('learner', userId);
     }
 
     this.#writeProgress(userId, corpusId, { ...progress, lastActivity: at });
     const policy = this.#queuePolicy(userId, corpus, progress);
-    this.#emitDayComplete(userId, corpus, progress.day, policy);
-    this.#logger.debug?.('school.language.attempt', { learnerId: userId, corpus: corpusId, seq, rung });
+    this.#emitDayComplete(userId, corpus, progress.day, policy, runId);
+    this.#log('debug', 'school.language.attempt', { learnerId: userId, corpus: corpusId, seq, rung }, runId);
     return event;
   }
 
@@ -470,7 +504,7 @@ export class SentenceLadderService {
    * event pointing at nothing. Evidence is the log — a file with no event
    * counts as not done, which is recoverable; an event with no file is not.
    */
-  saveRecording({ userId, corpusId, seq, buffer, ext = 'webm', capabilities = {} }) {
+  saveRecording({ userId, corpusId, seq, buffer, ext = 'webm', capabilities = {}, runId = null }) {
     this.#requireUser(userId);
     const corpus = this.#requireCorpus(corpusId);
     if (!buffer || buffer.length === 0) {
@@ -482,14 +516,14 @@ export class SentenceLadderService {
     const written = this.#ds.writeRecording(corpusId, userId, seq, language, buffer, ext);
     if (!written) throw new ValidationError('could not store recording', { field: 'audio' });
     return this.#recordAttempt({
-      userId, corpusId, seq, rung: 'recording', capabilities,
+      userId, corpusId, seq, rung: 'recording', capabilities, runId,
       allowRecording: true, skipDueCheck: true, practice: due?.practice === true,
     });
   }
 
   // -- pacing --------------------------------------------------------------
 
-  setPacing({ userId, corpusId, dailyLimit }) {
+  setPacing({ userId, corpusId, dailyLimit, runId = null }) {
     this.#requireUser(userId);
     const corpus = this.#requireCorpus(corpusId);
     if (this.#enrollment(userId, corpus)) {
@@ -498,9 +532,9 @@ export class SentenceLadderService {
     const progress = this.#readProgress(userId, corpusId);
     const next = { ...progress, dailyLimit: this.#clampLimit(dailyLimit) };
     this.#writeProgress(userId, corpusId, next);
-    this.#logger.info?.('school.language.pacing', {
+    this.#log('info', 'school.language.pacing', {
       userId, corpus: corpusId, dailyLimit: next.dailyLimit,
-    });
+    }, runId);
     return { dailyLimit: next.dailyLimit };
   }
 
@@ -509,7 +543,7 @@ export class SentenceLadderService {
    * client that asks early is refused, so finishing at noon cannot hand out
    * tomorrow's sentences. The spacing IS the method.
    */
-  rollDay({ userId, corpusId, capabilities = {} }) {
+  rollDay({ userId, corpusId, capabilities = {}, runId = null }) {
     this.#requireUser(userId);
     const corpus = this.#requireCorpus(corpusId);
     const progress = this.#readProgress(userId, corpusId);
@@ -536,13 +570,13 @@ export class SentenceLadderService {
       boundaryHour: this.#boundaryHour,
       offsetMinutes: this.#offsetMinutes(now),
     });
-    if (decision.roll) this.#emitDayComplete(userId, corpus, progress.day, policy);
+    if (decision.roll) this.#emitDayComplete(userId, corpus, progress.day, policy, runId);
 
     if (!decision.roll) return { rolled: false, day: progress.day, reason: decision.reason };
 
     const next = { ...progress, day: progress.day + 1 };
     this.#writeProgress(userId, corpusId, next);
-    this.#logger.info?.('school.language.day-rolled', { learnerId: userId, corpus: corpusId, day: next.day });
+    this.#log('info', 'school.language.day-rolled', { learnerId: userId, corpus: corpusId, day: next.day }, runId);
     return { rolled: true, day: next.day, reason: decision.reason };
   }
 

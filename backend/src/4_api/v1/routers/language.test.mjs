@@ -142,6 +142,7 @@ describe('Sentence Ladder study grant boundary', () => {
       buffer: expect.any(Buffer),
       ext: 'webm',
       capabilities: { microphone: true, textInput: ['KR'] },
+      runId: null,
     });
     expect(service.saveRecording.mock.calls[0][0].buffer).toEqual(bytes);
   });
@@ -159,5 +160,62 @@ describe('Sentence Ladder study grant boundary', () => {
       .set('X-School-Study-Grant', 'signed');
     expect(recording.status).toBe(404);
     expect(recording.body).toEqual({ error: 'recording not found' });
+  });
+});
+
+describe('run id correlation', () => {
+  it('threads the client run id into the operations that log', async () => {
+    const { app, service } = appWith();
+
+    await request(app)
+      .get('/api/v1/school/sentence-ladder/users/learner3/day?corpus=korean')
+      .set('X-School-Study-Grant', 'signed')
+      .set('X-School-Run-Id', 'b1f0c0de-1111-2222-3333-444455556666');
+
+    expect(service.getDay).toHaveBeenCalledWith(expect.objectContaining({
+      runId: 'b1f0c0de-1111-2222-3333-444455556666',
+    }));
+  });
+
+  it('degrades a malformed run id to null rather than failing a child mid-lesson', async () => {
+    const { app, service } = appWith();
+
+    const res = await request(app)
+      .post('/api/v1/school/sentence-ladder/users/learner3/log')
+      .set('X-School-Study-Grant', 'signed')
+      .set('X-School-Run-Id', 'not a run id; drop table')
+      .send({ corpus: 'korean', seq: 7, rung: 'repetition' });
+
+    expect(res.status).toBe(200);
+    expect(service.logAttempt).toHaveBeenCalledWith(expect.objectContaining({ runId: null }));
+  });
+
+  it('logs the run id on context, where the store indexes it', async () => {
+    const warn = vi.fn();
+    const service = {
+      listCourses: vi.fn(), previewDay: vi.fn(), getDay: vi.fn(), logAttempt: vi.fn(),
+      setPacing: vi.fn(), rollDay: vi.fn(), getHistory: vi.fn(), saveRecording: vi.fn(),
+    };
+    const app = express();
+    app.use(express.json());
+    app.use('/api/v1/school/sentence-ladder', createLanguageRouter({
+      languageStudyService: service,
+      studyGrants: { verify: () => ({ ok: false, reason: 'expired' }) },
+      languageAudioResource: {
+        getPromptAudio: vi.fn().mockResolvedValue(notFound()),
+        getRecordingAudio: vi.fn().mockResolvedValue(notFound()),
+      },
+      logger: { info() {}, warn, error() {} },
+    }));
+
+    await request(app)
+      .get('/api/v1/school/sentence-ladder/users/learner3/day?corpus=korean')
+      .set('X-School-Run-Id', 'run-abc123');
+
+    expect(warn).toHaveBeenCalledWith(
+      'school.sentence-ladder.study-grant-refused',
+      expect.any(Object),
+      { context: { runId: 'run-abc123' } },
+    );
   });
 });
