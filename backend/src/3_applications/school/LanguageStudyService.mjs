@@ -243,15 +243,29 @@ export class SentenceLadderService {
     });
     if (roll.roll) this.#emitDayComplete(userId, corpus, progress.day, policy);
 
+    // The rungs today's credit needs that this device cannot climb, and — for
+    // each — WHAT it is short of. The card used to hardcode one sentence,
+    // "Needs a microphone", for every blocked rung, so a tablet with a mic and
+    // an English-only keyboard told the child to find a microphone when what
+    // dictation wanted was a Korean keyboard. `requirementFor` is the single
+    // place that mapping lives; sending it beats letting the client keep a
+    // second copy that drifts.
+    const missing = policy.chain
+      ? policy.chain.filter((rung) => !chainFor(allowed, corpus.languages).includes(rung))
+      : [];
+
     return {
       corpus: { id: corpus.id, label: corpus.label, languages: corpus.languages, size: corpus.size },
       day: progress.day,
       dailyLimit: policy.dailyLimit,
       chain: chainFor(allowed, corpus.languages).filter((rung) => !policy.chain || policy.chain.includes(rung)),
       creditChain: policy.chain ?? creditChain(null, corpus.languages),
-      missingCreditRungs: policy.chain
-        ? policy.chain.filter((rung) => !chainFor(allowed, corpus.languages).includes(rung))
-        : [],
+      missingCreditRungs: missing,
+      missingCreditNeeds: Object.fromEntries(
+        missing
+          .map((rung) => [rung, requirementFor(rungById(rung), corpus.languages)])
+          .filter(([, need]) => need),
+      ),
       enrollment: policy.enrollment ? {
         lessonSize: policy.enrollment.lessonSize,
         rungs: policy.enrollment.rungs,
@@ -288,7 +302,11 @@ export class SentenceLadderService {
       dailyLimit: DEFAULT_DAILY_LIMIT,
       chain: chainFor(allowed, corpus.languages),
       creditChain: creditChain(null, corpus.languages),
+      // A preview filters no rung, so both of these are always empty. They are
+      // stated anyway so a preview day and a real one are the same shape and a
+      // client never has to ask which endpoint it is reading.
       missingCreditRungs: [],
+      missingCreditNeeds: {},
       enrollment: null,
       gate: { level: gate.level, message: gateMessage(gate), missing: gate.missing },
       queue: queue.map((entry) => this.#decorate(entry, corpus)),

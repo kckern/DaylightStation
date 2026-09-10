@@ -60,7 +60,8 @@ const entry = (seq, rung, done = false, options = {}) => ({
 });
 
 function dayPayload({
-  queue, chain = ['repetition'], day = 1, dailyLimit = 5, missingCreditRungs = [],
+  queue, chain = ['repetition'], day = 1, dailyLimit = 5,
+  missingCreditRungs = [], missingCreditNeeds = {},
 }) {
   const done = queue.filter((e) => e.done).length;
   return {
@@ -74,6 +75,7 @@ function dayPayload({
       queue,
       summary: { total: queue.length, done, byRung: {} },
       missingCreditRungs,
+      missingCreditNeeds,
       rollover: { roll: false, reason: 'queue-incomplete' },
     },
   };
@@ -174,12 +176,58 @@ describe('the day', () => {
       chain: ['repetition', 'recording'],
       queue: [entry(1, 'repetition'), entry(2, 'recording')],
       missingCreditRungs: ['recording'],
+      missingCreditNeeds: { recording: { kind: 'microphone' } },
     }));
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByText('Repetition');
     expect(screen.getByText(/Needs a microphone/)).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByRole('button', { name: 'Recording' })).toHaveClass('is-blocked');
+  });
+
+  // The note on a dimmed rung was one hardcoded string, "Needs a microphone",
+  // whatever the rung actually wanted. The tablet in the yellow room has a mic
+  // and an English-only keyboard, so the rung it blocks is DICTATION — and the
+  // card sent a child hunting for a microphone they were already holding.
+  it('tells a keyboard-blocked rung to find a KEYBOARD, not a microphone', async () => {
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['repetition', 'interpretation'],
+      queue: [entry(1, 'repetition'), entry(2, 'interpretation')],
+      missingCreditRungs: ['dictation'],
+      missingCreditNeeds: { dictation: { kind: 'textInput', language: 'KR' } },
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    await screen.findByText('Repetition');
+    expect(screen.getByText(/Needs a Korean keyboard/)).toBeTruthy();
+    expect(screen.queryByText(/microphone/i)).toBeNull();
+  });
+
+  it('names the microphone when the microphone is what is missing', async () => {
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['repetition', 'dictation'],
+      queue: [entry(1, 'repetition'), entry(2, 'dictation')],
+      missingCreditRungs: ['recording'],
+      missingCreditNeeds: { recording: { kind: 'microphone' } },
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    await screen.findByText('Repetition');
+    expect(screen.getByText(/Needs a microphone/)).toBeTruthy();
+    expect(screen.queryByText(/keyboard/i)).toBeNull();
+  });
+
+  it('will not print the word "null" at a child when the corpus cannot name its language', async () => {
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['repetition'],
+      queue: [entry(1, 'repetition')],
+      missingCreditRungs: ['dictation'],
+      // `resolveRole` yields null for a corpus whose languages map is missing
+      // the rung's role, and the requirement object around it is still truthy.
+      missingCreditNeeds: { dictation: { kind: 'textInput', language: null } },
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    await screen.findByText('Repetition');
+    expect(screen.getByText('Not available on this device')).toBeTruthy();
+    expect(screen.queryByText(/null/i)).toBeNull();
   });
 
   it('draws the rung a mic-less device skips even when the chain omits it', async () => {
@@ -287,6 +335,10 @@ describe('the day', () => {
     );
 
     expect(await screen.findByRole('status')).toHaveTextContent(/device that can complete Recording/i);
+    // This payload carries no `missingCreditNeeds` at all — an older server, or
+    // a rung it could not explain. The rung still states its own condition
+    // rather than dimming with no reason given.
+    expect(screen.getByText('Not available on this device')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Done' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Leave for now' }));
     expect(onExit).toHaveBeenCalledTimes(1);
