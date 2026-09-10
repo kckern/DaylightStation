@@ -120,11 +120,12 @@ describe('fail closed', () => {
     const { useCases } = await wire({ lifecycle: { enabled: true }, virtualDevices: true });
     expect(Object.keys(useCases).sort()).toEqual([
       'buildAgenda', 'closeLanguageDay', 'closeSessionOutcome', 'createLostAnswerSheetTicket', 'dispatchMedia',
-      'enrollLearner', 'getCompanionFinishCode', 'getLearnerDayCompletion', 'getPianoLessonGate', 'gradeSubmission',
+      'enrollLearner', 'getCompanionFinishCode', 'getLearnerDayCompletion', 'getLearnerTerm', 'getPianoLessonGate',
+      'gradeSubmission',
       'invalidateSessionEvidence', 'issueComposedWorksheet', 'issueCorrectedResultReceipt', 'issueDirectLaunch',
-      'issueDocument', 'manageCurriculumException',
+      'issueDocument', 'issueSubjectCode', 'manageCurriculumException',
       'manageProgramDayBypass', 'markSessionAbandoned', 'openRemediation', 'previewAgenda',
-      'recordLessonCompanionProgress', 'recordMediaCompletion', 'recoverMisattributedWorksheet', 'replaceLostAnswerSheet', 'replaceRemediation',
+      'rebuildLearnerTerm', 'recordLessonCompanionProgress', 'recordMediaCompletion', 'recoverMisattributedWorksheet', 'replaceLostAnswerSheet', 'replaceRemediation',
       'reprintIssuedArtifact', 'reprintResultReceiptArtifact', 'resolveAccessCode', 'resolveCardScan', 'resolvePersonalCard',
       'resolveReviewItem', 'resolveScanAction', 'reviewHeldCardScan', 'runSelfServiceAction', 'setAssignments',
       'submitPaperWork', 'teacherAgendaDispatch', 'unenrollLearner',

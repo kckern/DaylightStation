@@ -2920,7 +2920,12 @@
  * ------------------------------------------------------------------------- */
 .school-lock-split {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  // ONE THIRD KEYPAD, TWO THIRDS BOARD. Four learner cards in four quarters
+  // each need the width; a six-digit pad does not. The keypad is the first
+  // child and column 1 in flow order on both sides of the burn-in flip (the
+  // flip is `direction: rtl`, which mirrors placement, not the template), so
+  // the 1fr always lands on the pad and the 2fr on the board.
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
   width: 100%; height: 100%;
 
   &[data-side='keypad-right'] { direction: rtl; > * { direction: ltr; } }
@@ -2995,10 +3000,13 @@
     // past its share: a nine-pin day needs a four-pin base, and the pins are
     // the one thing here that cannot shrink into illegibility.
     display: grid;
-    grid-template-columns: 1fr minmax(max-content, 1fr) 1fr 1fr;
+    // Not quite even quarters: the face needs less than a fourth, the pins
+    // and the sixteen-week grid need more, and the week strip is seven
+    // squares and a number.
+    grid-template-columns: 0.8fr minmax(max-content, 1.2fr) 0.75fr 1.35fr;
     align-items: stretch; column-gap: 0;
     padding: clamp(0.5rem, 1.4vh, 0.9rem) clamp(0.7rem, 1.3vw, 1rem);
-    --disc-cap: clamp(1.75rem, 4.4vh, 2.5rem);
+    --disc-cap: clamp(1.75rem, 5.2vh, 2.8rem);
     --disc-gap: clamp(0.15rem, 0.5vh, 0.3rem);
     border: 1px solid var(--school-border); border-radius: 16px;
     background: var(--school-surface);
@@ -3027,8 +3035,8 @@
     // Bigger than it was (13vh → 15vh, 7rem → 8rem): the face is WHO, and on
     // a board of four it is the one thing a child finds their own row by.
     .piano-avatar {
-      width: clamp(4rem, 15vh, 8rem); height: clamp(4rem, 15vh, 8rem);
-      font-size: clamp(1.3rem, 4.6vh, 2.3rem);
+      width: clamp(4rem, 14vh, 7.5rem); height: clamp(4rem, 14vh, 7.5rem);
+      font-size: clamp(1.3rem, 4.3vh, 2.2rem);
     }
   }
   // FOUR PARTITIONS, time widening left to right: who · today · this week ·
@@ -3069,7 +3077,7 @@
     bottom: clamp(0.7rem, 1.6vh, 1.05rem);
     transform: translate(-50%, 50%);
     z-index: 1;
-    max-width: calc(clamp(4rem, 15vh, 8rem) + 0.8rem);
+    max-width: calc(clamp(4rem, 14vh, 7.5rem) + 0.8rem);
     padding: 0.18em 0.6em;
     border-radius: 999px;
     background: var(--school-surface);
@@ -3114,8 +3122,8 @@
     // `--stack` is Σ of the per-row pitch factors (√3/2 for a nesting pair,
     // 1 for a pair that cannot nest — see `pitchFactors`), so the stack's
     // height is disc·(1 + stack) + gap·stack.
-    // What the title, the meter and the three gaps between them take.
-    --room-h: calc(100cqh - 3.9rem);
+    // What the title, the meter and the gaps between them take.
+    --room-h: calc(100cqh - 3.7rem);
     --disc-by-height: calc((var(--room-h) - var(--disc-gap) * var(--stack, 0)) / (1 + var(--stack, 0)));
     --disc-by-width: calc((100cqw - (var(--base, 1) - 1) * var(--disc-gap)) / var(--base, 1));
     --disc: min(var(--disc-cap), var(--disc-by-height), var(--disc-by-width));
@@ -3285,7 +3293,7 @@
   // the plot and read by all three, so a month label can only ever sit over
   // its own week.
   &__term-plot {
-    --grid-cell: clamp(6px, 1.05vh, 9px);
+    --grid-cell: clamp(6px, 1.3vh, 12px);
     --grid-gap: 1px;
     flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
   }
@@ -3315,8 +3323,8 @@
   // The same footprint as an 18-week grid, so the card does not jump when the
   // term lands. Shimmers like the pins.
   &__grid--skeleton {
-    width: calc(16 * (clamp(6px, 1.05vh, 9px) + 1px));
-    height: calc(7 * (clamp(6px, 1.05vh, 9px) + 1px));
+    width: calc(16 * (clamp(6px, 1.3vh, 12px) + 1px));
+    height: calc(7 * (clamp(6px, 1.3vh, 12px) + 1px));
     border-radius: 3px;
     background: linear-gradient(
       100deg,
@@ -3444,6 +3452,47 @@
 .school-books-add__card.school-books-task { display: flex; }
 .school-books-add__card > .school-books-task__context { display: flex; align-items: center; gap: 1rem; }
 
+// THE FOUND BOOK: the cover as the stage. On the landscape Portal the
+// task-view grid puts the stage in column 1 and the words in column 2; here
+// the stage is the cover as tall as the pane allows with the three doors
+// straddling its foot, and the words are a quiet column — title, author,
+// then the blurb left-aligned in a box that scrolls rather than a clamp
+// that cuts.
+.school-books-found {
+  .school-books-found__stage { position: relative; display: flex; flex-direction: column; align-items: center; }
+  // Three selectors deep on purpose: the task-view's landscape rule sizes
+  // every context cover at 10rem, and this one has to outrank it.
+  .school-books-task__context .school-books-found__cover,
+  .school-books-found__cover {
+    width: auto; max-width: 100%;
+    height: clamp(14rem, 58vh, 30rem); max-height: none;
+    aspect-ratio: 2 / 3; object-fit: contain;
+    border-radius: 10px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  }
+  // Straddling: the doors sit half over the cover's bottom edge, on their own
+  // plinth so the cover's art never shows through the gaps between them.
+  .school-books-found__doors {
+    width: min(100%, 21rem); margin-top: -2.4rem; padding: 0.35rem; box-sizing: border-box;
+    border-radius: 16px; background: var(--school-bg);
+    position: relative; z-index: 1;
+  }
+  .school-books-found__doors .school-books-add__door { max-height: 6.5rem; }
+  .school-books-found__about {
+    text-align: left; align-items: stretch; min-height: 0;
+    .school-books-add__title { text-align: left; -webkit-line-clamp: 3; font-size: 1.5rem; }
+    .school-books-add__author { text-align: left; }
+  }
+  .school-books-found__blurb {
+    @include school-scrollbar;
+    flex: 1 1 auto; min-height: 0; max-height: 34vh; overflow-y: auto; overscroll-behavior: contain;
+    padding-right: 0.5rem;
+  }
+  .school-books-found__description {
+    display: block; overflow: visible; -webkit-line-clamp: unset;
+    font-size: 0.95rem; line-height: 1.45; color: var(--school-muted); text-align: left;
+  }
+}
+
 // Anonymous scan overlay never replaces an active School workspace.
 // `pointer-events` INHERITS, and the panel door mounts this dialog from inside
 // `.school-lock-split__board`, which is `pointer-events: none`. Fixed
@@ -3458,6 +3507,40 @@
 .school-book-scan__book h3 { font-size: 1.5rem; line-height: 1.25; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .school-book-scan__book > p { color: var(--school-muted); }
 .school-book-scan__preview .school-books-add__cover { max-height: none; width: min(18rem, 100%); flex-shrink: 0; }
+
+// "WHO'S READING?" AS A SCREEN. The shelf's header (Back is the way out), a
+// title that can be read from the doorway with the English shelf's mark
+// beside it, and the faces in ONE ROW — tall tiles, the face most of the
+// tile, the name under it — because a child picks their own face, and four
+// faces in a row is a line-up they already know how to read.
+.school-book-scan--who {
+  display: block; padding: var(--shelf-pad, 1rem) 0;
+  .school-book-scan__screen {
+    display: flex; flex-direction: column; gap: clamp(0.8rem, 2.4vh, 1.6rem);
+    width: 100%; height: 100%; box-sizing: border-box;
+    padding-inline: max(1rem, calc(50% - 32rem + 1rem));
+  }
+  .school-book-scan__ask {
+    display: flex; align-items: center; justify-content: center; gap: 0.75rem;
+    margin-top: clamp(0.25rem, 2vh, 1.25rem);
+  }
+  .school-book-scan__ask-icon { display: flex; font-size: clamp(2rem, 5vh, 2.8rem); color: var(--school-accent); svg { width: 1em; height: 1em; } }
+  .school-book-scan__ask-title { margin: 0; font-size: clamp(1.8rem, 4.6vh, 2.6rem); font-weight: 800; letter-spacing: -0.01em; }
+  .school-book-scan__learners {
+    flex: 1 1 auto; min-height: 0;
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); grid-auto-flow: column;
+    gap: clamp(0.6rem, 1.6vw, 1.2rem); align-content: center;
+  }
+  .school-book-scan__learners button {
+    flex-direction: column; justify-content: center; gap: clamp(0.5rem, 1.6vh, 1rem);
+    min-height: clamp(12rem, 52vh, 26rem); padding: clamp(0.75rem, 2vh, 1.4rem) 0.5rem;
+    font-size: clamp(1.2rem, 2.6vh, 1.6rem);
+  }
+  .school-book-scan__learners .piano-avatar {
+    width: clamp(7rem, 30vh, 14rem); height: clamp(7rem, 30vh, 14rem); flex: 0 0 auto;
+  }
+  .school-book-scan__error { margin: 0; text-align: center; color: var(--school-danger); font-weight: 700; }
+}
 .school-book-scan__actions > p { font-size: 1.2rem; }
 .school-book-scan__actions > .school-books__back { align-self: center; }
 .school-book-scan__learners { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: .75rem; }

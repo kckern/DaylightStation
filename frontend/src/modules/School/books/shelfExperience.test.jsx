@@ -57,7 +57,9 @@ describe('shelf experience', () => {
     expect(screen.getByText('Hatchet')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Update page' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Finished today' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Wrong book? Edit number' }));
+    // Wrong book: Back is the door — the header's, not a second button under
+    // the cover — and the digits survive the trip.
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(screen.getByTestId('numberpad-entry').textContent.replace(/\s/g, '')).toBe(ISBN);
     expect(api.open).not.toHaveBeenCalled();
   });
