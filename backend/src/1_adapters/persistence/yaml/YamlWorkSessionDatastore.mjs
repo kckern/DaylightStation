@@ -222,6 +222,11 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
           studyDay: state.studyDay ?? null,
           learnerId: state.learnerId, unitId: state.unitId, state: state.state,
           open: !state.terminal, result: state.outcome?.result ?? null,
+          // WHEN the result was recorded — the `outcome_recorded` event's own
+          // stamp, which a later `graded` adjustment never moves. A past-day
+          // replay filters evidence by this, not by `updatedAt`: a sheet passed
+          // on Tuesday and annotated on Thursday was still passed on Tuesday.
+          resultAt: state.outcome?.at ?? null,
           gradedPercent: state.gradedPercent ?? null, updatedAt: last?.at ?? null,
         } });
       }
@@ -254,7 +259,7 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
         unitId: row.unitId ?? null,
         state: row.state ?? null,
         terminal: row.open === false,
-        outcome: row.result ? { result: row.result } : null,
+        outcome: row.result ? { result: row.result, at: row.resultAt ?? null } : null,
         gradedPercent: row.gradedPercent ?? null,
         day,
         studyDay: row.studyDay ?? null,

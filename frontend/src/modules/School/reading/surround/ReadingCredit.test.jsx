@@ -95,6 +95,29 @@ describe('reading-credit — what it says', () => {
     expect(screen.queryByTestId('reading-credit-title')).toBeNull();
   });
 
+  // THE QUEUE IS USER-SCOPED, and the rail is where a child sees it: the
+  // waiting book wears the face and name of whoever it will be credited to.
+  it('shows the book on deck with the face and name of the child it is queued for', () => {
+    const { container } = renderRail({
+      ...READING,
+      onDeck: { title: 'Owl at Home', image: '/media/img/owl.jpg', learnerId: 'user_3', learnerName: 'Sibling' },
+    });
+    const next = screen.getByTestId('reading-credit-next');
+    expect(next).toHaveTextContent('Up next');
+    expect(next).toHaveTextContent('Owl at Home');
+    expect(next).toHaveTextContent('Sibling');
+    expect(next.querySelector('img[src="/media/img/owl.jpg"]')).not.toBeNull();
+    expect(next.querySelector('.reading-credit__next-face')).not.toBeNull();
+    // The plaque above still names the child reading NOW.
+    expect(screen.getByTestId('reading-credit-name')).toHaveTextContent('Reader');
+    expect(container.querySelectorAll('.piano-avatar, [data-testid="profile-avatar"]').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('draws no up-next block when nothing is waiting', () => {
+    renderRail({ ...READING, onDeck: null });
+    expect(screen.queryByTestId('reading-credit-next')).toBeNull();
+  });
+
   // Two facts about two different things. The subject used to sit directly
   // under the portrait, where a caption goes, so the rail read as a child
   // called "English".

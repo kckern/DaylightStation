@@ -135,7 +135,7 @@ export class FakeSessionRepository extends IWorkSessionRepository {
       unitId: state.unitId,
       state: state.state,
       terminal: state.terminal,
-      outcome: state.outcome ? { result: state.outcome.result } : null,
+      outcome: state.outcome ? { result: state.outcome.result, at: state.outcome.at ?? null } : null,
       gradedPercent: state.gradedPercent ?? null,
       day: String(events[0]?.at ?? '').slice(0, 10),
       // The household's 4am-boundary day, as the YAML datastore reports it —

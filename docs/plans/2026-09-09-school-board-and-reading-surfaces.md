@@ -119,6 +119,8 @@ its test; `SentenceLadderProgram.test.jsx` unaffected.
 
 ## Stream 1 — Honest past-day verdicts (the foundation)
 
+> **Done 2026-09-09.** See `docs/reference/school/term-grid.md`.
+
 **Principle:** evidence is filtered by time; config is not. Replaying day D counts only
 evidence stamped before the end of D's study-day window. A course edited since D
 re-colours D — accepted, per the derived-not-stored convention.
@@ -187,6 +189,8 @@ while D−5 is served from file, `version: 0` discarded, delete-then-rebuild is 
 
 ## Stream 2 — Model: term, weekly cadence, exempt
 
+> **Done 2026-09-09.** See `docs/reference/school/term-grid.md`.
+
 - **Term = the existing academic period.** `school.yml → progress.academicPeriods`
   (validated at boot, promoted to `plans/periods.yml`, served by `GET /periods`). Seed
   `{periodId: '2026-fall', kind: 'term', label: 'Fall 2026', startsAt: '2026-09-01',
@@ -224,6 +228,8 @@ while D−5 is served from file, `version: 0` discarded, delete-then-rebuild is 
 
 ## Stream 3 — The shared multi-day grid
 
+> **Done 2026-09-09.** See `docs/reference/school/term-grid.md`.
+
 **Goal:** one component renders both the reading streak (7 cols × 4 rows, column card)
 and the term grid (7 rows × N week cols, row card). Judging stays outside.
 
@@ -251,6 +257,8 @@ from there; no behaviour change).
   `layoutDayGrid` for a known 28-day input in both orientations.
 
 ## Stream 4 — The status board card
+
+> **Done 2026-09-09.** Four partitions live on the Portal; measured at 1280×800 (rail 120 · day 164 · week 46 · term 169, no overflow).
 
 **Files:** `frontend/src/modules/School/status/AgendaStatusBoard.jsx`,
 `status/agendaStatusModel.js`, `School.scss` (`.school-status-board__*`, ~2889-3150),
@@ -281,6 +289,8 @@ tests beside.
 
 ## Stream 5 — School design system: header + toggle registers
 
+> **Done 2026-09-09.** `shared/ScreenHeader` on the shelf and its four sub-views; `HangulTypingProvider` exposes `register`, `LanguageDisc` sits by the clock; flags are SVG.
+
 **Files:** new `frontend/src/modules/School/shared/ScreenHeader.jsx` + scss;
 consumers `books/BookShelf.jsx` (header), `books/NumberPad.jsx`, `selfService/Keypad.jsx`,
 `books/History.jsx`, `books/UpdateBook.jsx` (back buttons); `ime/HangulTypingProvider.jsx`
@@ -304,6 +314,10 @@ consumers `books/BookShelf.jsx` (header), `books/NumberPad.jsx`, `selfService/Ke
 - Tests: header renders one exit; register flips when a field declares a language.
 
 ## Stream 6 — Reading screen corrections + density
+
+> **Done 2026-09-09** (reading screen + density). Book history groups the shelf's own items by day client-side and reveals a week at a time — no `/shelf/history` endpoint was needed, the shelf read already carries every item. Ladder design review below.
+>
+> **Ladder review done 2026-09-09** (`frontend-design`): the rungs are a ladder (rails + rungs in climbing order, pips per rung, the lit rung holding the sentence in hand, a mic-less rung drawn dimmed with its reason), the sentence is the hero at ~3rem on an open stage, Play is a disc with an SVG glyph. Removed: the ALL-CAPS eyebrow, the progress bar and its "N left" twin, the tab strip, the bordered empty card, the yellow mid-day banner.
 
 **Files:** `books/BookShelf.jsx` + `School.scss` (`.school-books*`), `books/History.jsx`
 (retired), `books/ShelfTile.jsx`, `schoolApi.js`, backend `routers/schoolBooks.mjs` +

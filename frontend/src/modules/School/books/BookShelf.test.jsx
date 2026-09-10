@@ -175,13 +175,6 @@ describe('BookShelf', () => {
       expect(a.done).toHaveBeenCalledTimes(1);
     });
 
-    it('history › calls actions.openHistory', () => {
-      const a = arm();
-      mount();
-      fireEvent.click(screen.getByRole('button', { name: /history/i }));
-      expect(a.openHistory).toHaveBeenCalledTimes(1);
-    });
-
     it('a tile calls actions.openItem with its itemId', () => {
       const a = arm();
       mount();
@@ -205,13 +198,29 @@ describe('BookShelf', () => {
       expect(a.noteActivity).toHaveBeenCalledTimes(2);
     });
 
-    it('the done row holds set-aside books beside finished ones', () => {
+    it('the history holds set-aside books beside finished ones, on their days', () => {
       arm({ shelf: { learnerId: 'kid', items: [DONE_JULY, ASIDE_JULY, HATCHET], obligation: null } });
       mount();
-      const done = screen.getByTestId('recently-finished-row');
-      expect(within(done).getAllByText(/Jul|Jun/).length).toBeGreaterThan(1);
+      const done = screen.getByTestId('book-history');
       expect(done.querySelectorAll('.school-books-tile__mark.is-set-aside')).toHaveLength(1);
       expect(done.querySelectorAll('.school-books-tile__mark.is-finished')).toHaveLength(1);
+      // Two different days, two shelves — and no "See all history" anywhere.
+      expect(screen.getAllByTestId('book-history-group')).toHaveLength(2);
+      expect(screen.queryByRole('button', { name: /history/i })).toBeNull();
+    });
+
+    // THE TAXONOMY FIX: the obligation is pips INSIDE the Today heading, not a
+    // sentence in a chip above the shelf.
+    it('the obligation is drawn as pips in the Today heading, with the sentence as its name', () => {
+      arm({ shelf: { learnerId: 'kid', items: [HATCHET], obligation: { label: '1 of 2 books', per: 'day', actual: 1, target: 2, met: false, metric: 'books' } } });
+      mount();
+      const heading = screen.getByRole('heading', { level: 3, name: 'Today' });
+      const pips = screen.getByTestId('shelf-obligation');
+      expect(heading.parentElement).toContainElement(pips);
+      expect(pips).toHaveAttribute('aria-label', '1 of 2 books today');
+      expect(pips.querySelectorAll('.reading-pip')).toHaveLength(2);
+      expect(pips.querySelectorAll('.reading-pip--done')).toHaveLength(1);
+      expect(screen.queryByText('1 of 2 books today')).toBeNull();
     });
 
     it('the shelf row is a row and nothing else — one layout system per element', () => {
@@ -233,7 +242,7 @@ describe('BookShelf', () => {
       expect(add).toHaveTextContent('Tap to type the number');
       // And nothing outside the row offers it any more.
       expect(container.querySelectorAll('button')).toHaveLength(
-        container.querySelectorAll('.school-books-tile, .school-books__done, .school-books__history-link').length,
+        container.querySelectorAll('.school-books-tile, .school-screen-header__done, .school-books__history-link').length,
       );
     });
 
@@ -348,9 +357,7 @@ describe('BookShelf', () => {
       expect(screen.getByTestId('book-save-receipt')).toHaveTextContent('Hatchet');
 
       expect(screen.getByTestId('book-shelf-grid')).toBeInTheDocument();
-      fireEvent.click(screen.getByRole('button', { name: 'See all history' }));
       fireEvent.click(screen.getByRole('button', { name: 'Undo finish' }));
-      expect(a.openHistory).toHaveBeenCalledTimes(1);
       expect(a.undoFinish).toHaveBeenCalledTimes(1);
     });
   });
@@ -383,48 +390,72 @@ describe('BookShelf', () => {
     });
   });
 
-  describe('History', () => {
-    const history = (items) => arm({ view: 'history', shelf: { learnerId: 'kid', items, obligation: null } });
+  describe('Book history — one shelf per day, on the shelf screen itself', () => {
+    const history = (items, studyDay = '2026-08-02') => arm({ studyDay, shelf: { learnerId: 'kid', items, obligation: null } });
 
-    it('shows finished and set-aside books grouped by month, most recent first', () => {
+    it('groups finished and set-aside books by DAY, newest first, the day as the heading', () => {
       history([HATCHET, DONE_JULY, DONE_AUG, ASIDE_JULY]);
       mount();
       const groups = screen.getAllByTestId('book-history-group');
-      expect(groups).toHaveLength(2);
-      expect(within(groups[0]).getByRole('heading', { level: 3 })).toHaveTextContent('August 2026');
+      expect(groups).toHaveLength(3);
+      expect(within(groups[0]).getByRole('heading', { level: 4 })).toHaveTextContent('Today');
       expect(within(groups[0]).getByText('Finished in August')).toBeInTheDocument();
-      expect(within(groups[1]).getByRole('heading', { level: 3 })).toHaveTextContent('July 2026');
-      expect(within(groups[1]).getByText('Finished in July')).toBeInTheDocument();
+      // The spine: the number on top (with the month, since July is not
+      // August), the weekday down it; the full date as its name.
+      expect(within(groups[1]).getByRole('heading', { level: 4 })).toHaveAccessibleName('Monday 20 July');
+      expect(within(groups[1]).getByRole('heading', { level: 4 })).toHaveTextContent(/20 Jul.*Monday/);
       expect(within(groups[1]).getByText('Set aside in July')).toBeInTheDocument();
-      expect(screen.queryByText('Hatchet')).toBeNull();
+      expect(within(groups[2]).getByRole('heading', { level: 4 })).toHaveTextContent(/14 Jul.*Tuesday/);
+      // Each day wears its own colour, cycling.
+      expect(groups[0].style.getPropertyValue('--day-colour')).not.toBe(groups[1].style.getPropertyValue('--day-colour'));
+      expect(within(groups[2]).getByText('Finished in July')).toBeInTheDocument();
+      // A book still being read is on the Today row, not in the history.
+      expect(within(screen.getByTestId('book-history')).queryByText('Hatchet')).toBeNull();
     });
 
-    it('a finished tile shows its day, not a bar', () => {
+    it('a finished card carries no date and no bar — the day heading has the date', () => {
       history([DONE_JULY]);
       mount();
-      expect(screen.getByText('Jul 14')).toBeInTheDocument();
+      expect(screen.queryByText('Jul 14')).toBeNull();
       expect(screen.queryByRole('progressbar')).toBeNull();
+      expect(screen.getByTestId('book-history').querySelector('.school-books-tile--history')).not.toBeNull();
     });
 
-    it('finished history tiles can open details alongside back and Done', () => {
-      history([DONE_JULY, DONE_AUG]);
+    it('history cards open details; the header keeps its one exit', () => {
+      const a = history([DONE_JULY, DONE_AUG]);
       mount();
-      const names = screen.getAllByRole('button').map((b) => b.textContent.trim());
-      expect(names).toHaveLength(4);
-      expect(names).toEqual(expect.arrayContaining(['Done', expect.stringMatching(/back/i)]));
+      fireEvent.click(screen.getByRole('button', { name: 'Open Finished in July' }));
+      expect(a.openItem).toHaveBeenCalledWith(DONE_JULY.itemId);
+      expect(screen.queryByRole('button', { name: /back/i })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
     });
 
-    it('‹ back calls actions.back', () => {
-      const a = history([DONE_JULY]);
-      mount();
-      fireEvent.click(screen.getByRole('button', { name: /back/i }));
-      expect(a.back).toHaveBeenCalledTimes(1);
-    });
-
-    it('says so when nothing is finished yet', () => {
+    it('draws no history at all when nothing is finished yet', () => {
       history([HATCHET]);
       mount();
-      expect(screen.getByText(/nothing finished yet/i)).toBeInTheDocument();
+      expect(screen.queryByTestId('book-history')).toBeNull();
+    });
+
+    it('the same book finished twice in a day is one card wearing ×2', () => {
+      const twice = [
+        item('h1', { title: 'Hands Are Not for Hitting', bookId: 'b:hands' }, { status: 'finished', lastAt: '2026-08-02T09:00:00Z' }),
+        item('h2', { title: 'Hands Are Not for Hitting', bookId: 'b:hands' }, { status: 'finished', lastAt: '2026-08-02T15:00:00Z' }),
+        item('c1', { title: 'Cowboy Small', bookId: 'b:cowboy' }, { status: 'finished', lastAt: '2026-08-02T16:00:00Z' }),
+      ];
+      history(twice);
+      mount();
+      const today = screen.getAllByTestId('book-history-group')[0];
+      expect(within(today).getAllByRole('button')).toHaveLength(2);
+      expect(within(today).getByLabelText('2 times')).toHaveTextContent('×2');
+      expect(within(today).getByRole('button', { name: 'Open Cowboy Small' }).querySelector('.school-books-tile__times')).toBeNull();
+    });
+
+    it('reveals a week of days at a time, the rest behind a sentinel', () => {
+      const days = Array.from({ length: 10 }, (_, i) => item(`d${i}`, { title: `Book ${i}` }, { status: 'finished', lastAt: `2026-07-${String(20 - i).padStart(2, '0')}T12:00:00Z` }));
+      history(days);
+      mount();
+      expect(screen.getAllByTestId('book-history-group')).toHaveLength(7);
+      expect(screen.getByTestId('book-history-more')).toBeInTheDocument();
     });
   });
 });

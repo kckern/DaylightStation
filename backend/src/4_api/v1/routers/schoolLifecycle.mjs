@@ -167,8 +167,11 @@ export function createSchoolLifecycleRouter({
   lifecycleReadService = null,
   lifecycleSyllabusService = null,
   getLearnerDayCompletion = null,
+  getLearnerTerm = null,
+  rebuildLearnerTerm = null,
   getPianoLessonGate = null,
   issueDirectLaunch = null,
+  issueSubjectCode = null,
   issueDocument = null,
   issueComposedWorksheet = null,
   dispatchMedia = null,
@@ -343,6 +346,46 @@ export function createSchoolLifecycleRouter({
   if (getLearnerDayCompletion) {
     router.get('/learners/:learnerId/completion', asyncHandler(async (req, res) => {
       const result = await getLearnerDayCompletion.execute({ learnerId: req.params.learnerId });
+      res.set('Cache-Control', 'no-store').json(result);
+    }));
+  }
+
+  // --- the term grid ---------------------------------------------------------
+  // One verdict per study day since the term began (`GetLearnerTerm`). The
+  // status board reads this once per learner beside the plan. `no-store`
+  // because today's cell is live.
+  if (getLearnerTerm) {
+    router.get('/learners/:learnerId/term', asyncHandler(async (req, res) => {
+      const termId = typeof req.query.termId === 'string' && req.query.termId ? req.query.termId : null;
+      const result = await getLearnerTerm.execute({ learnerId: req.params.learnerId, termId });
+      res.set('Cache-Control', 'no-store').json(result);
+    }));
+  }
+  // Teacher-gated backfill / force-recompute of the cached verdicts. The
+  // cache is derived and disposable; this is how a grown-up asks for it to
+  // be rebuilt after a course edit, without a shell.
+  if (rebuildLearnerTerm) {
+    router.post('/learners/:learnerId/term/rebuild', asyncHandler(async (req, res) => {
+      const { termId = null, from = null, to = null, force = false, userId = null, pin = null } = req.body ?? {};
+      const result = await rebuildLearnerTerm.execute({
+        learnerId: req.params.learnerId, termId, from, to, force: force === true, userId, pin,
+      });
+      res.set('Cache-Control', 'no-store').json(result);
+    }));
+  }
+
+  // --- the board's disc door (browser testing) ------------------------------
+  // Mints one subject's six-digit code — the same record the printed agenda
+  // carries — so a disc tapped in a grown-up's browser can TYPE it into the
+  // ordinary keypad path. Reachable only through /lifecycle, which the
+  // locked panel never calls. Logged at warn on every use.
+  if (issueSubjectCode) {
+    router.post('/learners/:learnerId/subject-code', asyncHandler(async (req, res) => {
+      const result = await issueSubjectCode.execute({
+        learnerId: req.params.learnerId,
+        subject: req.body?.subject,
+        program: req.body?.program ?? null,
+      });
       res.set('Cache-Control', 'no-store').json(result);
     }));
   }

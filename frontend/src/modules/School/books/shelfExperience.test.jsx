@@ -69,7 +69,7 @@ describe('shelf experience', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Finished today' }));
     const receipt = await screen.findByTestId('book-save-receipt');
     expect(screen.getByTestId('book-shelf-grid')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Finished and set aside' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Book history' })).toBeInTheDocument();
     fireEvent.click(within(receipt).getByRole('button', { name: 'Undo finish' }));
     await waitFor(() => expect(api.progress).toHaveBeenCalledTimes(2));
     expect(api.progress.mock.calls[1][2]).toBe(item.itemId);
@@ -129,8 +129,7 @@ describe('shelf experience', () => {
   it('opens completed details from all history and keeps legacy finishes date-only', async () => {
     api.shelf.mockResolvedValue(shelf([{ ...finished, events: [{ kind: 'finished', at: '2026-09-06T12:00:00Z' }] }]));
     render(<BookShelf {...props} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'See all history' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open Hatchet' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Hatchet' }));
     expect(screen.getByText('Last finished Sep 6, 2026')).toBeInTheDocument();
     expect(screen.queryByText(/Recorded /)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Read again' })).toBeInTheDocument();
@@ -156,9 +155,13 @@ describe('shelf experience', () => {
       { ...finished, itemId: 'new', title: 'Recent', events: [{ kind: 'finished', at: '2026-09-07T12:00:00Z', recordedAt: '2026-09-07T12:01:00Z' }] },
     ]));
     render(<BookShelf {...props} />);
-    const row = await screen.findByTestId('recently-finished-row');
-    expect(within(row).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['Open Recent', 'Open Backdated']);
-    expect(within(row).getByText('Sep 2')).toBeInTheDocument();
+    const history = await screen.findByTestId('book-history');
+    // Newest day first; the backdated finish sits under its own day's heading.
+    expect(within(history).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['Open Recent', 'Open Backdated']);
+    const groups = within(history).getAllByTestId('book-history-group');
+    expect(groups.map((g) => g.getAttribute('data-day'))).toEqual(['2026-09-07', '2026-09-02']);
+    // Same month as today: the bare number, then the weekday down the spine.
+    expect(within(groups[1]).getByRole('heading', { level: 4 })).toHaveTextContent(/^2Wednesday$/);
   });
 
   it('blocks the first-book tile after the first save succeeds but its shelf read fails', async () => {
@@ -189,7 +192,6 @@ describe('shelf experience', () => {
     await screen.findByText('Undo could not save');
     expect(screen.queryByRole('button', { name: 'Open Hatchet' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Add a book/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'See all history' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Retry shelf' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Undo finish' }));
     await waitFor(() => expect(api.progress).toHaveBeenCalledTimes(3));
@@ -209,8 +211,6 @@ describe('shelf experience', () => {
     act(() => result.current.actions.startAdd());
     expect(result.current.view).toBe('shelf');
     act(() => result.current.actions.openItem(item.itemId));
-    expect(result.current.view).toBe('shelf');
-    act(() => result.current.actions.openHistory());
     expect(result.current.view).toBe('shelf');
   });
 

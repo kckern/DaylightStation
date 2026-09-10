@@ -2,7 +2,6 @@
 import BookCover from './BookCover.jsx';
 import Icon from '../home/icons/Icon.jsx';
 import { presentBook } from './bookPresentation.js';
-import { lastFinish } from './readingHistory.js';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -58,23 +57,14 @@ function captionFor(item) {
 }
 
 /**
- * A finished book's caption is its DAY. The green check on the art has already
- * said "finished", the row heading said it, and the History month heading says
- * it again — the word was on screen four times over. A SET-ASIDE book keeps its
- * words, because that outcome is the rarer one and the bookmark alone is a
- * shape a child still has to learn.
+ * A done book's caption. NO DATE: the card stands on a shelf whose heading
+ * is the day (`BookHistory`), and a card wearing the same date as the line
+ * above it was saying it twice. The green check on the art has already said
+ * "finished". A SET-ASIDE book keeps its word, because that outcome is the
+ * rarer one and the bookmark alone is a shape a child still has to learn.
  */
 function outcomeFor(item) {
-  if (item.projection?.status === 'set-aside') {
-    const day = shortDay(item.projection?.lastAt);
-    return day ? `Set aside ${day}` : 'Set aside';
-  }
-  // The finish day when there is a finish event, and the last touch when the
-  // caller declared this finished without one — History renders a tile that
-  // way. Reading `lastAt` only in the fallback keeps a recorded finish date
-  // from being quietly replaced by a later correction's timestamp.
-  const day = shortDay(lastFinish(item).day) ?? shortDay(item.projection?.lastAt);
-  return day ?? 'Finished';
+  return item.projection?.status === 'set-aside' ? 'Set aside' : null;
 }
 
 /**
@@ -85,10 +75,13 @@ function outcomeFor(item) {
  *   this book cannot count toward, when the shelf says so.
  * @param {boolean} [props.finished] - History mode; otherwise read from
  *   `projection.status`.
+ * @param {boolean} [props.history] - on the day-shelf history: cover first, no date.
+ * @param {number} [props.times] - how many times this book was finished that
+ *   day; above one it wears a `×N` badge instead of repeating the card.
  */
-export default function ShelfTile({ item, onSelect = null, incompatibleMetric = null, finished = false }) {
+export default function ShelfTile({ item, onSelect = null, incompatibleMetric = null, finished = false, history = false, times = 1 }) {
   const status = item.projection?.status ?? 'reading';
-  const onHistory = finished || status === 'finished' || status === 'set-aside';
+  const onHistory = finished || history || status === 'finished' || status === 'set-aside';
   const presentation = presentBook(item);
   const title = presentation.title;
   const mark = onHistory ? (OUTCOME_MARK[status] ?? OUTCOME_MARK.finished) : null;
@@ -106,6 +99,10 @@ export default function ShelfTile({ item, onSelect = null, incompatibleMetric = 
           <span className={`school-books-tile__mark ${mark.modifier}`} role="img" aria-label={mark.label}>
             <Icon name={mark.icon} />
           </span>
+        )}
+        {/* The same book, more than once in a day: one card, a count. */}
+        {times > 1 && (
+          <span className="school-books-tile__times" aria-label={`${times} times`}>×{times}</span>
         )}
       </span>
       {/* The text column owns its own vertical rhythm. It used to share a
@@ -129,7 +126,7 @@ export default function ShelfTile({ item, onSelect = null, incompatibleMetric = 
             <span className="school-books-tile__fill" style={{ width: `${percent}%` }} />
           </span>
         )}
-        <span className="school-books-tile__caption">{onHistory ? outcomeFor(item) : captionFor(item)}</span>
+        {(() => { const caption = onHistory ? outcomeFor(item) : captionFor(item); return caption ? <span className="school-books-tile__caption">{caption}</span> : null; })()}
         {!onHistory && incompatibleMetric && (
           <span className="school-books-tile__tag">{`doesn't count toward ${METRIC_WORDS[incompatibleMetric] ?? incompatibleMetric}`}</span>
         )}
@@ -137,11 +134,14 @@ export default function ShelfTile({ item, onSelect = null, incompatibleMetric = 
     </>
   );
 
+  // COVER FIRST on the history shelf: the art on top at twice the row's size,
+  // the title beneath. A finished book is remembered by its cover.
+  const classes = `school-books-tile${onHistory ? ' school-books-tile--history' : ''}`;
   if (!onSelect) {
-    return <div className="school-books-tile school-books-tile--still">{body}</div>;
+    return <div className={`${classes} school-books-tile--still`}>{body}</div>;
   }
   return (
-    <button type="button" className="school-books-tile" aria-label={`Open ${title}`} onClick={() => onSelect(item.itemId)}>
+    <button type="button" className={classes} aria-label={`Open ${title}`} onClick={() => onSelect(item.itemId)}>
       {body}
     </button>
   );

@@ -85,6 +85,21 @@ export class IProgramLauncher {
   }
 
   /**
+   * OPTIONAL. Whether `status()` can answer for a PAST study day when given
+   * `day`. True means the program keeps dated evidence (a reading log, a
+   * dispatch ledger, lesson completion stamps) and reads it against the day
+   * asked for. False (the default) means the program knows only its current
+   * state — a flashcard deck's mastery, a language ladder's position — and a
+   * replay must not ask it, because its answer would describe today wearing
+   * yesterday's date. `collectProgramStatuses` reads this and gives a
+   * non-replayable program `UNKNOWABLE_STATUS` for any day but today.
+   * @returns {boolean}
+   */
+  get replayable() {
+    return false;
+  }
+
+  /**
    * Today's status for one learner. Must not throw: agenda compilation calls
    * every launcher, and one failing program must not blank the agenda for the
    * rest.
@@ -92,7 +107,11 @@ export class IProgramLauncher {
    * `programInstance` identifies one configured instance (for example a
    * language corpus); launchers with no instance-specific state may ignore it.
    *
-   * @param {{userId: string, programInstance?: string|null}} args
+   * `day` (a `YYYY-MM-DD` study-day key) asks for that day's answer instead
+   * of today's. Only passed to a launcher whose `replayable` is true; such a
+   * launcher must judge "done" against that day's window, not the clock.
+   *
+   * @param {{userId: string, programInstance?: string|null, day?: string|null}} args
    * @returns {Promise<{doneToday: boolean, progressLabel: string|null, score: number|null,
    *   obligationProgress?: {completed: number, total: number}|null, servedWork?: object[]}>}
    * `planDailyAgenda` enriches each returned served-work row with the owning

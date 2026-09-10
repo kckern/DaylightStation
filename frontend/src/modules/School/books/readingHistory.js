@@ -38,7 +38,7 @@ function sortByOutcome(items) {
 }
 
 /** A set-aside reading has no finish event; its date is when it was last touched. */
-function outcomeDay(item) {
+export function outcomeDay(item) {
   if (item?.projection?.status === 'set-aside') return { day: item.projection.lastAt ?? null, recordedAt: item.projection.lastAt ?? null };
   return lastFinish(item);
 }

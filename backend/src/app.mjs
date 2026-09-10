@@ -3895,6 +3895,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       configService,
       householdId,
       schoolService,
+      // The term grid's term is one of the household's academic periods —
+      // the same instance the report cards and `/periods` read.
+      academicPeriods: schoolAcademicPeriods,
       attemptDatastore: schoolDatastore,
       economyService: economyApi.economyService,
       userService,

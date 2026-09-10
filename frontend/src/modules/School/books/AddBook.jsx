@@ -166,7 +166,6 @@ export default function AddBook({ step, add, today, earliestDay = null, error = 
 
   return (
     <div className={`school-books-add${['cover', 'where', 'page', 'when'].includes(step) ? ' school-books-task-view' : ''}`} data-testid="add-book" data-step={step}>
-      <button type="button" className="school-books__back" disabled={busy} onClick={() => { if (!busy) actions.back(); }}>‹ back</button>
       {body}
     </div>
   );

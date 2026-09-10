@@ -1,93 +1,46 @@
 import PropTypes from 'prop-types';
+import DayGrid from '../shared/dayGrid/DayGrid.jsx';
 import './streak.scss';
 
 /**
  * Four weeks of reading, as a wall of days.
  *
- * TWO CHANNELS, ONE JOB. The taxonomy gives this element J7 — "am I on a
- * streak?" — and it answers with a colour and a number that are not two facts
- * competing for the square, but one fact at two distances:
+ * A THIN COAT OVER `DayGrid`. The wall and the status board's term grid are
+ * one concept — a Monday-first week of squares, repeated — in two
+ * orientations, and this wrapper only chooses the reading one (weeks as
+ * rows, a month deep, counts shown) and the reading names. The colour is the
+ * streak, the number is the volume; see `DayGrid` for why a three-book day
+ * and a one-book day are the same green.
  *
- *   COLOUR  did I do my job that day.   Read from the sofa, without counting.
- *   NUMBER  how many books.             Read up close, by a child who is proud.
+ * OLDEST FIRST, ending on today, and Monday-aligned — so a gap reads as "I
+ * missed Tuesday" rather than as an anonymous hole, and the last filled square
+ * is the one a child just filled.
  *
- * The colour is the streak, deliberately. A three-book day and a one-book day
- * on a one-book target are both GREEN, because the obligation was met on both
- * and a wall that rewarded volume would teach a child that meeting the target
- * is not enough. The number is where the extra is acknowledged.
- *
- * OLDEST FIRST, ending on today. Seven columns, so a row is a week and the
- * columns line up as weekdays — which is what makes a gap read as "I missed
- * Tuesday" rather than as an anonymous hole. The last cell is always today, so
- * a child's eye lands on the square they just filled.
- *
- * The server does the judging (`ReadingApiService#summary`): this draws states,
- * it never compares a count to a target itself. A day nobody can judge — no
- * readable target — is drawn as unknown rather than as a failure, and a day
- * nobody ASKED about is drawn as a day off rather than as a miss. Greying those
- * made a perfectly normal week look like a broken streak.
- *
- * There are TWO of those, and they are not the same square. A weekend is `rest`
- * and recedes — it is the ordinary rhythm, and the wall should read straight
- * through it. A NAMED day off from the household calendar is `holiday`, drawn
- * blue and carrying its own name in the title, because Thanksgiving is a thing
- * that happened: a child looking at a blank week in late November is owed the
- * reason rather than the same near-invisible square a Saturday gets.
+ * The server does the judging (`ReadingApiService#summary`): this draws
+ * states, it never compares a count to a target itself. A day nobody asked
+ * about (a weekend, a holiday) arrives as `rest` and is drawn near-transparent
+ * rather than as a miss.
  */
-
-/** The states the server emits, and what each one means on the wall. */
-const STATE_LABEL = Object.freeze({
-  met: 'met the goal',
-  partial: 'read, but under the goal',
-  none: 'no reading',
-  rest: 'a day off',
-  holiday: 'a holiday',
-  unknown: 'no goal recorded',
-  'unknown-met': 'read',
-});
-
-/** `2026-09-09` -> `Sep 9`, for the accessible label only. */
-function dayLabel(studyDay) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(studyDay ?? ''));
-  if (!m) return String(studyDay ?? '');
-  const date = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
-  return Number.isNaN(date.getTime())
-    ? studyDay
-    : new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(date);
-}
-
 export default function StreakWall({ days, studyDay = null, className = '', testId = 'reading-streak' }) {
   const cells = Array.isArray(days) ? days.filter(Boolean) : [];
   if (cells.length === 0) return null;
-
   const met = cells.filter((d) => d.state === 'met').length;
-
   return (
-    <section
-      className={`reading-streak ${className}`.trim()}
-      data-testid={testId}
-      aria-label={`${met} ${met === 1 ? 'day' : 'days'} met in the last ${cells.length} days`}
-    >
-      <ol className="reading-streak__grid">
-        {cells.map((day) => {
-          const today = studyDay != null && day.studyDay === studyDay;
-          return (
-            <li
-              key={day.studyDay}
-              className={`reading-streak__day${today ? ' reading-streak__day--today' : ''}`}
-              data-state={day.state ?? 'none'}
-              data-testid={today ? 'reading-streak-today' : undefined}
-              // Spoken per square, because the colour is the whole message and
-              // a screen reader gets none of it.
-              title={`${dayLabel(day.studyDay)}: ${day.holiday ?? STATE_LABEL[day.state] ?? day.state}`}
-            >
-              {/* Zero is drawn as an empty square, not as a `0`. A nought in
-                  every gap turns a quiet week into a wall of noughts. */}
-              <span className="reading-streak__count">{day.books > 0 ? day.books : ''}</span>
-            </li>
-          );
-        })}
-      </ol>
+    <section className={`reading-streak ${className}`.trim()} data-testid={testId}>
+      <DayGrid
+        days={cells.map((d) => ({ studyDay: d.studyDay, state: d.state ?? 'none', count: d.books,
+          // The household calendar's own word for the day, so a blue square can
+          // say "Thanksgiving" instead of the generic "a day off".
+          label: d.holiday ?? null }))}
+        orientation="weeks-as-rows"
+        studyDay={studyDay}
+        showCount
+        className="reading-streak__grid"
+        cellClassName="reading-streak__day"
+        testId="reading-streak-grid"
+        todayTestId="reading-streak-today"
+        ariaLabel={`${met} ${met === 1 ? 'day' : 'days'} met in the last ${cells.length} days`}
+      />
     </section>
   );
 }
@@ -98,7 +51,6 @@ StreakWall.propTypes = {
     studyDay: PropTypes.string,
     books: PropTypes.number,
     state: PropTypes.string,
-    holiday: PropTypes.string,
   })),
   /** Today's study day, so the last square can be marked as theirs. */
   studyDay: PropTypes.string,

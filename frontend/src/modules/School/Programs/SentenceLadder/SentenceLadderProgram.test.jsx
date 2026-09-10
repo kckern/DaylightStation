@@ -105,7 +105,7 @@ describe('identity', () => {
     previewDayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'dictation')], chain: ['dictation'] }));
     render(<SentenceLadderProgram corpusId="glossika-korean" preview />);
 
-    expect(await screen.findByText(/Sentence Ladder · guest preview — nothing is saved/i)).toBeTruthy();
+    expect(await screen.findByText(/Guest preview, nothing is saved/i)).toBeTruthy();
     expect(dayMock).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Review' })).toBeNull();
 
@@ -129,9 +129,13 @@ describe('the day', () => {
       queue: [entry(1, 'repetition', true), entry(2, 'repetition')],
     }));
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    // ONE statement of progress: the "1 left" and the bar are gone; the
+    // ladder's rung carries the same fact as pips.
     expect(await screen.findByText('1 of 2 steps')).toBeTruthy();
-    expect(screen.getByText('1 left')).toBeTruthy();
+    expect(screen.queryByText('1 left')).toBeNull();
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-label', '1 of 2 session steps complete');
+    expect(screen.getByTestId('ladder-pips-repetition')).toHaveAttribute('aria-label', '1 of 2 repetition sentences');
+    expect(screen.getByTestId('ladder-pips-repetition').querySelectorAll('.reading-pip--done')).toHaveLength(1);
   });
 
   it('emits one structured progress acknowledgement for an observable day state', async () => {
@@ -147,7 +151,7 @@ describe('the day', () => {
     expect(programLogMock.mock.calls.filter(([detail]) => detail === 'progress')).toHaveLength(1);
   });
 
-  it('renders a tab per rung in the chain, with an outstanding count', async () => {
+  it('renders a rung per mode in the chain, in order, each wearing its own pips', async () => {
     dayMock.mockResolvedValue(dayPayload({
       chain: ['repetition', 'dictation'],
       queue: [entry(1, 'repetition', true), entry(2, 'dictation'), entry(3, 'dictation')],
@@ -155,7 +159,40 @@ describe('the day', () => {
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByText('Repetition');
     expect(screen.getByText('Dictation')).toBeTruthy();
-    expect(screen.getByText('2')).toBeTruthy();
+    const rungs = screen.getByRole('navigation', { name: 'Session modes' }).querySelectorAll('.lang-ladder__step');
+    expect([...rungs].map((r) => r.querySelector('.lang-ladder__label').textContent)).toEqual(['Repetition', 'Dictation']);
+    // Two dictation sentences, none done: two hollow pips, no count to read.
+    expect(screen.getByTestId('ladder-pips-dictation').querySelectorAll('.reading-pip')).toHaveLength(2);
+    expect(screen.getByTestId('ladder-pips-dictation').querySelectorAll('.reading-pip--done')).toHaveLength(0);
+    // No tab strip, no bar.
+    expect(document.querySelector('.lang-tab')).toBeNull();
+    expect(document.querySelector('.lang-program__progress-bar')).toBeNull();
+  });
+
+  it('a rung this device cannot climb says so on the rung, not in a banner', async () => {
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['repetition', 'recording'],
+      queue: [entry(1, 'repetition'), entry(2, 'recording')],
+      missingCreditRungs: ['recording'],
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    await screen.findByText('Repetition');
+    expect(screen.getByText(/Needs a microphone/)).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Recording' })).toHaveClass('is-blocked');
+  });
+
+  it('draws the rung a mic-less device skips even when the chain omits it', async () => {
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['repetition', 'dictation'],
+      queue: [entry(1, 'repetition'), entry(2, 'dictation')],
+      missingCreditRungs: ['recording'],
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    await screen.findByText('Repetition');
+    const labels = [...document.querySelectorAll('.lang-ladder__label')].map((el) => el.textContent);
+    expect(labels).toEqual(['Repetition', 'Dictation', 'Recording']);
+    expect(screen.getByRole('button', { name: 'Recording' })).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('lets a fully equipped session proceed through every offered mode', async () => {

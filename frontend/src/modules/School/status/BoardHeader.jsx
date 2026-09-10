@@ -21,6 +21,7 @@
  * from mount, so the displayed minute changes when the minute does.
  */
 import { useEffect, useState } from 'react';
+import { LanguageDisc } from '../ime/HangulTypingProvider.jsx';
 
 const TIME = { hour: 'numeric', minute: '2-digit' };
 const DATE = { weekday: 'long', month: 'long', day: 'numeric' };
@@ -43,7 +44,13 @@ export default function BoardHeader({ children, now = null }) {
   return (
     <header className="school-board-header">
       <div className="school-board-header__when">
-        <h2 className="school-board-header__time">{when.toLocaleTimeString(undefined, TIME)}</h2>
+        <h2 className="school-board-header__time">
+          {when.toLocaleTimeString(undefined, TIME)}
+          {/* The typing language's status register: a flag disc beside the
+              clock, where a glance already lands. The labelled badge appears
+              only while a field is being typed into. */}
+          <LanguageDisc className="school-board-header__lang" />
+        </h2>
         <p className="school-board-header__date">{when.toLocaleDateString(undefined, DATE)}</p>
       </div>
       {children}

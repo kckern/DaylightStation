@@ -49,7 +49,7 @@
   &--kr { border-left-color: var(--ime-kr); }
   &--en { border-left-color: var(--ime-en); }
 
-  &__flag { font-size: 20px; }
+  &__flag { display: flex; font-size: 20px; line-height: 1; .school-icon { display: flex; } svg { width: 1em; height: 1em; } }
 
   &__label { font-weight: 600; }
 
@@ -72,4 +72,18 @@
 // Someone who has asked the OS for less motion gets the colour change alone.
 @media (prefers-reduced-motion: reduce) {
   .school-ime-badge { animation: none; }
+}
+
+// The status register: a flag disc the size of a capital letter, right of the
+// clock. No label, no hint — the fact, at rest. A hairline ring lifts it off
+// the header without pretending to be a button.
+.school-ime-disc {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.1em; height: 1.1em;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
+  line-height: 1;
+  vertical-align: middle;
+  .school-icon { display: flex; }
+  svg { width: 100%; height: 100%; }
 }

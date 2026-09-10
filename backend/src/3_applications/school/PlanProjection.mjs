@@ -59,6 +59,7 @@ import { planDailyAgenda, programStatusFor } from '#domains/school/agenda.mjs';
 import { collectProgramStatuses } from './programStatusCollection.mjs';
 import { withCurriculumExceptions } from './curriculumExceptionProjection.mjs';
 import { appendAssignedProgramEntries, projectProgramEntry } from './assignedProgramPlan.mjs';
+import { studyDayForInstant } from '#domains/school/studyDay.mjs';
 
 /**
  * Attestation gate-unlock (spec D2): an attested unit enters the planner's
@@ -66,8 +67,9 @@ import { appendAssignedProgramEntries, projectProgramEntry } from './assignedPro
  * the engine had graded it. The row is marked `attested: true` — a reader that
  * must distinguish evidence kinds can. Lifted verbatim from `BuildAgenda`.
  */
-function withAttestedPasses(history, attestations, learnerId) {
-  const entries = attestations?.list?.({ learnerId }) ?? [];
+function withAttestedPasses(history, attestations, learnerId, untilMs = null) {
+  const entries = (attestations?.list?.({ learnerId }) ?? [])
+    .filter((a) => untilMs == null || !(Date.parse(a?.at ?? '') >= untilMs));
   if (!entries.length) return history;
   return [
     ...history,
@@ -78,10 +80,29 @@ function withAttestedPasses(history, attestations, learnerId) {
   ];
 }
 
+/**
+ * A REPLAY SEES ONLY WHAT HAD HAPPENED BY THEN. Evidence stamped at or after
+ * `untilMs` is dropped whole: a sheet passed on Thursday was not passed on
+ * Tuesday, and Tuesday's verdict must not borrow it. The stamp is the
+ * outcome's own (`outcome.at`, the `outcome_recorded` event), falling back to
+ * the row's last touch for a session that never recorded one.
+ *
+ * Dropped, not stripped back to "open": a session whose result came later is
+ * simply absent from the earlier day, which is the one reading that cannot
+ * invent a state the log never held.
+ */
+function historyBefore(history, untilMs) {
+  if (untilMs == null) return history;
+  return history.filter((row) => {
+    const stamp = Date.parse(row?.outcome?.at ?? row?.updatedAt ?? '');
+    return !Number.isFinite(stamp) || stamp < untilMs;
+  });
+}
+
 export class PlanProjection {
   #curriculum; #assignments; #sessions; #attestations; #curriculumExceptions;
   #launchers; #timezone; #clock; #logger; #planErrorEvent; #launcherFailedEvent;
-  #declaredEntryActions;
+  #declaredEntryActions; #householdSchedule;
   #inflight = new Map();
 
   /**
@@ -115,11 +136,16 @@ export class PlanProjection {
     // trigger config was unreadable and fails toward reporting. See
     // `collectProgramStatuses`.
     declaredEntryActions = undefined,
+    // The household's own calendar (`school.yml → calendar`), applied by
+    // `planDailyAgenda` over every course's schedule. Null: no house-wide
+    // days off.
+    householdSchedule = null,
     logger = console,
   } = {}) {
     if (!curriculum || !assignments || !sessions) {
       throw new Error('PlanProjection requires curriculum, assignments and sessions');
     }
+    this.#householdSchedule = householdSchedule;
     this.#curriculum = curriculum;
     this.#assignments = assignments;
     this.#sessions = sessions;
@@ -195,6 +221,17 @@ export class PlanProjection {
    *   surface without any of them losing the event name its dashboards and
    *   runbooks already know, or gaining a second line beside it.
    * @param {string} [args.launcherFailedEvent] - same, for a launcher that threw.
+   * @param {string|null} [args.historyUntil] - ISO instant. REPLAY MODE: only
+   *   evidence stamped before this instant is seen — sessions by
+   *   `outcome.at ?? updatedAt`, attestations by `at`, exceptions by when they
+   *   were decided/retracted. Config (units, enrollments, course policies) is
+   *   NOT versioned and is read as it stands today; editing a course re-colours
+   *   the past, which is the school convention (rollups are derived, never
+   *   stored). Pair with `now` at the midpoint of the day and `day` for the
+   *   launchers.
+   * @param {string|null} [args.day] - study-day key for the program launchers.
+   *   With it, only `replayable` launchers are asked (`status({..., day})`);
+   *   the rest read `unknowable` and take no part in the day's verdict.
    * @returns {Promise<{plan: object, sections: object[],
    *   programStatuses: Record<string, object>, activeExceptions: object[],
    *   projection: {assignment: object|null, units: object[], sessions: object[],
@@ -204,15 +241,20 @@ export class PlanProjection {
     learnerId, attested = true, exceptions = true, assignedPrograms = true,
     programStatuses = null, now = null, augmentPlan = null,
     planErrorEvent = this.#planErrorEvent, launcherFailedEvent = this.#launcherFailedEvent,
+    historyUntil = null, day = null,
   } = {}) {
     if (typeof learnerId !== 'string' || !learnerId.trim()) {
       throw new Error('PlanProjection.project requires learnerId');
     }
+    if (historyUntil != null && !Number.isFinite(Date.parse(historyUntil))) {
+      throw new TypeError(`PlanProjection.project: historyUntil is not an instant: ${historyUntil}`);
+    }
     // Only a plain read is shareable. A caller-supplied `programStatuses`, an
-    // explicit instant or an `augmentPlan` closure each make the call something
-    // other than "the current plan for this learner", and two of them cannot be
-    // compared for equality at all.
-    const shareable = programStatuses == null && now == null && augmentPlan == null;
+    // explicit instant, a replay or an `augmentPlan` closure each make the
+    // call something other than "the current plan for this learner", and two
+    // of them cannot be compared for equality at all.
+    const shareable = programStatuses == null && now == null && augmentPlan == null
+      && historyUntil == null && day == null;
     // The event names are part of the key: two surfaces sharing one fan-out
     // must not have one of them log a plan error under the other's name.
     const key = `${learnerId}|${attested}|${exceptions}|${assignedPrograms}|${planErrorEvent}|${launcherFailedEvent}`;
@@ -221,6 +263,7 @@ export class PlanProjection {
     const pending = this.#project({
       learnerId, attested, exceptions, assignedPrograms,
       programStatuses, now, augmentPlan, planErrorEvent, launcherFailedEvent,
+      historyUntil, day,
     });
     if (!shareable) return pending;
     this.#inflight.set(key, pending);
@@ -232,26 +275,34 @@ export class PlanProjection {
   async #project({
     learnerId, attested, exceptions, assignedPrograms,
     programStatuses, now, augmentPlan, planErrorEvent, launcherFailedEvent,
+    historyUntil, day,
   }) {
     const at = now == null ? this.#clock() : (now instanceof Date ? now : new Date(now));
     const nowIso = at.toISOString();
+    const untilMs = historyUntil == null ? null : Date.parse(historyUntil);
 
     // BuildAgenda's read set, in BuildAgenda's shape: one parallel fan-out, and
     // `listWorks` tolerated as absent because a catalog adapter predating work
     // configs simply has none.
-    const [assignment, units, works, rawHistory] = await Promise.all([
+    const [assignment, units, works, fullHistory] = await Promise.all([
       this.#assignments.get(learnerId),
       this.#curriculum.listUnits(),
       this.#curriculum.listWorks?.() ?? [],
       this.#sessions.listForLearner(learnerId),
     ]);
-    const activeExceptions = await this.#curriculumExceptions?.active?.() ?? [];
+    const rawHistory = historyBefore(fullHistory, untilMs);
+    // `activeAsOf` where the store has it; a store that only knows `active()`
+    // (a test double, an older ledger) answers for now — a replay then sees
+    // today's exceptions, which is the pre-seam behaviour, not a new lie.
+    const activeExceptions = untilMs != null && typeof this.#curriculumExceptions?.activeAsOf === 'function'
+      ? await this.#curriculumExceptions.activeAsOf(historyUntil)
+      : await this.#curriculumExceptions?.active?.() ?? [];
 
     // The planner's view: raw history plus whichever overlays are in force.
     // Order matters only in that both are additive; it is kept identical to
     // BuildAgenda's so nothing can drift on a nested rewrite.
     const attestedHistory = attested
-      ? withAttestedPasses(rawHistory, this.#attestations, learnerId)
+      ? withAttestedPasses(rawHistory, this.#attestations, learnerId, untilMs)
       : rawHistory;
     const history = exceptions
       ? withCurriculumExceptions(attestedHistory, activeExceptions, learnerId)
@@ -273,12 +324,15 @@ export class PlanProjection {
       plan, learnerId, launchers: this.#launchers, logger: this.#logger,
       logEvent: launcherFailedEvent,
       declaredEntryActions: this.#resolveDeclaredEntryActions(),
+      day,
+      studyDay: day ?? studyDayForInstant(at.getTime(), { timezone: this.#timezone }),
     });
 
     // RAW history, never the overlaid one — see the class header, subtlety 1.
     const { sections: rawSections } = planDailyAgenda({
       plan, sessions: rawHistory, programStatuses: statuses, now: nowIso,
       timezone: this.#timezone, logger: this.#logger,
+      householdSchedule: this.#householdSchedule,
     });
     const sections = rawSections.map((section) => (section.next?.program
       ? { ...section, next: projectProgramEntry(section.next, programStatusFor(statuses, section.next)) }

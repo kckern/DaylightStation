@@ -169,8 +169,11 @@ export class StoryTimeProgramLauncher {
     return studyDayForInstant(this.#clock().getTime(), { timezone: this.#timezone });
   }
 
-  async status({ userId }) {
-    const day = this.studyDay();
+  /** The reading log is sharded by day; any day can be re-read. */
+  get replayable() { return true; }
+
+  async status({ userId, day: replayDay = null }) {
+    const day = replayDay ?? this.studyDay();
     let enrollment;
     try {
       enrollment = await this.#enrollmentFor(userId);

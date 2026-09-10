@@ -135,8 +135,19 @@ export class ReadingApiService {
         consequence: 'the story played and the obligation did not move' });
       throw err;
     }
+    // A book waiting on deck takes the stage instead of the launch card: the
+    // Player is already advancing into it, and the session's next pick is the
+    // scope the queue carried — whoever it was queued for, or re-scoped to.
+    // The screen learns the pick from this response AND the broadcast.
+    const next = location ? this.#sessions.advanceToOnDeck?.(location) ?? null : null;
+    if (next) {
+      this.#logger.info?.('school.reading.read-then-advance', {
+        location, learnerId: next.learnerId, contentId: next.contentId, pickId: next.pickId,
+      });
+      return { kind: 'ok', read, presentation: null, next };
+    }
     const returning = location ? this.#sessions.beginReturn(location, { reason: 'story-finished' }) : null;
-    return { kind: 'ok', read, presentation: returning?.presentation ?? null };
+    return { kind: 'ok', read, presentation: returning?.presentation ?? null, next: null };
   }
   async summary(learnerId) {
     let status = null;
@@ -250,6 +261,10 @@ export class ReadingApiService {
         // the middle of that week is blank deserves to be told rather than
         // shown the same near-invisible square a Saturday gets.
         //
+        // `exempt` is `DayGrid`'s existing word for it, blue already, shared
+        // with the term grid — the same idea deserves one state, not a second
+        // one wearing a different name on a different surface.
+        //
         // The name comes from the HOUSEHOLD calendar, not the enrollment's own
         // schedule: a course may excuse a day for its own reasons, but only the
         // house declares Christmas. Reading still counts on a holiday — `met`
@@ -261,7 +276,7 @@ export class ReadingApiService {
         if (target === null) state = books > 0 ? 'unknown-met' : 'unknown';
         else if (target > 0 && books >= target) state = 'met';
         else if (books > 0) state = 'partial';
-        else if (holiday) state = 'holiday';
+        else if (holiday) state = 'exempt';
         else state = asked ? 'none' : 'rest';
         return { studyDay: day, books, target, asked, state,
           ...(holiday ? { holiday: holiday.label } : {}) };

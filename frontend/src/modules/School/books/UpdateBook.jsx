@@ -119,8 +119,6 @@ export default function UpdateBook({ item, today, earliestDay = null, error = nu
 
   return (
     <div className="school-books-update school-books-task-view" data-testid="update-book" data-task={choosing ? 'mode' : finishing ? 'date' : progressing ? 'progress' : 'book'}>
-      <button type="button" className="school-books__back" disabled={busy} onClick={() => { if (!busy) actions.back(); }}>‹ back</button>
-
       <div className="school-books-task">
         <div className="school-books-update__book school-books-task__context">
           <BookCover book={item} className="school-books-update__cover" />

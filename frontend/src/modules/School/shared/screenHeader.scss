@@ -1,0 +1,37 @@
+// The one School screen header. Inherits the `--school-*` tokens of the
+// screen it sits in; sizes its controls like the keypad's keys so every
+// tappable thing on these screens is the same height under a thumb.
+
+.school-screen-header {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  min-height: clamp(3.75rem, 8.5vh, 4.5rem);
+  min-width: 0;
+
+  &__lead { display: flex; align-items: center; gap: 1rem; min-width: 0; }
+
+  &__title { margin: 0; font-size: 1.6rem; font-weight: 800; white-space: nowrap; }
+
+  // The chip is a walk-away safeguard here, not a card header: no bottom margin.
+  &__identity { display: flex; align-items: center; min-width: 0; }
+  &__identity .school-selfservice-card__learner { margin-bottom: 0; }
+
+  &__back, &__done {
+    min-height: clamp(3.25rem, 7.5vh, 4rem);
+    border: 1px solid var(--school-border); border-radius: 14px;
+    background: var(--school-surface); color: var(--school-fg);
+    font-family: inherit; font-size: 1.2rem; font-weight: 700;
+    cursor: pointer; touch-action: manipulation;
+    &:active { background: var(--school-surface-2); transform: scale(0.97); }
+    &:disabled { opacity: 0.45; cursor: default; transform: none; }
+  }
+  // Back steps within the screen: quieter than Done, an icon and a word.
+  &__back {
+    display: inline-flex; align-items: center; gap: 0.45rem;
+    padding: 0 1.1rem 0 0.85rem;
+    background: transparent;
+  }
+  &__back-icon { display: flex; font-size: 1.15em; line-height: 1; svg { width: 1em; height: 1em; } }
+  // Done leaves the screen: the one filled control in the header.
+  &__done { padding: 0 1.5rem; }
+}

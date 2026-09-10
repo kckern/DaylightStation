@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { useState } from 'react';
-import HangulTypingProvider from './HangulTypingProvider.jsx';
+import HangulTypingProvider, { LanguageDisc, useHangulTyping } from './HangulTypingProvider.jsx';
 
 /** A controlled field, so the test also proves React sees the composed text. */
 function Field({ lang = null, off = false, label = 'field' }) {
@@ -26,12 +26,16 @@ const type = (el, s) => {
 
 const pressF6 = () => fireEvent.keyDown(document.body, { code: 'F6', key: 'F6' });
 const badge = () => screen.getByTestId('school-ime-badge');
+// The labelled badge is the PROMINENT register: it exists only while a text
+// field has focus. Every test that reads it focuses the field first.
+const focusField = (label = 'field') => act(() => { screen.getByLabelText(label).focus(); });
 
 beforeEach(() => { document.body.innerHTML = ''; });
 
 describe('HangulTypingProvider', () => {
   it('starts in English and says so', () => {
     render(<HangulTypingProvider><Field /></HangulTypingProvider>);
+    focusField();
     expect(badge()).toHaveTextContent('English');
     expect(badge().className).toContain('school-ime-badge--en');
   });
@@ -49,9 +53,9 @@ describe('HangulTypingProvider', () => {
   it('composes Hangul after F6', () => {
     render(<HangulTypingProvider><Field /></HangulTypingProvider>);
     act(() => { pressF6(); });
-    expect(badge()).toHaveTextContent('한국어');
     const el = screen.getByLabelText('field');
-    el.focus();
+    act(() => { el.focus(); });
+    expect(badge()).toHaveTextContent('한국어');
     type(el, 'dkssud');
     expect(el.value).toBe('안녕');
   });
@@ -60,6 +64,7 @@ describe('HangulTypingProvider', () => {
     render(<HangulTypingProvider><Field /></HangulTypingProvider>);
     act(() => { pressF6(); });
     act(() => { pressF6(); });
+    focusField();
     expect(badge()).toHaveTextContent('English');
     const el = screen.getByLabelText('field');
     type(el, 'gks');
@@ -113,6 +118,7 @@ describe('HangulTypingProvider', () => {
     const { container } = render(
       <HangulTypingProvider><div className="school-app"><Field /></div></HangulTypingProvider>,
     );
+    focusField();
     expect(container.querySelector('.school-app .school-ime-badge')).toBeNull();
     expect(container.querySelector('.school-ime-badge')).not.toBeNull();
   });
@@ -123,5 +129,45 @@ describe('HangulTypingProvider', () => {
     const el = screen.getByLabelText('field');
     type(el, 'gks');
     expect(el.value).toBe('');
+  });
+});
+
+/** Reads the register out of context, for the tests below. */
+function Register() {
+  const { register } = useHangulTyping();
+  return <output data-testid="register">{register}</output>;
+}
+
+describe('the two registers', () => {
+  it('rests in the status register with no badge; a focused text field makes it prominent', () => {
+    render(<HangulTypingProvider><Field /><Register /><button type="button">elsewhere</button></HangulTypingProvider>);
+    expect(screen.getByTestId('register')).toHaveTextContent('status');
+    expect(screen.queryByTestId('school-ime-badge')).toBeNull();
+    focusField();
+    expect(screen.getByTestId('register')).toHaveTextContent('prominent');
+    expect(badge()).toBeInTheDocument();
+    // Focus moving to something that is not a text field steps the badge back.
+    act(() => { screen.getByRole('button', { name: 'elsewhere' }).focus(); });
+    expect(screen.getByTestId('register')).toHaveTextContent('status');
+    expect(screen.queryByTestId('school-ime-badge')).toBeNull();
+  });
+
+  it('focus leaving a field for nothing at all also steps back', () => {
+    render(<HangulTypingProvider><Field /><Register /></HangulTypingProvider>);
+    focusField();
+    expect(screen.getByTestId('register')).toHaveTextContent('prominent');
+    act(() => { screen.getByLabelText('field').blur(); });
+    expect(screen.getByTestId('register')).toHaveTextContent('status');
+  });
+
+  it('the status disc shows the live mode as an SVG flag, never an emoji', () => {
+    const { container } = render(<HangulTypingProvider><LanguageDisc /></HangulTypingProvider>);
+    const disc = screen.getByTestId('school-ime-disc');
+    expect(disc).toHaveAttribute('aria-label', 'Typing English');
+    expect(disc.querySelector('svg')).not.toBeNull();
+    expect(container.textContent).not.toMatch(/[\u{1F1E6}-\u{1F1FF}]/u);
+    act(() => { pressF6(); });
+    expect(screen.getByTestId('school-ime-disc')).toHaveAttribute('aria-label', 'Typing 한국어');
+    expect(screen.getByTestId('school-ime-disc').className).toContain('school-ime-disc--kr');
   });
 });
