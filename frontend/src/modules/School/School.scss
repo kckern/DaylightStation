@@ -3216,9 +3216,24 @@
   // column: a second, independent fact (how much the child MOVED) beside the
   // school-work count, not a competitor to it. Quieter than the status line on
   // purpose — the discs and their count are still what this board is for.
+  // THIS WEEK as seven squares — the term's current column on its side, the
+  // same cell size, the weekday letters under it. The ring and its count sit
+  // beneath both.
+  &__week-strip {
+    flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    --grid-cell: clamp(7px, 1.35vh, 12px);
+    --grid-gap: 2px;
+  }
+  &__grid--week { --grid-cell: inherit; --grid-gap: inherit; }
+  &__week-letters {
+    list-style: none; margin: 0; padding: 0;
+    display: grid; grid-template-columns: repeat(7, var(--grid-cell)); gap: var(--grid-gap);
+    font-size: clamp(0.5rem, 1.1vh, 0.62rem); font-weight: 700; line-height: 1;
+    color: var(--school-muted); text-align: center;
+  }
   &__rings {
     flex: 0 0 auto;
-    display: flex; flex-direction: column; align-items: center; gap: 0.3em;
+    display: flex; flex-direction: row; align-items: center; gap: 0.35em;
     font-size: clamp(1rem, 2.6vh, 1.4rem); font-weight: 800;
     color: var(--school-muted);
     line-height: 1;
@@ -3258,6 +3273,7 @@
     --grid-none: var(--school-board-pending);
     --grid-exempt: var(--school-board-exempt, #4f8fd6);
     --grid-unknown-edge: color-mix(in srgb, var(--school-board-ink) 22%, transparent);
+    --grid-current: var(--school-board-ink);
     justify-content: flex-end;
   }
   // The same footprint as an 18-week grid, so the card does not jump when the
