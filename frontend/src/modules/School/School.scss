@@ -2168,11 +2168,10 @@
 }
 .school-books-tile__plus { font-size: 2rem; line-height: 1; color: var(--school-accent); }
 
-// BOOK HISTORY: one shelf per day, stacked, newest first. The stack is THE
-// vertical scroll container for a child's whole reading year (`min-height: 0`
-// is what lets a flex child shrink below its content and actually scroll);
-// each day inside it is a horizontal shelf that runs off the panel edge like
-// the Today row above.
+// BOOK HISTORY: one wrapping shelf, newest day first, each day opened by a
+// BOOKEND tile carrying its date. The scroll box is THE vertical scroll
+// container for a child's whole reading year (`min-height: 0` is what lets a
+// flex child shrink below its content and actually scroll).
 .school-books-history {
   flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 0.2rem;
   margin-top: clamp(0.4rem, 1.2vh, 0.8rem);
@@ -2180,13 +2179,37 @@
 .school-books-history__scroll {
   @include school-scrollbar;
   flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
-  display: flex; flex-direction: column; gap: clamp(0.3rem, 1vh, 0.6rem);
+  padding: 0.35rem var(--shelf-inset) 0.7rem;
 }
-.school-books-history__day { margin: 0; display: flex; flex-direction: column; }
-// The day is the heading; the cards under it carry no date of their own.
-.school-books-history__heading { margin: 0.2rem 0 0; color: var(--school-fg); font-size: 1.05rem; font-weight: 700; }
+.school-books-history__flow {
+  display: flex; flex-wrap: wrap; align-items: stretch; gap: 0.7rem;
+  // Cards are cover-first on this shelf; the tile's own history modifier
+  // does the layout, this only fixes the width the flow wraps by.
+  .school-books-tile { flex: 0 0 9.5rem; min-height: 0; }
+}
+// A day keeps its bookend and its books together in the DOM; the flow lays
+// them out as siblings.
+.school-books-history__day { display: contents; }
+// THE BOOKEND: the height of a card, half its width, the date written as a
+// word a child knows with the day under it. A left rule in the accent says
+// "a new day starts here" from across the row; the extra gap before it keeps
+// two days from reading as one shelf.
+.school-books-history__bookend {
+  flex: 0 0 5.9rem; box-sizing: border-box;
+  margin: 0; margin-left: 0.5rem;
+  display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 0.15rem;
+  padding: 0.6rem 0.6rem;
+  border-left: 3px solid var(--school-accent); border-radius: 0 12px 12px 0;
+  background: var(--school-surface);
+  color: var(--school-fg); text-align: left;
+  &:first-child { margin-left: 0; }
+}
+// "Wednesday" is the widest word this can hold, and it must never break —
+// "Thursd / ay" is not a day a child knows.
+.school-books-history__bookend-top { font-size: 0.95rem; font-weight: 800; line-height: 1.15; white-space: nowrap; }
+.school-books-history__bookend-bottom { font-size: 0.85rem; font-weight: 600; color: var(--school-muted); white-space: nowrap; }
 // The sentinel the history watches to reveal another week of days.
-.school-books-history__more { flex: 0 0 1px; }
+.school-books-history__more { height: 1px; }
 
 // The update overlay (books/UpdateBook.jsx): cover and title, ONE control
 // matched to the mode, `I finished it` beside it, `set it aside` small and
@@ -2391,14 +2414,10 @@
   .school-books-tile__title { font-size: 1rem; }
   .school-books-tile__author { font-size: 0.8rem; -webkit-line-clamp: 1; }
 }
-// COVER FIRST on the history shelves: the art on top at about twice the Today
+// COVER FIRST on the history shelf: the art on top at about twice the Today
 // row's size, the title beneath at up to three lines. A finished book is
 // remembered by its cover, and a title cut at two lines lost the word a
 // child was looking for.
-.school-books__row--history {
-  padding-top: 0.35rem; padding-bottom: 0.5rem;
-  .school-books-tile { flex: 0 0 9.5rem; min-height: 0; }
-}
 // The repeat count: the same book finished N times that day, one card. The
 // opposite corner from the outcome mark, in the surface colour so it reads as
 // a tag on the cover rather than a second mark.
@@ -2945,16 +2964,17 @@
   }
   &__row {
     flex: 1 1 0; min-height: 0;
-    display: flex; align-items: center; gap: clamp(0.6rem, 1.1vw, 0.9rem);
-    padding: clamp(0.7rem, 1.8vh, 1.2rem) clamp(0.7rem, 1.3vw, 1rem);
-    // ONE DISC SIZE, board-wide, from the height four cards leave a row.
-    // Three rows of pins at 0.78 pitch take 2.56 discs plus the readout line;
-    // on the 1280x800 Portal a card is ~150px, so 4.4vh (~35px) is the largest
-    // disc whose three-row worst case still clears the readout. Capped below
-    // the avatar — the face is who, the discs are what. Declared on the ROW
-    // because the day partition sizes itself from it (four pins wide).
-    --disc: clamp(1.75rem, 4.4vh, 2.5rem);
-    --disc-gap: clamp(0.2rem, 0.6vh, 0.35rem);
+    // FOUR EQUAL QUARTERS, a hairline between each. Time widens left to right
+    // — who, today, this week, the term — and the card is cut evenly so the
+    // eye finds the same column on every row. The day quarter alone may grow
+    // past its share: a nine-pin day needs a four-pin base, and the pins are
+    // the one thing here that cannot shrink into illegibility.
+    display: grid;
+    grid-template-columns: 1fr minmax(max-content, 1fr) 1fr 1fr;
+    align-items: stretch; column-gap: 0;
+    padding: clamp(0.5rem, 1.4vh, 0.9rem) clamp(0.7rem, 1.3vw, 1rem);
+    --disc-cap: clamp(1.75rem, 4.4vh, 2.5rem);
+    --disc-gap: clamp(0.15rem, 0.5vh, 0.3rem);
     border: 1px solid var(--school-border); border-radius: 16px;
     background: var(--school-surface);
     transition: border-color 400ms ease, background-color 400ms ease;
@@ -2991,22 +3011,28 @@
   // stacked a count, the rings and a strip of discs in one right-hand block,
   // so the count sat away from the discs it counted and a busy day made the
   // strip longer, not taller.
+  // Every partition after the first wears the divider on its left edge.
+  &__day, &__week, &__term {
+    min-width: 0; min-height: 0;
+    border-left: 1px solid var(--school-border);
+    padding: 0 clamp(0.4rem, 0.9vw, 0.8rem);
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+    gap: clamp(0.25rem, 0.8vh, 0.5rem);
+    // The title sits on ONE LINE across the row — at the top of every
+    // partition — and the content centres in what is left beneath it.
+    > :nth-child(2) { margin-top: auto; }
+    > :last-child { margin-bottom: auto; }
+  }
+  // A quiet title on each timed partition; the face needs none.
+  &__part-title {
+    margin: 0; flex: none; line-height: 1;
+    font-size: clamp(0.65rem, 1.5vh, 0.85rem); font-weight: 700;
+    color: var(--school-muted); letter-spacing: 0.02em;
+  }
   &__day {
-    flex: 1 1 auto; align-self: stretch;
-    // Never narrower than a four-pin base row (nine assignments), so the pins
-    // never spill onto the face or the rings whatever the term grid takes.
-    min-width: calc(4 * var(--disc) + 3 * var(--disc-gap));
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: clamp(0.3rem, 0.9vh, 0.6rem);
-  }
-  &__week {
-    flex: 0 0 auto; align-self: stretch;
-    display: flex; align-items: center; justify-content: center;
-    min-width: clamp(2.2rem, 3.6vw, 3.2rem);
-  }
-  &__term {
-    flex: 0 0 auto; align-self: stretch;
-    display: flex; align-items: center; justify-content: flex-end;
+    // The pins size themselves from THIS box's height (container units
+    // below), so it has to be a size container.
+    container-type: size;
   }
   // Anchored to the rail's padded box, then pulled down by half its own height
   // so it sits exactly astride the avatar's bottom edge. `translate(-50%, 50%)`
@@ -3049,18 +3075,33 @@
   // — which is exactly what "3 of 7 done" is. A circle only inscribes ~71% of
   // its box, so the diameter is sized for the ICON and the disc is what's left.
   &__pins {
-    display: flex; flex-direction: column; align-items: center;
-    // Rows nest: each sits at 0.78 of a disc below the one above, so the
-    // upper row's discs settle into the gaps of the lower — pins, not a
-    // stack. Negative margin rather than a gap, because the pitch is less
-    // than the disc.
-    --pitch: calc(var(--disc) * 0.78);
+    display: flex; flex-direction: column; align-items: center; flex: none;
+    // HEX PACKING, EXACTLY. Discs in adjacent rows are offset by half a
+    // pitch, so with centre-to-centre distance p = disc + gap the rows sit
+    // p·√3/2 apart and every disc TOUCHES its neighbours and overlaps none.
+    // The 0.78 pitch this replaced was a guess, and at 0.78 the rows bit
+    // into each other.
+    //
+    // THE DISC IS SIZED FROM WHAT THE PARTITION ACTUALLY HAS: `--rows` and
+    // `--base` come from the component; the height is the day box's own
+    // (`cqh`) less the title and the meter; the width is the box's (`cqw`).
+    // A one-row day gets the cap; a three-row day gets whatever fits.
+    // `--stack` is Σ of the per-row pitch factors (√3/2 for a nesting pair,
+    // 1 for a pair that cannot nest — see `pitchFactors`), so the stack's
+    // height is disc·(1 + stack) + gap·stack.
+    // What the title, the meter and the three gaps between them take.
+    --room-h: calc(100cqh - 3.9rem);
+    --disc-by-height: calc((var(--room-h) - var(--disc-gap) * var(--stack, 0)) / (1 + var(--stack, 0)));
+    --disc-by-width: calc((100cqw - (var(--base, 1) - 1) * var(--disc-gap)) / var(--base, 1));
+    --disc: min(var(--disc-cap), var(--disc-by-height), var(--disc-by-width));
   }
   &__pills {
     list-style: none; margin: 0; padding: 0;
     display: flex; flex-wrap: nowrap; align-items: center; justify-content: center; min-width: 0;
     gap: var(--disc-gap);
-    & + & { margin-top: calc(var(--pitch) - var(--disc)); }
+    // Row pitch = factor × (disc + gap), measured centre to centre; the
+    // margin is what is left after the disc above.
+    & + & { margin-top: calc((var(--disc) + var(--disc-gap)) * var(--pitch, 1) - var(--disc)); }
   }
   &__pill {
     flex: 0 0 auto;
@@ -3135,9 +3176,24 @@
   &__row.is-loading .school-status-board__status { opacity: 0.3; }
   &__status {
     flex: 0 0 auto;
-    font-size: clamp(0.85rem, 2vh, 1.1rem); font-weight: 700;
-    opacity: 0.75; text-transform: uppercase; letter-spacing: 0.05em;
+    font-size: clamp(0.7rem, 1.7vh, 0.95rem); font-weight: 700;
+    opacity: 0.75; letter-spacing: 0.03em;
     font-variant-numeric: tabular-nums;
+  }
+  // THE METER: one segment per assignment, filled as each is done, the words
+  // beneath. Green segments are the day's done discs restated as a bar a
+  // doorway can read; the hollow ones are what is left.
+  &__meter {
+    flex: none; width: min(100%, 11rem);
+    display: flex; flex-direction: column; align-items: center; gap: 0.25rem;
+  }
+  &__bar {
+    width: 100%; height: clamp(0.4rem, 1.1vh, 0.6rem);
+    display: grid; grid-template-columns: repeat(var(--segments, 1), 1fr); gap: 2px;
+  }
+  &__segment {
+    border-radius: 999px; background: var(--school-board-pending);
+    &.is-done { background: var(--school-board-done); }
   }
   &__status--none { text-transform: none; letter-spacing: normal; font-weight: 600; opacity: 0.5; }
 
@@ -3162,8 +3218,8 @@
   // purpose — the discs and their count are still what this board is for.
   &__rings {
     flex: 0 0 auto;
-    display: flex; flex-direction: column; align-items: center; gap: 0.25em;
-    font-size: clamp(0.9rem, 2.2vh, 1.2rem); font-weight: 800;
+    display: flex; flex-direction: column; align-items: center; gap: 0.3em;
+    font-size: clamp(1rem, 2.6vh, 1.4rem); font-weight: 800;
     color: var(--school-muted);
     line-height: 1;
   }
@@ -3174,9 +3230,28 @@
   // own palette is the household's (green/amber/grey) plus blue for a day
   // the house took off; the count is never shown here — the card is read from
   // across a room, and a number in an 11px square is noise.
+  // The grid and its two axes share one column template, declared once on
+  // the plot and read by all three, so a month label can only ever sit over
+  // its own week.
+  &__term-plot {
+    --grid-cell: clamp(6px, 1.05vh, 9px);
+    --grid-gap: 1px;
+    flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  }
+  &__term-axis {
+    list-style: none; margin: 0; padding: 0;
+    display: grid; grid-template-columns: repeat(var(--grid-cols, 1), var(--grid-cell)); gap: var(--grid-gap);
+    height: 0.7em;
+    font-size: clamp(0.5rem, 1.1vh, 0.62rem); font-weight: 700; line-height: 1;
+    color: var(--school-muted); font-variant-numeric: tabular-nums;
+    li { overflow: visible; white-space: nowrap; }
+    &--months { margin-top: 2px; }
+  }
   &__grid {
-    --grid-cell: clamp(6px, 1.15vh, 10px);
-    --grid-gap: max(1px, calc(var(--grid-cell) * 0.16));
+    // The day grid declares its own defaults on its root; the plot's values
+    // have to be pulled through explicitly or a 1rem cell comes back.
+    --grid-cell: inherit;
+    --grid-gap: inherit;
     --grid-radius: 2px;
     --grid-met: var(--school-board-done);
     --grid-partial: var(--school-board-retry, #e2a33c);
@@ -3188,8 +3263,8 @@
   // The same footprint as an 18-week grid, so the card does not jump when the
   // term lands. Shimmers like the pins.
   &__grid--skeleton {
-    width: calc(16 * (clamp(6px, 1.15vh, 10px) + max(1px, calc(clamp(6px, 1.15vh, 10px) * 0.16))));
-    height: calc(7 * (clamp(6px, 1.15vh, 10px) + max(1px, calc(clamp(6px, 1.15vh, 10px) * 0.16))));
+    width: calc(16 * (clamp(6px, 1.05vh, 9px) + 1px));
+    height: calc(7 * (clamp(6px, 1.05vh, 9px) + 1px));
     border-radius: 3px;
     background: linear-gradient(
       100deg,

@@ -400,9 +400,11 @@ describe('BookShelf', () => {
       expect(groups).toHaveLength(3);
       expect(within(groups[0]).getByRole('heading', { level: 4 })).toHaveTextContent('Today');
       expect(within(groups[0]).getByText('Finished in August')).toBeInTheDocument();
-      expect(within(groups[1]).getByRole('heading', { level: 4 })).toHaveTextContent('Monday 20 July');
+      // The bookend: the weekday on top, the date under.
+      expect(within(groups[1]).getByRole('heading', { level: 4 })).toHaveAccessibleName('Monday 20 July');
+      expect(within(groups[1]).getByRole('heading', { level: 4 })).toHaveTextContent(/Monday.*20 Jul/);
       expect(within(groups[1]).getByText('Set aside in July')).toBeInTheDocument();
-      expect(within(groups[2]).getByRole('heading', { level: 4 })).toHaveTextContent('Tuesday 14 July');
+      expect(within(groups[2]).getByRole('heading', { level: 4 })).toHaveTextContent(/Tuesday.*14 Jul/);
       expect(within(groups[2]).getByText('Finished in July')).toBeInTheDocument();
       // A book still being read is on the Today row, not in the history.
       expect(within(screen.getByTestId('book-history')).queryByText('Hatchet')).toBeNull();
