@@ -386,27 +386,100 @@ describe('recording', () => {
   });
 });
 
-describe('repetition auto-advance', () => {
-  it('requires the first tap, then runs hands-free', async () => {
-    // The first tap is real — it grants the browser audio activation. What it
-    // must not be is a tap per sentence, twenty times a sitting.
-    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
-    logMock.mockResolvedValue({ ok: true, status: 200, data: {} });
+// Repetition is the one rung with nothing to submit, so finishing it used to
+// mean leaving it: the parent's queue put the NEXT sentence on screen and a
+// timer played it 350ms later. A child who wanted the sentence they had just
+// heard one more time had no way to ask for it. Finishing now HOLDS the
+// sentence and offers the choice.
+describe('repetition, one sentence at a time', () => {
+  // jsdom fires no `ended` event, and the sequence machine advances on it.
+  const playsToEnd = () => {
+    window.HTMLMediaElement.prototype.play = vi.fn(function play() {
+      setTimeout(() => this.onended?.(), 0);
+      return Promise.resolve();
+    });
+  };
+  // The real loop: the server marks the attempt done and the program re-fetches
+  // the day. A static payload would hide the swap this test exists to catch.
+  const liveDay = (initial, chain = ['repetition']) => {
+    let queue = initial;
+    dayMock.mockImplementation(async () => dayPayload({ queue, chain }));
+    logMock.mockImplementation(async (_userId, { seq, rung }) => {
+      queue = queue.map((e) => (e.seq === seq && e.rung === rung ? { ...e, done: true } : e));
+      return { ok: true, status: 200, data: {} };
+    });
+  };
+  // A repetition sentence takes a real second to play — there is a deliberate
+  // silence before the repeated target clip, which is where the child speaks.
+  const SEQUENCE = { timeout: 4000 };
+
+  it('holds the sentence it just played and offers repeat or move on', async () => {
+    playsToEnd();
+    liveDay([entry(1, 'repetition'), entry(2, 'repetition')]);
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
 
-    fireEvent.click(await screen.findByText('Play'));
-    // Armed now: a later sentence shows the hands-free state, not a Play button.
-    await waitFor(() => expect(screen.queryByText('Play')).toBeNull());
+    fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
+    const again = await screen.findByRole('button', { name: 'Play again' }, SEQUENCE);
+    // Its word is for screen readers; a child sees the glyph, so there must be one.
+    expect(again.querySelector('svg')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Next' })).toBeTruthy();
+    // The sentence they just heard is still the one on screen.
+    expect(screen.getByText('English 1')).toBeTruthy();
+    expect(screen.queryByText('English 2')).toBeNull();
   });
 
-  it('Stop actually stops — it does not immediately re-arm', async () => {
+  it('moves on only when the child says so', async () => {
+    playsToEnd();
+    liveDay([entry(1, 'repetition'), entry(2, 'repetition')]);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Next' }, SEQUENCE));
+    expect(await screen.findByText('English 2')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Play' })).toBeTruthy();
+  });
+
+  it('replays without climbing the rung twice', async () => {
+    playsToEnd();
+    liveDay([entry(1, 'repetition'), entry(2, 'repetition')]);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Play again' }, SEQUENCE));
+    // It really plays again — and lands back on the same choice.
+    expect(await screen.findByRole('button', { name: 'Stop' })).toBeTruthy();
+    await screen.findByRole('button', { name: 'Play again' }, SEQUENCE);
+    expect(screen.getByText('English 1')).toBeTruthy();
+    // One pass over the sentence, one attempt recorded. A replay that logged
+    // again would credit a sentence the child has already climbed.
+    expect(logMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets go of the held sentence when the child changes rung', async () => {
+    playsToEnd();
+    liveDay(
+      [entry(1, 'repetition'), entry(2, 'repetition'), entry(3, 'dictation')],
+      ['repetition', 'dictation'],
+    );
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
+    await screen.findByRole('button', { name: 'Play again' }, SEQUENCE);
+
+    fireEvent.click(screen.getByRole('button', { name: /Dictation/ }));
+    expect(screen.getByLabelText(/Type what you hear/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Repetition/ }));
+    // Back to the queue, not to a stale hold on a sentence already finished.
+    expect(screen.getByText('English 2')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Play again' })).toBeNull();
+  });
+
+  it('Stop actually stops', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     fireEvent.click(await screen.findByText('Play'));
     fireEvent.click(await screen.findByText('Stop'));
-    // Back to a deliberate Play, not the auto-advance countdown.
     expect(await screen.findByText('Play')).toBeTruthy();
-    expect(screen.queryByText('Next…')).toBeNull();
   });
 });
 
