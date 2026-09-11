@@ -52,6 +52,21 @@ export const DEFAULT_IDLE_TIMEOUT_MS = 120_000;
 export const DEFAULT_SWEEP_INTERVAL_MS = 15_000;
 
 /**
+ * How long after a teardown a book card may still reclaim the session it
+ * belongs to.
+ *
+ * A child who scans their card, chooses a book off the shelf and scans it is
+ * doing ONE thing, and the idle sweep cannot see the middle of it. On
+ * 2026-09-11 the sweep closed a session at 17:13:21 and the book landed at
+ * 17:13:30 — nine seconds — and the story played with nobody's name on it.
+ *
+ * Deliberately a fraction of the idle timeout, not a second timeout: this does
+ * not keep a room alive, it only lets a tap that was ALREADY in flight land
+ * where it was aimed.
+ */
+export const REOPEN_GRACE_MS = 45_000;
+
+/**
  * The states an idle session may be torn down FROM (D6). `reading` is
  * deliberately absent: a 45-minute audiobook is not an idle room, and the
  * whole point of the timeout is to catch the room that is genuinely empty.
@@ -93,6 +108,8 @@ export class ReadingSessionService {
   #observationStore;
   /** Locations already reported stuck, so the 15s sweep warns once, not always. */
   #stuckReported = new Set();
+  /** location -> {session, reason, closedAt}: the last teardown, for the reopen grace. */
+  #recentlyClosed = new Map();
   #realtime; #clock; #logger; #idFactory; #idSequence = 0;
   #idleTimeoutMs; #sweepIntervalMs; #onTimeout; #scheduler; #cancelSweep = null;
 
@@ -251,6 +268,21 @@ export class ReadingSessionService {
   /** @returns {object|null} the frozen session at this location, or null */
   current(location) {
     return this.#sessions.get(location) ?? null;
+  }
+
+  /**
+   * The session torn down at this reader moments ago, or null.
+   *
+   * READ ONLY WHEN `current()` IS NULL — this is the gap between a teardown and
+   * the tap that was already on its way. See `REOPEN_GRACE_MS`.
+   *
+   * @returns {{session: object, reason: string|null, closedAt: number}|null}
+   */
+  recentlyClosed(location, { withinMs = REOPEN_GRACE_MS } = {}) {
+    const record = this.#recentlyClosed.get(location) ?? null;
+    if (!record) return null;
+    if (this.#clock().getTime() - record.closedAt > withinMs) return null;
+    return record;
   }
 
   /** A replay-safe read for a screen that mounted or reconnected mid-session. */
@@ -421,6 +453,9 @@ export class ReadingSessionService {
     this.#sessions.set(session.location, session);
     // A fresh session at this reader is a fresh chance to get stuck.
     this.#stuckReported.delete(session.location);
+    // A live session is never "recently closed" — the reopen grace exists for
+    // the gap between sessions and must not survive into one.
+    this.#recentlyClosed.delete(session.location);
     this.#log('info', 'school.reading.session-open', {
       location: session.location,
       learnerId: session.learnerId,
@@ -680,6 +715,9 @@ export class ReadingSessionService {
     const session = this.#sessions.get(location) ?? null;
     if (!session) return null;
     this.#sessions.delete(location);
+    this.#recentlyClosed.set(location, {
+      session, reason, closedAt: this.#clock().getTime(),
+    });
     this.#ackWaiters.get(session.sessionId)?.(false);
     this.#ackWaiters.get(session.presentationId)?.(false);
     this.#ackWaiters.get(session.pendingPresentation?.sessionId)?.(false);
