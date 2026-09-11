@@ -71,7 +71,9 @@ import {
   startLevelFor,
 } from './gateRepertoire.js';
 import { isConfigOnlyDecline, materialOrder } from './gateMaterial.js';
+import { isDrillSpec, resolveGateDrill } from './gateDrill.js';
 import { resolveLearnerPath } from './gateDailyEscalation.js';
+import { preloadGame } from '../../../gameRegistry.js';
 import GateCeremony, { CEREMONY_MS } from './GateCeremony.jsx';
 import './GameGate.scss';
 
@@ -282,6 +284,30 @@ export default function GameGate({
   // component knowing the wording would be a second place it lives.
   const framing = useMemo(() => (gameLabel ? { kind: 'gate', gameLabel } : null), [gameLabel]);
 
+  /**
+   * WARM THE PRIZE WHILE THE PRICE IS BEING PAID.
+   *
+   * The game is a lazy chunk, and on a kiosk tab that has been open across a
+   * deploy that chunk's hashed filename no longer exists. Discovered at MOUNT —
+   * which is where it was discovered — the failure lands after a child has
+   * passed the gate, so the repair (reload the shell) costs them the pass, and
+   * when the reload guard was latched there was no repair at all: they were
+   * simply told the game stopped.
+   *
+   * Fetching it here moves that whole class of failure to a moment when nothing
+   * is at stake. A stale shell reloads before a note is played; a warm chunk
+   * makes the hand-over after the ceremony instant.
+   *
+   * Fires once per gate mount, not per attempt: `regate: per-launch` means one
+   * mount is one launch of one game, and a retry after a failed ask is the same
+   * prize. Deliberately not awaited and deliberately unable to throw — a
+   * preflight must never be the reason a gate does not open.
+   */
+  useEffect(() => {
+    if (!gameId) return;
+    preloadGame(gameId);
+  }, [gameId]);
+
   const [state, setState] = useState(() => readGateState(learnerId, levels, config));
   /** Set the instant a pass lands; cleared by handing the game control. */
   const [ceremony, setCeremony] = useState(null);
@@ -315,11 +341,21 @@ export default function GameGate({
   // learner do not, and both of those must re-pick.
   const retryRef = useRef(false);
 
+  /**
+   * The study day this gate session belongs to, taken ONCE.
+   *
+   * It was re-derived per log line, which is fine for a log line and wrong for
+   * the drill: the day is what scopes a learner's banked reps, and a gate open
+   * across the 4am boundary would otherwise re-read the drill as empty halfway
+   * through a set. One reading per session, shared by both.
+   */
+  const studyDate = useMemo(() => clientStudyDate(), []);
+
   const emit = useCallback((event, data = {}, level = 'info') => {
     logger[level](event, {
-      learnerId, deviceId: kioskDeviceId, studyDate: clientStudyDate(), sessionId, ...data,
+      learnerId, deviceId: kioskDeviceId, studyDate, sessionId, ...data,
     });
-  }, [kioskDeviceId, learnerId, logger, sessionId]);
+  }, [kioskDeviceId, learnerId, logger, sessionId, studyDate]);
 
   // Everything the serve effect reads but must NOT re-run for, held in refs;
   // the session's callbacks read through the same ref, so a report that lands
@@ -427,6 +463,66 @@ export default function GameGate({
     });
     setPhase('attempt');
   }, [round]);
+
+  /**
+   * A DRILL SPEC BECOMES AN ORDINARY ONE, BEFORE THE SESSION SEES IT.
+   *
+   * `{ kind: 'drill' }` is the only spec whose answer depends on the LEARNER
+   * rather than on the bank: which of the three sets is asked for is a function
+   * of how many reps they have banked today. `AskSession` resolves material and
+   * knows nothing about who is playing — correctly, it is a resolver — so the
+   * choice is made here, where the learner is, and what is handed down is the
+   * plain `{ kind: 'exercise', instanceId }` every other path already produces.
+   *
+   * The drill's coordinates ride along on the attempt so the run can draw its
+   * pills. They are NOT folded into the spec: the spec is what gets resolved and
+   * what `materialKey` is computed from, and a projection inside it would make
+   * every serve a different material to the anti-repeat rule.
+   *
+   * A resolution that fails goes through `declineMaterial` like any other, with
+   * the drill's own reason word, so a mistyped `drill:` substitutes and an
+   * unreachable bank fails open — the same two answers, decided in the same
+   * place, for the same reasons.
+   */
+  useEffect(() => {
+    if (!attempt || !isDrillSpec(attempt.spec)) return undefined;
+    let alive = true;
+    const servedFor = attempt.attemptId;
+    const spec = attempt.spec;
+    resolveGateDrill({ spec, learnerId, studyDate }).then((resolved) => {
+      // The attempt this resolution was started for may already be gone — a
+      // retry, a new round, an unmount. Landing on a stale attempt would swap
+      // the material out from under a child mid-ask.
+      if (!alive || latest.current.attempt?.attemptId !== servedFor) return;
+      if (!resolved.ok) {
+        declineMaterial({ kind: spec.kind, reason: resolved.error });
+        return;
+      }
+      latest.current.emit('gate.drill-served', {
+        rung: latest.current.attempt.level.id,
+        drill: resolved.programId,
+        step: resolved.stepId,
+        // What the pills will show. The one number an adult reading the log
+        // wants is how far through today's nine this child is.
+        banked: resolved.projection.passed_steps * 3
+          + (resolved.projection.current_step?.pass_count ?? 0),
+        total: resolved.projection.total_steps * 3,
+        complete: resolved.complete,
+      });
+      setAttempt({
+        ...latest.current.attempt,
+        spec: resolved.spec,
+        drill: {
+          programId: resolved.programId,
+          stepId: resolved.stepId,
+          projection: resolved.projection,
+          complete: resolved.complete,
+        },
+      });
+    });
+    return () => { alive = false; };
+    // `attempt.spec` is the trigger: a decline swaps it, a retry re-serves it.
+  }, [attempt?.attemptId, attempt?.spec, learnerId, studyDate]);
 
   /**
    * The gate mounted. Emitted once per mount and BEFORE anything can decline,
@@ -749,31 +845,24 @@ export default function GameGate({
   }
 
   if (phase !== 'attempt' || !attempt) return <SkeletonStage />;
-
-  if (ceremony) {
-    return (
-      <GateCeremony
-        gameId={gameId}
-        gameLabel={gameLabel}
-        score={ceremony.score}
-        onDone={() => {
-          const actualMs = Date.now() - ceremony.startedAt;
-          const overranMs = Math.max(0, actualMs - CEREMONY_MS);
-          // A curtain that took a second longer than it was told to is not a
-          // slow frame; it is the hand-over being restarted by something. That
-          // is a warning, so it surfaces without anyone going to look for it.
-          emit('gate.ceremony-done', {
-            ...context, plannedMs: CEREMONY_MS, actualMs, overranMs,
-          }, overranMs > 1000 ? 'warn' : 'info');
-          setCeremony(null);
-          onPassed?.(ceremony.result);
-        }}
-      />
-    );
-  }
+  // A drill spec is not askable until the effect above has turned it into an
+  // instance. Handing it down unresolved would reach `resolveSpec` as an
+  // unknown kind and decline the level a child is standing on.
+  if (isDrillSpec(attempt.spec)) return <SkeletonStage />;
 
   return (
     <div className="piano-game-gate piano-game-gate--attempt">
+      {/* THE CURTAIN CLOSES ON THE PRACTICE, IT DOES NOT REPLACE IT.
+          This used to be `if (ceremony) return <GateCeremony/>`, which swapped
+          the ask out in the same commit the final note landed in. A child's
+          last key never got a frame: they played it, and the screen it was on
+          was already gone. The ceremony was built to overlay — `position:
+          absolute; inset: 0; z-index: 160`, and its own comment says "it covers
+          the practice and uncovers the reward" — so the 400ms of stillness it
+          opens with IS the frame where the last key is seen to land. It only
+          ever needed to be rendered on top of the run instead of instead of it.
+          The run keeps its own completed state underneath ("Passed", the key lit
+          in the footer) for exactly as long as the curtain takes to close. */}
       <AskSession
         intent="challenge"
         // The LEVEL and the SPEC, and nothing derived from either. What that
@@ -785,15 +874,53 @@ export default function GameGate({
         // read from `state`: the state's counter advances the moment this is
         // served, and a retry must land on the same scale.
         pickIndex={attempt.pickIndex}
+        // THE DRILL'S COORDINATES, when this rung is one. `programId`/`stepId`
+        // are what `ExerciseRun` has always needed to render `DrillProgress`
+        // and what the gate never passed — the whole reason nine reps of a
+        // three-key drill showed up as one scale, once, with no pills.
+        // `drillProjection` is today's standing, already computed above:
+        // handing it over means the chrome does not re-fetch a projection the
+        // gate just built, and — the part that matters — it is DAY-SCOPED,
+        // which the learning endpoint's own projection is not.
+        programId={attempt.drill?.programId ?? null}
+        stepId={attempt.drill?.stepId ?? null}
+        drillProjection={attempt.drill?.projection ?? null}
         framing={framing}
         traceContext={{ attemptId: attempt.attemptId, sessionId }}
         onResolved={handleResolved}
         onPassed={handlePassed}
         onFailed={handleFailed}
-        onExit={handleAbandoned}
+        // A PASS CANNOT BE ABANDONED. The run stays mounted under the curtain
+        // now, and it keeps its piano exit gesture — so without this a child
+        // resting a hand across the bottom and top keys during the 3.4s
+        // ceremony would fire `gate.abandoned` on an attempt that had already
+        // passed, and lose the game the curtain was in the middle of opening
+        // onto. Withdrawing the callback disables the gesture at its source
+        // (`usePianoExitGesture`'s `enabled`), which is where the decision
+        // belongs.
+        onExit={ceremony ? undefined : handleAbandoned}
         onUnavailable={handleUnavailable}
       />
 
+      {ceremony && (
+        <GateCeremony
+          gameId={gameId}
+          gameLabel={gameLabel}
+          score={ceremony.score}
+          onDone={() => {
+            const actualMs = Date.now() - ceremony.startedAt;
+            const overranMs = Math.max(0, actualMs - CEREMONY_MS);
+            // A curtain that took a second longer than it was told to is not a
+            // slow frame; it is the hand-over being restarted by something. That
+            // is a warning, so it surfaces without anyone going to look for it.
+            emit('gate.ceremony-done', {
+              ...context, plannedMs: CEREMONY_MS, actualMs, overranMs,
+            }, overranMs > 1000 ? 'warn' : 'info');
+            setCeremony(null);
+            onPassed?.(ceremony.result);
+          }}
+        />
+      )}
     </div>
   );
 }

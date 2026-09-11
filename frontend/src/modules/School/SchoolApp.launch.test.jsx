@@ -652,6 +652,8 @@ it('Portal scan waits for keypad digits, hands returned grant to the shelf and d
     expect(screen.queryByRole('dialog', { name: 'This book was just scanned' })).toBeNull();
     await act(async () => bookShelfProps.mock.calls.at(-1)[0].onExit('done'));
     expect(await screen.findByRole('dialog', { name: 'This book was just scanned' })).toBeInTheDocument();
-    expect(screen.getByText('Next book')).toBeInTheDocument();
+    // The scan card draws the coverless book's title as its cover, so the
+    // title is both the art and the card's heading.
+    expect(screen.getAllByText('Next book').length).toBeGreaterThan(0);
   } finally { r.unmount(); window.history.replaceState({}, '', oldUrl); }
 });

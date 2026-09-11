@@ -4,6 +4,7 @@ import { AbcRenderer } from '../../../../MusicNotation/renderers/AbcRenderer.jsx
 import { SvgSequenceStaff, sequenceStaffViewBox } from '../../../../MusicNotation/renderers/SvgSequenceStaff.jsx';
 import { instanceToAbc } from './exerciseAbc.js';
 import { getStaffPositionOnClef } from '../../../../MusicNotation/model/pitch.js';
+import { partitionHeldPitches } from '../../../../MusicNotation/model/heldPitch.js';
 import {
   SharpShape, FlatShape, ledgerLineYs,
   ACCIDENTAL_WIDTH, ACCIDENTAL_GAP, NOTEHEAD_RX, NOTEHEAD_RY,
@@ -54,6 +55,17 @@ function rootBox(element) {
 
 
 export default function ExerciseNotation({ instance, eventIndex = 0, activeNotes = null, complete = false, preview = false }) {
+  /**
+   * When the cursor reached the current event — the other half of the ghost
+   * rule. Stamped during render rather than from an effect, and only when the
+   * index actually moves, so a re-render caused by a key going down cannot
+   * shift the clock and turn a real mistake into a sustain.
+   */
+  const cursorArrivalRef = useRef({ index: null, at: 0 });
+  if (cursorArrivalRef.current.index !== eventIndex) {
+    cursorArrivalRef.current = { index: eventIndex, at: Date.now() };
+  }
+  const cursorArrivedAt = cursorArrivalRef.current.at;
   const staffRef = useRef([]);
   const [decoration, setDecoration] = useState(null);
   const abc = useMemo(() => instanceToAbc(instance), [instance]);
@@ -112,9 +124,16 @@ export default function ExerciseNotation({ instance, eventIndex = 0, activeNotes
         const x = box.x + box.width / 2;
         const bottom = lines.at(-1) + 0.35;
         const targets = new Set(pitches.map(p => p.midi));
-        const ghosts = attempting ? [...activeNotes.keys()].filter(midi => !targets.has(midi)).map(midi => ({
-          midi, ...getStaffPositionOnClef(midi, clef, accidental),
-        })) : [];
+        // A HELD KEY IS NOT AUTOMATICALLY A WRONG ONE. This filtered on
+        // membership alone, which on a legato scale draws the note you have
+        // just played correctly — and not yet let go of — as a mistake beside
+        // the note you are playing now. `partitionHeldPitches` is the shared
+        // rule: a ghost needs an ONSET at this entry, which is the same thing
+        // the assessor grades on. See MusicNotation/model/heldPitch.js.
+        const ghosts = attempting
+          ? partitionHeldPitches(activeNotes, { cursorArrivedAt, cursorTargets: targets })
+            .ghosts.map(({ midi }) => ({ midi, ...getStaffPositionOnClef(midi, clef, accidental) }))
+          : [];
         const y = Math.min(lines[0] - spacing, box.y - 4 * scale);
         // Keep ledger-line notes inside the same lane, including abcjs's
         // slightly taller noteheads at the bottom edge of the stave.
@@ -123,7 +142,7 @@ export default function ExerciseNotation({ instance, eventIndex = 0, activeNotes
       });
     }
     setDecoration(host && lanes.length ? { host, lanes } : null);
-  }, [activeNotes, complete, eventIndex, instance, preview]);
+  }, [activeNotes, complete, cursorArrivedAt, eventIndex, instance, preview]);
   useEffect(paint, [paint]);
   const rendered = useCallback((_tune, staffNotes) => { staffRef.current = staffNotes; paint(); }, [paint]);
   // instanceToAbc returns '' for material this module has no business drawing

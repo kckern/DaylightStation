@@ -155,9 +155,21 @@ export function createHealthRouter(config) {
   /**
    * Get default username for requests
    */
-  const getDefaultUsername = () => {
-    return healthOperations.defaultUsername();
-  };
+  /**
+   * Whose health data this request is about.
+   *
+   * The signed-in adult, falling back to head-of-household when nobody is
+   * signed in — a kiosk read, an e-ink panel, a cron job. This ONE line is why
+   * Health was single-user: it answered head-of-household unconditionally, so
+   * a second adult would have silently read and written the first one's food
+   * log, weight and medical record.
+   *
+   * With one adult and no session the answer is unchanged, which is what makes
+   * this safe to land ahead of anyone actually logging in.
+   */
+  const getDefaultUsername = (req = null) => (
+    req?.user?.sub || healthOperations.defaultUsername()
+  );
 
   /**
    * Get today's date in YYYY-MM-DD format
@@ -168,14 +180,14 @@ export function createHealthRouter(config) {
   const runNutritionOperation = (userId, id, payload, action) => healthOperations.runNutritionOperation
     ? healthOperations.runNutritionOperation(userId, id, payload, action) : action();
 
-  router.get('/context', (_req, res) => res.json(healthOperations.context()));
+  router.get('/context', (req, res) => res.json(healthOperations.context(getDefaultUsername(req))));
 
   router.post('/nutrition/receipts/reconcile', asyncHandler(async (req, res) => {
     const publisher = config.receiptPublisherProvider?.();
     if (!publisher) return res.status(503).json({ error: 'Nutrition receipts are unavailable' });
     const { logIds, dryRun, expectedFingerprints } = req.body || {};
     try {
-      res.json(await publisher.reconcile(getDefaultUsername(), { logIds, dryRun, expectedFingerprints }));
+      res.json(await publisher.reconcile(getDefaultUsername(req), { logIds, dryRun, expectedFingerprints }));
     } catch (error) {
       if (error.status) return res.status(error.status).json({ error: error.message });
       throw error;
@@ -188,29 +200,29 @@ export function createHealthRouter(config) {
     return service;
   };
   // Owner comes from Health's trusted household context, never request payload.
-  router.get('/nutrition/cleanup', asyncHandler(async (_req, res) => res.json(cleanup().status(getDefaultUsername()))));
+  router.get('/nutrition/cleanup', asyncHandler(async (req, res) => res.json(cleanup().status(getDefaultUsername(req)))));
   router.get('/nutrition/cleanup/history', asyncHandler(async (req, res) => {
     const offset = Number(req.query.offset || 0);
     if (!Number.isSafeInteger(offset) || offset < 0) return res.status(400).json({ error: 'Invalid offset' });
-    res.json(await cleanup().history(getDefaultUsername(), { offset, limit: 30 }));
+    res.json(await cleanup().history(getDefaultUsername(req), { offset, limit: 30 }));
   }));
-  router.patch('/nutrition/cleanup/settings', asyncHandler(async (req, res) => res.json(await cleanup().settings(getDefaultUsername(), req.body))));
+  router.patch('/nutrition/cleanup/settings', asyncHandler(async (req, res) => res.json(await cleanup().settings(getDefaultUsername(req), req.body))));
   router.post('/nutrition/capture-recovery', asyncHandler(async (req, res) => {
     const { logUuid, expectedVersion, operationId, observationIds, dryRun } = req.body;
     try {
-      res.json(await cleanup().recovery.recover({ userId: getDefaultUsername(), logUuid, expectedVersion, operationId, observationIds, dryRun }));
+      res.json(await cleanup().recovery.recover({ userId: getDefaultUsername(req), logUuid, expectedVersion, operationId, observationIds, dryRun }));
     } catch (error) {
       if (error.status) return res.status(error.status).json({ error: error.message });
       throw error;
     }
   }));
-  router.post('/nutrition/cleanup/run', asyncHandler(async (_req, res) => res.status(202).json(await cleanup().request(getDefaultUsername(), { manual: true }))));
+  router.post('/nutrition/cleanup/run', asyncHandler(async (req, res) => res.status(202).json(await cleanup().request(getDefaultUsername(req), { manual: true }))));
   router.post('/nutrition/cleanup/undo/:id', asyncHandler(async (req, res) => res.json(await cleanup().repairs.undo({
-    userId: getDefaultUsername(), repairId: req.params.id, operationId: req.body.operationId,
+    userId: getDefaultUsername(req), repairId: req.params.id, operationId: req.body.operationId,
   }))));
   router.post('/nutrition/cleanup/questions/:id/answer', asyncHandler(async (req, res) => {
     const { expectedVersion, operationId, choiceId, text, dismiss } = req.body;
-    res.json(await cleanup().interactions.answer({ userId: getDefaultUsername(), id: req.params.id,
+    res.json(await cleanup().interactions.answer({ userId: getDefaultUsername(req), id: req.params.id,
       expectedVersion, operationId, choiceId, text, dismiss }));
   }));
 
@@ -218,7 +230,7 @@ export function createHealthRouter(config) {
     const date = req.query.date || getToday();
     const error = validateOptionalDate(date);
     if (error) return res.status(400).json(error);
-    const userId = getDefaultUsername();
+    const userId = getDefaultUsername(req);
     const snapshot = await healthOperations.readNutritionDay(userId, date);
     try {
       const budget = await budgetService.getBudget(userId, date, { items: snapshot.items });
@@ -231,13 +243,13 @@ export function createHealthRouter(config) {
 
   router.post('/nutrition/copy', asyncHandler(async (req, res) => {
     const { operationId, ...payload } = req.body || {};
-    const userId = getDefaultUsername();
+    const userId = getDefaultUsername(req);
     return res.json(await runNutritionOperation(userId, operationId, { operation: 'copy', ...payload },
       () => healthOperations.copyNutritionItems(userId, { operationId, ...payload })));
   }));
 
   router.post('/nutrition/restore', asyncHandler(async (req, res) => {
-    return res.json(await healthOperations.restoreNutritionItems(getDefaultUsername(), req.body?.entryIds));
+    return res.json(await healthOperations.restoreNutritionItems(getDefaultUsername(req), req.body?.entryIds));
   }));
 
   /**
@@ -275,7 +287,7 @@ export function createHealthRouter(config) {
    */
   router.get('/daily', asyncHandler(async (req, res) => {
     const days = parseInt(req.query.days) || 15;
-    const username = getDefaultUsername();
+    const username = getDefaultUsername(req);
 
     logger.debug?.('health.daily.request', { username, days });
 
@@ -304,7 +316,7 @@ export function createHealthRouter(config) {
    * traversal vector into per-user datastore reads).
    */
   router.get('/longitudinal', asyncHandler(async (req, res) => {
-    const username = getDefaultUsername();
+    const username = getDefaultUsername(req);
     const result = await longitudinalService.aggregate(username);
     res.json(result);
   }));
@@ -315,7 +327,7 @@ export function createHealthRouter(config) {
    */
   router.get('/date/:date', asyncHandler(async (req, res) => {
     const { date } = req.params;
-    const username = getDefaultUsername();
+    const username = getDefaultUsername(req);
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
@@ -339,7 +351,7 @@ export function createHealthRouter(config) {
    */
   router.get('/range', asyncHandler(async (req, res) => {
     const { start, end } = req.query;
-    const username = getDefaultUsername();
+    const username = getDefaultUsername(req);
 
     if (!start || !end) {
       return res.status(400).json({ error: 'start and end query parameters required' });
@@ -369,7 +381,7 @@ export function createHealthRouter(config) {
    * Get weight data (legacy parity: returns data directly, keyed by date)
    */
   router.get('/weight', asyncHandler(async (req, res) => {
-    const username = getDefaultUsername();
+    const username = getDefaultUsername(req);
     const weightData = await healthOperations.readWeight(username);
 
     // Return data directly to match legacy /data/lifelog/weight response
@@ -381,7 +393,7 @@ export function createHealthRouter(config) {
    * Get workout/activity data
    */
   router.get('/workouts', asyncHandler(async (req, res) => {
-    const username = getDefaultUsername();
+    const username = getDefaultUsername(req);
     const activityData = await healthOperations.readActivity(username);
 
     res.json({
@@ -395,7 +407,7 @@ export function createHealthRouter(config) {
    * Get fitness tracking data (FitnessSyncer)
    */
   router.get('/fitness', asyncHandler(async (req, res) => {
-    const username = getDefaultUsername();
+    const username = getDefaultUsername(req);
     const fitnessData = await healthOperations.readFitness(username);
 
     res.json({
@@ -409,7 +421,7 @@ export function createHealthRouter(config) {
    * Get nutrition data
    */
   router.get('/nutrition', asyncHandler(async (req, res) => {
-    const username = getDefaultUsername();
+    const username = getDefaultUsername(req);
     const nutritionData = await healthOperations.readNutrition(username);
 
     res.json({
@@ -423,7 +435,7 @@ export function createHealthRouter(config) {
    * Get health coaching data
    */
   router.get('/coaching', asyncHandler(async (req, res) => {
-    const username = getDefaultUsername();
+    const username = getDefaultUsername(req);
     const coachingData = await healthOperations.readCoaching(username);
 
     res.json({
@@ -537,7 +549,7 @@ export function createHealthRouter(config) {
     if (!dashboardService) {
       return res.status(501).json({ error: 'Dashboard service not configured' });
     }
-    const userId = getDefaultUsername();
+    const userId = getDefaultUsername(req);
     logger.debug?.('health.dashboard.request', { userId });
 
     const dashboard = await dashboardService.execute(userId);
@@ -551,7 +563,7 @@ export function createHealthRouter(config) {
   if (healthOperations.nutritionItemsAvailable) {
     for (const [route, method] of [['meal-command', 'mealFoodCommand'], ['meal-undo', 'undoMealFoodCommand']]) {
       router.post(`/nutrition/${route}`, asyncHandler(async (req, res) => {
-        const userId = getDefaultUsername();
+        const userId = getDefaultUsername(req);
         try {
           if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) return res.status(400).json({ error: 'Command body is required' });
           const result = await healthOperations[method](userId, req.body);
@@ -570,7 +582,7 @@ export function createHealthRouter(config) {
      * Get today's nutrilist items
      */
     router.get('/nutrilist', asyncHandler(async (req, res) => {
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
       const today = getToday();
 
       logger.debug?.('health.nutrilist.today', { userId, date: today });
@@ -591,7 +603,7 @@ export function createHealthRouter(config) {
      */
     router.get('/nutrilist/item/:uuid', asyncHandler(async (req, res) => {
       const { uuid } = req.params;
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
 
       logger.debug?.('health.nutrilist.item', { userId, uuid });
 
@@ -613,7 +625,7 @@ export function createHealthRouter(config) {
      */
     router.get('/nutrilist/:date', asyncHandler(async (req, res) => {
       const { date } = req.params;
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
 
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
         return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
@@ -636,7 +648,7 @@ export function createHealthRouter(config) {
      * Create a new nutrilist item
      */
     router.post('/nutrilist', asyncHandler(async (req, res) => {
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
       const { operationId, ...itemData } = req.body;
 
       if (!itemData.item && !itemData.name) {
@@ -663,7 +675,7 @@ export function createHealthRouter(config) {
      */
     router.put('/nutrilist/:uuid', asyncHandler(async (req, res) => {
       const { uuid } = req.params;
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
       const { operationId, ...updateData } = req.body;
 
       // "Just this entry" (PRD F5.4) travels through this generic PUT, so the
@@ -699,7 +711,7 @@ export function createHealthRouter(config) {
      */
     router.delete('/nutrilist/:uuid', asyncHandler(async (req, res) => {
       const { uuid } = req.params;
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
 
       // Check if item exists
       const result = await healthOperations.deleteNutritionItem(userId, uuid);
@@ -734,7 +746,7 @@ export function createHealthRouter(config) {
      */
     router.get('/nutrition/catalog', asyncHandler(async (req, res) => {
       const { q, limit } = req.query;
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
       if (!q) {
         return res.status(400).json({ error: 'q query param required' });
       }
@@ -747,7 +759,7 @@ export function createHealthRouter(config) {
      * Query: limit (default 10)
      */
     router.get('/nutrition/catalog/recent', asyncHandler(async (req, res) => {
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
       const limit = parseInt(req.query.limit) || 10;
       const results = await catalogService.getRecent(userId, limit);
       return res.json({ items: results.map(presentFoodCatalogEntry), count: results.length });
@@ -781,7 +793,7 @@ export function createHealthRouter(config) {
           error: `Invalid mealTime: ${mealTime}. Must be one of: ${NUTRITION_MEAL_BUCKETS.join(', ')}`,
         });
       }
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
       try {
         const outcome = await runNutritionOperation(userId, req.body.operationId, { type: 'quickadd', catalogEntryId, mealTime, date }, async () => {
           const item = await catalogService.quickAdd(catalogEntryId, userId, {
@@ -803,7 +815,7 @@ export function createHealthRouter(config) {
      */
     router.post('/nutrition/catalog/backfill', asyncHandler(async (req, res) => {
       const daysBack = parseInt(req.body.daysBack) || 90;
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
       const result = await catalogService.backfill(userId, daysBack);
       return res.json(result);
     }));
@@ -817,7 +829,7 @@ export function createHealthRouter(config) {
      * ranking is the shipped bucket-blind one.
      */
     router.get('/nutrition/catalog/suggest', asyncHandler(async (req, res) => {
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
       const { q = '', limit, bucket } = req.query;
       if (bucket != null && !NUTRITION_MEAL_BUCKETS.includes(bucket)) {
         return res.status(400).json({
@@ -840,7 +852,7 @@ export function createHealthRouter(config) {
      * Body: { id?, name?, favorite }
      */
     router.put('/nutrition/catalog/favorite', asyncHandler(async (req, res) => {
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
       const { id, name, favorite } = req.body;
       if (!id && !name) return res.status(400).json({ error: 'id or name is required' });
       try {
@@ -864,7 +876,7 @@ export function createHealthRouter(config) {
      * `icon: null` clears back to the neutral fallback.
      */
     router.put('/nutrition/catalog/icon', asyncHandler(async (req, res) => {
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
       const { id, name, icon } = req.body || {};
       if (!id && !name) return res.status(400).json({ error: 'id or name is required' });
       const verdict = validateIcon(icon);
@@ -885,7 +897,7 @@ export function createHealthRouter(config) {
      * Body: { name, calories, protein, carbs, fat, barcodeUpc? }
      */
     router.post('/nutrition/catalog', asyncHandler(async (req, res) => {
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
       const { name, calories, protein, carbs, fat, grams, barcodeUpc } = req.body;
       if (!name) return res.status(400).json({ error: 'name is required' });
       if (!(typeof grams === 'number' && Number.isFinite(grams) && grams > 0)) return res.status(400).json({ error: 'A positive gram weight is required' });
@@ -899,18 +911,18 @@ export function createHealthRouter(config) {
     // Snapshot names can outlive a catalog rename. Read by stable identity so
     // favorite state and pinned-food actions still refer to the original food.
     router.get('/nutrition/catalog/:id', asyncHandler(async (req, res) => {
-      const entry = await catalogService.getById(req.params.id, getDefaultUsername());
+      const entry = await catalogService.getById(req.params.id, getDefaultUsername(req));
       if (!entry) return res.status(404).json({ error: 'Saved food no longer exists' });
       return res.json({ entry: presentFoodCatalogEntry(entry) });
     }));
 
     router.put('/nutrition/catalog/:id', asyncHandler(async (req, res) => {
-      const entry = await catalogService.updateDefinition(req.params.id, getDefaultUsername(), req.body || {});
+      const entry = await catalogService.updateDefinition(req.params.id, getDefaultUsername(req), req.body || {});
       return res.json({ entry: presentFoodCatalogEntry(entry) });
     }));
 
     router.delete('/nutrition/catalog/:id', asyncHandler(async (req, res) => {
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
       try {
         await catalogService.remove(req.params.id, userId);
         return res.json({ ok: true });
@@ -931,7 +943,7 @@ export function createHealthRouter(config) {
   // ==========================================================================
   if (budgetService) {
     router.get('/budget', asyncHandler(async (req, res) => {
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
       // LOCAL date, not UTC — new Date().toISOString() reads as tomorrow
       // every evening in this household's timezone (UTC-7/8).
       const date = req.query.date || localDateISO(new Date());
@@ -955,7 +967,7 @@ export function createHealthRouter(config) {
     // request — a 500 for the whole range because one day predates the scale
     // would make the strip unusable for anyone with a short weight history.
     router.get('/budget/range', asyncHandler(async (req, res) => {
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
       const { from, to } = req.query;
       try {
         return res.json({ days: await budgetService.getBudgetRange(userId, from, to) });
@@ -972,13 +984,13 @@ export function createHealthRouter(config) {
     }));
 
     router.get('/goals', asyncHandler(async (req, res) => {
-      const goals = await budgetService.getGoals(getDefaultUsername());
+      const goals = await budgetService.getGoals(getDefaultUsername(req));
       return res.json({ goals });
     }));
 
     router.put('/goals', asyncHandler(async (req, res) => {
       try {
-        const goals = await budgetService.setGoals(getDefaultUsername(), req.body);
+        const goals = await budgetService.setGoals(getDefaultUsername(req), req.body);
         return res.json({ goals });
       } catch (err) {
         // A malformed macroGoals/watchMicros shape is the caller's fault, not
@@ -1002,12 +1014,12 @@ export function createHealthRouter(config) {
   // ==========================================================================
   if (savedMealsService) {
     router.get('/nutrition/meals', asyncHandler(async (req, res) =>
-      res.json({ meals: await savedMealsService.list(getDefaultUsername()) })));
+      res.json({ meals: await savedMealsService.list(getDefaultUsername(req)) })));
 
     router.post('/nutrition/meals', asyncHandler(async (req, res) => {
       const { name, items } = req.body;
       try {
-        return res.json({ meal: await savedMealsService.create({ name, items }, getDefaultUsername()) });
+        return res.json({ meal: await savedMealsService.create({ name, items }, getDefaultUsername(req)) });
       } catch (err) {
         if (err.code === 'MEALS_WRITE_FAILED') {
           logger.error?.('health.meals.create.write_failed', { error: err.message });
@@ -1020,7 +1032,7 @@ export function createHealthRouter(config) {
     router.post('/nutrition/meals/:id/log', asyncHandler(async (req, res) => {
       const { date, mealTime } = req.body || {};
       try {
-        return res.json(await savedMealsService.logToDate(req.params.id, getDefaultUsername(), { date, mealTime }));
+        return res.json(await savedMealsService.logToDate(req.params.id, getDefaultUsername(req), { date, mealTime }));
       } catch (err) {
         if (err.code === 'MEALS_WRITE_FAILED') {
           logger.error?.('health.meals.log.write_failed', { error: err.message });
@@ -1032,7 +1044,7 @@ export function createHealthRouter(config) {
 
     router.delete('/nutrition/meals/:id', asyncHandler(async (req, res) => {
       try {
-        await savedMealsService.remove(req.params.id, getDefaultUsername());
+        await savedMealsService.remove(req.params.id, getDefaultUsername(req));
         return res.json({ ok: true });
       } catch (err) {
         if (err.code === 'MEALS_WRITE_FAILED') {
@@ -1053,18 +1065,18 @@ export function createHealthRouter(config) {
   // ==========================================================================
   if (templateService) {
     router.put('/nutrition/templates/:id', asyncHandler(async (req, res) => {
-      try { return res.json({ template: await templateService.update(req.params.id, getDefaultUsername(), req.body || {}) }); }
+      try { return res.json({ template: await templateService.update(req.params.id, getDefaultUsername(req), req.body || {}) }); }
       catch (err) { return res.status(err.code === 'TEMPLATE_NOT_FOUND' ? 404 : err.code === 'TEMPLATE_INVALID' ? 400 : 500).json({ error: err.message, code: err.code }); }
     }));
     router.get('/nutrition/templates', asyncHandler(async (req, res) => {
       const includeProposed = req.query.includeProposed === '1' || req.query.includeProposed === 'true';
-      return res.json({ templates: await templateService.list(getDefaultUsername(), { includeProposed }) });
+      return res.json({ templates: await templateService.list(getDefaultUsername(req), { includeProposed }) });
     }));
 
     router.post('/nutrition/templates', asyncHandler(async (req, res) => {
       const { name, icon, components } = req.body || {};
       try {
-        return res.json({ template: await templateService.create({ name, icon, components }, getDefaultUsername()) });
+        return res.json({ template: await templateService.create({ name, icon, components }, getDefaultUsername(req)) });
       } catch (err) {
         if (err.code === 'TEMPLATES_WRITE_FAILED') {
           logger.error?.('health.templates.create.write_failed', { error: err.message });
@@ -1085,7 +1097,7 @@ export function createHealthRouter(config) {
         return res.status(400).json({ error: 'variantNames must be an array', code: 'VARIANTS_INVALID' });
       }
       try {
-        const userId = getDefaultUsername();
+        const userId = getDefaultUsername(req);
         return res.json(await runNutritionOperation(userId, req.body.operationId,
           { operation: 'template', id: req.params.id, date, mealTime, variantNames },
           async () => ({ committed: true, ...await templateService.instantiate(req.params.id, userId, { date, mealTime, variantNames }) })));
@@ -1109,7 +1121,7 @@ export function createHealthRouter(config) {
     router.post('/nutrition/templates/:id/approve', asyncHandler(async (req, res) => {
       const { name } = req.body || {};
       try {
-        return res.json({ template: await templateService.approve(req.params.id, getDefaultUsername(), { name }) });
+        return res.json({ template: await templateService.approve(req.params.id, getDefaultUsername(req), { name }) });
       } catch (err) {
         if (err.code === 'TEMPLATE_NOT_FOUND') return res.status(404).json({ error: err.message, code: err.code });
         if (err.code === 'TEMPLATES_WRITE_FAILED') {
@@ -1122,7 +1134,7 @@ export function createHealthRouter(config) {
 
     router.post('/nutrition/templates/:id/dismiss', asyncHandler(async (req, res) => {
       try {
-        return res.json(await templateService.dismiss(req.params.id, getDefaultUsername()));
+        return res.json(await templateService.dismiss(req.params.id, getDefaultUsername(req)));
       } catch (err) {
         if (err.code === 'TEMPLATE_NOT_FOUND') return res.status(404).json({ error: err.message, code: err.code });
         if (err.code === 'TEMPLATES_WRITE_FAILED') {
@@ -1135,7 +1147,7 @@ export function createHealthRouter(config) {
 
     router.delete('/nutrition/templates/:id', asyncHandler(async (req, res) => {
       try {
-        await templateService.remove(req.params.id, getDefaultUsername());
+        await templateService.remove(req.params.id, getDefaultUsername(req));
         return res.json({ ok: true });
       } catch (err) {
         if (err.code === 'TEMPLATES_WRITE_FAILED') {
@@ -1159,14 +1171,14 @@ export function createHealthRouter(config) {
   // ==========================================================================
   if (catalogAuditService) {
     router.get('/nutrition/catalog/audit', asyncHandler(async (req, res) => {
-      return res.json(await catalogAuditService.report(getDefaultUsername()));
+      return res.json(await catalogAuditService.report(getDefaultUsername(req)));
     }));
 
     router.post('/nutrition/catalog/audit/approve', asyncHandler(async (req, res) => {
       const { key } = req.body || {};
       if (!key) return res.status(400).json({ error: 'key is required' });
       try {
-        return res.json(await catalogAuditService.approve(key, getDefaultUsername()));
+        return res.json(await catalogAuditService.approve(key, getDefaultUsername(req)));
       } catch (err) {
         if (err.code === 'BAD_KEY') return res.status(400).json({ error: err.message, code: err.code });
         if (err.code === 'NOT_FOUND' || err.code === 'NO_HISTORY') {
@@ -1184,7 +1196,7 @@ export function createHealthRouter(config) {
       const { key } = req.body || {};
       if (!key) return res.status(400).json({ error: 'key is required' });
       try {
-        return res.json(await catalogAuditService.dismiss(key, getDefaultUsername()));
+        return res.json(await catalogAuditService.dismiss(key, getDefaultUsername(req)));
       } catch (err) {
         if (err.code === 'BAD_KEY') return res.status(400).json({ error: err.message, code: err.code });
         if (err.code === 'LEDGER_UNAVAILABLE') return res.status(503).json({ error: err.message, code: err.code });
@@ -1203,11 +1215,11 @@ export function createHealthRouter(config) {
 
   if (medicalService) {
     router.get('/medical', asyncHandler(async (req, res) =>
-      res.json(await medicalService.listGrouped(getDefaultUsername()))));
+      res.json(await medicalService.listGrouped(getDefaultUsername(req)))));
 
     router.post('/medical', asyncHandler(async (req, res) => {
       try {
-        return res.json({ reading: await medicalService.add(req.body, getDefaultUsername()) });
+        return res.json({ reading: await medicalService.add(req.body, getDefaultUsername(req)) });
       } catch (err) {
         if (err.code === 'INVALID_READING') return res.status(400).json({ error: err.message });
         if (err.code === 'MEDICAL_WRITE_FAILED') {
@@ -1220,7 +1232,7 @@ export function createHealthRouter(config) {
 
     router.delete('/medical/:id', asyncHandler(async (req, res) => {
       try {
-        await medicalService.remove(req.params.id, getDefaultUsername());
+        await medicalService.remove(req.params.id, getDefaultUsername(req));
         return res.json({ ok: true });
       } catch (err) {
         if (err.code === 'MEDICAL_WRITE_FAILED') {
@@ -1258,7 +1270,7 @@ export function createHealthRouter(config) {
       if (!spoken && (typeof instruction !== 'string' || !instruction.trim())) {
         return res.status(400).json({ error: 'A correction is required' });
       }
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
       try {
         const result = await healthOperations.reviseNutritionEntry({ userId, entryUuid: uuid,
           ...(spoken ? { audio } : { instruction }) });
@@ -1284,7 +1296,7 @@ export function createHealthRouter(config) {
         return res.status(400).json({ error: 'A date, meal bucket and selected IDs are required' });
       }
       try {
-        return res.json(await healthOperations.suggestMealGroups({ userId: getDefaultUsername(), date, bucket, selectedIds }));
+        return res.json(await healthOperations.suggestMealGroups({ userId: getDefaultUsername(req), date, bucket, selectedIds }));
       } catch (err) {
         logger.warn?.('health.meal.suggestions.failed', { error: err.message });
         if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
@@ -1314,7 +1326,7 @@ export function createHealthRouter(config) {
      *     Sent INSTEAD of `content`; nothing is re-recorded.
      */
     router.post('/nutrition/input', asyncHandler(async (req, res) => {
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
       const { type, content, bucket, date, audioRef, selectedIds, clarification } = req.body;
       if ((selectedIds !== undefined && (!Array.isArray(selectedIds) || selectedIds.some(id => typeof id !== 'string' || !ENTRY_UUID_PATTERN.test(id)))) || (clarification !== undefined && (typeof clarification !== 'string' || !ENTRY_UUID_PATTERN.test(clarification)))) return res.status(400).json({ error: 'Invalid meal selection or clarification' });
       if (!type) {
@@ -1361,7 +1373,7 @@ export function createHealthRouter(config) {
      * Body: { callbackData: string, messageId?: string }
      */
     router.post('/nutrition/callback', asyncHandler(async (req, res) => {
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
       const { callbackData, messageId } = req.body;
       if (!callbackData) {
         return res.status(400).json({ error: 'callbackData is required' });
@@ -1386,7 +1398,7 @@ export function createHealthRouter(config) {
      * Query: date (YYYY-MM-DD, default local today)
      */
     router.get('/nutrition/pending', asyncHandler(async (req, res) => {
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
       const { date: rawDate } = req.query;
       if (rawDate !== undefined && rawDate !== null && !isISODate(String(rawDate))) {
         return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
@@ -1411,7 +1423,7 @@ export function createHealthRouter(config) {
       }
       try {
         const result = await healthOperations.reviewPendingNutrition({
-          userId: getDefaultUsername(), logUuid: req.params.id, expectedVersion, operationId,
+          userId: getDefaultUsername(req), logUuid: req.params.id, expectedVersion, operationId,
           action, items, portionFactor, date, mealTime, nutritionReviewed,
         });
         return res.json(result);
@@ -1447,7 +1459,7 @@ export function createHealthRouter(config) {
         return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
       }
       const date = rawDate ? String(rawDate) : getToday();
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
       try {
         const observations = observationPairing.listByDate(userId, date);
         return res.json({ observations: observations.map(serializeObservation), date, count: observations.length });
@@ -1482,7 +1494,7 @@ export function createHealthRouter(config) {
         return res.status(400).json({ error: 'entryUuid is required' });
       }
 
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
       try {
         const result = await observationPairing.pair(userId, id, entryUuid);
         logger.info?.('health.nutrition.observations.paired', {
@@ -1536,7 +1548,7 @@ export function createHealthRouter(config) {
         logger.debug?.('health.nutrition.observations.invalidId', { id });
         return res.status(400).json({ error: 'Invalid observation id' });
       }
-      const userId = getDefaultUsername();
+      const userId = getDefaultUsername(req);
       try {
         const result = observationPairing.dismiss(userId, id);
         logger.info?.('health.nutrition.observations.dismissed', { id });
@@ -1593,7 +1605,7 @@ export function createHealthRouter(config) {
     }
 
     // Never read userId from the request — see security note above.
-    const userId = getDefaultUsername();
+    const userId = getDefaultUsername(req);
     const size = req.query.size === 'thumb' ? 'thumb' : undefined;
     const absolutePath = photoStore.resolvePath(userId, photoRef, { size });
     if (!absolutePath) {

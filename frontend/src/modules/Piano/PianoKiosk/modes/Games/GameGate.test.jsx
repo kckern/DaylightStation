@@ -46,6 +46,8 @@ const h = vi.hoisted(() => {
     catalog: vi.fn(),
     instances: vi.fn(),
     instance: vi.fn(),
+    program: vi.fn(),
+    attempts: vi.fn(),
   };
 });
 
@@ -60,7 +62,12 @@ vi.mock('../../PianoMidiContext.jsx', async () => {
   };
 });
 vi.mock('../Exercises/pianoLearningApi.js', () => ({
-  pianoLearningApi: { catalog: h.catalog, instances: h.instances, instance: h.instance },
+  pianoLearningApi: {
+    catalog: h.catalog, instances: h.instances, instance: h.instance,
+    // The drill's two reads: which sets a drill has, and how many reps this
+    // learner has banked.
+    program: h.program, attempts: h.attempts,
+  },
 }));
 vi.mock('../../../ask/AskSession.jsx', async () => {
   const { useEffect, useState } = await import('react');
@@ -607,6 +614,37 @@ describe('GameGate — contract 4: passing', () => {
     expect(data.attemptId).toEqual(expect.any(String));
     expect(readStored('kid1').cleanPasses).toBe(1);
     expect(readStored('kid1').levelId).toBe('L1');
+  });
+
+  /**
+   * THE LAST KEY MUST BE SEEN TO LAND.
+   *
+   * The ceremony used to be `if (ceremony) return <GateCeremony/>` — it
+   * REPLACED the ask, in the same commit the final note completed the attempt.
+   * The child played the key that won them the game and the screen it was on
+   * was already gone; nothing ever drew it as hit. The curtain was always built
+   * to overlay (`position: absolute; inset: 0; z-index: 160`, and its opening
+   * 400ms of stillness exists precisely to show the practice one last time), so
+   * the run stays mounted underneath it for the whole hand-over.
+   */
+  it('keeps the ask on screen under the curtain, so the final note is seen', async () => {
+    const { container } = renderGate({ learnerId: 'kid1', gateConfig: CONFIG });
+    const pass = await screen.findByText('stub-pass');
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(pass);
+      expect(container.querySelector('.gate-ceremony')).toBeTruthy();
+      // Still there, underneath. This is the assertion the old render failed.
+      expect(container.querySelector('.piano-game-gate--attempt')).toBeTruthy();
+      expect(screen.queryByText('stub-pass')).toBeTruthy();
+
+      // Held for the length of the curtain, not for a frame.
+      act(() => vi.advanceTimersByTime(CEREMONY_MS - 100));
+      expect(screen.queryByText('stub-pass')).toBeTruthy();
+
+      act(() => vi.advanceTimersByTime(200));
+    } finally { vi.useRealTimers(); }
   });
 
   it('climbs a level and resets the counter after climbAfterCleanPasses clean passes', async () => {
@@ -1303,5 +1341,151 @@ describe('GameGate physical piano recovery', () => {
     } finally { vi.useRealTimers(); }
     await screen.findByTestId('ask-session');
     expect(events().filter(([name]) => name === 'gate.attempt')).toHaveLength(2);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * THE DRILL AT THE GATE.
+ *
+ * `scale-drill-3x3` — three sets, three reps, every rep the whole gesture up
+ * and back — shipped in `shared/music/learningPrograms.mjs` with the chrome to
+ * draw it, and never reached a child: the gate handed `AskSession` a level and
+ * a spec and never a program, so the run got one instance, once, with no pills.
+ * These are the wire.
+ */
+const DRILL_PROGRAM = {
+  id: 'scale-drill-3x3',
+  title: 'Scale drill',
+  steps: [
+    {
+      id: 'scale-set-1',
+      title: 'G major — right hand',
+      display: { key: 'G major', hand: 'R', hand_label: 'right hand', reps: 3 },
+      requirement: {
+        exercise_id: 'scales/modes@root=G,mode=ionian,direction=up-then-down,span_octaves=1,hand=R',
+        mode: 'free',
+        rubric: { criteria: { completeness: 1, cleanliness: 0.9 } },
+        required_passes: 3,
+      },
+    },
+    {
+      id: 'scale-set-2',
+      title: 'D major — left hand',
+      display: { key: 'D major', hand: 'L', hand_label: 'left hand', reps: 3 },
+      requirement: {
+        exercise_id: 'scales/modes@root=D,mode=ionian,direction=up-then-down,span_octaves=1,hand=L',
+        mode: 'free',
+        rubric: { criteria: { completeness: 1, cleanliness: 0.9 } },
+        required_passes: 3,
+      },
+    },
+  ],
+};
+
+const DRILL_LEVEL = {
+  id: 'drill-rung',
+  tier: 2,
+  presentation: { prompt: 'read', secondary: 'keyboard-strip', notationStyle: 'sequence', timing: 'free', hints: 'none' },
+  material: [{ kind: 'drill', drill: 'scale-drill-3x3' }],
+};
+const DRILL_CONFIG = {
+  repertoire: [REPERTOIRE[0], DRILL_LEVEL],
+  startLevel: 'drill-rung',
+};
+
+function bankedRep(step, count) {
+  return Array.from({ length: count }, () => ({
+    status: 'completed',
+    purpose: 'challenge',
+    // Local noon today: unambiguously inside the study day in any timezone.
+    created_at: new Date(new Date().setHours(12, 0, 0, 0)).toISOString(),
+    prompt: { exercise_id: DRILL_PROGRAM.steps[step].requirement.exercise_id },
+    criteria: { completeness: 1, cleanliness: 1 },
+  }));
+}
+
+describe('GameGate — the three-by-three drill', () => {
+  beforeEach(() => {
+    h.program.mockResolvedValue({ ok: true, status: 200, data: DRILL_PROGRAM });
+    h.attempts.mockResolvedValue({ ok: true, status: 200, data: { attempts: [] } });
+  });
+
+  it('serves the drill\u2019s current set as an ordinary exercise, up AND back', async () => {
+    renderGate({ learnerId: 'kid1', gateConfig: DRILL_CONFIG });
+    await screen.findByTestId('ask-session');
+
+    const props = h.askProps.at(-1);
+    // The spec the session sees is a plain instance — nothing below the gate
+    // learned a new material kind.
+    expect(props.materialSpec).toEqual({
+      kind: 'exercise',
+      instanceId: 'scales/modes@root=G,mode=ionian,direction=up-then-down,span_octaves=1,hand=R',
+    });
+    // Fifteen notes, not eight. This is the half-a-scale bug, pinned.
+    expect(props.materialSpec.instanceId).toContain('direction=up-then-down');
+    // And the coordinates the run needs to draw its pills — the thing the gate
+    // never passed.
+    expect(props.programId).toBe('scale-drill-3x3');
+    expect(props.stepId).toBe('scale-set-1');
+    expect(props.drillProjection.steps[0].pass_count).toBe(0);
+  });
+
+  it('picks up where the learner left off, and changes the hand with the set', async () => {
+    h.attempts.mockResolvedValue({ ok: true, status: 200, data: { attempts: bankedRep(0, 3) } });
+    renderGate({ learnerId: 'kid1', gateConfig: DRILL_CONFIG });
+    await screen.findByTestId('ask-session');
+
+    const props = h.askProps.at(-1);
+    expect(props.stepId).toBe('scale-set-2');
+    expect(props.materialSpec.instanceId).toContain('root=D');
+    expect(props.materialSpec.instanceId).toContain('hand=L');
+    expect(props.drillProjection.steps[0].passed).toBe(true);
+  });
+
+  it('says where the child stands, in one line, in the log', async () => {
+    h.attempts.mockResolvedValue({ ok: true, status: 200, data: { attempts: [...bankedRep(0, 3), ...bankedRep(1, 1)] } });
+    renderGate({ learnerId: 'kid1', gateConfig: DRILL_CONFIG });
+    await screen.findByTestId('ask-session');
+
+    const [, data] = eventNamed('gate.drill-served');
+    expect(data).toMatchObject({
+      drill: 'scale-drill-3x3', step: 'scale-set-2', banked: 4, total: 6, complete: false,
+    });
+  });
+
+  /**
+   * Yesterday's nine do not pay for today's game. Without the day scope the
+   * ninth LIFETIME pass would retire the rung permanently.
+   */
+  it('resets with the study day', async () => {
+    const yesterday = bankedRep(0, 3).map((attempt) => ({
+      ...attempt,
+      created_at: new Date(new Date().setHours(12, 0, 0, 0) - 86_400_000).toISOString(),
+    }));
+    h.attempts.mockResolvedValue({ ok: true, status: 200, data: { attempts: yesterday } });
+    renderGate({ learnerId: 'kid1', gateConfig: DRILL_CONFIG });
+    await screen.findByTestId('ask-session');
+
+    expect(h.askProps.at(-1).stepId).toBe('scale-set-1');
+  });
+
+  it('an unreachable program endpoint fails OPEN — the child earned this game', async () => {
+    h.program.mockResolvedValue({ ok: false, status: 502, data: null });
+    const { onPassed } = renderGate({ learnerId: 'kid1', gateConfig: DRILL_CONFIG });
+
+    await waitFor(() => expect(onPassed).toHaveBeenCalledTimes(1));
+    expect(eventNamed('gate.unavailable')[1].error).toBe('instance-unavailable');
+  });
+
+  it('a drill id that does not exist SUBSTITUTES rather than handing out a free match', async () => {
+    h.program.mockResolvedValue({ ok: false, status: 404, data: null });
+    const { onPassed } = renderGate({ learnerId: 'kid1', gateConfig: DRILL_CONFIG });
+
+    await screen.findByTestId('ask-session');
+    expect(onPassed).not.toHaveBeenCalled();
+    expect(eventNamed('gate.material-config-invalid')).toBeTruthy();
+    // The rung a child stands on does not move for a config typo.
+    expect(h.askProps.at(-1).ask.id).toBe('drill-rung');
   });
 });

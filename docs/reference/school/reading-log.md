@@ -189,6 +189,51 @@ the `3` and fired on pointerdown; a child wiped a half-typed ISBN four times in
 "where are you with it" doors were stacked text bars a pre-reader could not
 tell apart; they are square tiles with icons.
 
+### What the shelf looks like
+
+**One grid, and the cover is the card.** Everything the child has read is a
+single wrapping shelf that scrolls: the Add tile in the top-left corner, then
+the books being read now, then every finished day back to the beginning,
+newest first. There used to be a "Today" row and a "Finished and set aside"
+row with their own headings and their own scrolling, and seeing yesterday
+meant crossing a seam.
+
+A card is its cover and nothing else. The title, the author and the progress
+number moved to the panel a tap opens — on a shelf of picture books, three
+lines of words under every cover made a grid mostly made of text. The title
+survives as the card's accessible name and its tooltip, so nothing is lost to
+a screen reader or a mouse. Progress rides ON the art as a bar across the foot
+of the cover, and a finished book wears a green check in the corner while a
+set-aside one wears a bookmark.
+
+**A book with no cover art gets a drawn one**, not a blank: the title set
+large over a colour derived from the title itself, so the same book is the
+same colour on every shelf and two coverless books beside each other are told
+apart at a glance. A blank placeholder was the one book a child could not
+find.
+
+**Days are read as colour, not as headings.** Each day takes the next colour
+from a cycling palette and that colour runs as a RAIL along the top of the
+whole day — one unbroken bar the width of the day's books, breaking only where
+the day wraps onto the next row. Each day opens with a SPINE: a slim partition
+in the day's colour carrying the day-of-month, the month below it when the
+month is not the current one, and the weekday running down it.
+
+Two rules the layout keeps:
+
+- **A spine is never the last thing on a row.** A partition in the final cell
+  announced a day whose books were all on the row below — it labelled the
+  wrong shelf. The spine and the day's first book wrap as one unbreakable
+  pair; everything after that first book wraps freely.
+- **The month is its own line, never appended to the number.** As one string,
+  "19 Aug" wrapped inside the spine while a bare "8" did not, so the numeral
+  sat at a different height on those days and the spines stopped lining up.
+
+**Tapping a book opens it.** A book in progress opens the update panel — its
+page number, "I finished it", or set it aside. A finished book opens its
+details and the offer to read it again. That is the only place the numbers
+live now that the cards carry none.
+
 ---
 
 ## 4. The printed card

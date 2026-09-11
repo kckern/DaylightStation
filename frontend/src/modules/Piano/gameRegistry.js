@@ -91,6 +91,33 @@ export function getGameEntry(gameId) {
   return GAME_REGISTRY[gameId] ?? null;
 }
 
+/**
+ * Fetch a game's chunk BEFORE anything is riding on it.
+ *
+ * `lazyWithReload` recovers from a stale chunk by reloading the shell, which is
+ * the right repair and the wrong MOMENT when the import is triggered by a game
+ * mounting: by then a child has passed a gate, and the recovery costs them the
+ * thing they just earned. Worse, when the reload guard was latched (see
+ * lib/chunkReload.js) there was no recovery at all and they got "This game
+ * stopped." — four times running, on 2026-09-11, after four clean passes.
+ *
+ * A gate takes tens of seconds. Warming the chunk while the child is still
+ * playing means a stale shell reloads BEFORE they have spent anything, and a
+ * warm chunk makes the hand-over after the ceremony instant. Failure is not
+ * propagated: `importWithReload` has already either reloaded or decided this is
+ * a real fault, and a preflight must never be the reason a gate does not open.
+ *
+ * @param {string} gameId
+ * @returns {Promise<void>} resolves whatever happened.
+ */
+export function preloadGame(gameId) {
+  const entry = getGameEntry(gameId);
+  if (!entry?.component) return Promise.resolve();
+  return Promise.resolve()
+    .then(() => entry.component())
+    .then(() => {}, () => {});
+}
+
 export function getGameIds() {
   return Object.keys(GAME_REGISTRY);
 }

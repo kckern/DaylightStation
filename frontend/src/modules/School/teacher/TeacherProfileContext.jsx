@@ -27,6 +27,10 @@ export function TeacherProfileProvider({ children }) {
   const [currentId, setCurrentId] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [authorization, setAuthorization] = useState(inactiveAuthorization);
+  // Whether school.yml still configures a console PIN. Read from the server,
+  // never assumed: the console used to prompt unconditionally, so clearing the
+  // PIN in config made the dialog unanswerable rather than unnecessary.
+  const pinRequiredRef = useRef(true);
   const [pinPrompt, setPinPrompt] = useState({ open: false, busy: false, error: null, action: null, resource: null });
   const pendingAuthorizationRef = useRef(null);
   const currentIdRef = useRef(null);
@@ -44,6 +48,7 @@ export function TeacherProfileProvider({ children }) {
       setConfigured(Boolean(teacherResponse.ok && teacherResponse.data?.configured));
       setTeachers(list);
 
+      pinRequiredRef.current = authResponse.data?.pinRequired !== false;
       const serverAuth = authResponse.ok && authResponse.data?.active ? authResponse.data : inactiveAuthorization();
       const authenticatedId = list.some((teacher) => teacher.id === serverAuth.userId) ? serverAuth.userId : null;
       const stored = sessionStorage.getItem(STORAGE_KEY);
@@ -124,6 +129,26 @@ export function TeacherProfileProvider({ children }) {
     // the abandoned caller wait forever, so fail the newer request explicitly.
     if (pendingAuthorizationRef.current) {
       return Promise.resolve({ ok: false, busy: true });
+    }
+    // NO PIN CONFIGURED — unlock without asking. The PIN was a shared secret
+    // standing in for "is a grown-up doing this", and on a household LAN where
+    // children have no browser that question is already answered; who it was
+    // comes from the teacher they picked, which is the part that mattered.
+    // Prompting anyway would demand a secret the server does not check and
+    // cannot be satisfied.
+    if (!pinRequiredRef.current) {
+      return (async () => {
+        const unlocked = await teacherWorkspaceApi.unlock(teacherId, null);
+        if (!unlocked.ok) return { ok: false, error: unlocked.error ?? 'Could not unlock the console.' };
+        const next = { active: true, userId: teacherId };
+        authorizationRef.current = next;
+        setAuthorization(next);
+        if (!action) return { ok: true, grantToken: null };
+        const grant = await teacherWorkspaceApi.stepUp({ pin: null, action, resource });
+        return grant.ok
+          ? { ok: true, grantToken: grant.data?.grantToken ?? null }
+          : { ok: false, error: grant.error ?? 'Could not authorize that action.' };
+      })();
     }
     return new Promise((resolve) => {
       pendingAuthorizationRef.current = { resolve, action, resource, teacherId };

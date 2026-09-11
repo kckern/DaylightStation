@@ -4,6 +4,7 @@ import {
   recoverFromChunkError,
   importWithReload,
   clearChunkReloadGuard,
+  RELOAD_GUARD_TTL_MS,
 } from './chunkReload.js';
 
 // Silence the logger (it tries to reach a websocket otherwise)
@@ -133,5 +134,71 @@ describe('importWithReload', () => {
       importWithReload(() => Promise.reject(new Error('real bug'))),
     ).rejects.toThrow('real bug');
     expect(reload).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * THE KIOSK REGRESSION.
+ *
+ * The guard used to be a one-shot for the life of the tab: set on the first
+ * recovery, cleared only by a later dynamic import SUCCEEDING. A piano tablet
+ * whose tab never closes and which rarely lazy-loads anything therefore stayed
+ * latched shut permanently, and every deploy afterwards left a dead chunk with
+ * no recovery. On 2026-09-11 that shipped `chunk-reload.exhausted` for
+ * connect-four and checkers at 16:50 and then for chess at 20:52, where a child
+ * who had just passed his practice gate three times running was told the game
+ * he had earned was broken.
+ *
+ * What the guard is actually for is "we reloaded and it STILL fails" — which
+ * resolves within seconds. So it expires, and these are the two halves of that.
+ */
+describe('reload guard expiry (a cooldown, not a one-shot)', () => {
+  let reload;
+  beforeEach(() => {
+    reload = installTestEnv();
+    clearChunkReloadGuard();
+    vi.useRealTimers();
+  });
+
+  const stale = () => new Error('Failed to fetch dynamically imported module: /assets/PianoChessGame-B0J4XdeD.js');
+
+  it('a failure LONG after the last reload is a new deploy, and recovers', () => {
+    vi.useFakeTimers();
+    try {
+      expect(recoverFromChunkError(stale())).toBe(true);
+      expect(reload).toHaveBeenCalledTimes(1);
+
+      // Hours later — a new build rotates the hashes again.
+      vi.advanceTimersByTime(4 * 60 * 60 * 1000);
+
+      expect(recoverFromChunkError(stale())).toBe(true);
+      expect(reload).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a failure moments after a reload is a REAL fault, and does not loop', () => {
+    vi.useFakeTimers();
+    try {
+      expect(recoverFromChunkError(stale())).toBe(true);
+      vi.advanceTimersByTime(RELOAD_GUARD_TTL_MS - 1000);
+      expect(recoverFromChunkError(stale())).toBe(false);
+      expect(reload).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a stamp from the future (clock stepped back) expires rather than latching', () => {
+    window.sessionStorage.setItem('daylight.chunkReload.attempted', String(Date.now() + 60 * 60 * 1000));
+    expect(recoverFromChunkError(stale())).toBe(true);
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('an unparseable stamp fails toward recovery, not toward a dead kiosk', () => {
+    window.sessionStorage.setItem('daylight.chunkReload.attempted', 'true');
+    expect(recoverFromChunkError(stale())).toBe(true);
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 });

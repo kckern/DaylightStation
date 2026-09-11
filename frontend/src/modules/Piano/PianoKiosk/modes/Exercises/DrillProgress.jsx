@@ -70,20 +70,35 @@ function Cluster({ step, isCurrent, noteProgress }) {
  * @param {string} programId   the drill being run
  * @param {string} stepId      the set this run belongs to
  * @param {string} userId      whose attempts project the program
+ * @param {object|null} program a projection supplied by the HOST. When present
+ *   it is used as-is and nothing is fetched — the game gate passes one because
+ *   its drill is scoped to a single study day, which the learning endpoint's
+ *   lifetime projection cannot express. Omit it and this fetches its own, which
+ *   is what a practice mount wants.
  * @param {number} noteProgress 0..1 through the current rep's notes
  * @param {string} phase       the run's phase; 'opening' plays the flourish
  * @param {number} reloadKey   bump to re-read the projection after a pass lands
+ * @param {import('react').ReactNode} fallback what to render when there are no
+ *   pills to draw — the host's own standing instruction. See the note at the
+ *   return below for why this cannot be `null`.
  */
 export default function DrillProgress({
-  programId, stepId, userId, noteProgress = 0, phase = 'playing', reloadKey = 0,
+  programId, stepId, userId, program: suppliedProgram = null,
+  noteProgress = 0, phase = 'playing', reloadKey = 0, fallback = null,
 }) {
-  const [program, setProgram] = useState(null);
+  const [fetched, setFetched] = useState(null);
+  // A host that supplies a projection OWNS it — including when it changes. The
+  // fetched one is only ever a fallback, and the two never mix: reading them
+  // together would let a stale lifetime projection overwrite a day-scoped one
+  // the moment the endpoint answered.
+  const program = suppliedProgram ?? fetched;
 
   // A finished run is the only thing that can have moved the projection, so
   // `settled` is the re-read signal rather than a timer: the pills refresh when
   // a rep banks and at no other point in the take.
   const settled = phase === 'done';
   useEffect(() => {
+    if (suppliedProgram) return undefined;
     if (!programId || !userId) return undefined;
     // Optional-call, and check we got a thenable back. This is chrome around
     // somebody's practice, not the practice itself: if the learning endpoint
@@ -95,10 +110,10 @@ export default function DrillProgress({
     pending.then((result) => {
       if (!alive || !result?.ok) return;
       const found = (result.data?.programs ?? []).find((entry) => entry.id === programId);
-      setProgram(found ?? null);
+      setFetched(found ?? null);
     }).catch(() => { /* no projection, no pills */ });
     return () => { alive = false; };
-  }, [programId, userId, stepId, settled, reloadKey]);
+  }, [programId, userId, stepId, settled, reloadKey, suppliedProgram]);
 
   const current = useMemo(() => {
     const steps = program?.steps ?? [];
@@ -108,8 +123,19 @@ export default function DrillProgress({
   }, [program, stepId]);
 
   // A single-set program is not a drill, and a row of one pill says nothing a
-  // learner needs. Render nothing rather than decorate.
-  if (!program || (program.steps?.length ?? 0) < 2) return null;
+  // learner needs. There are no pills to read, so whatever the host would have
+  // shown INSTEAD of them is what belongs here.
+  //
+  // `fallback` rather than `null`, and that is a fix rather than a flourish.
+  // The host writes `drillProgress ?? standingInstruction`, and `drillProgress`
+  // is a JSX ELEMENT — truthy whatever this renders. So a run that had no
+  // projection (a one-step program, a learning endpoint that had not answered,
+  // and from now on a gate drill whose ledger was unreadable) suppressed the
+  // instruction line and then drew no pills either: an empty rail, and a child
+  // told nothing at all about how to start. Returning the fallback from here is
+  // the only place that can know, and it needs no hook in the host — which is
+  // what the original attempt cost (a hook below an early return, 114 tests).
+  if (!program || (program.steps?.length ?? 0) < 2) return fallback;
 
   return (
     <div className="drill-progress" data-phase={phase}>

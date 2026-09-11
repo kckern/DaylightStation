@@ -54,7 +54,9 @@ describe('shelf experience', () => {
     // and the pad acts on them after its settle.
     expect(screen.queryByRole('button', { name: 'Look it up' })).toBeNull();
     await screen.findByRole('button', { name: 'Start reading' });
-    expect(screen.getByText('Hatchet')).toBeInTheDocument();
+    // A coverless book draws its title AS its cover, so the title is on the
+    // page twice; the heading is the one the confirm card is about.
+    expect(screen.getByRole('heading', { name: 'Hatchet' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Update page' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Finished today' })).toBeInTheDocument();
     // Wrong book: Back is the door — the header's, not a second button under
@@ -70,8 +72,11 @@ describe('shelf experience', () => {
     expect(screen.queryByTestId('numberpad')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Finished today' }));
     const receipt = await screen.findByTestId('book-save-receipt');
-    expect(screen.getByTestId('book-shelf-grid')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Book history' })).toBeInTheDocument();
+    expect(screen.getByTestId('book-grid')).toBeInTheDocument();
+    // The finished book lands in the grid under its own day, rather than
+    // under a "Book history" heading in a second section below the shelf.
+    expect(within(screen.getByTestId('book-grid')).getByRole('button', { name: 'Open Hatchet' })).toBeInTheDocument();
+    expect(screen.getAllByTestId('book-history-group')).toHaveLength(1);
     fireEvent.click(within(receipt).getByRole('button', { name: 'Undo finish' }));
     await waitFor(() => expect(api.progress).toHaveBeenCalledTimes(2));
     expect(api.progress.mock.calls[1][2]).toBe(item.itemId);
@@ -158,8 +163,10 @@ describe('shelf experience', () => {
     ]));
     render(<BookShelf {...props} />);
     const history = await screen.findByTestId('book-history');
-    // Newest day first; the backdated finish sits under its own day's heading.
-    expect(within(history).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['Open Recent', 'Open Backdated']);
+    // Newest day first; the backdated finish sits under its own day's spine.
+    // The Add tile leads the grid and is not one of the books.
+    expect(within(history).getAllByRole('button').map(button => button.getAttribute('aria-label')))
+      .toEqual([null, 'Open Recent', 'Open Backdated']);
     const groups = within(history).getAllByTestId('book-history-group');
     expect(groups.map((g) => g.getAttribute('data-day'))).toEqual(['2026-09-07', '2026-09-02']);
     // Same month as today: the bare number, then the weekday down the spine.
