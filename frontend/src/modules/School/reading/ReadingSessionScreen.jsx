@@ -194,14 +194,19 @@ ReadingStage.propTypes = {
   logger: PropTypes.object,
 };
 
-function recentDayLabel(studyDay, currentStudyDay) {
+export function recentDayLabel(studyDay, currentStudyDay) {
   if (!studyDay) return '';
   if (studyDay === currentStudyDay) return 'Today';
   const current = Date.parse(`${currentStudyDay}T00:00:00Z`);
   const day = Date.parse(`${studyDay}T00:00:00Z`);
   if (Number.isFinite(current) && current - day === 86_400_000) return 'Yesterday';
   if (!Number.isFinite(day)) return studyDay;
-  return new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(new Date(day));
+  // FORMATTED IN UTC, BECAUSE IT WAS PARSED IN UTC. A study day is a calendar
+  // date, not an instant; handing `new Date(utcMidnight)` to a local-time
+  // formatter shifts it a day backwards anywhere west of Greenwich, which put
+  // Wednesday's two books under a heading that read TUE — while the streak
+  // wall six inches below had them on the right day.
+  return new Intl.DateTimeFormat(undefined, { weekday: 'short', timeZone: 'UTC' }).format(new Date(day));
 }
 
 /**

@@ -35,7 +35,7 @@ vi.mock('../../../lib/logging/Logger.js', () => ({
   default: () => ({ child: () => ({ info() {}, debug() {}, warn() {}, error() {} }) }),
 }));
 
-import { ReadingSessionScreen, Ceremony, clockTime } from './ReadingSessionScreen.jsx';
+import { ReadingSessionScreen, Ceremony, clockTime, recentDayLabel } from './ReadingSessionScreen.jsx';
 
 const SUMMARY = {
   learnerId: 'user_5', displayName: 'User_5', enrolled: true, error: false,
@@ -365,5 +365,19 @@ describe('ReadingSessionScreen', () => {
       await act(async () => { await vi.advanceTimersByTimeAsync(1200); });
       expect(h.overlay.shown[0].props.play).toMatchObject({ contentId: 'plex:999' });
     });
+  });
+});
+
+describe('recentDayLabel', () => {
+  it('names the weekday of the study day itself, not the day before it', () => {
+    // 2026-09-09 is a Wednesday. Parsed at UTC midnight and formatted in any
+    // timezone west of Greenwich, the naive version said "Tue".
+    expect(recentDayLabel('2026-09-09', '2026-09-11')).toBe('Wed');
+    expect(recentDayLabel('2026-09-08', '2026-09-11')).toBe('Tue');
+  });
+
+  it('still prefers the words for the two days that have them', () => {
+    expect(recentDayLabel('2026-09-11', '2026-09-11')).toBe('Today');
+    expect(recentDayLabel('2026-09-10', '2026-09-11')).toBe('Yesterday');
   });
 });
