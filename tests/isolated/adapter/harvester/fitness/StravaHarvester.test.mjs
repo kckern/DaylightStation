@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
+import yaml from 'js-yaml';
 
 describe('StravaHarvester', () => {
   let harvester;
@@ -702,9 +703,65 @@ describe('StravaHarvester', () => {
       expect(updated.participants.user_1.strava.deviceName).toBe('Garmin Forerunner 245 Music');
     });
 
+    it('does not block the event loop while scanning a week of session files', async () => {
+      // THE CONTAINER-STABILITY REGRESSION. Every step of the scan is synchronous
+      // — readdir, read, YAML parse, timeline hydration — and a session file
+      // carries a full timeline. Run unbroken over several days of them it blocked
+      // the loop for 13-15 seconds (observed 2026-09-11), which fails the
+      // container healthcheck (8s timeout, 3 retries) three times running and gets
+      // the whole backend restarted by autoheal, dropping every kiosk's socket.
+      //
+      // The assertion is not about speed. It is that a timer scheduled BEFORE the
+      // scan still fires DURING it — i.e. the loop is being serviced rather than
+      // starved. A synchronous scan cannot satisfy this no matter how fast it is.
+      const dateDir = path.join(tmpDir, '2026-02-15');
+      fs.mkdirSync(dateDir, { recursive: true });
+      for (let i = 0; i < 6; i += 1) {
+        fs.writeFileSync(path.join(dateDir, `sess-${i}.yml`), yaml.dump({
+          sessionId: `s${i}`,
+          session: { id: `s${i}`, date: '2026-02-15', start: '2026-02-15 19:12:50', end: '2026-02-15 19:20:50', duration_seconds: 480 },
+          timezone: 'America/Los_Angeles',
+          participants: { user_1: { display_name: 'User_1', is_primary: true } },
+          timeline: { events: [] },
+        }));
+      }
+
+      const harvester = new StravaHarvester({
+        stravaClient: mockStravaClient,
+        lifelogStore: mockLifelogStore,
+        getUserAuth: mockConfigService.getUserAuth,
+        getUserDir: mockConfigService.getUserDir,
+        clientId: mockConfigService.getSecret('STRAVA_CLIENT_ID'),
+        redirectUri: mockConfigService.getSecret('STRAVA_URL'),
+        mediaDir: mockConfigService.getMediaDir(),
+        fitnessHistoryDir: tmpDir,
+        timezone: 'America/Los_Angeles',
+        logger: mockLogger,
+      });
+
+      // A macrotask chain running alongside the scan. If the scan holds the loop
+      // it cannot advance; each yield the scan performs lets it tick once.
+      let turns = 0;
+      let running = true;
+      const pump = () => { if (running) { turns += 1; setImmediate(pump); } };
+      setImmediate(pump);
+
+      await harvester.matchHomeSessions('user_1', [
+        { id: 1, start_date: '2026-02-16T03:12:50Z', moving_time: 480, type: 'Ride', distance: 0 },
+      ]);
+      running = false;
+
+      // One turn per file scanned, give or take. A synchronous scan yields none.
+      expect(turns).toBeGreaterThanOrEqual(6);
+    });
+
     it('should retry matching for recent summary entries missing homeSessionId', async () => {
       // Pin clock so the cutoff window stays valid regardless of when the test runs.
-      vi.useFakeTimers();
+      // ONLY Date. The session scan yields with `setImmediate` between files so a
+      // week of large timeline YAML cannot block the event loop (and fail the
+      // container healthcheck); faking the whole timer set would swallow that
+      // yield and hang here instead of anywhere useful.
+      vi.useFakeTimers({ toFake: ['Date'] });
       vi.setSystemTime(new Date('2026-02-16T12:00:00Z'));
 
       try {
