@@ -6,6 +6,8 @@ import {
   ACCIDENTAL_WIDTH,
   ACCIDENTAL_HEIGHT,
   ACCIDENTAL_GAP,
+  ACCIDENTAL_INK_LEFT,
+  ACCIDENTAL_COLUMN_PITCH,
   NOTEHEAD_RX,
   SharpShape,
   FlatShape,
@@ -179,12 +181,17 @@ export function SvgStaffRenderer({
     const accDx = sorted.map((np, i) => {
       if (!accidentalColumn.has(i)) return null;
       const columnDx = Math.min(0, ...offsets) - NOTEHEAD_RX - ACCIDENTAL_GAP - ACCIDENTAL_WIDTH / 2;
-      return columnDx - accidentalColumn.get(i) * (ACCIDENTAL_WIDTH + 2);
+      return columnDx - accidentalColumn.get(i) * ACCIDENTAL_COLUMN_PITCH;
     });
 
     const leftDx = Math.min(
       ...offsets.map((offset) => offset - NOTEHEAD_RX),
-      ...accDx.filter((dx) => dx !== null).map((dx) => dx - ACCIDENTAL_WIDTH / 2),
+      // The glyph's REAL left extent, not its nominal box: a flat's stem hangs
+      // two units further left than half the box, and clearing the clef by the
+      // box leaves the stem drawn on top of it.
+      ...sorted.flatMap((np, i) => (accDx[i] === null
+        ? []
+        : [accDx[i] - ACCIDENTAL_INK_LEFT[np.isSharp ? 'sharp' : 'flat']])),
     );
     const rightDx = Math.max(...offsets.map((offset) => offset + NOTEHEAD_RX), 9);
     const shift = Math.max(0, clefRightEdge(lineSpacing) - (NOMINAL_BASE_X + leftDx));

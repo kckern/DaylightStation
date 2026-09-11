@@ -135,11 +135,12 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
   // Which key drops into which column, resolved from the layers rather than
   // from a constant in this file — see docs/reference/piano/grid-addressing.md.
   const overrides = useMemo(() => configuredAddressing(config), [config]);
+  // FROZEN FOR THE GAME: the column a note drops into must not change under a
+  // child partway through it. See managedAddressing.js.
   const managed = useMemo(() => managedAddressingAt(addressingPolicy?.config, {
     learnerId: addressingPolicy?.learnerId,
     completedGames: addressingPolicy?.completedGames,
-    completedPlayerMoves: Math.ceil(moves.length / 2),
-  }), [addressingPolicy, moves.length]);
+  }), [addressingPolicy]);
   const { x: columnNotes, addressing } = useAddressing({
     config, axisSize: COLUMNS, seed, ply: moves.length, overrides, managed,
   });

@@ -15,12 +15,42 @@ import './StaffNoteLabel.scss';
  *
  * The card is the house treatment for notation on a dark screen: notation needs
  * paper under it, because staff lines and noteheads are drawn as ink.
+ *
+ * TWO CHANNELS OF ANSWER, both off by default and both supplied by the host:
+ *
+ * `held` are the keys down right now, drawn as ghost noteheads wherever they
+ * land on this card's staff. The renderer has always been able to draw them and
+ * nothing ever passed them, so the board's only reply to a wrong press was
+ * "that chord is not on the board" — a child walking up the scale toward a note
+ * got nothing back for getting closer.
+ *
+ * `locked` says this card's hand is exactly right. It stays lit while the other
+ * hand is worked, because the player is still holding it, and it is the answer
+ * to the thing that made a dyad board so punishing: a correct right hand earned
+ * nothing until the left one landed, so it got thrown away and guessed again.
+ *
+ * @param {number|number[]} midi the note (or shape) this card names
+ * @param {number[]} [held] MIDI notes currently down on this card's axis
+ * @param {boolean} [locked] this card's hand is completely and correctly played
+ * @param {'sharp'|'flat'} [accidental] spelling for black keys on this board
  */
-export function StaffNoteLabel({ midi, midis = null }) {
+export function StaffNoteLabel({ midi, midis = null, held = null, locked = false, accidental = undefined }) {
   const targetPitches = Array.isArray(midis) ? midis : (Array.isArray(midi) ? midi : [midi]);
+  // `action-staff--matched` is the shared green treatment the other piano staves
+  // already use for ink that is right; the local class adds the border and glow
+  // that make it read as LOCKED from across the room.
+  const className = `chess-staff-label action-staff${locked ? ' action-staff--matched chess-staff-label--locked' : ''}`;
   return (
-    <div className="chess-staff-label action-staff">
-      <SvgStaffRenderer targetPitches={targetPitches} />
+    <div
+      className={className}
+      data-locked={locked ? 'true' : undefined}
+    >
+      <SvgStaffRenderer
+        targetPitches={targetPitches}
+        activeNotes={held}
+        matched={locked}
+        accidental={accidental}
+      />
     </div>
   );
 }

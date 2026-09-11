@@ -349,6 +349,9 @@
 
 .chess-readout--unmapped .chess-readout__chord { color: var(--pc-felt); }
 .chess-readout--offline { color: var(--piano-muted, #9a9aa6); }
+/* One hand landed, the other still being worked. Green, like the rim card that
+   went with it, so the two halves of the same answer agree with each other. */
+.chess-readout--half .chess-readout__says { color: var(--pc-brass); font-weight: 700; }
 
 
 /* ---- the chord rail: a mirror of the hands ------------------------------- */

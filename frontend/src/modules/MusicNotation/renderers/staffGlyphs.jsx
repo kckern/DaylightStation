@@ -20,9 +20,43 @@ export const ACCIDENTAL_GAP = 3;
 export const NOTEHEAD_RX = 9;
 export const NOTEHEAD_RY = 6.5;
 
+/**
+ * How far LEFT of its own origin each accidental's ink actually reaches.
+ *
+ * Not ACCIDENTAL_WIDTH / 2. That is the nominal column box used for spacing, and
+ * a flat is not centred in it: its stem sits at x = -6.5 with a 2.4 stroke, so
+ * its ink starts at -7.7 while the box says -5.5. Anything positioning an
+ * accidental against a hard boundary — the clef, the edge of the staff — has to
+ * ask for the real extent or it will place the glyph two units inside whatever
+ * it was trying to clear, which is exactly enough to look like a mistake.
+ */
+export const ACCIDENTAL_INK_LEFT = Object.freeze({ sharp: 5.5, flat: 7.7 });
+
+/**
+ * Gap between two accidental columns.
+ *
+ * Tighter than a full glyph box on purpose: two accidentals are only ever in
+ * separate columns BECAUSE they are at different heights, so their boxes may
+ * overlap horizontally without their ink ever meeting. Engraving does the same.
+ * The slack matters — on a 100-unit staff a bass-clef triad carrying two
+ * accidentals and a displaced notehead has no room to spare.
+ */
+export const ACCIDENTAL_COLUMN_PITCH = ACCIDENTAL_WIDTH - 1;
+
 /** Where `ClefGlyph` places itself, so callers can keep their ink off it. */
 export const CLEF_X = 2;
-export const clefWidth = (lineSpacing) => lineSpacing * 3;
+/**
+ * Two and a bit staff spaces, which is about what a bass clef is.
+ *
+ * This was three spaces. The treble clef never noticed — it is tall and narrow,
+ * so its scale is decided by the height constraint and it comes out around two
+ * spaces wide whatever this says. The BASS clef is wide enough that this is what
+ * binds, so three spaces drew it fatter than a printed one and, worse, reserved
+ * a third of the staff's width before a single note was placed. On the rank rim
+ * — bass clef, and the axis that gets the triads — that was the difference
+ * between a card that fits and a card whose accidentals sit on the clef.
+ */
+export const clefWidth = (lineSpacing) => lineSpacing * 2.2;
 /**
  * The x a staff's own ink must stay right of.
  *

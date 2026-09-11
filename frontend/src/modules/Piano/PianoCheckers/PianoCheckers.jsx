@@ -138,15 +138,14 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
   // layout, and the cadence decides when it moves — see
   // docs/reference/piano/grid-addressing.md.
   const overrides = useMemo(() => configuredAddressing(config), [config]);
-  const completedPlayerMoves = useMemo(() => moves.reduce((total, _move, index) => {
-    const replayed = replayGame({ moves: moves.slice(0, index + 1) });
-    return total + (replayed.lastMove?.player === 1 ? 1 : 0);
-  }, 0), [moves]);
+  // FROZEN FOR THE GAME — and the count it needed is gone with it. Deriving
+  // `completedPlayerMoves` meant replaying the whole game once per move inside
+  // a reduce, on every render: an O(n^2) replay per frame, for an input that
+  // should never have been moving the board mid-game in the first place.
   const managed = useMemo(() => managedAddressingAt(addressingPolicy?.config, {
     learnerId: addressingPolicy?.learnerId,
     completedGames: addressingPolicy?.completedGames,
-    completedPlayerMoves,
-  }), [addressingPolicy, completedPlayerMoves]);
+  }), [addressingPolicy]);
   const { x: fileNotes, y: rankNotes, addressing } = useAddressing({
     config, axisSize: AXIS, seed, ply: moves.length, overrides, managed,
   });
