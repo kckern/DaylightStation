@@ -196,7 +196,7 @@ export class PianoCourseProgramLauncher {
 
   async status({ userId, programInstance = null, day = null }) {
     if (!programInstance) {
-      return { doneToday: false, progressLabel: 'No piano course assigned', score: null };
+      return { doneToday: false, progressLabel: 'No piano course assigned', score: null, servedWork: [] };
     }
 
     let result;
@@ -247,6 +247,25 @@ export class PianoCourseProgramLauncher {
     ));
     const common = {
       score,
+      // NO WORK UNLESS A BRANCH BELOW CLAIMS SOME. Empty here, so that every
+      // answer this launcher gives carries the field the agenda reads
+      // (`Array.isArray(status.servedWork)`) and the two branches that DID
+      // credit a lesson override it on their way out.
+      //
+      // The two excused branches — a parent day-bypass, a co-progress lock —
+      // keep this empty deliberately. They are `doneToday: true` with nobody
+      // having played anything, and a served row is a claim that work WAS
+      // performed: the board paints one `passed` (green) and the printed agenda
+      // files it under what the child finished. Neither may say a child
+      // practised because a parent excused them.
+      //
+      // The cost is real and known: an excused day has no served work and no
+      // `next`, so its disc leaves the board entirely. The fix for THAT is a
+      // board state that can say "resolved, but not performed" — the four
+      // states (`passed`/`needs-retry`/`in-progress`/`pending`) cannot — not a
+      // green disc bought with a false claim. See "The exception" in
+      // docs/reference/school/programs.md.
+      servedWork: [],
       context: projection,
       progress: this.#progress({ focus, credit, parents: result?.parents, completed, total }),
       completedLessons,
