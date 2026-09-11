@@ -14,20 +14,47 @@ export const NOTE_TO_DIATONIC = { 0: 0, 2: 1, 4: 2, 5: 3, 7: 4, 9: 5, 11: 6 };
 export const isBlackKey = (midiNote) => !WHITE_KEYS.has(((midiNote % 12) + 12) % 12);
 
 /**
+ * Default spelling for each black key, with no key signature to lean on.
+ *
+ * These are the same five leans as `CHROMATIC_LEANS_SHARP` in model/spelling.js,
+ * read with C as the tonic: C♯ and F♯ spell sharp, E♭, A♭ and B♭ spell flat.
+ * That module is the authority on the convention and explains why each one
+ * leans the way it does; this is the no-context reduction of it, kept as a flat
+ * table because it is read once per notehead per render and must stay cheap.
+ * `pitch.test.js` asserts the two never drift apart.
+ */
+export const DEFAULT_BLACK_KEY_SPELLING = Object.freeze({
+  1: 'sharp',   // C♯
+  3: 'flat',    // E♭
+  6: 'sharp',   // F♯
+  8: 'flat',    // A♭
+  10: 'flat',   // B♭
+});
+
+/**
  * Choose how to spell a black key (sharp vs flat).
  *
+ * DETERMINISTIC. This used to default to `Math.random() < 0.5`, and because the
+ * spelling decides the staff POSITION downstream — sharps spell from the natural
+ * below, flats from the natural above — the same MIDI note rendered a diatonic
+ * step higher or lower from one frame to the next. On the piano-chess rim that
+ * meant a card the child could not recognise twice, and one note of a dyad
+ * coming out flat while its partner came out sharp. A notehead's height is not
+ * a coin flip.
+ *
+ * Callers that know the key pass `accidental` explicitly; everything else gets
+ * the house lean above.
+ *
  * @param {number} midiNote
- * @param {'sharp'|'flat'} [accidental] - force a spelling; omit for the legacy
- *   random 50/50 choice (preserves ActionStaff's original behavior).
+ * @param {'sharp'|'flat'} [accidental] - force a spelling.
  * @returns {{ isSharp: boolean, isFlat: boolean }}
  */
 export function spellAccidental(midiNote, accidental) {
   if (!isBlackKey(midiNote)) return { isSharp: false, isFlat: false };
-  if (accidental === 'sharp') return { isSharp: true, isFlat: false };
-  if (accidental === 'flat') return { isSharp: false, isFlat: true };
-  // Legacy default: random sharp/flat (caller is expected to memoize per render).
-  const isSharp = Math.random() < 0.5;
-  return { isSharp, isFlat: !isSharp };
+  const choice = accidental === 'sharp' || accidental === 'flat'
+    ? accidental
+    : DEFAULT_BLACK_KEY_SPELLING[((midiNote % 12) + 12) % 12];
+  return { isSharp: choice === 'sharp', isFlat: choice === 'flat' };
 }
 
 /**

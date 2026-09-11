@@ -1,8 +1,10 @@
 import { useMemo } from 'react';
 import { getStaffPositionOnClef } from '../model/pitch.js';
 import { stemDirectionFor, stemLengthUnits } from '../model/stems.js';
+import { noteheadOffsets, accidentalColumns } from '../model/chordLayout.js';
 import {
   ACCIDENTAL_WIDTH,
+  ACCIDENTAL_HEIGHT,
   ACCIDENTAL_GAP,
   NOTEHEAD_RX,
   NOTEHEAD_RY,
@@ -166,14 +168,11 @@ export function SvgSequenceStaff({
         const outerPos = stemUp ? heads[heads.length - 1].position : heads[0].position;
 
         // Seconds inside a simultaneity sit on opposite sides of the stem —
-        // the same rule the single-simultaneity renderer uses.
-        const offsets = heads.map(() => 0);
-        for (let i = 1; i < heads.length; i++) {
-          if (heads[i].position - heads[i - 1].position <= 1) {
-            if (stemUp) offsets[i - 1] = -2 * NOTEHEAD_RX;
-            else offsets[i] = 2 * NOTEHEAD_RX;
-          }
-        }
+        // the same rule the single-simultaneity renderer uses, and now literally
+        // the same code (model/chordLayout.js). Both renderers had their own
+        // copy and both copies displaced the head to the side the stem ISN'T.
+        const offsets = noteheadOffsets(heads.map((h) => h.position), dir)
+          .map((column) => column * 2 * NOTEHEAD_RX);
 
         // Run state, rule 1 + 5: opacity NEVER carries this — every notehead
         // renders at full opacity regardless of state, so the only thing that
@@ -188,10 +187,17 @@ export function SvgSequenceStaff({
         const active = isCursor && attemptInProgress;
         const state = index < cursorIndex ? 'done' : active ? 'active' : isCursor ? 'current' : 'todo';
 
-        // Accidentals alternate columns by how many the CHORD carries, not by
-        // notehead index — two accidentals three heads apart still need
-        // separate columns, and two adjacent naturals must not consume one.
-        let accCount = 0;
+        // Accidentals take a column of their own only when a neighbour would
+        // otherwise be drawn through them: the glyph is nearly two staff spaces
+        // tall, so a third apart collides and a fifth apart does not. Counting
+        // accidentals and alternating pushed clear ones needlessly outward,
+        // which on a narrow staff is what ran them into the clef.
+        const accidentalColumn = accidentalColumns(
+          heads.flatMap((head, index2) => (
+            head.isSharp || head.isFlat ? [{ index: index2, position: head.position }] : []
+          )),
+          ACCIDENTAL_HEIGHT / STEP_SIZE,
+        );
         const drawn = heads.map((head, i) => {
           const hasAccidental = head.isSharp || head.isFlat;
           // Per-notehead hit/miss (rule 2), meaningful only while this entry
@@ -202,7 +208,7 @@ export function SvgSequenceStaff({
             ...head,
             offset: offsets[i],
             hasAccidental,
-            accStagger: hasAccidental ? accCount++ % 2 : 0,
+            accStagger: hasAccidental ? accidentalColumn.get(i) : 0,
             noteState,
           };
         });
