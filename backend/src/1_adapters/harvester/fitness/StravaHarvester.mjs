@@ -688,7 +688,7 @@ export class StravaHarvester extends IHarvester {
    * @param {string[]} dates - Array of YYYY-MM-DD date strings
    * @returns {Array<Object>} Session objects with parsed start/end times
    */
-  #loadHomeSessions(dates) {
+  async #loadHomeSessions(dates) {
     if (!this.#fitnessHistoryDir) return [];
 
     const sessions = [];
@@ -698,6 +698,23 @@ export class StravaHarvester extends IHarvester {
       const files = listYamlFiles(dateDir);
 
       for (const filename of files) {
+        // YIELD BETWEEN FILES. Every step below is synchronous — readdir, read,
+        // YAML parse, timeline hydration — and a fitness session file carries a
+        // full timeline with thousands of series points. Scanning a week of them
+        // in one unbroken run blocked the event loop for 13-15 SECONDS on
+        // 2026-09-11 (`system.event-loop.lag maxMs=13682`, p99 still 66ms: one
+        // enormous tick, not general slowness). The container healthcheck is
+        // `curl localhost:3111/` with an 8s timeout and 3 retries, so a long
+        // enough scan fails it three times running and `autoheal` restarts the
+        // container — taking every kiosk's WebSocket down with it. The
+        // device-liveness "offline" storm in the same second is the same cause:
+        // every timer fired late at once.
+        //
+        // The total wall time is unchanged. What changes is that the loop is no
+        // longer BLOCKED during it: timers, the healthcheck and the socket all
+        // get serviced between files, which is the whole difference between a
+        // slow harvest and a restarted house.
+        await new Promise(resolve => setImmediate(resolve));
         const filePath = path.join(dateDir, `${filename}.yml`);
         const data = hydrateStoredTimeline(loadYamlSafe(filePath));
         if (!data?.session?.start || !data?.participants) continue;
@@ -734,13 +751,13 @@ export class StravaHarvester extends IHarvester {
    * @param {Array} activities - Strava activity objects
    * @returns {Array<{ activityId, sessionId, session, activity }>} Matched pairs
    */
-  #findMatches(username, activities) {
+  async #findMatches(username, activities) {
     // Collect unique dates from activities
     const dates = [...new Set(activities.map(a =>
       moment(a.start_date).tz(this.#timezone).format('YYYY-MM-DD')
     ))];
 
-    const homeSessions = this.#loadHomeSessions(dates);
+    const homeSessions = await this.#loadHomeSessions(dates);
     if (homeSessions.length === 0) return [];
 
     const matches = [];
@@ -877,7 +894,7 @@ export class StravaHarvester extends IHarvester {
    * @param {Array} activities
    */
   async applyHomeSessionEnrichment(username, activities) {
-    const matches = this.#findMatches(username, activities);
+    const matches = await this.#findMatches(username, activities);
     await this.#applyEnrichment(username, matches);
     return matches;
   }
@@ -921,7 +938,7 @@ export class StravaHarvester extends IHarvester {
 
     if (unmatchedActivities.length === 0) return;
 
-    const matches = this.#findMatches(username, unmatchedActivities);
+    const matches = await this.#findMatches(username, unmatchedActivities);
     await this.#applyEnrichment(username, matches);
 
     if (matches.length > 0) {
