@@ -23,6 +23,7 @@ import { createAdminContentRouter } from '#api/v1/routers/admin/content.mjs';
 import { ListManagementService } from '#apps/content/services/ListManagementService.mjs';
 import { YamlListDatastore } from '#adapters/persistence/yaml/YamlListDatastore.mjs';
 import { ListConfigCodec } from '#adapters/content/list/ListConfigCodec.mjs';
+import { errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -30,12 +31,6 @@ import { ListConfigCodec } from '#adapters/content/list/ListConfigCodec.mjs';
 
 let tmpDir;
 let app;
-
-/** Minimal error-handling middleware that maps httpStatus from domain errors */
-function testErrorHandler(err, req, res, _next) {
-  const status = err.httpStatus || 500;
-  res.status(status).json({ ok: false, error: err.message, code: err.code });
-}
 
 function buildApp(dataDir) {
   const a = express();
@@ -60,7 +55,14 @@ function buildApp(dataDir) {
   });
 
   a.use('/admin/content', router);
-  a.use(testErrorHandler);
+  // Mount the SAME error middleware production mounts, not a hand-rolled double.
+  // createAdminContentRouter has no error handler of its own (unlike its sibling
+  // admin routers), so in production its thrown errors are mapped by the
+  // app-level errorHandlerMiddleware() in backend/src/app.mjs. That handler maps
+  // by err.name, because the application errors ListManagementService throws
+  // (#apps/common/errors/SemanticErrors.mjs) are deliberately transport-neutral
+  // and carry no HTTP status of their own.
+  a.use(errorHandlerMiddleware());
   return a;
 }
 

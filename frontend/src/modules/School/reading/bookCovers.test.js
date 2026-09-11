@@ -65,6 +65,20 @@ describe('bookCover', () => {
     expect(good).toBe('/good.jpg');
   });
 
+  it('asks Plex for the shelf-sized image rather than the original poster', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true, json: async () => ({ image: '/api/v1/proxy/plex/library/metadata/620705/thumb/1779295360' }),
+    }));
+    const url = await bookCover('plex:620707', fetchImpl);
+    expect(url).toContain('/photo/:/transcode');
+    expect(url).toContain('width=');
+  });
+
+  it('leaves a non-Plex cover exactly as it arrived', async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ image: '/img/local-cover.jpg' }) }));
+    expect(await bookCover('plex:620999', fetchImpl)).toBe('/img/local-cover.jpg');
+  });
+
   it('answers null for no id without asking anything', async () => {
     const fetchImpl = vi.fn();
     expect(await bookCover(null, fetchImpl)).toBe(null);

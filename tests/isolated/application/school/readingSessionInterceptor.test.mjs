@@ -42,18 +42,51 @@ const unreadable = {
   status: async () => ({ error: true, enrolled: null, count: null, target: null, doneToday: false }),
 };
 
-function build({ storyTime = owing, sessions = new ReadingSessionService({ logger: silent }) } = {}) {
+/**
+ * ONE recorder, shared by both halves of the seam.
+ *
+ * Everywhere else the interceptor is the only thing that talks to the screen,
+ * so a gateway wired to it alone was enough. The REOPEN is the exception: the
+ * session store announces `session-open` and the interceptor then announces
+ * `book-selected`, and the ORDER of those two is the assertion — the launch
+ * card has to be back before the book lands on it. They can only be compared
+ * if both go to the same place, which is what the field has: one realtime
+ * gateway, composed into both.
+ */
+function recorder() {
   const sent = [];
-  const interceptor = new ReadingSessionInterceptor({
-    sessions,
-    storyTime,
+  return {
+    sent,
     realtime: {
       readingRoomChanged: (location, { kind, ...payload }) => sent.push({ topic: `reading:${location}`, payload: { event: kind, ...payload } }),
     },
-    logger: silent,
-  });
-  return { interceptor, sessions, sent };
+  };
 }
+
+function build({
+  storyTime = owing, bus = recorder(), wakeScreen = null, logger = silent, clock = () => new Date(),
+  sessions = new ReadingSessionService({ logger: silent }),
+} = {}) {
+  const interceptor = new ReadingSessionInterceptor({
+    sessions,
+    storyTime,
+    realtime: bus.realtime,
+    wakeScreen,
+    clock,
+    logger,
+  });
+  return { interceptor, sessions, sent: bus.sent };
+}
+
+/** A logger that keeps what it was told, for the paths whose only output is a log line. */
+function recordingLogger() {
+  const lines = [];
+  const at = (level) => (event, data) => lines.push({ level, event, data });
+  return { lines, warn: at('warn'), info: at('info'), error: at('error'), debug: at('debug') };
+}
+
+/** Let a fire-and-forget continuation run without leaning on a timer. */
+const settle = async () => { for (let i = 0; i < 4; i += 1) await Promise.resolve(); };
 
 describe('ReadingSessionInterceptor — no session', () => {
   it('does NOT claim when no session is open — a book tapped by a grown-up still just plays', async () => {
@@ -478,5 +511,349 @@ describe('ReadingSessionInterceptor — an unknown tag inside a session (D9)', (
       logger: silent,
     });
     expect(interceptor.noteUnknownTag({ location: 'livingroom', tagUid: '04a1b2c3' })).toBe(false);
+  });
+});
+
+/**
+ * THE NINE-SECOND GAP — the defect this whole seam exists to stop.
+ *
+ * Scanning a learner card, walking to the shelf, choosing a book and scanning
+ * it is ONE act, and the idle sweep cannot see the middle of it. On 2026-09-11
+ * it closed a living-room session at 17:13:21 and the book card landed at
+ * 17:13:23: no session, so the tap fell through to the ordinary content
+ * dispatch and the story played as plain media. No pick, no credit — the child
+ * heard their book and the obligation did not move.
+ */
+describe('ReadingSessionInterceptor — the tap that arrived just too late', () => {
+  /**
+   * A store whose clock the test drives, wired to the same screen AND the same
+   * clock as the interceptor — which is what composition does, and what makes
+   * `sinceCloseMs` (the store's `closedAt` read against the interceptor's now)
+   * mean anything.
+   */
+  function atTheGap({ storyTime = owing, wakeScreen = null, logger = silent } = {}) {
+    const state = { now: 1_000_000 };
+    const clock = () => new Date(state.now);
+    const bus = recorder();
+    const sessions = new ReadingSessionService({ logger: silent, realtime: bus.realtime, clock });
+    return { ...build({ sessions, bus, storyTime, wakeScreen, logger, clock }), state };
+  }
+
+  it('reopens a session the idle sweep closed seconds ago, and claims the book', async () => {
+    const { interceptor, sessions, sent, state } = atTheGap();
+
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+    sent.length = 0;
+
+    state.now += 9_000;
+    const claim = await interceptor.claim(bookTap());
+
+    expect(claim).toMatchObject({ claimed: true, by: 'reading-session', learnerId: 'user_5' });
+    expect(claim.refused).toBeFalsy();
+    // The screen is told, in order: the session is back FIRST, and the book
+    // lands on a launch card that is already there. (The store's own
+    // `session-update` trails the pick, as it does for every pick.)
+    expect(sent.map((s) => s.payload.event).slice(0, 2)).toEqual(['session-open', 'book-selected']);
+    expect(sessions.current('livingroom')).toMatchObject({ learnerId: 'user_5', state: 'confirm' });
+  });
+
+  it('reopens it for the SAME child, at a new session — not a resurrection of the old one', async () => {
+    const { interceptor, sessions, state } = atTheGap();
+    const first = sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    state.now += 9_000;
+    await interceptor.claim(bookTap());
+    const reopened = sessions.current('livingroom');
+    expect(reopened.learnerId).toBe('user_5');
+    expect(reopened.sessionId).not.toBe(first.sessionId);
+  });
+
+  it('does NOT reopen once the grace window has passed — a later tap is somebody browsing', async () => {
+    const { interceptor, sessions, state } = atTheGap();
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    state.now += 120_000;
+    expect(await interceptor.claim(bookTap())).toBeNull();
+    expect(sessions.current('livingroom')).toBeNull();
+  });
+
+  it('does NOT reopen a session the DAY closed — the day is done and the book is browsing', async () => {
+    const { interceptor, sessions, state } = atTheGap();
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'day-done' });
+
+    state.now += 5_000;
+    expect(await interceptor.claim(bookTap())).toBeNull();
+    expect(sessions.current('livingroom')).toBeNull();
+  });
+
+  // A bare `close()` records `reason: null`. Whatever closed that session, it
+  // was not the sweep cutting a child off mid-action, and only that mistake is
+  // worth undoing.
+  it('does NOT reopen a session closed for no stated reason', async () => {
+    const { interceptor, sessions, state } = atTheGap();
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom');
+
+    state.now += 5_000;
+    expect(await interceptor.claim(bookTap())).toBeNull();
+  });
+
+  /**
+   * A reopen is a claim like any other, and a claim the screen cannot be told
+   * about is the one outcome this seam may not produce — so the book goes back
+   * to the ordinary dispatch. But handing the BOOK back is only half of it: an
+   * abandoned reopen that leaves its session standing is a phantom, and
+   * `suppressEnd` answers only "is a session open at this reader". It would
+   * cancel the room's `end: tv-off` for the very dispatch that is about to play
+   * the book, and the living room would stay lit after the story ended with
+   * nothing left to turn it off — the 2026-08-28 fault, from a new direction.
+   *
+   * So an abandoned reopen rolls all the way back: no session, no suppression,
+   * the room exactly as the sweep left it.
+   */
+  function withADeadBus() {
+    const state = { now: 1_000_000 };
+    const clock = () => new Date(state.now);
+    const deadBus = { readingRoomChanged() { throw new Error('bus down'); } };
+    const sessions = new ReadingSessionService({ logger: silent, clock, realtime: deadBus });
+    const interceptor = new ReadingSessionInterceptor({
+      sessions, storyTime: owing, logger: silent, clock, realtime: deadBus,
+    });
+    return { interceptor, sessions, state };
+  }
+
+  it('hands the book back when the screen cannot be told the session is open again', async () => {
+    const { interceptor, sessions, state } = withADeadBus();
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    state.now += 9_000;
+    expect(await interceptor.claim(bookTap())).toBeNull();
+  });
+
+  it('and leaves NO session behind — a phantom would cancel the room s own teardown', async () => {
+    const { interceptor, sessions, state } = withADeadBus();
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    state.now += 9_000;
+    await interceptor.claim(bookTap());
+    expect(sessions.current('livingroom')).toBeNull();
+    expect(interceptor.suppressEnd(bookTap({ end: 'tv-off', endLocation: 'livingroom' }))).toBe(false);
+  });
+
+  // The rollback consumes the grace, deliberately: a bus that could not carry
+  // `book-selected` cannot carry a launch card either, and retrying would only
+  // mint another phantom.
+  it('does not try again on the next tap — the abandoned reopen spends the grace', async () => {
+    const { interceptor, sessions, state } = withADeadBus();
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    state.now += 9_000;
+    await interceptor.claim(bookTap());
+    state.now += 1_000;
+    expect(await interceptor.claim(bookTap())).toBeNull();
+    expect(sessions.current('livingroom')).toBeNull();
+  });
+
+  // ONE target, not two. The session records the device the reopen actually
+  // woke; a session carrying a device nobody woke would ride that stale target
+  // into every later `activate()` / `beginSwitch()` presentation.
+  it('records on the session the very device it woke', async () => {
+    const woke = [];
+    const { interceptor, sessions, state } = atTheGap({
+      wakeScreen: async (args) => { woke.push(args); return { ok: true }; },
+    });
+    // The closed session carried no target at all; the tap is what names one.
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    state.now += 9_000;
+    await interceptor.claim(bookTap());
+    expect(woke).toEqual([{ target: 'livingroom-tv', location: 'livingroom' }]);
+    expect(sessions.current('livingroom').target).toBe('livingroom-tv');
+  });
+
+  it('does not reopen anything at a reader where a session is already open', async () => {
+    const { interceptor, sessions, state } = atTheGap();
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+    const live = sessions.open({ location: 'livingroom', learnerId: 'user_3' });
+
+    state.now += 5_000;
+    expect(await interceptor.claim(bookTap())).toMatchObject({ learnerId: 'user_3' });
+    expect(sessions.current('livingroom').sessionId).toBe(live.sessionId);
+  });
+});
+
+/**
+ * THE REOPEN IS THE ONE CLAIM THAT MAY BE RACING A TEARDOWN.
+ *
+ * An ordinary claim lands on a session that is already open, on a screen that
+ * is already lit. A REOPENED one lands on a session the idle sweep just tore
+ * down — and the sweep's teardown is `end: tv-off` at the living-room reader.
+ * From the 2026-09-11 window:
+ *
+ *   17:13:22.106  session-close       reason=timeout
+ *   17:13:22.109  tv.turnOff.start    location=living_room
+ *   17:13:23.293  the book tap        +1.18s, with the turnOff STILL in flight
+ *   17:13:23.307  device.ha.powerOn.verified   elapsedMs=11
+ *   17:13:30.165  living_room_tv_state=off     elapsedMs=8018
+ *
+ * The only thing that re-lit that room was `wake-and-load`, on the UNCLAIMED
+ * path. Claiming the tap is exactly what takes that away: playback now happens
+ * in an overlay on the already-mounted reading widget, and nothing in it powers
+ * a display on. So the reopen — and ONLY the reopen — asks for the screen back.
+ *
+ * NOT a content load. The widget is already mounted and a reload would drop the
+ * very WebSocket carrying the `session-open` just broadcast to it; this is the
+ * same seam, and the same reasoning, as the learner-card path's `wakeScreen`.
+ */
+describe('ReadingSessionInterceptor — a reopen asks for the screen back', () => {
+  function atTheGap({ wakeScreen = null, logger = silent } = {}) {
+    const state = { now: 1_000_000 };
+    const clock = () => new Date(state.now);
+    const bus = recorder();
+    const sessions = new ReadingSessionService({ logger: silent, realtime: bus.realtime, clock });
+    return { ...build({ sessions, bus, wakeScreen, logger, clock }), state };
+  }
+
+  it('wakes the reader screen once, naming the target the book was aimed at', async () => {
+    const woke = [];
+    const { interceptor, sessions, state } = atTheGap({
+      wakeScreen: async (args) => { woke.push(args); return { ok: true }; },
+    });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    state.now += 9_000;
+    expect(await interceptor.claim(bookTap())).toMatchObject({ claimed: true });
+    expect(woke).toEqual([{ target: 'livingroom-tv', location: 'livingroom' }]);
+  });
+
+  it('does NOT wake on an ordinary claim — a live session is already on a lit screen', async () => {
+    const woke = [];
+    const { interceptor, sessions } = atTheGap({
+      wakeScreen: async (args) => { woke.push(args); return { ok: true }; },
+    });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    expect(await interceptor.claim(bookTap())).toMatchObject({ claimed: true });
+    expect(woke).toEqual([]);
+  });
+
+  it('does not wake a mid-story tap either — nothing there is racing a teardown', async () => {
+    const woke = [];
+    const { interceptor, sessions } = atTheGap({
+      wakeScreen: async (args) => { woke.push(args); return { ok: true }; },
+    });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.update('livingroom', { state: 'reading' });
+    await interceptor.claim(bookTap());
+    expect(woke).toEqual([]);
+  });
+
+  // The claim is the promise that the screen will handle the tap. A wake is
+  // how it is made KEEPABLE, not what makes it — so a wake that fails leaves
+  // the claim standing and says so, rather than sending the book back to a
+  // dispatch that would play it with nobody's name on it.
+  it('still claims the book when the wake REJECTS', async () => {
+    const logger = recordingLogger();
+    const { interceptor, sessions, state } = atTheGap({
+      wakeScreen: async () => { throw new Error('tv unreachable'); }, logger,
+    });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    state.now += 9_000;
+    expect(await interceptor.claim(bookTap())).toMatchObject({ claimed: true });
+    await settle();
+    expect(logger.lines.find((l) => l.event === 'school.reading.reopen-wake')).toMatchObject({
+      level: 'warn',
+      data: { ok: false, error: 'tv unreachable', location: 'livingroom', sinceCloseMs: 9_000 },
+    });
+  });
+
+  it('still claims the book when the wake THROWS synchronously', async () => {
+    const { interceptor, sessions, state } = atTheGap({
+      wakeScreen: () => { throw new Error('no device service'); },
+    });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    state.now += 9_000;
+    expect(await interceptor.claim(bookTap())).toMatchObject({ claimed: true });
+  });
+
+  it('reports a wake that answers `ok: false` rather than calling it done', async () => {
+    const logger = recordingLogger();
+    const { interceptor, sessions, state } = atTheGap({
+      wakeScreen: async () => ({ ok: false, error: 'unknown target: livingroom-tv' }), logger,
+    });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    state.now += 9_000;
+    await interceptor.claim(bookTap());
+    await settle();
+    expect(logger.lines.find((l) => l.event === 'school.reading.reopen-wake')).toMatchObject({
+      level: 'warn', data: { ok: false, target: 'livingroom-tv' },
+    });
+  });
+
+  // THE WAKE MUST NOT BLOCK THE TAP. `prepareForContent` took 6.9 seconds on
+  // 2026-09-11; awaiting it here would hold the NFC dispatch open for the same
+  // 6.9 seconds before the child's launch card ever came back.
+  it('does not wait for the wake to finish before claiming', async () => {
+    let release = null;
+    const { interceptor, sessions, state } = atTheGap({
+      wakeScreen: () => new Promise((resolve) => { release = () => resolve({ ok: true }); }),
+    });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    state.now += 9_000;
+    expect(await interceptor.claim(bookTap())).toMatchObject({ claimed: true });
+    expect(release).toBeTypeOf('function');   // still in flight, and the claim is already answered
+    release();
+  });
+
+  // `new Error()` has an empty message, and `??` does not catch an empty
+  // string. A wake that threw would have logged `ok: true` at info — the log
+  // saying the room came back is the one thing a dark-screen investigation
+  // leans on, so it may not lie in the one case nobody thinks to test.
+  it('reports a wake that threw with NO message as the failure it is', async () => {
+    const logger = recordingLogger();
+    const { interceptor, sessions, state } = atTheGap({
+      wakeScreen: async () => { throw new Error(); }, logger,
+    });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    state.now += 9_000;
+    await interceptor.claim(bookTap());
+    await settle();
+    expect(logger.lines.find((l) => l.event === 'school.reading.reopen-wake')).toMatchObject({
+      level: 'warn', data: { ok: false },
+    });
+  });
+
+  it('reopens with no wake wired at all — a degraded composition still credits the book', async () => {
+    const logger = recordingLogger();
+    const { interceptor, sessions, state } = atTheGap({ logger });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    state.now += 9_000;
+    expect(await interceptor.claim(bookTap())).toMatchObject({ claimed: true });
+    await settle();
+    expect(logger.lines.find((l) => l.event === 'school.reading.session-reopened')).toMatchObject({
+      data: { wakeRequested: false, sinceCloseMs: 9_000 },
+    });
+    expect(logger.lines.filter((l) => l.event === 'school.reading.reopen-wake')).toEqual([]);
   });
 });

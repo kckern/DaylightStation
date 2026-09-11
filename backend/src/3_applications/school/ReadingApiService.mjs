@@ -47,6 +47,22 @@ export class ReadingApiService {
     const session = this.#sessions.acknowledge(location, proof);
     return { ok: Boolean(session), session };
   }
+  /**
+   * THE DAY IS OVER — close the session and let the reader's own end policy run.
+   *
+   * Pure delegation on purpose: `ReadingSessionService#end` is the single
+   * teardown path, shared with the idle sweep, so the ceremony's ending and the
+   * sweep's cannot drift into two ways of turning a TV off.
+   *
+   * This method was missing entirely until 2026-09-11 while the router called
+   * it, so every wind-down POST 500'd and the room fell back to the two-minute
+   * idle timeout — the exact behaviour the route was added to remove. It also
+   * kept `ReadingSessionInterceptor`'s `reason === 'timeout'` reopen guard dead:
+   * no `day-done` close was ever recorded for it to refuse.
+   */
+  async end(location, { reason = 'day-done' } = {}) {
+    return this.#sessions.end(location, { reason });
+  }
   async events(location, limit) {
     const session = this.#sessions.snapshot(location);
     const current = session.session;

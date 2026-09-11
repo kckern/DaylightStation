@@ -26,6 +26,21 @@
   }
 }
 
+/* THE OPEN VIEW'S OWN COLUMN. It had no rule at all — a plain block div whose
+   spacing came entirely from its children's margins, which is why removing the
+   pips left the 7vh question resting directly on the lit case. The gap on
+   `.reading-session` belongs to the SCREEN's children, and this is one of them;
+   the prompt's own children were never gapped by anything.
+
+   It also pins the case's centring, which until now worked only as a side
+   effect of `align-items: center` two levels up. */
+.reading-session__prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2vh;
+}
+
 .reading-session__who {
   display: flex;
   flex-direction: column;
@@ -106,9 +121,16 @@
 
 .reading-session__recent {
   position: relative;
-  margin-top: 1vh;
-  width: min(80vw, 124vh);
-  padding: 2vh 3vw 0;
+  /* FIT THE BOOKS. At a fixed `min(80vw, 124vh)` the case was ~1339px on a
+     1920x1080 panel while three capped cards occupied ~620px centred in it —
+     over half the lit case empty. A case wider than the books standing in it
+     reads as a half-empty shelf, which is the opposite of what the shelf is
+     there to say; `fit-content` makes the case the width of its contents and
+     keeps the old figure as the ceiling for a long day. */
+  width: fit-content;
+  max-width: min(80vw, 124vh);
+  /* A real bottom: with `0` a two-line title sat flush on the panel's edge. */
+  padding: 2vh 3vw 1.6vh;
   border-radius: 1.5vh 1.5vh 0.6vh 0.6vh;
   /* The case: a soft pool of light at the back, so the books sit IN something
      rather than on top of a flat panel. */
@@ -288,6 +310,119 @@
   background:
     linear-gradient(105deg, rgba(246, 242, 232, 0.17) 0%, rgba(246, 242, 232, 0.06) 100%);
   border-left: 0.5vh solid rgba(255, 212, 121, 0.5);
+}
+
+/* ── The waiting slot ───────────────────────────────────────────────────
+   A GAP IN THE SHELF, NOT A CONTROL. This panel is a view: it takes no touch
+   and shows no cursor, so the one thing a child can act on must read as a
+   PLACE — the space a book is missing from — and never as something to press.
+
+   That rules out the whole button vocabulary: no outline, no raised edge, no
+   lift, no scale. What is left is the hole: the shelf's own dark, an inner
+   shadow deep enough to sit BELOW the plank line, and a light behind it. */
+.reading-session__slot-well {
+  background: rgba(11, 16, 23, 0.72);
+  /* Inset only — the covers beside it carry outer shadows, and an outer shadow
+     here would lift the hole off the shelf it is supposed to be part of. */
+  box-shadow:
+    inset 0 0.6vh 1.4vh rgba(0, 0, 0, 0.78),
+    inset 0 0 0 1px rgba(246, 242, 232, 0.05);
+
+  /* The sheen the real covers wear belongs to a surface; a gap has none. */
+  &::before { content: none; }
+
+  /* A gap stands on nothing, so it casts nothing. The cover's contact shadow
+     is what sells a book standing on the plank; under an empty slot it is a
+     smudge with no object, and it fights the recess this block is built for. */
+  &::after { content: none; }
+}
+
+/* THE ONE ANIMATION ON THE SCREEN. Slow — 2.4s, about a resting breath — and
+   it glows from BEHIND the opening rather than pulsing the shape itself: a
+   throb on the outline would read as a button demanding a press, which is the
+   one thing this must never say. */
+.reading-session__slot--live .reading-session__slot-well {
+  animation: reading-slot-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes reading-slot-breathe {
+  0%, 100% {
+    box-shadow:
+      inset 0 0.6vh 1.4vh rgba(0, 0, 0, 0.78),
+      inset 0 0 0 1px rgba(255, 212, 121, 0.10),
+      inset 0 -1.6vh 2.4vh -1vh rgba(255, 212, 121, 0.12);
+  }
+  50% {
+    box-shadow:
+      inset 0 0.6vh 1.4vh rgba(0, 0, 0, 0.78),
+      inset 0 0 0 1px rgba(255, 212, 121, 0.26),
+      inset 0 -1.6vh 2.4vh -1vh rgba(255, 212, 121, 0.42);
+  }
+}
+
+/* ── The idle window, drawn as the light going out ─────────────────────────
+   THIS IS A PICTURE OF THE BACKEND'S CLOCK AND NEVER THE CLOCK ITSELF. The
+   server's idle sweep is the authority — it closes an untouched session off
+   `lastActivityAt`, which every tap moves, and this stylesheet cannot see a
+   tap. If the two ever disagree, the sweep wins. Nothing here may be read back
+   as "how much time is left"; it only depicts that time is passing.
+
+   It exists because on 2026-09-11 a session closed silently on that sweep, a
+   child's book card arrived 1.18 s later, and the story played uncredited with
+   nothing anywhere on this screen having said a clock was running.
+
+   The duration is the BACKEND'S number, arriving on `session-open` and landing
+   here as `--slot-idle-ms` (unitless ms, so `calc(… * 1ms)` gives it units). A
+   slot that never got one wears neither this class nor the property and draws
+   no clock at all — the fallback is there for a malformed value, not as a
+   second source of truth.
+
+   IT DIMS, IT DOES NOT STOP BREATHING. The two animations deliberately touch
+   different properties: `reading-slot-breathe` owns `box-shadow` and keeps its
+   pulse to the last second; this one owns `filter` and eases the whole lit
+   result down to nothing. Written as a second set of `box-shadow` keyframes it
+   would simply have overridden the breath — later animation wins the property —
+   and the slot would have gone still instead of going dark. */
+.reading-session__slot--live.reading-session__slot--timed .reading-session__slot-well {
+  animation:
+    reading-slot-breathe 2.4s ease-in-out infinite,
+    reading-slot-idle-out calc(var(--slot-idle-ms, 120000) * 1ms) linear forwards;
+}
+
+@keyframes reading-slot-idle-out {
+  /* Held bright for the first stretch: a light that starts dying immediately
+     says "you are already late" on a window a child has barely entered. The
+     fall is over the back half, which is when it means something.
+
+     AND IT ENDS ON AN EMBER, NOT ON NOTHING. The slot's first duty is to say
+     WHERE THE NEXT BOOK GOES; the clock is the second thing it does, and the
+     second thing may not eat the first. Taken to zero the live slot became
+     indistinguishable from the dead slots beside it for the last stretch of
+     the window — so the shelf stopped naming the place a book goes exactly
+     when the child was closest to losing the session. The end stop is drawn
+     as a dimmed-down ember instead: plainly going out, still plainly there.
+     The message survives anyway, because what a person reads across glances
+     is the RATE — the filter multiplies the breath as well as the base glow,
+     so the pulse's amplitude collapses with it, and "still pulsing" vs
+     "barely pulsing" carries further than any absolute brightness would. */
+  0%, 35% { filter: brightness(1); }
+  100% { filter: brightness(0.25); }
+}
+
+/* Motion is the message here, so when motion is refused the message has to
+   survive without it: the lit state, held still. The timed selector is named
+   explicitly — it is more specific than the live one, so it would otherwise
+   keep animating straight through this block. */
+@media (prefers-reduced-motion: reduce) {
+  .reading-session__slot--live .reading-session__slot-well,
+  .reading-session__slot--live.reading-session__slot--timed .reading-session__slot-well {
+    animation: none;
+    filter: none;
+    box-shadow:
+      inset 0 0.6vh 1.4vh rgba(0, 0, 0, 0.78),
+      inset 0 0 0 1px rgba(255, 212, 121, 0.26),
+      inset 0 -1.6vh 2.4vh -1vh rgba(255, 212, 121, 0.42);
+  }
 }
 
 /* The caption floats BELOW the plank, so nothing overlaps the artwork and the

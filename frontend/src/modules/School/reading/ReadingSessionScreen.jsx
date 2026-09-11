@@ -194,14 +194,19 @@ ReadingStage.propTypes = {
   logger: PropTypes.object,
 };
 
-function recentDayLabel(studyDay, currentStudyDay) {
+export function recentDayLabel(studyDay, currentStudyDay) {
   if (!studyDay) return '';
   if (studyDay === currentStudyDay) return 'Today';
   const current = Date.parse(`${currentStudyDay}T00:00:00Z`);
   const day = Date.parse(`${studyDay}T00:00:00Z`);
   if (Number.isFinite(current) && current - day === 86_400_000) return 'Yesterday';
   if (!Number.isFinite(day)) return studyDay;
-  return new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(new Date(day));
+  // FORMATTED IN UTC, BECAUSE IT WAS PARSED IN UTC. A study day is a calendar
+  // date, not an instant; handing `new Date(utcMidnight)` to a local-time
+  // formatter shifts it a day backwards anywhere west of Greenwich, which put
+  // Wednesday's two books under a heading that read TUE — while the streak
+  // wall six inches below had them on the right day.
+  return new Intl.DateTimeFormat(undefined, { weekday: 'short', timeZone: 'UTC' }).format(new Date(day));
 }
 
 /**
@@ -249,35 +254,108 @@ function RecentBook({ read }) {
 }
 
 /**
+ * WHERE THE NEXT BOOK GOES — and the whole reason this screen has an answer.
+ *
+ * The panel is a VIEW: no touch, no cursor, no focus. A child answers "what do
+ * you want to read today?" by scanning a book, so the answer on screen has to
+ * be a place, not a control. This is a book-shaped gap in the shelf, recessed
+ * and lit from behind — never a bordered tile, never a lift on hover, nothing
+ * that has ever been pressed.
+ *
+ * ONE slot per story still owed, and only the FIRST of them breathes: the same
+ * "this is the one you are filling next" the pips drew with their live ring.
+ *
+ * THE LIVE SLOT ALSO CARRIES THE CLOCK. The backend closes an untouched session
+ * after `idleTimeoutMs`, and on 2026-09-11 it did so 1.18 seconds before a
+ * child's book card arrived — the story played and nothing was credited, with
+ * no sign anywhere on this screen that anything had been counting. The picking
+ * view has a countdown bar and the winding-down view has one; the single view
+ * where the timeout actually costs a read showed nothing.
+ *
+ * So the slot's own light runs down with the window. On a panel nobody touches
+ * that is the honest place for it: a child sees the light going out without
+ * reading a word, and there is no second widget to explain.
+ *
+ * IT IS A PICTURE OF THE BACKEND'S CLOCK AND NEVER THE CLOCK ITSELF. The
+ * server's idle sweep is authoritative — it alone decides when a session ends,
+ * off `lastActivityAt`, which every tap moves. This CSS only depicts it, and it
+ * cannot see a tap that reset the window. If the two ever disagree the sweep
+ * wins; nothing here may be read back as "how long is left".
+ *
+ * A slot with no published window gets neither the property nor the class: a
+ * screen that cannot know the window must not draw a confident clock.
+ */
+function EmptySlot({ live, idleTimeoutMs = null }) {
+  const timed = live && Number.isFinite(idleTimeoutMs) && idleTimeoutMs > 0;
+  return (
+    <li
+      className={`reading-session__recent-card reading-session__slot${live ? ' reading-session__slot--live' : ''}${timed ? ' reading-session__slot--timed' : ''}`}
+      data-testid="reading-slot"
+      style={timed ? { '--slot-idle-ms': idleTimeoutMs } : undefined}
+    >
+      <div className="reading-session__recent-cover reading-session__slot-well" aria-hidden="true" />
+      <span className="reading-session__recent-title" />
+    </li>
+  );
+}
+
+/**
  * One day's shelf: the label, then that day's books.
  *
  * THE DAY IS THE PARTITION. The shelf used to be a flat list deduped across a
  * whole week, so a story read on three days appeared once, wearing the newest
  * date and a `x3` that counted the other two days it no longer showed.
  */
-function RecentDay({ group, studyDay }) {
+function RecentDay({ group, studyDay, slots = 0, idleTimeoutMs = null }) {
   const books = (group?.books ?? []).filter((b) => b?.title);
-  if (books.length === 0) return null;
+  if (books.length === 0 && slots === 0) return null;
   return (
     <section className="reading-session__recent-day-group" data-testid="reading-recent-day">
       <h4 className="reading-session__recent-day">{recentDayLabel(group.studyDay, studyDay)}</h4>
-      <ul className="reading-session__recent-list" data-count={books.length}>
+      <ul className="reading-session__recent-list" data-count={books.length + slots}>
         {books.map((read, index) => (
           <RecentBook key={`${read.contentId ?? read.title ?? 'book'}-${index}`} read={read} />
+        ))}
+        {Array.from({ length: slots }, (_, i) => (
+          <EmptySlot key={`slot-${i}`} live={i === 0} idleTimeoutMs={idleTimeoutMs} />
         ))}
       </ul>
     </section>
   );
 }
 
-function Recent({ days, studyDay }) {
+/**
+ * The shelf: today, then the days behind it.
+ *
+ * TODAY IS ALWAYS DRAWN, even empty — it is the only column the child can act
+ * on, and it used to vanish on the exact day it mattered (`RecentDay` returned
+ * null at zero books), leaving a past day sitting where the eye lands first.
+ *
+ * The slot count comes from the obligation, which is known before a single
+ * cover has loaded — so the shelf's geometry is settled at first paint and
+ * covers landing one by one never move it.
+ */
+function Recent({ days, studyDay, target = null, count = 0, idleTimeoutMs = null }) {
   const groups = (Array.isArray(days) ? days : [])
     .filter((g) => Array.isArray(g?.books) && g.books.some((b) => b?.title));
-  if (groups.length === 0) return null;
+  const todayGroup = groups.find((g) => g.studyDay === studyDay) ?? { studyDay, books: [] };
+  const past = groups.filter((g) => g.studyDay !== studyDay);
+  const owed = Number.isFinite(target) ? target : 0;
+  const done = Number.isFinite(count) ? count : 0;
+  const slots = Math.max(0, owed - done);
+  // THIS EARLY RETURN IS ALSO WHAT RE-ARMS THE SLOT'S IDLE FADE, which is not
+  // obvious and is easy to break by being helpful. Every `session-open` clears
+  // the summary before refetching it, so the shelf unmounts here and comes back
+  // as fresh elements — and a CSS animation only restarts on a new element. Make
+  // this survive a null summary (keeping the shelf mounted through a reload) and
+  // the fade silently stops restarting: the next child inherits the last one's
+  // spent light. If that changes, key the slot on the session instead.
+  if (slots === 0 && groups.length === 0) return null;
   return (
     <section className="reading-session__recent" data-testid="reading-recent" aria-label="Recent stories">
       <div className="reading-session__recent-days">
-        {groups.map((group) => (
+        <RecentDay group={todayGroup} studyDay={studyDay} slots={slots} idleTimeoutMs={idleTimeoutMs} />
+        {past.map((group) => (
           <RecentDay key={group.studyDay} group={group} studyDay={studyDay} />
         ))}
       </div>
@@ -378,9 +456,12 @@ export function Ceremony({ tier, name, learner, pick, summary }) {
         testId={day ? 'reading-celebrate-count' : 'reading-book-done-count'}
       />
 
-      {/* The close is now the ONLY moment a child sees today's square turn
-          green — after this the screen winds down rather than returning to the
-          shelf — so the wall belongs here as much as on the way in. */}
+      {/* J7, and ONLY here. A streak wall is for lingering over: eight states
+          encoded as colour with no key, and a month to read them across. The
+          waiting screen is the one screen nobody should linger on — it asks a
+          question and wants an answer — so the wall moved to the close, which
+          is the moment there is nothing left to do but look. It is also the
+          only moment a child sees today's square turn green. */}
       {day ? (
         <StreakWall days={summary?.streak} studyDay={summary?.studyDay} className="reading-session__streak" />
       ) : null}
@@ -569,7 +650,7 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
     showOverlay(Notice, { notice: session.notice }, { mode: 'toast', timeout: 7000 });
   }, [session.notice, session.view, showOverlay]);
 
-  const { view, learner, summary, pick, notice, confirmRemainingMs, confirmTotalMs } = session;
+  const { view, learner, summary, pick, notice, idleTimeoutMs, confirmRemainingMs, confirmTotalMs } = session;
 
   // The whole screen belongs to the menu when nobody is standing at the reader,
   // and to the Player once a story is up.
@@ -628,16 +709,13 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
             {name ? <h2 className="reading-session__name">{name}</h2> : null}
           </div>
           <h1 className="reading-session__ask">What do you want to read today?</h1>
-          <ReadingPips
-            count={summary?.count}
+          <Recent
+            days={summary?.recentDays}
+            studyDay={summary?.studyDay}
             target={summary?.target}
-            label={summary?.progressLabel}
-            className="reading-session__pips"
+            count={summary?.count}
+            idleTimeoutMs={idleTimeoutMs}
           />
-          <Recent days={summary?.recentDays} studyDay={summary?.studyDay} />
-          {/* J7, and only here: a streak wall is for lingering over, and this
-              is the one screen a child lingers on. */}
-          <StreakWall days={summary?.streak} studyDay={summary?.studyDay} className="reading-session__streak" />
         </div>
       ) : null}
 

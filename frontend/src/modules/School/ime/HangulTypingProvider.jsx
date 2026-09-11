@@ -30,7 +30,12 @@ import './ime.scss';
 const TOGGLE_CODE = 'F6'; // the keyboard's globe key, which arrives as F6
 
 const HangulTypingContext = createContext({
-  mode: 'EN', register: 'status', setMode: () => {}, toggle: () => {},
+  mode: 'EN',
+  register: 'status',
+  setMode: () => {},
+  toggle: () => {},
+  // Outside a provider nothing is being composed, so every field is settled.
+  compositionState: (el) => ({ committed: el?.value ?? '', pending: '' }),
 });
 
 export function useHangulTyping() { return useContext(HangulTypingContext); }
@@ -114,6 +119,18 @@ export default function HangulTypingProvider({ children, enabled = true }) {
     imeLog.mode('toggled', { to: next });
   }, []);
 
+  /**
+   * Which part of a field is settled and which syllable is still in flight.
+   * A rung matching a target against the field cannot use `value`: in 두벌식
+   * the consonant that starts a syllable first lands as the previous one's
+   * batchim, so `value` briefly spells a word the learner did not type.
+   *
+   * A ref read, deliberately not state: callers ask during their own onChange,
+   * which the composer's own `writeField` already triggered, so the answer is
+   * current and no extra render is needed to deliver it.
+   */
+  const compositionState = useCallback((el) => composer.current.compositionState(el), []);
+
   // A field may name its language; the nearest declaration wins and is released
   // when focus leaves it. `TypedRung` sets this from the rung's own response
   // language, so dictation and interpretation alternate without a keypress.
@@ -173,7 +190,10 @@ export default function HangulTypingProvider({ children, enabled = true }) {
   // Nothing in flight survives the mode changing under it.
   useEffect(() => { composer.current.end(); }, [mode]);
 
-  const value = useMemo(() => ({ mode, register, setMode, toggle }), [mode, register, setMode, toggle]);
+  const value = useMemo(
+    () => ({ mode, register, setMode, toggle, compositionState }),
+    [mode, register, setMode, toggle, compositionState],
+  );
 
   return (
     <HangulTypingContext.Provider value={value}>

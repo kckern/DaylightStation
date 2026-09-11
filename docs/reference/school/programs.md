@@ -19,6 +19,73 @@ the label or reuse course progress to guess whether today's obligation has begun
 Sentence Ladder is the first code-registered program. Its canonical id is
 `sentence-ladder`; `language` is a deprecated read/write compatibility alias.
 
+## Every launcher must report `servedWork` — the rule, and why
+
+`AgendaStatusBoard` draws one disc per assignment from PLAN ∪ EVIDENCE. A
+program is in **neither** set once it is finished: the agenda stops offering it
+(the section's `next` goes `null`) the moment its launcher reports `doneToday`,
+and `BuildAgenda` deliberately opens no work session for a program entry, so
+there is no session evidence either. A launcher that reports no completed work
+therefore does not turn its disc green when a child finishes — **the disc leaves
+the board**, which is what a child saw after a finished Sentence Ladder day
+(2026-09-11).
+
+So a launcher's `status()` returns `servedWork: [{ unitId, title }]` for work
+completed today and `[]` otherwise. Rules:
+
+- **The identity is durable and belongs to the COURSE, not the day** —
+  `story-time:daily`, `sentence-ladder:<corpusId>`, `flashcards:<deckId>`,
+  `language-reels:<reelId>`, `rubiks-cube:<courseId>`, `book-log:shelf`,
+  `<surfaceProgramId>:daily`. The disc keeps the same identity tomorrow.
+  Language reels is the one whose served id deliberately **differs** from its
+  plan entry id: the entry is day-scoped (`language-reel-<day>-<reelId>`, minted
+  fresh each study day by `LanguageReelService.dailyEntry`), so the served row
+  names the reel and lets the agenda do the day-scoped anchoring.
+- **One row per assignment's daily obligation, not per item of work.** Several
+  rows against one assignment fill its disc once and become a `+N` badge (the
+  piano course is the one program that legitimately reports several lessons).
+- **Never set `assignmentUnitId` yourself.** `planDailyAgenda` stamps it on
+  every row from the program entry that owns the launcher; a launcher cannot
+  see the assignment and must not guess at it.
+- **`title` is child-facing, but not on the board.** A disc's spoken name is its
+  SUBJECT shelf (`agendaStatusModel.js` sets `label: nameFor(subject)`, and the
+  board renders only that), so `title` never appears there. It reaches people
+  through the printed agenda's finished-work line (`documents/receipts.mjs`) and
+  the teacher's day view (`School/teacher/learnerDay.js`) — both read by a
+  household, so it is the household-facing name of the work, never a deck id or
+  a program id. A `SurfaceProgramLauncher` authored with no `label:` falls back
+  to its program id, which is exactly the raw id this rule asks authors to keep
+  off the paper: author the label.
+- Reporting work does not grant credit and does not grade: the Sentence Ladder
+  still returns `score: null` because accuracy is recorded, never gating.
+
+`programLaunchers.servedWork.test.mjs` enforces this by walking the launcher
+classes `schoolLifecycle.mjs` registers and calling each one's `status()`, so a
+NINTH launcher fails the suite until it is covered by name.
+
+### The exception: a day that was EXCUSED, not performed
+
+`PianoCourseProgramLauncher` returns `doneToday: true` from two branches where
+nobody played anything — an active parent day-bypass, and a co-progress lock
+that leaves the child nothing they can do. Both report `servedWork: []`, and
+that empty array is a decision, not an oversight this rule forgot.
+
+`servedWork` asserts that WORK WAS PERFORMED: the board paints such a row
+`passed` (green), the printed agenda lists it under what the child finished, and
+the teacher's day view reports it as served. A row for an excused day would tell
+a household, on screen and on paper, that a child practised when a parent had
+excused them. A confidently wrong green disc is worse than a missing one —
+nothing about it invites a second look.
+
+The cost is real, and it is why this is an exception rather than a solution:
+with no served work and no `next`, an excused piano day's disc leaves the board
+exactly as the Sentence Ladder's did. The fix for that is a board state these
+four do not contain — `passed`, `needs-retry`, `in-progress` and `pending` have
+no way to say *resolved, but not performed* — plus a decision about whether an
+excused day counts toward "3 of 4 done". Until `agendaStatusModel`/
+`AgendaStatusBoard` grow one, this stays a known, named gap; **not** a licence
+to paint the disc green.
+
 ## Piano course — a program backed by another app's evidence
 
 `piano-course` is the program for "one Hoffman Academy lesson a day at the

@@ -169,6 +169,12 @@ export function useReadingSession({
   const [onDeck, setOnDeck] = useState(null);        // { contentId, title, image, pickId, learnerId, learnerName }
   const [notice, setNotice] = useState(null);        // { tone, title, detail }
   const [deadline, setDeadline] = useState(null);
+  // How long the BACKEND gives a child at the prompt before its idle sweep
+  // closes the session, published with every `session-open`. Null until a
+  // session says so: a screen that does not know the window must not draw one.
+  // Never a constant mirrored here — mirrored, it drifts the first time the
+  // sweep is tuned and the screen starts lying about how long a child has.
+  const [idleTimeoutMs, setIdleTimeoutMs] = useState(null);
   const [presentation, setPresentation] = useState(null);
 
   // Refs mirror what the async paths need to read WITHOUT re-subscribing or
@@ -642,11 +648,21 @@ export function useReadingSession({
         setSummary(null);
         say(null);
         loadSummary(payload.learnerId);
-        // A committed session-open is now only initial/prompt/reconnect. Card
-        // taps cannot produce one during confirmation or playback.
+        // A committed session-open is initial/prompt/reconnect — and, since
+        // 2026-09-11, a REOPEN: a book card tapped within seconds of an idle
+        // teardown reopens the session it belongs to (`ReadingSessionInterceptor`
+        // `#reopenIfJustClosed`), so a session-open can now be produced by a
+        // BOOK tap and arrives immediately before that book's `book-selected`.
+        // Resetting pick/deadline here is what makes that order safe. Card taps
+        // still cannot produce one during confirmation or playback.
         pickRef.current = null;
         setPick(null);
         setDeadline(null);
+        // A number or nothing — `0`, a string, or a missing field all mean
+        // "this screen cannot say", and the slot then draws no clock.
+        setIdleTimeoutMs(Number.isFinite(payload.idleTimeoutMs) && payload.idleTimeoutMs > 0
+          ? payload.idleTimeoutMs
+          : null);
         setView('open');
         readingLog.session('session-open', { learnerId: payload.learnerId, location: payload.location ?? location });
         return;
@@ -666,6 +682,10 @@ export function useReadingSession({
         onDeckRef.current = null;
         setOnDeck(null);
         setDeadline(null);
+        // The window belonged to the session that just ended. The card flow
+        // always lands back on a `session-open` (a presentation ACK commits to
+        // one), so the next prompt gets the live number rather than this one.
+        setIdleTimeoutMs(null);
         say(null);
         setView('idle');
         return;
@@ -856,6 +876,7 @@ export function useReadingSession({
     pick,
     onDeck,
     notice,
+    idleTimeoutMs,
     confirmRemainingMs,
     confirmTotalMs: confirmRemainingMs === null ? null : confirmMs,
     notePlaybackStarted,
