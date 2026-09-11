@@ -14,7 +14,9 @@ describe('BookScanEntry real hook', () => {
   it('reads on mount/reconnect, ignores other targets and passes returned authority after avatar selection', async () => {
     render(<BookScanEntry {...props} />); await act(async () => {});
     expect(screen.getByRole('dialog', { name: 'This book was just scanned' })).toBeTruthy();
-    expect(screen.getByText('Hatchet')).toBeTruthy();
+    // The drawn cover sets the title AS the art, so the title appears twice
+    // on a coverless book; the heading is the one this is about.
+    expect(screen.getByRole('heading', { name: 'Hatchet' })).toBeTruthy();
     const count = h.pending.mock.calls.length;
     act(() => h.event({ type: 'school.book-scan', screenId: 'elsewhere' })); expect(h.pending).toHaveBeenCalledTimes(count);
     await act(async () => h.reconnect({ connected: true })); expect(h.pending.mock.calls.length).toBeGreaterThan(count);

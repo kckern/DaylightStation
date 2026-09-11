@@ -43,7 +43,7 @@ describe('ReadingShelfPanel — what a grown-up sees', () => {
   it('reads the shelf for the learner in the URL', async () => {
     teacherWorkspaceApi.readingShelf.mockResolvedValue(ok(shelf()));
     render(<ReadingShelfPanel learnerId="User_4" />);
-    await screen.findByText(/A Borrowed Title/);
+    await screen.findAllByText(/A Borrowed Title/);
     expect(teacherWorkspaceApi.readingShelf).toHaveBeenCalledWith('User_4');
   });
 
@@ -101,7 +101,7 @@ describe('ReadingShelfPanel — what a grown-up sees', () => {
   it('offers no control that could change the record', async () => {
     teacherWorkspaceApi.readingShelf.mockResolvedValue(ok(shelf()));
     render(<ReadingShelfPanel learnerId="User_4" />);
-    await screen.findByText(/A Borrowed Title/);
+    await screen.findAllByText(/A Borrowed Title/);
     expect(screen.queryAllByRole('button')).toHaveLength(0);
     expect(screen.queryAllByRole('textbox')).toHaveLength(0);
   });
@@ -123,7 +123,7 @@ describe('ReadingShelfPanel — what a grown-up sees', () => {
     const onShelf = vi.fn();
     teacherWorkspaceApi.readingShelf.mockResolvedValue(ok(shelf()));
     render(<ReadingShelfPanel learnerId="User_4" onShelf={onShelf} />);
-    await screen.findByText(/A Borrowed Title/);
+    await screen.findAllByText(/A Borrowed Title/);
     // No obligation and no study day travel upward: the detail's own read
     // carries the counted window, computed once, on the server.
     await waitFor(() => expect(onShelf).toHaveBeenCalledWith({ state: 'ok' }));
@@ -268,7 +268,8 @@ describe('adding a book on the child’s behalf', () => {
     await open();
     fireEvent.change(screen.getByLabelText('ISBN'), { target: { value: '9780000000002' } });
     fireEvent.click(screen.getByRole('button', { name: 'Look it up' }));
-    expect(await screen.findByText(/A Borrowed Title/)).toBeTruthy();
+    // Twice: the drawn cover sets the title AS the art, and the row names it.
+    expect((await screen.findAllByText(/A Borrowed Title/)).length).toBeGreaterThan(0);
     // A miss names itself and changes nothing — the number may still be right.
     schoolApi.books.resolve.mockResolvedValue(ok({ status: 'not-found' }));
     fireEvent.click(screen.getByRole('button', { name: 'Look it up' }));
@@ -291,7 +292,7 @@ describe('adding a book on the child’s behalf', () => {
 
   it('a shelf with no add callback offers nothing that writes', async () => {
     render(<ReadingShelfPanel learnerId="User_4" />);
-    await screen.findByText(/A Borrowed Title/);
+    await screen.findAllByText(/A Borrowed Title/);
     expect(screen.queryByRole('button', { name: 'Add a book' })).toBeNull();
   });
 });

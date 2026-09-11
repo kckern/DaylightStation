@@ -295,7 +295,9 @@ describe('TeacherConsole workspace', () => {
     window.history.pushState({}, '', '/school/teacher/students/user_4/reading');
     render(<TeacherConsole />);
     expect(await screen.findByText('User_4’s shelf')).toBeTruthy();
-    expect(await screen.findByText('A Borrowed Title')).toBeTruthy();
+    // A coverless book draws its title as its cover, so the title appears
+    // both on the art and as the row's label.
+    expect((await screen.findAllByText('A Borrowed Title')).length).toBeGreaterThan(0);
     expect(teacherWorkspaceApi.readingShelf).toHaveBeenCalledWith('user_4');
     // Observation costs nothing: the shelf read is the only call this view makes.
     expect(screen.getByText('p. 84 / 184')).toBeTruthy();

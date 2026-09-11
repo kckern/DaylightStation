@@ -43,30 +43,6 @@ export function formatMinutes(minutes) {
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
-function captionFor(item) {
-  const p = item.projection ?? {};
-  switch (item.progressMode) {
-    case 'minutes':
-      return p.minutes > 0 ? formatMinutes(p.minutes) : 'Just started';
-    case 'check':
-      return p.daysRead > 0 ? `read on ${p.daysRead} ${p.daysRead === 1 ? 'day' : 'days'}` : 'Just started';
-    case 'page':
-    default:
-      return Number.isFinite(p.page) && p.page !== null ? `p. ${p.page}` : 'Just started';
-  }
-}
-
-/**
- * A done book's caption. NO DATE: the card stands on a shelf whose heading
- * is the day (`BookHistory`), and a card wearing the same date as the line
- * above it was saying it twice. The green check on the art has already said
- * "finished". A SET-ASIDE book keeps its word, because that outcome is the
- * rarer one and the bookmark alone is a shape a child still has to learn.
- */
-function outcomeFor(item) {
-  return item.projection?.status === 'set-aside' ? 'Set aside' : null;
-}
-
 /**
  * @param {object} props
  * @param {object} props.item - a shelf item as `useBookShelf` returns it.
@@ -104,44 +80,37 @@ export default function ShelfTile({ item, onSelect = null, incompatibleMetric = 
         {times > 1 && (
           <span className="school-books-tile__times" aria-label={`${times} times`}>×{times}</span>
         )}
+        {/* PROGRESS RIDES ON THE ART. The card has no text column any more, so
+            a book being read shows how far along it is as a bar across the foot
+            of its own cover rather than as a caption beneath it. */}
+        {showBar && (
+          <span className="school-books-tile__bar" role="progressbar"
+            aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} aria-label={`${percent}% read`}>
+            <span className="school-books-tile__fill" style={{ width: `${percent}%` }} />
+          </span>
+        )}
+        {!onHistory && incompatibleMetric && (
+          <span className="school-books-tile__tag">{`doesn't count toward ${METRIC_WORDS[incompatibleMetric] ?? incompatibleMetric}`}</span>
+        )}
       </span>
       {/* The text column owns its own vertical rhythm. It used to share a
           fixed four-row grid with the cover, one row of which was reserved for
           a progress bar a finished book never has — which is what sliced every
           second title line through the x-height. */}
-      <span className="school-books-tile__text">
-        <span className="school-books-tile__title" title={title}>{title}</span>
-        {presentation.author && (
-          <span className="school-books-tile__author" title={presentation.allAuthors}>{presentation.author}</span>
-        )}
-        {showBar && (
-          <span
-            className="school-books-tile__bar"
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={percent}
-            aria-label={`${percent}% read`}
-          >
-            <span className="school-books-tile__fill" style={{ width: `${percent}%` }} />
-          </span>
-        )}
-        {(() => { const caption = onHistory ? outcomeFor(item) : captionFor(item); return caption ? <span className="school-books-tile__caption">{caption}</span> : null; })()}
-        {!onHistory && incompatibleMetric && (
-          <span className="school-books-tile__tag">{`doesn't count toward ${METRIC_WORDS[incompatibleMetric] ?? incompatibleMetric}`}</span>
-        )}
-      </span>
     </>
   );
 
-  // COVER FIRST on the history shelf: the art on top at twice the row's size,
-  // the title beneath. A finished book is remembered by its cover.
+  // THE COVER IS THE CARD. The title used to sit under the art in up to three
+  // wrapped lines — on a shelf of picture books, three lines of chrome per cell
+  // and a grid that was mostly text. A book is recognised by its cover; the
+  // words move to the panel a tap opens, and survive here as the accessible
+  // name and the tooltip, so nothing is lost to a screen reader or a mouse.
   const classes = `school-books-tile${onHistory ? ' school-books-tile--history' : ''}`;
   if (!onSelect) {
-    return <div className={`${classes} school-books-tile--still`}>{body}</div>;
+    return <div className={`${classes} school-books-tile--still`} title={title}>{body}</div>;
   }
   return (
-    <button type="button" className={classes} aria-label={`Open ${title}`} onClick={() => onSelect(item.itemId)}>
+    <button type="button" className={classes} title={title} aria-label={`Open ${title}`} onClick={() => onSelect(item.itemId)}>
       {body}
     </button>
   );

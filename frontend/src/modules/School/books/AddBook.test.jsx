@@ -122,8 +122,10 @@ describe('AddBook', () => {
         book: { isbn13: '9780027746723', title: null, authors: [], coverUrl: null },
       };
       const a = mount('cover', { add: add({ resolved: unresolved, metadataMissing: true }) });
-      expect(screen.getByRole('img', { name: /no cover available for book 9780027746723/i })).toBeInTheDocument();
-      expect(screen.getByText('Book 9780027746723')).toBeInTheDocument();
+      // No art AND no title: the drawn cover falls back to the same honest
+      // `Book <isbn>` the heading uses, so the card is still identifiable.
+      expect(screen.getByRole('img', { name: /book 9780027746723 \(no cover art\)/i })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Book 9780027746723' })).toBeInTheDocument();
       expect(screen.getByText(/couldn't find a title or cover/i)).toBeInTheDocument();
       expect(screen.getByText(/you can still log it by ISBN/i)).toBeInTheDocument();
       expect(screen.queryByText(/fill in the book details later/i)).toBeNull();
