@@ -360,11 +360,52 @@
   }
 }
 
+/* ── The idle window, drawn as the light going out ─────────────────────────
+   THIS IS A PICTURE OF THE BACKEND'S CLOCK AND NEVER THE CLOCK ITSELF. The
+   server's idle sweep is the authority — it closes an untouched session off
+   `lastActivityAt`, which every tap moves, and this stylesheet cannot see a
+   tap. If the two ever disagree, the sweep wins. Nothing here may be read back
+   as "how much time is left"; it only depicts that time is passing.
+
+   It exists because on 2026-09-11 a session closed silently on that sweep, a
+   child's book card arrived 1.18 s later, and the story played uncredited with
+   nothing anywhere on this screen having said a clock was running.
+
+   The duration is the BACKEND'S number, arriving on `session-open` and landing
+   here as `--slot-idle-ms` (unitless ms, so `calc(… * 1ms)` gives it units). A
+   slot that never got one wears neither this class nor the property and draws
+   no clock at all — the fallback is there for a malformed value, not as a
+   second source of truth.
+
+   IT DIMS, IT DOES NOT STOP BREATHING. The two animations deliberately touch
+   different properties: `reading-slot-breathe` owns `box-shadow` and keeps its
+   pulse to the last second; this one owns `filter` and eases the whole lit
+   result down to nothing. Written as a second set of `box-shadow` keyframes it
+   would simply have overridden the breath — later animation wins the property —
+   and the slot would have gone still instead of going dark. */
+.reading-session__slot--live.reading-session__slot--timed .reading-session__slot-well {
+  animation:
+    reading-slot-breathe 2.4s ease-in-out infinite,
+    reading-slot-idle-out calc(var(--slot-idle-ms, 120000) * 1ms) linear forwards;
+}
+
+@keyframes reading-slot-idle-out {
+  /* Held bright for the first stretch: a light that starts dying immediately
+     says "you are already late" on a window a child has barely entered. The
+     fall is over the back half, which is when it means something. */
+  0%, 35% { filter: brightness(1); }
+  100% { filter: brightness(0.06); }
+}
+
 /* Motion is the message here, so when motion is refused the message has to
-   survive without it: the lit state, held still. */
+   survive without it: the lit state, held still. The timed selector is named
+   explicitly — it is more specific than the live one, so it would otherwise
+   keep animating straight through this block. */
 @media (prefers-reduced-motion: reduce) {
-  .reading-session__slot--live .reading-session__slot-well {
+  .reading-session__slot--live .reading-session__slot-well,
+  .reading-session__slot--live.reading-session__slot--timed .reading-session__slot-well {
     animation: none;
+    filter: none;
     box-shadow:
       inset 0 0.6vh 1.4vh rgba(0, 0, 0, 0.78),
       inset 0 0 0 1px rgba(255, 212, 121, 0.26),

@@ -332,7 +332,7 @@ goes back over the HTTP routes below. There is no other channel.
 | Event | Sent by | Payload | The screen does |
 |---|---|---|---|
 | `session-present` | `ReadingSessionService` | `learnerId, location, sessionId, presentationId, revision, serverEpoch, reason` | render that face immediately; ACK only after the launch card is painted and no fullscreen overlay covers it |
-| `session-open` | `ReadingSessionService.acknowledge` | committed session plus presentation identity | confirm the authoritative prompt; reconnects may safely re-ACK it |
+| `session-open` | `ReadingSessionService.acknowledge` | committed session plus presentation identity, including `idleTimeoutMs` | confirm the authoritative prompt; reconnects may safely re-ACK it. The window is drawn on the live empty slot, whose light fades over it |
 | `session-update` | `ReadingSessionService.update` | the whole session | **nothing** — the screen owns its own view; the session's mirror is not an instruction |
 | `session-close` | `ReadingSessionService.close` | the session, plus `reason` (`timeout`, …) | back to `idle`, unless a story is still playing — that outlives the session |
 | `session-refused` | the `reading-session` learner action | `learnerId, location, target, reason: 'content-playing'` | one notice over the running content, and **nothing else moves** (**D2**) |
@@ -469,7 +469,7 @@ Not state transitions, but each must land somewhere visible.
 | Failure | Behaviour |
 |---|---|
 | Content lookup fails | The player bails today. In a session: back to `PROMPT` with "that one didn't work" |
-| No book is picked | After two minutes, close the session. `end: tv-off` turns the configured display off; otherwise the widget returns to its idle/art surface. |
+| No book is picked | After two minutes, close the session. `end: tv-off` turns the configured display off; otherwise the widget returns to its idle/art surface. The prompt SHOWS that window running: the session publishes its own `idleTimeoutMs` and the live empty slot's amber glow eases to nothing over it (`--slot-idle-ms`, `reading-slot-idle-out`). That is a PICTURE of the sweep, never the sweep itself — the server decides off `lastActivityAt`, which every tap moves and the stylesheet cannot see, so where the two disagree the sweep wins. A `session-open` carrying no window draws no clock. |
 | TV wakes slowly, fails to wake, reloads, or misses the event | Reserve before wake; publish `PRESENTING` after the bounded wake result; a client hydrated during `STARTING` polls until the presentation exists. Replay twice. If no rendered ACK arrives, close the unseen initial session and alert an adult. |
 | Candidate learner face is not acknowledged | Never commit it. Replay once, then present the prior learner again and alert an adult; all inputs remain blocked until a face is acknowledged. |
 | Reading log write fails | The story still played. Surface it; never claim a read that was not recorded |
