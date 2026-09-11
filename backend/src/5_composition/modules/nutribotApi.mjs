@@ -2,6 +2,7 @@
 // Composition wiring for Nutribot API router(s). Extracted from bootstrap.mjs (Task P2.7-E).
 
 import { MealInstructionService } from '#apps/health/MealInstructionService.mjs';
+import { ReviseEntryService } from '#apps/health/ReviseEntryService.mjs';
 import { MealFoodCommands } from '#apps/health/MealFoodCommands.mjs';
 import { WebNutribotAdapter } from '#adapters/nutribot/WebNutribotAdapter.mjs';
 import { NutribotInputRouter } from '#apps/nutribot/services/NutribotInputRouter.mjs';
@@ -84,6 +85,12 @@ export function createNutribotApiRouter(config) {
       foodLogStore: nutribotServices.foodLogStore,
       aiGateway: nutribotServices.nutribotContainer.getAIGateway(),
       mealCommands: new MealFoodCommands({ nutritionItems: nutribotServices.nutriListStore, logger }),
+    }) : null,
+    transcribeVoice: (fileId) => nutribotServices.nutribotContainer.getMessagingGateway().transcribeVoice(fileId),
+    entryRevisions: aiGatewayAvailable ? new ReviseEntryService({
+      logger,
+      nutritionItems: nutribotServices.nutriListStore,
+      aiGateway: nutribotServices.nutribotContainer.getAIGateway(),
     }) : null,
     foodLogStore: nutribotServices.foodLogStore,
     voiceMemoStore: new VoiceMemoStore({ dataService, logger }),
