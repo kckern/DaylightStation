@@ -305,6 +305,60 @@ export class ReadingSessionService {
   }
 
   /**
+   * The learner this reader was LAST OCCUPIED BY, or null once the room has
+   * stopped being theirs.
+   *
+   * Same record as `recentlyClosed`, read with a second and longer tolerance,
+   * because the two answer different questions. `recentlyClosed` measures a
+   * FLIGHT TIME: the seconds between a teardown and a book card that was
+   * already on its way to the reader, which is a walk to the shelf. This
+   * measures how long a child who has been IGNORED keeps trying, which is a
+   * different human behaviour and a repeating one. On 2026-09-11 the learner
+   * re-tapped 39s after the close and again at 101s; a window tuned for the
+   * walk answers the first and not the second.
+   *
+   * The window is the room's OWN `idleTimeoutMs` — the household's declared
+   * answer to "how long does a quiet room still belong to whoever was last in
+   * it?", which is precisely the question being asked here, and which retunes
+   * itself when that timeout is retuned. It is FLOORED at `REOPEN_GRACE_MS`
+   * rather than clamped to it: a child must never get less time to reclaim
+   * their room than a book gets to reclaim their session, and a household that
+   * disabled the sweep entirely (`0`) still tears sessions down by other roads.
+   *
+   * LIKE `recentlyClosed`, THIS REPORTS EVERY TEARDOWN and the caller must not
+   * treat them alike — see that method's note. The one caller today,
+   * `makeReadingSessionHandler`, honours only the reasons that mean the SYSTEM
+   * took the room away from a child (`timeout`, `reopen-abandoned`,
+   * `presentation-unacknowledged`), never the ones that mean the child handed
+   * it back (`day-done`) or that state no provenance at all (`null`).
+   *
+   * The window is not a parameter, so no caller can widen it.
+   *
+   * @returns {{session: object, reason: string|null, closedAt: number}|null}
+   *   the same frozen record `recentlyClosed` hands out, or null if this room
+   *   has stopped belonging to whoever last left it.
+   */
+  recentlyDeparted(location) {
+    const record = this.#recentlyClosed.get(location) ?? null;
+    if (!record) return null;
+    if (this.#clock().getTime() - record.closedAt > this.#departureGraceMs()) return null;
+    return record;
+  }
+
+  /**
+   * How long a departed learner keeps first claim on the room they left.
+   *
+   * `Math.max`, deliberately, where `#reopenGraceMs` uses `Math.min`: the
+   * reopen grace is a FRACTION of the timeout and must stay one, while this is
+   * the timeout itself with the reopen grace as its floor. The two windows are
+   * therefore never inverted — a child can always reclaim a room for at least
+   * as long as a book can reclaim a session in it.
+   */
+  #departureGraceMs() {
+    return Math.max(this.#idleTimeoutMs > 0 ? this.#idleTimeoutMs : 0, REOPEN_GRACE_MS);
+  }
+
+  /**
    * The reopen grace this instance actually honours.
    *
    * Clamped to `idleTimeoutMs` so the grace stays a fraction of the timeout
