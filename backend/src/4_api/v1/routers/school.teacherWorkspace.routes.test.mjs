@@ -177,8 +177,13 @@ describe('teacher workspace routes', () => {
       .send({ userId: 'parent', pin: '4321' }).expect(200);
     expect(unlocked.headers['set-cookie'][0]).toMatch(/daylight_teacher_session=secret-token;.*HttpOnly; SameSite=Strict/);
     expect(unlocked.body).not.toHaveProperty('capabilityToken');
+    // `pinRequired` rides along so the console knows whether to ASK for a PIN.
+    // It defaults false because school.yml no longer configures one; the gate
+    // has always skipped the check when the key is absent, but the console
+    // prompted regardless and had no way to learn otherwise.
     await request(app({ teacherCapabilitySessions })).get('/api/v1/school/teacher/auth/status')
-      .set('Cookie', 'daylight_teacher_session=secret-token').expect(200).expect({ active: true, userId: 'parent' });
+      .set('Cookie', 'daylight_teacher_session=secret-token').expect(200)
+      .expect({ active: true, userId: 'parent', pinRequired: false });
     const locked = await request(app({ teacherCapabilitySessions })).post('/api/v1/school/teacher/auth/lock')
       .set('Cookie', 'daylight_teacher_session=secret-token').expect(200);
     expect(locked.headers['set-cookie'][0]).toMatch(/Max-Age=0/);
