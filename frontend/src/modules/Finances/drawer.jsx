@@ -336,12 +336,24 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
 
   const surplusValue = month.surplus;
   const isNegative = surplusValue < 0;  
-  const maxValue = incomeSum + categoryCredits.reduce((acc, {y}) => acc + y, 0);
+  const dayToDayStep = -dayToDaySum;
   
-  const totalIncomeValue = month.incomeTransactions.reduce((acc, { amount }) => acc + amount, 0);
+  // An income-bucket row can be expense-type: an RSU share transfer out
+  // ("Stock Option"), a payroll clawback. BudgetCompilationService SUBTRACTS
+  // those from month.income, so the waterfall has to step DOWN for them too.
+  // Plotting tx.amount raw drew Stock Option as a +13,372 bar instead of
+  // -13,372, which ran the cumulative to 51,291 against an axis capped at
+  // month.income + credits = 28,934 — so every step above that was rendered
+  // off-chart and nine categories looked empty.
+  const signedAmount = tx =>
+    (tx.transactionType === 'expense' || tx.type === 'expense') ? -tx.amount : tx.amount;
+
+  // Denominator for the merge heuristic below only, where magnitude is what
+  // matters — not a running total, so it stays absolute.
+  const totalIncomeValue = month.incomeTransactions.reduce((acc, tx) => acc + Math.abs(tx.amount), 0);
   const income = month.incomeTransactions.map(tx => ({
     name: tx.description || "Paycheck",
-    y: tx.amount,
+    y: signedAmount(tx),
     filter: { description: tx.description }
   })).sort((a, b) => a.name.localeCompare(b.name) || b.y - a.y);
 
@@ -377,9 +389,25 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
     ... categoryCredits.sort((a, b) => a.y - b.y),
     ... categoryDebits.sort((a, b) => a.y - b.y),
     { name: 'Cash Flow', isIntermediateSum: true, color: PALETTE.cashFlow , filter: { bucket: "monthly" }},
-    { name: 'Day-to-Day Spending', y: -dayToDaySum , color: PALETTE.dayToDay  , filter: { bucket: "day" }},
+    { name: 'Day-to-Day Spending', y: dayToDayStep , color: PALETTE.dayToDay  , filter: { bucket: "day" }},
     { name: !isNegative  ? 'Surplus' : 'Deficit',   isSum: true, color: isNegative ? PALETTE.over : PALETTE.gain}
   ];
+
+  // Bound the axis by walking the ACTUAL running total rather than predicting
+  // it. The series can peak mid-way: income rows sort with deductions last, so
+  // a month with an RSU vest climbs well above month.income before the share
+  // transfer steps back down (Jul '26 peaks at 37,920 on its way to 24,548).
+  // The old `incomeSum + credits` formula could not see that peak and clipped
+  // everything above it off the chart. 4% headroom keeps the tallest bar's
+  // data label off the axis edge.
+  const { peak, trough } = data.reduce((acc, point) => {
+    if (typeof point.y === 'number') acc.running += point.y;
+    acc.peak = Math.max(acc.peak, acc.running);
+    acc.trough = Math.min(acc.trough, acc.running);
+    return acc;
+  }, { running: 0, peak: 0, trough: 0 });
+  const maxValue = peak * 1.04;
+  const minValue = Math.min(0, trough, surplusValue);
 
   const options = {
     chart: { type: 'waterfall' },
@@ -399,7 +427,7 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
             }
         },
         title: { text: '' },
-        min: Math.min(0, surplusValue),
+        min: minValue,
         max: maxValue,
         plotLines: [{
             value: 0,
@@ -408,7 +436,7 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
             zIndex: 4
         }],
         plotBands: [{
-            from: Math.min(0, surplusValue),
+            from: minValue,
             to: 0,
             color: 'rgba(255, 100, 0, 0.1)'
         }]
