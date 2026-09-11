@@ -72,10 +72,17 @@ export class HealthOperations {
     return this.resolveDefaultUsername() || 'default';
   }
 
-  context() {
+  /**
+   * @param {string|null} [userId] whose context this is. The API passes the
+   *   signed-in adult; absent, it falls back to head-of-household. This used
+   *   to answer head-of-household unconditionally, so the FRONTEND keyed its
+   *   entire display-preferences and cache story on one name no matter who
+   *   was looking.
+   */
+  context(userId = null) {
     const densityLevels = this.densityLevels();
     return {
-      userId: this.defaultUsername(),
+      userId: userId || this.defaultUsername(),
       densityLevels,
       densityRevision: densityRevision(densityLevels),
     };
