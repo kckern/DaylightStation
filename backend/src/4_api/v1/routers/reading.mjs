@@ -4,6 +4,23 @@ import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/in
 
 const trimmed = value => typeof value === 'string' && value.trim() ? value.trim() : null;
 
+/**
+ * The reasons a CALLER may end a session with.
+ *
+ * `reason` was free text while it was only log and broadcast copy. It stopped
+ * being free the moment `ReadingSessionInterceptor` began branching on it: a
+ * session closed `timeout` is the one a book card may REOPEN within the grace
+ * window, because only the idle sweep cutting a child off mid-action is a
+ * mistake worth undoing. The sweep says `timeout` from inside the service;
+ * nothing arriving over HTTP may, or a body could mint a teardown
+ * indistinguishable from a real one and hand the next tap somebody else's
+ * session.
+ *
+ * One value, because one value is what the panel sends — the wind-down after
+ * the closing ceremony. Widening this is a deliberate line, not an accident.
+ */
+const END_REASONS = new Set(['day-done']);
+
 function badRequest(message) {
   const err = new Error(message);
   err.name = 'ValidationError';
@@ -57,6 +74,7 @@ export function createReadingRouter({ readingService } = {}) {
     const location = trimmed(req.body?.location);
     if (!location) throw badRequest('location is required');
     const reason = trimmed(req.body?.reason) || 'day-done';
+    if (!END_REASONS.has(reason)) throw badRequest(`reason must be one of: ${[...END_REASONS].join(', ')}`);
     const gone = await readingService.end(location, { reason });
     return res.json({ ok: Boolean(gone), location, reason });
   }));

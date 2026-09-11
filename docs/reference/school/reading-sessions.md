@@ -379,6 +379,7 @@ mid-assignment child's hardening off with nothing anywhere to say so.
 | `POST /playing` | `location, learnerId, contentId, pickId` | **Nothing else moves a session to `reading`.** The backend cannot see the first frame; without this, `state` never leaves `confirm`, D5 never fires in the field, and every book tapped during a story is claimed as a fresh prompt. It reports PLAYBACK START, not countdown expiry — they differ by however long the content takes to load, and that gap is exactly when a stray tap misbehaves. |
 | `POST /read` | `learnerId, contentId, title, tagUid, location, sessionId, pickId` | The only path that writes evidence. `pickId` is the idempotency key. It performs `READING → RETURNING`; rendered-face ACK performs `RETURNING → PROMPT`. Session/pick conflicts remain `409` and are logged with both request and current identities. |
 | `GET /read-status` | `learnerId, studyDay, pickId` | Resolves an ambiguous completion response from the durable idempotency key, without guessing or double-counting. |
+| `POST /session/end` | `location`, optional `reason` | The wind-down after the closing ceremony. `reason` is an ALLOWLIST (`day-done` only, and the default), not free text: the interceptor reopens a session closed `timeout` and only the idle sweep, from inside the service, may say that word. Anything else is `400`. |
 | `GET /summary` | `?learnerId=` | What the prompt puts in front of the child: display name, today's count/target, and the six newest reads across today plus the prior six study days. Every day degrades independently. |
 
 **On deck.** `queueNext` (the interceptor, on an unclaimed browsing-mode tap),
@@ -476,6 +477,7 @@ Not state transitions, but each must land somewhere visible.
 | Player remounts or completion response is lost | Must not double-count. Player suppresses duplicate terminal notifications; `pickId` dedup plus one retry and `read-status` recover transport ambiguity. |
 | Native terminal signals repeat | Player dispatches one semantic completion; the same `pickId` also dedups downstream evidence. |
 | Teardown suppression fails | The TV powers off before the ceremony. Guard with a test — this is the D8 hazard |
+| A book card lands JUST after the idle sweep closed the session | The interceptor reopens it. Scanning a card, walking to the shelf and scanning a book is ONE act and the sweep can land in the middle of it; on 2026-09-11 it closed a session 1.2s before the book arrived, which then dispatched as ordinary content — story played, no pick, no credit. `ReadingSessionService.recentlyClosed()` keeps the last teardown for `REOPEN_GRACE_MS` (45s, clamped to the idle timeout), and `ReadingSessionInterceptor` reopens it for `reason: 'timeout'` ONLY — a `day-done` close is a finished child and a book after it is browsing. **Open caveat:** the sweep records the close before running its own teardown, so a reopened session can sit behind a TV the teardown just powered off, and nothing on the claimed path wakes it. |
 
 ---
 
