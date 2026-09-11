@@ -58,7 +58,7 @@ const MID_STORY = new Set(['reading']);
 const MODE_UNREADABLE = 'unreadable';
 
 export class ReadingSessionInterceptor {
-  #sessions; #storyTime; #realtime; #clock; #logger; #idFactory; #idSequence = 0;
+  #sessions; #storyTime; #realtime; #wakeScreen; #clock; #logger; #idFactory; #idSequence = 0;
 
   /**
    * @param {object} config
@@ -67,12 +67,19 @@ export class ReadingSessionInterceptor {
    *   the story-time launcher, asked for `{error, enrolled, count, target}`.
    *   Absent means browsing, silently; `error` (or a throw) means browsing WITH
    *   a `session-error` on screen. See `#modeFor`.
+   * @param {(a: {target: string, location: string}) => Promise<object>} [config.wakeScreen]
+   *   power the reader's screen on and bring the kiosk forward. Used by ONE
+   *   path — `#reopenIfJustClosed` — and read its header for why. Deliberately
+   *   NOT a content load: the reading widget is already mounted, and reloading
+   *   the page would drop the very WebSocket carrying the `session-open` the
+   *   reopen just broadcast to it. Absent means no wake, exactly as before.
    */
-  constructor({ sessions, storyTime = null, realtime = null, clock = () => new Date(), idFactory = null, logger = console } = {}) {
+  constructor({ sessions, storyTime = null, realtime = null, wakeScreen = null, clock = () => new Date(), idFactory = null, logger = console } = {}) {
     if (!sessions) throw new Error('ReadingSessionInterceptor requires a sessions store');
     this.#sessions = sessions;
     this.#storyTime = storyTime;
     this.#realtime = realtime;
+    this.#wakeScreen = wakeScreen;
     this.#clock = clock;
     this.#idFactory = idFactory;
     this.#logger = logger;
@@ -86,7 +93,7 @@ export class ReadingSessionInterceptor {
     if (response?.kind !== 'content') return null;
     const location = response?.location;
     if (!location) return null;
-    const session = this.#sessions.current(location) ?? this.#reopenIfJustClosed(location);
+    const session = this.#sessions.current(location) ?? this.#reopenIfJustClosed(location, response?.target ?? null);
     if (!session) return null;
 
     const contentId = response.expression?.contentId ?? null;
@@ -259,10 +266,23 @@ export class ReadingSessionInterceptor {
    * Reopening broadcasts `session-open`, so the screen puts the launch card
    * back before the caller's own `book-selected` lands on it.
    *
+   * AND IT IS THE ONLY CLAIM THAT ASKS FOR THE SCREEN BACK. An ordinary claim
+   * lands on a session already open on a lit screen; this one lands on a
+   * session the sweep just tore down, and the sweep's teardown at the
+   * living-room reader IS `end: tv-off`. On 2026-09-11 `tv.turnOff.start`
+   * fired at 17:13:22.109 and the book arrived at 17:13:23.293 with that
+   * turnOff still in flight (the TV only reported off at 17:13:30.165). The
+   * single thing that re-lit the room was `wake-and-load`, on the UNCLAIMED
+   * path — and claiming the tap is precisely what takes that away, because a
+   * claimed book plays in an overlay on the already-mounted widget and nothing
+   * in that path powers a display on. So the reopen asks, and only the reopen.
+   *
+   * @param {string} location
+   * @param {string|null} target the device the tap was aimed at, for the wake
    * @returns {object|null} the reopened session, or null to let the book
    *   dispatch as it does today.
    */
-  #reopenIfJustClosed(location) {
+  #reopenIfJustClosed(location, target = null) {
     const record = this.#sessions.recentlyClosed?.(location) ?? null;
     if (!record || record.reason !== 'timeout') return null;
     const reopened = this.#sessions.open({
@@ -270,15 +290,48 @@ export class ReadingSessionInterceptor {
       learnerId: record.session.learnerId,
       target: record.session.target ?? null,
     });
+    const sinceCloseMs = this.#clock().getTime() - record.closedAt;
+    const wakeTarget = target ?? record.session.target ?? null;
     this.#log('info', 'school.reading.session-reopened', {
       location,
       learnerId: record.session.learnerId,
       sessionId: reopened?.sessionId ?? null,
       closedSessionId: record.session.sessionId,
-      sinceCloseMs: this.#clock().getTime() - record.closedAt,
+      sinceCloseMs,
+      // Whether the screen was ASKED for; whether it came back is the
+      // `reopen-wake` line, which carries the same `sinceCloseMs` so the two
+      // read together. Diagnosing a dark screen needs both halves.
+      wakeRequested: Boolean(this.#wakeScreen && wakeTarget),
       consequence: 'the book that arrived just after a teardown keeps its credit',
     });
+    this.#wakeForReopen(location, wakeTarget, sinceCloseMs);
     return reopened;
+  }
+
+  /**
+   * Ask for the reader's screen, and never let the asking cost the claim.
+   *
+   * FIRE AND FORGET, on purpose. `prepareForContent` took 6.9 seconds in the
+   * field on 2026-09-11; awaiting it here would hold the NFC dispatch open for
+   * that long before the child's launch card came back. And `claim()`'s whole
+   * contract is that a claim is a promise the screen will handle the tap — a
+   * wake that throws, rejects or hangs must not turn a good claim into a dead
+   * one, so every outcome lands in a log line and none of them propagate.
+   */
+  #wakeForReopen(location, target, sinceCloseMs) {
+    if (!this.#wakeScreen || !target) return;
+    const report = (result, error = null) => this.#log(error || result?.ok === false ? 'warn' : 'info', 'school.reading.reopen-wake', {
+      location, target, sinceCloseMs,
+      ok: !error && result?.ok !== false,
+      error: error ?? result?.error ?? null,
+    });
+    try {
+      Promise.resolve(this.#wakeScreen({ target, location }))
+        .then((result) => report(result))
+        .catch((err) => report(null, err?.message ?? String(err)));
+    } catch (err) {
+      report(null, err?.message ?? String(err));
+    }
   }
 
   /**

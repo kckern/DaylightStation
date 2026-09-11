@@ -4812,6 +4812,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       sessions: readingSessions,
       storyTime: schoolLifecycle.storyTimeLauncher,
       realtime: readingRealtime,
+      // ONLY the reopen path uses this, and it is the same seam the
+      // learner-card handler wakes with — one room, one way to wake a screen a
+      // mounted widget is about to be told something on. A reopened session is
+      // the one claim that can be racing this reader's own `end: tv-off`
+      // teardown, and a claimed book never reaches `wake-and-load`, so without
+      // it the launch card comes back on a TV the sweep just powered off.
+      wakeScreen: wakeScreenForBroadcast,
       logger: readingLogger,
     });
 
