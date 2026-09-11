@@ -26,6 +26,30 @@ needed.
 | flags | Geography | `svg/flags.svg` | placeholder line-art (flag) — swap later |
 | countries | Geography | `svg/countries.svg` | placeholder line-art (globe+pin) — swap later |
 
+## Sentence-ladder rungs
+
+Ingested 2026-09-11 from SVG Repo. Named `rung-<id>` so the ladder finds an
+icon by rung id, the same way a subject tile finds one by subject id.
+
+| Rung | File | Source | Style |
+|------|------|--------|-------|
+| `repetition` | `svg/rung-repetition.svg` | speaker | **filled** |
+| `dictation` | `svg/rung-dictation.svg` | keyboard-alt-1 | stroke, 1.5 |
+| `recording` | `svg/rung-recording.svg` | microphone-alt-1 | stroke, 1.5 |
+| `interpretation` | `svg/rung-interpretation.svg` | language (문/A) | **filled** |
+
+Note `rung-interpretation` is NOT `language.svg` — that name was already taken
+by the Language & Culture subject tile, which is a different mark for a
+different thing.
+
+The two stroke icons arrived at `stroke-width="2"` and were normalized to the
+set's existing `1.5` (cf. `svg/record.svg`); at the same size a heavier stroke
+reads as a different set. **The four are still not one family** — two are
+filled and two are outlines, so they carry visibly different weight when drawn
+side by side in the rung rail. Swapping the two filled ones for outline
+equivalents would settle it; the files are drop-in (keep `currentColor` + `1em`)
+and need no code change.
+
 ## Action marks
 
 The set also carries icons named for what a control DOES rather than for a
