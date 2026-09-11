@@ -78,13 +78,16 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
         },
         title: { text: '' },
         xAxis: {
+            // No <br/> here: this is a flex column, so a <br/> becomes its own
+            // anonymous flex item and makes every label three rows tall. With
+            // useHTML Highcharts centres the measured box on the tick, so that
+            // phantom row pushed each name up into the bar above and dropped
+            // the sub-line onto the bar's middle.
             categories: processedData.map(item => `
-                <div style="margin:0; padding:0; display:flex; flex-direction:column; align-items:center; justify-content:center">
+                <div class="category-label-stack">
                   <b class="category-label">${item.category}</b>
-                  <br/>
-                  <small class="category-label" style="color:#AAA; font-size:0.7rem">
-                    ${formatAsCurrency(item.budget)}
-                    ${item.credits > 0 ? ` <b class='green' style="color:${PALETTE.gain}">+ ${formatAsCurrency(item.credits)}</b>` : ''}
+                  <small class="category-label">
+                    ${formatAsCurrency(item.budget)}${item.credits > 0 ? ` <b class='green' style="color:${PALETTE.gain}">+ ${formatAsCurrency(item.credits)}</b>` : ''}
                   </small>
                 </div>`),
             labels: { useHTML: true },
