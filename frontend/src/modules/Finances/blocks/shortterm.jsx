@@ -112,6 +112,14 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
         credits: { enabled: false },
         tooltip: {
             shared: true,
+            // The x-axis labels use useHTML, which puts them in a div layer
+            // stacked above the SVG - so the default SVG tooltip renders
+            // UNDERNEATH them and the bucket names show through it. Setting
+            // useHTML on the tooltip does NOT fix this (verified); `outside`
+            // does, by rendering into document.body above the whole chart.
+            // It also escapes the panel's `overflow: hidden`, which would
+            // otherwise clip the tooltip near an edge.
+            outside: true,
             formatter: function () {
                 const index = this.points[0].point.index;
                 const item = processedData[index];
