@@ -171,3 +171,50 @@ describe('the two registers', () => {
     expect(screen.getByTestId('school-ime-disc').className).toContain('school-ime-disc--kr');
   });
 });
+
+/**
+ * A field that reads the composition inside its own `onChange` — the way a
+ * rung does it. It has to be the same component: the composer writes the
+ * field and dispatches `input`, and the answer is only current in the handler
+ * that write triggered.
+ */
+function ComposingField({ label = 'field' }) {
+  const { compositionState } = useHangulTyping();
+  const [value, setValue] = useState('');
+  const [state, setState] = useState({ committed: '', pending: '' });
+  return (
+    <>
+      <input
+        aria-label={label}
+        type="text"
+        value={value}
+        onChange={(e) => { setValue(e.target.value); setState(compositionState(e.target)); }}
+      />
+      <output data-testid="composition">{`${state.committed}|${state.pending}`}</output>
+    </>
+  );
+}
+
+describe('the composition seam', () => {
+  it('tells a consumer which syllable is still in flight', () => {
+    render(<HangulTypingProvider><ComposingField /></HangulTypingProvider>);
+    act(() => { pressF6(); });
+    const el = screen.getByLabelText('field');
+    act(() => { el.focus(); });
+    act(() => { type(el, 'dhs'); });
+    // 온 on screen, nothing settled: the ㄴ has not chosen a syllable yet, so
+    // a rung matching the field against 오늘 must not be told 온 is final.
+    expect(el.value).toBe('온');
+    expect(screen.getByTestId('composition')).toHaveTextContent('|온');
+    act(() => { type(el, 'mf'); });
+    expect(el.value).toBe('오늘');
+    expect(screen.getByTestId('composition')).toHaveTextContent('오|늘');
+  });
+
+  it('reports a field nobody is composing into as settled', () => {
+    render(<HangulTypingProvider><ComposingField /></HangulTypingProvider>);
+    const el = screen.getByLabelText('field');
+    act(() => { fireEvent.change(el, { target: { value: 'plain' } }); });
+    expect(screen.getByTestId('composition')).toHaveTextContent('plain|');
+  });
+});

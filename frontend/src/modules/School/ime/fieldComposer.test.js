@@ -191,3 +191,86 @@ describe('FieldComposer', () => {
     expect(b.value).toBe('국');
   });
 });
+
+/**
+ * The field's `value` cannot tell a reader which glyph the child is still
+ * typing, and in 두벌식 that difference is the whole story: a bare consonant
+ * lands as the previous syllable's batchim and only migrates out when its
+ * vowel arrives. A reveal driven off `value` therefore erases the glyph being
+ * typed on the first keystroke of every syllable. These cases pin the seam the
+ * automaton already has — settled text vs. the one syllable in flight — so a
+ * caller can ask instead of guessing.
+ */
+describe('FieldComposer.compositionState', () => {
+  it('keeps the syllable in flight out of committed text, through 오늘', () => {
+    const el = field();
+    const c = new FieldComposer();
+    const state = () => c.compositionState(el);
+    const whole = () => state().committed + state().pending;
+
+    typeInto(c, el, 'd');            // ㅇ
+    expect(state()).toEqual({ committed: '', pending: 'ㅇ' });
+    expect(whole()).toBe(el.value);
+
+    typeInto(c, el, 'h');            // ㅗ -> 오
+    expect(state()).toEqual({ committed: '', pending: '오' });
+    expect(whole()).toBe(el.value);
+
+    // THE ROW THAT MOTIVATES ALL OF THIS. The ㄴ attaches as 오's batchim, so
+    // the field reads 온 — nothing is settled yet, and a reader that trusted
+    // `value` would conclude the learner had un-typed 오.
+    typeInto(c, el, 's');            // ㄴ
+    expect(el.value).toBe('온');
+    expect(state()).toEqual({ committed: '', pending: '온' });
+    expect(whole()).toBe(el.value);
+
+    typeInto(c, el, 'm');            // ㅡ — the ㄴ migrates out to start 늘
+    expect(state()).toEqual({ committed: '오', pending: '느' });
+    expect(whole()).toBe(el.value);
+
+    typeInto(c, el, 'f');            // ㄹ
+    expect(state()).toEqual({ committed: '오', pending: '늘' });
+    expect(whole()).toBe(el.value);
+  });
+
+  it('reports a field it is not driving as entirely committed', () => {
+    const el = field({ value: 'already here' });
+    const c = new FieldComposer();
+    expect(c.compositionState(el)).toEqual({ committed: 'already here', pending: '' });
+
+    // Composing elsewhere does not make this field's text provisional.
+    typeInto(c, field(), 'dks');
+    expect(c.compositionState(el)).toEqual({ committed: 'already here', pending: '' });
+  });
+
+  it('counts text that predates the session as committed', () => {
+    // Latin typed before the session, or text the app put there — settled, and
+    // it lives before the anchor where the automaton cannot see it.
+    const el = field({ value: 'hi ' });
+    const c = new FieldComposer();
+    typeInto(c, el, 'dhs');
+    expect(el.value).toBe('hi 온');
+    expect(c.compositionState(el)).toEqual({ committed: 'hi ', pending: '온' });
+    typeInto(c, el, 'mf');
+    expect(c.compositionState(el)).toEqual({ committed: 'hi 오', pending: '늘' });
+  });
+
+  it('reports the text up to the caret when composing before existing text', () => {
+    // Composing mid-field, the tail after the caret belongs to neither half —
+    // it is the app's text, not this run's. Callers that need it read `value`.
+    const el = field({ value: 'ab', caret: 1 });
+    const c = new FieldComposer();
+    typeInto(c, el, 'gks');
+    expect(el.value).toBe('a한b');
+    expect(c.compositionState(el)).toEqual({ committed: 'a', pending: '한' });
+  });
+
+  it('settles everything once the run ends', () => {
+    const el = field();
+    const c = new FieldComposer();
+    typeInto(c, el, 'dhsmf');
+    expect(c.compositionState(el).pending).toBe('늘');
+    c.end();
+    expect(c.compositionState(el)).toEqual({ committed: '오늘', pending: '' });
+  });
+});
