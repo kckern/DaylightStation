@@ -52,6 +52,26 @@ export const DEFAULT_IDLE_TIMEOUT_MS = 120_000;
 export const DEFAULT_SWEEP_INTERVAL_MS = 15_000;
 
 /**
+ * How often the open sessions are written down, when anything has changed.
+ *
+ * The Map is the living room's state and it lives in this process, so a deploy
+ * erases it. On 2026-09-11 one landed four minutes into a 9m40s read-along and
+ * the child finished the book into a server that had never heard of his
+ * session. `ReadingApiService` now credits the read from the request's own
+ * evidence, so the book is not lost either way; this is what keeps the ROOM
+ * coherent — the pick still attributable, teardown still owed, no second scan.
+ *
+ * Five seconds because the thing being protected against is a restart, and
+ * losing the last five seconds of a session's life to one costs nothing: the
+ * fields that matter (who, which book, which pick) are minutes old by then, and
+ * the fields that churn (the playback position, at 10 Hz) are re-reported by
+ * the player within a second of it coming back.
+ *
+ * Structural events — a session opening or closing — do not wait for it.
+ */
+export const DEFAULT_PERSIST_INTERVAL_MS = 5_000;
+
+/**
  * How long after a teardown a book card may still reclaim the session it
  * belongs to.
  *
@@ -118,6 +138,7 @@ export class ReadingSessionService {
   #recentlyClosed = new Map();
   #realtime; #clock; #logger; #idFactory; #idSequence = 0;
   #idleTimeoutMs; #sweepIntervalMs; #onTimeout; #scheduler; #cancelSweep = null;
+  #sessionStore; #persistIntervalMs; #cancelPersist = null; #dirty = false;
 
   /**
    * @param {object} [config]
@@ -138,6 +159,10 @@ export class ReadingSessionService {
     sweepIntervalMs = DEFAULT_SWEEP_INTERVAL_MS,
     onTimeout = null,
     scheduler, observationStore = null,
+    // Durability across a restart. Optional: absent, the service behaves
+    // exactly as it always has — in memory, and forgotten on deploy.
+    sessionStore = null,
+    persistIntervalMs = DEFAULT_PERSIST_INTERVAL_MS,
   } = {}) {
     const missingSchedulerMethods = ['withDeadline', 'every', 'wait']
       .filter((method) => typeof scheduler?.[method] !== 'function');
@@ -154,6 +179,68 @@ export class ReadingSessionService {
     this.#idFactory = idFactory;
     this.#serverEpoch = this.#nextId('reading');
     this.#observationStore = observationStore;
+    this.#sessionStore = sessionStore;
+    this.#persistIntervalMs = Number.isFinite(persistIntervalMs) ? persistIntervalMs : DEFAULT_PERSIST_INTERVAL_MS;
+  }
+
+  /**
+   * Take back the sessions that were open when this process last wrote.
+   *
+   * Awaited by composition BEFORE the first request is served, so a card tap
+   * that lands during boot cannot open a second session for a room that already
+   * has one.
+   *
+   * REHYDRATED, NOT RESUMED. Nothing is broadcast and no ceremony is re-run: the
+   * screen is already showing whatever it was showing, and replaying a
+   * presentation at it would restart a story that never stopped. The session is
+   * simply back in the Map, where the sweep, the pick lookup and teardown can
+   * all find it again.
+   *
+   * A session restored into a room that has since emptied is not a problem this
+   * has to solve — `lastActivityAt` comes back with it, so the idle sweep tears
+   * a stale one down on its next pass exactly as it would a live one.
+   */
+  async hydrate() {
+    if (!this.#sessionStore?.load) return this;
+    let rows = [];
+    try {
+      rows = await this.#sessionStore.load();
+    } catch (err) {
+      this.#log('warn', 'school.reading.sessions-load-failed', { error: err?.message ?? String(err) });
+      return this;
+    }
+    let restored = 0;
+    for (const row of rows) {
+      if (this.#sessions.has(row.location)) continue;
+      this.#sessions.set(row.location, Object.freeze({ ...row }));
+      restored += 1;
+    }
+    if (restored) {
+      this.#log('info', 'school.reading.sessions-restored', {
+        count: restored,
+        locations: rows.map((row) => row.location),
+        states: rows.map((row) => row.state ?? null),
+        note: 'a restart no longer costs the room its session',
+      });
+    }
+    return this;
+  }
+
+  /** Mark the set changed; the persist timer writes it within the interval. */
+  #persistSoon() { this.#dirty = true; }
+
+  /**
+   * Write the set now. Structural changes — a session opening or closing — do
+   * not wait for the timer, because those are the ones a restart landing in the
+   * next four seconds would most obviously get wrong.
+   */
+  #persistNow() {
+    this.#dirty = false;
+    if (!this.#sessionStore?.save) return;
+    // Never awaited by a caller: persistence is a side effect of the room
+    // changing, and a slow disk must not hold up a card tap.
+    Promise.resolve(this.#sessionStore.save([...this.#sessions.values()]))
+      .catch((err) => this.#log('warn', 'school.reading.sessions-save-failed', { error: err?.message ?? String(err) }));
   }
 
   /**
@@ -161,6 +248,14 @@ export class ReadingSessionService {
    * second call must not leave a second timer running against the same Map.
    */
   start() {
+    // The persist timer is armed even when the idle timeout is off: a household
+    // that would rather leave the TV on than risk a false teardown still wants
+    // its sessions to survive a deploy.
+    if (this.#sessionStore?.save && !this.#cancelPersist && this.#persistIntervalMs > 0) {
+      this.#cancelPersist = this.#scheduler.every(this.#persistIntervalMs, () => {
+        if (this.#dirty) this.#persistNow();
+      });
+    }
     if (this.#cancelSweep || !this.#idleTimeoutMs) return this;
     this.#cancelSweep = this.#scheduler.every(this.#sweepIntervalMs, () => {
       // Never let a rejected sweep become an unhandled rejection on a timer
@@ -175,6 +270,14 @@ export class ReadingSessionService {
 
   /** Disarm the sweep. Safe to call twice, and safe to call having never started. */
   stop() {
+    if (this.#cancelPersist) {
+      this.#cancelPersist();
+      this.#cancelPersist = null;
+      // One last write on the way down. A graceful shutdown is the one restart
+      // whose timing we DO control, so it should not be the one that loses the
+      // last few seconds of the room.
+      if (this.#dirty) this.#persistNow();
+    }
     if (!this.#cancelSweep) return this;
     this.#cancelSweep();
     this.#cancelSweep = null;
@@ -447,6 +550,7 @@ export class ReadingSessionService {
       lastActivityAt: at.getTime(),
     });
     this.#sessions.set(location, committed);
+    this.#persistSoon();
     this.#observe('presentation-acknowledged', committed, {
       presentationId: presentation.presentationId, reason: presentation.reason,
     });
@@ -555,6 +659,7 @@ export class ReadingSessionService {
       revision: session.revision,
       replaced: previous?.learnerId ?? null,
     });
+    this.#persistNow();
     this.#observe(state === STARTING ? 'reserved' : 'opened', session, { replacedSessionId: previous?.sessionId ?? null });
     this.#broadcast(session.location, { event: state === STARTING ? 'session-starting' : 'session-open', ...session });
     return session;
@@ -576,6 +681,7 @@ export class ReadingSessionService {
       lastActivityAt: this.#clock().getTime(),
     });
     this.#sessions.set(location, active);
+    this.#persistSoon();
     this.#observe('presentation-requested', active, { presentationId: presentation.presentationId, reason: 'initial' });
     this.#broadcast(location, { event: 'session-present', location, ...presentation });
     return active;
@@ -601,6 +707,7 @@ export class ReadingSessionService {
       pendingPresentation: presentation, lastActivityAt: this.#clock().getTime(),
     });
     this.#sessions.set(location, pending);
+    this.#persistSoon();
     this.#observe('switch-requested', pending, {
       presentationId: presentation.presentationId,
       requestedLearnerId: presentation.learnerId,
@@ -634,6 +741,7 @@ export class ReadingSessionService {
       lastActivityAt: this.#clock().getTime(),
     });
     this.#sessions.set(location, returning);
+    this.#persistSoon();
     this.#observe('return-requested', returning, { presentationId: presentation.presentationId, reason });
     this.#broadcast(location, { event: 'session-present', location, ...presentation });
     return Object.freeze({ session: returning, presentation });
@@ -655,6 +763,7 @@ export class ReadingSessionService {
       lastActivityAt: this.#clock().getTime(),
     });
     this.#sessions.set(location, restoring);
+    this.#persistSoon();
     this.#observe('switch-rollback-requested', restoring, {
       failedPresentationId: presentationId, presentationId: rollback.presentationId,
     });
@@ -687,6 +796,8 @@ export class ReadingSessionService {
       serverEpoch: this.#serverEpoch, lastActivityAt: this.#clock().getTime(),
     });
     this.#sessions.set(session.location, updated);
+    // Throttled, not immediate: `update` carries the 10 Hz playback position.
+    this.#persistSoon();
     this.#observe('updated', updated, { state: updated.state, progress: updated.progress ?? null });
     this.#broadcast(session.location, { event: 'session-update', ...updated });
     return updated;
@@ -819,6 +930,7 @@ export class ReadingSessionService {
     this.#ackWaiters.get(session.pendingPresentation?.presentationId)?.(false);
     const revision = this.#nextRevision(session.location);
     this.#stuckReported.delete(location);
+    this.#persistNow();
     this.#observe('closed', session, { reason });
     this.#log('info', 'school.reading.session-close', {
       location: session.location, learnerId: session.learnerId, reason,
