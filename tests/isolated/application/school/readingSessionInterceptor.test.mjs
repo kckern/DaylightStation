@@ -602,26 +602,81 @@ describe('ReadingSessionInterceptor — the tap that arrived just too late', () 
     expect(await interceptor.claim(bookTap())).toBeNull();
   });
 
-  // A reopen is a claim like any other, and a claim the screen cannot be told
-  // about is the one outcome this seam may not produce. Here `session-open`
-  // itself is what the dead bus swallows, so the launch card never comes back —
-  // the book must go to the ordinary dispatch rather than into a session
-  // nothing is rendering.
-  it('hands the book back when the screen cannot be told the session is open again', async () => {
+  /**
+   * A reopen is a claim like any other, and a claim the screen cannot be told
+   * about is the one outcome this seam may not produce — so the book goes back
+   * to the ordinary dispatch. But handing the BOOK back is only half of it: an
+   * abandoned reopen that leaves its session standing is a phantom, and
+   * `suppressEnd` answers only "is a session open at this reader". It would
+   * cancel the room's `end: tv-off` for the very dispatch that is about to play
+   * the book, and the living room would stay lit after the story ended with
+   * nothing left to turn it off — the 2026-08-28 fault, from a new direction.
+   *
+   * So an abandoned reopen rolls all the way back: no session, no suppression,
+   * the room exactly as the sweep left it.
+   */
+  function withADeadBus() {
     const state = { now: 1_000_000 };
-    const sessions = new ReadingSessionService({
-      logger: silent, clock: () => new Date(state.now),
-      realtime: { readingRoomChanged() { throw new Error('bus down'); } },
-    });
+    const clock = () => new Date(state.now);
+    const deadBus = { readingRoomChanged() { throw new Error('bus down'); } };
+    const sessions = new ReadingSessionService({ logger: silent, clock, realtime: deadBus });
     const interceptor = new ReadingSessionInterceptor({
-      sessions, storyTime: owing, logger: silent,
-      realtime: { readingRoomChanged() { throw new Error('bus down'); } },
+      sessions, storyTime: owing, logger: silent, clock, realtime: deadBus,
     });
+    return { interceptor, sessions, state };
+  }
+
+  it('hands the book back when the screen cannot be told the session is open again', async () => {
+    const { interceptor, sessions, state } = withADeadBus();
     sessions.open({ location: 'livingroom', learnerId: 'user_5' });
     sessions.close('livingroom', { reason: 'timeout' });
 
     state.now += 9_000;
     expect(await interceptor.claim(bookTap())).toBeNull();
+  });
+
+  it('and leaves NO session behind — a phantom would cancel the room s own teardown', async () => {
+    const { interceptor, sessions, state } = withADeadBus();
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    state.now += 9_000;
+    await interceptor.claim(bookTap());
+    expect(sessions.current('livingroom')).toBeNull();
+    expect(interceptor.suppressEnd(bookTap({ end: 'tv-off', endLocation: 'livingroom' }))).toBe(false);
+  });
+
+  // The rollback consumes the grace, deliberately: a bus that could not carry
+  // `book-selected` cannot carry a launch card either, and retrying would only
+  // mint another phantom.
+  it('does not try again on the next tap — the abandoned reopen spends the grace', async () => {
+    const { interceptor, sessions, state } = withADeadBus();
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    state.now += 9_000;
+    await interceptor.claim(bookTap());
+    state.now += 1_000;
+    expect(await interceptor.claim(bookTap())).toBeNull();
+    expect(sessions.current('livingroom')).toBeNull();
+  });
+
+  // ONE target, not two. The session records the device the reopen actually
+  // woke; a session carrying a device nobody woke would ride that stale target
+  // into every later `activate()` / `beginSwitch()` presentation.
+  it('records on the session the very device it woke', async () => {
+    const woke = [];
+    const { interceptor, sessions, state } = atTheGap({
+      wakeScreen: async (args) => { woke.push(args); return { ok: true }; },
+    });
+    // The closed session carried no target at all; the tap is what names one.
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    state.now += 9_000;
+    await interceptor.claim(bookTap());
+    expect(woke).toEqual([{ target: 'livingroom-tv', location: 'livingroom' }]);
+    expect(sessions.current('livingroom').target).toBe('livingroom-tv');
   });
 
   it('does not reopen anything at a reader where a session is already open', async () => {
@@ -765,6 +820,26 @@ describe('ReadingSessionInterceptor — a reopen asks for the screen back', () =
     expect(await interceptor.claim(bookTap())).toMatchObject({ claimed: true });
     expect(release).toBeTypeOf('function');   // still in flight, and the claim is already answered
     release();
+  });
+
+  // `new Error()` has an empty message, and `??` does not catch an empty
+  // string. A wake that threw would have logged `ok: true` at info — the log
+  // saying the room came back is the one thing a dark-screen investigation
+  // leans on, so it may not lie in the one case nobody thinks to test.
+  it('reports a wake that threw with NO message as the failure it is', async () => {
+    const logger = recordingLogger();
+    const { interceptor, sessions, state } = atTheGap({
+      wakeScreen: async () => { throw new Error(); }, logger,
+    });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    state.now += 9_000;
+    await interceptor.claim(bookTap());
+    await settle();
+    expect(logger.lines.find((l) => l.event === 'school.reading.reopen-wake')).toMatchObject({
+      level: 'warn', data: { ok: false },
+    });
   });
 
   it('reopens with no wake wired at all — a degraded composition still credits the book', async () => {
