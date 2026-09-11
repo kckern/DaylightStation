@@ -97,9 +97,37 @@ second hearing is the correction. That pause is the shadowing mechanic itself,
 and the rung is a listening exercise without it.
 
 Text input is reported **per language**, not as one keyboard flag, because the
-two typing rungs are not interchangeable. A plain US keyboard satisfies
-interpretation and not dictation; collapsing both to "keyboard" offers a child
-a rung they physically cannot enter.
+two typing rungs are not interchangeable: collapsing both to "keyboard" would
+offer a child a rung they physically cannot enter. What separates them is no
+longer the hardware. School composes the target script itself (`School/ime/`),
+so a keyboard — any keyboard — satisfies the source language *and* every target
+the in-page IME can compose. A target with no composer is still withheld.
+
+### Which leaves one question: is there a keyboard at all
+
+The web platform cannot answer it. There is no "is a keyboard attached" API,
+and the signal that stood in for one — `matchMedia('(pointer: fine)')` — asks
+whether there is a **mouse**. On a desktop the two arrive together. On the
+Portal, a touch panel with a Korean/English Bluetooth keyboard bonded to it and
+no mouse at all, they do not: the panel the in-page IME was written for was the
+one panel that could never reach it, and every session there ran with
+`textInput: []` while the keyboard sat connected in front of the child, who was
+told to continue on another device.
+
+`lib/hardwareKeyboard.js` answers it three ways and takes any yes:
+
+| Signal | Knows | Blind to |
+|---|---|---|
+| a fine pointer | a desktop, which has a keyboard | every keyboard on a touch device |
+| the fleet registry — `devices.yml` `bluetooth_input.keyboards`, served for the asking device by `GET /api/v1/device/self/input` | a declared keyboard, at first paint | a device with no fleet name; a declaration gone stale |
+| a keypress — a letter, digit or punctuation `code`, which neither an Android IME (`keyCode 229`) nor a TV remote's D-pad can send | any keyboard anywhere, with nothing configured | anything before the child touches a key |
+
+A yes is remembered for the browser profile, so the late signals are late only
+once. **There is deliberately no "no":** nothing can distinguish a device with
+no keyboard from a child who has not typed yet, and guessing between those is
+what produced the Portal failure. The conservative floor therefore stands — no
+evidence still means `textInput: []` and repetition alone — and a grown-up's
+declaration in the Device sheet continues to outrank all three.
 
 **Two chains.** The *device chain* is the ladder as it exists on this panel: a
 rung whose input is absent is removed rather than left to stall, and sentences

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { languageLog } from './languageLog.js';
 import { canCompose } from '../../ime/languages.js';
+import { useHardwareKeyboard } from '../../../../hooks/useHardwareKeyboard.js';
 
 /**
  * What THIS device can do, which decides which rungs exist (design §1).
@@ -23,6 +24,20 @@ import { canCompose } from '../../ime/languages.js';
  * `textInput: []`, leaving only `repetition` — the rung that runs anywhere.
  * Over-claiming strands a learner on an input they cannot use, which is the
  * failure this whole capability system exists to prevent.
+ *
+ * **AND THE KEYBOARD QUESTION WAS BEING ANSWERED WRONG.** "Is there a keyboard"
+ * was read off `matchMedia('(pointer: fine)')`, which asks whether there is a
+ * MOUSE. On a desktop the two come together; on the Portal — a touch panel with
+ * a Korean/English Bluetooth keyboard bonded to it since 2026-09-09 — they do
+ * not, so the panel the in-page Hangul IME was written for was the one panel
+ * that could never reach it. Dictation and Interpretation were withheld on
+ * every session it ran (verified in the log store: `textInput: []`,
+ * `microphone: true`, every run, while `pkctl input` listed the keyboard as
+ * connected), and the child was told to continue on another device.
+ *
+ * `lib/hardwareKeyboard.js` now answers it, from a mouse OR the fleet registry
+ * OR an actual keypress. The floor survives because none of those three ever
+ * says "no keyboard" — they only ever find one.
  */
 
 const STORAGE_KEY = 'school.language.capabilities';
@@ -60,18 +75,6 @@ async function detectMicrophone() {
 }
 
 /**
- * A fine pointer implies a mouse, which in practice implies a real keyboard.
- * Touch-only means the Portal panel, where we assume nothing.
- */
-function guessHasKeyboard() {
-  try {
-    return window.matchMedia?.('(pointer: fine)')?.matches === true;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * @param {string} corpusId
  * @param {{source: string, target: string}} [languages]
  */
@@ -79,6 +82,10 @@ export function useCapabilities(corpusId, languages) {
   const [microphone, setMicrophone] = useState(false);
   const [textInput, setTextInput] = useState([]);
   const [ready, setReady] = useState(false);
+  // Not a constant: the registry answers over the network and a keypress can
+  // come at any moment, so this flips from false to true mid-session and the
+  // effect below has to run again when it does.
+  const keyboard = useHardwareKeyboard();
 
   useEffect(() => {
     if (!corpusId) return undefined;
@@ -94,7 +101,7 @@ export function useCapabilities(corpusId, languages) {
       // withheld: offering dictation there is exactly the dead end the ladder
       // filtering exists to avoid.
       const typable = [];
-      if (guessHasKeyboard()) {
+      if (keyboard) {
         if (languages?.source) typable.push(languages.source);
         if (languages?.target && canCompose(languages.target)) typable.push(languages.target);
       }
@@ -113,7 +120,7 @@ export function useCapabilities(corpusId, languages) {
     })();
 
     return () => { alive = false; };
-  }, [corpusId, languages?.source, languages?.target]);
+  }, [corpusId, languages?.source, languages?.target, keyboard]);
 
   const update = useCallback((next) => {
     const value = {
@@ -158,7 +165,7 @@ export function useCapabilities(corpusId, languages) {
   // on-screen keyboard while having no Tab or Enter key at all, so telling
   // that learner "Tab replays · Enter submits" is instructions for hardware
   // they do not have.
-  const hasHardwareKeyboard = useMemo(() => guessHasKeyboard(), []);
+  const hasHardwareKeyboard = keyboard;
 
   return { capabilities, ready, update, toggleLanguage, toggleMicrophone, hasHardwareKeyboard };
 }

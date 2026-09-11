@@ -48,6 +48,43 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
 
   router.get('/config', (req, res) => res.json(fleetService.configuration(req.query.householdId)));
 
+  /**
+   * What input hardware the ASKING device is declared to have.
+   *
+   * The browser cannot answer this. There is no web API for "is a keyboard
+   * attached"; the closest signal, `pointer: fine`, asks about a MOUSE. The
+   * Portal is a touch panel with a bonded Bluetooth keyboard and no mouse, so
+   * every keyboard-shaped question answered from media queries got it exactly
+   * backwards there — School's Sentence Ladder hid its Dictation and
+   * Interpretation rungs on the one device provisioned for them
+   * (`data/household/hardware/devices.yml` has declared that keyboard since
+   * 2026-09-09; nothing served it).
+   *
+   * Answers only for a device that named itself `fleet:<name>` — the header
+   * `deviceResolver` stamps. `browser:<token>` and a bare User-Agent are not
+   * fleet rows and are told so (`device: null`) rather than matched against
+   * one: a wrong match here would claim hardware a learner does not have,
+   * which is the failure the capability system exists to prevent.
+   *
+   * Deliberately NOT `/config`, which returns the whole registry — every
+   * host, MAC and auth reference in the house. This is asked by a child-facing
+   * kiosk page, so it answers one boolean about the asker and nothing else.
+   */
+  router.get('/self/input', (req, res) => {
+    const declared = req.deviceIdSource === 'header' && /^fleet:/.test(req.deviceId || '')
+      ? req.deviceId.slice('fleet:'.length)
+      : null;
+    const device = declared
+      ? fleetService.configuration(req.query.householdId)?.devices?.[declared] ?? null
+      : null;
+    const keyboards = device?.bluetooth_input?.keyboards;
+    res.json({
+      ok: true,
+      device: device ? declared : null,
+      keyboard: Array.isArray(keyboards) && keyboards.length > 0,
+    });
+  });
+
   router.get('/', (req, res) => {
     const devices = fleetService.list();
     res.json({ ok: true, count: devices.length, devices });
