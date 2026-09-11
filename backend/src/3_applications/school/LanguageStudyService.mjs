@@ -689,8 +689,17 @@ export class SentenceLadderService {
    * program must not blank the agenda for the rest (mirrors `summarize`'s
    * per-course try/catch, one level up since this returns a single object).
    *
+   * `servedWork` is the completed-work identity the agenda's own tally and the
+   * status board's discs are built from — one row for a cleared day, empty
+   * while it is still open. A launcher reports the WORK; `planDailyAgenda`
+   * stamps the owning assignment onto each row.
+   *
    * @param {{userId: string, corpusId?: string|null}} args
-   * @returns {{doneToday: boolean, progressLabel: string|null, score: number|null}}
+   * @returns {{doneToday: boolean, progressLabel: string|null, score: number|null,
+   *   obligationProgress?: {completed: number, total: number},
+   *   servedWork?: Array<{unitId: string, title: string}>}}
+   *   The bare triple — no `obligationProgress`, no `servedWork` — is the
+   *   "this learner has no such course" answer, not a course with nothing done.
    */
   // READ-ONLY by contract: the agenda preview GET depends on status() never writing (preview spec §3).
   todayStatus({ userId, corpusId = null }) {
@@ -756,6 +765,26 @@ export class SentenceLadderService {
           doneToday, progressLabel, score: null,
           // How far through the day, for a board that draws partial progress.
           obligationProgress: { completed: summary.done, total: summary.total },
+          // WHAT THE BOARD DRAWS AFTER THE OFFER IS GONE. `AgendaStatusBoard`
+          // builds one disc per assignment from PLAN ∪ EVIDENCE, and a served
+          // ladder is in neither set: the agenda drops `next` the moment the
+          // subject is served, and the ladder's evidence is its OWN event log,
+          // not a School work session anything else can see. So the disc did
+          // not turn green when a child finished — it left the board, on the
+          // one day the child most deserved to see it. `StoryTimeProgramLauncher`
+          // solved the same disappearance the same way; this is its analogue.
+          //
+          // ONE ROW, whatever the day held. A ladder day is one obligation
+          // (`Day N` of one course), not one row per sentence — a per-sentence
+          // list would turn one assignment into an "+19" overflow badge on its
+          // own disc. The id is the COURSE, durable across days like
+          // `story-time:daily`, so the disc keeps its identity tomorrow; the
+          // day rides in the title, where a finished thing is allowed to name
+          // itself by the day it finished. No `assignmentUnitId` — the agenda
+          // stamps that from the program entry that owns this program.
+          servedWork: doneToday
+            ? [{ unitId: `sentence-ladder:${corpus.id}`, title: `${corpus.label ?? corpus.id} · ${progressLabel}` }]
+            : [],
           // WHAT A CARD SAYS. `projectProgramEntry` reads `context` and
           // `progress` off this and feeds the breadcrumb, the unit line, the
           // title, the bars and the poster. Returning neither is why a Glossika

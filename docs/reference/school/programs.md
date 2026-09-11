@@ -19,6 +19,36 @@ the label or reuse course progress to guess whether today's obligation has begun
 Sentence Ladder is the first code-registered program. Its canonical id is
 `sentence-ladder`; `language` is a deprecated read/write compatibility alias.
 
+## Every launcher must report `servedWork` — the rule, and why
+
+`AgendaStatusBoard` draws one disc per assignment from PLAN ∪ EVIDENCE. A
+program is in **neither** set once it is finished: the agenda stops offering it
+(the section's `next` goes `null`) the moment its launcher reports `doneToday`,
+and `BuildAgenda` deliberately opens no work session for a program entry, so
+there is no session evidence either. A launcher that reports no completed work
+therefore does not turn its disc green when a child finishes — **the disc leaves
+the board**, which is what a child saw after a finished Sentence Ladder day
+(2026-09-11).
+
+So a launcher's `status()` returns `servedWork: [{ unitId, title }]` for work
+completed today and `[]` otherwise. Rules:
+
+- **The identity is durable and belongs to the COURSE, not the day** —
+  `story-time:daily`, `sentence-ladder:<corpusId>`, `flashcards:<deckId>`,
+  `rubiks-cube:<courseId>`, `<surfaceProgramId>:daily`. The disc keeps the same
+  identity tomorrow.
+- **One row per assignment's daily obligation, not per item of work.** Several
+  rows against one assignment fill its disc once and become a `+N` badge (the
+  piano course is the one program that legitimately reports several lessons).
+- **Never set `assignmentUnitId` yourself.** `planDailyAgenda` stamps it on
+  every row from the program entry that owns the launcher; a launcher cannot
+  see the assignment and must not guess at it.
+- **`title` is read aloud by a child** (the disc's label and the agenda
+  receipt's finished-work line), so it is the household-facing name of the work,
+  never a deck id or a program id.
+- Reporting work does not grant credit and does not grade: the Sentence Ladder
+  still returns `score: null` because accuracy is recorded, never gating.
+
 ## Piano course — a program backed by another app's evidence
 
 `piano-course` is the program for "one Hoffman Academy lesson a day at the
