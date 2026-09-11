@@ -1,7 +1,8 @@
 # Piano Chess: freeze the ladder inside a game, and show the child what he played
 
 **Date:** 2026-09-11
-**Status:** design, validated with the owner
+**Status:** SHIPPED (adb7e9eec, d8235a95f). This document is the design as
+built — the two places implementation disagreed with it are marked **[as built]**.
 **Trigger:** a live Piano Chess session, 21:01–21:16, learner `other-learner`
 
 ---
@@ -217,9 +218,15 @@ hand and the cursor commits a 2-note address, fails to resolve it, and fires
 `unrecognised_chord`. **The child is refused for doing precisely what 4.5 is
 meant to encourage.**
 
-Fix: one implementation, in `staffAddress.js`, imported by both. And releasing a
-complete half with nothing extra held is a no-op with the half still lit — never
-a refusal.
+Fix: one implementation, in `staffAddress.js`, imported by both.
+
+**[as built]** The design also called for an explicit "was that one correct
+hand?" check on the release path. It turned out to be unreachable and was not
+shipped: once the count is right, a single hand is BELOW the minimum on every
+scheme — two of four on a dyad board, three of six on a triad board — so it
+falls out through the note-count gate and produces no event at all, which is the
+behaviour wanted. The bug was never a missing special case; it was a count that
+said 2 when the board needed 4.
 
 **`identifyStaffAddress` demands an exact MIDI set match in dyad/triad mode**
 (`expected.join(',') !== held`), while single-note mode matches forgivingly by
@@ -301,8 +308,10 @@ right rather than clamping accidentals on top of each other.
   refusal.
 - `StaffNoteLabel.test.jsx` — ghosts render when `held` is passed, are omitted
   when `cues.ghostNotes` is off, and are skipped out of range.
-- Regression from the session: replay Other Learner's held-note sequence at each stage
-  and assert the rejection rate is not what the logs recorded.
+- **[as built]** `StaffNoteLabel.test.jsx` renders every shape the ladder can
+  deal — six stages × twelve seeds × sixteen cards — and asserts none of it puts
+  ink inside the clef's box. That is the gate the engraving defects needed and
+  none of them had.
 
 ## 7. Out of scope
 
