@@ -322,13 +322,17 @@
 // chevron, so a tap near either one was a guess. A grid gives each its own
 // cell; the chevron moved inside the button it belongs to.
 .teacher-roster__entry {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  // Three tracks now: the row, the PRINT action, and the preview icon. The
+  // print button had no track of its own, so it auto-flowed into column 1 and
+  // landed on its own line under the card — present, but reading as a stray
+  // control rather than part of the row it acts on.
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center; column-gap: 8px;
 }
 .teacher-roster__disclosure { color: #66543c; pointer-events: none; flex: none; }
 // The day's paper, one tap from the roster — a real link, so it can be
 // middle-clicked or long-pressed like any other.
-.teacher-roster__agenda-link { grid-column: 2; align-self: center; text-decoration: none; }
+.teacher-roster__agenda-link { grid-column: 3; align-self: center; text-decoration: none; }
 .teacher-roster__plan-link, .teacher-roster__reflections, .teacher-roster__details { grid-column: 1 / -1; }
 .teacher-roster__plan-link { justify-self: start; margin: 2px 0 4px 58px; }
 .teacher-roster__chevron { width: 14px; height: 14px; display: block; transition: transform 140ms ease;
@@ -2433,6 +2437,7 @@
 // The one roster control that puts paper in a tray. Sits beside the preview
 // icon it is NOT — that one opens the sheet on screen, this one prints it.
 .teacher-roster__agenda-print {
+  grid-column: 2; justify-self: end;
   display: inline-flex; align-items: center;
   .teacher-agenda-dispatch { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   button { border: 0; border-radius: 8px; padding: 7px 11px; cursor: pointer; font-weight: 650; white-space: nowrap;

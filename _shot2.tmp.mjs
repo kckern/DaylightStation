@@ -1,0 +1,10 @@
+import { chromium } from 'playwright';
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1400, height: 1000 }, deviceScaleFactor: 2 });
+await page.goto('http://localhost:3111/school/teacher', { waitUntil: 'networkidle', timeout: 60000 });
+await page.waitForTimeout(4000);
+const btns = await page.$$eval('button', els => els.map(e => e.textContent.trim()).filter(t => /print/i.test(t)));
+console.log('PRINT BUTTONS ON DASHBOARD:', JSON.stringify(btns));
+console.log('roster rows:', await page.$$eval('.teacher-roster__entry', e => e.length));
+await page.screenshot({ path: '/tmp/claude-1001/-opt-Code-DaylightStation/47295da5-4095-47f9-a017-e17a57cbf939/scratchpad/teacher-after.png' });
+await browser.close();
