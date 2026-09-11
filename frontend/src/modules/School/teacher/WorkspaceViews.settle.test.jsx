@@ -31,6 +31,7 @@ vi.mock('./teacherWorkspaceApi.js', () => ({
   },
 }));
 vi.mock('./TeacherProfileContext.jsx', () => ({
+  useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
     currentTeacher: { id: 'kckern', name: 'KC' },
     pin: null,

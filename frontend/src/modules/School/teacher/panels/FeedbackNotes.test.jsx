@@ -4,6 +4,7 @@ import FeedbackNotes from './FeedbackNotes.jsx';
 
 vi.mock('../../schoolApi.js', () => ({ schoolApi: { reviewLearner: vi.fn(), retract: vi.fn() } }));
 vi.mock('../TeacherProfileContext.jsx', () => ({
+  useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
     currentTeacher: { id: 'kckern', name: 'KC' },
     pin: null,

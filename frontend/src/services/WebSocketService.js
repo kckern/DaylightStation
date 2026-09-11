@@ -200,14 +200,44 @@ class WebSocketService {
   }
 
   /**
-   * Allow apps to opt out of the degraded-mode page reload. Kiosk surfaces
-   * want it (a fresh page beats waiting an hour); controller apps with live
-   * local playback must NOT be reloaded out from under the user (media spec
-   * C9.4: local playback continues unaffected during backend outages).
+   * Hold off the degraded-mode page reload while something on the page would be
+   * destroyed by it — live local playback (media spec C9.4), or a call in
+   * progress. Returns a RELEASE function; the reload comes back when every
+   * holder has let go.
+   *
+   * REF-COUNTED, and that is the whole point. This was a bare
+   * `setAutoReloadEnabled(boolean)` on a service that is a singleton for the
+   * whole tab, so one caller's "not right now" was everyone's "never again".
+   * `useCallSignaling` disabled it on authorize-ack and had no matching
+   * re-enable, which meant a kiosk that had taken ONE Home Line call spent the
+   * rest of its uptime — days, on the Portal — with its only self-repair
+   * switched off. The next dropped socket then climbed to the 5-minute,
+   * 15-minute and hourly tiers with nothing left to rescue it, which is the
+   * "broken state it can't recover from" this fix exists to end. A release
+   * function cannot be forgotten the way a matching setter call can.
+   *
+   * Releasing twice is a no-op, so a cleanup that runs on both unmount and an
+   * error path cannot drive the count negative and re-arm a reload underneath
+   * a holder that is still live.
    */
-  setAutoReloadEnabled(enabled) {
-    this._autoReloadEnabled = enabled !== false;
-    if (!this._autoReloadEnabled) this._clearAutoReloadTimer();
+  suppressAutoReload(reason = 'unspecified') {
+    this._autoReloadSuppressors = (this._autoReloadSuppressors ?? 0) + 1;
+    this.logger.info('websocket.auto-reload-suppressed', { reason, holders: this._autoReloadSuppressors });
+    this._applyAutoReloadPolicy();
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this._autoReloadSuppressors = Math.max(0, (this._autoReloadSuppressors ?? 1) - 1);
+      this.logger.info('websocket.auto-reload-released', { reason, holders: this._autoReloadSuppressors });
+      this._applyAutoReloadPolicy();
+    };
+  }
+
+  get autoReloadSuppressed() { return (this._autoReloadSuppressors ?? 0) > 0; }
+
+  _applyAutoReloadPolicy() {
+    if (this.autoReloadSuppressed) this._clearAutoReloadTimer();
     else if (this.degradedMode && !this._autoReloadTimeout) this._startAutoReloadTimer();
   }
 
@@ -216,7 +246,14 @@ class WebSocketService {
    * On a kiosk, a fresh page load is better than waiting an hour to reconnect.
    */
   _startAutoReloadTimer() {
-    if (this._autoReloadEnabled === false) return;
+    if (this.autoReloadSuppressed) {
+      // SAY SO. A kiosk sitting in degraded mode with its self-repair held off
+      // is indistinguishable, from the outside, from one that is simply broken.
+      this.logger.warn('websocket.auto-reload-withheld', {
+        holders: this._autoReloadSuppressors, reconnectTier: this.reconnectTier,
+      });
+      return;
+    }
     this._clearAutoReloadTimer();
     this.logger.warn('websocket.auto-reload-scheduled', { delayMs: AUTO_RELOAD_DELAY });
     this._autoReloadTimeout = setTimeout(() => {

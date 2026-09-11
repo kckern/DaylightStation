@@ -35,6 +35,7 @@ const teacherAuth = vi.hoisted(() => ({
   requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: null })),
 }));
 vi.mock('./TeacherProfileContext.jsx', () => ({
+  useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
     currentTeacher: { id: 'kckern', name: 'KC' },
     pin: null,

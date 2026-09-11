@@ -13,6 +13,7 @@ vi.mock('../../schoolApi.js', () => ({
 // A claimed, server-authorized teacher, so useTeacherWrite calls straight
 // through without exposing or forwarding a PIN.
 vi.mock('../TeacherProfileContext.jsx', () => ({
+  useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
     currentTeacher: { id: 'kckern', name: 'KC' },
     pin: null,

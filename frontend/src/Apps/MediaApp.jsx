@@ -47,9 +47,9 @@ export default function MediaApp() {
     });
     // C9.4/C9.7: a backend outage must never reload this page out from
     // under local playback. Kiosk routes keep the default behavior.
-    wsService.setAutoReloadEnabled(false);
+    const releaseAutoReload = wsService.suppressAutoReload('media local playback');
     return () => {
-      wsService.setAutoReloadEnabled(true);
+      releaseAutoReload();
       mediaLog.unmounted({});
       configureLogger({ context: { sessionLog: false } });
     };

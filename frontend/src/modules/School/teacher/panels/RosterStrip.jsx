@@ -27,6 +27,7 @@ import { useCallback, useEffect, useState } from 'react';
 import ProfileAvatar from '../../../../lib/identity/ProfileAvatar.jsx';
 import SafeImg from './SafeImg.jsx';
 import { agendaPreviewSrc } from './agendaPreviewSrc.js';
+import { AgendaDispatch } from './AgendaDispatch.jsx';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { joinLearnerDay, DAY_STATUS_LABEL } from '../learnerDay.js';
@@ -739,6 +740,14 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
         }}>
         <IconAgenda />
       </a>
+      {/* PRINT, next to the thing that only PREVIEWS. The icon above opens the
+          sheet on screen; this puts it on paper. It belongs on the dashboard row
+          because that is where a grown-up already is when a child cannot start
+          their day — a lost NFC card, most often — and the alternative was
+          drilling into that learner's Day panel to find the same control. */}
+      <span className="teacher-roster__agenda-print">
+        <AgendaDispatch learnerId={learnerId} learnerName={name} label="Print agenda" />
+      </span>
 
       {/* A learner with nothing recorded is not a dead end: the plan for
           the day is the next thing a teacher wants to see. */}

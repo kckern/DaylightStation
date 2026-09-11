@@ -16,6 +16,7 @@ const { requestAuthorizationMock } = vi.hoisted(() => ({
   requestAuthorizationMock: vi.fn(async () => ({ ok: true, grantToken: 'grant-1' })),
 }));
 vi.mock('../TeacherProfileContext.jsx', () => ({
+  useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
     currentTeacher: { id: 'kckern', name: 'KC' },
     pin: null,

@@ -28,6 +28,7 @@ vi.mock('./teacherWorkspaceApi.js', () => ({
   },
 }));
 vi.mock('./TeacherProfileContext.jsx', () => ({
+  useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
     currentTeacher: { id: 'test-user', name: 'test-user' },
     openPicker: vi.fn(),

@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
     subscribeAuthorized: vi.fn((_auth, callback) => { mocks.subscriber = callback; return vi.fn(); }),
     onStatusChange: vi.fn(callback => { mocks.status = callback; callback({ connected: mocks.connected }); return vi.fn(); }),
     getStatus: vi.fn(() => ({ connected: mocks.connected })),
-    setAutoReloadEnabled: vi.fn(),
+    suppressAutoReload: vi.fn(() => vi.fn()),
   },
 }));
 vi.mock('../../../services/WebSocketService.js', () => ({ default: mocks.service }));
@@ -44,7 +44,7 @@ describe('useCallSignaling reconnect behavior', () => {
     expect(mocks.sent).toEqual([]);
     await act(async () => { await mocks.subscriber({ topic: session.topic, type: 'homeline-authorize-ack', ok: true }); });
     expect(mocks.sent[0]).toMatchObject({ callId: 'c', attemptId: 'a', type: 'ready', revision: 0, sequence: 0 });
-    expect(mocks.service.setAutoReloadEnabled).toHaveBeenCalledWith(false);
+    expect(mocks.service.suppressAutoReload).toHaveBeenCalledWith('home-line call');
   });
 
   it('reauthorization status triggers a fresh handshake and permits a new offer', async () => {
