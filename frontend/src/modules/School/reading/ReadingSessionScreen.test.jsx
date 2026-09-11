@@ -84,19 +84,18 @@ describe('ReadingSessionScreen', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('open: the child sees themselves, the question, the count and recent history', async () => {
+  it('open: the child sees themselves, the question and recent history', async () => {
     render(<ReadingSessionScreen />);
     await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
 
     expect(screen.getByTestId('reading-session')).toHaveAttribute('data-view', 'open');
     expect(screen.getByText('What do you want to read today?')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText('User_5')).toBeInTheDocument());
-    // The obligation is DRAWN now, not written: one pip per story owed, filled
-    // as each is finished. The sentence survives as the accessible name.
-    const pips = screen.getByTestId('reading-count');
-    expect(pips).toHaveAttribute('aria-label', '1 of 2 stories');
-    expect(pips.querySelectorAll('.reading-pip')).toHaveLength(2);
-    expect(pips.querySelectorAll('.reading-pip--done')).toHaveLength(1);
+    // The obligation is the SLOTS now — the empty places on today's shelf.
+    // The pips said the same thing in a second notation a few hundred pixels
+    // away, and on a one-story day a single hollow ring reads as a spinner.
+    // They survive in the rail and in the ceremony, where nothing else counts.
+    expect(screen.queryByTestId('reading-count')).toBeNull();
     // No "Recent" heading any more: the day headings say what this is, and a
     // label above them was a third word for the same fact. It survives as the
     // section's accessible name.
