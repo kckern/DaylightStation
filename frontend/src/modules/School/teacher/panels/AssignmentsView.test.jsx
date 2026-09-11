@@ -15,6 +15,7 @@ vi.mock('../../schoolApi.js', () => ({
 
 // Mock useTeacherProfile to provide a claimed teacher
 vi.mock('../TeacherProfileContext.jsx', () => ({
+  useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
     currentTeacher: { id: 'kckern', name: 'KC' },
     pin: null,

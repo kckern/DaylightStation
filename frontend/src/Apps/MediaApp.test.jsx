@@ -6,14 +6,14 @@ vi.mock('../modules/Player/Player.jsx', () => ({
   default: ({ play }) => <div data-testid="player-stub">Player: {play?.contentId ?? 'none'}</div>,
 }));
 vi.mock('../services/WebSocketService.js', () => ({
-  // setAutoReloadEnabled is called on mount (C9.4/C9.7 — a backend outage must
+  // suppressAutoReload is held on mount (C9.4/C9.7 — a backend outage must
   // not reload the page out from under local playback); without it the mount
   // effect throws and the render assertion never runs.
   wsService: {
     send: vi.fn(),
     subscribe: vi.fn(() => () => {}),
     onStatusChange: vi.fn(() => () => {}),
-    setAutoReloadEnabled: vi.fn(),
+    suppressAutoReload: vi.fn(() => vi.fn()),
   },
   default: { send: vi.fn(), subscribe: vi.fn(() => () => {}), onStatusChange: vi.fn(() => () => {}) },
 }));

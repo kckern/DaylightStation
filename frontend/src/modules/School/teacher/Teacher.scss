@@ -227,6 +227,17 @@
 
     button { flex: 0 0 auto; border: 0; border-radius: 8px; padding: 8px 12px; background: transparent; color: #756d5f; cursor: pointer; font-weight: 650; white-space: nowrap; scroll-snap-align: start; }
     button[aria-current='page'] { background: #f0e2c8; color: #3d3326; }
+
+    // Pushed to the far end and given its own weight: this is the one control
+    // in the strip that does something in the physical world, so it must not
+    // read as a seventh navigation tab. `margin-left: auto` survives the
+    // horizontal scroll because the strip is a flex row, not a grid.
+    &-action {
+      flex: 0 0 auto; margin-left: auto; padding-left: 10px; display: flex; align-items: center;
+      .teacher-agenda-dispatch { display: flex; align-items: center; gap: 6px; }
+      button { background: #3d3326; color: #fdfbf6; }
+      button:disabled { opacity: .55; cursor: progress; }
+    }
   }
   &__mobile-nav, &__scrim { display: none; }
 }
@@ -941,6 +952,12 @@
 
   &__card {
     background: #fffdf8;
+    // The card paints itself light, so it must TELL the browser that. Without
+    // it, a dark-mode UA renders the <input> with its own dark control colours
+    // on this light card and the typed PIN goes dark-on-dark — unreadable, in
+    // the one dialog where you cannot see what you typed to begin with.
+    color-scheme: light;
+    color: #2b2620;
     border-radius: 14px;
     padding: 18px 20px;
     width: min(320px, 86vw);
@@ -948,7 +965,10 @@
     flex-direction: column;
     gap: 10px;
 
-    h3 { margin: 0; font-size: 15px; }
+    // Explicit, never inherited. These used to take whatever colour the
+    // surrounding app happened to set, which is fine on the console's cream
+    // background and invisible anywhere else.
+    h3 { margin: 0; font-size: 15px; color: #2b2620; }
     p { margin: 0; font-size: 13px; color: #6d6455; }
     input {
       border: 1px solid #e0d8c8;
@@ -957,7 +977,11 @@
       font-size: 18px;
       letter-spacing: 0.2em;
       text-align: center;
+      background: #fff;
+      color: #2b2620;
+      caret-color: #2b2620;
     }
+    input::placeholder { color: #9a917f; }
   }
 
   &__actions {
@@ -968,6 +992,7 @@
     button {
       border: 1px solid #d9bfae;
       background: #fff;
+      color: #2b2620;
       border-radius: 8px;
       padding: 6px 14px;
       font-size: 13px;
@@ -2402,4 +2427,18 @@
    * a control that is going to fail is worse than no control: the grown-up
    * has already decided by the time they read the sentence. */
   &__revision-refusal { margin: 0; font-size: 13px; font-weight: 700; color: var(--ds-text-high); }
+}
+
+
+// The one roster control that puts paper in a tray. Sits beside the preview
+// icon it is NOT — that one opens the sheet on screen, this one prints it.
+.teacher-roster__agenda-print {
+  display: inline-flex; align-items: center;
+  .teacher-agenda-dispatch { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  button { border: 0; border-radius: 8px; padding: 7px 11px; cursor: pointer; font-weight: 650; white-space: nowrap;
+    background: #3d3326; color: #fdfbf6; }
+  button:disabled { opacity: .55; cursor: progress; }
+  .teacher-agenda-dispatch__ready, .teacher-agenda-dispatch__blocked { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: .85rem; }
+  .teacher-agenda-dispatch__ready button:last-child,
+  .teacher-agenda-dispatch__blocked button { background: transparent; color: #756d5f; }
 }

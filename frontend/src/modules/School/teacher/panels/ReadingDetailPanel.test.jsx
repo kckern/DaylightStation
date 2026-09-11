@@ -36,6 +36,7 @@ vi.mock('../../schoolApi.js', () => ({
 const grantFor = async ({ action = null } = {}) => ({ ok: true, grantToken: action ? 'grant_1' : null });
 const requestAuthorization = vi.fn(grantFor);
 vi.mock('../TeacherProfileContext.jsx', () => ({
+  useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
     currentTeacher: { id: 'test-user', name: 'test-user' },
     openPicker: vi.fn(),

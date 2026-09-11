@@ -12,6 +12,7 @@ import ReviewQueueView from './ReviewQueueView.jsx';
 
 vi.mock('../../schoolApi.js', () => ({ schoolApi: { resolveReview: vi.fn() } }));
 vi.mock('../TeacherProfileContext.jsx', () => ({
+  useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
     currentTeacher: { id: 'kckern', name: 'KC' },
     pin: null,

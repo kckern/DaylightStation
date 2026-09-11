@@ -147,7 +147,35 @@ function runVitest(files) {
   // it is green, which is the same as having no gate. Half the cores keeps
   // the run parallel while leaving each worker enough headroom to be
   // deterministic.
-  const workers = Math.max(2, Math.floor((os.cpus?.().length ?? 4) / 2));
+  //
+  // The cap is also MEMORY-aware, because half the cores is only the right
+  // number when there is RAM behind them. On 2026-09-11 this run was
+  // SIGKILLed by the OOM handler after enumerating 3,192 files and before
+  // executing one of them: 8 forks, each holding a jsdom environment, on a box
+  // whose other tenants (a 3.7 GB OneDrive daemon, a Duplicati server 3.9 GB
+  // into swap) had left ~12 GB available and 31 GB already swapped. A gate that
+  // dies on arrival is worse than a slow one — it returns no verdict at all,
+  // and the wrapper's exit code cheerfully reports success.
+  //
+  // ~1.5 GB per worker is measured against this population's heaviest jsdom
+  // suites, with a floor of 2 so a genuinely starved box still produces an
+  // answer rather than refusing to start.
+  const availableGb = (() => {
+    try {
+      // MemAvailable, not freemem(): free memory excludes reclaimable page
+      // cache and reads far lower than what a new process can actually get.
+      const match = /^MemAvailable:\s+(\d+) kB$/m.exec(readFileSync('/proc/meminfo', 'utf8'));
+      if (match) return Number(match[1]) / 1024 / 1024;
+    } catch { /* not Linux, or /proc unavailable */ }
+    return (os.freemem?.() ?? 0) / 1024 ** 3 || Infinity;
+  })();
+  const byCpu = Math.floor((os.cpus?.().length ?? 4) / 2);
+  const byMemory = Math.floor(availableGb / 1.5);
+  const workers = Math.max(2, Math.min(byCpu, byMemory));
+  if (workers < byCpu) {
+    console.error(`gate-vitest: ${workers} workers (cpu allows ${byCpu}, `
+      + `${availableGb.toFixed(1)} GB available caps it) — slower, but it finishes.`);
+  }
   // NO `shell: true`. With it, node collapses argv into ONE `/bin/sh -c`
   // string, and Linux caps a single argument at MAX_ARG_STRLEN (128 KiB,
   // 32 pages) — a limit independent of the 2 MiB ARG_MAX everyone reaches

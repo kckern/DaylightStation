@@ -7,6 +7,8 @@ const SIGNAL_TYPES = new Set(['offer', 'answer', 'candidate', 'mute-state', 'han
 export function useCallSignaling({ role, session, peer, onEvent }) {
   const sequenceRef = useRef(0);
   const revisionRef = useRef(0);
+  // Releases the degraded-mode reload hold taken on authorize-ack.
+  const releaseAutoReload = useRef(null);
   const answeredRevisionRef = useRef(null);
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
@@ -44,7 +46,12 @@ export function useCallSignaling({ role, session, peer, onEvent }) {
       topic: session.topic, credential: session.credential, role, peerId: session.peerId,
     }, async message => {
       if (message.type === 'homeline-authorize-ack' && message.ok) {
-        wsService.setAutoReloadEnabled?.(false);
+        // Held for the life of THIS effect, not forever. The old call flipped a
+        // tab-wide boolean off here with no matching re-enable, so one call left
+        // the kiosk's only self-repair disabled until the page was reloaded by
+        // hand — which is the thing that could no longer happen.
+        releaseAutoReload.current?.();
+        releaseAutoReload.current = wsService.suppressAutoReload?.('home-line call');
         // A reconnect receives a fresh authorization and restarts the
         // handshake. Whether that produces a new offer is decided when the
         // TV's `waiting` arrives, below, not here.
@@ -87,7 +94,11 @@ export function useCallSignaling({ role, session, peer, onEvent }) {
     });
     const statusUnsub = wsService.onStatusChange(status => onEventRef.current?.({ type: 'control-status', ...status }));
     const heartbeat = setInterval(() => send('heartbeat'), 5_000);
-    return () => { clearInterval(heartbeat); unsubscribe(); statusUnsub(); peerRef.current.onIceCandidate(null); };
+    return () => {
+      clearInterval(heartbeat); unsubscribe(); statusUnsub(); peerRef.current.onIceCandidate(null);
+      releaseAutoReload.current?.();
+      releaseAutoReload.current = null;
+    };
   }, [role, send, session]);
 
   const restartIce = useCallback(async () => {

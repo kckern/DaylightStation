@@ -258,3 +258,17 @@ export function useTeacherProfile() {
   if (!ctx) throw new Error('useTeacherProfile requires TeacherProfileProvider');
   return ctx;
 }
+
+/**
+ * The same context, but ABSENT is an answer rather than a crash.
+ *
+ * For components that are mounted inside the console in the real app but must
+ * not take a whole screen down if they are ever rendered outside it. The roster
+ * strip is the case: it now carries a print control, and a throwing hook there
+ * would blank the dashboard — every child's row gone because one button could
+ * not find its provider. A missing provider means "you cannot authorize from
+ * here", which is a button that hides, not a page that dies.
+ */
+export function useTeacherProfileOptional() {
+  return useContext(TeacherProfileContext) ?? null;
+}
