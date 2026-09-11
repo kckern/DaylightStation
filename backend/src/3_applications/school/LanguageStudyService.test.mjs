@@ -657,6 +657,55 @@ describe('todayStatus — the card projection', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// THE DISC THAT VANISHED. A child finished their ladder day and the assignment
+// disc did not turn green — it left the `AgendaStatusBoard` altogether. The
+// board draws PLAN ∪ EVIDENCE, and a served ladder has neither leg: `next`
+// goes null the moment the subject is served, and the ladder's evidence lives
+// in its own event log rather than in a School work session the board can see.
+// `servedWork` is the third leg, and the only one a program subject can offer
+// — `StoryTimeProgramLauncher` already carries the same identity for the same
+// reason ("Daily story time has no work session, so this is the durable
+// identity that keeps its completed disc on the board after `next`
+// disappears").
+describe('todayStatus — the served work a finished disc is drawn from', () => {
+  it('reports nothing served while the day is still open', () => {
+    const svc = makeService(new FakeDatastore());
+    const status = svc.todayStatus({ userId: 'test-learner', corpusId: 'test-korean' });
+    expect(status.doneToday).toBe(false);
+    // Empty, not absent: the section's tally reads the array either way, and a
+    // launcher that answers "nothing yet" is saying something a missing field
+    // cannot.
+    expect(status.servedWork).toEqual([]);
+  });
+
+  it('names the course once the day is cleared, so the board keeps its disc', () => {
+    const svc = makeService(new FakeDatastore());
+    finishDay(svc);
+    const status = svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' });
+    expect(status.doneToday).toBe(true);
+    expect(status.servedWork).toEqual([
+      { unitId: 'sentence-ladder:test-korean', title: 'Test Korean · Day 1' },
+    ]);
+  });
+
+  it('leaves the assignment anchor to the agenda — a launcher reports only the work', () => {
+    const svc = makeService(new FakeDatastore());
+    finishDay(svc);
+    const [work] = svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' }).servedWork;
+    // `planDailyAgenda` stamps `assignmentUnitId` from the owning program
+    // entry. A launcher that guessed its own would be guessing at the identity
+    // of an assignment it cannot see.
+    expect(work).not.toHaveProperty('assignmentUnitId');
+  });
+
+  it('still grades nothing — the ladder records accuracy, it never gates on it', () => {
+    const svc = makeService(new FakeDatastore());
+    finishDay(svc);
+    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' }).score).toBeNull();
+  });
+});
+
 describe('day read observability', () => {
   it('says what it served — day, size, chain, and what this device could not climb', () => {
     const ds = new FakeDatastore();

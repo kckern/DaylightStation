@@ -274,3 +274,67 @@ describe('FieldComposer.compositionState', () => {
     expect(c.compositionState(el)).toEqual({ committed: '오늘', pending: '' });
   });
 });
+
+describe('FieldComposer and a modifier pressed mid-syllable', () => {
+  // A real keyboard reports Shift as its own keydown, and for half the syllables
+  // a child needs — ㅖ, ㅒ, and the doubled batchim ㄲ/ㅆ — that keydown lands
+  // between the initial and the jamo it modifies.
+  const shiftDown = () => key('ShiftLeft', { key: 'Shift', shiftKey: true });
+
+  it('keeps the run alive across the Shift keydown', () => {
+    const el = field();
+    const c = new FieldComposer();
+    expect(c.handleKey(key('KeyD'), el)).toBe(true);
+    expect(c.handleKey(shiftDown(), el)).toBe(false);
+    expect(c.active).toBe(true);
+  });
+
+  it('composes 예 from KeyD, Shift, Shift+KeyP', () => {
+    const el = field();
+    const c = new FieldComposer();
+    c.handleKey(key('KeyD'), el);
+    c.handleKey(shiftDown(), el);
+    expect(c.handleKey(key('KeyP', { shiftKey: true }), el)).toBe(true);
+    expect(el.value).toBe('예');
+  });
+
+  it('composes 얘 from KeyD, Shift, Shift+KeyO', () => {
+    const el = field();
+    const c = new FieldComposer();
+    c.handleKey(key('KeyD'), el);
+    c.handleKey(shiftDown(), el);
+    expect(c.handleKey(key('KeyO', { shiftKey: true }), el)).toBe(true);
+    expect(el.value).toBe('얘');
+  });
+
+  it('composes 있 from KeyD, KeyL, Shift, Shift+KeyT', () => {
+    const el = field();
+    const c = new FieldComposer();
+    c.handleKey(key('KeyD'), el);
+    c.handleKey(key('KeyL'), el);
+    c.handleKey(shiftDown(), el);
+    expect(c.handleKey(key('KeyT', { shiftKey: true }), el)).toBe(true);
+    expect(el.value).toBe('있');
+  });
+
+  // CapsLock sits one row above left Shift — a fumbled Shift must not break the
+  // syllable either.
+  it('composes 예 even when CapsLock is fumbled instead of Shift', () => {
+    const el = field();
+    const c = new FieldComposer();
+    c.handleKey(key('KeyD'), el);
+    expect(c.handleKey(key('CapsLock'), el)).toBe(false);
+    expect(c.active).toBe(true);
+    expect(c.handleKey(key('KeyP', { shiftKey: true }), el)).toBe(true);
+    expect(el.value).toBe('예');
+  });
+
+  it.each([['Ctrl', 'ctrlKey'], ['Alt', 'altKey'], ['Meta', 'metaKey']])('still ends the run on %s shortcuts', (_name, modifier) => {
+    const el = field();
+    const c = new FieldComposer();
+    typeInto(c, el, 'gks');
+    expect(c.active).toBe(true);
+    expect(c.handleKey(key('KeyC', { [modifier]: true }), el)).toBe(false);
+    expect(c.active).toBe(false);
+  });
+});
