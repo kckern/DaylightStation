@@ -3,7 +3,7 @@
 **Date:** 2026-09-11
 **Status:** SHIPPED (adb7e9eec, d8235a95f). This document is the design as
 built — the two places implementation disagreed with it are marked **[as built]**.
-**Trigger:** a live Piano Chess session, 21:01–21:16, learner `other-learner`
+**Trigger:** a live Piano Chess session, 21:01–21:16, one learner
 
 ---
 
@@ -37,7 +37,7 @@ not the mover. The escalation came from the household-managed path.
 gameAddressing:
   turnEscalation: { enabled: true, everyCompletedMoves: 1, offsetPerStep: 1 }
   users:
-    other-learner: { enabled: true, vocabulary: staff, startStage: 0 }
+    test-learner: { enabled: true, vocabulary: staff, startStage: 0 }
 ```
 
 `managedAddressing.js` walks an eight-stage staff path and adds **one stage per
