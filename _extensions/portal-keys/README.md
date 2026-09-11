@@ -155,8 +155,17 @@ node _extensions/portal-keys/pkctl.mjs beep fix    # remove it, keep everything 
 
 `beep fix` removes only services that mention `KeyEvent` and are not ours;
 the Portal's other services and `PortalKeysService` stay. Needs the admin
-token (`bootstrap-token`, or `PK_TOKEN`). `setting get|set [ns] <key>
-[value]` is the general form for any other row.
+token (`bootstrap-token`, or `PK_TOKEN`). The household keeps a copy at
+`data/household/auth/apk-tokens.yml` under `portal-key`, so from the prod
+host it is:
+
+```bash
+PK_TOKEN=$(sudo docker exec daylight-station sh -c 'cat data/household/auth/apk-tokens.yml' | awk '/portal-key:/{print $2}')
+```
+
+`setting get|set [ns] <key> [value]` is the general form for any other row.
+Verified 2026-09-10: removed both spellings of the service; `serviceBound`
+stayed true and the panel stayed up.
 
 ### It cannot be stopped from opening — don't re-run this list
 
@@ -247,8 +256,10 @@ USB-installed shell and executable dex payloads in app-private storage:
 - Payload p2 claims allowlisted USB boot keyboards directly through `UsbManager`
   and emits decoded events only on loopback WebSocket `127.0.0.1:8774`.
 - A broken operations payload cannot remove the lifeline; use `pkctl rollback`.
-- Both remote ports require a device-generated 256-bit admin token. The token is
-  captured once over USB with `pkctl bootstrap-token`; it is never returned over LAN.
+- Both remote ports — and, since shell 17, `GET /update` on `:8771` — require a
+  device-generated 256-bit admin token. The token is captured once over USB with
+  `pkctl bootstrap-token`; it is never returned over LAN. Before shell 17 `/update`
+  was ungated and anyone on the LAN could point the panel at an arbitrary APK.
   The CLI stores it mode `0600` at `~/.config/daylight/portal-keys-token` (override
   with `PK_TOKEN_FILE` or provide `PK_TOKEN`).
 
