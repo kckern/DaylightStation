@@ -246,7 +246,7 @@ describe('FieldComposer and a modifier pressed mid-syllable', () => {
     expect(el.value).toBe('예');
   });
 
-  it.each([['Ctrl', 'ctrlKey'], ['Alt', 'altKey'], ['Meta', 'metaKey']])('still ends the run on a %s shortcut', (_name, modifier) => {
+  it.each([['Ctrl', 'ctrlKey'], ['Alt', 'altKey'], ['Meta', 'metaKey']])('still ends the run on %s shortcuts', (_name, modifier) => {
     const el = field();
     const c = new FieldComposer();
     typeInto(c, el, 'gks');
