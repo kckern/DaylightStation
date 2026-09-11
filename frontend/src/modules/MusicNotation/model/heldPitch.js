@@ -33,9 +33,16 @@
  * already judged it, and judged it correct — and is not being played here at
  * all.
  *
- * If legato ever becomes something we teach, it has to arrive as an explicit
- * criterion with releases actually fed to the assessor. It must never come back
- * as a side effect of what a renderer happens to have in scope.
+ * ANYTHING STILL HELD FROM BEFORE THIS CURSOR GOES QUIET — including a key that
+ * was WRONG when it went down. Asked and decided by the owner on 2026-09-11:
+ * the alternative (keep ghosting a stale wrong note until it is released) was
+ * considered and rejected. A ghost answers "what are you playing at this note",
+ * and a finger left on a key from two notes ago is not an answer to this one;
+ * carrying it forward is the whole confusion this rule exists to end. It has
+ * already been shown to them, in its own place, while it was current.
+ *
+ * The target check runs FIRST, so none of this can touch the note actually
+ * being played.
  *
  * @param {number} midi
  * @param {object} at
