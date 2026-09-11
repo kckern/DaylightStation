@@ -613,7 +613,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   app.use('/api/v1', networkTrustResolver({ householdRoles: authConfig?.household_roles || {} }));
 
   // 3. tokenResolver parses JWT, merges roles
-  app.use('/api/v1', tokenResolver({ jwtSecret, jwtConfig }));
+  const { DataServiceAuthSessionStore } = await import('#adapters/auth/DataServiceAuthSessionStore.mjs');
+  const authSessionStore = new DataServiceAuthSessionStore({
+    dataService, logger: rootLogger.child({ module: 'auth-sessions' }),
+  });
+  app.use('/api/v1', tokenResolver({ jwtSecret, jwtConfig, sessionStore: authSessionStore }));
 
   // 4. permissionGate enforces role-based access (auth endpoints are exempt — they're unrestricted in app_routes)
   app.use('/api/v1', permissionGate({
@@ -6307,6 +6311,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     authService,
     jwtSecret,
     jwtConfig,
+    sessionStore: authSessionStore,
     authPublicContext: new AuthPublicContextService({
       defaultHouseholdId: () => configService.getDefaultHouseholdId(),
       readHousehold: () => dataService.household.read('household') || {},

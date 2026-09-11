@@ -15,6 +15,7 @@ import JobDetail from '../modules/Admin/Scheduler/JobDetail.jsx';
 import MembersIndex from '../modules/Admin/Household/MembersIndex.jsx';
 import MemberEditor from '../modules/Admin/Household/MemberEditor.jsx';
 import DevicesIndex from '../modules/Admin/Household/DevicesIndex.jsx';
+import SessionsIndex from '../modules/Admin/Household/SessionsIndex.jsx';
 import DeviceEditor from '../modules/Admin/Household/DeviceEditor.jsx';
 import FullyKioskConsole from '../modules/Admin/Household/FullyKioskConsole.jsx';
 import IntegrationsIndex from '../modules/Admin/System/IntegrationsIndex.jsx';
@@ -156,6 +157,7 @@ function AdminApp() {
               {/* Household */}
               <Route path="household/members" element={<MembersIndex />} />
               <Route path="household/members/:username" element={<MemberEditor />} />
+              <Route path="household/sessions" element={<SessionsIndex />} />
               <Route path="household/devices" element={<DevicesIndex />} />
               <Route path="household/devices/:deviceId/fully-kiosk" element={<FullyKioskConsole />} />
               <Route path="household/devices/:deviceId" element={<DeviceEditor />} />

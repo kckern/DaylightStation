@@ -60,6 +60,7 @@ const navSections = [
     items: [
       { label: 'Members', icon: IconUsers, to: '/admin/household/members' },
       { label: 'Devices', icon: IconDevices, to: '/admin/household/devices' },
+      { label: 'Sessions', icon: IconDevices, to: '/admin/household/sessions' },
     ]
   },
   {
