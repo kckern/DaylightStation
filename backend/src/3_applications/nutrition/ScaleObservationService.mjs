@@ -3,6 +3,14 @@ import { formatLocalTimestamp } from '#domains/core/utils/time.mjs';
 import { ScaleCapture } from './ScaleCapture.mjs';
 
 const WINDOW_MS = 15 * 60 * 1000;
+// Uncounted placements are retained so their evidence is re-reconciled on the
+// next placement and at boot. That list must be BOUNDED: an entry deliberately
+// held for a human (unknown tare above the container threshold, or no density
+// card at all) never counts, so without a cap one per meal would grow the
+// placement file without limit and replay every one of them on every restart.
+// Dropping the oldest costs nothing the user can see — its food log was already
+// written on the first reconcile, and `canAutoReview` has long since frozen it.
+const MAX_RETAINED_PLACEMENTS = 20;
 const empty = () => ({ grams: null, unit: null, density: null, container: null, complete: false, active: false, observationIds: [] });
 
 /** Hardware ingress is durable before any awaited processing. Placement IDs,
@@ -96,7 +104,8 @@ export function createObservationService({ scaleGateway, observationStore: store
     if (s.placement) {
       const previous = s.placement;
       previous.closedAt ||= new Date(now()).toISOString();
-      s.previousPlacements = [...(s.previousPlacements || []).filter(p => !p.counted), previous];
+      s.previousPlacements = [...(s.previousPlacements || []).filter(p => !p.counted), previous]
+        .slice(-MAX_RETAINED_PLACEMENTS);
       void enqueue(id, () => reconcile(id, previous));
     }
     const placement = { id: newId(), scaleId: id, startedAt: new Date(now()).toISOString() };

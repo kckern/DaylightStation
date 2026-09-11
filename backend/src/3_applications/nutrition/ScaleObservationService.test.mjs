@@ -86,15 +86,60 @@ describe('durable provisional scale capture', () => {
   });
   it('persists stabilization at exactly 72 hours, even after downtime, without changing totals', async () => {
     const f = await fixture();
-    await f.publish(458); f.service.setDensity('kitchen', 4); await f.service.settled();
+    // The container is named, so the reading is a measurement and the clock owns
+    // it. Without one, 458 g is above the container threshold and HELD — see the
+    // two tests below, which is a different contract, not this one.
+    await f.publish(458); f.service.setDensity('kitchen', 4);
+    f.service.setContainer('kitchen', 'tupperware'); await f.service.settled();
     const worker = new NutritionStabilization({ items: f.items, review: f.review, clock: f.clock, logger: f.logger });
     f.advance(72 * 3600000 - 1);
     expect(await worker.run('alice')).toBe(0);
     f.advance(1);
     expect(await worker.run('alice')).toBe(1);
-    expect((await f.rows())[0]).toMatchObject({ calories: 641, settled: true, settledBy: 'auto', review: { state: 'stable' } });
+    expect((await f.rows())[0]).toMatchObject({ calories: 557, settled: true, settledBy: 'auto', review: { state: 'stable' } });
     f.advance(7 * 86400000);
     expect(await new NutritionStabilization({ items: f.items, review: f.review, clock: f.clock, logger: f.logger }).run('alice')).toBe(0);
+    f.service.dispose();
+  });
+  it('holds an untared reading above the container threshold: visible, estimated, never self-settling', async () => {
+    const f = await fixture();
+    await f.publish(458); f.service.setDensity('kitchen', 4); await f.service.settled();
+    // HOLDING IS NOT HIDING. The food is on the day with its estimate and its
+    // macro split; what it never does is decide for itself that it was right.
+    const [row] = await f.rows();
+    expect(row).toMatchObject({ grams: 458, calories: 641, settled: false });
+    expect(row.protein).toBe(40.1);
+    expect(row.captureEvidence.tareUnknown).toBe(true);
+    expect(row.captureEvidence.assumptions[0]).toMatch(/held for confirmation/);
+    const worker = new NutritionStabilization({ items: f.items, review: f.review, clock: f.clock, logger: f.logger });
+    f.advance(72 * 3600000 + 1);
+    expect(await worker.run('alice')).toBe(0);
+    f.advance(30 * 86400000);
+    expect(await worker.run('alice')).toBe(0);
+    expect((await f.rows())[0]).toMatchObject({ settled: false });
+    f.service.dispose();
+  });
+  it('releases the hold when a late container scan answers the question', async () => {
+    const f = await fixture();
+    await f.publish(458); f.service.setDensity('kitchen', 4); await f.service.settled();
+    expect((await f.rows())[0].captureEvidence.tareUnknown).toBe(true);
+    f.service.setContainer('kitchen', 'tupperware'); await f.service.settled();
+    const answered = (await f.rows())[0];
+    expect(answered).toMatchObject({ grams: 398, calories: 557 });
+    expect(answered.captureEvidence.tareUnknown).toBe(false);
+    const worker = new NutritionStabilization({ items: f.items, review: f.review, clock: f.clock, logger: f.logger });
+    f.advance(72 * 3600000 + 1);
+    expect(await worker.run('alice')).toBe(1);
+    f.service.dispose();
+  });
+  it('applies the density row macro split and screen icon, not calories alone', async () => {
+    const f = await fixture();
+    await f.publish(200); f.service.setDensity('kitchen', 4);
+    f.service.setContainer('kitchen', 'tupperware'); await f.service.settled();
+    // 140 g at 1.4 kcal/g = 196 kcal, split 25/50/25 by CALORIES: fat 196*.25/9,
+    // carb 196*.5/4, protein 196*.25/4 — the same `computeNutrition` the Telegram
+    // density button and a later re-pair use, so the three cannot drift.
+    expect((await f.rows())[0]).toMatchObject({ grams: 140, calories: 196, fat: 5.4, carbs: 24.5, protein: 12.3 });
     f.service.dispose();
   });
   it('replays yogurt + chia + 458g at 140 kcal/100g as three counted entries without messaging', async () => {

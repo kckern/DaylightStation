@@ -285,6 +285,7 @@ export class NutribotContainer {
         barcodeGenerator: this.#barcodeGenerator,
         catalogService: this.#catalogService,
         reviewService: this.getFoodLogReview(),
+        photoStore: this.#photoStore,
       });
     }
     return this.#logFoodFromUPC;

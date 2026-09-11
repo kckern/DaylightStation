@@ -143,6 +143,17 @@ export class ApplyScanToComposition {
     // the prompt, but a sheet/table disagreement is better caught at scan time
     // than argued about later on the message.
     if (parsed.kind === 'container') {
+      // `ct:0` is the NO-CONTAINER card: food straight on the pan. It matches no
+      // row — a 0 g vessel is not one — but it is emphatically not an unknown
+      // tare. It is the ANSWER to "is there a container?", and the only way to
+      // clear a heavy-untared hold from the fridge rather than from the app.
+      // `'none'` is the sentinel `resolveScaleNet` and `ScaleCapture` already
+      // read as "asked and answered, subtract nothing".
+      if (parsed.grams === 0) {
+        this.#store.setContainer(scaleId, 'none');
+        this.#logger.info?.('applyScan.container', { scaleId, id: 'none', grams: 0 });
+        return { handled: true, ok: true, kind: 'container', id: 'none', label: 'No container', emoji: '🚫', grams: 0 };
+      }
       // The scan carries the tare in grams, so the subtraction needs no lookup.
       // The row is still resolved for its label, emoji and id — the id is what the
       // store keys on, and the ack is unreadable without a name.
