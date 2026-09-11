@@ -26,6 +26,21 @@
   }
 }
 
+/* THE OPEN VIEW'S OWN COLUMN. It had no rule at all — a plain block div whose
+   spacing came entirely from its children's margins, which is why removing the
+   pips left the 7vh question resting directly on the lit case. The gap on
+   `.reading-session` belongs to the SCREEN's children, and this is one of them;
+   the prompt's own children were never gapped by anything.
+
+   It also pins the case's centring, which until now worked only as a side
+   effect of `align-items: center` two levels up. */
+.reading-session__prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2vh;
+}
+
 .reading-session__who {
   display: flex;
   flex-direction: column;
@@ -106,7 +121,6 @@
 
 .reading-session__recent {
   position: relative;
-  margin-top: 1vh;
   /* FIT THE BOOKS. At a fixed `min(80vw, 124vh)` the case was ~1339px on a
      1920x1080 panel while three capped cards occupied ~620px centred in it —
      over half the lit case empty. A case wider than the books standing in it
