@@ -108,7 +108,7 @@ describe('SurfaceProgramLauncher', () => {
     it('reports doneToday:false with no dispatch-log rows at all', async () => {
       const { launcher } = build();
       const status = await launcher.status({ userId: 'kid1' });
-      expect(status).toEqual({ doneToday: false, progressLabel: null, score: null });
+      expect(status).toEqual({ doneToday: false, progressLabel: null, score: null, servedWork: [] });
     });
 
     it('reports doneToday:true for a matching row in the current UTC shard', async () => {
@@ -122,7 +122,10 @@ describe('SurfaceProgramLauncher', () => {
         },
       });
       const status = await launcher.status({ userId: 'kid1' });
-      expect(status).toEqual({ doneToday: true, progressLabel: null, score: null });
+      expect(status).toEqual({
+        doneToday: true, progressLabel: null, score: null,
+        servedWork: [{ unitId: 'pe-daily:daily', title: 'P.E.' }],
+      });
     });
 
     // REQUIRED TEST ROW (Task 12 brief, spec §6): the log shards by the UTC
@@ -211,7 +214,7 @@ describe('SurfaceProgramLauncher', () => {
         clock: () => new Date('2026-07-30T12:00:00Z'), logger: silentLogger,
       });
       const status = await launcher.status({ userId: 'kid1' });
-      expect(status).toEqual({ doneToday: false, progressLabel: null, score: null });
+      expect(status).toEqual({ doneToday: false, progressLabel: null, score: null, servedWork: [] });
     });
   });
 });
