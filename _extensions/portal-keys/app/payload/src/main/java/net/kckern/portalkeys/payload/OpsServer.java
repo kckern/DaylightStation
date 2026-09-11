@@ -8,8 +8,8 @@ import java.util.List;import java.util.Map;
 
 final class OpsServer extends NanoHTTPD{
     static final int PORT=8773;private final ShellServices shell;private final Context context;
-    private final UsbHidController usbHid;private final BluetoothController bluetooth;
-    OpsServer(ShellServices s,UsbHidController usbHid,BluetoothController bluetooth){super(PORT);shell=s;context=(Context)s.context();this.usbHid=usbHid;this.bluetooth=bluetooth;}
+    private final UsbHidController usbHid;private final BluetoothController bluetooth;private final VolumeBeepGuard beepGuard;
+    OpsServer(ShellServices s,UsbHidController usbHid,BluetoothController bluetooth,VolumeBeepGuard beepGuard){super(PORT);shell=s;context=(Context)s.context();this.usbHid=usbHid;this.bluetooth=bluetooth;this.beepGuard=beepGuard;}
     @Override public Response serve(IHTTPSession x){String u=x.getUri();try{
         if(!authorized(x))return json(Response.Status.UNAUTHORIZED,new JSONObject().put("ok",false).put("error","unauthorized"));
         if(u.equals("/")||u.equals("/status"))return json(new JSONObject().put("ok",true).put("payload","p2-bluetooth-usb-hid").put("port",PORT).put("hidPort",HidBridgeServer.PORT).put("shellVersionCode",shell.shellVersionCode()).put("a11yBound",shell.accessibilityService()!=null).put("usbHid",usbHid==null?JSONObject.NULL:usbHid.status()).put("bluetooth",bluetooth==null?JSONObject.NULL:bluetooth.status()));
@@ -31,9 +31,10 @@ final class OpsServer extends NanoHTTPD{
         if(u.equals("/getsetting"))return json(SettingsOps.get(context,value(param(x,"ns"),"secure"),param(x,"key")));
         if(u.equals("/setsetting"))return json(SettingsOps.put(context,value(param(x,"ns"),"secure"),param(x,"key"),param(x,"value")));
         if(u.equals("/accessibility/enable"))return json(SettingsOps.enableA11y(context));
+        if(u.equals("/accessibility/silence-beep")&&x.getMethod()==Method.POST){if(beepGuard==null)return err("beep guard unavailable");return json(beepGuard.silence("request"));}
         if(u.equals("/payload")){if(x.getMethod()==Method.POST)return json(new JSONObject().put("ok",true).put("result",shell.requestPayloadSwap(param(x,"url"),param(x,"sha256"))));return json(new JSONObject(shell.payloadStatusJson()));}
         if(u.equals("/payload/rollback")&&x.getMethod()==Method.POST)return json(new JSONObject().put("ok",true).put("result",shell.requestPayloadRollback()));
-        return err("routes: /status /input /usb-hid /bluetooth /exec /logcat /getsetting /setsetting /accessibility/enable /payload");
+        return err("routes: /status /input /usb-hid /bluetooth /exec /logcat /getsetting /setsetting /accessibility/enable /accessibility/silence-beep /payload");
     }catch(Exception e){return err(e.toString());}}
     private static String param(IHTTPSession x,String k){Map<String,List<String>>p=x.getParameters();List<String>v=p.get(k);return v==null||v.isEmpty()?null:v.get(0);}
     private static int intParam(IHTTPSession x,String k,int d){try{return Integer.parseInt(param(x,k));}catch(Exception e){return d;}}

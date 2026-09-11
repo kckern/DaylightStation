@@ -167,6 +167,17 @@ PK_TOKEN=$(sudo docker exec daylight-station sh -c 'cat data/household/auth/apk-
 Verified 2026-09-10: removed both spellings of the service; `serviceBound`
 stayed true and the panel stayed up.
 
+**Payload `p3-quiet-volume` does this by itself.** `VolumeBeepGuard` runs the
+same removal when the payload starts (every boot — the shell is START_STICKY
+and restarts on BOOT_COMPLETED) and again whenever
+`enabled_accessibility_services` changes under it, via a `ContentObserver`;
+our own write re-fires the observer, the second pass finds nothing, and it
+stops. Each removal is a `BEEP` line in the shell log. `POST
+/accessibility/silence-beep` on `:8773` runs one pass on demand. Build the
+payload jar on the Mac and swap it in over the air (see [Zero-tap payload
+upgrade](#zero-tap-payload-upgrade)); until that ships, `pkctl beep fix`
+after every reboot.
+
 ### It cannot be stopped from opening — don't re-run this list
 
 All measured on hardware 2026-07-21 against `com.facebook.alohaapps.controlcenter`:

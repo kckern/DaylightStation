@@ -9,6 +9,7 @@ public final class Main implements Payload {
     private HidBridgeServer hidBridge;
     private UsbHidController usbHid;
     private BluetoothController bluetooth;
+    private VolumeBeepGuard beepGuard;
 
     @Override public void start(ShellServices shell) {
         Context context = ((Context) shell.context()).getApplicationContext();
@@ -34,7 +35,14 @@ public final class Main implements Payload {
             bluetooth = null;
         }
         try {
-            ops = new OpsServer(shell, usbHid, bluetooth);
+            beepGuard = new VolumeBeepGuard(context, shell);
+            beepGuard.start();
+        } catch (Throwable t) {
+            shell.note("PAYLOAD", "Volume beep guard start failed " + t);
+            beepGuard = null;
+        }
+        try {
+            ops = new OpsServer(shell, usbHid, bluetooth, beepGuard);
             ops.start(0, true);
         } catch (Exception e) {
             throw new IllegalStateException(e);
@@ -43,14 +51,16 @@ public final class Main implements Payload {
 
     @Override public void stop() {
         if (ops != null) ops.stop();
+        if (beepGuard != null) beepGuard.stop();
         if (bluetooth != null) bluetooth.stop();
         if (usbHid != null) usbHid.stop();
         if (hidBridge != null) hidBridge.stop();
         ops = null;
+        beepGuard = null;
         bluetooth = null;
         usbHid = null;
         hidBridge = null;
     }
 
-    @Override public String version() { return "p2-bluetooth-usb-hid"; }
+    @Override public String version() { return "p3-quiet-volume"; }
 }
