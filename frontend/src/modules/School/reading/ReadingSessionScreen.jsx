@@ -254,35 +254,77 @@ function RecentBook({ read }) {
 }
 
 /**
+ * WHERE THE NEXT BOOK GOES — and the whole reason this screen has an answer.
+ *
+ * The panel is a VIEW: no touch, no cursor, no focus. A child answers "what do
+ * you want to read today?" by scanning a book, so the answer on screen has to
+ * be a place, not a control. This is a book-shaped gap in the shelf, recessed
+ * and lit from behind — never a bordered tile, never a lift on hover, nothing
+ * that has ever been pressed.
+ *
+ * ONE slot per story still owed, and only the FIRST of them breathes: the same
+ * "this is the one you are filling next" the pips drew with their live ring.
+ */
+function EmptySlot({ live }) {
+  return (
+    <li
+      className={`reading-session__recent-card reading-session__slot${live ? ' reading-session__slot--live' : ''}`}
+      data-testid="reading-slot"
+    >
+      <div className="reading-session__recent-cover reading-session__slot-well" aria-hidden="true" />
+      <span className="reading-session__recent-title" />
+    </li>
+  );
+}
+
+/**
  * One day's shelf: the label, then that day's books.
  *
  * THE DAY IS THE PARTITION. The shelf used to be a flat list deduped across a
  * whole week, so a story read on three days appeared once, wearing the newest
  * date and a `x3` that counted the other two days it no longer showed.
  */
-function RecentDay({ group, studyDay }) {
+function RecentDay({ group, studyDay, slots = 0 }) {
   const books = (group?.books ?? []).filter((b) => b?.title);
-  if (books.length === 0) return null;
+  if (books.length === 0 && slots === 0) return null;
   return (
     <section className="reading-session__recent-day-group" data-testid="reading-recent-day">
       <h4 className="reading-session__recent-day">{recentDayLabel(group.studyDay, studyDay)}</h4>
-      <ul className="reading-session__recent-list" data-count={books.length}>
+      <ul className="reading-session__recent-list" data-count={books.length + slots}>
         {books.map((read, index) => (
           <RecentBook key={`${read.contentId ?? read.title ?? 'book'}-${index}`} read={read} />
         ))}
+        {Array.from({ length: slots }, (_, i) => <EmptySlot key={`slot-${i}`} live={i === 0} />)}
       </ul>
     </section>
   );
 }
 
-function Recent({ days, studyDay }) {
+/**
+ * The shelf: today, then the days behind it.
+ *
+ * TODAY IS ALWAYS DRAWN, even empty — it is the only column the child can act
+ * on, and it used to vanish on the exact day it mattered (`RecentDay` returned
+ * null at zero books), leaving a past day sitting where the eye lands first.
+ *
+ * The slot count comes from the obligation, which is known before a single
+ * cover has loaded — so the shelf's geometry is settled at first paint and
+ * covers landing one by one never move it.
+ */
+function Recent({ days, studyDay, target = null, count = 0 }) {
   const groups = (Array.isArray(days) ? days : [])
     .filter((g) => Array.isArray(g?.books) && g.books.some((b) => b?.title));
-  if (groups.length === 0) return null;
+  const todayGroup = groups.find((g) => g.studyDay === studyDay) ?? { studyDay, books: [] };
+  const past = groups.filter((g) => g.studyDay !== studyDay);
+  const owed = Number.isFinite(target) ? target : 0;
+  const done = Number.isFinite(count) ? count : 0;
+  const slots = Math.max(0, owed - done);
+  if (slots === 0 && groups.length === 0) return null;
   return (
     <section className="reading-session__recent" data-testid="reading-recent" aria-label="Recent stories">
       <div className="reading-session__recent-days">
-        {groups.map((group) => (
+        <RecentDay group={todayGroup} studyDay={studyDay} slots={slots} />
+        {past.map((group) => (
           <RecentDay key={group.studyDay} group={group} studyDay={studyDay} />
         ))}
       </div>
@@ -639,7 +681,12 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
             label={summary?.progressLabel}
             className="reading-session__pips"
           />
-          <Recent days={summary?.recentDays} studyDay={summary?.studyDay} />
+          <Recent
+            days={summary?.recentDays}
+            studyDay={summary?.studyDay}
+            target={summary?.target}
+            count={summary?.count}
+          />
           {/* J7, and only here: a streak wall is for lingering over, and this
               is the one screen a child lingers on. */}
           <StreakWall days={summary?.streak} studyDay={summary?.studyDay} className="reading-session__streak" />

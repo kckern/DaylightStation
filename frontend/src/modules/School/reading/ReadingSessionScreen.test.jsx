@@ -105,10 +105,57 @@ describe('ReadingSessionScreen', () => {
     expect(screen.getByTestId('reading-recent')).toHaveTextContent('Today');
     expect(screen.getByTestId('reading-recent')).toHaveTextContent('Corduroy');
     expect(screen.getByTestId('reading-recent')).toHaveTextContent('Yesterday');
-    // The day is the PARTITION: one group per day, each with its own heading.
-    expect(screen.getAllByTestId('reading-recent-day')).toHaveLength(2);
+    // The day is the PARTITION: one group per day, each with its own heading —
+    // and TODAY ALWAYS LEADS, drawn from the obligation rather than from the
+    // history, so it holds its place whether or not a book has landed in it.
+    // Two here, because today has already been read in and is not duplicated
+    // behind itself: today's column, then yesterday's.
+    const openDays = screen.getAllByTestId('reading-recent-day');
+    expect(openDays).toHaveLength(2);
+    expect(openDays[0]).toHaveTextContent('Today');
+    expect(openDays[1]).toHaveTextContent('Yesterday');
     // Repeats are a badge on the cover they happened on, not a count in a caption.
     expect(screen.getByTestId('reading-recent-times')).toHaveTextContent('2');
+  });
+
+  it('open: today leads the shelf with an empty, waiting slot for each story owed', async () => {
+    vi.stubGlobal('fetch', stubFetch({
+      summary: { ...SUMMARY, count: 0, target: 2, studyDay: '2026-09-03', recentDays: SUMMARY.recentDays },
+    }));
+    render(<ReadingSessionScreen />);
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+
+    const shelf = await screen.findByTestId('reading-recent');
+    const days = within(shelf).getAllByTestId('reading-recent-day');
+    // Today leads, even with nothing read yet.
+    expect(days[0]).toHaveTextContent('Today');
+    // Two owed, none read: two empty slots.
+    expect(within(days[0]).getAllByTestId('reading-slot')).toHaveLength(2);
+    // Exactly ONE of them is the live one — the next book goes there.
+    expect(within(days[0]).getAllByTestId('reading-slot')
+      .filter((n) => n.className.includes('--live'))).toHaveLength(1);
+  });
+
+  it('open: a story already read today fills a slot and leaves the rest waiting', async () => {
+    vi.stubGlobal('fetch', stubFetch({ summary: { ...SUMMARY, count: 1, target: 2 } }));
+    render(<ReadingSessionScreen />);
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+
+    const today = (await screen.findAllByTestId('reading-recent-day'))[0];
+    expect(within(today).getAllByTestId('reading-recent-card')).toHaveLength(1);
+    expect(within(today).getAllByTestId('reading-slot')).toHaveLength(1);
+  });
+
+  it('open: a finished day shows today with no slot at all', async () => {
+    vi.stubGlobal('fetch', stubFetch({ summary: { ...SUMMARY, count: 2, target: 2, doneToday: true } }));
+    render(<ReadingSessionScreen />);
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+    const today = (await screen.findAllByTestId('reading-recent-day'))[0];
+    // Today still leads — the column is the day's record once the slots are
+    // gone, so nothing behind it may take the front of the shelf.
+    expect(today).toHaveTextContent('Today');
+    expect(within(today).getAllByTestId('reading-recent-card')).toHaveLength(1);
+    expect(within(today).queryByTestId('reading-slot')).toBeNull();
   });
 
   it('the close is a receipt: today\'s covers, the clock time each finished, and the wall', () => {
