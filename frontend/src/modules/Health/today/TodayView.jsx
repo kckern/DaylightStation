@@ -23,6 +23,8 @@ import { NeedsReviewSection } from './NeedsReviewSection.jsx';
 import { CleanupQuestions } from '../cleanup/CleanupQuestions.jsx';
 import { ObservationsSection } from './ObservationRow.jsx';
 import { EntryEditor } from './EntryEditor.jsx';
+import { ConfirmDialog } from './ConfirmDialog.jsx';
+import { deleteEntry, deleteConfirmBody, entryLabel } from './entryCommands.js';
 import { TemplatePicker } from './TemplatePicker.jsx';
 import { FoodCatalogManager } from './FoodCatalogManager.jsx';
 import { PhotoCapture } from '../capture/PhotoCapture.jsx';
@@ -65,6 +67,26 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
   const [focusTemplateId, setFocusTemplateId] = useState(null);
   const [captureNotice, setCaptureNotice] = useState(null); // string | null — e.g. "no food detected"
   const [undoDelete, setUndoDelete] = useState(null);
+  // The row awaiting a yes, plus the in-flight/error state of that yes. Held by
+  // the VIEW so one dialog serves every row and the edit sheet alike — see
+  // ConfirmDialog on why this is not per-row state.
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
+  const confirmDelete = async () => {
+    if (deleteBusy || !pendingDelete) return;
+    setDeleteBusy(true); setDeleteError(null);
+    try {
+      const removed = await deleteEntry(pendingDelete);
+      logger.info('entry.delete', { uuid: pendingDelete.uuid || pendingDelete.id, count: removed.entryIds.length });
+      setPendingDelete(null); setUndoDelete(removed); day.reload();
+    } catch (err) {
+      // The dialog STAYS OPEN on failure. Closing it would report a delete that
+      // did not happen, and the row is still there to prove otherwise.
+      logger.warn('entry.delete_failed', { uuid: pendingDelete.uuid || pendingDelete.id, error: err.message });
+      setDeleteError(err.message || 'Could not delete. Try again when connected.');
+    } finally { setDeleteBusy(false); }
+  };
   const [undoBusy, setUndoBusy] = useState(false);
   const undoPending = useRef(false);
   const [barcodeDate, setBarcodeDate] = useState(date);
@@ -394,6 +416,9 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
         }}>Undo</Button>
         <Button size="compact-xs" variant="subtle" disabled={undoBusy} onClick={() => setUndoDelete(null)}>Dismiss</Button>
       </div> : null}
+      <ConfirmDialog open={Boolean(pendingDelete)} title={pendingDelete ? `Delete ${entryLabel(pendingDelete)}?` : ''}
+        body={pendingDelete ? deleteConfirmBody(pendingDelete) : ''} busy={deleteBusy} error={deleteError}
+        onConfirm={confirmDelete} onCancel={() => { setPendingDelete(null); setDeleteError(null); }} />
       {day.error ? <ErrorState error={day.error} onRetry={day.reload} label="Food log" /> : null}
       {pendingReview.error ? <ErrorState error={pendingReview.error} onRetry={pendingReview.reload} label="Food review unavailable" /> : null}
       {observations.error ? <ErrorState error={observations.error} onRetry={observations.reload} label="Measurements unavailable" /> : null}
@@ -416,7 +441,7 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
         active={active}
         exerciseAvailable={Boolean(day.budget)}
         coldLoading={coldLoading} capturePendingBuckets={[...capturePending.values()].filter(pending => pending.date === date).map(pending => pending.bucket)}
-        onAddTo={bucket=>{setAddingTo(prev=>prev===bucket?null:bucket);setTypingIn(null);}} onRowTap={setEditingRow} onConfirm={day.reload} addingTo={addingTo}
+        onAddTo={bucket=>{setAddingTo(prev=>prev===bucket?null:bucket);setTypingIn(null);}} onRowTap={setEditingRow} onConfirm={day.reload} onRequestDelete={row => { setDeleteError(null); setPendingDelete(row); }} addingTo={addingTo}
         bucketHeaderAction={bucketHeaderAction}
         onVoiceCapture={onVoiceCapture} onTextCapture={onTextCapture} onPhotoCapture={onPhotoCapture}
         onMealChanged={result=>handleCaptureResult(result)} captureTasks={[...capturePending.values()]}
@@ -456,7 +481,7 @@ export function TodayView({ active = true, sidebarTarget, onSetupGoals, onCoachT
         onCreated={() => { setUnknownUpc(null); day.reload(); }} />
       <EntryEditor row={editingRow} open={active && Boolean(editingRow)}
         onClose={() => setEditingRow(null)} onChanged={day.reload}
-        onDeleted={setUndoDelete}
+        onRequestDelete={row => { setDeleteError(null); setEditingRow(null); setPendingDelete(row); }}
         onCoach={() => { onCoachTap(editingRow); setEditingRow(null); }}
         observations={observationRows}
         onPaired={(err) => {

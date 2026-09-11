@@ -35,6 +35,30 @@ describe('EntryRow', () => {
     expect(identity.children[2]).toHaveClass('health-density-badge');
   });
 
+  it('asks the view to delete, and offers no X at all when the view cannot handle one', () => {
+    const requested = vi.fn();
+    const view = r(<EntryRow row={baseRow} onTap={() => {}} onRequestDelete={requested} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete entry: Apple' }));
+    // The row never deletes and never confirms: it hands the row up. Nothing may
+    // reach the network from a single tap on a destructive control.
+    expect(requested).toHaveBeenCalledWith(baseRow);
+    expect(apiMock).not.toHaveBeenCalled();
+    view.unmount();
+    // No handler, no button — a control that cannot do its job is worse than absent.
+    r(<EntryRow row={baseRow} onTap={() => {}} />);
+    expect(screen.queryByRole('button', { name: 'Delete entry: Apple' })).toBeNull();
+  });
+
+  it('keeps confirm and delete as separate targets on an unsettled row', () => {
+    r(<EntryRow row={{ ...baseRow, settled: false }} onTap={() => {}} onConfirm={() => {}} onRequestDelete={() => {}} />);
+    const action = document.querySelector('.health-row__action');
+    // Both live in the action cell; a row awaiting confirmation must not lose its
+    // ✓ to the new ✕, and the two must not be the same tap target.
+    expect(action.querySelector('.health-row__confirm')).toBeTruthy();
+    expect(action.querySelector('.health-row__delete')).toBeTruthy();
+    expect(action.querySelector('.health-row__confirm')).not.toBe(action.querySelector('.health-row__delete'));
+  });
+
   it('an unsettled row (settled:false) renders the unsettled cue and a confirm button', () => {
     r(<EntryRow row={{ ...baseRow, settled: false }} onTap={() => {}} onConfirm={() => {}} />);
     expect(document.querySelector('.health-row-line--unsettled')).toBeTruthy();

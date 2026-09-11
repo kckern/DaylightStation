@@ -21,7 +21,7 @@ import './mealWorkflow.scss';
 const kcal = (rows) => Math.round(sumCounted(rows, 'calories'));
 
 function Section({
-  label, rows, onAdd, onRowTap, onConfirm, headerAction, coldLoading, pending,
+  label, rows, onAdd, onRowTap, onConfirm, onRequestDelete, headerAction, coldLoading, pending,
   measuredByUuid, date, bucket, active, onVoiceCapture, onTextCapture, onChanged, captureTasks = [], onHoldChange, externalClarification, onClearClarification,
 }) {
   const [selecting, setSelecting] = useState(false);
@@ -120,7 +120,7 @@ function Section({
         // `id` for the same reason `key` does: not every row shape carries both.
         const measured = measuredByUuid?.get(row.uuid) ?? measuredByUuid?.get(row.id) ?? null;
         if (!isGroup) {
-          return renderRow({row,onTap:onRowTap,onConfirm,measured});
+          return renderRow({row,onTap:onRowTap,onConfirm,onRequestDelete,measured});
         }
         const isOpen = !collapsed.has(key);
         return (
@@ -130,9 +130,9 @@ function Section({
                 for display) — purely so the tap handler forwards them to
                 whatever opens next (EntryEditSheet's group mode needs the
                 full child list to scale/move/delete them together). */}
-            {renderRow({ row:{...row,children},densityRow:{kind:'group',children},onTap:onRowTap,onConfirm,measured,
+            {renderRow({ row:{...row,children},densityRow:{kind:'group',children},onTap:onRowTap,onConfirm,onRequestDelete,measured,
               isGroup:true,expanded:isOpen,onToggle:()=>toggle(key),rollupKcal:rollup.calories })}
-            {isOpen ? children.map((c,index)=>renderRow({row:c,onTap:onRowTap,onConfirm,child:true,lastChild:index===children.length-1,
+            {isOpen ? children.map((c,index)=>renderRow({row:c,onTap:onRowTap,onConfirm,onRequestDelete,child:true,lastChild:index===children.length-1,
               measured:measuredByUuid?.get(c.uuid) ?? measuredByUuid?.get(c.id) ?? null})) : null}
           </div>
         );
@@ -148,7 +148,7 @@ function Section({
 }
 
 export function LogTable({
-  byBucket, date, sessions = [], exerciseAvailable = false, onAddTo, onRowTap, onConfirm,
+  byBucket, date, sessions = [], exerciseAvailable = false, onAddTo, onRowTap, onConfirm, onRequestDelete,
   addSlot, addingTo, bucketHeaderAction, coldLoading = false, capturePendingBucket = null, capturePendingBuckets = [],
   measuredByUuid = null, active = true, onVoiceCapture, onTextCapture, onMealChanged, captureTasks = [], clarifications, onClearClarification,
 }) {
@@ -181,7 +181,7 @@ export function LogTable({
               externalClarification={clarifications === undefined ? undefined : clarifications.get(`${date}:${b.id}`) || null}
               onClearClarification={()=>onClearClarification?.(`${date}:${b.id}`)}
               captureTasks={captureTasks.filter(task=>task.date===date && task.bucket===b.id)}
-              onAdd={() => onAddTo(b.id)} onRowTap={onRowTap} onConfirm={onConfirm}
+              onAdd={() => onAddTo(b.id)} onRowTap={onRowTap} onConfirm={onConfirm} onRequestDelete={onRequestDelete}
               headerAction={bucketHeaderAction ? bucketHeaderAction(b.id, rows, b.label) : null}
               coldLoading={coldLoading} pending={capturePendingBucket === b.id || capturePendingBuckets.includes(b.id)}
               measuredByUuid={measuredByUuid} />
@@ -200,7 +200,7 @@ export function LogTable({
         <ExerciseSection date={date} sessions={sessions} />
       ) : null}
       {orphans.length ? (
-        <Section label={UNGROUPED.label} rows={orphans} onRowTap={onRowTap} onConfirm={onConfirm}
+        <Section label={UNGROUPED.label} rows={orphans} onRowTap={onRowTap} onConfirm={onConfirm} onRequestDelete={onRequestDelete}
           measuredByUuid={measuredByUuid} />
       ) : null}
     </div>
