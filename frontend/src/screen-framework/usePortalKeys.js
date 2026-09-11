@@ -71,11 +71,24 @@ export function usePortalKeys({ enabled = true, port = DEFAULT_PORT } = {}) {
         const { step: doStep, stepSize: size } = handlersRef.current;
         const delta = size || 0.05;
 
-        logger().debug('key-received', {
+        // A physical press is logged at INFO, not debug: production ships `info`,
+        // so at debug every press on the panel was invisible in the log store —
+        // `pkctl status` read `keysSeen: 72` against zero events server-side while
+        // someone was standing there pressing the volume key and nothing moved.
+        // The key-up half stays at debug; it is protocol noise, not an action.
+        const isPress = msg.action === 'down';
+        logger()[isPress ? 'info' : 'debug']('key-received', {
           key: msg.key,
           action: msg.action,
           interactive: msg.interactive,
         });
+
+        // The APK broadcasts BOTH halves of every press (PortalKeysService
+        // .onKeyEvent calls broadcast() for ACTION_DOWN and ACTION_UP alike).
+        // Acting on both stepped the master twice per press — two taps took a
+        // panel from its configured 0.6 to a saturated 1.0, after which every
+        // further press did nothing at all. Only the press counts.
+        if (!isPress) return;
 
         switch (msg.key) {
           case 'KEYCODE_VOLUME_UP':
