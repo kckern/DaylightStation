@@ -35,6 +35,7 @@ export class LogFoodFromUPC {
   #barcodeGenerator;
   #catalogService;
   #reviewService;
+  #photoStore;
   #inflight = new Map();
   #clock;
 
@@ -56,7 +57,33 @@ export class LogFoodFromUPC {
     this.#barcodeGenerator = deps.barcodeGenerator; // Optional: for generating barcode images
     this.#catalogService = deps.catalogService || null;
     this.#reviewService = deps.reviewService;
+    this.#photoStore = deps.photoStore || null;
     this.#clock = deps.clock || { now: () => Date.now() };
+  }
+
+  /**
+   * Download the product's own photo and stamp its `photoRef` onto the item.
+   *
+   * NEVER THROWS, and never blocks the food log: no photoStore, no URL, a dead
+   * CDN link or a disk error all leave `photoRef` unset, which is the state
+   * every UPC capture was in before this existed.
+   *
+   * The image is re-fetched per scan rather than cached against the catalog
+   * entry, so scanning the same product twice stores the picture twice. That is
+   * a handful of kilobytes against a pipeline that already round-trips a model
+   * call; a `photoRef` on `FoodCatalogEntry` is the place to fix it properly.
+   * @private
+   */
+  async #persistProductPhoto({ userId, upc, product, foodItem }) {
+    if (!this.#photoStore || !this.#upcGateway?.fetchImage || !product?.imageUrl) return;
+    const buffer = await this.#upcGateway.fetchImage(product.imageUrl);
+    if (!buffer) return;
+    try {
+      foodItem.photoRef = await this.#photoStore.save(userId, buffer);
+      this.#logger.info?.('upc.photo.saved', { upc, userId, photoRef: foodItem.photoRef, bytes: buffer.length });
+    } catch (error) {
+      this.#logger.warn?.('upc.photo.save.failed', { upc, userId, error: error.message });
+    }
   }
 
   /**
@@ -243,9 +270,21 @@ export class LogFoodFromUPC {
       // 5. Create food item from product
       const grams = ['g', 'gram', 'grams'].includes(String(product.serving?.unit).toLowerCase())
         && Number(product.serving?.size) > 0 ? Number(product.serving.size) : null;
+      // `confineIcon` answers 'default' for any slug outside the manifest, which
+      // is the right refusal and was a SILENT one: a product could be scanned
+      // nine times, classify cleanly every time (the Noom colour proves the model
+      // answered), and land on the neutral dot without a single log line saying
+      // the model's guess was not a slug we own. Name the miss.
+      const proposedIcon = product.icon && product.icon !== 'default' ? product.icon : classification.icon;
+      const resolvedIcon = catalogEntry?.iconOverride
+        || confineIcon(proposedIcon, this.#iconVocabulary, product.name);
+      if (resolvedIcon === 'default') {
+        this.#logger.info?.('upc.icon.unresolved', { upc, name: product.name, proposedIcon: proposedIcon || null,
+          fromCatalog: !!catalogEntry, hadClassifier: !!this.#aiGateway });
+      }
       const foodItem = {
         label: product.name,
-        icon: catalogEntry?.iconOverride || confineIcon(product.icon && product.icon !== 'default' ? product.icon : classification.icon, this.#iconVocabulary, product.name),
+        icon: resolvedIcon,
         foodId: product.foodId || null,
         grams,
         unit: grams ? 'g' : product.serving?.unit || 'serving',
@@ -257,6 +296,14 @@ export class LogFoodFromUPC {
         captureEvidence: { source: 'upc', upc, serving: product.serving, assumption: 'one-serving' },
       };
       if (this.#catalogService?.resolveIdentity) Object.assign(foodItem, await this.#catalogService.resolveIdentity(foodItem, userId));
+
+      // 5b. Keep the manufacturer's own photo. The row renders `photoRef` ahead
+      // of any icon (EntryRow), so a real picture of the product beats the best
+      // slug we could have guessed — and this pipeline was already FETCHING the
+      // image URL and reporting `hasImage: true` before throwing it away.
+      // Best-effort throughout: no photoStore, a dead link, or a disk error
+      // leaves `photoRef` unset and the icon does its job.
+      await this.#persistProductPhoto({ userId, upc, product, foodItem });
 
       // 6. Create NutriLog entity
       const timezone = this.#config?.getUserTimezone?.(userId) || 'America/Los_Angeles';

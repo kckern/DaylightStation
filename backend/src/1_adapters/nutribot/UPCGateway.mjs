@@ -91,6 +91,45 @@ export class UPCGateway {
   }
 
   /**
+   * Fetch a product image as bytes, for callers that want to KEEP it.
+   *
+   * `lookup()` has always returned an `imageUrl` and logged `hasImage: true`,
+   * and every caller then dropped it on the floor — the manufacturer's own
+   * photo was fetched, reported, and never shown. Downloading belongs here
+   * rather than in the use case: the application layer does not do HTTP.
+   *
+   * NEVER THROWS. A product picture is decoration; a dead CDN link, a timeout,
+   * or an HTML error page dressed as a JPEG must cost the food log nothing.
+   * A non-image content type is refused rather than stored, because the
+   * barcodespider fallback answers a miss with a page, not a 404.
+   *
+   * @param {string} url Absolute http(s) URL, normally `product.imageUrl`.
+   * @returns {Promise<Buffer|null>} Image bytes, or null if unusable.
+   */
+  async fetchImage(url) {
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return null;
+    try {
+      const buffer = await this.#httpClient.downloadBuffer(url, { timeout: 8000 });
+      if (!Buffer.isBuffer(buffer) || buffer.length === 0) return null;
+      // Magic bytes, not the declared type: JPEG, PNG, GIF, WEBP (RIFF....WEBP).
+      const jpeg = buffer[0] === 0xFF && buffer[1] === 0xD8;
+      const png = buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]));
+      const gif = buffer.subarray(0, 3).toString('latin1') === 'GIF';
+      const webp = buffer.subarray(0, 4).toString('latin1') === 'RIFF'
+        && buffer.subarray(8, 12).toString('latin1') === 'WEBP';
+      if (!jpeg && !png && !gif && !webp) {
+        this.#logger.debug?.('upc.image.notAnImage', { url, bytes: buffer.length });
+        return null;
+      }
+      this.#logger.debug?.('upc.image.fetched', { url, bytes: buffer.length });
+      return buffer;
+    } catch (error) {
+      this.#logger.debug?.('upc.image.failed', { url, error: error.message });
+      return null;
+    }
+  }
+
+  /**
    * Look up product from Open Food Facts
    * @private
    */

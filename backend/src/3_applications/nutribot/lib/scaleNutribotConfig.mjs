@@ -103,6 +103,14 @@ export function normalizeScaleNutribotConfig(raw = {}, { logger = null } = {}) {
             // `icon` first time round: the config had it, the sheet rendered blank
             // gaps where the pictures should have been, and nothing errored.
             icon: l.icon || null,
+            // SCREEN artwork, and a DIFFERENT vocabulary from `icon` above: that
+            // one is an SVG path on the printed fridge sheet
+            // (`data/household/nutrition/icons/food/sandwich`), this one is a slug
+            // in the health app's icon manifest (`spaghetti-bolognese`). They look
+            // interchangeable and are not — feeding a sheet path to the manifest
+            // route resolves nothing. Unset means the capture keeps the 'default'
+            // sentinel; it is never guessed from the label.
+            ui_icon: l.ui_icon || null,
           };
           // Passed through untouched. `computeNutrition` (ScanNutritionService)
           // validates these when a density level is applied, and treats a blank
