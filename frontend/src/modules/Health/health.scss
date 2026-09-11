@@ -449,6 +449,18 @@ $health-aside-gap: 1.5rem;
   &__error { grid-column: 2 / -1; color: var(--ds-danger); font-size: 0.8rem; }
   &__branch { align-self: stretch; position: relative; }
 }
+// Whole-food correction, inside the edit sheet. The field takes the width and
+// the mic sits beside it: speaking is the faster of the two inputs and must not
+// be the one that wraps onto its own line on a phone.
+.health-revise {
+  &__input { flex: 1; min-width: 0; }
+  &__mic { flex: 0 0 auto; }
+  &__pins {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 0.25rem 0.5rem;
+  }
+}
+
 .health-row-identity { display: flex; align-items: center; gap: 0.2rem; min-width: 0; min-height: 28px; }
 .health-row-artwork { display: grid; place-items: center; width: 24px; height: 24px; flex: none; }
 .health-row-name { min-width: 0; min-height: 28px; overflow: hidden; text-align: left; }

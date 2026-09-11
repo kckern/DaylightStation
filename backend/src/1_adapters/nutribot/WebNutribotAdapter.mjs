@@ -18,6 +18,8 @@ export class WebNutribotAdapter {
   #voiceMemoStore;
   #logger;
   #mealInstructions;
+  #entryRevisions;
+  #transcribeVoice;
 
   /**
    * @param {Object} config
@@ -37,6 +39,8 @@ export class WebNutribotAdapter {
     if (!config.inputRouter) throw new Error('WebNutribotAdapter requires inputRouter');
     this.#inputRouter = config.inputRouter;
     this.#mealInstructions = config.mealInstructions || null;
+    this.#entryRevisions = config.entryRevisions || null;
+    this.#transcribeVoice = config.transcribeVoice || null;
     this.#foodLogStore = config.foodLogStore || null;
     this.#voiceMemoStore = config.voiceMemoStore || null;
     this.#logger = config.logger || null;
@@ -372,6 +376,38 @@ export class WebNutribotAdapter {
   suggestMealGroups({ userId, ...input }) {
     if (!this.#mealInstructions) throw Object.assign(new Error('Meal suggestions are unavailable'), { status: 503 });
     return this.#mealInstructions.suggest(userId, input);
+  }
+
+  /** Re-derive one entry from a spoken/typed correction. Returns a PROPOSAL —
+   *  the caller commits it through the ordinary entry PUT. 503 rather than a
+   *  silent no-op when the AI gateway is absent: a correction that appears to
+   *  work and changes nothing is the failure this codebase keeps naming. */
+  async reviseEntry({ userId, audio = null, ...input }) {
+    if (!this.#entryRevisions) throw Object.assign(new Error('Food revision is unavailable'), { status: 503 });
+    let instruction = input.instruction;
+    if (audio) {
+      if (!this.#transcribeVoice) throw Object.assign(new Error('Voice corrections are unavailable'), { status: 503 });
+      const { buffer, mimeType } = this.#decodeDataUrl(audio, 'voice');
+      // PERSIST FIRST, TRANSCRIBE SECOND — the same order, and the same reason,
+      // as the capture path above: a Whisper failure must not also destroy the
+      // recording. The ref travels back so a failed transcription can be retried
+      // from the bytes instead of asking the person to say it again.
+      const audioRef = await this.#persistVoiceMemo(userId, buffer, mimeType);
+      try {
+        instruction = await this.#transcribeVoice({ buffer, mimeType, audioRef });
+      } catch (error) {
+        throw Object.assign(new Error('Could not hear that correction'),
+          { status: 502, code: 'TRANSCRIBE_FAILED', audioRef, cause: error });
+      }
+      if (!instruction || !String(instruction).trim()) {
+        throw Object.assign(new Error('That recording came back empty'), { status: 422, code: 'TRANSCRIBE_EMPTY', audioRef });
+      }
+    }
+    const result = await this.#entryRevisions.propose(userId, { ...input, instruction });
+    // The heard text travels back so the surface can show what it acted on. A
+    // voice correction that silently mis-transcribes is otherwise indistinguishable
+    // from a model that misunderstood a correct one.
+    return audio ? { ...result, instruction } : result;
   }
 
   reviewPending(input) { return this.#inputRouter.reviewPending(input); }

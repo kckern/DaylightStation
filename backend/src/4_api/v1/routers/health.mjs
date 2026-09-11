@@ -1237,6 +1237,47 @@ export function createHealthRouter(config) {
   // ==========================================================================
 
   if (healthOperations.nutritionInputAvailable) {
+    /**
+     * POST /health/nutrilist/:uuid/revise
+     *
+     * "It says rice; it was cauliflower rice." Re-derives the entry from that
+     * sentence and returns a PROPOSAL — name, icon, colour, mass and the full
+     * nutrition — without writing anything. The client commits what it accepts
+     * through the ordinary PUT above, so the model never reaches the ledger
+     * except through a path that fences on version and records `manualFields`.
+     *
+     * The icon is validated HERE for the same reason the PUT validates it: the
+     * manifest lives on this side, and an unrecognised slug becomes null rather
+     * than a 400 — a good re-estimate must not be thrown away over its picture.
+     */
+    router.post('/nutrilist/:uuid/revise', asyncHandler(async (req, res) => {
+      const { uuid } = req.params;
+      const { instruction, audio } = req.body || {};
+      if (!ENTRY_UUID_PATTERN.test(uuid)) return res.status(400).json({ error: 'A food entry ID is required' });
+      const spoken = typeof audio === 'string' && audio.startsWith('data:');
+      if (!spoken && (typeof instruction !== 'string' || !instruction.trim())) {
+        return res.status(400).json({ error: 'A correction is required' });
+      }
+      const userId = getDefaultUsername();
+      try {
+        const result = await healthOperations.reviseNutritionEntry({ userId, entryUuid: uuid,
+          ...(spoken ? { audio } : { instruction }) });
+        if (Object.hasOwn(result.proposal, 'icon')) {
+          const verdict = validateIcon(result.proposal.icon);
+          if (!verdict.ok || !verdict.icon) {
+            logger.info?.('health.entry.revision.icon_unresolved', { userId, uuid, proposed: result.proposal.icon });
+            delete result.proposal.icon;
+          } else result.proposal.icon = verdict.icon;
+        }
+        logger.info?.('health.entry.revision.complete', { userId, uuid, basis: result.basis, pinned: result.pinned });
+        return res.json(result);
+      } catch (err) {
+        logger.warn?.('health.entry.revision.failed', { userId, uuid, error: err.message });
+        if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
+        return sendInternalError(res, { error: err.message });
+      }
+    }));
+
     router.post('/nutrition/meal-suggestions', asyncHandler(async (req, res) => {
       const { date, bucket, selectedIds } = req.body || {};
       if (!isISODate(date) || !NUTRITION_MEAL_BUCKETS.includes(bucket) || !Array.isArray(selectedIds) || selectedIds.some(id => typeof id !== 'string' || !ENTRY_UUID_PATTERN.test(id))) {

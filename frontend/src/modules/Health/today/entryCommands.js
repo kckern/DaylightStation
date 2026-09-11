@@ -13,6 +13,17 @@ export function updateEntry(row, changes, operationId) {
 export const entryLabel = row => row.name || row.item || row.label || 'this entry';
 
 /**
+ * The fields this person has corrected by hand, in the order the row records
+ * them. Read from the row rather than asked of the server, so the revise field
+ * can name them before you have said anything — a pin discovered only after a
+ * correction did nothing is the dead end this list exists to prevent.
+ *
+ * `cleanupFields` counts too: a name the auditor settled with you is as pinned
+ * as one you typed.
+ */
+export const entryPins = row => [...new Set([...(row?.manualFields || []), ...(row?.cleanupFields || [])])];
+
+/**
  * How many rows a delete will take with it, for the sentence the user reads.
  *
  * Display only. The SERVER decides what actually cascades and reports it back as

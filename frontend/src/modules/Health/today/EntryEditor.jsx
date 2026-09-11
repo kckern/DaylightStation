@@ -7,6 +7,7 @@ import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { foodGrams, foodPortion, NUTRIENT_KEYS, scaleFoodPortion } from '@shared-contracts/health/foodQuantity.mjs';
 import { formatNutrients, nutrientSummary } from '@shared-contracts/nutrition/countedRows.mjs';
 import { updateEntry, entryError } from './entryCommands.js';
+import { ReviseField } from './ReviseField.jsx';
 import { BUCKETS } from './mealBuckets.js';
 import { FoodIcon } from './FoodIcon.jsx';
 import { ObservationRow } from './ObservationRow.jsx';
@@ -105,6 +106,16 @@ function Editor({ row, onClose, onChanged, onRequestDelete, onCoach, observation
           onClick={() => setGrams(wholeGrams ? Math.max(1, Math.round((Number(grams) || originalGrams) * value)) : Math.round((Number(grams) || originalGrams) * value * 100) / 100)}>×{value}</Button>)}
       </Group>
       <Text size="sm">{nutrients.calories == null ? '—' : Math.round(nutrients.calories)} kcal · {formatNutrients([nutrients])}</Text>
+      {/* A whole-food correction, above the field-by-field controls below it,
+          because it is the faster way to fix the thing that is usually wrong: the
+          model named the food incorrectly and every number follows from that.
+          Not offered on a group — a dish row's numbers are its children's
+          roll-up, so re-deriving one writes a total the next roll-up discards
+          (the server refuses it for the same reason). */}
+      {!isGroup ? <ReviseField row={row} busy={busy} onApply={(changes, meta) => run(async () => {
+        const operationId = crypto.randomUUID();
+        await updateEntry(row, { ...changes, ...meta }, operationId);
+      }, { close: true })} /> : null}
       <SegmentedControl aria-label="Meal" size="xs" fullWidth value={mealTime || ''} disabled={busy}
         data={BUCKETS.map(bucket => ({ value: bucket.id, label: bucket.label }))} onChange={setMealTime} />
       {picking ? <>
