@@ -1,5 +1,75 @@
 # Reading Launch Card & Timeout Race Implementation Plan
 
+> **ARCHIVED 2026-09-11, on branch `school/reading-today-card`.** The durable
+> behaviour now lives in
+> [`docs/reference/school/reading-sessions.md`](../reference/school/reading-sessions.md);
+> this file is kept for the incident reconstruction and the reasoning behind
+> each task. Read the preamble below before trusting any task body: not all of
+> them shipped, and one task the docs were told to describe was never built.
+
+## What actually happened
+
+**Shipped, and pinned by tests**
+
+| Task | What landed |
+|---|---|
+| 1 | `ReadingSessionService.recentlyClosed()` — a frozen record of the last teardown, inside `REOPEN_GRACE_MS` (45 s, clamped to this instance's `idleTimeoutMs`, and not a caller parameter). |
+| 2 | `ReadingSessionInterceptor` reopens that session for `reason: 'timeout'` ONLY, plus the rollback (`reopen-abandoned`) when the `book-selected` broadcast fails, a single wake target, and the reopen's screen wake. `POST /session/end` gained its `reason` allowlist in the same commit. |
+| 4 | The session publishes its own `idleTimeoutMs` on every `session-open`. |
+| 6 | The shelf's weekday label is formatted in the zone it was parsed in; the test pins a non-UTC zone so the assertion can fail. |
+| 7 | Shelf covers go through `sizedPlexImage` with a square 205 px box. |
+| 9–14 | Today always leads the shelf with one empty slot per story owed; the slot is a recessed gap, not a control; the pips and the streak wall left this screen; the live slot's light runs down the idle window; the shelf case fits the books standing in it. |
+| — (not in the plan) | `ReadingApiService.end()` **did not exist** while the router called it, so every day-done wind-down POST had `500`'d since the route shipped and every room fell back to the two-minute idle timeout. Adding it also un-deadened the reopen's `day-done` guard, which had never had a real record to refuse. |
+| 15 | This archive, and the reference-doc update. |
+
+**Did NOT ship**
+
+- **Task 3 — the `content-playing` lockout.** A learner card is still refused
+  while the child's own just-dispatched book is playing, and that refusal is
+  deliberately non-retryable, so tapping again does nothing. Task 2 makes it
+  rare; it remains the dead end when the grace window is missed. Nothing in
+  `LearnerCardActions.mjs` was changed on this branch. **Task 15's instruction
+  to document an `ownRoom` exemption was therefore not followed — there is no
+  such exemption to document.** The reference doc records the dead end instead.
+- **Task 5 — field verification.** No deploy, so no log-store confirmation that
+  `school.reading.session-reopened` fires in the house, and no confirmation that
+  the original pattern (a `session-timeout` followed inside a minute by a
+  `wake-and-load.playback.confirmed` with no reopen between) has stopped.
+- **Task 8 — the null `displayName`.** Not investigated. The launch card's
+  header may still render an unlabeled portrait. The task body's guidance holds:
+  if the roster has no name, that is a data fix, and printing a raw learner id
+  at 5vh to a child who cannot read is worse than no label.
+
+**Known residuals**
+
+1. **The TV wake after a reopen is unverified.** The reopen asks for the screen
+   back, but fires that power-on into a teardown still in flight, and the two
+   verify against *different* entities — so `school.reading.reopen-wake` can log
+   `ok: true` for a room that then goes dark. Nobody has watched the actual set
+   through this sequence. This narrows the window; it does not close it. A
+   re-wake after the teardown settles is the obvious candidate and is
+   deliberately not built on speculation about the hardware.
+2. **`POST /session/end` answers `ok: true` when the teardown fails.**
+   `ReadingSessionService#end` swallows a failing `#onTimeout` into a
+   `school.reading.teardown-failed` warn and still returns the closed session,
+   so `ok` means "a session was closed", never "the TV went off". The log line
+   is the only place that failure surfaces.
+3. **A roaming vitest-worker flake**, pre-existing and unrelated to this work:
+   an occasional worker-level failure that moves between files across full-suite
+   runs. The reading folder ran clean here (94/94).
+
+**Carried forward from the session that wrote this plan**
+
+- The learner's read of "The Three Little Pigs" (`plex:620707`, 2026-09-11) was
+  never credited — it is the read the idle sweep ate. `POST /api/v1/school/reading/read`
+  with `{learnerId, contentId, title, location}` records it; the session guards
+  are skipped when no session is open.
+- **Never start a second backend** to test any of this. `node backend/index.js`
+  is a live household controller: a second instance makes real Home Assistant
+  calls and fights the running one for device authority on any port.
+
+---
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Stop the living-room reading session losing a child's credit to a 2-minute idle timeout, and rebuild its launch card as a scan-driven *view* — a today card with an empty, glowing slot where the next book goes — rather than a screen that asks a question it gives no way to answer.

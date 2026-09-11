@@ -17,6 +17,7 @@ import { createStateGatesModule } from './modules/stateGates.mjs';
 import { createFitnessPlayableModule } from './modules/fitnessApi.mjs';
 import { createApplicationScheduledJobs } from './modules/applicationScheduledJobs.mjs';
 import { createSchoolApiServices } from './modules/schoolApi.mjs';
+import { createLanguageStudyService } from './modules/schoolLanguage.mjs';
 import { GratitudePrintPresentationService } from '#apps/gratitude/services/GratitudePrintPresentationService.mjs';
 import { ProviderFitnessContentCatalog } from '#adapters/fitness/ProviderFitnessContentCatalog.mjs';
 import fs from 'node:fs';
@@ -258,6 +259,63 @@ const contracts = [
       });
       expect(['budget', 'health', 'archive-rotation', 'media-memory-validator']
         .every((id) => executor.canHandle(id))).toBe(true);
+    },
+  },
+  {
+    // The seam that made a completed language day produce nothing for months.
+    // `SentenceLadderService` takes a School realtime GATEWAY; composition
+    // handed it a bare `eventBus`, JavaScript dropped the unknown option, and
+    // the day-complete fact was never published — so `CloseLanguageDay`, wired
+    // correctly at the other end, never heard a thing. The unit suite could
+    // not catch it: it passes `realtime:` itself and therefore tests a wiring
+    // that production never used.
+    id: 'school.language-day-complete-reaches-the-bus',
+    verify() {
+      const corpus = {
+        id: 'contract-korean',
+        label: 'Contract Korean',
+        languages: { source: 'EN', target: 'KR' },
+        audio_base: 'apps/school/language/contract-korean',
+        sentences: [
+          { seq: 1, text: { EN: 'One.', KR: '하나.' } },
+          { seq: 2, text: { EN: 'Two.', KR: '둘.' } },
+        ],
+      };
+      const events = [];
+      let progress = null;
+      const datastore = {
+        listCorpusIds: () => [corpus.id],
+        readCorpus: (id) => (id === corpus.id ? corpus : null),
+        readProgress: () => progress,
+        writeProgress: (_u, _c, next) => { progress = next; return next; },
+        appendEvent: (_u, _c, event) => { events.push(event); return event; },
+        readAllEvents: () => events,
+        resolveAudioPath: (c, seq, lang) => `/media/${c}/${seq}-${lang}.mp3`,
+      };
+      // The external edge, and the only fake that matters here.
+      const eventBus = { publish: vi.fn(), subscribe: vi.fn() };
+
+      const service = createLanguageStudyService({
+        datastore,
+        readProgramEnrollment: () => ({
+          programId: 'sentence-ladder', corpusId: corpus.id, lessonSize: 1, rungs: ['repetition'],
+        }),
+        eventBus,
+        timezone: 'UTC',
+        logger: logger(),
+      });
+
+      const capabilities = { microphone: true, textInput: ['EN', 'KR'] };
+      const args = { userId: 'test-learner', corpusId: corpus.id, capabilities };
+      for (let guard = 0; guard < 50; guard += 1) {
+        const next = service.getDay(args).queue.find((entry) => !entry.done);
+        if (!next) break;
+        service.logAttempt({ ...args, seq: next.seq, rung: next.rung, given: 'x' });
+      }
+
+      expect(eventBus.publish).toHaveBeenCalledWith('school.language.day-complete', expect.objectContaining({
+        learnerId: 'test-learner', corpusId: corpus.id, programId: 'sentence-ladder',
+      }));
     },
   },
   {

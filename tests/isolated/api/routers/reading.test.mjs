@@ -546,3 +546,121 @@ describe('the streak wall marks the household s named days off', () => {
     expect(res.body.streak.some((d) => d.state === 'exempt')).toBe(false);
   });
 });
+
+/**
+ * `reason` USED TO BE FREE TEXT, and that was harmless while it was only log
+ * and broadcast copy. It stopped being harmless the moment the interceptor
+ * began BRANCHING on it: `timeout` is the one reason a closed session may be
+ * reopened by the next book card, and the idle sweep is the only thing
+ * entitled to say it. A `POST /session/end {"reason":"timeout"}` from anything
+ * that can reach this door would otherwise mint a record indistinguishable
+ * from a real sweep teardown and hand the next tap somebody else's session.
+ *
+ * Driven against a RECORDING service rather than the composed one, because the
+ * question here is only what the router lets through. That narrowness has a
+ * cost, paid in the field: `ReadingApiService` had no `end` method at all and
+ * this suite stayed green anyway. The composed suite at the bottom of the file
+ * is the one that would have caught it.
+ */
+describe('POST /session/end — the reason a session closed is not the caller\'s to invent', () => {
+  function endRouter() {
+    const ended = [];
+    const app = express();
+    app.use(express.json());
+    app.use('/api/v1/school/reading', createReadingRouter({
+      readingService: { end: async (location, { reason } = {}) => { ended.push({ location, reason }); return { location }; } },
+    }));
+    return { app, ended };
+  }
+
+  it('ends the day when the panel says so', async () => {
+    const { app, ended } = endRouter();
+    const res = await request(app).post('/api/v1/school/reading/session/end').send({ location: 'livingroom', reason: 'day-done' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true, location: 'livingroom', reason: 'day-done' });
+    expect(ended).toEqual([{ location: 'livingroom', reason: 'day-done' }]);
+  });
+
+  it('defaults to day-done when the body names no reason at all', async () => {
+    const { app, ended } = endRouter();
+    await request(app).post('/api/v1/school/reading/session/end').send({ location: 'livingroom' });
+    expect(ended).toEqual([{ location: 'livingroom', reason: 'day-done' }]);
+  });
+
+  it('REFUSES `timeout` — that word belongs to the idle sweep, and it reopens sessions', async () => {
+    const { app, ended } = endRouter();
+    const res = await request(app).post('/api/v1/school/reading/session/end').send({ location: 'livingroom', reason: 'timeout' });
+    expect(res.status).toBe(400);
+    // And it refuses BEFORE closing anything: a rejected reason is a rejected
+    // request, not a teardown filed under the wrong word.
+    expect(ended).toEqual([]);
+  });
+
+  it('refuses any other invented reason too', async () => {
+    const { app, ended } = endRouter();
+    const res = await request(app).post('/api/v1/school/reading/session/end').send({ location: 'livingroom', reason: 'whatever' });
+    expect(res.status).toBe(400);
+    expect(ended).toEqual([]);
+  });
+});
+
+/**
+ * THE SAME DOOR, DRIVEN THROUGH THE REAL SERVICE.
+ *
+ * The suite above answers "what does the router let through" against a
+ * recording stub — the right unit for that question, and exactly why a
+ * `ReadingApiService` with NO `end` method sailed past it for the whole life of
+ * the route. Every wind-down POST in the field threw `readingService.end is not
+ * a function` and 500'd, the screen logged `wind-down-end-failed`, and the room
+ * died by the two-minute idle timeout the route was added to remove.
+ *
+ * So this suite composes the production `ReadingApiService` over a real
+ * `ReadingSessionService` and asserts the CONSEQUENCE of the call, not just its
+ * shape: the session is gone, and the reader's declared end policy ran — the
+ * `#onTimeout` hook that turns the living-room TV off in the field.
+ */
+describe('POST /session/end — composed against the real ReadingApiService', () => {
+  it('ends the live session and applies the reader\'s end policy', async () => {
+    const toreDown = [];
+    const sessions = new ReadingSessionService({
+      logger: silent,
+      onTimeout: async (gone) => { toreDown.push({ location: gone.location, sessionId: gone.sessionId }); },
+    });
+    const { app } = build({ sessions });
+    const opened = sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+
+    const res = await request(app).post('/api/v1/school/reading/session/end')
+      .send({ location: 'livingroom', reason: 'day-done' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true, location: 'livingroom', reason: 'day-done' });
+    // The session is actually GONE — not merely reported closed.
+    expect(sessions.current('livingroom')).toBeNull();
+    // And the wind-down reached the policy that turns the TV off. Without this
+    // the route would be a 200 that left the room lit.
+    expect(toreDown).toEqual([{ location: 'livingroom', sessionId: opened.sessionId }]);
+  });
+
+  it('files the teardown as `day-done`, which is what keeps a finished day finished', async () => {
+    const sessions = new ReadingSessionService({ logger: silent });
+    const { app } = build({ sessions });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+
+    await request(app).post('/api/v1/school/reading/session/end').send({ location: 'livingroom' });
+
+    // `ReadingSessionInterceptor` only reopens a session closed `timeout`. That
+    // guard has been dead code for as long as `end()` was missing, because no
+    // `day-done` close was ever recorded.
+    expect(sessions.recentlyClosed('livingroom')).toMatchObject({ reason: 'day-done' });
+  });
+
+  it('answers ok:false when no session was open at that reader', async () => {
+    const sessions = new ReadingSessionService({ logger: silent });
+    const { app } = build({ sessions });
+
+    const res = await request(app).post('/api/v1/school/reading/session/end').send({ location: 'livingroom' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: false, location: 'livingroom', reason: 'day-done' });
+  });
+});

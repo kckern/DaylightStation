@@ -118,8 +118,9 @@ export class SurfaceProgramLauncher {
   }
 
   /**
-   * @param {{userId: string}} args
-   * @returns {Promise<{doneToday: boolean, progressLabel: null, score: null}>}
+   * @param {{userId: string, day?: string|null}} args
+   * @returns {Promise<{doneToday: boolean, progressLabel: null, score: null,
+   *   servedWork: Array<{unitId: string, title: string}>}>}
    */
   /** Dispatches are a dated ledger; any day's shards can be re-read. */
   get replayable() { return true; }
@@ -144,7 +145,7 @@ export class SurfaceProgramLauncher {
       this.#logger.warn?.('school.surface-program.status-failed', {
         programId: this.#id, error: err?.message ?? String(err),
       });
-      return { doneToday: false, progressLabel: null, score: null };
+      return { doneToday: false, progressLabel: null, score: null, servedWork: [] };
     }
 
     const doneToday = rows.some((row) => row
@@ -152,7 +153,22 @@ export class SurfaceProgramLauncher {
       && row.learnerId === userId
       && isSameStudyDay(Date.parse(row.at), nowMs, { timezone: this.#timezone, boundaryHour: 4 }));
 
-    return { doneToday, progressLabel: null, score: null };
+    return {
+      doneToday, progressLabel: null, score: null,
+      // WHAT THE BOARD DRAWS ONCE THE OFFER IS GONE. A served surface program
+      // leaves the agenda's offer track (`next` goes null) and never had a work
+      // session to fall back on — `BuildAgenda` opens none for a program entry
+      // — so without this row the disc vanishes on the day the child earned it,
+      // exactly as the Sentence Ladder's did. `StoryTimeProgramLauncher` set
+      // the precedent; `doneToday` here is a per-study-day judgement, so the
+      // identity is the program's own day, and the title is whatever
+      // `school.yml` authored as `label:`. Note that `#label` DEFAULTS TO THE
+      // ID (constructor above), so a `programs:` entry with no label prints a
+      // raw program id on a child's receipt — author the label.
+      //
+      // The agenda stamps `assignmentUnitId`; a launcher never guesses one.
+      servedWork: doneToday ? [{ unitId: `${this.#id}:daily`, title: this.#label }] : [],
+    };
   }
 
   #utcDay(ms) { return new Date(ms).toISOString().slice(0, 10); }

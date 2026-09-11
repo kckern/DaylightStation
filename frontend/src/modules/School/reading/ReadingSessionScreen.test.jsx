@@ -7,7 +7,7 @@
  * mocked the hook would prove the markup and nothing about the machine.
  */
 import { render, screen, act, waitFor, within } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 
 const h = vi.hoisted(() => ({ handler: null, overlay: { shown: [], dismissed: 0 }, cues: [] }));
 
@@ -35,7 +35,7 @@ vi.mock('../../../lib/logging/Logger.js', () => ({
   default: () => ({ child: () => ({ info() {}, debug() {}, warn() {}, error() {} }) }),
 }));
 
-import { ReadingSessionScreen, Ceremony, clockTime } from './ReadingSessionScreen.jsx';
+import { ReadingSessionScreen, Ceremony, clockTime, recentDayLabel } from './ReadingSessionScreen.jsx';
 
 const SUMMARY = {
   learnerId: 'user_5', displayName: 'User_5', enrolled: true, error: false,
@@ -84,19 +84,18 @@ describe('ReadingSessionScreen', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('open: the child sees themselves, the question, the count and recent history', async () => {
+  it('open: the child sees themselves, the question and recent history', async () => {
     render(<ReadingSessionScreen />);
     await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
 
     expect(screen.getByTestId('reading-session')).toHaveAttribute('data-view', 'open');
     expect(screen.getByText('What do you want to read today?')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText('User_5')).toBeInTheDocument());
-    // The obligation is DRAWN now, not written: one pip per story owed, filled
-    // as each is finished. The sentence survives as the accessible name.
-    const pips = screen.getByTestId('reading-count');
-    expect(pips).toHaveAttribute('aria-label', '1 of 2 stories');
-    expect(pips.querySelectorAll('.reading-pip')).toHaveLength(2);
-    expect(pips.querySelectorAll('.reading-pip--done')).toHaveLength(1);
+    // The obligation is the SLOTS now — the empty places on today's shelf.
+    // The pips said the same thing in a second notation a few hundred pixels
+    // away, and on a one-story day a single hollow ring reads as a spinner.
+    // They survive in the rail and in the ceremony, where nothing else counts.
+    expect(screen.queryByTestId('reading-count')).toBeNull();
     // No "Recent" heading any more: the day headings say what this is, and a
     // label above them was a third word for the same fact. It survives as the
     // section's accessible name.
@@ -105,10 +104,87 @@ describe('ReadingSessionScreen', () => {
     expect(screen.getByTestId('reading-recent')).toHaveTextContent('Today');
     expect(screen.getByTestId('reading-recent')).toHaveTextContent('Corduroy');
     expect(screen.getByTestId('reading-recent')).toHaveTextContent('Yesterday');
-    // The day is the PARTITION: one group per day, each with its own heading.
-    expect(screen.getAllByTestId('reading-recent-day')).toHaveLength(2);
+    // The day is the PARTITION: one group per day, each with its own heading —
+    // and TODAY ALWAYS LEADS, drawn from the obligation rather than from the
+    // history, so it holds its place whether or not a book has landed in it.
+    // Two here, because today has already been read in and is not duplicated
+    // behind itself: today's column, then yesterday's.
+    const openDays = screen.getAllByTestId('reading-recent-day');
+    expect(openDays).toHaveLength(2);
+    expect(openDays[0]).toHaveTextContent('Today');
+    expect(openDays[1]).toHaveTextContent('Yesterday');
     // Repeats are a badge on the cover they happened on, not a count in a caption.
     expect(screen.getByTestId('reading-recent-times')).toHaveTextContent('2');
+  });
+
+  it('open: today leads the shelf with an empty, waiting slot for each story owed', async () => {
+    vi.stubGlobal('fetch', stubFetch({
+      summary: { ...SUMMARY, count: 0, target: 2, studyDay: '2026-09-03', recentDays: SUMMARY.recentDays },
+    }));
+    render(<ReadingSessionScreen />);
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+
+    const shelf = await screen.findByTestId('reading-recent');
+    const days = within(shelf).getAllByTestId('reading-recent-day');
+    // Today leads, even with nothing read yet.
+    expect(days[0]).toHaveTextContent('Today');
+    // Two owed, none read: two empty slots.
+    expect(within(days[0]).getAllByTestId('reading-slot')).toHaveLength(2);
+    // Exactly ONE of them is the live one — the next book goes there.
+    expect(within(days[0]).getAllByTestId('reading-slot')
+      .filter((n) => n.className.includes('--live'))).toHaveLength(1);
+  });
+
+  it('open: a story already read today fills a slot and leaves the rest waiting', async () => {
+    vi.stubGlobal('fetch', stubFetch({ summary: { ...SUMMARY, count: 1, target: 2 } }));
+    render(<ReadingSessionScreen />);
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+
+    const today = (await screen.findAllByTestId('reading-recent-day'))[0];
+    expect(within(today).getAllByTestId('reading-recent-card')).toHaveLength(1);
+    expect(within(today).getAllByTestId('reading-slot')).toHaveLength(1);
+  });
+
+  it('open: a finished day shows today with no slot at all', async () => {
+    vi.stubGlobal('fetch', stubFetch({ summary: { ...SUMMARY, count: 2, target: 2, doneToday: true } }));
+    render(<ReadingSessionScreen />);
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+    const today = (await screen.findAllByTestId('reading-recent-day'))[0];
+    // Today still leads — the column is the day's record once the slots are
+    // gone, so nothing behind it may take the front of the shelf.
+    expect(today).toHaveTextContent('Today');
+    expect(within(today).getAllByTestId('reading-recent-card')).toHaveLength(1);
+    expect(within(today).queryByTestId('reading-slot')).toBeNull();
+  });
+
+  it('open: the waiting slot carries the idle window, so the clock is visible', async () => {
+    render(<ReadingSessionScreen />);
+    await deliver({
+      event: 'session-open', learnerId: 'user_5', location: 'livingroom', idleTimeoutMs: 120_000,
+    });
+    const slot = (await screen.findAllByTestId('reading-slot'))[0];
+    expect(slot.style.getPropertyValue('--slot-idle-ms')).toBe('120000');
+    expect(slot.className).toContain('reading-session__slot--timed');
+  });
+
+  it('open: a session that never said how long it gives draws no clock at all', async () => {
+    // A screen that cannot know the window must not draw a confident one. The
+    // backend publishes `idleTimeoutMs` with every `session-open`; an old
+    // server, or a payload that lost it, gets the breathing slot and nothing
+    // that claims to be counting.
+    render(<ReadingSessionScreen />);
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+    const slot = (await screen.findAllByTestId('reading-slot'))[0];
+    expect(slot.style.getPropertyValue('--slot-idle-ms')).toBe('');
+    expect(slot.className).not.toContain('reading-session__slot--timed');
+    // It is still the live slot — the light just does not pretend to a deadline.
+    expect(slot.className).toContain('reading-session__slot--live');
+  });
+
+  it('open: no streak wall — the waiting screen has one job', async () => {
+    render(<ReadingSessionScreen />);
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+    expect(screen.queryByTestId('reading-streak')).toBeNull();
   });
 
   it('the close is a receipt: today\'s covers, the clock time each finished, and the wall', () => {
@@ -139,10 +215,12 @@ describe('ReadingSessionScreen', () => {
     expect(clockTime('not a date')).toBeNull();
   });
 
-  it('open: the streak wall shows a month of days, coloured by whether the goal was met', async () => {
-    render(<ReadingSessionScreen />);
-    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
-    const wall = await screen.findByTestId('reading-streak');
+  // Moved off the open view with the wall itself: the close is where a month
+  // of days is now wired up, and this is the test that says the summary's
+  // streak and study day still reach it.
+  it('the close: the streak wall shows a month of days, coloured by whether the goal was met', () => {
+    render(<Ceremony tier="day" name="User_5" learner={{ id: 'user_5' }} pick={null} summary={SUMMARY} />);
+    const wall = screen.getByTestId('reading-streak');
     const cells = wall.querySelectorAll('.reading-streak__day');
     expect(cells).toHaveLength(3);
     expect(cells[0]).toHaveAttribute('data-state', 'none');
@@ -365,5 +443,48 @@ describe('ReadingSessionScreen', () => {
       await act(async () => { await vi.advanceTimersByTimeAsync(1200); });
       expect(h.overlay.shown[0].props.play).toMatchObject({ contentId: 'plex:999' });
     });
+  });
+});
+
+describe('recentDayLabel', () => {
+  /* THE AMBIENT ZONE IS THE TEST, so it is pinned rather than inherited.
+     A study day is a calendar date, not an instant. The bug parsed it at UTC
+     midnight and then formatted the weekday in LOCAL time, which names the day
+     BEFORE anywhere behind UTC — and names it correctly at UTC itself. So the
+     assertions below can only fail in a zone behind UTC: run the buggy version
+     under TZ=UTC and it passes, and this file becomes a description of the fix
+     instead of a guard on it, handing every UTC container (CI, Docker, the
+     homeserver) a green light from a test incapable of failing.
+
+     Pinned by substituting the default zone rather than by setting TZ, because
+     setting it cannot work here: the suite runs `pool: 'threads'`, and a
+     worker_thread's `process.env` is a plain snapshot object with none of the
+     magic setter Node uses to notify V8 of a zone change. `process.env.TZ` and
+     `vi.stubEnv('TZ', …)` both change the string while `resolvedOptions()`
+     keeps reporting the zone the worker booted in. Only the zone at spawn
+     counts, and that is not per-file.
+
+     So: every formatter that does not name its OWN zone gets the household's,
+     which is what a kiosk in the living room actually sees. A formatter that
+     names one — the fix — overrides it. That makes these assertions capable of
+     failing in any ambient zone, UTC included. */
+  const RealDateTimeFormat = Intl.DateTimeFormat;
+  beforeAll(() => {
+    Intl.DateTimeFormat = function DateTimeFormat(locales, options) {
+      return new RealDateTimeFormat(locales, { timeZone: 'America/Los_Angeles', ...options });
+    };
+  });
+  afterAll(() => { Intl.DateTimeFormat = RealDateTimeFormat; });
+
+  it('names the weekday of the study day itself, not the day before it', () => {
+    // 2026-09-09 is a Wednesday. Parsed at UTC midnight and formatted in any
+    // timezone west of Greenwich, the naive version said "Tue".
+    expect(recentDayLabel('2026-09-09', '2026-09-11')).toBe('Wed');
+    expect(recentDayLabel('2026-09-08', '2026-09-11')).toBe('Tue');
+  });
+
+  it('still prefers the words for the two days that have them', () => {
+    expect(recentDayLabel('2026-09-11', '2026-09-11')).toBe('Today');
+    expect(recentDayLabel('2026-09-10', '2026-09-11')).toBe('Yesterday');
   });
 });

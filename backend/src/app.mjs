@@ -364,7 +364,7 @@ import { SchoolService } from './3_applications/school/SchoolService.mjs';
 import { YamlSchoolDatastore } from './1_adapters/persistence/yaml/YamlSchoolDatastore.mjs';
 import { effectiveAttempts } from '#domains/school/attempt.mjs';
 import { createSentenceLadderRouter } from './4_api/v1/routers/sentenceLadder.mjs';
-import { SentenceLadderService } from './3_applications/school/SentenceLadderService.mjs';
+import { createLanguageStudyService } from './5_composition/modules/schoolLanguage.mjs';
 import { YamlLanguageStudyDatastore } from './1_adapters/persistence/yaml/YamlLanguageStudyDatastore.mjs';
 import { YamlAssignmentStore } from './1_adapters/persistence/yaml/YamlAssignmentStore.mjs';
 import { HmacSchoolStudyGrantIssuer } from './1_adapters/school/actions/HmacSchoolStudyGrantIssuer.mjs';
@@ -3358,9 +3358,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     }),
     idFactory: crypto.randomUUID,
   });
-  const languageStudyService = new SentenceLadderService({
+  const languageStudyService = createLanguageStudyService({
     datastore: new YamlLanguageStudyDatastore({ configService }),
     readProgramEnrollment: (learnerId, corpusId) => languageAssignments.readProgramEnrollment(learnerId, corpusId),
+    // Through the factory, so the bus is adapted to School's realtime port
+    // rather than handed over raw under an option name the service does not
+    // have. `new SentenceLadderService({ eventBus })` looked right here and
+    // published nothing for months.
     eventBus,
     timezone: configService.getTimezone?.() || null,
     readGate: () => {
@@ -4822,6 +4826,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       sessions: readingSessions,
       storyTime: schoolLifecycle.storyTimeLauncher,
       realtime: readingRealtime,
+      // ONLY the reopen path uses this, and it is the same seam the
+      // learner-card handler wakes with — one room, one way to wake a screen a
+      // mounted widget is about to be told something on. A reopened session is
+      // the one claim that can be racing this reader's own `end: tv-off`
+      // teardown, and a claimed book never reaches `wake-and-load`, so without
+      // it the launch card comes back on a TV the sweep just powered off.
+      wakeScreen: wakeScreenForBroadcast,
       logger: readingLogger,
     });
 

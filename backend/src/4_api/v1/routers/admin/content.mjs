@@ -22,6 +22,14 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
  * - PUT    /lists/:type/:name/items/swap      - Atomically swap content between two items
  * - PUT    /lists/:type/:name/items/:index   - Update item at index
  * - DELETE /lists/:type/:name/items/:index   - Remove item at index
+ *
+ * Error handling: ListManagementService throws transport-neutral application
+ * errors (#apps/common/errors/SemanticErrors.mjs — ValidationError,
+ * NotFoundError, ConflictError). Handlers let those propagate; the app-level
+ * `errorHandlerMiddleware` maps them to 400/404/409 by `err.name` and logs
+ * them. Do NOT reintroduce per-handler catches here: those errors carry no
+ * `httpStatus`, so any `if (error.httpStatus) throw error` guard is dead and
+ * silently downgrades a user error to a hand-rolled 500.
  */
 import express from 'express';
 
@@ -78,14 +86,8 @@ export function createAdminContentRouter(config) {
     const { type } = req.params;
     const householdId = householdIdFrom(req);
 
-    try {
-      const result = listManagementService.listByType(type, householdId);
-      res.json(result);
-    } catch (error) {
-      if (error.httpStatus) throw error;
-      logger.error?.('admin.lists.type.list.failed', { type, error: error.message, household: householdId });
-      sendInternalError(res, { error: `Failed to list ${type}` });
-    }
+    const result = listManagementService.listByType(type, householdId);
+    res.json(result);
   });
 
   /**
@@ -136,14 +138,8 @@ export function createAdminContentRouter(config) {
     const sectionIndex = parseInt(req.query.section, 10) || 0;
     const { items } = req.body || {};
 
-    try {
-      const result = listManagementService.replaceContents(type, listName, householdId, items, sectionIndex);
-      res.json(result);
-    } catch (error) {
-      if (error.httpStatus) throw error;
-      logger.error?.('admin.lists.reorder.failed', { type, list: listName, error: error.message });
-      sendInternalError(res, { error: 'Failed to update list' });
-    }
+    const result = listManagementService.replaceContents(type, listName, householdId, items, sectionIndex);
+    res.json(result);
   });
 
   /**
@@ -153,14 +149,8 @@ export function createAdminContentRouter(config) {
     const { type, name: listName } = req.params;
     const householdId = householdIdFrom(req);
 
-    try {
-      const result = listManagementService.deleteList(type, listName, householdId);
-      res.json(result);
-    } catch (error) {
-      if (error.httpStatus) throw error;
-      logger.error?.('admin.lists.delete.failed', { type, list: listName, error: error.message });
-      sendInternalError(res, { error: 'Failed to delete list' });
-    }
+    const result = listManagementService.deleteList(type, listName, householdId);
+    res.json(result);
   });
 
   // =============================================================================
@@ -176,14 +166,8 @@ export function createAdminContentRouter(config) {
     const sectionIndex = parseInt(req.query.section, 10) || 0;
     const itemData = req.body || {};
 
-    try {
-      const result = listManagementService.addItem(type, listName, householdId, itemData, sectionIndex);
-      res.status(201).json(result);
-    } catch (error) {
-      if (error.httpStatus) throw error;
-      logger.error?.('admin.lists.item.add.failed', { type, list: listName, label: itemData.label, error: error.message });
-      sendInternalError(res, { error: 'Failed to add item' });
-    }
+    const result = listManagementService.addItem(type, listName, householdId, itemData, sectionIndex);
+    res.status(201).json(result);
   });
 
   /**
@@ -208,14 +192,8 @@ export function createAdminContentRouter(config) {
     const householdId = householdIdFrom(req);
     const { a, b } = req.body || {};
 
-    try {
-      const result = listManagementService.swapItems(type, listName, householdId, a, b);
-      res.json(result);
-    } catch (error) {
-      if (error.httpStatus) throw error;
-      logger.error?.('admin.lists.items.swap.failed', { type, list: listName, a, b, error: error.message });
-      sendInternalError(res, { error: 'Failed to swap items' });
-    }
+    const result = listManagementService.swapItems(type, listName, householdId, a, b);
+    res.json(result);
   });
 
   /**
@@ -229,14 +207,8 @@ export function createAdminContentRouter(config) {
 
     const index = parseInt(indexStr, 10);
 
-    try {
-      const result = listManagementService.updateItem(type, listName, householdId, index, updates, sectionIndex);
-      res.json(result);
-    } catch (error) {
-      if (error.httpStatus) throw error;
-      logger.error?.('admin.lists.item.update.failed', { type, list: listName, index, error: error.message });
-      sendInternalError(res, { error: 'Failed to update item' });
-    }
+    const result = listManagementService.updateItem(type, listName, householdId, index, updates, sectionIndex);
+    res.json(result);
   });
 
   /**
@@ -249,14 +221,8 @@ export function createAdminContentRouter(config) {
 
     const index = parseInt(indexStr, 10);
 
-    try {
-      const result = listManagementService.deleteItem(type, listName, householdId, index, sectionIndex);
-      res.json(result);
-    } catch (error) {
-      if (error.httpStatus) throw error;
-      logger.error?.('admin.lists.item.delete.failed', { type, list: listName, index, error: error.message });
-      sendInternalError(res, { error: 'Failed to delete item' });
-    }
+    const result = listManagementService.deleteItem(type, listName, householdId, index, sectionIndex);
+    res.json(result);
   });
 
   // =============================================================================

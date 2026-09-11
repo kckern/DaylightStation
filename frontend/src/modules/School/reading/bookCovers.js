@@ -17,10 +17,21 @@
  *     titles immediately and the covers fill in as they land, so a slow lookup
  *     costs a placeholder, never a blank screen.
  *
+ * SIZED, not raw. `/api/v1/info` hands back the original proxied poster —
+ * measured on this library anywhere from 640x640 to 1336x1920 — for a shelf box
+ * that tops out at 205 CSS px on a panel running at devicePixelRatio 2. That is
+ * a 3-9x browser bilinear downscale that varies per poster, which is the whole
+ * reason the shelf looked blocky and inconsistent. `sizedPlexImage` hands Plex
+ * the box instead and its resampler does the work once, server-side and cached.
+ * The box is square because these are square audiobook sleeves in a square card
+ * — the point is the RESAMPLE, not the crop; nothing is cropped either way.
+ *
  * A failed lookup caches `null` — the shelf shows its spine placeholder and
  * does not ask again. A missing cover is not an error worth a retry storm on a
  * screen a child is standing in front of.
  */
+
+import { sizedPlexImage, ART_BOX } from '../plexImage.js';
 
 /** contentId -> cover url, or null for "asked, and there isn't one". */
 const cache = new Map();
@@ -40,7 +51,8 @@ async function lookup(contentId, fetchImpl) {
   try {
     const r = await fetchImpl(`/api/v1/info/${encodeURIComponent(contentId)}`, { credentials: 'same-origin' });
     const data = r?.ok ? await r.json() : null;
-    return data?.image ?? data?.thumbnail ?? data?.imageUrl ?? null;
+    const raw = data?.image ?? data?.thumbnail ?? data?.imageUrl ?? null;
+    return sizedPlexImage(raw, ...ART_BOX.readingShelf);
   } catch {
     return null;
   }

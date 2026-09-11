@@ -3,6 +3,7 @@
 
 import { createDeviceRouter } from '#api/v1/routers/device.mjs';
 import { getScreenOverrideService } from '#composition/modules/screenOverride.mjs';
+import { getVolumeBoostService } from '#composition/modules/volumeBoost.mjs';
 import { contentRequiresCamera } from '#apps/devices/services/contentRequiresCamera.mjs';
 import { DispatchIdempotencyService } from '#apps/devices/services/DispatchIdempotencyService.mjs';
 import { DeviceFleetControlService } from '#apps/devices/services/DeviceFleetControlService.mjs';
@@ -50,6 +51,8 @@ export function createDeviceApiRouter(config) {
       devices,
       configuration,
       callControl,
+      volumeBoosts: getVolumeBoostService(),
+      scheduler: new NodeApplicationScheduler(),
       logger,
     }),
     presenceService: new DevicePresenceService({

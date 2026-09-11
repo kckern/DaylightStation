@@ -18,6 +18,26 @@ import { Hangul } from './hangul.js';
 const TEXT_INPUT_TYPES = new Set(['text', 'search', '']);
 
 /**
+ * Key codes that get PRESSED during a syllable without producing one — not keys
+ * that produce no jamo, which would be most of the keyboard. They must pass
+ * through without ending the session.
+ *
+ * Treating them as ordinary non-jamo keys cost us every syllable needing Shift
+ * after an initial had landed — ㅖ, ㅒ, and ㄲ/ㅆ as batchim — so 예 came out
+ * ㅇㅖ. None of these keys moves the caret or rewrites text, so `#continuous()`
+ * still holds across them and the session stays anchored where it was.
+ *
+ * CapsLock earns its place by position, not by meaning: it sits one row above
+ * left Shift, we are asking a child to hunt for Shift repeatedly mid-word on a
+ * Bluetooth keyboard, and `Hangul.jamoFor` reads only `event.shiftKey` — so a
+ * stray press changes nothing a child can see except that the syllable breaks.
+ *
+ * Matched on `code`, not `key`, because `key` depends on whatever layout
+ * Android believes is attached.
+ */
+const PASSTHROUGH_CODES = new Set(['ShiftLeft', 'ShiftRight', 'CapsLock']);
+
+/**
  * Whether this element takes free text we may compose into. Deliberately
  * narrow: a number, date, tel, or password field is never composable, and
  * neither is anything that opted out.
@@ -95,6 +115,12 @@ export class FieldComposer {
     if (event.ctrlKey || event.altKey || event.metaKey) { this.end(); return false; }
     if (!isComposableField(el)) { this.end(); return false; }
 
+    // A modifier's own keydown is not a key the child typed — it is the keyboard
+    // announcing itself mid-syllable, and ending the session on it breaks the
+    // syllable in flight. Below the branch above on purpose, so a real shortcut
+    // still wins. See PASSTHROUGH_CODES for what belongs there and why.
+    if (PASSTHROUGH_CODES.has(event.code)) return false;
+
     if (event.key === 'Backspace') return this.#backspace(el);
 
     const jamo = Hangul.jamoFor(event.code, event.shiftKey);
@@ -105,6 +131,36 @@ export class FieldComposer {
     this.#hangul.jamo(jamo);
     this.#apply(el, before, this.#hangul.text);
     return true;
+  }
+
+  /**
+   * Split what the field holds into text that has settled and the one syllable
+   * still in flight.
+   *
+   * The field's own `value` cannot answer this, and in 두벌식 the difference
+   * decides what a reader may trust. A consonant is genuinely ambiguous until
+   * its vowel arrives: typing 오늘, the ㄴ lands as 오's batchim (the field
+   * reads 온) and only migrates out to start 늘 on the next key. Anything
+   * matching `value` against a target therefore loses the glyph the child is
+   * in the middle of typing, on the first keystroke of every syllable — which
+   * is exactly the glyph they most need on screen.
+   *
+   * `#hangul.committed` is only what THIS session settled; whatever was in the
+   * field before the anchor — Latin, a previous run, text the app put there —
+   * is settled too, and is included. With no live session everything is
+   * settled: Latin typing and fields this composer is not driving are done
+   * being ambiguous.
+   *
+   * `committed + pending` is the field up to the caret. Composing before
+   * existing text, the tail after the caret belongs to neither half; a caller
+   * that needs the whole field reads `value`.
+   */
+  compositionState(el) {
+    if (!this.#continuous(el)) return { committed: el?.value ?? '', pending: '' };
+    return {
+      committed: el.value.slice(0, this.#anchor) + this.#hangul.committed,
+      pending: this.#hangul.pending,
+    };
   }
 
   #backspace(el) {
