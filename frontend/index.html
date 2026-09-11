@@ -3,6 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <!--
+      THE .ICO IS DECLARED, AND IT CARRIES THE BUILD ID.
+
+      Nothing referenced it before, so every browser that cannot use an SVG
+      favicon — which is every Android WebView on the kiosks — fell back to an
+      IMPLICIT request for the bare `/favicon.ico`. That is a stable url, and a
+      stable url is the one thing NPM's asset cache can poison: it stores 502s,
+      so a deploy (container down ~45s) leaves a cached 502 under that key for
+      everyone. On 2026-09-11 it served one 1294 times.
+
+      Declaring it explicitly means the fallback goes to a versioned url that
+      is fresh every build, the way Vite's own hashed bundles already are. An
+      implicit request cannot be versioned; a declared one can.
+    -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=__BUILD_ID__" sizes="any" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=__BUILD_ID__" />
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#000000" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -264,8 +280,28 @@
     </script>
     <script type="module" src="/src/main.jsx"></script>
     <script>
+      // THE BUILD ID IS WHAT MAKES THIS REGISTRATION REACHABLE AT ALL.
+      //
+      // Registered bare, this asked for `/sw.js` — a stable url, and NPM's asset
+      // cache had a 502 stored under it since a deploy hours earlier. The
+      // registration failed on every page load on every device, so the shell
+      // cache this file implements had simply never run. `?v=<build>` is a new
+      // cache key every build, so a poisoned one is never asked for twice.
+      //
+      // The query does not affect SCOPE — that comes from the path — so this is
+      // still a root-scoped worker. It also fixes the other half of the problem
+      // it was hiding: a byte-identical sw.js does not trigger an update, and a
+      // versioned url does, so the worker actually rolls forward on a deploy.
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js', { scope: '/' });
+        navigator.serviceWorker.register('/sw.js?v=__BUILD_ID__', { scope: '/' })
+          // A worker that cannot register must never surface as a page error:
+          // the app works without it, and an unhandled rejection here is noise
+          // in the one place (boot) where noise costs the most.
+          .catch(function (error) {
+            if (window.DaylightLogger) {
+              window.DaylightLogger.warn('serviceworker.register-failed', { error: String(error) });
+            }
+          });
       }
     </script>
   </body>
