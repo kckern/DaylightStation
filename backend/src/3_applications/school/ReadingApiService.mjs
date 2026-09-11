@@ -129,14 +129,54 @@ export class ReadingApiService {
     const requestPickId = trimmed(body.pickId);
     const requestSessionId = trimmed(body.sessionId);
     if (requestSessionId && (!current || current.sessionId !== requestSessionId || !serverPick)) {
-      this.#logger.warn?.('school.reading.read-conflict', {
-        reason: 'session-or-pick-expired', location,
+      // THE SESSION IS A CHECK, NOT THE EVIDENCE.
+      //
+      // On 2026-09-11 a child finished a 9m40s story and got no credit for it.
+      // The session lives in a Map in this process and a DEPLOY landed four
+      // minutes into the book, so when the story ended the server had never
+      // heard of the session it was being told about and refused the read with
+      // a 409. From the sofa that is indistinguishable from the story not
+      // finishing: the audio ran to its last word and then no pip filled and no
+      // close screen came.
+      //
+      // But a read is attributable from the request itself. The client mints
+      // `pickId` when playback starts and sends it back at the end, the store
+      // is idempotent on it (`YamlReadingLogStore#append`), and the learner and
+      // the content are right there in the body. So when the session is gone
+      // and the request carries its own evidence, the child is credited and the
+      // reconstruction is logged loudly rather than the book being lost.
+      //
+      // A DIFFERENT pick genuinely in flight is still a conflict: that is a
+      // second story running in the room, not a forgotten session, and guessing
+      // between them would credit the wrong book.
+      const evidenceLearnerId = trimmed(body.learnerId);
+      const evidenceContentId = trimmed(body.contentId);
+      const conflictingPick = Boolean(serverPick?.pickId) && serverPick.pickId !== requestPickId;
+      const reconstructable = Boolean(evidenceLearnerId && evidenceContentId && requestPickId)
+        && !conflictingPick;
+
+      if (!reconstructable) {
+        this.#logger.warn?.('school.reading.read-conflict', {
+          reason: 'session-or-pick-expired', location,
+          requestSessionId, currentSessionId: current?.sessionId ?? null,
+          requestPickId, currentPickId: serverPick?.pickId ?? null,
+          requestLearnerId: evidenceLearnerId, currentLearnerId: current?.learnerId ?? null,
+          state: current?.state ?? null,
+          hasLearner: Boolean(evidenceLearnerId),
+          hasContent: Boolean(evidenceContentId),
+          hasPick: Boolean(requestPickId),
+          conflictingPick,
+        });
+        return { kind: 'session_expired' };
+      }
+
+      this.#logger.warn?.('school.reading.read-reconstructed', {
+        location, learnerId: evidenceLearnerId, contentId: evidenceContentId, pickId: requestPickId,
         requestSessionId, currentSessionId: current?.sessionId ?? null,
-        requestPickId, currentPickId: serverPick?.pickId ?? null,
-        requestLearnerId: trimmed(body.learnerId), currentLearnerId: current?.learnerId ?? null,
-        state: current?.state ?? null,
+        sessionPresent: Boolean(current),
+        reason: current ? 'session-replaced' : 'session-forgotten',
+        consequence: 'credited from the request; the read is not lost',
       });
-      return { kind: 'session_expired' };
     }
     if (serverPick?.pickId && serverPick.pickId !== requestPickId) {
       this.#logger.warn?.('school.reading.read-conflict', {

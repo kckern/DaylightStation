@@ -4784,8 +4784,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const { createReadingRouter } = await import('#api/v1/routers/reading.mjs');
     const { makeReadingTimeoutHandler } = await import('#composition/modules/learnerCardActions.mjs');
     const { YamlReadingSessionTimelineStore } = await import('#adapters/persistence/yaml/YamlReadingSessionTimelineStore.mjs');
+    const { YamlReadingSessionStore } = await import('#adapters/persistence/yaml/YamlReadingSessionStore.mjs');
     const { EventBusSchoolRealtimeAdapter } = await import('#adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs');
     const readingTimeline = new YamlReadingSessionTimelineStore({ configService, logger: readingLogger });
+    // The open sessions themselves, so a deploy does not erase the living room.
+    // See IReadingSessionStore: a redeploy four minutes into a 9m40s read-along
+    // left a child finishing his book into a server that had forgotten him.
+    const readingSessionStore = new YamlReadingSessionStore({ configService, logger: readingLogger });
     // One gateway for the whole reading ceremony. Passing the raw event bus
     // here stopped working when the application layer moved to the School
     // realtime port: JavaScript ignored the unknown `eventBus` option, leaving
@@ -4800,6 +4805,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // cold-wake broadcast strands the intent forever instead of replaying it.
       scheduler: new NodeAsyncScheduler(),
       observationStore: readingTimeline,
+      sessionStore: readingSessionStore,
       // D6 — the session owns teardown, and this is it. The location's own
       // `end: tv-off` is suppressed while a session is open (D8), so nothing
       // else will ever turn this TV off: an abandoned prompt would leave the
@@ -4809,6 +4815,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         locations: nfcLocationsForReachability, tv: homeAutomationAdapters.tvAdapter, logger: readingLogger,
       }),
     });
+    // Sessions come BACK before the first request is served: a card tapped
+    // during boot must not open a second session for a room that already has
+    // one.
+    await readingSessions.hydrate();
     readingSessions.start();
     server?.once?.('close', () => readingSessions.stop());
 
