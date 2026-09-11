@@ -45,52 +45,60 @@
     color-mix(in srgb, var(--pip-ink, #ffd479) 45%, transparent);
 }
 
-/* THE ONE IN FLIGHT. A ring that fills clockwise as the story runs, and pulses
-   whether or not the position is known — so the pip answers "which book is
-   happening" even before the media element has a duration to divide by.
-   `--pip-sweep` is set inline by the component; unset, the conic gradient is
-   fully transparent and only the pulse shows, which is the honest drawing of an
-   unknown position. A confident zero would be a lie.
+/* THE ONE IN FLIGHT — which book is happening, and nothing else.
 
-   THE PULSE IS THE ONE MOVING THING ON THIS SCREEN, and that is deliberate.
-   The status board next door refuses motion because it sits in peripheral
-   vision all day; this pip is on screen only while a story is actually playing,
-   and its whole job is to say which of the day's books is the one in progress.
-   It scales rather than changing brightness — a blinking dot in a dark room
-   reads as a fault. */
+   IT USED TO CARRY THE PLAYBACK POSITION TOO, as a conic sweep filling the ring
+   clockwise. One 1.4rem disc was doing two unrelated jobs: being a countable
+   thing (one of the day's books) and being a proportion (how far through this
+   recording). On a one-book day that left a single small circle carrying
+   everything, and the sweep inside it was too small to see from a sofa. The
+   proportion now lives on the ring around the child's portrait, which is four
+   times the size and says whose story it is at the same time; the pips went back
+   to counting, which is the one notation a four-year-old already has.
+
+   THE PULSE IS A GLOW, NOT A SIZE CHANGE. It used to breathe by `transform:
+   scale()`, which makes the disc jostle its neighbours — visible the moment
+   there are two or three books in the row, and worse the bigger the pips get.
+   A halo instead: the mark holds still and the light around it swells. It is
+   also never allowed to reach zero, because a dot that goes fully dark and
+   comes back is a blinking LED, and a blinking LED in a dark room reads as a
+   fault rather than as "this one".
+
+   Animated as the OPACITY of a pseudo-element carrying a fixed shadow, rather
+   than by animating `box-shadow` itself: this renders on a TV's browser, and an
+   animated box-shadow repaints the blur every frame where an opacity change is
+   handed to the compositor. */
 .reading-pip--live {
   position: relative;
   border-color: var(--pip-ink, #ffd479);
-  animation: reading-pip-pulse 2.4s ease-in-out infinite;
 
   &::after {
     content: '';
     position: absolute;
-    /* Inset by the ring's own border so the sweep sits INSIDE it rather than
-       covering it — the hollow ring must stay legible as "not yet done". */
-    inset: max(1.5px, calc(var(--pip-size, 3.4vh) * 0.15));
+    inset: -2px;
     border-radius: 50%;
-    background: conic-gradient(
-      from 0deg,
-      var(--pip-ink, #ffd479) 0deg,
-      var(--pip-ink, #ffd479) var(--pip-sweep, 0deg),
-      transparent var(--pip-sweep, 0deg)
-    );
+    box-shadow:
+      0 0 calc(var(--pip-size, 3.4vh) * 0.5) calc(var(--pip-size, 3.4vh) * 0.12) var(--pip-ink, #ffd479),
+      0 0 calc(var(--pip-size, 3.4vh) * 0.16) var(--pip-ink, #ffd479);
+    animation: reading-pip-glow 2.4s ease-in-out infinite;
+    pointer-events: none;
   }
 }
 
-@keyframes reading-pip-pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.18); }
+@keyframes reading-pip-glow {
+  /* Never 0: the floor is what keeps this a breath rather than a blink. */
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
 }
 
-/* Paused: the mark stays, the pulse stops. The sweep still says where we are.
-   A pip that vanished on pause took "which book is this" with it. */
-.reading-pip--held { animation: none; }
+/* Paused: the mark stays lit, the breathing stops. A pip that vanished on pause
+   took "which book is this" with it. Held at full, not at the floor — paused is
+   still the story in flight. */
+.reading-pip--held::after { animation: none; opacity: 1; }
 
-/* A wall panel that respects the setting shows the sweep and holds still. */
+/* A wall panel that respects the setting keeps the glow and holds it still. */
 @media (prefers-reduced-motion: reduce) {
-  .reading-pip--live { animation: none; }
+  .reading-pip--live::after { animation: none; opacity: 1; }
 }
 
 /* Read past the day's target — credit where a full row of pips would show none. */
