@@ -726,6 +726,17 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
             already the toggle. */}
         <span className="teacher-roster__disclosure" aria-hidden="true"><IconChevron open={open} /></span>
       </button>
+      {/* PRINT, beside the thing that only PREVIEWS. The icon below opens the
+          sheet on screen; this puts it on paper. Ordered BEFORE that icon
+          because grid auto-placement is order-sensitive — once the column-3
+          icon has taken row 1, a later column-2 item cannot backfill it and
+          drops to a row of its own under the card. It belongs on the dashboard row
+          because that is where a grown-up already is when a child cannot start
+          their day — a lost NFC card, most often — and the alternative was
+          drilling into that learner's Day panel to find the same control. */}
+      <span className="teacher-roster__agenda-print">
+        <AgendaDispatch learnerId={learnerId} learnerName={name} label="Print agenda" />
+      </span>
       {/* THE AGENDA BELONGS ON THE CARD, not behind the disclosure. It is
           the child's paper for the day — the thing a parent reaches for
           before deciding whether to open anything at all — and it used to
@@ -740,14 +751,6 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
         }}>
         <IconAgenda />
       </a>
-      {/* PRINT, next to the thing that only PREVIEWS. The icon above opens the
-          sheet on screen; this puts it on paper. It belongs on the dashboard row
-          because that is where a grown-up already is when a child cannot start
-          their day — a lost NFC card, most often — and the alternative was
-          drilling into that learner's Day panel to find the same control. */}
-      <span className="teacher-roster__agenda-print">
-        <AgendaDispatch learnerId={learnerId} learnerName={name} label="Print agenda" />
-      </span>
 
       {/* A learner with nothing recorded is not a dead end: the plan for
           the day is the next thing a teacher wants to see. */}
