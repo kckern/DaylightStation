@@ -250,10 +250,28 @@ export class OpenAIAdapter extends IAIGateway {
           this.metrics.errors++;
 
           if (response.status === 429) {
+            // A 429 is two different things. A real rate limit is transient and
+            // worth the retry-after wait. An exhausted balance is also a 429, and
+            // the 2026-09-10 outage spent two minutes per call waiting on
+            // "Rate limit exceeded" while the body said "You have no credits
+            // remaining". Keep the provider's words, and only retry the kind
+            // that can succeed.
+            const apiError = errorData.error || null;
+            const exhausted = apiError?.type === 'insufficient_quota'
+              || /credit|quota|billing/i.test(apiError?.code || '');
+            if (exhausted) {
+              const err = new Error(apiError?.message || 'OpenAI quota exhausted');
+              err.status = 429;
+              err.code = 'QUOTA_EXHAUSTED';
+              err.apiError = apiError;
+              throw err;
+            }
             const retryAfter = response.headers.get('retry-after') || 60;
-            const error = new Error(`Rate limit exceeded. Retry after ${retryAfter}s`);
+            const error = new Error(`Rate limit exceeded. Retry after ${retryAfter}s${apiError?.message ? ` — ${apiError.message}` : ''}`);
             error.code = 'RATE_LIMIT';
+            error.status = 429;
             error.retryAfter = parseInt(retryAfter, 10);
+            error.apiError = apiError;
             throw error;
           }
 
