@@ -192,7 +192,7 @@ describe('FieldComposer', () => {
   });
 });
 
-describe('FieldComposer and a Shift pressed mid-syllable', () => {
+describe('FieldComposer and a modifier pressed mid-syllable', () => {
   // A real keyboard reports Shift as its own keydown, and for half the syllables
   // a child needs — ㅖ, ㅒ, and the doubled batchim ㄲ/ㅆ — that keydown lands
   // between the initial and the jamo it modifies.
@@ -234,11 +234,8 @@ describe('FieldComposer and a Shift pressed mid-syllable', () => {
     expect(el.value).toBe('있');
   });
 
-  // CapsLock sits one row above left Shift, and we are asking a child to hunt
-  // for Shift mid-word on a Bluetooth keyboard. It reports none of ctrlKey /
-  // altKey / metaKey, so nothing else in handleKey catches it, and because
-  // jamoFor reads only event.shiftKey a stray press breaks the syllable with
-  // no visible feedback at all.
+  // CapsLock sits one row above left Shift — a fumbled Shift must not break the
+  // syllable either.
   it('composes 예 even when CapsLock is fumbled instead of Shift', () => {
     const el = field();
     const c = new FieldComposer();
@@ -249,7 +246,7 @@ describe('FieldComposer and a Shift pressed mid-syllable', () => {
     expect(el.value).toBe('예');
   });
 
-  it.each(['ctrlKey', 'altKey', 'metaKey'])('still ends the run on a %s shortcut', (modifier) => {
+  it.each([['Ctrl', 'ctrlKey'], ['Alt', 'altKey'], ['Meta', 'metaKey']])('still ends the run on a %s shortcut', (_name, modifier) => {
     const el = field();
     const c = new FieldComposer();
     typeInto(c, el, 'gks');
