@@ -109,6 +109,13 @@ ssh {env.prod_host} 'echo "content" > /path/to/file'
 - **Keep docs in /docs folder** - In appropriate subfolder
 - **Check dev server before starting** - Run `ss -tlnp | grep 3112` first; if running, don't start another
 - **Always use the logging framework** - Never use raw `console.log/debug/warn/error` for diagnostic logging. Use the structured logging framework in `frontend/src/lib/logging/`. See [Logging](#logging) section below
+- **Worth flagging is worth fixing** - Never end a session by handing back a list of
+  things the user should do. If something was worth noticing — a stale entry, an
+  unprinted card, a host condition, a gate that never ran, a follow-up the change
+  implies — fix it in the same session, or say plainly why it cannot be fixed and
+  what was done instead. "Remaining items", "you may want to", and "worth flagging"
+  are all the same failure: work dumped back on the user after they asked for it to
+  be done.
 - **Can't delete? Move to `_deleteme/`** - When `rm` is permission-blocked (e.g. cleaning up scratch/temp scripts), `mv` the files into a `_deleteme/` folder at repo root instead of leaving them in place. The user empties `_deleteme/` manually. `_deleteme/` is gitignored.
 
 ---
