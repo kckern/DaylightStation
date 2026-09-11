@@ -392,7 +392,12 @@ $health-aside-gap: 1.5rem;
 }
 
 .health-meal {
-  --health-meal-tracks: 20px minmax(0, 1fr) 2rem 2rem 2rem 4.5rem 3.8rem 44px;
+  // Track 8 holds BOTH row controls (confirm ✓ and delete ✕). It was 44px for
+  // one; two real tap targets need the room. The meal header reads the same
+  // variable, so widening here keeps its add button aligned with the column
+  // rather than drifting off it — which is the whole reason these three grids
+  // share one track list (see layout.contract.test.js).
+  --health-meal-tracks: 20px minmax(0, 1fr) 2rem 2rem 2rem 4.5rem 3.8rem 76px;
   margin-top: 0.4rem;
   &__header { display: grid; grid-template-columns: var(--health-meal-tracks); gap: 0.2rem; align-items: center; border-bottom: 1px solid var(--ds-border); min-height: 28px; }
   &__header &__add { width: 44px; text-align: center; font-size: 1.25rem; }
@@ -469,7 +474,10 @@ $health-aside-gap: 1.5rem;
 .health-row__kcal { grid-column: 7; }
 .health-numeric-control { cursor: ew-resize; touch-action: pan-y; user-select: none; }
 .health-numeric-control:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
-.health-row__action { grid-column: 8; }
+.health-row__action {
+  grid-column: 8;
+  display: flex; align-items: center; justify-content: flex-end; gap: 0.15rem;
+}
 .health-row-line--group { background: var(--ds-surface); border-radius: 6px; font-weight: 600; }
 .health-row-line--child .health-row__visual { opacity: 0.75; }
 .health-row-line--child .health-row-identity { box-sizing: border-box; padding-left: 16px; }
@@ -484,14 +492,14 @@ $health-aside-gap: 1.5rem;
 .health-row-line--last-child .health-row__branch::before { bottom: auto; height: 50%; }
 .health-row__branch .health-row__expand { width: 100%; height: 100%; }
 @include bp.mobile-only {
-  .health-meal { --health-meal-tracks: 12px minmax(0, 1fr) 1.65rem 1.65rem 1.65rem 3rem 2.2rem 44px; }
+  .health-meal { --health-meal-tracks: 12px minmax(0, 1fr) 1.65rem 1.65rem 1.65rem 3rem 2.2rem 64px; }
   .health-row-line { --health-row-gap: 0.1rem; gap: var(--health-row-gap); }
   .health-macros { grid-template-columns: repeat(3, 1.65rem); gap: 0.15rem; }
   .health-macro-badge { font-size: 0.68rem; }
   .health-row__kcal small { display: none; }
   .health-row__identity { gap: 0.25rem; }
   .health-row-line, .health-row-identity, .health-row-name, .health-portion,
-  .health-row__confirm, .health-row__expand, .health-density-badge { min-height: 44px; }
+  .health-row__confirm, .health-row__delete, .health-row__expand, .health-density-badge { min-height: 44px; }
 }
 
 .health-exercise {
@@ -581,6 +589,19 @@ $health-aside-gap: 1.5rem;
   &:hover { background: var(--ds-surface-alt); }
 }
 
+// Same geometry as the confirm beside it, muted until reached. A destructive
+// control on every row of a log you scan for numbers must not compete with the
+// numbers; it earns its colour on hover/focus, when you have clearly aimed at it.
+.health-row__delete {
+  display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  min-width: 28px; min-height: 28px;
+  border: 1px solid transparent; border-radius: 8px;
+  color: var(--ds-text-mid); opacity: 0.55;
+  &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; opacity: 1; color: var(--ds-danger); }
+  &:hover { background: var(--ds-surface-alt); opacity: 1; color: var(--ds-danger); }
+  &:disabled { opacity: 0.2; }
+}
+
 // Expand/collapse control for a group row — a sibling of the row button
 // (see .health-row-line comment: never nested inside it). Real button,
 // The button fills its branch cell; mobile rules increase its height. State uses
@@ -598,7 +619,7 @@ $health-aside-gap: 1.5rem;
 
 @media (pointer: coarse) {
   .health-row-line, .health-row-identity, .health-row-name, .health-portion,
-  .health-row__confirm, .health-row__expand, .health-density-badge { min-height: 44px; }
+  .health-row__confirm, .health-row__delete, .health-row__expand, .health-density-badge { min-height: 44px; }
 }
 
 .health-display-settings {

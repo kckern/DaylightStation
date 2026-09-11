@@ -85,13 +85,18 @@ describe('entry correction dialog', () => {
     expect(writes()[0][1]).toEqual({ id: 'f1', favorite: false });
   });
 
-  it('deletes immediately and exposes exactly the server-returned group IDs for Undo', async () => {
-    apiMock.mockResolvedValue({ affectedIds: ['r1', 'child-1'] });
-    const deleted = vi.fn(), close = vi.fn();
-    mount({ onDeleted: deleted, onClose: close });
+  it('asks the view to delete rather than deleting, so both entry points confirm alike', async () => {
+    const requested = vi.fn();
+    mount({ onRequestDelete: requested });
+    const before = apiMock.mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: 'Delete', exact: true }));
-    await waitFor(() => expect(deleted).toHaveBeenCalledWith({ entryIds: ['r1', 'child-1'], label: 'Eggs' }));
-    expect(close).toHaveBeenCalledOnce();
+    // The row travels back untouched — the view owns the confirm, the DELETE and
+    // the Undo banner. Nothing may reach the network from this click: the sheet
+    // used to fire the DELETE here while the row X asked first, which is how one
+    // action ended up with two contracts.
+    expect(requested).toHaveBeenCalledOnce();
+    expect(requested.mock.calls[0][0]).toMatchObject({ uuid: 'r1' });
+    expect(apiMock.mock.calls.length).toBe(before);
   });
 
   it('changes to another row start a new draft, without leaked icon or errors', () => {

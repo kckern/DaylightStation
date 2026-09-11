@@ -12,7 +12,7 @@ import { usePortionControl } from './usePortionDraft.js';
 
 const logger = createAppLogger('health').child('entry-row');
 
-export function EntryRow({ row, densityRow = row, onTap, onConfirm, isGroup = false, expanded = false, onToggle, rollupKcal, child = false, lastChild = false, measured = null }) {
+export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDelete, isGroup = false, expanded = false, onToggle, rollupKcal, child = false, lastChild = false, measured = null }) {
   const [error, setError] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
   const pending = useRef(false);
@@ -61,6 +61,18 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, isGroup = fa
       {confirmation === 'saved' ? <span role="status" aria-label={`${name} confirmed`} title="Confirmed">✓</span> : unsettled ?
         <UnstyledButton className="health-row__confirm" aria-label={`Confirm entry: ${name}`} title="Confirm this estimate"
           disabled={confirmation === 'saving' || Boolean(portions?.draft)} aria-busy={confirmation === 'saving'} onClick={confirm}>{confirmation === 'saving' ? '…' : '✓'}</UnstyledButton> : null}
+      {/* Asks the VIEW to delete rather than deleting: one dialog for the whole
+          list, and the row never has to know what cascades. Muted until reached,
+          because a destructive control that shouts on every row of a log you scan
+          for numbers is the wrong kind of visible. Held back while a portion drag
+          is live for the same reason the confirm is — a pointer already committed
+          to one gesture must not land on another. */}
+      {onRequestDelete ? <UnstyledButton className="health-row__delete" aria-label={`Delete entry: ${name}`} title="Delete this entry"
+        disabled={Boolean(portions?.draft)} onClick={() => onRequestDelete(row)}>
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" focusable="false">
+          <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      </UnstyledButton> : null}
     </div>
     {error ? <span role="alert" className="health-row__error">{error}</span> : null}
   </div>;

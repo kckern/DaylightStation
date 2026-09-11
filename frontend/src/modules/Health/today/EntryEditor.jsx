@@ -21,7 +21,7 @@ export function EntryEditor({ row, open, ...props }) {
   return open && row ? <Editor key={identity(row)} row={row} {...props} /> : null;
 }
 
-function Editor({ row, onClose, onChanged, onDeleted, onCoach, observations = [], onPaired }) {
+function Editor({ row, onClose, onChanged, onRequestDelete, onCoach, observations = [], onPaired }) {
   const children = row.kind === 'group' ? row.children || [] : [];
   const isGroup = row.kind === 'group';
   const original = isGroup ? {
@@ -143,10 +143,14 @@ function Editor({ row, onClose, onChanged, onDeleted, onCoach, observations = []
             await DaylightAPI('api/v1/health/nutrition/catalog/favorite', { ...(row.foodId ? { id: row.foodId } : { name: nameOf(row) }), favorite: !favorite }, 'PUT');
             setFavorite(value => !value);
           })}>{favorite ? '★ Favorited' : '☆ Favorite'}</Button> : <span />}
-        <Button size="compact-xs" color="red" variant="subtle" disabled={busy} onClick={() => run(async () => {
-          const result = await DaylightAPI(`api/v1/health/nutrilist/${identity(row)}`, {}, 'DELETE');
-          onDeleted?.({ entryIds: result.affectedIds || [identity(row)], label: nameOf(row) });
-        }, { close: true })}>Delete</Button>
+        {/* Deleting used to happen right here, instantly, with an Undo banner
+            behind it — while the row X asked first. Two contracts for one action,
+            and which one you got depended on where you tapped. The sheet now hands
+            the row to the view and the view asks, so both entry points confirm and
+            both land in the same Undo. `row` carries its children (LogTable attaches
+            them before opening this), so the confirm can name what cascades. */}
+        <Button size="compact-xs" color="red" variant="subtle" disabled={busy}
+          onClick={() => onRequestDelete?.(row)}>Delete</Button>
       </Group>
       <Group justify="flex-end" gap="xs">
         <Button size="sm" variant="subtle" disabled={busy} onClick={onClose}>Cancel</Button>
