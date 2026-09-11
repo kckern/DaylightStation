@@ -209,13 +209,17 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   the STAGE — not how the attempt is graded. Omit it and the run derives one
  *   (see `deriveRunTier`): every caller that predates tiers keeps the screen it
  *   had, apart from `ordering:'any'` material, which now gets lit keys.
+ * @param {object|null} [props.drillProjection] A projection of `programId`
+ *   supplied by the host, handed to `DrillProgress` in place of the one it
+ *   would otherwise fetch. The game gate passes one because its drill is scoped
+ *   to a single study day and the learning endpoint's projection is not.
  * @param {((reason:'no-access'|'instance-not-found'|'unrunnable')=>void)} [props.onUnavailable]
  *   This run has settled into a terminal state it cannot leave under its own
  *   power. All three render a `PianoEmpty`, so a host without a recovery callback could strand a
  *   player on a dead end. Both callbacks are optional and additive: omit them
  *   and the surface behaves exactly as it did before.
  */
-export default function ExerciseRun({ instance, score, requirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, framing = null, ask = null, askTuple = null, tier = null, traceContext = null, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, ask = null, askTuple = null, tier = null, traceContext = null, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
@@ -962,16 +966,39 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   const noteProgress = askEvents.length
     ? Math.min(Math.max(eventIndex, 0), askEvents.length) / askEvents.length
     : 0;
+  const hintVisible = hintPolicy === 'always' || afterStallHint;
+  /**
+   * A DRILL SAYS WHERE YOU ARE; A LONE EXERCISE SAYS WHAT TO DO.
+   *
+   * Inside a multi-set drill the pills carry the position and the placard
+   * carries the subject, and the standing instruction underneath them was
+   * telling a child something the staff and the cursor already say — nine times
+   * over, once per rep. A lone exercise keeps it, having no pills to read
+   * instead.
+   *
+   * WHICH of the two it is cannot be known here: it depends on a projection
+   * that is fetched. So the instruction is handed DOWN as the fallback and
+   * `DrillProgress` returns it when it has nothing to draw, rather than the
+   * host guessing from `programId && stepId` — a guess that was wrong for every
+   * one-step program and left the rail empty and the child unaddressed.
+   */
+  const standingInstruction = (
+    <>
+      {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{!runtime ? 'Getting the music ready…' : snapshot.mode === 'cued' ? `Press any key to start. You'll hear ${countIn?.clicks ?? beatsPerMeasure} clicks, then play at that speed.` : 'Play the first note to begin.'}</p>{!connected && <span>Waiting for the piano…</span>}</div>}
+      {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : isWrong ? 'That note was not expected — keep going.' : stage === 'recall' ? 'Play the named music from memory.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.'}{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
+    </>
+  );
   const drillProgress = programId && stepId ? (
     <DrillProgress
       programId={programId}
       stepId={stepId}
       userId={currentUser}
+      program={drillProjection}
       phase={phase}
       noteProgress={noteProgress}
+      fallback={standingInstruction}
     />
   ) : null;
-  const hintVisible = hintPolicy === 'always' || afterStallHint;
   /**
    * A percentage belongs to a STAGE, not to a tier.
    *
@@ -1107,10 +1134,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
           begin", "Follow the highlighted notes") was telling a child something
           the staff and the cursor already say — nine times over, once per rep.
           It is kept for a lone exercise, which has no pills to read instead. */}
-      {drillProgress ?? (<>
-        {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{!runtime ? 'Getting the music ready…' : snapshot.mode === 'cued' ? `Press any key to start. You'll hear ${countIn?.clicks ?? beatsPerMeasure} clicks, then play at that speed.` : 'Play the first note to begin.'}</p>{!connected && <span>Waiting for the piano…</span>}</div>}
-        {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : isWrong ? 'That note was not expected — keep going.' : stage === 'recall' ? 'Play the named music from memory.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.'}{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
-      </>)}
+      {drillProgress ?? standingInstruction}
       {/* The piano still starts the run; only the sentence about it is gone.
           A disconnected piano is the one thing the pills cannot say, so it
           keeps its own line whatever the surface. */}

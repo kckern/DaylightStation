@@ -286,9 +286,13 @@ describe('the run route — a video checkpoint says which lesson it returns to',
     press(60);
     press(62);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
+    // A PASS IS TAKEN AUTOMATICALLY. There is no Continue button to click and
+    // there has not been one since `let a child take a pass they cannot click`
+    // (04988e808): this surface has no pointer controls, so a child at a piano
+    // with no mouse could be stranded on a run they had already passed. The
+    // assertion is the navigation itself, which is the behaviour that matters.
     expect(await screen.findByTestId('back-at-the-lesson')).toBeInTheDocument();
-    expect(where()).toBe('/piano/videos/piano-basics/lesson-2');
+    await waitFor(() => expect(where()).toBe('/piano/videos/piano-basics/lesson-2'));
   });
 
   it('still runs, unframed, for a checkpoint URL that carries no label', async () => {
@@ -335,7 +339,7 @@ describe('the run route — the ways out', () => {
     press(60);
     press(62);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
-    expect(where()).toBe('/piano/exercises/program/hanon');
+    // Automatic, for the same reason as the checkpoint above.
+    await waitFor(() => expect(where()).toBe('/piano/exercises/program/hanon'));
   });
 });

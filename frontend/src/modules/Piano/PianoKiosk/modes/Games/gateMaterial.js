@@ -339,6 +339,11 @@ const CONFIG_DECLINE_REASONS = Object.freeze([
   'no-collection-or-instance',
   'unknown-material-kind',
   'ask-invalid',
+  // A `{ kind: 'drill' }` naming a program that does not exist — a 404 from the
+  // program endpoint, which is a spelling mistake and not an outage. The drill
+  // resolver keeps `instance-unavailable` for a program that could not be
+  // reached, so the two stay on opposite sides of this list.
+  'drill-unknown',
 ]);
 
 /**
