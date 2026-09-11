@@ -66,8 +66,14 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
           because a destructive control that shouts on every row of a log you scan
           for numbers is the wrong kind of visible. Held back while a portion drag
           is live for the same reason the confirm is — a pointer already committed
-          to one gesture must not land on another. */}
-      {onRequestDelete ? <UnstyledButton className="health-row__delete" aria-label={`Delete entry: ${name}`} title="Delete this entry"
+          to one gesture must not land on another.
+
+          NOT ON CHILD ROWS. A dish's members are deleted with the dish; giving
+          each one its own X puts four more destructive controls inside one
+          expanded group and makes the list harder to read than the mis-parse it
+          would fix. Removing a single wrong ingredient is a trip through the
+          edit sheet, which is the rarer case. */}
+      {onRequestDelete && !child ? <UnstyledButton className="health-row__delete" aria-label={`Delete entry: ${name}`} title="Delete this entry"
         disabled={Boolean(portions?.draft)} onClick={() => onRequestDelete(row)}>
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" focusable="false">
           <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
