@@ -20,6 +20,20 @@ export const ACCIDENTAL_GAP = 3;
 export const NOTEHEAD_RX = 9;
 export const NOTEHEAD_RY = 6.5;
 
+/** Where `ClefGlyph` places itself, so callers can keep their ink off it. */
+export const CLEF_X = 2;
+export const clefWidth = (lineSpacing) => lineSpacing * 3;
+/**
+ * The x a staff's own ink must stay right of.
+ *
+ * The clef is drawn first and its box is fixed, but nothing downstream knew
+ * that: accidentals were laid out purely relative to the noteheads, so a chord
+ * needing two of them staggered the second one left to x ≈ 34 while the clef
+ * occupied 2…44, and the two were simply drawn on top of each other. Any staff
+ * placing ink leftward from the noteheads asks this where to stop.
+ */
+export const clefRightEdge = (lineSpacing) => CLEF_X + clefWidth(lineSpacing) + 2;
+
 /** Engraved sharp: two verticals + two thick bars slanting up to the right. */
 export function SharpShape() {
   return (
@@ -34,7 +48,18 @@ export function SharpShape() {
 }
 
 /**
- * Engraved flat: tall stem + a bold solid bowl sitting on the notehead's line.
+ * Engraved flat: tall stem + an open bowl sitting on the notehead's line.
+ *
+ * The bowl is a RING, drawn as an outer shape with an inner counter subtracted
+ * (`fill-rule="evenodd"`), not the solid teardrop it used to be. A ♭ without its
+ * counter is not a flat, it is a blob — at rim-card size the reader who noticed
+ * was looking at a row of B flats and seeing filled lozenges. The counter also
+ * does the engraving work for free: the ring is widest where the bowl bulges
+ * right and narrows to nothing where it meets the stem, which is the weight
+ * distribution of the printed glyph.
+ *
+ * The two subpaths meet at the stem and the inner one stops short of the
+ * bottom, so the bowl's lower tip stays solid ink where it joins the stem.
  *
  * REGISTERED ON THE BOWL, not on the glyph's overall extent. Every caller
  * places an accidental with `translate(x, noteY)` — the contract stated at the
@@ -50,7 +75,12 @@ export function FlatShape() {
   return (
     <>
       <line x1="-6.5" y1="-15.75" x2="-6.5" y2="5.75" stroke="currentColor" strokeWidth="2.4" />
-      <path d="M -6.5 -6.75 C 2.5 -10.25, 6.5 -0.25, -6.5 6.75 Z" fill="currentColor" />
+      <path
+        d="M -6.5 -7.4 C 3.4 -11.0, 7.6 -0.4, -6.5 7.4 Z
+           M -5.1 -4.9 C 1.5 -7.3, 4.2 -0.8, -5.1 4.4 Z"
+        fill="currentColor"
+        fillRule="evenodd"
+      />
     </>
   );
 }
@@ -95,9 +125,9 @@ export function ClefGlyph({ clef, lineSpacing, bottomLineY }) {
   const [clefTransform, setClefTransform] = useState('');
   const [clefReady, setClefReady] = useState(false);
 
-  const targetW = lineSpacing * 3;
+  const targetW = clefWidth(lineSpacing);
   const targetH = lineSpacing * 6;
-  const targetX = 2;
+  const targetX = CLEF_X;
   const targetY = bottomLineY - lineSpacing * 5;
 
   const measureClef = useCallback((node) => {
