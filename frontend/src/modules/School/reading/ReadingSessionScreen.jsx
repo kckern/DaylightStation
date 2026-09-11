@@ -675,12 +675,6 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
             {name ? <h2 className="reading-session__name">{name}</h2> : null}
           </div>
           <h1 className="reading-session__ask">What do you want to read today?</h1>
-          <ReadingPips
-            count={summary?.count}
-            target={summary?.target}
-            label={summary?.progressLabel}
-            className="reading-session__pips"
-          />
           <Recent
             days={summary?.recentDays}
             studyDay={summary?.studyDay}
