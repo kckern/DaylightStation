@@ -30,6 +30,12 @@ describe('ReadingSessionService', () => {
     expect(s.current('livingroom').openedAt).toBe('2026-08-26T18:00:00.000Z');
   });
 
+  it('publishes its own idle window, so the screen can draw the clock it is actually running', () => {
+    const sessions = new ReadingSessionService({ logger: silent, idleTimeoutMs: 90_000 });
+    const session = sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    expect(session.idleTimeoutMs).toBe(90_000);
+  });
+
   it('the trusted open seam may replace a fixture/session directly', () => {
     const s = new ReadingSessionService({ logger: silent });
     s.open({ location: 'livingroom', learnerId: 'user_5' });
