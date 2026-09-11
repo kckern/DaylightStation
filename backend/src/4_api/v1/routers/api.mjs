@@ -98,6 +98,7 @@ export function createApiRouter(config) {
     '/health': 'health',
     '/health-dashboard': 'health-dashboard',
     '/feed': 'feed',
+    '/ai': 'ai',  // shared AI gateway (chat, json, vision, transcribe, embed, metrics)
     '/finance': 'finance',
     '/cost': 'cost',
     '/harvest': 'harvest',

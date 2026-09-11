@@ -219,3 +219,48 @@ describe('OpenAIAdapter transcription failure diagnostics', () => {
     expect(deps.httpClient.postForm).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('OpenAIAdapter 429 handling', () => {
+  // The 2026-09-10 outage: every call logged "Rate limit exceeded. Retry after
+  // 60s" and waited out two retries, while the body said the balance was gone.
+  it('does not retry an exhausted balance, and keeps the provider\'s words', async () => {
+    const post = vi.fn(async () => ({
+      status: 429,
+      headers: {},
+      data: { error: { message: 'You have no credits remaining.', type: 'insufficient_quota', code: 'credit_balance_exhausted' } },
+    }));
+    const deps = makeDeps({ post });
+    const adapter = new OpenAIAdapter({ apiKey: 'test-key' }, deps);
+    adapter._setSleepOverride(async () => {});
+
+    await expect(adapter.chat([{ role: 'user', content: 'Hello' }], { model: 'gpt-4.1' }))
+      .rejects.toThrow('You have no credits remaining.');
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(deps.logger.error).toHaveBeenCalledWith('openai.error', expect.objectContaining({
+      status: 429,
+      error: 'You have no credits remaining.',
+      apiError: expect.objectContaining({ type: 'insufficient_quota' }),
+    }));
+  });
+
+  it('still retries a genuine rate limit after retry-after', async () => {
+    const post = vi.fn()
+      .mockResolvedValueOnce({
+        status: 429,
+        headers: { 'retry-after': '1' },
+        data: { error: { message: 'Rate limit reached for gpt-4.1', type: 'requests' } },
+      })
+      .mockResolvedValueOnce({ status: 200, headers: {}, data: { choices: [{ message: { content: 'ok' } }], usage: {} } });
+    const deps = makeDeps({ post });
+    const adapter = new OpenAIAdapter({ apiKey: 'test-key' }, deps);
+    const slept = [];
+    adapter._setSleepOverride(async (ms) => { slept.push(ms); });
+
+    await expect(adapter.chat([{ role: 'user', content: 'Hello' }], { model: 'gpt-4.1' })).resolves.toBe('ok');
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(slept).toEqual([1000]);
+    expect(deps.logger.warn).toHaveBeenCalledWith('openai.retry', expect.objectContaining({
+      error: expect.stringContaining('Rate limit reached for gpt-4.1'),
+    }));
+  });
+});
