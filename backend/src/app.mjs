@@ -4798,7 +4798,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
      * PROFILES CARRY `display_name`, NOT `name`. Reading `profile.name` yields
      * undefined, which is why the reading rail drew a face with no caption under
      * it all evening and `GET /reading/summary` answered `displayName: null` for
-     * a child whose profile says `display_name: "Test Learner"` on the first page. The
+     * a child whose profile says `display_name` on its first page. The
      * piano roster hit exactly this and fixed it locally (see GetCourseProgress:
      * "a bare p.name shipped 'undefined' labels"); this is the same resolution,
      * shared, so the next caller does not have to rediscover it.
