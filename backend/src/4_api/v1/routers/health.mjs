@@ -180,7 +180,7 @@ export function createHealthRouter(config) {
   const runNutritionOperation = (userId, id, payload, action) => healthOperations.runNutritionOperation
     ? healthOperations.runNutritionOperation(userId, id, payload, action) : action();
 
-  router.get('/context', (req, res) => res.json(healthOperations.context()));
+  router.get('/context', (req, res) => res.json(healthOperations.context(getDefaultUsername(req))));
 
   router.post('/nutrition/receipts/reconcile', asyncHandler(async (req, res) => {
     const publisher = config.receiptPublisherProvider?.();
