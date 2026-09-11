@@ -564,6 +564,39 @@ describe('a sustained note is not a mistake', () => {
     expect(ghosts[0].getAttribute('data-midi')).toBe('61');
   });
 
+  /**
+   * The owner's call, 2026-09-11: anything still held from before this cursor
+   * goes quiet, INCLUDING a key that was wrong when it went down. The rejected
+   * alternative was to keep ghosting a stale wrong note until release. Pinned
+   * here because a comment can be ignored and this cannot.
+   */
+  it('a WRONG note held across an advance also goes quiet — anything still held is stale', () => {
+    vi.useFakeTimers();
+    // The cursor arrives at 62 with nothing held...
+    vi.setSystemTime(2000);
+    const { container, rerender } = render(
+      <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1} activeNotes={new Map()} />
+    );
+    // ...and THEN the child presses 61 by mistake and keeps holding it. The
+    // press has to land after the arrival, which is the real order of events —
+    // a tie is a sustain by design (see classifyHeldPitch).
+    vi.setSystemTime(2100);
+    rerender(
+      <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1}
+        activeNotes={new Map([[61, at(2100)]])} />
+    );
+    expect(container.querySelectorAll('.sequence-note-wrong-ghost')).toHaveLength(1);
+
+    // They then find 64 and the cursor advances — 61 is STILL down.
+    vi.setSystemTime(3000);
+    rerender(
+      <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={2}
+        activeNotes={new Map([[61, at(2100)], [64, at(3000)]])} />
+    );
+    expect(container.querySelectorAll('.sequence-note-wrong-ghost')).toHaveLength(0);
+    expect(container.querySelector('.sequence-note-hit')?.getAttribute('data-midi')).toBe('64');
+  });
+
   it('a held key with no press time is still ghosted — provenance unknown, do not hide it', () => {
     const { container } = render(
       <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1}
