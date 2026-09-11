@@ -157,6 +157,12 @@ describe('ReadingSessionScreen', () => {
     expect(within(today).queryByTestId('reading-slot')).toBeNull();
   });
 
+  it('open: no streak wall — the waiting screen has one job', async () => {
+    render(<ReadingSessionScreen />);
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+    expect(screen.queryByTestId('reading-streak')).toBeNull();
+  });
+
   it('the close is a receipt: today\'s covers, the clock time each finished, and the wall', () => {
     render(<Ceremony tier="day" name="User_5" learner={{ id: 'user_5' }} pick={null} summary={SUMMARY} />);
     const close = screen.getByTestId('reading-celebrate');
@@ -185,10 +191,12 @@ describe('ReadingSessionScreen', () => {
     expect(clockTime('not a date')).toBeNull();
   });
 
-  it('open: the streak wall shows a month of days, coloured by whether the goal was met', async () => {
-    render(<ReadingSessionScreen />);
-    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
-    const wall = await screen.findByTestId('reading-streak');
+  // Moved off the open view with the wall itself: the close is where a month
+  // of days is now wired up, and this is the test that says the summary's
+  // streak and study day still reach it.
+  it('the close: the streak wall shows a month of days, coloured by whether the goal was met', () => {
+    render(<Ceremony tier="day" name="User_5" learner={{ id: 'user_5' }} pick={null} summary={SUMMARY} />);
+    const wall = screen.getByTestId('reading-streak');
     const cells = wall.querySelectorAll('.reading-streak__day');
     expect(cells).toHaveLength(3);
     expect(cells[0]).toHaveAttribute('data-state', 'none');
