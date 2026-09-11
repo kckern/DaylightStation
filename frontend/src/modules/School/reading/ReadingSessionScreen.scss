@@ -107,8 +107,16 @@
 .reading-session__recent {
   position: relative;
   margin-top: 1vh;
-  width: min(80vw, 124vh);
-  padding: 2vh 3vw 0;
+  /* FIT THE BOOKS. At a fixed `min(80vw, 124vh)` the case was ~1339px on a
+     1920x1080 panel while three capped cards occupied ~620px centred in it —
+     over half the lit case empty. A case wider than the books standing in it
+     reads as a half-empty shelf, which is the opposite of what the shelf is
+     there to say; `fit-content` makes the case the width of its contents and
+     keeps the old figure as the ceiling for a long day. */
+  width: fit-content;
+  max-width: min(80vw, 124vh);
+  /* A real bottom: with `0` a two-line title sat flush on the panel's edge. */
+  padding: 2vh 3vw 1.6vh;
   border-radius: 1.5vh 1.5vh 0.6vh 0.6vh;
   /* The case: a soft pool of light at the back, so the books sit IN something
      rather than on top of a flat panel. */
