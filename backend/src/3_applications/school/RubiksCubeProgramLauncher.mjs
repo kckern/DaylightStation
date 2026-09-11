@@ -7,7 +7,29 @@ export class RubiksCubeProgramLauncher {
   get id() { return 'rubiks-cube'; }
   get surface() { return 'portal'; }
   get locationHint() { return 'on the Portal'; }
-  status({ userId }) { return this.#service.status({ userId }); }
+  /**
+   * WHY A LAUNCHER REPORTS ITS SERVED WORK. `AgendaStatusBoard` draws one disc
+   * per assignment from PLAN ∪ EVIDENCE, and a finished program is in neither
+   * set: the agenda stops offering it (`next` goes null) the moment it reports
+   * `doneToday`, and `BuildAgenda` never opens a work session for a program
+   * entry, so the evidence side has nothing either. Without a `servedWork` row
+   * the disc does not turn green when a child finishes — it disappears. Same
+   * durable-identity fix `StoryTimeProgramLauncher` already carries.
+   *
+   * The row names the WORK only; `planDailyAgenda` stamps `assignmentUnitId`
+   * onto it from the program entry that owns this program.
+   */
+  async status({ userId }) {
+    const status = await this.#service.status({ userId });
+    return {
+      ...status,
+      // The COURSE, not the activity finished today: one cube assignment is one
+      // disc, and the course id is the identity it keeps tomorrow.
+      servedWork: status?.doneToday
+        ? [{ unitId: `rubiks-cube:${RUBIKS_CUBE_COURSE_ID}`, title: "Rubik's cube" }]
+        : [],
+    };
+  }
   issueLaunchTarget({ userId, unitId }) {
     return { kind: 'program', program: 'rubiks-cube', courseId: RUBIKS_CUBE_COURSE_ID, unitId,
       cubeGrant: this.#grants.issue({ learnerId: userId, unitId: unitId || 'rubiks-cube', courseId: RUBIKS_CUBE_COURSE_ID, revision: RUBIKS_CUBE_REVISION }) };

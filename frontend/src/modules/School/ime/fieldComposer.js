@@ -18,6 +18,26 @@ import { Hangul } from './hangul.js';
 const TEXT_INPUT_TYPES = new Set(['text', 'search', '']);
 
 /**
+ * Key codes that get PRESSED during a syllable without producing one — not keys
+ * that produce no jamo, which would be most of the keyboard. They must pass
+ * through without ending the session.
+ *
+ * Treating them as ordinary non-jamo keys cost us every syllable needing Shift
+ * after an initial had landed — ㅖ, ㅒ, and ㄲ/ㅆ as batchim — so 예 came out
+ * ㅇㅖ. None of these keys moves the caret or rewrites text, so `#continuous()`
+ * still holds across them and the session stays anchored where it was.
+ *
+ * CapsLock earns its place by position, not by meaning: it sits one row above
+ * left Shift, we are asking a child to hunt for Shift repeatedly mid-word on a
+ * Bluetooth keyboard, and `Hangul.jamoFor` reads only `event.shiftKey` — so a
+ * stray press changes nothing a child can see except that the syllable breaks.
+ *
+ * Matched on `code`, not `key`, because `key` depends on whatever layout
+ * Android believes is attached.
+ */
+const PASSTHROUGH_CODES = new Set(['ShiftLeft', 'ShiftRight', 'CapsLock']);
+
+/**
  * Whether this element takes free text we may compose into. Deliberately
  * narrow: a number, date, tel, or password field is never composable, and
  * neither is anything that opted out.
@@ -94,6 +114,12 @@ export class FieldComposer {
   handleKey(event, el) {
     if (event.ctrlKey || event.altKey || event.metaKey) { this.end(); return false; }
     if (!isComposableField(el)) { this.end(); return false; }
+
+    // A modifier's own keydown is not a key the child typed — it is the keyboard
+    // announcing itself mid-syllable, and ending the session on it breaks the
+    // syllable in flight. Below the branch above on purpose, so a real shortcut
+    // still wins. See PASSTHROUGH_CODES for what belongs there and why.
+    if (PASSTHROUGH_CODES.has(event.code)) return false;
 
     if (event.key === 'Backspace') return this.#backspace(el);
 
