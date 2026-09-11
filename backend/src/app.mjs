@@ -364,7 +364,7 @@ import { SchoolService } from './3_applications/school/SchoolService.mjs';
 import { YamlSchoolDatastore } from './1_adapters/persistence/yaml/YamlSchoolDatastore.mjs';
 import { effectiveAttempts } from '#domains/school/attempt.mjs';
 import { createSentenceLadderRouter } from './4_api/v1/routers/sentenceLadder.mjs';
-import { SentenceLadderService } from './3_applications/school/SentenceLadderService.mjs';
+import { createLanguageStudyService } from './5_composition/modules/schoolLanguage.mjs';
 import { YamlLanguageStudyDatastore } from './1_adapters/persistence/yaml/YamlLanguageStudyDatastore.mjs';
 import { YamlAssignmentStore } from './1_adapters/persistence/yaml/YamlAssignmentStore.mjs';
 import { HmacSchoolStudyGrantIssuer } from './1_adapters/school/actions/HmacSchoolStudyGrantIssuer.mjs';
@@ -3354,9 +3354,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     }),
     idFactory: crypto.randomUUID,
   });
-  const languageStudyService = new SentenceLadderService({
+  const languageStudyService = createLanguageStudyService({
     datastore: new YamlLanguageStudyDatastore({ configService }),
     readProgramEnrollment: (learnerId, corpusId) => languageAssignments.readProgramEnrollment(learnerId, corpusId),
+    // Through the factory, so the bus is adapted to School's realtime port
+    // rather than handed over raw under an option name the service does not
+    // have. `new SentenceLadderService({ eventBus })` looked right here and
+    // published nothing for months.
     eventBus,
     timezone: configService.getTimezone?.() || null,
     readGate: () => {

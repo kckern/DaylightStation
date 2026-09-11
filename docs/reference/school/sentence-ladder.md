@@ -467,6 +467,23 @@ completion state is recomputed. `sentence-ladder` and legacy `language`
 identifiers are equivalent at this boundary so migrated assignments cannot
 lose credit.
 
+The settlement resolves the assignment from the learner plan's `programs:`
+list — the enrollment IS the assignment. It does not require an authored
+curriculum unit, and none exists: an early design routed the ladder through a
+`school.unit` carrying a `programInstance`, that unit was never written, and
+for months the settlement's assigned-check looked there while its reward
+lookup, in the same method, read the enrollment correctly. Every completed day
+took the `unassigned` branch. Where a household has authored a matching unit
+its id still names the session; otherwise the session takes the same synthetic
+`<programId>:<corpusId>` id the plan entry carries, so the session and the
+agenda row agree.
+
+Both guards on the publish are audible. If the day completes but the
+enrollment is missing, or the realtime port is not wired, the service warns
+once per process with `school.language.day-complete-suppressed` naming which
+guard failed (`no-enrollment` or `no-realtime`). Those two look identical from
+outside, and a silent return is how a mis-wired bridge stayed invisible.
+
 A teacher can run a **guest preview** of any corpus: a fresh day derived
 without a learner, a grant, or a saved attempt, so the ladder can be
 experienced without manufacturing evidence.

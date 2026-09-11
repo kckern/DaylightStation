@@ -31,6 +31,10 @@ const TREND_BUCKETS = 12;
 export class SentenceLadderService {
   #ds; #logger; #now; #timezone; #boundaryHour; #readGate; #readProgramEnrollment; #realtime;
   #corpusCache = new Map();
+  // Which suppression reasons have already been announced this process. At
+  // most one line per reason: the guard below runs on every saved attempt, so
+  // a per-call warn would bury the very signal it exists to raise.
+  #suppressionsAnnounced = new Set();
 
   constructor({
     datastore,
@@ -190,8 +194,30 @@ export class SentenceLadderService {
     return { enrollment, chain, dailyLimit, admission };
   }
 
+  /**
+   * Announce a dead bridge instead of returning into the dark.
+   *
+   * Both guards used to fail silently, which is why a completed language day
+   * produced no work session for months without a single log line: a
+   * composition root that passed `eventBus` where the constructor takes
+   * `realtime` left `#realtime` null forever, and that is indistinguishable
+   * from a household with nobody enrolled unless the suppression says which.
+   */
+  #announceSuppression(reason, userId, corpus, day, runId) {
+    if (this.#suppressionsAnnounced.has(reason)) return;
+    this.#suppressionsAnnounced.add(reason);
+    this.#log('warn', 'school.language.day-complete-suppressed', {
+      reason, learnerId: userId, corpus: corpus.id, day,
+    }, runId);
+  }
+
   #emitDayComplete(userId, corpus, day, policy, runId = null) {
-    if (!policy.enrollment || !this.#realtime?.languageDayCompleted) return;
+    if (!policy.enrollment || !this.#realtime?.languageDayCompleted) {
+      this.#announceSuppression(
+        policy.enrollment ? 'no-realtime' : 'no-enrollment', userId, corpus, day, runId,
+      );
+      return;
+    }
     const queue = buildDayQueue({
       log: this.#ds.readAllEvents(userId, corpus.id), day,
       dailyLimit: policy.dailyLimit, corpusSize: corpus.size,
