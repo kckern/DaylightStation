@@ -2091,22 +2091,64 @@
   background: var(--school-surface-2);
   box-sizing: border-box;
 }
+// NO ART: the title IS the cover (see BookCover.jsx). Drawn from a hue the
+// title itself decides, so a book lands on the same colour every time and
+// two coverless books side by side are told apart before either is read.
+// Deliberately a BOOK and not an error state: a spine-dark edge down the
+// left, the title set large, the whole thing the size of the art it stands
+// in for — a blank grey square was the one book a child could not find.
+.school-books-cover--drawn {
+  display: grid; align-items: center; justify-items: center;
+  // A DEEPER TOP INSET than the other three sides. The outcome mark rides the
+  // top-left corner of the art, which costs a photographic cover nothing —
+  // almost none carry their title up there — but a drawn cover's title fills
+  // the whole box, and the badge was landing on its first letter
+  // ("3lueberries for Sal"). The text starts below the badge instead.
+  padding: 1rem 0.45rem 0.55rem 0.6rem;
+  border-color: hsl(var(--drawn-hue, 210) 45% 28%);
+  border-left: 0.35rem solid hsl(var(--drawn-hue, 210) 55% 24%);
+  background:
+    linear-gradient(150deg,
+      hsl(var(--drawn-hue, 210) 42% 32%) 0%,
+      hsl(var(--drawn-hue, 210) 38% 22%) 100%);
+  overflow: hidden;
+}
+.school-books-cover__drawn-title {
+  // Scales with the slot: the same component draws a 5rem shelf card and a
+  // 7rem update-view cover, and a fixed size would overflow one or swim in
+  // the other.
+  font-size: clamp(0.62rem, 15cqw, 1.05rem);
+  font-weight: 800; line-height: 1.18; text-align: center;
+  color: hsl(var(--drawn-hue, 210) 30% 94%);
+  text-shadow: 0 1px 2px hsl(var(--drawn-hue, 210) 45% 12% / 0.7);
+  // `break-word`, NOT `anywhere`: `anywhere` breaks wherever it makes the box
+  // narrowest, which split titles mid-word beside a perfectly good space
+  // ("Goodnigh / t Moon"). This breaks a word only when the word alone will
+  // not fit, which is the case it is actually for.
+  overflow-wrap: break-word; hyphens: auto;
+  display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden;
+}
 
-// A book card: art on the left, a text column on the right. NOTHING here fixes
-// a card's height - titles are two clamped lines of arbitrary text, and a fixed
-// height sliced every second line through the x-height.
+
+// A book card IS ITS COVER. It used to be art on the left and a text column on
+// the right — title, author, caption — which on a shelf of picture books made
+// a grid that was mostly words about books rather than books. The words moved
+// to the panel a tap opens; only the Add tile still carries any, because an
+// empty frame has nothing to be recognised by.
+//
+// NOTHING here fixes a card's height: the art sets it, and a fixed height
+// sliced the covers of unusually tall books.
 .school-books-tile {
-  display: grid; grid-template-columns: 5rem minmax(0, 1fr); align-items: start;
-  column-gap: 0.75rem; text-align: left; padding: 0.55rem;
-  border: 1px solid var(--school-border); border-radius: 14px;
-  // One step UP from the panel: `--school-surface` on `--school-bg` is about a
-  // 1.05:1 luminance step, so at kiosk distance a row of cards read as one
-  // smear with hairlines through it.
-  background: var(--school-surface-2); color: var(--school-fg);
+  display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center;
+  align-items: start; text-align: center; padding: 0.6rem 0.5rem 0.55rem;
+  // No card frame and no fill. The cover supplies its own edge, and a card
+  // drawn around it put a second rectangle around every book — which is what
+  // made the shelf read as a form rather than as a shelf.
+  border: 0; background: transparent; color: var(--school-fg);
   font-family: inherit; font-size: 1.05rem; cursor: pointer; touch-action: manipulation;
   min-width: 0; box-sizing: border-box;
-  &:active { background: var(--school-surface); transform: scale(0.98); }
-  &--still { cursor: default; &:active { background: var(--school-surface-2); transform: none; } }
+  &:active { transform: scale(0.96); }
+  &--still { cursor: default; &:active { transform: none; } }
 }
 .school-books-tile__text {
   display: flex; flex-direction: column; gap: 0.3rem; min-width: 0;
@@ -2115,7 +2157,13 @@
 // not the image's: `aspect-ratio` on a replaced element is negotiated against
 // its intrinsic size, and one 128x191 thumbnail came out 184px tall and
 // stretched every other card in the row with it. A plain block obeys.
-.school-books-tile__art { position: relative; display: block; width: 5rem; aspect-ratio: 2 / 3; }
+// `container-type` is for the DRAWN cover: its title sets its size in `cqw`,
+// so it scales with whatever slot it was dropped into rather than needing a
+// size per caller.
+.school-books-tile__art {
+  position: relative; display: block; width: 5rem; aspect-ratio: 2 / 3;
+  container-type: inline-size;
+}
 .school-books-tile__cover {
   display: block; width: 100%; height: 100%; object-fit: contain; object-position: center;
   border-radius: 8px; box-sizing: border-box;
@@ -2141,14 +2189,6 @@
 .school-books-tile__title {
   font-weight: 700; line-height: 1.3;
   overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-}
-.school-books-tile__author {
-  color: var(--school-muted); font-size: 0.86rem; line-height: 1.2;
-  // A one-line ellipsis used to cut multi-author summaries at exactly the
-  // useful part ("& 2 m…"). Two compact lines preserve the bounded label
-  // without letting an unbounded provider list make every tile a new height.
-  overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical; overflow: hidden;
 }
 .school-books-tile__bar { display: block; height: 0.5rem; border-radius: 999px; background: var(--school-border); overflow: hidden; }
 .school-books-tile__fill { display: block; height: 100%; background: var(--school-accent); }
@@ -2186,15 +2226,46 @@
 }
 .school-books-history__scroll { padding: 0.35rem var(--shelf-inset) 1rem; }
 .school-books-history__flow {
-  display: flex; flex-wrap: wrap; align-items: stretch; gap: 0.7rem;
+  // `flex-start`, NOT `stretch`: a stretched row makes every cell as tall as
+  // its tallest, and the Add tile carries two lines of words no book card
+  // does — which dragged each spine on that row a full text-block below the
+  // covers it opens, so the day's colour ran on past the end of the day.
+  display: flex; flex-wrap: wrap; align-items: flex-start;
+  // NO COLUMN GAP — THAT IS WHAT MAKES THE RAIL A RAIL.
+  //
+  // The day's colour used to be a border along the top of each card, which a
+  // 0.7rem gap chopped into one stripe per book: a dashed line, not a rail.
+  // With the columns closed up, the borders of a day's cards meet and run as
+  // ONE unbroken rail the width of the day — and it breaks exactly where the
+  // day wraps, because a new row starts a new run. The breathing room moved
+  // inside the cards, where it costs the rail nothing.
+  row-gap: 0.9rem; column-gap: 0;
   // Cards are cover-first on this shelf; the tile's own history modifier
-  // does the layout, this only fixes the width the flow wraps by — and the
-  // DAY'S COLOUR runs along the top of every one of them.
+  // does the layout, this only fixes the width the flow wraps by.
   .school-books-tile {
     flex: 0 0 9.5rem; min-height: 0;
-    border-top: 5px solid var(--day-colour, var(--school-border));
-    border-top-left-radius: 8px; border-top-right-radius: 8px;
+    .school-books-tile__art { width: 6.5rem; }
   }
+  // The Add tile is not part of any day and wears no rail: it is the empty
+  // place on the shelf, not a book someone finished.
+  .school-books-tile:not(.school-books-tile--add) {
+    border-top: 5px solid var(--day-colour, var(--school-border));
+    border-top-left-radius: 0; border-top-right-radius: 0;
+  }
+  // The ends of a run are the only rounded corners, so a day reads as one
+  // bar with two finished ends rather than a row of separate caps.
+  .school-books-history__opening > .school-books-tile { border-top-left-radius: 0; }
+  .school-books-history__day > .school-books-tile:last-child { border-top-right-radius: 8px; }
+}
+// The spine and the day's first book, as ONE flow item — see `Opening` in
+// BookHistory.jsx. The gap before it is what separates two days; inside it
+// there is none, so the spine's rail runs straight into the first cover's.
+.school-books-history__opening {
+  // `stretch` HERE is what makes the spine exactly as tall as the cover it
+  // opens — the pair sizes itself, rather than the row sizing it.
+  display: flex; align-items: stretch; gap: 0;
+  margin-left: 0.6rem;
+  &:first-child { margin-left: 0; }
 }
 // A day keeps its spine and its books together in the DOM; the flow lays
 // them out as siblings. `--day-colour` is set here and inherits through.
@@ -2205,20 +2276,27 @@
 // one shelf.
 .school-books-history__bookend {
   flex: 0 0 2.75rem; box-sizing: border-box;
-  margin: 0; margin-left: 0.6rem;
-  display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
+  margin: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 0.35rem;
   padding: 0.45rem 0.2rem 0.6rem;
   border-top: 5px solid var(--day-colour, var(--school-border));
-  border-radius: 8px 8px 12px 12px;
+  // Square on the right: the rail carries on into the first cover from here.
+  border-radius: 0 0 0 12px;
   background: color-mix(in srgb, var(--day-colour, var(--school-border)) 14%, var(--school-surface));
   color: var(--school-fg);
-  &:first-child { margin-left: 0; }
 }
 .school-books-history__bookend-top {
   font-size: 1.35rem; font-weight: 900; line-height: 1; letter-spacing: -0.02em;
   color: var(--day-colour, var(--school-fg)); white-space: nowrap; text-align: center;
-  // "19 Aug" stacks; a bare "6" does not.
-  max-width: 2.4rem; overflow-wrap: normal;
+  font-variant-numeric: tabular-nums;
+}
+// The month, only when the month is not this one. Its own line, small and
+// muted: it qualifies the numeral above it rather than competing with it,
+// and it cannot push that numeral off its baseline the way "19 Aug" did.
+.school-books-history__bookend-month {
+  font-size: 0.7rem; font-weight: 800; line-height: 1; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--school-muted); white-space: nowrap;
+  margin-top: -0.2rem;
 }
 .school-books-history__bookend-bottom {
   writing-mode: vertical-rl; text-orientation: mixed;
@@ -2422,23 +2500,6 @@
 }
 .school-books__recent { margin: 0; }
 
-// A horizontal shelf that RUNS OFF THE PANEL. The inset is padding rather than
-// a container width, so the first card lines up under the heading while the
-// last one is free to be cut by the panel edge - which is the affordance: a
-// history that ended in whitespace said there was nothing more to see.
-.school-books__row {
-  @include school-scrollbar;
-  display: flex; flex: none; gap: 0.7rem;
-  overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain;
-  // No scroll snapping: with `scroll-snap-align: start` the browser snapped the
-  // first card's edge to the SCROLLPORT's edge on load, silently scrolling the
-  // row past its own left inset so the first book arrived half off the panel.
-  padding: 0.5rem var(--shelf-inset) 0.7rem; min-height: 0; align-items: stretch;
-  .school-books-tile { flex: 0 0 17rem; min-height: 9.5rem; }
-  .school-books-tile--add { flex: 0 0 auto; min-height: 0; }
-  .school-books-tile__title { font-size: 1rem; }
-  .school-books-tile__author { font-size: 0.8rem; -webkit-line-clamp: 1; }
-}
 // COVER FIRST on the history shelf: the art on top at about twice the Today
 // row's size, the title beneath at up to three lines. A finished book is
 // remembered by its cover, and a title cut at two lines lost the word a
@@ -2454,15 +2515,12 @@
   box-shadow: 0 0 0 2px var(--school-surface-2);
   font-size: 0.8rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums;
 }
+// Every card on this shelf is cover-first now, so the history modifier is
+// left holding only what is actually different about a finished book: a
+// bigger cover, and a mark that clears its corner.
 .school-books-tile--history {
-  grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center;
-  row-gap: 0.45rem; padding: 0.6rem 0.5rem 0.55rem;
   .school-books-tile__art { width: 6.5rem; }
   .school-books-tile__mark { top: -0.4rem; left: -0.4rem; }
-  .school-books-tile__text { align-items: center; gap: 0.15rem; }
-  .school-books-tile__title { font-size: 0.95rem; line-height: 1.25; -webkit-line-clamp: 3; }
-  .school-books-tile__author { display: none; }
-  .school-books-tile__caption { font-size: 0.8rem; }
 }
 .school-books__finish-context p { margin: 0.35rem 0; }
 .school-books__recorded { color: var(--school-muted); font-size: 0.85rem; }

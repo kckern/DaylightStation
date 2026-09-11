@@ -57,24 +57,32 @@ export function dayHeading(key, today = null) {
 const bookKey = (item) => item.bookId ?? item.isbn13 ?? item.book?.isbn13 ?? String(item.title ?? item.book?.title ?? item.itemId);
 
 /**
- * What the spine says: the day-of-month as its number (with the month when
- * the month is not this one — a "19" in September is not enough on its own),
- * and the weekday as the word running down it. Today and yesterday keep
- * their words and no number.
- *   Today / —,  Yesterday / —,  6 / Sunday,  19 Aug / Wednesday,  Earlier / —
+ * What the spine says: the day-of-month as its number, the month BELOW it as
+ * its own small line when the month is not this one (a "19" in September is
+ * not enough on its own), and the weekday as the word running down it. Today
+ * and yesterday keep their words and no number.
+ *   Today / —,  Yesterday / —,  6 / Sunday,  19 · Aug / Wednesday,  Earlier / —
+ *
+ * THE MONTH IS A SEPARATE FIELD, not appended to the number. As one string
+ * "19 Aug" wrapped inside the spine's width while a bare "8" did not, so the
+ * big numeral sat at a different height on those days and the spines down a
+ * column no longer lined up. Its own line keeps every numeral on one baseline.
  */
 export function bookendLines(key, today = null) {
   const heading = dayHeading(key, today);
-  if (!key || heading === 'Today' || heading === 'Yesterday') return { top: null, bottom: heading };
+  if (!key || heading === 'Today' || heading === 'Yesterday') return { top: null, month: null, bottom: heading };
   try {
     const ms = parseKey(key);
     const d = new Date(ms);
     let thisMonth = false;
     try { thisMonth = today ? new Date(parseKey(today)).getUTCMonth() === d.getUTCMonth() : false; } catch { thisMonth = false; }
-    const number = thisMonth ? String(d.getUTCDate()) : `${d.getUTCDate()} ${MONTH_NAMES[d.getUTCMonth()].slice(0, 3)}`;
-    return { top: number, bottom: WEEKDAY_NAMES[isoWeekday(ms) - 1] };
+    return {
+      top: String(d.getUTCDate()),
+      month: thisMonth ? null : MONTH_NAMES[d.getUTCMonth()].slice(0, 3),
+      bottom: WEEKDAY_NAMES[isoWeekday(ms) - 1],
+    };
   } catch {
-    return { top: null, bottom: heading };
+    return { top: null, month: null, bottom: heading };
   }
 }
 
@@ -102,7 +110,42 @@ export function groupByDay(items = []) {
     .map(([key, day]) => ({ key, items: [...day.values()] }));
 }
 
-export default function BookHistory({ items = [], today = null, onSelect = null, pageDays = PAGE_DAYS }) {
+/** The day's partition: its number, its month when that needs saying, its weekday. */
+function Spine({ lines, label }) {
+  return (
+    <h4 className="school-books-history__bookend" aria-label={label}>
+      {lines.top ? <span className="school-books-history__bookend-top">{lines.top}</span> : null}
+      {lines.month ? <span className="school-books-history__bookend-month">{lines.month}</span> : null}
+      <span className="school-books-history__bookend-bottom">{lines.bottom}</span>
+    </h4>
+  );
+}
+
+/**
+ * A SPINE IS NEVER THE LAST THING ON A ROW.
+ *
+ * A day's partition landing in the final cell of a row announced a day whose
+ * books were all on the row below — it read as a label for the wrong shelf,
+ * and the row it closed ended on a colour that belonged to nothing above it.
+ * Flex wrapping has no "keep these together", so the spine and the day's FIRST
+ * book are one flow item: they wrap as a pair, and the pair cannot leave the
+ * spine stranded. Everything after the first book wraps freely, which is what
+ * lets a long day flow across rows the way it should.
+ */
+function Opening({ spine, children }) {
+  return <div className="school-books-history__opening">{spine}{children}</div>;
+}
+
+/**
+ * @param {object} props
+ * @param {Array} props.items - everything DONE, grouped into day segments.
+ * @param {Array} [props.reading] - what is in progress. Its own segment at the
+ *   head of the grid: a book being read has no finish day to file it under,
+ *   and burying it among finished days would hide the one thing a child came
+ *   to the shelf to act on.
+ * @param {React.ReactNode} [props.lead] - the Add tile, always the first cell.
+ */
+export default function BookHistory({ items = [], reading = [], lead = null, today = null, onSelect = null, incompatibleMetricFor = null, pageDays = PAGE_DAYS }) {
   const groups = groupByDay(items);
   const [shown, setShown] = useState(pageDays);
   const sentinel = useRef(null);
@@ -119,13 +162,33 @@ export default function BookHistory({ items = [], today = null, onSelect = null,
     return () => observer.disconnect();
   }, [shown, groups.length, pageDays]);
 
-  if (!groups.length) return null;
   const visible = groups.slice(0, shown);
+  // ONE GRID. Today and history used to be two stacked sections with their own
+  // headings; they are one flow now, so the eye runs from the book being read
+  // straight back through every day without a seam.
   return (
-    <section className="school-books-history" aria-label="Book history" data-testid="book-history">
-      <h3 className="school-books__shelf-title">Book history</h3>
+    <section className="school-books-history" aria-label="Books" data-testid="book-history">
       <div className="school-books-history__scroll" data-testid="book-history-scroll">
-        <div className="school-books-history__flow">
+        <div className="school-books-history__flow" data-testid="book-grid">
+          {lead}
+          {reading.length > 0 && (
+            // A segment like a day's, without a date — because "now" is not a
+            // day you look back on. `display: contents`, so its cards join the
+            // same wrap as every other cell.
+            <section className="school-books-history__day school-books-history__day--reading"
+              data-testid="book-reading-group" style={{ '--day-colour': 'var(--school-accent)' }}>
+              <Opening spine={<Spine lines={{ top: null, month: null, bottom: 'Reading' }} label="Reading now" />}>
+                {reading.length > 0 && (
+                  <ShelfTile key={reading[0].itemId} item={reading[0]} onSelect={onSelect}
+                    incompatibleMetric={incompatibleMetricFor?.(reading[0]) ?? null} />
+                )}
+              </Opening>
+              {reading.slice(1).map((item) => (
+                <ShelfTile key={item.itemId} item={item} onSelect={onSelect}
+                  incompatibleMetric={incompatibleMetricFor?.(item) ?? null} />
+              ))}
+            </section>
+          )}
           {visible.map((group, index) => {
             const lines = bookendLines(group.key, today);
             return (
@@ -140,11 +203,11 @@ export default function BookHistory({ items = [], today = null, onSelect = null,
                 data-day={group.key || undefined}
                 style={{ '--day-colour': DAY_COLOURS[index % DAY_COLOURS.length] }}
               >
-                <h4 className="school-books-history__bookend" aria-label={dayHeading(group.key, today)}>
-                  {lines.top ? <span className="school-books-history__bookend-top">{lines.top}</span> : null}
-                  <span className="school-books-history__bookend-bottom">{lines.bottom}</span>
-                </h4>
-                {group.items.map(({ item, times }) => (
+                <Opening spine={<Spine lines={lines} label={dayHeading(group.key, today)} />}>
+                  <ShelfTile key={group.items[0].item.itemId} item={group.items[0].item}
+                    history times={group.items[0].times} onSelect={onSelect} />
+                </Opening>
+                {group.items.slice(1).map(({ item, times }) => (
                   <ShelfTile key={item.itemId} item={item} history times={times} onSelect={onSelect} />
                 ))}
               </section>
@@ -161,6 +224,10 @@ export default function BookHistory({ items = [], today = null, onSelect = null,
 
 BookHistory.propTypes = {
   items: PropTypes.array,
+  reading: PropTypes.array,
+  lead: PropTypes.node,
+  /** (item) => metric|null — the obligation metric this book cannot count toward. */
+  incompatibleMetricFor: PropTypes.func,
   /** The study day, so the top shelf can be called Today. */
   today: PropTypes.string,
   onSelect: PropTypes.func,

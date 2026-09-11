@@ -1,17 +1,17 @@
 /**
- * ShelfTile — one cover + one caption (design §3).
+ * ShelfTile — THE COVER IS THE CARD.
  *
- * What these pin: the cover is an image named by the title and falls back to
- * the launch card's calm placeholder (never an invented cover); the caption is
- * the mode's own number, formatted but never derived; a title that cannot
- * break still cannot escape the tile; the incompatible tag; the tap; and that
- * a finished tile shows the day, not a bar.
+ * What these pin: the tile is its art and nothing else, so the title survives
+ * only where it cannot cost layout (the accessible name and the tooltip); a
+ * book with no art gets a DRAWN cover rather than a blank placeholder, because
+ * on a shelf of covers a blank is the one book a child cannot find; progress
+ * rides on the art; a finished book is marked, not captioned; and the tap.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import ShelfTile from './ShelfTile.jsx';
 
-const PLACEHOLDER = 'school-selfservice-card__poster-placeholder';
+const DRAWN = 'school-books-cover--drawn';
 
 const item = (overrides = {}, projection = {}) => ({
   itemId: 'kid:9780064400558:e0',
@@ -31,18 +31,35 @@ const item = (overrides = {}, projection = {}) => ({
 });
 
 describe('ShelfTile', () => {
-  describe('the text column', () => {
-    it('wraps title, author, bar and caption beside the art, never inside it', () => {
+  describe('the cover is the card', () => {
+    it('draws the art and no text column at all', () => {
       const { container } = render(<ShelfTile item={item()} onSelect={() => {}} />);
-      const text = container.querySelector('.school-books-tile__text');
-      expect(text.querySelector('.school-books-tile__title')).not.toBeNull();
-      expect(text.querySelector('.school-books-tile__author')).not.toBeNull();
-      expect(text.querySelector('.school-books-tile__bar')).not.toBeNull();
-      expect(text.querySelector('.school-books-tile__caption')).not.toBeNull();
-      // The cover is the text column's SIBLING: they used to share one fixed
-      // four-row grid, which is what sliced every second title line.
-      expect(text.querySelector('.school-books-tile__cover')).toBeNull();
+      // The title used to sit under the art in up to three wrapped lines. On a
+      // shelf of picture books that was a grid mostly made of words.
+      expect(container.querySelector('.school-books-tile__text')).toBeNull();
+      expect(container.querySelector('.school-books-tile__title')).toBeNull();
+      expect(container.querySelector('.school-books-tile__caption')).toBeNull();
       expect(container.querySelector('.school-books-tile__art .school-books-tile__cover')).not.toBeNull();
+    });
+
+    it('keeps the title as the accessible name and the tooltip, so nothing is lost', () => {
+      // Removing the words from the layout must not remove them from the page:
+      // a screen reader and a hovering mouse both still get the title.
+      render(<ShelfTile item={item()} onSelect={() => {}} />);
+      const tile = screen.getByRole('button', { name: 'Open Hatchet' });
+      expect(tile).toHaveAttribute('title', 'Hatchet');
+    });
+
+    it('names a still tile too, when there is nothing to tap', () => {
+      const { container } = render(<ShelfTile item={item({}, { status: 'finished' })} />);
+      expect(container.querySelector('.school-books-tile')).toHaveAttribute('title', 'Hatchet');
+    });
+
+    it('a title that cannot break costs the tile no layout, because it is not in it', () => {
+      const title = 'Supercalifragilisticexpialidociousness'.padEnd(40, 'x');
+      expect(title).not.toMatch(/\s/);
+      render(<ShelfTile item={item({ title })} onSelect={() => {}} />);
+      expect(screen.getByRole('button', { name: `Open ${title}` })).toHaveAttribute('title', title);
     });
   });
 
@@ -53,19 +70,37 @@ describe('ShelfTile', () => {
       expect(img).toHaveAttribute('src', '/covers/hatchet.jpg');
     });
 
-    it('uses the launch card placeholder when there is no cover', () => {
+    it('DRAWS a cover from the title when there is no art', () => {
+      // The calm placeholder was adequate while every card carried its title
+      // underneath. Now that the cover IS the card, a placeholder is a card
+      // with no identity — so the title becomes the cover instead.
       const { container } = render(<ShelfTile item={item({ coverUrl: null })} onSelect={() => {}} />);
-      expect(container.querySelector(`.${PLACEHOLDER}`)).not.toBeNull();
       expect(container.querySelector('img')).toBeNull();
-      expect(screen.getByRole('img', { name: 'No cover available for Hatchet' })).toBeInTheDocument();
+      const drawn = container.querySelector(`.${DRAWN}`);
+      expect(drawn).not.toBeNull();
+      expect(drawn).toHaveAttribute('aria-label', 'Hatchet (no cover art)');
+      expect(drawn).toHaveTextContent('Hatchet');
     });
 
-    it('falls back to the placeholder when the cover fails to load', () => {
+    it('gives the same book the same colour every time, so the colour identifies it', () => {
+      // The hue is derived from the title, not randomised: that is the whole
+      // point — two coverless books beside each other must be told apart, and
+      // the same book must not change colour between renders.
+      const one = render(<ShelfTile item={item({ coverUrl: null })} onSelect={() => {}} />);
+      const two = render(<ShelfTile item={item({ coverUrl: null })} onSelect={() => {}} />);
+      const hue = (r) => r.container.querySelector(`.${DRAWN}`).style.getPropertyValue('--drawn-hue');
+      expect(hue(one)).toBe(hue(two));
+      expect(hue(one)).not.toBe('');
+
+      const other = render(<ShelfTile item={item({ title: 'Frog and Toad', coverUrl: null })} onSelect={() => {}} />);
+      expect(hue(other)).not.toBe(hue(one));
+    });
+
+    it('falls back to the drawn cover when the art fails to load', () => {
       const { container } = render(<ShelfTile item={item()} onSelect={() => {}} />);
       fireEvent.error(screen.getByRole('img', { name: 'Cover of Hatchet' }));
-      expect(container.querySelector(`.${PLACEHOLDER}`)).not.toBeNull();
       expect(container.querySelector('img')).toBeNull();
-      expect(screen.getByRole('img', { name: 'No cover available for Hatchet' })).toBeInTheDocument();
+      expect(container.querySelector(`.${DRAWN}`)).not.toBeNull();
     });
 
     it('retries when a shelf refresh supplies a different cover URL', () => {
@@ -78,55 +113,45 @@ describe('ShelfTile', () => {
     it('refuses an active or opaque cover URL from provider data', () => {
       const { container } = render(<ShelfTile item={item({ coverUrl: 'javascript:alert(1)' })} onSelect={() => {}} />);
       expect(container.querySelector('img')).toBeNull();
-      expect(screen.getByRole('img', { name: 'No cover available for Hatchet' })).toBeInTheDocument();
+      expect(container.querySelector(`.${DRAWN}`)).not.toBeNull();
     });
 
     it('refuses a backslash path that a browser could normalize into a cross-origin URL', () => {
       const { container } = render(<ShelfTile item={item({ coverUrl: '/\\evil.example/cover.jpg' })} onSelect={() => {}} />);
       expect(container.querySelector('img')).toBeNull();
-      expect(screen.getByRole('img', { name: 'No cover available for Hatchet' })).toBeInTheDocument();
+      expect(container.querySelector(`.${DRAWN}`)).not.toBeNull();
     });
   });
 
-  describe('captions per mode', () => {
-    it('page: a bar at the percent and the page number', () => {
-      render(<ShelfTile item={item()} onSelect={() => {}} />);
-      expect(screen.getByText('p. 84')).toBeInTheDocument();
-      expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '46');
+  describe('progress rides on the art', () => {
+    it('page mode: a bar across the foot of the cover, at the percent', () => {
+      const { container } = render(<ShelfTile item={item()} onSelect={() => {}} />);
+      const bar = screen.getByRole('progressbar');
+      expect(bar).toHaveAttribute('aria-valuenow', '46');
+      expect(bar).toHaveAttribute('aria-label', '46% read');
+      // ON the art, not beneath it — there is no beneath any more.
+      expect(container.querySelector('.school-books-tile__art .school-books-tile__bar')).not.toBeNull();
     });
 
-    it('page: "Just started" while no page is logged', () => {
-      render(<ShelfTile item={item({}, { page: null, percent: 0 })} onSelect={() => {}} />);
-      expect(screen.getByText('Just started')).toBeInTheDocument();
-      expect(screen.queryByText(/^p\. /)).toBeNull();
-    });
-
-    it('page: no bar when the record had no page count', () => {
+    it('no bar when the record had no page count to measure against', () => {
       render(<ShelfTile item={item({ pageCount: null }, { percent: null })} onSelect={() => {}} />);
-      expect(screen.getByText('p. 84')).toBeInTheDocument();
       expect(screen.queryByRole('progressbar')).toBeNull();
     });
 
-    it('minutes: hours and minutes formatted from the integer', () => {
-      render(<ShelfTile item={item({ progressMode: 'minutes' }, { minutes: 200 })} onSelect={() => {}} />);
-      expect(screen.getByText('3h 20m')).toBeInTheDocument();
-      expect(screen.queryByRole('progressbar')).toBeNull();
+    it('no bar for the modes that have no end to be partway to', () => {
+      // Minutes and check-ins count up; neither has a total, so neither has a
+      // percentage, and a bar would be inventing one.
+      for (const progressMode of ['minutes', 'check']) {
+        const { unmount } = render(<ShelfTile item={item({ progressMode })} onSelect={() => {}} />);
+        expect(screen.queryByRole('progressbar')).toBeNull();
+        unmount();
+      }
     });
 
-    it('minutes: under an hour is minutes alone', () => {
-      render(<ShelfTile item={item({ progressMode: 'minutes' }, { minutes: 45 })} onSelect={() => {}} />);
-      expect(screen.getByText('45m')).toBeInTheDocument();
-    });
-
-    it('check: the days read', () => {
-      render(<ShelfTile item={item({ progressMode: 'check' }, { daysRead: 12 })} onSelect={() => {}} />);
-      expect(screen.getByText('read on 12 days')).toBeInTheDocument();
-      expect(screen.queryByRole('progressbar')).toBeNull();
-    });
-
-    it('check: one day is singular', () => {
-      render(<ShelfTile item={item({ progressMode: 'check' }, { daysRead: 1 })} onSelect={() => {}} />);
-      expect(screen.getByText('read on 1 day')).toBeInTheDocument();
+    it('no numbers anywhere on the card — those live in the panel a tap opens', () => {
+      render(<ShelfTile item={item()} onSelect={() => {}} />);
+      expect(screen.queryByText(/^p\. /)).toBeNull();
+      expect(screen.queryByText('Just started')).toBeNull();
     });
   });
 
@@ -145,15 +170,6 @@ describe('ShelfTile', () => {
     expect(screen.queryByText(/doesn't count/)).toBeNull();
   });
 
-  it('clamps a title that cannot break', () => {
-    const title = 'Supercalifragilisticexpialidociousness'.padEnd(40, 'x');
-    expect(title).toHaveLength(40);
-    expect(title).not.toMatch(/\s/);
-    render(<ShelfTile item={item({ title })} onSelect={() => {}} />);
-    const el = screen.getByText(title);
-    expect(el).toHaveClass('school-books-tile__title');
-  });
-
   it('reports its itemId on tap', () => {
     const onSelect = vi.fn();
     render(<ShelfTile item={item()} onSelect={onSelect} />);
@@ -162,20 +178,30 @@ describe('ShelfTile', () => {
   });
 
   describe('on history', () => {
-    // NO DATE ON A DONE CARD: the history shelf's day heading carries it, and
-    // a card wearing the same date as the line above it said it twice.
-    it('a finished tile shows neither a bar nor a date — the day heading owns the date', () => {
+    // NO DATE AND NO WORDS ON A DONE CARD: the day's spine beside it carries
+    // the date, and the mark on the art carries the outcome.
+    it('a finished tile shows neither a bar nor a date', () => {
       const { container } = render(<ShelfTile item={item({}, { status: 'finished', page: 195, percent: 100, lastAt: '2026-07-14T21:00:00Z' })} />);
       expect(screen.queryByRole('progressbar')).toBeNull();
-      expect(screen.queryByText(/^p\. /)).toBeNull();
       expect(screen.queryByText('Jul 14')).toBeNull();
-      expect(container.querySelector('.school-books-tile__caption')).toBeNull();
       expect(container.querySelector('.school-books-tile')).toHaveClass('school-books-tile--history');
     });
 
-    it('a set-aside tile names that outcome, without a date', () => {
-      render(<ShelfTile item={item({}, { status: 'set-aside', lastAt: '2026-06-02' })} />);
-      expect(screen.getByText('Set aside')).toBeInTheDocument();
+    it('marks a finished book with the green check, not a sentence', () => {
+      const { container } = render(<ShelfTile item={item({}, { status: 'finished', lastAt: '2026-07-14' })} />);
+      const mark = container.querySelector('.school-books-tile__mark');
+      expect(mark).toHaveClass('is-finished');
+      expect(mark).toHaveAttribute('aria-label', 'Finished');
+      expect(screen.queryByText(/^Finished/)).toBeNull();
+    });
+
+    it('marks a set-aside book differently, and says so only to a reader', () => {
+      // The bookmark is a shape a child still has to learn, so the word stays
+      // — as the mark's accessible name, which costs the cover no room.
+      const { container } = render(<ShelfTile item={item({}, { status: 'set-aside', lastAt: '2026-06-02' })} />);
+      const mark = container.querySelector('.school-books-tile__mark');
+      expect(mark).toHaveClass('is-set-aside');
+      expect(mark).toHaveAttribute('aria-label', 'Set aside');
       expect(screen.queryByText(/Jun 2/)).toBeNull();
     });
 
@@ -185,18 +211,9 @@ describe('ShelfTile', () => {
       expect(container.querySelector('.school-books-tile__mark')).toHaveClass('is-finished');
     });
 
-    it('marks a finished book with the green check, not another sentence', () => {
-      const { container } = render(<ShelfTile item={item({}, { status: 'finished', lastAt: '2026-07-14' })} />);
-      const mark = container.querySelector('.school-books-tile__mark');
-      expect(mark).toHaveClass('is-finished');
-      expect(mark).toHaveAttribute('aria-label', 'Finished');
-      expect(screen.queryByText(/^Finished/)).toBeNull();
-    });
-
-    it('marks a set-aside book differently, and keeps its word', () => {
-      const { container } = render(<ShelfTile item={item({}, { status: 'set-aside', lastAt: '2026-06-02' })} />);
-      expect(container.querySelector('.school-books-tile__mark')).toHaveClass('is-set-aside');
-      expect(screen.getByText('Set aside')).toBeInTheDocument();
+    it('wears a count instead of repeating the same book down the day', () => {
+      render(<ShelfTile item={item({}, { status: 'finished' })} history times={3} />);
+      expect(screen.getByLabelText('3 times')).toHaveTextContent('×3');
     });
 
     it('a book still being read carries no outcome mark at all', () => {

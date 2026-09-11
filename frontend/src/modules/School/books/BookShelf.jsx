@@ -1,6 +1,5 @@
 /** Learner reading workspace: bounded collections, focused editors, and inline save results. */
 import { useBookShelf } from './useBookShelf.js';
-import ShelfTile from './ShelfTile.jsx';
 import BookHistory from './BookHistory.jsx';
 import ReadingPips from '../reading/ReadingPips.jsx';
 import UpdateBook from './UpdateBook.jsx';
@@ -112,16 +111,12 @@ function Shelf({ shelf, error, actions, receipt, busy, needsRefresh, today }) {
       <Fault error={error} onRetry={actions.retry} needsRefresh={needsRefresh} busy={busy} />
       {receipt && <SaveReceipt receipt={receipt} busy={busy} inline onUndo={actions.undoFinish} />}
       <div className="school-books__collections">
-        {/* TODAY, with the obligation INSIDE its heading as pips — the same
-            notation the living-room rail and the close use, so a child sees
-            one object change state across the whole ceremony. It used to be
-            a sentence in a chip floating above "Reading now": a count sitting
-            apart from the thing it counts. `count`/`target` are the shelf's
-            own `actual`/`target`; the sentence survives as the label the
-            pips fall back to when the target is unreadable or too large. */}
-        <div className="school-books__shelf-heading">
-          <h3 className="school-books__shelf-title">Today</h3>
-          {obligation && (
+        {/* The obligation stands alone now that the grid has no section
+            headings to hang it from — the same pips, still the shelf's own
+            actual/target, just no longer introducing a "Today" row that no
+            longer exists. */}
+        {obligation && (
+          <div className="school-books__shelf-heading">
             <ReadingPips
               count={Number.isFinite(obligation.actual) ? obligation.actual : 0}
               target={Number.isFinite(obligation.target) ? obligation.target : null}
@@ -129,18 +124,20 @@ function Shelf({ shelf, error, actions, receipt, busy, needsRefresh, today }) {
               className="school-books__pips"
               testId="shelf-obligation"
             />
-          )}
-        </div>
-        <div className="school-books__row" data-testid="book-shelf-grid">
-          {items.map((item) => <ShelfTile key={item.itemId} item={item} onSelect={awaitingShelf ? null : actions.openItem}
-            incompatibleMetric={incompatible.has(item.bookId) ? obligation.metric : null} />)}
-          {/* Last, so it stands beside what is already being read — and alone,
-              which is the whole row, when nothing is. */}
-          <AddTile first={(shelf?.items ?? []).length === 0} disabled={awaitingShelf} onSelect={actions.startAdd} />
-        </div>
-        {/* One shelf per day, stacked, scrolling down as far as the record
-            goes. There is no "See all history" any more: this IS all of it. */}
-        <BookHistory items={done} today={today} onSelect={awaitingShelf ? null : actions.openItem} />
+          </div>
+        )}
+        {/* ONE GRID: the Add tile, then what is being read, then every day
+            back to the beginning. Today and history used to be two sections
+            with their own headings and their own scroll behaviour; a child
+            reading the shelf had to cross a seam to see yesterday. */}
+        <BookHistory
+          lead={<AddTile first={(shelf?.items ?? []).length === 0} disabled={awaitingShelf} onSelect={actions.startAdd} />}
+          reading={items}
+          items={done}
+          today={today}
+          onSelect={awaitingShelf ? null : actions.openItem}
+          incompatibleMetricFor={(item) => (incompatible.has(item.bookId) ? obligation.metric : null)}
+        />
       </div>
     </>
   );

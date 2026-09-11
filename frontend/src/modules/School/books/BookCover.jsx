@@ -35,13 +35,34 @@ export default function BookCover({ book, className = '', loading = 'eager' }) {
       />
     );
   }
+  // NO ART: the title BECOMES the cover.
+  //
+  // A star on a dark square was adequate while every card carried its title
+  // underneath. On a shelf where the cover IS the card, that placeholder is an
+  // unidentifiable blank — the one book a child cannot find. So the fallback
+  // draws a cover instead: the title set large over a hue derived from the
+  // title itself, so the same book lands on the same colour every time and two
+  // coverless books beside each other are told apart at a glance.
   return (
     <div
-      className={`school-selfservice-card__poster-placeholder school-books-cover ${className}`.trim()}
+      className={`school-books-cover school-books-cover--drawn ${className}`.trim()}
       role="img"
-      aria-label={`No cover available for ${title}`}
+      aria-label={`${title} (no cover art)`}
+      style={{ '--drawn-hue': titleHue(title) }}
     >
-      <span aria-hidden="true">✦</span>
+      <span className="school-books-cover__drawn-title" aria-hidden="true">{title}</span>
     </div>
   );
+}
+
+/**
+ * A stable hue from the title. Not random and not hashed for distribution —
+ * only for REPEATABILITY: the point is that `Charlotte's Web` is the same
+ * colour on every shelf, every render, so the colour becomes part of how the
+ * book is recognised.
+ */
+function titleHue(title) {
+  let hash = 0;
+  for (let i = 0; i < title.length; i += 1) hash = (hash * 31 + title.charCodeAt(i)) % 360;
+  return hash;
 }
