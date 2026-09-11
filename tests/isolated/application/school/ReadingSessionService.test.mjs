@@ -399,3 +399,114 @@ describe('ReadingSessionService — the idle timeout (D6)', () => {
     expect(service.current('livingroom')).toBeNull();
   });
 });
+
+/**
+ * The nine seconds between a teardown and the book card that was already on
+ * its way to the reader. See `REOPEN_GRACE_MS`.
+ *
+ * The window edges are pinned to the millisecond on purpose: a grace quietly
+ * narrowed to ten seconds would still pass a "+9s works, +69s does not" pair,
+ * and ten seconds is not long enough to walk to a shelf — which is the whole
+ * failure this exists to prevent.
+ */
+describe('ReadingSessionService — the session that just closed', () => {
+  it('remembers a timed-out session, to the last millisecond of the grace', () => {
+    let now = 1_000_000;
+    const sessions = new ReadingSessionService({ logger: silent, clock: () => new Date(now) });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    now += 9_000; // the nine seconds that cost a real child his credit
+    const record = sessions.recentlyClosed('livingroom');
+    expect(record).toBeTruthy();
+    expect(record.session.learnerId).toBe('user_5');
+    expect(record.reason).toBe('timeout');
+
+    now += 35_999; // 44_999ms — the last millisecond inside the window
+    expect(sessions.recentlyClosed('livingroom')).toBeTruthy();
+    now += 2; // 45_001ms — the first millisecond outside it
+    expect(sessions.recentlyClosed('livingroom')).toBeNull();
+  });
+
+  it('hands out a frozen record — nobody resurrects an expired session from outside', () => {
+    let now = 1_000_000;
+    const sessions = new ReadingSessionService({ logger: silent, clock: () => new Date(now) });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+    const record = sessions.recentlyClosed('livingroom');
+    expect(Object.isFrozen(record)).toBe(true);
+
+    now += 60_000;
+    try { record.closedAt = now; } catch { /* strict-mode throw is the same answer */ }
+    expect(sessions.recentlyClosed('livingroom')).toBeNull();
+  });
+
+  it('forgets the closed session once a new one is open — a live session is never "recently closed"', () => {
+    let now = 1_000_000;
+    const sessions = new ReadingSessionService({ logger: silent, clock: () => new Date(now) });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_3' });
+    expect(sessions.recentlyClosed('livingroom')).toBeNull();
+  });
+
+  // The grace is a FRACTION of the idle timeout, not a second timeout. A
+  // household that shortened its timeout must not end up with a grace longer
+  // than the timeout it chose.
+  it('clamps the grace to a shorter configured idle timeout', () => {
+    let now = 1_000_000;
+    const sessions = new ReadingSessionService({
+      logger: silent, clock: () => new Date(now), idleTimeoutMs: 30_000,
+    });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    now += 29_999;
+    expect(sessions.recentlyClosed('livingroom')).toBeTruthy();
+    now += 2; // 30_001ms — past this instance's own idle timeout
+    expect(sessions.recentlyClosed('livingroom')).toBeNull();
+  });
+
+  // `idleTimeoutMs: 0` disables the sweep; it must not silently disable the
+  // grace as well, or `Math.min(45_000, 0)` would kill the feature outright.
+  it('a disabled idle timeout keeps the full grace, not a zero one', () => {
+    let now = 1_000_000;
+    const sessions = new ReadingSessionService({
+      logger: silent, clock: () => new Date(now), idleTimeoutMs: 0,
+    });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+    now += 44_999;
+    expect(sessions.recentlyClosed('livingroom')).toBeTruthy();
+  });
+
+  // Everything above closes by hand. THIS is the one that actually fires in
+  // the field, and the one Task 2 will be wired behind.
+  it('the idle SWEEP records the teardown it performed, with reason timeout', async () => {
+    let now = 1_000_000;
+    const sessions = new ReadingSessionService({ logger: silent, clock: () => new Date(now) });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+
+    now += 120_001;
+    await sessions.sweep();
+
+    expect(sessions.current('livingroom')).toBeNull();
+    const record = sessions.recentlyClosed('livingroom');
+    expect(record).toBeTruthy();
+    expect(record.reason).toBe('timeout');
+    expect(record.session.learnerId).toBe('user_5');
+  });
+
+  // The two facts Task 2's `reason === 'timeout'` guard rests on. A day-done
+  // close is a finished child: reopening it re-arms a ceremony that already ran.
+  it('records every teardown, and keeps the reasons apart', () => {
+    const sessions = new ReadingSessionService({ logger: silent });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom');
+    expect(sessions.recentlyClosed('livingroom').reason).toBeNull();
+
+    sessions.open({ location: 'study', learnerId: 'user_3' });
+    sessions.close('study', { reason: 'day-done' });
+    expect(sessions.recentlyClosed('study').reason).toBe('day-done');
+  });
+});

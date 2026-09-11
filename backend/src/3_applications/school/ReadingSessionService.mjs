@@ -52,6 +52,27 @@ export const DEFAULT_IDLE_TIMEOUT_MS = 120_000;
 export const DEFAULT_SWEEP_INTERVAL_MS = 15_000;
 
 /**
+ * How long after a teardown a book card may still reclaim the session it
+ * belongs to.
+ *
+ * A child who scans their card, chooses a book off the shelf and scans it is
+ * doing ONE thing, and the idle sweep cannot see the middle of it. On
+ * 2026-09-11 the sweep closed a session at 17:13:21 and the book landed at
+ * 17:13:30 — nine seconds — and the story played with nobody's name on it.
+ *
+ * Deliberately a fraction of the idle timeout, not a second timeout: this does
+ * not keep a room alive, it only lets a tap that was ALREADY in flight land
+ * where it was aimed.
+ *
+ * That "fraction" is enforced, not merely asserted: `idleTimeoutMs` is
+ * injectable per instance, so a household configured shorter than this would
+ * otherwise get a grace LONGER than its own timeout. The effective grace is
+ * clamped to the instance's idle timeout whenever that timeout is positive —
+ * see `#reopenGraceMs`.
+ */
+export const REOPEN_GRACE_MS = 45_000;
+
+/**
  * The states an idle session may be torn down FROM (D6). `reading` is
  * deliberately absent: a 45-minute audiobook is not an idle room, and the
  * whole point of the timeout is to catch the room that is genuinely empty.
@@ -93,6 +114,8 @@ export class ReadingSessionService {
   #observationStore;
   /** Locations already reported stuck, so the 15s sweep warns once, not always. */
   #stuckReported = new Set();
+  /** location -> {session, reason, closedAt}: the last teardown, for the reopen grace. */
+  #recentlyClosed = new Map();
   #realtime; #clock; #logger; #idFactory; #idSequence = 0;
   #idleTimeoutMs; #sweepIntervalMs; #onTimeout; #scheduler; #cancelSweep = null;
 
@@ -251,6 +274,49 @@ export class ReadingSessionService {
   /** @returns {object|null} the frozen session at this location, or null */
   current(location) {
     return this.#sessions.get(location) ?? null;
+  }
+
+  /**
+   * The session torn down at this reader moments ago, or null.
+   *
+   * READ ONLY WHEN `current()` IS NULL — this is the gap between a teardown and
+   * the tap that was already on its way. See `REOPEN_GRACE_MS`.
+   *
+   * THIS RETURNS EVERY TEARDOWN, and the caller must not treat them alike.
+   * Only `reason === 'timeout'` is safe to reopen: that is the sweep cutting a
+   * child off mid-action, which is precisely the mistake worth undoing. A
+   * `day-done` close is a finished child whose closing ceremony already ran —
+   * reopening it re-arms a ceremony that has happened. A bare `close()` records
+   * `reason: null` and is likewise not a reopen. The check belongs to the
+   * caller, not here, because a diagnostic reader legitimately wants to see
+   * what closed at a reader whatever the reason.
+   *
+   * The window is the instance's effective grace (`#reopenGraceMs`); it is not
+   * a parameter, so no caller can widen it.
+   *
+   * @returns {{session: object, reason: string|null, closedAt: number}|null}
+   *   a frozen record, or null if nothing closed here inside the grace.
+   */
+  recentlyClosed(location) {
+    const record = this.#recentlyClosed.get(location) ?? null;
+    if (!record) return null;
+    if (this.#clock().getTime() - record.closedAt > this.#reopenGraceMs()) return null;
+    return record;
+  }
+
+  /**
+   * The reopen grace this instance actually honours.
+   *
+   * Clamped to `idleTimeoutMs` so the grace stays a fraction of the timeout
+   * even when a household shortens it. A disabled timeout (`0`) keeps the FULL
+   * grace rather than `Math.min(45_000, 0)`: turning the sweep off must not
+   * silently turn the reopen off too — a manual `close(…, 'timeout')` in such a
+   * household is still a tap worth catching.
+   */
+  #reopenGraceMs() {
+    return this.#idleTimeoutMs > 0
+      ? Math.min(REOPEN_GRACE_MS, this.#idleTimeoutMs)
+      : REOPEN_GRACE_MS;
   }
 
   /** A replay-safe read for a screen that mounted or reconnected mid-session. */
@@ -421,6 +487,9 @@ export class ReadingSessionService {
     this.#sessions.set(session.location, session);
     // A fresh session at this reader is a fresh chance to get stuck.
     this.#stuckReported.delete(session.location);
+    // A live session is never "recently closed" — the reopen grace exists for
+    // the gap between sessions and must not survive into one.
+    this.#recentlyClosed.delete(session.location);
     this.#log('info', 'school.reading.session-open', {
       location: session.location,
       learnerId: session.learnerId,
@@ -680,6 +749,12 @@ export class ReadingSessionService {
     const session = this.#sessions.get(location) ?? null;
     if (!session) return null;
     this.#sessions.delete(location);
+    // Frozen at the point of record, like every other object this class hands
+    // out: the reader returns this exact object, and a caller who could write
+    // `closedAt` could resurrect an expired session from outside the class.
+    this.#recentlyClosed.set(location, Object.freeze({
+      session, reason, closedAt: this.#clock().getTime(),
+    }));
     this.#ackWaiters.get(session.sessionId)?.(false);
     this.#ackWaiters.get(session.presentationId)?.(false);
     this.#ackWaiters.get(session.pendingPresentation?.sessionId)?.(false);
