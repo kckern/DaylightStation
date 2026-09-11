@@ -49,6 +49,10 @@ export class TransactionClassifier {
   #monthlyTagDict;
   #shortTermTagDict;
   #transferTagDict;
+  #plumbingAccounts;
+  #plumbingPatterns;
+  #shortTermDescDict;
+  #shortTermIdDict;
 
   /**
    * @param {BucketConfig} config - Budget bucket configuration
@@ -93,6 +97,57 @@ export class TransactionClassifier {
       });
       return acc;
     }, {});
+
+    // Description-routed short-term buckets. A one-off project (a water-damage
+    // restoration, a remodel) is a set of named transactions, not a tag: the
+    // vendors are already tagged Home Maintenance/Fees like any other repair.
+    // Listing descriptions pulls them into their own bucket without inventing a
+    // tag at the source. Later entries do not silently win — see the collision check.
+    this.#shortTermDescDict = (config.shortTerm || []).reduce((acc, { descriptions, label }) => {
+      const bucketLabel = label || FALLBACK_LABEL;
+      (descriptions || []).forEach(d => {
+        const pattern = String(d).trim().toLowerCase();
+        if (!pattern) return;
+        if (acc[pattern] && acc[pattern] !== bucketLabel) {
+          throw new ValidationError(
+            `Short-term description "${d}" claimed by both ${acc[pattern]} and ${bucketLabel}`,
+            { code: 'CLASSIFIER_DESCRIPTION_COLLISION', description: d }
+          );
+        }
+        acc[pattern] = bucketLabel;
+      });
+      return acc;
+    }, {});
+
+    // Explicit transaction ids pinned to a short-term bucket. For a CLOSED
+    // one-off project this beats description matching outright: the ids are
+    // exact, so no future vendor with a similar name can fall into a bucket
+    // that is already funded to 100% and done. Use `descriptions` for an OPEN
+    // project still accruing transactions, `ids` for one that has finished.
+    this.#shortTermIdDict = (config.shortTerm || []).reduce((acc, { ids, label }) => {
+      const bucketLabel = label || FALLBACK_LABEL;
+      (ids || []).forEach(id => {
+        const key = String(id).trim();
+        if (!key) return;
+        if (acc[key] && acc[key] !== bucketLabel) {
+          throw new ValidationError(
+            `Short-term transaction id ${key} claimed by both ${acc[key]} and ${bucketLabel}`,
+            { code: 'CLASSIFIER_ID_COLLISION', transactionId: key }
+          );
+        }
+        acc[key] = bucketLabel;
+      });
+      return acc;
+    }, {});
+
+    // Account-scoped plumbing: brokerage-side mirrors of real transfers that
+    // Buxfer types as expense/income rather than transfer (see #isPlumbing).
+    this.#plumbingAccounts = new Set(
+      (config.plumbing?.accounts || []).map(a => String(a).trim().toLowerCase()).filter(Boolean)
+    );
+    this.#plumbingPatterns = (config.plumbing?.descriptions || [])
+      .map(d => String(d).trim().toLowerCase())
+      .filter(Boolean);
 
     this.#assertNoCrossBucketCollisions();
   }
@@ -149,6 +204,12 @@ export class TransactionClassifier {
     const mainTag = txnTags[0];
     const txnType = transaction.type;
 
+    // Account-scoped plumbing wins over everything, including transferTags.
+    // These are brokerage-side legs of a transfer already counted elsewhere.
+    if (this.#isPlumbing(transaction)) {
+      return { label: mainTag || 'Transfer', bucket: 'transfer' };
+    }
+
     // Check for transfers first
     // Most transfers are internal account movements (e.g., Fidelity cash sweeps) and stay in the transfer bucket.
     // Exception: transfers whose main tag is in a monthly category's transferTags represent real cash
@@ -169,6 +230,20 @@ export class TransactionClassifier {
     // Check for day-to-day spending
     if (this.#arraysOverlap(this.#dayToDayTags, txnTags)) {
       return { label: 'Day-to-Day', bucket: 'day' };
+    }
+
+    // Project-routed short-term bucket (pinned id first, then description).
+    // Runs after income and day-to-day
+    // (so a project can never swallow a paycheck or the grocery run) but before
+    // the monthly and short-term TAG lookups, so a named project transaction
+    // lands in its own bucket whatever it happens to be tagged.
+    const pinned = this.#shortTermIdDict[String(transaction.id)];
+    if (pinned) {
+      return { label: pinned, bucket: 'shortTerm' };
+    }
+    const descLabel = this.#matchShortTermDescription(transaction);
+    if (descLabel) {
+      return { label: descLabel, bucket: 'shortTerm' };
     }
 
     // Check for monthly expenses — label from the matching tag, wherever it sits
@@ -219,6 +294,50 @@ export class TransactionClassifier {
       monthly: [...new Set(Object.values(this.#monthlyTagDict))],
       shortTerm: [...new Set(Object.values(this.#shortTermTagDict))]
     };
+  }
+
+  /**
+   * Resolve a transaction to a short-term bucket by description.
+   * Case- and whitespace-insensitive substring match.
+   * @private
+   */
+  #matchShortTermDescription(transaction) {
+    const description = String(transaction.description || '').trim().toLowerCase();
+    if (!description) return null;
+    for (const [pattern, label] of Object.entries(this.#shortTermDescDict)) {
+      if (description.includes(pattern)) return label;
+    }
+    return null;
+  }
+
+  /**
+   * Brokerage-side plumbing: the mirror leg of a transfer that Buxfer reports
+   * as a plain expense/income instead of type=transfer, so #isTransfer never
+   * sees it.
+   *
+   * A payday produces three records of the same dollar amount:
+   *   Net Pay             type=transfer  Payroll -> Fidelity   (caught by #isTransfer)
+   *   Fidelity Cash Sweep type=expense   Fidelity  [Investments]
+   *   Coupang Payroll     type=income    Fidelity  [Payroll]
+   *
+   * The real paycheck is a separate record on the Payroll account. Left alone,
+   * the last two inflate Long-term Savings and income respectively, and because
+   * deposits and sweeps do not match dollar-for-dollar within a period they do
+   * NOT cancel — they overstate surplus by the unswept remainder.
+   *
+   * Matching is deliberately narrow: the transaction must sit in a configured
+   * plumbing account AND its description must match a configured pattern.
+   * A description alone is not enough — "Coupang Payroll" on the Payroll
+   * account is the real paycheck.
+   * @private
+   */
+  #isPlumbing(transaction) {
+    if (this.#plumbingAccounts.size === 0 || this.#plumbingPatterns.length === 0) return false;
+    const account = String(transaction.accountName || '').trim().toLowerCase();
+    if (!this.#plumbingAccounts.has(account)) return false;
+    const description = String(transaction.description || '').trim().toLowerCase();
+    if (!description) return false;
+    return this.#plumbingPatterns.some(pattern => description.includes(pattern));
   }
 
   /**
