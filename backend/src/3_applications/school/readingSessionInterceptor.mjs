@@ -93,7 +93,12 @@ export class ReadingSessionInterceptor {
     if (response?.kind !== 'content') return null;
     const location = response?.location;
     if (!location) return null;
-    const session = this.#sessions.current(location) ?? this.#reopenIfJustClosed(location, response?.target ?? null);
+    // `reopened` is held separately from `session` because it is the ONLY one
+    // this call is allowed to undo. A session that was already open belongs to
+    // a child standing at the reader and survives any answer given here.
+    const current = this.#sessions.current(location);
+    const reopened = current ? null : this.#reopenIfJustClosed(location, response?.target ?? null);
+    const session = current ?? reopened;
     if (!session) return null;
 
     const contentId = response.expression?.contentId ?? null;
@@ -146,7 +151,13 @@ export class ReadingSessionInterceptor {
       pickId: this.#nextPickId(), learnerId, contentId, target: response.target ?? null,
       studyDay: this.#storyTime?.studyDay?.() ?? null, at: this.#clock().toISOString(),
     };
-    if (!this.#broadcast(location, { event: 'book-selected', learnerId, location, sessionId: session.sessionId, ...pick })) return null;
+    // The only `return null` a REOPENED session can reach: its state is always
+    // PROMPT, so neither the not-ready branch nor the mid-story branch above is
+    // reachable from here. If that ever changes, they need this rollback too.
+    if (!this.#broadcast(location, { event: 'book-selected', learnerId, location, sessionId: session.sessionId, ...pick })) {
+      this.#abandonReopen(reopened, location);
+      return null;
+    }
     this.#sessions.update(location, { state: 'confirm', pick });
     this.#log('info', 'school.reading.book-selected', { location, learnerId, contentId });
     return { claimed: true, by: CLAIMED_BY, learnerId, contentId };
@@ -266,6 +277,28 @@ export class ReadingSessionInterceptor {
    * Reopening broadcasts `session-open`, so the screen puts the launch card
    * back before the caller's own `book-selected` lands on it.
    *
+   * THE STORE AND THIS CLASS MUST SHARE ONE REALTIME GATEWAY. That is an
+   * invariant of composition, not an accident of it, and nothing enforces it:
+   * `ReadingSessionService.#broadcast` swallows its own failures and returns
+   * nothing, so `open()` reports success whether or not the screen was told.
+   * Wired to two gateways — or hit by a transient failure on the `session-open`
+   * send alone — this produces a CLAIMED tap whose widget never restored the
+   * launch card, which is the single outcome the header of this file forbids.
+   * The `book-selected` send below is the only failure this can see, and it is
+   * what the rollback hangs off.
+   *
+   * IT REACHES `prompt` WITHOUT A RENDERED ACK, and that is a deliberate
+   * exception. `ReadingSessionService.open`'s default `state = PROMPT` mints a
+   * presentationId and stamps `presentedAt`/`acknowledgedAt` as of now; its own
+   * comment calls that a trusted fixture/restore seam, because the production
+   * card path reaches prompt only through a screen that says it painted. A
+   * synchronous claim cannot wait for an ACK — the book tap is already being
+   * dispatched — so the reopen asserts the launch card rather than proving it.
+   * The bet is small (the card was rendered moments ago and the widget is still
+   * mounted) but it is a bet, and it COUPLES this path to that seam: anyone
+   * tightening `open()` to require an acknowledgement kills the reopen, and no
+   * test here would fail.
+   *
    * AND IT IS THE ONLY CLAIM THAT ASKS FOR THE SCREEN BACK. An ordinary claim
    * lands on a session already open on a lit screen; this one lands on a
    * session the sweep just tore down, and the sweep's teardown at the
@@ -285,13 +318,17 @@ export class ReadingSessionInterceptor {
   #reopenIfJustClosed(location, target = null) {
     const record = this.#sessions.recentlyClosed?.(location) ?? null;
     if (!record || record.reason !== 'timeout') return null;
+    // ONE target value. The session records the device the wake actually asks
+    // for, because a session carrying a device nobody woke would ride that
+    // stale target into every later `activate()` / `beginSwitch()`
+    // presentation. The tap's own target wins: it names the screen this book
+    // was aimed at, and the closed session may have carried none at all.
+    const wakeTarget = target ?? record.session.target ?? null;
+    const wakeRequested = Boolean(this.#wakeScreen && wakeTarget);
     const reopened = this.#sessions.open({
-      location,
-      learnerId: record.session.learnerId,
-      target: record.session.target ?? null,
+      location, learnerId: record.session.learnerId, target: wakeTarget,
     });
     const sinceCloseMs = this.#clock().getTime() - record.closedAt;
-    const wakeTarget = target ?? record.session.target ?? null;
     this.#log('info', 'school.reading.session-reopened', {
       location,
       learnerId: record.session.learnerId,
@@ -300,12 +337,44 @@ export class ReadingSessionInterceptor {
       sinceCloseMs,
       // Whether the screen was ASKED for; whether it came back is the
       // `reopen-wake` line, which carries the same `sinceCloseMs` so the two
-      // read together. Diagnosing a dark screen needs both halves.
-      wakeRequested: Boolean(this.#wakeScreen && wakeTarget),
+      // read together. Diagnosing a dark screen needs both halves — and see
+      // `#wakeForReopen` for why even `ok: true` is not proof of a lit room.
+      wakeRequested,
       consequence: 'the book that arrived just after a teardown keeps its credit',
     });
-    this.#wakeForReopen(location, wakeTarget, sinceCloseMs);
+    if (wakeRequested) this.#wakeForReopen(location, wakeTarget, sinceCloseMs);
     return reopened;
+  }
+
+  /**
+   * Undo a reopen whose screen could not be told, and leave the room exactly as
+   * the sweep left it.
+   *
+   * A reopened session that outlives its own abandoned claim is a PHANTOM, and
+   * it is not inert: `suppressEnd` asks only whether a session is open at this
+   * reader, so the phantom would cancel the room's `end: tv-off` for the very
+   * dispatch about to play the book — the story ends, and nothing is left to
+   * turn the living room off. That is the 2026-08-28 fault arriving by a new
+   * road.
+   *
+   * IT SPENDS THE GRACE, deliberately. The close writes a `reopen-abandoned`
+   * record, so the next tap inside the window will not try again: a bus that
+   * could not carry `book-selected` cannot carry a launch card either, and a
+   * retry would only mint a second phantom.
+   */
+  #abandonReopen(reopened, location) {
+    if (!reopened) return;
+    // Only ever close the session THIS call opened. Nothing awaits between the
+    // reopen and the broadcast, so this holds today; it is asserted rather than
+    // assumed because an await introduced above would silently break it.
+    if (this.#sessions.current(location)?.sessionId !== reopened.sessionId) return;
+    this.#sessions.close(location, { reason: 'reopen-abandoned' });
+    this.#log('warn', 'school.reading.reopen-abandoned', {
+      location,
+      learnerId: reopened.learnerId,
+      sessionId: reopened.sessionId,
+      consequence: 'the book dispatches as ordinary content, and the room keeps its own teardown',
+    });
   }
 
   /**
@@ -317,20 +386,42 @@ export class ReadingSessionInterceptor {
    * contract is that a claim is a promise the screen will handle the tap — a
    * wake that throws, rejects or hangs must not turn a good claim into a dead
    * one, so every outcome lands in a log line and none of them propagate.
+   *
+   * `ok: true` IS NOT PROOF THE ROOM CAME BACK — do not read it as one. This
+   * fires a power-on INTO a teardown that is still running, and the two verify
+   * against DIFFERENT entities. From the 2026-09-11 window:
+   *
+   *   17:13:22.147  script.turn_on   the OFF script (the sweep's teardown)
+   *   17:13:23.303  script.turn_on   the ON script (this)
+   *   17:13:23.307  living_room_tv_POWER = on    elapsedMs=3   ← this reports ok
+   *   17:13:30.165  living_room_tv_STATE = off   elapsedMs=8018 ← 7s LATER
+   *
+   * The power-on verified in 3ms against a sensor that had not yet caught up
+   * with the off script, while the teardown was waiting on a different one that
+   * reached `off` seven seconds after this would have logged success. Whether
+   * the child's room ended up lit is UNVERIFIED: nobody has watched the actual
+   * TV through this sequence, and that item was audio. A re-wake after the
+   * teardown settles is the obvious candidate, and it is deliberately NOT built
+   * here — it is speculation about hardware behaviour that has to be tested on
+   * the real TV first. Until someone does that, this narrows the window; it
+   * does not close it.
    */
   #wakeForReopen(location, target, sinceCloseMs) {
-    if (!this.#wakeScreen || !target) return;
-    const report = (result, error = null) => this.#log(error || result?.ok === false ? 'warn' : 'info', 'school.reading.reopen-wake', {
-      location, target, sinceCloseMs,
-      ok: !error && result?.ok !== false,
-      error: error ?? result?.error ?? null,
+    const say = (ok, error) => this.#log(ok ? 'info' : 'warn', 'school.reading.reopen-wake', {
+      location, target, sinceCloseMs, ok, error: error ?? null,
+      caveat: ok ? 'verified against the power sensor, not the one the teardown drives' : null,
     });
+    // Two named paths rather than one predicate, because `new Error()` has an
+    // EMPTY message: `??` does not catch it, and a wake that threw would have
+    // been logged as a success at info — in the one line a dark-screen
+    // investigation actually leans on.
+    const failed = (err) => say(false, err?.message || String(err ?? '') || 'wake failed without a message');
     try {
       Promise.resolve(this.#wakeScreen({ target, location }))
-        .then((result) => report(result))
-        .catch((err) => report(null, err?.message ?? String(err)));
+        .then((result) => (result?.ok === false ? say(false, result?.error ?? null) : say(true, null)))
+        .catch(failed);
     } catch (err) {
-      report(null, err?.message ?? String(err));
+      failed(err);
     }
   }
 

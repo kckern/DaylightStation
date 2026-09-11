@@ -642,8 +642,13 @@ export function useReadingSession({
         setSummary(null);
         say(null);
         loadSummary(payload.learnerId);
-        // A committed session-open is now only initial/prompt/reconnect. Card
-        // taps cannot produce one during confirmation or playback.
+        // A committed session-open is initial/prompt/reconnect — and, since
+        // 2026-09-11, a REOPEN: a book card tapped within seconds of an idle
+        // teardown reopens the session it belongs to (`ReadingSessionInterceptor`
+        // `#reopenIfJustClosed`), so a session-open can now be produced by a
+        // BOOK tap and arrives immediately before that book's `book-selected`.
+        // Resetting pick/deadline here is what makes that order safe. Card taps
+        // still cannot produce one during confirmation or playback.
         pickRef.current = null;
         setPick(null);
         setDeadline(null);
