@@ -23,11 +23,16 @@ import './pips.scss';
  * adult still get the words; it is simply no longer the thing on screen.
  *
  * WHILE A STORY PLAYS, one pip is LIVE — the one this story will fill. It
- * pulses, and where the position is known it fills clockwise as the story runs.
- * That is where the reading session's progress lives now: the surround frame
- * suppresses the Player's own progress bar, and a bar across the top said
- * "how far through this file" where the pips already say "how far through
- * today". One place, one notation.
+ * glows, and that is ALL it says.
+ *
+ * It used to fill clockwise with the playback position as well, which made one
+ * small disc carry two unrelated facts: a countable thing (one of the day's
+ * books) and a proportion (how far through this recording). On a one-book day
+ * that was a single circle carrying everything, with a sweep inside it too
+ * small to see from a sofa. The proportion moved to the ring around the child's
+ * portrait on the reading rail — four times the size, and it says whose story
+ * it is while it says how far through. These went back to counting, which is
+ * the one notation a four-year-old already has.
  *
  * Falls back to the plain label whenever the numbers cannot carry it: an
  * unreadable obligation (`target` null), or a target so large that pips would
@@ -39,7 +44,7 @@ export const MAX_PIPS = 8;
 
 export default function ReadingPips({
   count, target, label, className = '', testId = 'reading-count',
-  live = false, moving = true, progress = null,
+  live = false, moving = true,
 }) {
   const owed = Number.isFinite(target) ? target : null;
   const done = Number.isFinite(count) ? count : 0;
@@ -51,12 +56,9 @@ export default function ReadingPips({
   }
 
   // THE ONE BEING READ RIGHT NOW is the first pip not yet filled — which is
-  // where the story in progress will land when it finishes. It is drawn as a
-  // ring that fills clockwise, so the pips answer BOTH questions a child has:
-  // how many books are left (count them) and how far through this one we are
-  // (watch it close). Only ever one, and only while something is playing.
+  // where the story in progress will land when it finishes. Only ever one, and
+  // only while something is loaded.
   const activeIndex = live && done < owed ? done : -1;
-  const fraction = Number.isFinite(progress) ? Math.min(1, Math.max(0, progress)) : null;
 
   return (
     <div
@@ -72,12 +74,6 @@ export default function ReadingPips({
               key={i}
               className={`reading-pip reading-pip--live${moving ? '' : ' reading-pip--held'}`}
               data-testid="reading-pip-live"
-              // A conic gradient rather than an SVG ring: one element, no
-              // viewBox to keep in sync with `--pip-size`, and the browser
-              // interpolates the sweep. `null` progress leaves the sweep unset
-              // and the pip simply pulses — an unknown position must not draw
-              // a confident zero.
-              style={fraction === null ? undefined : { '--pip-sweep': `${fraction * 360}deg` }}
             />
           );
         }
@@ -98,8 +94,6 @@ ReadingPips.propTypes = {
   testId: PropTypes.string,
   /** A story is loaded (playing or paused): mark the pip it will fill. */
   live: PropTypes.bool,
-  /** The audio is actually running. False holds the pulse still. */
+  /** The audio is actually running. False holds the glow still, at full. */
   moving: PropTypes.bool,
-  /** 0..1 through that story, or null when the position is not known. */
-  progress: PropTypes.number,
 };

@@ -4782,6 +4782,26 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const { ReadingSessionInterceptor } = await import('#apps/school/readingSessionInterceptor.mjs');
     const { RecordStoryRead } = await import('#apps/school/usecases/RecordStoryRead.mjs');
     const { createReadingRouter } = await import('#api/v1/routers/reading.mjs');
+    /**
+     * A learner's display name, for the surfaces that greet them by it.
+     *
+     * PROFILES CARRY `display_name`, NOT `name`. Reading `profile.name` yields
+     * undefined, which is why the reading rail drew a face with no caption under
+     * it all evening and `GET /reading/summary` answered `displayName: null` for
+     * a child whose profile says `display_name: "Test Learner"` on the first page. The
+     * piano roster hit exactly this and fixed it locally (see GetCourseProgress:
+     * "a bare p.name shipped 'undefined' labels"); this is the same resolution,
+     * shared, so the next caller does not have to rediscover it.
+     *
+     * Falls back to the username and then to the id: a greeting by id is a worse
+     * greeting, never a broken screen.
+     */
+    const resolveLearnerProfile = (id) => {
+      const profile = configService.getUserProfile?.(id) ?? null;
+      if (!profile) return null;
+      return { ...profile, id: String(id), name: profile.display_name || profile.username || String(id) };
+    };
+
     const { makeReadingTimeoutHandler } = await import('#composition/modules/learnerCardActions.mjs');
     const { YamlReadingSessionTimelineStore } = await import('#adapters/persistence/yaml/YamlReadingSessionTimelineStore.mjs');
     const { YamlReadingSessionStore } = await import('#adapters/persistence/yaml/YamlReadingSessionStore.mjs');
@@ -4852,7 +4872,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       readingLog: schoolLifecycle.stores.readingLog,
       // Optional: without it the prompt falls back to the learner id, which is
       // a worse greeting and not a broken one.
-      resolveLearner: (id) => configService.getUserProfile?.(id) ?? null,
+      resolveLearner: resolveLearnerProfile,
       // Days the whole house is off, in the same shape a syllabus schedule
       // takes. Only the household declares Christmas — a course's own `except`
       // excuses a subject, which is a different statement and a different
@@ -4922,7 +4942,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         }),
         // Optional: without it the score placard names the learner id, which is
         // a worse placard and not a broken lesson.
-        resolveLearner: (id) => configService.getUserProfile?.(id) ?? null,
+        resolveLearner: resolveLearnerProfile,
         logger: lessonLogger,
       }));
     } catch (err) {
