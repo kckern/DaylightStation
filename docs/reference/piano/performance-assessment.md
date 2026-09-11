@@ -213,6 +213,24 @@ stalls, substitutions, transposition errors, or achieved BPM. Authored duration
 and tie structure are retained for timing and future criteria. Part attribution
 is only as reliable as authored staff/hand data.
 
+**A surface may not issue a verdict the engine cannot.** Only onsets are
+observed; no note-off reaches a matcher, so releases, durations and overlap are
+not merely unscored but unrepresentable in attempt state. A renderer reading the
+live HELD set is therefore reading onsets *minus releases* — a signal with no
+standing — and any judgement it draws from one is its own invention. The staff
+renderers once treated every held pitch that was not a current target as a wrong
+note, which on a scale fires on every note, because a scale is played legato and
+the previous key has not been lifted yet. `MusicNotation/model/heldPitch.js` is
+the single rule that keeps the drawn verdict and the graded verdict the same
+one: a ghost requires an onset at the current entry, and anything still held
+from before it draws nothing. `staff.ghost` and `staff.sustain` carry the key
+press, cursor arrival and draw times independently, so which of the two a mark
+was can be settled from the log store rather than from a screen recording.
+
+If articulation is ever to be graded, it arrives as an explicit criterion with
+releases fed to a matcher — never as a side effect of what a renderer has in
+scope.
+
 Game points, combo, damage, block, focus, health, and tier display scores are
 surface projections, not rubric criteria. Progression and next-exercise choice
 belong to consumers such as `BankChallengePolicy`, not to the assessment

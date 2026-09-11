@@ -225,6 +225,17 @@ is no in-progress state to lose.
 The rematch is a genuine remount, keyed on a match id, so "play again" cannot keep its
 board across a gate that was paid for.
 
+**The CEREMONY is the one thing that overlays rather than swaps.** It closes over the run
+and opens onto the game, which is why it holds still for 400ms before the panels move:
+that frame is where a child sees the key they just played land. Rendered in place of the
+run — as it once was — the ask vanished in the same commit the final note completed it,
+and the note that won the game never got a frame.
+
+The run therefore stays mounted, and live to MIDI, underneath the curtain. Its piano exit
+gesture is withdrawn for that moment: a pass cannot be abandoned, and without this a hand
+resting across the outer keys during the hand-over would fire `gate.abandoned` on an
+attempt that had already passed.
+
 ### Difficulty is a presentation tier, not a grading knob
 
 Every level names a **tier**, and the tier decides what the screen *is*. This is the
@@ -483,7 +494,7 @@ the gate anticipated cannot strand a child on a kiosk with no browser chrome.
 
 ### Material
 
-The gate asks for material through a provider seam that names three kinds:
+The gate asks for material through a provider seam that names four kinds:
 
 - **`keys`** — a lit-keyboard ask, synthesized on the spot: one white key, or two to
   three a third to a fifth apart. The floor of the ladder is made of these, and they
@@ -519,6 +530,30 @@ The gate asks for material through a provider seam that names three kinds:
   against the score's own tempo map. The cursor lights the engraved notehead itself and
   the bars either side of the passage stay printed but greyed back, so the ask is
   focused without losing the run-up.
+
+- **`drill`** — a multi-set drill, named by its program id (`{ kind: drill, drill: scale-drill-3x3 }`;
+  the id may be omitted for the scale drill). It is the only kind whose answer depends on
+  the LEARNER rather than on the bank: which set is asked for is a function of how many
+  reps that child has banked today, so the gate resolves it against their own standing
+  and hands the run a plain instance plus the program coordinates its chrome reads.
+
+  The scale drill is three sets of three reps — G right hand, D left hand, A both hands,
+  every rep the whole gesture up to the octave and back. A set is a program step and its
+  `required_passes` IS the rep counter, so passing a gate banks a rep and the row of pills
+  carries across launches: a child works through the nine over the course of a day rather
+  than paying for each game with all of them.
+
+  **It resets with the study day.** The projection counts only attempts inside the current
+  4am-to-4am day, because the drill is the price of a game rather than a course somebody
+  finishes once — without the reset, the ninth lifetime pass would retire the rung forever.
+
+  A rep banks on the DRILL's own requirement, which is stricter than the rung's: the rung
+  is completeness-only (a stray wrong key cannot fail a child), while a rep needs
+  cleanliness too. A scrappy take therefore opens the game and still asks for the rep
+  again, which is the right pair of answers.
+
+  A drill that cannot be reached fails open; a drill id that does not exist substitutes.
+  Same two answers as every other kind, for the same reasons.
 
 A level may mix kinds; the rotation serves one per attempt. An entry that cannot be
 served — a bank 502, a score naming no document — is skipped, logged as
@@ -739,6 +774,7 @@ reconstructing — the fail-open ones — are not the ones missing an anchor.
 | `gate.blocked` | warn | no player is chosen; the gate refuses without granting |
 | `gate.material-skipped` | info | a configured material entry was declined, with its reason |
 | `gate.material-config-invalid` | warn | every entry in a level failed for a config-class reason; the built-in C major fallback was served instead |
+| `gate.drill-served` | info | a `drill` level resolved, with the set being asked (`step`), the program (`drill`), and `banked` / `total` reps for the day |
 
 `gate.ceremony-start` / `gate.ceremony-done` bracket the one step of this flow that has
 no other witness. The curtain stands between `gate.passed` and the game's own mount, so
