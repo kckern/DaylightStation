@@ -290,6 +290,61 @@
   border-left: 0.5vh solid rgba(255, 212, 121, 0.5);
 }
 
+/* ── The waiting slot ───────────────────────────────────────────────────
+   A GAP IN THE SHELF, NOT A CONTROL. This panel is a view: it takes no touch
+   and shows no cursor, so the one thing a child can act on must read as a
+   PLACE — the space a book is missing from — and never as something to press.
+
+   That rules out the whole button vocabulary: no outline, no raised edge, no
+   lift, no scale. What is left is the hole: the shelf's own dark, an inner
+   shadow deep enough to sit BELOW the plank line, and a light behind it. */
+.reading-session__slot-well {
+  background: rgba(11, 16, 23, 0.72);
+  /* Inset only — the covers beside it carry outer shadows, and an outer shadow
+     here would lift the hole off the shelf it is supposed to be part of. */
+  box-shadow:
+    inset 0 0.6vh 1.4vh rgba(0, 0, 0, 0.78),
+    inset 0 0 0 1px rgba(246, 242, 232, 0.05);
+
+  /* The sheen the real covers wear belongs to a surface; a gap has none. */
+  &::before { content: none; }
+}
+
+/* THE ONE ANIMATION ON THE SCREEN. Slow — 2.4s, about a resting breath — and
+   it glows from BEHIND the opening rather than pulsing the shape itself: a
+   throb on the outline would read as a button demanding a press, which is the
+   one thing this must never say. */
+.reading-session__slot--live .reading-session__slot-well {
+  animation: reading-slot-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes reading-slot-breathe {
+  0%, 100% {
+    box-shadow:
+      inset 0 0.6vh 1.4vh rgba(0, 0, 0, 0.78),
+      inset 0 0 0 1px rgba(255, 212, 121, 0.10),
+      inset 0 -1.6vh 2.4vh -1vh rgba(255, 212, 121, 0.12);
+  }
+  50% {
+    box-shadow:
+      inset 0 0.6vh 1.4vh rgba(0, 0, 0, 0.78),
+      inset 0 0 0 1px rgba(255, 212, 121, 0.26),
+      inset 0 -1.6vh 2.4vh -1vh rgba(255, 212, 121, 0.42);
+  }
+}
+
+/* Motion is the message here, so when motion is refused the message has to
+   survive without it: the lit state, held still. */
+@media (prefers-reduced-motion: reduce) {
+  .reading-session__slot--live .reading-session__slot-well {
+    animation: none;
+    box-shadow:
+      inset 0 0.6vh 1.4vh rgba(0, 0, 0, 0.78),
+      inset 0 0 0 1px rgba(255, 212, 121, 0.26),
+      inset 0 -1.6vh 2.4vh -1vh rgba(255, 212, 121, 0.42);
+  }
+}
+
 /* The caption floats BELOW the plank, so nothing overlaps the artwork and the
    shelf line stays unbroken across the whole row. */
 .reading-session__recent-title {
