@@ -63,6 +63,12 @@ export const DEFAULT_SWEEP_INTERVAL_MS = 15_000;
  * Deliberately a fraction of the idle timeout, not a second timeout: this does
  * not keep a room alive, it only lets a tap that was ALREADY in flight land
  * where it was aimed.
+ *
+ * That "fraction" is enforced, not merely asserted: `idleTimeoutMs` is
+ * injectable per instance, so a household configured shorter than this would
+ * otherwise get a grace LONGER than its own timeout. The effective grace is
+ * clamped to the instance's idle timeout whenever that timeout is positive —
+ * see `#reopenGraceMs`.
  */
 export const REOPEN_GRACE_MS = 45_000;
 
@@ -276,13 +282,41 @@ export class ReadingSessionService {
    * READ ONLY WHEN `current()` IS NULL — this is the gap between a teardown and
    * the tap that was already on its way. See `REOPEN_GRACE_MS`.
    *
+   * THIS RETURNS EVERY TEARDOWN, and the caller must not treat them alike.
+   * Only `reason === 'timeout'` is safe to reopen: that is the sweep cutting a
+   * child off mid-action, which is precisely the mistake worth undoing. A
+   * `day-done` close is a finished child whose closing ceremony already ran —
+   * reopening it re-arms a ceremony that has happened. A bare `close()` records
+   * `reason: null` and is likewise not a reopen. The check belongs to the
+   * caller, not here, because a diagnostic reader legitimately wants to see
+   * what closed at a reader whatever the reason.
+   *
+   * The window is the instance's effective grace (`#reopenGraceMs`); it is not
+   * a parameter, so no caller can widen it.
+   *
    * @returns {{session: object, reason: string|null, closedAt: number}|null}
+   *   a frozen record, or null if nothing closed here inside the grace.
    */
-  recentlyClosed(location, { withinMs = REOPEN_GRACE_MS } = {}) {
+  recentlyClosed(location) {
     const record = this.#recentlyClosed.get(location) ?? null;
     if (!record) return null;
-    if (this.#clock().getTime() - record.closedAt > withinMs) return null;
+    if (this.#clock().getTime() - record.closedAt > this.#reopenGraceMs()) return null;
     return record;
+  }
+
+  /**
+   * The reopen grace this instance actually honours.
+   *
+   * Clamped to `idleTimeoutMs` so the grace stays a fraction of the timeout
+   * even when a household shortens it. A disabled timeout (`0`) keeps the FULL
+   * grace rather than `Math.min(45_000, 0)`: turning the sweep off must not
+   * silently turn the reopen off too — a manual `close(…, 'timeout')` in such a
+   * household is still a tap worth catching.
+   */
+  #reopenGraceMs() {
+    return this.#idleTimeoutMs > 0
+      ? Math.min(REOPEN_GRACE_MS, this.#idleTimeoutMs)
+      : REOPEN_GRACE_MS;
   }
 
   /** A replay-safe read for a screen that mounted or reconnected mid-session. */
@@ -715,9 +749,12 @@ export class ReadingSessionService {
     const session = this.#sessions.get(location) ?? null;
     if (!session) return null;
     this.#sessions.delete(location);
-    this.#recentlyClosed.set(location, {
+    // Frozen at the point of record, like every other object this class hands
+    // out: the reader returns this exact object, and a caller who could write
+    // `closedAt` could resurrect an expired session from outside the class.
+    this.#recentlyClosed.set(location, Object.freeze({
       session, reason, closedAt: this.#clock().getTime(),
-    });
+    }));
     this.#ackWaiters.get(session.sessionId)?.(false);
     this.#ackWaiters.get(session.presentationId)?.(false);
     this.#ackWaiters.get(session.pendingPresentation?.sessionId)?.(false);
