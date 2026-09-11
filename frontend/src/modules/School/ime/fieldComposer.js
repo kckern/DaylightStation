@@ -107,6 +107,36 @@ export class FieldComposer {
     return true;
   }
 
+  /**
+   * Split what the field holds into text that has settled and the one syllable
+   * still in flight.
+   *
+   * The field's own `value` cannot answer this, and in 두벌식 the difference
+   * decides what a reader may trust. A consonant is genuinely ambiguous until
+   * its vowel arrives: typing 오늘, the ㄴ lands as 오's batchim (the field
+   * reads 온) and only migrates out to start 늘 on the next key. Anything
+   * matching `value` against a target therefore loses the glyph the child is
+   * in the middle of typing, on the first keystroke of every syllable — which
+   * is exactly the glyph they most need on screen.
+   *
+   * `#hangul.committed` is only what THIS session settled; whatever was in the
+   * field before the anchor — Latin, a previous run, text the app put there —
+   * is settled too, and is included. With no live session everything is
+   * settled: Latin typing and fields this composer is not driving are done
+   * being ambiguous.
+   *
+   * `committed + pending` is the field up to the caret. Composing before
+   * existing text, the tail after the caret belongs to neither half; a caller
+   * that needs the whole field reads `value`.
+   */
+  compositionState(el) {
+    if (!this.#continuous(el)) return { committed: el?.value ?? '', pending: '' };
+    return {
+      committed: el.value.slice(0, this.#anchor) + this.#hangul.committed,
+      pending: this.#hangul.pending,
+    };
+  }
+
   #backspace(el) {
     // Only a live session's own text is ours to peel. Outside one, Backspace is
     // an ordinary delete and must stay that way.
