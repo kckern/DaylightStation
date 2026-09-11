@@ -461,6 +461,61 @@ describe('School lifecycle completion emission', () => {
   });
 });
 
+/**
+ * The guard that hid the defect above for months.
+ *
+ * `#emitDayComplete` returned on a falsy guard and said nothing, so a bridge
+ * wired with the wrong constructor key looked exactly like a household with
+ * nobody enrolled. Nothing in the log store distinguished them; it took
+ * auditing a missing reward to notice the ceremony had never run once. A
+ * bridge that is wired wrong has to announce itself.
+ */
+describe('day-complete suppression is audible', () => {
+  const finish = (overrides) => {
+    const ds = new FakeDatastore();
+    const logger = { warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
+    const svc = makeService(ds, AT, { logger, ...overrides });
+    finishDay(svc);
+    return { svc, ds, logger };
+  };
+  const suppressions = (logger) => logger.warn.mock.calls
+    .filter(([event]) => event === 'school.language.day-complete-suppressed');
+
+  it('warns once, naming the missing realtime port, and does not repeat', () => {
+    const { ds, logger } = finish({
+      readProgramEnrollment: () => ({
+        programId: 'sentence-ladder', corpusId: 'test-korean', lessonSize: 2,
+        rungs: ['repetition', 'dictation'],
+      }),
+      // realtime deliberately absent — this is app.mjs's defect in miniature.
+    });
+    expect(suppressions(logger)).toHaveLength(1);
+    expect(suppressions(logger)[0][1]).toMatchObject({ reason: 'no-realtime' });
+    // The guard sits ahead of the queue-complete check, so it ran on every one
+    // of these attempts. One line, not one per attempt.
+    expect(ds.readAllEvents('kckern', 'test-korean').length).toBeGreaterThan(1);
+  });
+
+  it('names the missing enrollment when that is the failing guard', () => {
+    const { logger } = finish({
+      realtime: new EventBusSchoolRealtimeAdapter({ eventBus: { publish: vi.fn() } }),
+    });
+    expect(suppressions(logger)).toHaveLength(1);
+    expect(suppressions(logger)[0][1]).toMatchObject({ reason: 'no-enrollment' });
+  });
+
+  it('says nothing when the bridge is wired and the learner is enrolled', () => {
+    const { logger } = finish({
+      readProgramEnrollment: () => ({
+        programId: 'sentence-ladder', corpusId: 'test-korean', lessonSize: 2,
+        rungs: ['repetition', 'dictation'],
+      }),
+      realtime: new EventBusSchoolRealtimeAdapter({ eventBus: { publish: vi.fn() } }),
+    });
+    expect(suppressions(logger)).toHaveLength(0);
+  });
+});
+
 describe('pacing', () => {
   it('clamps to a sane range instead of trusting the client', () => {
     const svc = makeService(new FakeDatastore());

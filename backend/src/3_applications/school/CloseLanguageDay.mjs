@@ -1,4 +1,5 @@
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
+import { programUnitId } from './assignedProgramPlan.mjs';
 
 const canonicalProgramId = (programId) => (
   programId === 'language' ? 'sentence-ladder' : programId
@@ -41,15 +42,26 @@ export class CloseLanguageDay {
     }
   }
 
+  /**
+   * ONE lookup answers "is this program assigned", and it reads `programs:` —
+   * the collection a learner plan actually stores an enrollment in.
+   *
+   * This method used to ask the question twice, against two different
+   * collections twenty lines apart: the gate below matched `standaloneWork`
+   * (via the store's `units` alias) against the authored curriculum catalog,
+   * while the reward it later resolved came from `programs`. No household plan
+   * has ever carried a ladder under `standaloneWork`, and no program-kind unit
+   * has ever been authored, so the gate always took the `unassigned` branch
+   * and a completed language day has never opened a work session — while the
+   * reward lookup sat right there, reading the enrollment correctly.
+   */
   async #settle({ learnerId, corpusId, day, programId, sessionId }) {
     const canonicalId = canonicalProgramId(programId);
     const assignment = await this.#assignments.get(learnerId);
-    const assigned = (assignment?.units ?? []).map((entry) => typeof entry === 'string' ? { unitId: entry } : entry);
-    const units = await this.#curriculum.listUnits();
-    const unit = units.find((candidate) => assigned.some((entry) => entry.unitId === candidate.unitId)
-      && canonicalProgramId(candidate.program) === canonicalId
-      && (candidate.programInstance ?? corpusId) === corpusId);
-    if (!unit) {
+    const policy = (assignment?.programs ?? []).find((entry) => (
+      canonicalProgramId(entry?.programId) === canonicalId && entry?.corpusId === corpusId
+    ));
+    if (!policy) {
       this.#logger.info?.('school.language.close-unassigned', { learnerId, corpusId, day, programId });
       return { status: 'unassigned', sessionId };
     }
@@ -57,7 +69,7 @@ export class CloseLanguageDay {
     if (!existing.sessionId) {
       const at = this.#clock().toISOString();
       for (const raw of [
-        { type: 'created', at, sessionId, learnerId, unitId: unit.unitId },
+        { type: 'created', at, sessionId, learnerId, unitId: await this.#unitIdFor(canonicalId, corpusId) },
         { type: 'program_dispatched', at, sessionId, programId, corpusId, day },
       ]) {
         const { errors, event } = createEvent(raw);
@@ -65,13 +77,23 @@ export class CloseLanguageDay {
         await this.#sessions.appendEvent(sessionId, event);
       }
     }
-    const policy = (assignment?.programs ?? []).find((entry) => (
-      canonicalProgramId(entry?.programId) === canonicalId && entry?.corpusId === corpusId
-    ));
     return this.#close.execute({
       sessionId, honorClose: true,
       rewardOverride: policy?.reward ?? null,
     });
+  }
+
+  /**
+   * An authored curriculum unit still wins where a household wrote one, so
+   * existing sessions keep their identity. Otherwise the session takes the
+   * same synthetic id the plan entry carries — the enrollment IS the
+   * assignment, and the catalog has nothing to say about it.
+   */
+  async #unitIdFor(canonicalId, corpusId) {
+    const units = await this.#curriculum.listUnits();
+    const authored = units.find((candidate) => canonicalProgramId(candidate.program) === canonicalId
+      && (candidate.programInstance ?? corpusId) === corpusId);
+    return authored?.unitId ?? programUnitId(canonicalId, corpusId);
   }
 }
 

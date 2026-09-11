@@ -81,6 +81,16 @@ export function bookLogShelfEntry({
  */
 const cadenceOf = (enrollment, fallback = 'daily') => (enrollment?.cadence === 'weekly' ? 'weekly' : fallback);
 
+/**
+ * The synthetic unit id a program enrollment gets on the plan.
+ *
+ * EXPORTED because `CloseLanguageDay` has to open its work session against the
+ * SAME id the agenda row carries. It used to spell the id by finding an
+ * authored curriculum unit, of which none exists, so the two halves of the
+ * ceremony could not have agreed even if they had both run.
+ */
+export const programUnitId = (programId, instanceId) => `${programId}:${instanceId}`;
+
 /** Mutates the planner result in the same additive way BuildAgenda always has. */
 export function appendAssignedProgramEntries(plan, assignment) {
   if (!plan || !Array.isArray(plan.entries)) return plan;
@@ -159,7 +169,7 @@ export function appendAssignedProgramEntries(plan, assignment) {
       const corpusId = enrollment.corpusId;
       if (!corpusId) continue;
       plan.entries.push(baseEntry({
-        unitId: `sentence-ladder:${corpusId}`,
+        unitId: programUnitId('sentence-ladder', corpusId),
         title: enrollment.title ?? 'Language practice',
         subject: enrollment.subject ?? 'language',
         program: 'sentence-ladder',
