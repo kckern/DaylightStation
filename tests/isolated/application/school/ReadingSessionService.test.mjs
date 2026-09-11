@@ -399,3 +399,34 @@ describe('ReadingSessionService — the idle timeout (D6)', () => {
     expect(service.current('livingroom')).toBeNull();
   });
 });
+
+/**
+ * The nine seconds between a teardown and the book card that was already on
+ * its way to the reader. See `REOPEN_GRACE_MS`.
+ */
+describe('ReadingSessionService — the session that just closed', () => {
+  it('remembers a timed-out session for the grace window, and forgets it after', () => {
+    let now = 1_000_000;
+    const sessions = new ReadingSessionService({ logger: silent, clock: () => new Date(now) });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    now += 9_000; // the nine seconds that cost a real child his credit
+    const record = sessions.recentlyClosed('livingroom');
+    expect(record).toBeTruthy();
+    expect(record.session.learnerId).toBe('user_5');
+    expect(record.reason).toBe('timeout');
+
+    now += 60_000; // well past the window
+    expect(sessions.recentlyClosed('livingroom')).toBeNull();
+  });
+
+  it('forgets the closed session once a new one is open — a live session is never "recently closed"', () => {
+    let now = 1_000_000;
+    const sessions = new ReadingSessionService({ logger: silent, clock: () => new Date(now) });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_3' });
+    expect(sessions.recentlyClosed('livingroom')).toBeNull();
+  });
+});
