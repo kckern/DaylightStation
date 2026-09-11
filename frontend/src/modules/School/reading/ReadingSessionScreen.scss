@@ -308,6 +308,11 @@
 
   /* The sheen the real covers wear belongs to a surface; a gap has none. */
   &::before { content: none; }
+
+  /* A gap stands on nothing, so it casts nothing. The cover's contact shadow
+     is what sells a book standing on the plank; under an empty slot it is a
+     smudge with no object, and it fights the recess this block is built for. */
+  &::after { content: none; }
 }
 
 /* THE ONE ANIMATION ON THE SCREEN. Slow — 2.4s, about a resting breath — and
