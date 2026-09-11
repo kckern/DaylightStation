@@ -161,8 +161,10 @@ export class SurfaceProgramLauncher {
       // — so without this row the disc vanishes on the day the child earned it,
       // exactly as the Sentence Ladder's did. `StoryTimeProgramLauncher` set
       // the precedent; `doneToday` here is a per-study-day judgement, so the
-      // identity is the program's own day, and the title is the household's
-      // authored label rather than the program id a child never sees.
+      // identity is the program's own day, and the title is whatever
+      // `school.yml` authored as `label:`. Note that `#label` DEFAULTS TO THE
+      // ID (constructor above), so a `programs:` entry with no label prints a
+      // raw program id on a child's receipt — author the label.
       //
       // The agenda stamps `assignmentUnitId`; a launcher never guesses one.
       servedWork: doneToday ? [{ unitId: `${this.#id}:daily`, title: this.#label }] : [],
