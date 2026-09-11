@@ -6,6 +6,34 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 export function createAuthRouter({ authService, jwtSecret, jwtConfig, authPublicContext, logger = console }) {
   const router = express.Router();
 
+  // 30 days, renewed on every issue. The JWT itself is configured `10y`, which
+  // is effectively permanent — fine for a token that establishes identity
+  // rather than guarding a perimeter, but a browser session should not outlive
+  // the machine it was opened on. The cookie is the shorter of the two on
+  // purpose; revoking before it lapses needs the server-side session record
+  // that Admin's revoke list will add.
+  const SESSION_COOKIE = 'daylight_session';
+  const SESSION_MAX_AGE = 30 * 24 * 60 * 60;
+
+  // Path=/ because ONE sign-in must cover every adult app — /admin, /finance,
+  // /health, /feed, the teacher console. Scoping it to /api/v1/auth (the way
+  // the teacher cookie scopes to /api/v1/school) would make it useless for the
+  // thing it exists to do. SameSite=Lax so an ordinary navigation carries it
+  // while a cross-site POST does not.
+  const sessionCookie = (req, token) => {
+    const secure = req.secure || req.get('x-forwarded-proto') === 'https';
+    return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; Max-Age=${SESSION_MAX_AGE}`
+      + `; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
+  };
+
+  /** Issue the token AND set it as the browser session. Every path that mints a
+   *  token signs the person in; returning one without the cookie is what left
+   *  each app to store and attach it itself. */
+  const issueSession = (req, res, user, token) => {
+    res.set('Set-Cookie', sessionCookie(req, token));
+    logger.info('auth.session.issued', { username: user.username ?? user, maxAgeSec: SESSION_MAX_AGE });
+  };
+
   function issueToken(user) {
     return signToken(
       { sub: user.username, hid: user.householdId, roles: user.roles },
@@ -40,6 +68,7 @@ export function createAuthRouter({ authService, jwtSecret, jwtConfig, authPublic
       { issuer: authConfig.jwt.issuer, expiresIn: authConfig.jwt.expiry, algorithm: authConfig.jwt.algorithm }
     );
 
+    issueSession(req, res, user, token);
     logger.info('auth.setup.complete', { username });
     res.json({ token });
   }));
@@ -57,9 +86,20 @@ export function createAuthRouter({ authService, jwtSecret, jwtConfig, authPublic
     }
 
     const token = issueToken(user);
+    issueSession(req, res, user, token);
     logger.info('auth.token.issued', { username });
     res.json({ token });
   }));
+
+  // POST /auth/logout — drop the browser session.
+  // The token stays valid (it is a 10y JWT and nothing revokes it yet); this
+  // clears the transport, which is what "sign out on this device" means until
+  // the session record lands. Says so rather than implying more.
+  router.post('/logout', (req, res) => {
+    res.set('Set-Cookie', `daylight_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`);
+    logger.info('auth.session.cleared', {});
+    res.json({ ok: true });
+  });
 
   // POST /auth/claim — first-boot: claim existing profile and set password
   router.post('/claim', asyncHandler(async (req, res) => {
@@ -86,6 +126,7 @@ export function createAuthRouter({ authService, jwtSecret, jwtConfig, authPublic
       freshAuthConfig.jwt.secret,
       { issuer: freshAuthConfig.jwt.issuer, expiresIn: freshAuthConfig.jwt.expiry, algorithm: freshAuthConfig.jwt.algorithm }
     );
+    issueSession(req, res, user, token);
     logger.info('auth.claim.complete', { username });
     res.json({ token });
   }));
@@ -140,6 +181,7 @@ export function createAuthRouter({ authService, jwtSecret, jwtConfig, authPublic
     try {
       const user = await authService.acceptInvite(req.params.token, { password, displayName });
       const token = issueToken(user);
+      issueSession(req, res, user, token);
       logger.info('auth.invite.accepted', { username: user.username });
       res.json({ token });
     } catch (err) {
