@@ -49,6 +49,13 @@ describe('EntryRow', () => {
     expect(screen.queryByRole('button', { name: 'Delete entry: Apple' })).toBeNull();
   });
 
+  it('gives a dish member no X of its own — the dish deletes it', () => {
+    // The group's X cascades to its children, so four more destructive controls
+    // inside one expanded dish buy nothing and cost the list's legibility.
+    r(<EntryRow row={baseRow} onTap={() => {}} onRequestDelete={() => {}} child />);
+    expect(screen.queryByRole('button', { name: 'Delete entry: Apple' })).toBeNull();
+  });
+
   it('keeps confirm and delete as separate targets on an unsettled row', () => {
     r(<EntryRow row={{ ...baseRow, settled: false }} onTap={() => {}} onConfirm={() => {}} onRequestDelete={() => {}} />);
     const action = document.querySelector('.health-row__action');
