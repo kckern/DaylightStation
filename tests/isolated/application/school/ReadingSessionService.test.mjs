@@ -516,3 +516,90 @@ describe('ReadingSessionService — the session that just closed', () => {
     expect(sessions.recentlyClosed('study').reason).toBe('day-done');
   });
 });
+
+/**
+ * The SAME teardown record, read with a second and longer tolerance.
+ *
+ * `recentlyClosed` measures a FLIGHT TIME — the seconds between the sweep
+ * firing and a book card that was already on its way to the reader landing.
+ * `recentlyDeparted` measures something else entirely: how long a child who
+ * has been ignored keeps trying. On 2026-09-11 the learner re-tapped 39s after
+ * the close and again at 101s, and a window tuned for a walk to the shelf
+ * answers the first and not the second.
+ *
+ * So the window here is the room's OWN idle timeout — the household's declared
+ * answer to "how long does a quiet room still belong to whoever was last in
+ * it?" — floored at the reopen grace, because a child must never get less time
+ * to reclaim their room than a book gets to reclaim their session.
+ */
+describe('ReadingSessionService — the learner who just left this room', () => {
+  it('still answers after the reopen grace has lapsed — the second re-tap, not just the first', () => {
+    let now = 1_000_000;
+    const sessions = new ReadingSessionService({ logger: silent, clock: () => new Date(now) });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    now += 101_000; // the field's second re-tap, long past REOPEN_GRACE_MS
+    expect(sessions.recentlyClosed('livingroom')).toBeNull();
+    expect(sessions.recentlyDeparted('livingroom')).toMatchObject({
+      reason: 'timeout', session: { learnerId: 'user_5' },
+    });
+  });
+
+  it('is bounded by the room s own idle timeout, to the millisecond', () => {
+    let now = 1_000_000;
+    const sessions = new ReadingSessionService({ logger: silent, clock: () => new Date(now) });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    now += 119_999;
+    expect(sessions.recentlyDeparted('livingroom')).toBeTruthy();
+    now += 2; // 120_001ms — past this room's own idle timeout
+    expect(sessions.recentlyDeparted('livingroom')).toBeNull();
+  });
+
+  it('is floored at the reopen grace when the timeout is shorter than it', () => {
+    let now = 1_000_000;
+    const sessions = new ReadingSessionService({
+      logger: silent, clock: () => new Date(now), idleTimeoutMs: 30_000,
+    });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+
+    now += 44_999; // past the 30s timeout, still inside the 45s floor
+    expect(sessions.recentlyDeparted('livingroom')).toBeTruthy();
+    now += 2;
+    expect(sessions.recentlyDeparted('livingroom')).toBeNull();
+  });
+
+  it('a disabled idle timeout keeps the floor, not a zero window', () => {
+    let now = 1_000_000;
+    const sessions = new ReadingSessionService({
+      logger: silent, clock: () => new Date(now), idleTimeoutMs: 0,
+    });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'presentation-unacknowledged' });
+    now += 44_999;
+    expect(sessions.recentlyDeparted('livingroom')).toBeTruthy();
+    now += 2;
+    expect(sessions.recentlyDeparted('livingroom')).toBeNull();
+  });
+
+  it('is forgotten the moment a new session opens — a live room has no departed learner', () => {
+    const sessions = new ReadingSessionService({ logger: silent });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'timeout' });
+    sessions.open({ location: 'livingroom', learnerId: 'user_3' });
+    expect(sessions.recentlyDeparted('livingroom')).toBeNull();
+  });
+
+  it('reports every reason and hands out the same frozen record — the policy belongs to the caller', () => {
+    const sessions = new ReadingSessionService({ logger: silent });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    sessions.close('livingroom', { reason: 'day-done' });
+    const record = sessions.recentlyDeparted('livingroom');
+    expect(record.reason).toBe('day-done');
+    expect(Object.isFrozen(record)).toBe(true);
+    expect(record).toBe(sessions.recentlyClosed('livingroom'));
+  });
+});
