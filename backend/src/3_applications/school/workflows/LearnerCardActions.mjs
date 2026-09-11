@@ -88,6 +88,22 @@ export function makeReadingTimeoutHandler({ locations = () => ({}), tv = null, l
 }
 
 /**
+ * The teardowns after which a learner may still reclaim the reader they left,
+ * despite content playing on it — the exemption to D2, stated as an allow-list.
+ *
+ * Every one of these is the SYSTEM taking the room away from a child who had
+ * not finished with it. Deliberately absent: `day-done` (the child handed the
+ * room back, and the reader's end policy turned the TV off behind them) and a
+ * bare close's `null` (no stated provenance). See the exemption itself for the
+ * incident this exists for.
+ */
+const RECLAIMABLE_CLOSE_REASONS = new Set([
+  'timeout',
+  'reopen-abandoned',
+  'presentation-unacknowledged',
+]);
+
+/**
  * The `reading-session` learner action: a preschooler's own card at the
  * living-room reader opens a session scoped to them, and wakes the screen so
  * they can see it.
@@ -99,10 +115,17 @@ export function makeReadingTimeoutHandler({ locations = () => ({}), tv = null, l
  * the quiet failure here is as bad as the loud one — a child who taps and sees
  * nothing taps harder (invariant 5).
  *
- * "UNRELATED" IS "NO SESSION OPEN AT THIS READER". Once a reading session is
- * open, its launch card is the only hand-off point: confirmation, loading,
- * playback, celebration, and return all refuse learner cards without changing
- * the authoritative session or its frozen pick.
+ * "UNRELATED" IS "NO SESSION OPEN AT THIS READER, AND NONE JUST TAKEN FROM
+ * THIS LEARNER". Once a reading session is open, its launch card is the only
+ * hand-off point: confirmation, loading, playback, celebration, and return all
+ * refuse learner cards without changing the authoritative session or its frozen
+ * pick. And a reader whose last session the SYSTEM tore down — a sweep timeout,
+ * an abandoned reopen, a launch card the screen never painted — still belongs
+ * to that learner for `recentlyDeparted`'s window, because the content playing
+ * there is most likely the orphaned debris of the session they just lost. That
+ * exemption is the ONLY case in which this handler knowingly takes a running
+ * screen, and `RECLAIMABLE_CLOSE_REASONS` is its whole scope; see the guard for
+ * the 2026-09-11 incident that bought it.
  *
  * EVERY DEGRADED PATH OPENS THE SESSION. No playback source wired, a source
  * that throws, a TV that will not wake — all of them let the child in. The only
@@ -160,14 +183,77 @@ export function makeReadingSessionHandler({
         log('warn', 'school.reading.playback-unreadable', { location, target, error: err?.message ?? String(err) });
       }
       if (busy) {
-        tell(location, {
-          event: 'session-refused', reason: 'content-playing', learnerId, location, target,
-          at: clock().toISOString(),
+        // THE ROOM THE LEARNER JUST LEFT IS THE ONE EXEMPTION TO D2.
+        //
+        // The refusal protects a movie SOMEBODY ELSE is watching. On 2026-09-11
+        // it locked a child out of his own story instead: the sweep closed his
+        // session at 17:13:22, his book card landed 1.18s later with no session
+        // open and dispatched as ordinary content, and every re-tap of his card
+        // was then refused BECAUSE THE CONTENT PLAYING WAS HIS OWN BOOK
+        // (17:14:01 and 17:15:02). The refusal is deliberately non-retryable,
+        // so tapping harder did nothing at all and recovery needed an adult.
+        //
+        // There is no way to ask WHAT is playing — `isPlaying` is a bare
+        // per-device boolean fed by `screen.presence`, with no content identity
+        // on it — so "this learner was the last occupant of this reader" is the
+        // proxy, and `recentlyDeparted` is how long that stays true.
+        //
+        // ONLY THE TEARDOWNS THE SYSTEM IMPOSED. `timeout` is the sweep cutting
+        // a child off mid-act; `reopen-abandoned` is that same act one road
+        // further along; `presentation-unacknowledged` is a launch card the
+        // screen never painted, and re-tapping is the recovery gesture for it.
+        // `day-done` is excluded for a different reason than the reopen path
+        // excludes it: not because a ceremony would be re-armed, but because a
+        // finished day HANDS THE ROOM BACK — the reader's end policy has
+        // already turned the TV off, so content playing after it is new, and
+        // new content in a room nobody is using belongs to whoever started it.
+        // A bare close (`reason: null`) states no provenance and is likewise
+        // not exempt; this is an allow-list so a reason added later has to be
+        // decided on rather than inherited.
+        // IT SPENDS ITSELF. `open()` below drops the room's teardown record, so
+        // one exemption is all a given teardown ever buys; a second one costs a
+        // second genuine teardown. And it needs no refusal broadcast of its
+        // own — the session it opens publishes the launch card, which is a
+        // louder acknowledgement of the tap than a toast (invariant 5).
+        //
+        // WHAT IT DOES NOT DO IS STOP THE ORPHANED STORY. `wakeScreen` is
+        // power + foreground and explicitly not a content load, so the story
+        // already playing keeps playing; what the child gets back is a session
+        // scoped to them, which is what makes their NEXT book scan a claimed,
+        // credited pick instead of ordinary content. Whether the launch card
+        // wins the screen back from a fullscreen player is unverified on the
+        // real set — see the reading-sessions doc's open questions.
+        const departed = sessions.recentlyDeparted?.(location) ?? null;
+        const ownRoom = Boolean(learnerId)
+          && departed?.session?.learnerId === learnerId
+          && RECLAIMABLE_CLOSE_REASONS.has(departed.reason);
+        if (!ownRoom) {
+          tell(location, {
+            event: 'session-refused', reason: 'content-playing', learnerId, location, target,
+            at: clock().toISOString(),
+          });
+          log('info', 'school.reading.session-refused', {
+            location, learnerId, target, reason: 'content-playing',
+            // Why the exemption did NOT apply, so a refusal in the field can be
+            // told from a bug in the exemption without re-deriving the state.
+            // Null on both means the room had no recent occupant at all.
+            departedLearnerId: departed?.session?.learnerId ?? null,
+            departedReason: departed?.reason ?? null,
+          });
+          // Not retryable: the movie will still be playing on the next tap, and a
+          // released debounce would only let a child tap through the refusal.
+          return { status: 'reading_session_refused', reason: 'content-playing', learnerId, location };
+        }
+        // Logged as its own event, not as a field on the refusal: the refusal
+        // line does not fire here, and a seizure of the TV — which this is, on
+        // purpose — must be findable in the log store on its own name.
+        log('info', 'school.reading.refusal-exempted', {
+          location, learnerId, target,
+          closeReason: departed.reason,
+          closedSessionId: departed.session?.sessionId ?? null,
+          sinceCloseMs: clock().getTime() - departed.closedAt,
+          consequence: 'the child gets their own room back instead of a refusal they cannot retry',
         });
-        log('info', 'school.reading.session-refused', { location, learnerId, target, reason: 'content-playing' });
-        // Not retryable: the movie will still be playing on the next tap, and a
-        // released debounce would only let a child tap through the refusal.
-        return { status: 'reading_session_refused', reason: 'content-playing', learnerId, location };
       }
     }
 
