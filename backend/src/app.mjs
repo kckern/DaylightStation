@@ -6029,9 +6029,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     );
   }
 
+  const { AiGatewayService } = await import('#apps/ai/AiGatewayService.mjs');
   v1Routers.ai = createAIRouter({
-    openaiAdapter: aiOpenaiAdapter,
-    anthropicAdapter: aiAnthropicAdapter,
+    aiService: new AiGatewayService(
+      { openai: aiOpenaiAdapter, anthropic: aiAnthropicAdapter },
+      { logger: rootLogger.child({ module: 'ai-api' }) },
+    ),
     logger: rootLogger.child({ module: 'ai-api' })
   });
 
