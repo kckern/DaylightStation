@@ -100,6 +100,32 @@ describe('usePortalKeys / PortalKeysBridge', () => {
     expect(step).toHaveBeenCalledWith(0.1);
   });
 
+  // The APK broadcasts BOTH down and up for every physical press (see
+  // PortalKeysService.onKeyEvent). Acting on both moved the master by 2x
+  // stepSize per press, which is how a panel configured to start at 0.6
+  // arrived at a saturated 1.0 after two taps and then stopped responding.
+  it('steps ONCE per physical press, ignoring the key-up half', () => {
+    const { step } = renderBridge({ config: { enabled: true }, stepSize: 0.1 });
+
+    act(() => {
+      volumeSocket().emit({ type: 'key', key: 'KEYCODE_VOLUME_UP', action: 'down' });
+      volumeSocket().emit({ type: 'key', key: 'KEYCODE_VOLUME_UP', action: 'up' });
+    });
+
+    expect(step).toHaveBeenCalledTimes(1);
+    expect(step).toHaveBeenCalledWith(0.1);
+  });
+
+  it('ignores a key-up for VOLUME_DOWN too', () => {
+    const { step } = renderBridge({ config: { enabled: true }, stepSize: 0.1 });
+
+    act(() => {
+      volumeSocket().emit({ type: 'key', key: 'KEYCODE_VOLUME_DOWN', action: 'up' });
+    });
+
+    expect(step).not.toHaveBeenCalled();
+  });
+
   it('steps volume down by stepSize on VOLUME_DOWN', () => {
     const { step } = renderBridge({ config: { enabled: true }, stepSize: 0.05 });
     act(() => {

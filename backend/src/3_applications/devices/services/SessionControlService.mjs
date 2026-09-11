@@ -179,9 +179,24 @@ export class SessionControlService extends ISessionControl {
     return this.sendCommand(this.#transport.buildCommand({ targetDevice: deviceId, command: 'queue', commandId, params }));
   }
 
-  config(deviceId, { setting, value, commandId }) {
-    return this.sendCommand(this.#transport.buildCommand({ targetDevice: deviceId, command: 'config', commandId,
-      params: { setting, value } }));
+  /**
+   * Session settings — volume, shuffle, repeat, shader.
+   *
+   * Logged on BOTH outcomes. Only the failure paths inside sendCommand used to
+   * emit anything, so a session volume change that worked left no trace at all:
+   * asked "did the volume command land?", the log store could only answer "it
+   * did not fail in one of four specific ways".
+   */
+  async config(deviceId, { setting, value, commandId }) {
+    const result = await this.sendCommand(this.#transport.buildCommand({
+      targetDevice: deviceId, command: 'config', commandId, params: { setting, value },
+    }));
+    const ok = result?.ok === true;
+    this.#logger[ok ? 'info' : 'warn']?.('session-control.config', {
+      deviceId, setting, value, commandId, ok,
+      ...(ok ? {} : { code: result?.code, error: result?.error }),
+    });
+    return result;
   }
 
   adoptSnapshot(deviceId, commandId, snapshot) {
