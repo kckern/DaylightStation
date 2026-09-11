@@ -425,9 +425,12 @@ export function Ceremony({ tier, name, learner, pick, summary }) {
         testId={day ? 'reading-celebrate-count' : 'reading-book-done-count'}
       />
 
-      {/* The close is now the ONLY moment a child sees today's square turn
-          green — after this the screen winds down rather than returning to the
-          shelf — so the wall belongs here as much as on the way in. */}
+      {/* J7, and ONLY here. A streak wall is for lingering over: eight states
+          encoded as colour with no key, and a month to read them across. The
+          waiting screen is the one screen nobody should linger on — it asks a
+          question and wants an answer — so the wall moved to the close, which
+          is the moment there is nothing left to do but look. It is also the
+          only moment a child sees today's square turn green. */}
       {day ? (
         <StreakWall days={summary?.streak} studyDay={summary?.studyDay} className="reading-session__streak" />
       ) : null}
@@ -681,9 +684,6 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
             target={summary?.target}
             count={summary?.count}
           />
-          {/* J7, and only here: a streak wall is for lingering over, and this
-              is the one screen a child lingers on. */}
-          <StreakWall days={summary?.streak} studyDay={summary?.studyDay} className="reading-session__streak" />
         </div>
       ) : null}
 
