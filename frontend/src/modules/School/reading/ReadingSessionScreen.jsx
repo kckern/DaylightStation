@@ -264,12 +264,34 @@ function RecentBook({ read }) {
  *
  * ONE slot per story still owed, and only the FIRST of them breathes: the same
  * "this is the one you are filling next" the pips drew with their live ring.
+ *
+ * THE LIVE SLOT ALSO CARRIES THE CLOCK. The backend closes an untouched session
+ * after `idleTimeoutMs`, and on 2026-09-11 it did so 1.18 seconds before a
+ * child's book card arrived — the story played and nothing was credited, with
+ * no sign anywhere on this screen that anything had been counting. The picking
+ * view has a countdown bar and the winding-down view has one; the single view
+ * where the timeout actually costs a read showed nothing.
+ *
+ * So the slot's own light runs down with the window. On a panel nobody touches
+ * that is the honest place for it: a child sees the light going out without
+ * reading a word, and there is no second widget to explain.
+ *
+ * IT IS A PICTURE OF THE BACKEND'S CLOCK AND NEVER THE CLOCK ITSELF. The
+ * server's idle sweep is authoritative — it alone decides when a session ends,
+ * off `lastActivityAt`, which every tap moves. This CSS only depicts it, and it
+ * cannot see a tap that reset the window. If the two ever disagree the sweep
+ * wins; nothing here may be read back as "how long is left".
+ *
+ * A slot with no published window gets neither the property nor the class: a
+ * screen that cannot know the window must not draw a confident clock.
  */
-function EmptySlot({ live }) {
+function EmptySlot({ live, idleTimeoutMs = null }) {
+  const timed = live && Number.isFinite(idleTimeoutMs) && idleTimeoutMs > 0;
   return (
     <li
-      className={`reading-session__recent-card reading-session__slot${live ? ' reading-session__slot--live' : ''}`}
+      className={`reading-session__recent-card reading-session__slot${live ? ' reading-session__slot--live' : ''}${timed ? ' reading-session__slot--timed' : ''}`}
       data-testid="reading-slot"
+      style={timed ? { '--slot-idle-ms': idleTimeoutMs } : undefined}
     >
       <div className="reading-session__recent-cover reading-session__slot-well" aria-hidden="true" />
       <span className="reading-session__recent-title" />
@@ -284,7 +306,7 @@ function EmptySlot({ live }) {
  * whole week, so a story read on three days appeared once, wearing the newest
  * date and a `x3` that counted the other two days it no longer showed.
  */
-function RecentDay({ group, studyDay, slots = 0 }) {
+function RecentDay({ group, studyDay, slots = 0, idleTimeoutMs = null }) {
   const books = (group?.books ?? []).filter((b) => b?.title);
   if (books.length === 0 && slots === 0) return null;
   return (
@@ -294,7 +316,9 @@ function RecentDay({ group, studyDay, slots = 0 }) {
         {books.map((read, index) => (
           <RecentBook key={`${read.contentId ?? read.title ?? 'book'}-${index}`} read={read} />
         ))}
-        {Array.from({ length: slots }, (_, i) => <EmptySlot key={`slot-${i}`} live={i === 0} />)}
+        {Array.from({ length: slots }, (_, i) => (
+          <EmptySlot key={`slot-${i}`} live={i === 0} idleTimeoutMs={idleTimeoutMs} />
+        ))}
       </ul>
     </section>
   );
@@ -311,7 +335,7 @@ function RecentDay({ group, studyDay, slots = 0 }) {
  * cover has loaded — so the shelf's geometry is settled at first paint and
  * covers landing one by one never move it.
  */
-function Recent({ days, studyDay, target = null, count = 0 }) {
+function Recent({ days, studyDay, target = null, count = 0, idleTimeoutMs = null }) {
   const groups = (Array.isArray(days) ? days : [])
     .filter((g) => Array.isArray(g?.books) && g.books.some((b) => b?.title));
   const todayGroup = groups.find((g) => g.studyDay === studyDay) ?? { studyDay, books: [] };
@@ -319,11 +343,18 @@ function Recent({ days, studyDay, target = null, count = 0 }) {
   const owed = Number.isFinite(target) ? target : 0;
   const done = Number.isFinite(count) ? count : 0;
   const slots = Math.max(0, owed - done);
+  // THIS EARLY RETURN IS ALSO WHAT RE-ARMS THE SLOT'S IDLE FADE, which is not
+  // obvious and is easy to break by being helpful. Every `session-open` clears
+  // the summary before refetching it, so the shelf unmounts here and comes back
+  // as fresh elements — and a CSS animation only restarts on a new element. Make
+  // this survive a null summary (keeping the shelf mounted through a reload) and
+  // the fade silently stops restarting: the next child inherits the last one's
+  // spent light. If that changes, key the slot on the session instead.
   if (slots === 0 && groups.length === 0) return null;
   return (
     <section className="reading-session__recent" data-testid="reading-recent" aria-label="Recent stories">
       <div className="reading-session__recent-days">
-        <RecentDay group={todayGroup} studyDay={studyDay} slots={slots} />
+        <RecentDay group={todayGroup} studyDay={studyDay} slots={slots} idleTimeoutMs={idleTimeoutMs} />
         {past.map((group) => (
           <RecentDay key={group.studyDay} group={group} studyDay={studyDay} />
         ))}
@@ -619,7 +650,7 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
     showOverlay(Notice, { notice: session.notice }, { mode: 'toast', timeout: 7000 });
   }, [session.notice, session.view, showOverlay]);
 
-  const { view, learner, summary, pick, notice, confirmRemainingMs, confirmTotalMs } = session;
+  const { view, learner, summary, pick, notice, idleTimeoutMs, confirmRemainingMs, confirmTotalMs } = session;
 
   // The whole screen belongs to the menu when nobody is standing at the reader,
   // and to the Player once a story is up.
@@ -683,6 +714,7 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
             studyDay={summary?.studyDay}
             target={summary?.target}
             count={summary?.count}
+            idleTimeoutMs={idleTimeoutMs}
           />
         </div>
       ) : null}

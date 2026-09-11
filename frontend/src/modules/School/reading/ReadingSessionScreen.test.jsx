@@ -157,6 +157,30 @@ describe('ReadingSessionScreen', () => {
     expect(within(today).queryByTestId('reading-slot')).toBeNull();
   });
 
+  it('open: the waiting slot carries the idle window, so the clock is visible', async () => {
+    render(<ReadingSessionScreen />);
+    await deliver({
+      event: 'session-open', learnerId: 'user_5', location: 'livingroom', idleTimeoutMs: 120_000,
+    });
+    const slot = (await screen.findAllByTestId('reading-slot'))[0];
+    expect(slot.style.getPropertyValue('--slot-idle-ms')).toBe('120000');
+    expect(slot.className).toContain('reading-session__slot--timed');
+  });
+
+  it('open: a session that never said how long it gives draws no clock at all', async () => {
+    // A screen that cannot know the window must not draw a confident one. The
+    // backend publishes `idleTimeoutMs` with every `session-open`; an old
+    // server, or a payload that lost it, gets the breathing slot and nothing
+    // that claims to be counting.
+    render(<ReadingSessionScreen />);
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+    const slot = (await screen.findAllByTestId('reading-slot'))[0];
+    expect(slot.style.getPropertyValue('--slot-idle-ms')).toBe('');
+    expect(slot.className).not.toContain('reading-session__slot--timed');
+    // It is still the live slot — the light just does not pretend to a deadline.
+    expect(slot.className).toContain('reading-session__slot--live');
+  });
+
   it('open: no streak wall — the waiting screen has one job', async () => {
     render(<ReadingSessionScreen />);
     await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
