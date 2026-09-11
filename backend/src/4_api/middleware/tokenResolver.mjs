@@ -19,7 +19,7 @@ function cookieValue(req, name) {
   return null;
 }
 
-export function tokenResolver({ jwtSecret, jwtConfig }) {
+export function tokenResolver({ jwtSecret, jwtConfig, sessionStore = null }) {
   return (req, res, next) => {
     // Header first, cookie second. A CLI or the agent mounts send a Bearer
     // token; a browser cannot attach one to an ordinary navigation or fetch
@@ -43,9 +43,20 @@ export function tokenResolver({ jwtSecret, jwtConfig }) {
       return next();
     }
 
+    // A REVOKED SESSION IS NOT A USER. The JWT is configured for ten years, so
+    // nothing expires on its own — signing out on a lost device works only
+    // because the record behind `sid` can be deleted. A token minted before
+    // sessions existed, or a CLI/agent bearer, carries no `sid` and keeps
+    // working; one that names a session must name a live one.
+    if (payload.sid && sessionStore && !sessionStore.isActive(payload.sid)) {
+      return next();
+    }
+    if (payload.sid && sessionStore) sessionStore.touch(payload.sid);
+
     req.user = {
       sub: payload.sub,
       hid: payload.hid,
+      sid: payload.sid ?? null,
       roles: payload.roles || []
     };
 

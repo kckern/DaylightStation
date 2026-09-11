@@ -3,7 +3,7 @@ import express from 'express';
 import { signToken } from '#system/auth/jwt.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 
-export function createAuthRouter({ authService, jwtSecret, jwtConfig, authPublicContext, logger = console }) {
+export function createAuthRouter({ authService, jwtSecret, jwtConfig, authPublicContext, sessionStore = null, logger = console }) {
   const router = express.Router();
 
   // 30 days, renewed on every issue. The JWT itself is configured `10y`, which
@@ -30,13 +30,26 @@ export function createAuthRouter({ authService, jwtSecret, jwtConfig, authPublic
    *  token signs the person in; returning one without the cookie is what left
    *  each app to store and attach it itself. */
   const issueSession = (req, res, user, token) => {
-    res.set('Set-Cookie', sessionCookie(req, token));
+    // The cookie carries a token naming a REVOCABLE session, when there is a
+    // store to revoke against. Without one it carries the caller's token
+    // unchanged, so a deployment with no session store still signs people in.
+    let cookieToken = token;
+    if (sessionStore) {
+      const { id } = sessionStore.create({
+        username: user.username,
+        userAgent: req.get('user-agent') ?? null,
+        ip: req.ip ?? null,
+      });
+      cookieToken = issueToken(user, id);
+    }
+    res.set('Set-Cookie', sessionCookie(req, cookieToken));
     logger.info('auth.session.issued', { username: user.username ?? user, maxAgeSec: SESSION_MAX_AGE });
+    return cookieToken;
   };
 
-  function issueToken(user) {
+  function issueToken(user, sid = null) {
     return signToken(
-      { sub: user.username, hid: user.householdId, roles: user.roles },
+      { sub: user.username, hid: user.householdId, roles: user.roles, ...(sid ? { sid } : {}) },
       jwtSecret,
       { issuer: jwtConfig.issuer, expiresIn: jwtConfig.expiry, algorithm: jwtConfig.algorithm }
     );
@@ -96,9 +109,37 @@ export function createAuthRouter({ authService, jwtSecret, jwtConfig, authPublic
   // clears the transport, which is what "sign out on this device" means until
   // the session record lands. Says so rather than implying more.
   router.post('/logout', (req, res) => {
-    res.set('Set-Cookie', `daylight_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`);
-    logger.info('auth.session.cleared', {});
-    res.json({ ok: true });
+    // Revokes the RECORD as well as clearing the transport. Without the record
+    // this cleared a cookie while leaving a ten-year token valid for anyone who
+    // had copied it — which is signing out in appearance only.
+    const revoked = req.user?.sid && sessionStore ? sessionStore.revoke(req.user.sid) : false;
+    res.set('Set-Cookie', 'daylight_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax');
+    logger.info('auth.session.cleared', { revoked });
+    res.json({ ok: true, revoked });
+  });
+
+  // GET /auth/sessions — every signed-in device, newest first.
+  router.get('/sessions', (req, res) => {
+    if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+    if (!sessionStore) return res.json({ sessions: [], revocable: false });
+    res.json({
+      sessions: sessionStore.list().map(row => ({ ...row, current: row.id === req.user.sid })),
+      revocable: true,
+    });
+  });
+
+  // DELETE /auth/sessions/:id — sign one device out. `?others=1` signs out
+  // every device but this one, which is the button you want after losing a
+  // phone and the only one that does not require identifying it in a list.
+  router.delete('/sessions/:id', (req, res) => {
+    if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+    if (!sessionStore) return res.status(503).json({ error: 'Sessions are not revocable on this deployment' });
+    if (req.params.id === 'others') {
+      return res.json(sessionStore.revokeAllExcept(req.user.sid));
+    }
+    const revoked = sessionStore.revoke(req.params.id);
+    if (!revoked) return res.status(404).json({ error: 'No such session' });
+    res.json({ revoked: true, id: req.params.id });
   });
 
   // POST /auth/claim — first-boot: claim existing profile and set password
