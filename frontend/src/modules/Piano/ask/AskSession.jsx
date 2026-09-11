@@ -151,6 +151,12 @@ async function resolveSession({
  * @param {string|null} [props.programId] The program a step belongs to. Fetched
  *   for its step: the requirement, and the framing line C1 asked for.
  * @param {string|null} [props.stepId] Which step of it.
+ * @param {object|null} [props.drillProjection] A projection of that program the
+ *   HOST has already computed, passed straight through to the run's drill
+ *   chrome. Its reason for existing is the game gate, whose drill is scoped to
+ *   one study day — a standing the learning endpoint's own (lifetime)
+ *   projection cannot express. Omit it and the chrome fetches for itself, which
+ *   is what a practice mount wants.
  * @param {object|null} [props.requirementOverride] A host-authored requirement,
  *   which wins over the step's. Passed down BY IDENTITY.
  * @param {'practice'|'challenge'} [props.intent]
@@ -184,6 +190,7 @@ export default function AskSession({
   instanceId = null,
   programId = null,
   stepId = null,
+  drillProjection = null,
   requirementOverride = null,
   intent = 'practice',
   practiceMode = 'free',
@@ -335,6 +342,7 @@ export default function AskSession({
       practiceMode={practiceMode}
       programId={programId}
       stepId={stepId}
+      drillProjection={drillProjection}
       instance={sources.instance}
       score={sources.score}
       requirement={requirement}
