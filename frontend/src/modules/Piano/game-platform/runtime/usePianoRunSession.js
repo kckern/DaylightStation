@@ -17,7 +17,26 @@ export function usePianoRunSession({ gameId, phase, initialPhase, score = null, 
   const sessionRef = useRef(null);
   const sequenceRef = useRef(0);
   const queueRef = useRef(Promise.resolve());
-  const payloadKey = JSON.stringify({ phase, score, metrics });
+
+  // Score and metrics move continuously while a game runs (the side-scroller's
+  // score advances every rAF frame; Hero's elapsed_ms every millisecond). They
+  // must NOT drive the sync effect: each dispatch appends to the session journal
+  // and the coordinator re-reads and replays that whole journal, so a per-frame
+  // sync is O(n^2) in frames and its structuredClone eventually exhausts the
+  // tab (observed in prod: 90-100% long-task occupancy for the length of a
+  // side-scroller run, and `structuredClone ... out of memory` in
+  // space-invaders). The rule module keeps only the LATEST sync anyway, so the
+  // intermediate commits were overwritten without ever being read.
+  //
+  // The protocol session records the run's LIFECYCLE. Sync on phase
+  // transitions, carrying whatever score and metrics stand at that moment --
+  // which is what a terminal sync needs to record the final result.
+  //
+  // `logger` is held by ref for the same reason: a caller that passes an
+  // unmemoized logger would otherwise re-trigger this effect on every render
+  // and reintroduce the per-frame dispatch through the back door.
+  const latestRef = useRef({ score, metrics, logger });
+  latestRef.current = { score, metrics, logger };
 
   const createSession = useCallback(() => authority.create({
     ruleset: { id: pianoRunRuleModule.id, version: pianoRunRuleModule.version },
@@ -39,7 +58,11 @@ export function usePianoRunSession({ gameId, phase, initialPhase, score = null, 
   }, [authority, createSession]);
 
   useEffect(() => {
-    const payload = JSON.parse(payloadKey);
+    // JSON round-trip preserves the previous normalization: undefined-valued
+    // metrics (e.g. a game that reports no `distance`) are dropped rather than
+    // reaching canonicalStringify as undefined.
+    const { score: currentScore, metrics: currentMetrics } = latestRef.current;
+    const payload = JSON.parse(JSON.stringify({ phase, score: currentScore, metrics: currentMetrics }));
     queueRef.current = queueRef.current.then(async (current) => {
       if (!current) return current;
       // A replay is a new protocol session, not a transition from a completed
@@ -60,8 +83,8 @@ export function usePianoRunSession({ gameId, phase, initialPhase, score = null, 
       sessionRef.current = next;
       return next;
     }).catch((error) => {
-      logger?.error?.('piano.game.protocol-sync-failed', { gameId, phase, error: error.message });
+      latestRef.current.logger?.error?.('piano.game.protocol-sync-failed', { gameId, phase, error: error.message });
       return sessionRef.current;
     });
-  }, [authority, createSession, definition, gameId, logger, payloadKey, phase]);
+  }, [authority, createSession, definition, gameId, phase]);
 }
