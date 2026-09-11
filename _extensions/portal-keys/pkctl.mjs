@@ -396,7 +396,8 @@ const commands = {
       process.exit(1);
     }
     console.log('→ ' + url);
-    pretty(await req(`/update?url=${encodeURIComponent(url)}`));
+    // Gated on the admin token since shell 17; older shells ignore the header.
+    pretty(await reqAt(BASE, `/update?url=${encodeURIComponent(url)}`));
     console.log('\n→ Android confirmation requested; verify the new version with `pkctl status`.');
   },
 

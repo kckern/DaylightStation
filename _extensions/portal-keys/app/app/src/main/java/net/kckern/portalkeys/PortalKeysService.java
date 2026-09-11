@@ -279,6 +279,8 @@ public class PortalKeysService extends AccessibilityService
     @Override public boolean isDisplayOn()      { return isPanelLit(); }
     @Override public String  fkbLastError()     { return fkb == null ? null : fkb.lastError(); }
 
+    @Override public String adminToken() { return AdminToken.get(this); }
+
     /** Blocking download+install; the control server already runs off the main thread. */
     @Override public String installUpdate(String url) {
         return new SelfUpdater(this, eventLog).install(url);

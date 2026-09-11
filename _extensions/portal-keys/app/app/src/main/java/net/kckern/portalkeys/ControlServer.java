@@ -60,6 +60,8 @@ public class ControlServer extends NanoWSD {
         String fkbLastError();
         String installUpdate(String url);
         String readLogcat(int lines);
+        /** The device-generated admin token; gates the APK update route. */
+        String adminToken();
     }
 
     public BtDiag btDiag;
@@ -166,7 +168,13 @@ public class ControlServer extends NanoWSD {
             if ("/config".equals(uri)) return json(handleConfig(session));
             if ("/lockdown".equals(uri)) return handleLockdown(session);
             // ADB-free deploy + diagnosis — see SelfUpdater for why these exist.
+            // Gated on the admin token like the payload OTA on :8772: this server
+            // is bound to the LAN, and an ungated /update lets anyone on it point
+            // the panel at an arbitrary APK. Same header contract as ShellServer.
             if ("/update".equals(uri)) {
+                if (!adminAuthorized(session)) {
+                    return json(Response.Status.UNAUTHORIZED, "{\"error\":\"unauthorized\"}");
+                }
                 String url = session.getParms().get("url");
                 if (url == null || url.isEmpty()) {
                     return json("{\"error\":\"usage: /update?url=<apk-url>\"}");
@@ -269,6 +277,19 @@ public class ControlServer extends NanoWSD {
      * reconciler. A null deadline with locked=true is an intentional
      * fail-closed lock used only while its YAML state cannot be parsed.
      */
+    /** `X-Portal-Token: <token>` or `Authorization: Bearer <token>`, constant-time. */
+    private boolean adminAuthorized(IHTTPSession session) {
+        String supplied = session.getHeaders().get("x-portal-token");
+        if (supplied == null) {
+            String a = session.getHeaders().get("authorization");
+            if (a != null && a.startsWith("Bearer ")) supplied = a.substring(7);
+        }
+        String expected = statusProvider.adminToken();
+        if (expected == null || expected.isEmpty() || supplied == null) return false;
+        return MessageDigest.isEqual(
+                expected.getBytes(StandardCharsets.UTF_8), supplied.getBytes(StandardCharsets.UTF_8));
+    }
+
     private Response handleLockdown(IHTTPSession session) throws Exception {
         if (session.getMethod() != Method.PUT) {
             return json(Response.Status.METHOD_NOT_ALLOWED, "{\"error\":\"PUT required\"}");
