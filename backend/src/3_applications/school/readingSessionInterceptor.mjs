@@ -86,7 +86,7 @@ export class ReadingSessionInterceptor {
     if (response?.kind !== 'content') return null;
     const location = response?.location;
     if (!location) return null;
-    const session = this.#sessions.current(location);
+    const session = this.#sessions.current(location) ?? this.#reopenIfJustClosed(location);
     if (!session) return null;
 
     const contentId = response.expression?.contentId ?? null;
@@ -241,6 +241,44 @@ export class ReadingSessionInterceptor {
       openedAt: session.openedAt,
     });
     return true;
+  }
+
+  /**
+   * THE NINE-SECOND GAP. A child scans their card, walks to the shelf, picks a
+   * book and scans it — one act, which the idle sweep can land in the middle
+   * of. When it does, the book card arrives at a reader with no session and
+   * dispatches as ordinary content: the story plays, and the obligation does
+   * not move. That is exactly what happened on 2026-09-11 at 17:13:23, a
+   * second after a teardown.
+   *
+   * ONLY A TIMEOUT IS REOPENED. A session closed because the DAY was done is a
+   * finished child, and a book tapped after that is browsing — reopening it
+   * would re-arm a ceremony that already ran. `REOPEN_GRACE_MS` bounds it, and
+   * the bound belongs to the store: there is no option here to widen it.
+   *
+   * Reopening broadcasts `session-open`, so the screen puts the launch card
+   * back before the caller's own `book-selected` lands on it.
+   *
+   * @returns {object|null} the reopened session, or null to let the book
+   *   dispatch as it does today.
+   */
+  #reopenIfJustClosed(location) {
+    const record = this.#sessions.recentlyClosed?.(location) ?? null;
+    if (!record || record.reason !== 'timeout') return null;
+    const reopened = this.#sessions.open({
+      location,
+      learnerId: record.session.learnerId,
+      target: record.session.target ?? null,
+    });
+    this.#log('info', 'school.reading.session-reopened', {
+      location,
+      learnerId: record.session.learnerId,
+      sessionId: reopened?.sessionId ?? null,
+      closedSessionId: record.session.sessionId,
+      sinceCloseMs: this.#clock().getTime() - record.closedAt,
+      consequence: 'the book that arrived just after a teardown keeps its credit',
+    });
+    return reopened;
   }
 
   /**

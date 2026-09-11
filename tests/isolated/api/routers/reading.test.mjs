@@ -546,3 +546,59 @@ describe('the streak wall marks the household s named days off', () => {
     expect(res.body.streak.some((d) => d.state === 'exempt')).toBe(false);
   });
 });
+
+/**
+ * `reason` USED TO BE FREE TEXT, and that was harmless while it was only log
+ * and broadcast copy. It stopped being harmless the moment the interceptor
+ * began BRANCHING on it: `timeout` is the one reason a closed session may be
+ * reopened by the next book card, and the idle sweep is the only thing
+ * entitled to say it. A `POST /session/end {"reason":"timeout"}` from anything
+ * that can reach this door would otherwise mint a record indistinguishable
+ * from a real sweep teardown and hand the next tap somebody else's session.
+ *
+ * Driven against a RECORDING service rather than the composed one, because the
+ * question here is only what the router lets through — and because
+ * `ReadingApiService` has no `end` method at all (see the report on this
+ * branch), so the composed path answers 500 to every reason alike.
+ */
+describe('POST /session/end — the reason a session closed is not the caller\'s to invent', () => {
+  function endRouter() {
+    const ended = [];
+    const app = express();
+    app.use(express.json());
+    app.use('/api/v1/school/reading', createReadingRouter({
+      readingService: { end: async (location, { reason } = {}) => { ended.push({ location, reason }); return { location }; } },
+    }));
+    return { app, ended };
+  }
+
+  it('ends the day when the panel says so', async () => {
+    const { app, ended } = endRouter();
+    const res = await request(app).post('/api/v1/school/reading/session/end').send({ location: 'livingroom', reason: 'day-done' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true, location: 'livingroom', reason: 'day-done' });
+    expect(ended).toEqual([{ location: 'livingroom', reason: 'day-done' }]);
+  });
+
+  it('defaults to day-done when the body names no reason at all', async () => {
+    const { app, ended } = endRouter();
+    await request(app).post('/api/v1/school/reading/session/end').send({ location: 'livingroom' });
+    expect(ended).toEqual([{ location: 'livingroom', reason: 'day-done' }]);
+  });
+
+  it('REFUSES `timeout` — that word belongs to the idle sweep, and it reopens sessions', async () => {
+    const { app, ended } = endRouter();
+    const res = await request(app).post('/api/v1/school/reading/session/end').send({ location: 'livingroom', reason: 'timeout' });
+    expect(res.status).toBe(400);
+    // And it refuses BEFORE closing anything: a rejected reason is a rejected
+    // request, not a teardown filed under the wrong word.
+    expect(ended).toEqual([]);
+  });
+
+  it('refuses any other invented reason too', async () => {
+    const { app, ended } = endRouter();
+    const res = await request(app).post('/api/v1/school/reading/session/end').send({ location: 'livingroom', reason: 'whatever' });
+    expect(res.status).toBe(400);
+    expect(ended).toEqual([]);
+  });
+});
