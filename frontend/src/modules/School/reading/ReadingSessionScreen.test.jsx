@@ -7,7 +7,7 @@
  * mocked the hook would prove the markup and nothing about the machine.
  */
 import { render, screen, act, waitFor, within } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 
 const h = vi.hoisted(() => ({ handler: null, overlay: { shown: [], dismissed: 0 }, cues: [] }));
 
@@ -369,6 +369,35 @@ describe('ReadingSessionScreen', () => {
 });
 
 describe('recentDayLabel', () => {
+  /* THE AMBIENT ZONE IS THE TEST, so it is pinned rather than inherited.
+     A study day is a calendar date, not an instant. The bug parsed it at UTC
+     midnight and then formatted the weekday in LOCAL time, which names the day
+     BEFORE anywhere behind UTC — and names it correctly at UTC itself. So the
+     assertions below can only fail in a zone behind UTC: run the buggy version
+     under TZ=UTC and it passes, and this file becomes a description of the fix
+     instead of a guard on it, handing every UTC container (CI, Docker, the
+     homeserver) a green light from a test incapable of failing.
+
+     Pinned by substituting the default zone rather than by setting TZ, because
+     setting it cannot work here: the suite runs `pool: 'threads'`, and a
+     worker_thread's `process.env` is a plain snapshot object with none of the
+     magic setter Node uses to notify V8 of a zone change. `process.env.TZ` and
+     `vi.stubEnv('TZ', …)` both change the string while `resolvedOptions()`
+     keeps reporting the zone the worker booted in. Only the zone at spawn
+     counts, and that is not per-file.
+
+     So: every formatter that does not name its OWN zone gets the household's,
+     which is what a kiosk in the living room actually sees. A formatter that
+     names one — the fix — overrides it. That makes these assertions capable of
+     failing in any ambient zone, UTC included. */
+  const RealDateTimeFormat = Intl.DateTimeFormat;
+  beforeAll(() => {
+    Intl.DateTimeFormat = function DateTimeFormat(locales, options) {
+      return new RealDateTimeFormat(locales, { timeZone: 'America/Los_Angeles', ...options });
+    };
+  });
+  afterAll(() => { Intl.DateTimeFormat = RealDateTimeFormat; });
+
   it('names the weekday of the study day itself, not the day before it', () => {
     // 2026-09-09 is a Wednesday. Parsed at UTC midnight and formatted in any
     // timezone west of Greenwich, the naive version said "Tue".
