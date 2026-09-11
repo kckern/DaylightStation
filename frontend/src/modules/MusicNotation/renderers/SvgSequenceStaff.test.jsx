@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
-import { SvgSequenceStaff } from './SvgSequenceStaff.jsx';
+import { SvgSequenceStaff, classifyHeldPitch } from './SvgSequenceStaff.jsx';
 
 // jsdom sees SVG STRUCTURE, never layout: element counts, classes, and the
 // `data-` attributes the component publishes so vertical truth is assertable
@@ -486,5 +486,114 @@ describe('SvgSequenceStaff', () => {
       const gaps = columns.slice(1).map((x, i) => x - columns[i]);
       expect(new Set(gaps).size).toBe(1); // even columns
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * THE AFTERGLOW. Reported from the piano kiosk: a child playing a clean scale,
+ * cursor advancing correctly, score 1.0 — and a ghost note appearing on every
+ * note, one beat behind. Production (`piano.exercise-midi-state`, 21:24) shows
+ * why: a scale is legato, and up to THREE keys are down at once.
+ *
+ *     [60]        -> [60,62]       onsets [62]
+ *     [60,62]     -> [60,62,64]    onsets [64]
+ *     [60,62,64]  -> [62,64]       releases [60]
+ *
+ * The instant the cursor advanced to 62, the still-held 60 stopped matching the
+ * target and was drawn as a wrong note. Nothing was played wrong; the finger had
+ * simply not left the key yet.
+ */
+describe('a sustained note is not a mistake', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  const at = (ms) => ({ velocity: 80, timestamp: ms });
+
+  it('draws NO ghost for a key still held from the previous note', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1000);
+    // Cursor on 60; 60 pressed and held.
+    const { container, rerender } = render(
+      <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={0} activeNotes={new Map([[60, at(1000)]])} />
+    );
+
+    // 62 goes down at 2000 and the cursor advances — 60 has NOT been released.
+    vi.setSystemTime(2000);
+    rerender(
+      <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1}
+        activeNotes={new Map([[60, at(1000)], [62, at(2000)]])} />
+    );
+
+    expect(container.querySelectorAll('.sequence-note-wrong-ghost')).toHaveLength(0);
+    // And the note actually being played still reads as correct.
+    expect(container.querySelector('.sequence-note-hit')?.getAttribute('data-midi')).toBe('62');
+  });
+
+  it('survives a three-deep legato overlap — the real scale', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(3000);
+    const { container, rerender } = render(
+      <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1}
+        activeNotes={new Map([[60, at(1000)], [62, at(3000)]])} />
+    );
+    vi.setSystemTime(4000);
+    rerender(
+      <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={2}
+        activeNotes={new Map([[60, at(1000)], [62, at(3000)], [64, at(4000)]])} />
+    );
+    expect(container.querySelectorAll('.sequence-note-wrong-ghost')).toHaveLength(0);
+    expect(container.querySelector('.sequence-note-hit')?.getAttribute('data-midi')).toBe('64');
+  });
+
+  it('STILL ghosts a wrong note pressed after the cursor arrived', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(2000);
+    const { container, rerender } = render(
+      <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1}
+        activeNotes={new Map([[60, at(1000)]])} />
+    );
+    // Same cursor entry, so its arrival clock does not move: 61 is a fresh
+    // answer to THIS note, and a wrong one.
+    vi.setSystemTime(2500);
+    rerender(
+      <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1}
+        activeNotes={new Map([[60, at(1000)], [61, at(2500)]])} />
+    );
+    const ghosts = container.querySelectorAll('.sequence-note-wrong-ghost');
+    expect(ghosts).toHaveLength(1);
+    expect(ghosts[0].getAttribute('data-midi')).toBe('61');
+  });
+
+  it('a held key with no press time is still ghosted — provenance unknown, do not hide it', () => {
+    const { container } = render(
+      <SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={1}
+        activeNotes={new Map([[61, { velocity: 80 }]])} />
+    );
+    expect(container.querySelectorAll('.sequence-note-wrong-ghost')).toHaveLength(1);
+  });
+});
+
+describe('classifyHeldPitch', () => {
+  const targets = new Set([62]);
+
+  it('a target is a target, whenever it was pressed', () => {
+    expect(classifyHeldPitch(62, { pressedAt: 1, cursorArrivedAt: 1000, cursorTargets: targets })).toBe('target');
+  });
+
+  it('pressed after the cursor arrived is a ghost', () => {
+    expect(classifyHeldPitch(61, { pressedAt: 1500, cursorArrivedAt: 1000, cursorTargets: targets })).toBe('ghost');
+  });
+
+  it('pressed before the cursor arrived is a sustain', () => {
+    expect(classifyHeldPitch(60, { pressedAt: 500, cursorArrivedAt: 1000, cursorTargets: targets })).toBe('sustain');
+  });
+
+  it('a tie counts as a sustain — never accuse a child on a rounding error', () => {
+    expect(classifyHeldPitch(60, { pressedAt: 1000, cursorArrivedAt: 1000, cursorTargets: targets })).toBe('sustain');
+  });
+
+  it('an unknown press time falls back to ghost', () => {
+    expect(classifyHeldPitch(61, { pressedAt: undefined, cursorArrivedAt: 1000, cursorTargets: targets })).toBe('ghost');
+    expect(classifyHeldPitch(61, { pressedAt: 1500, cursorArrivedAt: NaN, cursorTargets: targets })).toBe('ghost');
   });
 });

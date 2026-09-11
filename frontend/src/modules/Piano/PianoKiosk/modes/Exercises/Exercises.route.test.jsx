@@ -25,7 +25,10 @@ import { Exercises } from './Exercises.jsx';
  * metronome, the notation renderers and the learning API.
  */
 const h = vi.hoisted(() => ({
-  log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  // `sampled` included deliberately: the real logger has it and the staff's
+  // ghost/sustain telemetry calls it, so a mock without it tests a shape that
+  // does not exist.
+  log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), sampled: vi.fn() },
   runProps: [],
   activeNotes: new Map(),
   record: vi.fn(),
