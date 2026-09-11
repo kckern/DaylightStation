@@ -301,6 +301,14 @@ never closes, and the reading code has no per-day cap for the same reason.
 | Unit | a reading, spanning days | one read = one day's count |
 | Launcher | `BookLogProgramLauncher` | `StoryTimeProgramLauncher` |
 
+Nothing on this page moves when story time changes. The living-room launch
+card's 2026-09-11 rebuild — today leading the shelf, an empty slot per story
+owed, the idle window drawn on the live slot, the reopen grace after an idle
+teardown — is entirely
+[`reading-sessions.md`](reading-sessions.md#the-launch-card--the-shelf-and-the-slot-the-next-book-goes-into).
+The wall panel's own empty-slot affordance is a different element with a
+different job, and it is [`reading-shelf.md`](reading-shelf.md).
+
 ---
 
 ## Where each piece lives
