@@ -483,6 +483,10 @@ export class ReadingSessionService {
       // and a re-parse per session per sweep buys nothing. Every tap moves it
       // (see `update`), so a child picking a book is never counted as idle.
       lastActivityAt: at.getTime(),
+      // Published so the launch card can DRAW the window it is being judged
+      // against. A constant duplicated in the frontend drifts the first time
+      // this is tuned, and the screen would then lie about how long a child has.
+      idleTimeoutMs: this.#idleTimeoutMs,
     });
     this.#sessions.set(session.location, session);
     // A fresh session at this reader is a fresh chance to get stuck.
