@@ -5,7 +5,28 @@ export class LanguageReelsProgramLauncher {
   get id() { return 'language-reels'; }
   get surface() { return 'portal'; }
   get locationHint() { return 'on the Portal'; }
-  async status({ userId, programInstance = null }) { return this.#service.status({ userId, reelId: programInstance }); }
+  /**
+   * WHY A LAUNCHER REPORTS ITS SERVED WORK. `AgendaStatusBoard` draws one disc
+   * per assignment from PLAN ∪ EVIDENCE, and a finished program is in neither
+   * set: the agenda stops offering it (`next` goes null) the moment it reports
+   * `doneToday`, and `BuildAgenda` never opens a work session for a program
+   * entry, so the evidence side has nothing either. Without a `servedWork` row
+   * the disc does not turn green when a child finishes — it disappears. Same
+   * durable-identity fix `StoryTimeProgramLauncher` already carries.
+   *
+   * The row names the WORK only; `planDailyAgenda` stamps `assignmentUnitId`
+   * onto it from the program entry that owns this program.
+   */
+  async status({ userId, programInstance = null }) {
+    const status = await this.#service.status({ userId, reelId: programInstance });
+    return {
+      ...status,
+      // A reel's plan entry is day-scoped (`language-reel-<day>-<reel>`), so the
+      // identity here is the REEL — stable wherever it is offered, and never
+      // mistakable for the day's entry id.
+      servedWork: status?.doneToday ? [{ unitId: `language-reels:${programInstance}`, title: 'Language reel' }] : [],
+    };
+  }
   issueLaunchTarget({ userId, programInstance, unitId }) {
     const { revision } = this.#service.getReel(programInstance);
     return { kind: 'program', program: 'language-reels', reelId: programInstance, unitId,
