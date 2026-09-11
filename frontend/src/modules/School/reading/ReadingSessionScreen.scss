@@ -392,9 +392,21 @@
 @keyframes reading-slot-idle-out {
   /* Held bright for the first stretch: a light that starts dying immediately
      says "you are already late" on a window a child has barely entered. The
-     fall is over the back half, which is when it means something. */
+     fall is over the back half, which is when it means something.
+
+     AND IT ENDS ON AN EMBER, NOT ON NOTHING. The slot's first duty is to say
+     WHERE THE NEXT BOOK GOES; the clock is the second thing it does, and the
+     second thing may not eat the first. Taken to zero the live slot became
+     indistinguishable from the dead slots beside it for the last stretch of
+     the window — so the shelf stopped naming the place a book goes exactly
+     when the child was closest to losing the session. The end stop is drawn
+     as a dimmed-down ember instead: plainly going out, still plainly there.
+     The message survives anyway, because what a person reads across glances
+     is the RATE — the filter multiplies the breath as well as the base glow,
+     so the pulse's amplitude collapses with it, and "still pulsing" vs
+     "barely pulsing" carries further than any absolute brightness would. */
   0%, 35% { filter: brightness(1); }
-  100% { filter: brightness(0.06); }
+  100% { filter: brightness(0.25); }
 }
 
 /* Motion is the message here, so when motion is refused the message has to
