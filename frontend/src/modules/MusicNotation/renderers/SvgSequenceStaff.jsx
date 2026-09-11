@@ -1,11 +1,17 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import getLogger from '../../../lib/logging/Logger.js';
+import { classifyHeldPitch, partitionHeldPitches } from '../model/heldPitch.js';
 import { getStaffPositionOnClef } from '../model/pitch.js';
+
+// Re-exported so this renderer's own suite can assert the rule it draws by.
+export { classifyHeldPitch };
 import { stemDirectionFor, stemLengthUnits } from '../model/stems.js';
 import { noteheadOffsets, accidentalColumns } from '../model/chordLayout.js';
 import {
   ACCIDENTAL_WIDTH,
   ACCIDENTAL_HEIGHT,
   ACCIDENTAL_GAP,
+  ACCIDENTAL_COLUMN_PITCH,
   NOTEHEAD_RX,
   NOTEHEAD_RY,
   SharpShape,
@@ -51,9 +57,12 @@ import './SvgSequenceStaff.scss';
  *       per NOTE, not as a group: a target pitch being held is green, a
  *       target pitch not being held is red — a partially-played chord is not
  *       a verdict on the whole chord;
- *     - a held pitch that is not one of the cursor entry's targets draws as a
- *       ghost at the pitch actually played, semi-opaque black, no stem — "you
- *       are here", not a second verdict;
+ *     - a held pitch that is not one of the cursor entry's targets, AND was
+ *       pressed after the cursor reached this entry, draws as a ghost at the
+ *       pitch actually played, semi-opaque black, no stem — "you are here",
+ *       not a second verdict. A key that was ALREADY DOWN when the cursor
+ *       arrived is a sustain, not a mistake, and draws nothing — see
+ *       `classifyHeldPitch`;
  *     - all of it is keyed to the CURRENTLY held set, so it clears the instant
  *       a key is released — nothing here remembers a past mistake.
  * @param {'treble'|'bass'|null} clef - explicit clef; omit to derive from the majority pitch.
@@ -260,15 +269,105 @@ export function SvgSequenceStaff({
   // Unlike the resting-ink range this staff otherwise draws within, a ghost is
   // never clipped for being far off the target — the whole point is showing a
   // child how far off they are, ledger lines and all, however far that is.
-  const heldGhosts = useMemo(() => {
-    if (!attemptInProgress) return [];
-    const ghosts = [];
-    for (const [midi] of activeNotes) {
-      if (cursorTargetMidis.has(midi)) continue;
-      ghosts.push({ midi, ...getStaffPositionOnClef(midi, activeClef, accidental) });
-    }
-    return ghosts;
-  }, [attemptInProgress, activeNotes, cursorTargetMidis, activeClef, accidental]);
+  /**
+   * WHEN THE CURSOR ARRIVED HERE — the other half of `classifyHeldPitch`.
+   *
+   * Kept in a ref and stamped during render rather than from an effect: the
+   * ghosts below are computed in the same pass, and an effect would stamp the
+   * arrival one commit LATE, which is exactly one frame of every key still
+   * being classified against the previous entry's arrival — the bug, one frame
+   * smaller. The ref is written only when the index actually changes, so a
+   * re-render for any other reason (a key going down, a parent tick) does not
+   * move the clock and silently turn a real ghost into a sustain.
+   */
+  const cursorArrivalRef = useRef({ index: null, at: 0 });
+  if (cursorArrivalRef.current.index !== cursorIndex) {
+    cursorArrivalRef.current = { index: cursorIndex, at: Date.now() };
+  }
+  const cursorArrivedAt = cursorArrivalRef.current.at;
+
+  /**
+   * Ghosts are DRAWN; sustains are only logged. Keeping both is what lets the
+   * log store prove that a ghost which did not appear was an afterglow, rather
+   * than an accusation we quietly dropped.
+   */
+  const { heldGhosts, heldSustains } = useMemo(() => {
+    if (!attemptInProgress) return { heldGhosts: [], heldSustains: [] };
+    const { ghosts, sustains } = partitionHeldPitches(activeNotes, {
+      cursorArrivedAt, cursorTargets: cursorTargetMidis,
+    });
+    return {
+      heldGhosts: ghosts.map((g) => ({ ...g, ...getStaffPositionOnClef(g.midi, activeClef, accidental) })),
+      heldSustains: sustains,
+    };
+  }, [attemptInProgress, activeNotes, cursorTargetMidis, cursorArrivedAt, activeClef, accidental]);
+
+  /**
+   * INDEPENDENT TIMESTAMPS FOR THE GHOST AND FOR THE KEY.
+   *
+   * The question this exists to answer is the one that could not be answered
+   * from the logs when a child reported ghost notes on a perfect scale: was
+   * that ghost something they PLAYED, or the tail of the note before it? Held
+   * sets alone cannot say — `piano.exercise-midi-state` shows `[60,62]` and
+   * nothing in it distinguishes "still releasing 60" from "just pressed 60".
+   *
+   * So each event carries three clocks and the interval between two of them:
+   * when the key went down (`pressedAt`, from the MIDI layer), when the cursor
+   * reached this entry (`cursorArrivedAt`), and when the staff drew it (`at`).
+   * `sinceCursorMs` is the decisive number — negative is impossible for a
+   * ghost by construction, and a value in the low tens of milliseconds is a
+   * legato overlap being correctly classified rather than accused.
+   *
+   * Logged on APPEARANCE, not per render: a ghost lives as long as its key is
+   * held, which at 60fps would otherwise be sixty identical lines a second.
+   * `sampled` is the second belt — this ships from kiosks over a WebSocket, and
+   * a child mashing keys must not be able to flood the store.
+   */
+  const loggerRef = useRef(null);
+  if (!loggerRef.current) loggerRef.current = getLogger().child({ component: 'sequence-staff' });
+  const reportedRef = useRef({ ghosts: new Set(), sustains: new Set() });
+  useEffect(() => {
+    const at = Date.now();
+    const seen = reportedRef.current;
+    const emit = (kind, key, entries) => {
+      const live = new Set(entries.map((e) => `${cursorIndex}:${e.midi}`));
+      for (const entry of entries) {
+        const id = `${cursorIndex}:${entry.midi}`;
+        if (seen[key].has(id)) continue;
+        seen[key].add(id);
+        const payload = {
+          midi: entry.midi,
+          at,
+          pressedAt: entry.pressedAt,
+          cursorArrivedAt,
+          // How long after the cursor got here the key went down. This one
+          // number separates a mistake from an afterglow.
+          sinceCursorMs: Number.isFinite(entry.pressedAt) ? entry.pressedAt - cursorArrivedAt : null,
+          cursorIndex,
+          targets: [...cursorTargetMidis],
+        };
+        // TELEMETRY MAY NOT TAKE DOWN THE STAGE. `sampled` is the right call
+        // here — this ships from kiosks over a WebSocket and a child mashing
+        // keys must not flood the store — but a logger that does not have it
+        // must degrade to a plain line, and a logger that throws must cost
+        // nothing at all. A child's practice does not stop because a log line
+        // could not be written.
+        try {
+          const log = loggerRef.current;
+          if (typeof log?.sampled === 'function') {
+            log.sampled(`staff.${kind}`, payload, { maxPerMinute: 60, aggregate: true });
+          } else if (typeof log?.info === 'function') {
+            log.info(`staff.${kind}`, payload);
+          }
+        } catch { /* never */ }
+      }
+      // Forget anything no longer held so the same pitch can be reported again
+      // if it is pressed again at this same cursor.
+      for (const id of [...seen[key]]) if (!live.has(id)) seen[key].delete(id);
+    };
+    emit('ghost', 'ghosts', heldGhosts);
+    emit('sustain', 'sustains', heldSustains);
+  }, [heldGhosts, heldSustains, cursorIndex, cursorArrivedAt, cursorTargetMidis]);
 
   const { width: viewBoxW } = sequenceStaffViewBox(columns.length);
   const viewBox = `0 0 ${viewBoxW} ${VIEWBOX_H}`;
@@ -349,10 +448,14 @@ export function SvgSequenceStaff({
                 const noteX = col.colX + head.offset;
                 const noteY = yOf(head.position);
                 // Accidental column: left of every notehead in this column,
-                // staggered when a chord carries more than one.
+                // and one column further out only when a neighbour would
+                // otherwise be drawn through it (see chordLayout). The pitch is
+                // the shared one, so this staff and the single-simultaneity one
+                // space their accidentals identically — the whole reason these
+                // primitives are shared rather than copied.
                 const accX =
                   Math.min(col.colX, noteX) - NOTEHEAD_RX - ACCIDENTAL_GAP - ACCIDENTAL_WIDTH / 2
-                  - head.accStagger * (ACCIDENTAL_WIDTH + 2);
+                  - head.accStagger * ACCIDENTAL_COLUMN_PITCH;
                 return (
                   <g key={`${head.midi}-${i}`}>
                     {/* rule 1: full opacity in every one of done/todo/hit/miss —

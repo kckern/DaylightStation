@@ -156,6 +156,74 @@ export function issueWorksheet({ bank, learnerId, enrollmentId, lessonId, profil
       })),
     };
   });
+
+  // THE ANSWER COLUMN MUST NOT LOOK CONTRIVED.
+  //
+  // The shuffle is fair — over 500 sheets the correct answer lands on each
+  // letter in the proportion the option counts predict. Fair is not the same as
+  // unpatterned: `lower-3` prints THREE questions, and three fair draws come up
+  // all-one-letter about once in seventeen sheets. A learner got A/A/A on 2026-09-11
+  // (Come Follow Me) and it read as a broken randomizer. The look is the
+  // smaller problem — a column filled without reading scores 100%, which is the
+  // failure the distractor-reservation rule above exists to prevent, reached
+  // from the other side.
+  //
+  // The bar is "does this sheet look obviously guessable", not "is this sheet
+  // statistically uniform". Uniformity is the wrong target at this size: three
+  // answers over three or four letters CANNOT be evenly spread — one letter
+  // holds 1 and the rest hold 0 — so any percentage-margin rule is
+  // unsatisfiable on the shortest sheets and would spin to the attempt limit on
+  // every one of them. Two rules, both stated in whole answers:
+  //
+  //   RUN    three or more of the same letter consecutively. A, A, A is a
+  //          straight line down the page whatever the totals say.
+  //   HALF   one letter holding more than half the sheet. Deliberately loose —
+  //          two of three, or three of five, is ordinary luck and left alone.
+  //
+  // Only the OPTION ORDER is re-rolled. The sampled distractors stay exactly as
+  // drawn: the sheet asks the same question, it just stops answering it in a
+  // straight line. Re-picking distractors would change what was asked.
+  //
+  // It draws from the same seeded stream, so a sheet is still reproducible from
+  // `seed` alone and a minted artifact still replays. And it draws ONLY when a
+  // sheet actually offends, which keeps every other sheet bit-identical to what
+  // it was before this existed — the discipline the sampling ternary above is
+  // written for.
+  const singles = items.filter((item) => item.type === 'multiple_choice' && item.options.length > 1);
+  const correctLetter = (item) => item.options.find((option) => option.correct)?.letter;
+  // Never more than half, and never all of a short sheet. Both floors matter:
+  // at three questions `ceil(3/2)` is already 2, and the explicit 2 keeps a
+  // two-question sheet from being asked for something it cannot give.
+  const crowdCap = Math.max(2, Math.ceil(singles.length / 2));
+
+  const looksContrived = () => {
+    let run = 0;
+    let previous = null;
+    const counts = new Map();
+    for (const item of singles) {
+      const letter = correctLetter(item);
+      run = letter === previous ? run + 1 : 1;
+      if (run >= 3) return true;
+      previous = letter;
+      const next = (counts.get(letter) ?? 0) + 1;
+      if (next > crowdCap) return true;
+      counts.set(letter, next);
+    }
+    return false;
+  };
+
+  // Bounded: each re-roll is independent and the rules are loose, so this
+  // almost always settles on the first retry. An unbounded loop over a bank
+  // that cannot satisfy them would hang worksheet issue for every child, and
+  // whatever the last attempt produced still ships — a sheet with a run on it
+  // beats no sheet at all.
+  for (let attempt = 0; attempt < 12 && looksContrived(); attempt += 1) {
+    for (const item of singles) {
+      item.options = shuffled(item.options, random)
+        .map((option, index) => ({ ...option, letter: LETTERS[index] }));
+    }
+  }
+
   return deepFreeze({
     schema: 'school.issued-worksheet/v1', bankId: normalized.id, bankRevision: normalized.revision,
     learnerId, enrollmentId, lessonId, profile, seed: String(seed ?? ''),

@@ -10,6 +10,9 @@ import { presentPublicResources } from '../presenters/publicResourceRefs.mjs';
 import { mountTeacherReadingRoutes } from './school.teacherReading.mjs';
 
 export function createSchoolRouter({
+  // () => boolean. Whether school.yml still configures a console PIN. The
+  // console reads this to decide whether to ask for one at all.
+  teacherPinRequired = () => false,
   schoolErrors = {},
   coreErrors = {},
   slugify,
@@ -185,10 +188,17 @@ export function createSchoolRouter({
     res.json({ active: true, ...status });
   }));
   router.get('/teacher/auth/status', wrap(async (req, res) => {
-    if (!teacherCapabilitySessions) return res.json({ active: false });
-    res.set('Cache-Control', 'no-store').json(teacherCapabilitySessions.status(
-      cookieValue(req, 'daylight_teacher_session'),
-    ));
+    if (!teacherCapabilitySessions) return res.json({ active: false, pinRequired: false });
+    // `pinRequired` exists so the console can stop ASKING for something the
+    // server does not want. TeacherGate has always skipped the PIN check when
+    // none is configured, but the console prompted anyway — it had no way to
+    // know, so removing the PIN from config made the dialog unanswerable
+    // instead of unnecessary. With this, an unset PIN means the console
+    // unlocks silently and the grown-up is identified by who they picked.
+    res.set('Cache-Control', 'no-store').json({
+      ...teacherCapabilitySessions.status(cookieValue(req, 'daylight_teacher_session')),
+      pinRequired: teacherPinRequired(),
+    });
   }));
   router.post('/teacher/auth/step-up', wrap(async (req, res) => {
     if (!teacherCapabilitySessions) throw new EntityNotFoundError('teacher authorization', 'not configured');

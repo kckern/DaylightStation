@@ -25,7 +25,10 @@ import { Exercises } from './Exercises.jsx';
  * metronome, the notation renderers and the learning API.
  */
 const h = vi.hoisted(() => ({
-  log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  // `sampled` included deliberately: the real logger has it and the staff's
+  // ghost/sustain telemetry calls it, so a mock without it tests a shape that
+  // does not exist.
+  log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), sampled: vi.fn() },
   runProps: [],
   activeNotes: new Map(),
   record: vi.fn(),
@@ -279,10 +282,6 @@ describe('the run route — a video checkpoint says which lesson it returns to',
     expect(pianoLearningApi.program).not.toHaveBeenCalled();
   });
 
-  // No click. A pass takes itself — see 04988e808: the office TV has no
-  // touchscreen and no mouse, so the one panel a child reached by SUCCEEDING
-  // was the only one with no way out of it. These two tests still clicked the
-  // Continue button that fix removed the need for.
   it('returns to the lesson when the checkpoint is passed', async () => {
     const { press } = renderAt(checkpointUrl());
     await screen.findByText('Play the first note to begin.');
@@ -290,8 +289,13 @@ describe('the run route — a video checkpoint says which lesson it returns to',
     press(60);
     press(62);
 
+    // A PASS IS TAKEN AUTOMATICALLY. There is no Continue button to click and
+    // there has not been one since `let a child take a pass they cannot click`
+    // (04988e808): this surface has no pointer controls, so a child at a piano
+    // with no mouse could be stranded on a run they had already passed. The
+    // assertion is the navigation itself, which is the behaviour that matters.
     expect(await screen.findByTestId('back-at-the-lesson')).toBeInTheDocument();
-    expect(where()).toBe('/piano/videos/piano-basics/lesson-2');
+    await waitFor(() => expect(where()).toBe('/piano/videos/piano-basics/lesson-2'));
   });
 
   it('still runs, unframed, for a checkpoint URL that carries no label', async () => {
@@ -341,6 +345,7 @@ describe('the run route — the ways out', () => {
     press(60);
     press(62);
 
+    // Automatic, for the same reason as the checkpoint above.
     await waitFor(() => expect(where()).toBe('/piano/exercises/program/hanon'));
   });
 });

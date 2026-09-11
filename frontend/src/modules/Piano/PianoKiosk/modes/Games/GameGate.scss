@@ -17,6 +17,12 @@
   height: 100%;
   min-height: 0;
   overflow: hidden;
+  /* The ceremony is `position: absolute; inset: 0` and closes OVER the practice
+     — that is what makes its opening 400ms of stillness the frame where a child
+     sees the key they just played land. It needs a containing block, and this
+     is it. Without one it resolved against the viewport while the gate rendered
+     it INSTEAD of the run, and the ask vanished on the final note. */
+  position: relative;
 
   > .piano-exercise-run {
     flex: 1 1 auto;

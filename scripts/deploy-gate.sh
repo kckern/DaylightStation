@@ -10,6 +10,14 @@
 # came back status 502 and the read-along never opened. The gate was watching
 # the garage and nothing else — hence the Portal check below.
 #
+# On 2026-09-11 it happened again, in the third place nobody was watching. The
+# gate reported CLEAR and the deploy went out 42 seconds after
+# `game.mount {"game":"checkers","learnerId":...}` — a child was mid-game on the
+# piano tablet. The container went down, his WebSocket dropped 1006, the kiosk
+# reloaded under him, and from his side the game restarted for no reason. The
+# garage was idle and the Portal was quiet and both halves passed honestly; the
+# gate simply had no idea the piano kiosk existed. Hence section 3.
+#
 # Exit 0 = clear to deploy. Exit 1 = someone is using it; WAIT.
 #
 #   ./scripts/deploy-gate.sh && ./scripts/build-daylight.sh && sudo deploy-daylight
@@ -58,9 +66,18 @@ elif ! curl -s --max-time 5 -o /dev/null "$LOGS/select/logsql/query" -d 'query=_
   blocked=1
 fi
 
+# ── 3. Piano kiosk: a child mid-game, or mid-anything ───────────────────────
+# Shared with `reload-piano-kiosk.sh`, because a redeploy and a forced reload
+# are the same interruption from the child's side and must answer to the same
+# question. See that script for what counts and what deliberately does not.
+if ! "$(dirname "$0")/piano-kiosk-idle.sh"; then
+  echo "BLOCKED: the piano kiosk is in use"
+  blocked=1
+fi
+
 if [ "$blocked" -ne 0 ]; then
   echo "GATE BLOCKED — do not deploy. Wait and re-run."
   exit 1
 fi
-echo "GATE CLEAR (garage idle; no Portal activity in $PORTAL_WINDOW)"
+echo "GATE CLEAR (garage idle; no Portal activity in $PORTAL_WINDOW; piano kiosk idle)"
 exit 0

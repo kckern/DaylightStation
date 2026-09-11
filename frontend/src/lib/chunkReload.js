@@ -14,13 +14,39 @@
  * The fix: when a chunk-load failure is detected, hard-reload ONCE to fetch the
  * fresh `index.html` (served `no-cache`) and its current chunk hashes. A
  * sessionStorage guard prevents an infinite reload loop if the chunk is
- * genuinely broken rather than merely stale; the guard is cleared the moment a
- * dynamic import succeeds, so a FUTURE deploy can trigger recovery again.
+ * genuinely broken rather than merely stale.
+ *
+ * THE GUARD IS A COOLDOWN, NOT A ONE-SHOT, and that distinction is the whole
+ * of this module's usefulness on a kiosk. It used to latch for the life of the
+ * tab: set on the first recovery, cleared only by a later dynamic import
+ * SUCCEEDING. A tab that never closes and rarely lazy-loads anything therefore
+ * stayed latched shut forever, and every deploy after that point armed a
+ * landmine. On the piano tablet on 2026-09-11 that is exactly what happened —
+ * `chunk-reload.exhausted` on connect-four and checkers at 16:50, then on chess
+ * at 20:52, where a child who had just passed his gate three times in a row was
+ * told his prize was broken.
+ *
+ * What "already reloaded" is actually trying to detect is "we reloaded and the
+ * chunk STILL will not load" — a genuine failure, which is a thing that happens
+ * within SECONDS of the reload, not hours. So the guard carries a timestamp and
+ * expires. Inside the window a second failure is the real thing and is allowed
+ * to surface; outside it, the failure belongs to a NEW deploy and earns a fresh
+ * recovery. A successful import still clears it early.
  */
 import { lazy } from 'react';
 import { getChildLogger } from './logging/singleton.js';
 
 const RELOAD_GUARD_KEY = 'daylight.chunkReload.attempted';
+
+/**
+ * How long after a recovery reload a second chunk failure still counts as
+ * "the reload did not help".
+ *
+ * Generous enough to cover a slow kiosk boot plus the first lazy import that
+ * follows it, and far short of the interval between deploys — which is the
+ * only other thing that can rotate chunk hashes under a running tab.
+ */
+export const RELOAD_GUARD_TTL_MS = 90000;
 
 // Cross-browser set of messages browsers use when a dynamically imported module
 // fails to load (Chrome/Edge, Firefox, Safari, and the legacy webpack phrasing).
@@ -46,9 +72,19 @@ export function isChunkLoadError(err) {
   return CHUNK_ERROR_RE.test(msg);
 }
 
-function alreadyReloaded() {
+/**
+ * A recovery reload happened recently enough that a fresh failure means the
+ * reload did not help. An unparseable or absent stamp is "no recent reload" —
+ * failing toward recovery, because a kiosk that cannot reload is the state this
+ * module exists to prevent.
+ */
+function alreadyReloaded(now = Date.now()) {
   try {
-    return !!window.sessionStorage?.getItem(RELOAD_GUARD_KEY);
+    const stamp = Number(window.sessionStorage?.getItem(RELOAD_GUARD_KEY));
+    if (!Number.isFinite(stamp) || stamp <= 0) return false;
+    // A stamp from the future (clock stepped back) is treated as expired rather
+    // than as a guard that can never lift.
+    return now >= stamp && now - stamp < RELOAD_GUARD_TTL_MS;
   } catch {
     return false;
   }
@@ -82,8 +118,10 @@ export function recoverFromChunkError(err, context = {}) {
   if (!isChunkLoadError(err)) return false;
   const message = (typeof err === 'string' ? err : err?.message) || String(err);
   if (alreadyReloaded()) {
-    // Already reloaded once and the chunk STILL won't load — this is a real
-    // failure, not a stale cache. Don't loop; let it surface.
+    // Reloaded moments ago and the chunk STILL won't load — this is a real
+    // failure, not a stale cache. Don't loop; let it surface. The guard
+    // expires (RELOAD_GUARD_TTL_MS), so a LATER deploy is recovered from
+    // normally rather than inheriting this verdict.
     logger().error('chunk-reload.exhausted', { ...context, message });
     return false;
   }
@@ -116,10 +154,13 @@ export function installChunkReloadHandler() {
     recoverFromChunkError(event?.reason, { via: 'unhandledrejection' });
   });
 
-  // On a normal (non-post-reload) boot, the shell is current — clear any stale
-  // guard so a future deploy can recover. After a recovery reload the guard is
-  // intentionally left until an import actually succeeds (see importWithReload),
-  // so a still-broken shell surfaces instead of looping forever.
+  // On a normal (non-post-reload) boot the shell is current, so drop any
+  // expired stamp rather than leaving it to be re-read on every failure.
+  //
+  // This line used to read `if (!alreadyReloaded()) clearChunkReloadGuard()`,
+  // which cleared the guard only when the guard was already absent — inert in
+  // the one case it was written for. It could never un-latch anything. The TTL
+  // above is what actually lifts a stale guard now; this is housekeeping.
   if (!alreadyReloaded()) clearChunkReloadGuard();
 }
 

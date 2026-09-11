@@ -116,32 +116,47 @@ describe('BookShelf', () => {
   });
 
   describe('the shelf', () => {
-    it('one tile per reading/unread item, then + Add a book last', () => {
+    it('the Add tile leads, then one tile per reading/unread item', () => {
+      // ADD IS THE TOP-LEFT CELL. It used to trail the row, which put the one
+      // thing a child comes to this screen to do at the end of everything
+      // they have already done — and moved further away each time they read.
       arm({ shelf: { learnerId: 'kid', items: [HATCHET, DONE_JULY, FROG, UNREAD], obligation: null } });
       mount();
-      const grid = screen.getByTestId('book-shelf-grid');
-      const tiles = within(grid).getAllByRole('button');
-      expect(tiles.map((t) => t.textContent)).toEqual([
-        expect.stringContaining('Hatchet'),
-        expect.stringContaining('Frog and Toad'),
-        expect.stringContaining('Not yet opened'),
+      const grid = screen.getByTestId('book-grid');
+      // The cards carry no text, so they are read by their accessible names.
+      expect(within(grid).getAllByRole('button').map((t) => t.getAttribute('title') ?? t.textContent)).toEqual([
         expect.stringContaining('Add a book'),
+        'Hatchet',
+        'Frog and Toad',
+        'Not yet opened',
+        'Finished in July',
       ]);
-      expect(within(grid).queryByText('Finished in July')).toBeNull();
+    });
+
+    it('the finished book is in the grid too — one flow, no seam', () => {
+      // Today and history used to be two sections with their own headings and
+      // their own scrolling; seeing yesterday meant crossing a seam.
+      arm({ shelf: { learnerId: 'kid', items: [HATCHET, DONE_JULY], obligation: null } });
+      mount();
+      const grid = screen.getByTestId('book-grid');
+      expect(within(grid).getByRole('button', { name: 'Open Hatchet' })).toBeInTheDocument();
+      expect(within(grid).getByRole('button', { name: 'Open Finished in July' })).toBeInTheDocument();
+      expect(screen.queryByTestId('book-shelf-grid')).toBeNull();
     });
 
     it('keeps the hook order — no re-sort', () => {
       arm({ shelf: { learnerId: 'kid', items: [FROG, HATCHET], obligation: null } });
       mount();
-      const tiles = within(screen.getByTestId('book-shelf-grid')).getAllByRole('button');
-      expect(tiles[0]).toHaveTextContent('Frog and Toad');
-      expect(tiles[1]).toHaveTextContent('Hatchet');
+      const tiles = within(screen.getByTestId('book-grid')).getAllByRole('button');
+      expect(tiles[0]).toHaveTextContent('Add a book');
+      expect(tiles[1]).toHaveAttribute('title', 'Frog and Toad');
+      expect(tiles[2]).toHaveAttribute('title', 'Hatchet');
     });
 
     it('empty: the + tile alone, captioned for the first book', () => {
       arm({ shelf: { learnerId: 'kid', items: [], obligation: null } });
       mount();
-      const tiles = within(screen.getByTestId('book-shelf-grid')).getAllByRole('button');
+      const tiles = within(screen.getByTestId('book-grid')).getAllByRole('button');
       expect(tiles).toHaveLength(1);
       expect(tiles[0]).toHaveTextContent('Add your first book');
     });
@@ -209,49 +224,50 @@ describe('BookShelf', () => {
       expect(screen.queryByRole('button', { name: /history/i })).toBeNull();
     });
 
-    // THE TAXONOMY FIX: the obligation is pips INSIDE the Today heading, not a
-    // sentence in a chip above the shelf.
-    it('the obligation is drawn as pips in the Today heading, with the sentence as its name', () => {
+    // The obligation STANDS ALONE now: it used to be pips inside a "Today"
+    // heading, and the single grid has no section headings to hang it from.
+    it('the obligation is drawn as pips above the grid, with the sentence as its name', () => {
       arm({ shelf: { learnerId: 'kid', items: [HATCHET], obligation: { label: '1 of 2 books', per: 'day', actual: 1, target: 2, met: false, metric: 'books' } } });
       mount();
-      const heading = screen.getByRole('heading', { level: 3, name: 'Today' });
       const pips = screen.getByTestId('shelf-obligation');
-      expect(heading.parentElement).toContainElement(pips);
       expect(pips).toHaveAttribute('aria-label', '1 of 2 books today');
       expect(pips.querySelectorAll('.reading-pip')).toHaveLength(2);
       expect(pips.querySelectorAll('.reading-pip--done')).toHaveLength(1);
       expect(screen.queryByText('1 of 2 books today')).toBeNull();
+      // No row headings survive the merge — that was the seam.
+      expect(screen.queryByRole('heading', { name: 'Today' })).toBeNull();
+      expect(screen.queryByRole('heading', { name: /finished and set aside/i })).toBeNull();
     });
 
-    it('the shelf row is a row and nothing else — one layout system per element', () => {
-      arm();
-      mount();
-      const row = screen.getByTestId('book-shelf-grid');
-      expect(row).toHaveClass('school-books__row');
-      expect(row).not.toHaveClass('school-books__grid');
+    it('ONE grid, one scroll — not a row plus a history below it', () => {
+      arm({ shelf: { learnerId: 'kid', items: [HATCHET, DONE_JULY], obligation: null } });
+      const { container } = mount();
+      expect(container.querySelectorAll('[data-testid="book-grid"]')).toHaveLength(1);
+      expect(container.querySelectorAll('.school-books__row')).toHaveLength(0);
+      expect(container.querySelectorAll('.school-books-history__scroll')).toHaveLength(1);
     });
 
-    it('the add card takes a book\'s footprint in the row, not a control beside it', () => {
+    it('the add card takes a book\'s footprint in the grid, not a control beside it', () => {
       arm();
       const { container } = mount();
-      const row = screen.getByTestId('book-shelf-grid');
-      const add = within(row).getByRole('button', { name: /Add a book/ });
+      const grid = screen.getByTestId('book-grid');
+      const add = within(grid).getByRole('button', { name: /Add a book/ });
       // The same card, the same 2:3 art slot: it stands ON the shelf.
       expect(add).toHaveClass('school-books-tile');
       expect(add.querySelector('.school-books-tile__art .school-books-tile__cover')).not.toBeNull();
       expect(add).toHaveTextContent('Tap to type the number');
-      // And nothing outside the row offers it any more.
+      // And nothing outside the grid offers it any more.
       expect(container.querySelectorAll('button')).toHaveLength(
-        container.querySelectorAll('.school-books-tile, .school-screen-header__done, .school-books__history-link').length,
+        container.querySelectorAll('.school-books-tile, .school-screen-header__done').length,
       );
     });
 
     it('offers the add card even when the only books are finished ones', () => {
       arm({ shelf: { learnerId: 'kid', items: [DONE_JULY], obligation: null } });
       mount();
-      const row = screen.getByTestId('book-shelf-grid');
-      expect(within(row).getByRole('button', { name: /Add a book/ })).toBeInTheDocument();
-      expect(within(row).queryByText('Ready for your next book')).toBeNull();
+      const grid = screen.getByTestId('book-grid');
+      expect(within(grid).getByRole('button', { name: /Add a book/ })).toBeInTheDocument();
+      expect(within(grid).queryByText('Ready for your next book')).toBeNull();
     });
   });
 
@@ -330,7 +346,7 @@ describe('BookShelf', () => {
       const overlay = screen.getByTestId('update-book');
       expect(within(overlay).getByText('Hatchet')).toBeInTheDocument();
       expect(within(overlay).getByRole('button', { name: 'Update page' })).toBeInTheDocument();
-      expect(screen.queryByTestId('book-shelf-grid')).toBeNull();
+      expect(screen.queryByTestId('book-grid')).toBeNull();
       expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
     });
 
@@ -340,7 +356,7 @@ describe('BookShelf', () => {
       const overlay = screen.getByTestId('add-book');
       expect(overlay).toHaveAttribute('data-step', 'number');
       expect(within(overlay).getByText('Type the number under the barcode')).toBeInTheDocument();
-      expect(screen.queryByTestId('book-shelf-grid')).toBeNull();
+      expect(screen.queryByTestId('book-grid')).toBeNull();
       expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
     });
 
@@ -356,7 +372,7 @@ describe('BookShelf', () => {
       expect(screen.getByTestId('book-save-receipt')).toHaveTextContent('Book finished!');
       expect(screen.getByTestId('book-save-receipt')).toHaveTextContent('Hatchet');
 
-      expect(screen.getByTestId('book-shelf-grid')).toBeInTheDocument();
+      expect(screen.getByTestId('book-grid')).toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'Undo finish' }));
       expect(a.undoFinish).toHaveBeenCalledTimes(1);
     });
@@ -403,9 +419,9 @@ describe('BookShelf', () => {
       // The spine: the number on top (with the month, since July is not
       // August), the weekday down it; the full date as its name.
       expect(within(groups[1]).getByRole('heading', { level: 4 })).toHaveAccessibleName('Monday 20 July');
-      expect(within(groups[1]).getByRole('heading', { level: 4 })).toHaveTextContent(/20 Jul.*Monday/);
+      expect(within(groups[1]).getByRole('heading', { level: 4 })).toHaveTextContent(/20\s*Jul\s*Monday/);
       expect(within(groups[1]).getByText('Set aside in July')).toBeInTheDocument();
-      expect(within(groups[2]).getByRole('heading', { level: 4 })).toHaveTextContent(/14 Jul.*Tuesday/);
+      expect(within(groups[2]).getByRole('heading', { level: 4 })).toHaveTextContent(/14\s*Jul\s*Tuesday/);
       // Each day wears its own colour, cycling.
       expect(groups[0].style.getPropertyValue('--day-colour')).not.toBe(groups[1].style.getPropertyValue('--day-colour'));
       expect(within(groups[2]).getByText('Finished in July')).toBeInTheDocument();
@@ -430,10 +446,14 @@ describe('BookShelf', () => {
       expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
     });
 
-    it('draws no history at all when nothing is finished yet', () => {
+    it('draws no day segments at all when nothing is finished yet', () => {
+      // The grid itself always stands — the Add tile lives in it — but a
+      // child who has finished nothing is shown no empty days.
       history([HATCHET]);
       mount();
-      expect(screen.queryByTestId('book-history')).toBeNull();
+      expect(screen.getByTestId('book-grid')).toBeInTheDocument();
+      expect(screen.queryAllByTestId('book-history-group')).toHaveLength(0);
+      expect(screen.getByTestId('book-reading-group')).toBeInTheDocument();
     });
 
     it('the same book finished twice in a day is one card wearing ×2', () => {
