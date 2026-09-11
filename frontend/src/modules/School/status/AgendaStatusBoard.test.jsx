@@ -345,7 +345,7 @@ describe('AgendaStatusBoard render', () => {
     schoolApi.stateGates.mockResolvedValue({ ok: false, status: 500, data: null });
 
     render(<AgendaStatusBoard kids={KIDS} day="2026-08-26" />);
-    await waitFor(() => expect(screen.getAllByText('0 of 1').length).toBe(2));
+    await waitFor(() => expect(screen.getAllByLabelText('0 of 1 done').length).toBe(2));
   });
 
   it('renders one non-interactive row per kid with pills and a single count readout', async () => {
@@ -368,8 +368,8 @@ describe('AgendaStatusBoard render', () => {
     } });
     render(<AgendaStatusBoard kids={KIDS} day="2026-08-24" />);
     await waitFor(() => {
-      expect(screen.getByText('1 of 3')).toBeTruthy();
-      expect(screen.getByText('0 of 3')).toBeTruthy();
+      expect(screen.getByLabelText('1 of 3 done')).toBeTruthy();
+      expect(screen.getByLabelText('0 of 3 done')).toBeTruthy();
     });
     // ONE readout per card, in the corner. The status WORD used to sit there
     // with the count repeated under the discs — two lines for one fact, and
@@ -403,10 +403,11 @@ describe('AgendaStatusBoard render', () => {
     await waitFor(() => expect(screen.getByTestId('agenda-status-board')).toBeTruthy());
     const row = screen.getByTestId('agenda-status-board').querySelector('.school-status-board__row');
     expect(row.dataset.complete).toBe('true');
-    // The chip stands IN PLACE OF "2 of 2" — a reader should not have to
-    // compare two numbers to learn the one thing that matters.
-    expect(screen.getByLabelText('Done for the day')).toBeTruthy();
-    expect(screen.queryByText('2 of 2')).toBeNull();
+    // Nothing is printed under the pins at 100%: the row is green end to end
+    // — nameplate, card, every disc — and a chip saying "DONE" underneath was a
+    // third statement of the same fact, charging the discs the height.
+    expect(screen.queryByTestId('board-day-meter')).toBeNull();
+    expect(screen.queryByText(/^Done$/i)).toBeNull();
   });
 
   it('turns a failed scan yellow without the card going complete', async () => {
@@ -421,7 +422,7 @@ describe('AgendaStatusBoard render', () => {
       entries: [],
     } });
     render(<AgendaStatusBoard kids={[{ id: 'learner1', name: 'Learner One' }]} day="2026-08-24" />);
-    await waitFor(() => expect(screen.getByText('1 of 2')).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText('1 of 2 done')).toBeTruthy());
 
     const board = screen.getByTestId('agenda-status-board');
     expect(board.querySelectorAll('[data-state="passed"]').length).toBe(1);
@@ -442,7 +443,7 @@ describe('AgendaStatusBoard render', () => {
       entries: [{ unitId: 'story-time:daily', subject: 'english' }],
     } });
     render(<AgendaStatusBoard kids={[{ id: 'learner1', name: 'Learner One' }]} day="2026-08-24" />);
-    await waitFor(() => expect(screen.getByText('0 of 1')).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText('0 of 1 done')).toBeTruthy());
 
     const board = screen.getByTestId('agenda-status-board');
     expect(board.querySelectorAll('[data-state="in-progress"]')).toHaveLength(1);
@@ -470,7 +471,7 @@ describe('AgendaStatusBoard render', () => {
     expect(pills.querySelectorAll('.school-status-board__pill')).toHaveLength(1);
     expect(screen.getByLabelText('Arts & Culture: done, 7 extra items completed')).toBeTruthy();
     expect(board.querySelector('.school-status-board__extra').getAttribute('aria-hidden')).toBe('true');
-    expect(screen.getByLabelText('Done for the day')).toBeTruthy();
+    expect(board.querySelector('.school-status-board__row').dataset.complete).toBe('true');
   });
 
   it('every segment draws a subject icon and states its subject and state by name', async () => {
@@ -492,7 +493,7 @@ describe('AgendaStatusBoard render', () => {
       ],
     } });
     render(<AgendaStatusBoard kids={[{ id: 'learner1', name: 'Learner One' }]} day="2026-08-24" />);
-    await waitFor(() => expect(screen.getByText('1 of 3')).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText('1 of 3 done')).toBeTruthy());
 
     const segments = screen.getByTestId('agenda-status-board').querySelectorAll('.school-status-board__pill');
     expect(segments).toHaveLength(3);
@@ -559,7 +560,7 @@ describe('a scan updates the board immediately', () => {
     schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: { sections: [{ subject: 'math' }], entries: [] } });
 
     render(<AgendaStatusBoard kids={[{ id: 'learner1', name: 'Learner One' }]} day="2026-08-26" />);
-    await waitFor(() => expect(screen.getByText('0 of 1')).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText('0 of 1 done')).toBeTruthy());
 
     // The scan lands; the SAME endpoints now report it passed.
     schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [
@@ -568,8 +569,10 @@ describe('a scan updates the board immediately', () => {
     const omr = wsHandlers.find((h) => h.topic === 'omr');
     omr.cb({ event: 'scan-graded', learnerId: 'learner1', result: 'passed', percent: 100 });
 
-    // The chip appears without any timer advancing.
-    await waitFor(() => expect(screen.getByLabelText('Done for the day')).toBeTruthy());
+    // The card goes complete without any timer advancing.
+    await waitFor(() => expect(
+      document.querySelector('.school-status-board__row').dataset.complete,
+    ).toBe('true'));
   });
 
   it('ignores traffic on the topic that is not a scan', async () => {
@@ -592,7 +595,7 @@ describe('a scan updates the board immediately', () => {
         entries: [{ unitId: 'm.01', subject: 'math' }],
       } });
       render(<AgendaStatusBoard kids={[{ id: 'learner1', name: 'Learner One' }]} day="2026-08-26" />);
-      await waitFor(() => expect(screen.getByText('0 of 1')).toBeTruthy());
+      await waitFor(() => expect(screen.getByLabelText('0 of 1 done')).toBeTruthy());
       const before = schoolApi.teacherDay.mock.calls.length;
 
       wsHandlers.find((h) => h.topic === 'school').cb({
@@ -610,7 +613,7 @@ describe('a scan updates the board immediately', () => {
       entries: [{ unitId: 'm.01', subject: 'math' }],
     } });
     render(<AgendaStatusBoard kids={[{ id: 'learner1', name: 'Learner One' }]} day="2026-08-26" />);
-    await waitFor(() => expect(screen.getByText('0 of 1')).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText('0 of 1 done')).toBeTruthy());
     const school = wsHandlers.find((h) => h.topic === 'school');
     const before = schoolApi.teacherDay.mock.calls.length;
 
@@ -794,16 +797,55 @@ describe('the four partitions', () => {
     schoolApi.stateGates.mockResolvedValue({ ok: false, status: 0, data: null });
   });
 
-  it('packs seven assignments as pins in two rows of 3 and 4, count under the pins', async () => {
+  it('packs seven assignments as pins in two rows of 3 and 4, bar under the pins', async () => {
     schoolApi.agendaPreview.mockResolvedValue(plan(7));
     schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
     render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
-    await waitFor(() => expect(screen.getByText('0 of 7')).toBeTruthy());
+    const meter = await screen.findByTestId('board-day-meter');
     const day = screen.getByTestId('board-day');
     const rows = day.querySelectorAll('.school-status-board__pills');
     expect([...rows].map((row) => row.querySelectorAll('.school-status-board__pill').length)).toEqual([3, 4]);
-    // The count lives INSIDE the day partition, under the pins.
-    expect(day.querySelector('.school-status-board__status').textContent).toBe('0 of 7');
+    // The bar lives INSIDE the day partition, under the pins — one segment per
+    // assignment, and no printed count: the segments ARE the count, and the
+    // words underneath were costing the pins the height they need to be read
+    // from a doorway.
+    expect(day.contains(meter)).toBe(true);
+    expect(meter.querySelectorAll('.school-status-board__segment')).toHaveLength(7);
+    expect(day.querySelector('.school-status-board__status')).toBeNull();
+    expect(screen.queryByText('0 of 7')).toBeNull();
+    // Still announced, for anyone who cannot see the bar.
+    expect(meter.querySelector('[role="progressbar"]')).toHaveAttribute('aria-label', '0 of 7 done');
+  });
+
+  it('shows no meter and no DONE chip once the day is finished — the row is green', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(plan(2));
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [
+      { learnerId: 'learner1', sessions: [
+        { unitId: 'm.0', subject: 'math', outcome: { result: 'passed' } },
+        { unitId: 'm.1', subject: 'math', outcome: { result: 'passed' } },
+      ] },
+    ] } });
+    schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
+    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
+    const day = await screen.findByTestId('board-day');
+    await waitFor(() => expect(
+      day.querySelectorAll('.school-status-board__pill[data-state="passed"]'),
+    ).toHaveLength(2));
+    expect(screen.queryByTestId('board-day-meter')).toBeNull();
+    expect(screen.queryByText(/^Done$/i)).toBeNull();
+    expect(day.closest('.school-status-board__row')).toHaveAttribute('data-complete', 'true');
+  });
+
+  it('drops the "Today" heading but keeps the partition named for a screen reader', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(plan(3));
+    schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
+    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
+    const day = await screen.findByTestId('board-day');
+    expect(day.querySelector('.school-status-board__part-title')).toBeNull();
+    expect(day).toHaveAttribute('aria-label', 'Today');
+    // Its two neighbours keep theirs; the day is named by sitting between them.
+    expect(screen.getByText('This week')).toBeTruthy();
+    expect(screen.getByText('This term')).toBeTruthy();
   });
 
   it('draws the term as weeks-as-columns with today ringed, and the eighth row only for weekly work', async () => {
@@ -842,7 +884,7 @@ describe('the four partitions', () => {
     schoolApi.agendaPreview.mockResolvedValue(plan(2));
     schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
     render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
-    await waitFor(() => expect(screen.getByText('0 of 2')).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText('0 of 2 done')).toBeTruthy());
     expect(screen.getByTestId('agenda-status-board').querySelectorAll('button, a')).toHaveLength(0);
   });
 
@@ -851,7 +893,7 @@ describe('the four partitions', () => {
     schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
     const onOpenSegment = vi.fn();
     render(<AgendaStatusBoard kids={kids} day="2026-09-09" onOpenSegment={onOpenSegment} />);
-    await waitFor(() => expect(screen.getByText('0 of 2')).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText('0 of 2 done')).toBeTruthy());
     const doors = screen.getAllByRole('button', { name: /^Open / });
     expect(doors).toHaveLength(2);
     fireEvent.click(doors[0]);
@@ -872,7 +914,7 @@ describe('the four partitions', () => {
     schoolApi.agendaPreview.mockResolvedValue(plan(2));
     schoolApi.learnerTerm = vi.fn().mockRejectedValue(new Error('boom'));
     render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
-    await waitFor(() => expect(screen.getByText('0 of 2')).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText('0 of 2 done')).toBeTruthy());
     // The partition keeps its title; only the grid is absent.
     await waitFor(() => expect(screen.getByTestId('board-term').querySelector('.school-daygrid, .school-status-board__grid--skeleton')).toBeNull());
   });
@@ -881,7 +923,7 @@ describe('the four partitions', () => {
     schoolApi.agendaPreview.mockResolvedValue(plan(1));
     schoolApi.learnerTerm = vi.fn(() => new Promise(() => {}));
     render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
-    await waitFor(() => expect(screen.getByText('0 of 1')).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText('0 of 1 done')).toBeTruthy());
     expect(screen.getByTestId('board-term').querySelector('.school-status-board__grid--skeleton')).toBeTruthy();
   });
 });
