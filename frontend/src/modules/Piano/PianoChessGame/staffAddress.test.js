@@ -3,6 +3,7 @@ import { SQUARES } from '@shared-gaming/rulesets/chess/index.mjs';
 import {
   DEFAULT_STAFF_SCHEME, identifyStaffAddress, noteLetter, noteName,
   squareToStaffAddress, staffCandidateSquares, staffToSquare, validateStaffScheme,
+  staffAxisMatch,
 } from './staffAddress.js';
 import { identifyChord, squareToChord, findChordCollisions, validateChordScheme } from './chordAddress.js';
 import { candidateSquares } from './chordCandidates.js';
@@ -170,5 +171,110 @@ describe('the rim labels', () => {
       expect(position, `note ${midi} sits at ${position}`).toBeGreaterThanOrEqual(-4);
       expect(position, `note ${midi} sits at ${position}`).toBeLessThanOrEqual(12);
     }
+  });
+});
+
+/**
+ * Multi-note cards — the dyad and triad textures.
+ *
+ * These are what a child is handed several games into a study day, and until
+ * 2026-09-11 they were the least forgiving surface in the game: an exact MIDI
+ * set match where the single-note path matched by letter across octaves, no way
+ * to tell a half-played address from nonsense, and a note count that said every
+ * staff board needed two notes when these need four or six.
+ */
+describe('dyad and triad addressing', () => {
+  const tick = (state, notes, now, scheme) => advanceCursor(state, notes, now, { scheme });
+
+  // Two notes per card on each axis; the same shapes buildScheme produces.
+  const DYADS = Object.freeze({
+    id: 'test-dyads', kind: 'staff',
+    roots: [[60, 67], [62, 69], [64, 71], [65, 72], [67, 74], [69, 76], [71, 77], [72, 79]],
+    qualities: [[40, 47], [41, 48], [43, 50], [45, 52], [46, 53], [48, 55], [50, 57], [52, 59]],
+  });
+
+  it('is a legal scheme', () => {
+    expect(validateStaffScheme(DYADS)).toEqual({ valid: true, errors: [] });
+  });
+
+  it('needs both hands in full — four notes, not two', () => {
+    expect(minNotesFor(DYADS)).toBe(4);
+    expect(minNotesFor(S)).toBe(2);
+  });
+
+  it('addresses a square from the two shapes that name it', () => {
+    // roots[2] over qualities[4] = file c, rank 5.
+    expect(identifyStaffAddress([46, 53, 64, 71], DYADS).square).toBe('c5');
+  });
+
+  // The single-note path has always matched by letter through `axisIndex` — a
+  // player reaching for the D column gets it whether they play the D on the
+  // staff or the D an octave up. The multi-note path demanded exact MIDI, so
+  // the same shape one octave off was refused here and accepted there.
+  it('forgives the octave, the way the single-note path always has', () => {
+    expect(identifyStaffAddress([46 - 12, 53 - 12, 64, 71], DYADS).square).toBe('c5');
+    expect(identifyStaffAddress([46, 53, 64 + 12, 71 + 12], DYADS).square).toBe('c5');
+  });
+
+  it('refuses a hand that names nothing, and a hand with a stray note in it', () => {
+    expect(identifyStaffAddress([46, 54, 64, 71], DYADS).square).toBe(null);
+    expect(identifyStaffAddress([46, 53, 64, 71, 66], DYADS).square).toBe(null);
+  });
+
+  describe('one hand at a time', () => {
+    it('reports each hand independently', () => {
+      const right = staffAxisMatch([64, 71], DYADS);
+      expect(right).toMatchObject({ file: 2, rank: null, fileComplete: true, rankComplete: false });
+      const left = staffAxisMatch([46, 53], DYADS);
+      expect(left).toMatchObject({ file: null, rank: 4, fileComplete: false, rankComplete: true });
+      expect(staffAxisMatch([46, 53, 64, 71], DYADS))
+        .toMatchObject({ file: 2, rank: 4, fileComplete: true, rankComplete: true, extra: [] });
+    });
+
+    it('calls a half-played hand out as extra, not as a match', () => {
+      // One note of a two-note shape: not the card yet.
+      expect(staffAxisMatch([64], DYADS)).toMatchObject({ fileComplete: false, extra: [64] });
+      // A right hand that is right, and a left hand that is halfway.
+      expect(staffAxisMatch([46, 64, 71], DYADS))
+        .toMatchObject({ fileComplete: true, rankComplete: false, extra: [46] });
+    });
+
+    // THE REFUSAL THIS FIXES. `minNotesFor` was a flat 2 for every staff
+    // scheme, so on a four-note board a correct two-note right hand let go was
+    // resolved as a WHOLE address, found to name no square, and refused —
+    // `unrecognised_chord`, the same message as playing nonsense. Being told
+    // off for playing exactly half of the right answer is the worst possible
+    // reading of it, and half of the right answer is what working the hands one
+    // at a time looks like. With the count right, one hand is simply below the
+    // minimum and the board says nothing at all.
+    it('does not refuse a correct hand let go on its own', () => {
+      const settled = tick(createCursorState(), [64, 71], 0, DYADS);
+      const previewed = tick(settled.state, [64, 71], 200, DYADS);
+      const released = tick(previewed.state, [], 400, DYADS);
+      expect(released.event).toBe(null);
+    });
+
+    it('is equally silent about a wrong hand — one hand is never a verdict', () => {
+      // Not a refusal either: below the minimum, the board cannot tell a wrong
+      // hand from a hand still being built, and guessing is how it would start
+      // telling a child off mid-reach.
+      const settled = tick(createCursorState(), [64, 66], 0, DYADS);
+      const released = tick(settled.state, [], 400, DYADS);
+      expect(released.event).toBe(null);
+    });
+
+    it('still refuses a full address that names no square', () => {
+      // Four notes, both hands claimed, and the left hand is wrong. That IS a
+      // verdict, and refusing it is the board doing its job.
+      const settled = tick(createCursorState(), [46, 54, 64, 71], 0, DYADS);
+      const released = tick(settled.state, [], 400, DYADS);
+      expect(released.event).toMatchObject({ type: 'commit', square: null });
+    });
+
+    it('commits the square when both hands are down and released', () => {
+      const settled = tick(createCursorState(), [46, 53, 64, 71], 0, DYADS);
+      const released = tick(settled.state, [], 400, DYADS);
+      expect(released.event).toMatchObject({ type: 'commit', square: 'c5' });
+    });
   });
 });

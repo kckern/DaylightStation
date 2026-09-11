@@ -64,10 +64,49 @@ export function schemeFor(resolved, { size = 8, seed = 0, fallback = null } = {}
   return { ...buildScheme(resolved, { size, seed }), source: 'built' };
 }
 
-export function ergonomicStaffShape(root, texture = 'single', upper = true) {
-  if (texture === 'single') return root;
-  const intervals = texture === 'triad' ? [0, 4, 7] : [0, 7];
-  return upper ? intervals.map((interval) => root + interval) : intervals.map((interval) => root - interval).sort((a, b) => a - b);
+/** How many notes each texture puts on a card. */
+const TEXTURE_DEGREES = Object.freeze({ single: 1, dyad: 2, triad: 3 });
+
+/**
+ * The shape a slot is read as, built from the axis's OWN pitch material.
+ *
+ * This used to stack fixed SEMITONE intervals — `[0, 7]` for a dyad, `[0, 4, 7]`
+ * for a triad — and that quietly made two things impossible.
+ *
+ * A naturals axis could not stay natural: a perfect fifth below bass B2 is E♭2,
+ * so "dyads, no sharps or flats yet" was not a rung anybody could be put on. And
+ * a diatonic tier came out wrong in the other direction: `[0, 4, 7]` is a MAJOR
+ * triad by construction, so an F-major axis sprouted F♯ and C♯ that are not in
+ * the key the tier exists to teach.
+ *
+ * Built by scale DEGREE instead — walk the pool by index, taking every other
+ * slot (root, third, fifth) — and every note of every shape is drawn from the
+ * tier's own set by construction. A naturals tier yields naturals-only dyads and
+ * triads; tier 3's single accidental stays the only accidental on the board. The
+ * interval therefore varies with the degree, a fifth here and a diminished fifth
+ * there, which is the thing being read rather than a defect in it.
+ *
+ * Indices off either end wrap by the octave, so the axis's lowest slot still has
+ * a third and a fifth beneath it.
+ *
+ * @param {number} index slot on the axis
+ * @param {number[]} pool the tier's pitch material for this axis, low to high
+ * @param {'single'|'dyad'|'triad'} texture
+ * @param {boolean} upper stack upward (treble) or downward (bass)
+ */
+export function diatonicStaffShape(index, pool, texture = 'single', upper = true) {
+  const degrees = TEXTURE_DEGREES[texture] ?? 1;
+  if (degrees === 1 || !pool.length) return pool[index];
+  // A dyad is the root and its fifth — degrees 0 and 4 — not the root and its
+  // third. The fifth is the interval a hand finds without looking.
+  const steps = degrees === 3 ? [0, 2, 4] : [0, 4];
+  const notes = steps.map((step) => {
+    const target = upper ? index + step : index - step;
+    const octaves = Math.floor(target / pool.length);
+    const wrapped = ((target % pool.length) + pool.length) % pool.length;
+    return pool[wrapped] + octaves * 12;
+  });
+  return notes.sort((a, b) => a - b);
 }
 
 function axisValues(vocabulary, axis, config, size, seed, clefs, texture = 'single') {
@@ -77,8 +116,8 @@ function axisValues(vocabulary, axis, config, size, seed, clefs, texture = 'sing
   // material they have.
   const other = vocabulary === 'staff' ? materialFor(vocabulary, axis === 'x' ? 'y' : 'x', config?.tier ?? 2, clefs) : [];
   const upper = vocabulary !== 'staff' || Math.min(...pool) > Math.min(...other);
-  const taken = pool.slice(0, size).map((value) => (
-    vocabulary === 'staff' ? ergonomicStaffShape(value, texture, upper) : value
+  const taken = pool.slice(0, size).map((value, index) => (
+    vocabulary === 'staff' ? diatonicStaffShape(index, pool, texture, upper) : value
   ));
   if (config?.order === 'shuffled') return shuffle(taken, seed).items;
   // Reverse is the same scale read downward — every interval still where it was,

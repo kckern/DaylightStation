@@ -4,11 +4,11 @@ import { SETTLE_MS, HOLD_MS, readingSignature, readingFor } from './chordReadout
 
 export default function ChordReadout({
   heldNotes = [], chord = null, square = null, connected = true, settling = false, minNotes = 3,
-  isReading = false,
+  isReading = false, half = null,
 }) {
   const reading = useMemo(
-    () => readingFor({ heldNotes, chord, square, connected, settling, minNotes }),
-    [heldNotes, chord, square, connected, settling, minNotes],
+    () => readingFor({ heldNotes, chord, square, connected, settling, minNotes, half }),
+    [heldNotes, chord, square, connected, settling, minNotes, half],
   );
   // Offline is a standing condition, not a moment of play: it must not wait out
   // a settle window behind a stale reading, because it is the answer to "why is
@@ -33,6 +33,12 @@ export default function ChordReadout({
           {state === 'offline' && 'piano not connected'}
           {state === 'idle' && 'nothing yet'}
           {state === 'partial' && (isReading ? 'one more, other staff' : 'keep holding — three notes')}
+          {/* A landed hand is not "not enough notes yet". It is most of the
+              answer, and saying so is what stops a child re-checking the hand
+              they already have right while they hunt for the other one. */}
+          {state === 'half' && (shown.half === 'file'
+            ? 'right hand is right — now the left'
+            : 'left hand is right — now the right')}
           {state === 'settling' && 'reading…'}
           {state === 'unmapped' && 'is not a square'}
           {state === 'square' && 'names'}

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import { SvgStaffRenderer, ACCIDENTAL_WIDTH, ACCIDENTAL_HEIGHT } from './SvgStaffRenderer.jsx';
+import { clefRightEdge, NOTEHEAD_RX } from './staffGlyphs.jsx';
 
 const translateX = (el) => Number(/translate\(([-\d.]+)/.exec(el.getAttribute('transform'))[1]);
 
@@ -149,10 +150,11 @@ describe('SvgStaffRenderer', () => {
   });
 
   it('keeps the group clear of the clef when a head or accidental would reach it', () => {
-    // A down-stem chord displaces a head a full notehead-width left; at the
-    // nominal column that lands the head at x=38, inside the clef's 2…44 box.
+    // A down-stem chord displaces a head a full notehead-width left, which at
+    // the nominal column puts it inside the clef's box. The group shifts.
     const { container } = render(<SvgStaffRenderer targetPitches={[67, 69, 74]} />);
-    expect(Math.min(...noteXs(container)) - 9).toBeGreaterThanOrEqual(46);
+    expect(Math.min(...noteXs(container)) - NOTEHEAD_RX)
+      .toBeGreaterThanOrEqual(clefRightEdge(14) - 0.01);
   });
 
   // ── Accidentals ────────────────────────────────────────────────────────────

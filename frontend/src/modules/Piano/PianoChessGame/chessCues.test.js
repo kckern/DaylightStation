@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { cuesFromConfig } from './chessCues.js';
 
 describe('cuesFromConfig', () => {
-  const ALL_ON = { flashRejected: true, toast: true, showDestinationLabels: true, sound: true };
+  const ALL_ON = { flashRejected: true, toast: true, showDestinationLabels: true, ghostNotes: true, sound: true };
 
   it('translates snake_case refusal loudness, treating only explicit false as off', () => {
     expect(cuesFromConfig({ feedback: { flash_rejected: false, toast: false } })).toEqual({
@@ -25,6 +25,14 @@ describe('cuesFromConfig', () => {
       ...ALL_ON,
       showDestinationLabels: false,
     });
+  });
+
+  it('turns ghost notes off only on explicit false', () => {
+    // Default ON. Without them the board's only reply to a wrong press is "that
+    // chord is not on the board", so a child walking up the scale toward a note
+    // gets nothing back for getting closer — and getting closer is the skill.
+    expect(cuesFromConfig({ feedback: { ghost_notes: false } })).toEqual({ ...ALL_ON, ghostNotes: false });
+    expect(cuesFromConfig({ feedback: { ghost_notes: true } })).toEqual(ALL_ON);
   });
 
   it('turns sound off only on explicit false', () => {
