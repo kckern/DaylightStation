@@ -4519,6 +4519,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     manageProgramDayBypass: schoolLifecycle.useCases?.manageProgramDayBypass ?? null,
     teacherCapabilitySessions,
     teacherGate: schoolTeacherGate,
+    // Read per request, never snapshotted — clearing the PIN in school.yml
+    // takes effect on the next config reload rather than the next restart.
+    teacherPinRequired: () => {
+      const pin = schoolTeacherConfig.pin();
+      return typeof pin === 'string' && pin.length > 0;
+    },
     openRemediation: schoolLifecycle.useCases?.openRemediation ?? null,
     renderArtifactPostview: createArtifactPostviewRenderer(),
     renderWorksheetThumbnail: renderPdfFirstPagePng,
