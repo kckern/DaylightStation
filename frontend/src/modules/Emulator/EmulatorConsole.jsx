@@ -279,7 +279,7 @@ export function EmulatorConsole({
         width: hasCut ? (sc.width / 100) * rect.width : rect.width,
         height: hasCut ? (sc.height / 100) * rect.height : rect.height,
       };
-      const next = computeScreenBox({ cut, dpr, native: game?.native });
+      const next = computeScreenBox({ cut, dpr, native: game?.native, scaling: presentation?.screen_scaling });
       setScreenBox((prev) => (prev && prev.scale === next.scale && prev.left === next.left
         && prev.top === next.top && prev.width === next.width && prev.height === next.height
         ? prev : next));
