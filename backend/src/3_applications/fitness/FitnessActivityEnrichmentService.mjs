@@ -646,7 +646,7 @@ export class FitnessActivityEnrichmentService {
    * Fire-and-forget — callers should .catch() errors.
    *
    * @param {string} sessionId - Session ID (YYYYMMDDHHmmss format)
-   * @param {Object} newMemo - Transcribed memo object from VoiceMemoTranscriptionService
+   * @param {Object} newMemo - Transcribed memo object from VoiceTranscriptionService (fitness profile)
    * @param {string} newMemo.transcriptClean - Cleaned transcript text
    * @param {number} [newMemo.startedAt] - Memo start timestamp (epoch ms)
    * @param {number} [newMemo.durationSeconds] - Memo duration
