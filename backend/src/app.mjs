@@ -4821,6 +4821,33 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // `studyDay()` as the shard key. A second launcher with its own timezone
   // would file a 10pm read under tomorrow while this one still read today.
   // ==========================================================================
+  /**
+   * A learner's display name, for the surfaces that greet them by it.
+   *
+   * PROFILES CARRY `display_name`, NOT `name`. Reading `profile.name` yields
+   * undefined, which is why the reading rail drew a face with no caption under
+   * it all evening and `GET /reading/summary` answered `displayName: null` for
+   * a child whose profile says `display_name` on its first page. The
+   * piano roster hit exactly this and fixed it locally (see GetCourseProgress:
+   * "a bare p.name shipped 'undefined' labels"); this is the same resolution,
+   * shared, so the next caller does not have to rediscover it.
+   *
+   * Falls back to the username and then to the id: a greeting by id is a worse
+   * greeting, never a broken screen.
+   *
+   * Declared HERE, not inside the reading block, because the media-lesson
+   * router is a SIBLING block that also greets by name. While it lived in the
+   * reading scope, lesson wiring threw `resolveLearnerProfile is not defined`
+   * on every boot and every TV lesson surface was lost — silently, because that
+   * wiring is deliberately caught so a broken lesson cannot take the rest of
+   * School with it.
+   */
+  const resolveLearnerProfile = (id) => {
+    const profile = configService.getUserProfile?.(id) ?? null;
+    if (!profile) return null;
+    return { ...profile, id: String(id), name: profile.display_name || profile.username || String(id) };
+  };
+
   let readingSessions = null;
   let readingSessionInterceptor = null;
   if (schoolLifecycle.wired && schoolLifecycle.storyTimeLauncher) {
@@ -4830,25 +4857,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const { ReadingSessionInterceptor } = await import('#apps/school/readingSessionInterceptor.mjs');
     const { RecordStoryRead } = await import('#apps/school/usecases/RecordStoryRead.mjs');
     const { createReadingRouter } = await import('#api/v1/routers/reading.mjs');
-    /**
-     * A learner's display name, for the surfaces that greet them by it.
-     *
-     * PROFILES CARRY `display_name`, NOT `name`. Reading `profile.name` yields
-     * undefined, which is why the reading rail drew a face with no caption under
-     * it all evening and `GET /reading/summary` answered `displayName: null` for
-     * a child whose profile says `display_name` on its first page. The
-     * piano roster hit exactly this and fixed it locally (see GetCourseProgress:
-     * "a bare p.name shipped 'undefined' labels"); this is the same resolution,
-     * shared, so the next caller does not have to rediscover it.
-     *
-     * Falls back to the username and then to the id: a greeting by id is a worse
-     * greeting, never a broken screen.
-     */
-    const resolveLearnerProfile = (id) => {
-      const profile = configService.getUserProfile?.(id) ?? null;
-      if (!profile) return null;
-      return { ...profile, id: String(id), name: profile.display_name || profile.username || String(id) };
-    };
 
     const { makeReadingTimeoutHandler } = await import('#composition/modules/learnerCardActions.mjs');
     const { YamlReadingSessionTimelineStore } = await import('#adapters/persistence/yaml/YamlReadingSessionTimelineStore.mjs');
