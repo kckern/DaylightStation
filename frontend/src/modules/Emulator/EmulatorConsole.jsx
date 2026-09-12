@@ -264,6 +264,15 @@ export function EmulatorConsole({
   // fractional left/top re-blurs the 1px lines). The pure math lives in
   // computeScreenBox (exported, unit-tested); this effect only measures + sets.
   const [screenBox, setScreenBox] = useState(null);
+
+  // Which pixel-grid treatment this console asks for.
+  //   dotmatrix — the DMG: grid PLUS the olive wash of a reflective LCD.
+  //   lcdgrid   — the same grid, no colour cast, for the Color and the Advance.
+  // Declared up here because the grid-drawing effect below depends on it; as a
+  // `const` it is in the temporal dead zone until this line runs, and a
+  // dependency array is evaluated during render.
+  const isDotmatrix = game?.shader === 'dotmatrix';
+  const hasPixelGrid = isDotmatrix || game?.shader === 'lcdgrid';
   useLayoutEffect(() => {
     const root = consoleRef.current;
     if (!root) return undefined;
@@ -308,7 +317,11 @@ export function EmulatorConsole({
     canvas.height = devH;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, devW, devH);
-    ctx.strokeStyle = 'rgba(0,0,0,0.20)';
+    // The Game Boy draws its grid UNDER an olive wash, which softens it; on a
+    // bare colour screen the same 20% lines read as a mesh laid over the game
+    // rather than as the gaps between pixels, so the wash-free variant is
+    // lighter. Both are still one device pixel wide at every integer scale.
+    ctx.strokeStyle = isDotmatrix ? 'rgba(0,0,0,0.20)' : 'rgba(0,0,0,0.09)';
     ctx.lineWidth = 1;
     const s = screenBox.scale;
     for (let x = s; x < devW; x += s) {
@@ -317,7 +330,7 @@ export function EmulatorConsole({
     for (let y = s; y < devH; y += s) {
       ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(devW, y + 0.5); ctx.stroke();
     }
-  }, [screenBox]);
+  }, [screenBox, isDotmatrix]);
 
   // ── Dual gamepad-activity indicator ──────────────────────────────────────
   // Two independent channels, both fed into the chrome LED + the logs:
@@ -883,7 +896,6 @@ export function EmulatorConsole({
   const pixelBox = screenBox
     ? { inset: 'auto', left: `${screenBox.left}px`, top: `${screenBox.top}px`, width: `${screenBox.width}px`, height: `${screenBox.height}px` }
     : screenStyle;
-  const isDotmatrix = game?.shader === 'dotmatrix';
   const shaderStyle = {
     ...(isDotmatrix ? { ...pixelBox, backgroundColor: shade.color } : pixelBox),
   };
@@ -924,7 +936,7 @@ export function EmulatorConsole({
         className={`emulator-shader shader-${game?.shader || 'none'} ${animClass}`.trim()}
         style={shaderStyle}
       >
-        {isDotmatrix && <canvas ref={gridCanvasRef} className="emulator-shader-grid" aria-hidden="true" />}
+        {hasPixelGrid && <canvas ref={gridCanvasRef} className="emulator-shader-grid" aria-hidden="true" />}
       </div>
       <OverlayLayer overlays={overlays} resolve={resolveOverlay} />
       <HotspotLayer hotspots={hotspots} onActivate={(h) => controllerRef.current?.activate(h)} />
