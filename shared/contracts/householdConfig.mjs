@@ -69,7 +69,6 @@ export const HOUSEHOLD_APP_CONFIGS = Object.freeze({
   piano:            'piano/config',
   'playback-hub':   'playback-hub/config',
   'pressure-mats':  'hardware/pressure-mats/config',
-  retroarch:        'gaming/retroarch/config',
   'state-gates':    'state-gates/config',
   scales:           'hardware/scales',
   // A named policy file reads better than a generic config.yml sitting beside
