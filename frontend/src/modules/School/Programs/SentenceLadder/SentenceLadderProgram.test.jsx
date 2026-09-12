@@ -1282,6 +1282,76 @@ describe('the typing surface', () => {
   });
 });
 
+// GLYPH-PACED AUDIO. The sentence is paced by the learner's own progress, so a
+// syllable landing in the right column replays the clip — the model arrives at
+// the speed they are working, and doubles as "yes, that one".
+describe('glyph-paced audio', () => {
+  const playMock = () => window.HTMLMediaElement.prototype.play;
+  const rung = (options) => render(
+    <TypedRung
+      entry={entry(1, 'dictation', false, { text: { EN: 'one', KR: '한국' }, ...options })}
+      audioUrl={(seq, lang) => `/audio/${seq}/${lang}`}
+      onComplete={() => {}}
+      saving={false}
+      idleReplayMs={0}
+    />,
+  );
+
+  it('replays once each time a syllable is committed correctly, in copy mode', async () => {
+    rung({ copyPrompt: true });
+    const input = screen.getByLabelText('Copy the sentence');
+    // Arrival is one play, and everything below is counted against it.
+    await waitFor(() => expect(playMock()).toHaveBeenCalledTimes(1));
+
+    await act(async () => { fireEvent.change(input, { target: { value: '한' } }); });
+    expect(playMock()).toHaveBeenCalledTimes(2);
+
+    await act(async () => { fireEvent.change(input, { target: { value: '한국' } }); });
+    expect(playMock()).toHaveBeenCalledTimes(3);
+
+    // A WRONG glyph is not a replay. The clip is the reward for landing the
+    // syllable, so firing it here would make it mean nothing.
+    await act(async () => { fireEvent.change(input, { target: { value: '한국어' } }); });
+    expect(playMock()).toHaveBeenCalledTimes(3);
+
+    // Backspacing back over settled text must not re-fire on the way forward
+    // from a stale high-water mark either.
+    await act(async () => { fireEvent.change(input, { target: { value: '한국' } }); });
+    expect(playMock()).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not replay on progress in listen mode', async () => {
+    // THE TARGET IS HIDDEN HERE ON PURPOSE. Replaying the clip whenever the
+    // learner is correct tells them they are correct, which IS the exercise —
+    // a drill that looks like it is working while measuring nothing. No green
+    // assertion anywhere else in this file would have caught it.
+    rung();
+    const input = screen.getByLabelText('Type what you hear');
+    await waitFor(() => expect(playMock()).toHaveBeenCalledTimes(1));
+
+    await act(async () => { fireEvent.change(input, { target: { value: '한' } }); });
+    await act(async () => { fireEvent.change(input, { target: { value: '한국' } }); });
+    expect(playMock()).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays silenced: a correct syllable does not undo a Stop', async () => {
+    // Stop means quiet until explicitly asked. A learner who silenced the
+    // sentence did not ask for it back by typing well, and letting progress
+    // re-arm it is the loop coming back through a side door.
+    rung({ copyPrompt: true });
+    const input = screen.getByLabelText('Copy the sentence');
+    await waitFor(() => expect(playMock()).toHaveBeenCalledTimes(1));
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Stop' })); });
+    await act(async () => { fireEvent.change(input, { target: { value: '한' } }); });
+    expect(playMock()).toHaveBeenCalledTimes(1);
+
+    // Tab is the ask, and the ask brings it back.
+    await act(async () => { fireEvent.keyDown(input, { key: 'Tab' }); });
+    await waitFor(() => expect(playMock()).toHaveBeenCalledTimes(2));
+  });
+});
+
 describe('day rollover', () => {
   it('offers the next day once everything is done', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition', true)] }));

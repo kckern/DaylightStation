@@ -82,6 +82,8 @@ export default function TypedRung({
   // Play button — so resuming costs one key and never needs explaining.
   const [hushed, setHushed] = useState(false);
   const inputRef = useRef(null);
+  const hushedRef = useRef(false);
+  hushedRef.current = hushed;
 
   const { compositionState } = useHangulTyping();
   const { playSequence, preload, stop, playing, blocked } = useSentenceAudio();
@@ -152,6 +154,37 @@ export default function TypedRung({
     arrived.current = true;
     play();
   }, [play]);
+
+  /**
+   * GLYPH-PACED AUDIO. The sentence is paced by the learner's own progress: a
+   * syllable that settles in the right column replays the clip, so the model
+   * arrives at the speed they are actually working and doubles as the "yes,
+   * that one" they would otherwise have to wait until Submit for.
+   *
+   * COPY MODE ONLY, and that restriction is the whole point. In listen mode
+   * the model is hidden deliberately; a clip that fires exactly when the
+   * learner is right TELLS them they are right, which is the entire exercise.
+   * A drill that looks like it is working while measuring nothing is the
+   * failure this screen keeps circling back to.
+   */
+  const settledCount = useRef(0);
+  useEffect(() => {
+    const settled = Array.from(typed.committed);
+    const before = settledCount.current;
+    // Updated on every path, including listen mode and backspace, so the
+    // "grew" comparison is never measured against a stale high-water mark.
+    settledCount.current = settled.length;
+    if (!isCopying || settled.length <= before) return;
+    const want = Array.from(targetText);
+    const at = settled.length - 1;
+    if (settled[at] !== want[at]) return;
+    // Stop still means quiet. A learner who silenced the sentence did not ask
+    // for it back by typing correctly, and re-imposing it here would be the
+    // loop returning through a side door.
+    if (hushedRef.current) return;
+    languageLog.rung('glyph-replay', { rung: entry.rung, seq: entry.seq, at });
+    play();
+  }, [typed.committed, isCopying, targetText, play, entry.rung, entry.seq]);
 
   const stopPlayback = useCallback(() => {
     languageLog.rung('stopped', { rung: entry.rung, seq: entry.seq });
