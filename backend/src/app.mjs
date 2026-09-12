@@ -76,6 +76,7 @@ import { bootstrapLifeplan } from '#composition/modules/lifeplan.mjs';
 import { bootstrapNotifications } from '#composition/modules/notifications.mjs';
 import { createPlaybackStallDetector } from '#composition/modules/playbackStall.mjs';
 import { createHubFleetBridge } from '#composition/modules/hubFleetBridge.mjs';
+import { createPlaySessionTracking } from '#composition/modules/playSessions.mjs';
 import { createApiRouters } from '#composition/modules/contentApi.mjs';
 import { createFitnessApiRouter, createFitnessPlayableModule } from '#composition/modules/fitnessApi.mjs';
 import { createBooksApiRouter, createBooksModule } from '#composition/modules/booksApi.mjs';
@@ -3715,6 +3716,22 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     devicesConfig: devicesConfig.devices || {},
     logger: rootLogger.child({ module: 'screen-presence' }),
   });
+
+  // Play-time observation for any device declaring `play_observation: true`.
+  // No-op if none does. READ-ONLY: it measures play and broadcasts it on
+  // `play-session:<deviceId>`; nothing acts on the result and nothing is ever
+  // shut off from here. While no game is in the foreground this costs one kiosk
+  // REST call per device per interval — ADB is only consulted once the emulator
+  // is actually in front, so an idle house is nearly free.
+  const playSessionTracking = createPlaySessionTracking({
+    devicesConfig: devicesConfig.devices || {},
+    gamesConfig: configService.getHouseholdAppConfig(householdId, 'games'),
+    configService,
+    eventBus,
+    httpClient: axios,
+    logger: rootLogger.child({ module: 'play-sessions' }),
+  });
+  playSessionTracking.start();
 
   // Piano-power → tablet-screen authority. DS becomes the single writer for the
   // OFF side of the yellow-room tablet's FKB screen: piano OFF ⇒ screen OFF
