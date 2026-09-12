@@ -14,7 +14,7 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
  * surface is not a special case; it is simply an observation with better
  * confidence. That is what keeps one meter behind both kinds of play surface.
  */
-export function createPlaySessionsRouter({ recordObservation = null, sessions = null, trackers = [], watchdog = null, grantLedger = null, grantPlayTime = null, logger = console }) {
+export function createPlaySessionsRouter({ recordObservation = null, sessions = null, trackers = [], watchdog = null, grantLedger = null, grantPlayTime = null, checkEligibility = null, logger = console }) {
   const router = express.Router();
 
   /**
@@ -143,6 +143,24 @@ export function createPlaySessionsRouter({ recordObservation = null, sessions = 
     } catch (error) {
       logger.error?.('play.api.grants_failed', { userId: req.params.userId, error: error.message });
       return sendInternalError(res, { error: 'Failed to read play grants' });
+    }
+  });
+
+  /**
+   * GET /eligibility — may play begin?
+   *
+   * Answers with reasons rather than a bare no. "No" with no explanation is what
+   * makes a system feel arbitrary to a child, and the reason is what a parent
+   * needs in order to disagree with it.
+   */
+  router.get('/eligibility', async (req, res) => {
+    if (!checkEligibility) return res.json({ allowed: true, reasons: [] });
+    const { userId = null, deviceId = null, contentId = null } = req.query || {};
+    try {
+      return res.json(await checkEligibility.execute({ userId, deviceId, contentId }));
+    } catch (error) {
+      logger.error?.('play.api.eligibility_failed', { error: error.message });
+      return sendInternalError(res, { error: 'Failed to check play eligibility' });
     }
   });
 

@@ -874,12 +874,12 @@ while. `[x]` is built and tested; `[ ]` is not started.
 
 | | Task | Milestone | Notes |
 |---|---|---|---|
-| `[ ]` | **T38 Express play eligibility as a state-gate** — gate + entitlement definitions for "may play", with economy as one claim | M4 | Replaces a bespoke wallet check (9.2) |
-| `[ ]` | **T39 Per-title play policy** — single-player versus group, attribution and cost rules per game | M4 | Pokemon and Mario Kart are not the same product (9.3) |
+| `[x]` | **T38 Express play eligibility as a state-gate** — gate + entitlement definitions for "may play", with economy as one claim | M4 | Replaces a bespoke wallet check (9.2) |
+| `[x]` | **T39 Per-title play policy** — single-player versus group, attribution and cost rules per game | M4 | Pokemon and Mario Kart are not the same product (9.3) |
 | `[x]` | **T40 Payer + roster on `PlaySession`** — group play without splitting, roster recorded for later | M4 | Domain change; decide before group pricing (9.3) |
 | `[x]` | **T41 Controller census in the observation** — count connected gamepads from the input device list | M2 | Feasible over the existing channel (9.4) |
 | `[x]` | **T42 Controller ACTIVITY sampling** — bounded-window event sampling, so idle pads are not counted as players | M2 | Connected is not playing (9.4) |
-| `[ ]` | **T43 Schedule and prerequisite gates** — approved play windows, "schoolwork done" style conditions | M4 | Time-bound gates already exist to build on |
+| `[x]` | **T43 Schedule and prerequisite gates** — approved play windows, "schoolwork done" style conditions | M4 | Time-bound gates already exist to build on |
 
 ### Tasks added by the Section 7 decisions
 
