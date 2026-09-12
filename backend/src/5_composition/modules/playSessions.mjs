@@ -18,6 +18,8 @@ import { AdbAdapter } from '#adapters/devices/AdbAdapter.mjs';
 import { RetroArchPlayObservationSource } from '#adapters/gaming/RetroArchPlayObservationSource.mjs';
 import { RetroArchSessionLogReader } from '#adapters/gaming/RetroArchSessionLogReader.mjs';
 import { EventBusPlaySessionAnnouncer } from '#adapters/eventbus/EventBusPlaySessionAnnouncer.mjs';
+import { FleetPlaySessionAnnouncer } from '#adapters/eventbus/FleetPlaySessionAnnouncer.mjs';
+import { CompositePlaySessionAnnouncer } from '#adapters/eventbus/CompositePlaySessionAnnouncer.mjs';
 import { YamlPlaySessionDatastore } from '#adapters/persistence/yaml/YamlPlaySessionDatastore.mjs';
 import { YamlPlayIntentDatastore } from '#adapters/persistence/yaml/YamlPlayIntentDatastore.mjs';
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
@@ -97,7 +99,16 @@ export function createPlaySessionTracking(config) {
 
   const sessions = new YamlPlaySessionDatastore({ configService, logger });
   const intents = new YamlPlayIntentDatastore({ configService, logger });
-  const announcer = new EventBusPlaySessionAnnouncer({ eventBus, logger });
+  // Two audiences for the same fact: the domain events the economy and the
+  // overlay consume, and the fleet projection that makes a game render in the
+  // media device view like anything else on any other device.
+  const announcer = new CompositePlaySessionAnnouncer({
+    announcers: [
+      new EventBusPlaySessionAnnouncer({ eventBus, logger }),
+      new FleetPlaySessionAnnouncer({ eventBus, logger }),
+    ],
+    logger,
+  });
 
   const recordObservation = new RecordPlayObservation({
     sessions,
