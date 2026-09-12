@@ -665,6 +665,27 @@ the meter knows it is less accurate than it would like to be. Silence on those
 is the healthy state, which is what makes them useful as an alarm rather than as
 noise.
 
+### 5.10b Live result
+
+Verified on the living-room hardware (2026-09-11), running the real observation
+chain against a real game:
+
+| phase | observed |
+|---|---|
+| playing | `unknown` (first sample — no CPU delta yet), then 7× `playing` |
+| backgrounded | `unknown` (debounce), then 4× `paused` |
+| resumed | `unknown` (process identity changed), then 7× `playing` |
+
+**Wall clock 69s; `playedMs` 19s.** The meter refused to bill the 49 seconds the
+game was not being played, which is the claim the whole design rests on.
+
+One behaviour the run made explicit: backgrounding takes the emulator out of the
+foreground, so the source reports nothing loaded and the session ENDS rather than
+pausing. Time is therefore spread across two sessions rather than accumulating in
+one. Nothing is lost or double-counted — a settled session plus a new one sums to
+the same played time — but a consumer that assumes one session per sitting will
+be wrong.
+
 ### 5.11 Testing
 
 - Unit: played-time accumulation across pause/resume/gap/switch sequences;
@@ -817,7 +838,7 @@ while. `[x]` is built and tested; `[ ]` is not started.
 | `[x]` | **T4 Composition wiring** — kiosk client + ADB adapter + source + datastore + announcer + use case + tracker; start on boot | `5_composition/` only |
 | `[x]` | **T5 Startup reconciliation** — close stale open sessions as `lost`, clear any armed overlay | Crash recovery (5.10) |
 | `[x]` | **T6 Structured logging vocabulary** — one event per transition, queryable by device and session | NFR-7 |
-| `[ ]` | **T7 Live verification on the console device** — scripted session asserting event sequence and `playedMs` against wall clock *with pauses* | The number must disagree with wall clock, correctly |
+| `[x]` | **T7 Live verification on the console device** — scripted session asserting event sequence and `playedMs` against wall clock *with pauses* | The number must disagree with wall clock, correctly |
 
 **M1 exit:** we can answer "what is playing, for whom, on which device, and for how long" in real time, and nothing has been shut off.
 
@@ -865,7 +886,7 @@ while. `[x]` is built and tested; `[ ]` is not started.
 
 | | Task | Notes |
 |---|---|---|
-| `[ ]` | **T28 Fleet visibility** — verify play sessions render correctly in the existing device view | Via T37; no new view (7.3) |
+| `[x]` | **T28 Fleet visibility** — verify play sessions render correctly in the existing device view | Via T37; no new view (7.3) |
 | `[x]` | **T29 Session history / audit view** — because played time became money | |
 | `[x]` | **T30 Reference documentation** — endstate, present tense, under `docs/reference/`, plus the navigation table | |
 | `[x]` | **T31 Retire the stale launcher config twin** — `gaming/retroarch/config.yml` reads as live and is not (3.10) | Independent of this feature; found en route |

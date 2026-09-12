@@ -31,9 +31,10 @@ describe('FleetPlaySessionAnnouncer', () => {
 
   it('emits a snapshot the shared media contract accepts', async () => {
     await announcer().started(playing(30));
-    const errors = validateSessionSnapshot?.(published[0][1]);
-    // If the contract exposes a validator it must pass; otherwise assert shape.
-    if (Array.isArray(errors)) expect(errors).toEqual([]);
+    // Asserted unconditionally: a hedged check here would pass even if the
+    // projection stopped being renderable, which is the one thing it is for.
+    expect(typeof validateSessionSnapshot).toBe('function');
+    expect(validateSessionSnapshot(published[0][1])).toEqual({ valid: true, errors: [] });
     expect(published[0][1]).toMatchObject({
       sessionId: 'ps_1', state: 'playing',
       currentItem: { contentId: 'retroarch:gb/test', format: 'game', title: 'Test Game' },
@@ -53,6 +54,17 @@ describe('FleetPlaySessionAnnouncer', () => {
   it('maps a paused observation to paused', async () => {
     await announcer().progress(playing(10), { state: 'paused' });
     expect(published[0][1].state).toBe('paused');
+  });
+
+  it('validates in every state the fleet will see, not just the first', async () => {
+    const a = announcer();
+    const s = playing(10);
+    await a.progress(s, { state: 'paused' });
+    s.end({ endedAt: at(20), reason: 'quit' });
+    await a.ended(s);
+    for (const [, snapshot] of published) {
+      expect(validateSessionSnapshot(snapshot)).toEqual({ valid: true, errors: [] });
+    }
   });
 
   it('goes idle with no current item when the session ends', async () => {

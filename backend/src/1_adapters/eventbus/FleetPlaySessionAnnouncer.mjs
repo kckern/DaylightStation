@@ -1,4 +1,5 @@
 import { IPlaySessionAnnouncer } from '#apps/gaming/ports/IPlaySessionAnnouncer.mjs';
+import { createEmptyQueueSnapshot } from '#shared-contracts/media/shapes.mjs';
 
 /**
  * Projects play sessions into the Fleet's device-state shape.
@@ -51,7 +52,10 @@ export class FleetPlaySessionAnnouncer extends IPlaySessionAnnouncer {
         : null,
       // Seconds of observed play — the billed number, never wall-clock.
       position: Math.max(0, Math.round(session.playedMs / 1000)),
-      queue: { items: [], currentIndex: 0 },
+      // The canonical factory, not a hand-rolled shape: the contract requires
+      // upNextCount and a -1 current index, and a snapshot missing either is
+      // rejected by the fleet rather than rendered.
+      queue: createEmptyQueueSnapshot(),
       config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1.0 },
       meta: { ownerId: session.deviceId, updatedAt: new Date().toISOString() },
     };
