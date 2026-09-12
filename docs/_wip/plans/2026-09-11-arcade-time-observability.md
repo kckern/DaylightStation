@@ -877,8 +877,8 @@ while. `[x]` is built and tested; `[ ]` is not started.
 | `[ ]` | **T38 Express play eligibility as a state-gate** — gate + entitlement definitions for "may play", with economy as one claim | M4 | Replaces a bespoke wallet check (9.2) |
 | `[ ]` | **T39 Per-title play policy** — single-player versus group, attribution and cost rules per game | M4 | Pokemon and Mario Kart are not the same product (9.3) |
 | `[ ]` | **T40 Payer + roster on `PlaySession`** — group play without splitting, roster recorded for later | M4 | Domain change; decide before group pricing (9.3) |
-| `[ ]` | **T41 Controller census in the observation** — count connected gamepads from the input device list | M2 | Feasible over the existing channel (9.4) |
-| `[ ]` | **T42 Controller ACTIVITY sampling** — bounded-window event sampling, so idle pads are not counted as players | M2 | Connected is not playing (9.4) |
+| `[x]` | **T41 Controller census in the observation** — count connected gamepads from the input device list | M2 | Feasible over the existing channel (9.4) |
+| `[x]` | **T42 Controller ACTIVITY sampling** — bounded-window event sampling, so idle pads are not counted as players | M2 | Connected is not playing (9.4) |
 | `[ ]` | **T43 Schedule and prerequisite gates** — approved play windows, "schoolwork done" style conditions | M4 | Time-bound gates already exist to build on |
 
 ### Tasks added by the Section 7 decisions
@@ -964,10 +964,23 @@ How many controllers are connected, and how many are *being used*, is evidence
 about who is playing. It bears on attribution, on whether a title is being played
 as a group, and potentially on price.
 
-Both are obtainable from the device:
+Both are obtainable from the device, though **counting controllers is harder
+than it looks and the obvious methods are all wrong.** Measured against the
+living-room hardware:
 
-- **Connected** — the input device list enumerates every attached device with a
-  source bitmask, so gamepads and joysticks can be counted and identified.
+- The Shield's own **remote reports input class GAMEPAD** (`0x61`) and source
+  `SOURCE_GAMEPAD` (`0x701`).
+- The living-room **air-mouse reports JOYSTICK**, and carries a joystick-sourced
+  axis (`GENERIC_1`).
+
+Keying on class, or on source, or on "has a joystick-sourced axis" each counts
+two remote controls as two players sitting down to a four-player game. What a
+remote does not have is a thumbstick, so the working discriminator is a **stick
+axis by name** — X, Y, Z, RZ or a hat — **carrying the joystick source**. Both
+halves are required. Verified: zero on the real device with nothing paired, one
+when a controller is present.
+
+- **Connected** — devices reporting a joystick-sourced stick axis.
 - **Active** — raw input events can be streamed from the device nodes and sampled
   over a bounded window, giving per-controller activity rather than mere presence.
 
