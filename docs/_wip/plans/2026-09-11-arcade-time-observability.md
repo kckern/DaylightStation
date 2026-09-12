@@ -571,7 +571,7 @@ produced it:
 |---|---|---|
 | 1 | Kiosk REST `foregroundApp` + process CPU delta | normal |
 | 2 | ADB alone (`pidof`, CPU, focused window) | reduced — kiosk REST down |
-| 3 | RetroArch session log file (start from filename, last write from mtime) | coarse — boundaries only |
+| 3 | RetroArch session log file (exact start from filename, content identity from the body) | coarse — start and identity only, never an end |
 | 4 | nothing | `unknown` |
 
 **A restart is not an ending.** Startup settles what a stopped process left
@@ -581,28 +581,46 @@ because a process that came back in thirty seconds while a child was still
 playing should not orphan that session. Only a session older than the tolerance
 is closed as `lost` — we cannot honestly claim to know what happened in the gap.
 
-**Reconciling the blind window.** This is the real recovery, and the device
-keeps the evidence for us. RetroArch writes one timestamped log file per
-session: the **filename carries the exact start time** and the **mtime tracks
-the last write**. Measured across real sessions, mtime lands at or near the
-session's end every time. So when live observation returns, the system can
-enumerate those files and reconstruct which sessions existed during the gap and
-where their boundaries were — after the fact, with no live observation at all.
+**Reconciling the blind window — what the device can and cannot tell us.**
+RetroArch writes one timestamped log file per session, and an earlier draft of
+this document claimed its mtime marks where the session ended. **That was wrong,
+and measurement disproved it.** Across all 425 session logs on the device:
 
-Because `playedMs` is a cumulative high-water mark, a retroactive correction is
-just a larger value on the next progress message. The contract absorbs
-reconciliation with no special machinery, which is the payoff for choosing a
-high-water mark over deltas.
+| Write span (start → last write) | Share |
+|---|---|
+| under 10s | 36.5% |
+| 10–60s | 22.1% |
+| 1–5 min | 14.6% |
+| 5–30 min | 19.8% |
+| over 30 min | 7.1% |
 
-Two honest limits on that evidence:
+Median 28 seconds; **59% of sessions stop writing within a minute of starting**,
+and file size barely varies with duration (median ~7.8 KB whether the session ran
+two minutes or two hours). Logging is dominated by startup, and steady play
+produces writes only sporadically. A session that ran ten minutes can easily show
+a three-second write span — verified directly against sessions run by hand while
+watching the clock.
 
-- The log tells us a session **existed** and roughly **when**. It does not
-  distinguish active emulation from a paused or idle game, so reconciled time is
-  an upper bound and should be settled conservatively and flagged.
-- Log volume is dominated by startup — sessions of 2 minutes and 107 minutes
-  both produce 10–20 KB — so writes during steady play are sporadic. mtime is a
-  good *boundary* signal and only a coarse *liveness* one. **The write cadence
-  during steady play must be measured before any live check depends on it.**
+So mtime is a **lower bound on activity, not an ending**, and reconstructing when
+play stopped from it would under-report most sessions badly.
+
+What the log IS good for, and it is worth more than the mtime idea was:
+
+- **An exact session start**, encoded in the filename.
+- **Which game was loaded.** The log records the core and the save-file
+  redirection, naming the content. This is the identity the missing command
+  interface would have provided (3.2), and it is the difference between "a game
+  ran" and "Super Bomberman ran" — so reconciliation can confirm or correct
+  attribution even when the launch intent has expired or been superseded.
+
+**Therefore blind-window time is settled conservatively, not reconstructed.**
+When observation returns, the system can say with confidence that a session
+existed, when it began, and what was played — and cannot honestly say when it
+ended. Unseen time is not credited by guesswork; it is recorded as a gap and
+surfaced for review. A candidate heartbeat worth investigating is the SRAM
+autosave (`autosave_interval = 10`), whose file mtime should advance every ten
+seconds during play — but only for titles with battery saves, so it can never be
+the general answer.
 
 **Closing the abuse hole without terminating blind.** Going blind must not
 become a way to play forever. Since we will not terminate on `unknown`
@@ -807,9 +825,9 @@ while. `[x]` is built and tested; `[ ]` is not started.
 
 | | Task | Notes |
 |---|---|---|
-| `[ ]` | **T8 Measure log write cadence during steady play** | The one flagged unknown in 5.10; decides whether logs can serve as a liveness rung |
-| `[ ]` | **T9 `RetroArchSessionLogReader`** — filename → start, mtime → last write | `1_adapters/gaming/` |
-| `[ ]` | **T10 `ReconcilePlaySessions`** — settle blind windows, raise `playedMs`, close orphans | Upper-bound and flagged, never silent |
+| `[x]` | **T8 Measure log write cadence during steady play** | MEASURED over 425 sessions: median 28s write-span, 59% stop writing within a minute. Logs are NOT a liveness or end signal — they give an exact start and content identity |
+| `[ ]` | **T9 `RetroArchSessionLogReader`** — exact start from filename, content identity from the body | `1_adapters/gaming/` |
+| `[ ]` | **T10 `ReconcilePlaySessions`** — confirm a session existed and what was played; settle unseen time conservatively, never by guesswork | Ends cannot be reconstructed (5.10) |
 | `[ ]` | **T11 Staleness alarm** — no progress for N intervals is a fault, not silence | NFR-8 |
 | `[ ]` | **T12 Degraded-mode alerting** — ADB lost ⇒ reduced confidence surfaced, not swallowed | |
 | `[ ]` | **T13 Prolonged-blindness policy** — stop granting launches, notify a parent; never kill blind | Closes the abuse hole (6.1) |
