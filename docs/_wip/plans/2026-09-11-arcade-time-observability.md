@@ -836,9 +836,9 @@ while. `[x]` is built and tested; `[ ]` is not started.
 
 | | Task | Notes |
 |---|---|---|
-| `[ ]` | **T14 Ship the film as a build artifact** | Prototype exists under `docs/_wip/prototypes/`; a 404 paints the TV (5.6) |
+| `[x]` | **T14 Ship the film as a build artifact** | Prototype exists under `docs/_wip/prototypes/`; a 404 paints the TV (5.6) |
 | `[ ]` | **T15 Overlay driver** — arm on confirmed start, tear down on end, verify URL first, re-assert disarmed at boot | Device-declared only |
-| `[ ]` | **T16 Film runtime** — subscribe to `play-session:<deviceId>`, render remaining time, urgency states, visible degradation when the socket goes stale | |
+| `[x]` | **T16 Film runtime** — subscribe to `play-session:<deviceId>`, render remaining time, urgency states, visible degradation when the socket goes stale | |
 | `[ ]` | **T17 Spoken warnings** — kiosk text-to-speech alongside the visual | A child absorbed in a game hears sooner than reads |
 | `[ ]` | **T18 Verify no gameplay impact** — focus and input unaffected, emulation CPU unchanged | NFR-5 |
 
@@ -868,7 +868,7 @@ while. `[x]` is built and tested; `[ ]` is not started.
 | `[ ]` | **T28 Fleet visibility** — verify play sessions render correctly in the existing device view | Via T37; no new view (7.3) |
 | `[ ]` | **T29 Session history / audit view** — because played time became money | |
 | `[ ]` | **T30 Reference documentation** — endstate, present tense, under `docs/reference/`, plus the navigation table | |
-| `[ ]` | **T31 Retire the stale launcher config twin** — `gaming/retroarch/config.yml` reads as live and is not (3.10) | Independent of this feature; found en route |
+| `[x]` | **T31 Retire the stale launcher config twin** — `gaming/retroarch/config.yml` reads as live and is not (3.10) | Independent of this feature; found en route |
 
 ### Tasks added by Section 9
 
