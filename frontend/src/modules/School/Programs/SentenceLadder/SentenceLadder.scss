@@ -246,6 +246,29 @@ $disc: 5.5rem;
   // the button is still just "Play again" to anything that asks. Without it a
   // baseline Stop renders as a bare pause glyph with no word anywhere on it.
   &__key { font-size: $meta; }
+  // THE LIVE MICROPHONE on a typing rung, after `--quiet` so it wins: a quiet
+  // control is transparent on transparent, and the one moment this control is
+  // holding an open microphone is not a moment to be quiet about. The same red
+  // the recording rung's live tile uses, so the two rungs mean one thing by it.
+  &--live {
+    // The token, not the `#fff` its older twin `.lang-tile--live` hardcodes:
+    // School has no danger-ink token and --school-fg is the near-white this
+    // app already reads on a dark ground. Indistinguishable, and one fewer
+    // raw hex in a stylesheet that is supposed to have none.
+    background: var(--school-danger); color: var(--school-fg); border-color: transparent;
+    .lang-btn__key { font-weight: 700; }
+  }
+  // WAITING ON THE MODEL. A span, not a button — there is nothing to press —
+  // and the accent makes it unmistakably not the control that was just there.
+  //
+  // NO ANIMATION, on purpose: this file has exactly one (the caret), because
+  // the kiosk WebView drops frames under keyframes. The state reads as busy
+  // from the words and the colour instead, which is the same trade the
+  // recording rung's sounding tile makes.
+  &.is-working {
+    color: var(--school-accent); cursor: default;
+    .lang-btn__key { font-weight: 700; }
+  }
   &:focus-visible { outline: 3px solid var(--school-accent); outline-offset: 2px; }
   &:disabled { opacity: 0.5; cursor: default; }
 }
@@ -500,6 +523,10 @@ $disc: 5.5rem;
     gap: 1rem; width: 100%; min-height: $touch;
   }
   &__cues { display: flex; align-items: center; gap: 0.5rem; }
+  // The answering side. Speaking sits here rather than in the cue row opposite
+  // because it is a way of ANSWERING, not a way of hearing the sentence again:
+  // the hand that reaches for Submit is the hand that reaches for this.
+  &__commit { display: flex; align-items: center; gap: 0.75rem; }
 
   &__notice {
     display: flex; flex-direction: column; align-items: center; gap: 0.75rem;

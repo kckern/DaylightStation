@@ -62,9 +62,37 @@ function sendAudioResource(res, resource, { cache = AUDIO_CACHE } = {}) {
   resource.open().pipe(res);
 }
 
+/**
+ * Language codes in words, for the ONE place a language name is needed: the
+ * Whisper bias prompt on a spoken answer.
+ *
+ * AN ALLOWLIST, NOT A PASS-THROUGH, and that is the whole reason it exists. A
+ * Whisper prompt biases recognition toward the words in it, so any client
+ * string that reaches the prompt is a way to make the model hear a sentence
+ * nobody said — including the expected answer. A code with no entry here
+ * resolves to `undefined` and the profile falls back to its own default, so
+ * the worst a hostile query string can do is get English.
+ *
+ * The frontend has the same two-line map for its own copy
+ * (`SentenceLadder/languageNames.js`); duplicating two words is cheaper than a
+ * shared module that would tempt someone into making either side dynamic.
+ */
+const SPOKEN_LANGUAGE_NAMES = Object.freeze({ EN: 'English', KR: 'Korean' });
+
+/**
+ * The register the corpus is written in. A CONSTANT, never a request field:
+ * the profile takes a key from a closed set, and letting a client choose the
+ * key is one step from letting it choose the text.
+ */
+const SPOKEN_REGISTER = 'everyday';
+
 export function createLanguageRouter({
   languageStudyService,
   languageAudioResource,
+  // Optional. Absent means the household has no AI gateway, which is a normal
+  // configuration and not a fault: the day says so, the client draws no mic,
+  // and typing is still the way through. See the transcribe route below.
+  languageTranscription = null,
   studyGrants = null,
   schoolErrors = {},
   coreErrors = {},
@@ -134,7 +162,17 @@ export function createLanguageRouter({
   // The day carries which UI cues exist so a rung builds its sound sequence
   // once, from facts, rather than probing `/cue/*` per sentence. This is
   // HTTP-layer composition: the study service knows nothing about media.
-  const withCues = (day) => ({ ...day, cues: languageAudioResource.listCues?.() ?? [] });
+  //
+  // `voiceAnswer` is the same kind of fact one layer up: whether this
+  // deployment can turn speech into text at all. A client that had to find out
+  // by pressing a mic and getting a 503 would be drawing a control that cannot
+  // work — the dead-button failure this screen keeps designing around — so the
+  // answer travels with the day and the control is simply never drawn.
+  const withCues = (day) => ({
+    ...day,
+    cues: languageAudioResource.listCues?.() ?? [],
+    voiceAnswer: Boolean(languageTranscription),
+  });
 
   // A non-recording demonstration for teachers.  It is intentionally NOT a
   // `/users/:userId/*` alias: that namespace carries a study grant and every
@@ -159,10 +197,15 @@ export function createLanguageRouter({
   }));
 
   router.post('/users/:userId/log', wrap((req, res) => {
-    const { corpus, seq, rung, given = null, revealed = false } = req.body || {};
+    const { corpus, seq, rung, given = null, revealed = false, method = null } = req.body || {};
     if (!authorized(req, res, corpus)) return;
     res.json(languageStudyService.logAttempt({
       userId: req.params.userId, corpusId: corpus, seq, rung, given,
+      // HOW the answer was produced — typed, or spoken and transcribed. Passed
+      // straight through and validated by the service: an older client sends
+      // nothing and the field stays absent rather than being inferred, because
+      // a guessed method in an append-only log outlives whoever guessed it.
+      method,
       // A reveal is the learner saying "show me" instead of answering, and it
       // is written down as such. Compared to `true` rather than coerced: a
       // truthy-cast would let the string "false" — which is what a body built
@@ -214,6 +257,82 @@ export function createLanguageRouter({
       capabilities: readCapabilities(req.query),
       runId: readRunId(req),
     }));
+  }));
+
+  /**
+   * A SPOKEN ANSWER TO A TYPING RUNG. Audio in, a transcript back — and
+   * nothing is written down here. The learner reads the transcript in their
+   * own field, edits it, and submits it through `/log` like any other answer,
+   * so a mistranscription is something they can see and fix rather than a
+   * mistake they are marked down for without ever being told why.
+   *
+   * ⚠ THE ONE RULE. Nothing derived from the expected answer may reach the
+   * transcription call. A Whisper prompt biases recognition: give it the
+   * English sentence and the model hears that sentence whatever the child
+   * said, and the rung then measures nothing while looking perfect.
+   *
+   * The route is built so that rule cannot be broken by accident rather than
+   * merely being observed: it never touches the corpus. `authorized` checks a
+   * grant's SCOPE against the corpus id and loads nothing, so no expected text
+   * is ever in scope on this path. `seq` is taken for the log line only. The
+   * context handed to the profile is exactly two fields, both resolved from
+   * closed sets — a language name from `SPOKEN_LANGUAGE_NAMES`, a register
+   * constant — so a query string has nothing to widen. The profile ignores
+   * everything else anyway; this is the belt to its braces.
+   *
+   * NOT `POST /sentence-ladder/transcribe` as the plan wrote it: every write
+   * on this rung is a learner-scoped route under `/users/:userId/`, and the
+   * study-grant guard reads `req.params.userId`. A top-level path could not
+   * wear the same guard, which is the one property the plan actually asked for.
+   */
+  router.post('/users/:userId/transcribe', rawAudio, wrap(async (req, res) => {
+    const { corpus, seq = null, lang = null } = req.query || {};
+    if (!authorized(req, res, corpus)) return;
+    const runId = readRunId(req);
+    if (!languageTranscription) {
+      // A normal configuration, not a fault: this household has no AI gateway.
+      // The day already said `voiceAnswer: false`, so reaching here means a
+      // stale client — answer plainly and let it fall back to typing.
+      logger.info?.('school.sentence-ladder.transcribe-unavailable', {
+        learnerId: req.params.userId, corpus,
+      }, runCtx(runId));
+      return res.status(503).json({ error: 'Spoken answers are unavailable on this server' });
+    }
+    const buffer = Buffer.isBuffer(req.body) ? req.body : null;
+    if (!buffer || buffer.length === 0) {
+      return res.status(400).json({ error: 'recording is empty' });
+    }
+
+    const startedAt = Date.now();
+    const result = await languageTranscription.transcribe({
+      audioBuffer: buffer,
+      mimeType: req.get('Content-Type') || 'audio/webm',
+      sessionId: runId,
+      context: {
+        spokenLanguage: SPOKEN_LANGUAGE_NAMES[String(lang || '').toUpperCase()],
+        register: SPOKEN_REGISTER,
+      },
+    });
+
+    const text = String(result?.transcriptClean ?? '').trim();
+    const empty = !text || Boolean(languageTranscription.isEmpty?.(text));
+    // Lengths, never contents. The transcript is a child's voice written down;
+    // shipping it to the log store would put their speech in a searchable
+    // index that outlives the audio it came from.
+    logger.info?.('school.sentence-ladder.transcribed', {
+      learnerId: req.params.userId,
+      corpus,
+      seq: seq == null ? null : Number(seq),
+      bytes: buffer.length,
+      transcriptLength: text.length,
+      empty,
+      ms: Date.now() - startedAt,
+    }, runCtx(runId));
+
+    // An empty transcript is an outcome, not an error: the mic may have been
+    // covered, or the child may have said nothing. The field is left alone and
+    // the screen says so — see TypedRung.
+    return res.json({ transcript: empty ? '' : text, empty });
   }));
 
   // Media is addressed by (corpus, seq, language) and returned as an opaque

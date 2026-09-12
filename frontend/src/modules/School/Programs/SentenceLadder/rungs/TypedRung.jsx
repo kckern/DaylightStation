@@ -5,6 +5,7 @@ import { useHangulTyping } from '../../../ime/HangulTypingProvider.jsx';
 import { columnsFor } from './glyphStrip.js';
 import GlyphStrip from './GlyphStrip.jsx';
 import Icon from '../../../home/icons/Icon.jsx';
+import useVoiceCapture from './useVoiceCapture.js';
 
 /**
  * The two typing rungs, which are one component (design §5).
@@ -130,6 +131,43 @@ const PEEK_KEY = 'F1';
 const REVEAL_WORD = 'Show answer';
 
 /**
+ * SPEAKING THE ANSWER — interpretation only, and it is an INPUT METHOD, not a
+ * different kind of answer.
+ *
+ * The rung asks what a sentence means. A learner who understands it perfectly
+ * can still be defeated by an English keyboard, and the record then measures
+ * typing rather than comprehension — which is the one thing this rung exists
+ * to measure. So they can say it instead: the mic opens, the take goes for
+ * recognition, and the transcript arrives IN THE FIELD.
+ *
+ * IN THE FIELD, UNSUBMITTED, and that is the whole design. A transcript sent
+ * straight off would make every mistranscription the learner's mistake, marked
+ * down for a word they said correctly and never told why. Landing it in the
+ * field costs one extra tap and makes the machine's guess something they can
+ * see and correct — which is also the only way they ever find out it guessed.
+ *
+ * NOT ON DICTATION, and not because it would be hard. Dictation's task IS
+ * entering the Korean script; a learner who could say the sentence instead
+ * would be handing in a recording of the one skill being drilled.
+ *
+ * IT REPLACES THE FIELD rather than appending. What is usually sitting there
+ * is an abandoned half-attempt, and splicing a spoken sentence onto it makes a
+ * sentence nobody said. The control's caption turns over to say so before the
+ * learner presses it, for the same reason "Play" becomes "Play again".
+ */
+const SPEAK_WORD = 'Say the answer';
+const SPEAK_STOP_WORD = 'Stop speaking';
+
+/**
+ * How long a spoken answer may run before the mic closes itself.
+ *
+ * A child who walks away mid-take would otherwise hold the microphone open
+ * until the rung unmounted, with the OS recording indicator lit on a panel in
+ * their room. Long enough for any sentence in the corpus said slowly, twice.
+ */
+export const MAX_SPEAK_MS = 20_000;
+
+/**
  * The baseline's quiet control: a glyph, the word for anything that asks, and
  * the visible caption — which is where the shortcut is written when there is a
  * keyboard to press it on. Play, Stop and Peek are the same button three
@@ -150,6 +188,17 @@ function QuietButton({ icon, word, caption, onClick }) {
 export default function TypedRung({
   entry, audioUrl, nextEntry, onComplete, saving, showShortcuts = false,
   idleReplayMs = DEFAULT_IDLE_REPLAY_MS,
+  /**
+   * Turn a spoken take into text: `(blob) => Promise<{ok, transcript, empty}>`.
+   *
+   * ABSENT means the control is not drawn at all, and the program decides that
+   * — it is the only thing that knows whether this device has a microphone and
+   * whether the server can transcribe (`day.voiceAnswer`). A control that
+   * cannot ever work is a dead control, and a child who presses a dead button
+   * concludes the screen is broken and stops trusting the rest of it; the same
+   * reasoning keeps Hint off this rung until glosses exist.
+   */
+  onTranscribe = null,
 }) {
   const [value, setValue] = useState('');
   /**
@@ -192,6 +241,27 @@ export default function TypedRung({
   const [peeking, setPeeking] = useState(false);
   // The reveal, and it only ever goes one way. See REVEAL_WORD above.
   const [revealed, setRevealed] = useState(false);
+  /**
+   * The spoken answer, as three visibly different states: `idle`, `recording`,
+   * `sending`. Three, not two, because the round trip is a model call — a
+   * control that looked the same for four seconds would read as broken to a
+   * child at a panel with no pointer and no other way to ask what is happening.
+   */
+  const [speaking, setSpeaking] = useState('idle');
+  // What went wrong with the last take, in words, for the notice line. Every
+  // failure here is survivable — the field never goes away — so this is an
+  // explanation, never a dead end.
+  const [speakNote, setSpeakNote] = useState(null);
+  /**
+   * Whether what is in the field came from the learner's voice.
+   *
+   * Cleared the moment the field is emptied: a transcript deleted and retyped
+   * from scratch is theirs from the keys, and calling that spoken would be a
+   * fact nobody established. An EDIT of a transcript stays spoken — the answer
+   * came from speech and was then corrected, which is exactly what the extra
+   * tap is for.
+   */
+  const [spokenFrom, setSpokenFrom] = useState(null);
   const inputRef = useRef(null);
   // The one control left standing after a reveal takes the focus the field
   // gives up, so a learner on a bonded keyboard can still press Enter rather
@@ -232,6 +302,10 @@ export default function TypedRung({
   // Dictation has the peek; interpretation has this. Never both on one rung:
   // on dictation the model is help, on interpretation it is the answer.
   const canReveal = !isDictation && answerText !== '' && !revealed;
+  // See SPEAK_WORD. Interpretation only, and only where something can actually
+  // listen — after a reveal there is nothing left to answer, by voice or
+  // otherwise.
+  const canSpeak = !isDictation && typeof onTranscribe === 'function' && !revealed;
 
   /**
    * THE COPY-MODE GATE, wired up.
@@ -431,6 +505,104 @@ export default function TypedRung({
     window.setTimeout(() => commitRef.current?.focus?.({ preventScroll: true }), 0);
   }, [entry.rung, entry.seq, value, audioUrl, responseLang, playSequence]);
 
+  /**
+   * THE SPOKEN ANSWER, end to end. See SPEAK_WORD for why it exists and why
+   * the transcript stops in the field.
+   *
+   * Nothing about the expected answer is sent or could be: the take goes up as
+   * audio and the language the learner is answering in, and the server's route
+   * never reads the corpus. That is not a courtesy — a recogniser told what it
+   * is expecting hears that sentence whatever the child said, and the rung
+   * would then measure nothing while looking perfect.
+   */
+  const speakTimer = useRef(null);
+  const alive = useRef(true);
+  useEffect(() => () => {
+    alive.current = false;
+    window.clearTimeout(speakTimer.current);
+  }, []);
+
+  const onTake = useCallback(async ({ blob, durationMs }) => {
+    window.clearTimeout(speakTimer.current);
+    languageLog.capture('speak-stop', {
+      rung: entry.rung, seq: entry.seq, bytes: blob?.size ?? 0, durationMs,
+    });
+    setSpeaking('sending');
+    const result = await onTranscribe?.(blob);
+    if (!alive.current) return;
+    setSpeaking('idle');
+
+    if (!result?.ok) {
+      languageLog.captureError('transcribe-failed', {
+        rung: entry.rung, seq: entry.seq, status: result?.status ?? null,
+      });
+      // NOT A DEAD END. The field is still there and still the way through, so
+      // the note says both things a stuck child needs: it can be tried again,
+      // and it does not have to be.
+      setSpeakNote('That didn’t get written down — have another go, or type it.');
+      return;
+    }
+    const transcript = String(result.transcript ?? '').trim();
+    if (result.empty || !transcript) {
+      languageLog.capture('speak-unheard', { rung: entry.rung, seq: entry.seq });
+      // Their own typing is untouched. A mic that heard nothing is no reason
+      // to throw away what they had already written.
+      setSpeakNote('We didn’t hear that — have another go, or type it.');
+      return;
+    }
+
+    setSpeakNote(null);
+    // Lengths, never the words: the transcript is a child's voice written
+    // down, and the log store is a searchable index that outlives the audio.
+    languageLog.rung('spoke', {
+      rung: entry.rung, seq: entry.seq, chars: transcript.length, replaced: value.length,
+    });
+    setValue(transcript);
+    setSpokenFrom(transcript);
+    setPeeking(false);
+    // Back to the keys with the caret at the end, so the first correction is
+    // the first keystroke rather than a tap to get there.
+    window.setTimeout(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus({ preventScroll: true });
+      el.setSelectionRange?.(transcript.length, transcript.length);
+    }, 0);
+  }, [entry.rung, entry.seq, onTranscribe, value.length]);
+
+  const onSpeakDenied = useCallback((err) => {
+    languageLog.captureError('speak-denied', {
+      rung: entry.rung, seq: entry.seq, error: err?.message,
+    });
+    setSpeaking('idle');
+    // PRESENT-AND-EXPLAINING, unlike a device with no microphone at all, where
+    // the control is never drawn. The device said it had one, so the control
+    // was honestly offered and the failure is a permission a second try may
+    // yet get — and typing is still right there either way.
+    setSpeakNote('The microphone didn’t open — have another go, or type it.');
+  }, [entry.rung, entry.seq]);
+
+  const { start: startSpeaking, stop: stopSpeaking } = useVoiceCapture({
+    onTake, onDenied: onSpeakDenied,
+  });
+
+  const speak = useCallback(async () => {
+    setSpeakNote(null);
+    // Nothing may be sounding into an open microphone. The prompt playing over
+    // the take is the one way to get the model to transcribe the sentence back
+    // at us rather than the child.
+    stop();
+    setHushed(true);
+    if (!await startSpeaking()) return;
+    setSpeaking('recording');
+    languageLog.rung('speak-start', { rung: entry.rung, seq: entry.seq });
+    // The mic closes itself eventually — see MAX_SPEAK_MS.
+    speakTimer.current = window.setTimeout(() => {
+      languageLog.capture('speak-capped', { rung: entry.rung, seq: entry.seq, afterMs: MAX_SPEAK_MS });
+      stopSpeaking();
+    }, MAX_SPEAK_MS);
+  }, [entry.rung, entry.seq, startSpeaking, stopSpeaking, stop]);
+
   // Going quiet is what a stuck learner looks like, and hearing the sentence
   // again is what the loop was reaching for before it became a siren. So:
   // exactly one replay after a silence. Keyed on `value`, so every keystroke
@@ -441,6 +613,8 @@ export default function TypedRung({
     // `revealed` counts as done here: the exercise is over, and a sentence
     // that starts offering itself again over the answer is talking to nobody.
     if (playing || submitted || saving || revealed) return undefined;
+    // Nor while the learner is speaking, or waiting to hear what was heard.
+    if (speaking !== 'idle') return undefined;
     // Silenced on purpose. See `hushed`.
     if (hushed) return undefined;
     // A kiosk that has not been touched yet fails the autoplay gate, and a
@@ -454,7 +628,7 @@ export default function TypedRung({
       play();
     }, idleReplayMs);
     return () => window.clearTimeout(timer);
-  }, [idleReplayMs, playing, submitted, saving, blocked, hushed, revealed, value, play, entry.rung, entry.seq]);
+  }, [idleReplayMs, playing, submitted, saving, blocked, hushed, revealed, speaking, value, play, entry.rung, entry.seq]);
 
   const submit = useCallback(() => {
     if (saving) return;
@@ -478,9 +652,16 @@ export default function TypedRung({
     if (!value.trim()) return;
     setSubmitted(true);
     stop();
-    languageLog.rung('complete', { rung: entry.rung, seq: entry.seq });
-    onComplete({ seq: entry.seq, rung: entry.rung, given: value });
-  }, [value, saving, revealed, stop, entry, onComplete]);
+    /**
+     * HOW IT WAS GIVEN, on the row with the answer itself. The response is
+     * still text — voice is an input method — so this is one field, not a
+     * second kind of record, and it is what lets a grown-up reading the log
+     * tell a spoken answer from a typed one instead of guessing.
+     */
+    const method = spokenFrom ? 'spoken' : 'typed';
+    languageLog.rung('complete', { rung: entry.rung, seq: entry.seq, method });
+    onComplete({ seq: entry.seq, rung: entry.rung, given: value, method });
+  }, [value, saving, revealed, spokenFrom, stop, entry, onComplete]);
 
   const onKeyDown = useCallback((e) => {
     if (e.key === 'Tab') {
@@ -509,6 +690,10 @@ export default function TypedRung({
       {blocked && (
         <p className="lang-rung__notice" role="alert">Audio was blocked — tap Play again.</p>
       )}
+      {/* Every way speaking can fail says the same two things: it can be tried
+          again, and it does not have to be. The field is never taken away, so
+          there is no state this notice can leave a child stranded in. */}
+      {speakNote && <p className="lang-rung__notice" role="alert">{speakNote}</p>}
 
       {/* The drill, taking the height the baseline leaves it. */}
       <div className="lang-rung__stage">
@@ -580,6 +765,11 @@ export default function TypedRung({
               // submit — so the one job a keystroke has now is to be a keystroke.
               // (It also restarts the idle wait, via the effect's `value` dep.)
               setValue(e.target.value);
+              // Emptied means started over: whatever is typed next is theirs
+              // from the keys, not a transcript they edited, and the record
+              // must not go on calling it spoken. An edit of a transcript is
+              // still spoken — see `spokenFrom`.
+              if (e.target.value.trim() === '') setSpokenFrom(null);
               // TYPE TO HIDE. The peek is over the moment the learner writes
               // anything — that is what stops it being copy mode with an extra
               // step, and it is why there is no timer and no cap.
@@ -646,18 +836,62 @@ export default function TypedRung({
             />
           )}
         </div>
-        <button
-          type="button"
-          ref={commitRef}
-          className="lang-btn lang-btn--primary"
-          onClick={submit}
-          disabled={(!revealed && !value.trim()) || saving}
-        >
-          {/* "Submit" is a word for work being handed in. After a reveal there
-              is nothing to hand in, so the button says what actually happens
-              next. */}
-          {saving ? 'Saving…' : revealed ? 'Continue' : 'Submit'}
-        </button>
+        {/* THE WAY FORWARD, and the two ways of getting there. Speaking sits
+            with Submit rather than in the quiet cue row on the left: it is a
+            way of ANSWERING, not a way of hearing the sentence again, and a
+            child reaching for it is reaching for the same side of the screen
+            they reach for to hand the answer in. */}
+        <div className="lang-rung__commit">
+          {canSpeak && speaking === 'idle' && (
+            /* NO GLYPH, for the reason the peek has none: the icon set has
+               nothing that reads as "say it" at this size. `record` is a tape
+               reel and it is the RECORDING rung's start tile — borrowed here it
+               would promise that this take is kept, which is the one thing it
+               is not. A wrong picture is worse than a plain word. */
+            <QuietButton
+              word={SPEAK_WORD}
+              /* "instead" is a warning, not decoration: the transcript
+                 REPLACES the field, and a child who has half an answer typed
+                 should know that before they press it, not after. */
+              caption={value.trim() ? 'Speak instead' : 'Speak'}
+              onClick={speak}
+            />
+          )}
+          {canSpeak && speaking === 'recording' && (
+            <button
+              type="button"
+              className="lang-btn lang-btn--quiet lang-btn--live"
+              onClick={stopSpeaking}
+            >
+              <Icon name="stop" className="lang-btn__glyph" />
+              <span className="lang-btn__word">{SPEAK_STOP_WORD}</span>
+              <span className="lang-btn__key" aria-hidden="true">Stop</span>
+            </button>
+          )}
+          {/* IN FLIGHT, and deliberately not a button. The round trip is a
+              model call taking seconds; there is nothing useful to press, and
+              a control that looked identical to the one just pressed would
+              read as broken to a child at a panel with no pointer. A status
+              that says what is being waited on, moving while it waits — the
+              same shape the recording rung's sounding phases use. */}
+          {canSpeak && speaking === 'sending' && (
+            <span className="lang-btn lang-btn--quiet is-working" role="status">
+              <span className="lang-btn__key">Writing it down…</span>
+            </span>
+          )}
+          <button
+            type="button"
+            ref={commitRef}
+            className="lang-btn lang-btn--primary"
+            onClick={submit}
+            disabled={(!revealed && !value.trim()) || saving}
+          >
+            {/* "Submit" is a word for work being handed in. After a reveal there
+                is nothing to hand in, so the button says what actually happens
+                next. */}
+            {saving ? 'Saving…' : revealed ? 'Continue' : 'Submit'}
+          </button>
+        </div>
       </div>
     </div>
   );

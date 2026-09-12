@@ -28,6 +28,7 @@ const answer = (i) => col(i).querySelector('.lang-strip__got').textContent;
 const dayMock = vi.fn();
 const previewDayMock = vi.fn();
 const logMock = vi.fn();
+const transcribeMock = vi.fn();
 const rollMock = vi.fn();
 const pacingMock = vi.fn();
 const historyMock = vi.fn();
@@ -97,6 +98,7 @@ vi.mock('./languageApi.js', () => ({
     pacing: (...a) => pacingMock(...a),
     history: (...a) => historyMock(...a),
     recording: vi.fn(async () => ({ ok: true, status: 200, data: {} })),
+    transcribe: (...a) => transcribeMock(...a),
     recordingBlob: vi.fn(async () => ({ ok: false, status: 404, data: null })),
     audioUrl: (c, seq, lang) => `/audio/${c}/${seq}/${lang}`,
     cueUrl: (name) => `/cue/${name}`,
@@ -139,7 +141,7 @@ const entry = (seq, rung, done = false, options = {}) => ({
 
 function dayPayload({
   queue, chain = ['repetition'], day = 1, dailyLimit = 5,
-  missingCreditRungs = [], missingCreditNeeds = {}, cues = [],
+  missingCreditRungs = [], missingCreditNeeds = {}, cues = [], voiceAnswer = false,
 }) {
   const done = queue.filter((e) => e.done).length;
   return {
@@ -155,6 +157,10 @@ function dayPayload({
       missingCreditRungs,
       missingCreditNeeds,
       cues,
+      // Whether this deployment can turn speech into text at all. Off by
+      // default here so every existing test keeps rendering the surface it was
+      // written against.
+      voiceAnswer,
       rollover: { roll: false, reason: 'queue-incomplete' },
     },
   };
@@ -1048,8 +1054,11 @@ describe('typed rungs', () => {
     fireEvent.change(input, { target: { value: '한국어 1' } });
     fireEvent.click(screen.getByText('Submit'));
 
+    // `method` rides with every answer now, including this one: a row that
+    // says nothing about how it was produced is a row from before the question
+    // was asked, and going forward the log says which.
     await waitFor(() => expect(logMock).toHaveBeenCalledWith('kckern', {
-      corpus: 'glossika-korean', seq: 1, rung: 'dictation', given: '한국어 1',
+      corpus: 'glossika-korean', seq: 1, rung: 'dictation', given: '한국어 1', method: 'typed',
     }, expect.anything(), 'test-grant'));
     // Re-fetched rather than mutating a local copy of the queue.
     await waitFor(() => expect(dayMock.mock.calls.length).toBeGreaterThan(1));
@@ -1954,5 +1963,310 @@ describe('hands-free', () => {
     await screen.findByRole('button', { name: 'Start the next day' });
     pressKey('Enter');
     await waitFor(() => expect(rollMock).toHaveBeenCalled());
+  });
+});
+
+// SPEAKING THE ANSWER — interpretation only.
+//
+// A learner who understands a sentence perfectly can be defeated by an English
+// keyboard, and then the record measures typing rather than comprehension. So
+// the answer can be spoken: the transcript lands IN THE FIELD, unsubmitted, and
+// the learner reads and edits it before it goes. Auto-submitting would turn
+// every mistranscription into their mistake, silently.
+//
+// The response stays text — voice is an input method, not a different kind of
+// answer — so the only thing that changes on the record is `method`.
+describe('speaking the answer', () => {
+  const onComplete = vi.fn();
+  const onTranscribe = vi.fn();
+
+  /** jsdom has no microphone. One that opens, records, and hands back a blob. */
+  const fakeMic = () => {
+    const track = { stop: vi.fn() };
+    const stream = { getTracks: () => [track] };
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => stream),
+        enumerateDevices: vi.fn(async () => [{ kind: 'audioinput' }]),
+      },
+    });
+    class FakeRecorder {
+      constructor() { this.state = 'inactive'; this.mimeType = 'audio/webm'; }
+      start() { this.state = 'recording'; }
+      stop() {
+        this.state = 'inactive';
+        this.ondataavailable?.({ data: new Blob(['spoken'], { type: 'audio/webm' }) });
+        this.onstop?.();
+      }
+    }
+    window.MediaRecorder = FakeRecorder;
+    return { track };
+  };
+
+  /** A mic that will not open — the permission the kiosk never got. */
+  const deadMic = () => {
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => { throw new Error('NotAllowedError'); }),
+        enumerateDevices: vi.fn(async () => [{ kind: 'audioinput' }]),
+      },
+    });
+    window.MediaRecorder = class { };
+  };
+
+  const rung = (rungId = 'interpretation', props = {}) => render(
+    <HangulTypingProvider>
+      <TypedRung
+        entry={entry(1, rungId, false, { text: { EN: 'It is cold today', KR: '오늘 추워요' } })}
+        audioUrl={(seq, lang) => `/audio/${seq}/${lang}`}
+        onComplete={onComplete}
+        onTranscribe={onTranscribe}
+        saving={false}
+        idleReplayMs={0}
+        {...props}
+      />
+    </HangulTypingProvider>,
+  );
+
+  const speakButton = () => screen.getByRole('button', { name: 'Say the answer' });
+  const speak = async () => {
+    await act(async () => { fireEvent.click(speakButton()); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Stop speaking' })); });
+  };
+
+  beforeEach(() => {
+    onComplete.mockClear();
+    onTranscribe.mockReset().mockResolvedValue({ ok: true, transcript: 'it is cold today', empty: false });
+    fakeMic();
+  });
+
+  it('is offered on interpretation, where an English keyboard is the obstacle', () => {
+    rung();
+    expect(speakButton()).toBeTruthy();
+  });
+
+  /**
+   * NOT ON DICTATION, and not because it would be hard. Dictation's task IS
+   * entering the Korean script; a learner who could say the sentence instead
+   * would be handing in a recording of the one skill the rung exists to drill.
+   */
+  it('is NOT offered on dictation, where typing the script is the whole task', () => {
+    rung('dictation');
+    expect(screen.queryByRole('button', { name: 'Say the answer' })).toBeNull();
+  });
+
+  it('is not drawn at all where nothing could transcribe it', () => {
+    // No AI gateway, or no microphone: the program passes no handler and the
+    // control is ABSENT rather than present-and-failing. A child who presses a
+    // dead button concludes the screen is broken and stops trusting the rest.
+    rung('interpretation', { onTranscribe: null });
+    expect(screen.queryByRole('button', { name: 'Say the answer' })).toBeNull();
+    // And the way through is untouched.
+    expect(screen.getByLabelText('Type what it means')).toBeTruthy();
+  });
+
+  it('puts the transcript in the field and stops there', async () => {
+    rung();
+    await speak();
+
+    const input = screen.getByLabelText('Type what it means');
+    expect(input.value).toBe('it is cold today');
+    // NOT SUBMITTED. A transcription error must be something the learner can
+    // see and fix, never a mistake they are marked down for without being told.
+    expect(onComplete).not.toHaveBeenCalled();
+    // The field has the keys back, so the first correction is the first
+    // keystroke rather than a tap to get there.
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('replaces what was in the field, and says so before it does', async () => {
+    rung();
+    const input = screen.getByLabelText('Type what it means');
+    await act(async () => { fireEvent.change(input, { target: { value: 'it is co' } }); });
+    // An abandoned half-attempt is what is usually there, and splicing a spoken
+    // sentence onto it would produce a sentence nobody said — so it is replaced,
+    // and the caption stops being a surprise about it.
+    expect(screen.getByRole('button', { name: 'Say the answer' }).textContent).toContain('instead');
+
+    await speak();
+    expect(screen.getByLabelText('Type what it means').value).toBe('it is cold today');
+  });
+
+  /**
+   * A round trip through a model is not instant, and a control that looks
+   * identical for four seconds reads as broken — to a child at a TV with no
+   * pointer, who has no other way to ask what is happening.
+   */
+  it('looks different in each of its three states', async () => {
+    let settle;
+    onTranscribe.mockReturnValue(new Promise((resolve) => { settle = resolve; }));
+    rung();
+
+    expect(speakButton()).toBeTruthy();
+    await act(async () => { fireEvent.click(speakButton()); });
+    // Recording: a live control that says how to stop, not a second mystery.
+    expect(screen.getByRole('button', { name: 'Stop speaking' })).toBeTruthy();
+    expect(document.querySelector('.lang-btn--live')).toBeTruthy();
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Stop speaking' })); });
+    // In flight: not a button at all — there is nothing to press — but a status
+    // that says what is being waited on.
+    expect(screen.queryByRole('button', { name: 'Say the answer' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Stop speaking' })).toBeNull();
+    expect(screen.getByText(/writing it down/i)).toBeTruthy();
+
+    await act(async () => { settle({ ok: true, transcript: 'it is cold today', empty: false }); });
+    expect(speakButton()).toBeTruthy();
+  });
+
+  it('says so and leaves the field alone when nothing was heard', async () => {
+    onTranscribe.mockResolvedValue({ ok: true, transcript: '', empty: true });
+    rung();
+    const input = screen.getByLabelText('Type what it means');
+    await act(async () => { fireEvent.change(input, { target: { value: 'half an answer' } }); });
+    await speak();
+
+    expect(screen.getByRole('alert').textContent).toMatch(/didn’t hear/i);
+    // Their own typing survives a mic that heard nothing.
+    expect(screen.getByLabelText('Type what it means').value).toBe('half an answer');
+    // And the control is back, not stuck mid-flight.
+    expect(speakButton()).toBeTruthy();
+  });
+
+  it('survives a failed request without stranding the learner', async () => {
+    onTranscribe.mockResolvedValue({ ok: false, status: 500 });
+    rung();
+    await speak();
+
+    expect(screen.getByRole('alert').textContent).toMatch(/type it/i);
+    expect(speakButton()).toBeTruthy();
+    expect(screen.getByLabelText('Type what it means')).toBeTruthy();
+  });
+
+  it('survives a microphone that will not open, and keeps saying why', async () => {
+    deadMic();
+    rung();
+    await act(async () => { fireEvent.click(speakButton()); });
+
+    expect(screen.getByRole('alert').textContent).toMatch(/microphone/i);
+    expect(onTranscribe).not.toHaveBeenCalled();
+    // PRESENT-AND-EXPLAINING here, unlike the absent case above: the device
+    // said it had a microphone, so the control was honestly offered and the
+    // failure is a permission a second try may yet get.
+    expect(speakButton()).toBeTruthy();
+  });
+
+  it('marks the answer as spoken, and an edit of it still spoken', async () => {
+    rung();
+    await speak();
+    const input = screen.getByLabelText('Type what it means');
+    await act(async () => { fireEvent.change(input, { target: { value: "it's cold today" } }); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Submit' })); });
+
+    expect(onComplete).toHaveBeenCalledWith({
+      seq: 1, rung: 'interpretation', given: "it's cold today", method: 'spoken',
+    });
+  });
+
+  it('marks an answer that was typed all along as typed', async () => {
+    rung();
+    const input = screen.getByLabelText('Type what it means');
+    await act(async () => { fireEvent.change(input, { target: { value: 'typed by hand' } }); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Submit' })); });
+    expect(onComplete).toHaveBeenLastCalledWith({
+      seq: 1, rung: 'interpretation', given: 'typed by hand', method: 'typed',
+    });
+  });
+
+  it('calls a cleared-and-retyped answer typed, because none of it was spoken', async () => {
+    rung();
+    await speak();
+    const input = screen.getByLabelText('Type what it means');
+    // Cleared to nothing: whatever comes next is theirs from the keys.
+    await act(async () => { fireEvent.change(input, { target: { value: '' } }); });
+    await act(async () => { fireEvent.change(input, { target: { value: 'my own words' } }); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Submit' })); });
+
+    expect(onComplete).toHaveBeenLastCalledWith({
+      seq: 1, rung: 'interpretation', given: 'my own words', method: 'typed',
+    });
+  });
+
+  // A REVEALED SENTENCE HAS NO METHOD, because nobody answered it.
+  it('goes away after a reveal, and the reveal carries no method', async () => {
+    rung();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Show answer' })); });
+    expect(screen.queryByRole('button', { name: 'Say the answer' })).toBeNull();
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
+    expect(onComplete).toHaveBeenCalledWith({ seq: 1, rung: 'interpretation', revealed: true });
+    expect(onComplete.mock.calls[0][0].method).toBeUndefined();
+  });
+
+  it('is logged at every step, so a session can be read back', async () => {
+    rung();
+    await speak();
+    expect(rungLogMock).toHaveBeenCalledWith('speak-start', expect.objectContaining({ seq: 1 }));
+    expect(rungLogMock).toHaveBeenCalledWith('spoke', expect.objectContaining({ seq: 1, chars: 16 }));
+  });
+});
+
+// The program end of the same feature: the day says whether the server can
+// transcribe, and the method reaches the wire.
+describe('a spoken answer, end to end', () => {
+  const withMic = () => Object.defineProperty(navigator, 'mediaDevices', {
+    configurable: true,
+    value: {
+      getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })),
+      enumerateDevices: vi.fn(async () => [{ kind: 'audioinput' }]),
+    },
+  });
+
+  it('draws no microphone when the day says voice answers are unavailable', async () => {
+    withMic();
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['interpretation'], queue: [entry(1, 'interpretation')], voiceAnswer: false,
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />);
+    await screen.findByLabelText(/Type what it means/i);
+    expect(screen.queryByRole('button', { name: 'Say the answer' })).toBeNull();
+  });
+
+  it('sends the transcript up and the method back down', async () => {
+    withMic();
+    class FakeRecorder {
+      constructor() { this.state = 'inactive'; this.mimeType = 'audio/webm'; }
+      start() { this.state = 'recording'; }
+      stop() {
+        this.state = 'inactive';
+        this.ondataavailable?.({ data: new Blob(['spoken'], { type: 'audio/webm' }) });
+        this.onstop?.();
+      }
+    }
+    window.MediaRecorder = FakeRecorder;
+    transcribeMock.mockResolvedValue({ ok: true, status: 200, data: { transcript: 'it is cold today', empty: false } });
+    logMock.mockResolvedValue({ ok: true, status: 200, data: {} });
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['interpretation'], queue: [entry(1, 'interpretation')], voiceAnswer: true,
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />);
+
+    await screen.findByLabelText(/Type what it means/i);
+    const say = await screen.findByRole('button', { name: 'Say the answer' });
+    await act(async () => { fireEvent.click(say); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Stop speaking' })); });
+
+    await waitFor(() => expect(transcribeMock).toHaveBeenCalled());
+    const [userId, corpus, seq, lang, blob] = transcribeMock.mock.calls[0];
+    expect([userId, corpus, seq, lang]).toEqual(['test-learner', 'glossika-korean', 1, 'EN']);
+    expect(blob).toBeInstanceOf(Blob);
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Submit' })); });
+    await waitFor(() => expect(logMock).toHaveBeenCalledWith('test-learner', {
+      corpus: 'glossika-korean', seq: 1, rung: 'interpretation',
+      given: 'it is cold today', method: 'spoken',
+    }, expect.anything(), 'test-grant'));
   });
 });

@@ -43,6 +43,7 @@ import {
   createContentRegistry,
   createMediaProgressMemory,
   createFitnessServices,
+  createLanguageTranscriptionService,
   createFeedServices,
   createFinanceServices,
   createEntropyServices,
@@ -4619,6 +4620,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const sentenceLadderRouter = createSentenceLadderRouter({ schoolErrors,
     languageStudyService,
     languageAudioResource,
+    // A SPOKEN ANSWER to the interpretation rung. Null without an AI gateway,
+    // and that is a supported configuration rather than a fault: the day then
+    // says `voiceAnswer: false`, the rung draws no microphone, and typing is
+    // still the way through. The LANGUAGE profile, never the fitness one —
+    // that profile's cleanup pass repairs what it misheard, which pointed at a
+    // learner's translation would tidy a wrong answer into a right one.
+    languageTranscription: createLanguageTranscriptionService({
+      openaiAdapter: sharedAiGateway,
+      logger: rootLogger.child({ module: 'school-language-transcription' }),
+    }),
     studyGrants: schoolStudyGrants,
     logger: rootLogger.child({ module: 'school-language-api' })
   });
