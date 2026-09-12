@@ -14,7 +14,7 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
  * surface is not a special case; it is simply an observation with better
  * confidence. That is what keeps one meter behind both kinds of play surface.
  */
-export function createPlaySessionsRouter({ recordObservation = null, sessions = null, trackers = [], watchdog = null, grantLedger = null, grantPlayTime = null, checkEligibility = null, summarisePlayUsage = null, logger = console }) {
+export function createPlaySessionsRouter({ recordObservation = null, sessions = null, trackers = [], watchdog = null, grantLedger = null, grantPlayTime = null, checkEligibility = null, summarisePlayUsage = null, placements = null, logger = console }) {
   const router = express.Router();
 
   /**
@@ -76,6 +76,30 @@ export function createPlaySessionsRouter({ recordObservation = null, sessions = 
    * Exposed because silence from a meter is indistinguishable from a quiet
    * house; this is how an operator tells the two apart without reading logs.
    */
+  /**
+   * GET /placement — where a countdown may be drawn, per emulated system.
+   *
+   * An emulated console is framed by bezel artwork with the game showing
+   * through a hole, and the hole is a different shape on every system. This is
+   * the measured answer to "where is there room", so a surface can position
+   * itself honestly and a person can check it without reading the television.
+   *
+   * `?system=gb` narrows to one. Every rect is [x, y, w, h] normalised 0..1.
+   */
+  router.get('/placement', (req, res) => {
+    if (!placements) {
+      return res.status(503).json({ error: 'Play-session metering is not configured' });
+    }
+    const all = placements();
+    const system = req.query.system;
+    if (system) {
+      const one = all[system];
+      if (!one) return res.status(404).json({ error: `No bezel geometry for system: ${system}` });
+      return res.json({ system, ...one });
+    }
+    res.json({ systems: all });
+  });
+
   router.get('/health', (_req, res) => {
     res.json({
       devices: trackers.flatMap((tracker) => tracker.getHealth()),

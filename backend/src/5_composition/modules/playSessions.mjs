@@ -18,6 +18,7 @@ import { AdbAdapter } from '#adapters/devices/AdbAdapter.mjs';
 import { RetroArchPlayObservationSource } from '#adapters/gaming/RetroArchPlayObservationSource.mjs';
 import { RetroArchSessionLogReader } from '#adapters/gaming/RetroArchSessionLogReader.mjs';
 import { EventBusPlaySessionAnnouncer } from '#adapters/eventbus/EventBusPlaySessionAnnouncer.mjs';
+import { parseBezel, choosePlacement } from '#domains/gaming/value-objects/OverlayPlacement.mjs';
 import { FleetPlaySessionAnnouncer } from '#adapters/eventbus/FleetPlaySessionAnnouncer.mjs';
 import { CompositePlaySessionAnnouncer } from '#adapters/eventbus/CompositePlaySessionAnnouncer.mjs';
 import { FullyKioskPlayOverlay } from '#adapters/devices/FullyKioskPlayOverlay.mjs';
@@ -39,6 +40,7 @@ import { YamlPlayIntentDatastore } from '#adapters/persistence/yaml/YamlPlayInte
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
 import { RecordPlayObservation } from '#apps/gaming/usecases/RecordPlayObservation.mjs';
 import { ReconcileOpenSessions } from '#apps/gaming/usecases/ReconcileOpenSessions.mjs';
+import { NamePlaySessionContent } from '#apps/gaming/usecases/NamePlaySessionContent.mjs';
 import { ReconcilePlaySessions } from '#apps/gaming/usecases/ReconcilePlaySessions.mjs';
 import { PlayObservationWatchdog } from '#apps/gaming/runtime/PlayObservationWatchdog.mjs';
 import { PlaySessionTracker } from '#apps/gaming/runtime/PlaySessionTracker.mjs';
@@ -64,14 +66,52 @@ const RECONCILE_WINDOW_MS = 24 * 60 * 60 * 1000;
  * emulator was handed. Turning that back into a content id is what lets a
  * session recovered after a blind spot be attributed to an actual title.
  */
-export function buildContentResolver(catalog) {
+export function buildContentResolver(catalog, gamesConfig = null) {
   const byRom = new Map();
   for (const [consoleId, games] of Object.entries(catalog?.games || {})) {
+    // The emulated SYSTEM comes from the catalog, never from the core. A core
+    // does not identify a system — gambatte serves both Game Boy and Game Boy
+    // Color — so a core-based guess would merge two consoles that need
+    // different on-screen treatment. The ROM's place in the catalog is exact.
+    const label = gamesConfig?.consoles?.[consoleId]?.label ?? null;
+    const core = gamesConfig?.consoles?.[consoleId]?.core ?? null;
     for (const game of games || []) {
-      if (game?.rom) byRom.set(game.rom, { contentId: `retroarch:${consoleId}/${game.id}`, title: game.title });
+      if (!game?.rom) continue;
+      byRom.set(game.rom, {
+        contentId: `retroarch:${consoleId}/${game.id}`,
+        title: game.title,
+        console: consoleId,
+        consoleLabel: label,
+        core,
+      });
     }
   }
   return (romPath) => byRom.get(romPath) || null;
+}
+
+/**
+ * Emulated system → where a countdown may be drawn on that system's bezel.
+ *
+ * The geometry is measured from the emulator's own border artwork and lives in
+ * configuration, because it is a property of the art, not of the code. Parsing
+ * it here means a mis-measured zone — one that has crept over the game screen —
+ * is refused at boot with the system named, rather than discovered by a child
+ * whose game is covered by a clock.
+ *
+ * A system whose bezel fails to parse simply gets no placement. Losing the
+ * countdown's position must never cost us the meter.
+ */
+export function buildBezelTable(gamesConfig = null, logger = console) {
+  const table = new Map();
+  for (const [systemId, entry] of Object.entries(gamesConfig?.consoles || {})) {
+    if (!entry?.bezel) continue;
+    try {
+      table.set(systemId, parseBezel(entry.bezel, { system: systemId }));
+    } catch (error) {
+      logger.warn?.('play.bezel.invalid', { system: systemId, error: error.message });
+    }
+  }
+  return table;
 }
 
 /**
@@ -100,7 +140,7 @@ export function createPlaySessionTracking(config) {
 
   if (declared.length === 0) {
     logger.info?.('play.tracking.none_declared', {});
-    return { trackers: [], sessions: null, intents: null, recordObservation: null, watchdog: null, grantLedger: null, grantPlayTime: null, checkEligibility: null, summarisePlayUsage: null, async start() {}, stop() {} };
+    return { trackers: [], sessions: null, intents: null, recordObservation: null, watchdog: null, grantLedger: null, grantPlayTime: null, checkEligibility: null, summarisePlayUsage: null, placements: () => ({}), async start() {}, stop() {} };
   }
 
   const packageName = gamesConfig?.launch?.package;
@@ -110,7 +150,7 @@ export function createPlaySessionTracking(config) {
     logger.warn?.('play.tracking.no_launch_package', {
       devices: declared.map(([id]) => id),
     });
-    return { trackers: [], sessions: null, intents: null, recordObservation: null, watchdog: null, grantLedger: null, grantPlayTime: null, checkEligibility: null, summarisePlayUsage: null, async start() {}, stop() {} };
+    return { trackers: [], sessions: null, intents: null, recordObservation: null, watchdog: null, grantLedger: null, grantPlayTime: null, checkEligibility: null, summarisePlayUsage: null, placements: () => ({}), async start() {}, stop() {} };
   }
 
   const sessions = new YamlPlaySessionDatastore({ configService, logger });
@@ -165,6 +205,30 @@ export function createPlaySessionTracking(config) {
     : (profileFor ? new RoleBasedPlayGrants({ profileFor, logger }) : new NoPlayTimeGrants());
   const grantPlayTime = grantLedger ? new GrantPlayTime({ ledger: grantLedger, logger }) : null;
 
+  const bezels = buildBezelTable(gamesConfig, logger);
+  // Content → where its countdown goes. Keyed on the emulated SYSTEM, which the
+  // catalog knows exactly; the core would not do, since one core can serve two
+  // systems with different bezels.
+  const placementFor = (content) => {
+    const bezel = content?.console ? bezels.get(content.console) : null;
+    return bezel ? choosePlacement(bezel) : null;
+  };
+
+  // Who the countdown is addressed to. A slug is an identifier, not a name; the
+  // surface a child reads should say "Robin", not "robin".
+  const identify = profileFor
+    ? async (userId) => {
+      if (!userId) return null;
+      try {
+        const profile = await profileFor(userId);
+        return profile ? { displayName: profile.display_name ?? null } : null;
+      } catch (error) {
+        logger.debug?.('play.identify.failed', { userId, error: error.message });
+        return null;
+      }
+    }
+    : null;
+
   const adbByDevice = new Map();
   const controllerProbes = new Map();
   const enforcement = new EnforcePlayBudget({
@@ -180,11 +244,21 @@ export function createPlaySessionTracking(config) {
     // The countdown film reads warnings off the same topic it already listens to.
     notify: async (session, payload) => {
       try {
+        // The SAME presentation fields the announcer sends, so a warning is not
+        // a second, thinner kind of message the film has to special-case.
+        const identity = identify ? await identify(session.userId) : null;
         eventBus.broadcast(`play-session:${session.deviceId}`, {
           event: 'play.session.progress',
           sessionId: session.id, deviceId: session.deviceId,
           playedMs: session.playedMs, userId: session.userId,
-          title: session.content?.title ?? null, ...payload,
+          displayName: identity?.displayName ?? null,
+          contentId: session.content?.contentId ?? null,
+          title: session.content?.title ?? null,
+          system: session.content?.console ?? null,
+          systemLabel: session.content?.consoleLabel ?? null,
+          placement: placementFor(session.content),
+          controllers: session.controllers ?? null,
+          ...payload,
         });
       } catch (error) {
         logger.warn?.('play.budget.notify_failed', { error: error.message });
@@ -199,7 +273,7 @@ export function createPlaySessionTracking(config) {
   // and the overlay that puts a countdown in front of the player.
   const announcer = new CompositePlaySessionAnnouncer({
     announcers: [
-      new EventBusPlaySessionAnnouncer({ eventBus, logger }),
+      new EventBusPlaySessionAnnouncer({ eventBus, placementFor, identify, logger }),
       new FleetPlaySessionAnnouncer({ eventBus, logger }),
       overlayAnnouncer,
       enforcement,
@@ -214,6 +288,8 @@ export function createPlaySessionTracking(config) {
     trustedGapMs: Math.round(intervalMs * TRUSTED_GAP_FACTOR),
     logger,
   });
+
+  const resolveContent = buildContentResolver(gamesCatalog, gamesConfig);
 
   const built = declared.map(([deviceId, device]) => {
     const content = device.content_control || {};
@@ -244,9 +320,18 @@ export function createPlaySessionTracking(config) {
       })
       : null;
 
+    // A game started at the device opens a session with no title. Ask the
+    // device's own logs once, while it is still running, so the countdown knows
+    // which system it is drawing on instead of waiting for the next restart.
+    const nameUnidentified = logReader
+      ? (session) => new NamePlaySessionContent({
+        sessions, logReader, resolveContent, logger,
+      }).execute(session)
+      : null;
+
     const tracker = new PlaySessionTracker({
       devices: [{ deviceId, surface: CONSOLE_SURFACE }],
-      observationSource, intents, recordObservation,
+      observationSource, intents, recordObservation, nameUnidentified,
       intervalMs, scheduler, now, logger,
     });
     return { deviceId, tracker, logReader };
@@ -254,7 +339,6 @@ export function createPlaySessionTracking(config) {
 
   const trackers = built.map((b) => b.tracker);
 
-  const resolveContent = buildContentResolver(gamesCatalog);
   const watchdog = new PlayObservationWatchdog({
     trackers,
     scheduler,
@@ -300,6 +384,20 @@ export function createPlaySessionTracking(config) {
     trackers,
     sessions,
     checkEligibility,
+    /**
+     * Overlay geometry per emulated system, already validated.
+     *
+     * Plain data, so the HTTP surface can serve it without reaching into the
+     * domain, and so a person can check what the film was told rather than
+     * inferring it from where a countdown ended up on the television.
+     */
+    placements: () => Object.fromEntries([...bezels].map(([system, bezel]) => [system, {
+      label: gamesConfig?.consoles?.[system]?.label ?? null,
+      source: bezel.source,
+      screen: bezel.screen,
+      zones: bezel.zones,
+      placement: choosePlacement(bezel),
+    }])),
     // Monitoring: usage can be watched long before any policy is set against it.
     summarisePlayUsage: new SummarisePlayUsage({ sessions, logger }),
     intents,

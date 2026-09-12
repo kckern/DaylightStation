@@ -20,7 +20,7 @@
  * layer owns no globals.
  */
 export class PlaySessionTracker {
-  #devices; #source; #intents; #record; #intervalMs;
+  #devices; #source; #intents; #record; #nameUnidentified; #intervalMs;
   #scheduler; #now; #logger;
   #cancel = null; #running = false;
   #inFlight = new Set();
@@ -28,6 +28,7 @@ export class PlaySessionTracker {
 
   constructor({
     devices = [], observationSource, intents, recordObservation,
+    nameUnidentified = null,
     intervalMs, scheduler, now, logger = console,
   }) {
     if (!observationSource?.observe) throw new Error('PlaySessionTracker requires an observationSource');
@@ -41,6 +42,7 @@ export class PlaySessionTracker {
     this.#source = observationSource;
     this.#intents = intents || null;
     this.#record = recordObservation;
+    this.#nameUnidentified = nameUnidentified;
     this.#intervalMs = intervalMs;
     this.#scheduler = scheduler;
     this.#now = now;
@@ -97,13 +99,26 @@ export class PlaySessionTracker {
       const observation = await this.#source.observe(deviceId, {
         expectedContent: intent?.content ?? null,
       });
-      await this.#record.execute({
+      const result = await this.#record.execute({
         deviceId,
         surface,
         userId: intent?.userId ?? null,
         grantRef: intent?.grantRef ?? null,
         observation,
       });
+
+      // A game started at the device itself — which is how the arcade is
+      // actually used — opens a session nobody named. The device's own logs know
+      // what it was, so ask them once and fill the blank in. Only ever attempted
+      // for a session that is genuinely unidentified, so this costs nothing on
+      // the normal path.
+      if (this.#nameUnidentified && result?.session && !result.session.content?.contentId) {
+        try {
+          await this.#nameUnidentified(result.session);
+        } catch (error) {
+          this.#logger.warn?.('play.session.naming_failed', { deviceId, error: error.message });
+        }
+      }
       this.#mark(deviceId, {
         state: observation?.state ?? null,
         degraded: observation?.degraded === true,

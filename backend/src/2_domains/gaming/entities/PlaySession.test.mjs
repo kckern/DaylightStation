@@ -221,3 +221,55 @@ describe('PlaySession — group play has a payer and a roster', () => {
     expect(revived.payerId).toBe('test-learner');
   });
 });
+
+describe('PlaySession — controllers seen', () => {
+  it('records how many controllers were live', () => {
+    const s = open();
+    s.observe({ state: PlayState.PLAYING, observedAt: at(0), controllers: 2 });
+    expect(s.controllers).toBe(2);
+  });
+
+  it('keeps the HIGH-WATER mark, not the last reading', () => {
+    // A four-player game stays a four-player game even if someone puts a pad
+    // down before it ends.
+    const s = open();
+    s.observe({ state: PlayState.PLAYING, observedAt: at(0), controllers: 4 });
+    s.observe({ state: PlayState.PLAYING, observedAt: at(10), controllers: 1 });
+    expect(s.controllers).toBe(4);
+  });
+
+  it('stays null when controllers could not be counted', () => {
+    const s = open();
+    s.observe({ state: PlayState.PLAYING, observedAt: at(0) });
+    expect(s.controllers).toBeNull();
+  });
+
+  it('survives a snapshot round trip', () => {
+    const s = open();
+    s.observe({ state: PlayState.PLAYING, observedAt: at(0), controllers: 3 });
+    expect(PlaySession.fromSnapshot(s.toSnapshot()).controllers).toBe(3);
+  });
+});
+
+describe('PlaySession — naming a game it could not identify', () => {
+  const named = { contentId: 'retroarch:gb/x', title: 'Recovered Title' };
+
+  it('fills in a blank title', () => {
+    const s = PlaySession.open({ id: 'p', deviceId: 'd', surface: 's', content: null, trustedGapMs: 25_000 });
+    expect(s.attributeContent(named)).toEqual({ attributed: true });
+    expect(s.content.title).toBe('Recovered Title');
+  });
+
+  it('never overwrites what was observed at the time', () => {
+    // A later guess must not rewrite a title we actually knew.
+    const s = open();
+    const before = s.content.contentId;
+    expect(s.attributeContent(named).attributed).toBe(false);
+    expect(s.content.contentId).toBe(before);
+  });
+
+  it('ignores an empty attribution', () => {
+    const s = PlaySession.open({ id: 'p', deviceId: 'd', surface: 's', content: null, trustedGapMs: 25_000 });
+    expect(s.attributeContent(null).attributed).toBe(false);
+  });
+});

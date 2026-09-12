@@ -3751,6 +3751,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     checkEligibility: playSessionTracking.checkEligibility,
     summarisePlayUsage: playSessionTracking.summarisePlayUsage,
     logger: rootLogger.child({ module: 'play-sessions-api' }),
+    placements: playSessionTracking.placements,
   });
 
   // Piano-power → tablet-screen authority. DS becomes the single writer for the
