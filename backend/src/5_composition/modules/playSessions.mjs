@@ -92,7 +92,7 @@ export function createPlaySessionTracking(config) {
 
   if (declared.length === 0) {
     logger.info?.('play.tracking.none_declared', {});
-    return { trackers: [], sessions: null, intents: null, async start() {}, stop() {} };
+    return { trackers: [], sessions: null, intents: null, recordObservation: null, async start() {}, stop() {} };
   }
 
   const packageName = gamesConfig?.launch?.package;
@@ -102,7 +102,7 @@ export function createPlaySessionTracking(config) {
     logger.warn?.('play.tracking.no_launch_package', {
       devices: declared.map(([id]) => id),
     });
-    return { trackers: [], sessions: null, intents: null, async start() {}, stop() {} };
+    return { trackers: [], sessions: null, intents: null, recordObservation: null, async start() {}, stop() {} };
   }
 
   const sessions = new YamlPlaySessionDatastore({ configService, logger });
@@ -246,6 +246,9 @@ export function createPlaySessionTracking(config) {
     trackers,
     sessions,
     intents,
+    // Exposed so the HTTP surface can feed self-reporting play surfaces into the
+    // same use case the polled source uses.
+    recordObservation,
     /**
      * Settle anything a previous process left open, THEN start watching. Order
      * matters: a tracker that observed first could append to a session whose
