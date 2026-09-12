@@ -763,7 +763,7 @@ while. `[x]` is built and tested; `[ ]` is not started.
 |---|---|---|
 | `[x]` | **T1 Launch attribution record** — persist "content X launched for user Y on device Z, against grant G" so the observer can echo identity | The source can confirm *a* game runs, never *which* (3.2). Carries the grant reference from 7.1 |
 | `[x]` | **T2 `PlaySessionTracker`** — the scheduler: which devices, what interval, calls `RecordPlayObservation`, self-watchdog | `3_applications/gaming/runtime/` |
-| `[ ]` | **T3 Device declaration** — `play_observation` / `play_overlay` blocks in the hardware device config, plus contract/schema | Declared, never inferred (FR-12) |
+| `[x]` | **T3 Device declaration** — `play_observation` / `play_overlay` blocks in the hardware device config, plus contract/schema | Declared, never inferred (FR-12) |
 | `[ ]` | **T4 Composition wiring** — kiosk client + ADB adapter + source + datastore + announcer + use case + tracker; start on boot | `5_composition/` only |
 | `[ ]` | **T5 Startup reconciliation** — close stale open sessions as `lost`, clear any armed overlay | Crash recovery (5.10) |
 | `[ ]` | **T6 Structured logging vocabulary** — one event per transition, queryable by device and session | NFR-7 |
