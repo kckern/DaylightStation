@@ -145,6 +145,47 @@ describe('computeScreenBox', () => {
     expect(box.left).toBe(40);
     expect(box.top).toBe(64);
   });
+  it('fill mode takes the whole cutout instead of locking to a whole multiple', () => {
+    // The Genesis aperture. Integer locking leaves a quarter of it empty:
+    // 320x224 fits 3x (960x672) because 4x overflows. A console with no pixel
+    // grid to align to should not pay that.
+    const hole = { left: 365, top: 110, width: 1190, height: 892 };
+    const locked = computeScreenBox({ cut: hole, dpr: 1, native: { width: 320, height: 224 } });
+    expect([locked.width, locked.height]).toEqual([960, 672]);
+
+    const filled = computeScreenBox({ cut: hole, dpr: 1, native: { width: 320, height: 224 }, scaling: 'fill' });
+    expect([filled.width, filled.height]).toEqual([1190, 892]);
+    expect([filled.left, filled.top]).toEqual([365, 110]);
+  });
+
+  it('fill mode keeps the CUTOUT aspect, not the framebuffer aspect', () => {
+    // A Mega Drive drew 320x224 (1.4286) across a 4:3 television: its pixels
+    // were never square. Filling a 4:3 cutout is what reproduces that, so the
+    // box must not come back at the framebuffer's own ratio.
+    const filled = computeScreenBox({
+      cut: { left: 365, top: 110, width: 1190, height: 892 },
+      dpr: 1, native: { width: 320, height: 224 }, scaling: 'fill',
+    });
+    expect(filled.width / filled.height).toBeCloseTo(4 / 3, 2);
+    expect(filled.width / filled.height).not.toBeCloseTo(320 / 224, 2);
+  });
+
+  it('fill mode snaps to whole device pixels at a fractional DPR', () => {
+    const filled = computeScreenBox({
+      cut: { left: 365.4, top: 110.7, width: 1190.3, height: 892.6 },
+      dpr: 1.5, native: { width: 320, height: 224 }, scaling: 'fill',
+    });
+    for (const v of [filled.left, filled.top, filled.width, filled.height]) {
+      expect(Math.abs(v * 1.5 - Math.round(v * 1.5))).toBeLessThan(1e-9);
+    }
+  });
+
+  it('defaults to integer locking, so the Game Boy is untouched', () => {
+    const box = computeScreenBox({ cut, dpr: 1, native: { width: 160, height: 144 } });
+    expect(box.scale).toBe(2);
+    expect([box.width, box.height]).toEqual([320, 288]);
+  });
+
   it('falls back to 160×144 when native is absent', () => {
     const box = computeScreenBox({ cut, dpr: 1, native: undefined });
     expect(box.scale).toBe(2);
