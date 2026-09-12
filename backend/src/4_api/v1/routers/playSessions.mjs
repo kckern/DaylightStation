@@ -14,7 +14,7 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
  * surface is not a special case; it is simply an observation with better
  * confidence. That is what keeps one meter behind both kinds of play surface.
  */
-export function createPlaySessionsRouter({ recordObservation = null, sessions = null, trackers = [], watchdog = null, logger = console }) {
+export function createPlaySessionsRouter({ recordObservation = null, sessions = null, trackers = [], watchdog = null, grantLedger = null, grantPlayTime = null, logger = console }) {
   const router = express.Router();
 
   /**
@@ -110,6 +110,39 @@ export function createPlaySessionsRouter({ recordObservation = null, sessions = 
     } catch (error) {
       logger.error?.('play.api.history_failed', { deviceId: req.params.deviceId, error: error.message });
       return sendInternalError(res, { error: 'Failed to read play history' });
+    }
+  });
+
+  /**
+   * POST /grants — give a child play time, extend it, or take it back.
+   *
+   * All three are one operation: an entry on an append-only ledger. Revoking
+   * writes a negative delta so the grant AND the revocation stay visible, where
+   * editing a balance would leave neither.
+   */
+  router.post('/grants', async (req, res) => {
+    if (!grantPlayTime) return res.status(503).json({ error: 'Play-time grants are not configured' });
+    const { userId, minutes, by = null, reason = null, on = null } = req.body || {};
+    if (!userId || !Number.isFinite(Number(minutes))) {
+      return res.status(400).json({ error: 'userId and a numeric minutes are required' });
+    }
+    try {
+      return res.json(await grantPlayTime.execute({ userId, minutes: Number(minutes), by, reason, on }));
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
+  });
+
+  /** GET /grants/:userId — today's granted time and how it was arrived at. */
+  router.get('/grants/:userId', async (req, res) => {
+    if (!grantLedger) return res.status(503).json({ error: 'Play-time grants are not configured' });
+    const on = req.query.on || new Date().toISOString().slice(0, 10);
+    try {
+      const { grantedMs, entries } = await grantLedger.forUserOn(req.params.userId, on);
+      return res.json({ userId: req.params.userId, on, grantedMs, entries });
+    } catch (error) {
+      logger.error?.('play.api.grants_failed', { userId: req.params.userId, error: error.message });
+      return sendInternalError(res, { error: 'Failed to read play grants' });
     }
   });
 

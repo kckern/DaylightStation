@@ -124,3 +124,49 @@ describe('GET /health', () => {
     expect(r.body.blocked).toEqual(['tv']);
   });
 });
+
+describe('parent controls — grant, extend, revoke', () => {
+  let rows;
+  const grantLedger = {
+    forUserOn: async (u, on) => ({ grantedMs: rows.reduce((t, r) => t + r.deltaMs, 0), entries: rows, on }),
+  };
+  const grantPlayTime = {
+    execute: async ({ userId, minutes }) => {
+      rows.push({ deltaMs: minutes * 60_000 });
+      return { userId, day: '2026-09-11', grantedMs: rows.reduce((t, r) => t + r.deltaMs, 0), changedMs: minutes * 60_000 };
+    },
+  };
+  const router = () => createPlaySessionsRouter({ grantLedger, grantPlayTime, logger: quiet });
+  beforeEach(() => { rows = []; });
+
+  it('grants time', async () => {
+    const r = await call(router(), 'POST', '/grants', { userId: 'child', minutes: 20, by: 'parent' });
+    expect(r.status).toBe(200);
+    expect(r.body.grantedMs).toBe(1_200_000);
+  });
+
+  it('takes time back with a negative amount', async () => {
+    const r = router();
+    await call(r, 'POST', '/grants', { userId: 'child', minutes: 30 });
+    // fresh listener per call, but rows persist — the ledger is the shared state
+    const after = await call(r, 'POST', '/grants', { userId: 'child', minutes: -10 });
+    expect(after.body.grantedMs).toBe(1_200_000);
+  });
+
+  it('rejects a request with no amount', async () => {
+    const r = await call(router(), 'POST', '/grants', { userId: 'child' });
+    expect(r.status).toBe(400);
+  });
+
+  it('reports the balance and how it was arrived at', async () => {
+    rows.push({ deltaMs: 600_000, by: 'parent', reason: 'reading' });
+    const r = await call(router(), 'GET', '/grants/child');
+    expect(r.body.grantedMs).toBe(600_000);
+    expect(r.body.entries[0].reason).toBe('reading');
+  });
+
+  it('says so plainly when grants are not configured', async () => {
+    const r = await call(createPlaySessionsRouter({ logger: quiet }), 'POST', '/grants', { userId: 'c', minutes: 5 });
+    expect(r.status).toBe(503);
+  });
+});

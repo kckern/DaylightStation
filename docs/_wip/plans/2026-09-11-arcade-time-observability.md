@@ -840,7 +840,7 @@ while. `[x]` is built and tested; `[ ]` is not started.
 | `[x]` | **T15 Overlay driver** — arm on confirmed start, tear down on end, verify URL first, re-assert disarmed at boot | Device-declared only |
 | `[x]` | **T16 Film runtime** — subscribe to `play-session:<deviceId>`, render remaining time, urgency states, visible degradation when the socket goes stale | |
 | `[x]` | **T17 Spoken warnings** — kiosk text-to-speech alongside the visual | A child absorbed in a game hears sooner than reads |
-| `[ ]` | **T18 Verify no gameplay impact** — focus and input unaffected, emulation CPU unchanged | NFR-5 |
+| `[x]` | **T18 Verify no gameplay impact** — focus and input unaffected, emulation CPU unchanged | NFR-5 |
 
 ### M4 — Budget and enforcement
 
@@ -849,8 +849,8 @@ while. `[x]` is built and tested; `[ ]` is not started.
 | `[x]` | **T19 `EnforcePlayBudget`** — remaining time, warning thresholds, expiry decision | `3_applications/gaming/usecases/` |
 | `[x]` | **T20 Termination adapter** — stop the emulator, return the device to its kiosk | Only ever called by expiry |
 | `[x]` | **T21 Warning ladder** — lead time sufficient to save, because termination destroys unsaved progress (3.4) | FR-10; hard requirement |
-| `[ ]` | **T22 Economy integration** — purchase time with coins, burn against `playedMs`, settle on end | Ledger is the book of record |
-| `[ ]` | **T23 Parent controls** — grant, extend, override | |
+| `[x]` | **T22 Economy integration** — purchase time with coins, burn against `playedMs`, settle on end | Ledger is the book of record |
+| `[x]` | **T23 Parent controls** — grant, extend, override | |
 
 ### M5 — Second surface and parity
 
@@ -876,7 +876,7 @@ while. `[x]` is built and tested; `[ ]` is not started.
 |---|---|---|---|
 | `[ ]` | **T38 Express play eligibility as a state-gate** — gate + entitlement definitions for "may play", with economy as one claim | M4 | Replaces a bespoke wallet check (9.2) |
 | `[ ]` | **T39 Per-title play policy** — single-player versus group, attribution and cost rules per game | M4 | Pokemon and Mario Kart are not the same product (9.3) |
-| `[ ]` | **T40 Payer + roster on `PlaySession`** — group play without splitting, roster recorded for later | M4 | Domain change; decide before group pricing (9.3) |
+| `[x]` | **T40 Payer + roster on `PlaySession`** — group play without splitting, roster recorded for later | M4 | Domain change; decide before group pricing (9.3) |
 | `[x]` | **T41 Controller census in the observation** — count connected gamepads from the input device list | M2 | Feasible over the existing channel (9.4) |
 | `[x]` | **T42 Controller ACTIVITY sampling** — bounded-window event sampling, so idle pads are not counted as players | M2 | Connected is not playing (9.4) |
 | `[ ]` | **T43 Schedule and prerequisite gates** — approved play windows, "schoolwork done" style conditions | M4 | Time-bound gates already exist to build on |
