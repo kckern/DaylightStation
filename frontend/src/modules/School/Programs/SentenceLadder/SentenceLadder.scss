@@ -429,6 +429,35 @@ $disc: 5.5rem;
     clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
   }
 
+  // A REFUSED KEYSTROKE, drawn on the live column. Copy mode's gate consumes a
+  // key that would break the shape being traced, and consuming it means nothing
+  // on screen changes — which a child reads as a broken keyboard and answers by
+  // pressing harder. So the column steps aside and flushes danger for the
+  // length of `REFUSAL_FLASH_MS`.
+  //
+  // A TRANSITION, not a keyframe: the file's opening note about the kiosk
+  // dropping frames under keyframes stands, and one transform step is the
+  // cheapest thing a compositor can be asked for. The class arrives with the
+  // column already stepped aside — an instant out-stroke is the fastest
+  // possible answer to a key — and the transition carries it back when the
+  // class clears, which is what makes it read as a rebound rather than a jump.
+  &__strip {
+    width: 100%;
+    .lang-strip__col { transition: transform 140ms ease-out; }
+    &.is-refused .lang-strip__col.is-current {
+      transform: translateX(-0.14em);
+      .lang-strip__want, .lang-strip__got { color: var(--school-danger); }
+      &::after { background: var(--school-danger); }
+    }
+    // Reduced motion keeps the ANSWER and drops the travel: the colour flash
+    // alone still says "that key did not land", and a jump with no transition
+    // would be more motion than the eased one, not less.
+    @media (prefers-reduced-motion: reduce) {
+      .lang-strip__col { transition: none; }
+      &.is-refused .lang-strip__col.is-current { transform: none; }
+    }
+  }
+
   // The drill itself, taking whatever height the baseline leaves. Without this
   // the whole rung is one centred stack and Submit floats a few pixels under
   // the sentence in the middle of a 620px stage — the "300px column down the
