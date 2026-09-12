@@ -25,10 +25,25 @@ describe('columnsFor', () => {
     expect(cols('가나다라', '', '')).toEqual(['가:current', '나:next', '다:hidden', '라:hidden']);
   });
 
-  // Listen mode starts blind; a peek turns every column visible at once.
+  // Listen mode withholds the MODEL. The live column is still the learner's, so
+  // it keeps its state and its caret and only loses the glyph it would print.
   it('hides the model entirely when asked, and shows all of it on a peek', () => {
-    expect(cols('오늘', '', '', { reveal: 'none' })).toEqual(['오:blind', '늘:blind']);
+    expect(cols('오늘', '', '', { reveal: 'none' })).toEqual([':current', '늘:blind']);
     expect(cols('오늘', '', '', { reveal: 'all' })).toEqual(['오:current', '늘:next']);
+  });
+
+  // The learner must be able to see their OWN typing in listen mode — the
+  // column they are in, the half-built syllable still in the IME buffer, and
+  // the caret saying where they are. Only `want` is withheld. Before this, the
+  // live column fell through to `blind`, so the last syllable of every sentence
+  // was invisible right up to Submit.
+  it('shows the learner their own live syllable in listen mode, never the model', () => {
+    const out = columnsFor({ target: '오늘', committed: '오', pending: '느', reveal: 'none' });
+    expect(out).toEqual([
+      { want: '', got: '오', state: 'done' },
+      { want: '', got: '느', state: 'current' },
+    ]);
+    expect(out.map((c) => c.want).join('')).toBe('');
   });
 
   it('carries what the learner actually put in each column', () => {
