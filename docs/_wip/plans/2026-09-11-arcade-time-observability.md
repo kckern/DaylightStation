@@ -858,7 +858,7 @@ while. `[x]` is built and tested; `[ ]` is not started.
 |---|---|---|
 | `[ ]` | **T24 Browser-emulator reporting** — emit the same three events with exact confidence | |
 | `[ ]` | **T25 Move metering authority server-side** — the in-app gate becomes display plus local safety | Decision 6.2 |
-| `[ ]` | **T26 API router** — push ingress for the browser surface, session reads | `4_api/v1/routers/gaming.mjs` |
+| `[x]` | **T26 API router** — push ingress for the browser surface, session reads | `4_api/v1/routers/gaming.mjs` |
 | `[ ]` | **T27 In-app countdown** — the browser surface draws its own; it must never arm a device overlay | 5.6 |
 
 ### M6 — Operations

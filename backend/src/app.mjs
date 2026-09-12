@@ -77,6 +77,7 @@ import { bootstrapNotifications } from '#composition/modules/notifications.mjs';
 import { createPlaybackStallDetector } from '#composition/modules/playbackStall.mjs';
 import { createHubFleetBridge } from '#composition/modules/hubFleetBridge.mjs';
 import { createPlaySessionTracking } from '#composition/modules/playSessions.mjs';
+import { createPlaySessionsRouter } from './4_api/v1/routers/playSessions.mjs';
 import { createApiRouters } from '#composition/modules/contentApi.mjs';
 import { createFitnessApiRouter, createFitnessPlayableModule } from '#composition/modules/fitnessApi.mjs';
 import { createBooksApiRouter, createBooksModule } from '#composition/modules/booksApi.mjs';
@@ -3734,6 +3735,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'play-sessions' }),
   });
   await playSessionTracking.start();
+
+  // HTTP surface: push ingress for surfaces that report their own lifecycle,
+  // plus session and health reads. Present even when nothing is metered, so a
+  // caller gets an explicit 503 rather than a 404 that looks like a typo.
+  v1Routers['play-sessions'] = createPlaySessionsRouter({
+    recordObservation: playSessionTracking.recordObservation,
+    sessions: playSessionTracking.sessions,
+    trackers: playSessionTracking.trackers,
+    logger: rootLogger.child({ module: 'play-sessions-api' }),
+  });
 
   // Piano-power → tablet-screen authority. DS becomes the single writer for the
   // OFF side of the yellow-room tablet's FKB screen: piano OFF ⇒ screen OFF
