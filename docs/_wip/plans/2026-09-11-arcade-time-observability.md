@@ -890,7 +890,7 @@ while. `[x]` is built and tested; `[ ]` is not started.
 | `[ ]` | **T34 Remote authorization ceremony** — wake and raise the garage screen, run the scan, return the result | M4 | Disappears if a reader ever sits by the living-room screen |
 | `[ ]` | **T35 Admin-attributed sessions** — unlimited grant for shared/family play | M4 | A grant with no ceiling, not a bypass |
 | `[ ]` | **T36 `IPlayTimeGrant` boundary** — economy answers "N seconds for user U against grant G"; gaming burns and reports | M4 | Keeps coins, tokens, rates and expiry out of the meter (7.2) |
-| `[ ]` | **T37 Fleet bridge** — project play sessions into the `device-state:<deviceId>` snapshot shape | M6 | Replaces a bespoke arcade view (7.3) |
+| `[x]` | **T37 Fleet bridge** — project play sessions into the `device-state:<deviceId>` snapshot shape | M6 | Replaces a bespoke arcade view (7.3) |
 
 All three previously open questions are now decided; none block M1 or M2.
 
