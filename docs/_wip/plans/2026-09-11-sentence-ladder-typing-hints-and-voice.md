@@ -828,7 +828,7 @@ npx vitest run backend/src/1_adapters/ai/ tests/isolated/adapter --reporter=dot
 git commit -m "refactor(ai): voice transcription is a service with a profile, not a fitness detail"
 ```
 
-### Task 13: Interpretation accepts a spoken answer
+### Task 13: Interpretation accepts a spoken answer [as built]
 
 **The capture path already exists and works.** `RecordingRung.jsx` records a blob and
 `languageApi.recording(userId, corpusId, seq, blob, capabilities, studyGrant)` posts it —
@@ -847,6 +847,38 @@ find out why they were marked down.
 **Files:** `TypedRung.jsx` (a mic control beside Submit), a new
 `POST /sentence-ladder/transcribe` guarded by the same `studyGrant` as every other write
 on this rung, and `LanguageStudyService.mjs` to carry `method` onto the record.
+
+**AS BUILT (2026-09-11).** Four departures from the text above, all for reasons the
+text implies:
+
+1. **The route is `POST /users/:userId/transcribe`, not `/sentence-ladder/transcribe`.**
+   The one property the plan actually asked for is the study-grant guard, and
+   `authorized(req, res, corpus)` reads `req.params.userId` — a top-level path could not
+   wear it. Every other write on this rung is learner-scoped for the same reason.
+2. **The route never touches the corpus, by construction.** It was tempting to resolve
+   the answering language server-side from `corpus.languages`, which means loading the
+   corpus, which puts the expected English in scope on the one code path that must never
+   see it. Instead the client sends `?lang=EN` (it already has
+   `entry.response.language`), the router maps it through a two-entry allowlist, and the
+   register is a constant. `seq` is accepted for the log line only. So the context the
+   profile receives is exactly `{ spokenLanguage, register }` from closed sets, and the
+   test asserts that key set *exactly* rather than with `objectContaining` — a new key
+   there is how an expected answer would arrive.
+3. **The day carries `voiceAnswer`**, composed at the HTTP layer beside `cues`. Without
+   it the client would learn there is no AI gateway by drawing a microphone that 503s,
+   which is the dead-button failure this screen keeps designing around. With it the
+   control is simply never drawn.
+4. **The recorder was extracted, not copied.** `rungs/useVoiceCapture.js` owns exactly
+   the part both rungs share — open mic, record, hand back a blob, release — and
+   `RecordingRung` was moved onto it with its phase machine, verdicts, band and logging
+   untouched (its 8 existing tests pass unchanged). It deliberately does not log: the two
+   rungs name the same events differently on purpose.
+
+Also decided here: **no glyph on the Speak control.** `record.svg` is a tape reel and it
+is the *recording* rung's start tile; borrowed here it would promise the take is kept,
+which is the one thing it is not. Same reasoning as the peek's missing glyph.
+`method: 'typed'` is now written on every new text attempt, not only spoken ones, so the
+log is self-describing going forward while old rows stay honestly silent.
 
 ### Task 14: A spoken answer changes what the rung needs
 

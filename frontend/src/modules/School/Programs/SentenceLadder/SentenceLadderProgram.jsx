@@ -368,7 +368,7 @@ export default function SentenceLadderProgram({
    * surfaced, never swallowed: an unrecorded attempt that looks recorded is
    * how a learner loses a session's work without knowing.
    */
-  const onComplete = useCallback(async ({ seq, rung, given, revealed, blob }) => {
+  const onComplete = useCallback(async ({ seq, rung, given, revealed, blob, method }) => {
     if (preview) {
       // The preview has no identity, grant, or mutable endpoint.  Completion
       // is a browser-only affordance so a teacher can experience the ladder
@@ -395,7 +395,10 @@ export default function SentenceLadderProgram({
         // joining it: the learner produced nothing, and the text they were
         // just shown must never travel as something they wrote. Spread, so an
         // ordinary attempt's body is exactly what it has always been.
-        ...(revealed ? { revealed: true } : { given }),
+        //
+        // `method` rides with `given` for the same reason and no other: it
+        // describes how an answer was produced, and a reveal is not an answer.
+        ...(revealed ? { revealed: true } : { given, ...(method ? { method } : {}) }),
       }, capabilities, studyGrant);
     setSaving(false);
 
@@ -412,6 +415,27 @@ export default function SentenceLadderProgram({
     await load();
     return result;
   }, [userId, corpusId, capabilities, studyGrant, load, preview]);
+
+  /**
+   * A SPOKEN ANSWER to a typing rung. Audio up, a transcript back, and nothing
+   * written down: the transcript lands in the learner's own field, where they
+   * read and edit it before submitting through `onComplete` like any other
+   * answer. See `TypedRung`'s SPEAK_WORD for why it stops there.
+   *
+   * The rung is handed a plain function rather than the api client and the
+   * identity to go with it, for the same reason it is handed `onComplete`: a
+   * rung that knew how to address the server would be a second place for the
+   * grant, the corpus and the run id to be assembled, and they are assembled
+   * exactly once, here.
+   */
+  const onTranscribe = useCallback(async (blob) => {
+    const lang = entry?.response?.language;
+    const { ok, status, data } = await languageApi.transcribe(
+      userId, corpusId, entry.seq, lang, blob, capabilities, studyGrant,
+    );
+    if (!ok) return { ok: false, status };
+    return { ok: true, transcript: data?.transcript ?? '', empty: data?.empty === true };
+  }, [userId, corpusId, capabilities, studyGrant, entry]);
 
   const onRoll = useCallback(async () => {
     const { ok, data } = await languageApi.roll(userId, corpusId, capabilities, studyGrant);
@@ -744,6 +768,15 @@ export default function SentenceLadderProgram({
             entry={entry} nextEntry={nextEntry} audioUrl={audioUrl}
             onComplete={onComplete} saving={saving}
             showShortcuts={hasHardwareKeyboard}
+            /* THE THREE FACTS THAT DECIDE WHETHER A MICROPHONE IS DRAWN, and
+               all three live here rather than in the rung. A preview has no
+               identity or grant to spend; a device with no microphone cannot
+               open one; a deployment with no AI gateway answers `voiceAnswer:
+               false` on the day. Any of them missing and the rung is handed
+               nothing, so it draws no control at all — a dead button is worse
+               than an absent one. */
+            onTranscribe={!preview && day?.voiceAnswer && capabilities.microphone
+              ? onTranscribe : null}
           />
         )}
         {tab === 'study' && !allDone && entry && entry.rung === 'recording' && (

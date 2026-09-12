@@ -419,19 +419,19 @@ export class SentenceLadderService {
    */
   logAttempt({
     userId, corpusId, seq, rung, given = null, revealed = false,
-    source = null, capabilities = {}, runId = null,
+    source = null, capabilities = {}, runId = null, method = null,
   }) {
     if (rung === 'recording') {
       throw new ValidationError('recording evidence requires an audio upload', { field: 'rung' });
     }
     return this.#recordAttempt({
-      userId, corpusId, seq, rung, given, revealed, source, capabilities, runId,
+      userId, corpusId, seq, rung, given, revealed, source, capabilities, runId, method,
     });
   }
 
   #recordAttempt({
     userId, corpusId, seq, rung, given = null, revealed = false, source = null, capabilities = {},
-    allowRecording = false, skipDueCheck = false, practice = false, runId = null,
+    allowRecording = false, skipDueCheck = false, practice = false, runId = null, method = null,
   }) {
     this.#requireUser(userId);
     const corpus = this.#requireCorpus(corpusId);
@@ -513,6 +513,27 @@ export class SentenceLadderService {
         }
         event.given = given.trim();
         event.accuracy = accuracy(given, expected);
+        /**
+         * HOW THE ANSWER WAS PRODUCED — typed, or spoken and transcribed into
+         * the field before the learner submitted it.
+         *
+         * The response is still TEXT. Voice is an input method, not a different
+         * kind of answer, so this is one extra field on the same row rather
+         * than a second shape of record: a learner who understands a sentence
+         * but cannot find the keys on an English keyboard is measured on
+         * comprehension either way, and a reader can still tell the two apart.
+         *
+         * Absent when the client did not say, rather than defaulted to
+         * 'typed': every row written before this existed is a typed answer
+         * whose method was never asked, and a field that claims otherwise for
+         * them would be a fact nobody established, in an append-only log.
+         */
+        if (method != null) {
+          if (method !== 'typed' && method !== 'spoken') {
+            throw new ValidationError(`unknown answer method: ${method}`, { field: 'method', value: method });
+          }
+          event.method = method;
+        }
       }
     }
 

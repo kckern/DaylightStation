@@ -409,6 +409,66 @@ describe('logAttempt', () => {
     });
   });
 
+  /**
+   * HOW THE ANSWER WAS GIVEN. Interpretation can be answered by speaking: the
+   * learner says what the sentence means, the transcript lands in the field,
+   * and they read and edit it before submitting. The response is still TEXT —
+   * voice is an input method, not a different kind of answer — so the record
+   * changes by exactly one field, which is what lets a reader tell a spoken
+   * answer from a typed one without inventing a second kind of row.
+   */
+  describe('the answer method', () => {
+    it('is written down beside the answer it describes', () => {
+      makeDue(ds, 'interpretation');
+      const event = svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        given: "The weather's nice today.", method: 'spoken', capabilities: EQUIPPED,
+      });
+      expect(event.method).toBe('spoken');
+      // And it changes nothing else: a spoken answer is scored exactly as a
+      // typed one is, because it is the same answer.
+      expect(event.given).toBe("The weather's nice today.");
+      expect(event.accuracy).toBe(1);
+    });
+
+    it('stays absent when the client did not say, rather than being guessed at', () => {
+      makeDue(ds, 'interpretation');
+      const event = svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        given: 'something', capabilities: EQUIPPED,
+      });
+      expect(event.method).toBeUndefined();
+    });
+
+    it('refuses anything but the two methods that exist', () => {
+      makeDue(ds, 'interpretation');
+      expect(() => svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        given: 'something', method: 'telepathy', capabilities: EQUIPPED,
+      })).toThrow(ValidationError);
+    });
+
+    // A REVEALED SENTENCE HAS NO METHOD, because nobody answered it. The same
+    // rule that drops `given` and `accuracy` drops this.
+    it('is absent from a reveal, whatever the client sends', () => {
+      makeDue(ds, 'interpretation');
+      const event = svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        revealed: true, method: 'spoken', capabilities: EQUIPPED,
+      });
+      expect(event.revealed).toBe(true);
+      expect(event.method).toBeUndefined();
+    });
+
+    it('is absent from a rung with no written answer at all', () => {
+      const event = svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition',
+        method: 'typed', capabilities: EQUIPPED,
+      });
+      expect(event.method).toBeUndefined();
+    });
+  });
+
   it('stamps last activity so rollover has something to measure from', () => {
     svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition' });
     expect(ds.readProgress('kckern', 'test-korean').last_activity)

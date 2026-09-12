@@ -381,6 +381,53 @@ the composer an oracle, and only `copy` does.
 The typing field asks for the in-page IME in the right script: the target for
 dictation, the source for interpretation, following focus with no keypress.
 
+**Interpretation can be answered by speaking.** A learner who understands a
+sentence perfectly can still be defeated by an English keyboard, and the record
+would then measure typing rather than comprehension — which is the one thing
+this rung exists to measure. So a *Speak* control sits beside Submit: the mic
+opens, the take goes for recognition, and the transcript lands **in the field,
+unsubmitted**. Sent straight off it would make every mistranscription the
+learner's own mistake, marked down for a word they said correctly and never
+told why; landing it in the field costs one tap and makes the machine's guess
+something they can see and correct.
+
+- **The response is still text.** Voice is an *input method*, not a different
+  kind of answer, so `entry.response` is unchanged and the attempt carries one
+  extra field, `method: typed | spoken`. A revealed sentence has no method,
+  because nobody answered it.
+- **The transcript replaces the field.** What is usually sitting there is an
+  abandoned half-attempt, and splicing a spoken sentence onto it makes a
+  sentence nobody said. The control says "Speak **instead**" once there is text
+  to lose. An edit of a transcript is still `spoken`; a transcript deleted to
+  nothing and retyped is `typed`.
+- **Not on dictation.** Entering the Korean script *is* that rung's task; a
+  learner who could say the sentence instead would be handing in a recording of
+  the one skill being drilled.
+- **Three visible states**, because the round trip is a model call: *Speak*
+  (quiet), a red *Stop* while the mic is open, and "Writing it down…" in the
+  accent while the transcript is in flight. A control that looked the same for
+  four seconds reads as broken to a child at a panel with no pointer. The mic
+  closes itself after 20s.
+- **Every failure is survivable and none is a dead end**, because the field
+  never goes away. No microphone on the device, or no AI gateway on the server
+  (`day.voiceAnswer: false`) — the control is *not drawn at all*, on the same
+  reasoning that keeps Hint off this rung: a button that cannot work is a dead
+  button. A mic that will not open, a failed request, or a transcript with
+  nothing in it — the control *stays and explains*, because it was honestly
+  offered and a second try may yet work.
+
+**⚠ Nothing derived from the expected answer reaches the recogniser, and the
+route is built so it cannot.** A Whisper prompt biases recognition: give it the
+English sentence and the model hears that sentence whatever the child said, and
+the rung measures nothing while looking perfect. `POST
+/users/:userId/transcribe` never touches the corpus — the study grant is
+checked for *scope* and loads nothing, `seq` is taken for the log line only, and
+the context handed to the transcription profile is exactly two fields resolved
+from closed sets (a language name from an allowlist, a register constant). The
+profile (`1_adapters/ai/transcriptionProfiles/language.mjs`) also repairs
+nothing: its cleanup pass may drop filler and collapse a stutter and must
+otherwise return the words as heard, wrong grammar and all.
+
 ### Recording
 
 One gesture runs the rung until the learner has spoken:
@@ -556,7 +603,14 @@ An attempt is one row in the day's log:
   practice: false          # true for a cold-start top-up pass
   given: 오늘 날씨가 좋아요   # text responses only
   accuracy: 0.92           # text responses only; recorded, never gating
+  method: typed            # text responses only; typed | spoken
 ```
+
+`method` says how the answer was produced — typed, or spoken and transcribed
+into the field before the learner submitted it. It is **absent** on rows written
+before the question was asked, and on any client that does not send it: a
+guessed method in an append-only log outlives whoever guessed it. It changes
+nothing about scoring or credit.
 
 A **revealed** attempt is the same row with one field instead of two:
 
@@ -598,9 +652,10 @@ All under `/api/v1/school/sentence-ladder`. Learner routes carry
 |---|---|---|
 | GET | `/courses` | valid corpora with their role bindings; an invalid corpus is omitted, not served broken |
 | GET | `/preview/:corpusId/day` | a non-recording guest day for teachers |
-| GET | `/users/:userId/day` | today's queue for this device's capabilities, the credit chain, blocked rungs and their needs, cues, rollover state |
-| POST | `/users/:userId/log` | one attempt — `seq`, `rung`, and either `given` (text rungs) or `revealed: true` (the learner asked to be shown the answer; never both) |
+| GET | `/users/:userId/day` | today's queue for this device's capabilities, the credit chain, blocked rungs and their needs, cues, `voiceAnswer`, rollover state |
+| POST | `/users/:userId/log` | one attempt — `seq`, `rung`, and either `given` (text rungs, optionally with `method: typed \| spoken`) or `revealed: true` (the learner asked to be shown the answer; never both) |
 | POST | `/users/:userId/recording` | raw audio for one outstanding recording step |
+| POST | `/users/:userId/transcribe` | raw audio of a spoken answer → `{ transcript, empty }`. Stores nothing and reads no corpus. 503 where the household has no AI gateway — the day says `voiceAnswer: false` in advance so no client has to find out this way |
 | PUT | `/users/:userId/pacing` | new sentences per day |
 | POST | `/users/:userId/roll` | ask for the next study day; refused with a reason when not earned |
 | GET | `/users/:userId/history` | the Review shelf, newest day first |
