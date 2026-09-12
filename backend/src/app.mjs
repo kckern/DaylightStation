@@ -3730,6 +3730,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService,
     eventBus,
     httpClient: axios,
+    daylightHost,
     logger: rootLogger.child({ module: 'play-sessions' }),
   });
   await playSessionTracking.start();
