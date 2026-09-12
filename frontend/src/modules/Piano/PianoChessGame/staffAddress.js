@@ -186,18 +186,21 @@ export function identifyStaffAddress(midiNotes, scheme = DEFAULT_STAFF_SCHEME) {
   const notes = [...new Set((Array.isArray(midiNotes) ? midiNotes : []).filter(Number.isFinite))];
   const pitch_classes = [...new Set(notes.map((n) => ((n % 12) + 12) % 12))].sort((a, b) => a - b);
   if (!scalarScheme(scheme)) {
-    const held = notes.slice().sort((a, b) => a - b).join(',');
-    for (let file = 0; file < scheme.roots.length; file += 1) {
-      for (let rank = 0; rank < scheme.qualities.length; rank += 1) {
-        const expected = [...new Set([
-          ...staffTokenNotes(scheme.roots[file]), ...staffTokenNotes(scheme.qualities[rank]),
-        ])].sort((a, b) => a - b);
-        if (expected.join(',') !== held) continue;
-        const square = `${FILES[file]}${RANKS[rank]}`;
-        return { square, candidates: [{ square, symbol: squareToStaffAddress(square, scheme).symbol, root_in_bass: true }], pitch_classes };
-      }
+    // Both hands, each naming its own axis. Resolved side by side rather than
+    // by comparing the whole held set against every (file, rank) pair: the
+    // pair-wise version demanded an EXACT MIDI set, so the right shape an
+    // octave off was refused here while the single-note path accepted it, and
+    // it could say nothing about a hand that was half right.
+    const matched = staffAxisMatch(notes, scheme);
+    if (!matched.fileComplete || !matched.rankComplete || matched.extra.length) {
+      return { square: null, candidates: [], pitch_classes };
     }
-    return { square: null, candidates: [], pitch_classes };
+    const square = `${FILES[matched.file]}${RANKS[matched.rank]}`;
+    return {
+      square,
+      candidates: [{ square, symbol: squareToStaffAddress(square, scheme).symbol, root_in_bass: true }],
+      pitch_classes,
+    };
   }
   if (notes.length !== 2) return { square: null, candidates: [], pitch_classes };
 
@@ -261,6 +264,73 @@ export function staffCandidateSquares(heldNotes, scheme = DEFAULT_STAFF_SCHEME) 
 }
 
 /**
+ * How many notes it takes to name a square in THIS scheme.
+ *
+ * One per axis when the cards carry single notes, two per axis for dyads, three
+ * for triads — read off the shapes rather than assumed, because assuming is how
+ * `chordCursor` came to hold a hard-coded 2 for every staff scheme. A dyad board
+ * needs four notes, so on that board a correct two-note right hand was resolved
+ * as if it were a whole address, failed, and came back as "that chord is not on
+ * the board" — a refusal for playing exactly half of the right answer, which is
+ * the one thing a child working hand by hand does constantly.
+ */
+export function staffMinNotes(scheme = DEFAULT_STAFF_SCHEME) {
+  const perAxis = (axis) => (Array.isArray(axis?.[0]) ? axis[0].length : 1);
+  return perAxis(scheme?.roots) + perAxis(scheme?.qualities);
+}
+
+/** Pitch-class set of a shape, as a sorted comma string, for comparison. */
+const pcKey = (notes) => [...new Set(notes.map((n) => ((n % 12) + 12) % 12))].sort((a, b) => a - b).join(',');
+
+/**
+ * Which axis slot, if any, this hand has completely named.
+ *
+ * The board asks for two hands and has only ever answered about both at once:
+ * a right hand that is exactly right earns nothing until the left one lands, so
+ * a child fishing for the left hand has no way to know the right one is done
+ * and re-guesses it. This reports the two halves independently.
+ *
+ * Matching is by PITCH CLASS within a side, which is the same forgiveness the
+ * single-note path has always had through `axisIndex` — a player reaching for
+ * the D column gets it whether they play the D on the staff or the D an octave
+ * up, and being marked wrong for the octave teaches nothing about the board.
+ * The multi-note path used to demand an exact MIDI set, so the same shape one
+ * octave off was refused on a dyad board and accepted on a single-note one.
+ *
+ * @returns {{file: number|null, rank: number|null, fileComplete: boolean,
+ *   rankComplete: boolean, extra: number[]}}
+ */
+export function staffAxisMatch(heldNotes, scheme = DEFAULT_STAFF_SCHEME) {
+  const empty = { file: null, rank: null, fileComplete: false, rankComplete: false, extra: [] };
+  const notes = [...new Set((heldNotes || []).filter(Number.isFinite))];
+  if (!notes.length) return empty;
+  const split = splitFor(scheme);
+  if (!split) return empty;
+
+  const above = notes.filter((note) => note >= split.boundary);
+  const below = notes.filter((note) => note < split.boundary);
+  const [fileSide, rankSide] = split.filesAbove ? [above, below] : [below, above];
+
+  const matchAxis = (side, axis) => {
+    if (!side.length) return null;
+    const key = pcKey(side);
+    const index = axis.findIndex((token) => pcKey(staffTokenNotes(token)) === key);
+    return index < 0 ? null : index;
+  };
+
+  const file = matchAxis(fileSide, scheme.roots ?? []);
+  const rank = matchAxis(rankSide, scheme.qualities ?? []);
+  return {
+    file,
+    rank,
+    fileComplete: file !== null,
+    rankComplete: rank !== null,
+    // Notes on a side that names nothing: the hand is wrong, not merely short.
+    extra: [...(file === null ? fileSide : []), ...(rank === null ? rankSide : [])].sort((a, b) => a - b),
+  };
+}
+
+/**
  * A staff scheme cannot collide with itself: every square is a distinct PAIR of
  * notes drawn from two disjoint sets, so distinctness is structural rather than
  * something to verify chord by chord. What can go wrong is an overlap between the
@@ -293,4 +363,5 @@ export function validateStaffScheme(scheme) {
 export default {
   DEFAULT_STAFF_SCHEME, SPLIT_MIDI, splitFor, isStaffScheme, squareToStaffAddress, staffToSquare,
   identifyStaffAddress, staffCandidateSquares, validateStaffScheme, axisIndex, noteLetter, noteName, staffTokenNotes,
+  staffMinNotes, staffAxisMatch,
 };

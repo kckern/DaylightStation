@@ -337,7 +337,10 @@ describe('the run route — the ways out', () => {
 
   it('sends a passed program step back to its program page', async () => {
     const { press } = renderAt(runUrl({ intent: 'challenge', program: 'hanon', step: 'hanon-01' }));
-    await screen.findByText('Play the first note to begin.');
+    // Wait on the run being ready for input, not on a line of copy: the
+    // challenge framing does not draw the practice screen's "Play the first
+    // note to begin." prompt, so waiting for that text waited forever.
+    await waitFor(() => expect(document.querySelector('[data-phase="ready"]')).toBeTruthy());
 
     press(60);
     press(62);

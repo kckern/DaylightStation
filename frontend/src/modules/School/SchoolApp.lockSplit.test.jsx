@@ -81,7 +81,10 @@ describe('locked kiosk split home', () => {
     // the first, so a synchronous query here races the second — it failed at
     // 110ms in a full sweep (2026-09-06) and every solo run won the race.
     // Wait for the count itself, which is the thing the second stage decides.
-    expect(await screen.findByText('1 of 2')).toBeInTheDocument();
+    // It is no longer PRINTED — the bar's filled segments are the count, and
+    // the words under them were costing the day's discs their height — so ask
+    // the progressbar, which carries it for screen readers either way.
+    expect(await screen.findByLabelText('1 of 2 done')).toBeInTheDocument();
   });
 
   it('swaps sides every 90s on an idle panel, without remounting the keypad', async () => {

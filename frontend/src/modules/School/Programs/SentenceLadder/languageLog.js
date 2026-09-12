@@ -48,7 +48,7 @@ export const languageLog = {
   // store is a 7-day disk cap shared with every other household subsystem.
   programStep: (detail, data) => emit('program', detail, data, 'debug'),  // day-loading | tab
   programError: (detail, data) => emit('program', detail, data, 'error'), // day-failed
-  rung: (detail, data) => emit('rung', detail, data, 'debug'),           // enter | selected | complete | held | replayed | advanced | practice
+  rung: (detail, data) => emit('rung', detail, data, 'debug'),           // enter | selected | complete | held | replayed | advanced | practice | stopped | idle-replay
   /**
    * The one rung fact the log STORE keeps. Everything else in this category is
    * `debug`, and debug never reaches the store — it is dropped at ingest,

@@ -25,6 +25,13 @@ export function cuesFromConfig(config) {
     // while looking at their hands. `!== false` like the rest, so a household
     // silences it explicitly rather than by omission.
     sound: feedback.sound !== false,
+    // GHOST NOTES: the keys currently down, drawn as pencil on every rim card
+    // and every staff in range. Default ON. Without them the board answers only
+    // "yes" or "that chord is not on the board", so a child walking up the
+    // scale toward a note learns nothing from getting closer — which is the
+    // whole of what reading practice is. Config can silence them for a player
+    // who wants the unaided drill.
+    ghostNotes: feedback.ghost_notes !== false,
   };
 }
 

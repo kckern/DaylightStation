@@ -84,12 +84,70 @@
    height back out. */
 .reading-credit__avatar {
   --avatar: clamp(3.25rem, 52cqw, 6.5rem);
+  /* Room for the ring OUTSIDE the portrait: the face keeps its full diameter
+     and the arc is drawn around it, rather than the portrait shrinking to make
+     space for its own progress bar. */
+  --ring-w: max(3px, calc(var(--avatar) * 0.075));
+  --ring-gap: max(2px, calc(var(--avatar) * 0.045));
   width: var(--avatar);
   height: var(--avatar);
   flex: 0 0 auto;
   display: grid;
   place-items: center;
   line-height: 0;
+  position: relative;
+  /* The ring is drawn OUTSIDE this box (negative inset, so the portrait keeps
+     its full diameter), which means the box has to reserve the space itself or
+     the arc is laid over whatever sits next to it — which on a narrow rail is
+     the child's own name, a quarter-inch below. */
+  margin: calc(var(--ring-gap) + var(--ring-w));
+}
+
+/* ── How far through THIS story ──────────────────────────────────────────── */
+
+/* THE RING ROUND THE FACE. The rail's one proportion, and the largest graphic
+   on it: it used to be a conic sweep inside a 1.4rem pip, where a one-book day
+   left a single small circle being both "which book" and "how far through" and
+   neither was legible from a sofa. Wrapped round the portrait it is four times
+   the size and says whose story it is at the same time.
+
+   Absolutely positioned and OUTSIZED so the portrait keeps its diameter; the
+   grid centres the face and this sits over it, larger, with nothing but air
+   between them. `pointer-events: none` because it is a readout on a panel
+   nobody touches, and a stray hit target on a TV is a thing that can steal
+   focus. */
+.reading-credit__ring {
+  position: absolute;
+  /* Negative inset by the gap plus the stroke: the arc's OUTER edge lands that
+     far outside the portrait. */
+  inset: calc(-1 * (var(--ring-gap) + var(--ring-w)));
+  width: auto;
+  height: auto;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.reading-credit__ring-track,
+.reading-credit__ring-sweep {
+  fill: none;
+  /* The viewBox is 100 units wide however big the box renders, so the stroke is
+     stated in those units and scales with the portrait. */
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+
+/* What is left to go. Faint, but a RING rather than nothing: an arc with no
+   track behind it does not read as a proportion, it reads as a smear. */
+.reading-credit__ring-track {
+  stroke: color-mix(in srgb, var(--ink, #e9dfc8) 22%, transparent);
+}
+
+/* What has been read. The pips' own amber, so the two halves of "how far" —
+   through this book, through today — are visibly the same statement. */
+.reading-credit__ring-sweep {
+  stroke: #ffd479;
+  /* No transition: this is driven at 10 Hz and a tween between two samples that
+     are 100ms apart buys nothing and fights the next one. */
 }
 
 /* `ProfileAvatar` is the household's own round avatar, shared with the reading
@@ -102,7 +160,10 @@
   flex: 0 0 auto;
   border-radius: 50%;
   object-fit: cover;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ink, #e9dfc8) 55%, transparent);
+  /* The portrait's own rim stays, quieter than it was: the progress ring now
+     sits just outside it, and two bright concentric circles read as a target
+     rather than as a face with a readout around it. */
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ink, #e9dfc8) 35%, transparent);
 }
 
 .reading-credit__name {

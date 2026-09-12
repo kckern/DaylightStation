@@ -3124,6 +3124,13 @@
     // The pins size themselves from THIS box's height (container units
     // below), so it has to be a size container.
     container-type: size;
+    // This partition has NO title, unlike its two neighbours, so the shared
+    // "title on the top line, content centred beneath it" rule above has
+    // nothing to skip past and would centre the BAR instead of the pins.
+    // Here the pins are the content and they get the whole box.
+    justify-content: center;
+    > :nth-child(2) { margin-top: 0; }
+    > :last-child { margin-bottom: 0; }
   }
   // Anchored to the rail's padded box, then pulled down by half its own height
   // so it sits exactly astride the avatar's bottom edge. `translate(-50%, 50%)`
@@ -3180,8 +3187,12 @@
     // `--stack` is Σ of the per-row pitch factors (√3/2 for a nesting pair,
     // 1 for a pair that cannot nest — see `pitchFactors`), so the stack's
     // height is disc·(1 + stack) + gap·stack.
-    // What the title, the meter and the gaps between them take.
-    --room-h: calc(100cqh - 3.7rem);
+    // What the bar and the gap above it take. This was 3.7rem when the
+    // partition also carried a "Today" heading and the bar carried "2 of 7"
+    // underneath — two lines of type that repeated what the pins and the card's
+    // own green already said, and charged the pins ~2.5rem of height for it.
+    // Both are gone; the discs got the height.
+    --room-h: calc(100cqh - 1.2rem);
     --disc-by-height: calc((var(--room-h) - var(--disc-gap) * var(--stack, 0)) / (1 + var(--stack, 0)));
     --disc-by-width: calc((100cqw - (var(--base, 1) - 1) * var(--disc-gap)) / var(--base, 1));
     --disc: min(var(--disc-cap), var(--disc-by-height), var(--disc-by-width));
@@ -3282,12 +3293,14 @@
     opacity: 0.75; letter-spacing: 0.03em;
     font-variant-numeric: tabular-nums;
   }
-  // THE METER: one segment per assignment, filled as each is done, the words
-  // beneath. Green segments are the day's done discs restated as a bar a
-  // doorway can read; the hollow ones are what is left.
+  // THE METER: one segment per assignment, filled as each is done. Green
+  // segments are the day's done discs restated as a bar a doorway can read; the
+  // hollow ones are what is left. No words under it — the segments are the
+  // count, and the count is on the progressbar's aria-label for anyone who
+  // needs it read out.
   &__meter {
     flex: none; width: min(100%, 11rem);
-    display: flex; flex-direction: column; align-items: center; gap: 0.25rem;
+    display: flex; flex-direction: column; align-items: center;
   }
   &__bar {
     width: 100%; height: clamp(0.4rem, 1.1vh, 0.6rem);
@@ -3299,20 +3312,10 @@
   }
   &__status--none { text-transform: none; letter-spacing: normal; font-weight: 600; opacity: 0.5; }
 
-  // The chip that REPLACES the count at 100%. Green is already carrying the
-  // message on the card; this says it in a word, because green is a
-  // convention a child has to be taught and a word is not. One word, since
-  // it sits under a column four pins wide.
-  &__done-chip {
-    flex: 0 0 auto;
-    padding: 0.2em 0.7em;
-    border-radius: 999px;
-    background: var(--school-board-done);
-    color: var(--school-board-done-ink);
-    font-size: clamp(0.75rem, 1.8vh, 1rem); font-weight: 800;
-    text-transform: uppercase; letter-spacing: 0.04em;
-    white-space: nowrap; line-height: 1.3;
-  }
+  // (The "DONE" chip that used to replace the count at 100% is gone. A
+  // finished row already turns green end to end — nameplate, card and every
+  // disc — so the chip was a third statement of the same fact, and it was
+  // taking the height from the discs that make the first one.)
 
   // RINGS THIS WEEK. Sits under the "x of y" readout in the card's right
   // column: a second, independent fact (how much the child MOVED) beside the

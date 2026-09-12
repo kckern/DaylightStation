@@ -32,7 +32,7 @@ import OpponentRosterSheet from '../game-platform/opponent/OpponentRosterSheet.j
 import { cuesFromConfig } from './chessCues.js';
 import ChessSettingsPanel from './ChessSettingsPanel.jsx';
 import { CHORD_QUALITIES, DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
-import { isStaffScheme } from './staffAddress.js';
+import { isStaffScheme, splitFor, staffAxisMatch } from './staffAddress.js';
 import StaffNoteLabel from '../game-platform/families/addressed-board/StaffNoteLabel.jsx';
 import { candidateSquares } from './chordCandidates.js';
 import { destinationBadges } from './chessBadges.js';
@@ -41,7 +41,7 @@ import { DOUBLE_WINDOW_MS } from './chordSelection.js';
 import {
   REJECTION_MESSAGES, applySquare, capturedPieces,
   createChessGameState, isPlayerTurn, projectChessAuthorityState, takeMoveBack,
-  playerTurnOf, schemeForPly,
+  schemeForPly,
 } from './chessGameState.js';
 import { managedAddressingAt } from '../game-platform/addressing/managedAddressing.js';
 import { useChessAuthority } from './useChessAuthority.js';
@@ -202,12 +202,14 @@ export function PianoChessGame({
   // Scheme and cadence resolve together, through the addressing layers, so the
   // board and its shuffle can never come from two different opinions of the
   // config.
-  const completedPlayerMoves = playerTurnOf(game.history.length, playerColor);
+  // FROZEN FOR THE GAME. This used to take `completedPlayerMoves` as well, so
+  // the memo recomputed on every move and the board got harder as the child
+  // played it — see managedAddressing.js. The pressure is settled when the game
+  // starts and the only thing that can change it is starting another one.
   const managedAddressing = useMemo(() => managedAddressingAt(addressingPolicy?.config, {
     learnerId: addressingPolicy?.learnerId,
     completedGames: addressingPolicy?.completedGames,
-    completedPlayerMoves,
-  }), [addressingPolicy, completedPlayerMoves]);
+  }), [addressingPolicy]);
   const loadedAddressing = useMemo(
     () => (chessConfig ? chessAddressingFor(chessConfig, scheme, gameSeed, managedAddressing) : null),
     [chessConfig, scheme, gameSeed, managedAddressing],
@@ -576,7 +578,6 @@ export function PianoChessGame({
       ? chessAddressingFor(chessConfigRef.current, scheme, nextSession.seed, managedAddressingAt(addressingPolicy?.config, {
         learnerId: addressingPolicy?.learnerId,
         completedGames: addressingPolicy?.completedGames,
-        completedPlayerMoves: 0,
       }))
       : null;
     const nativeInitial = createChessGameState({
@@ -687,19 +688,81 @@ export function PianoChessGame({
   // The board takes plain strings; translating chords into them is this layer's
   // job, which is why ChessBoard never learns what a chord is.
   const minNotes = minNotesFor(liveScheme);
+
+  /**
+   * The held notes, split into the hand each one belongs to.
+   *
+   * THE RIM ONLY EVER SHOWED THE QUESTION. `SvgStaffRenderer` has always been
+   * able to draw the keys currently down as ghost noteheads and nothing ever
+   * passed them, so the board's whole reply to a wrong press was "that chord is
+   * not on the board" and a child walking up the scale toward a note learned
+   * nothing from getting closer.
+   *
+   * Split rather than handed over whole, for two reasons. A note belongs to one
+   * axis — the scheme's own boundary decides which — so a bass note has no
+   * business appearing on a treble card. And these feed sixteen cards that are
+   * props of a MEMOIZED board: the comment below is there because rebuilding
+   * them per render reconciled all 64 squares on every note event. Splitting
+   * means a left hand at the keys leaves all eight treble cards on one stable
+   * empty array, so they do not reconcile at all.
+   */
+  const { heldFileNotes, heldRankNotes } = useMemo(() => {
+    if (!reading || !cues.ghostNotes || !heldNotes.length) {
+      return { heldFileNotes: EMPTY_ARRAY, heldRankNotes: EMPTY_ARRAY };
+    }
+    const split = splitFor(liveScheme);
+    if (!split) return { heldFileNotes: EMPTY_ARRAY, heldRankNotes: EMPTY_ARRAY };
+    const above = heldNotes.filter((note) => note >= split.boundary);
+    const below = heldNotes.filter((note) => note < split.boundary);
+    const [files, ranks] = split.filesAbove ? [above, below] : [below, above];
+    return {
+      heldFileNotes: files.length ? files : EMPTY_ARRAY,
+      heldRankNotes: ranks.length ? ranks : EMPTY_ARRAY,
+    };
+  }, [reading, cues.ghostNotes, heldNotes, liveScheme]);
+
+  /**
+   * Which hand, if either, is already exactly right.
+   *
+   * A square takes two hands and the board used to answer about both at once,
+   * so a correct right hand earned nothing until the left one landed and got
+   * thrown away and guessed again on every attempt. The card that landed now
+   * goes green and STAYS green while the other hand is worked.
+   */
+  const axisMatch = useMemo(
+    () => (reading && heldNotes.length ? staffAxisMatch(heldNotes, liveScheme) : null),
+    [reading, heldNotes, liveScheme],
+  );
+
   // In the reading vocabulary the rim IS the lesson: a note drawn on the staff
   // the player reads it from. ChessBoard renders labels as children, so a node
   // costs it nothing to accept.
   // Memoized because these are props of a memoized board: rebuilt every render,
   // they defeated its bail-out on identity alone, and all 64 squares reconciled
   // on every note event as a result.
+  const lockedFile = axisMatch?.fileComplete ? axisMatch.file : null;
+  const lockedRank = axisMatch?.rankComplete ? axisMatch.rank : null;
   const fileLabels = useMemo(() => (reading
-    ? liveScheme.roots.map((midi) => <StaffNoteLabel key={Array.isArray(midi) ? midi.join('-') : midi} midi={midi} />)
-    : liveScheme.roots), [reading, liveScheme]);
+    ? liveScheme.roots.map((midi, index) => (
+      <StaffNoteLabel
+        key={Array.isArray(midi) ? midi.join('-') : midi}
+        midi={midi}
+        held={heldFileNotes}
+        locked={index === lockedFile}
+      />
+    ))
+    : liveScheme.roots), [reading, liveScheme, heldFileNotes, lockedFile]);
   const rankLabels = useMemo(() => (reading
-    ? liveScheme.qualities.map((midi) => <StaffNoteLabel key={Array.isArray(midi) ? midi.join('-') : midi} midi={midi} />)
+    ? liveScheme.qualities.map((midi, index) => (
+      <StaffNoteLabel
+        key={Array.isArray(midi) ? midi.join('-') : midi}
+        midi={midi}
+        held={heldRankNotes}
+        locked={index === lockedRank}
+      />
+    ))
     : liveScheme.qualities.map((quality) => CHORD_QUALITIES[quality]?.label || 'maj')),
-  [reading, liveScheme]);
+  [reading, liveScheme, heldRankNotes, lockedRank]);
 
   // The marks channel is empty until a gesture asks. "Show legal moves" means
   // the destinations of the piece being held — or, when none is held yet,
@@ -875,6 +938,9 @@ export function PianoChessGame({
               settling={heldNotes.length >= minNotes && candidates.length > 0 && !cursor}
               minNotes={minNotes}
               isReading={reading}
+              half={axisMatch && !axisMatch.extra.length
+                && axisMatch.fileComplete !== axisMatch.rankComplete
+                ? (axisMatch.fileComplete ? 'file' : 'rank') : null}
             />
             {onboardCopy && (
               <aside className="chess-onboard" key={onboardStep}>

@@ -1,5 +1,5 @@
 import { identifyChord } from './chordAddress.js';
-import { isStaffScheme } from './staffAddress.js';
+import { isStaffScheme, staffMinNotes } from './staffAddress.js';
 
 /**
  * Turning hands into squares.
@@ -21,10 +21,28 @@ export const DEFAULT_SETTLE_MS = 140;
 export const MIN_CHORD_NOTES = 3;
 
 /**
- * How many notes it takes to name a square, which depends on the vocabulary:
- * a chord needs three, a staff address is exactly two — one note on each staff.
+ * How many notes it takes to name a square, which depends on the vocabulary AND,
+ * for a staff scheme, on how many notes its cards carry.
+ *
+ * This was a flat `2` for every staff scheme. A dyad board needs four notes and
+ * a triad board six, so on those boards a child who played a correct two-note
+ * right hand and let go had it resolved as a whole address, found to name no
+ * square, and refused — `unrecognised_chord`, the same message as playing
+ * nonsense. Being told off for playing exactly half of the right answer is the
+ * worst possible reading of what they just did, and half of the right answer is
+ * what hand-by-hand practice looks like.
  */
-export const minNotesFor = (scheme) => (isStaffScheme(scheme) ? 2 : MIN_CHORD_NOTES);
+export const minNotesFor = (scheme) => (isStaffScheme(scheme) ? staffMinNotes(scheme) : MIN_CHORD_NOTES);
+
+/*
+ * There is deliberately no "was that one correct hand?" check on the release
+ * path. Once `minNotesFor` counts the notes a card actually carries, a single
+ * hand is BELOW the minimum on every scheme — two of four on a dyad board,
+ * three of six on a triad board — so it falls out through the note-count gate
+ * below and produces no event at all, which is the behaviour we want. The bug
+ * was never a missing special case; it was a note count that said 2 when the
+ * board needed 4, which made a correct half look like a whole wrong answer.
+ */
 
 /**
  * The take-it-back gesture: any note and the same note an octave away.
