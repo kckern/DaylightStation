@@ -16,24 +16,25 @@
  *    indistinguishable from an idle device, so health is observable and a
  *    watchdog can alarm on staleness rather than on nothing at all.
  *
- * Timers and clocks are injected: this layer owns no globals.
+ * Timing goes through `IApplicationScheduler` and the clock is injected: this
+ * layer owns no globals.
  */
 export class PlaySessionTracker {
   #devices; #source; #intents; #record; #intervalMs;
-  #setTimer; #clearTimer; #now; #logger;
-  #timer = null; #running = false;
+  #scheduler; #now; #logger;
+  #cancel = null; #running = false;
   #inFlight = new Set();
   #health = new Map();
 
   constructor({
     devices = [], observationSource, intents, recordObservation,
-    intervalMs, setTimer, clearTimer, now, logger = console,
+    intervalMs, scheduler, now, logger = console,
   }) {
     if (!observationSource?.observe) throw new Error('PlaySessionTracker requires an observationSource');
     if (!recordObservation?.execute) throw new Error('PlaySessionTracker requires recordObservation');
     if (!Number.isFinite(intervalMs) || intervalMs <= 0) throw new Error('PlaySessionTracker requires a positive intervalMs');
-    if (typeof setTimer !== 'function' || typeof clearTimer !== 'function') {
-      throw new Error('PlaySessionTracker requires injected setTimer/clearTimer');
+    if (typeof scheduler?.after !== 'function') {
+      throw new Error('PlaySessionTracker requires an injected scheduler with after()');
     }
     if (typeof now !== 'function') throw new Error('PlaySessionTracker requires an injected now()');
     this.#devices = devices;
@@ -41,8 +42,7 @@ export class PlaySessionTracker {
     this.#intents = intents || null;
     this.#record = recordObservation;
     this.#intervalMs = intervalMs;
-    this.#setTimer = setTimer;
-    this.#clearTimer = clearTimer;
+    this.#scheduler = scheduler;
     this.#now = now;
     this.#logger = logger;
   }
@@ -61,8 +61,8 @@ export class PlaySessionTracker {
 
   stop() {
     this.#running = false;
-    if (this.#timer !== null) this.#clearTimer(this.#timer);
-    this.#timer = null;
+    this.#cancel?.();
+    this.#cancel = null;
     this.#logger.info?.('play.tracker.stopped', {});
     return this;
   }
@@ -70,13 +70,13 @@ export class PlaySessionTracker {
   #schedule() {
     if (!this.#running) return;
     // The callback RETURNS its promise so a tick is awaitable — by a test with
-    // fake timers, and by any future shutdown that wants to drain in flight
+    // a fake scheduler, and by any future shutdown that wants to drain in-flight
     // work rather than abandon it mid-probe.
-    this.#timer = this.#setTimer(() => this.tick()
+    this.#cancel = this.#scheduler.after(this.#intervalMs, () => this.tick()
       .catch((error) => {
         this.#logger.error?.('play.tracker.tick_failed', { error: error.message });
       })
-      .finally(() => this.#schedule()), this.#intervalMs);
+      .finally(() => this.#schedule()));
   }
 
   /** One pass over every watched device. Safe to call directly (tests, probes). */
