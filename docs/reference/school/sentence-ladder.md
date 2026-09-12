@@ -333,6 +333,23 @@ nothing.** A wrong dictation still graduates the sentence; the diff waits on
 the Review shelf. School's rule is "no second gate anywhere", and this program
 keeps it.
 
+**`copy` mode's input gate is not a second gate.** The target is on screen and
+the child is tracing it, so the IME refuses a keystroke that makes the syllable
+in flight stop being a viable prefix of the syllable being traced, and settles
+each syllable the moment it is complete — 오 locks as its ㅗ lands, so the ㄴ of
+오늘 starts 늘 instead of flashing 온 (`School/ime/syllable.js`). That is an
+input constraint, the way a worksheet prints a shape to trace over, and it
+changes nothing about grading: accuracy is still recorded and still gates
+nothing, and a refused keystroke is never written down at all.
+
+**It is `copy` only, and that restraint is the point.** In `listen` the target
+is hidden, and the program knows it just the same — but a gate there would
+repair a child who misheard 오늘 as 온... into the right answer without anyone
+seeing it happen, and the record would then say they heard it correctly. That
+is a session that looks like it is working perfectly while measuring nothing.
+`listen` keeps the plain automaton; the gate is unreachable unless a rung hands
+the composer an oracle, and only `copy` does.
+
 The typing field asks for the in-page IME in the right script: the target for
 dictation, the source for interpretation, following focus with no keypress.
 
