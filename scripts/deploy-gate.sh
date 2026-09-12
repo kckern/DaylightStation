@@ -18,6 +18,14 @@
 # garage was idle and the Portal was quiet and both halves passed honestly; the
 # gate simply had no idea the piano kiosk existed. Hence section 3.
 #
+# On 2026-09-12 it was the fourth place. The gate reported CLEAR while someone
+# stood at the garage display pressing their finger to the reader over and over,
+# trying to release an emergency lockdown that `elizabeth` had committed four
+# minutes earlier. Every existing check passed honestly: there was no workout,
+# no roster and no video — because a person locked out of the app cannot start
+# one. "No session" had been standing in for "nobody there", and a lockdown is
+# exactly the state where those two come apart. Hence section 4.
+#
 # Exit 0 = clear to deploy. Exit 1 = someone is using it; WAIT.
 #
 #   ./scripts/deploy-gate.sh && ./scripts/build-daylight.sh && sudo deploy-daylight
@@ -67,9 +75,41 @@ if ! "$(dirname "$0")/piano-kiosk-idle.sh"; then
   blocked=1
 fi
 
+# ── 4. Garage emergency lockdown ───────────────────────────────────────────
+# An emergency lockdown means a person is at the garage display and CANNOT use
+# it — so sections 1-3 are all quiet for the one reason that should block
+# hardest. Restarting mid-ceremony drops the release scan they are part-way
+# through and hands them a dead screen on top of a locked one.
+#
+# This does not leave the gate permanently red: a lock carries its own
+# `lockedUntil` and expires on its own, so the block lifts without anyone
+# doing anything.
+EMERGENCY_URL="${DAYLIGHT_EMERGENCY_URL:-http://localhost:3111/api/v1/fitness/emergency}"
+emergency="$(curl -s --max-time 5 "$EMERGENCY_URL" 2>/dev/null)"
+
+if [ -z "$emergency" ]; then
+  # Fail closed, as everywhere else here: "I could not ask" is not "nobody is
+  # there". If the app is down this is moot anyway — there is nothing running
+  # to interrupt, and the owner override exists for that case.
+  echo "BLOCKED: cannot read the emergency lock state ($EMERGENCY_URL unreachable)"
+  blocked=1
+elif printf '%s' "$emergency" | grep -q '"locked":[[:space:]]*true'; then
+  until_ts="$(printf '%s' "$emergency" | grep -oE '"lockedUntil":[0-9]+' | grep -oE '[0-9]+')"
+  by="$(printf '%s' "$emergency" | grep -oE '"lockedBy":"[^"]*"' | cut -d'"' -f4)"
+  when=""
+  [ -n "${until_ts:-}" ] && when=" until $(date -d "@$until_ts" '+%H:%M:%S' 2>/dev/null || echo "$until_ts")"
+  echo "BLOCKED: the garage is under an emergency lockdown (by ${by:-unknown}${when})"
+  blocked=1
+fi
+
+# Release attempts are human-driven by definition, so a recent one means someone
+# is standing at the reader right now even if the lock has since cleared.
+release="$(printf '%s' "$garage" | grep -cE 'emergency\.release_(requested|hold|scan_start|denied)')"
+[ "$release" -gt 0 ] && { echo "BLOCKED: someone is working the emergency release ($release events in $GARAGE_WINDOW)"; blocked=1; }
+
 if [ "$blocked" -ne 0 ]; then
   echo "GATE BLOCKED — do not deploy. Wait and re-run."
   exit 1
 fi
-echo "GATE CLEAR (garage idle; Portal idle; piano kiosk idle)"
+echo "GATE CLEAR (garage idle; Portal idle; piano kiosk idle; no emergency lock)"
 exit 0
