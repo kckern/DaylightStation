@@ -52,6 +52,9 @@ This is the reuse inventory. Every path below was read, not assumed.
 | Per-agent memory config (`last_messages`, working memory, observational) | `data/system/config/agents.yml` | Yes |
 | School program pattern end to end: launcher → service → enrollment validator → frontend program component → per-learner records | `SentenceLadderProgramLauncher.mjs` / `LanguageProgramLauncher.mjs`, `LanguageStudyService.mjs`, `SchoolProgramEnrollmentValidators.mjs`, `frontend/src/modules/School/Programs/SentenceLadder/` | **Yes** — copy the shape exactly |
 | Language corpus domain: bands, scope ranges, named units, day queue, rollover | `backend/src/2_domains/school/language/` | Partially — corpus/units/scope ideas transfer; sentence-pair mechanics do not |
+| **In-page Hangul IME** — jamo automaton, field composer, app-wide provider, F6/globe toggle, `data-ime="off"` opt-out | `frontend/src/modules/School/ime/` (`hangul.js`, `fieldComposer.js`, `HangulTypingProvider.jsx`) | **Yes, and it is already mounted around the whole School app** — see §10 |
+| Hardware-keyboard detection (mouse OR fleet registry OR a real keypress; never says "no") | `frontend/src/lib/hardwareKeyboard.js`, `frontend/src/hooks/useHardwareKeyboard.js` | Yes |
+| Per-device capability gating — which rungs exist on this panel, with a grown-up override in local storage | `.../SentenceLadder/useCapabilities.js`, `DeviceSettings.jsx` | Yes — Pen Pal should gate on `textInput` the same way |
 | Target-language audio serving (prompt audio, recorded takes, cues) | `backend/src/3_applications/school/LanguageAudioResource.mjs` | Yes, for pre-generated lines |
 | Text-to-speech API | `backend/src/4_api/v1/routers/tts.mjs`, `backend/src/3_applications/tts/SpeechSynthesis.mjs` | Yes — voice inventory per language needs confirming before relying on it |
 | Emulator saves for Pokémon Red/Yellow, per learner | `media/emulation/gb/saves/{learner}/pokemon-red.srm` (32 KB Gen-1 SRAM) | **Raw material only** — see §8 |
@@ -351,11 +354,20 @@ The gate is explicitly **not** a grader. Its instructions cap it: name at most t
 
 ## 10. Surfaces and input — the risk nobody thinks about until demo day
 
-Pen Pal requires **typing in the target language**, which is different from every existing School program.
+Pen Pal requires **typing in the target language**. Sentence Ladder already solved this, and Pen Pal inherits the solution rather than inventing one.
 
-- On the **Portal tablet** (FullyKiosk WebView), typing Korean requires a Korean IME installed and selectable in the Android keyboard settings. Unverified. If it is missing, the program is unusable on the surface the children actually use.
-- **Decision: ship an in-app on-screen keyboard for the target language's script**, rendered by the app, not the OS. For Korean that is a 2-set Hangul keyboard with jamo composition — a known, bounded problem, and it removes the dependency on device IME configuration entirely. It also makes the LexiconPanel's tap-to-insert consistent with how the rest of the text is entered.
-- The existing rule that **school surfaces stay hands-free at every step** still binds the *navigation*: arriving at Pen Pal, starting a conversation, and ending it must all work from the keyboard/remote. Only the composing step requires touch.
+**Korean input is done.** The Portal's WebView has no IME for its bonded physical keyboard, so School composes Hangul itself: `modules/School/ime/` is a jamo automaton (`hangul.js`) driving a real `<input>`/`<textarea>` through `fieldComposer.js`, wrapped around the entire School app by `HangulTypingProvider`. What Pen Pal has to do to get Korean typing is **declare the composer field's language** — the provider flips mode when a field asks for it, exactly as the dictation rung does. Nothing new is built. Three consequences:
+
+- **There is no on-screen keyboard, and Pen Pal must not add one.** The composer maps a *physical* keyboard; the globe key (arriving as `F6`) toggles EN/KR, and the mode is deliberately not persisted because the Portal is shared between learners.
+- **Declare opt-outs, never infer them.** The lexicon sidebar's source-language search box must carry `data-ime="off"` or declare `EN`, or a learner searching for "backpack" will type Hangul into it.
+- **Gate on capability, do not assume.** `useCapabilities.js` + `lib/hardwareKeyboard.js` already answer "is there a keyboard here, and which scripts can it produce". Pen Pal's enrollment is unusable on a device with `textInput: []`, and should say so on the card rather than opening a composer nobody can type into — the same failure the capability system was built to prevent.
+- **P4 shrinks accordingly.** It is now the LexiconPanel and tap-to-insert alone.
+
+**One promotion is required if L2 leaves School.** `HangulTypingProvider` currently lives under `modules/School/ime/` and is mounted by `SchoolApp`. The moment a glossed chat renders outside School, the provider has to move up beside the other shared UI — it is already written to be app-wide (it wraps a whole app, acts only on free-text fields, and passes everything through in EN mode); only its location is School's. Move it when the second consumer appears, not before.
+
+Remaining surface notes:
+
+- The rule that **school surfaces stay hands-free at every step** still binds the *navigation*: arriving at Pen Pal, starting a conversation and ending it must all work from the keyboard/remote. Only composing requires typing.
 - TTS playback of the persona's line: use the existing `/api/v1/tts` route. **Confirm a Korean voice exists before promising it**; if not, ship silent v1 and add audio as a follow-up. Audio must obey the master volume binding, as all school audio does.
 
 ---
@@ -368,7 +380,7 @@ Pen Pal requires **typing in the target language**, which is different from ever
 | **P1 — Lexicon** | L0 service: port, SQLite adapter, build step, one language (KO), overlay merge, `GET /api/v1/lexicon` | `lookup` returns glosses both directions in < 10 ms; an overlay entry beats the base entry |
 | **P2 — Glossed reading** | `GlossedMessage` + `TokenPeek`; `components` prop on `AgentChatSurface`; a static fixture conversation at `/dev/…` | Tapping any token peeks; a message with `tokens: []` still renders correctly |
 | **P3 — The agent** | `ConversationPartnerAgent`, persona/topic/level file format, structured output via `execute` + `outputSchema`, one persona (Prof. Oak) with no tools | A real turn comes back glossed and schema-valid; a forced schema failure degrades to plain text |
-| **P4 — Composing** | `LexiconPanel`, tap-to-insert, in-app Hangul keyboard | A learner can produce a Korean sentence with no OS IME |
+| **P4 — Composing** | `LexiconPanel`, tap-to-insert; declare the composer field's language to the existing Hangul IME; `data-ime="off"` on the source-language search box | A learner types a Korean sentence on the Portal, and the English search box stays English |
 | **P5 — The gate** | `ProofreadGate`, three policy modes, per-item accept, transcript records original + sent + accepted | A clean sentence passes with no modal in `suggest` mode |
 | **P6 — School wrapper** | `pen-pal` enrollment validator, launcher, program component, day credit, records, teacher visibility | A grown-up can enrol a child from the Teacher console and the child can reach it from the Portal |
 | **P7 — Journey knowledge** | SRAM ingestor, `JourneyProjection`, `lookupJourney` tool, topic overlay for species names | Oak asks about a badge the child actually earned |
@@ -383,17 +395,18 @@ P0–P2 are useful on their own: they make any agent in the app able to speak a 
 2. **One registered agent id** (`conversation-partner`), persona supplied by request context.
 3. **Non-streaming structured turns** with a typing indicator; do not teach `streamExecute` to validate schemas.
 4. **`text` is authoritative, tokens are an overlay** — malformed glosses degrade, never break.
-5. **In-app script keyboard**, not the device IME.
+5. **Reuse School's in-page Hangul IME** (`modules/School/ime/`) — declare the field's language; build no keyboard. Promote the provider out of `modules/School/` only when a glossed chat first renders outside School.
 6. **Journey knowledge is a snapshot-diff projection**, not an event log; the agent may not assert unrecorded events.
 7. **Program name `pen-pal`**; substrate names (`lexicon`, `annotated-message`, `conversation-partner`) are the durable ones.
 8. **The proofread gate uses a cheaper model** than the conversation agent, and is capped at three observations per turn.
 
 ## 13. Questions that genuinely change the build
 
-These are the only ones worth a decision from the user before P1 starts:
+One remains:
 
-- **Which base Korean lexicon**, and is its licence acceptable for a household-only, non-redistributed deployment? Everything in P1 hangs on the answer, and the wrong choice is expensive to unpick.
-- **Does the target device have a Korean IME?** If yes, P4 shrinks to the LexiconPanel alone. Ten minutes with the tablet answers it and may remove a whole phase.
+- **Which base Korean lexicon**, and is its licence acceptable for a household-only, non-redistributed deployment? Everything in P1 hangs on the answer, and the wrong choice is expensive to unpick. Candidates and their trade-offs are in §5.
+
+*Closed 2026-09-11:* the Korean-input question. Sentence Ladder already ships an in-page Hangul IME and a keyboard-presence detector, and the Portal has a Korean/English keyboard bonded to it. Pen Pal declares a field language and gets composition; §10 has the details.
 
 Everything else in this document is decided.
 
@@ -407,3 +420,5 @@ Everything else in this document is decided.
 | A persona breaks character or drifts above level | Level constraints are prompt-enforced *and* post-checked: a reply whose token count exceeds the level ceiling is regenerated once. |
 | The layering rots and L0–L2 grow School imports | An import-boundary check in the test suite from P2 onward, not a convention in a doc. |
 | Child pastes English and the persona answers in English | Persona prompt forbids it; the gate is the natural place to catch a fully-source-language reply and ask for a target-language attempt. |
+| The lexicon search box silently composes Hangul, so English lookups return nothing | `data-ime="off"` or an explicit `EN` declaration on that field, asserted in a test — the IME's own rule is that opt-outs are declared, never inferred. |
+| Pen Pal opens on a device with no keyboard | Gate the program card on `useCapabilities().textInput`, exactly as the ladder gates its typing rungs. |
