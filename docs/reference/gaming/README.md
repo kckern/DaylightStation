@@ -24,3 +24,9 @@ The v2 cutover has no runtime compatibility aliases. `scripts/migrations/gaming-
 The dependency direction is `environment → experience → platform`. Experiences may consume environment capabilities (such as buzzers and audio cues) only through injected `gamingServices`; they never import an environment. `architecture.test.js` enforces these boundaries.
 
 See [taxonomy](taxonomy.md), [kernel and runtime](kernel-and-runtime.md), [authored artifacts](authored-artifacts.md), and [Party Games](party-games.md).
+
+**Emulated arcade play is a separate concern from the Party Games platform
+above.** For how the house observes that a game is being played, meters the time,
+and ends a session when it runs out, see [play sessions](play-sessions.md); for
+the emulator's boot contract and fault handling, see
+[emulator resilience](emulator-resilience.md).

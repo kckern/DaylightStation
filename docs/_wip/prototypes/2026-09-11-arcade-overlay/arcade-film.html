@@ -1,0 +1,117 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Arcade Film</title>
+<style>
+  /* FKB draws this in a fill-width / WRAP-HEIGHT, NOT_TOUCHABLE, NOT_FOCUSABLE
+     APPLICATION_OVERLAY window. Height must come from real flow height, so we
+     pin it to screen.height in JS. Everything else stays transparent. */
+  html,body{margin:0;padding:0;background:transparent;overflow:hidden;
+    font-family:"Segoe UI",Roboto,system-ui,sans-serif;-webkit-font-smoothing:antialiased;
+    color:#fff}
+  #film{position:relative;width:100%;background:transparent}
+  /* --- status pip: proves the film is alive + connected --- */
+  #pip{position:absolute;top:14px;right:18px;width:12px;height:12px;border-radius:50%;
+    background:#ff5656;box-shadow:0 0 10px rgba(0,0,0,.8);opacity:.55;transition:background .3s}
+  #pip.ok{background:#7ee787}
+  /* --- bottom banner --- */
+  #banner{position:absolute;left:0;right:0;bottom:0;box-sizing:border-box;
+    display:none;align-items:center;gap:28px;padding:22px 40px;
+    background:linear-gradient(180deg,rgba(14,16,22,.94),rgba(8,9,13,.98));
+    border-top:4px solid #ffd666;box-shadow:0 -10px 50px rgba(0,0,0,.8)}
+  #banner.show{display:flex;animation:rise .5s cubic-bezier(.2,.9,.25,1.1) both}
+  @keyframes rise{from{transform:translateY(140px);opacity:0}to{transform:translateY(0);opacity:1}}
+  #av{width:110px;height:110px;border-radius:50%;object-fit:cover;flex:0 0 auto;background:#222;
+    border:4px solid #ffd666;box-shadow:0 0 26px rgba(255,214,102,.6);
+    animation:bob 2.6s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+  #name{font-size:46px;font-weight:700;line-height:1}
+  #sub{font-size:20px;color:#ffd666;margin-top:8px;letter-spacing:.16em;text-transform:uppercase}
+  .spacer{flex:1 1 auto}
+  .timer{text-align:right;min-width:420px}
+  #clock{font-variant-numeric:tabular-nums;font-size:104px;font-weight:800;line-height:.9;
+    text-shadow:0 0 30px rgba(255,214,102,.55)}
+  #label{font-size:20px;letter-spacing:.22em;text-transform:uppercase;color:#9aa4b2;margin-top:10px}
+  .bar{margin-top:14px;height:12px;border-radius:12px;background:rgba(255,255,255,.14);overflow:hidden}
+  #fill{height:100%;border-radius:12px;background:linear-gradient(90deg,#7ee787,#ffd666);transition:width 1s linear}
+  .warn #banner{border-top-color:#ff8a4c} .warn #clock{color:#ffb37a;animation:pulse 1s ease-in-out infinite}
+  .warn #fill{background:linear-gradient(90deg,#ffd666,#ff8a4c)}
+  .crit #banner{border-top-color:#ff5656} .crit #clock{color:#ff6b6b;animation:pulse .6s ease-in-out infinite}
+  .crit #fill{background:linear-gradient(90deg,#ff8a4c,#ff5656)}
+  @keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.07);opacity:.8}}
+  /* --- floating toast --- */
+  #toast{position:absolute;top:40px;left:50%;transform:translateX(-50%);
+    display:none;padding:20px 44px;border-radius:999px;font-size:38px;font-weight:600;
+    background:rgba(10,12,18,.94);border:3px solid #ffd666;box-shadow:0 10px 40px rgba(0,0,0,.7)}
+  #toast.show{display:block;animation:drop .45s cubic-bezier(.2,.9,.25,1.1) both}
+  @keyframes drop{from{transform:translate(-50%,-90px);opacity:0}to{transform:translate(-50%,0);opacity:1}}
+</style></head>
+<body>
+<div id="film">
+  <div id="pip"></div>
+  <div id="toast"></div>
+  <div id="banner">
+    <img id="av" alt="">
+    <div><div id="name">—</div><div id="sub">Arcade time</div></div>
+    <div class="spacer"></div>
+    <div class="timer">
+      <div id="clock">--:--</div><div id="label">remaining</div>
+      <div class="bar"><div id="fill" style="width:100%"></div></div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  var film=document.getElementById('film'), pip=document.getElementById('pip');
+  // Pin the film to the full display height so the wrap-height overlay covers the screen.
+  function size(){ film.style.height=(window.screen.height||1080)+'px'; }
+  size(); window.addEventListener('resize',size);
+
+  var banner=document.getElementById('banner'), toastEl=document.getElementById('toast');
+  var timer=null, toastT=null;
+
+  function two(n){return (n<10?'0':'')+n}
+  function showCountdown(o){
+    document.getElementById('name').textContent=o.name||o.user||'Player';
+    document.getElementById('sub').textContent=o.sub||'Arcade time';
+    if(o.user) document.getElementById('av').src='/api/v1/static/img/users/'+o.user+'.jpg';
+    var total=parseInt(o.secs||300,10), left=total;
+    banner.classList.add('show');
+    if(timer) clearTimeout(timer);
+    (function tick(){
+      document.getElementById('clock').textContent=two(Math.floor(left/60))+':'+two(left%60);
+      document.getElementById('fill').style.width=Math.max(0,(left/total)*100)+'%';
+      document.body.className = left<=60?'crit':(left<=180?'warn':'');
+      if(left<=0){document.getElementById('label').textContent="time's up";return}
+      left--; timer=setTimeout(tick,1000);
+    })();
+  }
+  function showToast(text,ms){
+    toastEl.textContent=text; toastEl.classList.add('show');
+    if(toastT) clearTimeout(toastT);
+    toastT=setTimeout(function(){toastEl.classList.remove('show')}, ms||4000);
+  }
+  function clearAll(){ banner.classList.remove('show'); toastEl.classList.remove('show');
+    if(timer)clearTimeout(timer); document.body.className=''; }
+
+  function handle(m){
+    if(!m || !m.overlay) return;
+    if(m.overlay==='countdown') showCountdown(m);
+    else if(m.overlay==='toast') showToast(m.text||'', m.ms);
+    else if(m.overlay==='clear') clearAll();
+  }
+
+  // --- WebSocket: always-on, self-healing ---
+  var ws, retry=0;
+  function connect(){
+    var proto = location.protocol==='https:'?'wss://':'ws://';
+    ws = new WebSocket(proto+location.host+'/ws');
+    ws.onopen=function(){ retry=0; pip.classList.add('ok');
+      ws.send(JSON.stringify({type:'bus_command',action:'subscribe',topics:['arcade-overlay','fitness']})); };
+    ws.onmessage=function(e){ try{ handle(JSON.parse(e.data)); }catch(_){} };
+    ws.onclose=function(){ pip.classList.remove('ok');
+      retry=Math.min(retry+1,6); setTimeout(connect, 500*Math.pow(2,retry)); };
+    ws.onerror=function(){ try{ws.close();}catch(_){} };
+  }
+  connect();
+})();
+</script>
+</body></html>

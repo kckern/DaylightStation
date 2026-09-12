@@ -76,6 +76,8 @@ import { bootstrapLifeplan } from '#composition/modules/lifeplan.mjs';
 import { bootstrapNotifications } from '#composition/modules/notifications.mjs';
 import { createPlaybackStallDetector } from '#composition/modules/playbackStall.mjs';
 import { createHubFleetBridge } from '#composition/modules/hubFleetBridge.mjs';
+import { createPlaySessionTracking } from '#composition/modules/playSessions.mjs';
+import { createPlaySessionsRouter } from './4_api/v1/routers/playSessions.mjs';
 import { createApiRouters } from '#composition/modules/contentApi.mjs';
 import { createFitnessApiRouter, createFitnessPlayableModule } from '#composition/modules/fitnessApi.mjs';
 import { createBooksApiRouter, createBooksModule } from '#composition/modules/booksApi.mjs';
@@ -3714,6 +3716,40 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     haGateway: homeAutomationAdapters.haGateway,
     devicesConfig: devicesConfig.devices || {},
     logger: rootLogger.child({ module: 'screen-presence' }),
+  });
+
+  // Play-time observation for any device declaring `play_observation: true`.
+  // No-op if none does. READ-ONLY: it measures play and broadcasts it on
+  // `play-session:<deviceId>`; nothing acts on the result and nothing is ever
+  // shut off from here. While no game is in the foreground this costs one kiosk
+  // REST call per device per interval — ADB is only consulted once the emulator
+  // is actually in front, so an idle house is nearly free.
+  const playSessionTracking = createPlaySessionTracking({
+    devicesConfig: devicesConfig.devices || {},
+    gamesConfig: configService.getHouseholdAppConfig(householdId, 'games'),
+    gamesCatalog: dataService.household.read('gaming/retroarch/catalog'),
+    configService,
+    eventBus,
+    httpClient: axios,
+    daylightHost,
+    haGateway: homeAutomationAdapters.haGateway,
+    profileFor: (username) => userService.getProfile(username),
+    logger: rootLogger.child({ module: 'play-sessions' }),
+  });
+  await playSessionTracking.start();
+
+  // HTTP surface: push ingress for surfaces that report their own lifecycle,
+  // plus session and health reads. Present even when nothing is metered, so a
+  // caller gets an explicit 503 rather than a 404 that looks like a typo.
+  v1Routers['play-sessions'] = createPlaySessionsRouter({
+    recordObservation: playSessionTracking.recordObservation,
+    sessions: playSessionTracking.sessions,
+    trackers: playSessionTracking.trackers,
+    watchdog: playSessionTracking.watchdog,
+    grantLedger: playSessionTracking.grantLedger,
+    grantPlayTime: playSessionTracking.grantPlayTime,
+    checkEligibility: playSessionTracking.checkEligibility,
+    logger: rootLogger.child({ module: 'play-sessions-api' }),
   });
 
   // Piano-power → tablet-screen authority. DS becomes the single writer for the
