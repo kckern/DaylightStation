@@ -660,7 +660,7 @@ the button set it, `onChange` clears it. Log through
 
 ## Phase 5 — interpretation needs help
 
-### Task 9: Separate a hint from a reveal
+### Task 9: Separate a hint from a reveal  [as built]
 
 **The distinction that makes this task necessary:** on interpretation the task is *"type
 what it means in English"*, so **the English text IS the answer**. Showing it is not a
@@ -681,6 +681,44 @@ repetition rung already plays the EN clip via `audioUrl(seq, 'EN')`. **No new da
 
 **Files:** `TypedRung.jsx`, `languageLog.js`, `LanguageStudyService.mjs` (record the
 reveal on the attempt), `docs/reference/school/sentence-ladder.md`.
+
+**[as built] — 2026-09-11.** The reveal ships; the Hint half does not, per the
+tabling note below. Where it departed from the text above:
+
+- **`languageLog.js` needed no change.** The reveal logs through the existing
+  `languageLog.rung('reveal', { rung, seq, typed })` and `rung('complete', {…,
+  revealed: true })` — the same category the peek and every other rung event
+  already use. Adding a facade line for one event would have been a fifth way
+  to say `emit('rung', …)`.
+- **Two commit points, not one press.** "Ends the exercise" cannot mean the
+  press itself writes the attempt: the program re-fetches the day and advances
+  on save, so the child would never see the answer they just asked for. The
+  reveal shows it; **Continue** records it. One commit path per sentence, and
+  the reveal cannot land twice.
+- **Text AND audio together, on one control.** The plan offers "EN text or EN
+  audio". Split into Show and Hear they read as two kinds of help, a child who
+  took one would reasonably take the other, and the log would carry two rows
+  for one sentence nobody answered. It is one surrender, so it is one button;
+  having given the answer away, playing it is the most useful thing left.
+- **No keyboard shortcut, unlike the peek's F1.** A key that ends the exercise
+  is a key that ends it by accident. The control is a deliberate tap, and there
+  is no un-reveal — an un-reveal would let a child read the answer, hide it,
+  and type it back as their own.
+- **The field is REMOVED on reveal, not disabled.** Found by rendering: a
+  greyed input still holding half an answer, sitting directly under the answer
+  it had just been handed, is an invitation to copy it in — and on a panel a
+  disabled field barely looks different from a live one. Focus moves to
+  Continue so a bonded keyboard still has somewhere to send Enter.
+- **Two readers had to change beyond `#recordAttempt`.** `ReviewPanel`'s last
+  branch treats "no written answer" as *repetition*, so every revealed
+  interpretation would have appeared on the learner's own history as a
+  repetition they completed. And `#summarizeCourse` gained an **Answers shown**
+  count: keeping reveals out of the accuracy average stops them lying, but it
+  does not make them visible, and a grown-up deciding whether the rung is too
+  hard needs the number.
+- **`accuracy` is absent on a revealed row, not zero.** A zero is a score for a
+  sentence nobody assessed; `accuracy(expected, expected)` — what storing the
+  shown text would have produced — is the 1.0 this task exists to prevent.
 
 ### Tasks 10 and 11 — TABLED
 

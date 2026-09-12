@@ -319,12 +319,40 @@ could not do was ask for the sentence they had just heard one more time.
 ### Dictation and interpretation
 
 Dictation hides the sentence — recalling it is the task. Interpretation shows
-it — rendering meaning is the task. Both loop the prompt audio while the
-learner types, with about two and a half seconds of silence before each
-restart, so the repetition reinforces without becoming a siren; the clips
-within one pass stay gapless. In `copy` mode the target script is revealed one
-glyph ahead of what has been typed correctly, so a child learning the script
-can practise entering it before they can hear it.
+it — rendering meaning is the task. The prompt plays once on arrival and again
+on Tab, on the Play control, or after a long enough silence to mean "stuck";
+it does not loop, and a Stop sits beside Play for as long as anything sounds.
+In `copy` mode the target script is revealed one glyph ahead of what has been
+typed correctly, so a child learning the script can practise entering it
+before they can hear it.
+
+**A hint is partial. A reveal is the answer.** The two rungs need different
+help, and the difference is not a matter of degree:
+
+| Rung | What is withheld | The affordance | What it costs |
+|---|---|---|---|
+| dictation | the Korean | **Peek** (F1, or the button) — shows the whole sentence, with the learner's own column marked; the next keystroke takes it away | nothing. It is still theirs to type, in Hangul, from memory of what they just read — which is the skill |
+| interpretation | the English | **Reveal** ("Show answer") — the English text, and the English clip with it | the exercise. The field goes, and the attempt is recorded as a reveal |
+
+On interpretation the English text IS the answer, so showing it is not a hint:
+it hands over the whole response and leaves transcription. Playing the English
+clip hands over exactly the same thing. Both are a skip, and calling either one
+a hint would let the record say a child interpreted 4,143 sentences when they
+pressed a button 4,143 times. So the reveal shows the text and plays the clip
+together — one surrender, not two — and it is one-way: there is no un-reveal,
+because reading the answer, hiding it, and typing it back in is precisely the
+record this split exists to protect.
+
+**The partial half is not built, and that is deliberate.** The hint for
+interpretation is one word's meaning — a gloss — and glosses are tabled into
+`docs/_wip/plans/2026-09-11-sentence-ladder-word-glosses.md`. Until they exist
+there is no Hint control on this rung, not even a disabled one: a button with
+nothing to say is a dead button, and a child who presses a dead button decides
+the screen is broken. When glosses land, Hint joins Reveal — it does not
+replace it, and it must not be recorded as one.
+
+A reveal **clears the rung like any other attempt** — accuracy gates nothing
+here and neither does this. What changes is only what the evidence says.
 
 An answer is compared to the expected text after trimming, collapsing
 whitespace and casefolding — nothing cleverer, so a near miss is exactly what
@@ -530,6 +558,29 @@ An attempt is one row in the day's log:
   accuracy: 0.92           # text responses only; recorded, never gating
 ```
 
+A **revealed** attempt is the same row with one field instead of two:
+
+```yaml
+- at: 2026-09-11T13:41:02Z
+  day: 1
+  seq: 1
+  rung: interpretation
+  attributedTo: test-learner
+  revealed: true           # the learner asked to be shown the answer
+  expected: The weather's nice today.
+  language: EN
+```
+
+It carries **no `given`** — the learner produced nothing, and the text they
+were shown must never be written down as theirs — and **no `accuracy` at all**,
+not a zero. A zero would be a score for a sentence nobody assessed, and
+scoring the shown text against itself would be the 1.0 that says a child
+understood a sentence they pressed a button on. An absent field is the honest
+shape, and every reader already filters on `typeof accuracy`. The course card's
+typing-accuracy figure therefore excludes reveals by construction, and counts
+them separately as **Answers shown** so a grown-up can see how much of the work
+was handed over.
+
 The log is the only source of truth for where a sentence is. `progress.yml`
 holds what cannot be derived: the current study day, the pacing limit, and the
 last activity time. Because the queue is rebuilt from evidence, a lost write
@@ -548,7 +599,7 @@ All under `/api/v1/school/sentence-ladder`. Learner routes carry
 | GET | `/courses` | valid corpora with their role bindings; an invalid corpus is omitted, not served broken |
 | GET | `/preview/:corpusId/day` | a non-recording guest day for teachers |
 | GET | `/users/:userId/day` | today's queue for this device's capabilities, the credit chain, blocked rungs and their needs, cues, rollover state |
-| POST | `/users/:userId/log` | one attempt — `seq`, `rung`, `given` for text rungs |
+| POST | `/users/:userId/log` | one attempt — `seq`, `rung`, and either `given` (text rungs) or `revealed: true` (the learner asked to be shown the answer; never both) |
 | POST | `/users/:userId/recording` | raw audio for one outstanding recording step |
 | PUT | `/users/:userId/pacing` | new sentences per day |
 | POST | `/users/:userId/roll` | ask for the next study day; refused with a reason when not earned |

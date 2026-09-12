@@ -368,7 +368,7 @@ export default function SentenceLadderProgram({
    * surfaced, never swallowed: an unrecorded attempt that looks recorded is
    * how a learner loses a session's work without knowing.
    */
-  const onComplete = useCallback(async ({ seq, rung, given, blob }) => {
+  const onComplete = useCallback(async ({ seq, rung, given, revealed, blob }) => {
     if (preview) {
       // The preview has no identity, grant, or mutable endpoint.  Completion
       // is a browser-only affordance so a teacher can experience the ladder
@@ -387,7 +387,16 @@ export default function SentenceLadderProgram({
     setNotice(null);
     const result = blob
       ? await languageApi.recording(userId, corpusId, seq, blob, capabilities, studyGrant)
-      : await languageApi.log(userId, { corpus: corpusId, seq, rung, given }, capabilities, studyGrant);
+      : await languageApi.log(userId, {
+        corpus: corpusId,
+        seq,
+        rung,
+        // A REVEAL CARRIES NO ANSWER. `revealed` replaces `given` rather than
+        // joining it: the learner produced nothing, and the text they were
+        // just shown must never travel as something they wrote. Spread, so an
+        // ordinary attempt's body is exactly what it has always been.
+        ...(revealed ? { revealed: true } : { given }),
+      }, capabilities, studyGrant);
     setSaving(false);
 
     if (!result.ok) {
@@ -399,7 +408,7 @@ export default function SentenceLadderProgram({
       );
       return result;
     }
-    languageLog.attempt('saved', { corpus: corpusId, seq, rung });
+    languageLog.attempt('saved', { corpus: corpusId, seq, rung, ...(revealed ? { revealed: true } : {}) });
     await load();
     return result;
   }, [userId, corpusId, capabilities, studyGrant, load, preview]);

@@ -66,6 +66,29 @@ function Item({ item, userId, corpusId, languages, studyGrant }) {
     );
   }
 
+  /**
+   * A REVEAL, said as a reveal. It has to be tested BEFORE the `given` branch
+   * and before the fallthrough: a revealed row carries no written answer, so
+   * the last branch — which assumes "no answer" means "repetition" — would
+   * file every sentence a child gave up on as a repetition they completed.
+   * The one surface where a learner reads their own record back is the last
+   * place a reveal is allowed to turn into something else.
+   */
+  if (item.revealed) {
+    return (
+      <li className="lang-review__item">
+        <span className="lang-review__rung">
+          {item.rung === 'dictation' ? 'Dictation' : 'Interpretation'}
+        </span>
+        <span className="lang-review__sentence">{item.text?.[languages?.target]}</span>
+        {/* No diff and no score, because there was nothing to compare: what is
+            worth keeping on the shelf is the answer itself, which is the one
+            thing this sentence can still teach. */}
+        <span className="lang-review__shown">Answer shown: {item.expected}</span>
+      </li>
+    );
+  }
+
   if (item.given != null) {
     return (
       <li className="lang-review__item">
