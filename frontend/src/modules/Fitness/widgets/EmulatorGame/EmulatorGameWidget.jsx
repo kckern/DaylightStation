@@ -372,6 +372,7 @@ export default function EmulatorGameWidget({ fitnessContext, onClose, config, on
       <ArcadeShell
         consoles={library.consoles}
         games={library.games}
+        systems={library.systems}
         onSelectGame={handleSelectGame}
         onExit={onClose}
         resolveMediaUrl={(p) => DaylightMediaPath(p)}

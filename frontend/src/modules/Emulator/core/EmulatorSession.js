@@ -113,21 +113,29 @@ export function createEmulatorSession({
       volume: engineConfig.volume,
     });
 
-    // Calibrate WRAM via a harmless cheat ping.
-    const calibrator = createWramCalibrator({
-      setCheat: engine.setCheat,
-      resetCheat: engine.resetCheat,
-      getHeap: engine.getHeap,
-      waitFrames: engine.waitFrames,
-      system,
-      logger: childLog,
-    });
-
+    // Calibrate WRAM via a harmless cheat ping — but ONLY for a game that
+    // declares a semantic state map, since the base address exists to read that
+    // map and nothing else. Calibrating regardless cost a cheat-ping round trip
+    // on every boot and, worse, reported `emulator.calibration.failed` at warn
+    // level for every title without states (Sonic, and five of the seven Game
+    // Boy titles) — a permanent false alarm that would bury a real failure.
     let cal = null;
-    try {
-      cal = await calibrator.calibrate();
-    } catch (err) {
-      childLog.warn('emulator.calibration.error', { error: err && err.message });
+    if (game.states) {
+      const calibrator = createWramCalibrator({
+        setCheat: engine.setCheat,
+        resetCheat: engine.resetCheat,
+        getHeap: engine.getHeap,
+        waitFrames: engine.waitFrames,
+        system,
+        logger: childLog,
+      });
+      try {
+        cal = await calibrator.calibrate();
+      } catch (err) {
+        childLog.warn('emulator.calibration.error', { error: err && err.message });
+      }
+    } else {
+      childLog.debug('emulator.calibration.skipped', { reason: 'no-states' });
     }
 
     if (cal && cal.wramBase != null && game.states) {
@@ -146,10 +154,11 @@ export function createEmulatorSession({
       });
       stateMap.start();
       childLog.info('emulator.statemap.started', { wramBase });
-    } else {
+    } else if (game.states) {
+      // Only a game that ASKED for a state map can fail to get one.
       childLog.warn('emulator.calibration.failed', {
         calibrated: cal != null,
-        hasStates: !!game.states,
+        hasStates: true,
       });
     }
 

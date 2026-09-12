@@ -41,7 +41,10 @@
   // at fixed percentages regardless of container aspect. The screen cutout
   // rectangle itself is config-driven (presentation.screen in the system YAML)
   // and applied to .emulator-mount / .emulator-shader as inline styles.
-  .emulator-chrome.chrome-gb-bezel {
+  // Matches every `chrome-<system>-bezel` (gb-bezel, genesis-bezel, ...): the
+  // treatment is identical for any bezel, since the cutout geometry comes from
+  // the system YAML rather than from CSS.
+  .emulator-chrome[class*='-bezel'] {
     background-size: 100% 100%;
     background-position: center;
     background-repeat: no-repeat;

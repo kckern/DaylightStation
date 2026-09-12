@@ -15,6 +15,7 @@ function makeEngine(overrides = {}) {
     setCheat: vi.fn(),
     resetCheat: vi.fn(),
     waitFrames: vi.fn(async () => {}),
+    applyShader: vi.fn(),
     destroy: vi.fn(),
     ...overrides,
   };
@@ -213,6 +214,22 @@ describe('createEmulatorSession.start', () => {
     const { session } = setup({ game, createStateMap });
     await session.start({ mount: {} });
     expect(createStateMap).not.toHaveBeenCalled();
+  });
+
+  it('no states on game → does not calibrate at all, and does not warn', async () => {
+    // The WRAM base exists only to read a semantic state map. A title that
+    // declares none (Sonic, and most of the Game Boy library) must not pay for
+    // a cheat-ping round trip on every boot, and must not be reported as a
+    // calibration FAILURE — a warning that always fires would bury a real one.
+    const calibrate = vi.fn(async () => ({ wramBase: 42 }));
+    const createWramCalibrator = vi.fn(() => ({ calibrate }));
+    const game = { ...GAME, states: undefined };
+    const { session } = setup({ game, createWramCalibrator });
+    await session.start({ mount: {} });
+    expect(createWramCalibrator).not.toHaveBeenCalled();
+    expect(calibrate).not.toHaveBeenCalled();
+    // The failure warning is guarded by the same `game.states` condition, so
+    // not calibrating is exactly not warning.
   });
 });
 

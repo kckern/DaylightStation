@@ -26,6 +26,7 @@ const EMPTY_CONTROLLERS = [];
 export function ArcadeShell({
   consoles = [],
   games = [],
+  systems = {},
   activeSystem: activeSystemProp,
   onSelectGame,
   onSelectConsole,
@@ -52,6 +53,9 @@ export function ArcadeShell({
     () => games.filter((g) => g.system === activeSystem),
     [games, activeSystem],
   );
+
+  // Box-art shape belongs to the console, so it changes with the tab.
+  const coverAspect = activeSystem ? systems?.[activeSystem]?.coverAspect : null;
 
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [columns, setColumns] = useState(1);
@@ -121,6 +125,7 @@ export function ArcadeShell({
           onActivate={(game) => onSelectGame?.(game)}
           onColumnsChange={setColumns}
           resolveMediaUrl={resolveMediaUrl}
+          coverAspect={coverAspect}
         />
       </div>
       <ConsoleTabs consoles={consoles} activeSystem={activeSystem} onSelect={selectConsole} />

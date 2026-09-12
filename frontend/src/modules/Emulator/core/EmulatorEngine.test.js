@@ -436,3 +436,62 @@ describe('EmulatorEngine claimGamepads', () => {
     expect(engine.claimGamepads()).toBe(0);
   });
 });
+
+describe('EmulatorEngine picture shader', () => {
+  function makeShaderInstance() {
+    const files = {};
+    return makeFakeInstance({
+      config: { shaders: { 'crt-geom.glslp': { shader: { type: 'text', value: 'shaders = 1' } } } },
+      enableShader: vi.fn((name) => {
+        if (name === 'disabled') { delete files['/shader/shader.glslp']; return; }
+        files['/shader/shader.glslp'] = 'shaders = 1\nshader0 = crt-geom.glsl\n';
+      }),
+      Module: {
+        FS: {
+          readFile: (path) => {
+            if (!(path in files)) { const e = new Error('ENOENT'); throw e; }
+            return files[path];
+          },
+        },
+      },
+    });
+  }
+
+  it('applies a known preset and reads it back out of the core filesystem', async () => {
+    const instance = makeShaderInstance();
+    const engine = createEmulatorEngine({ load: async () => instance, win: makeFakeWin() });
+    // Before boot there is no instance to configure — must not throw.
+    expect(engine.applyShader('crt-geom.glslp')).toBe(false);
+    await engine.boot({ mount: {}, romUrl: 'r', pathtodata: '/d', core: 'segaMD' });
+
+    expect(engine.getAppliedShader()).toBeNull();
+    expect(engine.applyShader('crt-geom.glslp')).toBe(true);
+    expect(instance.enableShader).toHaveBeenCalledWith('crt-geom.glslp');
+    // Read-back is the proof the setting took: the call returning is not.
+    expect(engine.getAppliedShader()).toContain('crt-geom.glsl');
+  });
+
+  it('is a no-op for an absent name, and survives a build without enableShader', async () => {
+    const instance = makeShaderInstance();
+    const engine = createEmulatorEngine({ load: async () => instance, win: makeFakeWin() });
+    await engine.boot({ mount: {}, romUrl: 'r', pathtodata: '/d', core: 'segaMD' });
+    expect(engine.applyShader(null)).toBe(false);
+    expect(instance.enableShader).not.toHaveBeenCalled();
+
+    const bare = makeFakeInstance();
+    const e2 = createEmulatorEngine({ load: async () => bare, win: makeFakeWin() });
+    await e2.boot({ mount: {}, romUrl: 'r', pathtodata: '/d', core: 'segaMD' });
+    expect(e2.applyShader('crt-geom.glslp')).toBe(false);
+    expect(e2.getAppliedShader()).toBeNull();
+  });
+
+  it('reports failure rather than throwing when the core rejects the preset', async () => {
+    const instance = makeFakeInstance({
+      config: { shaders: {} },
+      enableShader: vi.fn(() => { throw new Error('bad preset'); }),
+    });
+    const engine = createEmulatorEngine({ load: async () => instance, win: makeFakeWin() });
+    await engine.boot({ mount: {}, romUrl: 'r', pathtodata: '/d', core: 'segaMD' });
+    expect(engine.applyShader('nope.glslp')).toBe(false);
+  });
+});
