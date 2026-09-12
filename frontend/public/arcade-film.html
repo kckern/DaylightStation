@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Arcade Film</title>
+<style>
+  /* This page is drawn by the kiosk in a fill-width / WRAP-HEIGHT,
+     NOT_FOCUSABLE, NOT_TOUCHABLE APPLICATION_OVERLAY window, on top of a running
+     game. Three consequences shape everything below:
+       1. Height must come from real flow height — `position:fixed` collapses the
+          window to nothing — so the film is pinned to the display height in JS.
+       2. Every pixel not drawn shows the game, so the page stays transparent and
+          renders NOTHING when there is nothing to say.
+       3. It cannot take focus or swallow input, which is what lets it sit over
+          gameplay without pausing it. */
+  :root{--u:10px}  /* layout unit; JS rescales it to the placed rect */
+  html,body{margin:0;padding:0;background:transparent;overflow:hidden;color:#fff;
+    font-family:"Segoe UI",Roboto,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  #film{position:relative;width:100%;background:transparent}
+
+  /* The banner is PLACED, never assumed. An emulated console is framed by
+     bezel art with the game showing through a hole, and the hole is a different
+     size and place on every system — a Game Boy's chrome is thick and its screen
+     small; an N64's is a sliver either side of an almost-full-width picture. So
+     a full-width bottom bar that is perfect on a Game Boy sits on top of the
+     game on an N64. The backend sends a measured rect; JS writes it here, and
+     everything inside scales off `--u` so the same markup reads correctly in a
+     wide band or a narrow pillar. Absent a placement, we keep the old
+     full-width bottom bar, which is the safe generic answer. */
+  #banner{position:absolute;left:0;right:0;bottom:0;box-sizing:border-box;
+    display:none;align-items:center;
+    gap:calc(var(--u) * 2.8);padding:calc(var(--u) * 2.2) calc(var(--u) * 4);
+    overflow:hidden;
+    background:linear-gradient(180deg,rgba(14,16,22,.94),rgba(8,9,13,.98));
+    border-top:4px solid #ffd666;box-shadow:0 -10px 50px rgba(0,0,0,.8)}
+  #banner.show{display:flex;animation:rise .5s cubic-bezier(.2,.9,.25,1.1) both}
+  /* A narrow side pillar cannot take a row of avatar + name + clock. */
+  #banner.stacked{flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;border-top:none;border-left:4px solid #ffd666;border-radius:calc(var(--u) * 1.2);
+    gap:calc(var(--u) * 1);padding:calc(var(--u) * 1.2)}
+  #banner.stacked .spacer{display:none}
+  #banner.stacked .timer{text-align:center;min-width:0}
+  #banner.stacked #name{font-size:calc(var(--u) * 3)}
+  #banner.stacked #sub{font-size:calc(var(--u) * 1.5)}
+  #banner.stacked #av{width:calc(var(--u) * 7);height:calc(var(--u) * 7)}
+  #banner.placed{border-radius:calc(var(--u) * 1.2)}
+  /* Deliberately reads as a placeholder: a dashed edge and a field dump, so
+     nobody mistakes it for the finished design on a television. */
+  #banner.placeholder{border:2px dashed rgba(255,214,102,.75);border-top:2px dashed rgba(255,214,102,.75);
+    background:rgba(10,12,18,.82)}
+  #meta{display:none;font-size:calc(var(--u) * 1.1);line-height:1.35;color:#7f8a99;
+    font-family:ui-monospace,Menlo,Consolas,monospace;white-space:pre;text-align:left}
+  #banner.placeholder #meta{display:block}
+  /* Shed when the zone is too small to hold everything legibly. */
+  .shed{display:none !important}
+  #banner.placeholder.stacked #meta{margin-top:calc(var(--u) * .6)}
+  .who{min-width:0;overflow:hidden}
+  @keyframes rise{from{transform:translateY(140px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+  #av{width:calc(var(--u) * 9);height:calc(var(--u) * 9);border-radius:50%;object-fit:cover;flex:0 0 auto;background:#222;
+    border:4px solid #ffd666;box-shadow:0 0 26px rgba(255,214,102,.6);animation:bob 2.6s ease-in-out infinite}
+  #av[hidden]{display:none}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+  #name{font-size:calc(var(--u) * 4.6);font-weight:700;line-height:1;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #sub{font-size:calc(var(--u) * 2);color:#ffd666;margin-top:calc(var(--u) * .8);letter-spacing:.16em;text-transform:uppercase}
+  .spacer{flex:1 1 auto}
+  .timer{text-align:right;min-width:calc(var(--u) * 22)}
+  #clock{font-variant-numeric:tabular-nums;font-size:calc(var(--u) * 8);font-weight:800;line-height:.9;
+    text-shadow:0 0 30px rgba(255,214,102,.55)}
+  #label{font-size:calc(var(--u) * 1.9);letter-spacing:.22em;text-transform:uppercase;color:#9aa4b2;margin-top:calc(var(--u) * 1)}
+  .bar{margin-top:calc(var(--u) * 1.4);height:calc(var(--u) * 1.2);border-radius:12px;background:rgba(255,255,255,.14);overflow:hidden}
+  #fill{height:100%;border-radius:12px;background:linear-gradient(90deg,#7ee787,#ffd666);transition:width 1s linear}
+  #bar[hidden]{display:none}
+
+  body.warn #banner{border-top-color:#ff8a4c}
+  body.warn #clock{color:#ffb37a;animation:pulse 1s ease-in-out infinite}
+  body.warn #fill{background:linear-gradient(90deg,#ffd666,#ff8a4c)}
+  body.crit #banner{border-top-color:#ff5656}
+  body.crit #clock{color:#ff6b6b;animation:pulse .6s ease-in-out infinite}
+  body.crit #fill{background:linear-gradient(90deg,#ff8a4c,#ff5656)}
+  @keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.07);opacity:.8}}
+
+  /* A frozen clock that still looks authoritative is worse than one that plainly
+     admits it has lost contact — it tells a child they have time they may not. */
+  body.stale #banner{border-top-color:#6b7280;filter:saturate(.25)}
+  body.stale #clock{color:#9aa4b2;animation:none}
+  body.stale #label::after{content:" — no contact";color:#ff8a4c}
+
+  #toast{position:absolute;top:40px;left:50%;transform:translateX(-50%);display:none;
+    padding:20px 44px;border-radius:999px;font-size:38px;font-weight:600;
+    background:rgba(10,12,18,.94);border:3px solid #ffd666;box-shadow:0 10px 40px rgba(0,0,0,.7)}
+  #toast.show{display:block;animation:drop .45s cubic-bezier(.2,.9,.25,1.1) both}
+  @keyframes drop{from{transform:translate(-50%,-90px);opacity:0}to{transform:translate(-50%,0);opacity:1}}
+</style></head>
+<body>
+<div id="film">
+  <div id="toast"></div>
+  <!-- PLACEHOLDER, not the finished countdown. It exists to prove the panel
+       lands in the bezel's negative space and that every field the real design
+       will need actually arrives over the socket. Design comes later; the
+       geometry and the payload are what is being settled here. -->
+  <div id="banner">
+    <img id="av" alt="" hidden>
+    <div class="who"><div id="name">—</div><div id="sub">—</div></div>
+    <div class="spacer"></div>
+    <div class="timer">
+      <div id="clock">--:--</div><div id="label">remaining</div>
+      <div class="bar" id="bar"><div id="fill" style="width:100%"></div></div>
+    </div>
+    <div id="meta"></div>
+  </div>
+</div>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var DEVICE = q.get('device') || '';
+  var STALE_MS = Number(q.get('staleMs') || 45000);
+
+  var film = document.getElementById('film');
+  var banner = document.getElementById('banner');
+  var toastEl = document.getElementById('toast');
+  var avEl = document.getElementById('av');
+  var clockEl = document.getElementById('clock');
+  var labelEl = document.getElementById('label');
+  var fillEl = document.getElementById('fill');
+  var barEl = document.getElementById('bar');
+
+  // Pin to the display so the wrap-height overlay covers the screen.
+  function screenW() { return window.screen.width || window.innerWidth || 1920; }
+  function screenH() { return window.screen.height || 1080; }
+  function size() { film.style.height = screenH() + 'px'; if (placement) place(placement); }
+  size(); window.addEventListener('resize', size);
+
+  // Where this system's bezel leaves room. Rects are [x, y, w, h] normalised
+  // 0..1, measured from the emulator's own border art, and are guaranteed by the
+  // backend not to overlap the game screen.
+  var placement = null;
+
+  var baseU = 10;
+  function setU(u) { document.documentElement.style.setProperty('--u', u + 'px'); }
+
+  /**
+   * Shrink the layout unit until the banner's contents actually fit the rect.
+   *
+   * The alternative — trusting a hand-tuned ratio — is what clipped the clock
+   * off the bottom of the Game Boy's band and the name off the side of the
+   * N64's pillar. The zone is a hard boundary because beyond it is the game, so
+   * fitting is measured, not estimated, and is re-run whenever the content
+   * changes length (a longer name, a game title, a two-digit hour).
+   */
+  function fits() {
+    return banner.scrollHeight <= banner.clientHeight + 1
+      && banner.scrollWidth <= banner.clientWidth + 1;
+  }
+
+  var MIN_U = 4.5;
+
+  /**
+   * Shrink the layout unit until the panel's contents fit the rect, and if they
+   * still will not, SHED DETAIL rather than clip.
+   *
+   * The zone boundary is hard — beyond it is the game — so something has to
+   * give. Shrinking type forever gives an unreadable panel; clipping hides the
+   * clock, which is the one thing that must always be visible. Dropping the
+   * field dump, then the progress bar, then the avatar, keeps the countdown
+   * legible in a zone as short as the GameCube's 93px strip.
+   */
+  function fit() {
+    if (!placement || !rectOk(placement.toast)) return;
+    var optional = [document.getElementById('meta'), barEl, avEl];
+    optional.forEach(function (el) { if (el) el.classList.remove('shed'); });
+
+    for (var dropped = 0; dropped <= optional.length; dropped++) {
+      var u = baseU;
+      for (var i = 0; i < 14; i++) {
+        setU(u);
+        if (fits()) return;
+        u *= 0.92;
+        if (u < MIN_U) break;
+      }
+      setU(MIN_U);
+      if (fits()) return;
+      var next = optional[dropped];
+      if (next) next.classList.add('shed');
+    }
+  }
+
+  function rectOk(r) {
+    return Array.isArray(r) && r.length === 4 && r.every(function (n) {
+      return typeof n === 'number' && isFinite(n);
+    }) && r[2] > 0 && r[3] > 0;
+  }
+
+  /**
+   * Move the banner into the placed rect and rescale its contents to fit.
+   *
+   * `--u` is bounded by BOTH dimensions: a narrow pillar must not blow the clock
+   * out past its own edge just because it is tall. Getting this wrong would push
+   * the countdown back over the game, which is the one thing the placement
+   * exists to prevent.
+   */
+  function place(p) {
+    placement = p;
+    banner.classList.remove('stacked', 'placed');
+    if (!p || !rectOk(p.toast)) {
+      banner.style.cssText = '';
+      baseU = 10; setU(baseU);
+      return;
+    }
+    var W = screenW(), H = screenH();
+    var x = p.toast[0] * W, y = p.toast[1] * H, w = p.toast[2] * W, h = p.toast[3] * H;
+    banner.style.left = x + 'px';
+    banner.style.top = y + 'px';
+    banner.style.right = 'auto';
+    banner.style.bottom = 'auto';
+    banner.style.width = w + 'px';
+    banner.style.height = h + 'px';
+    // Starting guess for the layout unit: a row of avatar + name + clock needs
+    // roughly 56 units of width, a stacked pillar 26. `fit()` corrects it by
+    // measurement afterwards, so this only has to be close.
+    var stacked = p.orientation === 'stacked';
+    baseU = Math.max(4, stacked ? Math.min(w / 26, h / 16) : Math.min(w / 56, h / 11));
+    setU(baseU);
+    banner.classList.add('placed');
+    if (p.orientation === 'stacked') banner.classList.add('stacked');
+  }
+
+  var session = null;        // { playedMs, remainingMs|null, at }
+  var ticker = null, toastT = null, lastMessageAt = 0;
+
+  function two(n) { return (n < 10 ? '0' : '') + n; }
+  function hhmmss(ms) {
+    var t = Math.max(0, Math.round(ms / 1000));
+    var m = Math.floor(t / 60), s = t % 60;
+    return two(m) + ':' + two(s);
+  }
+
+  function render() {
+    if (!session) return;
+    var drift = Date.now() - session.at;
+    if (session.remainingMs === null) {
+      // No budget known yet (metering not granted): show honest elapsed time
+      // rather than inventing a countdown.
+      clockEl.textContent = hhmmss(session.playedMs + drift);
+      labelEl.textContent = 'played';
+      barEl.hidden = true;
+      document.body.classList.remove('warn', 'crit');
+      return;
+    }
+    var left = Math.max(0, session.remainingMs - drift);
+    clockEl.textContent = hhmmss(left);
+    labelEl.textContent = left <= 0 ? "time's up" : 'remaining';
+    barEl.hidden = false;
+    fillEl.style.width = (session.grantedMs ? Math.max(0, (left / session.grantedMs) * 100) : 0) + '%';
+    document.body.classList.toggle('crit', left <= 60000);
+    document.body.classList.toggle('warn', left > 60000 && left <= 180000);
+  }
+
+  function startTicking() { if (!ticker) ticker = setInterval(render, 1000); }
+  function stopTicking() { if (ticker) { clearInterval(ticker); ticker = null; } }
+
+  // Everything the real design will be built from, shown plainly so the wiring
+  // can be checked on the television instead of inferred from the logs.
+  function metaLines(m) {
+    var p = m.placement || {};
+    return [
+      'system   ' + (m.systemLabel || m.system || '—'),
+      'game     ' + (m.title || m.contentId || '—'),
+      'player   ' + (m.displayName || m.userId || '—'),
+      'pads     ' + (m.controllers == null ? '—' : m.controllers),
+      'zone     ' + (p.zone || '—') + (p.orientation ? ' / ' + p.orientation : ''),
+      'session  ' + (m.sessionId || '—'),
+    ].join('\n');
+  }
+
+  function show(m) {
+    document.getElementById('name').textContent = m.displayName || m.userId || 'Player';
+    document.getElementById('sub').textContent = m.systemLabel || m.title || 'Arcade time';
+    document.getElementById('meta').textContent = metaLines(m);
+    // PLACEHOLDER until the panel is designed. Marked as such on screen so a
+    // provisional layout is never mistaken for a finished one.
+    banner.classList.add('placeholder');
+    // A user with no portrait on file should show nothing, not an empty ring.
+    if (m.userId) {
+      avEl.onerror = function () { avEl.hidden = true; };
+      avEl.onload = function () { avEl.hidden = false; };
+      avEl.hidden = true;
+      avEl.src = '/api/v1/static/img/users/' + encodeURIComponent(m.userId) + '.jpg';
+    } else { avEl.hidden = true; }
+    banner.classList.add('show');
+    startTicking();
+  }
+
+  function clear() {
+    banner.classList.remove('show');
+    toastEl.classList.remove('show');
+    document.body.className = '';
+    place(null);
+    session = null; stopTicking();
+  }
+
+  function toast(text, ms) {
+    if (!text) return;
+    toastEl.textContent = text; toastEl.classList.add('show');
+    if (toastT) clearTimeout(toastT);
+    toastT = setTimeout(function () { toastEl.classList.remove('show'); }, ms || 5000);
+  }
+
+  function handle(m) {
+    if (!m || (DEVICE && m.deviceId && m.deviceId !== DEVICE)) return;
+    lastMessageAt = Date.now();
+    document.body.classList.remove('stale');
+
+    if (m.event === 'play.session.ended') { clear(); return; }
+    if (m.overlay === 'toast') { toast(m.text, m.ms); return; }
+    if (m.event !== 'play.session.started' && m.event !== 'play.session.progress') return;
+
+    session = {
+      playedMs: Number(m.playedMs || 0),
+      grantedMs: m.grantedMs != null ? Number(m.grantedMs) : null,
+      remainingMs: m.remainingMs != null ? Number(m.remainingMs) : null,
+      at: Date.now(),
+    };
+    // Placement can arrive on any message, so a film that reconnects mid-game
+    // positions itself at once rather than at the next launch.
+    if (m.placement !== undefined) place(m.placement);
+    if (m.event === 'play.session.started') show(m);
+    else if (!banner.classList.contains('show')) show(m);
+    if (m.warning) toast(m.warning, 6000);
+    render();
+    fit();
+  }
+
+  // Losing contact must be visible. A countdown that keeps ticking on stale data
+  // is a lie told confidently.
+  setInterval(function () {
+    if (!banner.classList.contains('show')) return;
+    if (lastMessageAt && Date.now() - lastMessageAt > STALE_MS) {
+      document.body.classList.add('stale');
+      stopTicking();
+    }
+  }, 5000);
+
+  // Deliberate seam: lets the film's states be driven and screenshotted in a
+  // headless browser, so its appearance can be verified without taking over a
+  // television. Read-only entry point — it feeds the same handler the socket does.
+  window.__arcadeFilm = { handle: handle, clear: clear, toast: toast, place: place, fit: fit };
+
+  var ws, retry = 0;
+  function connect() {
+    try {
+      ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+    } catch (e) { setTimeout(connect, 5000); return; }
+    ws.onopen = function () {
+      retry = 0;
+      var topics = DEVICE ? ['play-session:' + DEVICE] : [];
+      ws.send(JSON.stringify({ type: 'bus_command', action: 'subscribe', topics: topics }));
+    };
+    ws.onmessage = function (e) { try { handle(JSON.parse(e.data)); } catch (_) {} };
+    ws.onclose = function () {
+      retry = Math.min(retry + 1, 6);
+      setTimeout(connect, 500 * Math.pow(2, retry));
+    };
+    ws.onerror = function () { try { ws.close(); } catch (_) {} };
+  }
+  connect();
+})();
+</script>
+</body></html>

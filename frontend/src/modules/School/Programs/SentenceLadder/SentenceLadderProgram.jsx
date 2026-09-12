@@ -772,8 +772,11 @@ export default function SentenceLadderProgram({
             {sessionFinished && locked && exitHandler && (
               <button type="button" className="lang-btn lang-btn--primary" onClick={exitHandler}>Done</button>
             )}
-            {allDone && !preview && !blockedByDevice && !locked && (
-              <button type="button" className="lang-btn lang-btn--primary" onClick={onRoll}>Start the next day</button>
+            {/* On the locked kiosk too. Hidden there, a child who finished a
+                day had no way on to the next one, and "complete" became a wall.
+                Done stays the primary there, so Enter still leaves. */}
+            {allDone && !preview && !blockedByDevice && (
+              <button type="button" className={locked ? 'lang-btn' : 'lang-btn lang-btn--primary'} onClick={onRoll}>Start the next day</button>
             )}
           </div>
         )}

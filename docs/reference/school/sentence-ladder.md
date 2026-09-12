@@ -190,43 +190,67 @@ it started in, and someone drilling at 1am has not earned tomorrow's sentences.
 **The queue is derived, never stored.** Every attempt is appended to an
 evidence log; the day's queue is rebuilt from that log on every read. There is
 no queue table to lose or desynchronise, and the queue can never claim
-progress the log does not show. A day's work is:
+progress the log does not show. A day's work is **`dailyLimit` steps at every
+rung**, the same number on each:
 
-1. up to `dailyLimit` brand-new sentences, entering at the first rung;
-2. every sentence that cleared rung *k* on an **earlier** day and has not yet
-   cleared rung *k+1*;
-3. **practice**, only while (2) cannot fill the day.
+1. at the first rung, up to `dailyLimit` brand-new sentences;
+2. at each rung above it, sentences that cleared the rung below on an
+   **earlier** day and have not yet cleared this one: oldest first, at most
+   `dailyLimit`;
+3. **practice**, only while (2) cannot fill that rung.
+
+Graduates beyond the limit are not dropped. They stay owed and graduate on a
+later day, so a pace change delays a sentence without losing it. A step
+finished today stays on its rung, so finishing one never pulls another in
+behind it. Before 2026-09-12 the fill topped up the day's *total* rung by rung,
+and a pipeline that did not match the limit came out lopsided: a first day at
+five a day, followed by an enrollment of three, served 3 repetitions,
+8 dictations, 1 recording and no interpretation.
 
 The "earlier day" test is what enforces one rung per day. Without it a sentence
 shadowed this morning would reappear as dictation this afternoon, and the
 whole ladder would collapse into one sitting.
 
 **The cold start.** On day one nothing has cleared anything, so the day would
-be a quarter of its intended size and only reach full volume on day four. A
-short day is topped up by walking today's own new set up the remaining rungs
-as practice:
+be a quarter of its intended size and only reach full volume on day four. Each
+rung that graduates cannot fill is topped up with today's own new set as
+practice (one sentence a day, four rungs):
 
 ```
               CREDITED                   PRACTICE
    Day 1  s1@r1                      s1@r2 r3 r4
-   Day 2  s2@r1 s1@r2                s2@r2 r3
-   Day 3  s3@r1 s2@r2 s1@r3          s3@r2
+   Day 2  s2@r1 s1@r2                s2@r3 r4
+   Day 3  s3@r1 s2@r2 s1@r3          s3@r4
    Day 4  s4@r1 s3@r2 s2@r3 s1@r4        --      <- steady
 ```
 
 Practice never advances a sentence: its events are written with `practice:
 true` and ignored when deciding what cleared, so a sentence still climbs
 exactly one rung a day for credit. The top-up turns itself off once credited
-work fills the day, and comes back by itself if a learner drains the pipeline
+work fills a rung, and comes back by itself if a learner drains the pipeline
 by skipping a week. The surface says "Extra practice — this one doesn't move
 up yet" over such an entry, because the same sentence arriving at three rungs
 in one sitting reads as a bug otherwise.
 
-**Rollover** needs two things: the queue is complete, and the boundary has
-passed. Rolling with work outstanding would skip a rung without telling the
-learner; rolling before the boundary would hand out tomorrow's sentences
-today and let a keen learner burn the corpus in an afternoon. A refused roll
-says why. An empty queue counts as complete.
+**Rollover** needs the day's queue complete, judged on the full credit queue
+rather than the requesting device's filtered one, so a panel that cannot
+climb a rung can never roll past it. Rolling with work outstanding would skip
+a rung without telling the learner, and a refused roll says why.
+
+- **Opening the ladder rolls for you.** A day finished in an earlier study day
+  advances on the read (`school.language.day-rolled`, `via: open`). Nobody
+  needs to find a button, which is how a finished day came back as "complete"
+  the next afternoon on the locked kiosk (2026-09-12).
+- **A finished day is never a wall.** *Start the next day* is offered on the
+  day-complete panel everywhere, the kiosk included, and the server grants it
+  on the same day too (`reason: ahead`, `via: ahead`), even when today is
+  already credited.
+- **Neither path re-announces the day.** Only the attempt that finishes a day
+  publishes `day-complete`. A read or a roll that restated it closed the day
+  again, and each close printed another receipt.
+
+An empty queue counts as complete, but opening onto one does not roll: with
+every sentence retired there is no next day to serve.
 
 **Retirement.** A sentence that has cleared every rung of the chain is retired.
 Evidence recorded on a better-equipped device never creates phantom work on a

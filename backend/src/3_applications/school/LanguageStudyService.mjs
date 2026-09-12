@@ -240,6 +240,7 @@ export class SentenceLadderService {
       capabilities: { microphone: true, textInput: Object.values(corpus.languages) },
       languages: corpus.languages, playable: corpus.playable,
       admission: policy.admission, rungChain: policy.chain,
+      voiceAnswer: this.#voiceAnswer,
     });
     if (queue.length > 0 && summarizeQueue(queue).done === queue.length) {
       this.#log('info', 'school.language.day-complete', {
@@ -268,9 +269,9 @@ export class SentenceLadderService {
   getDay({ userId, corpusId, capabilities = {}, runId = null }) {
     this.#requireUser(userId);
     const corpus = this.#requireCorpus(corpusId);
-    const progress = this.#readProgress(userId, corpusId);
-    const policy = this.#queuePolicy(userId, corpus, progress);
     const log = this.#ds.readAllEvents(userId, corpusId);
+    const { progress, roll } = this.#openDay(userId, corpus, log, runId);
+    const policy = this.#queuePolicy(userId, corpus, progress);
 
     // The client DECLARES what it can do; the gate KNOWS. A keyboard absent at
     // a known MAC is a fact, and it wins over a stored localStorage claim.
@@ -289,16 +290,6 @@ export class SentenceLadderService {
       rungChain: policy.chain,
       voiceAnswer: this.#voiceAnswer,
     });
-
-    const now = this.#now();
-    const roll = shouldRollDay({
-      queue,
-      lastActivity: progress.lastActivity ? Date.parse(progress.lastActivity) : null,
-      now,
-      boundaryHour: this.#boundaryHour,
-      offsetMinutes: this.#offsetMinutes(now),
-    });
-    if (roll.roll) this.#emitDayComplete(userId, corpus, progress.day, policy, runId);
 
     // The rungs today's credit needs that this device cannot climb, and — for
     // each — WHAT it is short of. The card used to hardcode one sentence,
@@ -670,46 +661,69 @@ export class SentenceLadderService {
   }
 
   /**
-   * Advance to the next study day. The rule is re-checked server-side: a
-   * client that asks early is refused, so finishing at noon cannot hand out
-   * tomorrow's sentences. The spacing IS the method.
+   * The day a learner OPENS onto. A day finished in an earlier study day is
+   * behind them, so it advances here, on the read, with nobody having to find
+   * a button first. That button was hidden on the locked kiosk, which is how a
+   * finished day 1 came back as "complete" the next afternoon and a child who
+   * wanted today's sentences met a wall (2026-09-12).
+   *
+   * Judged on the FULL credit queue, never this device's filtered one: a panel
+   * without a keyboard sees a finished repetition-only day, and rolling on that
+   * would skip the rungs today's credit still needs.
+   *
+   * Announces nothing. The attempt that finished the day already published
+   * `day-complete`; every read restating it closed the day again, and each
+   * close put another receipt on the roll.
    */
-  rollDay({ userId, corpusId, capabilities = {}, runId = null }) {
-    this.#requireUser(userId);
-    const corpus = this.#requireCorpus(corpusId);
-    const progress = this.#readProgress(userId, corpusId);
-    const policy = this.#queuePolicy(userId, corpus, progress);
-    const log = this.#ds.readAllEvents(userId, corpusId);
-
-    const queue = buildDayQueue({
-      log,
-      day: progress.day,
-      dailyLimit: policy.dailyLimit,
-      corpusSize: corpus.size,
-      capabilities,
-      languages: corpus.languages,
-      playable: corpus.playable,
-      admission: policy.admission,
-      rungChain: policy.chain,
-      voiceAnswer: this.#voiceAnswer,
-    });
-
+  #openDay(userId, corpus, log, runId = null) {
+    const progress = this.#readProgress(userId, corpus.id);
+    const queue = this.#fullDayQueue(userId, corpus.id, corpus, log, progress);
     const now = this.#now();
-    const decision = shouldRollDay({
+    const roll = shouldRollDay({
       queue,
       lastActivity: progress.lastActivity ? Date.parse(progress.lastActivity) : null,
       now,
       boundaryHour: this.#boundaryHour,
       offsetMinutes: this.#offsetMinutes(now),
     });
-    if (decision.roll) this.#emitDayComplete(userId, corpus, progress.day, policy, runId);
+    if (!roll.roll) return { progress, roll, rolled: false };
+    // Every sentence retired: there is no next day to open onto, and rolling
+    // a vacuous day on every read would only inflate the day count.
+    if (queue.length === 0) return { progress, roll: { roll: false, reason: 'nothing-left' }, rolled: false };
+    const next = { ...progress, day: progress.day + 1 };
+    this.#writeProgress(userId, corpus.id, next);
+    this.#log('info', 'school.language.day-rolled', {
+      learnerId: userId, corpus: corpus.id, day: next.day, via: 'open',
+    }, runId);
+    return { progress: next, roll, rolled: true };
+  }
 
-    if (!decision.roll) return { rolled: false, day: progress.day, reason: decision.reason };
+  /**
+   * Advance to the next study day on request. A finished day is enough: a
+   * learner can always go on to the next set, even on a day already credited.
+   * Only rolling with work outstanding is refused, because that would skip a
+   * rung without saying so. `reason` says which it was — `earned` once the
+   * boundary has passed, `ahead` when the next set was taken the same day.
+   *
+   * Judged on the full credit queue, like `#openDay`, so a device that cannot
+   * climb a rung cannot roll past it; the client's capabilities play no part.
+   */
+  rollDay({ userId, corpusId, runId = null }) {
+    this.#requireUser(userId);
+    const corpus = this.#requireCorpus(corpusId);
+    const log = this.#ds.readAllEvents(userId, corpusId);
+    const opened = this.#openDay(userId, corpus, log, runId);
+    if (opened.rolled) return { rolled: true, day: opened.progress.day, reason: opened.roll.reason };
+
+    const { progress, roll } = opened;
+    if (roll.reason !== 'before-boundary') return { rolled: false, day: progress.day, reason: roll.reason };
 
     const next = { ...progress, day: progress.day + 1 };
     this.#writeProgress(userId, corpusId, next);
-    this.#log('info', 'school.language.day-rolled', { learnerId: userId, corpus: corpusId, day: next.day }, runId);
-    return { rolled: true, day: next.day, reason: decision.reason };
+    this.#log('info', 'school.language.day-rolled', {
+      learnerId: userId, corpus: corpusId, day: next.day, via: 'ahead',
+    }, runId);
+    return { rolled: true, day: next.day, reason: 'ahead' };
   }
 
   // -- history -------------------------------------------------------------
@@ -802,6 +816,7 @@ export class SentenceLadderService {
       playable: corpus.playable,
       admission: policy.admission,
       rungChain: policy.chain,
+      voiceAnswer: this.#voiceAnswer,
     });
   }
 

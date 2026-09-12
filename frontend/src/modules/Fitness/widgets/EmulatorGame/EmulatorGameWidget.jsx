@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPlaySessionReporter } from './playSessionReporter.js';
 import { createPortal } from 'react-dom';
 import { DaylightAPI, DaylightMediaPath } from '../../../../lib/api.mjs';
 import getLogger from '../../../../lib/logging/Logger.js';
@@ -102,6 +103,42 @@ export default function EmulatorGameWidget({ fitnessContext, onClose, config, on
     window.__emulatorCapturingGamepad = view === 'playing';
     return () => { window.__emulatorCapturingGamepad = false; };
   }, [view]);
+
+  // Report play to the household meter.
+  //
+  // This surface knows its own lifecycle exactly, so it reports rather than
+  // being watched from outside — the same observations the inferred source
+  // produces, differing only in stated confidence.
+  //
+  // DECLARED, never inferred: with no `meterDeviceId` in config the widget
+  // reports nothing at all, so a screen is only ever metered because it was
+  // named. It is also the device id the session is filed under, so guessing one
+  // would file this room's play against another room.
+  const meterDeviceId = config?.meterDeviceId ?? null;
+  const reporterRef = useRef(null);
+  useEffect(() => {
+    if (!meterDeviceId) return undefined;
+    if (!reporterRef.current) {
+      reporterRef.current = createPlaySessionReporter({
+        deviceId: meterDeviceId,
+        post: (body) => DaylightAPI('api/v1/play-sessions/observations', body),
+        logger,
+      });
+    }
+    const reporter = reporterRef.current;
+    const game = launch?.game;
+    if (view === 'playing' && game) {
+      reporter.started({
+        userId: launch.userId ?? null,
+        content: { contentId: `emulatorjs:${game.system}/${game.id}`, title: game.title ?? null },
+      });
+    } else {
+      reporter.ended();
+    }
+    // Leaving the widget entirely must close the session, not leave it open for
+    // the server to age out as lost.
+    return () => { reporterRef.current?.ended(); };
+  }, [view, launch, meterDeviceId, config, logger]);
 
   // Idle re-lock: while sitting at the unlocked grid, re-lock after N minutes.
   useEffect(() => {

@@ -168,6 +168,7 @@ export function createApiRouter(config) {
     // here, which is a convincing way to look wired and not be.
     '/measures': 'measures',
     '/books': 'books',  // Book metadata resolution (OpenLibrary/Google Books) — the School shelf is under /school/books
+    '/play-sessions': 'play-sessions',  // Metered arcade time: observations, sessions, grants, eligibility
   };
 
   // Mount each router at its path

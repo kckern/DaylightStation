@@ -128,4 +128,32 @@ describe('CloseLanguageDay', () => {
     })).status).toBe('unassigned');
     expect(f.close.execute).not.toHaveBeenCalled();
   });
+
+  // A second close-out re-prints the receipt. Found live 2026-09-12: reopening
+  // a finished ladder day repeated this fact, and the printer ran six "PASSED"
+  // slips for work finished the day before.
+  it('does not close — or reprint — a day that is already settled', async () => {
+    const { createEvent } = await import('#domains/school/sessions/sessionEvents.mjs');
+    const sessionId = 'ses_lang_test-learner_glossika-korean_d1';
+    const at = '2026-09-11T19:40:00.000Z';
+    const events = [
+      { type: 'created', at, sessionId, learnerId: 'test-learner', unitId: 'language-daily' },
+      { type: 'program_dispatched', at, sessionId, programId: 'sentence-ladder', corpusId: 'glossika-korean', day: 1 },
+      { type: 'outcome_recorded', at, sessionId, outcomeId: `out:${sessionId}`, result: 'passed', reason: 'program_complete' },
+    ].map((raw, i) => {
+      const { errors, event } = createEvent(raw);
+      if (errors.length) throw new Error(errors.join('; '));
+      return { ...event, seq: i + 1 };
+    });
+    const f = subject({ events });
+    const bridge = new CloseLanguageDay({ ...f, closeSessionOutcome: f.close });
+
+    const result = await bridge.handle({
+      learnerId: 'test-learner', corpusId: 'glossika-korean', day: 1, programId: 'sentence-ladder',
+    });
+
+    expect(result).toEqual({ status: 'already_settled', sessionId });
+    expect(f.close.execute).not.toHaveBeenCalled();
+    expect(f.sessions.appendEvent).not.toHaveBeenCalled();
+  });
 });

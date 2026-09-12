@@ -77,6 +77,8 @@ import { bootstrapLifeplan } from '#composition/modules/lifeplan.mjs';
 import { bootstrapNotifications } from '#composition/modules/notifications.mjs';
 import { createPlaybackStallDetector } from '#composition/modules/playbackStall.mjs';
 import { createHubFleetBridge } from '#composition/modules/hubFleetBridge.mjs';
+import { createPlaySessionTracking } from '#composition/modules/playSessions.mjs';
+import { createPlaySessionsRouter } from './4_api/v1/routers/playSessions.mjs';
 import { createApiRouters } from '#composition/modules/contentApi.mjs';
 import { createFitnessApiRouter, createFitnessPlayableModule } from '#composition/modules/fitnessApi.mjs';
 import { createBooksApiRouter, createBooksModule } from '#composition/modules/booksApi.mjs';
@@ -3734,6 +3736,42 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'screen-presence' }),
   });
 
+  // Play-time observation for any device declaring `play_observation: true`.
+  // No-op if none does. READ-ONLY: it measures play and broadcasts it on
+  // `play-session:<deviceId>`; nothing acts on the result and nothing is ever
+  // shut off from here. While no game is in the foreground this costs one kiosk
+  // REST call per device per interval — ADB is only consulted once the emulator
+  // is actually in front, so an idle house is nearly free.
+  const playSessionTracking = createPlaySessionTracking({
+    devicesConfig: devicesConfig.devices || {},
+    gamesConfig: configService.getHouseholdAppConfig(householdId, 'games'),
+    gamesCatalog: dataService.household.read('gaming/retroarch/catalog'),
+    configService,
+    eventBus,
+    httpClient: axios,
+    daylightHost,
+    haGateway: homeAutomationAdapters.haGateway,
+    profileFor: (username) => userService.getProfile(username),
+    logger: rootLogger.child({ module: 'play-sessions' }),
+  });
+  await playSessionTracking.start();
+
+  // HTTP surface: push ingress for surfaces that report their own lifecycle,
+  // plus session and health reads. Present even when nothing is metered, so a
+  // caller gets an explicit 503 rather than a 404 that looks like a typo.
+  v1Routers['play-sessions'] = createPlaySessionsRouter({
+    recordObservation: playSessionTracking.recordObservation,
+    sessions: playSessionTracking.sessions,
+    trackers: playSessionTracking.trackers,
+    watchdog: playSessionTracking.watchdog,
+    grantLedger: playSessionTracking.grantLedger,
+    grantPlayTime: playSessionTracking.grantPlayTime,
+    checkEligibility: playSessionTracking.checkEligibility,
+    summarisePlayUsage: playSessionTracking.summarisePlayUsage,
+    logger: rootLogger.child({ module: 'play-sessions-api' }),
+    placements: playSessionTracking.placements,
+  });
+
   // Piano-power → tablet-screen authority. DS becomes the single writer for the
   // OFF side of the yellow-room tablet's FKB screen: piano OFF ⇒ screen OFF
   // (debounced + reconciled), piano OFF→ON edge ⇒ pulse screen ON. Disabled by
@@ -4803,6 +4841,33 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // `studyDay()` as the shard key. A second launcher with its own timezone
   // would file a 10pm read under tomorrow while this one still read today.
   // ==========================================================================
+  /**
+   * A learner's display name, for the surfaces that greet them by it.
+   *
+   * PROFILES CARRY `display_name`, NOT `name`. Reading `profile.name` yields
+   * undefined, which is why the reading rail drew a face with no caption under
+   * it all evening and `GET /reading/summary` answered `displayName: null` for
+   * a child whose profile says `display_name` on its first page. The
+   * piano roster hit exactly this and fixed it locally (see GetCourseProgress:
+   * "a bare p.name shipped 'undefined' labels"); this is the same resolution,
+   * shared, so the next caller does not have to rediscover it.
+   *
+   * Falls back to the username and then to the id: a greeting by id is a worse
+   * greeting, never a broken screen.
+   *
+   * Declared HERE, not inside the reading block, because the media-lesson
+   * router is a SIBLING block that also greets by name. While it lived in the
+   * reading scope, lesson wiring threw `resolveLearnerProfile is not defined`
+   * on every boot and every TV lesson surface was lost — silently, because that
+   * wiring is deliberately caught so a broken lesson cannot take the rest of
+   * School with it.
+   */
+  const resolveLearnerProfile = (id) => {
+    const profile = configService.getUserProfile?.(id) ?? null;
+    if (!profile) return null;
+    return { ...profile, id: String(id), name: profile.display_name || profile.username || String(id) };
+  };
+
   let readingSessions = null;
   let readingSessionInterceptor = null;
   if (schoolLifecycle.wired && schoolLifecycle.storyTimeLauncher) {
@@ -4812,25 +4877,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const { ReadingSessionInterceptor } = await import('#apps/school/readingSessionInterceptor.mjs');
     const { RecordStoryRead } = await import('#apps/school/usecases/RecordStoryRead.mjs');
     const { createReadingRouter } = await import('#api/v1/routers/reading.mjs');
-    /**
-     * A learner's display name, for the surfaces that greet them by it.
-     *
-     * PROFILES CARRY `display_name`, NOT `name`. Reading `profile.name` yields
-     * undefined, which is why the reading rail drew a face with no caption under
-     * it all evening and `GET /reading/summary` answered `displayName: null` for
-     * a child whose profile says `display_name` on its first page. The
-     * piano roster hit exactly this and fixed it locally (see GetCourseProgress:
-     * "a bare p.name shipped 'undefined' labels"); this is the same resolution,
-     * shared, so the next caller does not have to rediscover it.
-     *
-     * Falls back to the username and then to the id: a greeting by id is a worse
-     * greeting, never a broken screen.
-     */
-    const resolveLearnerProfile = (id) => {
-      const profile = configService.getUserProfile?.(id) ?? null;
-      if (!profile) return null;
-      return { ...profile, id: String(id), name: profile.display_name || profile.username || String(id) };
-    };
 
     const { makeReadingTimeoutHandler } = await import('#composition/modules/learnerCardActions.mjs');
     const { YamlReadingSessionTimelineStore } = await import('#adapters/persistence/yaml/YamlReadingSessionTimelineStore.mjs');

@@ -1773,6 +1773,12 @@ describe('day rollover', () => {
     expect(screen.queryByText('Leave for now')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Done' }));
     expect(onExit).toHaveBeenCalledTimes(1);
+
+    // The next day is offered on the kiosk as well. Without it a finished day
+    // was a wall: the child could only leave, never go on.
+    rollMock.mockResolvedValue({ ok: true, status: 200, data: { rolled: true, day: 2, reason: 'ahead' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Start the next day' }));
+    await waitFor(() => expect(rollMock).toHaveBeenCalledTimes(1));
   });
 
   it('refuses an early roll and says why, rather than silently doing nothing', async () => {

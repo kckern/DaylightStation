@@ -5,7 +5,14 @@ import { ScreenVolumeProvider } from '../../../frontend/src/screen-framework/pro
 import { ScreenVolumeContext } from '../../../frontend/src/lib/volume/ScreenVolumeContext.js';
 
 vi.mock('../../../frontend/src/lib/logging/Logger.js', () => ({
-  default: () => ({ child: () => ({ warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() }) }),
+  // The full logger surface, `sampled` included: the provider rate-limits its
+  // master-changed event, and a mock missing that method fails the render
+  // rather than the assertion, which hides what the test is actually about.
+  default: () => ({
+    child: () => ({
+      warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn(), sampled: vi.fn(),
+    }),
+  }),
 }));
 
 // Capture the context value so we can assert on effectiveMaster.

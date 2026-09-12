@@ -3,6 +3,11 @@ import { isSessionState, isRepeatMode } from './commands.mjs';
 const FORMATS = new Set([
   'video', 'dash_video', 'audio', 'singalong', 'readalong',
   'readable_paged', 'readable_flow', 'app', 'image', 'composite',
+  // An emulated game session surfaced on a device. Distinct from 'app': the
+  // fleet view renders it like any other content on any other device, which is
+  // the point — a device playing a game and a device playing a video are the
+  // same concept.
+  'game',
 ]);
 
 const isStr   = (v) => typeof v === 'string' && v.length > 0;
