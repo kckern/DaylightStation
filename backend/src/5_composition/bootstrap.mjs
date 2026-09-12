@@ -100,7 +100,9 @@ import { AmbientLedAdapter } from '#adapters/fitness/AmbientLedAdapter.mjs';
 import { DanceLightingController } from '#adapters/fitness/DanceLightingController.mjs';
 import { GarageFanAdapter } from '#adapters/fitness/GarageFanAdapter.mjs';
 import { FitnessAssetResolver } from '#adapters/fitness/FitnessAssetResolver.mjs';
-import { VoiceMemoTranscriptionService } from '#adapters/fitness/VoiceMemoTranscriptionService.mjs';
+import { VoiceTranscriptionService } from '#adapters/ai/VoiceTranscriptionService.mjs';
+import { fitnessTranscriptionProfile } from '#adapters/ai/transcriptionProfiles/fitness.mjs';
+import { languageTranscriptionProfile } from '#adapters/ai/transcriptionProfiles/language.mjs';
 import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
 import { AgentConfigProjection, EntropyConfigProjection, NewsReporterConfigProjection } from '#adapters/config/ApplicationConfigProjections.mjs';
 import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
@@ -935,11 +937,17 @@ export function createFitnessServices(config) {
     });
   }
 
-  // Voice memo transcription (optional - requires AI gateway)
+  // Voice memo transcription (optional - requires AI gateway).
+  // The profile carries the two prompts that used to be baked into the
+  // service: the fitness Whisper bias and a cleanup pass that REPAIRS the
+  // transcript ("thumbbells -> dumbbells"). Right for a memo shouted
+  // mid-workout; see createLanguageTranscriptionService for why it is exactly
+  // wrong for anything that assesses the speaker.
   let transcriptionService = null;
   if (openaiAdapter) {
-    transcriptionService = new VoiceMemoTranscriptionService({
+    transcriptionService = new VoiceTranscriptionService({
       openaiAdapter,
+      profile: fitnessTranscriptionProfile,
       logger
     });
   }
@@ -956,6 +964,32 @@ export function createFitnessServices(config) {
     transcriptionService,
     haGateway // Expose for other uses
   };
+}
+
+/**
+ * Spoken-answer transcription for language assessment.
+ *
+ * Same service as the fitness voice memo, different profile, and the
+ * difference is the whole point. The fitness profile's cleanup pass is told to
+ * fix what it misheard; pointed at a learner saying what a sentence means, it
+ * would tidy a wrong answer into a right one and the evidence log would record
+ * comprehension that never happened. The language profile repairs nothing, and
+ * its Whisper prompt names the language but never the expected sentence — a
+ * Whisper prompt biases recognition, so an expected answer in it makes the
+ * model hear that answer whatever the child said.
+ *
+ * @param {Object} config
+ * @param {Object} [config.openaiAdapter] - OpenAI adapter from the shared AI gateway
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {Object|null} Transcription service, or null without an AI gateway
+ */
+export function createLanguageTranscriptionService({ openaiAdapter, logger = console } = {}) {
+  if (!openaiAdapter) return null;
+  return new VoiceTranscriptionService({
+    openaiAdapter,
+    profile: languageTranscriptionProfile,
+    logger
+  });
 }
 
 // =============================================================================

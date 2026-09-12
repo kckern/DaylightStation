@@ -2,9 +2,11 @@
  * Characterisation test for the fitness voice-memo transcription path.
  *
  * Written BEFORE the service was generalised into
- * `1_adapters/ai/VoiceTranscriptionService.mjs` so that the move is provably
- * behaviour-preserving rather than hopefully so. It pins the three things a
- * refactor is most likely to drift on:
+ * `1_adapters/ai/VoiceTranscriptionService.mjs` (it lived next to the old
+ * fitness service and ran green against that code first), so that the move is
+ * provably behaviour-preserving rather than hopefully so. Every assertion
+ * below is unchanged by the move; only the construction is. It pins the three
+ * things a refactor is most likely to drift on:
  *   1. the exact Whisper prompt (the fitness recognition bias),
  *   2. the filename extension chosen per MIME type,
  *   3. the exact shape of the returned memo object.
@@ -16,8 +18,16 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { VoiceMemoTranscriptionService } from './VoiceMemoTranscriptionService.mjs';
-import { buildTranscriptionContext } from './transcriptionContext.mjs';
+import { VoiceTranscriptionService } from './VoiceTranscriptionService.mjs';
+import {
+  fitnessTranscriptionProfile,
+  buildTranscriptionContext
+} from './transcriptionProfiles/fitness.mjs';
+
+/** The fitness path exactly as the composition root now builds it. */
+function makeService(config) {
+  return new VoiceTranscriptionService({ profile: fitnessTranscriptionProfile, ...config });
+}
 
 function makeAdapter({ transcript = 'did twenty thumbbell curls', clean = 'did twenty dumbbell curls' } = {}) {
   return {
@@ -31,14 +41,14 @@ function makeLogger() {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
 
-describe('VoiceMemoTranscriptionService (characterisation)', () => {
+describe('VoiceTranscriptionService + fitness profile (characterisation)', () => {
   it('requires an openaiAdapter', () => {
-    expect(() => new VoiceMemoTranscriptionService({})).toThrow(/openaiAdapter is required/);
+    expect(() => makeService({})).toThrow(/openaiAdapter is required/);
   });
 
   it('sends the fitness Whisper bias built from the session context', async () => {
     const openaiAdapter = makeAdapter();
-    const svc = new VoiceMemoTranscriptionService({ openaiAdapter, logger: makeLogger() });
+    const svc = makeService({ openaiAdapter, logger: makeLogger() });
 
     const context = {
       currentShow: 'Nature Documentary',
@@ -68,7 +78,7 @@ describe('VoiceMemoTranscriptionService (characterisation)', () => {
 
   it('sends the repairing cleanup prompt as the chat system message', async () => {
     const openaiAdapter = makeAdapter();
-    const svc = new VoiceMemoTranscriptionService({ openaiAdapter, logger: makeLogger() });
+    const svc = makeService({ openaiAdapter, logger: makeLogger() });
 
     await svc.transcribeVoiceMemo({ audioBuffer: Buffer.alloc(100), mimeType: 'audio/ogg' });
 
@@ -93,7 +103,7 @@ describe('VoiceMemoTranscriptionService (characterisation)', () => {
     ['application/octet-stream', 'ogg']
   ])('resolves %s to a .%s filename', async (mimeType, ext) => {
     const openaiAdapter = makeAdapter();
-    const svc = new VoiceMemoTranscriptionService({ openaiAdapter, logger: makeLogger() });
+    const svc = makeService({ openaiAdapter, logger: makeLogger() });
 
     await svc.transcribeVoiceMemo({ audioBuffer: Buffer.alloc(10), mimeType });
 
@@ -103,7 +113,7 @@ describe('VoiceMemoTranscriptionService (characterisation)', () => {
 
   it('accepts base64 audio, with or without a data URI prefix', async () => {
     const openaiAdapter = makeAdapter();
-    const svc = new VoiceMemoTranscriptionService({ openaiAdapter, logger: makeLogger() });
+    const svc = makeService({ openaiAdapter, logger: makeLogger() });
 
     const raw = Buffer.from('hello-audio');
     await svc.transcribeVoiceMemo({ audioBase64: raw.toString('base64'), mimeType: 'audio/ogg' });
@@ -118,7 +128,7 @@ describe('VoiceMemoTranscriptionService (characterisation)', () => {
 
   it('returns the memo shape callers persist', async () => {
     const openaiAdapter = makeAdapter();
-    const svc = new VoiceMemoTranscriptionService({ openaiAdapter, logger: makeLogger() });
+    const svc = makeService({ openaiAdapter, logger: makeLogger() });
 
     const result = await svc.transcribeVoiceMemo({
       audioBuffer: Buffer.alloc(4096 * 3),
@@ -150,7 +160,7 @@ describe('VoiceMemoTranscriptionService (characterisation)', () => {
 
   it('nulls the optional fields and the duration when nothing is supplied', async () => {
     const openaiAdapter = makeAdapter();
-    const svc = new VoiceMemoTranscriptionService({ openaiAdapter, logger: makeLogger() });
+    const svc = makeService({ openaiAdapter, logger: makeLogger() });
 
     const result = await svc.transcribeVoiceMemo({ audioBuffer: Buffer.alloc(10) });
 
@@ -165,7 +175,7 @@ describe('VoiceMemoTranscriptionService (characterisation)', () => {
     const openaiAdapter = makeAdapter();
     openaiAdapter.chat.mockRejectedValue(new Error('gateway down'));
     const logger = makeLogger();
-    const svc = new VoiceMemoTranscriptionService({ openaiAdapter, logger });
+    const svc = makeService({ openaiAdapter, logger });
 
     const result = await svc.transcribeVoiceMemo({ audioBuffer: Buffer.alloc(10), sessionId: 's' });
 
@@ -178,7 +188,7 @@ describe('VoiceMemoTranscriptionService (characterisation)', () => {
 
   it('skips the cleanup call entirely when Whisper returned nothing', async () => {
     const openaiAdapter = makeAdapter({ transcript: '' });
-    const svc = new VoiceMemoTranscriptionService({ openaiAdapter, logger: makeLogger() });
+    const svc = makeService({ openaiAdapter, logger: makeLogger() });
 
     const result = await svc.transcribeVoiceMemo({ audioBuffer: Buffer.alloc(10) });
 
@@ -189,7 +199,7 @@ describe('VoiceMemoTranscriptionService (characterisation)', () => {
 
   it('keeps the raw transcript when cleanup returns only whitespace', async () => {
     const openaiAdapter = makeAdapter({ clean: '   ' });
-    const svc = new VoiceMemoTranscriptionService({ openaiAdapter, logger: makeLogger() });
+    const svc = makeService({ openaiAdapter, logger: makeLogger() });
 
     const result = await svc.transcribeVoiceMemo({ audioBuffer: Buffer.alloc(10) });
 
@@ -199,7 +209,7 @@ describe('VoiceMemoTranscriptionService (characterisation)', () => {
   it('logs lengths, never contents - a transcript is somebody speaking out loud', async () => {
     const openaiAdapter = makeAdapter();
     const logger = makeLogger();
-    const svc = new VoiceMemoTranscriptionService({ openaiAdapter, logger });
+    const svc = makeService({ openaiAdapter, logger });
 
     await svc.transcribeVoiceMemo({
       audioBuffer: Buffer.alloc(2048),
@@ -238,7 +248,7 @@ describe('VoiceMemoTranscriptionService (characterisation)', () => {
   it('flags the [No Memo] sentinel in the cleanup log', async () => {
     const openaiAdapter = makeAdapter({ clean: '[No Memo]' });
     const logger = makeLogger();
-    const svc = new VoiceMemoTranscriptionService({ openaiAdapter, logger });
+    const svc = makeService({ openaiAdapter, logger });
 
     await svc.transcribeVoiceMemo({ audioBuffer: Buffer.alloc(10) });
 
@@ -251,9 +261,9 @@ describe('VoiceMemoTranscriptionService (characterisation)', () => {
   it('reports configuration by delegating to the adapter', () => {
     const openaiAdapter = makeAdapter();
     openaiAdapter.isConfigured.mockReturnValue(false);
-    expect(new VoiceMemoTranscriptionService({ openaiAdapter }).isConfigured()).toBe(false);
+    expect(makeService({ openaiAdapter }).isConfigured()).toBe(false);
 
     // An adapter without the probe is treated as configured.
-    expect(new VoiceMemoTranscriptionService({ openaiAdapter: { transcribe() {}, chat() {} } }).isConfigured()).toBe(true);
+    expect(makeService({ openaiAdapter: { transcribe() {}, chat() {} } }).isConfigured()).toBe(true);
   });
 });

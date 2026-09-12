@@ -744,6 +744,26 @@ whatever the learner actually said. The language profile's Whisper prompt may na
   the export in `1_adapters/fitness/index.mjs`.
 - Modify: `backend/src/5_composition/bootstrap.mjs:940` — build per profile.
 
+**AS BUILT (2026-09-11) — the thin factory could not stay in `fitness/`.** The layer gate
+`adapters-no-cross-adapter` sits at a hard baseline of zero, and `ai` and `fitness` are
+different adapter families: *any* file under `1_adapters/fitness/` that imports
+`1_adapters/ai/VoiceTranscriptionService.mjs` is a regression (verified with a throwaway
+one-line import — the audit went from 0 to 1). A thin factory, and a barrel re-export from
+`fitness/index.mjs`, are both exactly that import. So instead:
+
+- `1_adapters/fitness/VoiceMemoTranscriptionService.mjs` and
+  `1_adapters/fitness/transcriptionContext.mjs` are **deleted**; the Whisper bias builder
+  moved wholesale into `ai/transcriptionProfiles/fitness.mjs` (it *is* the fitness half of
+  the profile), and `fitness/index.mjs` exports neither.
+- The composition root binds the profile:
+  `createFitnessServices` builds `new VoiceTranscriptionService({ profile: fitnessTranscriptionProfile })`,
+  and a new `createLanguageTranscriptionService({ openaiAdapter, logger })` in the same file
+  builds the language one. **Task 13 should call that, not construct the service itself.**
+- `VoiceTranscriptionService` keeps a documented `transcribeVoiceMemo()` alias for
+  `transcribe()`, because the fitness application port is named that in
+  `FitnessVoiceMemoService`, `VoiceMemoRetryWorker` and every test double for them.
+  Nothing in fitness changed: the characterisation test's 21 assertions pass unchanged.
+
 **Step 1: Characterisation test FIRST, before moving anything.** Capture what the fitness
 path does today against a stubbed `openaiAdapter`: the prompt it sends, the filename
 extension per MIME type, and the exact shape it returns. Then the refactor is provably
