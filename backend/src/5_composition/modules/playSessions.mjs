@@ -20,6 +20,8 @@ import { RetroArchSessionLogReader } from '#adapters/gaming/RetroArchSessionLogR
 import { EventBusPlaySessionAnnouncer } from '#adapters/eventbus/EventBusPlaySessionAnnouncer.mjs';
 import { FleetPlaySessionAnnouncer } from '#adapters/eventbus/FleetPlaySessionAnnouncer.mjs';
 import { CompositePlaySessionAnnouncer } from '#adapters/eventbus/CompositePlaySessionAnnouncer.mjs';
+import { FullyKioskPlayOverlay } from '#adapters/devices/FullyKioskPlayOverlay.mjs';
+import { OverlayPlaySessionAnnouncer } from '#apps/gaming/runtime/OverlayPlaySessionAnnouncer.mjs';
 import { YamlPlaySessionDatastore } from '#adapters/persistence/yaml/YamlPlaySessionDatastore.mjs';
 import { YamlPlayIntentDatastore } from '#adapters/persistence/yaml/YamlPlayIntentDatastore.mjs';
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
@@ -72,6 +74,7 @@ export function buildContentResolver(catalog) {
 export function createPlaySessionTracking(config) {
   const {
     devicesConfig, gamesConfig, gamesCatalog = null, configService, eventBus, httpClient,
+    daylightHost = null, overlayPath = '/arcade-film.html',
     intervalMs = DEFAULT_INTERVAL_MS,
     scheduler = new NodeApplicationScheduler(),
     now = () => new Date().toISOString(),
@@ -99,13 +102,46 @@ export function createPlaySessionTracking(config) {
 
   const sessions = new YamlPlaySessionDatastore({ configService, logger });
   const intents = new YamlPlayIntentDatastore({ configService, logger });
-  // Two audiences for the same fact: the domain events the economy and the
-  // overlay consume, and the fleet projection that makes a game render in the
-  // media device view like anything else on any other device.
+  // Kiosk clients, built once per declared device and shared by the observation
+  // source and the overlay driver.
+  const kioskByDevice = new Map();
+  for (const [deviceId, device] of declared) {
+    const content = device.content_control || {};
+    const password = content.password
+      || (content.auth_ref ? configService?.getHouseholdAuth?.(content.auth_ref)?.password : null);
+    kioskByDevice.set(deviceId, new FullyKioskRestClient(
+      { host: content.host, port: content.port, password: password || '' },
+      { httpClient, logger },
+    ));
+  }
+
+  // The overlay is a SEPARATE declaration from observation: a device may be
+  // metered without ever carrying a countdown. Only `play_overlay: true` devices
+  // get a client here, so no code path can put a film on a screen that did not
+  // ask for one.
+  const overlayDevices = declared.filter(([, d]) => d?.play_overlay === true).map(([id]) => id);
+  const overlayAnnouncer = (overlayDevices.length && daylightHost)
+    ? new OverlayPlaySessionAnnouncer({
+      overlay: new FullyKioskPlayOverlay({
+        clientsByDevice: new Map(overlayDevices.map((id) => [id, kioskByDevice.get(id)])),
+        httpClient, logger,
+      }),
+      buildUrl: (deviceId) => `${daylightHost}${overlayPath}?device=${encodeURIComponent(deviceId)}`,
+      logger,
+    })
+    : null;
+  if (overlayDevices.length && !daylightHost) {
+    logger.warn?.('play.overlay.no_host', { devices: overlayDevices });
+  }
+
+  // Several audiences for the same fact: the domain events the economy consumes,
+  // the fleet projection that renders a game like any other content on a device,
+  // and the overlay that puts a countdown in front of the player.
   const announcer = new CompositePlaySessionAnnouncer({
     announcers: [
       new EventBusPlaySessionAnnouncer({ eventBus, logger }),
       new FleetPlaySessionAnnouncer({ eventBus, logger }),
+      overlayAnnouncer,
     ],
     logger,
   });
@@ -121,13 +157,7 @@ export function createPlaySessionTracking(config) {
   const built = declared.map(([deviceId, device]) => {
     const content = device.content_control || {};
     const fallback = content.fallback || {};
-    const password = content.password
-      || (content.auth_ref ? configService?.getHouseholdAuth?.(content.auth_ref)?.password : null);
-
-    const kioskClient = new FullyKioskRestClient(
-      { host: content.host, port: content.port, password: password || '' },
-      { httpClient, logger },
-    );
+    const kioskClient = kioskByDevice.get(deviceId);
 
     // ADB is the confirmer, not the primary channel: without it we can still see
     // that the emulator is in front, we just cannot tell playing from paused.
@@ -214,6 +244,16 @@ export function createPlaySessionTracking(config) {
         } catch (error) {
           logger.warn?.('play.tracking.device_reconcile_failed', { deviceId, error: error.message });
         }
+      }
+
+      // A process that died mid-session must not leave a film on the family
+      // television. Recovery removes it actively rather than assuming it is gone.
+      if (overlayAnnouncer) {
+        const stillOpen = new Set();
+        for (const deviceId of deviceIds) {
+          if (await sessions.findOpenForDevice(deviceId)) stillOpen.add(deviceId);
+        }
+        await overlayAnnouncer.disarmIdle(overlayDevices.filter((id) => !stillOpen.has(id)));
       }
 
       trackers.forEach((t) => t.start());

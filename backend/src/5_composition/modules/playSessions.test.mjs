@@ -100,3 +100,28 @@ describe('catalog content resolver', () => {
     expect(resolve(undefined)).toBeNull();
   });
 });
+
+describe('overlay is a separate declaration from metering', () => {
+  const meteredOnly = {
+    play_observation: true,
+    content_control: { host: '10.0.0.9', port: 2323, auth_ref: 'fullykiosk', fallback: { provider: 'adb', host: '10.0.0.9' } },
+  };
+  const meteredWithOverlay = { ...meteredOnly, play_overlay: true };
+
+  it('builds trackers without an overlay when no device declares one', () => {
+    const r = build({ 'livingroom-tv': meteredOnly }, { daylightHost: 'https://host' });
+    expect(r.trackers).toHaveLength(1);
+  });
+
+  it('still meters when a host for the film is unknown', () => {
+    // No daylightHost means no URL can be built; metering must not depend on it.
+    const r = build({ 'livingroom-tv': meteredWithOverlay }, { daylightHost: null });
+    expect(r.trackers).toHaveLength(1);
+  });
+
+  it('starts cleanly with an overlay-declared device', async () => {
+    const r = build({ 'livingroom-tv': meteredWithOverlay }, { daylightHost: 'https://host' });
+    await expect(r.start()).resolves.not.toThrow();
+    r.stop();
+  });
+});

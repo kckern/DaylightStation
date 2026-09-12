@@ -837,7 +837,7 @@ while. `[x]` is built and tested; `[ ]` is not started.
 | | Task | Notes |
 |---|---|---|
 | `[x]` | **T14 Ship the film as a build artifact** | Prototype exists under `docs/_wip/prototypes/`; a 404 paints the TV (5.6) |
-| `[ ]` | **T15 Overlay driver** — arm on confirmed start, tear down on end, verify URL first, re-assert disarmed at boot | Device-declared only |
+| `[x]` | **T15 Overlay driver** — arm on confirmed start, tear down on end, verify URL first, re-assert disarmed at boot | Device-declared only |
 | `[x]` | **T16 Film runtime** — subscribe to `play-session:<deviceId>`, render remaining time, urgency states, visible degradation when the socket goes stale | |
 | `[ ]` | **T17 Spoken warnings** — kiosk text-to-speech alongside the visual | A child absorbed in a game hears sooner than reads |
 | `[ ]` | **T18 Verify no gameplay impact** — focus and input unaffected, emulation CPU unchanged | NFR-5 |
