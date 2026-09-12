@@ -102,6 +102,24 @@ export class Hangul {
 
   get text() { return this.committed + this.pending; }
 
+  /**
+   * A detached copy, for asking "what would this key do?" without doing it.
+   *
+   * The copy-mode gate has to judge a keystroke by the state it WOULD produce,
+   * and the 두벌식 rules that decide that state (a final joining, a final
+   * stealing forward, a syllable flushing) live in this class and must not be
+   * re-derived anywhere else. Feeding the jamo to a copy asks the automaton
+   * itself, and a refused key then leaves the real one untouched.
+   */
+  clone() {
+    const copy = new Hangul();
+    copy.committed = this.committed;
+    copy.cho = this.cho;
+    copy.jung = this.jung;
+    copy.jong = this.jong;
+    return copy;
+  }
+
   /** Freeze the in-flight syllable into committed text. */
   flush() {
     this.committed += this.pending;

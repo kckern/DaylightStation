@@ -14,6 +14,7 @@
  * own text authoritative between words.
  */
 import { Hangul } from './hangul.js';
+import { isTraceableTarget, isViablePrefix } from './syllable.js';
 
 const TEXT_INPUT_TYPES = new Set(['text', 'search', '']);
 
@@ -110,8 +111,29 @@ export class FieldComposer {
   /**
    * Offer one keydown. Returns true if it was consumed (the caller should
    * preventDefault) and false if the browser and the app should handle it.
+   *
+   * `oracle` is OPTIONAL and is the whole of copy mode. Absent — which is the
+   * default, and is what listen mode and every other School field pass — this
+   * behaves exactly as it did before copy mode existed: the plain automaton,
+   * every key lands, nothing is corrected. It is a parameter rather than
+   * state on this class so that "no oracle" is not a mode anything can fall
+   * into by forgetting to clear it.
+   *
+   * It comes from React context via the provider, deliberately not from a
+   * `data-` attribute: the target syllable is not a string to leave in the DOM
+   * where a child can read the answer out of devtools. On a copy-mode screen
+   * the sentence is on display anyway, but listen mode will use the same seam
+   * and there it matters.
+   *
+   *   { currentTarget(): string|null, onRefused?(jamo): void }
+   *
+   * `currentTarget` names the ONE syllable being traced right now, or null for
+   * "no opinion" — past the end of the sentence, between words, anywhere the
+   * caller cannot say. Null switches both halves off for that keystroke.
+   *
+   * @param {{ currentTarget: () => (string|null), onRefused?: (jamo: string) => void }} [oracle]
    */
-  handleKey(event, el) {
+  handleKey(event, el, oracle) {
     if (event.ctrlKey || event.altKey || event.metaKey) { this.end(); return false; }
     if (!isComposableField(el)) { this.end(); return false; }
 
@@ -126,11 +148,73 @@ export class FieldComposer {
     const jamo = Hangul.jamoFor(event.code, event.shiftKey);
     if (!jamo) { this.end(); return false; }
 
+    // Before the gate, because judging the key needs the automaton this run is
+    // holding. Starting a session writes nothing to the field and moves no
+    // caret, so a key refused immediately after still leaves the field exactly
+    // as the child left it.
     this.#ensureSession(el);
+    const target = oracle ? (oracle.currentTarget?.() ?? null) : null;
+
+    // THE GATE. Offered before the automaton mutates, so a refused key changes
+    // nothing at all. Returning true (consumed) without applying is what makes
+    // the key "not land": the learner sees nothing move, and `onRefused` gives
+    // the UI something to show so a refused key does not feel like a dead
+    // keyboard.
+    if (target !== null && this.#refuses(jamo, target)) {
+      oracle.onRefused?.(jamo);
+      return true;
+    }
+
     const before = this.#hangul.text;
     this.#hangul.jamo(jamo);
+
+    // AUTO-LOCK. In copy mode we know the target, so the instant the syllable
+    // in flight IS the target it is settled — there is nothing left to type
+    // into it. 오 locks the moment ㅗ lands, so a following ㄴ has no syllable
+    // to attach to and starts 늘 directly.
+    //
+    // This is why the 온 transient never happens here. In the plain automaton
+    // the ㄴ of 오늘 lands as 오's batchim and the field reads 온 until the next
+    // key, which is what collapsed the prompt: the ambiguity is not papered
+    // over, it ceases to exist. Copy mode is the only place we may do this —
+    // see the warning at the top of syllable.js.
+    if (target !== null && this.#hangul.pending === target) this.#hangul.flush();
+
     this.#apply(el, before, this.#hangul.text);
     return true;
+  }
+
+  /**
+   * Would this jamo stop the syllable in flight being a viable prefix of
+   * `target`?
+   *
+   * Asked of a COPY of the automaton, so the 두벌식 rules that decide what a
+   * key does — a final joining, a final stealing forward, a syllable flushing —
+   * are answered by the automaton itself rather than re-derived here, where the
+   * second copy would drift from the first.
+   */
+  #refuses(jamo, target) {
+    // Fail open on anything the oracle cannot reason about. A gate that
+    // refuses what it does not understand is a dead keyboard with no
+    // explanation, which is worse for a child than no gate at all.
+    if (!isTraceableTarget(target)) return false;
+
+    const probe = this.#hangul.clone();
+    probe.jamo(jamo);
+
+    // A key that SETTLES text has abandoned the syllable rather than built it.
+    // Under auto-lock the only legitimate commit is the one performed above the
+    // instant `pending` reaches the target, so a commit the automaton makes on
+    // its own means this key was not the next stroke of the shape being traced:
+    // a second consonant pushing the first out (ㅇ then ㄱ), a vowel with no
+    // initial standing alone as a bare jamo (ㅗ typed before its ㅇ), a vowel
+    // that will not join the one already there. None of those show up in the
+    // `{ cho, jung, jong }` comparison below, because by then the wrong jamo
+    // has already moved into committed text where that comparison cannot see
+    // it — the state left in flight looks like an innocent fresh start.
+    if (probe.committed !== this.#hangul.committed) return true;
+
+    return !isViablePrefix(probe, target);
   }
 
   /**
