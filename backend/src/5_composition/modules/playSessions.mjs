@@ -25,6 +25,7 @@ import { OverlayPlaySessionAnnouncer } from '#apps/gaming/runtime/OverlayPlaySes
 import { KioskPlayTerminator } from '#adapters/devices/KioskPlayTerminator.mjs';
 import { KioskPlaySpeaker } from '#adapters/devices/KioskPlaySpeaker.mjs';
 import { NoPlayTimeGrants } from '#adapters/gaming/NoPlayTimeGrants.mjs';
+import { HomeAssistantPlayAlert } from '#adapters/devices/HomeAssistantPlayAlert.mjs';
 import { EnforcePlayBudget } from '#apps/gaming/usecases/EnforcePlayBudget.mjs';
 import { YamlPlaySessionDatastore } from '#adapters/persistence/yaml/YamlPlaySessionDatastore.mjs';
 import { YamlPlayIntentDatastore } from '#adapters/persistence/yaml/YamlPlayIntentDatastore.mjs';
@@ -79,7 +80,7 @@ export function createPlaySessionTracking(config) {
   const {
     devicesConfig, gamesConfig, gamesCatalog = null, configService, eventBus, httpClient,
     daylightHost = null, overlayPath = '/arcade-film.html',
-    grants = null,
+    grants = null, haGateway = null,
     intervalMs = DEFAULT_INTERVAL_MS,
     scheduler = new NodeApplicationScheduler(),
     now = () => new Date().toISOString(),
@@ -92,7 +93,7 @@ export function createPlaySessionTracking(config) {
 
   if (declared.length === 0) {
     logger.info?.('play.tracking.none_declared', {});
-    return { trackers: [], sessions: null, intents: null, recordObservation: null, async start() {}, stop() {} };
+    return { trackers: [], sessions: null, intents: null, recordObservation: null, watchdog: null, async start() {}, stop() {} };
   }
 
   const packageName = gamesConfig?.launch?.package;
@@ -102,7 +103,7 @@ export function createPlaySessionTracking(config) {
     logger.warn?.('play.tracking.no_launch_package', {
       devices: declared.map(([id]) => id),
     });
-    return { trackers: [], sessions: null, intents: null, recordObservation: null, async start() {}, stop() {} };
+    return { trackers: [], sessions: null, intents: null, recordObservation: null, watchdog: null, async start() {}, stop() {} };
   }
 
   const sessions = new YamlPlaySessionDatastore({ configService, logger });
@@ -232,6 +233,16 @@ export function createPlaySessionTracking(config) {
     now,
     staleAfterMs: intervalMs * STALE_AFTER_FACTOR,
     intervalMs: intervalMs * 3,
+    // Blindness is tolerable briefly and a person's problem after that. It never
+    // stops a running game — only withholds NEW play until observation returns.
+    escalateAfterMs: intervalMs * STALE_AFTER_FACTOR * 10,
+    alert: new HomeAssistantPlayAlert({
+      haGateway,
+      serviceByDevice: new Map(declared
+        .filter(([, d]) => d?.notify_service)
+        .map(([id, d]) => [id, d.notify_service])),
+      logger,
+    }),
     logger,
   });
 
@@ -249,6 +260,7 @@ export function createPlaySessionTracking(config) {
     // Exposed so the HTTP surface can feed self-reporting play surfaces into the
     // same use case the polled source uses.
     recordObservation,
+    watchdog,
     /**
      * Settle anything a previous process left open, THEN start watching. Order
      * matters: a tracker that observed first could append to a session whose

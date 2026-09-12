@@ -114,3 +114,54 @@ describe('PlayObservationWatchdog — lifecycle', () => {
     expect(events()).toContain('play.watchdog.failed');
   });
 });
+
+describe('PlayObservationWatchdog — prolonged blindness escalates to a person', () => {
+  const blind = () => [{ deviceId: 'tv', lastTickAt: at(-7200), consecutiveErrors: 0 }];
+
+  it('marks the device so no NEW play is granted, and never stops a running game', () => {
+    const w = build(blind(), { escalateAfterMs: 600_000 });
+    const found = w.check();
+    expect(found).toContainEqual({ deviceId: 'tv', condition: 'blind' });
+    expect(w.isBlocked('tv')).toBe(true);
+    // Nothing here terminates anything — that is the entire point.
+    expect(events()).not.toContain('play.terminated');
+  });
+
+  it('tells a responsible adult, in plain language', async () => {
+    const raised = [];
+    const w = build(blind(), { escalateAfterMs: 600_000, alert: { raise: async (a) => raised.push(a) } });
+    w.check();
+    await Promise.resolve();
+    expect(raised[0].deviceId).toBe('tv');
+    expect(raised[0].message).toMatch(/cannot see/i);
+  });
+
+  it('escalates once, not on every sweep', async () => {
+    const raised = [];
+    const health = blind();
+    const w = build(health, { escalateAfterMs: 600_000, alert: { raise: async (a) => raised.push(a) } });
+    w.check(); w.check(); w.check();
+    await Promise.resolve();
+    expect(raised).toHaveLength(1);
+  });
+
+  it('unblocks the device when observation returns', () => {
+    const health = blind();
+    const w = build(health, { escalateAfterMs: 600_000 });
+    w.check();
+    health[0].lastTickAt = at(-5);
+    w.check();
+    expect(w.isBlocked('tv')).toBe(false);
+  });
+
+  it('a short outage does not escalate', () => {
+    const w = build([{ deviceId: 'tv', lastTickAt: at(-120), consecutiveErrors: 0 }], { escalateAfterMs: 600_000 });
+    expect(w.isBlocked('tv')).toBe(false);
+  });
+
+  it('a failing alert never breaks the sweep', () => {
+    const w = build(blind(), { escalateAfterMs: 600_000, alert: { raise: async () => { throw new Error('ha down'); } } });
+    expect(() => w.check()).not.toThrow();
+    expect(w.isBlocked('tv')).toBe(true);
+  });
+});

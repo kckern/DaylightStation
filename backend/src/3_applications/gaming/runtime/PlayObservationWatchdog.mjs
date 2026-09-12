@@ -21,16 +21,24 @@
  * Alarms are edge-triggered: a condition is announced when it starts and when it
  * clears, not on every sweep. A watchdog that repeats itself every interval is
  * one people learn to filter out.
+ *
+ * PROLONGED blindness escalates to a person. The system will not stop a game it
+ * cannot see — killing blind is worse than mis-billing — but going blind must
+ * not therefore become a way to play forever. So past a longer threshold the
+ * device is marked as not-to-be-granted-more-play and a responsible adult is
+ * told, which closes the hole without ever pointing a kill switch at a child
+ * nobody can observe.
  */
 export class PlayObservationWatchdog {
-  #trackers; #scheduler; #now; #logger;
-  #staleAfterMs; #errorThreshold; #intervalMs;
+  #trackers; #scheduler; #now; #logger; #alert;
+  #staleAfterMs; #errorThreshold; #intervalMs; #escalateAfterMs;
   #cancel = null; #running = false;
   #active = new Map();
+  #blocked = new Set();
 
   constructor({
-    trackers = [], scheduler, now, logger = console,
-    staleAfterMs, errorThreshold = 3, intervalMs,
+    trackers = [], scheduler, now, logger = console, alert = null,
+    staleAfterMs, errorThreshold = 3, intervalMs, escalateAfterMs = null,
   }) {
     if (typeof scheduler?.after !== 'function') throw new Error('PlayObservationWatchdog requires a scheduler with after()');
     if (typeof now !== 'function') throw new Error('PlayObservationWatchdog requires an injected now()');
@@ -40,7 +48,10 @@ export class PlayObservationWatchdog {
     this.#scheduler = scheduler;
     this.#now = now;
     this.#logger = logger;
+    this.#alert = alert;
     this.#staleAfterMs = staleAfterMs;
+    // Default: blindness is tolerable for a while, then it is a person's problem.
+    this.#escalateAfterMs = Number.isFinite(escalateAfterMs) ? escalateAfterMs : staleAfterMs * 10;
     this.#errorThreshold = errorThreshold;
     this.#intervalMs = intervalMs;
   }
@@ -95,12 +106,46 @@ export class PlayObservationWatchdog {
           note: 'observations arriving but playing-versus-paused unconfirmed; played time may be over-counted',
         });
 
+        // Prolonged blindness: mark the device and tell someone. Never kill.
+        const prolonged = age !== null && age > this.#escalateAfterMs;
+        if (prolonged && !this.#blocked.has(deviceId)) {
+          this.#blocked.add(deviceId);
+          this.#logger.error?.('play.watchdog.blind_escalated', {
+            deviceId, ageMs: age,
+            note: 'no new play granted on this device until observation returns; the running game is NOT stopped',
+          });
+          void this.#raise(deviceId, 'blind', 'The arcade timer cannot see the TV. No new games until it recovers.');
+          found.push({ deviceId, condition: 'blind' });
+        } else if (!prolonged && this.#blocked.has(deviceId)) {
+          this.#blocked.delete(deviceId);
+          this.#logger.info?.('play.watchdog.blind_cleared', { deviceId });
+        } else if (prolonged) {
+          found.push({ deviceId, condition: 'blind' });
+        }
+
         if (stale) found.push({ deviceId, condition: 'stale' });
         if (failing) found.push({ deviceId, condition: 'failing' });
         if (degraded === true) found.push({ deviceId, condition: 'degraded' });
       }
     }
     return found;
+  }
+
+  /**
+   * Devices that must not be granted more play until observation returns. The
+   * eligibility gate consults this; nothing here stops a game already running.
+   */
+  isBlocked(deviceId) { return this.#blocked.has(deviceId); }
+
+  blockedDevices() { return [...this.#blocked]; }
+
+  async #raise(deviceId, condition, message) {
+    if (!this.#alert?.raise) return;
+    try {
+      await this.#alert.raise({ deviceId, condition, message });
+    } catch (error) {
+      this.#logger.warn?.('play.watchdog.alert_failed', { deviceId, error: error.message });
+    }
   }
 
   /** Announce only on transitions, so an alarm stays worth reading. */

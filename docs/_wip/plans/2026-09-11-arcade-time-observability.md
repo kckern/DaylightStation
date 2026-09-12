@@ -830,7 +830,7 @@ while. `[x]` is built and tested; `[ ]` is not started.
 | `[x]` | **T10 `ReconcilePlaySessions`** — confirm a session existed and what was played; settle unseen time conservatively, never by guesswork | Ends cannot be reconstructed (5.10) |
 | `[x]` | **T11 Staleness alarm** — no progress for N intervals is a fault, not silence | NFR-8 |
 | `[x]` | **T12 Degraded-mode alerting** — ADB lost ⇒ reduced confidence surfaced, not swallowed | |
-| `[ ]` | **T13 Prolonged-blindness policy** — stop granting launches, notify a parent; never kill blind | Closes the abuse hole (6.1) |
+| `[x]` | **T13 Prolonged-blindness policy** — stop granting launches, notify a parent; never kill blind | Closes the abuse hole (6.1) |
 
 ### M3 — Overlay (display only; still no enforcement)
 
@@ -866,7 +866,7 @@ while. `[x]` is built and tested; `[ ]` is not started.
 | | Task | Notes |
 |---|---|---|
 | `[ ]` | **T28 Fleet visibility** — verify play sessions render correctly in the existing device view | Via T37; no new view (7.3) |
-| `[ ]` | **T29 Session history / audit view** — because played time became money | |
+| `[x]` | **T29 Session history / audit view** — because played time became money | |
 | `[x]` | **T30 Reference documentation** — endstate, present tense, under `docs/reference/`, plus the navigation table | |
 | `[x]` | **T31 Retire the stale launcher config twin** — `gaming/retroarch/config.yml` reads as live and is not (3.10) | Independent of this feature; found en route |
 

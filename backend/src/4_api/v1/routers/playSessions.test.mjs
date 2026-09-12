@@ -84,11 +84,43 @@ describe('GET /devices/:deviceId', () => {
   });
 });
 
+describe('GET /devices/:deviceId/history — played time became money', () => {
+  const withHistory = {
+    listForDeviceSince: async (d, since) => (d === 'tv' ? [
+      { toSnapshot: () => ({ id: 'ps_1', deviceId: 'tv', playedMs: 60_000, since }) },
+    ] : []),
+  };
+
+  it('returns sessions with what was played and how precisely', async () => {
+    const r = await call(createPlaySessionsRouter({ sessions: withHistory, logger: quiet }),
+      'GET', '/devices/tv/history?since=2026-09-01T00:00:00.000Z');
+    expect(r.status).toBe(200);
+    expect(r.body.sessions[0]).toMatchObject({ id: 'ps_1', playedMs: 60_000 });
+  });
+
+  it('rejects a since that is not an instant', async () => {
+    const r = await call(createPlaySessionsRouter({ sessions: withHistory, logger: quiet }),
+      'GET', '/devices/tv/history?since=last-tuesday');
+    expect(r.status).toBe(400);
+  });
+
+  it('returns an empty list rather than an error for a device with no history', async () => {
+    const r = await call(createPlaySessionsRouter({ sessions: withHistory, logger: quiet }), 'GET', '/devices/other/history');
+    expect(r.body.sessions).toEqual([]);
+  });
+});
+
 describe('GET /health', () => {
   it('exposes per-device observation health', async () => {
     const trackers = [{ getHealth: () => [{ deviceId: 'tv', lastTickAt: 'x', consecutiveErrors: 0 }] }];
     const r = await call(createPlaySessionsRouter({ trackers, logger: quiet }), 'GET', '/health');
     expect(r.body.devices).toHaveLength(1);
     expect(r.body.devices[0].deviceId).toBe('tv');
+  });
+
+  it('reports devices the meter has lost sight of', async () => {
+    const watchdog = { blockedDevices: () => ['tv'] };
+    const r = await call(createPlaySessionsRouter({ watchdog, logger: quiet }), 'GET', '/health');
+    expect(r.body.blocked).toEqual(['tv']);
   });
 });
