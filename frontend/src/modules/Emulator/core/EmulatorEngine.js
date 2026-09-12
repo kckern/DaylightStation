@@ -97,6 +97,63 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
   }
 
   /**
+   * Read back the shader preset the core is actually running.
+   *
+   * `enableShader` writes the `.glslp` into the core's own filesystem, so the
+   * file's presence there — not the fact that the call returned — is the proof
+   * the setting took. Read-back is required at the settle barrier; see
+   * bootSettle.js for why a call that "succeeded" is not evidence.
+   *
+   * @returns {string|null} preset text, or null when no shader is active
+   */
+  function getAppliedShader() {
+    if (!ready || !instance) return null;
+    try {
+      const text = instance.Module?.FS?.readFile('/shader/shader.glslp', { encoding: 'utf8' });
+      return text && text.length ? text : null;
+    } catch {
+      // ENOENT is the normal "no shader" answer, not a failure.
+      return null;
+    }
+  }
+
+  /**
+   * Select one of EmulatorJS's built-in shaders, applied INSIDE the core's own
+   * GL pipeline.
+   *
+   * This is the only workable place for a picture shader over an emulator. The
+   * core's canvas is created with `preserveDrawingBuffer: false`, so its drawing
+   * buffer is cleared the moment the frame is presented: an outside renderer
+   * that samples it with texImage2D reads back transparent black, whatever it
+   * does with the result. (Measured 2026-09-12 — a readback of the live canvas
+   * returns a single colour, `0,0,0,0`, while the picture is plainly on screen.)
+   *
+   * The shader name is a key into `EJS_SHADERS`, e.g. 'crt-geom.glslp'. The
+   * presets and their GLSL are embedded in the vendored bundle, so nothing is
+   * fetched. An unknown name makes EmulatorJS turn shading off rather than
+   * throw, which is the right failure: an unfiltered picture, never a black one.
+   *
+   * @param {string|null} name
+   * @returns {boolean} whether the call reached the instance
+   */
+  function applyShader(name) {
+    if (!ready || !instance || !name) return false;
+    if (typeof instance.enableShader !== 'function') {
+      log().warn('shader.unsupported', { name, reason: 'no-enableShader' });
+      return false;
+    }
+    const known = !!instance.config?.shaders?.[name];
+    try {
+      instance.enableShader(name);
+      log().info('shader.applied', { name, known });
+      return true;
+    } catch (err) {
+      log().warn('shader.failed', { name, error: err?.message });
+      return false;
+    }
+  }
+
+  /**
    * Confirm the game actually RENDERED, not just that the boot promise resolved.
    * Polls the frame counter until it advances. Resolves `true` on a confirmed
    * frame, `false` on timeout (→ `boot.no-frames`, a real "booted but blank"
@@ -482,6 +539,8 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
   return {
     boot,
     isReady,
+    applyShader,
+    getAppliedShader,
     confirmFirstFrame,
     pause,
     resume,

@@ -689,6 +689,26 @@ export function EmulatorConsole({
                   return live === null || Math.abs(live - desiredVolume) < 0.001;
                 },
               },
+              // Picture shader — EmulatorJS's OWN preset, run by the core inside
+              // its GL pipeline (distinct from `game.shader`, which is our CSS
+              // layer: the Game Boy's dot-matrix grid). A television effect has
+              // to be this one, because it warps the picture and the core's
+              // canvas cannot be sampled from outside — see
+              // EmulatorEngine.applyShader.
+              //
+              // It belongs at the barrier like everything else: EJS's start
+              // chain runs `loadSettings()`, which re-applies the stored shader
+              // choice through the same `handleSpecialOptions('shader', …)` path
+              // and would put ours back to whatever was saved.
+              ...(presentation?.ejs_shader
+                ? [{
+                  name: 'picture-shader',
+                  apply: () => engine.applyShader?.(presentation.ejs_shader),
+                  // The call returning is not evidence; the preset landing in
+                  // the core's filesystem is.
+                  verify: () => !!engine.getAppliedShader?.(),
+                }]
+                : []),
             ],
           });
 

@@ -10,6 +10,8 @@ const RAM_REGIONS = {
   // Game Boy / Game Boy Color: WRAM at 0xC000–0xDFFF.
   gb: { base: 0xc000, end: 0xdfff },
   gbc: { base: 0xc000, end: 0xdfff },
+  // Mega Drive/Genesis: 68000 work RAM at 0xFF0000-0xFFFFFF (64 KiB).
+  genesis: { base: 0xff0000, end: 0xffffff },
 };
 
 /**

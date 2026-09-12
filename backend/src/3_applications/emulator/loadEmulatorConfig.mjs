@@ -12,6 +12,12 @@ const CORE_NATIVE = {
   gambatte: { width: 160, height: 144 },
   gba: { width: 240, height: 160 },
   mgba: { width: 240, height: 160 },
+  // Mega Drive/Genesis: 320x224 is the standard active display (Sonic 1 included).
+  // The key is the EJS_core value lowercased, so `segaMD` from a manifest lands
+  // on `segamd`; the libretro core name is accepted too.
+  segamd: { width: 320, height: 224 },
+  genesis: { width: 320, height: 224 },
+  genesis_plus_gx: { width: 320, height: 224 },
 };
 const DEFAULT_NATIVE = { width: 160, height: 144 };
 
@@ -68,6 +74,13 @@ export function loadEmulatorConfig({
     systems[systemId] = {
       core: manifest.core?.ejs_core || manifest.core?.name || systemId,
       label: manifest.label || systemId,
+      // Shape of this console's box art, as width/height. The Game Boy's
+      // cartridge labels are square; a Genesis box is a tall rectangle, and
+      // cropping one to a square cuts the art in half. Absent ⇒ square, which
+      // is what every pre-existing cover already is.
+      coverAspect: Number.isFinite(Number(manifest.cover_aspect))
+        ? Number(manifest.cover_aspect)
+        : null,
       native: manifest.native && Number.isFinite(manifest.native.width) && Number.isFinite(manifest.native.height)
         ? { width: manifest.native.width, height: manifest.native.height }
         : null,

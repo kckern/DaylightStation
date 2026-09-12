@@ -223,7 +223,8 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 | Piano grid addressing (keys→squares: permutations, config, difficulty ladder) | `docs/reference/piano/grid-addressing.md` |
 | Piano game time budget + match gate (daily minutes, played challenge, day files) | `docs/reference/piano/games-budget-gate.md` |
 | Exercise library (shared corpus: Fitness workouts + School anatomy) | `docs/reference/fitness/exercise-library.md` |
-| Arcade emulator (EmulatorJS boot contract, gamepad routing, fault handling) | `docs/reference/gaming/emulator-resilience.md` |
+| Arcade emulator (EmulatorJS boot contract, picture shaders, gamepad routing, fault handling) | `docs/reference/gaming/emulator-resilience.md` |
+| Arcade consoles (adding a system: manifest, core, bezel geometry) | `docs/reference/gaming/arcade-consoles.md` |
 | Play sessions (metered arcade time: observation, budget, overlay) | `docs/reference/gaming/play-sessions.md` |
 | Household economy (coins) | `docs/reference/economy/economy.md` |
 | State Gates (assertions, gate policy, entitlements, replay) | `docs/reference/state-gates/README.md` |

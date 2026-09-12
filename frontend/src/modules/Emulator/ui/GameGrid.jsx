@@ -10,7 +10,7 @@
 import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { GameCover } from './GameCover.jsx';
 
-export function GameGrid({ games = [], focusedIndex = 0, onActivate, onColumnsChange, resolveMediaUrl }) {
+export function GameGrid({ games = [], focusedIndex = 0, onActivate, onColumnsChange, resolveMediaUrl, coverAspect }) {
   const gridRef = useRef(null);
   const tileRefs = useRef([]);
 
@@ -29,7 +29,7 @@ export function GameGrid({ games = [], focusedIndex = 0, onActivate, onColumnsCh
     if (ro && gridRef.current) ro.observe(gridRef.current);
     window.addEventListener('resize', measure);
     return () => { ro?.disconnect(); window.removeEventListener('resize', measure); };
-  }, [games.length, onColumnsChange]);
+  }, [games.length, onColumnsChange, coverAspect]);
 
   // Keep the focused tile scrolled into view + DOM-focused for a11y.
   useEffect(() => {
@@ -50,7 +50,14 @@ export function GameGrid({ games = [], focusedIndex = 0, onActivate, onColumnsCh
 
   return (
     <div className="emu-grid-wrap">
-      <div className="emu-grid" ref={gridRef} role="grid">
+      {/* Tile shape is the console's, not the grid's: one custom property sizes
+          both the track and the tile so they cannot drift apart. */}
+      <div
+        className="emu-grid"
+        ref={gridRef}
+        role="grid"
+        style={Number.isFinite(coverAspect) && coverAspect > 0 ? { '--emu-cover-aspect': coverAspect } : undefined}
+      >
         {games.map((game, i) => (
           <div className="emu-grid__cell" key={game.id} ref={(el) => { tileRefs.current[i] = el; }}>
             <GameCover

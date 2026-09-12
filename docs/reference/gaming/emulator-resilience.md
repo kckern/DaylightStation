@@ -68,6 +68,41 @@ the AudioMixer applied earlier — the game comes up at the wrong volume until t
 volume panel is opened, which re-applies and sticks. `bootSettle` verifies the level
 afterwards regardless.
 
+## Picture shaders
+
+Two unrelated things are called a shader in the arcade, and a system's manifest
+picks whichever it needs.
+
+`shader` is **our** layer: a CSS/canvas pass drawn over the picture. The Game
+Boy's `dotmatrix` is this — a colour wash plus a pixel grid on a canvas at
+integer device-pixel positions. It can tint and overlay, and nothing more.
+
+`ejs_shader` is one of **EmulatorJS's own** presets, run by the core inside its
+GL pipeline. The Genesis declares `crt-geom.glslp` for it: real curvature,
+scanlines, an aperture mask and phosphor bloom. `engine.applyShader()` writes
+the preset into the core's filesystem through `enableShader`; the presets and
+their GLSL are embedded in the vendored `emulator.min.js` (`EJS_SHADERS`), so
+nothing is fetched. An unknown name makes EmulatorJS switch shading off rather
+than throw — a typo costs the effect, never the game.
+
+It is applied **at the settle barrier**, as one of the verified settings above,
+for the same reason the volume is: EJS's start chain runs `loadSettings()`,
+which re-applies the stored shader choice through the same
+`handleSpecialOptions('shader', …)` path and would overwrite an early call.
+`engine.getAppliedShader()` is the read-back — the preset's presence in the
+core's filesystem, not the fact that `enableShader` returned.
+
+**An effect that warps the picture has to be `ejs_shader`, and cannot be built
+outside the core.** The core's canvas is created with
+`preserveDrawingBuffer: false`, so its drawing buffer is cleared the instant the
+frame is presented. Sampling it from another WebGL context — the way the
+Player's `crtRenderer` upscales a `<video>` — reads back transparent black while
+the picture is plainly on screen. The reading is unambiguous: a `drawImage` of
+the live canvas yields the single colour `0,0,0,0`. Forcing
+`preserveDrawingBuffer: true` onto the context does not rescue it either. Do not
+reach for the Player's renderer here; it is built for a `<video>` source, which
+has no such barrier.
+
 ## Audio context
 
 The live state is at `Module.AL.contexts[<id>].audioCtx.state`. It is only readable

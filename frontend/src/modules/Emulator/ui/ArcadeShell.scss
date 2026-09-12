@@ -92,7 +92,14 @@
   // the grid shrink-wraps to a single column. Empty tracks collapse, so items
   // stay centered via justify-content.
   width: 100%;
-  grid-template-columns: repeat(auto-fit, 14vh);
+  // Tile HEIGHT is the constant so rows line up across consoles; the width
+  // follows the console's box-art shape (--emu-cover-aspect = width/height,
+  // set per system from its manifest). Default 1 = square, which is what the
+  // Game Boy's 512x512 cartridge labels are.
+  --emu-cover-aspect: 1;
+  --emu-cover-h: 14vh;
+  --emu-cover-w: calc(var(--emu-cover-h) * var(--emu-cover-aspect));
+  grid-template-columns: repeat(auto-fit, var(--emu-cover-w));
   gap: 3vh 3vw;
   justify-content: center;
   align-content: center;
@@ -101,11 +108,12 @@
   &__empty { color: #6b7080; font-size: 2vh; }
 }
 
-// A cover tile — square, art-filled, no caption.
+// A cover tile — art-filled, no caption. Shaped by the console's box art
+// (see --emu-cover-aspect on .emu-grid); square unless a system says otherwise.
 .emu-cover {
   position: relative;
-  width: 14vh;
-  height: 14vh;
+  width: var(--emu-cover-w, 14vh);
+  height: var(--emu-cover-h, 14vh);
   padding: 0;
   border: 2px solid transparent;
   border-radius: 1.4vh;
