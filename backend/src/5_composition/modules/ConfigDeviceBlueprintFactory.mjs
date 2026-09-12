@@ -62,6 +62,19 @@ export class ConfigDeviceBlueprintFactory extends IDeviceBlueprintFactory {
         // `video_call: true`; anything silent is not a call target, so a new
         // screen is never offered a camera it does not have.
         videoCall: source.video_call === true,
+        // Whether this device's play time is metered, and whether it may carry
+        // a countdown overlay.
+        //
+        // DECLARED, never inferred, for the same reason as `video_call` above
+        // and with sharper consequences. Observation costs a polling loop
+        // against a device; the overlay is durable device state that renders
+        // over EVERYTHING that screen shows, not only over games. Inferring
+        // either from "has a screen" or "can launch a game" would eventually
+        // put a countdown on a wall panel showing artwork. A device opts in;
+        // silence means no meter and no overlay, with no code path that can
+        // create one.
+        playObservation: source.play_observation === true,
+        playOverlay: source.play_overlay === true,
         defaultVolume: source.default_volume,
         // Volume governance. `cap` is the everyday ceiling; `boost_max` is the
         // highest a temporary override may ever reach. Absent `volume:` block =

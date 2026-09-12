@@ -1,0 +1,165 @@
+/**
+ * Watches the watchers.
+ *
+ * A meter that stops measuring looks exactly like a house where nobody is
+ * playing: no events, no errors, no sessions. That symmetry is the danger this
+ * component exists to break. Silence is not evidence of quiet, so the health of
+ * each tracker is inspected on its own schedule and anything wrong is said out
+ * loud.
+ *
+ * Three conditions, each a different kind of wrong:
+ *
+ *  - **Stale** — no tick within the tolerance. The loop has stopped, hung, or
+ *    is wedged behind a probe that never returns. This is the serious one,
+ *    because it is the one that is otherwise invisible.
+ *  - **Failing** — ticks are happening and erroring. The device is unreachable
+ *    or answering badly; we know we cannot see.
+ *  - **Degraded** — observations arrive but cannot confirm playing versus
+ *    paused, so time may be over-counted. Not a failure; a measurably worse
+ *    meter, and worth knowing before the numbers are questioned.
+ *
+ * Alarms are edge-triggered: a condition is announced when it starts and when it
+ * clears, not on every sweep. A watchdog that repeats itself every interval is
+ * one people learn to filter out.
+ *
+ * PROLONGED blindness escalates to a person. The system will not stop a game it
+ * cannot see — killing blind is worse than mis-billing — but going blind must
+ * not therefore become a way to play forever. So past a longer threshold the
+ * device is marked as not-to-be-granted-more-play and a responsible adult is
+ * told, which closes the hole without ever pointing a kill switch at a child
+ * nobody can observe.
+ */
+export class PlayObservationWatchdog {
+  #trackers; #scheduler; #now; #logger; #alert;
+  #staleAfterMs; #errorThreshold; #intervalMs; #escalateAfterMs;
+  #cancel = null; #running = false;
+  #active = new Map();
+  #blocked = new Set();
+
+  constructor({
+    trackers = [], scheduler, now, logger = console, alert = null,
+    staleAfterMs, errorThreshold = 3, intervalMs, escalateAfterMs = null,
+  }) {
+    if (typeof scheduler?.after !== 'function') throw new Error('PlayObservationWatchdog requires a scheduler with after()');
+    if (typeof now !== 'function') throw new Error('PlayObservationWatchdog requires an injected now()');
+    if (!Number.isFinite(staleAfterMs) || staleAfterMs <= 0) throw new Error('PlayObservationWatchdog requires a positive staleAfterMs');
+    if (!Number.isFinite(intervalMs) || intervalMs <= 0) throw new Error('PlayObservationWatchdog requires a positive intervalMs');
+    this.#trackers = trackers;
+    this.#scheduler = scheduler;
+    this.#now = now;
+    this.#logger = logger;
+    this.#alert = alert;
+    this.#staleAfterMs = staleAfterMs;
+    // Default: blindness is tolerable for a while, then it is a person's problem.
+    this.#escalateAfterMs = Number.isFinite(escalateAfterMs) ? escalateAfterMs : staleAfterMs * 10;
+    this.#errorThreshold = errorThreshold;
+    this.#intervalMs = intervalMs;
+  }
+
+  get isRunning() { return this.#running; }
+
+  start() {
+    if (this.#running) return this;
+    this.#running = true;
+    this.#schedule();
+    return this;
+  }
+
+  stop() {
+    this.#running = false;
+    this.#cancel?.();
+    this.#cancel = null;
+    return this;
+  }
+
+  #schedule() {
+    if (!this.#running) return;
+    this.#cancel = this.#scheduler.after(this.#intervalMs, () => {
+      try { this.check(); } catch (error) {
+        this.#logger.error?.('play.watchdog.failed', { error: error.message });
+      }
+      this.#schedule();
+    });
+  }
+
+  /** One sweep. Returns the conditions currently active, for tests and probes. */
+  check() {
+    const at = Date.parse(this.#now());
+    const found = [];
+
+    for (const tracker of this.#trackers) {
+      for (const health of tracker.getHealth()) {
+        const { deviceId, lastTickAt, consecutiveErrors = 0, degraded, lastError } = health;
+
+        // A tracker that has never ticked is not yet stale — it may have only
+        // just started. Staleness needs a previous success to be measured from.
+        const age = lastTickAt ? at - Date.parse(lastTickAt) : null;
+        const stale = age !== null && age > this.#staleAfterMs;
+        const failing = consecutiveErrors >= this.#errorThreshold;
+
+        this.#edge(deviceId, 'stale', stale, 'error', {
+          ageMs: age, staleAfterMs: this.#staleAfterMs,
+          note: 'no observation within tolerance — the meter may be blind while play continues',
+        });
+        this.#edge(deviceId, 'failing', failing, 'warn', { consecutiveErrors, lastError });
+        this.#edge(deviceId, 'degraded', degraded === true, 'warn', {
+          note: 'observations arriving but playing-versus-paused unconfirmed; played time may be over-counted',
+        });
+
+        // Prolonged blindness: mark the device and tell someone. Never kill.
+        const prolonged = age !== null && age > this.#escalateAfterMs;
+        if (prolonged && !this.#blocked.has(deviceId)) {
+          this.#blocked.add(deviceId);
+          this.#logger.error?.('play.watchdog.blind_escalated', {
+            deviceId, ageMs: age,
+            note: 'no new play granted on this device until observation returns; the running game is NOT stopped',
+          });
+          void this.#raise(deviceId, 'blind', 'The arcade timer cannot see the TV. No new games until it recovers.');
+          found.push({ deviceId, condition: 'blind' });
+        } else if (!prolonged && this.#blocked.has(deviceId)) {
+          this.#blocked.delete(deviceId);
+          this.#logger.info?.('play.watchdog.blind_cleared', { deviceId });
+        } else if (prolonged) {
+          found.push({ deviceId, condition: 'blind' });
+        }
+
+        if (stale) found.push({ deviceId, condition: 'stale' });
+        if (failing) found.push({ deviceId, condition: 'failing' });
+        if (degraded === true) found.push({ deviceId, condition: 'degraded' });
+      }
+    }
+    return found;
+  }
+
+  /**
+   * Devices that must not be granted more play until observation returns. The
+   * eligibility gate consults this; nothing here stops a game already running.
+   */
+  isBlocked(deviceId) { return this.#blocked.has(deviceId); }
+
+  blockedDevices() { return [...this.#blocked]; }
+
+  async #raise(deviceId, condition, message) {
+    if (!this.#alert?.raise) return;
+    try {
+      await this.#alert.raise({ deviceId, condition, message });
+    } catch (error) {
+      this.#logger.warn?.('play.watchdog.alert_failed', { deviceId, error: error.message });
+    }
+  }
+
+  /** Announce only on transitions, so an alarm stays worth reading. */
+  #edge(deviceId, condition, isActive, level, detail) {
+    const key = `${deviceId}:${condition}`;
+    const wasActive = this.#active.get(key) === true;
+    if (isActive === wasActive) return;
+    this.#active.set(key, isActive);
+    if (isActive) {
+      this.#logger[level]?.(`play.watchdog.${condition}`, { deviceId, ...detail });
+    } else {
+      this.#logger.info?.(`play.watchdog.${condition}_cleared`, { deviceId });
+    }
+  }
+}
+
+export default PlayObservationWatchdog;
