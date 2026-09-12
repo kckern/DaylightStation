@@ -1,4 +1,16 @@
 /**
+ * coinMeteredGate — SUPERSEDED by serverMeteredGate.
+ *
+ * This metered locally and settled against the economy from the browser, which
+ * works only for a surface we own. The console emulator has no client to host a
+ * gate, so keeping this as the book of record would mean two meters keeping
+ * their own time and drifting apart. Authority now lives on the server, which
+ * measures both surfaces; `serverMeteredGate` renders what it says and stops
+ * play when it says the time is gone.
+ *
+ * Retained for the coin flows that still run through it. New work should not
+ * add authority here.
+ *
  * coinMeteredGate — a coin-metered governance gate for the Emulator Console.
  *
  * The arcade drains a player's household coins while they play. This gate is the
