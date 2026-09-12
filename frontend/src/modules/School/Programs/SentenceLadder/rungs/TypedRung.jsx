@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSentenceAudio, clipsFor } from '../useSentenceAudio.js';
 import { languageLog } from '../languageLog.js';
+import { useHangulTyping } from '../../../ime/HangulTypingProvider.jsx';
+import { columnsFor } from './glyphStrip.js';
+import GlyphStrip from './GlyphStrip.jsx';
 import Icon from '../../../home/icons/Icon.jsx';
 
 /**
@@ -12,15 +15,29 @@ import Icon from '../../../home/icons/Icon.jsx';
  * two components would mean two places to hardcode a language, which is
  * exactly what the role model exists to prevent.
  *
- *   dictation      — hear target, type target. In enrollment-owned `copy`
- *                    mode, one target glyph is revealed ahead of the matching
- *                    typed prefix, so early learners can practise entering
- *                    the script without being handed the whole sentence.
- *   interpretation — hear target, type source. The target text is shown, since
- *                    the task is rendering meaning, not recalling the audio.
+ *   dictation      — hear target, type target. Drawn as TWO COLUMN-ALIGNED
+ *                    ROWS (`GlyphStrip`): the model above, the learner's answer
+ *                    directly beneath, one grid column per syllable. In
+ *                    enrollment-owned `copy` mode the model is shown one glyph
+ *                    ahead; in listen mode it is not in the DOM at all.
+ *   interpretation — hear target, type source. The target text is shown whole
+ *                    and the field stays visible: the task is rendering
+ *                    meaning, not tracing a script, so there is nothing to
+ *                    align column by column and an English answer aligned
+ *                    character by character would just leak its length.
+ *
+ * WHY THE FIELD IS OFFSCREEN ON THE DICTATION RUNG. The strip's lower row IS
+ * the field's rendering — a second, differently-sized copy of the same text
+ * directly under it was the old stack's worst moment, because the two type
+ * scales had to be kept in sync by hand and never were. The input stays a real,
+ * focused, selectable element (see `.is-offscreen`): the in-page IME reads
+ * `selectionStart` on every keystroke, so `display:none` / `visibility:hidden`
+ * would strand every half-composed syllable.
  *
  * Tab replays the clip. That was the 2016 shortcut and it matters: a learner
- * mid-word should not have to leave the field to hear the sentence again.
+ * mid-word should not have to leave the field to hear the sentence again. The
+ * shortcut is written ON the play control rather than in a hint line of its
+ * own — one line of screen, and it says what the control does.
  *
  * The audio used to LOOP until submit, starting on the first keystroke. A
  * learner typing one Hangul syllable at a time was hammered by the same
@@ -42,6 +59,18 @@ export default function TypedRung({
   idleReplayMs = DEFAULT_IDLE_REPLAY_MS,
 }) {
   const [value, setValue] = useState('');
+  /**
+   * What the IME says is SETTLED and what is still in flight.
+   *
+   * Never `value`. In 두벌식 a consonant is genuinely ambiguous until the next
+   * vowel lands: typing 오늘 leaves the field reading 온 after ㄴ, and only the
+   * next vowel decides whether that ㄴ closed 오 or opened 늘. A strip fed the
+   * field value calls column 0 settled-and-WRONG at that moment, reddens it and
+   * jumps the caret on — then undoes itself a keystroke later. The glyph the
+   * child is in the middle of typing disappears out from under them.
+   * `compositionState` is the seam that makes that impossible.
+   */
+  const [typed, setTyped] = useState({ committed: '', pending: '' });
   const [played, setPlayed] = useState(false);
   // Sticky, unlike `saving`: the answer is in, so nothing may start sounding
   // while the program works out which rung comes next.
@@ -54,24 +83,29 @@ export default function TypedRung({
   const [hushed, setHushed] = useState(false);
   const inputRef = useRef(null);
 
+  const { compositionState } = useHangulTyping();
   const { playSequence, preload, stop, playing, blocked } = useSentenceAudio();
 
   const responseLang = entry.response?.language;
   const promptLang = entry.prompt?.[0]?.language;
   const isDictation = entry.rung === 'dictation';
   const isCopying = isDictation && entry.copyPrompt === true;
-  const showPromptText = !isDictation || isCopying;
   const targetText = entry.text?.[promptLang] ?? '';
-  const visibleTargetText = useMemo(() => {
-    if (!isCopying) return targetText;
-    const targetGlyphs = Array.from(targetText);
-    const typedGlyphs = Array.from(value);
-    let matched = 0;
-    while (matched < typedGlyphs.length && typedGlyphs[matched] === targetGlyphs[matched]) matched += 1;
-    // Keep exactly one upcoming glyph in view. Precomposed Hangul syllables
-    // are one code point, which is the step the learner sees on the keyboard.
-    return targetGlyphs.slice(0, Math.min(matched + 1, targetGlyphs.length)).join('');
-  }, [isCopying, targetText, value]);
+
+  /**
+   * How much of the model the strip is allowed to draw. Copy mode traces a
+   * visible sentence; listen mode must not have it in the DOM at all, or the
+   * drill is a reading exercise for anyone who can reach devtools. Threaded as
+   * a value rather than inlined so the peek control that flips it to 'all' is
+   * one line here and nothing at all in `glyphStrip.js`.
+   */
+  const reveal = isCopying ? 'model' : 'none';
+  const columns = useMemo(
+    () => columnsFor({
+      target: targetText, committed: typed.committed, pending: typed.pending, reveal,
+    }),
+    [targetText, typed.committed, typed.pending, reveal],
+  );
 
   // NOTE: do NOT reset `value`/`played` here. This component is remounted per
   // entry via `key={rung-seq}` (in SentenceLadderProgram), so each entry already
@@ -172,79 +206,102 @@ export default function TypedRung({
     }
   }, [play, submit]);
 
+  const label = isCopying ? 'Copy the sentence' : isDictation ? 'Type what you hear' : 'Type what it means';
+
   return (
     <div className={`lang-rung lang-rung--${entry.rung}`}>
-      <div className="lang-rung__controls">
-        {/* Play leads until it has been used; after that Submit is the only
-            primary, so the screen always answers "what do I do next" once. */}
-        <button
-          type="button"
-          className={`lang-btn lang-btn--disc${played ? ' lang-btn--disc-quiet' : ''}`}
-          onClick={play}
-        >
-          <Icon name="play" className="lang-btn__glyph" />
-          <span className="lang-btn__word">{played ? 'Play again' : 'Play'}</span>
-        </button>
-        {/* The way out of the sound, in the same row and the same disc the
-            repetition rung uses. While the clip looped there was no such
-            control anywhere on this rung: the only escape was to finish
-            typing. It appears only while something is actually sounding, so
-            the row never offers a Stop with nothing to stop. */}
-        {playing && (
-          <button
-            type="button"
-            className="lang-btn lang-btn--disc lang-btn--disc-quiet"
-            onClick={stopPlayback}
-          >
-            <Icon name="pause" className="lang-btn__glyph" />
-            <span className="lang-btn__word">Stop</span>
-          </button>
-        )}
-      </div>
-
       {blocked && (
         <p className="lang-rung__notice" role="alert">Audio was blocked — tap Play again.</p>
       )}
 
-      {/* Ordinary dictation shows nothing: recalling the sentence is the task.
-          Copy mode intentionally reveals it for script-entry practice. */}
-      {showPromptText && (
-        <p className="lang-rung__target" aria-live={isCopying ? 'polite' : undefined}>{visibleTargetText}</p>
-      )}
+      {/* The drill, taking the height the baseline leaves it. */}
+      <div className="lang-rung__stage">
+        {/* Dictation gets the two column-aligned rows; interpretation gets the
+            whole target sentence and a visible field, because there is no
+            per-syllable correspondence to draw and an English answer aligned
+            character by character would only leak its length. */}
+        {isDictation
+          ? <GlyphStrip columns={columns} caret={!saving && !submitted} />
+          : <p className="lang-rung__target">{targetText}</p>}
 
-      <label className="lang-rung__label" htmlFor={`lang-input-${entry.seq}`}>
-        {isCopying ? 'Copy the sentence' : isDictation ? 'Type what you hear' : 'Type what it means'}
-      </label>
-      <input
-        id={`lang-input-${entry.seq}`}
-        ref={inputRef}
-        className="lang-rung__input"
-        type="text"
-        lang={responseLang}
-        /* Drives the School-wide in-page IME: dictation asks for the target
-           script, interpretation for the source, and the mode follows focus
-           with no keypress. F6 still overrides. */
-        data-ime-lang={responseLang}
-        autoComplete="off"
-        autoCorrect="off"
-        spellCheck={false}
-        value={value}
-        onChange={(e) => {
-          // Nothing starts playing here any more. This line is where the loop
-          // was armed — the first keystroke began audio that then ran until
-          // submit — so the one job a keystroke has now is to be a keystroke.
-          // (It also restarts the idle wait, via the effect's `value` dep.)
-          setValue(e.target.value);
-        }}
-        onKeyDown={onKeyDown}
-        disabled={saving}
-      />
-      {/* Only where those keys exist. A touch panel may have a Hangul IME on
-          its on-screen keyboard and no Tab key at all, and instructions for
-          absent hardware are worse than no instructions. */}
-      {showShortcuts && <p className="lang-rung__hint">Tab plays the sentence · Enter submits</p>}
+        {/* Kept on the dictation rung for the accessible name only: the strip is
+            `role="presentation"` duplication of this field, so the field is still
+            the labelled control, but a visible caption above two rows that already
+            say "model here, your answer here" is the stack this screen shed. */}
+        <label
+          className={`lang-rung__label${isDictation ? ' is-offscreen' : ''}`}
+          htmlFor={`lang-input-${entry.seq}`}
+        >
+          {label}
+        </label>
+        <input
+          id={`lang-input-${entry.seq}`}
+          ref={inputRef}
+          className={`lang-rung__input${isDictation ? ' is-offscreen' : ''}`}
+          type="text"
+          lang={responseLang}
+          /* Drives the School-wide in-page IME: dictation asks for the target
+             script, interpretation for the source, and the mode follows focus
+             with no keypress. F6 still overrides. */
+          data-ime-lang={responseLang}
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+          value={value}
+          onChange={(e) => {
+            // Nothing starts playing here any more. This line is where the loop
+            // was armed — the first keystroke began audio that then ran until
+            // submit — so the one job a keystroke has now is to be a keystroke.
+            // (It also restarts the idle wait, via the effect's `value` dep.)
+            setValue(e.target.value);
+            // Read from the composer DURING its own change event, which is the
+            // only moment its answer is guaranteed current — see the note on
+            // `typed` above for why the field's value will not do.
+            setTyped(compositionState(e.target));
+          }}
+          onKeyDown={onKeyDown}
+          disabled={saving}
+        />
+      </div>
 
-      <div className="lang-rung__controls">
+      {/* The baseline: what sounds, on the left with its shortcut written on
+          it, and the way forward on the right. Audio is NOT a column — a 90px
+          disc owning the vertical centre of the screen made the loudest thing
+          on a typing rung the thing the learner needs least often. */}
+      <div className="lang-rung__baseline">
+        <div className="lang-rung__cues">
+          <button
+            type="button"
+            className="lang-btn lang-btn--quiet"
+            onClick={play}
+          >
+            <Icon name="play" className="lang-btn__glyph" />
+            <span className="lang-btn__word">{played ? 'Play again' : 'Play'}</span>
+            {/* The visible caption, and the shortcut ONLY where those keys
+                exist: a touch panel may have a Hangul IME on its on-screen
+                keyboard and no Tab key at all, and instructions for absent
+                hardware are worse than no instructions. Held out of the
+                accessible name so the control is still just "Play again". */}
+            <span className="lang-btn__key" aria-hidden="true">
+              {showShortcuts ? 'Tab plays' : (played ? 'Play again' : 'Play')}
+            </span>
+          </button>
+          {/* The way out of the sound. While the clip looped there was no such
+              control anywhere on this rung: the only escape was to finish
+              typing. It appears only while something is actually sounding, so
+              the row never offers a Stop with nothing to stop. */}
+          {playing && (
+            <button
+              type="button"
+              className="lang-btn lang-btn--quiet"
+              onClick={stopPlayback}
+            >
+              <Icon name="pause" className="lang-btn__glyph" />
+              <span className="lang-btn__word">Stop</span>
+              <span className="lang-btn__key" aria-hidden="true">Stop</span>
+            </button>
+          )}
+        </div>
         <button
           type="button"
           className="lang-btn lang-btn--primary"

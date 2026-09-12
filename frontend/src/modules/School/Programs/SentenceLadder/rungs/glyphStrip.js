@@ -39,7 +39,17 @@ export function columnsFor({ target, committed, pending = '', reveal = 'model' }
   const at = got.length;
 
   return want.map((glyph, i) => {
-    if (i < at) return { want: glyph, got: got[i], state: got[i] === glyph ? 'done' : 'wrong' };
+    // A SETTLED COLUMN IS STILL SUBJECT TO `reveal`. Returning the model glyph
+    // here regardless turned listen mode into an answer key: every syllable the
+    // learner committed — right OR WRONG — printed the correct one above it, so
+    // typing anything at all walked the sentence out one glyph at a time and
+    // the learner could simply copy it back before submitting. Found by
+    // rendering the rung, not by a test; no assertion anywhere covered
+    // `reveal: 'none'` with committed text in it. The state is kept, so `done`
+    // and `wrong` still colour the learner's own row.
+    if (i < at) {
+      return { want: reveal === 'none' ? '' : glyph, got: got[i], state: got[i] === glyph ? 'done' : 'wrong' };
+    }
     if (reveal === 'none') return { want: glyph, got: null, state: 'blind' };
     if (i === at) return { want: glyph, got: ghost || null, state: 'current' };
     if (reveal === 'all') return { want: glyph, got: null, state: 'next' };

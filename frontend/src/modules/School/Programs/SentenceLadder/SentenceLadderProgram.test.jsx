@@ -1,8 +1,29 @@
+import fs from 'node:fs';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import SentenceLadderProgram from './SentenceLadderProgram.jsx';
 import TypedRung from './rungs/TypedRung.jsx';
+import HangulTypingProvider from '../../ime/HangulTypingProvider.jsx';
 import ICONS from '../../home/icons/iconRegistry.js';
+
+/**
+ * The dictation surface is a grid, not a sentence: one column per syllable,
+ * the model on the upper row and the learner's answer on the lower one. These
+ * read a column rather than a string, because `getByText('한국')` — which is
+ * how the old prefix-matching prompt was asserted — cannot tell a settled
+ * glyph from a ghosted one, and that difference is the whole rung.
+ */
+/**
+ * The stylesheet, as text. jsdom applies no external CSS, so the one rule on
+ * this screen that would break the IME rather than merely look wrong —
+ * whatever hides the dictation field — cannot be caught by a computed style.
+ * It is asserted against the source instead.
+ */
+const SCSS_SOURCE = fs.readFileSync(new URL('./SentenceLadder.scss', import.meta.url), 'utf8');
+
+const col = (i) => document.querySelectorAll('.lang-strip__col')[i];
+const model = (i) => col(i).querySelector('.lang-strip__want').textContent;
+const answer = (i) => col(i).querySelector('.lang-strip__got').textContent;
 
 const dayMock = vi.fn();
 const previewDayMock = vi.fn();
@@ -47,6 +68,23 @@ vi.mock('./languageLog.js', () => ({
     currentRun: vi.fn(() => 'test-run'),
     endRun: vi.fn(),
   },
+}));
+
+/**
+ * IS THERE A KEYBOARD — asked with a lever, not inferred from a mouse.
+ *
+ * `lib/hardwareKeyboard.js` caches a found keyboard in MODULE state on purpose
+ * and deliberately has no "no": one typing keystroke anywhere in this file
+ * teaches it for every test that runs after. The shortcut test below was
+ * reading that leak — it passed only because nothing above it had ever typed a
+ * letter, and the moment a test drove the in-page IME with real `KeyD`-shaped
+ * events, "hides shortcuts on a touch panel" started failing on ordering
+ * rather than on behaviour. It now says what it means.
+ */
+const { keyboard } = vi.hoisted(() => ({ keyboard: { present: false } }));
+vi.mock('../../../../hooks/useHardwareKeyboard.js', () => ({
+  useHardwareKeyboard: () => keyboard.present,
+  default: () => keyboard.present,
 }));
 
 vi.mock('./languageApi.js', () => ({
@@ -131,6 +169,7 @@ beforeEach(() => {
   pacingLogMock.mockClear();
   pacingWarnMock.mockClear();
   capabilityLogMock.mockClear();
+  keyboard.present = false;
   historyMock.mockReset().mockResolvedValue({
     ok: true,
     status: 200,
@@ -393,10 +432,21 @@ describe('the day', () => {
     }));
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
 
-    expect(await screen.findByText('한')).toBeTruthy();
-    const input = screen.getByLabelText('Copy the sentence');
+    const input = await screen.findByLabelText('Copy the sentence');
+    // One column per syllable of 한국어 1, the live one plus exactly one
+    // ghosted next; everything past that is not drawn.
+    expect(model(0)).toBe('한');
+    expect(col(0).className).toContain('is-current');
+    expect(col(1).className).toContain('is-next');
+    expect(col(2).className).toContain('is-hidden');
+
     fireEvent.change(input, { target: { value: '한' } });
-    expect(screen.getByText('한국')).toBeTruthy();
+    expect(col(0).className).toContain('is-done');
+    expect(answer(0)).toBe('한');
+    expect(col(1).className).toContain('is-current');
+    expect(col(2).className).toContain('is-next');
+    // The sentence is columns, never one run of text — a `getByText` for the
+    // whole thing is how the old prefix-matching prompt was asserted.
     expect(screen.queryByText('한국어 1')).toBeNull();
   });
 
@@ -1140,6 +1190,98 @@ describe('typed rung audio', () => {
   });
 });
 
+// THE SEAM THE WHOLE SURFACE RESTS ON. The strip is fed the IME's COMMITTED
+// prefix, never the field's value. Wired to `value` it looks correct in every
+// test that types one precomposed syllable at a time and falls apart under a
+// real keyboard, which is the only way a child ever uses it.
+describe('the typing surface', () => {
+  const rung = (options) => render(
+    <HangulTypingProvider>
+      <TypedRung
+        entry={entry(1, 'dictation', false, { text: { EN: 'today', KR: '오늘' }, ...options })}
+        audioUrl={(seq, lang) => `/audio/${seq}/${lang}`}
+        onComplete={() => {}}
+        saving={false}
+        idleReplayMs={0}
+      />
+    </HangulTypingProvider>,
+  );
+  // 두벌식 on a physical keyboard, which is what the Portal has: one jamo per
+  // key, matched on `code` because Android's reported `key` follows whatever
+  // layout it thinks is attached.
+  const typeJamo = (el, keys) => {
+    for (const ch of keys) act(() => { fireEvent.keyDown(el, { code: `Key${ch.toUpperCase()}`, key: ch }); });
+  };
+
+  it('keeps the glyph being typed on screen through an ambiguous syllable', () => {
+    rung({ copyPrompt: true });
+    const input = screen.getByLabelText('Copy the sentence');
+    // Blur first: the rung focuses itself in a mount effect, and a child's
+    // effects run BEFORE its parents', so in a test that mounts the provider
+    // and the rung together the provider's focusin listener is not registered
+    // yet and never sees that first focus. In the app the provider has been
+    // mounted since the shell loaded, so this is a test artefact — but without
+    // it the field never declares Korean and nothing composes.
+    act(() => { input.blur(); input.focus(); });
+
+    // d h → ㅇ ㅗ → 오. Then s → ㄴ, and the FIELD now spells 온: a real word,
+    // one glyph, and not the 오 the learner is typing. Only the next vowel
+    // decides whether that ㄴ closed 오 or opened 늘.
+    typeJamo(input, 'dhs');
+    expect(input.value).toBe('온');
+
+    // Nothing has SETTLED, so column 0 has not moved: 오 is still drawn, still
+    // the live column, still not wrong. Fed the field value instead, the strip
+    // would call column 0 settled-and-wrong, redden it, jump the caret to
+    // column 1 — and undo all of it one keystroke later.
+    expect(model(0)).toBe('오');
+    expect(col(0).className).toContain('is-current');
+    expect(col(0).className).not.toContain('is-wrong');
+    expect(answer(0)).toBe('온');
+
+    // m f → ㅡ ㄹ. The ㄴ leaves 오 for the next syllable, 오 settles, and the
+    // caret moves exactly once — when the ambiguity resolved.
+    typeJamo(input, 'mf');
+    expect(input.value).toBe('오늘');
+    expect(col(0).className).toContain('is-done');
+    expect(answer(0)).toBe('오');
+    expect(col(1).className).toContain('is-current');
+    expect(answer(1)).toBe('늘');
+  });
+
+  it('does not print the model above a syllable the learner already typed, in listen mode', async () => {
+    // A SETTLED COLUMN IS STILL SUBJECT TO `reveal`. It used to render its
+    // target glyph whatever reveal said, so in listen mode every committed
+    // syllable printed the correct one above the learner's — right or WRONG.
+    // Typing anything at all walked the hidden sentence out one glyph at a
+    // time, to be copied back before Submit. Found by rendering the rung; no
+    // assertion anywhere covered `reveal: 'none'` with committed text in it.
+    rung();
+    const input = screen.getByLabelText('Type what you hear');
+    await act(async () => { fireEvent.change(input, { target: { value: '우' } }); });
+    expect(answer(0)).toBe('우');
+    expect(col(0).className).toContain('is-wrong');
+    expect(model(0)).toBe('');
+    // Not merely invisible — not in the document. The strip is the only thing
+    // on this screen that knows the sentence.
+    expect(document.body.textContent).not.toContain('오');
+  });
+
+  it('parks the field offscreen rather than hiding it, so the IME keeps its selection', () => {
+    // `display:none` and `visibility:hidden` both take an element out of the
+    // selection APIs, and `FieldComposer.#continuous` reads `selectionStart`
+    // on every keystroke — so either one strands every half-composed syllable.
+    rung({ copyPrompt: true });
+    const input = screen.getByLabelText('Copy the sentence');
+    expect(input.className).toContain('is-offscreen');
+    const css = SCSS_SOURCE.slice(SCSS_SOURCE.indexOf('&__input.is-offscreen'));
+    const rule = css.slice(0, css.indexOf('}'));
+    expect(rule).not.toMatch(/display:\s*none/);
+    expect(rule).not.toMatch(/visibility:\s*hidden/);
+    expect(rule).toMatch(/position:\s*absolute/);
+  });
+});
+
 describe('day rollover', () => {
   it('offers the next day once everything is done', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition', true)] }));
@@ -1210,28 +1352,24 @@ describe('dismissal and dead ends', () => {
   });
 
   it('hides keyboard shortcuts on a touch panel, shows them on a desktop', async () => {
-    // Driven explicitly rather than trusting the test environment's ambient
-    // matchMedia: the whole point is that the Portal and a laptop differ.
-    const setPointer = (fine) => {
-      window.matchMedia = (q) => ({
-        matches: q.includes('pointer: fine') ? fine : false,
-        media: q, addListener() {}, removeListener() {},
-        addEventListener() {}, removeEventListener() {},
-      });
-    };
+    // Driven explicitly rather than trusting an ambient signal: the whole point
+    // is that the Portal and a laptop differ, and the hint now rides ON the
+    // play control rather than in a hint line of its own.
     dayMock.mockResolvedValue(dayPayload({ chain: ['dictation'], queue: [entry(1, 'dictation')] }));
 
-    setPointer(false);
+    keyboard.present = false;
     const touch = render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByLabelText(/Type what you hear/i);
     expect(screen.queryByText(/Tab plays/)).toBeNull();
     touch.unmount();
 
-    setPointer(true);
+    keyboard.present = true;
     window.localStorage.clear();
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByLabelText(/Type what you hear/i);
+    // On the control it triggers, and out of that control's accessible name.
     expect(screen.getByText(/Tab plays/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Play again' })).toBeTruthy();
   });
 
   it('keeps device capabilities out of the drill surface', async () => {
