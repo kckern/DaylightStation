@@ -3733,6 +3733,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     httpClient: axios,
     daylightHost,
     haGateway: homeAutomationAdapters.haGateway,
+    profileFor: (username) => userService.getProfile(username),
     logger: rootLogger.child({ module: 'play-sessions' }),
   });
   await playSessionTracking.start();

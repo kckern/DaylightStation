@@ -25,6 +25,7 @@ import { OverlayPlaySessionAnnouncer } from '#apps/gaming/runtime/OverlayPlaySes
 import { KioskPlayTerminator } from '#adapters/devices/KioskPlayTerminator.mjs';
 import { KioskPlaySpeaker } from '#adapters/devices/KioskPlaySpeaker.mjs';
 import { NoPlayTimeGrants } from '#adapters/gaming/NoPlayTimeGrants.mjs';
+import { RoleBasedPlayGrants } from '#adapters/gaming/RoleBasedPlayGrants.mjs';
 import { HomeAssistantPlayAlert } from '#adapters/devices/HomeAssistantPlayAlert.mjs';
 import { EnforcePlayBudget } from '#apps/gaming/usecases/EnforcePlayBudget.mjs';
 import { YamlPlaySessionDatastore } from '#adapters/persistence/yaml/YamlPlaySessionDatastore.mjs';
@@ -80,7 +81,7 @@ export function createPlaySessionTracking(config) {
   const {
     devicesConfig, gamesConfig, gamesCatalog = null, configService, eventBus, httpClient,
     daylightHost = null, overlayPath = '/arcade-film.html',
-    grants = null, haGateway = null,
+    grants = null, haGateway = null, profileFor = null,
     intervalMs = DEFAULT_INTERVAL_MS,
     scheduler = new NodeApplicationScheduler(),
     now = () => new Date().toISOString(),
@@ -147,7 +148,10 @@ export function createPlaySessionTracking(config) {
   // grant source replaces this.
   const adbByDevice = new Map();
   const enforcement = new EnforcePlayBudget({
-    grants: grants || new NoPlayTimeGrants(),
+    // Adults play without a ceiling so family play works before the economy
+    // issues grants; everyone else gets none, so nothing counts down for them.
+    grants: grants
+      || (profileFor ? new RoleBasedPlayGrants({ profileFor, logger }) : new NoPlayTimeGrants()),
     terminator: new KioskPlayTerminator({
       adbByDevice, kioskByDevice, packageName, logger,
     }),
