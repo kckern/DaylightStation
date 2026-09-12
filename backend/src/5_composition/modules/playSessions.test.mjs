@@ -25,11 +25,11 @@ const build = (devices, over = {}) => createPlaySessionTracking({
 });
 
 describe('play-session wiring is opt-in per device', () => {
-  it('builds nothing when no device declares it', () => {
+  it('builds nothing when no device declares it', async () => {
     const r = build({ 'art-panel': notMetered, 'office-pc': notMetered });
     expect(r.trackers).toHaveLength(0);
     expect(r.sessions).toBeNull();
-    expect(() => r.start()).not.toThrow();
+    await expect(r.start()).resolves.not.toThrow();
   });
 
   it('watches only the declared devices', () => {
@@ -44,10 +44,10 @@ describe('play-session wiring is opt-in per device', () => {
     expect(r.trackers).toHaveLength(0);
   });
 
-  it('starts and stops every tracker it built', () => {
+  it('starts and stops every tracker it built', async () => {
     const r = build({ 'livingroom-tv': metered, 'other-tv': metered });
     expect(r.trackers).toHaveLength(2);
-    r.start();
+    await r.start();
     expect(r.trackers.every((t) => t.isRunning)).toBe(true);
     r.stop();
     expect(r.trackers.some((t) => t.isRunning)).toBe(false);
