@@ -33,6 +33,12 @@ V=$(node -e "console.log(require('media/emulation/_engine/version.json').version
 curl -O "https://cdn.emulatorjs.org/$V/data/cores/<core>-wasm.data"
 ```
 
+Not every console has its own system key: EmulatorJS has no `gbc`, because
+gambatte switches on the cartridge header, so the Game Boy Color declares
+`ejs_core: gb` and shares the Game Boy's core file. It is still its own system
+here — that is what gives it a tab, a bezel, a screen geometry and a save
+namespace of its own.
+
 Fetch the `-legacy-wasm.data` variant too. EmulatorJS asks for it whenever
 WebGL2 is unavailable, and if it is missing the engine **silently falls back to
 the public CDN** — a kiosk that quietly depends on the internet. It logs only
@@ -42,10 +48,9 @@ the public CDN** — a kiosk that quietly depends on the internet. It logs only
 deliberate blank placeholder. A system with a manifest but no slot is invisible.
 
 **4. Native resolution** in `CORE_NATIVE` (`loadEmulatorConfig.mjs`), keyed by
-the **lowercased** `ejs_core`. The screen box is integer-locked — the largest
-whole multiple of the native framebuffer that fits the bezel cutout — so a
-missing entry silently falls back to the Game Boy's 160×144 and the picture is
-sized and positioned for the wrong console inside the right hole.
+the **lowercased** `ejs_core`. The screen box is derived from it (see the next
+section), so a missing entry silently falls back to the Game Boy's 160×144 and
+the picture is sized and positioned for the wrong console inside the right hole.
 
 **5. Bezel art** at `media/emulation/{system}/bezel.png`, plus
 `presentation.screen` and `chrome: {system}-bezel`. The chrome CSS matches any
@@ -56,27 +61,52 @@ box art is not square. Cover tiles are square by default because Game Boy
 cartridge labels are; a Genesis box is a tall rectangle and a square tile crops
 half of it away.
 
+## Sizing the picture inside the cutout
+
+`presentation.screen` is the cutout; `presentation.screen_scaling` says how the
+picture uses it.
+
+The default, `integer`, takes the largest whole multiple of the framebuffer
+that fits and centres it. Any console drawing a pixel grid needs this, or the
+grid moirés. It costs up to a full step: the Game Boy Color's aperture happens
+to be exactly 6x160x144 and wastes nothing, the Advance's 1260x840 takes 5x =
+1200x800 and gives up 5%.
+
+`fill` takes the whole cutout. Use it where there is no grid to align to *and*
+the console's pixels were not square. The Genesis is the case: it drew 320x224
+across a 4:3 television, so its cutout is measured at 4:3 and filling it
+reproduces the real geometry. Integer-locking it had wasted a quarter of the
+aperture and letterboxed the picture into the wrong shape besides.
+
+So measure the cutout at the console's **display** aspect, not its framebuffer
+aspect. They differ whenever the pixels were not square.
+
 ## Deriving the bezel and its cutout
 
-The bezels come from the Shield's RetroArch overlays, which are not single
-images: the art is a set of quadrant tiles composited at runtime. Read the
-overlay's `.cfg` and honour it rather than eyeballing the result.
+The bezels come from the Shield's RetroArch overlays. Read the overlay's `.cfg`
+first, because two shapes of them exist and only one needs work.
 
-Only the descs carrying `_alpha_mod = 1` are visible — the overlay's own
-`alpha_mod` is `0.0`, which is how the art shows while the touch-button descs
-stay invisible. For the Genesis that is eight 1200×540 tiles plus two logos.
-Each desc gives a centre and a half-extent in normalised coordinates; composite
-them at 1920×1080 and the cutout falls out of the alpha channel.
+Most are a single full-screen PNG with `overlay0_descs = 0` — `gbc-grape` and
+`gba_animated` are both this, and the file is copied to `bezel.png` verbatim.
 
-Take the largest rectangle **of the console's native aspect** that fits entirely
-inside the transparent area. Do not ray-scan outward from the centre: these
-apertures are rounded rectangles, so a single row or column runs past the
-corners and overstates the box.
+The Genesis is the other kind: `genesis2_animated_border` is a set of tiles
+composited at runtime. Only the descs carrying `_alpha_mod = 1` are visible —
+the overlay's own `alpha_mod` is `0.0`, which is how the art shows while the
+touch-button descs stay invisible — and for that one it is eight 1200×540 tiles
+plus two logos. Each desc gives a centre and a half-extent in normalised
+coordinates; composite them at 1920×1080 and the cutout falls out of the alpha
+channel.
+
+Either way, take the largest rectangle **of the console's display aspect** that
+fits entirely inside the transparent area. Do not ray-scan outward from the
+centre: some apertures are rounded rectangles, so a single row or column runs
+past the corners and overstates the box.
 
 Cross-check the answer against the same console's entry in
 `data/household/gaming/games.yml`, which carries an independent measurement of
-the same art for the Shield's own countdown placement. The two agreed on the
-Genesis to the pixel in `y` and within five pixels in height.
+the same art for the Shield's own countdown placement. On the Advance the two
+agree exactly — 1260×840 at (330,120) from both — and on the Genesis to the
+pixel in `y`.
 
 A console's `bezel.zones` toast rects in that file are measured negative space —
 the flattest patch in each band of chrome — and are the right coordinates to

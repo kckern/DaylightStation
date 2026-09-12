@@ -65,6 +65,14 @@
     opacity: 1;
   }
 
+  // Game Boy Color / Advance: the same LCD grid, no colour cast. The parent has
+  // no background of its own, so multiply composites only the grid lines the
+  // canvas draws.
+  .emulator-shader.shader-lcdgrid {
+    mix-blend-mode: multiply;
+    opacity: 1;
+  }
+
   // Canvas grid overlay — fills the shader div, drawn in device-pixel space.
   .emulator-shader-grid {
     position: absolute;

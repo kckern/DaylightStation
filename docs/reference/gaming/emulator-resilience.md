@@ -73,9 +73,20 @@ afterwards regardless.
 Two unrelated things are called a shader in the arcade, and a system's manifest
 picks whichever it needs.
 
-`shader` is **our** layer: a CSS/canvas pass drawn over the picture. The Game
-Boy's `dotmatrix` is this — a colour wash plus a pixel grid on a canvas at
-integer device-pixel positions. It can tint and overlay, and nothing more.
+`shader` is **our** layer: a CSS/canvas pass drawn over the picture. It can tint
+and overlay, and nothing more. Two variants exist, both drawing the same pixel
+grid on a canvas at integer device-pixel positions:
+
+- `dotmatrix` — grid plus an olive wash. The Game Boy: a DMG's reflective
+  screen really was that colour.
+- `lcdgrid` — the grid alone, for the Game Boy Color and Advance. Their screens
+  were not olive, and tinting a Pokémon Crystal sprite green would misdescribe
+  the hardware. The lines are lighter here (9% against the DMG's 20%), because
+  without a wash over them the same 20% reads as a mesh laid on the game rather
+  than as the gaps between pixels.
+
+Both keep the integer screen-box lock, since a grid only lands correctly when
+each game pixel is a whole number of device pixels.
 
 `ejs_shader` is one of **EmulatorJS's own** presets, run by the core inside its
 GL pipeline. The Genesis declares `crt-geom.glslp` for it: real curvature,
