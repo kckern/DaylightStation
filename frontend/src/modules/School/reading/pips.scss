@@ -101,16 +101,28 @@
   .reading-pip--live::after { animation: none; opacity: 1; }
 }
 
-/* Read past the day's target — credit where a full row of pips would show none. */
+/* Read past the day's target — credit where a full row of pips would show none.
+
+   FLOORED, because the size is derived from the pip and the pip is not always a
+   shelf pip: the sentence ladder draws fifteen of them in a 250px rail at half
+   a rem each, where 0.76 of that is a 6px numeral nobody can read. The badge is
+   the one thing in this row made of WORDS, so it cannot ride the disc down. */
 .reading-pip-extra {
   margin-left: 0.4vh;
-  font-size: calc(var(--pip-size, 3.4vh) * 0.76);
+  font-size: max(0.75rem, calc(var(--pip-size, 3.4vh) * 0.76));
   font-weight: 700;
   color: var(--pip-ink, #ffd479);
 }
 
 /* The fallback wording, for the obligations pips cannot draw (unreadable, or a
-   target past MAX_PIPS). Sized by the host. */
+   target past the host's `maxPips`). Sized by the host.
+
+   THE DEFAULT IS A HEADING, AND THAT IS A TRAP A HOST CAN FALL INTO SILENTLY.
+   The sentence ladder set --pip-size and --pip-ink but not --pip-label-size, and
+   its rungs hold fifteen sentences against a default cap of eight — so every
+   rung had ALWAYS rendered this fallback, at 4.4vh (~35px) in the accent green,
+   wrapping to three lines and overflowing a 250px rail. Set --pip-label-size
+   wherever you set --pip-size; the two are one decision. */
 .reading-pips-label {
   margin: 0;
   font-size: var(--pip-label-size, 4.4vh);

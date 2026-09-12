@@ -22,6 +22,28 @@ const RUNG_LABELS = {
 const RUNG_ORDER = ['repetition', 'dictation', 'recording', 'interpretation'];
 
 /**
+ * How many pips a rung may draw before it gives up and prints the count.
+ *
+ * `ReadingPips` defaults to 8 and that default is RIGHT where it was written:
+ * the reading shelf asks "how many books do I still owe", a child answers it by
+ * counting, and counting stops working somewhere around nine. This rail is not
+ * asking that. Fifteen pips here are a progress TEXTURE — how far along the
+ * rung is, read as the shape of a row rather than as a number — so the limit
+ * that protects counting does not apply, and 15 is the default day's pace.
+ *
+ * The ceiling is the RAIL, not the eye: fifteen 0.5rem discs at a 0.22rem gap
+ * measure 169px inside a column that is 179px wide at its narrowest. See
+ * `.lang-ladder__pips`, where the arithmetic lives. Past this — a 25- or
+ * 50-a-day pace — the row would overflow, so it degrades to the count in text.
+ *
+ * This was a live defect, not a tuning choice: at the default of 8 EVERY rung
+ * of a 15-sentence day fell back to text, and with `--pip-label-size` unset
+ * that text rendered at 4.4vh in the accent green over three wrapped lines.
+ * The rail had never once drawn a pip.
+ */
+const LADDER_MAX_PIPS = 15;
+
+/**
  * What a rung this device cannot climb is actually short of — the text under a
  * dimmed rung. It used to be one hardcoded line, "Needs a microphone", printed
  * whatever the rung wanted: the yellow-room tablet has a mic and an
@@ -585,6 +607,7 @@ export default function SentenceLadderProgram({
                       testId={`ladder-pips-${rung}`}
                       live={active && !allDone}
                       moving={false}
+                      maxPips={LADDER_MAX_PIPS}
                     />
                   </button>
                 </li>

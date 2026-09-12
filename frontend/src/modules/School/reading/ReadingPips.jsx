@@ -35,21 +35,33 @@ import './pips.scss';
  * the one notation a four-year-old already has.
  *
  * Falls back to the plain label whenever the numbers cannot carry it: an
- * unreadable obligation (`target` null), or a target so large that pips would
- * become a smear of dots nobody can count at a glance.
+ * unreadable obligation (`target` null), or a target past what the host says it
+ * can draw (`maxPips`), where pips would become a smear of dots nobody can read
+ * at a glance. That fallback is TEXT, and a host that never expects to hit it
+ * must still size it — see `--pip-label-size`, which defaults to a heading.
  */
 
-/** Past this many, counting dots is slower than reading the sentence. */
+/**
+ * Past this many, counting dots is slower than reading the sentence.
+ *
+ * This is the READING SHELF's number, and the question there is "how many books
+ * do I still owe" — an answer a child arrives at by counting, which is what
+ * stops working around nine. A host whose axis is not a countable obligation
+ * but a PROGRESS TEXTURE — a row you read the shape of rather than count — may
+ * raise it with `maxPips`, and must then size the pips to fit its own column
+ * (see `.lang-ladder__pips`). Nothing raises it by default.
+ */
 export const MAX_PIPS = 8;
 
 export default function ReadingPips({
   count, target, label, className = '', testId = 'reading-count',
-  live = false, moving = true,
+  live = false, moving = true, maxPips = MAX_PIPS,
 }) {
   const owed = Number.isFinite(target) ? target : null;
   const done = Number.isFinite(count) ? count : 0;
+  const ceiling = Number.isFinite(maxPips) && maxPips > 0 ? maxPips : MAX_PIPS;
 
-  if (owed === null || owed < 1 || owed > MAX_PIPS) {
+  if (owed === null || owed < 1 || owed > ceiling) {
     return label
       ? <p className={`reading-pips-label ${className}`.trim()} data-testid={testId}>{label}</p>
       : null;
@@ -96,4 +108,9 @@ ReadingPips.propTypes = {
   live: PropTypes.bool,
   /** The audio is actually running. False holds the glow still, at full. */
   moving: PropTypes.bool,
+  /**
+   * How many pips this host can draw before the row stops being readable.
+   * Defaults to `MAX_PIPS`. Raise it only with a column measured to hold them.
+   */
+  maxPips: PropTypes.number,
 };
