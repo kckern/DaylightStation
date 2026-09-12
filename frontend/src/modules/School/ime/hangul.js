@@ -47,6 +47,38 @@ const FINAL_SPLIT = Object.fromEntries(Object.entries(FINAL_JOIN).map(([k, v]) =
 
 const isVowel = (j) => JUNG.includes(j);
 
+/**
+ * The inverse of the arithmetic in `Hangul#pending`: a precomposed syllable
+ * back into the three jamo that built it.
+ *
+ * Lives here rather than beside its caller so there is exactly one copy of
+ * `CHO`/`JUNG`/`JONG` and of the 0xac00 / 21 / 28 packing. A second copy would
+ * drift, and a decomposition table that disagrees with the composition table
+ * is a bug that only shows up on the handful of syllables nobody typed while
+ * testing.
+ *
+ * Returns null for anything that is not a single precomposed syllable — a bare
+ * jamo (ㄱ), Latin, punctuation, an empty string, a run of several characters.
+ * Callers treat null as "no opinion", never as "wrong".
+ */
+export function decompose(syllable) {
+  if (typeof syllable !== 'string') return null;
+  const chars = [...syllable];
+  if (chars.length !== 1) return null;
+  const index = chars[0].codePointAt(0) - 0xac00;
+  if (index < 0 || index >= CHO.length * 21 * 28) return null;
+  const jong = JONG[index % 28];
+  const withoutJong = (index - (index % 28)) / 28;
+  return {
+    cho: CHO[Math.floor(withoutJong / 21)],
+    jung: JUNG[withoutJong % 21],
+    // An empty batchim is `null`, matching how the automaton holds "not there"
+    // — `JONG[0]` is the empty string and comparing against that reads as if a
+    // syllable could have a batchim made of nothing.
+    jong: jong === '' ? null : jong,
+  };
+}
+
 export class Hangul {
   constructor() { this.reset(); }
 
