@@ -173,14 +173,23 @@ export const MAX_SPEAK_MS = 20_000;
  * keyboard to press it on. Play, Stop and Peek are the same button three
  * times, and written out three times they had already begun to drift.
  */
-function QuietButton({ icon, word, caption, onClick }) {
+function QuietButton({ icon, word, caption, captionTone = null, onClick }) {
   return (
     <button type="button" className="lang-btn lang-btn--quiet" onClick={onClick}>
       {icon && <Icon name={icon} className="lang-btn__glyph" />}
       {/* The accessible name, kept off screen: the caption beside it says the
           shortcut, and a control called "Tab plays" is not called "Play". */}
       <span className="lang-btn__word">{word}</span>
-      <span className="lang-btn__key" aria-hidden="true">{caption}</span>
+      {/* `aria-hidden` throughout: a caption is either a shortcut the screen
+          reader does not need or — when it is a failure reason — already
+          announced by the `role="alert"` notice, and hearing it twice is
+          noise. */}
+      <span
+        className={`lang-btn__key${captionTone ? ` is-${captionTone}` : ''}`}
+        aria-hidden="true"
+      >
+        {caption}
+      </span>
     </button>
   );
 }
@@ -248,9 +257,23 @@ export default function TypedRung({
    * child at a panel with no pointer and no other way to ask what is happening.
    */
   const [speaking, setSpeaking] = useState('idle');
-  // What went wrong with the last take, in words, for the notice line. Every
-  // failure here is survivable — the field never goes away — so this is an
-  // explanation, never a dead end.
+  /**
+   * What went wrong with the last take, said in TWO places because they answer
+   * two different questions.
+   *
+   * `notice` is the full sentence in the screen's one notice region at the top:
+   * what happened and that typing is still the way through.
+   *
+   * `caption` is three or four words ON THE CONTROL, and it is the half that
+   * matters most. The Speak button is bottom-right and the notice region is
+   * ~660px away at the top of an 800px panel; a child presses a button and
+   * looks at the button. A reply that only appears at the far end of the screen
+   * reads exactly like the press doing nothing — the same failure the refused
+   * keystroke's flash exists to prevent, one control over.
+   *
+   * Every failure here is survivable — the field never goes away — so both
+   * halves are an explanation, never a dead end.
+   */
   const [speakNote, setSpeakNote] = useState(null);
   /**
    * Whether what is in the field came from the learner's voice.
@@ -539,7 +562,7 @@ export default function TypedRung({
       // NOT A DEAD END. The field is still there and still the way through, so
       // the note says both things a stuck child needs: it can be tried again,
       // and it does not have to be.
-      setSpeakNote('That didn’t get written down — have another go, or type it.');
+      setSpeakNote({ notice: 'That didn’t get written down — have another go, or type it.', caption: 'Didn’t get written down' });
       return;
     }
     const transcript = String(result.transcript ?? '').trim();
@@ -547,7 +570,7 @@ export default function TypedRung({
       languageLog.capture('speak-unheard', { rung: entry.rung, seq: entry.seq });
       // Their own typing is untouched. A mic that heard nothing is no reason
       // to throw away what they had already written.
-      setSpeakNote('We didn’t hear that — have another go, or type it.');
+      setSpeakNote({ notice: 'We didn’t hear that — have another go, or type it.', caption: 'Didn’t hear that' });
       return;
     }
 
@@ -579,7 +602,7 @@ export default function TypedRung({
     // the control is never drawn. The device said it had one, so the control
     // was honestly offered and the failure is a permission a second try may
     // yet get — and typing is still right there either way.
-    setSpeakNote('The microphone didn’t open — have another go, or type it.');
+    setSpeakNote({ notice: 'The microphone didn’t open — have another go, or type it.', caption: 'Mic didn’t open' });
   }, [entry.rung, entry.seq]);
 
   const { start: startSpeaking, stop: stopSpeaking } = useVoiceCapture({
@@ -693,7 +716,7 @@ export default function TypedRung({
       {/* Every way speaking can fail says the same two things: it can be tried
           again, and it does not have to be. The field is never taken away, so
           there is no state this notice can leave a child stranded in. */}
-      {speakNote && <p className="lang-rung__notice" role="alert">{speakNote}</p>}
+      {speakNote && <p className="lang-rung__notice" role="alert">{speakNote.notice}</p>}
 
       {/* The drill, taking the height the baseline leaves it. */}
       <div className="lang-rung__stage">
@@ -850,10 +873,17 @@ export default function TypedRung({
                is not. A wrong picture is worse than a plain word. */
             <QuietButton
               word={SPEAK_WORD}
-              /* "instead" is a warning, not decoration: the transcript
-                 REPLACES the field, and a child who has half an answer typed
-                 should know that before they press it, not after. */
-              caption={value.trim() ? 'Speak instead' : 'Speak'}
+              /* WHAT JUST HAPPENED BEATS WHAT TO DO NEXT. After a failed take
+                 the caption carries the short reason, because this is where the
+                 child is looking; the full sentence and the way out are in the
+                 notice above, and the next press clears it.
+
+                 Otherwise: "instead" is a warning, not decoration — the
+                 transcript REPLACES the field, and a child who has half an
+                 answer typed should know that before they press it, not
+                 after. */
+              caption={speakNote ? speakNote.caption : (value.trim() ? 'Speak instead' : 'Speak')}
+              captionTone={speakNote ? 'warn' : null}
               onClick={speak}
             />
           )}

@@ -2129,10 +2129,31 @@ describe('speaking the answer', () => {
     await speak();
 
     expect(screen.getByRole('alert').textContent).toMatch(/didn’t hear/i);
+    // AND ON THE CONTROL, which is where the child is looking. The notice sits
+    // ~660px away at the top of an 800px panel; a reply only up there reads as
+    // the press having done nothing.
+    const caption = speakButton().querySelector('.lang-btn__key');
+    expect(caption.textContent).toMatch(/didn’t hear/i);
+    expect(caption.className).toContain('is-warn');
     // Their own typing survives a mic that heard nothing.
     expect(screen.getByLabelText('Type what it means').value).toBe('half an answer');
     // And the control is back, not stuck mid-flight.
     expect(speakButton()).toBeTruthy();
+  });
+
+  // The reason is a reply to a press, so the next press clears it: a stale
+  // "Didn't hear that" sitting on the button through a good take would say the
+  // take failed when it did not.
+  it('clears the reason off the control on the next take', async () => {
+    onTranscribe.mockResolvedValueOnce({ ok: true, transcript: '', empty: true });
+    rung();
+    await speak();
+    expect(speakButton().querySelector('.lang-btn__key').textContent).toMatch(/didn’t hear/i);
+
+    onTranscribe.mockResolvedValueOnce({ ok: true, transcript: 'it is cold today', empty: false });
+    await speak();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByLabelText('Type what it means').value).toBe('it is cold today');
   });
 
   it('survives a failed request without stranding the learner', async () => {

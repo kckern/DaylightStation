@@ -245,7 +245,15 @@ $disc: 5.5rem;
   // the (screen-reader-only) accessible name, so this can say "Tab plays" while
   // the button is still just "Play again" to anything that asks. Without it a
   // baseline Stop renders as a bare pause glyph with no word anywhere on it.
-  &__key { font-size: $meta; }
+  &__key {
+    font-size: $meta;
+    // WHAT JUST WENT WRONG, said on the control itself. The notice region at
+    // the top of the screen carries the full sentence, but it is ~660px from
+    // the button on an 800px panel and a child looks at what they pressed —
+    // a reply only up there reads as the press doing nothing. Amber, matching
+    // that notice, so the two are obviously one answer and not two problems.
+    &.is-warn { color: var(--school-warn); font-weight: 700; }
+  }
   // THE LIVE MICROPHONE on a typing rung, after `--quiet` so it wins: a quiet
   // control is transparent on transparent, and the one moment this control is
   // holding an open microphone is not a moment to be quiet about. The same red
