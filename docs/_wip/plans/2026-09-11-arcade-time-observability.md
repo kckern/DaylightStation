@@ -856,7 +856,7 @@ while. `[x]` is built and tested; `[ ]` is not started.
 
 | | Task | Notes |
 |---|---|---|
-| `[ ]` | **T24 Browser-emulator reporting** — emit the same three events with exact confidence | |
+| `[x]` | **T24 Browser-emulator reporting** — emit the same three events with exact confidence | |
 | `[ ]` | **T25 Move metering authority server-side** — the in-app gate becomes display plus local safety | Decision 6.2 |
 | `[x]` | **T26 API router** — push ingress for the browser surface, session reads | `4_api/v1/routers/gaming.mjs` |
 | `[ ]` | **T27 In-app countdown** — the browser surface draws its own; it must never arm a device overlay | 5.6 |
@@ -885,7 +885,7 @@ while. `[x]` is built and tested; `[ ]` is not started.
 
 | | Task | Milestone | Notes |
 |---|---|---|---|
-| `[ ]` | **T32 `IPlayAuthorizationGateway`** — application-owned identity port; existing biometric gateway wired in composition | M4 | Gaming must not import a peer adapter (7.1) |
+| `[x]` | **T32 `IPlayAuthorizationGateway`** — application-owned identity port; existing biometric gateway wired in composition | M4 | Gaming must not import a peer adapter (7.1) |
 | `[ ]` | **T33 Authorize-here, redeem-there grants** — scoped to content or device, expiring if unredeemed, recorded on the session | M4 | The walk to the garage must not be a blank cheque |
 | `[ ]` | **T34 Remote authorization ceremony** — wake and raise the garage screen, run the scan, return the result | M4 | Disappears if a reader ever sits by the living-room screen |
 | `[ ]` | **T35 Admin-attributed sessions** — unlimited grant for shared/family play | M4 | A grant with no ceiling, not a bypass |
