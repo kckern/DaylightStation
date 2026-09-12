@@ -13,4 +13,6 @@ export class IPlaySessionRepository {
   /** Sessions on a device that started at or after an instant — the set that
    *  reconciliation compares against what the device itself recorded. */
   async listForDeviceSince(_deviceId, _sinceIso) { throw new Error('IPlaySessionRepository.listForDeviceSince must be implemented'); }
+  /** Every recorded session across all devices in a window — the usage ledger. */
+  async listSince(_sinceIso, _untilIso) { throw new Error('IPlaySessionRepository.listSince must be implemented'); }
 }

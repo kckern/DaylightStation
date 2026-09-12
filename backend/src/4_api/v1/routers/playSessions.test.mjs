@@ -5,6 +5,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
 import { createPlaySessionsRouter } from './playSessions.mjs';
+import { SummarisePlayUsage } from '#apps/gaming/usecases/SummarisePlayUsage.mjs';
 
 const quiet = { error() {}, warn() {}, info() {} };
 
@@ -167,6 +168,50 @@ describe('parent controls — grant, extend, revoke', () => {
 
   it('says so plainly when grants are not configured', async () => {
     const r = await call(createPlaySessionsRouter({ logger: quiet }), 'POST', '/grants', { userId: 'c', minutes: 5 });
+    expect(r.status).toBe(503);
+  });
+});
+
+describe('GET /usage — the monitoring surface', () => {
+  const MIN = 60_000;
+  const snap = (over = {}) => ({
+    id: 's1', startedAt: '2026-09-12T10:00:00.000Z', deviceId: 'livingroom-tv',
+    userId: 'child-a', content: { contentId: 'g:1', title: 'Game One' },
+    playedMs: 10 * MIN, confidenceMs: 10_000, ...over,
+  });
+  const withLedger = (rows) => createPlaySessionsRouter({
+    summarisePlayUsage: new SummarisePlayUsage({ sessions: { listSince: async () => rows }, logger: quiet }),
+    logger: quiet,
+  });
+
+  it('rolls usage up by player, title, device and day', async () => {
+    const r = await call(withLedger([
+      snap(), snap({ id: 's2', userId: 'child-b', playedMs: 5 * MIN }),
+    ]), 'GET', '/usage?since=2026-09-01T00:00:00.000Z');
+    expect(r.status).toBe(200);
+    expect(r.body.totalPlayed).toBe('15m 0s');
+    expect(r.body.byUser[0]).toMatchObject({ key: 'child-a', playedMs: 600000 });
+    expect(r.body.byTitle[0].key).toBe('Game One');
+  });
+
+  it('accepts entities as well as snapshots', async () => {
+    const entity = { toSnapshot: () => snap() };
+    const r = await call(withLedger([entity]), 'GET', '/usage');
+    expect(r.body.sessionCount).toBe(1);
+  });
+
+  it('returns an empty ledger rather than an error', async () => {
+    const r = await call(withLedger([]), 'GET', '/usage');
+    expect(r.body).toMatchObject({ totalPlayedMs: 0, sessionCount: 0 });
+  });
+
+  it('rejects a since that is not an instant', async () => {
+    const r = await call(withLedger([]), 'GET', '/usage?since=yesterday');
+    expect(r.status).toBe(400);
+  });
+
+  it('says so plainly when recording is not configured', async () => {
+    const r = await call(createPlaySessionsRouter({ logger: quiet }), 'GET', '/usage');
     expect(r.status).toBe(503);
   });
 });

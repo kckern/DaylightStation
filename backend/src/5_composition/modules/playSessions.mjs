@@ -30,6 +30,7 @@ import { LedgerPlayTimeGrants } from '#adapters/gaming/LedgerPlayTimeGrants.mjs'
 import { YamlPlayGrantLedger } from '#adapters/persistence/yaml/YamlPlayGrantLedger.mjs';
 import { GrantPlayTime } from '#apps/gaming/usecases/GrantPlayTime.mjs';
 import { CheckPlayEligibility } from '#apps/gaming/usecases/CheckPlayEligibility.mjs';
+import { SummarisePlayUsage } from '#apps/gaming/usecases/SummarisePlayUsage.mjs';
 import { AndroidControllerProbe } from '#adapters/devices/AndroidControllerProbe.mjs';
 import { HomeAssistantPlayAlert } from '#adapters/devices/HomeAssistantPlayAlert.mjs';
 import { EnforcePlayBudget } from '#apps/gaming/usecases/EnforcePlayBudget.mjs';
@@ -99,7 +100,7 @@ export function createPlaySessionTracking(config) {
 
   if (declared.length === 0) {
     logger.info?.('play.tracking.none_declared', {});
-    return { trackers: [], sessions: null, intents: null, recordObservation: null, watchdog: null, grantLedger: null, grantPlayTime: null, checkEligibility: null, async start() {}, stop() {} };
+    return { trackers: [], sessions: null, intents: null, recordObservation: null, watchdog: null, grantLedger: null, grantPlayTime: null, checkEligibility: null, summarisePlayUsage: null, async start() {}, stop() {} };
   }
 
   const packageName = gamesConfig?.launch?.package;
@@ -109,7 +110,7 @@ export function createPlaySessionTracking(config) {
     logger.warn?.('play.tracking.no_launch_package', {
       devices: declared.map(([id]) => id),
     });
-    return { trackers: [], sessions: null, intents: null, recordObservation: null, watchdog: null, grantLedger: null, grantPlayTime: null, checkEligibility: null, async start() {}, stop() {} };
+    return { trackers: [], sessions: null, intents: null, recordObservation: null, watchdog: null, grantLedger: null, grantPlayTime: null, checkEligibility: null, summarisePlayUsage: null, async start() {}, stop() {} };
   }
 
   const sessions = new YamlPlaySessionDatastore({ configService, logger });
@@ -299,6 +300,8 @@ export function createPlaySessionTracking(config) {
     trackers,
     sessions,
     checkEligibility,
+    // Monitoring: usage can be watched long before any policy is set against it.
+    summarisePlayUsage: new SummarisePlayUsage({ sessions, logger }),
     intents,
     // Exposed so the HTTP surface can feed self-reporting play surfaces into the
     // same use case the polled source uses.
