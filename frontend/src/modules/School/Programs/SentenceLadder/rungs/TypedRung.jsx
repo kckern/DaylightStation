@@ -54,6 +54,18 @@ import Icon from '../../../home/icons/Icon.jsx';
  */
 export const DEFAULT_IDLE_REPLAY_MS = 30_000;
 
+/**
+ * How long a refused keystroke is drawn for.
+ *
+ * A SILENT REFUSAL READS AS A BROKEN KEYBOARD. Copy mode's gate consumes a key
+ * that would stop the syllable in flight being a prefix of the one being
+ * traced, and consuming it means nothing on screen moves — so without this the
+ * child's answer to "my typing stopped working" is to press harder. Long enough
+ * to see at arm's length on a 10" panel, short enough not to sit in the way of
+ * the next key.
+ */
+export const REFUSAL_FLASH_MS = 180;
+
 export default function TypedRung({
   entry, audioUrl, nextEntry, onComplete, saving, showShortcuts = false,
   idleReplayMs = DEFAULT_IDLE_REPLAY_MS,
@@ -81,11 +93,24 @@ export default function TypedRung({
   // loop again in slower clothes. Cleared by any explicit ask — Tab, or the
   // Play button — so resuming costs one key and never needs explaining.
   const [hushed, setHushed] = useState(false);
+  /**
+   * A refused keystroke, drawn. Two pieces of state for one flash:
+   *   `refusing`  whether the class is on right now
+   *   `refusals`  how many there have EVER been, which keys the strip
+   *
+   * The counter exists because the flash is a CSS transition, and a transition
+   * only runs when the property it watches actually changes. A second refusal
+   * inside the window of the first would leave the column sitting still —
+   * precisely the "nothing happened" this flash exists to prevent. Keying the
+   * strip on the counter remounts it from rest, so every refusal moves.
+   */
+  const [refusing, setRefusing] = useState(false);
+  const [refusals, setRefusals] = useState(0);
   const inputRef = useRef(null);
   const hushedRef = useRef(false);
   hushedRef.current = hushed;
 
-  const { compositionState } = useHangulTyping();
+  const { compositionState, setTypingOracle } = useHangulTyping();
   const { playSequence, preload, stop, playing, blocked } = useSentenceAudio();
 
   const responseLang = entry.response?.language;
@@ -102,6 +127,64 @@ export default function TypedRung({
    * one line here and nothing at all in `glyphStrip.js`.
    */
   const reveal = isCopying ? 'model' : 'none';
+
+  /**
+   * THE COPY-MODE GATE, wired up.
+   *
+   * The IME half has shipped for a while (`ime/syllable.js`, and `handleKey`'s
+   * optional third argument); nothing reached it until this. Copy mode is a
+   * worksheet with the shape printed on it: a key that would stop the syllable
+   * in flight being a prefix of the one being traced does not land, and the
+   * column says so.
+   *
+   * ⚠ COPY MODE ONLY, and the effect bails before it registers anything in
+   * listen mode. The program knows the target in BOTH modes — that is exactly
+   * the trap. Gating listen mode would refuse a keystroke the learner genuinely
+   * meant: a child who misheard 오늘 as 온… would be steered into the right
+   * answer with nothing on screen saying so, and the record would then claim
+   * they heard it correctly. A drill that looks like it is working while
+   * measuring nothing is worse than one that is visibly broken.
+   *
+   * The target is read through a ref so a re-render mid-sentence does not
+   * re-register the oracle, and the element is passed with it so the provider
+   * can refuse to apply it to any other field in School.
+   */
+  const targetRef = useRef(targetText);
+  targetRef.current = targetText;
+  const refusalTimer = useRef(null);
+
+  const flashRefusal = useCallback((jamo) => {
+    languageLog.rung('refused', { rung: entry.rung, seq: entry.seq, jamo });
+    setRefusals((n) => n + 1);
+    setRefusing(true);
+    window.clearTimeout(refusalTimer.current);
+    refusalTimer.current = window.setTimeout(() => setRefusing(false), REFUSAL_FLASH_MS);
+  }, [entry.rung, entry.seq]);
+
+  useEffect(() => () => window.clearTimeout(refusalTimer.current), []);
+
+  useEffect(() => {
+    if (!isCopying) return undefined;
+    const el = inputRef.current;
+    if (!el) return undefined;
+    const oracle = {
+      /**
+       * The one syllable being traced right now, or null for "no opinion".
+       *
+       * Indexed by how much has SETTLED — the same seam the strip reads, and
+       * the only one that survives a space: a space is not a traceable target,
+       * so the gate stands down for that keystroke, the space lands as itself,
+       * and the next syllable lines up again on the far side of it.
+       */
+      currentTarget: () => Array.from(targetRef.current)[
+        Array.from(compositionState(el).committed).length
+      ] ?? null,
+      onRefused: flashRefusal,
+    };
+    setTypingOracle(el, oracle);
+    return () => setTypingOracle(null, null);
+  }, [isCopying, compositionState, setTypingOracle, flashRefusal]);
+
   const columns = useMemo(
     () => columnsFor({
       target: targetText, committed: typed.committed, pending: typed.pending, reveal,
@@ -254,7 +337,20 @@ export default function TypedRung({
             per-syllable correspondence to draw and an English answer aligned
             character by character would only leak its length. */}
         {isDictation
-          ? <GlyphStrip columns={columns} caret={!saving && !submitted} />
+          ? (
+            /* The wrapper exists for the refusal flash: the strip renders what
+               `columnsFor` decided and holds no state, so "this keystroke was
+               refused" — which is about the keyboard, not about the sentence —
+               is carried here and styled through to the live column. Keyed on
+               the refusal count so a repeat inside the window still moves; see
+               `refusals` above. */
+            <div
+              key={`strip-${refusals}`}
+              className={`lang-rung__strip${refusing ? ' is-refused' : ''}`}
+            >
+              <GlyphStrip columns={columns} caret={!saving && !submitted} />
+            </div>
+          )
           : <p className="lang-rung__target">{targetText}</p>}
 
         {/* Kept on the dictation rung for the accessible name only: the strip is

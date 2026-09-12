@@ -1271,29 +1271,83 @@ describe('the typing surface', () => {
     // it the field never declares Korean and nothing composes.
     act(() => { input.blur(); input.focus(); });
 
-    // d h → ㅇ ㅗ → 오. Then s → ㄴ, and the FIELD now spells 온: a real word,
-    // one glyph, and not the 오 the learner is typing. Only the next vowel
-    // decides whether that ㄴ closed 오 or opened 늘.
+    // d h → ㅇ ㅗ → 오, and the GATE settles it the instant it is the syllable
+    // being traced. So the following s → ㄴ has no syllable left to attach to
+    // and opens the next one directly: the field never spells 온 here at all.
+    // That is copy mode's payoff — the ambiguity is not survived, it ceases to
+    // exist — and it is licensed only by knowing the target, which is why the
+    // listen-mode test below still has to survive it.
     typeJamo(input, 'dhs');
-    expect(input.value).toBe('온');
+    expect(input.value).toBe('오ㄴ');
 
-    // Nothing has SETTLED, so column 0 has not moved: 오 is still drawn, still
-    // the live column, still not wrong. Fed the field value instead, the strip
-    // would call column 0 settled-and-wrong, redden it, jump the caret to
-    // column 1 — and undo all of it one keystroke later.
-    expect(model(0)).toBe('오');
-    expect(col(0).className).toContain('is-current');
-    expect(col(0).className).not.toContain('is-wrong');
-    expect(answer(0)).toBe('온');
-
-    // m f → ㅡ ㄹ. The ㄴ leaves 오 for the next syllable, 오 settles, and the
-    // caret moves exactly once — when the ambiguity resolved.
-    typeJamo(input, 'mf');
-    expect(input.value).toBe('오늘');
     expect(col(0).className).toContain('is-done');
     expect(answer(0)).toBe('오');
     expect(col(1).className).toContain('is-current');
+    expect(answer(1)).toBe('ㄴ');
+
+    // m f → ㅡ ㄹ, and 늘 locks the same way.
+    typeJamo(input, 'mf');
+    expect(input.value).toBe('오늘');
+    expect(col(1).className).toContain('is-done');
     expect(answer(1)).toBe('늘');
+  });
+
+  it('holds the live column through the ambiguous syllable in listen mode, where nothing settles it', () => {
+    // NO GATE HERE, so the 두벌식 ambiguity is real and the strip has to
+    // survive it exactly as it always did. Fed the field's value the strip
+    // would call column 0 settled-and-wrong the moment 온 appeared, redden it,
+    // jump the caret on — and undo all of it one keystroke later.
+    rung();
+    const input = screen.getByLabelText('Type what you hear');
+    act(() => { input.blur(); input.focus(); });
+
+    typeJamo(input, 'dhs');
+    expect(input.value).toBe('온');
+    // Nothing has COMMITTED, so no column has moved off blind and none is
+    // wrong. The model is not in the DOM in either state.
+    expect(col(0).className).toContain('is-blind');
+    expect(col(0).className).not.toContain('is-wrong');
+
+    typeJamo(input, 'mf');
+    expect(input.value).toBe('오늘');
+    expect(answer(0)).toBe('오');
+    expect(col(0).className).toContain('is-done');
+  });
+
+  it('refuses a keystroke that would break the shape being traced, and shows the refusal', () => {
+    // THE COPY-MODE GATE, reached from the UI for the first time. A refused key
+    // is consumed — nothing else on the page acts on it — but nothing lands
+    // either, so without the flash the child's evidence is a keyboard that
+    // stopped working, and the answer to that is to press harder.
+    rung({ copyPrompt: true });
+    const input = screen.getByLabelText('Copy the sentence');
+    act(() => { input.blur(); input.focus(); });
+
+    typeJamo(input, 'r'); // ㄱ, where 오 wants ㅇ
+    expect(input.value).toBe('');
+    expect(document.querySelector('.lang-rung__strip').className).toContain('is-refused');
+    expect(rungLogMock).toHaveBeenCalledWith('refused', expect.objectContaining({ jamo: 'ㄱ' }));
+
+    // A refusal costs the stroke, not the run.
+    typeJamo(input, 'dh');
+    expect(input.value).toBe('오');
+  });
+
+  it('lets a wrong keystroke land in listen mode, because listen mode gets no oracle at all', () => {
+    // THE TRAP THIS WHOLE TASK IS BUILT AROUND. The program knows the target in
+    // BOTH modes. Gating here would refuse a keystroke the learner genuinely
+    // meant: a child who misheard 오늘 as 온… would be steered into the right
+    // answer with nothing on screen saying so, and the record would then claim
+    // they heard it correctly. A drill that looks like it is working while
+    // measuring nothing is worse than one that is visibly broken.
+    rung();
+    const input = screen.getByLabelText('Type what you hear');
+    act(() => { input.blur(); input.focus(); });
+
+    typeJamo(input, 'r'); // ㄱ — nowhere near the 오 this sentence wants
+    expect(input.value).toBe('ㄱ');
+    expect(document.querySelector('.lang-rung__strip').className).not.toContain('is-refused');
+    expect(rungLogMock).not.toHaveBeenCalledWith('refused', expect.anything());
   });
 
   it('does not print the model above a syllable the learner already typed, in listen mode', async () => {
