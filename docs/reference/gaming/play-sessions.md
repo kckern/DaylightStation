@@ -39,6 +39,14 @@ accurate to the polling interval and says so; a self-reported one is exact.
 Sessions are announced on `play-session:<deviceId>` as `play.session.started`,
 `play.session.progress` and `play.session.ended`.
 
+Each message carries the session's identity (device, session, status), what is
+being played (content id, title, emulated system and its label), who is playing
+(user id and display name), how many controllers were live at once, the time
+(cumulative played, granted and remaining where a grant exists, and the accuracy
+bound), and where the countdown may be drawn on this system's bezel. The same
+fields ride on warnings, so a warning is not a second, thinner kind of message a
+surface has to special-case.
+
 Played time is always the **cumulative total** for the session, never an
 increment. A duplicated, retried or replayed message therefore cannot double
 count, and a dropped one costs nothing because the next carries the truth.
@@ -139,3 +147,45 @@ still looks authoritative would tell a child they have time they may not.
 
 Startup clears any overlay on a device with no open session, so a process that
 died mid-session cannot leave a countdown on the family television.
+
+## Where the countdown is allowed to draw
+
+An emulated console does not fill the television. It is framed by bezel artwork —
+a Game Boy shell, a Super Famicom fascia — with the game showing through a hole
+in the middle, and that hole is a different size and in a different place on
+every system. "Put the timer in the bottom third" is therefore not a placement:
+on a Game Boy the bottom third is moulded plastic, and on an NES it is the game.
+
+So placement is stated per emulated system, and the source is the bezel art
+itself. For each system the configuration records the **game screen** — the hole
+the art leaves — and an ordered list of **zones**: bands of surrounding chrome,
+each carrying the largest patch of genuine negative space inside it. Negative
+space means flat art: an empty moulded face, a painted panel, the black beyond a
+letterbox. A logo, a button, a grille or a label all disqualify a patch, so the
+countdown sinks into the design rather than sitting on top of it.
+
+Every rectangle is `[x, y, w, h]` normalised to 0..1 of the output, so it means
+the same thing at any resolution and to a screenshot as to the overlay.
+
+The invariant that carries the value: **a zone never intersects the game
+screen**. That is checked when configuration loads, not trusted, and a system
+whose geometry has drifted is named and dropped rather than used — losing a
+countdown's position must never cost the meter, and a countdown on top of the
+game is worse than none.
+
+The emulated system comes from the launcher catalog, never from the emulator
+core: one core serves both Game Boy and Game Boy Color, and those have different
+bezels. A session started by hand at the device opens without a title, so the
+device's own logs are read while it is still running to fill the blank in — which
+is what lets a hand-started game be placed at all, instead of waiting for the
+next restart.
+
+The surface is told where it may draw rather than knowing it. Given a zone it
+fits its contents to the rect, and where the zone is too small to hold everything
+legibly it sheds detail — supporting fields first, then the progress bar, then
+the portrait — rather than clipping or shrinking type into illegibility. The
+clock and the player's name always survive.
+
+`GET /api/v1/play-sessions/placement` returns the whole table, `?system=` one of
+them, so what the surface was told can be checked without reading the
+television.

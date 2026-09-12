@@ -56,7 +56,7 @@ function requireText(value, field) {
 }
 
 export class PlaySession {
-  #id; #deviceId; #surface; #userId; #content; #grantRef; #participants;
+  #id; #deviceId; #surface; #userId; #content; #grantRef; #participants; #controllers;
   #status; #startedAt; #endedAt; #endReason;
   #playedMs; #lastState; #lastObservedAt; #confidenceMs; #trustedGapMs;
 
@@ -64,7 +64,7 @@ export class PlaySession {
     id, deviceId, surface, userId = null, content = null, grantRef = null, participants = [],
     status = PlaySessionStatus.PENDING,
     startedAt = null, endedAt = null, endReason = null,
-    playedMs = 0, lastState = null, lastObservedAt = null,
+    playedMs = 0, lastState = null, lastObservedAt = null, controllers = null,
     confidenceMs = 0, trustedGapMs,
   }) {
     this.#id = requireText(id, 'id');
@@ -79,6 +79,7 @@ export class PlaySession {
     this.#content = content;
     this.#grantRef = grantRef;
     this.#participants = Array.from(new Set(participants.filter(Boolean)));
+    this.#controllers = Number.isFinite(controllers) ? controllers : null;
     this.#status = status;
     this.#startedAt = startedAt;
     this.#endedAt = endedAt;
@@ -117,6 +118,14 @@ export class PlaySession {
    * cost-splitting remains possible later without rewriting history.
    */
   get participants() { return [...this.#participants]; }
+  /**
+   * The most controllers seen live at once during this session.
+   *
+   * A HIGH-WATER mark, not the latest reading: a four-player game is a
+   * four-player game even if someone put their pad down before it ended, and
+   * the last sample would quietly turn it back into a solo session.
+   */
+  get controllers() { return this.#controllers; }
   get status() { return this.#status; }
   get startedAt() { return this.#startedAt; }
   get endedAt() { return this.#endedAt; }
@@ -139,7 +148,7 @@ export class PlaySession {
    * @param {number} [observation.confidenceMs] Accuracy bound of this probe.
    * @returns {{started: boolean, accruedMs: number, stale: boolean, truncatedMs: number}}
    */
-  observe({ state, observedAt, confidenceMs = 0 }) {
+  observe({ state, observedAt, confidenceMs = 0, controllers = null }) {
     if (this.#status === PlaySessionStatus.ENDED) {
       throw new DomainInvariantError('Cannot observe an ended play session', {
         code: 'PLAY_SESSION_ENDED', sessionId: this.#id,
@@ -172,6 +181,9 @@ export class PlaySession {
       this.#playedMs += accruedMs;
     }
 
+    if (Number.isFinite(controllers) && (this.#controllers === null || controllers > this.#controllers)) {
+      this.#controllers = controllers;
+    }
     this.#lastState = state;
     this.#lastObservedAt = new Date(at).toISOString();
     if (confidenceMs > this.#confidenceMs) this.#confidenceMs = confidenceMs;
@@ -198,6 +210,25 @@ export class PlaySession {
     }
     this.#participants.push(userId);
     return this;
+  }
+
+  /**
+   * Name what was played, for a session that could not tell at the time.
+   *
+   * A game started by hand at the device — or one whose launch authorisation had
+   * expired — records real play with no title. The device's own logs can say
+   * what it was afterwards, and filling that in turns "someone played something"
+   * into a usable record.
+   *
+   * It only ever FILLS A BLANK. A session that already knows what it played is
+   * left alone, because overwriting it would let a later guess rewrite history
+   * that was observed at the time.
+   */
+  attributeContent(content) {
+    if (!content?.contentId) return { attributed: false, reason: 'no content' };
+    if (this.#content?.contentId) return { attributed: false, reason: 'already attributed' };
+    this.#content = content;
+    return { attributed: true };
   }
 
   reconcilePlayedMs(playedMs, { confidenceMs = 0 } = {}) {
@@ -235,7 +266,7 @@ export class PlaySession {
       userId: this.#userId, content: this.#content, grantRef: this.#grantRef,
       participants: [...this.#participants], status: this.#status,
       startedAt: this.#startedAt, endedAt: this.#endedAt, endReason: this.#endReason,
-      playedMs: this.#playedMs, lastState: this.#lastState,
+      playedMs: this.#playedMs, controllers: this.#controllers, lastState: this.#lastState,
       lastObservedAt: this.#lastObservedAt, confidenceMs: this.#confidenceMs,
       trustedGapMs: this.#trustedGapMs,
     };
