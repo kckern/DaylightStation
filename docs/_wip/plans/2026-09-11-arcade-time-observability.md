@@ -574,6 +574,13 @@ produced it:
 | 3 | RetroArch session log file (start from filename, last write from mtime) | coarse — boundaries only |
 | 4 | nothing | `unknown` |
 
+**A restart is not an ending.** Startup settles what a stopped process left
+open, but staleness decides the outcome, not the restart itself: a session whose
+last observation is recent is RESUMED with its accumulated `playedMs` intact,
+because a process that came back in thirty seconds while a child was still
+playing should not orphan that session. Only a session older than the tolerance
+is closed as `lost` — we cannot honestly claim to know what happened in the gap.
+
 **Reconciling the blind window.** This is the real recovery, and the device
 keeps the evidence for us. RetroArch writes one timestamped log file per
 session: the **filename carries the exact start time** and the **mtime tracks
@@ -614,6 +621,31 @@ service already provides.
 must visibly degrade rather than keep ticking. A frozen clock that still looks
 authoritative is worse than one that plainly shows it has lost contact, because
 it tells a child they have time they may not have.
+
+### 5.10a Log vocabulary
+
+Every transition emits one structured event. Names are stable and dotted so a
+whole session, or a whole device, can be pulled out of the log store without
+knowing which component wrote which line. Every event carries `sessionId` and
+`deviceId` where it has them.
+
+| Event | Level | Meaning |
+|---|---|---|
+| `play.session.started` | info | A confirmed PLAYING observation opened a billable session |
+| `play.session.ended` | info | Session closed; carries `reason`, final `playedMs`, `switched` |
+| `play.session.resumed` | info | A restart found a fresh session and continued it |
+| `play.session.lost` | warn | A session could not be honestly resumed and was settled |
+| `play.session.gap_truncated` | warn | The observer went quiet; unbillable remainder recorded |
+| `play.session.announce_failed` | warn | A broadcast was lost; the session was not |
+| `play.intent.expired` | debug | Attribution stopped; observation continued |
+| `play.tracker.device_failed` | warn | One device's probe failed; others unaffected |
+| `play.tracker.tick_failed` | error | The whole pass failed |
+| `play.tracking.reconciled` | info | Startup settlement summary |
+
+The warn-level events are the ones worth alerting on: each marks a place where
+the meter knows it is less accurate than it would like to be. Silence on those
+is the healthy state, which is what makes them useful as an alarm rather than as
+noise.
 
 ### 5.11 Testing
 
@@ -765,8 +797,8 @@ while. `[x]` is built and tested; `[ ]` is not started.
 | `[x]` | **T2 `PlaySessionTracker`** — the scheduler: which devices, what interval, calls `RecordPlayObservation`, self-watchdog | `3_applications/gaming/runtime/` |
 | `[x]` | **T3 Device declaration** — `play_observation` / `play_overlay` blocks in the hardware device config, plus contract/schema | Declared, never inferred (FR-12) |
 | `[ ]` | **T4 Composition wiring** — kiosk client + ADB adapter + source + datastore + announcer + use case + tracker; start on boot | `5_composition/` only |
-| `[ ]` | **T5 Startup reconciliation** — close stale open sessions as `lost`, clear any armed overlay | Crash recovery (5.10) |
-| `[ ]` | **T6 Structured logging vocabulary** — one event per transition, queryable by device and session | NFR-7 |
+| `[x]` | **T5 Startup reconciliation** — close stale open sessions as `lost`, clear any armed overlay | Crash recovery (5.10) |
+| `[x]` | **T6 Structured logging vocabulary** — one event per transition, queryable by device and session | NFR-7 |
 | `[ ]` | **T7 Live verification on the console device** — scripted session asserting event sequence and `playedMs` against wall clock *with pauses* | The number must disagree with wall clock, correctly |
 
 **M1 exit:** we can answer "what is playing, for whom, on which device, and for how long" in real time, and nothing has been shut off.

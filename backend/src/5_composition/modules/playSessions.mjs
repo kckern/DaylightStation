@@ -21,6 +21,7 @@ import { YamlPlaySessionDatastore } from '#adapters/persistence/yaml/YamlPlaySes
 import { YamlPlayIntentDatastore } from '#adapters/persistence/yaml/YamlPlayIntentDatastore.mjs';
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
 import { RecordPlayObservation } from '#apps/gaming/usecases/RecordPlayObservation.mjs';
+import { ReconcileOpenSessions } from '#apps/gaming/usecases/ReconcileOpenSessions.mjs';
 import { PlaySessionTracker } from '#apps/gaming/runtime/PlaySessionTracker.mjs';
 
 const DEFAULT_INTERVAL_MS = 10_000;
@@ -28,6 +29,9 @@ const DEFAULT_INTERVAL_MS = 10_000;
  *  play. Beyond this the tracker was not watching, and the unseen remainder is
  *  a blind spot rather than billable time. */
 const TRUSTED_GAP_FACTOR = 2.5;
+/** A session unobserved for longer than this cannot be honestly resumed after a
+ *  restart, so startup settles it as lost rather than leaving it open. */
+const STALE_AFTER_FACTOR = 6;
 const CONSOLE_SURFACE = 'console-emulator';
 
 /**
@@ -54,7 +58,7 @@ export function createPlaySessionTracking(config) {
 
   if (declared.length === 0) {
     logger.info?.('play.tracking.none_declared', {});
-    return { trackers: [], sessions: null, intents: null, start() {}, stop() {} };
+    return { trackers: [], sessions: null, intents: null, async start() {}, stop() {} };
   }
 
   const packageName = gamesConfig?.launch?.package;
@@ -64,7 +68,7 @@ export function createPlaySessionTracking(config) {
     logger.warn?.('play.tracking.no_launch_package', {
       devices: declared.map(([id]) => id),
     });
-    return { trackers: [], sessions: null, intents: null, start() {}, stop() {} };
+    return { trackers: [], sessions: null, intents: null, async start() {}, stop() {} };
   }
 
   const sessions = new YamlPlaySessionDatastore({ configService, logger });
@@ -114,11 +118,33 @@ export function createPlaySessionTracking(config) {
     devices: declared.map(([id]) => id), intervalMs, packageName,
   });
 
+  const reconcile = new ReconcileOpenSessions({ sessions, announcer, logger });
+  const deviceIds = declared.map(([id]) => id);
+
   return {
     trackers,
     sessions,
     intents,
-    start() { trackers.forEach((t) => t.start()); },
+    /**
+     * Settle anything a previous process left open, THEN start watching. Order
+     * matters: a tracker that observed first could append to a session whose
+     * fate had not yet been decided.
+     */
+    async start() {
+      try {
+        const settled = await reconcile.execute({
+          deviceIds, now: now(), staleAfterMs: intervalMs * STALE_AFTER_FACTOR,
+        });
+        if (settled.resumed.length || settled.lost.length) {
+          logger.info?.('play.tracking.reconciled', settled);
+        }
+      } catch (error) {
+        // Never let reconciliation failure prevent observation — a missed
+        // settlement is recoverable, a meter that never starts is not.
+        logger.error?.('play.tracking.reconcile_failed', { error: error.message });
+      }
+      trackers.forEach((t) => t.start());
+    },
     stop() { trackers.forEach((t) => t.stop()); },
   };
 }

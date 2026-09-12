@@ -3731,7 +3731,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     httpClient: axios,
     logger: rootLogger.child({ module: 'play-sessions' }),
   });
-  playSessionTracking.start();
+  await playSessionTracking.start();
 
   // Piano-power → tablet-screen authority. DS becomes the single writer for the
   // OFF side of the yellow-room tablet's FKB screen: piano OFF ⇒ screen OFF

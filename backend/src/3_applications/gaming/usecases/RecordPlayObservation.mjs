@@ -65,6 +65,12 @@ export class RecordPlayObservation {
     if (session && nowPlayingId !== openContentId) {
       session.end({ endedAt: observedAt, reason: PlaySessionEndReason.QUIT });
       await this.#sessions.save(session);
+      this.#logger.info?.('play.session.ended', {
+        sessionId: session.id, deviceId, surface, userId: session.userId,
+        grantRef: session.grantRef, contentId: openContentId,
+        playedMs: session.playedMs, confidenceMs: session.confidenceMs,
+        reason: session.endReason, switched: nowPlayingId !== null,
+      });
       await this.#announce('ended', session);
       result.ended = session;
       result.switched = nowPlayingId !== null;
@@ -92,6 +98,7 @@ export class RecordPlayObservation {
       this.#logger.info?.('play.session.started', {
         sessionId: session.id, deviceId, surface, userId,
         contentId: nowPlayingId, grantRef, startedAt: session.startedAt,
+        confidenceMs: session.confidenceMs,
       });
       await this.#announce('started', session);
     } else if (!folded.stale) {
