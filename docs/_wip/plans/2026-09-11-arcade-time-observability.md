@@ -814,7 +814,7 @@ while. `[x]` is built and tested; `[ ]` is not started.
 | `[x]` | **T1 Launch attribution record** — persist "content X launched for user Y on device Z, against grant G" so the observer can echo identity | The source can confirm *a* game runs, never *which* (3.2). Carries the grant reference from 7.1 |
 | `[x]` | **T2 `PlaySessionTracker`** — the scheduler: which devices, what interval, calls `RecordPlayObservation`, self-watchdog | `3_applications/gaming/runtime/` |
 | `[x]` | **T3 Device declaration** — `play_observation` / `play_overlay` blocks in the hardware device config, plus contract/schema | Declared, never inferred (FR-12) |
-| `[ ]` | **T4 Composition wiring** — kiosk client + ADB adapter + source + datastore + announcer + use case + tracker; start on boot | `5_composition/` only |
+| `[x]` | **T4 Composition wiring** — kiosk client + ADB adapter + source + datastore + announcer + use case + tracker; start on boot | `5_composition/` only |
 | `[x]` | **T5 Startup reconciliation** — close stale open sessions as `lost`, clear any armed overlay | Crash recovery (5.10) |
 | `[x]` | **T6 Structured logging vocabulary** — one event per transition, queryable by device and session | NFR-7 |
 | `[ ]` | **T7 Live verification on the console device** — scripted session asserting event sequence and `playedMs` against wall clock *with pauses* | The number must disagree with wall clock, correctly |
@@ -826,7 +826,7 @@ while. `[x]` is built and tested; `[ ]` is not started.
 | | Task | Notes |
 |---|---|---|
 | `[x]` | **T8 Measure log write cadence during steady play** | MEASURED over 425 sessions: median 28s write-span, 59% stop writing within a minute. Logs are NOT a liveness or end signal — they give an exact start and content identity |
-| `[ ]` | **T9 `RetroArchSessionLogReader`** — exact start from filename, content identity from the body | `1_adapters/gaming/` |
+| `[x]` | **T9 `RetroArchSessionLogReader`** — exact start from filename, content identity from the body | `1_adapters/gaming/` |
 | `[x]` | **T10 `ReconcilePlaySessions`** — confirm a session existed and what was played; settle unseen time conservatively, never by guesswork | Ends cannot be reconstructed (5.10) |
 | `[x]` | **T11 Staleness alarm** — no progress for N intervals is a fault, not silence | NFR-8 |
 | `[x]` | **T12 Degraded-mode alerting** — ADB lost ⇒ reduced confidence surfaced, not swallowed | |
