@@ -820,6 +820,17 @@ while. `[x]` is built and tested; `[ ]` is not started.
 | `[ ]` | **T30 Reference documentation** — endstate, present tense, under `docs/reference/`, plus the navigation table | |
 | `[ ]` | **T31 Retire the stale launcher config twin** — `gaming/retroarch/config.yml` reads as live and is not (3.10) | Independent of this feature; found en route |
 
+### Tasks added by Section 9
+
+| | Task | Milestone | Notes |
+|---|---|---|---|
+| `[ ]` | **T38 Express play eligibility as a state-gate** — gate + entitlement definitions for "may play", with economy as one claim | M4 | Replaces a bespoke wallet check (9.2) |
+| `[ ]` | **T39 Per-title play policy** — single-player versus group, attribution and cost rules per game | M4 | Pokemon and Mario Kart are not the same product (9.3) |
+| `[ ]` | **T40 Payer + roster on `PlaySession`** — group play without splitting, roster recorded for later | M4 | Domain change; decide before group pricing (9.3) |
+| `[ ]` | **T41 Controller census in the observation** — count connected gamepads from the input device list | M2 | Feasible over the existing channel (9.4) |
+| `[ ]` | **T42 Controller ACTIVITY sampling** — bounded-window event sampling, so idle pads are not counted as players | M2 | Connected is not playing (9.4) |
+| `[ ]` | **T43 Schedule and prerequisite gates** — approved play windows, "schoolwork done" style conditions | M4 | Time-bound gates already exist to build on |
+
 ### Tasks added by the Section 7 decisions
 
 | | Task | Milestone | Notes |
@@ -832,3 +843,98 @@ while. `[x]` is built and tested; `[ ]` is not started.
 | `[ ]` | **T37 Fleet bridge** — project play sessions into the `device-state:<deviceId>` snapshot shape | M6 | Replaces a bespoke arcade view (7.3) |
 
 All three previously open questions are now decided; none block M1 or M2.
+
+---
+
+## 9. Eligibility is a policy decision, not a wallet check
+
+The economy is **one input among several**, and treating "do they have coins?" as
+the question would bake in a model that is already too narrow.
+
+### 9.1 The dimensions
+
+| Dimension | Example |
+|---|---|
+| **Time** | An approved schedule for when games may be played at all |
+| **Prerequisites** | Schoolwork finished, the school day completed, a chore done — any external condition |
+| **Game** | A single-player title attributes to one child; a four-player title does not |
+| **User** | Per-child caps, overrides and earned autonomy |
+| **Economy** | Coins, game tokens, weekday-versus-weekend exchange rates |
+| **Live inputs** | How many controllers are connected — and how many are actually being used |
+
+These combine. "Two children may play a co-op title together on a Saturday
+afternoon, once both have finished school, sharing the cost" is a single
+decision drawing on five of those six.
+
+### 9.2 Where the decision belongs
+
+**State-gates already is this machine.** It has gate definitions,
+entitlement definitions, assertions, a policy graph, and subject and period
+references — a vocabulary for "may this subject do this thing in this period,
+given what is asserted about them". Eligibility to play is that question, and it
+should be expressed as a gate evaluation rather than as bespoke `if` statements
+inside the gaming slice.
+
+That reframes the economy from gatekeeper to **one claim among others**. A
+wallet or token balance becomes an input to a gate decision, exactly like "school
+day complete" or "inside the approved window". The benefit is that a new
+condition — a new chore, a new schedule, a seasonal rule — is a policy change
+rather than a code change.
+
+It also keeps the separation this whole document rests on:
+
+> **The meter measures. The policy decides.**
+
+`PlaySession` answers "how much was actually played" and nothing else. Whether
+play may begin, what it costs, and who pays are decided elsewhere and handed to
+the session as a grant (7.2). Keeping that line sharp is what lets pricing and
+policy churn without ever touching the arithmetic that bills a child.
+
+### 9.3 Group play breaks the single-user assumption
+
+A co-op title played by three children is not one child's session. Today
+`PlaySession` carries a single `userId`, which is sufficient for a solo title and
+for an admin-attributed family session, and **insufficient for shared play that
+should draw on more than one balance**.
+
+The options, which need deciding before group pricing is built:
+
+- A session has a **payer** and a **roster**: one child (or a parent) is charged,
+  the others are recorded as present.
+- A session **splits cost across a roster**, requiring each participant to have
+  authorised and to have balance.
+
+The first is simpler and probably right to start with — "one can spend on behalf
+of the others" — with the roster recorded so the second remains possible without
+rewriting history.
+
+### 9.4 Controllers are an observability input
+
+How many controllers are connected, and how many are *being used*, is evidence
+about who is playing. It bears on attribution, on whether a title is being played
+as a group, and potentially on price.
+
+Both are obtainable from the device:
+
+- **Connected** — the input device list enumerates every attached device with a
+  source bitmask, so gamepads and joysticks can be counted and identified.
+- **Active** — raw input events can be streamed from the device nodes and sampled
+  over a bounded window, giving per-controller activity rather than mere presence.
+
+**Connected is not playing**, and this is the same trap as the foreground signal
+at a different level: a controller left on the couch is exactly as misleading as
+an emulator foregrounded with no game loaded. A pad that is paired but idle must
+not be counted as a player. The lesson generalises — **presence is never activity**
+— and every signal added to this system should be read against it.
+
+Controller counts belong in the observation payload, so they travel on the bus
+and land in the session record alongside everything else that was true at the
+time.
+
+### 9.5 Consequence for the configuration model
+
+Policy is therefore **multidimensional and data-driven**: a decision over time ×
+game × user × external gates × live inputs. It must not be expressed as nested
+conditionals in the gaming slice. The gaming side asks one question — "may this
+subject play this title on this device now, and on what terms?" — and receives a
+grant or a refusal with a reason.
