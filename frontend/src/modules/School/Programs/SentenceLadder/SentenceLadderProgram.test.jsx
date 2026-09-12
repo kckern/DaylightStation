@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import SentenceLadderProgram from './SentenceLadderProgram.jsx';
 import TypedRung from './rungs/TypedRung.jsx';
+import ICONS from '../../home/icons/iconRegistry.js';
 
 const dayMock = vi.fn();
 const previewDayMock = vi.fn();
@@ -66,6 +67,22 @@ vi.mock('./languageApi.js', () => ({
 }));
 
 const LANGUAGES = { source: 'EN', target: 'KR' };
+/**
+ * The registry's raw SVG, re-serialised by the DOM so it can be compared with
+ * what `Icon` actually rendered. The files ship self-closing (`<path …/>`) and
+ * jsdom serialises the same node as `<path …></path>`, so a raw string compare
+ * fails on markup that is identical.
+ */
+function renderedIcon(name) {
+  const host = document.createElement('div');
+  host.innerHTML = ICONS[name];
+  return host.innerHTML;
+}
+
+const RUNG_TITLES = {
+  repetition: 'Repetition', dictation: 'Dictation',
+  recording: 'Recording', interpretation: 'Interpretation',
+};
 
 const entry = (seq, rung, done = false, options = {}) => ({
   seq,
@@ -235,6 +252,47 @@ describe('the day', () => {
     expect(pips).toHaveClass('reading-pips-label');
     expect(pips.textContent).toBe('2 of 20 repetition sentences');
     expect(document.querySelector('.reading-pip')).toBeNull();
+  });
+
+  // `Icon` marks itself with `school-icon` and the SVG body of the name it was
+  // given — it emits no `data-icon` — so the icon a rung is actually wearing is
+  // identified by matching that body against the registry. Asserting on the
+  // class alone would pass with all four rungs wearing the same picture.
+  it('says whose session this is, and marks each rung with its own icon', async () => {
+    const rungs = ['repetition', 'dictation', 'recording', 'interpretation'];
+    dayMock.mockResolvedValue(dayPayload({
+      chain: rungs,
+      queue: rungs.map((rung, i) => entry(i + 1, rung)),
+    }));
+    // `test-learner`, never a real child's name: this repo is public and a
+    // pre-commit hook rejects household names in fixtures.
+    const { container } = render(
+      <SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />,
+    );
+    expect(await screen.findByText('Test Learner')).toBeTruthy();
+    for (const rung of rungs) {
+      const step = [...container.querySelectorAll('.lang-ladder__step')]
+        .find((el) => el.querySelector('.lang-ladder__label')?.textContent === RUNG_TITLES[rung]);
+      expect(step.querySelector('.lang-ladder__glyph').innerHTML).toBe(renderedIcon(`rung-${rung}`));
+    }
+  });
+
+  // A rung this device cannot climb is still one of the four. Dimming is the
+  // only thing that may differ — a rung stripped of its mark would be the one
+  // a child cannot recognise at all, which is backwards.
+  it('keeps its mark on a rung this device cannot climb', async () => {
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['repetition'],
+      queue: [entry(1, 'repetition')],
+      missingCreditRungs: ['recording'],
+      missingCreditNeeds: { recording: { kind: 'microphone' } },
+    }));
+    const { container } = render(
+      <SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />,
+    );
+    await screen.findByText('Recording');
+    const blocked = container.querySelector('.lang-ladder__step.is-blocked');
+    expect(blocked.querySelector('.lang-ladder__glyph').innerHTML).toBe(renderedIcon('rung-recording'));
   });
 
   it('a rung this device cannot climb says so on the rung, not in a banner', async () => {

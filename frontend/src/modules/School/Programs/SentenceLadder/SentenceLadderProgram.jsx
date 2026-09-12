@@ -10,6 +10,8 @@ import PacingControl from './PacingControl.jsx';
 import DeviceSettings from './DeviceSettings.jsx';
 import { languageName } from './languageNames.js';
 import ReadingPips from '../../reading/ReadingPips.jsx';
+import ProfileAvatar from '../../../../lib/identity/ProfileAvatar.jsx';
+import Icon from '../../home/icons/Icon.jsx';
 import './SentenceLadder.scss';
 
 const RUNG_LABELS = {
@@ -42,6 +44,28 @@ const RUNG_ORDER = ['repetition', 'dictation', 'recording', 'interpretation'];
  * The rail had never once drawn a pip.
  */
 const LADDER_MAX_PIPS = 15;
+
+/**
+ * Whose session this is, as a name rather than an id.
+ *
+ * The rail had no owner on it at all. On a shared living-room panel that is a
+ * real question — a child walks up to a half-climbed ladder and cannot tell
+ * whether the fifteen sentences on it are theirs or their sibling's, and the
+ * only way to find out was to start answering.
+ *
+ * Derived from the learner id, because that is the only identity this program
+ * is given: the School shell mounts it with `userId` and nothing else. Ids in
+ * this household are `first` or `first-last`, so title-casing the segments is
+ * the whole transformation. `ProfileAvatar` beside it carries the real
+ * portrait, which is what a pre-reader actually recognises; the words are for
+ * the adult and the screen reader.
+ */
+function learnerLabel(userId) {
+  if (!userId) return null;
+  return userId.split(/[-_.\s]+/).filter(Boolean)
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join(' ');
+}
 
 /**
  * What a rung this device cannot climb is actually short of — the text under a
@@ -502,6 +526,7 @@ export default function SentenceLadderProgram({
   const blockedByDevice = settled && missingCreditRungs.length > 0;
   const sessionFinished = settled && !blockedByDevice;
   const exitHandler = onExit ?? onSignIn;
+  const learnerName = learnerLabel(userId);
 
   return (
     <div className="lang-program">
@@ -541,7 +566,12 @@ export default function SentenceLadderProgram({
               data-testid="selfservice-section-exit"
               onClick={onExit}
             >
-              Leave for now
+              {/* The set's own back mark, the same one the launch card uses, so
+                  "out of here" is one picture across the School and not a word
+                  in one place and a chevron in another. Decorative: the words
+                  beside it are still the accessible name. */}
+              <Icon name="back" className="lang-btn__glyph" />
+              <span>Leave for now</span>
             </button>
           )}
         </div>
@@ -560,6 +590,14 @@ export default function SentenceLadderProgram({
             device cannot climb says so in a quiet line rather than a banner.
             The Review shelf sits below the ladder: it is not a rung. */}
         <nav className="lang-ladder" aria-label="Session modes">
+          {/* WHOSE LADDER THIS IS, at the top of the rail. A guest preview has
+              no learner, so it gets no portrait rather than a placeholder one. */}
+          {!preview && learnerName && (
+            <div className="lang-ladder__who">
+              <ProfileAvatar id={userId} name={learnerName} size={96} />
+              <span className="lang-ladder__who-name">{learnerName}</span>
+            </div>
+          )}
           <ol className="lang-ladder__rungs">
             {/* Every rung the day has, in climbing order — including one this
                 device cannot climb. The server's chain omits an unsupported
@@ -574,7 +612,15 @@ export default function SentenceLadderProgram({
                 return (
                   <li key={rung} className="lang-ladder__rung">
                     <div className="lang-ladder__step is-blocked" role="button" aria-disabled="true" aria-label={label}>
-                      <span className="lang-ladder__label">{label}</span>
+                      {/* A rung this device cannot climb keeps its mark. It is
+                          still one of the four, and dimming it is the only
+                          thing that should differ — stripping the icon would
+                          make the unreachable rung the one a child cannot
+                          recognise at all. */}
+                      <span className="lang-ladder__name">
+                        <Icon name={`rung-${rung}`} className="lang-ladder__glyph" />
+                        <span className="lang-ladder__label">{label}</span>
+                      </span>
                       <span className="lang-ladder__note">{needNote(missingCreditNeeds[rung])}</span>
                     </div>
                   </li>
@@ -596,7 +642,14 @@ export default function SentenceLadderProgram({
                       setActiveRung(g.rung);
                     }}
                   >
-                    <span className="lang-ladder__label">{label}</span>
+                    {/* Each rung wears its own mark: the four names are four
+                        long words in the same weight, and on a panel read at
+                        arm's length a child finds "the microphone one" far
+                        faster than they read "Recording". */}
+                    <span className="lang-ladder__name">
+                      <Icon name={`rung-${rung}`} className="lang-ladder__glyph" />
+                      <span className="lang-ladder__label">{label}</span>
+                    </span>
                     {/* The lit rung's next pip is the sentence in hand — held
                         still: a wall panel does not pulse. */}
                     <ReadingPips
