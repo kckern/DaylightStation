@@ -17,19 +17,22 @@ const intentFor = (overrides = {}) => new PlayIntent({
 
 let source, record, intents, timers;
 
+/** Fake IApplicationScheduler: `after` records the task and returns a cancel. */
 function makeTimers() {
   const scheduled = [];
   return {
     scheduled,
-    setTimer: (fn, ms) => { scheduled.push({ fn, ms }); return scheduled.length; },
-    clearTimer: (id) => { scheduled[id - 1] = null; },
+    after: (ms, fn) => {
+      const slot = scheduled.push({ fn, ms }) - 1;
+      return () => { scheduled[slot] = null; };
+    },
     runNext: async () => { const t = scheduled.find(Boolean); if (t) { scheduled[scheduled.indexOf(t)] = null; await t.fn(); } },
   };
 }
 
 const tracker = (over = {}) => new PlaySessionTracker({
   devices: [DEVICE], observationSource: source, intents, recordObservation: record,
-  intervalMs: 10_000, setTimer: timers.setTimer, clearTimer: timers.clearTimer, now,
+  intervalMs: 10_000, scheduler: timers, now,
   logger: { info() {}, warn() {}, debug() {}, error() {} },
   ...over,
 });
@@ -125,9 +128,9 @@ describe('PlaySessionTracker — scheduling', () => {
     expect(t.isRunning).toBe(false);
   });
 
-  it('refuses global timers — they must be injected', () => {
+  it('refuses global timers — scheduling must be injected', () => {
     expect(() => new PlaySessionTracker({
       observationSource: source, recordObservation: record, intervalMs: 1000, now,
-    })).toThrow(/setTimer/);
+    })).toThrow(/scheduler/);
   });
 });
