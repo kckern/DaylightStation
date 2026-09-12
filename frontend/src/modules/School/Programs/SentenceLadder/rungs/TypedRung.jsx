@@ -66,6 +66,56 @@ export const DEFAULT_IDLE_REPLAY_MS = 30_000;
  */
 export const REFUSAL_FLASH_MS = 180;
 
+/**
+ * PRESS TO PEEK, TYPE TO HIDE — and no third mode to go with it.
+ *
+ * Copy mode is a beginner's scaffold. An intermediate should be LISTENING and
+ * typing what they heard, not reading and transcribing; pure blind dictation
+ * with nothing to fall back on is too harsh. So the whole sentence can be
+ * asked for, with the learner's own position marked, and the next keystroke
+ * takes it away again: look, hold a chunk in your head, type it from memory.
+ * You cannot read and type at the same time, which is the point.
+ *
+ * This COLLAPSES the tiers rather than adding one — beginner is `copy`,
+ * intermediate and advanced are both `listen` and differ only in how often
+ * they peek, which is recorded anyway. One fewer knob for nobody to remember
+ * to change as a child improves.
+ *
+ * F1, and deliberately NOT Escape: `screens/portal.yml` binds `actions.escape`
+ * to `reload` when the screen is idle, so a stuck child pressing it would
+ * reload the kiosk out from under themselves. Tab already plays, Space is a
+ * space (a Korean sentence has them), and the arrows are the caret and end a
+ * composition session on purpose. F1 reads as "help" and was unclaimed — and
+ * it is paired with a visible button, because the Portal is a touch panel and
+ * a child cannot press a key that is not on it.
+ *
+ * NO CAP, deliberately. Self-hiding does not prevent glyph-by-glyph copying: a
+ * child can peek, type one glyph, peek again. What discourages that is that
+ * each peek shows the WHOLE sentence, so taking one glyph out of it is
+ * obviously uneconomic — plus the peek count sitting in the evidence log. A
+ * hard cap would fire mid-sentence and strand a stuck child, which is the
+ * failure this whole design keeps stepping around.
+ */
+const PEEK_KEY = 'F1';
+
+/**
+ * The baseline's quiet control: a glyph, the word for anything that asks, and
+ * the visible caption — which is where the shortcut is written when there is a
+ * keyboard to press it on. Play, Stop and Peek are the same button three
+ * times, and written out three times they had already begun to drift.
+ */
+function QuietButton({ icon, word, caption, onClick }) {
+  return (
+    <button type="button" className="lang-btn lang-btn--quiet" onClick={onClick}>
+      {icon && <Icon name={icon} className="lang-btn__glyph" />}
+      {/* The accessible name, kept off screen: the caption beside it says the
+          shortcut, and a control called "Tab plays" is not called "Play". */}
+      <span className="lang-btn__word">{word}</span>
+      <span className="lang-btn__key" aria-hidden="true">{caption}</span>
+    </button>
+  );
+}
+
 export default function TypedRung({
   entry, audioUrl, nextEntry, onComplete, saving, showShortcuts = false,
   idleReplayMs = DEFAULT_IDLE_REPLAY_MS,
@@ -106,6 +156,9 @@ export default function TypedRung({
    */
   const [refusing, setRefusing] = useState(false);
   const [refusals, setRefusals] = useState(0);
+  // The whole of the peek: one boolean, cleared by the next keystroke. See
+  // PEEK_KEY above for why it is not a third dictation mode.
+  const [peeking, setPeeking] = useState(false);
   const inputRef = useRef(null);
   const hushedRef = useRef(false);
   hushedRef.current = hushed;
@@ -122,11 +175,16 @@ export default function TypedRung({
   /**
    * How much of the model the strip is allowed to draw. Copy mode traces a
    * visible sentence; listen mode must not have it in the DOM at all, or the
-   * drill is a reading exercise for anyone who can reach devtools. Threaded as
-   * a value rather than inlined so the peek control that flips it to 'all' is
-   * one line here and nothing at all in `glyphStrip.js`.
+   * drill is a reading exercise for anyone who can reach devtools — except
+   * while the learner is holding a peek open, which is 'all': every column at
+   * once, the live one marked, the rest ghosted. Threaded as a value rather
+   * than inlined, which is why the peek is one line here and nothing at all in
+   * `glyphStrip.js`.
    */
-  const reveal = isCopying ? 'model' : 'none';
+  const reveal = isCopying ? 'model' : (peeking ? 'all' : 'none');
+  // Copy mode already shows the sentence, and the interpretation rung shows its
+  // target whole — there is nothing for either to peek at.
+  const canPeek = isDictation && !isCopying;
 
   /**
    * THE COPY-MODE GATE, wired up.
@@ -276,6 +334,29 @@ export default function TypedRung({
     inputRef.current?.focus();
   }, [stop, entry.rung, entry.seq]);
 
+  /**
+   * Show the sentence, or put it away again.
+   *
+   * Logged on the REVEAL edge only, and through the same rung category as
+   * everything else on this screen, so the peek count for a sentence is in the
+   * evidence log beside the attempt it belongs to. That count is what tells a
+   * grown-up whether a child is ready for the rung — which is the only reason
+   * this needs no cap.
+   */
+  const togglePeek = useCallback(() => {
+    const next = !peeking;
+    setPeeking(next);
+    if (next) {
+      languageLog.rung('peek', {
+        rung: entry.rung, seq: entry.seq, at: Array.from(typed.committed).length,
+      });
+    }
+    // Back to the keys: a peek taken with the button leaves focus on it, and
+    // the next keystroke — the one that is supposed to take the peek away —
+    // would go nowhere.
+    inputRef.current?.focus();
+  }, [peeking, typed.committed, entry.rung, entry.seq]);
+
   // Going quiet is what a stuck learner looks like, and hearing the sentence
   // again is what the loop was reaching for before it became a siren. So:
   // exactly one replay after a silence. Keyed on `value`, so every keystroke
@@ -313,6 +394,11 @@ export default function TypedRung({
       play();
       return;
     }
+    if (canPeek && e.key === PEEK_KEY) {
+      e.preventDefault();
+      togglePeek();
+      return;
+    }
     // No Space branch. Space used to mean "play" while the field was empty,
     // which reads fine in English and is a trap in Korean: 오늘 온 사람 begins
     // with a word, then a space the learner cannot type. The key is a space.
@@ -320,7 +406,7 @@ export default function TypedRung({
       e.preventDefault();
       submit();
     }
-  }, [play, submit]);
+  }, [play, submit, canPeek, togglePeek]);
 
   const label = isCopying ? 'Copy the sentence' : isDictation ? 'Type what you hear' : 'Type what it means';
 
@@ -383,6 +469,10 @@ export default function TypedRung({
             // submit — so the one job a keystroke has now is to be a keystroke.
             // (It also restarts the idle wait, via the effect's `value` dep.)
             setValue(e.target.value);
+            // TYPE TO HIDE. The peek is over the moment the learner writes
+            // anything — that is what stops it being copy mode with an extra
+            // step, and it is why there is no timer and no cap.
+            setPeeking(false);
             // Read from the composer DURING its own change event, which is the
             // only moment its answer is guaranteed current — see the note on
             // `typed` above for why the field's value will not do.
@@ -399,36 +489,40 @@ export default function TypedRung({
           on a typing rung the thing the learner needs least often. */}
       <div className="lang-rung__baseline">
         <div className="lang-rung__cues">
-          <button
-            type="button"
-            className="lang-btn lang-btn--quiet"
+          {/* The shortcut is written on the caption ONLY where those keys
+              exist: a touch panel may have a Hangul IME on its on-screen
+              keyboard and no Tab key at all, and instructions for absent
+              hardware are worse than no instructions. */}
+          <QuietButton
+            icon="play"
+            word={played ? 'Play again' : 'Play'}
+            caption={showShortcuts ? 'Tab plays' : (played ? 'Play again' : 'Play')}
             onClick={play}
-          >
-            <Icon name="play" className="lang-btn__glyph" />
-            <span className="lang-btn__word">{played ? 'Play again' : 'Play'}</span>
-            {/* The visible caption, and the shortcut ONLY where those keys
-                exist: a touch panel may have a Hangul IME on its on-screen
-                keyboard and no Tab key at all, and instructions for absent
-                hardware are worse than no instructions. Held out of the
-                accessible name so the control is still just "Play again". */}
-            <span className="lang-btn__key" aria-hidden="true">
-              {showShortcuts ? 'Tab plays' : (played ? 'Play again' : 'Play')}
-            </span>
-          </button>
+          />
           {/* The way out of the sound. While the clip looped there was no such
               control anywhere on this rung: the only escape was to finish
               typing. It appears only while something is actually sounding, so
               the row never offers a Stop with nothing to stop. */}
           {playing && (
-            <button
-              type="button"
-              className="lang-btn lang-btn--quiet"
-              onClick={stopPlayback}
-            >
-              <Icon name="pause" className="lang-btn__glyph" />
-              <span className="lang-btn__word">Stop</span>
-              <span className="lang-btn__key" aria-hidden="true">Stop</span>
-            </button>
+            <QuietButton icon="pause" word="Stop" caption="Stop" onClick={stopPlayback} />
+          )}
+          {/* THE PEEK, AND ITS BUTTON. The key alone would be unreachable on
+              the Portal, which is a panel with a keyboard only sometimes
+              bonded to it — and this rung's whole audience is the child typing
+              blind. No glyph: the icon set has nothing that reads as "show me"
+              at a glance, and a wrong picture is worse than a plain word. */}
+          {canPeek && (
+            <QuietButton
+              word={peeking ? 'Hide' : 'Peek'}
+              /* The caption turns over with the state for the same reason
+                 "Play" becomes "Play again": a control that reads the same
+                 either way leaves a child no way to tell whether the sentence
+                 is up because they asked for it. */
+              caption={showShortcuts
+                ? (peeking ? 'F1 hides' : 'F1 peeks')
+                : (peeking ? 'Hide' : 'Peek')}
+              onClick={togglePeek}
+            />
           )}
         </div>
         <button

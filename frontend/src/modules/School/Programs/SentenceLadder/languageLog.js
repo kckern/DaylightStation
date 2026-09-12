@@ -49,7 +49,7 @@ export const languageLog = {
   programStep: (detail, data) => emit('program', detail, data, 'debug'),  // day-loading | tab
   programError: (detail, data) => emit('program', detail, data, 'error'), // day-failed
   // enter | selected | complete | held | replayed | advanced | practice |
-  // stopped | idle-replay | glyph-replay | refused
+  // stopped | idle-replay | glyph-replay | refused | peek
   rung: (detail, data) => emit('rung', detail, data, 'debug'),
   /**
    * The one rung fact the log STORE keeps. Everything else in this category is
