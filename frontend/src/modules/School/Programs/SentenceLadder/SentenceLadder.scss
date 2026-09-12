@@ -412,7 +412,9 @@ $disc: 5.5rem;
 
     &:focus { outline: 2px solid var(--school-accent); outline-offset: 2px; }
   }
-  &__hint { margin: 0; font-size: $meta; color: var(--school-muted); }
+  // (`&__hint` used to live here — the typed rungs' "Tab plays the sentence ·
+  // Enter submits" line. The shortcut is written on the play control now and
+  // nothing else in School ever wore the class, so the rule went with it.)
 
   // OFFSCREEN, NOT HIDDEN. The dictation field is drawn by the glyph strip, so
   // the element itself must leave the layout — but it is still the focused,

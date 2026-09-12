@@ -1438,8 +1438,14 @@ describe('dismissal and dead ends', () => {
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByLabelText(/Type what you hear/i);
     // On the control it triggers, and out of that control's accessible name.
-    expect(screen.getByText(/Tab plays/)).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Play again' })).toBeTruthy();
+    // Asserted through the hint's own node rather than by asking for the
+    // button BY name: that name is "Play" until the arrival clip has started
+    // and "Play again" after, so a name-based assertion here races the effect
+    // that `findByLabelText` above does not wait for — which is a flake under
+    // a loaded suite and says nothing about where the hint lives.
+    const hint = screen.getByText(/Tab plays/);
+    expect(hint.closest('button')).toBeTruthy();
+    expect(hint.getAttribute('aria-hidden')).toBe('true');
   });
 
   it('keeps device capabilities out of the drill surface', async () => {
