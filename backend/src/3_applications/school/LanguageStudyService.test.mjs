@@ -732,15 +732,76 @@ describe('rollDay', () => {
     expect(result).toEqual({ rolled: false, day: 1, reason: 'queue-incomplete' });
   });
 
-  it('refuses before the boundary even with the queue finished', () => {
-    // A client asking early must not be able to rush the spacing.
+  it('starts the next day early once today is finished — a finished day is never a wall', () => {
     const ds = new FakeDatastore();
     const svc = makeService(ds);
     svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 3 });
     finishDay(svc);
     const result = svc.rollDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
-    expect(result.rolled).toBe(false);
-    expect(result.reason).toBe('before-boundary');
+    expect(result).toEqual({ rolled: true, day: 2, reason: 'ahead' });
+    expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED }).day).toBe(2);
+  });
+
+  it('will not roll past a rung this device could not climb', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 3 });
+    const bare = { microphone: false, textInput: [] };
+    finishDay(svc, bare);
+    const result = svc.rollDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: bare });
+    expect(result).toEqual({ rolled: false, day: 1, reason: 'queue-incomplete' });
+  });
+
+  it('opening the ladder on the next study day serves the next day, with no button', () => {
+    // The kiosk hid the roll button, so a finished day came back as
+    // "complete" the following afternoon and the child could go no further.
+    const ds = new FakeDatastore();
+    let clock = AT;
+    const svc = makeService(ds, () => clock);
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 3 });
+    finishDay(svc);
+    clock = Date.parse('2026-07-22T10:00:00Z');
+
+    const day = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    expect(day.day).toBe(2);
+    expect(day.summary.done).toBeLessThan(day.summary.total);
+    expect(ds.readProgress('kckern', 'test-korean').day).toBe(2);
+    // Opening it again is the same day, not another roll.
+    expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED }).day).toBe(2);
+  });
+
+  it('a device-limited open never rolls past the rungs the credit still needs', () => {
+    const ds = new FakeDatastore();
+    let clock = AT;
+    const svc = makeService(ds, () => clock);
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 3 });
+    const bare = { microphone: false, textInput: [] };
+    finishDay(svc, bare);
+    clock = Date.parse('2026-07-22T10:00:00Z');
+    expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: bare }).day).toBe(1);
+  });
+
+  it('announces a finished day once — reading it back or rolling it never re-publishes', () => {
+    // Each re-publish closed the day again, and each close printed its receipt.
+    const ds = new FakeDatastore();
+    const eventBus = { publish: vi.fn() };
+    let clock = AT;
+    const svc = makeService(ds, () => clock, {
+      readProgramEnrollment: () => ({
+        programId: 'sentence-ladder', corpusId: 'test-korean', lessonSize: 2,
+        rungs: ['repetition', 'dictation'],
+      }),
+      realtime: new EventBusSchoolRealtimeAdapter({ eventBus }),
+    });
+    finishDay(svc);
+    expect(eventBus.publish).toHaveBeenCalledTimes(1);
+
+    for (let i = 0; i < 3; i += 1) svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    clock = Date.parse('2026-07-22T10:00:00Z');
+    svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    svc.rollDay({ userId: 'kckern', corpusId: 'test-korean' });
+    expect(eventBus.publish).toHaveBeenCalledTimes(1);
   });
 
   it('rolls once the boundary has passed', () => {
