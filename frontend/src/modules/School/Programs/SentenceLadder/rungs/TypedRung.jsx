@@ -201,8 +201,11 @@ export default function TypedRung({
    * Turn a spoken take into text: `(blob) => Promise<{ok, transcript, empty}>`.
    *
    * ABSENT means the control is not drawn at all, and the program decides that
-   * — it is the only thing that knows whether this device has a microphone and
-   * whether the server can transcribe (`day.voiceAnswer`). A control that
+   * — it is the only thing that knows whether this device has a microphone,
+   * and the day's entry says whether THIS rung takes a spoken answer at all
+   * (`entry.spokenAnswer`, which already folds in whether the server can
+   * transcribe). Dictation never does: speaking the Korean back is the
+   * repetition rung, and this rung exists to practise the script. A control that
    * cannot ever work is a dead control, and a child who presses a dead button
    * concludes the screen is broken and stops trusting the rest of it; the same
    * reasoning keeps Hint off this rung until glosses exist.

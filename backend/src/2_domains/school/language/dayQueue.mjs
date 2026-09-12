@@ -115,6 +115,10 @@ function clearedIndex(log) {
  * @param {string[]} [args.rungChain] enrollment-owned credit chain; device
  *        capabilities still remove rungs it cannot serve
  * @param {object}   [args.capabilities] {microphone, textInput[]} — filters the ladder
+ * @param {boolean}  [args.voiceAnswer] whether this deployment can transcribe
+ *        speech, which is what makes the microphone an alternative to typing
+ *        the interpretation. Same default as the ladder's — a queue built
+ *        without it is short a rung, never dead-ended on one.
  * @param {{source: string, target: string}} args.languages - the corpus role binding
  * @param {Set<number>} [args.playable] - sequences that have audio; omit for "all".
  *        A rung's prompt is audio, so a sentence without it cannot be drilled —
@@ -126,10 +130,11 @@ export function buildDayQueue({
   log = [], day, dailyLimit, corpusSize, capabilities = {}, languages, playable = null,
   admission = null,
   rungChain = null,
+  voiceAnswer = false,
 }) {
   const canDrill = (seq) => playable === null || playable.has(seq);
   const { byRung: cleared, everSeen, practiced } = clearedIndex(log);
-  const availableChain = chainFor(capabilities, languages);
+  const availableChain = chainFor(capabilities, languages, { voiceAnswer });
   const chain = Array.isArray(rungChain)
     ? rungChain.filter((rung) => availableChain.includes(rung))
     : availableChain;
