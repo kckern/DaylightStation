@@ -3746,6 +3746,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     sessions: playSessionTracking.sessions,
     trackers: playSessionTracking.trackers,
     watchdog: playSessionTracking.watchdog,
+    grantLedger: playSessionTracking.grantLedger,
+    grantPlayTime: playSessionTracking.grantPlayTime,
     logger: rootLogger.child({ module: 'play-sessions-api' }),
   });
 

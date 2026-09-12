@@ -56,12 +56,12 @@ function requireText(value, field) {
 }
 
 export class PlaySession {
-  #id; #deviceId; #surface; #userId; #content; #grantRef;
+  #id; #deviceId; #surface; #userId; #content; #grantRef; #participants;
   #status; #startedAt; #endedAt; #endReason;
   #playedMs; #lastState; #lastObservedAt; #confidenceMs; #trustedGapMs;
 
   constructor({
-    id, deviceId, surface, userId = null, content = null, grantRef = null,
+    id, deviceId, surface, userId = null, content = null, grantRef = null, participants = [],
     status = PlaySessionStatus.PENDING,
     startedAt = null, endedAt = null, endReason = null,
     playedMs = 0, lastState = null, lastObservedAt = null,
@@ -78,6 +78,7 @@ export class PlaySession {
     this.#userId = userId;
     this.#content = content;
     this.#grantRef = grantRef;
+    this.#participants = Array.from(new Set(participants.filter(Boolean)));
     this.#status = status;
     this.#startedAt = startedAt;
     this.#endedAt = endedAt;
@@ -93,8 +94,8 @@ export class PlaySession {
    * Open a session in response to a launch. It is PENDING, not ACTIVE: nothing
    * is billable until a PLAYING observation confirms the game is really running.
    */
-  static open({ id, deviceId, surface, userId = null, content = null, grantRef = null, trustedGapMs }) {
-    return new PlaySession({ id, deviceId, surface, userId, content, grantRef, trustedGapMs });
+  static open({ id, deviceId, surface, userId = null, content = null, grantRef = null, participants = [], trustedGapMs }) {
+    return new PlaySession({ id, deviceId, surface, userId, content, grantRef, participants, trustedGapMs });
   }
 
   get id() { return this.#id; }
@@ -104,6 +105,18 @@ export class PlaySession {
   get content() { return this.#content; }
   /** The authorisation this session was opened against (7.1). */
   get grantRef() { return this.#grantRef; }
+  /**
+   * Who is PAYING. A group session is charged to one person — a child spending
+   * on behalf of siblings, or an adult covering the room — because splitting a
+   * balance across children needs every one of them to have authorised, which
+   * a couch does not make practical.
+   */
+  get payerId() { return this.#userId; }
+  /**
+   * Everyone recorded as present, payer included. Not charged today; recorded so
+   * cost-splitting remains possible later without rewriting history.
+   */
+  get participants() { return [...this.#participants]; }
   get status() { return this.#status; }
   get startedAt() { return this.#startedAt; }
   get endedAt() { return this.#endedAt; }
@@ -172,6 +185,21 @@ export class PlaySession {
    * high-water mark: lowering it would let a blind spot erase time already
    * witnessed.
    */
+  /**
+   * Record someone else as present. Idempotent, and never changes who pays:
+   * joining a game must not silently move the bill to a sibling.
+   */
+  addParticipant(userId) {
+    if (!userId || this.#participants.includes(userId)) return this;
+    if (this.#status === PlaySessionStatus.ENDED) {
+      throw new DomainInvariantError('Cannot add a participant to an ended play session', {
+        code: 'PLAY_SESSION_ENDED', sessionId: this.#id,
+      });
+    }
+    this.#participants.push(userId);
+    return this;
+  }
+
   reconcilePlayedMs(playedMs, { confidenceMs = 0 } = {}) {
     if (!Number.isFinite(playedMs) || playedMs < 0) {
       throw new ValidationError('playedMs must be a non-negative number', {
@@ -204,7 +232,8 @@ export class PlaySession {
   toSnapshot() {
     return {
       id: this.#id, deviceId: this.#deviceId, surface: this.#surface,
-      userId: this.#userId, content: this.#content, grantRef: this.#grantRef, status: this.#status,
+      userId: this.#userId, content: this.#content, grantRef: this.#grantRef,
+      participants: [...this.#participants], status: this.#status,
       startedAt: this.#startedAt, endedAt: this.#endedAt, endReason: this.#endReason,
       playedMs: this.#playedMs, lastState: this.#lastState,
       lastObservedAt: this.#lastObservedAt, confidenceMs: this.#confidenceMs,

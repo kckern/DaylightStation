@@ -26,6 +26,9 @@ import { KioskPlayTerminator } from '#adapters/devices/KioskPlayTerminator.mjs';
 import { KioskPlaySpeaker } from '#adapters/devices/KioskPlaySpeaker.mjs';
 import { NoPlayTimeGrants } from '#adapters/gaming/NoPlayTimeGrants.mjs';
 import { RoleBasedPlayGrants } from '#adapters/gaming/RoleBasedPlayGrants.mjs';
+import { LedgerPlayTimeGrants } from '#adapters/gaming/LedgerPlayTimeGrants.mjs';
+import { YamlPlayGrantLedger } from '#adapters/persistence/yaml/YamlPlayGrantLedger.mjs';
+import { GrantPlayTime } from '#apps/gaming/usecases/GrantPlayTime.mjs';
 import { HomeAssistantPlayAlert } from '#adapters/devices/HomeAssistantPlayAlert.mjs';
 import { EnforcePlayBudget } from '#apps/gaming/usecases/EnforcePlayBudget.mjs';
 import { YamlPlaySessionDatastore } from '#adapters/persistence/yaml/YamlPlaySessionDatastore.mjs';
@@ -94,7 +97,7 @@ export function createPlaySessionTracking(config) {
 
   if (declared.length === 0) {
     logger.info?.('play.tracking.none_declared', {});
-    return { trackers: [], sessions: null, intents: null, recordObservation: null, watchdog: null, async start() {}, stop() {} };
+    return { trackers: [], sessions: null, intents: null, recordObservation: null, watchdog: null, grantLedger: null, grantPlayTime: null, async start() {}, stop() {} };
   }
 
   const packageName = gamesConfig?.launch?.package;
@@ -104,7 +107,7 @@ export function createPlaySessionTracking(config) {
     logger.warn?.('play.tracking.no_launch_package', {
       devices: declared.map(([id]) => id),
     });
-    return { trackers: [], sessions: null, intents: null, recordObservation: null, watchdog: null, async start() {}, stop() {} };
+    return { trackers: [], sessions: null, intents: null, recordObservation: null, watchdog: null, grantLedger: null, grantPlayTime: null, async start() {}, stop() {} };
   }
 
   const sessions = new YamlPlaySessionDatastore({ configService, logger });
@@ -146,12 +149,26 @@ export function createPlaySessionTracking(config) {
   // ever stopped. Metering still runs and still records what was played — the
   // meter measures from day one and only starts costing anything when a real
   // grant source replaces this.
+  const grantLedger = configService ? new YamlPlayGrantLedger({ configService, logger }) : null;
+  const isAdmin = profileFor
+    ? async (userId) => {
+      const profile = await profileFor(userId);
+      const roles = Array.isArray(profile?.roles) ? profile.roles.map(String) : [];
+      return profile?.type === 'owner' || roles.some((r) => ['sysadmin', 'parent', 'gaming-host'].includes(r));
+    }
+    : null;
+  const playGrants = (grantLedger && isAdmin)
+    ? new LedgerPlayTimeGrants({ ledger: grantLedger, isAdmin, logger })
+    : (profileFor ? new RoleBasedPlayGrants({ profileFor, logger }) : new NoPlayTimeGrants());
+  const grantPlayTime = grantLedger ? new GrantPlayTime({ ledger: grantLedger, logger }) : null;
+
   const adbByDevice = new Map();
   const enforcement = new EnforcePlayBudget({
-    // Adults play without a ceiling so family play works before the economy
-    // issues grants; everyone else gets none, so nothing counts down for them.
-    grants: grants
-      || (profileFor ? new RoleBasedPlayGrants({ profileFor, logger }) : new NoPlayTimeGrants()),
+    // Adults play without a ceiling; everyone else plays the time on their
+    // ledger, and nothing at all if none was granted. Where granted time came
+    // from — a parent's phone or converted tokens — is the ledger's business,
+    // not the meter's.
+    grants: grants || playGrants,
     terminator: new KioskPlayTerminator({
       adbByDevice, kioskByDevice, packageName, logger,
     }),
@@ -265,6 +282,8 @@ export function createPlaySessionTracking(config) {
     // same use case the polled source uses.
     recordObservation,
     watchdog,
+    grantLedger,
+    grantPlayTime,
     /**
      * Settle anything a previous process left open, THEN start watching. Order
      * matters: a tracker that observed first could append to a session whose

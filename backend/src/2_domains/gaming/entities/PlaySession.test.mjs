@@ -178,3 +178,46 @@ describe('PlaySession — validation and persistence', () => {
     expect(revived.playedMs).toBe(25_000);
   });
 });
+
+describe('PlaySession — group play has a payer and a roster', () => {
+  it('treats the attributed user as the payer', () => {
+    const s = open();
+    expect(s.payerId).toBe('test-learner');
+  });
+
+  it('records others as present without moving the bill', () => {
+    const s = open();
+    s.addParticipant('sibling-a');
+    s.addParticipant('sibling-b');
+    expect(s.participants).toEqual(['sibling-a', 'sibling-b']);
+    expect(s.payerId).toBe('test-learner');   // unchanged
+  });
+
+  it('is idempotent — joining twice is joining once', () => {
+    const s = open();
+    s.addParticipant('sibling-a');
+    s.addParticipant('sibling-a');
+    expect(s.participants).toEqual(['sibling-a']);
+  });
+
+  it('ignores an empty participant', () => {
+    const s = open();
+    s.addParticipant(null);
+    expect(s.participants).toEqual([]);
+  });
+
+  it('refuses to add someone to an ended session', () => {
+    const s = open();
+    s.observe({ state: PlayState.PLAYING, observedAt: at(0) });
+    s.end({ endedAt: at(10), reason: PlaySessionEndReason.QUIT });
+    expect(() => s.addParticipant('sibling-a')).toThrow(/ended/i);
+  });
+
+  it('carries the roster through a snapshot, so history stays splittable later', () => {
+    const s = open();
+    s.addParticipant('sibling-a');
+    const revived = PlaySession.fromSnapshot(s.toSnapshot());
+    expect(revived.participants).toEqual(['sibling-a']);
+    expect(revived.payerId).toBe('test-learner');
+  });
+});
