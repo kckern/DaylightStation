@@ -37,6 +37,37 @@ import VoiceBand from './VoiceBand.jsx';
 /** Below this shaped level for SILENT_AFTER_MS, the mic is called silent. */
 const SILENT_LEVEL = 0.04;
 const SILENT_AFTER_MS = 2000;
+/**
+ * The floor a take has to clear to be KEPT at all: long enough to be a
+ * sentence, and loud enough to have been one.
+ *
+ * A rung that accepts anything is a rung that can be tapped through, and the
+ * evidence that this was happening is in the log for 2026-09-11: six takes, the
+ * last two at ~1s each with `heard: false`, one of them accepted 1 second after
+ * it stopped. Recording was being spent rather than done.
+ *
+ * `heard` is the strong signal and does most of the work — it means the live
+ * level never once crossed SILENT_LEVEL, and a real utterance always crosses
+ * it. The duration floor catches the other shape: a tap, a cough, a single loud
+ * syllable that clears the level but is not an attempt at the sentence.
+ *
+ * 1200ms IS NOT A GUESS. The six takes from that session were pulled off disk
+ * and measured, and they separate cleanly:
+ *
+ *   take  length   peak      whisper no_speech   text
+ *   1-4   1.74s     -0.0dB   0.035-0.093         real Korean sentences
+ *          -2.58s   -4.5dB                       (incl. the 이 가방은/가방들은 pair)
+ *   5     1.14s    -63.5dB   0.941               silence
+ *   6     0.66s    -52.6dB   0.963               silence
+ *
+ * A -63dB peak is under a quiet room's noise floor; the spectrograms of 5 and 6
+ * are black, with no harmonics or formants anywhere. Whisper returned the same
+ * byte-identical Korean broadcast sign-off for both, which is its documented
+ * hallucination on silence — two different files producing one phrase is the
+ * tell. Spoken takes ran 1.74-2.58s and tapped-through ones 0.66-1.14s, so the
+ * floor sits in the gap with room on either side.
+ */
+const MIN_TAKE_MS = 1200;
 /** The take is kept as this many mono samples — plenty for a band a few
  *  hundred bars wide, cheap enough to bin every resize. */
 const TAKE_SAMPLES = 4096;
@@ -75,6 +106,30 @@ export default function RecordingRung({
   const [stream, setStream] = useState(null);
   const [take, setTake] = useState(null);
   const [silent, setSilent] = useState(false);
+  /**
+   * The FINISHED take's verdict — `null` | `'too-quiet'` | `'too-short'`.
+   * Decided at stop, not by the live meter, and it GATES Keep.
+   *
+   * `silent` above needs SILENT_AFTER_MS (2s) of sub-floor level while
+   * recording, so a take shorter than that could capture nothing and say
+   * nothing: no warning could fire, playback was a second of silence that is
+   * easy to miss, and `Keep` sat there as the primary button. A child could
+   * bank an empty recording having never been told it was empty — and, on
+   * 2026-09-11, did, twice, accepting one of them a second after it stopped.
+   *
+   * So this is not advice. A take that clears neither floor cannot be kept, and
+   * the only way on is to record again.
+   */
+  const [takeVerdict, setTakeVerdict] = useState(null);
+  /**
+   * Consecutive refusals. A gate with no way through is a trap, and the mic
+   * really can be dead — so after three the ladder's own escape hatch appears.
+   * It is deliberately the DEVICE-level one ("skip recording on this device"),
+   * not a per-sentence skip: a broken panel stops asking, while a child having
+   * a hard time with one sentence still has to say it.
+   */
+  const [refusals, setRefusals] = useState(0);
+  const takeStartedAtRef = useRef(0);
 
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
@@ -83,7 +138,7 @@ export default function RecordingRung({
   const takeUrlRef = useRef(null);
   const playbackRef = useRef(null);
   const unbindPlaybackRef = useRef(null);
-  const silenceRef = useRef({ since: null, heard: false });
+  const silenceRef = useRef({ since: null, heard: false, sampled: false });
   const phaseRef = useRef(phase);
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   const rootRef = useRef(null);
@@ -118,7 +173,8 @@ export default function RecordingRung({
   const beginCapture = useCallback(async () => {
     setError(null);
     setSilent(false);
-    silenceRef.current = { since: null, heard: false };
+    setTakeVerdict(null);
+    silenceRef.current = { since: null, heard: false, sampled: false };
     try {
       const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = mic;
@@ -135,7 +191,30 @@ export default function RecordingRung({
         // Release the mic between takes rather than holding it for the whole
         // session — on a shared kiosk another app may need it.
         releaseMic();
-        languageLog.capture('stop', { seq: entry.seq, bytes: blob.size, heard: silenceRef.current.heard });
+        const durationMs = Date.now() - takeStartedAtRef.current;
+        const heard = silenceRef.current.heard;
+        languageLog.capture('stop', { seq: entry.seq, bytes: blob.size, heard, durationMs });
+        // The same facts the log has always carried, now also enforced.
+        // WE ONLY REFUSE ON WHAT WE COULD MEASURE. `heard` comes from a live
+        // level meter that needs an AudioContext; a browser without one reports
+        // no levels at all and the band just stays a baseline. There, `heard`
+        // is false for every take ever made, and refusing on it would lock the
+        // rung shut on a device where nothing is wrong. So loudness is only
+        // judged when a level actually arrived; length is judged always.
+        const measurable = silenceRef.current.sampled === true;
+        const verdict = measurable && !heard ? 'too-quiet'
+          : durationMs < MIN_TAKE_MS ? 'too-short'
+            : null;
+        setTakeVerdict(verdict);
+        if (verdict) {
+          setRefusals((n) => n + 1);
+          // Logged as its own event: a run of these is what tells a grown-up the
+          // rung is being tapped through rather than done, and it is not
+          // recoverable from `capture.stop` without knowing these thresholds.
+          languageLog.capture('refused', { seq: entry.seq, reason: verdict, durationMs, bytes: blob.size, heard, measurable });
+        } else {
+          setRefusals(0);
+        }
 
         // Straight into hearing it. The Stop tap is the gesture behind this
         // play(), so autoplay policy is satisfied; if it still refuses, the
@@ -165,6 +244,7 @@ export default function RecordingRung({
       };
 
       recorder.start();
+      takeStartedAtRef.current = Date.now();
       setStream(mic);
       setPhase('recording');
       languageLog.capture('start', { seq: entry.seq });
@@ -220,6 +300,7 @@ export default function RecordingRung({
   const recordAgain = useCallback(() => {
     stopPlayback();
     dropTake();
+    setTakeVerdict(null);
     setPhase('prompting');
     languageLog.capture('retake', { seq: entry.seq });
     playSequence(cue());
@@ -241,17 +322,24 @@ export default function RecordingRung({
   }, [stopPlayback]);
 
   const accept = useCallback(() => {
+    // THE GATE. A take that cleared neither floor is not an attempt, and the
+    // only way on is to record again. Enforced here rather than only by
+    // disabling the tile, because the keyboard reaches `accept` directly.
+    if (takeVerdict) return;
     if (!blobRef.current || saving) return;
     stopPlayback();
     languageLog.rung('complete', { rung: 'recording', seq: entry.seq });
     onComplete({ seq: entry.seq, rung: 'recording', blob: blobRef.current });
-  }, [entry.seq, onComplete, saving, stopPlayback]);
+  }, [entry.seq, onComplete, saving, stopPlayback, takeVerdict]);
 
   // The band reports every live level; two seconds under the floor with
   // nothing yet heard is the moment to say so in words.
   const onLevel = useCallback((level) => {
     const s = silenceRef.current;
     const now = Date.now();
+    // A level arrived at all, so loudness is measurable on this device. See the
+    // verdict below for why that is a precondition for refusing on it.
+    s.sampled = true;
     if (level >= SILENT_LEVEL) {
       s.heard = true;
       s.since = null;
@@ -312,6 +400,24 @@ export default function RecordingRung({
       {silent && phase === 'recording' && (
         <p className="lang-rung__notice" role="alert">Nothing’s coming through — is the microphone on?</p>
       )}
+      {/* A take that cleared neither floor, however short. Said here because the
+          live warning above cannot reach a take shorter than two seconds, and
+          those are precisely the takes most likely to be empty. */}
+      {takeVerdict && (phase === 'playback' || phase === 'review') && (
+        <div className="lang-rung__notice" role="alert">
+          <p>{takeVerdict === 'too-quiet'
+            ? 'We didn’t hear that one — say it out loud and have another go.'
+            : 'That was too quick — say the whole sentence.'}</p>
+          {/* Three in a row and the mic may simply be dead. The way out is the
+              DEVICE-level one, so a broken panel stops asking while a child
+              stuck on one sentence still has to say it. */}
+          {refusals >= 3 && onDisableMicrophone && (
+            <button type="button" className="lang-btn" onClick={onDisableMicrophone}>
+              Skip recording on this device
+            </button>
+          )}
+        </div>
+      )}
       {error && (
         <div className="lang-rung__notice" role="alert">
           <p>{error}</p>
@@ -346,15 +452,25 @@ export default function RecordingRung({
         )}
         {phase === 'review' && (
           <>
-            <button type="button" className="lang-tile" onClick={recordAgain} aria-label="Record again">
+            {/* WHICH TILE IS PRIMARY FOLLOWS THE TAKE. A refused take means the
+                only thing to do is go again, so Again leads and Keep is
+                disabled outright — the rung does not move on something that was
+                not said. The way past a dead mic is the device-level escape in
+                the notice above, not a quiet take. */}
+            <button
+              type="button"
+              className={`lang-tile${takeVerdict ? ' lang-tile--primary' : ''}`}
+              onClick={recordAgain}
+              aria-label="Record again"
+            >
               <Icon name="record-again" className="lang-tile__glyph" />
               <span className="lang-tile__word" aria-hidden="true">Again</span>
             </button>
             <button
               type="button"
-              className="lang-tile lang-tile--primary"
+              className={`lang-tile${takeVerdict ? '' : ' lang-tile--primary'}`}
               onClick={accept}
-              disabled={saving}
+              disabled={saving || Boolean(takeVerdict)}
               aria-label={saving ? 'Saving' : 'Keep it'}
             >
               <Icon name="keep" className="lang-tile__glyph" />

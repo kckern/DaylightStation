@@ -407,6 +407,18 @@ describe('recording', () => {
   // written to run without the last (the band stays a baseline); the first two
   // are stood in for here, minimally: a stream with tracks to stop, and a
   // recorder whose stop() delivers one chunk and fires onstop.
+  /**
+   * A take has a LENGTH now — the rung refuses anything under MIN_TAKE_MS, so a
+   * recorder that stops in the same millisecond it started is refused, exactly
+   * as a real tapped-through take would be. `hold` is how long the fake take
+   * appears to run; the clock is nudged rather than the test made to wait.
+   */
+  const fakeClock = () => {
+    const real = Date.now;
+    let offset = 0;
+    vi.spyOn(Date, 'now').mockImplementation(() => real() + offset);
+    return { advance: (ms) => { offset += ms; } };
+  };
   const fakeMic = () => {
     const track = { stop: vi.fn() };
     const stream = { getTracks: () => [track] };
@@ -500,9 +512,15 @@ describe('recording', () => {
     renderRung();
     const { languageApi } = await import('./languageApi.js');
 
+    // This test is about the KEYS, so the take has to be one the rung would
+    // accept: long enough to be a sentence. Loudness is not judged here because
+    // happy-dom has no AudioContext, so no level is ever reported and the rung
+    // deliberately declines to rule on what it could not measure.
+    const clock = fakeClock();
     await screen.findByRole('button', { name: 'Listen, then record' });
     pressKey(' ');
     await screen.findByRole('button', { name: 'Stop' });
+    clock.advance(5000);
     pressKey(' ');
     await screen.findByRole('button', { name: 'Keep it' });
 
@@ -512,13 +530,42 @@ describe('recording', () => {
     await screen.findByRole('button', { name: 'Stop' });
     expect(played.slice(before).map((u) => u.replace(/^https?:\/\/[^/]+/, ''))).toEqual(['/cue/record']);
 
+    clock.advance(5000);
     pressKey('Enter');
     await screen.findByRole('button', { name: 'Keep it' });
     pressKey(' ');
     await waitFor(() => expect(languageApi.recording).toHaveBeenCalledTimes(1));
+    Date.now.mockRestore?.();
     const [, corpus, seq, blob] = languageApi.recording.mock.calls[0];
     expect([corpus, seq]).toEqual(['glossika-korean', 1]);
     expect(blob).toBeInstanceOf(Blob);
+  });
+
+  /**
+   * A rung that accepts anything can be tapped through. Production, 2026-09-11:
+   * six takes, the last two ~1s each with `heard: false`, one accepted a second
+   * after it stopped. Recording was being spent rather than done.
+   */
+  it('refuses a take too short to be a sentence, and will not let it be kept', async () => {
+    playsToEnd();
+    fakeMic();
+    recordingDay();
+    renderRung();
+    const { languageApi } = await import('./languageApi.js');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Listen, then record' }));
+    // Stopped in the same instant it started — no clock advance at all.
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop' }));
+
+    expect(await screen.findByText(/too quick/i)).toBeInTheDocument();
+    const keep = await screen.findByRole('button', { name: 'Keep it' });
+    expect(keep).toBeDisabled();
+
+    // And the keyboard cannot get past it either — `accept` is gated at the
+    // callback, not only by the tile being disabled.
+    pressKey(' ');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(languageApi.recording).not.toHaveBeenCalled();
   });
 
   it('leaves the keys alone while a control has focus', async () => {
