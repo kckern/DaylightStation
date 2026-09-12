@@ -3732,6 +3732,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     eventBus,
     httpClient: axios,
     daylightHost,
+    haGateway: homeAutomationAdapters.haGateway,
     logger: rootLogger.child({ module: 'play-sessions' }),
   });
   await playSessionTracking.start();
@@ -3743,6 +3744,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     recordObservation: playSessionTracking.recordObservation,
     sessions: playSessionTracking.sessions,
     trackers: playSessionTracking.trackers,
+    watchdog: playSessionTracking.watchdog,
     logger: rootLogger.child({ module: 'play-sessions-api' }),
   });
 

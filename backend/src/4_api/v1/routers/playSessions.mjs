@@ -14,7 +14,7 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
  * surface is not a special case; it is simply an observation with better
  * confidence. That is what keeps one meter behind both kinds of play surface.
  */
-export function createPlaySessionsRouter({ recordObservation = null, sessions = null, trackers = [], logger = console }) {
+export function createPlaySessionsRouter({ recordObservation = null, sessions = null, trackers = [], watchdog = null, logger = console }) {
   const router = express.Router();
 
   /**
@@ -77,7 +77,40 @@ export function createPlaySessionsRouter({ recordObservation = null, sessions = 
    * house; this is how an operator tells the two apart without reading logs.
    */
   router.get('/health', (_req, res) => {
-    res.json({ devices: trackers.flatMap((tracker) => tracker.getHealth()) });
+    res.json({
+      devices: trackers.flatMap((tracker) => tracker.getHealth()),
+      // Devices the meter has lost sight of for long enough that no NEW play
+      // should be granted on them. Nothing here stops a game already running.
+      blocked: watchdog?.blockedDevices?.() ?? [],
+    });
+  });
+
+  /**
+   * GET /devices/:deviceId/history?since=ISO — sessions on a device.
+   *
+   * Played time became money, so the record has to be answerable: who played
+   * what, for how long, against which authorisation, and how precisely that was
+   * measured.
+   */
+  router.get('/devices/:deviceId/history', async (req, res) => {
+    if (!sessions?.listForDeviceSince) {
+      return res.status(503).json({ error: 'Play-session metering is not configured' });
+    }
+    const since = req.query.since || new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+    if (Number.isNaN(Date.parse(since))) {
+      return res.status(400).json({ error: 'since must be an ISO instant' });
+    }
+    try {
+      const found = await sessions.listForDeviceSince(req.params.deviceId, since);
+      return res.json({
+        deviceId: req.params.deviceId,
+        since,
+        sessions: found.map((session) => session.toSnapshot()),
+      });
+    } catch (error) {
+      logger.error?.('play.api.history_failed', { deviceId: req.params.deviceId, error: error.message });
+      return sendInternalError(res, { error: 'Failed to read play history' });
+    }
   });
 
   return router;
