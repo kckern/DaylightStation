@@ -4,9 +4,13 @@
 // this mounts inside .school-app and must not look like a different app. That
 // includes matching its 12px radius and its 64px touch floor.
 //
-// No animation: the kiosk WebView drops frames under transitions/keyframes.
-// Nothing below needs any — every emphasis decision here is colour, size,
-// weight or position.
+// ONE animation, and it is the caret. The kiosk WebView drops frames under
+// transitions/keyframes, so every other emphasis decision here is colour, size,
+// weight or position. The typing caret is the exception because a caret that
+// does not blink does not read as a caret — a child looking for "where am I"
+// finds a blinking mark and not a static dash. It is one compositor-cheap
+// opacity step on a 0.7em box, and it stands down for anyone who has asked the
+// OS for reduced motion.
 //
 // FOUR type sizes, deliberately. An earlier pass had twelve, four of them
 // within 1.6px of each other, which is a scale nobody chose.
@@ -235,6 +239,13 @@ $disc: 5.5rem;
     display: inline-flex; align-items: center; gap: 0.4rem; padding: 0 1rem;
     .lang-btn__glyph { font-size: 1.35rem; }
   }
+  // THE VISIBLE CAPTION on a quiet control, and where the shortcut is written
+  // when there is a keyboard to press it on — a hint belongs on the control it
+  // triggers, not in a line of its own further down the screen. `__word` stays
+  // the (screen-reader-only) accessible name, so this can say "Tab plays" while
+  // the button is still just "Play again" to anything that asks. Without it a
+  // baseline Stop renders as a bare pause glyph with no word anywhere on it.
+  &__key { font-size: $meta; }
   &:focus-visible { outline: 3px solid var(--school-accent); outline-offset: 2px; }
   &:disabled { opacity: 0.5; cursor: default; }
 }
@@ -350,6 +361,11 @@ $disc: 5.5rem;
 .lang-rung {
   display: flex; flex-direction: column; align-items: center;
   box-sizing: border-box;
+  // The containing block for `.is-offscreen`. Without it the parked field
+  // resolves against whatever ancestor happens to be positioned — on the
+  // Portal that is the scrolling stage, and a 1px box anchored there can drag
+  // the scroll origin when it takes focus.
+  position: relative;
   // Centred vertically so the drill does not sit in a different place than the
   // day-complete state, which made the screen appear to jump between them.
   // SAFE centring, because this column sits in an overflow:auto stage and plain
@@ -387,11 +403,52 @@ $disc: 5.5rem;
     width: min(100%, 720px); min-height: $touch; padding: 0 1rem;
     border: 1px solid var(--school-border); border-radius: $radius;
     background: var(--school-surface); color: var(--school-fg);
-    font-size: 1.6rem; text-align: center;
+    // ONE of the four sizes on this screen, not a fifth invented for the field.
+    // It used to be a hardcoded 1.6rem, which existed only to look roughly like
+    // the sentence above it — two numbers that had to be kept in step by hand
+    // and were not. On the dictation rung the question no longer arises: the
+    // glyph strip's lower row IS the field's rendering, at the strip's own size.
+    font-size: $body; text-align: center;
 
     &:focus { outline: 2px solid var(--school-accent); outline-offset: 2px; }
   }
   &__hint { margin: 0; font-size: $meta; color: var(--school-muted); }
+
+  // OFFSCREEN, NOT HIDDEN. The dictation field is drawn by the glyph strip, so
+  // the element itself must leave the layout — but it is still the focused,
+  // typed-into control, and the in-page IME reads `selectionStart` off it on
+  // every keystroke (`FieldComposer.#continuous`). `display:none` and
+  // `visibility:hidden` both take an element out of the selection APIs, which
+  // strands every half-composed syllable. Position, size and clip do not.
+  &__label.is-offscreen,
+  &__input.is-offscreen {
+    position: absolute; width: 1px; height: 1px; min-height: 0;
+    margin: -1px; padding: 0; border: 0; opacity: 0; overflow: hidden;
+    clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+  }
+
+  // The drill itself, taking whatever height the baseline leaves. Without this
+  // the whole rung is one centred stack and Submit floats a few pixels under
+  // the sentence in the middle of a 620px stage — the "300px column down the
+  // centre with an empty right half" shape this pass exists to remove.
+  &__stage {
+    flex: 1; min-height: 0; width: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    // `safe`, for the same reason .lang-rung uses it: a stage shorter than its
+    // content must overflow off the END, not off the top where nothing can
+    // scroll back to it.
+    justify-content: safe center; gap: 1rem;
+  }
+
+  // The baseline. What sounds sits on the left with its shortcut on it; the way
+  // forward sits on the right. Audio is deliberately NOT a column here — the
+  // 90px disc that used to own the vertical centre made the loudest control on
+  // a typing rung the one a learner needs least often.
+  &__baseline {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 1rem; width: 100%; min-height: $touch;
+  }
+  &__cues { display: flex; align-items: center; gap: 0.5rem; }
 
   &__notice {
     display: flex; flex-direction: column; align-items: center; gap: 0.75rem;
@@ -420,6 +477,82 @@ $disc: 5.5rem;
     min-height: $disc;
   }
 }
+
+// --- the glyph strip --------------------------------------------------------
+// The dictation surface: two rows on ONE grid, the model above and the
+// learner's answer directly beneath, a column per syllable.
+//
+// TYPE SCALE MATCHES BY CONSTRUCTION. Both rows inherit `$target` from this
+// element, so the model and the answer are the same size because they are the
+// same font-size declaration — not because two numbers elsewhere were kept in
+// step. That is the defect the old stack shipped: a $target sentence over a
+// 1.6rem field, drifting every time either was touched.
+//
+// One column per syllable and not two flowing lines: the whole point is that a
+// child can see WHICH syllable they are on and which one is wrong, and two
+// independently-flowing lines drift apart the moment a glyph is a different
+// width. `columnsFor` decides what goes in each; this only draws it.
+.lang-strip {
+  font-size: $target;
+  // WRAPPING, not `grid-auto-flow: column`. A single auto-flowed row overflows
+  // its stage BOTH WAYS once a sentence is long — and a scroll container only
+  // reaches what is past its end edge, so a 22-syllable sentence rendered with
+  // its first two glyphs clipped off the left and no way to scroll to them.
+  // Same trap as `justify-content: safe center` on .lang-rung, one axis over.
+  // Each column is still its own grid; only their flow is flex.
+  display: flex; flex-wrap: wrap;
+  justify-content: safe center; align-content: center;
+  column-gap: 0.55em; row-gap: 0.35em;
+  width: 100%;
+  // Hangul must not break mid-syllable.
+  word-break: keep-all;
+
+  // Two lanes of equal, FIXED height — the model and the answer — plus a strip
+  // of padding underneath for the caret. Fixed rather than content-sized so a
+  // column with nothing in it (listen mode before the first keystroke, or a
+  // model glyph not yet revealed) is exactly as tall as its neighbours and the
+  // two rows stay locked whatever is in them.
+  &__col {
+    display: grid; grid-template-rows: 1.3em 1.3em;
+    justify-items: center; align-items: center;
+    position: relative; line-height: 1.2;
+    padding-bottom: 0.35em;
+    // A blind column has no text at all; without a floor the strip collapses
+    // to a row of gaps and the caret has nothing to sit under.
+    min-width: 1em;
+  }
+  // THE WRITING LINE. The one mark in a column whether or not the model glyph
+  // is there — it is what makes an unrevealed stretch of sentence read as
+  // "more syllables, here" instead of empty space, and it is why the visible
+  // glyphs stay put as the model unghosts ahead of the learner.
+  &__col::after {
+    content: ''; position: absolute; left: 8%; right: 8%; top: 1.3em;
+    height: 2px; border-radius: 2px; background: var(--school-border);
+  }
+  &__want { font-weight: 800; }
+  &__got { font-weight: 800; color: var(--school-fg); }
+
+  // The `is-*` class is on the COLUMN, so every state rule is scoped through
+  // it. Written as a bare `.is-next &__want` these would match any `.is-next`
+  // ancestor anywhere in School — dead-or-worse CSS, since the ladder's rungs
+  // use `.is-active` / `.is-done` names from the same family.
+  &__col.is-next &__want { opacity: 0.32; }
+  &__col.is-hidden &__want { visibility: hidden; }
+  &__col.is-blind &__want { visibility: hidden; }
+  &__col.is-wrong &__got { color: var(--school-danger); }
+  &__col.is-done &__got { color: var(--school-accent); }
+
+  // The caret is the only motion on this screen; keep it cheap and respect a
+  // learner who has asked the OS for less of it.
+  &__caret {
+    position: absolute; bottom: 0.02em; width: 0.7em; height: 3px;
+    background: var(--school-accent);
+    animation: lang-blink 1.05s steps(1) infinite;
+    @media (prefers-reduced-motion: reduce) { animation: none; }
+  }
+}
+
+@keyframes lang-blink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
 
 // --- the voice band ---------------------------------------------------------
 // The child's own sound, drawn as it happens (rungs/VoiceBand.jsx). As wide
