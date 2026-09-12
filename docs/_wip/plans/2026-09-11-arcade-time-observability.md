@@ -839,16 +839,16 @@ while. `[x]` is built and tested; `[ ]` is not started.
 | `[x]` | **T14 Ship the film as a build artifact** | Prototype exists under `docs/_wip/prototypes/`; a 404 paints the TV (5.6) |
 | `[x]` | **T15 Overlay driver** — arm on confirmed start, tear down on end, verify URL first, re-assert disarmed at boot | Device-declared only |
 | `[x]` | **T16 Film runtime** — subscribe to `play-session:<deviceId>`, render remaining time, urgency states, visible degradation when the socket goes stale | |
-| `[ ]` | **T17 Spoken warnings** — kiosk text-to-speech alongside the visual | A child absorbed in a game hears sooner than reads |
+| `[x]` | **T17 Spoken warnings** — kiosk text-to-speech alongside the visual | A child absorbed in a game hears sooner than reads |
 | `[ ]` | **T18 Verify no gameplay impact** — focus and input unaffected, emulation CPU unchanged | NFR-5 |
 
 ### M4 — Budget and enforcement
 
 | | Task | Notes |
 |---|---|---|
-| `[ ]` | **T19 `EnforcePlayBudget`** — remaining time, warning thresholds, expiry decision | `3_applications/gaming/usecases/` |
-| `[ ]` | **T20 Termination adapter** — stop the emulator, return the device to its kiosk | Only ever called by expiry |
-| `[ ]` | **T21 Warning ladder** — lead time sufficient to save, because termination destroys unsaved progress (3.4) | FR-10; hard requirement |
+| `[x]` | **T19 `EnforcePlayBudget`** — remaining time, warning thresholds, expiry decision | `3_applications/gaming/usecases/` |
+| `[x]` | **T20 Termination adapter** — stop the emulator, return the device to its kiosk | Only ever called by expiry |
+| `[x]` | **T21 Warning ladder** — lead time sufficient to save, because termination destroys unsaved progress (3.4) | FR-10; hard requirement |
 | `[ ]` | **T22 Economy integration** — purchase time with coins, burn against `playedMs`, settle on end | Ledger is the book of record |
 | `[ ]` | **T23 Parent controls** — grant, extend, override | |
 
@@ -889,7 +889,7 @@ while. `[x]` is built and tested; `[ ]` is not started.
 | `[ ]` | **T33 Authorize-here, redeem-there grants** — scoped to content or device, expiring if unredeemed, recorded on the session | M4 | The walk to the garage must not be a blank cheque |
 | `[ ]` | **T34 Remote authorization ceremony** — wake and raise the garage screen, run the scan, return the result | M4 | Disappears if a reader ever sits by the living-room screen |
 | `[ ]` | **T35 Admin-attributed sessions** — unlimited grant for shared/family play | M4 | A grant with no ceiling, not a bypass |
-| `[ ]` | **T36 `IPlayTimeGrant` boundary** — economy answers "N seconds for user U against grant G"; gaming burns and reports | M4 | Keeps coins, tokens, rates and expiry out of the meter (7.2) |
+| `[x]` | **T36 `IPlayTimeGrant` boundary** — economy answers "N seconds for user U against grant G"; gaming burns and reports | M4 | Keeps coins, tokens, rates and expiry out of the meter (7.2) |
 | `[x]` | **T37 Fleet bridge** — project play sessions into the `device-state:<deviceId>` snapshot shape | M6 | Replaces a bespoke arcade view (7.3) |
 
 All three previously open questions are now decided; none block M1 or M2.

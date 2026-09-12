@@ -22,6 +22,10 @@ import { FleetPlaySessionAnnouncer } from '#adapters/eventbus/FleetPlaySessionAn
 import { CompositePlaySessionAnnouncer } from '#adapters/eventbus/CompositePlaySessionAnnouncer.mjs';
 import { FullyKioskPlayOverlay } from '#adapters/devices/FullyKioskPlayOverlay.mjs';
 import { OverlayPlaySessionAnnouncer } from '#apps/gaming/runtime/OverlayPlaySessionAnnouncer.mjs';
+import { KioskPlayTerminator } from '#adapters/devices/KioskPlayTerminator.mjs';
+import { KioskPlaySpeaker } from '#adapters/devices/KioskPlaySpeaker.mjs';
+import { NoPlayTimeGrants } from '#adapters/gaming/NoPlayTimeGrants.mjs';
+import { EnforcePlayBudget } from '#apps/gaming/usecases/EnforcePlayBudget.mjs';
 import { YamlPlaySessionDatastore } from '#adapters/persistence/yaml/YamlPlaySessionDatastore.mjs';
 import { YamlPlayIntentDatastore } from '#adapters/persistence/yaml/YamlPlayIntentDatastore.mjs';
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
@@ -75,6 +79,7 @@ export function createPlaySessionTracking(config) {
   const {
     devicesConfig, gamesConfig, gamesCatalog = null, configService, eventBus, httpClient,
     daylightHost = null, overlayPath = '/arcade-film.html',
+    grants = null,
     intervalMs = DEFAULT_INTERVAL_MS,
     scheduler = new NodeApplicationScheduler(),
     now = () => new Date().toISOString(),
@@ -134,6 +139,35 @@ export function createPlaySessionTracking(config) {
     logger.warn?.('play.overlay.no_host', { devices: overlayDevices });
   }
 
+  // Enforcement. `grants` decides whether ANY of this can act: the default
+  // answers "no grant" for every session, so warnings never fire and nothing is
+  // ever stopped. Metering still runs and still records what was played — the
+  // meter measures from day one and only starts costing anything when a real
+  // grant source replaces this.
+  const adbByDevice = new Map();
+  const enforcement = new EnforcePlayBudget({
+    grants: grants || new NoPlayTimeGrants(),
+    terminator: new KioskPlayTerminator({
+      adbByDevice, kioskByDevice, packageName, logger,
+    }),
+    speaker: new KioskPlaySpeaker({ clientsByDevice: kioskByDevice, logger }),
+    // The countdown film reads warnings off the same topic it already listens to.
+    notify: async (session, payload) => {
+      try {
+        eventBus.broadcast(`play-session:${session.deviceId}`, {
+          event: 'play.session.progress',
+          sessionId: session.id, deviceId: session.deviceId,
+          playedMs: session.playedMs, userId: session.userId,
+          title: session.content?.title ?? null, ...payload,
+        });
+      } catch (error) {
+        logger.warn?.('play.budget.notify_failed', { error: error.message });
+      }
+    },
+    sessions,
+    logger,
+  });
+
   // Several audiences for the same fact: the domain events the economy consumes,
   // the fleet projection that renders a game like any other content on a device,
   // and the overlay that puts a countdown in front of the player.
@@ -142,6 +176,7 @@ export function createPlaySessionTracking(config) {
       new EventBusPlaySessionAnnouncer({ eventBus, logger }),
       new FleetPlaySessionAnnouncer({ eventBus, logger }),
       overlayAnnouncer,
+      enforcement,
     ],
     logger,
   });
@@ -171,6 +206,8 @@ export function createPlaySessionTracking(config) {
     const observationSource = new RetroArchPlayObservationSource({
       kioskClient, adbAdapter, packageName, pollIntervalMs: intervalMs, logger,
     });
+
+    if (adbAdapter) adbByDevice.set(deviceId, adbAdapter);
 
     const logReader = adbAdapter
       ? new RetroArchSessionLogReader({
