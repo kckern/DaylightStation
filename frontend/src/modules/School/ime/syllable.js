@@ -8,9 +8,9 @@
  * not after the whole block.
  *
  * ⚠ THIS IS COPY MODE ONLY. In listen mode the program also knows the target,
- * and applying any of this there would silently correct a learner who misheard
- * 오늘 as 온... into the right answer — the record would then say they heard it
- * correctly. That is measurement corruption: a system that looks like it is
+ * and applying any of this there would correct a learner who misheard 오늘 as
+ * 온... into the right answer, with nothing on screen to say it happened — and
+ * the record would then claim they heard it correctly. That is measurement corruption: a system that looks like it is
  * working perfectly while measuring nothing. Listen mode keeps the plain
  * automaton. Nothing here is reachable without an explicit oracle being handed
  * to `FieldComposer.handleKey`, and there is deliberately no default one.

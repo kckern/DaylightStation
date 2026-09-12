@@ -19,14 +19,40 @@ function field({ type = 'text', value = '', caret = null, tag = 'input' } = {}) 
 
 // Type a QWERTY string into the field through the composer, the way the
 // keyboard would. Returns whether every key was consumed.
-function typeInto(composer, el, s) {
+function typeInto(composer, el, s, oracle) {
   let allConsumed = true;
   for (const ch of s) {
     const code = ch === ' ' ? 'Space' : `Key${ch.toUpperCase()}`;
-    const consumed = composer.handleKey(key(code, { shiftKey: ch !== ch.toLowerCase() && /[a-z]/i.test(ch) }), el);
+    const consumed = composer.handleKey(key(code, { shiftKey: ch !== ch.toLowerCase() && /[a-z]/i.test(ch) }), el, oracle);
     if (!consumed) allConsumed = false;
   }
   return allConsumed;
+}
+
+/**
+ * The copy-mode oracle, built the way the provider will build it: the syllable
+ * being traced is the one at the length of what has already settled. Every
+ * caller in these tests passes it EXPLICITLY — there is no default, which is
+ * what keeps listen mode on the plain automaton.
+ */
+function tracer(composer, el, word) {
+  const refused = [];
+  const oracle = {
+    currentTarget: () => [...word][[...composer.compositionState(el).committed].length] ?? null,
+    onRefused: (jamo) => refused.push(jamo),
+  };
+  return { oracle, refused };
+}
+
+// The field's value after every single keystroke — the transcript a child
+// actually watches, which is where the 온 flash lived.
+function transcript(composer, el, s, oracle) {
+  const seen = [];
+  for (const ch of s) {
+    typeInto(composer, el, ch, oracle);
+    seen.push(el.value);
+  }
+  return seen;
 }
 
 beforeEach(() => { document.body.innerHTML = ''; });
@@ -336,5 +362,192 @@ describe('FieldComposer and a modifier pressed mid-syllable', () => {
     expect(c.active).toBe(true);
     expect(c.handleKey(key('KeyC', { [modifier]: true }), el)).toBe(false);
     expect(c.active).toBe(false);
+  });
+});
+
+/**
+ * COPY MODE. The target sentence is on screen and the child traces it, so the
+ * program knows the syllable being typed. Two things follow, and neither is
+ * reachable without the caller handing over an oracle.
+ *
+ * ⚠ Copy mode only. In listen mode the target is known too, and auto-flushing
+ * there would correct a child who misheard 오늘 as 온... into the right answer
+ * with nothing on screen to say so, and the record would then claim they heard
+ * it correctly. Every test below
+ * passes the oracle by hand; the suite above never does, and that is the whole
+ * of the difference.
+ */
+describe('FieldComposer with a copy-mode oracle', () => {
+  it('locks 오 the moment ㅗ lands, so 온 never appears at any point', () => {
+    const el = field();
+    const c = new FieldComposer();
+    const { oracle } = tracer(c, el, '오늘');
+
+    // THE PAYOFF. Without the oracle the third keystroke reads 온 (see the
+    // transcript in the next test), and a prompt matching on `value` collapsed
+    // there. The ㄴ has no syllable to attach to because 오 is already settled,
+    // so it starts 늘 directly and the ambiguity does not exist to be handled.
+    const seen = transcript(c, el, 'dhsmf', oracle);
+    expect(seen).toEqual(['ㅇ', '오', '오ㄴ', '오느', '오늘']);
+    expect(seen).not.toContain('온');
+    expect(el.value).toBe('오늘');
+  });
+
+  it('settles each syllable as it completes, so nothing is left in flight', () => {
+    const el = field();
+    const c = new FieldComposer();
+    const { oracle } = tracer(c, el, '오늘');
+    typeInto(c, el, 'dhsmf', oracle);
+    // The last syllable locked too — a rung reading `compositionState` sees a
+    // finished answer rather than one glyph still provisional.
+    expect(c.compositionState(el)).toEqual({ committed: '오늘', pending: '' });
+  });
+
+  it('refuses a wrong initial on the first jamo, not after the whole block', () => {
+    const el = field();
+    const c = new FieldComposer();
+    const { oracle, refused } = tracer(c, el, '오늘');
+
+    // ㅁ where 오 is wanted. Consumed — the caller still preventDefaults, so
+    // nothing else on the page acts on it — but the field does not move.
+    expect(c.handleKey(key('KeyA'), el, oracle)).toBe(true);
+    expect(el.value).toBe('');
+    expect(refused).toEqual(['ㅁ']);
+
+    // And the right key still lands afterwards: a refusal costs the stroke,
+    // not the run.
+    typeInto(c, el, 'dh', oracle);
+    expect(el.value).toBe('오');
+  });
+
+  it('refuses a batchim the target does not have', () => {
+    const el = field();
+    const c = new FieldComposer();
+    const { oracle, refused } = tracer(c, el, '한국');
+    typeInto(c, el, 'gk', oracle);          // 하 — not yet 한, so not yet locked
+    expect(el.value).toBe('하');
+    expect(c.handleKey(key('KeyR'), el, oracle)).toBe(true);  // ㄱ would make 학
+    expect(el.value).toBe('하');
+    expect(refused).toEqual(['ㄱ']);
+    typeInto(c, el, 's', oracle);           // ㄴ completes 한 and locks it
+    expect(el.value).toBe('한');
+    expect(c.compositionState(el)).toEqual({ committed: '한', pending: '' });
+  });
+
+  /**
+   * These two are the cases the `{ cho, jung, jong }` comparison cannot see on
+   * its own: the wrong jamo lands in COMMITTED text and what is left in flight
+   * looks like an innocent fresh start. Both were real ways to type past the
+   * gate before `#refuses` also checked that nothing settled.
+   */
+  it('refuses a vowel typed before its initial', () => {
+    const el = field();
+    const c = new FieldComposer();
+    const { oracle, refused } = tracer(c, el, '오늘');
+    // ㅗ with no initial is not a syllable — the automaton stands it alone as a
+    // bare jamo, which is committed text the child did not mean to write.
+    expect(c.handleKey(key('KeyH'), el, oracle)).toBe(true);
+    expect(el.value).toBe('');
+    expect(refused).toEqual(['ㅗ']);
+  });
+
+  it('refuses a second consonant that would push the first out', () => {
+    const el = field();
+    const c = new FieldComposer();
+    const { oracle, refused } = tracer(c, el, '오늘');
+    typeInto(c, el, 'd', oracle);           // ㅇ, correct so far
+    expect(c.handleKey(key('KeyR'), el, oracle)).toBe(true);  // ㄱ flushes the ㅇ
+    expect(el.value).toBe('ㅇ');
+    expect(refused).toEqual(['ㄱ']);
+  });
+
+  it('traces across a word boundary, where the space settles the syllable', () => {
+    const el = field();
+    const c = new FieldComposer();
+    const { oracle, refused } = tracer(c, el, '한국 어');
+    typeInto(c, el, 'gksrnr', oracle);
+    expect(el.value).toBe('한국');
+    // Space is not a jamo: the composer hands it back and the browser inserts
+    // it. The oracle counts settled glyphs, so the space carries it forward.
+    expect(c.handleKey(key('Space', { key: ' ' }), el, oracle)).toBe(false);
+    el.value = '한국 ';
+    el.setSelectionRange(3, 3);
+    typeInto(c, el, 'dj', oracle);
+    expect(el.value).toBe('한국 어');
+    expect(refused).toEqual([]);
+  });
+
+  it('leaves Backspace alone, so a refused child can still correct themselves', () => {
+    const el = field();
+    const c = new FieldComposer();
+    const { oracle } = tracer(c, el, '한국');
+    typeInto(c, el, 'gk', oracle);
+    expect(c.handleKey(key('Backspace', { key: 'Backspace' }), el, oracle)).toBe(true);
+    expect(el.value).toBe('ㅎ');
+  });
+
+  /**
+   * FAIL OPEN, three ways. A gate that refuses what it cannot reason about is a
+   * dead keyboard with nothing on screen to explain it — much worse for a child
+   * than no gate at all.
+   */
+  describe('holds no opinion it cannot justify', () => {
+    const anything = (currentTarget) => {
+      const el = field();
+      const c = new FieldComposer();
+      expect(typeInto(c, el, 'dhsmf', { currentTarget })).toBe(true);
+      return el.value;
+    };
+
+    it('lets everything through when the oracle says null', () => {
+      expect(anything(() => null)).toBe('오늘');
+    });
+
+    it('lets everything through against a target it cannot decompose', () => {
+      expect(anything(() => 'a')).toBe('오늘');
+      expect(anything(() => 'ㄱ')).toBe('오늘');
+      expect(anything(() => '오늘')).toBe('오늘'); // a whole word is not a syllable
+    });
+
+    it('does not require onRefused, and drops the key either way', () => {
+      const el = field();
+      const c = new FieldComposer();
+      const oracle = { currentTarget: () => '오' };   // no onRefused at all
+      expect(() => c.handleKey(key('KeyA'), el, oracle)).not.toThrow();
+      expect(el.value).toBe('');
+    });
+  });
+});
+
+/**
+ * THE OTHER HALF OF THE TRAP. Listen mode hides the target and must keep the
+ * plain automaton, so none of copy mode may be reachable by default. The suite
+ * above this one already calls `handleKey` with two arguments throughout and
+ * is unchanged by this work; these cases say so out loud, on the one sequence
+ * where the two modes visibly differ.
+ */
+describe('FieldComposer with no oracle is exactly what it was', () => {
+  it('still flashes 온 while typing 오늘 — the automaton, uncorrected', () => {
+    const el = field();
+    const c = new FieldComposer();
+    expect(transcript(c, el, 'dhsmf')).toEqual(['ㅇ', '오', '온', '오느', '오늘']);
+  });
+
+  it('lets a learner type a batchim the program knows is wrong, and keeps it', () => {
+    // A child who misheard 오늘 as 온 must end up with 온 in the record.
+    // Repairing this behind their back is measurement corruption: the session
+    // would report that they heard it correctly.
+    const el = field();
+    const c = new FieldComposer();
+    typeInto(c, el, 'dhs');
+    expect(el.value).toBe('온');
+    expect(c.compositionState(el)).toEqual({ committed: '', pending: '온' });
+  });
+
+  it.each([undefined, null])('treats %p as no oracle', (absent) => {
+    const el = field();
+    const c = new FieldComposer();
+    expect(typeInto(c, el, 'dhs', absent)).toBe(true);
+    expect(el.value).toBe('온');
   });
 });
