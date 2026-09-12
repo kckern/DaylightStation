@@ -1383,6 +1383,88 @@ describe('the typing surface', () => {
   });
 });
 
+// PRESS TO PEEK, TYPE TO HIDE. The intermediate tier, with no third mode and no
+// third enum value: what separates intermediate from advanced is how often they
+// ask, which is in the log either way.
+describe('the peek', () => {
+  const rung = (options) => render(
+    <HangulTypingProvider>
+      <TypedRung
+        entry={entry(1, 'dictation', false, { text: { EN: 'today', KR: '오늘' }, ...options })}
+        audioUrl={(seq, lang) => `/audio/${seq}/${lang}`}
+        onComplete={() => {}}
+        saving={false}
+        idleReplayMs={0}
+      />
+    </HangulTypingProvider>,
+  );
+  const listen = (options) => {
+    rung(options);
+    return screen.getByLabelText('Type what you hear');
+  };
+
+  it('shows the whole sentence on F1 and takes it away on the next keystroke', async () => {
+    const input = listen();
+    // Blind to start with: not merely invisible, not in the document.
+    expect(model(0)).toBe('');
+    expect(document.body.textContent).not.toContain('오');
+
+    await act(async () => { fireEvent.keyDown(input, { key: 'F1', code: 'F1' }); });
+    expect(model(0)).toBe('오');
+    expect(model(1)).toBe('늘');
+    expect(rungLogMock).toHaveBeenCalledWith('peek', expect.objectContaining({ seq: 1, at: 0 }));
+
+    // TYPE TO HIDE. You can look, or you can type, and not both — which is the
+    // whole reason this is not just copy mode with an extra step.
+    await act(async () => { fireEvent.change(input, { target: { value: '오' } }); });
+    expect(model(0)).toBe('');
+    expect(model(1)).toBe('');
+  });
+
+  it('shows the model above syllables the learner has already settled, too', async () => {
+    // A recent fix made a SETTLED column respect `reveal` — it used to print
+    // the right glyph above every syllable the learner committed, right or
+    // wrong, which handed listen mode its answer one glyph at a time. A peek
+    // that inherited that guard would show only the part of the sentence the
+    // learner has not reached, which is the half they can already work out.
+    const input = listen();
+    await act(async () => { fireEvent.change(input, { target: { value: '우' } }); });
+    expect(model(0)).toBe('');
+
+    await act(async () => { fireEvent.keyDown(input, { key: 'F1', code: 'F1' }); });
+    expect(model(0)).toBe('오');
+    expect(col(0).className).toContain('is-wrong');
+    expect(answer(0)).toBe('우');
+  });
+
+  it('offers a button as well as the key, because the Portal is a touch panel', async () => {
+    const input = listen();
+    const peek = screen.getByRole('button', { name: 'Peek' });
+    await act(async () => { fireEvent.click(peek); });
+    expect(model(0)).toBe('오');
+    // And it says so: a control that only ever reads "Peek" gives a child no
+    // way to tell whether the sentence is up because they asked.
+    expect(screen.getByRole('button', { name: 'Hide' })).toBeTruthy();
+    // Focus goes back to the field, or the keystroke that is supposed to take
+    // the peek away lands on the button instead.
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('is not wired to Escape, which the Portal binds to reload', async () => {
+    // `screens/portal.yml` maps `actions.escape` to `reload` when the screen is
+    // idle. A stuck child reaching for the obvious key would have reloaded the
+    // kiosk out from under themselves.
+    const input = listen();
+    await act(async () => { fireEvent.keyDown(input, { key: 'Escape', code: 'Escape' }); });
+    expect(model(0)).toBe('');
+  });
+
+  it('has no peek in copy mode, where the sentence is already on screen', () => {
+    rung({ copyPrompt: true });
+    expect(screen.queryByRole('button', { name: 'Peek' })).toBeNull();
+  });
+});
+
 // GLYPH-PACED AUDIO. The sentence is paced by the learner's own progress, so a
 // syllable landing in the right column replays the clip — the model arrives at
 // the speed they are working, and doubles as "yes, that one".
