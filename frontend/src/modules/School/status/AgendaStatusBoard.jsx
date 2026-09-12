@@ -282,15 +282,22 @@ function WeekStrip({ term }) {
 
 /**
  * The day's count as a SEGMENTED BAR — one segment per assignment, filled as
- * each is done — with the words beneath. A bar is the shape a child reads
- * from across a room; "2 of 7" is the shape an adult reads up close. At 100%
- * both give way to one word.
+ * each is done.
+ *
+ * THE BAR ALONE. It used to carry "2 of 7" underneath and a "Done" chip at
+ * 100%, and both were saying a second time what the reader could already see:
+ * the filled segments ARE the count, and a finished row turns green end to end.
+ * Two lines of redundant type were costing the pins the vertical space they
+ * need to be read from across a room, which is the one job this panel has.
+ *
+ * The count survives for anyone who cannot see the bar — it is the
+ * progressbar's `aria-label`, where it was all along.
  */
 function DayMeter({ summary }) {
   if (!summary || summary.total <= 0) return null;
-  if (summary.done >= summary.total) {
-    return <span className="school-status-board__done-chip" aria-label="Done for the day">Done</span>;
-  }
+  // Finished: the row's own green says it. Rendering nothing here is what lets
+  // the pins keep the height instead of handing it to a chip.
+  if (summary.done >= summary.total) return null;
   return (
     <div className="school-status-board__meter" data-testid="board-day-meter">
       <div
@@ -306,7 +313,6 @@ function DayMeter({ summary }) {
           <span key={i} className={`school-status-board__segment${i < summary.done ? ' is-done' : ''}`} />
         ))}
       </div>
-      <span className="school-status-board__status">{summary.done} of {summary.total}</span>
     </div>
   );
 }
@@ -536,8 +542,12 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
                 card — who, today, this week, the term — and each partition
                 is one thing with its own number inside it, not a count
                 floating away from the thing it counts. */}
-            <div className="school-status-board__day" data-testid="board-day">
-              <h3 className="school-status-board__part-title">Today</h3>
+            {/* No "Today" heading: this is the leftmost partition of a row
+                that reads who / today / this week / this term, and its two
+                neighbours are labelled, so the one in the middle of that
+                sentence is already named by its position. The label is kept for
+                anyone reading the page rather than looking at it. */}
+            <div className="school-status-board__day" data-testid="board-day" role="group" aria-label="Today">
               {loading ? (
                 // SKELETON PINS while the plan is in flight — a three-disc
                 // pyramid, the row's height fixed by the disc size rather than
@@ -553,11 +563,9 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
               ) : summary && summary.segments.length > 0 ? (
                 <Pins segments={summary.segments} onOpen={onOpenSegment ? (segment) => onOpenSegment(kid.id, segment) : null} />
               ) : null}
-              {/* THE METER, under the pins: a segmented bar with the words
-                  beneath, or one word at 100%. */}
-              {loading ? (
-                <span className="school-status-board__status school-status-board__status--none">&nbsp;</span>
-              ) : summary && summary.total > 0 ? (
+              {/* THE METER, under the pins: a segmented bar, and nothing once
+                  the day is finished. */}
+              {loading ? null : summary && summary.total > 0 ? (
                 <DayMeter summary={summary} />
               ) : (
                 <span className="school-status-board__status school-status-board__status--none">No plan to show</span>

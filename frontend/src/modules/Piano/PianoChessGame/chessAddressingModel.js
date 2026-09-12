@@ -71,8 +71,12 @@ export function schemeForAddressing(addressing, fallback = DEFAULT_CHORD_SCHEME)
   return chessAddressingFor(addressing, fallback).scheme;
 }
 
-/** A chord takes three notes to name a square; a staff address takes two. */
-export const minNotesFor = (scheme) => (isStaffScheme(scheme)
-  ? (Array.isArray(scheme.roots?.[0]) ? scheme.roots[0].length : 1)
-    + (Array.isArray(scheme.qualities?.[0]) ? scheme.qualities[0].length : 1)
-  : 3);
+/**
+ * How many notes name a square here.
+ *
+ * Re-exported rather than reimplemented: this file and `chordCursor` each had
+ * their own version, only one of them counted the notes on a card, and the
+ * cursor — the one that decides whether a release is refused — had the wrong
+ * one. Two answers to "is this enough notes yet" is one answer too many.
+ */
+export { minNotesFor } from './chordCursor.js';

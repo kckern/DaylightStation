@@ -44,3 +44,29 @@
     height: 100%;
   }
 }
+
+/**
+ * LOCKED: this card's hand is exactly right, and it stays right while the other
+ * hand is worked.
+ *
+ * A square addressed with two hands used to be all or nothing — a correct right
+ * hand earned nothing until the left one landed, so a child fishing for the left
+ * had no way to know the right was done and re-guessed it every attempt. This is
+ * the answer: the card that landed goes green and HOLDS, so the only open
+ * question on the board is the hand still being worked.
+ *
+ * Loud on purpose. It is read at a piano, from a seated child's distance, out of
+ * a rim of sixteen otherwise identical cream cards, and it has to win that
+ * glance against a board of pieces. The ink inside it is already green from
+ * `action-staff--matched`; this is the card saying so too.
+ */
+.chess-staff-label.action-staff.chess-staff-label--locked {
+  /* The house "this is right" green, tinted rather than renamed — a ninth
+     shade of correct is exactly what the chrome token guard exists to stop.
+     The paper itself is left to `action-staff--matched`, which already washes
+     a matched staff, so this is the card's edge saying so and nothing more. */
+  border-color: color-mix(in srgb, var(--pg-brass-fill) 85%, transparent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--pg-brass-fill) 55%, transparent),
+    0 0 12px 2px color-mix(in srgb, var(--pg-brass-fill) 35%, transparent);
+}

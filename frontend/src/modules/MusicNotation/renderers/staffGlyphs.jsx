@@ -20,6 +20,54 @@ export const ACCIDENTAL_GAP = 3;
 export const NOTEHEAD_RX = 9;
 export const NOTEHEAD_RY = 6.5;
 
+/**
+ * How far LEFT of its own origin each accidental's ink actually reaches.
+ *
+ * Not ACCIDENTAL_WIDTH / 2. That is the nominal column box used for spacing, and
+ * a flat is not centred in it: its stem sits at x = -6.5 with a 2.4 stroke, so
+ * its ink starts at -7.7 while the box says -5.5. Anything positioning an
+ * accidental against a hard boundary — the clef, the edge of the staff — has to
+ * ask for the real extent or it will place the glyph two units inside whatever
+ * it was trying to clear, which is exactly enough to look like a mistake.
+ */
+export const ACCIDENTAL_INK_LEFT = Object.freeze({ sharp: 5.5, flat: 7.7 });
+
+/**
+ * Gap between two accidental columns.
+ *
+ * Tighter than a full glyph box on purpose: two accidentals are only ever in
+ * separate columns BECAUSE they are at different heights, so their boxes may
+ * overlap horizontally without their ink ever meeting. Engraving does the same.
+ * The slack matters — on a 100-unit staff a bass-clef triad carrying two
+ * accidentals and a displaced notehead has no room to spare.
+ */
+export const ACCIDENTAL_COLUMN_PITCH = ACCIDENTAL_WIDTH - 1;
+
+/** Where `ClefGlyph` places itself, so callers can keep their ink off it. */
+export const CLEF_X = 2;
+/**
+ * Two and a bit staff spaces, which is about what a bass clef is.
+ *
+ * This was three spaces. The treble clef never noticed — it is tall and narrow,
+ * so its scale is decided by the height constraint and it comes out around two
+ * spaces wide whatever this says. The BASS clef is wide enough that this is what
+ * binds, so three spaces drew it fatter than a printed one and, worse, reserved
+ * a third of the staff's width before a single note was placed. On the rank rim
+ * — bass clef, and the axis that gets the triads — that was the difference
+ * between a card that fits and a card whose accidentals sit on the clef.
+ */
+export const clefWidth = (lineSpacing) => lineSpacing * 2.2;
+/**
+ * The x a staff's own ink must stay right of.
+ *
+ * The clef is drawn first and its box is fixed, but nothing downstream knew
+ * that: accidentals were laid out purely relative to the noteheads, so a chord
+ * needing two of them staggered the second one left to x ≈ 34 while the clef
+ * occupied 2…44, and the two were simply drawn on top of each other. Any staff
+ * placing ink leftward from the noteheads asks this where to stop.
+ */
+export const clefRightEdge = (lineSpacing) => CLEF_X + clefWidth(lineSpacing) + 2;
+
 /** Engraved sharp: two verticals + two thick bars slanting up to the right. */
 export function SharpShape() {
   return (
@@ -34,7 +82,18 @@ export function SharpShape() {
 }
 
 /**
- * Engraved flat: tall stem + a bold solid bowl sitting on the notehead's line.
+ * Engraved flat: tall stem + an open bowl sitting on the notehead's line.
+ *
+ * The bowl is a RING, drawn as an outer shape with an inner counter subtracted
+ * (`fill-rule="evenodd"`), not the solid teardrop it used to be. A ♭ without its
+ * counter is not a flat, it is a blob — at rim-card size the reader who noticed
+ * was looking at a row of B flats and seeing filled lozenges. The counter also
+ * does the engraving work for free: the ring is widest where the bowl bulges
+ * right and narrows to nothing where it meets the stem, which is the weight
+ * distribution of the printed glyph.
+ *
+ * The two subpaths meet at the stem and the inner one stops short of the
+ * bottom, so the bowl's lower tip stays solid ink where it joins the stem.
  *
  * REGISTERED ON THE BOWL, not on the glyph's overall extent. Every caller
  * places an accidental with `translate(x, noteY)` — the contract stated at the
@@ -50,7 +109,12 @@ export function FlatShape() {
   return (
     <>
       <line x1="-6.5" y1="-15.75" x2="-6.5" y2="5.75" stroke="currentColor" strokeWidth="2.4" />
-      <path d="M -6.5 -6.75 C 2.5 -10.25, 6.5 -0.25, -6.5 6.75 Z" fill="currentColor" />
+      <path
+        d="M -6.5 -7.4 C 3.4 -11.0, 7.6 -0.4, -6.5 7.4 Z
+           M -5.1 -4.9 C 1.5 -7.3, 4.2 -0.8, -5.1 4.4 Z"
+        fill="currentColor"
+        fillRule="evenodd"
+      />
     </>
   );
 }
@@ -95,9 +159,9 @@ export function ClefGlyph({ clef, lineSpacing, bottomLineY }) {
   const [clefTransform, setClefTransform] = useState('');
   const [clefReady, setClefReady] = useState(false);
 
-  const targetW = lineSpacing * 3;
+  const targetW = clefWidth(lineSpacing);
   const targetH = lineSpacing * 6;
-  const targetX = 2;
+  const targetX = CLEF_X;
   const targetY = bottomLineY - lineSpacing * 5;
 
   const measureClef = useCallback((node) => {

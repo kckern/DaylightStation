@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import SentenceLadderProgram from './SentenceLadderProgram.jsx';
+import TypedRung from './rungs/TypedRung.jsx';
 
 const dayMock = vi.fn();
 const previewDayMock = vi.fn();
@@ -932,6 +933,166 @@ describe('typed rungs', () => {
   });
 });
 
+// The dictation clip used to LOOP until submit, and it started on the learner's
+// first keystroke. A child typing one Hangul syllable at a time got the same
+// sentence over and over, with no stop control anywhere on the screen. These
+// tests pin the replacement: one pass on arrival, a Stop the learner can reach,
+// and a single gentle replay if they go quiet.
+describe('typed rung audio', () => {
+  const dictationDay = () => dayPayload({ chain: ['dictation'], queue: [entry(1, 'dictation')] });
+  const playMock = () => window.HTMLMediaElement.prototype.play;
+  // A clip that actually finishes, so a loop would have somewhere to restart
+  // from and the idle wait has a silence to measure.
+  const playsToEnd = () => {
+    window.HTMLMediaElement.prototype.play = vi.fn(function play() {
+      setTimeout(() => this.onended?.(), 0);
+      return Promise.resolve();
+    });
+  };
+  const renderDictation = () => render(
+    <SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />,
+  );
+
+  it('plays once on arrival and never loops', async () => {
+    playsToEnd();
+    dayMock.mockResolvedValue(dictationDay());
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      renderDictation();
+      await screen.findByLabelText(/Type what you hear/i);
+      // No keystroke, no tap: arriving on the rung is what plays it.
+      await waitFor(() => expect(playMock()).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull());
+      // Far past LOOP_GAP_MS (2.5s), well short of the idle replay (30s).
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+      expect(playMock()).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not treat Space as a play key', async () => {
+    dayMock.mockResolvedValue(dictationDay());
+    renderDictation();
+    const input = await screen.findByLabelText(/Type what you hear/i);
+    await waitFor(() => expect(playMock()).toHaveBeenCalled());
+
+    // 오늘 온 사람 — a Korean sentence needs its spaces, and a Space bound to
+    // "play" only while the field is empty is a trap the child cannot see.
+    const before = playMock().mock.calls.length;
+    const notPrevented = fireEvent.keyDown(input, { key: ' ' });
+    expect(notPrevented).toBe(true);
+    expect(playMock().mock.calls.length).toBe(before);
+  });
+
+  it('offers a Stop while the clip sounds, and Play again once it is stopped', async () => {
+    dayMock.mockResolvedValue(dictationDay());
+    renderDictation();
+    await screen.findByLabelText(/Type what you hear/i);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull());
+    expect(window.HTMLMediaElement.prototype.pause).toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Play again' })).toBeTruthy();
+  });
+
+  it('replays once when the learner has gone quiet, and a keystroke restarts the wait', async () => {
+    playsToEnd();
+    dayMock.mockResolvedValue(dictationDay());
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      renderDictation();
+      const input = await screen.findByLabelText(/Type what you hear/i);
+      await waitFor(() => expect(playMock()).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull());
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(25_000); });
+      expect(playMock()).toHaveBeenCalledTimes(1);
+
+      fireEvent.change(input, { target: { value: '한' } });
+      await act(async () => { await vi.advanceTimersByTimeAsync(25_000); });
+      expect(playMock()).toHaveBeenCalledTimes(1);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+      expect(playMock()).toHaveBeenCalledTimes(2);
+      // ONE replay, not a loop that has merely been slowed down.
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+      expect(playMock()).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not retry on a timer when the browser blocked the audio', async () => {
+    // A panel nobody has touched yet fails the autoplay gate. Retrying every
+    // 30s would be silent and would beat a warn into the log store forever.
+    window.HTMLMediaElement.prototype.play = vi.fn(() => Promise.reject(new Error('blocked')));
+    dayMock.mockResolvedValue(dictationDay());
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      renderDictation();
+      expect(await screen.findByText(/Audio was blocked/i)).toBeTruthy();
+      expect(playMock()).toHaveBeenCalledTimes(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+      expect(playMock()).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // STOP MEANS QUIET, NOT "QUIET FOR THIRTY SECONDS". A learner who silences the
+  // sentence has said the audio is in their way; bringing it back on a timer
+  // re-imposes the thing they just refused — the loop again, in slower clothes.
+  it('stays quiet after Stop, and comes back the moment it is asked for', async () => {
+    playsToEnd();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(
+        <TypedRung
+          entry={entry(1, 'dictation')}
+          audioUrl={(seq, lang) => `/audio/${seq}/${lang}`}
+          onComplete={() => {}}
+          saving={false}
+          idleReplayMs={30_000}
+        />,
+      );
+      await waitFor(() => expect(playMock()).toHaveBeenCalledTimes(1));
+
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /stop/i })); });
+      // Well past the idle interval, twice over: the silence holds.
+      await act(async () => { await vi.advanceTimersByTimeAsync(90_000); });
+      expect(playMock()).toHaveBeenCalledTimes(1);
+
+      // Tab is the ask, and the ask un-hushes it.
+      await act(async () => { fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Tab' }); });
+      await waitFor(() => expect(playMock()).toHaveBeenCalledTimes(2));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a zero idle interval turns the replay off completely', async () => {
+    playsToEnd();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(
+        <TypedRung
+          entry={entry(1, 'dictation')}
+          audioUrl={(seq, lang) => `/audio/${seq}/${lang}`}
+          onComplete={() => {}}
+          saving={false}
+          idleReplayMs={0}
+        />,
+      );
+      await waitFor(() => expect(playMock()).toHaveBeenCalledTimes(1));
+      await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+      expect(playMock()).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('day rollover', () => {
   it('offers the next day once everything is done', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition', true)] }));
@@ -1121,22 +1282,13 @@ describe('hands-free', () => {
     expect(await screen.findByRole('button', { name: 'Play' })).toBeTruthy();
   });
 
-  it('a typed rung is focused on arrival and Space plays before the first letter', async () => {
+  it('a typed rung is focused on arrival, and the sentence sounds without a key being touched', async () => {
     dayMock.mockResolvedValue(dayPayload({ chain: ['dictation'], queue: [entry(1, 'dictation')] }));
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     const input = await screen.findByLabelText(/Type what you hear/i);
     await waitFor(() => expect(document.activeElement).toBe(input));
-
-    fireEvent.keyDown(input, { key: ' ' });
     await waitFor(() => expect(window.HTMLMediaElement.prototype.play).toHaveBeenCalled());
     expect(input.value).toBe('');
-
-    // Once typing has begun, Space is a space again.
-    fireEvent.change(input, { target: { value: '한' } });
-    const before = window.HTMLMediaElement.prototype.play.mock.calls.length;
-    const event = fireEvent.keyDown(input, { key: ' ' });
-    expect(event).toBe(true); // not prevented
-    expect(window.HTMLMediaElement.prototype.play.mock.calls.length).toBe(before);
   });
 
   it('the arrows walk the ladder, and reach the Review shelf', async () => {

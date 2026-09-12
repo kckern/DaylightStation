@@ -664,3 +664,207 @@ describe('POST /session/end — composed against the real ReadingApiService', ()
     expect(res.body).toMatchObject({ ok: false, location: 'livingroom', reason: 'day-done' });
   });
 });
+
+/**
+ * A DEPLOY IN THE MIDDLE OF A STORY.
+ *
+ * 2026-09-11: a child started a 9m40s read-along at 15:09 and the backend was
+ * redeployed at 15:13. Sessions live in a Map in the process, so when the story
+ * ended at 15:18 the server had never heard of the session it was being told
+ * about and refused the read with a 409 (`session-or-pick-expired`).
+ *
+ * From the sofa that is indistinguishable from the story not finishing: the
+ * audio ran to its last word and then no pip filled and no close screen came.
+ * The household reported it as "the track didn't play to the end".
+ *
+ * The session is a CHECK. The evidence is the request: the client mints
+ * `pickId` when playback starts and sends it back at the end, the store is
+ * idempotent on it, and the learner and content are in the body.
+ */
+describe('POST /read — a forgotten session must not cost the child the book', () => {
+  const finished = {
+    learnerId: 'test-learner', contentId: 'plex:620707', title: 'Three Little Pigs',
+    location: 'livingroom', pickId: 'pick_mtxidoqk_1', sessionId: 'rs_mtxida1l_2',
+  };
+
+  it('credits the read when the session is gone entirely — the deploy case', async () => {
+    const { app, readingLog } = build();
+    // No session at all: exactly what a restart leaves behind.
+    const res = await request(app).post('/api/v1/school/reading/read').send(finished);
+    expect(res.status).toBe(200);
+    expect(res.body.read).toMatchObject({ learnerId: 'test-learner', pickId: 'pick_mtxidoqk_1' });
+    expect(await readingLog.listForDay('test-learner', '2026-08-26')).toHaveLength(1);
+  });
+
+  it('is still idempotent — a retry after the restart does not credit twice', async () => {
+    const { app, readingLog } = build();
+    await request(app).post('/api/v1/school/reading/read').send(finished).expect(200);
+    await request(app).post('/api/v1/school/reading/read').send(finished).expect(200);
+    expect(await readingLog.listForDay('test-learner', '2026-08-26')).toHaveLength(1);
+  });
+
+  it('credits it when a DIFFERENT session has since opened in the room', async () => {
+    // The child scanned back in after the restart; the room has a new session
+    // with no pick. The book they just finished is still theirs.
+    const { app, readingLog, sessions } = build();
+    sessions.open({ location: 'livingroom', learnerId: 'test-learner' });
+    await request(app).post('/api/v1/school/reading/read').send(finished).expect(200);
+    expect(await readingLog.listForDay('test-learner', '2026-08-26')).toHaveLength(1);
+  });
+
+  // The one case that is a real conflict rather than a forgotten session: a
+  // second story is genuinely in flight in the room, and guessing between the
+  // two would credit the wrong book.
+  it('still refuses when another pick is actually in flight', async () => {
+    const { app, readingLog, sessions } = build();
+    const opened = sessions.open({ location: 'livingroom', learnerId: 'other-learner' });
+    sessions.update('livingroom', {
+      state: 'reading',
+      pick: { pickId: 'pick-someone-else', learnerId: 'other-learner', contentId: 'plex:1', studyDay: '2026-08-26' },
+    });
+    expect(opened.sessionId).not.toBe(finished.sessionId);
+    const res = await request(app).post('/api/v1/school/reading/read').send(finished);
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ recorded: false, reason: 'session-or-pick-expired' });
+    expect(await readingLog.listForDay('test-learner', '2026-08-26')).toHaveLength(0);
+  });
+
+  it('still refuses when the request carries no evidence of its own', async () => {
+    const { app } = build();
+    // A sessionId and nothing to attribute: there is no book here to credit.
+    const res = await request(app).post('/api/v1/school/reading/read')
+      .send({ location: 'livingroom', sessionId: 'rs_gone', pickId: 'pick-1' });
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ recorded: false, reason: 'session-or-pick-expired' });
+  });
+});
+
+/**
+ * SESSIONS ACROSS A RESTART.
+ *
+ * The other half of the deploy-mid-story failure. Crediting the read from its
+ * own evidence stops the book being lost; this stops the ROOM being lost — the
+ * pick stays attributable, teardown is still owed, and nobody has to scan back
+ * in because a deploy landed while they were listening.
+ */
+describe('reading sessions survive a restart', () => {
+  /** The port, in memory, with the same never-throws contract as the YAML one. */
+  function memorySessionStore(seed = []) {
+    let rows = [...seed];
+    const saves = [];
+    return {
+      saves,
+      async load() { return rows; },
+      async save(next) { rows = [...next]; saves.push(rows); },
+      get rows() { return rows; },
+    };
+  }
+  /** A scheduler whose `every` hands back its tick so a test can drive it. */
+  function drivableScheduler() {
+    const ticks = [];
+    return {
+      ticks,
+      withDeadline: (work) => work,
+      wait: async () => {},
+      every: (ms, fn) => { ticks.push({ ms, fn }); return () => {}; },
+      run: (ms) => ticks.filter((t) => t.ms === ms).forEach((t) => t.fn()),
+    };
+  }
+
+  it('writes a session the moment it opens — a deploy four seconds later still has it', async () => {
+    const store = memorySessionStore();
+    const sessions = new ReadingSessionService({ logger: silent, sessionStore: store });
+    const opened = sessions.open({ location: 'livingroom', learnerId: 'test-learner' });
+    // Not on the timer: opening is structural, and the timer is the thing a
+    // restart in the next few seconds would beat.
+    await Promise.resolve();
+    expect(store.rows).toHaveLength(1);
+    expect(store.rows[0]).toMatchObject({ location: 'livingroom', learnerId: 'test-learner', sessionId: opened.sessionId });
+  });
+
+  it('takes the room back on hydrate, with its pick still attributable', async () => {
+    const first = new ReadingSessionService({ logger: silent, sessionStore: memorySessionStore() });
+    const opened = first.open({ location: 'livingroom', learnerId: 'test-learner' });
+    first.update('livingroom', {
+      state: 'reading',
+      pick: { pickId: 'pick-1', learnerId: 'test-learner', contentId: 'plex:620707', studyDay: '2026-08-26' },
+    });
+    first.stop();
+
+    // A NEW process, reading the same file the old one left behind.
+    const onDisk = [{ ...first.current('livingroom') }];
+    const second = new ReadingSessionService({ logger: silent, sessionStore: memorySessionStore(onDisk) });
+    expect(second.current('livingroom')).toBeNull();
+    await second.hydrate();
+    expect(second.current('livingroom')).toMatchObject({
+      sessionId: opened.sessionId, learnerId: 'test-learner', state: 'reading',
+    });
+    expect(second.current('livingroom').pick).toMatchObject({ pickId: 'pick-1', contentId: 'plex:620707' });
+  });
+
+  it('the read that failed in the field now lands on the rehydrated session', async () => {
+    const first = new ReadingSessionService({ logger: silent, sessionStore: memorySessionStore() });
+    const opened = first.open({ location: 'livingroom', learnerId: 'test-learner' });
+    first.update('livingroom', {
+      state: 'reading',
+      pick: { pickId: 'pick_mtxidoqk_1', learnerId: 'test-learner', contentId: 'plex:620707', studyDay: '2026-08-26' },
+    });
+    const carried = [{ ...first.current('livingroom') }];
+
+    const sessions = new ReadingSessionService({ logger: silent, sessionStore: memorySessionStore(carried) });
+    await sessions.hydrate();
+    const { app, readingLog } = build({ sessions });
+    const res = await request(app).post('/api/v1/school/reading/read').send({
+      learnerId: 'test-learner', contentId: 'plex:620707', title: 'Three Little Pigs',
+      location: 'livingroom', pickId: 'pick_mtxidoqk_1', sessionId: opened.sessionId,
+    });
+    expect(res.status).toBe(200);
+    expect(await readingLog.listForDay('test-learner', '2026-08-26')).toHaveLength(1);
+  });
+
+  it('throttles the 10 Hz playback position onto a timer instead of a write each time', async () => {
+    const store = memorySessionStore();
+    const scheduler = drivableScheduler();
+    const sessions = new ReadingSessionService({
+      logger: silent, sessionStore: store, scheduler, persistIntervalMs: 5000,
+    });
+    sessions.open({ location: 'livingroom', learnerId: 'test-learner' });
+    sessions.start();
+    await Promise.resolve();
+    const afterOpen = store.saves.length;
+    for (let i = 0; i < 40; i += 1) {
+      sessions.update('livingroom', { progress: { positionSec: i, durationSec: 580, at: new Date().toISOString() } });
+    }
+    await Promise.resolve();
+    expect(store.saves.length).toBe(afterOpen); // forty updates, no writes
+    scheduler.run(5000);
+    await Promise.resolve();
+    expect(store.saves.length).toBe(afterOpen + 1); // one, on the tick
+  });
+
+  it('clears a closed room from the file rather than leaving a tombstone', async () => {
+    const store = memorySessionStore();
+    const sessions = new ReadingSessionService({ logger: silent, sessionStore: store });
+    sessions.open({ location: 'livingroom', learnerId: 'test-learner' });
+    await Promise.resolve();
+    sessions.close('livingroom', { reason: 'day-done' });
+    await Promise.resolve();
+    expect(store.rows).toEqual([]);
+  });
+
+  it('runs exactly as before when no store is wired', async () => {
+    const sessions = new ReadingSessionService({ logger: silent });
+    await sessions.hydrate();
+    const opened = sessions.open({ location: 'livingroom', learnerId: 'test-learner' });
+    expect(sessions.current('livingroom')).toMatchObject({ sessionId: opened.sessionId });
+  });
+
+  it('a store that throws on load costs durability, never story time', async () => {
+    const sessions = new ReadingSessionService({
+      logger: silent,
+      sessionStore: { async load() { throw new Error('disk full'); }, async save() {} },
+    });
+    await expect(sessions.hydrate()).resolves.toBeDefined();
+    expect(sessions.open({ location: 'livingroom', learnerId: 'test-learner' })).toMatchObject({ learnerId: 'test-learner' });
+  });
+});

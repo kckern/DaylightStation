@@ -4792,10 +4792,35 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const { ReadingSessionInterceptor } = await import('#apps/school/readingSessionInterceptor.mjs');
     const { RecordStoryRead } = await import('#apps/school/usecases/RecordStoryRead.mjs');
     const { createReadingRouter } = await import('#api/v1/routers/reading.mjs');
+    /**
+     * A learner's display name, for the surfaces that greet them by it.
+     *
+     * PROFILES CARRY `display_name`, NOT `name`. Reading `profile.name` yields
+     * undefined, which is why the reading rail drew a face with no caption under
+     * it all evening and `GET /reading/summary` answered `displayName: null` for
+     * a child whose profile says `display_name` on its first page. The
+     * piano roster hit exactly this and fixed it locally (see GetCourseProgress:
+     * "a bare p.name shipped 'undefined' labels"); this is the same resolution,
+     * shared, so the next caller does not have to rediscover it.
+     *
+     * Falls back to the username and then to the id: a greeting by id is a worse
+     * greeting, never a broken screen.
+     */
+    const resolveLearnerProfile = (id) => {
+      const profile = configService.getUserProfile?.(id) ?? null;
+      if (!profile) return null;
+      return { ...profile, id: String(id), name: profile.display_name || profile.username || String(id) };
+    };
+
     const { makeReadingTimeoutHandler } = await import('#composition/modules/learnerCardActions.mjs');
     const { YamlReadingSessionTimelineStore } = await import('#adapters/persistence/yaml/YamlReadingSessionTimelineStore.mjs');
+    const { YamlReadingSessionStore } = await import('#adapters/persistence/yaml/YamlReadingSessionStore.mjs');
     const { EventBusSchoolRealtimeAdapter } = await import('#adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs');
     const readingTimeline = new YamlReadingSessionTimelineStore({ configService, logger: readingLogger });
+    // The open sessions themselves, so a deploy does not erase the living room.
+    // See IReadingSessionStore: a redeploy four minutes into a 9m40s read-along
+    // left a child finishing his book into a server that had forgotten him.
+    const readingSessionStore = new YamlReadingSessionStore({ configService, logger: readingLogger });
     // One gateway for the whole reading ceremony. Passing the raw event bus
     // here stopped working when the application layer moved to the School
     // realtime port: JavaScript ignored the unknown `eventBus` option, leaving
@@ -4810,6 +4835,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // cold-wake broadcast strands the intent forever instead of replaying it.
       scheduler: new NodeAsyncScheduler(),
       observationStore: readingTimeline,
+      sessionStore: readingSessionStore,
       // D6 — the session owns teardown, and this is it. The location's own
       // `end: tv-off` is suppressed while a session is open (D8), so nothing
       // else will ever turn this TV off: an abandoned prompt would leave the
@@ -4819,6 +4845,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         locations: nfcLocationsForReachability, tv: homeAutomationAdapters.tvAdapter, logger: readingLogger,
       }),
     });
+    // Sessions come BACK before the first request is served: a card tapped
+    // during boot must not open a second session for a room that already has
+    // one.
+    await readingSessions.hydrate();
     readingSessions.start();
     server?.once?.('close', () => readingSessions.stop());
 
@@ -4852,7 +4882,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       readingLog: schoolLifecycle.stores.readingLog,
       // Optional: without it the prompt falls back to the learner id, which is
       // a worse greeting and not a broken one.
-      resolveLearner: (id) => configService.getUserProfile?.(id) ?? null,
+      resolveLearner: resolveLearnerProfile,
       // Days the whole house is off, in the same shape a syllabus schedule
       // takes. Only the household declares Christmas — a course's own `except`
       // excuses a subject, which is a different statement and a different
@@ -4922,7 +4952,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         }),
         // Optional: without it the score placard names the learner id, which is
         // a worse placard and not a broken lesson.
-        resolveLearner: (id) => configService.getUserProfile?.(id) ?? null,
+        resolveLearner: resolveLearnerProfile,
         logger: lessonLogger,
       }));
     } catch (err) {

@@ -115,6 +115,55 @@ function WallClock() {
 }
 
 /**
+ * How far through THIS story, drawn as a ring around the child's portrait.
+ *
+ * THE PROPORTION AND THE COUNT ARE DIFFERENT QUESTIONS. This used to be a conic
+ * sweep inside the live pip — one 1.4rem disc being both "one of the day's
+ * books" and "how far through this recording", which on a one-book day left a
+ * single small circle carrying everything and a sweep too small to see from a
+ * sofa. Here it is the largest graphic on the rail, and it is wrapped around the
+ * face, which says whose story it is in the same stroke.
+ *
+ * AN SVG STROKE, NOT A CONIC GRADIENT. The pip used a conic because it is one
+ * element with no viewBox to keep in sync, and at pip size the banding on the
+ * gradient's leading edge does not show. At portrait size it does; a stroked
+ * circle is crisp at any diameter and its width is an exact number of units
+ * rather than a consequence of an inset.
+ *
+ * An unknown duration draws NOTHING, not a zero-length arc. The position
+ * arrives at 10 Hz but the duration is 0 until the media element has metadata,
+ * and a confident zero at the start of a story is a lie the child can see.
+ */
+function ProgressRing({ fraction }) {
+  if (!Number.isFinite(fraction)) return null;
+  const value = Math.min(1, Math.max(0, fraction));
+  // Geometry in a 100-unit box the CSS scales; r leaves room for the stroke.
+  const r = 46;
+  const circumference = 2 * Math.PI * r;
+  return (
+    <svg
+      className="reading-credit__ring"
+      viewBox="0 0 100 100"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <circle className="reading-credit__ring-track" cx="50" cy="50" r={r} />
+      <circle
+        className="reading-credit__ring-sweep"
+        cx="50" cy="50" r={r}
+        // From twelve o'clock, clockwise — the direction a clock face and every
+        // other progress ring a child will ever meet both run.
+        transform="rotate(-90 50 50)"
+        strokeDasharray={circumference}
+        strokeDashoffset={circumference * (1 - value)}
+      />
+    </svg>
+  );
+}
+
+ProgressRing.propTypes = { fraction: PropTypes.number };
+
+/**
  * The subject as its own MARK, above the child rather than beneath them.
  *
  * TWO IDENTITIES, NOT ONE. The subject word used to sit directly under the
@@ -148,10 +197,9 @@ export default function ReadingCredit({
   const subject = subjectLabel(reading?.subject);
   const mark = subjectIcon(reading?.subject);
 
-  // How far through THIS story, for the live pip. The module contract already
-  // delivers both numbers at 10 Hz; they were previously used for nothing here
-  // (see the header's note on the clock, which held while the Player drew its
-  // own bar). A duration of 0 is "not known yet", never "at the start".
+  // How far through THIS story, for the ring around the portrait. The module
+  // contract delivers both numbers at 10 Hz. A duration of 0 is "not known
+  // yet", never "at the start".
   const fraction = duration > 0 && position >= 0 ? position / duration : null;
 
   // ATTRIBUTION IS THE WHOLE POINT, so the bar for rendering is a learner and
@@ -186,9 +234,11 @@ export default function ReadingCredit({
         </div>
       ) : null}
 
-      {/* Who is getting the credit. The name is the caption on the face. */}
+      {/* Who is getting the credit, and how far through their story. The name
+          is the caption on the face; the ring around it is the position. */}
       <div className="reading-credit__who">
-        <div className="reading-credit__avatar">
+        <div className="reading-credit__avatar" data-testid="reading-credit-avatar">
+          <ProgressRing fraction={fraction} />
           <ProfileAvatar id={learnerId} name={name || learnerId} size={256} />
         </div>
         {name ? <p className="reading-credit__name" data-testid="reading-credit-name">{name}</p> : null}
@@ -207,7 +257,6 @@ export default function ReadingCredit({
           // story loaded, and only the PULSE stops when the audio does.
           live={playing || duration > 0}
           moving={playing}
-          progress={fraction}
         />
       </div>
 

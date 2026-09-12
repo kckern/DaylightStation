@@ -20,15 +20,27 @@ export const SETTLE_MS = 140;
 export const HOLD_MS = 600;
 
 /** Everything that makes one reading different from another. */
-export const readingSignature = (reading) => (reading.state === 'idle' ? '' : [reading.state, reading.symbol, reading.square].join('|'));
+export const readingSignature = (reading) => (reading.state === 'idle' ? '' : [reading.state, reading.symbol, reading.square, reading.half].join('|'));
 
-export function readingFor({ heldNotes = [], chord = null, square = null, connected = true, settling = false, minNotes = 3 }) {
+/**
+ * `half` is one hand landed and the other still being worked.
+ *
+ * It sits above `partial` deliberately: a correct right hand is not "not enough
+ * notes yet", it is a third of the way to the answer and the only thing left is
+ * the other hand. Saying so is what lets a child stop re-checking the hand they
+ * already have right.
+ */
+export function readingFor({
+  heldNotes = [], chord = null, square = null, connected = true, settling = false, minNotes = 3,
+  half = null,
+}) {
   const held = heldNotes.length;
   let state = 'idle';
   if (!connected) state = 'offline';
   else if (chord && square) state = 'square';
   else if (held >= minNotes && settling) state = 'settling';
   else if (held >= minNotes) state = 'unmapped';
+  else if (half) state = 'half';
   else if (held > 0) state = 'partial';
-  return { state, held, square, symbol: chord?.symbol ?? null };
+  return { state, held, square, half, symbol: chord?.symbol ?? null };
 }

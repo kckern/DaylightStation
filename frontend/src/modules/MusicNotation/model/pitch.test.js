@@ -4,8 +4,10 @@ import {
   spellAccidental,
   getStaffPosition,
   getStaffPositionOnClef,
+  DEFAULT_BLACK_KEY_SPELLING,
   WHITE_KEYS,
 } from './pitch.js';
+import { spellPitchClass } from './spelling.js';
 
 describe('isBlackKey', () => {
   it('identifies white keys', () => {
@@ -23,6 +25,41 @@ describe('spellAccidental', () => {
   it('honors forced sharp/flat for black keys', () => {
     expect(spellAccidental(61, 'sharp')).toEqual({ isSharp: true, isFlat: false });
     expect(spellAccidental(61, 'flat')).toEqual({ isSharp: false, isFlat: true });
+  });
+
+  // This used to be `Math.random() < 0.5`. Because the spelling decides the
+  // staff POSITION downstream, a coin flip moved the same note a diatonic step
+  // between renders: a piano-chess rim card the child could not recognise
+  // twice, and one note of a dyad coming out flat while its partner came out
+  // sharp. Determinism here is not tidiness, it is the whole point.
+  it('spells a black key the same way every single time', () => {
+    for (const pc of [1, 3, 6, 8, 10]) {
+      const first = spellAccidental(60 + pc);
+      for (let i = 0; i < 100; i += 1) expect(spellAccidental(60 + pc)).toEqual(first);
+    }
+  });
+
+  it('gives a black key a stable staff position across repeated calls', () => {
+    for (const midi of [51, 58, 61, 66, 70]) {
+      const first = getStaffPosition(midi);
+      for (let i = 0; i < 100; i += 1) {
+        const again = getStaffPosition(midi);
+        expect(again.position).toBe(first.position);
+        expect(again.isSharp).toBe(first.isSharp);
+        expect(again.isFlat).toBe(first.isFlat);
+      }
+    }
+  });
+
+  // model/spelling.js is the authority on which way each chromatic degree
+  // leans; the table here is its no-key reduction, duplicated only because it
+  // is read once per notehead per render. If the two ever disagree, a card and
+  // a chord symbol for the same note will disagree too.
+  it('the default lean matches spelling.js read in C', () => {
+    for (const pc of [1, 3, 6, 8, 10]) {
+      const houseLean = spellPitchClass(pc).alter === 1 ? 'sharp' : 'flat';
+      expect(DEFAULT_BLACK_KEY_SPELLING[pc]).toBe(houseLean);
+    }
   });
 });
 
