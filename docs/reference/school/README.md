@@ -18,6 +18,11 @@
 >
 > **Roadmap (candidate future work, categorized):** [`docs/roadmap/2026-07-21-school-module-roadmap.md`](../../roadmap/2026-07-21-school-module-roadmap.md)
 >
+> **Pen Pal — conversational language learning (proposed, not built):**
+> [`docs/roadmap/2026-09-11-conversational-language-program-design.md`](../../roadmap/2026-09-11-conversational-language-program-design.md)
+> — glossed agent chat over a shared lexicon service. Only its last phase is
+> School-specific; the chat, gloss and dictionary layers are app-wide.
+>
 > **Enrollment and syllabi (whole-course path built):**
 > [`enrollment.md`](./enrollment.md) — `school.course-enrollment/v2` exists and
 > the planner and issue path honor it fully. `EnrollLearner`/`UnenrollLearner`
