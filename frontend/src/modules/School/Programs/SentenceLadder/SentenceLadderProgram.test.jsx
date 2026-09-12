@@ -1800,6 +1800,45 @@ describe('dismissal and dead ends', () => {
     expect(row.textContent).toContain('English 1');
   });
 
+  // An interpretation row headlines the KOREAN it was asked about. Headlining
+  // the English printed the answer above a diff of the answer against itself,
+  // and left the sentence the child actually read off the row entirely — which
+  // also made an answered row and the revealed row above it look like two
+  // different exercises. Dictation is the other way round and stays that way:
+  // its prompt is audio, so the English line is the only gloss on the row.
+  it('headlines an interpretation row with its Korean prompt, and a dictation row with its English', async () => {
+    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
+    historyMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: {
+        corpus: { languages: LANGUAGES },
+        days: [{
+          day: 1,
+          items: [
+            {
+              seq: 1, rung: 'interpretation', day: 1, given: 'English 1', expected: 'English 1',
+              accuracy: 1, text: { EN: 'English 1', KR: '한국어 1' },
+            },
+            {
+              seq: 2, rung: 'dictation', day: 1, given: '한국어 2', expected: '한국어 2',
+              accuracy: 1, text: { EN: 'English 2', KR: '한국어 2' },
+            },
+          ],
+        }],
+      },
+    });
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    await screen.findByText('한국어 1');
+    const [interpretation, dictation] = Array.from(
+      document.querySelectorAll('.lang-review__item'),
+    ).map((li) => li.querySelector('.lang-review__sentence').textContent);
+    expect(interpretation).toBe('한국어 1');
+    expect(dictation).toBe('English 2');
+  });
+
   it('lets the learner retry a failed history load', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
     historyMock

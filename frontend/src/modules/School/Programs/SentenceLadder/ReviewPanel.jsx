@@ -52,7 +52,23 @@ function RecordingPlayback({ userId, corpusId, seq, studyGrant }) {
 }
 
 function Item({ item, userId, corpusId, languages, studyGrant }) {
-  const sourceText = item.text?.[languages?.source];
+  /**
+   * THE HEADLINE IS THE PROMPT, and which language that is depends on the rung.
+   *
+   * Dictation hears Korean and writes Korean, so its prompt has no text at all
+   * — the English line is the only thing on the row saying what the sentence
+   * meant, and the diff beneath it compares Korean to Korean.
+   *
+   * Interpretation READS Korean and writes English, so the English line is the
+   * answer. Printing it as the headline put the answer above a diff of the
+   * answer against the answer — the same sentence three times in two languages'
+   * worth of space, with the Korean the child was actually looking at nowhere
+   * on the row. Worse, the revealed row beside it shows the Korean, so two
+   * interpretation rows on one shelf did not read as the same exercise.
+   */
+  const promptText = item.rung === 'interpretation'
+    ? item.text?.[languages?.target]
+    : item.text?.[languages?.source];
 
   if (item.rung === 'recording') {
     return (
@@ -95,7 +111,7 @@ function Item({ item, userId, corpusId, languages, studyGrant }) {
         <span className="lang-review__rung">
           {item.rung === 'dictation' ? 'Dictation' : 'Interpretation'}
         </span>
-        <span className="lang-review__sentence">{sourceText}</span>
+        <span className="lang-review__sentence">{promptText}</span>
         <DiffLine expected={item.expected} given={item.given} />
         {typeof item.accuracy === 'number' && (
           <span className="lang-review__score">{Math.round(item.accuracy * 100)}%</span>
