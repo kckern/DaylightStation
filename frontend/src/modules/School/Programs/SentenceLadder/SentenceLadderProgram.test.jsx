@@ -201,6 +201,42 @@ describe('the day', () => {
     expect(document.querySelector('.lang-program__progress-bar')).toBeNull();
   });
 
+  // THE RAIL WAS THE DEFECT, NOT THE STYLING. `ReadingPips` gives up and prints
+  // its label past a cap that defaults to 8, and a day's pace is commonly 15 —
+  // so every rung had ALWAYS rendered "0 of 15 repetition sentences" instead of
+  // pips, at the component's default label size (4.4vh) in the accent green,
+  // wrapping to three lines and pushing the Review shelf off a 1280x800 panel.
+  // The rail had never drawn a single pip in its life.
+  it('draws fifteen pips for a fifteen-sentence rung instead of printing the sentence', async () => {
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['repetition'],
+      queue: Array.from({ length: 15 }, (_, i) => entry(i + 1, 'repetition', i < 4)),
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />);
+    await screen.findByText('Repetition');
+    const pips = screen.getByTestId('ladder-pips-repetition');
+    expect(pips.querySelectorAll('.reading-pip')).toHaveLength(15);
+    expect(pips.querySelectorAll('.reading-pip--done')).toHaveLength(4);
+    // The sentence survives as the accessible name and NOWHERE on the glass.
+    expect(pips.getAttribute('aria-label')).toBe('4 of 15 repetition sentences');
+    expect(document.querySelector('.reading-pips-label')).toBeNull();
+  });
+
+  // The cap is the RAIL's width, not a taste: sixteen pips no longer fit the
+  // column, so a 20-a-day pace has to fall back to words rather than overflow.
+  it('falls back to the count in words once a rung outgrows the rail', async () => {
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['repetition'],
+      queue: Array.from({ length: 20 }, (_, i) => entry(i + 1, 'repetition', i < 2)),
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />);
+    await screen.findByText('Repetition');
+    const pips = screen.getByTestId('ladder-pips-repetition');
+    expect(pips).toHaveClass('reading-pips-label');
+    expect(pips.textContent).toBe('2 of 20 repetition sentences');
+    expect(document.querySelector('.reading-pip')).toBeNull();
+  });
+
   it('a rung this device cannot climb says so on the rung, not in a banner', async () => {
     dayMock.mockResolvedValue(dayPayload({
       chain: ['repetition', 'recording'],

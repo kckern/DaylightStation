@@ -138,8 +138,33 @@ $disc: 5.5rem;
     &.is-done { color: var(--school-muted); }
     &.is-blocked { opacity: 0.55; cursor: default; }
   }
-  &__label { line-height: 1.2; }
-  &__pips { --pip-size: 0.95rem; --pip-gap: 0.4rem; --pip-ink: var(--school-accent); }
+  &__label { line-height: 1.15; }
+  // PIPS SIZED FROM THE COLUMN, NOT BY EYE. A rung holds one pip per sentence
+  // and a day's limit is commonly fifteen, so the row has to be arithmetic:
+  // `.reading-pips` is a nowrap flex of `flex: none` discs, which means a row
+  // too wide does not wrap, it OVERFLOWS THE RAIL.
+  //
+  //   column           13rem floor of __split's minmax(13rem, 16rem) = 208px
+  //   minus padding    __step's 0.9rem each side                     = -28.8px
+  //   available                                                      ≈ 179px
+  //   15 pips          15 × 0.5rem + 14 × 0.22rem                    = 169.3px
+  //
+  // 0.95rem/0.4rem — the old shelf-sized values — needed 313px for fifteen and
+  // would have run 134px past the rail had the pips ever drawn at all. They did
+  // not: the count was over ReadingPips' default cap of 8, so every rung fell
+  // back to text. See --pip-label-size below.
+  &__pips {
+    --pip-size: 0.5rem;
+    --pip-gap: 0.22rem;
+    --pip-ink: var(--school-accent);
+    // THE FALLBACK, SIZED. A rung past LADDER_MAX_PIPS (a 25- or 50-a-day
+    // pace) still degrades to "12 of 25 dictation sentences" — and unset,
+    // that renders at the component default of 4.4vh, ~35px, in the accent
+    // green, wrapping to three lines and pushing the Review shelf off the
+    // panel. That is the shape the rail was in until 2026-09-11. Meta size,
+    // so the worst case is a quiet second line rather than a banner.
+    --pip-label-size: #{$meta};
+  }
   &__note { font-size: $meta; line-height: 1.25; color: var(--school-muted); }
 
   // Review is a shelf under the ladder, not a rung.
