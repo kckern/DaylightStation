@@ -827,9 +827,9 @@ while. `[x]` is built and tested; `[ ]` is not started.
 |---|---|---|
 | `[x]` | **T8 Measure log write cadence during steady play** | MEASURED over 425 sessions: median 28s write-span, 59% stop writing within a minute. Logs are NOT a liveness or end signal — they give an exact start and content identity |
 | `[ ]` | **T9 `RetroArchSessionLogReader`** — exact start from filename, content identity from the body | `1_adapters/gaming/` |
-| `[ ]` | **T10 `ReconcilePlaySessions`** — confirm a session existed and what was played; settle unseen time conservatively, never by guesswork | Ends cannot be reconstructed (5.10) |
-| `[ ]` | **T11 Staleness alarm** — no progress for N intervals is a fault, not silence | NFR-8 |
-| `[ ]` | **T12 Degraded-mode alerting** — ADB lost ⇒ reduced confidence surfaced, not swallowed | |
+| `[x]` | **T10 `ReconcilePlaySessions`** — confirm a session existed and what was played; settle unseen time conservatively, never by guesswork | Ends cannot be reconstructed (5.10) |
+| `[x]` | **T11 Staleness alarm** — no progress for N intervals is a fault, not silence | NFR-8 |
+| `[x]` | **T12 Degraded-mode alerting** — ADB lost ⇒ reduced confidence surfaced, not swallowed | |
 | `[ ]` | **T13 Prolonged-blindness policy** — stop granting launches, notify a parent; never kill blind | Closes the abuse hole (6.1) |
 
 ### M3 — Overlay (display only; still no enforcement)

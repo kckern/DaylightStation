@@ -84,6 +84,35 @@ export class YamlPlaySessionDatastore extends IPlaySessionRepository {
     return row ? PlaySession.fromSnapshot(row) : null;
   }
 
+  /**
+   * Sessions on a device that started at or after `sinceIso`, ended ones from
+   * the dated history plus the current one if it qualifies. Walks only the day
+   * files the window actually spans.
+   */
+  async listForDeviceSince(deviceId, sinceIso, { householdId = null } = {}) {
+    const since = Date.parse(sinceIso);
+    if (!Number.isFinite(since)) return [];
+    const out = [];
+    const seen = new Set();
+
+    const day = 24 * 60 * 60 * 1000;
+    for (let t = since; t <= Date.now() + day; t += day) {
+      const iso = new Date(t).toISOString().slice(0, 10);
+      const rows = loadYamlSafe(this.#historyPath(iso, householdId)) || [];
+      for (const row of rows) {
+        if (row?.deviceId !== deviceId || seen.has(row?.id)) continue;
+        if (Date.parse(row.startedAt || row.endedAt || 0) < since) continue;
+        seen.add(row.id);
+        try { out.push(PlaySession.fromSnapshot(row)); } catch { /* skip unreadable row */ }
+      }
+    }
+
+    const current = await this.findCurrentForDevice(deviceId, { householdId });
+    if (current && !seen.has(current.id) && Date.parse(current.startedAt || 0) >= since) out.push(current);
+
+    return out.sort((a, b) => String(a.startedAt).localeCompare(String(b.startedAt)));
+  }
+
   /** Every device we have ever tracked — the input to startup reconciliation. */
   async listTrackedDeviceIds({ householdId = null } = {}) {
     const entries = listEntries(path.join(this.#root(householdId), 'current')) || [];

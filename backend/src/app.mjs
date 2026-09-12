@@ -3726,6 +3726,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const playSessionTracking = createPlaySessionTracking({
     devicesConfig: devicesConfig.devices || {},
     gamesConfig: configService.getHouseholdAppConfig(householdId, 'games'),
+    gamesCatalog: dataService.household.read('gaming/retroarch/catalog'),
     configService,
     eventBus,
     httpClient: axios,

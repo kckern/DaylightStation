@@ -10,4 +10,7 @@ export class IPlaySessionRepository {
   async findById(_sessionId) { throw new Error('IPlaySessionRepository.findById must be implemented'); }
   /** The one session currently open on a device, or null. */
   async findOpenForDevice(_deviceId) { throw new Error('IPlaySessionRepository.findOpenForDevice must be implemented'); }
+  /** Sessions on a device that started at or after an instant — the set that
+   *  reconciliation compares against what the device itself recorded. */
+  async listForDeviceSince(_deviceId, _sinceIso) { throw new Error('IPlaySessionRepository.listForDeviceSince must be implemented'); }
 }
