@@ -68,3 +68,35 @@ describe('play-session wiring is opt-in per device', () => {
     expect(r.trackers).toHaveLength(1);
   });
 });
+
+describe('catalog content resolver', () => {
+  const catalog = {
+    games: {
+      gb: [{ id: 'super-mario-land', rom: '/Games/GB/SML.gb', title: 'Super Mario Land' }],
+      snes: [{ id: 'bomberman-2', rom: '/Games/SNES/SB2.sfc', title: 'Super Bomberman 2' }],
+    },
+  };
+
+  it('maps a device ROM path back to a content id', async () => {
+    const { buildContentResolver } = await import('./playSessions.mjs');
+    const resolve = buildContentResolver(catalog);
+    expect(resolve('/Games/SNES/SB2.sfc')).toEqual({ contentId: 'retroarch:snes/bomberman-2', title: 'Super Bomberman 2' });
+  });
+
+  it('returns null for a ROM the catalog does not know', async () => {
+    const { buildContentResolver } = await import('./playSessions.mjs');
+    expect(buildContentResolver(catalog)('/Games/GB/unknown.gb')).toBeNull();
+  });
+
+  it('tolerates a missing or empty catalog', async () => {
+    const { buildContentResolver } = await import('./playSessions.mjs');
+    expect(buildContentResolver(null)('/anything')).toBeNull();
+    expect(buildContentResolver({ games: {} })('/anything')).toBeNull();
+  });
+
+  it('skips catalog entries with no rom path', async () => {
+    const { buildContentResolver } = await import('./playSessions.mjs');
+    const resolve = buildContentResolver({ games: { gb: [{ id: 'x', title: 'X' }] } });
+    expect(resolve(undefined)).toBeNull();
+  });
+});

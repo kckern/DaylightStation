@@ -16,12 +16,15 @@
 import { FullyKioskRestClient } from '#adapters/devices/FullyKioskRestClient.mjs';
 import { AdbAdapter } from '#adapters/devices/AdbAdapter.mjs';
 import { RetroArchPlayObservationSource } from '#adapters/gaming/RetroArchPlayObservationSource.mjs';
+import { RetroArchSessionLogReader } from '#adapters/gaming/RetroArchSessionLogReader.mjs';
 import { EventBusPlaySessionAnnouncer } from '#adapters/eventbus/EventBusPlaySessionAnnouncer.mjs';
 import { YamlPlaySessionDatastore } from '#adapters/persistence/yaml/YamlPlaySessionDatastore.mjs';
 import { YamlPlayIntentDatastore } from '#adapters/persistence/yaml/YamlPlayIntentDatastore.mjs';
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
 import { RecordPlayObservation } from '#apps/gaming/usecases/RecordPlayObservation.mjs';
 import { ReconcileOpenSessions } from '#apps/gaming/usecases/ReconcileOpenSessions.mjs';
+import { ReconcilePlaySessions } from '#apps/gaming/usecases/ReconcilePlaySessions.mjs';
+import { PlayObservationWatchdog } from '#apps/gaming/runtime/PlayObservationWatchdog.mjs';
 import { PlaySessionTracker } from '#apps/gaming/runtime/PlaySessionTracker.mjs';
 
 const DEFAULT_INTERVAL_MS = 10_000;
@@ -33,6 +36,27 @@ const TRUSTED_GAP_FACTOR = 2.5;
  *  restart, so startup settles it as lost rather than leaving it open. */
 const STALE_AFTER_FACTOR = 6;
 const CONSOLE_SURFACE = 'console-emulator';
+/** Where the emulator keeps its per-session logs. Overridable per household. */
+const DEFAULT_LOG_DIR = '/storage/emulated/0/RetroArch/logs';
+/** How far back startup reconciliation looks for sessions the meter never saw. */
+const RECONCILE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * ROM path → content identity, from the launcher catalog.
+ *
+ * The device's logs name the content by its file path, because that is what the
+ * emulator was handed. Turning that back into a content id is what lets a
+ * session recovered after a blind spot be attributed to an actual title.
+ */
+export function buildContentResolver(catalog) {
+  const byRom = new Map();
+  for (const [consoleId, games] of Object.entries(catalog?.games || {})) {
+    for (const game of games || []) {
+      if (game?.rom) byRom.set(game.rom, { contentId: `retroarch:${consoleId}/${game.id}`, title: game.title });
+    }
+  }
+  return (romPath) => byRom.get(romPath) || null;
+}
 
 /**
  * @param {Object} config
@@ -45,7 +69,7 @@ const CONSOLE_SURFACE = 'console-emulator';
  */
 export function createPlaySessionTracking(config) {
   const {
-    devicesConfig, gamesConfig, configService, eventBus, httpClient,
+    devicesConfig, gamesConfig, gamesCatalog = null, configService, eventBus, httpClient,
     intervalMs = DEFAULT_INTERVAL_MS,
     scheduler = new NodeApplicationScheduler(),
     now = () => new Date().toISOString(),
@@ -83,7 +107,7 @@ export function createPlaySessionTracking(config) {
     logger,
   });
 
-  const trackers = declared.map(([deviceId, device]) => {
+  const built = declared.map(([deviceId, device]) => {
     const content = device.content_control || {};
     const fallback = content.fallback || {};
     const password = content.password
@@ -107,11 +131,30 @@ export function createPlaySessionTracking(config) {
       kioskClient, adbAdapter, packageName, pollIntervalMs: intervalMs, logger,
     });
 
-    return new PlaySessionTracker({
+    const logReader = adbAdapter
+      ? new RetroArchSessionLogReader({
+        adbAdapter, logDir: gamesConfig?.source?.logs_path || DEFAULT_LOG_DIR, logger,
+      })
+      : null;
+
+    const tracker = new PlaySessionTracker({
       devices: [{ deviceId, surface: CONSOLE_SURFACE }],
       observationSource, intents, recordObservation,
       intervalMs, scheduler, now, logger,
     });
+    return { deviceId, tracker, logReader };
+  });
+
+  const trackers = built.map((b) => b.tracker);
+
+  const resolveContent = buildContentResolver(gamesCatalog);
+  const watchdog = new PlayObservationWatchdog({
+    trackers,
+    scheduler,
+    now,
+    staleAfterMs: intervalMs * STALE_AFTER_FACTOR,
+    intervalMs: intervalMs * 3,
+    logger,
   });
 
   logger.info?.('play.tracking.configured', {
@@ -143,9 +186,29 @@ export function createPlaySessionTracking(config) {
         // settlement is recoverable, a meter that never starts is not.
         logger.error?.('play.tracking.reconcile_failed', { error: error.message });
       }
+      // Compare what the device recorded against what we saw. This never
+      // invents billable time — it surfaces sessions the meter missed and
+      // repairs attribution it could not determine live.
+      for (const { deviceId, logReader } of built) {
+        if (!logReader) continue;
+        try {
+          const found = await new ReconcilePlaySessions({
+            sessions, logReader, resolveContent, logger,
+          }).execute({ deviceId, since: new Date(Date.parse(now()) - RECONCILE_WINDOW_MS).toISOString() });
+          if (found.unrecorded.length || found.enriched.length) {
+            logger.info?.('play.tracking.device_reconciled', {
+              deviceId, unrecorded: found.unrecorded.length, enriched: found.enriched.length,
+            });
+          }
+        } catch (error) {
+          logger.warn?.('play.tracking.device_reconcile_failed', { deviceId, error: error.message });
+        }
+      }
+
       trackers.forEach((t) => t.start());
+      watchdog.start();
     },
-    stop() { trackers.forEach((t) => t.stop()); },
+    stop() { watchdog.stop(); trackers.forEach((t) => t.stop()); },
   };
 }
 

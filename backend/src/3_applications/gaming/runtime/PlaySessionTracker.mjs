@@ -104,9 +104,13 @@ export class PlaySessionTracker {
         grantRef: intent?.grantRef ?? null,
         observation,
       });
-      this.#mark(deviceId, { state: observation?.state ?? null, error: null });
+      this.#mark(deviceId, {
+        state: observation?.state ?? null,
+        degraded: observation?.degraded === true,
+        error: null,
+      });
     } catch (error) {
-      this.#mark(deviceId, { state: null, error: error.message });
+      this.#mark(deviceId, { state: null, degraded: false, error: error.message });
       this.#logger.warn?.('play.tracker.device_failed', { deviceId, error: error.message });
     } finally {
       this.#inFlight.delete(deviceId);
@@ -126,11 +130,14 @@ export class PlaySessionTracker {
     return intent;
   }
 
-  #mark(deviceId, { state, error }) {
+  #mark(deviceId, { state, degraded, error }) {
     const previous = this.#health.get(deviceId) || { consecutiveErrors: 0 };
     this.#health.set(deviceId, {
       lastTickAt: this.#now(),
       lastState: state,
+      // True when the observation reached us but could not confirm
+      // playing-versus-paused — a measurably worse meter, not a failure.
+      degraded: degraded === true,
       lastError: error,
       consecutiveErrors: error ? previous.consecutiveErrors + 1 : 0,
     });
@@ -140,7 +147,7 @@ export class PlaySessionTracker {
   getHealth() {
     return this.#devices.map(({ deviceId }) => ({
       deviceId,
-      ...(this.#health.get(deviceId) || { lastTickAt: null, lastState: null, lastError: null, consecutiveErrors: 0 }),
+      ...(this.#health.get(deviceId) || { lastTickAt: null, lastState: null, degraded: false, lastError: null, consecutiveErrors: 0 }),
     }));
   }
 }
