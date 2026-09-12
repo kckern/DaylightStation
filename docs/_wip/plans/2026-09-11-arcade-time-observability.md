@@ -867,7 +867,7 @@ while. `[x]` is built and tested; `[ ]` is not started.
 |---|---|---|
 | `[ ]` | **T28 Fleet visibility** — verify play sessions render correctly in the existing device view | Via T37; no new view (7.3) |
 | `[ ]` | **T29 Session history / audit view** — because played time became money | |
-| `[ ]` | **T30 Reference documentation** — endstate, present tense, under `docs/reference/`, plus the navigation table | |
+| `[x]` | **T30 Reference documentation** — endstate, present tense, under `docs/reference/`, plus the navigation table | |
 | `[x]` | **T31 Retire the stale launcher config twin** — `gaming/retroarch/config.yml` reads as live and is not (3.10) | Independent of this feature; found en route |
 
 ### Tasks added by Section 9
