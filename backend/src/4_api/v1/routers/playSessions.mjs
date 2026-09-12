@@ -14,7 +14,7 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
  * surface is not a special case; it is simply an observation with better
  * confidence. That is what keeps one meter behind both kinds of play surface.
  */
-export function createPlaySessionsRouter({ recordObservation = null, sessions = null, trackers = [], watchdog = null, grantLedger = null, grantPlayTime = null, checkEligibility = null, logger = console }) {
+export function createPlaySessionsRouter({ recordObservation = null, sessions = null, trackers = [], watchdog = null, grantLedger = null, grantPlayTime = null, checkEligibility = null, summarisePlayUsage = null, logger = console }) {
   const router = express.Router();
 
   /**
@@ -143,6 +143,34 @@ export function createPlaySessionsRouter({ recordObservation = null, sessions = 
     } catch (error) {
       logger.error?.('play.api.grants_failed', { userId: req.params.userId, error: error.message });
       return sendInternalError(res, { error: 'Failed to read play grants' });
+    }
+  });
+
+  /**
+   * GET /usage?since=&until= — the usage ledger, rolled up.
+   *
+   * This is the monitoring surface: who played, what, for how long, on which
+   * day, across every device. It exists so usage can be WATCHED before any
+   * policy is written against it — you cannot set a sensible limit on a number
+   * you have never seen.
+   *
+   * Reports PLAYED time, not the span a game was open. Those differ by whatever
+   * was spent paused or idle at a title screen, and the difference is often most
+   * of it, so a limit set against wall-clock would be a very different limit
+   * from the one intended.
+   */
+  router.get('/usage', async (req, res) => {
+    if (!summarisePlayUsage) return res.status(503).json({ error: 'Play-session recording is not configured' });
+    const since = req.query.since || new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+    const until = req.query.until || null;
+    if (Number.isNaN(Date.parse(since)) || (until && Number.isNaN(Date.parse(until)))) {
+      return res.status(400).json({ error: 'since and until must be ISO instants' });
+    }
+    try {
+      return res.json(await summarisePlayUsage.execute({ since, until }));
+    } catch (error) {
+      logger.error?.('play.api.usage_failed', { error: error.message });
+      return sendInternalError(res, { error: 'Failed to read play usage' });
     }
   });
 

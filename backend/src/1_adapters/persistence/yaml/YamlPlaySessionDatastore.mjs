@@ -113,6 +113,46 @@ export class YamlPlaySessionDatastore extends IPlaySessionRepository {
     return out.sort((a, b) => String(a.startedAt).localeCompare(String(b.startedAt)));
   }
 
+  /**
+   * Every recorded session in a window, across all devices — the usage ledger.
+   *
+   * Reads only the day files the window spans, so a month-wide question costs
+   * thirty small reads rather than a scan. Sessions still open are included:
+   * "what happened today" that silently omits the game running right now would
+   * be a strange kind of record.
+   */
+  async listSince(sinceIso, untilIso = null, { householdId = null } = {}) {
+    const since = Date.parse(sinceIso);
+    if (!Number.isFinite(since)) return [];
+    const until = Number.isFinite(Date.parse(untilIso)) ? Date.parse(untilIso) : Date.now();
+
+    const out = [];
+    const seen = new Set();
+    const day = 24 * 60 * 60 * 1000;
+    for (let t = since; t <= until + day; t += day) {
+      const iso = new Date(t).toISOString().slice(0, 10);
+      const rows = loadYamlSafe(this.#historyPath(iso, householdId)) || [];
+      for (const row of rows) {
+        if (!row?.id || seen.has(row.id)) continue;
+        const at = Date.parse(row.startedAt || row.endedAt || 0);
+        if (!Number.isFinite(at) || at < since || at > until) continue;
+        seen.add(row.id);
+        try { out.push(PlaySession.fromSnapshot(row)); } catch { /* skip unreadable row */ }
+      }
+    }
+
+    // Include anything still open, so today's record is not missing the game
+    // currently on screen.
+    for (const deviceId of await this.listTrackedDeviceIds({ householdId })) {
+      const current = await this.findCurrentForDevice(deviceId, { householdId });
+      if (!current || seen.has(current.id)) continue;
+      const at = Date.parse(current.startedAt || 0);
+      if (Number.isFinite(at) && at >= since && at <= until) out.push(current);
+    }
+
+    return out.sort((a, b) => String(a.startedAt).localeCompare(String(b.startedAt)));
+  }
+
   /** Every device we have ever tracked — the input to startup reconciliation. */
   async listTrackedDeviceIds({ householdId = null } = {}) {
     const entries = listEntries(path.join(this.#root(householdId), 'current')) || [];
