@@ -29,6 +29,8 @@ import { RoleBasedPlayGrants } from '#adapters/gaming/RoleBasedPlayGrants.mjs';
 import { LedgerPlayTimeGrants } from '#adapters/gaming/LedgerPlayTimeGrants.mjs';
 import { YamlPlayGrantLedger } from '#adapters/persistence/yaml/YamlPlayGrantLedger.mjs';
 import { GrantPlayTime } from '#apps/gaming/usecases/GrantPlayTime.mjs';
+import { CheckPlayEligibility } from '#apps/gaming/usecases/CheckPlayEligibility.mjs';
+import { AndroidControllerProbe } from '#adapters/devices/AndroidControllerProbe.mjs';
 import { HomeAssistantPlayAlert } from '#adapters/devices/HomeAssistantPlayAlert.mjs';
 import { EnforcePlayBudget } from '#apps/gaming/usecases/EnforcePlayBudget.mjs';
 import { YamlPlaySessionDatastore } from '#adapters/persistence/yaml/YamlPlaySessionDatastore.mjs';
@@ -84,7 +86,7 @@ export function createPlaySessionTracking(config) {
   const {
     devicesConfig, gamesConfig, gamesCatalog = null, configService, eventBus, httpClient,
     daylightHost = null, overlayPath = '/arcade-film.html',
-    grants = null, haGateway = null, profileFor = null,
+    grants = null, haGateway = null, profileFor = null, assertionsFor = null,
     intervalMs = DEFAULT_INTERVAL_MS,
     scheduler = new NodeApplicationScheduler(),
     now = () => new Date().toISOString(),
@@ -97,7 +99,7 @@ export function createPlaySessionTracking(config) {
 
   if (declared.length === 0) {
     logger.info?.('play.tracking.none_declared', {});
-    return { trackers: [], sessions: null, intents: null, recordObservation: null, watchdog: null, grantLedger: null, grantPlayTime: null, async start() {}, stop() {} };
+    return { trackers: [], sessions: null, intents: null, recordObservation: null, watchdog: null, grantLedger: null, grantPlayTime: null, checkEligibility: null, async start() {}, stop() {} };
   }
 
   const packageName = gamesConfig?.launch?.package;
@@ -107,7 +109,7 @@ export function createPlaySessionTracking(config) {
     logger.warn?.('play.tracking.no_launch_package', {
       devices: declared.map(([id]) => id),
     });
-    return { trackers: [], sessions: null, intents: null, recordObservation: null, watchdog: null, grantLedger: null, grantPlayTime: null, async start() {}, stop() {} };
+    return { trackers: [], sessions: null, intents: null, recordObservation: null, watchdog: null, grantLedger: null, grantPlayTime: null, checkEligibility: null, async start() {}, stop() {} };
   }
 
   const sessions = new YamlPlaySessionDatastore({ configService, logger });
@@ -163,6 +165,7 @@ export function createPlaySessionTracking(config) {
   const grantPlayTime = grantLedger ? new GrantPlayTime({ ledger: grantLedger, logger }) : null;
 
   const adbByDevice = new Map();
+  const controllerProbes = new Map();
   const enforcement = new EnforcePlayBudget({
     // Adults play without a ceiling; everyone else plays the time on their
     // ledger, and nothing at all if none was granted. Where granted time came
@@ -229,7 +232,10 @@ export function createPlaySessionTracking(config) {
       kioskClient, adbAdapter, packageName, pollIntervalMs: intervalMs, logger,
     });
 
-    if (adbAdapter) adbByDevice.set(deviceId, adbAdapter);
+    if (adbAdapter) {
+      adbByDevice.set(deviceId, adbAdapter);
+      controllerProbes.set(deviceId, new AndroidControllerProbe({ adbAdapter, logger }));
+    }
 
     const logReader = adbAdapter
       ? new RetroArchSessionLogReader({
@@ -274,9 +280,25 @@ export function createPlaySessionTracking(config) {
   const reconcile = new ReconcileOpenSessions({ sessions, announcer, logger });
   const deviceIds = declared.map(([id]) => id);
 
+  // Eligibility: may play BEGIN? Rules live in configuration and in state-gate
+  // assertions, never here. Absent inputs are permissive; a device the meter
+  // cannot see is the one thing that refuses.
+  const checkEligibility = new CheckPlayEligibility({
+    policyFor: () => gamesConfig?.play_policy || {},
+    assertionsFor,
+    isBlocked: (deviceId) => watchdog.isBlocked(deviceId),
+    controllersFor: async (deviceId) => {
+      const probe = controllerProbes.get(deviceId);
+      const census = probe ? await probe.census() : null;
+      return census?.connected ?? null;
+    },
+    logger,
+  });
+
   return {
     trackers,
     sessions,
+    checkEligibility,
     intents,
     // Exposed so the HTTP surface can feed self-reporting play surfaces into the
     // same use case the polled source uses.
