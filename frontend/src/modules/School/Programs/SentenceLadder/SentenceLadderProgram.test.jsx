@@ -1303,10 +1303,15 @@ describe('the typing surface', () => {
 
     typeJamo(input, 'dhs');
     expect(input.value).toBe('온');
-    // Nothing has COMMITTED, so no column has moved off blind and none is
-    // wrong. The model is not in the DOM in either state.
-    expect(col(0).className).toContain('is-blind');
+    // Nothing has COMMITTED, so the live column has not moved and nothing is
+    // wrong — 온 is unfinished, not incorrect. It stays column 0's pending
+    // answer and the caret stays with it. The model is not in the DOM in
+    // either state: the learner sees their own keystrokes and nothing else.
+    expect(col(0).className).toContain('is-current');
     expect(col(0).className).not.toContain('is-wrong');
+    expect(answer(0)).toBe('온');
+    expect(col(1).className).toContain('is-blind');
+    expect(document.querySelector('.lang-strip').textContent).toBe('온');
 
     typeJamo(input, 'mf');
     expect(input.value).toBe('오늘');
