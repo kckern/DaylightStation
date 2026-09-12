@@ -248,6 +248,9 @@ export function createCrtRenderer({
   let preFilter = { ...DEFAULT_PRE_FILTER, ...(preFilterInput || {}) };
   let scale = renderScale;
   let view = { x: 0, y: 0, w: 0, h: 0 };
+  // Source dimensions `view` was computed from; see drawFrame.
+  let viewSrcW = 0;
+  let viewSrcH = 0;
   let frameCount = 0;
   const frameStats = createCrtFrameStats();
   let running = false;
@@ -288,7 +291,9 @@ export function createCrtRenderer({
     const py = Math.max(1, Math.round(rect.height * dpr * scale));
     if (canvas.width !== px) canvas.width = px;
     if (canvas.height !== py) canvas.height = py;
-    view = fitContain(video.videoWidth, video.videoHeight, px, py);
+    viewSrcW = video.videoWidth;
+    viewSrcH = video.videoHeight;
+    view = fitContain(viewSrcW, viewSrcH, px, py);
   }
 
   function runPreFilter(vw, vh) {
@@ -333,7 +338,11 @@ export function createCrtRenderer({
     const vh = video.videoHeight;
     if (!vw || !vh || video.readyState < 2) return false;
 
-    if (view.w === 0 || canvas.width === 0) resize();
+    // Recompute the letterbox when the SOURCE's intrinsic size changes, not only
+    // when the output canvas does: an adaptive stream that switches resolution
+    // mid-play keeps a `view` measured from the old frame size, and `loadedmetadata`
+    // does not fire again for it.
+    if (view.w === 0 || canvas.width === 0 || vw !== viewSrcW || vh !== viewSrcH) resize();
 
     gl.bindTexture(gl.TEXTURE_2D, srcTexture);
     try {
