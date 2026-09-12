@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   RUNGS, RUNG_IDS, ROLES, rungById, resolveRole,
-  requirementFor, chainFor, nextRung, graduationEdges, creditChain,
+  requirementFor, satisfiesRequirement, chainFor, nextRung, graduationEdges, creditChain,
 } from './ladder.mjs';
 
 const KOREAN = { source: 'EN', target: 'KR' };
@@ -47,13 +47,54 @@ describe('requirementFor', () => {
   it('distinguishes the two typing rungs by script', () => {
     // The whole reason textInput is per-language and not a boolean.
     expect(requirementFor(rungById('dictation'), KOREAN))
-      .toEqual({ kind: 'textInput', language: 'KR' });
+      .toEqual({ anyOf: [{ kind: 'textInput', language: 'KR' }] });
     expect(requirementFor(rungById('interpretation'), KOREAN))
-      .toEqual({ kind: 'textInput', language: 'EN' });
+      .toEqual({ anyOf: [{ kind: 'textInput', language: 'EN' }] });
   });
 
   it('maps an audio response to the microphone', () => {
-    expect(requirementFor(rungById('recording'), KOREAN)).toEqual({ kind: 'microphone' });
+    expect(requirementFor(rungById('recording'), KOREAN))
+      .toEqual({ anyOf: [{ kind: 'microphone' }] });
+  });
+
+  it('offers the microphone as an ALTERNATIVE to typing the interpretation', () => {
+    // The payoff of the spoken answer: the child says the English, it is
+    // transcribed into the field, and the requirement is met without a key.
+    expect(requirementFor(rungById('interpretation'), KOREAN, { voiceAnswer: true }))
+      .toEqual({ anyOf: [{ kind: 'textInput', language: 'EN' }, { kind: 'microphone' }] });
+  });
+
+  it('does NOT open dictation to a spoken answer', () => {
+    // Speaking the Korean that was just played back is repetition — a rung
+    // that already exists. Accepting it as dictation would credit listening
+    // as writing and quietly delete the only rung that practises the script.
+    expect(requirementFor(rungById('dictation'), KOREAN, { voiceAnswer: true }))
+      .toEqual({ anyOf: [{ kind: 'textInput', language: 'KR' }] });
+  });
+
+  it('ignores the spoken alternative where the server cannot transcribe', () => {
+    expect(requirementFor(rungById('interpretation'), KOREAN, { voiceAnswer: false }))
+      .toEqual({ anyOf: [{ kind: 'textInput', language: 'EN' }] });
+  });
+});
+
+describe('satisfiesRequirement', () => {
+  it('is met by ANY ONE alternative, not all of them', () => {
+    const need = requirementFor(rungById('interpretation'), KOREAN, { voiceAnswer: true });
+    expect(satisfiesRequirement({ microphone: true, textInput: [] }, need)).toBe(true);
+    expect(satisfiesRequirement({ microphone: false, textInput: ['EN'] }, need)).toBe(true);
+    expect(satisfiesRequirement({ microphone: false, textInput: ['KR'] }, need)).toBe(false);
+  });
+
+  it('treats a requirement of nothing as met', () => {
+    expect(satisfiesRequirement({}, null)).toBe(true);
+    expect(satisfiesRequirement({}, undefined)).toBe(true);
+  });
+
+  it('refuses a textInput alternative that names no language', () => {
+    // A corpus with an unbound role must not resolve to "any keyboard will do".
+    expect(satisfiesRequirement({ textInput: ['EN', 'KR'] }, { anyOf: [{ kind: 'textInput', language: null }] }))
+      .toBe(false);
   });
 });
 
@@ -72,6 +113,23 @@ describe('chainFor', () => {
   it('drops the recording rung when there is no microphone', () => {
     const chain = chainFor({ microphone: false, textInput: ['EN', 'KR'] }, KOREAN);
     expect(chain).toEqual(['repetition', 'dictation', 'interpretation']);
+  });
+
+  it('offers interpretation to a mic-only panel where the server can transcribe', () => {
+    // The Portal with no keyboard evidence. Before the spoken answer this
+    // device was told to go elsewhere for every rung but repetition.
+    const micOnly = { microphone: true, textInput: [] };
+    expect(chainFor(micOnly, KOREAN, { voiceAnswer: true }))
+      .toEqual(['repetition', 'recording', 'interpretation']);
+  });
+
+  it('does NOT offer it on a server that cannot transcribe', () => {
+    // The dead end this filter exists to prevent: a rung with no way in and
+    // no way past. Without an AI gateway the microphone answers nothing.
+    const micOnly = { microphone: true, textInput: [] };
+    expect(chainFor(micOnly, KOREAN, { voiceAnswer: false }))
+      .toEqual(['repetition', 'recording']);
+    expect(chainFor(micOnly, KOREAN)).toEqual(['repetition', 'recording']);
   });
 
   it('leaves only repetition on a bare touch panel', () => {

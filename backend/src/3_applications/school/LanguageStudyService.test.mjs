@@ -246,7 +246,7 @@ describe('getDay', () => {
       capabilities: { microphone: true, textInput: ['EN'] },
     });
     expect(day.missingCreditRungs).toEqual(['dictation']);
-    expect(day.missingCreditNeeds.dictation).toEqual({ kind: 'textInput', language: 'KR' });
+    expect(day.missingCreditNeeds.dictation).toEqual({ anyOf: [{ kind: 'textInput', language: 'KR' }] });
     // A rung this device CAN climb is not in the map at all.
     expect(day.missingCreditNeeds).not.toHaveProperty('recording');
   });
@@ -258,7 +258,7 @@ describe('getDay', () => {
       capabilities: { microphone: false, textInput: ['EN', 'KR'] },
     });
     expect(day.missingCreditRungs).toEqual(['recording']);
-    expect(day.missingCreditNeeds.recording).toEqual({ kind: 'microphone' });
+    expect(day.missingCreditNeeds.recording).toEqual({ anyOf: [{ kind: 'microphone' }] });
   });
 
   // The only case with TWO rungs blocked at once, which is the one way a
@@ -278,9 +278,77 @@ describe('getDay', () => {
     });
     expect(day.missingCreditRungs).toEqual(['dictation', 'recording']);
     expect(day.missingCreditNeeds).toEqual({
-      dictation: { kind: 'textInput', language: 'KR' },
-      recording: { kind: 'microphone' },
+      dictation: { anyOf: [{ kind: 'textInput', language: 'KR' }] },
+      recording: { anyOf: [{ kind: 'microphone' }] },
     });
+  });
+
+  /**
+   * THE PANEL WITH A MICROPHONE AND NO KEYBOARD.
+   *
+   * Until interpretation accepted a spoken answer this device was told to go
+   * elsewhere for three of the four rungs. It can now translate out loud —
+   * but only where the server can actually transcribe, which is a deployment
+   * fact and reaches the service from composition, never from the request.
+   */
+  const micOnly = { microphone: true, textInput: [] };
+
+  it('offers interpretation to a keyboard-less panel where speech can be transcribed', () => {
+    svc = makeService(ds, AT, { ...fullLadder(), voiceAnswer: true });
+    const day = svc.getDay({
+      userId: 'test-learner', corpusId: 'test-korean', capabilities: micOnly,
+    });
+    expect(day.chain).toEqual(['repetition', 'recording', 'interpretation']);
+    expect(day.missingCreditRungs).toEqual(['dictation']);
+    expect(day.missingCreditNeeds).not.toHaveProperty('interpretation');
+  });
+
+  it('does NOT offer it where the household has no AI gateway', () => {
+    // The dead end the chain filter exists to prevent, reintroduced by the
+    // change meant to open the rung up: a rung with no way in and no way past.
+    svc = makeService(ds, AT, fullLadder());
+    const day = svc.getDay({
+      userId: 'test-learner', corpusId: 'test-korean', capabilities: micOnly,
+    });
+    expect(day.chain).toEqual(['repetition', 'recording']);
+    expect(day.missingCreditRungs).toEqual(['dictation', 'interpretation']);
+    expect(day.missingCreditNeeds.interpretation)
+      .toEqual({ anyOf: [{ kind: 'textInput', language: 'EN' }] });
+  });
+
+  it('names BOTH ways through a rung that is short of both', () => {
+    svc = makeService(ds, AT, { ...fullLadder(), voiceAnswer: true });
+    const day = svc.getDay({
+      userId: 'test-learner', corpusId: 'test-korean',
+      capabilities: { microphone: false, textInput: ['KR'] },
+    });
+    expect(day.missingCreditNeeds.interpretation).toEqual({
+      anyOf: [{ kind: 'textInput', language: 'EN' }, { kind: 'microphone' }],
+    });
+  });
+
+  it('marks the queue entry that accepts a spoken answer, and only that one', () => {
+    // The client must not keep its own list of which rungs may be spoken —
+    // that second copy is what this whole change exists to delete. Dictation
+    // is typing the target script: a spoken answer there is repetition.
+    svc = makeService(ds, AT, { ...fullLadder(), voiceAnswer: true });
+    const day = svc.getDay({
+      userId: 'test-learner', corpusId: 'test-korean',
+      capabilities: { microphone: true, textInput: ['EN', 'KR'] },
+    });
+    const byRung = Object.fromEntries(day.queue.map((e) => [e.rung, e.spokenAnswer]));
+    expect(byRung.interpretation).toBe(true);
+    expect(byRung.dictation).toBe(false);
+    expect(byRung.repetition).toBe(false);
+  });
+
+  it('marks nothing spoken where the server cannot transcribe', () => {
+    svc = makeService(ds, AT, fullLadder());
+    const day = svc.getDay({
+      userId: 'test-learner', corpusId: 'test-korean',
+      capabilities: { microphone: true, textInput: ['EN', 'KR'] },
+    });
+    expect(day.queue.every((e) => e.spokenAnswer === false)).toBe(true);
   });
 });
 

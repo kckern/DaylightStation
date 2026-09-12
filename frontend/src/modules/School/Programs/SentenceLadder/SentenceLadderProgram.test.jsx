@@ -152,7 +152,11 @@ function dayPayload({
       day,
       dailyLimit,
       chain,
-      queue,
+      // The server marks each entry itself — interpretation only, and only
+      // where it can transcribe. Stamped here the way `#decorate` stamps it so
+      // no test has to know which rungs may be spoken. An entry that says so
+      // explicitly wins.
+      queue: queue.map((e) => ({ spokenAnswer: voiceAnswer && e.rung === 'interpretation', ...e })),
       summary: { total: queue.length, done, byRung: {} },
       missingCreditRungs,
       missingCreditNeeds,
@@ -330,7 +334,7 @@ describe('the day', () => {
       chain: ['repetition'],
       queue: [entry(1, 'repetition')],
       missingCreditRungs: ['recording'],
-      missingCreditNeeds: { recording: { kind: 'microphone' } },
+      missingCreditNeeds: { recording: { anyOf: [{ kind: 'microphone' }] } },
     }));
     const { container } = render(
       <SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />,
@@ -345,7 +349,7 @@ describe('the day', () => {
       chain: ['repetition', 'recording'],
       queue: [entry(1, 'repetition'), entry(2, 'recording')],
       missingCreditRungs: ['recording'],
-      missingCreditNeeds: { recording: { kind: 'microphone' } },
+      missingCreditNeeds: { recording: { anyOf: [{ kind: 'microphone' }] } },
     }));
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByText('Repetition');
@@ -363,7 +367,7 @@ describe('the day', () => {
       chain: ['repetition', 'interpretation'],
       queue: [entry(1, 'repetition'), entry(2, 'interpretation')],
       missingCreditRungs: ['dictation'],
-      missingCreditNeeds: { dictation: { kind: 'textInput', language: 'KR' } },
+      missingCreditNeeds: { dictation: { anyOf: [{ kind: 'textInput', language: 'KR' }] } },
     }));
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByText('Repetition');
@@ -376,7 +380,7 @@ describe('the day', () => {
       chain: ['repetition', 'dictation'],
       queue: [entry(1, 'repetition'), entry(2, 'dictation')],
       missingCreditRungs: ['recording'],
-      missingCreditNeeds: { recording: { kind: 'microphone' } },
+      missingCreditNeeds: { recording: { anyOf: [{ kind: 'microphone' }] } },
     }));
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByText('Repetition');
@@ -391,12 +395,64 @@ describe('the day', () => {
       missingCreditRungs: ['dictation'],
       // `resolveRole` yields null for a corpus whose languages map is missing
       // the rung's role, and the requirement object around it is still truthy.
-      missingCreditNeeds: { dictation: { kind: 'textInput', language: null } },
+      missingCreditNeeds: { dictation: { anyOf: [{ kind: 'textInput', language: null }] } },
     }));
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByText('Repetition');
     expect(screen.getByText('Not available on this device')).toBeTruthy();
     expect(screen.queryByText(/null/i)).toBeNull();
+  });
+
+  /**
+   * A rung short of ALTERNATIVES. Interpretation may be typed in English OR
+   * spoken and transcribed, so a device short of both must name both — and
+   * must never list them as though a child needed to find both.
+   */
+  it('says "or" when either of two things would unblock the rung', async () => {
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['repetition'],
+      queue: [entry(1, 'repetition')],
+      missingCreditRungs: ['interpretation'],
+      missingCreditNeeds: {
+        interpretation: { anyOf: [{ kind: 'textInput', language: 'EN' }, { kind: 'microphone' }] },
+      },
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />);
+    await screen.findByText('Repetition');
+    expect(screen.getByText('Needs an English keyboard or a microphone — on another device')).toBeTruthy();
+    expect(screen.queryByText(/and a microphone/)).toBeNull();
+  });
+
+  it('drops an alternative it cannot name rather than printing half a sentence', async () => {
+    // The null-language payload again, now beside a real alternative: the
+    // unprintable half goes, the true half stays, and the child is told
+    // something they can act on instead of "Needs a null keyboard or …".
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['repetition'],
+      queue: [entry(1, 'repetition')],
+      missingCreditRungs: ['interpretation'],
+      missingCreditNeeds: {
+        interpretation: { anyOf: [{ kind: 'textInput', language: null }, { kind: 'microphone' }] },
+      },
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />);
+    await screen.findByText('Repetition');
+    expect(screen.getByText('Needs a microphone — on another device')).toBeTruthy();
+    expect(screen.queryByText(/null/i)).toBeNull();
+  });
+
+  it('still reads a requirement from a server that predates alternatives', async () => {
+    // A bare `{kind}` with no `anyOf` — an older server, or a truncated
+    // payload. The card is the last place that may go blank.
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['repetition'],
+      queue: [entry(1, 'repetition')],
+      missingCreditRungs: ['recording'],
+      missingCreditNeeds: { recording: { kind: 'microphone' } },
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />);
+    await screen.findByText('Repetition');
+    expect(screen.getByText(/Needs a microphone/)).toBeTruthy();
   });
 
   it('draws the rung a mic-less device skips even when the chain omits it', async () => {
@@ -954,7 +1010,7 @@ describe('what the store can answer afterwards', () => {
       chain: ['repetition'],
       queue: [entry(1, 'repetition')],
       missingCreditRungs: ['dictation'],
-      missingCreditNeeds: { dictation: { kind: 'textInput', language: 'KR' } },
+      missingCreditNeeds: { dictation: { anyOf: [{ kind: 'textInput', language: 'KR' }] } },
     }));
     const { rerender } = render(
       <SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />,
@@ -968,6 +1024,27 @@ describe('what the store can answer afterwards', () => {
     // A rendered STATE, not an event: re-rendering it must not say it again.
     rerender(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     expect(capabilityLogMock.mock.calls.filter(([d]) => d === 'rung-blocked')).toHaveLength(1);
+  });
+
+  it('keeps the blocked-rung token countable when a rung has two ways through', async () => {
+    // `stats by` on this field is how someone answers "which capability is
+    // blocking the most work". A token built from an unordered list would be
+    // a different string for the same situation and count as two things, so
+    // the alternatives are sorted and joined with a separator that groups.
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['repetition'],
+      queue: [entry(1, 'repetition')],
+      missingCreditRungs: ['interpretation'],
+      missingCreditNeeds: {
+        interpretation: { anyOf: [{ kind: 'textInput', language: 'EN' }, { kind: 'microphone' }] },
+      },
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />);
+    await screen.findByText(/English keyboard or a microphone/);
+    expect(capabilityLogMock).toHaveBeenCalledWith('rung-blocked', {
+      corpus: 'glossika-korean', day: 1, rungs: ['interpretation'],
+      needs: { interpretation: 'microphone|textInput:EN' },
+    });
   });
 
   it('records the extra-practice banner it shows the child', async () => {
@@ -2252,6 +2329,18 @@ describe('a spoken answer, end to end', () => {
     }));
     render(<SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />);
     await screen.findByLabelText(/Type what it means/i);
+    expect(screen.queryByRole('button', { name: 'Say the answer' })).toBeNull();
+  });
+
+  it('draws no microphone on DICTATION, whatever the server can transcribe', async () => {
+    // Speaking the Korean back is the repetition rung wearing a microphone.
+    // The rung that exists to practise the script must not offer a way past it.
+    withMic();
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['dictation'], queue: [entry(1, 'dictation')], voiceAnswer: true,
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />);
+    await screen.findByLabelText(/Type what you hear/i);
     expect(screen.queryByRole('button', { name: 'Say the answer' })).toBeNull();
   });
 

@@ -29,7 +29,7 @@ const IDLE_AFTER_DAYS = 14;
 const TREND_BUCKETS = 12;
 
 export class SentenceLadderService {
-  #ds; #logger; #now; #timezone; #boundaryHour; #readGate; #readProgramEnrollment; #realtime;
+  #ds; #logger; #now; #timezone; #boundaryHour; #readGate; #readProgramEnrollment; #realtime; #voiceAnswer;
   #corpusCache = new Map();
   // Which suppression reasons have already been announced this process. At
   // most one line per reason: the guard below runs on every saved attempt, so
@@ -47,6 +47,21 @@ export class SentenceLadderService {
     readGate = null,
     readProgramEnrollment = null,
     realtime = null,
+    /**
+     * Whether this DEPLOYMENT can turn speech into text, which is what makes
+     * a microphone an alternative to typing the interpretation.
+     *
+     * A constructor argument, not a request field and not part of
+     * `capabilities`: capabilities are whatever the client declares (they
+     * arrive in a query string), so a client able to assert the transcriber
+     * into existence would be handed a rung it cannot enter and cannot leave.
+     * Composition derives it from the one transcription service the router
+     * also gets, so the chain and the drawn microphone cannot disagree.
+     *
+     * Defaults to false. A composition that forgets it offers one rung fewer,
+     * which degrades; the other way round dead-ends a child.
+     */
+    voiceAnswer = false,
   }) {
     this.#ds = datastore;
     this.#logger = logger;
@@ -56,6 +71,7 @@ export class SentenceLadderService {
     this.#readGate = readGate;
     this.#readProgramEnrollment = typeof readProgramEnrollment === 'function' ? readProgramEnrollment : null;
     this.#realtime = realtime;
+    this.#voiceAnswer = voiceAnswer === true;
   }
 
   /**
@@ -271,6 +287,7 @@ export class SentenceLadderService {
       playable: corpus.playable,
       admission: policy.admission,
       rungChain: policy.chain,
+      voiceAnswer: this.#voiceAnswer,
     });
 
     const now = this.#now();
@@ -290,9 +307,9 @@ export class SentenceLadderService {
     // dictation wanted was a Korean keyboard. `requirementFor` is the single
     // place that mapping lives; sending it beats letting the client keep a
     // second copy that drifts.
-    const deviceChain = chainFor(allowed, corpus.languages);
+    const deviceChain = chainFor(allowed, corpus.languages, { voiceAnswer: this.#voiceAnswer });
     const missing = policy.chain ? policy.chain.filter((rung) => !deviceChain.includes(rung)) : [];
-    const needs = missing.map((rung) => [rung, requirementFor(rungById(rung), corpus.languages)]);
+    const needs = missing.map((rung) => [rung, this.#requirementFor(rungById(rung), corpus)]);
 
     const chain = deviceChain.filter((rung) => !policy.chain || policy.chain.includes(rung));
 
@@ -350,13 +367,14 @@ export class SentenceLadderService {
       corpusSize: corpus.size, capabilities: allowed,
       languages: corpus.languages, playable: corpus.playable,
       admission: null, rungChain: null,
+      voiceAnswer: this.#voiceAnswer,
     });
     return {
       schema: 'school.sentence-ladder-guest-preview/v1',
       corpus: { id: corpus.id, label: corpus.label, languages: corpus.languages, size: corpus.size },
       day: 1,
       dailyLimit: DEFAULT_DAILY_LIMIT,
-      chain: chainFor(allowed, corpus.languages),
+      chain: chainFor(allowed, corpus.languages, { voiceAnswer: this.#voiceAnswer }),
       creditChain: creditChain(null, corpus.languages),
       // A preview DOES filter rungs by device capability — `allowed` reaches
       // `buildDayQueue` above — but it has no enrollment chain to fall short
@@ -374,6 +392,18 @@ export class SentenceLadderService {
   }
 
   /**
+   * This rung's requirement, bound to this corpus AND this deployment.
+   *
+   * One method so that the queue filter, the missing-credit map and the gate
+   * check cannot be given different answers to the same question — the last
+   * time two of them disagreed, a child was told to connect a keyboard for a
+   * rung that needs none.
+   */
+  #requirementFor(rung, corpus) {
+    return requirementFor(rung, corpus.languages, { voiceAnswer: this.#voiceAnswer });
+  }
+
+  /**
    * Attach everything a rung needs to render: the sentence text, and the
    * audio each prompt step should play — resolved from roles to concrete
    * language codes HERE, so no frontend component ever hardcodes EN or KR.
@@ -388,10 +418,21 @@ export class SentenceLadderService {
     const response = rung?.response
       ? { ...rung.response, language: resolveRole(rung.response.role, corpus.languages) }
       : null;
+    // Whether THIS rung will take a spoken answer, decided once here rather
+    // than by the client combining `day.voiceAnswer` with its own list of
+    // which rungs may be spoken. That second list is the thing this task
+    // exists to delete: the ladder says interpretation only — speaking the
+    // Korean back on dictation is the repetition rung wearing a mic — and a
+    // client keeping its own copy would drift from it the first time the
+    // ladder changed. The device's microphone is still the client's to know.
+    const spokenAnswer = response?.modality === 'text'
+      && (this.#requirementFor(rung, corpus)?.anyOf ?? [])
+        .some((alt) => alt.kind === 'microphone');
     return {
       seq: entry.seq,
       rung: entry.rung,
       done: entry.done,
+      spokenAnswer,
       text: sentence?.text ?? null,
       prompt,
       response,
@@ -561,7 +602,7 @@ export class SentenceLadderService {
     const rungDef = rungById(rung);
     const gate = this.#gate();
     const allowed = capabilitiesUnder(gate, capabilities);
-    if (!allowsRung(gate, requirementFor(rungDef, corpus.languages), allowed)) {
+    if (!allowsRung(gate, this.#requirementFor(rungDef, corpus), allowed)) {
       throw new GateClosedError(gateMessage(gate) || 'That is unavailable right now', gate);
     }
     const policy = this.#queuePolicy(userId, corpus, progress);
@@ -575,6 +616,7 @@ export class SentenceLadderService {
       playable: corpus.playable,
       admission: policy.admission,
       rungChain: policy.chain,
+      voiceAnswer: this.#voiceAnswer,
     });
     const due = queue.find((entry) => !entry.done && entry.seq === Number(seq) && entry.rung === rung) ?? null;
     if (!due) {
@@ -649,6 +691,7 @@ export class SentenceLadderService {
       playable: corpus.playable,
       admission: policy.admission,
       rungChain: policy.chain,
+      voiceAnswer: this.#voiceAnswer,
     });
 
     const now = this.#now();

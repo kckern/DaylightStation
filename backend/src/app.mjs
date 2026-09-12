@@ -3359,8 +3359,25 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     }),
     idFactory: crypto.randomUUID,
   });
+  // A SPOKEN ANSWER to the interpretation rung. Null without an AI gateway,
+  // and that is a supported configuration rather than a fault: the day then
+  // says `voiceAnswer: false`, the interpretation rung needs a keyboard after
+  // all, and typing is still the way through. The LANGUAGE profile, never the
+  // fitness one — that profile's cleanup pass repairs what it misheard, which
+  // pointed at a learner's translation would tidy a wrong answer into a right
+  // one.
+  //
+  // Built ONCE, here, because two things must agree about it: the service
+  // (which decides whether a keyboard-less panel is offered interpretation at
+  // all) and the router (which serves the transcribe route and tells the
+  // client whether to draw a microphone). Two constructions could differ.
+  const languageTranscription = createLanguageTranscriptionService({
+    openaiAdapter: sharedAiGateway,
+    logger: rootLogger.child({ module: 'school-language-transcription' }),
+  });
   const languageStudyService = createLanguageStudyService({
     datastore: new YamlLanguageStudyDatastore({ configService }),
+    languageTranscription,
     readProgramEnrollment: (learnerId, corpusId) => languageAssignments.readProgramEnrollment(learnerId, corpusId),
     // Through the factory, so the bus is adapted to School's realtime port
     // rather than handed over raw under an option name the service does not
@@ -4620,16 +4637,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const sentenceLadderRouter = createSentenceLadderRouter({ schoolErrors,
     languageStudyService,
     languageAudioResource,
-    // A SPOKEN ANSWER to the interpretation rung. Null without an AI gateway,
-    // and that is a supported configuration rather than a fault: the day then
-    // says `voiceAnswer: false`, the rung draws no microphone, and typing is
-    // still the way through. The LANGUAGE profile, never the fitness one —
-    // that profile's cleanup pass repairs what it misheard, which pointed at a
-    // learner's translation would tidy a wrong answer into a right one.
-    languageTranscription: createLanguageTranscriptionService({
-      openaiAdapter: sharedAiGateway,
-      logger: rootLogger.child({ module: 'school-language-transcription' }),
-    }),
+    // The same instance the study service was given above — see there.
+    languageTranscription,
     studyGrants: schoolStudyGrants,
     logger: rootLogger.child({ module: 'school-language-api' })
   });

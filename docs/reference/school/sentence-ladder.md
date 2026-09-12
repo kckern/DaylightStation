@@ -89,7 +89,29 @@ different corpus, not different code.
 | `repetition` | source, target, target | none — sat through | nothing |
 | `dictation` | target | target text | a keyboard for the target script |
 | `recording` | target | target audio | a microphone |
-| `interpretation` | target | source text | a keyboard for the source script |
+| `interpretation` | target | source text | a keyboard for the source script **or** a microphone |
+
+**A requirement is a set of alternatives, met by any one of them** — the
+payload shape is `{anyOf: [...]}` for every rung, including the three that have
+exactly one. Interpretation's second alternative is the spoken answer: the
+learner says the translation, it is transcribed into the field, and they read
+and edit it before submitting. The answer is still *text*; voice is an input
+method, and the attempt records which (`method: 'typed' | 'spoken'`).
+
+**Only interpretation.** Dictation is typing the target script from audio, so a
+spoken target answer there is the learner repeating what was just played —
+which is the repetition rung, already done. Accepting it as dictation would
+credit listening as writing and remove the only rung that practises the script.
+
+**The alternative exists only where the server can actually transcribe.** A
+household with no AI gateway has none, and the ladder is told so
+(`voiceAnswer`) as a separate input from `capabilities` — capabilities are
+declared by the client, down to a query string, and a client able to assert the
+transcriber into existence would be handed a rung with no way in and no way
+past. It reaches the study service from composition, from the same transcription
+service the router gets, so the offered rung and the drawn microphone cannot
+disagree. Each queue entry carries `spokenAnswer`, so the client never keeps its
+own list of which rungs may be spoken.
 
 Repetition plays the target twice on purpose. The first hearing is
 recognition; the pause before the second is where the learner speaks; the
@@ -137,9 +159,25 @@ the enrollment's list of rungs and is what decides whether a day is complete;
 a device never lowers the bar for credit. When a device cannot serve a credit
 rung, the surface says so on that rung, names the thing it lacks ("Needs a
 Korean keyboard", "Needs a microphone — on another device"), and the day is
-finished elsewhere. A rung with no reason falls back to "Not available on this
-device", and a requirement whose language cannot be named is never printed
-as "Needs a null keyboard".
+finished elsewhere. A rung short of *alternatives* names them with **or** —
+"Needs an English keyboard or a microphone" — never as though a child had to
+find both. A rung with no reason falls back to "Not available on this device",
+and a requirement whose language cannot be named is never printed as "Needs a
+null keyboard": that alternative is dropped, and the printable ones still tell
+the child what to do.
+
+The same requirement also reaches the log store as one short token per blocked
+rung (`microphone`, `textInput:KR`, `microphone|textInput:EN`) — sorted, so a
+rung with two ways through is one countable thing rather than two spellings of
+one situation. `stats by` on it answers which capability blocks the most work.
+
+**A keyboard-less panel with a microphone can now do interpretation**, which
+before this was one of three rungs it was sent elsewhere for. The access gate
+follows: a hindered gate withholds every keyboard, and the rung survives on its
+second alternative. The gate and the queue answer that question with the ladder's
+one predicate (`satisfiesRequirement`) — they used to hold a copy each, and the
+copies drifted into telling a child to connect a keyboard for a rung that needs
+none.
 
 ---
 

@@ -77,24 +77,55 @@ function learnerLabel(userId) {
  * domain is the one place that mapping lives.
  */
 function needNote(need) {
-  if (need?.kind === 'microphone') return 'Needs a microphone — on another device';
-  // A textInput requirement can arrive naming no language: `resolveRole` yields
-  // null when the corpus's languages map has no entry for the rung's role, and
-  // the wrapper object around that null is still truthy, so it survives every
-  // check upstream and reaches here intact. Fall through rather than print it —
-  // a child must never be shown a card reading "Needs a null keyboard".
-  //
-  // No matching server-side warning, deliberately: a corpus that cannot name
-  // both its languages is refused outright by `validateCorpus`, so this shape
-  // cannot come from a validated corpus. What it CAN come from is the payload —
-  // an older server, a truncated response — which is exactly why the guard
-  // belongs on this side and not there.
-  if (need?.kind === 'textInput' && need.language) {
-    return `Needs a ${languageName(need.language)} keyboard — on another device`;
-  }
+  const names = alternativeNames(need);
   // A rung the server could not explain still says something true: it is out of
-  // reach here. Silence would leave a dimmed rung with no reason at all.
-  return 'Not available on this device';
+  // reach here. Silence would leave a dimmed rung with no reason at all, and a
+  // requirement can arrive with nothing printable in it (see below).
+  if (names.length === 0) return 'Not available on this device';
+  // "or", never "and". A requirement is met by ANY ONE of its alternatives —
+  // interpretation can be typed in English OR spoken — and a card listing both
+  // as though a child had to find both would send them off for a keyboard they
+  // do not need.
+  return `Needs ${names.join(' or ')} — on another device`;
+}
+
+/**
+ * Each alternative in words, skipping any that cannot be named.
+ *
+ * A textInput requirement can arrive naming no language: `resolveRole` yields
+ * null when the corpus's languages map has no entry for the rung's role, and
+ * the wrapper object around that null is still truthy, so it survives every
+ * check upstream and reaches here intact. Dropped rather than printed — a child
+ * must never be shown a card reading "Needs a null keyboard". Dropping it
+ * rather than failing the whole note also matters now that a requirement has
+ * more than one alternative: the printable half still tells them what to do.
+ *
+ * No matching server-side warning, deliberately: a corpus that cannot name
+ * both its languages is refused outright by `validateCorpus`, so this shape
+ * cannot come from a validated corpus. What it CAN come from is the payload —
+ * an older server, a truncated response — which is exactly why the guard
+ * belongs on this side and not there. The same reasoning accepts a bare
+ * `{kind}` with no `anyOf`: that is what a server predating alternatives sends.
+ */
+function alternativeNames(need) {
+  return alternativesOf(need)
+    .map((alt) => {
+      if (alt?.kind === 'microphone') return 'a microphone';
+      if (alt?.kind === 'textInput' && alt.language) return `${anArticle(languageName(alt.language))} keyboard`;
+      return null;
+    })
+    .filter(Boolean);
+}
+
+/** Requirements old and new, as one list. */
+function alternativesOf(need) {
+  if (Array.isArray(need?.anyOf)) return need.anyOf;
+  return need?.kind ? [need] : [];
+}
+
+/** "an English keyboard", "a Korean keyboard" — the note reads as a sentence. */
+function anArticle(word) {
+  return `${/^[aeiou]/i.test(word) ? 'an' : 'a'} ${word}`;
 }
 
 /**
@@ -103,11 +134,19 @@ function needNote(need) {
  * sentence and would be a poor thing to group or count by; this is what a
  * `stats by` reads when someone asks which capability is blocking the most
  * children on the most devices.
+ *
+ * Alternatives are SORTED and joined with `|`. The ladder has few of them and
+ * a stable order makes `microphone|textInput:EN` one countable thing; built in
+ * payload order it would be two strings for one situation and group as two.
  */
 function needTag(need) {
-  if (need?.kind === 'microphone') return 'microphone';
-  if (need?.kind === 'textInput') return `textInput:${need.language ?? 'unnamed'}`;
-  return 'unspecified';
+  const parts = alternativesOf(need).map((alt) => {
+    if (alt?.kind === 'microphone') return 'microphone';
+    if (alt?.kind === 'textInput') return `textInput:${alt.language ?? 'unnamed'}`;
+    return null;
+  }).filter(Boolean);
+  if (parts.length === 0) return 'unspecified';
+  return [...parts].sort().join('|');
 }
 
 /**
@@ -771,11 +810,17 @@ export default function SentenceLadderProgram({
             /* THE THREE FACTS THAT DECIDE WHETHER A MICROPHONE IS DRAWN, and
                all three live here rather than in the rung. A preview has no
                identity or grant to spend; a device with no microphone cannot
-               open one; a deployment with no AI gateway answers `voiceAnswer:
-               false` on the day. Any of them missing and the rung is handed
-               nothing, so it draws no control at all — a dead button is worse
-               than an absent one. */
-            onTranscribe={!preview && day?.voiceAnswer && capabilities.microphone
+               open one; and the ENTRY says whether this rung takes a spoken
+               answer at all — the server folds `voiceAnswer` into that, so a
+               deployment with no AI gateway marks every entry false and
+               dictation is false even where it does have one. Any of them
+               missing and the rung is handed nothing, so it draws no control at
+               all — a dead button is worse than an absent one.
+
+               Read off the entry rather than recombined here on purpose: which
+               rungs may be spoken is the ladder's to say, and a second copy of
+               that list on this side is exactly what drifts. */
+            onTranscribe={!preview && entry.spokenAnswer && capabilities.microphone
               ? onTranscribe : null}
           />
         )}

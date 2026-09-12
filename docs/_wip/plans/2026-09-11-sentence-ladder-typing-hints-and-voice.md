@@ -880,7 +880,7 @@ which is the one thing it is not. Same reasoning as the peek's missing glyph.
 `method: 'typed'` is now written on every new text attempt, not only spoken ones, so the
 log is self-describing going forward while old rows stay honestly silent.
 
-### Task 14: A spoken answer changes what the rung needs
+### Task 14: A spoken answer changes what the rung needs [as built]
 
 **This is the payoff, and it is a real domain change.** Interpretation currently declares
 it needs `textInput:EN`. Answerable by voice, it needs **`textInput:EN` OR `microphone`**
@@ -900,7 +900,55 @@ it needs `textInput:EN`. Answerable by voice, it needs **`textInput:EN` OR `micr
 microphone and no keyboard must now be offered interpretation instead of being told to
 go elsewhere.
 
+**AS BUILT (2026-09-11).** Four decisions worth recording:
+
+1. **Every requirement is `{anyOf: [...]}`, including the three with one alternative.**
+   A shape that is sometimes a requirement and sometimes a list of them would be branched
+   on at four call sites, which is how the queue and the gate drifted apart the last time.
+   The log token grammar is unchanged for the single cases (`microphone`, `textInput:KR`)
+   and sorted for the new one (`microphone|textInput:EN`), so `stats by` still counts it.
+2. **`voiceAnswer` is NOT a capability.** Capabilities are whatever the client declares —
+   they arrive in a query string — so a client that could assert the transcriber into
+   existence would be handed a rung with no way in and no way past: the dead end
+   `chainFor` exists to prevent, reintroduced by the change meant to open the rung up. It
+   is a second argument to `requirementFor`/`chainFor`, a constructor argument on the
+   service (defaulting to false, because a caller that forgets it offers one rung too few
+   rather than one too many), and composition derives it from the SAME transcription
+   service the router is given — one `const languageTranscription` in `app.mjs` now, where
+   there were two constructions.
+3. **The gate lost its copy of the predicate.** `accessGate.allowsRung` imported the
+   ladder's `satisfiesRequirement` instead of branching on `requirement.kind` itself. Its
+   own header comment records the incident two copies caused, and alternatives gave that
+   copy a second way to fail: a hindered gate withholds keyboards, and a gate still
+   reading `.kind` would have refused every spoken interpretation the queue had offered.
+4. **`#decorate` marks the entry, and that closed a live gap.** `TypedRung` serves both
+   typing rungs and its Speak control was gated on `day.voiceAnswer` alone — so DICTATION
+   was offering a spoken answer, with the client sending `lang=KR`. A child could have
+   spoken the Korean that had just been played to them and had it transcribed into the
+   field, on the one rung whose purpose is typing the script. Each entry now carries
+   `spokenAnswer`, decided by the ladder, and the client keeps no list of its own.
+
+Also found and left alone as its own thing: `getDay` returned `chain` from a second
+`chainFor(...)` call that ignored the enrollment's credit chain, while the log line beside
+it used the filtered value. The two are now the one filtered value, which is what the
+queue was already built from.
+
 ---
+
+## Closing note — what this plan shipped (2026-09-11)
+
+All fourteen tasks are built except Tasks 10 and 11, which were carved out to
+`docs/_wip/plans/2026-09-11-sentence-ladder-word-glosses.md` — the hint half of Task 9
+depends on glosses that do not exist yet, and inventing them inside a typing plan would
+have meant a corpus change riding on a UI change.
+
+What landed: the Shift bug (Task 1), the committed/pending IME seam (Task 2) and the
+glyph strip built on it (Tasks 3–4), the rail's identity and rung icons (Task 5),
+glyph-paced audio (Task 6), copy mode as tracing with a jamo-level gate (Task 7), the
+press-to-peek tier (Task 8), the reveal without the hint (Task 9), the transcription
+service lifted out of fitness with its own non-repairing profile (Task 12), interpretation
+accepting a spoken answer (Task 13), and the requirement becoming a set of alternatives so
+a keyboard-less panel can climb that rung at all (Task 14).
 
 ## Documentation
 
