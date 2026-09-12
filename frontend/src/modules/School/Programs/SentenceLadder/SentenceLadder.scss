@@ -109,6 +109,20 @@ $disc: 5.5rem;
 .lang-ladder {
   display: flex; flex-direction: column; gap: 0.75rem; min-height: 0;
 
+  // WHOSE SESSION THIS IS. The portrait is the part that works on a shared
+  // panel — a pre-reader recognises a face across a room and does not read a
+  // name — so the name sits beside it at meta size rather than competing.
+  // `.piano-avatar` is the household's own round avatar (identity.scss); it is
+  // sized here because 2.5rem is that file's default and this rail is narrow.
+  &__who {
+    display: flex; align-items: center; gap: 0.6rem; min-width: 0;
+    .piano-avatar { width: 2.2rem; height: 2.2rem; font-size: 0.85rem; flex: none; }
+  }
+  &__who-name {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: $meta; font-weight: 700; color: var(--school-muted);
+  }
+
   &__rungs {
     list-style: none; margin: 0; padding: 0 0 0 0;
     display: flex; flex-direction: column;
@@ -138,7 +152,20 @@ $disc: 5.5rem;
     &.is-done { color: var(--school-muted); }
     &.is-blocked { opacity: 0.55; cursor: default; }
   }
-  &__label { line-height: 1.15; }
+  // The rung's mark and its name, on one line. The mark inherits the step's
+  // colour, so it dims with a blocked rung and lights with the active one
+  // without a rule of its own — which is the point of an `currentColor` set.
+  &__name { display: flex; align-items: center; gap: 0.45rem; min-width: 0; }
+  &__glyph {
+    display: flex; flex: none; font-size: 1.2rem; line-height: 1;
+    svg { width: 1em; height: 1em; }
+    // Two of the four marks arrive as 1.5-weight strokes and two as fills (see
+    // the icon MANIFEST); at 1.2rem on a panel read at arm's length a 1.5
+    // stroke is a hairline beside a solid shape. Thickened here, the same way
+    // .lang-tile does it, until the set is one family.
+    path[stroke] { stroke-width: 1.9; }
+  }
+  &__label { line-height: 1.15; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   // PIPS SIZED FROM THE COLUMN, NOT BY EYE. A rung holds one pip per sentence
   // and a day's limit is commonly fifteen, so the row has to be arithmetic:
   // `.reading-pips` is a nowrap flex of `flex: none` discs, which means a row
@@ -199,7 +226,15 @@ $disc: 5.5rem;
   &__word {
     position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
   }
-  &--quiet { min-height: $touch-min; background: transparent; border-color: transparent; color: var(--school-muted); }
+  // The quiet exit now carries the set's back mark beside its words, so it
+  // needs to be a row. It also has to OVERRIDE __glyph's 2.2rem, which is the
+  // play disc's size: at 2.2rem the chevron stood 35px tall next to 17.6px
+  // text, which is the same "one element shouting" failure the rail's pips had.
+  &--quiet {
+    min-height: $touch-min; background: transparent; border-color: transparent; color: var(--school-muted);
+    display: inline-flex; align-items: center; gap: 0.4rem; padding: 0 1rem;
+    .lang-btn__glyph { font-size: 1.35rem; }
+  }
   &:focus-visible { outline: 3px solid var(--school-accent); outline-offset: 2px; }
   &:disabled { opacity: 0.5; cursor: default; }
 }
