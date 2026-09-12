@@ -1470,6 +1470,120 @@ describe('the peek', () => {
   });
 });
 
+// THE REVEAL — and why it is not the peek.
+//
+// On dictation the withheld thing is the Korean: a peek shows it and the
+// learner still has to type it in Hangul, which is the skill being drilled.
+// On interpretation the withheld thing is the ENGLISH, which IS the answer —
+// showing it leaves nothing but transcription. So the interpretation rung has
+// no peek; it has a reveal, and a reveal ends the exercise and is recorded as
+// a reveal. Without that split the record would say a child interpreted 4,143
+// sentences when they pressed a button 4,143 times.
+describe('the reveal', () => {
+  const onComplete = vi.fn();
+  const rung = (rungId = 'interpretation', options) => render(
+    <HangulTypingProvider>
+      <TypedRung
+        entry={entry(1, rungId, false, { text: { EN: 'It is cold today', KR: '오늘 추워요' }, ...options })}
+        audioUrl={(seq, lang) => `/audio/${seq}/${lang}`}
+        onComplete={onComplete}
+        saving={false}
+        idleReplayMs={0}
+      />
+    </HangulTypingProvider>,
+  );
+
+  beforeEach(() => onComplete.mockClear());
+
+  it('is offered on interpretation, where the English IS the answer', () => {
+    rung();
+    expect(screen.getByRole('button', { name: 'Show answer' })).toBeTruthy();
+  });
+
+  it('is NOT offered on dictation, where seeing the sentence still leaves it to type', () => {
+    rung('dictation');
+    expect(screen.queryByRole('button', { name: 'Show answer' })).toBeNull();
+  });
+
+  it('replaces the peek rather than joining it — one rung, one kind of help', () => {
+    // The converse of the test above. On interpretation the model IS the
+    // answer, so the thing that shows it cannot be the gentle one.
+    rung();
+    expect(screen.queryByRole('button', { name: 'Peek' })).toBeNull();
+  });
+
+  it('draws no Hint, because the partial half has nothing to say yet', () => {
+    // Word glosses are tabled into their own plan. A Hint control with no
+    // gloss behind it is a button that does nothing, and a child who presses
+    // a dead button concludes the screen is broken.
+    rung();
+    expect(screen.queryByRole('button', { name: /hint/i })).toBeNull();
+  });
+
+  it('shows the English and plays it — the whole answer, in both forms we hold', async () => {
+    rung();
+    const play = window.HTMLMediaElement.prototype.play;
+    await waitFor(() => expect(play).toHaveBeenCalled());
+    const before = play.mock.calls.length;
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Show answer' })); });
+    expect(screen.getByText('It is cold today')).toBeTruthy();
+    expect(play.mock.calls.length).toBeGreaterThan(before);
+    expect(rungLogMock).toHaveBeenCalledWith('reveal', expect.objectContaining({
+      rung: 'interpretation', seq: 1,
+    }));
+  });
+
+  it('A REVEALED SENTENCE IS NOT RECORDED AS A CORRECT ATTEMPT', async () => {
+    rung();
+    const input = screen.getByLabelText('Type what it means');
+    // Half an answer typed before giving up. It must not travel: what the
+    // learner had is not what they produced, and the answer on screen is the
+    // one thing they must never be recorded as having written.
+    await act(async () => { fireEvent.change(input, { target: { value: 'It is co' } }); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Show answer' })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
+
+    expect(onComplete).toHaveBeenCalledWith({ seq: 1, rung: 'interpretation', revealed: true });
+    expect(onComplete.mock.calls[0][0].given).toBeUndefined();
+  });
+
+  it('takes the field away once the answer is up — there is nothing left to answer', async () => {
+    rung();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Show answer' })); });
+    // Gone, not merely disabled. A greyed field still holding half an answer,
+    // sitting directly under the answer, is an invitation to type it back in —
+    // and on a panel a disabled input barely looks different from a live one.
+    expect(screen.queryByLabelText('Type what it means')).toBeNull();
+    // The keys have somewhere to go: the one control left takes the focus the
+    // field just gave up, so Enter still moves the learner on.
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Continue' }));
+    // One commit point, and it is no longer called Submit: nothing is being
+    // submitted.
+    expect(screen.queryByRole('button', { name: 'Submit' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeTruthy();
+    // And no way back: an un-reveal would let a child read the answer, hide
+    // it, and type it in as their own — the exact corruption this splits off.
+    expect(screen.queryByRole('button', { name: 'Show answer' })).toBeNull();
+  });
+
+  it('sends the reveal to the server as a reveal, with no answer attached', async () => {
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['interpretation'], queue: [entry(1, 'interpretation')],
+    }));
+    logMock.mockResolvedValue({ ok: true, status: 200, data: {} });
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    await screen.findByLabelText(/Type what it means/i);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Show answer' })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
+
+    await waitFor(() => expect(logMock).toHaveBeenCalledWith('kckern', {
+      corpus: 'glossika-korean', seq: 1, rung: 'interpretation', revealed: true,
+    }, expect.anything(), 'test-grant'));
+  });
+});
+
 // GLYPH-PACED AUDIO. The sentence is paced by the learner's own progress, so a
 // syllable landing in the right column replays the clip — the model arrives at
 // the speed they are working, and doubles as "yes, that one".
@@ -1651,6 +1765,39 @@ describe('dismissal and dead ends', () => {
     expect(screen.getByText('Korean keyboard')).toBeTruthy();
     expect(screen.getByText('English keyboard')).toBeTruthy();
     expect(screen.getByText('Microphone')).toBeTruthy();
+  });
+
+  it('shows a revealed sentence as shown, not as a repetition the learner did', async () => {
+    // A reveal writes no `given`, and the shelf's last branch — the one for a
+    // row with no written answer — is "Repetition". Left alone, every
+    // interpretation a child gave up on would appear on their own history as a
+    // repetition they completed. The one place the learner reads their record
+    // back must not be where the reveal quietly becomes something else.
+    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
+    historyMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: {
+        corpus: { languages: LANGUAGES },
+        days: [{
+          day: 1,
+          items: [{
+            seq: 1, rung: 'interpretation', day: 1, revealed: true,
+            language: 'EN', expected: 'English 1',
+            text: { EN: 'English 1', KR: '한국어 1' },
+          }],
+        }],
+      },
+    });
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    // Read off the shelf's own row, not the page: the ladder rail beside it
+    // legitimately says "Repetition" about the day's queue.
+    const row = await screen.findByText(/Answer shown/);
+    const item = row.closest('.lang-review__item');
+    expect(item.querySelector('.lang-review__rung').textContent).toBe('Interpretation');
+    expect(row.textContent).toContain('English 1');
   });
 
   it('lets the learner retry a failed history load', async () => {

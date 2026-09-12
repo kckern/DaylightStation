@@ -345,6 +345,70 @@ describe('logAttempt', () => {
     })).toThrow(EntityNotFoundError);
   });
 
+  /**
+   * A REVEAL IS NOT AN ATTEMPT. On interpretation the English text IS the
+   * answer, so showing it hands over the whole response — that is a skip, and
+   * the record has to say so. Without this the log would claim a child
+   * interpreted a sentence they only pressed a button on.
+   */
+  describe('a revealed answer', () => {
+    it('is recorded AS a reveal — no response, and no accuracy to mistake for one', () => {
+      makeDue(ds, 'interpretation');
+      const event = svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        revealed: true, capabilities: EQUIPPED,
+      });
+      expect(event.revealed).toBe(true);
+      // The learner produced nothing. An `accuracy` of any value would be a
+      // score for a sentence nobody answered, and 1.0 — which is what the
+      // expected text scored against itself would be — is the precise lie.
+      expect(event.given).toBeUndefined();
+      expect(event.accuracy).toBeUndefined();
+      // What was shown is still on the record, so the Review shelf can say so.
+      expect(event.expected).toBe("The weather's nice today.");
+      expect(event.language).toBe('EN');
+    });
+
+    it('will not carry a typed answer along with it', () => {
+      makeDue(ds, 'interpretation');
+      const event = svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        revealed: true, given: "The weather's nice today.", capabilities: EQUIPPED,
+      });
+      expect(event.given).toBeUndefined();
+      expect(event.accuracy).toBeUndefined();
+    });
+
+    it('needs no written response, where an ordinary attempt does', () => {
+      makeDue(ds, 'interpretation');
+      expect(() => svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        capabilities: EQUIPPED,
+      })).toThrow(ValidationError);
+    });
+
+    it('is refused on a rung with nothing written to reveal', () => {
+      expect(() => svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition',
+        revealed: true, capabilities: EQUIPPED,
+      })).toThrow(ValidationError);
+    });
+
+    it('still clears the rung — the sentence moves on, the record says how', () => {
+      makeDue(ds, 'interpretation');
+      svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        revealed: true, capabilities: EQUIPPED,
+      });
+      // Accuracy gates nothing in this program and neither does a reveal. What
+      // changes is what the evidence SAYS, not what it unlocks.
+      expect(() => svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        revealed: true, capabilities: EQUIPPED,
+      })).toThrow(/outstanding/);
+    });
+  });
+
   it('stamps last activity so rollover has something to measure from', () => {
     svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition' });
     expect(ds.readProgress('kckern', 'test-korean').last_activity)
@@ -829,6 +893,32 @@ describe('summarize — the agenda counts sentences, not steps', () => {
     expect(course.next.label).toBe('4 sentences today');
     expect(course.next.detail).toMatch(/^4 new · 15 steps left — /);
     expect(course.next.estimate).toEqual({ count: 15, unit: 'steps' });
+  });
+
+  it('keeps reveals out of the typing accuracy, and counts them where they show', () => {
+    const ds = new FakeDatastore();
+    makeDue(ds, 'interpretation');
+    const svc = makeService(ds);
+    svc.logAttempt({
+      userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+      revealed: true, capabilities: EQUIPPED,
+    });
+    const [course] = svc.summarize({ userId: 'kckern' });
+    // Nothing was scored, so there is no accuracy figure to inflate. A reveal
+    // that landed in this average at 1.0 would read as perfect comprehension
+    // of a sentence the learner never rendered.
+    expect(course.metrics.find((m) => m.id === 'accuracy')).toBeUndefined();
+    // But it is not invisible either — a grown-up reading the card has to be
+    // able to see how much of the work was handed over.
+    expect(course.metrics.find((m) => m.id === 'reveals')).toMatchObject({ value: 1 });
+  });
+
+  it('shows no reveal count for a learner who never asked for one', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition', capabilities: EQUIPPED });
+    const [course] = svc.summarize({ userId: 'kckern' });
+    expect(course.metrics.find((m) => m.id === 'reveals')).toBeUndefined();
   });
 
   it('splits sentences entering today from those back for review', () => {

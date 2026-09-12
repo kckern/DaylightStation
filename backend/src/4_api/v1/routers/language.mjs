@@ -159,10 +159,16 @@ export function createLanguageRouter({
   }));
 
   router.post('/users/:userId/log', wrap((req, res) => {
-    const { corpus, seq, rung, given = null } = req.body || {};
+    const { corpus, seq, rung, given = null, revealed = false } = req.body || {};
     if (!authorized(req, res, corpus)) return;
     res.json(languageStudyService.logAttempt({
       userId: req.params.userId, corpusId: corpus, seq, rung, given,
+      // A reveal is the learner saying "show me" instead of answering, and it
+      // is written down as such. Compared to `true` rather than coerced: a
+      // truthy-cast would let the string "false" — which is what a body built
+      // by hand or by an older client can carry — turn an answered sentence
+      // into a skip on the permanent record.
+      revealed: revealed === true,
       capabilities: readCapabilities(req.query),
       runId: readRunId(req),
     }));

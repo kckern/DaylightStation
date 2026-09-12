@@ -412,16 +412,25 @@ export class SentenceLadderService {
    * Append one attempt event. `given` is required for a text rung and ignored
    * otherwise; accuracy is computed for text responses but **gates nothing**
    * (design §3) — it exists for the learner's own diff on the Review surface.
+   *
+   * `revealed` is the OTHER kind of row a text rung can produce: the learner
+   * asked to be shown the answer instead of producing one. It takes the place
+   * of `given` rather than sitting beside it — see `#recordAttempt`.
    */
-  logAttempt({ userId, corpusId, seq, rung, given = null, source = null, capabilities = {}, runId = null }) {
+  logAttempt({
+    userId, corpusId, seq, rung, given = null, revealed = false,
+    source = null, capabilities = {}, runId = null,
+  }) {
     if (rung === 'recording') {
       throw new ValidationError('recording evidence requires an audio upload', { field: 'rung' });
     }
-    return this.#recordAttempt({ userId, corpusId, seq, rung, given, source, capabilities, runId });
+    return this.#recordAttempt({
+      userId, corpusId, seq, rung, given, revealed, source, capabilities, runId,
+    });
   }
 
   #recordAttempt({
-    userId, corpusId, seq, rung, given = null, source = null, capabilities = {},
+    userId, corpusId, seq, rung, given = null, revealed = false, source = null, capabilities = {},
     allowRecording = false, skipDueCheck = false, practice = false, runId = null,
   }) {
     this.#requireUser(userId);
@@ -462,16 +471,49 @@ export class SentenceLadderService {
     if (practice === true || due?.practice === true) event.practice = true;
     if (source) event.source = source;
 
+    if (revealed === true && rungDef.response?.modality !== 'text') {
+      // Nothing written, nothing to reveal. A reveal on a repetition or a
+      // recording would be a flag with no meaning, and a meaningless flag in an
+      // append-only log outlives whoever set it.
+      throw new ValidationError(`${rung} has no written answer to reveal`, { field: 'revealed' });
+    }
+
     if (rungDef.response?.modality === 'text') {
-      if (typeof given !== 'string' || given.trim() === '') {
-        throw new ValidationError(`${rung} requires a written response`, { field: 'given' });
-      }
       const language = resolveRole(rungDef.response.role, corpus.languages);
       const expected = sentence.text[language] ?? '';
-      event.given = given.trim();
       event.expected = expected;
       event.language = language;
-      event.accuracy = accuracy(given, expected);
+
+      if (revealed === true) {
+        /**
+         * A REVEAL IS NOT AN ATTEMPT, and this is the line that keeps the
+         * record honest about it. On interpretation the English text IS the
+         * answer, so showing it hands over the whole response and leaves only
+         * transcription; the learner produced nothing, so:
+         *
+         *   - no `given` — there is no answer of theirs to store, and the one
+         *     thing that must never be written down as theirs is the expected
+         *     text they were just shown;
+         *   - **no `accuracy` at all**, rather than a zero. A zero is a score,
+         *     and a scored reveal would drag the learner's average down for a
+         *     sentence nobody assessed — while `accuracy(expected, expected)`,
+         *     which is what storing the shown text would have produced, is the
+         *     1.0 that would say a child understood a sentence they only
+         *     pressed a button on. An ABSENT field is the honest shape, and
+         *     every reader here already filters on `typeof accuracy`.
+         *
+         * What it does NOT change is credit. Accuracy gates nothing in this
+         * program and neither does this: the sentence still clears the rung and
+         * climbs. The difference is entirely in what the evidence says.
+         */
+        event.revealed = true;
+      } else {
+        if (typeof given !== 'string' || given.trim() === '') {
+          throw new ValidationError(`${rung} requires a written response`, { field: 'given' });
+        }
+        event.given = given.trim();
+        event.accuracy = accuracy(given, expected);
+      }
     }
 
     // The datastore returns null rather than throwing when it will not resolve
@@ -872,8 +914,14 @@ export class SentenceLadderService {
       )),
     );
 
+    // Reveals are OUT OF THIS AVERAGE BY CONSTRUCTION: a revealed row carries
+    // no `accuracy` field at all (see `#recordAttempt`), so the filter that was
+    // already here excludes it. Said out loud because the tempting "fix" — give
+    // a reveal a zero so it is counted — would turn a skip into a failed
+    // assessment, and this program assesses nothing.
     const scored = log.filter((e) => typeof e.accuracy === 'number');
     const recordings = log.filter((e) => e.rung === 'recording').length;
+    const reveals = log.filter((e) => e.revealed === true).length;
     const outstanding = queue.filter((e) => !e.done);
 
     const lastActivity = progress.lastActivity
@@ -905,6 +953,14 @@ export class SentenceLadderService {
       { id: 'day', kind: 'count', label: 'Study day', value: progress.day, unit: 'days', audience: 'learner' },
       { id: 'recordings', kind: 'count', label: 'Recordings', value: recordings, unit: 'recordings' },
     ];
+    // Only once there are any. Keeping a reveal out of the accuracy figure
+    // stops it lying; it does not make it visible, and a grown-up reading this
+    // card has to be able to see how much of the work was handed over. No
+    // `audience: 'learner'` — this is for the person deciding whether the rung
+    // is too hard, not a scoreboard for the child to watch.
+    if (reveals) {
+      metrics.push({ id: 'reveals', kind: 'count', label: 'Answers shown', value: reveals, unit: 'sentences' });
+    }
     if (scored.length) {
       metrics.push({
         id: 'accuracy', kind: 'score', label: 'Typing accuracy',

@@ -151,6 +151,30 @@ describe('Sentence Ladder study grant boundary', () => {
     expect(service.saveRecording.mock.calls[0][0].buffer).toEqual(bytes);
   });
 
+  // A REVEAL IS A DIFFERENT RECORD, so the flag has to survive the wire. An
+  // un-plumbed field on the service is not "recorded": the screen would draw
+  // an honest reveal and the log would still say the child answered.
+  it('carries a reveal through to the service, and never infers one', async () => {
+    const { app, service } = appWith();
+    service.logAttempt.mockReturnValue({ rung: 'interpretation', seq: 7, revealed: true });
+
+    await request(app)
+      .post('/api/v1/school/sentence-ladder/users/learner3/log')
+      .set('X-School-Study-Grant', 'signed')
+      .send({ corpus: 'korean', seq: 7, rung: 'interpretation', revealed: true });
+    expect(service.logAttempt).toHaveBeenCalledWith(expect.objectContaining({ revealed: true }));
+
+    // Anything that is not literally `true` is not a reveal. A body that says
+    // `revealed: "false"` must not turn an answered sentence into a skip.
+    await request(app)
+      .post('/api/v1/school/sentence-ladder/users/learner3/log')
+      .set('X-School-Study-Grant', 'signed')
+      .send({ corpus: 'korean', seq: 7, rung: 'interpretation', given: 'it is cold', revealed: 'false' });
+    expect(service.logAttempt).toHaveBeenLastCalledWith(expect.objectContaining({
+      revealed: false, given: 'it is cold',
+    }));
+  });
+
   it('preserves the two audio not-found envelopes', async () => {
     const { app } = appWith();
 

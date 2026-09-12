@@ -429,6 +429,26 @@ $disc: 5.5rem;
     clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
   }
 
+  // THE ANSWER, once a learner has asked to be shown it. Drawn where their
+  // typing was about to go, at the source sentence's size rather than the
+  // target's: it is an answer being read, not the sentence being drilled, and
+  // giving it the 3rem hero size would make the way out the loudest thing on
+  // the screen. The tint is the surface warmed toward the warn token — the
+  // same colour the rest of School uses for "this is a note about what just
+  // happened", never danger, because asking for help is not an error.
+  &__answer {
+    display: flex; flex-direction: column; align-items: center; gap: 0.35rem;
+    width: min(100%, 720px); box-sizing: border-box;
+    padding: 0.9rem 1.2rem; border-radius: $radius;
+    background: color-mix(in srgb, var(--school-warn) 14%, var(--school-surface));
+    border: 1px solid color-mix(in srgb, var(--school-warn) 40%, transparent);
+  }
+  &__answer-text { margin: 0; font-size: $source; line-height: 1.35; font-weight: 700; }
+  // The consequence, on the same card as the answer. A child who does not know
+  // this counts differently will press the control as if it were a hint, and
+  // finding out afterwards on the Review shelf is finding out too late.
+  &__answer-note { margin: 0; font-size: $meta; color: var(--school-muted); }
+
   // A REFUSED KEYSTROKE, drawn on the live column. Copy mode's gate consumes a
   // key that would break the shape being traced, and consuming it means nothing
   // on screen changes — which a child reads as a broken keyboard and answers by
@@ -619,6 +639,9 @@ $disc: 5.5rem;
   &__rung { font-size: $meta; text-transform: uppercase; letter-spacing: 0.05em; color: var(--school-muted); }
   &__sentence { font-size: $body; }
   &__score { font-size: $meta; color: var(--school-fg); }
+  // What a revealed row says in place of a diff. Muted and italic rather than
+  // coloured: it is a fact about the sentence, not a mark against the child.
+  &__shown { font-size: $meta; color: var(--school-muted); font-style: italic; }
   &__missing { font-size: $meta; color: var(--school-warn); }
 }
 

@@ -99,6 +99,37 @@ export const REFUSAL_FLASH_MS = 180;
 const PEEK_KEY = 'F1';
 
 /**
+ * A HINT IS PARTIAL. A REVEAL IS THE ANSWER. They are not the same affordance
+ * wearing two labels, and the name is the whole of the distinction.
+ *
+ * On DICTATION the withheld thing is the Korean, and the peek above shows it:
+ * the learner has still got to type it, in Hangul, from memory of what they
+ * just read — which is the skill the rung is drilling. A peek is help.
+ *
+ * On INTERPRETATION the withheld thing is the ENGLISH, and the English IS the
+ * answer. Showing it leaves nothing but transcription; playing the English
+ * clip leaves exactly the same nothing. So there is no peek on this rung —
+ * there is a REVEAL, it ends the exercise for that sentence, and it is
+ * recorded as a reveal rather than as an attempt the learner got right.
+ * Without that split the record would say a child interpreted 4,143 sentences
+ * when they pressed a button 4,143 times.
+ *
+ * THE HINT HALF IS NOT BUILT, ON PURPOSE. The partial help for this rung is
+ * one word's meaning — a gloss — and glosses are tabled into their own plan
+ * (`2026-09-11-sentence-ladder-word-glosses.md`). A Hint button with no gloss
+ * behind it is a dead control, and a child who presses a dead button concludes
+ * the screen is broken and stops trusting the rest of it. So: no Hint, not
+ * even disabled, until there is something for it to say.
+ *
+ * NO KEYBOARD SHORTCUT, unlike the peek — and unlike the peek, deliberately
+ * one-way. A key that ends the exercise is a key that ends it by accident, and
+ * an "un-reveal" would let a child read the answer, put it away, and type it
+ * back as their own, which is precisely the record this split exists to
+ * protect. It costs a deliberate tap, and after it the field is gone.
+ */
+const REVEAL_WORD = 'Show answer';
+
+/**
  * The baseline's quiet control: a glyph, the word for anything that asks, and
  * the visible caption — which is where the shortcut is written when there is a
  * keyboard to press it on. Play, Stop and Peek are the same button three
@@ -159,7 +190,13 @@ export default function TypedRung({
   // The whole of the peek: one boolean, cleared by the next keystroke. See
   // PEEK_KEY above for why it is not a third dictation mode.
   const [peeking, setPeeking] = useState(false);
+  // The reveal, and it only ever goes one way. See REVEAL_WORD above.
+  const [revealed, setRevealed] = useState(false);
   const inputRef = useRef(null);
+  // The one control left standing after a reveal takes the focus the field
+  // gives up, so a learner on a bonded keyboard can still press Enter rather
+  // than being stranded with focus on a removed element.
+  const commitRef = useRef(null);
   const hushedRef = useRef(false);
   hushedRef.current = hushed;
 
@@ -185,6 +222,16 @@ export default function TypedRung({
   // Copy mode already shows the sentence, and the interpretation rung shows its
   // target whole — there is nothing for either to peek at.
   const canPeek = isDictation && !isCopying;
+  /**
+   * What the reveal would show: the text in the language the learner is being
+   * asked to produce. Guarded on the text actually existing, because a corpus
+   * row missing its English would otherwise draw a control that shows a blank
+   * — which reads as the reveal being broken rather than the data being thin.
+   */
+  const answerText = entry.text?.[responseLang] ?? '';
+  // Dictation has the peek; interpretation has this. Never both on one rung:
+  // on dictation the model is help, on interpretation it is the answer.
+  const canReveal = !isDictation && answerText !== '' && !revealed;
 
   /**
    * THE COPY-MODE GATE, wired up.
@@ -357,6 +404,33 @@ export default function TypedRung({
     inputRef.current?.focus();
   }, [peeking, typed.committed, entry.rung, entry.seq]);
 
+  /**
+   * Show the answer, and end the exercise for this sentence.
+   *
+   * BOTH FORMS AT ONCE — the text on screen and the clip in the learner's ear
+   * — because they are one surrender, not two. Split into "Show" and "Hear"
+   * they would read as two different kinds of help, a child who took one would
+   * reasonably take the other, and the log would carry two rows for one
+   * sentence nobody answered. Having given the answer away, the most useful
+   * thing left to do with it is teach it, which is what hearing it does.
+   *
+   * Nothing is written down here. The record is made when the learner presses
+   * Continue, through the same `onComplete` an answer goes through — one
+   * commit point per sentence, so a reveal cannot land twice and cannot land
+   * without the learner having seen what they asked for.
+   */
+  const doReveal = useCallback(() => {
+    setRevealed(true);
+    setPeeking(false);
+    languageLog.rung('reveal', {
+      rung: entry.rung, seq: entry.seq, typed: Array.from(value).length,
+    });
+    // Asking for the answer un-hushes, exactly as asking for the prompt does.
+    setHushed(false);
+    playSequence([{ url: audioUrl(entry.seq, responseLang) }], { loop: false });
+    window.setTimeout(() => commitRef.current?.focus?.({ preventScroll: true }), 0);
+  }, [entry.rung, entry.seq, value, audioUrl, responseLang, playSequence]);
+
   // Going quiet is what a stuck learner looks like, and hearing the sentence
   // again is what the loop was reaching for before it became a siren. So:
   // exactly one replay after a silence. Keyed on `value`, so every keystroke
@@ -364,7 +438,9 @@ export default function TypedRung({
   // the attempt is in. A non-finite or non-positive interval turns it off.
   useEffect(() => {
     if (!Number.isFinite(idleReplayMs) || idleReplayMs <= 0) return undefined;
-    if (playing || submitted || saving) return undefined;
+    // `revealed` counts as done here: the exercise is over, and a sentence
+    // that starts offering itself again over the answer is talking to nobody.
+    if (playing || submitted || saving || revealed) return undefined;
     // Silenced on purpose. See `hushed`.
     if (hushed) return undefined;
     // A kiosk that has not been touched yet fails the autoplay gate, and a
@@ -378,15 +454,33 @@ export default function TypedRung({
       play();
     }, idleReplayMs);
     return () => window.clearTimeout(timer);
-  }, [idleReplayMs, playing, submitted, saving, blocked, hushed, value, play, entry.rung, entry.seq]);
+  }, [idleReplayMs, playing, submitted, saving, blocked, hushed, revealed, value, play, entry.rung, entry.seq]);
 
   const submit = useCallback(() => {
-    if (!value.trim() || saving) return;
+    if (saving) return;
+    /**
+     * TWO ROWS, ONE BUTTON. A revealed sentence is committed through the same
+     * path as an answered one — same guard against a double press, same stop,
+     * same `onComplete` — and differs in exactly one field: it carries
+     * `revealed` INSTEAD OF `given`, never as well as. Whatever the learner had
+     * typed before they gave up is not what they produced, and the answer now
+     * sitting on screen is the one string that must never be recorded as
+     * theirs. See `LanguageStudyService#recordAttempt`, which drops the
+     * accuracy on its side for the same reason.
+     */
+    if (revealed) {
+      setSubmitted(true);
+      stop();
+      languageLog.rung('complete', { rung: entry.rung, seq: entry.seq, revealed: true });
+      onComplete({ seq: entry.seq, rung: entry.rung, revealed: true });
+      return;
+    }
+    if (!value.trim()) return;
     setSubmitted(true);
     stop();
     languageLog.rung('complete', { rung: entry.rung, seq: entry.seq });
     onComplete({ seq: entry.seq, rung: entry.rung, given: value });
-  }, [value, saving, stop, entry, onComplete]);
+  }, [value, saving, revealed, stop, entry, onComplete]);
 
   const onKeyDown = useCallback((e) => {
     if (e.key === 'Tab') {
@@ -439,48 +533,67 @@ export default function TypedRung({
           )
           : <p className="lang-rung__target">{targetText}</p>}
 
-        {/* Kept on the dictation rung for the accessible name only: the strip is
-            `role="presentation"` duplication of this field, so the field is still
-            the labelled control, but a visible caption above two rows that already
-            say "model here, your answer here" is the stack this screen shed. */}
-        <label
-          className={`lang-rung__label${isDictation ? ' is-offscreen' : ''}`}
-          htmlFor={`lang-input-${entry.seq}`}
-        >
-          {label}
-        </label>
-        <input
-          id={`lang-input-${entry.seq}`}
-          ref={inputRef}
-          className={`lang-rung__input${isDictation ? ' is-offscreen' : ''}`}
-          type="text"
-          lang={responseLang}
-          /* Drives the School-wide in-page IME: dictation asks for the target
-             script, interpretation for the source, and the mode follows focus
-             with no keypress. F6 still overrides. */
-          data-ime-lang={responseLang}
-          autoComplete="off"
-          autoCorrect="off"
-          spellCheck={false}
-          value={value}
-          onChange={(e) => {
-            // Nothing starts playing here any more. This line is where the loop
-            // was armed — the first keystroke began audio that then ran until
-            // submit — so the one job a keystroke has now is to be a keystroke.
-            // (It also restarts the idle wait, via the effect's `value` dep.)
-            setValue(e.target.value);
-            // TYPE TO HIDE. The peek is over the moment the learner writes
-            // anything — that is what stops it being copy mode with an extra
-            // step, and it is why there is no timer and no cap.
-            setPeeking(false);
-            // Read from the composer DURING its own change event, which is the
-            // only moment its answer is guaranteed current — see the note on
-            // `typed` above for why the field's value will not do.
-            setTyped(compositionState(e.target));
-          }}
-          onKeyDown={onKeyDown}
-          disabled={saving}
-        />
+        {/* THE ANSWER, IN PLACE OF THE FIELD — not above it. Rendering both put
+            a dead grey input, still holding half an answer, directly under the
+            sentence it had just been handed: a standing invitation to type the
+            answer back in, and on a panel a disabled field is barely
+            distinguishable from a live one. There is nothing left to answer,
+            so there is no field. It also says plainly what the record will
+            say, because a child who does not know this counts differently will
+            press it as if it were a hint. */}
+        {revealed ? (
+          <div className="lang-rung__answer">
+            <p className="lang-rung__answer-text">{answerText}</p>
+            <p className="lang-rung__answer-note">
+              Shown, not answered — this one goes down as shown.
+            </p>
+          </div>
+        ) : (
+          <>
+          {/* Kept on the dictation rung for the accessible name only: the strip is
+              `role="presentation"` duplication of this field, so the field is still
+              the labelled control, but a visible caption above two rows that already
+              say "model here, your answer here" is the stack this screen shed. */}
+          <label
+            className={`lang-rung__label${isDictation ? ' is-offscreen' : ''}`}
+            htmlFor={`lang-input-${entry.seq}`}
+          >
+            {label}
+          </label>
+          <input
+            id={`lang-input-${entry.seq}`}
+            ref={inputRef}
+            className={`lang-rung__input${isDictation ? ' is-offscreen' : ''}`}
+            type="text"
+            lang={responseLang}
+            /* Drives the School-wide in-page IME: dictation asks for the target
+               script, interpretation for the source, and the mode follows focus
+               with no keypress. F6 still overrides. */
+            data-ime-lang={responseLang}
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            value={value}
+            onChange={(e) => {
+              // Nothing starts playing here any more. This line is where the loop
+              // was armed — the first keystroke began audio that then ran until
+              // submit — so the one job a keystroke has now is to be a keystroke.
+              // (It also restarts the idle wait, via the effect's `value` dep.)
+              setValue(e.target.value);
+              // TYPE TO HIDE. The peek is over the moment the learner writes
+              // anything — that is what stops it being copy mode with an extra
+              // step, and it is why there is no timer and no cap.
+              setPeeking(false);
+              // Read from the composer DURING its own change event, which is the
+              // only moment its answer is guaranteed current — see the note on
+              // `typed` above for why the field's value will not do.
+              setTyped(compositionState(e.target));
+            }}
+            onKeyDown={onKeyDown}
+            disabled={saving}
+          />
+          </>
+        )}
       </div>
 
       {/* The baseline: what sounds, on the left with its shortcut written on
@@ -511,6 +624,14 @@ export default function TypedRung({
               bonded to it — and this rung's whole audience is the child typing
               blind. No glyph: the icon set has nothing that reads as "show me"
               at a glance, and a wrong picture is worse than a plain word. */}
+          {/* THE REVEAL, and it is not the peek — see REVEAL_WORD. It sits in
+              the quiet row rather than beside Submit: the way forward on this
+              screen is answering, and the way out should take a deliberate
+              reach across to the other side of the baseline. No glyph and no
+              shortcut caption, because there is no key. */}
+          {canReveal && (
+            <QuietButton word={REVEAL_WORD} caption={REVEAL_WORD} onClick={doReveal} />
+          )}
           {canPeek && (
             <QuietButton
               word={peeking ? 'Hide' : 'Peek'}
@@ -527,11 +648,15 @@ export default function TypedRung({
         </div>
         <button
           type="button"
+          ref={commitRef}
           className="lang-btn lang-btn--primary"
           onClick={submit}
-          disabled={!value.trim() || saving}
+          disabled={(!revealed && !value.trim()) || saving}
         >
-          {saving ? 'Saving…' : 'Submit'}
+          {/* "Submit" is a word for work being handed in. After a reveal there
+              is nothing to hand in, so the button says what actually happens
+              next. */}
+          {saving ? 'Saving…' : revealed ? 'Continue' : 'Submit'}
         </button>
       </div>
     </div>
