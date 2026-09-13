@@ -38,7 +38,7 @@ export default function ImageDecoderDisplay({
 
   return (
     <figure className="image-decoder-display" data-status={failed ? "error" : loaded === `${src}:${attempt}` ? "ready" : "loading"} data-motion-index={motionIndex} aria-label={alt} style={{
-      transform: `translate3d(${frame.x.toFixed(2)}%, ${frame.y.toFixed(2)}%, 0) scale(${frame.scale.toFixed(3)})`,
+      transform: `translate3d(${frame.x.toFixed(2)}%, ${frame.y.toFixed(2)}%, 0)`,
     }}>
       <img key={`${src}:${attempt}`} className="image-decoder-display__probe" src={resource} alt="" aria-hidden="true" onLoad={() => { setFailure(null); setLoaded(`${src}:${attempt}`); }} onError={() => setFailure(src)} />
       {failed && <div className="image-decoder-display__error" role="alert">Clue image could not load.<button type="button" onClick={() => { setFailure(null); setAttempt(value => value + 1); }}>Retry image</button></div>}
@@ -50,7 +50,12 @@ export default function ImageDecoderDisplay({
           style={{
             maskImage,
             WebkitMaskImage: maskImage,
+            opacity: frame.subjectOpacity.toFixed(3),
+            transform: `scaleX(${frame.mirrored ? -1 : 1}) scale(${frame.subjectScale.toFixed(3)})`,
           }}
+          data-mirrored={frame.mirrored}
+          data-subject-scale={frame.subjectScale.toFixed(3)}
+          data-subject-opacity={frame.subjectOpacity.toFixed(3)}
         />
         <svg
           className="image-decoder-display__artifacts"

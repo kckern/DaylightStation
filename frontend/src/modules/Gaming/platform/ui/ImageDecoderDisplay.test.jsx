@@ -36,13 +36,19 @@ describe('ImageDecoderDisplay', () => {
     expect(composite).toContainElement(subject);
     expect(composite).toContainElement(artifacts);
     expect(composite).not.toHaveAttribute('style');
-    expect(subject.style.transform).toBe('');
+    expect(subject.style.transform).toMatch(/^scaleX\([^)]+\) scale\(0\./);
+    expect(Number(subject.dataset.subjectScale)).toBeGreaterThanOrEqual(0.75);
+    expect(Number(subject.dataset.subjectScale)).toBeLessThanOrEqual(1);
+    expect(Number(subject.dataset.subjectOpacity)).toBeGreaterThanOrEqual(0.5);
+    expect(Number(subject.dataset.subjectOpacity)).toBeLessThanOrEqual(1);
     expect(card).toHaveAttribute('data-motion-index', '0');
     expect(artifacts).toHaveAttribute('data-interference-rotation', '0');
     expect(artifacts.style.transform).toBe('rotate(0deg)');
     const first = card.style.transform;
+    const firstMirror = subject.dataset.mirrored;
     act(() => vi.advanceTimersByTime(1000));
     expect(card.style.transform).not.toBe(first);
+    expect(subject.dataset.mirrored).not.toBe(firstMirror);
     expect(card).toHaveAttribute('data-motion-index', '1');
     expect(artifacts).toHaveAttribute('data-interference-rotation', '90');
     expect(artifacts.style.transform).toBe('rotate(90deg)');
@@ -57,6 +63,11 @@ describe('ImageDecoderDisplay', () => {
     for (let index = 1; index < frames.length; index += 1) {
       const distance = Math.hypot(frames[index].x - frames[index - 1].x, frames[index].y - frames[index - 1].y);
       expect(distance / 100).toBeGreaterThanOrEqual(0.5);
+      expect(frames[index].mirrored).not.toBe(frames[index - 1].mirrored);
+      expect(frames[index].subjectScale).toBeGreaterThanOrEqual(0.75);
+      expect(frames[index].subjectScale).toBeLessThanOrEqual(1);
+      expect(frames[index].subjectOpacity).toBeGreaterThanOrEqual(0.5);
+      expect(frames[index].subjectOpacity).toBeLessThanOrEqual(1);
     }
   });
 });

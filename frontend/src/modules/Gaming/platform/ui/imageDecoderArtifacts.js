@@ -66,7 +66,9 @@ export function generateDecoderMotion(seed, count = 8) {
       id: index,
       x: farEdge ? 35 : -35,
       y: -8 + random() * 16,
-      scale: 0.97 + random() * 0.03,
+      mirrored: Boolean(index % 2),
+      subjectScale: 0.75 + random() * 0.25,
+      subjectOpacity: 0.5 + random() * 0.5,
     };
   });
 }
