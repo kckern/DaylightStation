@@ -37,7 +37,7 @@ export default function ImageDecoderDisplay({
   }, [motion.length, motionIntervalMs, seed]);
 
   return (
-    <figure className="image-decoder-display" data-status={failed ? "error" : loaded === `${src}:${attempt}` ? "ready" : "loading"} aria-label={alt} style={{
+    <figure className="image-decoder-display" data-status={failed ? "error" : loaded === `${src}:${attempt}` ? "ready" : "loading"} data-motion-index={motionIndex} aria-label={alt} style={{
       transform: `translate3d(${frame.x.toFixed(2)}%, ${frame.y.toFixed(2)}%, 0) scale(${frame.scale.toFixed(3)})`,
     }}>
       <img key={`${src}:${attempt}`} className="image-decoder-display__probe" src={resource} alt="" aria-hidden="true" onLoad={() => { setFailure(null); setLoaded(`${src}:${attempt}`); }} onError={() => setFailure(src)} />
@@ -57,6 +57,7 @@ export default function ImageDecoderDisplay({
           viewBox="0 0 100 100"
           preserveAspectRatio="xMidYMid meet"
           aria-hidden="true"
+          data-interference-rotation={motionIndex * 90}
           style={{ transform: `rotate(${motionIndex * 90}deg)` }}
         >
           {texture.tiles.map(tile => <rect key={`tile:${tile.id}`} className="image-decoder-display__texture-tile"

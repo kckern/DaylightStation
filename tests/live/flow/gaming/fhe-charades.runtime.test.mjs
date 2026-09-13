@@ -170,14 +170,26 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
         };
         return {card:box(card),subject:box(card.querySelector('.image-decoder-display__subject')),artifacts:box(card.querySelector('.image-decoder-display__artifacts'))};
       });
+      const waitForNextSettledFrame = async () => {
+        const startingIndex = await decoderCard.getAttribute('data-motion-index');
+        await expect.poll(() => decoderCard.getAttribute('data-motion-index')).not.toBe(startingIndex);
+        await page.waitForTimeout(400);
+      };
+      await waitForNextSettledFrame();
       const firstGeometry = await geometry();
+      const firstIndex = Number(await decoderCard.getAttribute('data-motion-index'));
+      const firstRotation = Number(await decoderCard.locator('.image-decoder-display__artifacts').getAttribute('data-interference-rotation'));
       expect(Math.abs(firstGeometry.subject.left - firstGeometry.artifacts.left)).toBeLessThan(1);
       expect(Math.abs(firstGeometry.subject.top - firstGeometry.artifacts.top)).toBeLessThan(1);
       expect(Math.abs(firstGeometry.subject.width - firstGeometry.artifacts.width)).toBeLessThan(1);
       expect(firstGeometry.subject.width).toBeGreaterThan(firstGeometry.card.width * 0.9);
-      await page.waitForTimeout(1400);
+      await waitForNextSettledFrame();
       const secondGeometry = await geometry();
+      const secondIndex = Number(await decoderCard.getAttribute('data-motion-index'));
+      const secondRotation = Number(await decoderCard.locator('.image-decoder-display__artifacts').getAttribute('data-interference-rotation'));
       expect(Math.hypot(secondGeometry.card.left - firstGeometry.card.left, secondGeometry.card.top - firstGeometry.card.top)).toBeGreaterThanOrEqual(firstGeometry.card.width * 0.5);
+      expect(secondIndex).toBe((firstIndex + 1) % 8);
+      expect(secondRotation - firstRotation).toBe(90);
       expect(Math.abs(secondGeometry.subject.left - secondGeometry.artifacts.left)).toBeLessThan(1);
       expect(Math.abs(secondGeometry.subject.width - secondGeometry.artifacts.width)).toBeLessThan(1);
       const asset = await request.get(ready.state.challenge.decoder.image);
