@@ -1,4 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  IconArrowRight,
+  IconLetterCase,
+  IconMasksTheater,
+  IconMessageOff,
+  IconPlayerPlayFilled,
+  IconPlayerStopFilled,
+  IconPointerOff,
+} from '@tabler/icons-react';
 import { useWebSocketSubscription } from '@/hooks/useWebSocket.js';
 import { fetchSession, sendRuleCommand } from '@gaming/platform/api/sessionClient.js';
 import Scoreboard from '@gaming-ui/Scoreboard.jsx';
@@ -14,7 +23,44 @@ import StageActions from '@gaming-ui/StageActions.jsx';
 import OutcomeReveal from '@gaming-ui/OutcomeReveal.jsx';
 import CompanionPanel from '@gaming-ui/CompanionPanel.jsx';
 import TitleCard from '@gaming-ui/TitleCard.jsx';
+import MemberAvatar from '@gaming-ui/MemberAvatar.jsx';
 import './Charades.scss';
+
+const TIMER_CIRCUMFERENCE = 2 * Math.PI * 52;
+
+function RoundProgress({ current, total }) {
+  return (
+    <span className="charades__rounds" role="img" aria-label={`Round ${current} of ${total}`}>
+      {Array.from({ length: total }, (_, index) => {
+        const round = index + 1;
+        const state = round < current ? 'complete' : round === current ? 'current' : 'upcoming';
+        return <span key={round} className="charades__round-step" data-state={state} aria-hidden="true" />;
+      })}
+    </span>
+  );
+}
+
+function CharadesCountdown({ deadline, durationMs, onComplete }) {
+  return (
+    <Timer deadline={deadline} durationMs={durationMs} format="seconds" onComplete={onComplete}>
+      {({ seconds, progress }) => (
+        <div className="charades__countdown" role="timer" aria-label={`${seconds} seconds remaining`}>
+          <svg viewBox="0 0 120 120" aria-hidden="true">
+            <circle className="charades__countdown-track" cx="60" cy="60" r="52" />
+            <circle
+              className="charades__countdown-progress"
+              cx="60"
+              cy="60"
+              r="52"
+              style={{ strokeDasharray: TIMER_CIRCUMFERENCE, strokeDashoffset: TIMER_CIRCUMFERENCE * (1 - progress) }}
+            />
+          </svg>
+          <strong>{seconds}</strong>
+        </div>
+      )}
+    </Timer>
+  );
+}
 
 export default function Charades({ seats = [], sessionId, onComplete, gamingServices }) {
   const teams = seats;
@@ -101,6 +147,8 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
     [teams, state?.performer_id],
   );
   const performerName = performer?.name || state?.performer_id || 'Performer';
+  const performerMember = wheelMembers.find(member => member.id === state?.performer_id)
+    || { id: state?.performer_id, name: performerName, avatar: null };
   const prompt = state?.challenge?.prompt || '';
 
 
@@ -112,7 +160,11 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
   return (
     <main className="charades" data-phase={state.phase} data-casual={casual}>
       {error && <div role="alert" className="charades__notice">{error}<GameButton onClick={retry}>Retry</GameButton></div>}
-      <ShowHeader eyebrow={`Round ${state.round} of ${definition.rounds}`} title="Charades" status={performerName} />
+      <ShowHeader
+        eyebrow={<RoundProgress current={state.round} total={definition.rounds} />}
+        title={<span className="charades__title"><IconMasksTheater aria-hidden="true" />Charades</span>}
+        status={<MemberAvatar member={performerMember} teamColor={performer?.color} size={34} showName />}
+      />
 
       {state.phase === 'performer-ready' && (
         <section className="charades__center">
@@ -121,21 +173,23 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
       )}
 
       {state.phase === 'challenge-ready' && (
-        <section className="charades__center">
-          <p className="charades__eyebrow">Secret clue</p>
+        <section className="charades__center charades__clue">
           {state.clue_presentation === 'image' ? <ImageDecoderDisplay src={state.challenge?.decoder?.image} alt="Encoded image clue for the performer" /> : <SegmentedSecretText text={prompt} label="Charades clue" accessibleText="Encoded charades clue for the performer" />}
-          <p className="charades__decoder-help">Performer only: view through the red decoder card.</p>
-          <GameButton tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'challenge.start' })}>{casual ? 'Go' : 'Start acting'}</GameButton>
+          <GameButton className="charades__primary-action" tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'challenge.start' })}><IconPlayerPlayFilled aria-hidden="true" />{casual ? 'Go' : 'Start acting'}</GameButton>
         </section>
       )}
 
       {state.phase === 'performing' && (
         <section className="charades__center charades__performing">
-          <Timer className="charades__timer" size="xl" format="seconds" deadline={state.deadline} durationMs={definition.timer_ms} onComplete={() => command({ type: 'timer.expire' })} />
+          <CharadesCountdown deadline={state.deadline} durationMs={definition.timer_ms} onComplete={() => command({ type: 'timer.expire' })} />
           {musicError && <div className="charades__notice" role="status">{musicError}<GameButton onClick={() => setMusicAttempt(value => value + 1)}>Retry music</GameButton></div>}
           <div className="charades__spotlight" aria-label="The secret clue is concealed during play">Act!</div>
-          <p className="charades__rule">Act it out — no talking, spelling, or pointing at objects.</p>
-          <GameButton tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'challenge.finish' })}>{casual ? 'Finish turn' : 'Stop timer'}</GameButton>
+          <ul className="charades__rules" aria-label="Charades rules">
+            <li><IconMessageOff aria-hidden="true" />No talking</li>
+            <li><IconLetterCase aria-hidden="true" />No spelling</li>
+            <li><IconPointerOff aria-hidden="true" />No pointing</li>
+          </ul>
+          <GameButton className="charades__primary-action" tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'challenge.finish' })}><IconPlayerStopFilled aria-hidden="true" />{casual ? 'Finish turn' : 'Stop timer'}</GameButton>
         </section>
       )}
 
@@ -150,17 +204,24 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
       )}
 
       {state.phase === 'challenge-complete' && (
-        <section className={`charades__center${casual && state.clue_presentation === 'image' ? ' charades__image-reveal' : ''}`}>
-          <OutcomeReveal tone="success" eyebrow={casual ? "The clue was" : "Score committed"} title={casual ? prompt : "Clue complete"}>
-            {casual && state.clue_presentation === 'image' && (
+        casual ? (
+          <section className="charades__center charades__reveal">
+            <h2>{prompt}</h2>
+            {state.clue_presentation === 'image' && (
               <img className="charades__revealed-image" src={state.challenge?.decoder?.image} alt={prompt} />
             )}
-            <p>{casual ? "Thanks for acting!" : "Pass the stage to the next performer."}</p>
-            <GameButton tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'challenge.next' })}>
-              {casual ? (anotherClue ? 'Next clue' : finalTurn ? 'Finish game' : 'Next performer') : 'Next clue'}
+            <GameButton className="charades__primary-action" tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'challenge.next' })}>
+              {anotherClue ? 'Next clue' : finalTurn ? 'Finish game' : 'Next performer'}<IconArrowRight aria-hidden="true" />
             </GameButton>
-          </OutcomeReveal>
-        </section>
+          </section>
+        ) : (
+          <section className="charades__center">
+            <OutcomeReveal tone="success" eyebrow="Score committed" title="Clue complete">
+              <p>Pass the stage to the next performer.</p>
+              <GameButton tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'challenge.next' })}>Next clue</GameButton>
+            </OutcomeReveal>
+          </section>
+        )
       )}
 
       {!casual && <Scoreboard teams={teams} scores={state.scores || {}} activeTeamId={state.performer_id} />}

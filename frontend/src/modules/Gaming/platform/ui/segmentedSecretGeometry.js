@@ -6,7 +6,7 @@ export const SEGMENTS = Object.freeze({
 });
 
 const GLYPHS = Object.freeze({
-  A: 'a b c e f g1 g2', B: 'c d e f g1 g2 l m', C: 'a d e f', D: 'a b c d e f', E: 'a d e f g1 g2', F: 'a e f g1 g2',
+  A: 'a b c e f g1 g2', B: 'a b c d e f g1 g2', C: 'a d e f', D: 'a b c d e f', E: 'a d e f g1 g2', F: 'a e f g1 g2',
   G: 'a c d e f g2', H: 'b c e f g1 g2', I: 'a d l m', J: 'b c d e', K: 'e f g1 h i k', L: 'd e f', M: 'b c e f h i',
   N: 'b c e f h k', O: 'a b c d e f', P: 'a b e f g1 g2', Q: 'a b c d e f k', R: 'a b e f g1 g2 k', S: 'a c d f g1 g2',
   T: 'a l m', U: 'b c d e f', V: 'e f j k', W: 'b c e f j m', X: 'h i j k', Y: 'h i m', Z: 'a d i j',
