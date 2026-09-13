@@ -56,6 +56,22 @@ projects individual setup for this mode while preserving the experience's team
 capabilities for competitive definitions. The rule setting controls behavior;
 hiding a scoreboard alone is not casual mode.
 
+A menu can launch a preconfigured individual roster directly, with no player or
+guest setup screen:
+
+```yaml
+- label: Charades
+  input: "app:party-games/charades:family?autostart=true&participants=person_a,person_b"
+  action: Open
+```
+
+The menu owns the explicit participant IDs and automatic-start flag. The selected
+definition owns rounds, timing, clue count, competition and music. IDs resolve
+against the live household profile; missing, duplicate or unknown IDs produce a
+configuration error instead of silently selecting different players. Without
+`autostart=true`, normal setup remains available. Launch parameters persist in the
+durable screen URL; a saved session takes precedence over new setup on refresh.
+
 Authored content may reference a clue bank beneath the configured data root:
 
 ```yaml

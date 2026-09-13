@@ -74,3 +74,42 @@ it('canonicalizes direct-route return targets and rejects a backslash-normalized
  await screen.findByTestId('team-setup');fireEvent.keyDown(window,{key:'Escape'});
  expect(replace).toHaveBeenCalledExactlyOnceWith('/screens/living-room');
 });
+
+it('launches a menu-configured roster directly without setup and keeps its parameters on refresh',async()=>{
+ render(<React.StrictMode><AppContainer open={{app:'party-games/charades:family?autostart=true&participants=b,a'}} clear={()=>{}}/></React.StrictMode>);
+ await screen.findByRole('button',{name:'Complete session-one'});
+ expect(screen.queryByTestId('team-setup')).toBeNull();
+ expect(screen.queryByText('+ Guest')).toBeNull();
+ expect(createSession).toHaveBeenCalledTimes(1);
+ expect(createSession.mock.calls[0][0]).toMatchObject({definitionId:'charades:family',seats:[{id:'b',members:[{id:'b',name:'Bob'}]},{id:'a',members:[{id:'a',name:'Alice'}]}]});
+ const params=new URLSearchParams(window.location.search);
+ expect(params.get('participants')).toBe('b,a');expect(params.get('autostart')).toBe('true');
+});
+it('fails visibly instead of silently changing an invalid configured roster',async()=>{
+ render(<PartyGamesApp definitionId="charades:family?autostart=true&participants=a,missing"/>);
+ expect(await screen.findByRole('alert')).toHaveTextContent('Unknown configured participant: missing');
+ expect(createSession).not.toHaveBeenCalled();expect(screen.queryByTestId('team-setup')).toBeNull();
+});
+it('requires explicit distinct participants for an automatic launch',async()=>{
+ render(<PartyGamesApp definitionId="charades:family?autostart=true&participants=a,a"/>);
+ expect(await screen.findByRole('alert')).toHaveTextContent('distinct participant');
+ expect(createSession).not.toHaveBeenCalled();
+});
+it('restores automatic launch parameters from a direct URL before session creation',async()=>{
+ window.history.replaceState({},'','/screens/living-room/party-games/charades:family?autostart=true&participants=b');
+ render(<PartyGamesApp appPath="charades:family"/>);
+ await screen.findByRole('button',{name:'Complete session-one'});
+ expect(createSession.mock.calls[0][0].seats.map(s=>s.id)).toEqual(['b']);
+});
+it('does not infer a roster when automatic launch has no participants',async()=>{
+ render(<PartyGamesApp definitionId="charades:family?autostart=true"/>);
+ expect(await screen.findByRole('alert')).toHaveTextContent('distinct participant');
+ expect(createSession).not.toHaveBeenCalled();
+});
+it('keeps the saved session roster authoritative over automatic launch parameters',async()=>{
+ window.history.replaceState({},'','/screens/living-room/party-games/charades:family?session=saved&autostart=true&participants=missing');
+ fetchBoot.mockResolvedValue({config,sets,attachedSession:{header:{session_id:'saved',experience:{id:'charades'},seats:[{id:'b',members:[config.household_members[1]]}]},state:{competition:false}}});
+ render(<PartyGamesApp appPath="charades:family"/>);
+ await screen.findByRole('button',{name:'Complete saved'});
+ expect(createSession).not.toHaveBeenCalled();expect(screen.queryByRole('alert')).toBeNull();
+});

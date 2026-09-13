@@ -1,3 +1,5 @@
+import { TEAM_COLORS } from '@gaming-ui/teamColors.js';
+
 // Outer shell flow: loading → set-picker → team-setup → buzzer-bind → playing
 // → results. Game-agnostic — knows nothing about
 // what happens inside 'playing' (the mounted game owns that).
@@ -74,6 +76,25 @@ export function flowReducer(state, action) {
         ? set.definitionId === action.requestedDefinition
         : action.requestedGame && set.game === action.requestedGame));
       if (action.attachedSession || action.diagnosticSession) return attachSession(next, action.sets, action.attachedSession || action.diagnosticSession, action.requestedDefinition);
+      if (action.launch?.autostart) {
+        const ids = action.launch.participants;
+        let error;
+        if (!requestedSet) error = 'Configured game is not available';
+        else if ((requestedSet.setupProfile?.kind || requestedSet.setup) !== 'individuals') error = 'Automatic participant setup requires an individual game';
+        else if (!ids?.length || new Set(ids).size !== ids.length) error = 'Automatic setup requires distinct participant IDs';
+        const known = new Map((action.config?.household_members || []).map(member => [member.id, member]));
+        if (!error) {
+          const unknown = ids.find(id => !known.has(id));
+          if (unknown) error = `Unknown configured participant: ${unknown}`;
+        }
+        if (error) return { ...next, phase: 'loading', error };
+        const seats = ids.map((id, index) => ({
+          id, name: known.get(id).name, members: [known.get(id)],
+          color: TEAM_COLORS[index % TEAM_COLORS.length], slot: `slot_${index + 1}`,
+        }));
+        const selected = selectSet(next, requestedSet);
+        return { ...selected, seats, phase: needsBuzzerBinding(selected) ? 'buzzer-bind' : 'playing' };
+      }
       if (requestedSet) return selectSet(next, requestedSet);
       return { ...next, phase: 'set-picker' };
     }

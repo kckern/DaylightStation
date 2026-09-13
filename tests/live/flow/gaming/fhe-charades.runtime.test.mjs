@@ -8,6 +8,8 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   const pageErrors = [];
   page.on('pageerror', error => pageErrors.push(error.message));
   const gameFailures = [];
+  const creations = [];
+  page.on('request', request => { if (request.method() === 'POST' && request.url().endsWith('/api/v1/gaming/sessions')) creations.push(request.postDataJSON()); });
   page.on('response', response => {
     if (response.status() >= 400 && response.url().includes('/api/v1/gaming/')) gameFailures.push({url:response.url(),status:response.status()});
   });
@@ -21,8 +23,10 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
     };
     window.Audio.prototype = NativeAudio.prototype;
     window.__fheWheelSelections = [];
+    window.__fheSetupSeen = false;
     const observedWheels = new WeakSet();
     new MutationObserver(() => {
+      if (document.querySelector('[data-testid=team-setup]')) window.__fheSetupSeen = true;
       document.querySelectorAll('.family-selector[data-selected-id]').forEach(wheel => {
         const id = wheel.getAttribute('data-selected-id');
         if (id && !observedWheels.has(wheel)) {
@@ -59,28 +63,6 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   await expect(page.locator('.menu-item').filter({hasText:'Charades'})).toBeVisible();
   for (let step = 0; step < 25 && !(await page.locator('.menu-item.active').innerText()).includes('Charades'); step++) await page.keyboard.press('ArrowRight');
   await expect(page.locator('.menu-item.active')).toContainText('Charades');
-  await page.keyboard.press('Enter');
-  await expect(page.getByTestId('team-setup')).toBeVisible();
-  // Native Shield-style Back has one owner and returns to the original menu.
-  await page.keyboard.press('Escape');
-  await expect(page.locator('.menu-item.active')).toContainText('Charades');
-  expect(new URL(page.url()).pathname).toBe('/screens/living-room/fhe');
-  await page.keyboard.press('Enter');
-  await expect(page.getByTestId('team-setup')).toBeVisible();
-  await expect(page.getByTestId('teams-confirm')).toHaveText('Start with 6 players');
-  await expect(page.getByRole('button', {name:'Teams',exact:true})).toHaveCount(0);
-  await expectFits(page.getByTestId('team-setup'));
-  // Exercise the actual roster controls before keeping all six participants.
-  const rosterButton = page.locator('.gp-teamsetup__individuals button[aria-pressed]').first();
-  for (let step = 0; step < 35 && !(await rosterButton.evaluate(el => el === document.activeElement)); step++) await page.keyboard.press('ArrowDown');
-  await expect(rosterButton).toBeFocused();
-  await page.keyboard.press('Enter');
-  await expect(rosterButton).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.getByTestId('teams-confirm')).toHaveText('Start with 5 players');
-  await page.keyboard.press('Enter');
-  await expect(rosterButton).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByTestId('teams-confirm')).toHaveText('Start with 6 players');
-  await focusRemote(/Start with 6 players/);
   const createdPromise = page.waitForResponse(r => r.url().endsWith('/api/v1/gaming/sessions') && r.request().method() === 'POST');
   await page.keyboard.press('Enter');
   const createdResponse = await createdPromise;
@@ -91,6 +73,14 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   const read = () => api(sessionPath);
   const seatIds = created.header.seats.map(seat => seat.id);
   expect(new Set(seatIds).size).toBe(6);
+  await expect(stage).toBeVisible();
+  expect(await page.evaluate(() => window.__fheSetupSeen)).toBe(false);
+  await expect(page.getByTestId('team-setup')).toHaveCount(0);
+  await expect(page.getByRole('button', {name:/Guest|Start with/})).toHaveCount(0);
+  const launch = new URL(page.url()).searchParams;
+  expect(launch.get('autostart')).toBe('true');
+  expect(launch.get('participants').split(',')).toEqual(seatIds);
+  expect(creations).toHaveLength(1);
   const initial = await read();
   const definition = initial.definition;
   expect(definition).toMatchObject({rounds:3,timer_ms:60_000,clues_per_turn:1,competition:false});
@@ -220,6 +210,7 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   expect(new URL(page.url()).pathname).toBe('/screens/living-room/fhe');
   await page.reload({waitUntil:'domcontentloaded'});
   await expect(page.locator('.menu-item').filter({hasText:'Charades'})).toBeVisible();
+  expect(creations).toHaveLength(1);
   expect(pageErrors).toEqual([]);
   expect(gameFailures).toEqual([]);
   await testInfo.attach('verified-turns', {body:JSON.stringify({sessionId,turns,imageIds,textIds},null,2),contentType:'application/json'});
