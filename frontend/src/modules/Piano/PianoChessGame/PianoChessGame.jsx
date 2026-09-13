@@ -393,13 +393,27 @@ export function PianoChessGame({
     return () => clearTimeout(timer);
   }, [liveScheme.id, shuffleEachTurn]);
 
+  /**
+   * THE SCHEME IN PLAY, not the one this component defaults to.
+   *
+   * This logged `scheme.id` — the PROP, whose default is
+   * `DEFAULT_CHORD_SCHEME` — so every chess game ever recorded says
+   * `letters-by-difficulty-v1` whether the child was reading chord symbols or
+   * staff cards. It is the one field an investigator uses to ask which
+   * vocabulary somebody was on, and it always gave the same answer: on
+   * 2026-09-13 it read `chords` for a game whose own `move-played` line carried
+   * staff dyads two lines below it. `liveScheme` is `game.scheme`, the one the
+   * board actually addresses with once `loadedAddressing` has resolved.
+   */
   useEffect(() => {
     logger().info('mounted', {
-      player_color: playerColor, difficulty, scheme: scheme.id,
+      player_color: playerColor, difficulty,
+      scheme: liveScheme?.id ?? null,
+      vocabulary: liveScheme?.kind === 'staff' ? 'staff' : 'chords',
       shuffle: shuffleEachTurn ? 'each_turn' : 'never', seed: gameSeed,
     });
     if (game.schemeRejected) logger().warn('scheme-rejected', game.schemeRejected);
-  }, [difficulty, game.schemeRejected, gameSeed, playerColor, scheme.id, shuffleEachTurn]);
+  }, [difficulty, game.schemeRejected, gameSeed, playerColor, liveScheme?.id, liveScheme?.kind, shuffleEachTurn]);
 
   /**
    * The board, said out loud.
