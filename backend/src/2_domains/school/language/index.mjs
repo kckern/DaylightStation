@@ -7,7 +7,7 @@
  */
 export {
   ROLES, RUNGS, RUNG_IDS,
-  rungById, resolveRole, requirementFor,
+  rungById, resolveRole, requirementFor, satisfiesRequirement,
   chainFor, nextRung, graduationEdges, creditChain,
 } from './ladder.mjs';
 

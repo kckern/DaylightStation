@@ -468,6 +468,41 @@ rotation, action lifecycle, physics, obstacles, score, sounds, and level
 progression. Ordinary play produces no assessment verdict or curriculum
 evidence.
 
+### Obstacles and actions
+
+Three verbs, three staves. A **low** obstacle is jumped (top staff), a **high**
+pillar is ducked under (bottom staff), and a **block** floating in the middle
+band — too tall to jump over, too low to duck under — is **shot** with a third
+staff that sits beside the jump staff, a little lower, under a crosshair. One
+fresh press fires one pellet: holding the chord does not auto-fire, and there is
+no shot from a slide. A `block` breaks on one pellet; a `block_hard` cracks on
+the first and breaks on the second, with the same notes both times. A broken
+block counts as cleared exactly like a dodge — it heals, adds a score bonus, and
+re-deals the targets. The staves never share a pitch, so holding one action's
+chord can never fire another.
+
+Each level's `obstacle_mix` weights what spawns, e.g. `{ low: 2, high: 2, block: 1 }`;
+absent means low and high evenly. The shoot staff exists only on a level whose
+mix can spawn a block. On single-note levels the staff that clears the next
+obstacle stays bright and the other staves dim.
+
+### Death, sound and sprites
+
+Running out of health freezes the world and bursts the player into a ring of
+orbs; the Game Over card follows about two seconds later.
+
+`theme.sounds` maps game events — `jump`, `duck`, `shoot`, `hit`, `death`,
+`dodge`, `levelup`, `gameover`, `start` — to files. A `/media/...` path is served
+through the media proxy, and an unset event is silent. The household config
+points jump, hit, shoot and death at `media/audio/sfx/side-scroller/`, so
+replacing a file there changes the sound with no config change.
+
+`theme.player.frames` names sheet cells per pose, and any entry may be a cycle.
+The default Mega Man sheet supplies stand, run, jump, slide, a two-frame hurt,
+and shooting while standing, running and jumping; the pellet is another cell on
+the same sheet. Block skins, the pellet and the explosion colours are each
+overridable per theme.
+
 ---
 
 ## Piano Flashcards

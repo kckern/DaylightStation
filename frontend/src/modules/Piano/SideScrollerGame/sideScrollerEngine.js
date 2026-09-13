@@ -7,6 +7,7 @@
  * State shape (world):
  * {
  *   obstacles: [],        // array of obstacle objects
+ *   projectiles: [],      // buster pellets in flight
  *   worldPos: 0,          // total distance scrolled
  *   score: 0,
  *   health: TOTAL_HEALTH,
@@ -15,19 +16,28 @@
  *   jumpT: 0,            // jump progress 0..1
  *   duckStartT: 0,       // timestamp when duck started (0 = not ducking)
  *   invincibleUntil: 0,  // timestamp until which player is invincible
- *   dodgeCount: 0,       // number of obstacles successfully dodged
+ *   shootUntil: 0,       // timestamp until which the shooting pose holds
+ *   dodgeCount: 0,       // number of obstacles cleared (passed or shot down)
+ *   blockHits: 0,        // pellets that struck a block
+ *   blocksBroken: 0,     // blocks shot down
+ *   nextId: 1,           // id source for obstacles and pellets
  * }
  *
  * Obstacle shape:
  * {
- *   type: 'low' | 'high',
+ *   id: number,          // stable across removals (render key)
+ *   type: 'low' | 'high' | 'block' | 'block_hard',
  *   x: number,           // left edge, normalized
  *   y: number,           // top edge, normalized
  *   width: number,
  *   height: number,
  *   hit: boolean,         // true if player already collided with it
- *   dodged: boolean,      // true if player successfully passed it
+ *   dodged: boolean,      // true if player cleared it (passed or broke it)
+ *   hp, maxHp: number,    // blocks only — pellets remaining to break it
+ *   broken: boolean,      // blocks only — shot down
  * }
+ *
+ * Projectile shape: { id, x, y } — left/top edge, PELLET_WIDTH × PELLET_HEIGHT.
  */
 
 // ─── Constants ──────────────────────────────────────────────────
@@ -40,8 +50,64 @@ export const PLAYER_DUCK_HEIGHT = 0.09;
 export const PLAYER_WIDTH = 0.04;
 export const OBSTACLE_LOW = 'low';
 export const OBSTACLE_HIGH = 'high';
+export const OBSTACLE_BLOCK = 'block';
+export const OBSTACLE_BLOCK_HARD = 'block_hard';
 export const JUMP_HEIGHT = 0.25;
 export const MAX_DUCK_MS = 800;
+
+// A block floats in the middle band. Its top sits above the highest a jumping
+// player's feet ever reach (GROUND_Y - JUMP_HEIGHT = 0.43) and its bottom below
+// a ducking player's head (GROUND_Y - PLAYER_DUCK_HEIGHT = 0.59), so neither
+// jumping nor ducking clears it — it has to be shot.
+export const BLOCK_TOP = 0.38;
+export const BLOCK_BOTTOM = 0.64;
+export const BLOCK_HP = Object.freeze({ [OBSTACLE_BLOCK]: 1, [OBSTACLE_BLOCK_HARD]: 2 });
+export const BLOCK_BREAK_SCORE = 50;
+
+export const PELLET_SPEED = 1.6;      // screen widths per second — outruns any scroll
+export const PELLET_WIDTH = 0.015;
+export const PELLET_HEIGHT = 0.025;
+export const BUSTER_HEIGHT = 0.10;    // pellet centre above the player's feet
+export const SHOOT_POSE_MS = 250;
+
+export const DEFAULT_OBSTACLE_MIX = Object.freeze({ [OBSTACLE_LOW]: 1, [OBSTACLE_HIGH]: 1 });
+const OBSTACLE_TYPES = [OBSTACLE_LOW, OBSTACLE_HIGH, OBSTACLE_BLOCK, OBSTACLE_BLOCK_HARD];
+const PELLET_EXIT_X = 1.05;
+
+/** True for obstacle types that are cleared by shooting. */
+export function isShootable(type) {
+  return BLOCK_HP[type] !== undefined;
+}
+
+// ─── Obstacle Mix ───────────────────────────────────────────────
+
+/**
+ * Pick an obstacle type from a level's `obstacle_mix` weights
+ * (e.g. `{ low: 1, high: 1, block: 1 }`). Unknown keys and non-positive weights
+ * are ignored; an absent or empty mix falls back to low/high evenly.
+ *
+ * @param {object} [mix]
+ * @param {() => number} [random]
+ * @returns {string} obstacle type
+ */
+export function pickObstacleType(mix, random = Math.random) {
+  const weighted = OBSTACLE_TYPES
+    .map((type) => [type, Number(mix?.[type]) || 0])
+    .filter(([, weight]) => weight > 0);
+  const pool = weighted.length > 0 ? weighted : Object.entries(DEFAULT_OBSTACLE_MIX);
+  const total = pool.reduce((sum, [, weight]) => sum + weight, 0);
+  let r = random() * total;
+  for (const [type, weight] of pool) {
+    if (r < weight) return type;
+    r -= weight;
+  }
+  return pool[pool.length - 1][0];
+}
+
+/** True when a level's mix can spawn something that must be shot. */
+export function mixIncludesShootable(mix) {
+  return OBSTACLE_TYPES.some((type) => isShootable(type) && Number(mix?.[type]) > 0);
+}
 
 // ─── World Creation ─────────────────────────────────────────────
 
@@ -52,6 +118,7 @@ export const MAX_DUCK_MS = 800;
 export function createInitialWorld(config = {}) {
   return {
     obstacles: [],
+    projectiles: [],
     worldPos: 0,
     score: 0,
     health: config.health ?? TOTAL_HEALTH,
@@ -60,7 +127,11 @@ export function createInitialWorld(config = {}) {
     jumpT: 0,
     duckStartT: 0,
     invincibleUntil: 0,
+    shootUntil: 0,
     dodgeCount: 0,
+    blockHits: 0,
+    blocksBroken: 0,
+    nextId: 1,
   };
 }
 
@@ -71,16 +142,24 @@ export function createInitialWorld(config = {}) {
  * Does NOT mutate the original world.
  *
  * @param {object} world - Current world state
- * @param {'low'|'high'} type - Obstacle type
+ * @param {'low'|'high'|'block'|'block_hard'} type - Obstacle type
  * @returns {object} New world with the obstacle appended
  */
 export function spawnObstacle(world, type) {
   const width = 0.04 + Math.random() * 0.02;
+  const id = world.nextId ?? 1;
   let y, height;
+  const extra = {};
 
   if (type === OBSTACLE_LOW) {
     height = 0.10;
     y = GROUND_Y - height;
+  } else if (isShootable(type)) {
+    y = BLOCK_TOP;
+    height = BLOCK_BOTTOM - BLOCK_TOP;
+    extra.hp = BLOCK_HP[type];
+    extra.maxHp = BLOCK_HP[type];
+    extra.broken = false;
   } else {
     // Tall pillar — unjumpable, must duck to clear
     // Bottom baseline at GROUND_Y - PLAYER_HEIGHT + 0.02 = 0.52
@@ -91,6 +170,7 @@ export function spawnObstacle(world, type) {
   }
 
   const obstacle = {
+    id,
     type,
     x: 1.05,
     y,
@@ -98,20 +178,47 @@ export function spawnObstacle(world, type) {
     height,
     hit: false,
     dodged: false,
+    ...extra,
   };
 
   return {
     ...world,
     obstacles: [...world.obstacles, obstacle],
+    nextId: id + 1,
   };
 }
 
 // ─── World Tick ─────────────────────────────────────────────────
 
 /**
+ * Index of the block a pellet strikes this frame, or -1. The test sweeps both
+ * bodies across the frame (pellet rightward from its old x, block leftward from
+ * its old x) so a low frame rate cannot tunnel a pellet through a thin block.
+ * The nearest (leftmost) eligible block wins.
+ */
+function findPelletTarget(obstacles, pellet, newX, shift) {
+  const sweepStart = pellet.x;
+  const sweepEnd = newX + PELLET_WIDTH;
+  const top = pellet.y;
+  const bottom = pellet.y + PELLET_HEIGHT;
+  let best = -1;
+
+  for (let i = 0; i < obstacles.length; i++) {
+    const ob = obstacles[i];
+    if (!isShootable(ob.type) || ob.broken || ob.hit || ob.dodged) continue;
+    const overlapX = sweepStart < ob.x + shift + ob.width && sweepEnd > ob.x;
+    const overlapY = top < ob.y + ob.height && bottom > ob.y;
+    if (overlapX && overlapY && (best < 0 || ob.x < obstacles[best].x)) best = i;
+  }
+
+  return best;
+}
+
+/**
  * Advance the world by dt seconds.
  * Moves obstacles left, removes off-screen ones, marks dodged obstacles,
- * advances worldPos, and increments score.
+ * flies pellets and resolves their block hits, advances worldPos, and
+ * increments score.
  *
  * Does NOT mutate the original world.
  *
@@ -123,6 +230,9 @@ export function spawnObstacle(world, type) {
 export function tickWorld(world, dt, scrollSpeed) {
   const shift = scrollSpeed * 0.08 * dt;
   let dodgeCount = world.dodgeCount;
+  let score = world.score + scrollSpeed * dt * 10;
+  let blockHits = world.blockHits ?? 0;
+  let blocksBroken = world.blocksBroken ?? 0;
 
   // Move obstacles and apply dodge/removal
   const obstacles = [];
@@ -149,12 +259,42 @@ export function tickWorld(world, dt, scrollSpeed) {
     });
   }
 
+  // Fly pellets; a pellet that strikes a block is consumed
+  const travel = PELLET_SPEED * dt;
+  const projectiles = [];
+  for (const pellet of world.projectiles ?? []) {
+    const newX = pellet.x + travel;
+    const target = findPelletTarget(obstacles, pellet, newX, shift);
+
+    if (target >= 0) {
+      const block = obstacles[target];
+      const hp = block.hp - 1;
+      blockHits++;
+      if (hp <= 0) {
+        // Shot down: stops colliding and counts as cleared, like a dodge.
+        obstacles[target] = { ...block, hp: 0, broken: true, dodged: true };
+        dodgeCount++;
+        blocksBroken++;
+        score += BLOCK_BREAK_SCORE;
+      } else {
+        obstacles[target] = { ...block, hp };
+      }
+      continue;
+    }
+
+    if (newX > PELLET_EXIT_X) continue;
+    projectiles.push({ ...pellet, x: newX });
+  }
+
   return {
     ...world,
     obstacles,
+    projectiles,
     worldPos: world.worldPos + shift,
-    score: world.score + scrollSpeed * dt * 10,
+    score,
     dodgeCount,
+    blockHits,
+    blocksBroken,
   };
 }
 
@@ -259,6 +399,33 @@ export function updateDuck(world, now, maxDuckMs) {
   return world;
 }
 
+// ─── Shoot ──────────────────────────────────────────────────────
+
+/**
+ * Fire one pellet from the buster and hold the shooting pose. No-op while
+ * ducking — there is no slide-shot. Mid-jump shots are allowed; they simply fly
+ * above a block.
+ *
+ * @param {object} world
+ * @param {number} now - Current timestamp (ms)
+ * @returns {object} New world (or same reference if no-op)
+ */
+export function applyShoot(world, now) {
+  if (world.playerState === 'ducking') return world;
+  const id = world.nextId ?? 1;
+  const pellet = {
+    id,
+    x: PLAYER_X + PLAYER_WIDTH,
+    y: world.playerY - BUSTER_HEIGHT - PELLET_HEIGHT / 2,
+  };
+  return {
+    ...world,
+    projectiles: [...(world.projectiles ?? []), pellet],
+    shootUntil: now + SHOOT_POSE_MS,
+    nextId: id + 1,
+  };
+}
+
 // ─── Hitbox & Collision ─────────────────────────────────────────
 
 /**
@@ -280,7 +447,7 @@ export function getPlayerHitbox(world) {
 
 /**
  * Check for AABB collisions between the player and obstacles.
- * Skips obstacles that are already hit or dodged.
+ * Skips obstacles that are already hit or dodged (a broken block is dodged).
  *
  * @param {object} world
  * @returns {object[]} Array of obstacle objects that overlap the player

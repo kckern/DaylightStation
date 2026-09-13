@@ -29,7 +29,7 @@ const IDLE_AFTER_DAYS = 14;
 const TREND_BUCKETS = 12;
 
 export class SentenceLadderService {
-  #ds; #logger; #now; #timezone; #boundaryHour; #readGate; #readProgramEnrollment; #realtime;
+  #ds; #logger; #now; #timezone; #boundaryHour; #readGate; #readProgramEnrollment; #realtime; #voiceAnswer;
   #corpusCache = new Map();
   // Which suppression reasons have already been announced this process. At
   // most one line per reason: the guard below runs on every saved attempt, so
@@ -47,6 +47,21 @@ export class SentenceLadderService {
     readGate = null,
     readProgramEnrollment = null,
     realtime = null,
+    /**
+     * Whether this DEPLOYMENT can turn speech into text, which is what makes
+     * a microphone an alternative to typing the interpretation.
+     *
+     * A constructor argument, not a request field and not part of
+     * `capabilities`: capabilities are whatever the client declares (they
+     * arrive in a query string), so a client able to assert the transcriber
+     * into existence would be handed a rung it cannot enter and cannot leave.
+     * Composition derives it from the one transcription service the router
+     * also gets, so the chain and the drawn microphone cannot disagree.
+     *
+     * Defaults to false. A composition that forgets it offers one rung fewer,
+     * which degrades; the other way round dead-ends a child.
+     */
+    voiceAnswer = false,
   }) {
     this.#ds = datastore;
     this.#logger = logger;
@@ -56,6 +71,7 @@ export class SentenceLadderService {
     this.#readGate = readGate;
     this.#readProgramEnrollment = typeof readProgramEnrollment === 'function' ? readProgramEnrollment : null;
     this.#realtime = realtime;
+    this.#voiceAnswer = voiceAnswer === true;
   }
 
   /**
@@ -224,6 +240,7 @@ export class SentenceLadderService {
       capabilities: { microphone: true, textInput: Object.values(corpus.languages) },
       languages: corpus.languages, playable: corpus.playable,
       admission: policy.admission, rungChain: policy.chain,
+      voiceAnswer: this.#voiceAnswer,
     });
     if (queue.length > 0 && summarizeQueue(queue).done === queue.length) {
       this.#log('info', 'school.language.day-complete', {
@@ -252,9 +269,9 @@ export class SentenceLadderService {
   getDay({ userId, corpusId, capabilities = {}, runId = null }) {
     this.#requireUser(userId);
     const corpus = this.#requireCorpus(corpusId);
-    const progress = this.#readProgress(userId, corpusId);
-    const policy = this.#queuePolicy(userId, corpus, progress);
     const log = this.#ds.readAllEvents(userId, corpusId);
+    const { progress, roll } = this.#openDay(userId, corpus, log, runId);
+    const policy = this.#queuePolicy(userId, corpus, progress);
 
     // The client DECLARES what it can do; the gate KNOWS. A keyboard absent at
     // a known MAC is a fact, and it wins over a stored localStorage claim.
@@ -271,17 +288,8 @@ export class SentenceLadderService {
       playable: corpus.playable,
       admission: policy.admission,
       rungChain: policy.chain,
+      voiceAnswer: this.#voiceAnswer,
     });
-
-    const now = this.#now();
-    const roll = shouldRollDay({
-      queue,
-      lastActivity: progress.lastActivity ? Date.parse(progress.lastActivity) : null,
-      now,
-      boundaryHour: this.#boundaryHour,
-      offsetMinutes: this.#offsetMinutes(now),
-    });
-    if (roll.roll) this.#emitDayComplete(userId, corpus, progress.day, policy, runId);
 
     // The rungs today's credit needs that this device cannot climb, and — for
     // each — WHAT it is short of. The card used to hardcode one sentence,
@@ -290,9 +298,9 @@ export class SentenceLadderService {
     // dictation wanted was a Korean keyboard. `requirementFor` is the single
     // place that mapping lives; sending it beats letting the client keep a
     // second copy that drifts.
-    const deviceChain = chainFor(allowed, corpus.languages);
+    const deviceChain = chainFor(allowed, corpus.languages, { voiceAnswer: this.#voiceAnswer });
     const missing = policy.chain ? policy.chain.filter((rung) => !deviceChain.includes(rung)) : [];
-    const needs = missing.map((rung) => [rung, requirementFor(rungById(rung), corpus.languages)]);
+    const needs = missing.map((rung) => [rung, this.#requirementFor(rungById(rung), corpus)]);
 
     const chain = deviceChain.filter((rung) => !policy.chain || policy.chain.includes(rung));
 
@@ -350,13 +358,14 @@ export class SentenceLadderService {
       corpusSize: corpus.size, capabilities: allowed,
       languages: corpus.languages, playable: corpus.playable,
       admission: null, rungChain: null,
+      voiceAnswer: this.#voiceAnswer,
     });
     return {
       schema: 'school.sentence-ladder-guest-preview/v1',
       corpus: { id: corpus.id, label: corpus.label, languages: corpus.languages, size: corpus.size },
       day: 1,
       dailyLimit: DEFAULT_DAILY_LIMIT,
-      chain: chainFor(allowed, corpus.languages),
+      chain: chainFor(allowed, corpus.languages, { voiceAnswer: this.#voiceAnswer }),
       creditChain: creditChain(null, corpus.languages),
       // A preview DOES filter rungs by device capability — `allowed` reaches
       // `buildDayQueue` above — but it has no enrollment chain to fall short
@@ -374,6 +383,18 @@ export class SentenceLadderService {
   }
 
   /**
+   * This rung's requirement, bound to this corpus AND this deployment.
+   *
+   * One method so that the queue filter, the missing-credit map and the gate
+   * check cannot be given different answers to the same question — the last
+   * time two of them disagreed, a child was told to connect a keyboard for a
+   * rung that needs none.
+   */
+  #requirementFor(rung, corpus) {
+    return requirementFor(rung, corpus.languages, { voiceAnswer: this.#voiceAnswer });
+  }
+
+  /**
    * Attach everything a rung needs to render: the sentence text, and the
    * audio each prompt step should play — resolved from roles to concrete
    * language codes HERE, so no frontend component ever hardcodes EN or KR.
@@ -388,10 +409,21 @@ export class SentenceLadderService {
     const response = rung?.response
       ? { ...rung.response, language: resolveRole(rung.response.role, corpus.languages) }
       : null;
+    // Whether THIS rung will take a spoken answer, decided once here rather
+    // than by the client combining `day.voiceAnswer` with its own list of
+    // which rungs may be spoken. That second list is the thing this task
+    // exists to delete: the ladder says interpretation only — speaking the
+    // Korean back on dictation is the repetition rung wearing a mic — and a
+    // client keeping its own copy would drift from it the first time the
+    // ladder changed. The device's microphone is still the client's to know.
+    const spokenAnswer = response?.modality === 'text'
+      && (this.#requirementFor(rung, corpus)?.anyOf ?? [])
+        .some((alt) => alt.kind === 'microphone');
     return {
       seq: entry.seq,
       rung: entry.rung,
       done: entry.done,
+      spokenAnswer,
       text: sentence?.text ?? null,
       prompt,
       response,
@@ -412,17 +444,26 @@ export class SentenceLadderService {
    * Append one attempt event. `given` is required for a text rung and ignored
    * otherwise; accuracy is computed for text responses but **gates nothing**
    * (design §3) — it exists for the learner's own diff on the Review surface.
+   *
+   * `revealed` is the OTHER kind of row a text rung can produce: the learner
+   * asked to be shown the answer instead of producing one. It takes the place
+   * of `given` rather than sitting beside it — see `#recordAttempt`.
    */
-  logAttempt({ userId, corpusId, seq, rung, given = null, source = null, capabilities = {}, runId = null }) {
+  logAttempt({
+    userId, corpusId, seq, rung, given = null, revealed = false,
+    source = null, capabilities = {}, runId = null, method = null,
+  }) {
     if (rung === 'recording') {
       throw new ValidationError('recording evidence requires an audio upload', { field: 'rung' });
     }
-    return this.#recordAttempt({ userId, corpusId, seq, rung, given, source, capabilities, runId });
+    return this.#recordAttempt({
+      userId, corpusId, seq, rung, given, revealed, source, capabilities, runId, method,
+    });
   }
 
   #recordAttempt({
-    userId, corpusId, seq, rung, given = null, source = null, capabilities = {},
-    allowRecording = false, skipDueCheck = false, practice = false, runId = null,
+    userId, corpusId, seq, rung, given = null, revealed = false, source = null, capabilities = {},
+    allowRecording = false, skipDueCheck = false, practice = false, runId = null, method = null,
   }) {
     this.#requireUser(userId);
     const corpus = this.#requireCorpus(corpusId);
@@ -462,16 +503,70 @@ export class SentenceLadderService {
     if (practice === true || due?.practice === true) event.practice = true;
     if (source) event.source = source;
 
+    if (revealed === true && rungDef.response?.modality !== 'text') {
+      // Nothing written, nothing to reveal. A reveal on a repetition or a
+      // recording would be a flag with no meaning, and a meaningless flag in an
+      // append-only log outlives whoever set it.
+      throw new ValidationError(`${rung} has no written answer to reveal`, { field: 'revealed' });
+    }
+
     if (rungDef.response?.modality === 'text') {
-      if (typeof given !== 'string' || given.trim() === '') {
-        throw new ValidationError(`${rung} requires a written response`, { field: 'given' });
-      }
       const language = resolveRole(rungDef.response.role, corpus.languages);
       const expected = sentence.text[language] ?? '';
-      event.given = given.trim();
       event.expected = expected;
       event.language = language;
-      event.accuracy = accuracy(given, expected);
+
+      if (revealed === true) {
+        /**
+         * A REVEAL IS NOT AN ATTEMPT, and this is the line that keeps the
+         * record honest about it. On interpretation the English text IS the
+         * answer, so showing it hands over the whole response and leaves only
+         * transcription; the learner produced nothing, so:
+         *
+         *   - no `given` — there is no answer of theirs to store, and the one
+         *     thing that must never be written down as theirs is the expected
+         *     text they were just shown;
+         *   - **no `accuracy` at all**, rather than a zero. A zero is a score,
+         *     and a scored reveal would drag the learner's average down for a
+         *     sentence nobody assessed — while `accuracy(expected, expected)`,
+         *     which is what storing the shown text would have produced, is the
+         *     1.0 that would say a child understood a sentence they only
+         *     pressed a button on. An ABSENT field is the honest shape, and
+         *     every reader here already filters on `typeof accuracy`.
+         *
+         * What it does NOT change is credit. Accuracy gates nothing in this
+         * program and neither does this: the sentence still clears the rung and
+         * climbs. The difference is entirely in what the evidence says.
+         */
+        event.revealed = true;
+      } else {
+        if (typeof given !== 'string' || given.trim() === '') {
+          throw new ValidationError(`${rung} requires a written response`, { field: 'given' });
+        }
+        event.given = given.trim();
+        event.accuracy = accuracy(given, expected);
+        /**
+         * HOW THE ANSWER WAS PRODUCED — typed, or spoken and transcribed into
+         * the field before the learner submitted it.
+         *
+         * The response is still TEXT. Voice is an input method, not a different
+         * kind of answer, so this is one extra field on the same row rather
+         * than a second shape of record: a learner who understands a sentence
+         * but cannot find the keys on an English keyboard is measured on
+         * comprehension either way, and a reader can still tell the two apart.
+         *
+         * Absent when the client did not say, rather than defaulted to
+         * 'typed': every row written before this existed is a typed answer
+         * whose method was never asked, and a field that claims otherwise for
+         * them would be a fact nobody established, in an append-only log.
+         */
+        if (method != null) {
+          if (method !== 'typed' && method !== 'spoken') {
+            throw new ValidationError(`unknown answer method: ${method}`, { field: 'method', value: method });
+          }
+          event.method = method;
+        }
+      }
     }
 
     // The datastore returns null rather than throwing when it will not resolve
@@ -498,7 +593,7 @@ export class SentenceLadderService {
     const rungDef = rungById(rung);
     const gate = this.#gate();
     const allowed = capabilitiesUnder(gate, capabilities);
-    if (!allowsRung(gate, requirementFor(rungDef, corpus.languages), allowed)) {
+    if (!allowsRung(gate, this.#requirementFor(rungDef, corpus), allowed)) {
       throw new GateClosedError(gateMessage(gate) || 'That is unavailable right now', gate);
     }
     const policy = this.#queuePolicy(userId, corpus, progress);
@@ -512,6 +607,7 @@ export class SentenceLadderService {
       playable: corpus.playable,
       admission: policy.admission,
       rungChain: policy.chain,
+      voiceAnswer: this.#voiceAnswer,
     });
     const due = queue.find((entry) => !entry.done && entry.seq === Number(seq) && entry.rung === rung) ?? null;
     if (!due) {
@@ -565,45 +661,69 @@ export class SentenceLadderService {
   }
 
   /**
-   * Advance to the next study day. The rule is re-checked server-side: a
-   * client that asks early is refused, so finishing at noon cannot hand out
-   * tomorrow's sentences. The spacing IS the method.
+   * The day a learner OPENS onto. A day finished in an earlier study day is
+   * behind them, so it advances here, on the read, with nobody having to find
+   * a button first. That button was hidden on the locked kiosk, which is how a
+   * finished day 1 came back as "complete" the next afternoon and a child who
+   * wanted today's sentences met a wall (2026-09-12).
+   *
+   * Judged on the FULL credit queue, never this device's filtered one: a panel
+   * without a keyboard sees a finished repetition-only day, and rolling on that
+   * would skip the rungs today's credit still needs.
+   *
+   * Announces nothing. The attempt that finished the day already published
+   * `day-complete`; every read restating it closed the day again, and each
+   * close put another receipt on the roll.
    */
-  rollDay({ userId, corpusId, capabilities = {}, runId = null }) {
-    this.#requireUser(userId);
-    const corpus = this.#requireCorpus(corpusId);
-    const progress = this.#readProgress(userId, corpusId);
-    const policy = this.#queuePolicy(userId, corpus, progress);
-    const log = this.#ds.readAllEvents(userId, corpusId);
-
-    const queue = buildDayQueue({
-      log,
-      day: progress.day,
-      dailyLimit: policy.dailyLimit,
-      corpusSize: corpus.size,
-      capabilities,
-      languages: corpus.languages,
-      playable: corpus.playable,
-      admission: policy.admission,
-      rungChain: policy.chain,
-    });
-
+  #openDay(userId, corpus, log, runId = null) {
+    const progress = this.#readProgress(userId, corpus.id);
+    const queue = this.#fullDayQueue(userId, corpus.id, corpus, log, progress);
     const now = this.#now();
-    const decision = shouldRollDay({
+    const roll = shouldRollDay({
       queue,
       lastActivity: progress.lastActivity ? Date.parse(progress.lastActivity) : null,
       now,
       boundaryHour: this.#boundaryHour,
       offsetMinutes: this.#offsetMinutes(now),
     });
-    if (decision.roll) this.#emitDayComplete(userId, corpus, progress.day, policy, runId);
+    if (!roll.roll) return { progress, roll, rolled: false };
+    // Every sentence retired: there is no next day to open onto, and rolling
+    // a vacuous day on every read would only inflate the day count.
+    if (queue.length === 0) return { progress, roll: { roll: false, reason: 'nothing-left' }, rolled: false };
+    const next = { ...progress, day: progress.day + 1 };
+    this.#writeProgress(userId, corpus.id, next);
+    this.#log('info', 'school.language.day-rolled', {
+      learnerId: userId, corpus: corpus.id, day: next.day, via: 'open',
+    }, runId);
+    return { progress: next, roll, rolled: true };
+  }
 
-    if (!decision.roll) return { rolled: false, day: progress.day, reason: decision.reason };
+  /**
+   * Advance to the next study day on request. A finished day is enough: a
+   * learner can always go on to the next set, even on a day already credited.
+   * Only rolling with work outstanding is refused, because that would skip a
+   * rung without saying so. `reason` says which it was — `earned` once the
+   * boundary has passed, `ahead` when the next set was taken the same day.
+   *
+   * Judged on the full credit queue, like `#openDay`, so a device that cannot
+   * climb a rung cannot roll past it; the client's capabilities play no part.
+   */
+  rollDay({ userId, corpusId, runId = null }) {
+    this.#requireUser(userId);
+    const corpus = this.#requireCorpus(corpusId);
+    const log = this.#ds.readAllEvents(userId, corpusId);
+    const opened = this.#openDay(userId, corpus, log, runId);
+    if (opened.rolled) return { rolled: true, day: opened.progress.day, reason: opened.roll.reason };
+
+    const { progress, roll } = opened;
+    if (roll.reason !== 'before-boundary') return { rolled: false, day: progress.day, reason: roll.reason };
 
     const next = { ...progress, day: progress.day + 1 };
     this.#writeProgress(userId, corpusId, next);
-    this.#log('info', 'school.language.day-rolled', { learnerId: userId, corpus: corpusId, day: next.day }, runId);
-    return { rolled: true, day: next.day, reason: decision.reason };
+    this.#log('info', 'school.language.day-rolled', {
+      learnerId: userId, corpus: corpusId, day: next.day, via: 'ahead',
+    }, runId);
+    return { rolled: true, day: next.day, reason: 'ahead' };
   }
 
   // -- history -------------------------------------------------------------
@@ -696,6 +816,7 @@ export class SentenceLadderService {
       playable: corpus.playable,
       admission: policy.admission,
       rungChain: policy.chain,
+      voiceAnswer: this.#voiceAnswer,
     });
   }
 
@@ -872,8 +993,14 @@ export class SentenceLadderService {
       )),
     );
 
+    // Reveals are OUT OF THIS AVERAGE BY CONSTRUCTION: a revealed row carries
+    // no `accuracy` field at all (see `#recordAttempt`), so the filter that was
+    // already here excludes it. Said out loud because the tempting "fix" — give
+    // a reveal a zero so it is counted — would turn a skip into a failed
+    // assessment, and this program assesses nothing.
     const scored = log.filter((e) => typeof e.accuracy === 'number');
     const recordings = log.filter((e) => e.rung === 'recording').length;
+    const reveals = log.filter((e) => e.revealed === true).length;
     const outstanding = queue.filter((e) => !e.done);
 
     const lastActivity = progress.lastActivity
@@ -905,6 +1032,14 @@ export class SentenceLadderService {
       { id: 'day', kind: 'count', label: 'Study day', value: progress.day, unit: 'days', audience: 'learner' },
       { id: 'recordings', kind: 'count', label: 'Recordings', value: recordings, unit: 'recordings' },
     ];
+    // Only once there are any. Keeping a reveal out of the accuracy figure
+    // stops it lying; it does not make it visible, and a grown-up reading this
+    // card has to be able to see how much of the work was handed over. No
+    // `audience: 'learner'` — this is for the person deciding whether the rung
+    // is too hard, not a scoreboard for the child to watch.
+    if (reveals) {
+      metrics.push({ id: 'reveals', kind: 'count', label: 'Answers shown', value: reveals, unit: 'sentences' });
+    }
     if (scored.length) {
       metrics.push({
         id: 'accuracy', kind: 'score', label: 'Typing accuracy',

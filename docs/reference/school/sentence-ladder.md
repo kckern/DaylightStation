@@ -89,7 +89,29 @@ different corpus, not different code.
 | `repetition` | source, target, target | none — sat through | nothing |
 | `dictation` | target | target text | a keyboard for the target script |
 | `recording` | target | target audio | a microphone |
-| `interpretation` | target | source text | a keyboard for the source script |
+| `interpretation` | target | source text | a keyboard for the source script **or** a microphone |
+
+**A requirement is a set of alternatives, met by any one of them** — the
+payload shape is `{anyOf: [...]}` for every rung, including the three that have
+exactly one. Interpretation's second alternative is the spoken answer: the
+learner says the translation, it is transcribed into the field, and they read
+and edit it before submitting. The answer is still *text*; voice is an input
+method, and the attempt records which (`method: 'typed' | 'spoken'`).
+
+**Only interpretation.** Dictation is typing the target script from audio, so a
+spoken target answer there is the learner repeating what was just played —
+which is the repetition rung, already done. Accepting it as dictation would
+credit listening as writing and remove the only rung that practises the script.
+
+**The alternative exists only where the server can actually transcribe.** A
+household with no AI gateway has none, and the ladder is told so
+(`voiceAnswer`) as a separate input from `capabilities` — capabilities are
+declared by the client, down to a query string, and a client able to assert the
+transcriber into existence would be handed a rung with no way in and no way
+past. It reaches the study service from composition, from the same transcription
+service the router gets, so the offered rung and the drawn microphone cannot
+disagree. Each queue entry carries `spokenAnswer`, so the client never keeps its
+own list of which rungs may be spoken.
 
 Repetition plays the target twice on purpose. The first hearing is
 recognition; the pause before the second is where the learner speaks; the
@@ -137,9 +159,25 @@ the enrollment's list of rungs and is what decides whether a day is complete;
 a device never lowers the bar for credit. When a device cannot serve a credit
 rung, the surface says so on that rung, names the thing it lacks ("Needs a
 Korean keyboard", "Needs a microphone — on another device"), and the day is
-finished elsewhere. A rung with no reason falls back to "Not available on this
-device", and a requirement whose language cannot be named is never printed
-as "Needs a null keyboard".
+finished elsewhere. A rung short of *alternatives* names them with **or** —
+"Needs an English keyboard or a microphone" — never as though a child had to
+find both. A rung with no reason falls back to "Not available on this device",
+and a requirement whose language cannot be named is never printed as "Needs a
+null keyboard": that alternative is dropped, and the printable ones still tell
+the child what to do.
+
+The same requirement also reaches the log store as one short token per blocked
+rung (`microphone`, `textInput:KR`, `microphone|textInput:EN`) — sorted, so a
+rung with two ways through is one countable thing rather than two spellings of
+one situation. `stats by` on it answers which capability blocks the most work.
+
+**A keyboard-less panel with a microphone can now do interpretation**, which
+before this was one of three rungs it was sent elsewhere for. The access gate
+follows: a hindered gate withholds every keyboard, and the rung survives on its
+second alternative. The gate and the queue answer that question with the ladder's
+one predicate (`satisfiesRequirement`) — they used to hold a copy each, and the
+copies drifted into telling a child to connect a keyboard for a rung that needs
+none.
 
 ---
 
@@ -152,43 +190,67 @@ it started in, and someone drilling at 1am has not earned tomorrow's sentences.
 **The queue is derived, never stored.** Every attempt is appended to an
 evidence log; the day's queue is rebuilt from that log on every read. There is
 no queue table to lose or desynchronise, and the queue can never claim
-progress the log does not show. A day's work is:
+progress the log does not show. A day's work is **`dailyLimit` steps at every
+rung**, the same number on each:
 
-1. up to `dailyLimit` brand-new sentences, entering at the first rung;
-2. every sentence that cleared rung *k* on an **earlier** day and has not yet
-   cleared rung *k+1*;
-3. **practice**, only while (2) cannot fill the day.
+1. at the first rung, up to `dailyLimit` brand-new sentences;
+2. at each rung above it, sentences that cleared the rung below on an
+   **earlier** day and have not yet cleared this one: oldest first, at most
+   `dailyLimit`;
+3. **practice**, only while (2) cannot fill that rung.
+
+Graduates beyond the limit are not dropped. They stay owed and graduate on a
+later day, so a pace change delays a sentence without losing it. A step
+finished today stays on its rung, so finishing one never pulls another in
+behind it. Before 2026-09-12 the fill topped up the day's *total* rung by rung,
+and a pipeline that did not match the limit came out lopsided: a first day at
+five a day, followed by an enrollment of three, served 3 repetitions,
+8 dictations, 1 recording and no interpretation.
 
 The "earlier day" test is what enforces one rung per day. Without it a sentence
 shadowed this morning would reappear as dictation this afternoon, and the
 whole ladder would collapse into one sitting.
 
 **The cold start.** On day one nothing has cleared anything, so the day would
-be a quarter of its intended size and only reach full volume on day four. A
-short day is topped up by walking today's own new set up the remaining rungs
-as practice:
+be a quarter of its intended size and only reach full volume on day four. Each
+rung that graduates cannot fill is topped up with today's own new set as
+practice (one sentence a day, four rungs):
 
 ```
               CREDITED                   PRACTICE
    Day 1  s1@r1                      s1@r2 r3 r4
-   Day 2  s2@r1 s1@r2                s2@r2 r3
-   Day 3  s3@r1 s2@r2 s1@r3          s3@r2
+   Day 2  s2@r1 s1@r2                s2@r3 r4
+   Day 3  s3@r1 s2@r2 s1@r3          s3@r4
    Day 4  s4@r1 s3@r2 s2@r3 s1@r4        --      <- steady
 ```
 
 Practice never advances a sentence: its events are written with `practice:
 true` and ignored when deciding what cleared, so a sentence still climbs
 exactly one rung a day for credit. The top-up turns itself off once credited
-work fills the day, and comes back by itself if a learner drains the pipeline
+work fills a rung, and comes back by itself if a learner drains the pipeline
 by skipping a week. The surface says "Extra practice — this one doesn't move
 up yet" over such an entry, because the same sentence arriving at three rungs
 in one sitting reads as a bug otherwise.
 
-**Rollover** needs two things: the queue is complete, and the boundary has
-passed. Rolling with work outstanding would skip a rung without telling the
-learner; rolling before the boundary would hand out tomorrow's sentences
-today and let a keen learner burn the corpus in an afternoon. A refused roll
-says why. An empty queue counts as complete.
+**Rollover** needs the day's queue complete, judged on the full credit queue
+rather than the requesting device's filtered one, so a panel that cannot
+climb a rung can never roll past it. Rolling with work outstanding would skip
+a rung without telling the learner, and a refused roll says why.
+
+- **Opening the ladder rolls for you.** A day finished in an earlier study day
+  advances on the read (`school.language.day-rolled`, `via: open`). Nobody
+  needs to find a button, which is how a finished day came back as "complete"
+  the next afternoon on the locked kiosk (2026-09-12).
+- **A finished day is never a wall.** *Start the next day* is offered on the
+  day-complete panel everywhere, the kiosk included, and the server grants it
+  on the same day too (`reason: ahead`, `via: ahead`), even when today is
+  already credited.
+- **Neither path re-announces the day.** Only the attempt that finishes a day
+  publishes `day-complete`. A read or a roll that restated it closed the day
+  again, and each close printed another receipt.
+
+An empty queue counts as complete, but opening onto one does not roll: with
+every sentence retired there is no next day to serve.
 
 **Retirement.** A sentence that has cleared every rung of the chain is retired.
 Evidence recorded on a better-equipped device never creates phantom work on a
@@ -319,12 +381,40 @@ could not do was ask for the sentence they had just heard one more time.
 ### Dictation and interpretation
 
 Dictation hides the sentence — recalling it is the task. Interpretation shows
-it — rendering meaning is the task. Both loop the prompt audio while the
-learner types, with about two and a half seconds of silence before each
-restart, so the repetition reinforces without becoming a siren; the clips
-within one pass stay gapless. In `copy` mode the target script is revealed one
-glyph ahead of what has been typed correctly, so a child learning the script
-can practise entering it before they can hear it.
+it — rendering meaning is the task. The prompt plays once on arrival and again
+on Tab, on the Play control, or after a long enough silence to mean "stuck";
+it does not loop, and a Stop sits beside Play for as long as anything sounds.
+In `copy` mode the target script is revealed one glyph ahead of what has been
+typed correctly, so a child learning the script can practise entering it
+before they can hear it.
+
+**A hint is partial. A reveal is the answer.** The two rungs need different
+help, and the difference is not a matter of degree:
+
+| Rung | What is withheld | The affordance | What it costs |
+|---|---|---|---|
+| dictation | the Korean | **Peek** (F1, or the button) — shows the whole sentence, with the learner's own column marked; the next keystroke takes it away | nothing. It is still theirs to type, in Hangul, from memory of what they just read — which is the skill |
+| interpretation | the English | **Reveal** ("Show answer") — the English text, and the English clip with it | the exercise. The field goes, and the attempt is recorded as a reveal |
+
+On interpretation the English text IS the answer, so showing it is not a hint:
+it hands over the whole response and leaves transcription. Playing the English
+clip hands over exactly the same thing. Both are a skip, and calling either one
+a hint would let the record say a child interpreted 4,143 sentences when they
+pressed a button 4,143 times. So the reveal shows the text and plays the clip
+together — one surrender, not two — and it is one-way: there is no un-reveal,
+because reading the answer, hiding it, and typing it back in is precisely the
+record this split exists to protect.
+
+**The partial half is not built, and that is deliberate.** The hint for
+interpretation is one word's meaning — a gloss — and glosses are tabled into
+`docs/_wip/plans/2026-09-11-sentence-ladder-word-glosses.md`. Until they exist
+there is no Hint control on this rung, not even a disabled one: a button with
+nothing to say is a dead button, and a child who presses a dead button decides
+the screen is broken. When glosses land, Hint joins Reveal — it does not
+replace it, and it must not be recorded as one.
+
+A reveal **clears the rung like any other attempt** — accuracy gates nothing
+here and neither does this. What changes is only what the evidence says.
 
 An answer is compared to the expected text after trimming, collapsing
 whitespace and casefolding — nothing cleverer, so a near miss is exactly what
@@ -352,6 +442,53 @@ the composer an oracle, and only `copy` does.
 
 The typing field asks for the in-page IME in the right script: the target for
 dictation, the source for interpretation, following focus with no keypress.
+
+**Interpretation can be answered by speaking.** A learner who understands a
+sentence perfectly can still be defeated by an English keyboard, and the record
+would then measure typing rather than comprehension — which is the one thing
+this rung exists to measure. So a *Speak* control sits beside Submit: the mic
+opens, the take goes for recognition, and the transcript lands **in the field,
+unsubmitted**. Sent straight off it would make every mistranscription the
+learner's own mistake, marked down for a word they said correctly and never
+told why; landing it in the field costs one tap and makes the machine's guess
+something they can see and correct.
+
+- **The response is still text.** Voice is an *input method*, not a different
+  kind of answer, so `entry.response` is unchanged and the attempt carries one
+  extra field, `method: typed | spoken`. A revealed sentence has no method,
+  because nobody answered it.
+- **The transcript replaces the field.** What is usually sitting there is an
+  abandoned half-attempt, and splicing a spoken sentence onto it makes a
+  sentence nobody said. The control says "Speak **instead**" once there is text
+  to lose. An edit of a transcript is still `spoken`; a transcript deleted to
+  nothing and retyped is `typed`.
+- **Not on dictation.** Entering the Korean script *is* that rung's task; a
+  learner who could say the sentence instead would be handing in a recording of
+  the one skill being drilled.
+- **Three visible states**, because the round trip is a model call: *Speak*
+  (quiet), a red *Stop* while the mic is open, and "Writing it down…" in the
+  accent while the transcript is in flight. A control that looked the same for
+  four seconds reads as broken to a child at a panel with no pointer. The mic
+  closes itself after 20s.
+- **Every failure is survivable and none is a dead end**, because the field
+  never goes away. No microphone on the device, or no AI gateway on the server
+  (`day.voiceAnswer: false`) — the control is *not drawn at all*, on the same
+  reasoning that keeps Hint off this rung: a button that cannot work is a dead
+  button. A mic that will not open, a failed request, or a transcript with
+  nothing in it — the control *stays and explains*, because it was honestly
+  offered and a second try may yet work.
+
+**⚠ Nothing derived from the expected answer reaches the recogniser, and the
+route is built so it cannot.** A Whisper prompt biases recognition: give it the
+English sentence and the model hears that sentence whatever the child said, and
+the rung measures nothing while looking perfect. `POST
+/users/:userId/transcribe` never touches the corpus — the study grant is
+checked for *scope* and loads nothing, `seq` is taken for the log line only, and
+the context handed to the transcription profile is exactly two fields resolved
+from closed sets (a language name from an allowlist, a register constant). The
+profile (`1_adapters/ai/transcriptionProfiles/language.mjs`) also repairs
+nothing: its cleanup pass may drop filler and collapse a stutter and must
+otherwise return the words as heard, wrong grammar and all.
 
 ### Recording
 
@@ -528,7 +665,37 @@ An attempt is one row in the day's log:
   practice: false          # true for a cold-start top-up pass
   given: 오늘 날씨가 좋아요   # text responses only
   accuracy: 0.92           # text responses only; recorded, never gating
+  method: typed            # text responses only; typed | spoken
 ```
+
+`method` says how the answer was produced — typed, or spoken and transcribed
+into the field before the learner submitted it. It is **absent** on rows written
+before the question was asked, and on any client that does not send it: a
+guessed method in an append-only log outlives whoever guessed it. It changes
+nothing about scoring or credit.
+
+A **revealed** attempt is the same row with one field instead of two:
+
+```yaml
+- at: 2026-09-11T13:41:02Z
+  day: 1
+  seq: 1
+  rung: interpretation
+  attributedTo: test-learner
+  revealed: true           # the learner asked to be shown the answer
+  expected: The weather's nice today.
+  language: EN
+```
+
+It carries **no `given`** — the learner produced nothing, and the text they
+were shown must never be written down as theirs — and **no `accuracy` at all**,
+not a zero. A zero would be a score for a sentence nobody assessed, and
+scoring the shown text against itself would be the 1.0 that says a child
+understood a sentence they pressed a button on. An absent field is the honest
+shape, and every reader already filters on `typeof accuracy`. The course card's
+typing-accuracy figure therefore excludes reveals by construction, and counts
+them separately as **Answers shown** so a grown-up can see how much of the work
+was handed over.
 
 The log is the only source of truth for where a sentence is. `progress.yml`
 holds what cannot be derived: the current study day, the pacing limit, and the
@@ -547,9 +714,10 @@ All under `/api/v1/school/sentence-ladder`. Learner routes carry
 |---|---|---|
 | GET | `/courses` | valid corpora with their role bindings; an invalid corpus is omitted, not served broken |
 | GET | `/preview/:corpusId/day` | a non-recording guest day for teachers |
-| GET | `/users/:userId/day` | today's queue for this device's capabilities, the credit chain, blocked rungs and their needs, cues, rollover state |
-| POST | `/users/:userId/log` | one attempt — `seq`, `rung`, `given` for text rungs |
+| GET | `/users/:userId/day` | today's queue for this device's capabilities, the credit chain, blocked rungs and their needs, cues, `voiceAnswer`, rollover state |
+| POST | `/users/:userId/log` | one attempt — `seq`, `rung`, and either `given` (text rungs, optionally with `method: typed \| spoken`) or `revealed: true` (the learner asked to be shown the answer; never both) |
 | POST | `/users/:userId/recording` | raw audio for one outstanding recording step |
+| POST | `/users/:userId/transcribe` | raw audio of a spoken answer → `{ transcript, empty }`. Stores nothing and reads no corpus. 503 where the household has no AI gateway — the day says `voiceAnswer: false` in advance so no client has to find out this way |
 | PUT | `/users/:userId/pacing` | new sentences per day |
 | POST | `/users/:userId/roll` | ask for the next study day; refused with a reason when not earned |
 | GET | `/users/:userId/history` | the Review shelf, newest day first |

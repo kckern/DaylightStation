@@ -245,7 +245,38 @@ $disc: 5.5rem;
   // the (screen-reader-only) accessible name, so this can say "Tab plays" while
   // the button is still just "Play again" to anything that asks. Without it a
   // baseline Stop renders as a bare pause glyph with no word anywhere on it.
-  &__key { font-size: $meta; }
+  &__key {
+    font-size: $meta;
+    // WHAT JUST WENT WRONG, said on the control itself. The notice region at
+    // the top of the screen carries the full sentence, but it is ~660px from
+    // the button on an 800px panel and a child looks at what they pressed —
+    // a reply only up there reads as the press doing nothing. Amber, matching
+    // that notice, so the two are obviously one answer and not two problems.
+    &.is-warn { color: var(--school-warn); font-weight: 700; }
+  }
+  // THE LIVE MICROPHONE on a typing rung, after `--quiet` so it wins: a quiet
+  // control is transparent on transparent, and the one moment this control is
+  // holding an open microphone is not a moment to be quiet about. The same red
+  // the recording rung's live tile uses, so the two rungs mean one thing by it.
+  &--live {
+    // The token, not the `#fff` its older twin `.lang-tile--live` hardcodes:
+    // School has no danger-ink token and --school-fg is the near-white this
+    // app already reads on a dark ground. Indistinguishable, and one fewer
+    // raw hex in a stylesheet that is supposed to have none.
+    background: var(--school-danger); color: var(--school-fg); border-color: transparent;
+    .lang-btn__key { font-weight: 700; }
+  }
+  // WAITING ON THE MODEL. A span, not a button — there is nothing to press —
+  // and the accent makes it unmistakably not the control that was just there.
+  //
+  // NO ANIMATION, on purpose: this file has exactly one (the caret), because
+  // the kiosk WebView drops frames under keyframes. The state reads as busy
+  // from the words and the colour instead, which is the same trade the
+  // recording rung's sounding tile makes.
+  &.is-working {
+    color: var(--school-accent); cursor: default;
+    .lang-btn__key { font-weight: 700; }
+  }
   &:focus-visible { outline: 3px solid var(--school-accent); outline-offset: 2px; }
   &:disabled { opacity: 0.5; cursor: default; }
 }
@@ -429,6 +460,55 @@ $disc: 5.5rem;
     clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
   }
 
+  // THE ANSWER, once a learner has asked to be shown it. Drawn where their
+  // typing was about to go, at the source sentence's size rather than the
+  // target's: it is an answer being read, not the sentence being drilled, and
+  // giving it the 3rem hero size would make the way out the loudest thing on
+  // the screen. The tint is the surface warmed toward the warn token — the
+  // same colour the rest of School uses for "this is a note about what just
+  // happened", never danger, because asking for help is not an error.
+  &__answer {
+    display: flex; flex-direction: column; align-items: center; gap: 0.35rem;
+    width: min(100%, 720px); box-sizing: border-box;
+    padding: 0.9rem 1.2rem; border-radius: $radius;
+    background: color-mix(in srgb, var(--school-warn) 14%, var(--school-surface));
+    border: 1px solid color-mix(in srgb, var(--school-warn) 40%, transparent);
+  }
+  &__answer-text { margin: 0; font-size: $source; line-height: 1.35; font-weight: 700; }
+  // The consequence, on the same card as the answer. A child who does not know
+  // this counts differently will press the control as if it were a hint, and
+  // finding out afterwards on the Review shelf is finding out too late.
+  &__answer-note { margin: 0; font-size: $meta; color: var(--school-muted); }
+
+  // A REFUSED KEYSTROKE, drawn on the live column. Copy mode's gate consumes a
+  // key that would break the shape being traced, and consuming it means nothing
+  // on screen changes — which a child reads as a broken keyboard and answers by
+  // pressing harder. So the column steps aside and flushes danger for the
+  // length of `REFUSAL_FLASH_MS`.
+  //
+  // A TRANSITION, not a keyframe: the file's opening note about the kiosk
+  // dropping frames under keyframes stands, and one transform step is the
+  // cheapest thing a compositor can be asked for. The class arrives with the
+  // column already stepped aside — an instant out-stroke is the fastest
+  // possible answer to a key — and the transition carries it back when the
+  // class clears, which is what makes it read as a rebound rather than a jump.
+  &__strip {
+    width: 100%;
+    .lang-strip__col { transition: transform 140ms ease-out; }
+    &.is-refused .lang-strip__col.is-current {
+      transform: translateX(-0.14em);
+      .lang-strip__want, .lang-strip__got { color: var(--school-danger); }
+      &::after { background: var(--school-danger); }
+    }
+    // Reduced motion keeps the ANSWER and drops the travel: the colour flash
+    // alone still says "that key did not land", and a jump with no transition
+    // would be more motion than the eased one, not less.
+    @media (prefers-reduced-motion: reduce) {
+      .lang-strip__col { transition: none; }
+      &.is-refused .lang-strip__col.is-current { transform: none; }
+    }
+  }
+
   // The drill itself, taking whatever height the baseline leaves. Without this
   // the whole rung is one centred stack and Submit floats a few pixels under
   // the sentence in the middle of a 620px stage — the "300px column down the
@@ -451,6 +531,10 @@ $disc: 5.5rem;
     gap: 1rem; width: 100%; min-height: $touch;
   }
   &__cues { display: flex; align-items: center; gap: 0.5rem; }
+  // The answering side. Speaking sits here rather than in the cue row opposite
+  // because it is a way of ANSWERING, not a way of hearing the sentence again:
+  // the hand that reaches for Submit is the hand that reaches for this.
+  &__commit { display: flex; align-items: center; gap: 0.75rem; }
 
   &__notice {
     display: flex; flex-direction: column; align-items: center; gap: 0.75rem;
@@ -590,6 +674,9 @@ $disc: 5.5rem;
   &__rung { font-size: $meta; text-transform: uppercase; letter-spacing: 0.05em; color: var(--school-muted); }
   &__sentence { font-size: $body; }
   &__score { font-size: $meta; color: var(--school-fg); }
+  // What a revealed row says in place of a diff. Muted and italic rather than
+  // coloured: it is a fact about the sentence, not a mark against the child.
+  &__shown { font-size: $meta; color: var(--school-muted); font-style: italic; }
   &__missing { font-size: $meta; color: var(--school-warn); }
 }
 
