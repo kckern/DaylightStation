@@ -664,10 +664,15 @@ describe('the exercise run, per tier, in a real layout engine at 1280x800', () =
     // and the keyboard's sheets entirely and this would stay green, which is
     // exactly the silent omission it exists to catch.
     const OWNED = [
-      // SvgSequenceStaff.scss — the paper card, the ink, the cursor lane and the
-      // ghost's colours. Nothing else in frontend/src/**/*.scss names these.
-      ['.sequence-note-wrong-ghost', 'SvgSequenceStaff.scss', 'the wrong-note ghost would have no colour of its own'],
-      ['.sequence-staff__ghost-accidental', 'SvgSequenceStaff.scss', 'the staff\'s own sheet is missing'],
+      // SvgSequenceStaff.scss — the paper card, the run-state ink and the cursor
+      // lane. Nothing else in frontend/src/**/*.scss names these.
+      //
+      // NOT the ghost: its paint moved to `GHOST_INK` in staffGlyphs.jsx and is
+      // applied as attributes, because the single-simultaneity renderer draws
+      // the same ghost and cannot share a stylesheet. Asserting a ghost class
+      // here would be asserting that the fork came back.
+      ['.sequence-note-miss', 'SvgSequenceStaff.scss', 'a wrong note would not be coloured'],
+      ['.sequence-note-done', 'SvgSequenceStaff.scss', 'the staff\'s own sheet is missing'],
       ['.sequence-staff__cursor', 'SvgSequenceStaff.scss', 'the cursor lane would be invisible'],
       // PianoKeyboard.scss — `.piano-key` alone proves nothing (the shell has it).
       ['.target-dim', 'PianoKeyboard.scss', 'a lit key would be painted like any other'],

@@ -555,6 +555,30 @@ The gate asks for material through a provider seam that names four kinds:
   A drill that cannot be reached fails open; a drill id that does not exist substitutes.
   Same two answers as every other kind, for the same reasons.
 
+### What the run screen says while a child plays one
+
+**A run with set/rep structure draws pills, not paragraphs.** Any ask whose events
+repeat consecutively — a `keys` rung with `reps`, as well as a `drill` — is projected into
+`DrillProgress`: one cluster per set, one ring per rep, banked rings gilded. The ask sentence
+over the stage and the standing instruction under it both drop wherever the pills actually
+draw, because the pills say where you are and the stage says what to play. A reading deck's
+clusters carry **no label**: naming the pitch under a staff a child is being asked to read
+hands them the answer. A host-supplied drill projection always wins over an inferred one —
+it knows a standing that spans the whole study day.
+
+**A cued run states the real note rate.** The count-in is a quarter-note pulse, and the
+exercise bank writes its scales in eighths, so "play at that speed" was false for every cued
+scale rung — it clicked four times at 60bpm and then graded eight notes 500ms apart. The
+ready line now says "then play two notes on every click", derived from the **compiled
+expectation** rather than the written note values: the sentence has to describe the grid the
+engine measures on. An ask with no steady pulse keeps the generic line rather than inventing
+a rate.
+
+**A failed attempt is told what went wrong, in one sentence and never a number.**
+`failureAdvice` names the weakest criterion — nothing arrived, notes missing, off the beat,
+extra notes — and answers `null` rather than guessing, in which case the panel keeps its
+standing line. The no-percentage rule is unchanged and is stated above.
+
 A level may mix kinds; the rotation serves one per attempt. An entry that cannot be
 served — a bank 502, a score naming no document — is skipped, logged as
 `gate.material-skipped` with its own reason code, and the level's other material is

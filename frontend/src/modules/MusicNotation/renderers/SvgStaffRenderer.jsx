@@ -9,6 +9,8 @@ import {
   ACCIDENTAL_INK_LEFT,
   ACCIDENTAL_COLUMN_PITCH,
   NOTEHEAD_RX,
+  NOTEHEAD_RY,
+  GHOST_INK,
   SharpShape,
   FlatShape,
   ledgerLineYs,
@@ -273,14 +275,20 @@ export function SvgStaffRenderer({
         )}
 
         {/*
-          Ghost notes — the keys currently down, drawn as pencil beside the ink.
+          Ghost notes — the keys currently down, drawn at the pitch they landed
+          on. This is the only channel telling a child walking up the scale
+          whether they are getting closer, so it has to be visible: the original
+          treatment here was `fill rgba(0,0,0,0.15)` at `opacity 0.5` — about 7%
+          black on a paper card, which is nothing at all — and carried no ledger
+          lines, so a ghost off the staff could not even be located.
 
-          Drawn hollow and dashed rather than as a faint fill. The previous
-          treatment was `fill rgba(0,0,0,0.15)` at `opacity 0.5` — about 7%
-          black, which on a paper-coloured card is nothing at all — and it had
-          no ledger lines, so a ghost off the staff could not even be located.
-          Both of those matter here: this is the only channel telling a child
-          walking up the scale whether they are getting closer.
+          The fix for that reached for a hollow dashed ellipse, which made this
+          the ONE staff in the app drawing a ghost as an outline: the board rims
+          showed dashes while the exercise run beside them showed solid
+          translucent heads, for the same fact. The house treatment is
+          `GHOST_INK` and it lives in ./staffGlyphs.jsx — 45% black, filled,
+          solid — which answers the visibility problem without a second
+          vocabulary for it.
         */}
         {ghostNotes.map((gn) => {
           const noteY = bottomLineY - gn.position * stepSize;
@@ -290,11 +298,11 @@ export function SvgStaffRenderer({
             <g key={`ghost-${gn.pitch}`} className="action-staff__ghost">
               {ledgerLines.map((ly, li) => (
                 <line key={`ghost-ledger-${li}`} x1={ghostX - 14} y1={ly} x2={ghostX + 14} y2={ly}
-                  stroke="rgba(0,0,0,0.45)" strokeWidth="1" strokeDasharray="3 2" />
+                  {...GHOST_INK.ledger} />
               ))}
-              <ellipse cx={noteX} cy={noteY} rx="9" ry="6.5"
-                fill="none" stroke="rgba(0,0,0,0.55)" strokeWidth="1.6" strokeDasharray="3.5 2.5"
+              <ellipse cx={noteX} cy={noteY} rx={NOTEHEAD_RX} ry={NOTEHEAD_RY}
                 transform={`rotate(-12, ${noteX}, ${noteY})`}
+                {...GHOST_INK.head}
               />
             </g>
           );

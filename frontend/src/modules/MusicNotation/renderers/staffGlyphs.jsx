@@ -21,6 +21,36 @@ export const NOTEHEAD_RX = 9;
 export const NOTEHEAD_RY = 6.5;
 
 /**
+ * THE HOUSE GHOST. One treatment, written once, for every staff in the app.
+ *
+ * A ghost is a key the player is holding, drawn at the pitch it actually
+ * landed on. It is never a verdict — the target it displaced is coloured
+ * miss-red in its own right — so it is "you are here" and nothing more:
+ * SEMI-OPAQUE BLACK INK, never a hue, never a dashed outline.
+ *
+ * It is here rather than in either renderer's stylesheet because it drifted.
+ * The ordered staff drew a 45%-black filled head (2026-08-27); the
+ * single-simultaneity staff, fixing a genuinely invisible 7%-black ghost of its
+ * own, reached for a hollow dashed ellipse instead of for this value
+ * (2026-09-11, `0907aa4de`). The result was one child looking at two different
+ * pictures of the same fact on two surfaces of the same game — the exercise run
+ * and the board rim beside it. A shared constant is the only version of "the
+ * house style" that a third renderer cannot quietly fork.
+ *
+ * Applied as ATTRIBUTES, not as a class, for the same reason: a stylesheet
+ * cannot import this file, so a class-based rule would be a second copy of
+ * these numbers that nothing keeps honest.
+ */
+export const GHOST_INK = Object.freeze({
+  /** The notehead: filled, solid-stroked, no dash. */
+  head: Object.freeze({ fill: 'rgba(0, 0, 0, 0.45)', stroke: 'rgba(0, 0, 0, 0.6)', strokeWidth: 1 }),
+  /** Its ledger lines: lighter than the head, still solid — a dashed ledger reads as a different KIND of line. */
+  ledger: Object.freeze({ stroke: 'rgba(0, 0, 0, 0.35)', strokeWidth: 1 }),
+  /** Its accidental, drawn with `currentColor` by the glyph shapes. */
+  accidental: 'rgba(0, 0, 0, 0.55)',
+});
+
+/**
  * How far LEFT of its own origin each accidental's ink actually reaches.
  *
  * Not ACCIDENTAL_WIDTH / 2. That is the nominal column box used for spacing, and

@@ -33,31 +33,150 @@
 
 
 /* The two panels that replace the run: a failed attempt, and no chosen player.
-   Both are non-granting — nothing here reaches a match (D12). */
+   Both are non-granting — nothing here reaches a match (D12).
+
+   THE INSTRUMENT'S PALETTE, NOT THE APP'S. Mahogany case, ivory type, antique
+   gold for anything earned — the same three colours the gate ceremony and the
+   drill rail are drawn in, so the bad day and the good one belong to the same
+   piano. This was four grey sentences of equal weight on a black field under a
+   default browser heading; it was the only screen in the gate nobody had
+   designed, and the only one a child sees exclusively when things go wrong.
+
+   MOTION: transform and opacity only. Animated `filter` is a known trap in this
+   codebase — low fps, zero long tasks, invisible to every profiler. */
 .piano-game-gate--failed,
 .piano-game-gate--blocked {
+  --gg-case: var(--pg-case, #16161b);
+  --gg-ivory: var(--pg-ivory, #f1f1f4);
+  --gg-gold: #c9a227;
+  --gg-gold-bright: #e8cf7a;
+  --gg-mahogany: #6b2a1e;
+  --gg-mahogany-deep: #3d1610;
+
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.65rem;
   height: 100%;
   min-height: 0;
   padding: var(--sp-5, 1.5rem);
   font-style: normal;              /* .piano-mode__placeholder italicises */
   text-align: center;
-
-  h2 { margin: 0; }
-  p { max-width: 34rem; margin: 0; color: var(--gg-muted); }
+  /* A wash rather than flat black: the card has to sit ON something. */
+  background: radial-gradient(120% 90% at 50% 0%, #241611 0%, var(--gg-case) 68%);
 }
+
+.piano-game-gate__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  width: min(38rem, 100%);
+  padding: clamp(1.4rem, 4vh, 2.4rem) clamp(1.4rem, 5vw, 2.75rem);
+  border: 1px solid color-mix(in srgb, var(--gg-mahogany) 60%, transparent);
+  border-radius: var(--r-lg, 16px);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--gg-mahogany-deep) 78%, #000) 0%, #170d0a 100%);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 236, 200, 0.06);
+  font-family: 'Roboto Condensed', sans-serif;
+  /* It arrives; it does not appear. Half a second of settle is the difference
+     between a verdict and an error dialog. */
+  animation: gate-fail-arrive 420ms cubic-bezier(0.22, 0.9, 0.28, 1) both;
+
+  h2 {
+    margin: 0;
+    font-size: clamp(1.9rem, 5vw, 2.8rem);
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: var(--gg-ivory);
+  }
+
+  p { max-width: 32rem; margin: 0; color: var(--gg-muted); }
+}
+
+@keyframes gate-fail-arrive {
+  from { transform: translateY(10px) scale(0.985); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+
+/* The label over the verdict, in the gate's own gold, small and spaced — the
+   same eyebrow the ceremony wears over the game it is unlocking. */
+.piano-game-gate__eyebrow {
+  font-size: 0.72rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--gg-gold-bright) 62%, transparent) !important;
+}
+
+/* What actually went wrong. The one line on this panel a child should read, so
+   it carries the ink and the others step back from it. */
+.piano-game-gate__diagnosis {
+  margin-top: 0.35rem !important;
+  font-size: clamp(1.05rem, 2.6vw, 1.3rem);
+  line-height: 1.35;
+  color: var(--gg-ivory) !important;
+}
+
+/* The standing line, demoted: it says "what now", which the keyed instruction
+   below says better and second. */
+.piano-game-gate__guidance { font-size: 0.95rem; }
 
 /* The one line that has to be unmissable: the ladder just moved for them. */
 .piano-game-gate__eased {
-  padding: 0.35rem 0.9rem;
-  border-radius: var(--r-sm, 8px);
-  background: var(--gg-surface);
-  color: var(--gg-accent) !important;
+  margin-top: 0.35rem !important;
+  padding: 0.4rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--gg-gold) 45%, transparent);
+  border-radius: var(--r-pill, 999px);
+  background: color-mix(in srgb, var(--gg-gold) 14%, transparent);
+  color: var(--gg-gold-bright) !important;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.piano-game-gate__piano-guidance { font-size: 1.2rem; color: var(--gg-fg) !important; }
-.piano-game-gate__exit-guidance { font-size: .95rem; }
+/* The ways out, fenced off from the verdict by a rule rather than by a gap:
+   everything above is about the attempt, everything below is about the piano. */
+.piano-game-gate__ways {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  width: 100%;
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid color-mix(in srgb, var(--gg-mahogany) 55%, transparent);
+}
+
+.piano-game-gate__piano-guidance {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  font-size: 1.15rem;
+  color: var(--gg-fg) !important;
+}
+
+/* A key, waiting to be pressed. Breathing, not blinking: a blink rate reads as
+   an alarm, and this child has had enough of those for one attempt. */
+.piano-game-gate__key-hint {
+  flex: none;
+  width: 13px;
+  height: 30px;
+  border-radius: 2px 2px 3px 3px;
+  background: linear-gradient(180deg, #fbf7ef 0%, #ddd5c6 100%);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+  animation: gate-key-breathe 1600ms ease-in-out infinite;
+}
+
+@keyframes gate-key-breathe {
+  0%, 100% { transform: translateY(0); opacity: 0.72; }
+  50%      { transform: translateY(2px); opacity: 1; }
+}
+
+.piano-game-gate__exit-guidance { font-size: .85rem; opacity: 0.72; }
+
+@media (prefers-reduced-motion: reduce) {
+  .piano-game-gate__card,
+  .piano-game-gate__key-hint {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
