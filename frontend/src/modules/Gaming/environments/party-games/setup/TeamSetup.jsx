@@ -7,10 +7,10 @@ import { TEAM_COLORS } from '@gaming-ui/teamColors.js';
 import MemberAvatar from '@gaming-ui/MemberAvatar.jsx';
 import './TeamSetup.scss';
 
-export function TeamSetup({ config, setupKind = 'teams', onConfirm }) {
+export function TeamSetup({ config, setupKind = 'teams', selectAll = false, onConfirm }) {
   const [state, dispatch] = useReducer(teamSetupReducer, config, initTeamSetup);
   const [mode, setMode] = useState(setupKind === 'individuals' ? 'individuals' : 'teams');
-  const [individuals, setIndividuals] = useState([]);
+
   const presets = useMemo(() => config?.team_presets || [], [config?.team_presets]);
 
   const members = useMemo(() => {
@@ -18,6 +18,8 @@ export function TeamSetup({ config, setupKind = 'teams', onConfirm }) {
     for (const preset of presets) for (const team of preset.teams) for (const member of team.members) all.set(member.id, member);
     return [...all.values()];
   }, [config?.household_members, presets]);
+
+  const [individuals, setIndividuals] = useState(() => selectAll ? members : []);
 
   // Pool = every member known from presets, minus those already on a team.
   const pool = useMemo(() => {
@@ -98,7 +100,7 @@ export function TeamSetup({ config, setupKind = 'teams', onConfirm }) {
       </div>
       </>}
 
-      <button type="button" className="gp-teamsetup__confirm" data-testid="teams-confirm"
+      <button type="button" autoFocus={selectAll} className="gp-teamsetup__confirm" data-testid="teams-confirm"
         disabled={mode === 'individuals' && individualSeats.length === 0}
         onClick={() => onConfirm?.(mode === 'individuals' ? individualSeats : state.teams)}>
         {mode === 'individuals' ? `Start with ${individualSeats.length} players` : `Start with ${state.teams.length} teams`}

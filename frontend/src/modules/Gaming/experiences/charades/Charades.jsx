@@ -3,8 +3,10 @@ import { useWebSocketSubscription } from '@/hooks/useWebSocket.js';
 import { fetchSession, sendRuleCommand } from '@gaming/platform/api/sessionClient.js';
 import Scoreboard from '@gaming-ui/Scoreboard.jsx';
 import SegmentedSecretText from '@gaming-ui/SegmentedSecretText.jsx';
-import TimerRing from '@gaming-ui/TimerRing.jsx';
-import { useCountdown } from '@gaming-ui/useCountdown.js';
+import Timer from '@gaming-ui/Timer.jsx';
+import ImageDecoderDisplay from '@gaming-ui/ImageDecoderDisplay.jsx';
+import FamilySelector from '@/modules/AppContainer/Apps/FamilySelector/FamilySelector.jsx';
+import getLogger from '@/lib/logging/Logger.js';
 import ShowHeader from '@gaming-ui/ShowHeader.jsx';
 import GameButton from '@gaming-ui/GameButton.jsx';
 import InstructionCard from '@gaming-ui/InstructionCard.jsx';
@@ -14,12 +16,6 @@ import CompanionPanel from '@gaming-ui/CompanionPanel.jsx';
 import TitleCard from '@gaming-ui/TitleCard.jsx';
 import './Charades.scss';
 
-function CharadesTimer({ deadline, durationMs, onExpire }) {
-  const seconds = deadline ? Math.max(0, (deadline - Date.now()) / 1000) : durationMs / 1000;
-  const countdown = useCountdown({ seconds, running: true, onExpire });
-  return <div className="charades__timer"><TimerRing progress={countdown.progress} remaining={countdown.remaining} /><strong>{Math.ceil(countdown.remaining)}</strong></div>;
-}
-
 export default function Charades({ seats = [], sessionId, onComplete, gamingServices }) {
   const teams = seats;
   const audio = gamingServices?.audio;
@@ -27,32 +23,70 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
   const [definition, setDefinition] = useState(null);
   const [error, setError] = useState(null);
   const [completion, setCompletion] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [musicError, setMusicError] = useState(null);
+  const [musicAttempt, setMusicAttempt] = useState(0);
   const completedRef = React.useRef(false);
+  const inFlight = React.useRef(false);
+  const revision = React.useRef(-1);
+  const failedCommand = React.useRef(null);
+  const epoch = React.useRef(0);
+  const logger = useMemo(() => getLogger().child({ component: 'charades', sessionId }), [sessionId]);
+  const apply = useCallback((result) => {
+    const nextRevision = result.header?.revision ?? 0;
+    if (nextRevision < revision.current) return;
+    revision.current = nextRevision;
+    setState(result.state); if (result.definition) setDefinition(result.definition);
+    setCompletion(result.result || null); setError(null);
+  }, []);
   const command = useCallback(async (value, options) => {
+    if (inFlight.current) return null;
+    inFlight.current = true; setBusy(true); const currentEpoch = epoch.current;
     try {
       const result = await sendRuleCommand(sessionId, value, options);
-      setState(result.state); setCompletion(result.result || null); setError(null);
-      if (value.type === 'outcome.correct') audio?.play('correct');
-      else if (value.type === 'outcome.incorrect') audio?.play('wrong');
-      else if (value.type === 'challenge.next') audio?.play('handoff');
-      else if (value.type === 'challenge.start') audio?.play('ready');
+      if (currentEpoch !== epoch.current) return null;
+      apply(result); failedCommand.current = null;
+      logger.info('charades.command', { command: value.type, phase: result.state?.phase, revision: result.header?.revision });
+      if (result.state?.competition !== false) {
+        if (value.type === 'outcome.correct') audio?.play('correct');
+        else if (value.type === 'outcome.incorrect') audio?.play('wrong');
+        else if (value.type === 'challenge.next') audio?.play('handoff');
+        else if (value.type === 'challenge.start') audio?.play('ready');
+      }
       return result;
     } catch (cause) {
-      setError(cause.message); return null;
-    }
-  }, [audio, sessionId]);
-
-  const refresh = useCallback(() => fetchSession(sessionId).then((result) => {
-    setState(result.state); setDefinition(result.definition); setCompletion(result.result || null); setError(null);
-  }).catch((cause) => setError(cause.message)), [sessionId]);
-
-  useEffect(() => { refresh(); }, [refresh]);
+      if (currentEpoch === epoch.current) { failedCommand.current = { value, options, revision: revision.current }; setError(cause.message); logger.warn('charades.command-failed', { command: value.type, error: cause.message }); }
+      return null;
+    } finally { if (currentEpoch === epoch.current) { inFlight.current = false; setBusy(false); } }
+  }, [apply, audio, logger, sessionId]);
+  const refresh = useCallback(async () => {
+    const currentEpoch = epoch.current;
+    try { const result = await fetchSession(sessionId); if (currentEpoch === epoch.current) { apply(result); return result; } }
+    catch (cause) { if (currentEpoch === epoch.current) setError(cause.message); }
+  }, [apply, sessionId]);
+  const retry = async () => {
+    const failed = failedCommand.current;
+    const current = await refresh();
+    if (failed && current?.header?.revision === failed.revision) await command(failed.value, failed.options);
+  };
+  useEffect(() => {
+    epoch.current += 1; revision.current = -1; completedRef.current = false; inFlight.current = false;
+    setState(null); setDefinition(null); refresh();
+    return () => { epoch.current += 1; };
+  }, [refresh]);
   useWebSocketSubscription('gaming', (message) => {
     if (message?.kind === 'session-updated' && message.sessionId === sessionId) refresh();
   }, [refresh, sessionId]);
   useEffect(() => {
-    if (state?.phase === 'complete' && completion && !completedRef.current) { completedRef.current = true; audio?.play('win'); onComplete?.(completion); }
-  }, [audio, completion, onComplete, state?.phase]);
+    if (state?.phase === 'complete' && completion && !completedRef.current) {
+      completedRef.current = true; if (state.competition !== false) audio?.play('win'); onComplete?.(completion);
+    }
+  }, [audio, completion, onComplete, state?.phase, state?.competition]);
+  useEffect(() => {
+    setMusicError(null);
+    if (state?.phase !== 'performing' || !definition?.guessing_music) return;
+    return gamingServices?.music?.start(definition.guessing_music, { onError: cause => setMusicError(cause?.message || 'Music could not start') });
+  }, [state?.phase, state?.challenge_index, definition?.guessing_music?.source, definition?.guessing_music?.volume, gamingServices?.music, musicAttempt]);
 
   const performer = useMemo(
     () => teams.find((team) => team.id === state?.performer_id),
@@ -61,34 +95,38 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
   const performerName = performer?.name || state?.performer_id || 'Performer';
   const prompt = state?.challenge?.prompt || '';
 
-  if (error) return <div className="party-games__error">{error}</div>;
-  if (!state || !definition) return <TitleCard title="Charades" subtitle="Choosing a secret…" />;
 
+  if (!state || !definition) return error ? <div className="party-games__error" role="alert">{error}<GameButton onClick={retry}>Retry</GameButton></div> : <TitleCard title="Charades" subtitle="Choosing a secret…" />;
+
+  const casual = state.competition === false;
+  const finalTurn = state.challenge_index === (state.turn_order?.length || 0) - 1 && (state.clue_index || 0) >= (definition.clues_per_turn || 1) - 1;
   return (
-    <main className="charades" data-phase={state.phase}>
+    <main className="charades" data-phase={state.phase} data-casual={casual}>
+      {error && <div role="alert" className="charades__notice">{error}<GameButton onClick={retry}>Retry</GameButton></div>}
       <ShowHeader eyebrow={`Round ${state.round} of ${definition.rounds}`} title="Charades" status={performerName} />
 
       {state.phase === 'performer-ready' && (
         <section className="charades__center">
-          <InstructionCard eyebrow="Next performer" title={`${performerName}, take the stage`}><p>Get the red decoder card. Your secret stays concealed until you are ready.</p><footer><GameButton tone="primary" autoFocus onClick={() => command({ type: 'performer.ready' })}>Reveal with decoder</GameButton></footer></InstructionCard>
+          {casual ? <><p className="charades__eyebrow">Choosing the next performer</p><FamilySelector key={`${state.challenge_index}:${state.performer_id}`} members={seats} winner={state.performer_id} autoSpin embedded durationMs={2600} onComplete={() => command({ type: 'performer.ready' })} /><strong>{performerName}, get the red decoder card ready</strong></> : <InstructionCard eyebrow="Next performer" title={`${performerName}, take the stage`}><p>Get the red decoder card. Your secret stays concealed until you are ready.</p><footer><GameButton tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'performer.ready' })}>Reveal with decoder</GameButton></footer></InstructionCard>}
         </section>
       )}
 
       {state.phase === 'challenge-ready' && (
         <section className="charades__center">
           <p className="charades__eyebrow">Secret clue</p>
-          <SegmentedSecretText text={prompt} label="Charades clue" accessibleText="Encoded charades clue for the performer" />
+          {state.clue_presentation === 'image' ? <ImageDecoderDisplay src={state.challenge?.decoder?.image} alt="Encoded image clue for the performer" /> : <SegmentedSecretText text={prompt} label="Charades clue" accessibleText="Encoded charades clue for the performer" />}
           <p className="charades__decoder-help">Performer only: view through the red decoder card.</p>
-          <GameButton tone="primary" autoFocus onClick={() => command({ type: 'challenge.start' })}>Start acting</GameButton>
+          <GameButton tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'challenge.start' })}>{casual ? 'Go' : 'Start acting'}</GameButton>
         </section>
       )}
 
       {state.phase === 'performing' && (
         <section className="charades__center charades__performing">
-          <CharadesTimer deadline={state.deadline} durationMs={definition.timer_ms} onExpire={() => command({ type: 'timer.expire' })} />
+          <Timer className="charades__timer" size="xl" format="seconds" deadline={state.deadline} durationMs={definition.timer_ms} onComplete={() => command({ type: 'timer.expire' })} />
+          {musicError && <div className="charades__notice" role="status">{musicError}<GameButton onClick={() => setMusicAttempt(value => value + 1)}>Retry music</GameButton></div>}
           <div className="charades__spotlight" aria-label="The secret clue is concealed during play">Act!</div>
           <p className="charades__rule">Act it out — no talking, spelling, or pointing at objects.</p>
-          <GameButton tone="primary" onClick={() => command({ type: 'challenge.finish' })}>Stop timer</GameButton>
+          <GameButton tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'challenge.finish' })}>{casual ? 'Finish turn' : 'Stop timer'}</GameButton>
         </section>
       )}
 
@@ -104,11 +142,11 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
 
       {state.phase === 'challenge-complete' && (
         <section className="charades__center">
-          <OutcomeReveal tone="success" eyebrow="Score committed" title="Clue complete"><p>Pass the stage to the next performer.</p><GameButton tone="primary" autoFocus onClick={() => command({ type: 'challenge.next' })}>Next clue</GameButton></OutcomeReveal>
+          <OutcomeReveal tone="success" eyebrow={casual ? "The clue was" : "Score committed"} title={casual ? prompt : "Clue complete"}><p>{casual ? "Thanks for acting!" : "Pass the stage to the next performer."}</p><GameButton tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'challenge.next' })}>{casual ? (finalTurn ? 'Finish game' : 'Next performer') : 'Next clue'}</GameButton></OutcomeReveal>
         </section>
       )}
 
-      <Scoreboard teams={teams} scores={state.scores || {}} activeTeamId={state.performer_id} />
+      {!casual && <Scoreboard teams={teams} scores={state.scores || {}} activeTeamId={state.performer_id} />}
     </main>
   );
 }

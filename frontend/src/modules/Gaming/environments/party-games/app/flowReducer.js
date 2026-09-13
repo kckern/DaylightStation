@@ -6,6 +6,7 @@ export const initialFlowState = {
   phase: 'loading',
   config: null,
   sets: [],
+  competition: true,
   game: null,
   setId: null,
   definitionId: null,
@@ -26,6 +27,7 @@ function selectSet(state, set) {
   return {
     ...state,
     phase: set.setup === 'none' ? 'playing' : 'team-setup',
+    competition: set.competition !== false,
     game: set.game,
     setId: set.setId,
     definitionId: set.definitionId,
@@ -38,8 +40,8 @@ function selectSet(state, set) {
   };
 }
 
-function attachSession(state, sets, session) {
-  const diagnosticDefinitionId = session?.diagnostic?.definition_id;
+function attachSession(state, sets, session, requestedDefinition) {
+  const diagnosticDefinitionId = session?.diagnostic?.definition_id || requestedDefinition;
   const experienceId = session?.header?.experience?.id;
   const mounted = sets.find((set) => set.valid && (
     diagnosticDefinitionId ? set.definitionId === diagnosticDefinitionId : set.game === experienceId
@@ -50,6 +52,7 @@ function attachSession(state, sets, session) {
   }
   return {
     ...selectSet(state, mounted),
+    competition: session.state?.competition ?? mounted.competition ?? true,
     phase: session?.header?.status === 'complete' && session.result ? 'results' : 'playing',
     seats: session.header?.seats || [],
     sessionId: session.header?.session_id || null,
@@ -67,10 +70,10 @@ export function flowReducer(state, action) {
   switch (action.type) {
     case 'BOOT_LOADED': {
       const next = { ...state, config: action.config, sets: action.sets, error: null };
-      const requestedSet = action.requestedGame
-        ? action.sets.find((set) => set.valid && set.game === action.requestedGame)
-        : null;
-      if (action.attachedSession || action.diagnosticSession) return attachSession(next, action.sets, action.attachedSession || action.diagnosticSession);
+      const requestedSet = action.sets.find((set) => set.valid && (action.requestedDefinition
+        ? set.definitionId === action.requestedDefinition
+        : action.requestedGame && set.game === action.requestedGame));
+      if (action.attachedSession || action.diagnosticSession) return attachSession(next, action.sets, action.attachedSession || action.diagnosticSession, action.requestedDefinition);
       if (requestedSet) return selectSet(next, requestedSet);
       return { ...next, phase: 'set-picker' };
     }

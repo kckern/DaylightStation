@@ -66,3 +66,15 @@
   .charades__center { padding-block: 0.35rem; }
   .charades__spotlight { width: 14rem; }
 }
+
+.charades[data-casual="true"] {
+  grid-template-rows: auto minmax(0, 1fr);
+  .charades__center { gap: 8px; padding: 8px 16px; }
+  .gp-show-header { box-sizing: border-box; height: 62px; padding: 8px 20px; h1 { font-size: 32px; } }
+  .charades__eyebrow { font-size: 13px; }
+  .segmented-secret-text { box-sizing: border-box; width: 100%; max-height: 250px; padding: 16px; gap: 8px; }
+  .segmented-secret-text__glyph { width: 34px; }
+  .segmented-secret-text__word { gap: 2px; }
+  .charades__rule { font-size: 18px; }
+}
+.charades__notice { z-index: 5; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 8px; background: var(--gp-stage); color: var(--gp-paper); }

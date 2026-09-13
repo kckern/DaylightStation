@@ -1,0 +1,40 @@
+import React from 'react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, expect, it, vi } from 'vitest';
+import PartyGamesApp from './PartyGamesApp.jsx';
+import AppContainer from '@/modules/AppContainer/AppContainer.jsx';
+import {fetchBoot,createSession} from './sessionClient.js';
+vi.mock('./sessionClient.js',()=>({fetchBoot:vi.fn(),createSession:vi.fn()}));
+vi.mock('@/hooks/useWebSocket.js',()=>({useWebSocketStatus:()=>({connected:true})}));
+vi.mock('../../../../../screen-framework/input/adapters/GamepadAdapter.js',()=>({acquireGamepadInputHost:()=>({release:()=>{}}),bindNextGamepadPress:()=>{}}));
+vi.mock('../effects/EffectOverlay.jsx',()=>({default:()=> <div>Effect rail</div>}));
+vi.mock('./PartyGamesExperience.jsx',()=>({default:({onComplete,sessionId})=><button onClick={()=>onComplete({outcome:{kind:'completed'},scores:[]})}>Complete {sessionId}</button>}));
+const config={household_members:[{id:'a',name:'Alice'},{id:'b',name:'Bob'}],team_presets:[]};
+const sets=[{id:'charades:family',definitionId:'charades:family',game:'charades',setId:'family',presenter_id:'charades-stage',setup:'individuals',setupProfile:{kind:'individuals'},competition:false,valid:true}];
+beforeEach(()=>{window.history.replaceState({},'','/screens/living-room/fhe'); fetchBoot.mockReset().mockResolvedValue({config,sets});createSession.mockReset().mockResolvedValue({header:{session_id:'session-one'}});});
+it('propagates AppContainer definition into casual setup and creates only one session in StrictMode', async()=>{
+ render(<React.StrictMode><AppContainer open={{app:'party-games/charades:family'}} clear={()=>{}}/></React.StrictMode>);
+ const start=await screen.findByRole('button',{name:'Start with 2 players'});
+ fireEvent.click(start); await screen.findByRole('button',{name:'Complete session-one'});
+ expect(createSession).toHaveBeenCalledTimes(1); expect(createSession.mock.calls[0][0].definitionId).toBe('charades:family');
+ expect(window.location.pathname).toBe('/screens/living-room/party-games/charades:family'); expect(new URLSearchParams(window.location.search).get('session')).toBe('session-one');
+ expect(screen.queryByText('Effect rail')).toBeNull();
+});
+it('traverses setup and neutral results using only remote controls and clears session on exit', async()=>{
+ const exit=vi.fn(); render(<PartyGamesApp definitionId="charades:family" dismiss={exit}/>);
+ await screen.findByRole('button',{name:'Start with 2 players'});
+ fireEvent.keyDown(window,{key:'ArrowRight'}); expect(screen.getByRole('button',{name:'Alice'})).toHaveFocus();
+ fireEvent.keyDown(window,{key:'Enter'}); expect(screen.getByRole('button',{name:'Start with 1 players'})).toBeEnabled();
+ for(let i=0;i<3;i++) fireEvent.keyDown(window,{key:'ArrowRight'});
+ fireEvent.keyDown(window,{key:'Enter'}); await screen.findByRole('button',{name:'Complete session-one'});
+ fireEvent.keyDown(window,{key:'Enter'}); await screen.findByTestId('results');
+ expect(screen.queryByText(/wins|score committed/i)).toBeNull();
+ fireEvent.keyDown(window,{key:'ArrowRight'}); fireEvent.keyDown(window,{key:'Enter'});
+ expect(exit).toHaveBeenCalledTimes(1); expect(window.location.pathname).toBe('/screens/living-room/fhe');expect(window.location.search).toBe('');
+});
+it('attaches durable session on refresh without creating another', async()=>{
+ window.history.replaceState({},'','/screens/living-room/party-games/charades:family?session=saved&return_to=%2Fscreens%2Fliving-room%2Ffhe');
+ fetchBoot.mockResolvedValue({config,sets,attachedSession:{header:{session_id:'saved',experience:{id:'charades'},seats:[]},state:{competition:false}}});
+ render(<PartyGamesApp appPath="charades:family"/>);
+ await screen.findByRole('button',{name:'Complete saved'}); expect(createSession).not.toHaveBeenCalled(); expect(fetchBoot).toHaveBeenCalledWith({diagnosticSessionId:null,sessionId:'saved'});
+});
