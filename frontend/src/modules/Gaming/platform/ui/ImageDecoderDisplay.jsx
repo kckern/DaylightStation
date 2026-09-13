@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { DEFAULT_ARTIFACT_COUNT, generateDecoderArtifacts, generateDecoderTexture } from './imageDecoderArtifacts.js';
+import React, { useEffect, useMemo, useState } from 'react';
+import { DEFAULT_ARTIFACT_COUNT, generateDecoderArtifacts, generateDecoderMotion, generateDecoderTexture } from './imageDecoderArtifacts.js';
 import './ImageDecoderDisplay.scss';
 
 function cssUrl(src) {
@@ -11,19 +11,30 @@ export default function ImageDecoderDisplay({
   alt = 'Secret image clue',
   seed = src,
   artifactCount = DEFAULT_ARTIFACT_COUNT,
+  motionIntervalMs = 1000,
 }) {
   const [failure, setFailure] = useState(null);
   const [loaded, setLoaded] = useState(null);
   const [attempt, setAttempt] = useState(0);
+  const [motionIndex, setMotionIndex] = useState(0);
   const failed = failure === src;
   const artifacts = useMemo(
     () => generateDecoderArtifacts(seed, artifactCount),
     [seed, artifactCount],
   );
   const texture = useMemo(() => generateDecoderTexture(seed), [seed]);
+  const motion = useMemo(() => generateDecoderMotion(seed), [seed]);
   const tone = index => `var(--gp-decoder-noise-${index + 1})`;
   const resource = attempt ? `${src}${String(src).includes('?') ? '&' : '?'}decoder_retry=${attempt}` : src;
   const maskImage = cssUrl(resource);
+  const frame = motion[motionIndex % motion.length];
+
+  useEffect(() => {
+    setMotionIndex(0);
+    if (!Number.isFinite(motionIntervalMs) || motionIntervalMs <= 0) return undefined;
+    const timer = setInterval(() => setMotionIndex(index => (index + 1) % motion.length), motionIntervalMs);
+    return () => clearInterval(timer);
+  }, [motion.length, motionIntervalMs, seed]);
 
   return (
     <figure className="image-decoder-display" data-status={failed ? "error" : loaded === `${src}:${attempt}` ? "ready" : "loading"} aria-label={alt}>
@@ -33,7 +44,11 @@ export default function ImageDecoderDisplay({
         className="image-decoder-display__subject"
         data-testid="image-decoder-subject"
         role="img" aria-label={alt}
-        style={{ maskImage, WebkitMaskImage: maskImage }}
+        style={{
+          maskImage,
+          WebkitMaskImage: maskImage,
+          transform: `translate3d(${frame.x.toFixed(2)}%, ${frame.y.toFixed(2)}%, 0) scale(${frame.scale.toFixed(3)})`,
+        }}
       />
       <svg
         className="image-decoder-display__artifacts"

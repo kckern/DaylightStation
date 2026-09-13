@@ -20,6 +20,9 @@
 
 .image-decoder-display__subject {
   background: #d0ffff;
+  transform-origin: center;
+  transition: transform 320ms cubic-bezier(.22, .72, .24, 1);
+  will-change: transform;
 
   mask-position: center;
   mask-repeat: no-repeat;

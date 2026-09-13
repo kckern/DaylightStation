@@ -47,11 +47,38 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   const stage = page.locator('main.charades');
   const phase = async (value, timeout = 20_000) => expect(stage).toHaveAttribute('data-phase', value, {timeout});
   const expectFits = async locator => {
-    const clipped = await locator.evaluate(root => [root, ...root.querySelectorAll('button, img, .segmented-secret-text, .segmented-secret-text__glyph, .image-decoder-display, .charades__countdown')]
+    const clipped = await locator.evaluate(root => {
+      const stageContent = root.matches('main.charades') ? root.querySelector(':scope > .charades__center') : null;
+      const stageBounds = stageContent?.getBoundingClientRect();
+      return [root, ...root.querySelectorAll('button, img, h2, .segmented-secret-text, .segmented-secret-text__glyph, .image-decoder-display, .charades__countdown')]
       .filter(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden')
-      .filter(el => { const b = el.getBoundingClientRect(); return b.bottom > innerHeight + 1 || b.right > innerWidth + 1 || b.top < -1 || b.left < -1; })
-      .map(el => ({tag:el.tagName,className:el.className,text:el.textContent?.slice(0,80)})));
+      .filter(el => {
+        const b = el.getBoundingClientRect();
+        const outsideViewport = b.bottom > innerHeight + 1 || b.right > innerWidth + 1 || b.top < -1 || b.left < -1;
+        const outsideStage = stageBounds && stageContent.contains(el)
+          && (b.top < stageBounds.top - 1 || b.bottom > stageBounds.bottom + 1 || b.left < stageBounds.left - 1 || b.right > stageBounds.right + 1);
+        return outsideViewport || outsideStage;
+      })
+      .map(el => ({tag:el.tagName,className:el.className,text:el.textContent?.slice(0,80)}));
+    });
     expect(clipped, 'Controls and clue must fit the actual TV CSS viewport').toEqual([]);
+  };
+  const expectActionRail = async name => {
+    const action = stage.locator(':scope > .charades__center.charades__with-footer > .charades__primary-action');
+    await expect(action).toHaveAccessibleName(name);
+    await expect(action.locator(':scope > svg')).toHaveCount(1);
+    const placement = await action.evaluate(button => {
+      const bounds = button.getBoundingClientRect();
+      const stageBounds = button.parentElement.getBoundingClientRect();
+      return {
+        width: Math.round(bounds.width),
+        centerError: Math.round(Math.abs((bounds.left + bounds.right) / 2 - (stageBounds.left + stageBounds.right) / 2)),
+        bottomGap: Math.round(stageBounds.bottom - bounds.bottom),
+      };
+    });
+    expect(placement.width).toBe(320);
+    expect(placement.centerError).toBeLessThanOrEqual(1);
+    expect(placement.bottomGap).toBeLessThanOrEqual(20);
   };
   const api = async (path) => {
     const response = await request.get(path);
@@ -131,6 +158,9 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
     if (imageTurn) {
       imageIds.push(ready.state.challenge.id);
       await expect(stage.locator('.image-decoder-display')).toHaveAttribute('data-status', 'ready');
+      const movingSubject = stage.getByTestId('image-decoder-subject');
+      const firstTransform = await movingSubject.evaluate(subject => subject.style.transform);
+      await expect.poll(() => movingSubject.evaluate(subject => subject.style.transform), {timeout:2500}).not.toBe(firstTransform);
       const asset = await request.get(ready.state.challenge.decoder.image);
       expect(asset.ok()).toBe(true);
       expect(asset.headers()['content-type']).toContain('image/svg+xml');
@@ -156,6 +186,7 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
       await expect(stage.locator('svg').first()).toBeVisible();
     }
     expect((await musicState()).some(a => !a.paused)).toBe(false);
+    await expectActionRail(/^(Go|Start acting)/i);
     await expectFits(stage);
     if (turn === 0) {
       await page.screenshot({path:testInfo.outputPath('decoder-ready.png')});
@@ -170,6 +201,7 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
     await expect(stage.getByRole('list', {name:'Charades rules'})).toContainText('No talkingNo spellingNo pointing');
     await expect(stage).not.toContainText('Act it out');
     await expect(stage.getByRole('button', {name:'Finish turn'}).locator('svg')).toBeVisible();
+    await expectActionRail(/finish|stop timer/i);
     const progress = stage.locator('.charades__countdown-progress');
     const initialOffset = await progress.evaluate(circle => circle.style.strokeDashoffset);
     await expect.poll(() => progress.evaluate(circle => circle.style.strokeDashoffset), {timeout:2500}).not.toBe(initialOffset);
@@ -181,6 +213,7 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
     await expect.poll(async () => (await musicState()).some(a => !a.paused && a.time > 0.1 && a.ready >= 2), {timeout:20_000}).toBe(true);
     heardTracks.push((await musicState()).find(a => !a.paused)?.src);
     await expectFits(stage);
+    if (turn === 0) await page.screenshot({path:testInfo.outputPath('acting.png')});
     const started = await read();
     expect(started.state.deadline).toBeGreaterThan(Date.now());
     if (turn === 1) {
@@ -211,6 +244,8 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
       await expect(stage.locator('.image-decoder-display')).toHaveCount(0);
     }
     await expectFits(stage);
+    await expectActionRail(/Next clue|Next performer|Finish game/);
+    if (turn === 0) await page.screenshot({path:testInfo.outputPath('reveal.png')});
     await expect(stage).not.toContainText(/score committed|guessed it|not guessed|wins/i);
     await expect(stage.getByRole('button', {name:/Next clue|Next performer|Finish game/}).locator('svg')).toBeVisible();
     await focusRemote(/next|finish|complete/i);

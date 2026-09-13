@@ -12,8 +12,11 @@ const view = (s=state, revision=1) => ({state:s,header:{revision},definition:{co
 beforeEach(() => { fetchSession.mockReset().mockResolvedValue(view()); sendRuleCommand.mockReset(); });
 it('shows image decoder and Go without leaking answer, then hides clue while acting and reveals neutrally', async () => {
  const music = {start:vi.fn(() => vi.fn())};
- render(<Charades sessionId="one" seats={seats} gamingServices={{music}} />);
+ const {container} = render(<Charades sessionId="one" seats={seats} gamingServices={{music}} />);
  const go = await screen.findByRole('button',{name:'Go'}); expect(screen.queryByText('Rabbit')).toBeNull();
+ expect(go.parentElement).toHaveClass('charades__center', 'charades__with-footer');
+ expect(go.previousElementSibling).toHaveClass('charades__stage-content');
+ expect(go.firstElementChild?.tagName).toBe('svg');
  expect(screen.getByRole('img',{name:'Round 1 of 1'})).toBeInTheDocument();
  expect(screen.getByRole('img',{name:'Alice'})).toHaveAttribute('src','/alice.jpg');
  expect(screen.getByRole('heading',{name:'Charades'})).toBeInTheDocument();
@@ -23,6 +26,8 @@ it('shows image decoder and Go without leaking answer, then hides clue while act
  expect(screen.queryByRole('img',{name:'Rabbit'})).toBeNull();
  sendRuleCommand.mockResolvedValueOnce(view({...state,phase:'performing',deadline:Date.now()+60000},2)); fireEvent.click(go);
  const finish = await screen.findByRole('button',{name:'Finish turn'}); expect(screen.queryByTestId('image-decoder-subject')).toBeNull();
+ expect(finish.parentElement).toHaveClass('charades__center', 'charades__with-footer');
+ expect(finish.previousElementSibling).toHaveClass('charades__stage-content');
  expect(screen.getByRole('timer')).toHaveAccessibleName(/seconds remaining/);
  expect(screen.getByRole('list',{name:'Charades rules'})).toHaveTextContent('No talkingNo spellingNo pointing');
  expect(screen.queryByText(/Act it out/)).toBeNull();
@@ -31,9 +36,13 @@ it('shows image decoder and Go without leaking answer, then hides clue while act
  sendRuleCommand.mockResolvedValueOnce(view({...state,phase:'challenge-complete'},3)); fireEvent.click(screen.getByRole('button',{name:'Finish turn'}));
  expect(await screen.findByText('Rabbit')).toBeInTheDocument();
  expect(screen.getByRole('img',{name:'Rabbit'})).toHaveAttribute('src','/rabbit.svg');
+ const revealContent = container.querySelector('.charades__reveal-content');
+ expect(revealContent).toContainElement(screen.getByRole('heading',{name:'Rabbit'}));
+ expect(revealContent).toContainElement(screen.getByRole('img',{name:'Rabbit'}));
+ expect(revealContent).not.toContainElement(screen.getByRole('button',{name:'Finish game'}));
  expect(screen.queryByText('The clue was')).toBeNull();
  expect(screen.queryByText('Thanks for acting!')).toBeNull();
- expect(screen.getByRole('button',{name:'Finish game'}).querySelector('svg')).not.toBeNull();
+ expect(screen.getByRole('button',{name:'Finish game'}).firstElementChild?.tagName).toBe('svg');
  expect(screen.queryByTestId('image-decoder-subject')).toBeNull();
  expect(screen.queryByText(/score committed|wins/i)).toBeNull(); expect(screen.getByRole('button',{name:'Finish game'})).toBeEnabled();
 });
@@ -58,7 +67,7 @@ it('keeps music playing across equivalent refreshed definitions and cleans it up
  const performing={...state,phase:'performing',deadline:Date.now()+60000};
  fetchSession.mockResolvedValue(view(performing));
  render(<Charades sessionId="one" seats={seats} gamingServices={{music}}/>);
- await screen.findByRole('button',{name:'Finish turn'});expect(music.start).toHaveBeenCalledTimes(1);
+ await screen.findByRole('button',{name:'Finish turn'});await waitFor(()=>expect(music.start).toHaveBeenCalledTimes(1));
  expect(music.start).toHaveBeenCalledWith(expect.objectContaining({source:'test:music',order:'shuffle',repeat:'after-cycle',memory:'session'}),expect.objectContaining({sessionId:'one'}));
  fetchSession.mockResolvedValue(view({...performing},2));
  await act(async()=>ws.handler({kind:'session-updated',sessionId:'one'}));
