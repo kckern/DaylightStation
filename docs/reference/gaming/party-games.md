@@ -10,7 +10,17 @@ TV and companion presenters share two import aliases: `@gaming` resolves to the 
 
 Jeopardy and Activity Party use the direct Gaming coordinator. Activity Party supports Draw and Charades, performer-ready gates, rounds, deterministic timers and rotation, host modes, progressive reveals, score adjustments, and verifier confirmation for subjective hostless outcomes. Drawing checkpoints are transient and are deleted when an outcome commits.
 
-Charades is also mounted as a focused Party Games experience with a seeded, deterministic family word bank. Its text decoder is an original reusable sixteen-segment SVG display: every segment is illuminated, warm yellow/pink/orange/white segments encode the secret, and cool cyan/blue/green segments provide the mask that dims through a physical red filter. The segment proportions were visually informed by Kaiser Zhar Khan's donationware “Digital Display TFB” font from True Fonts Blog; the font binary and glyph outlines are not bundled. A separate image-decoder renderer is reserved for cyan SVG line art masked by red circles/bubbles.
+Charades is also mounted as a focused Party Games experience with a seeded,
+deterministic clue bank. Its reusable sixteen-segment text decoder uses a fixed
+48-position field for ordinary clues, with uniform camouflage over letters,
+spaces and padding. Longer clues expand in complete rows without truncation.
+Pale cyan signal segments sit under warm colored segment decoys and rings;
+a red filter removes the camouflage and reveals text with readable spacing.
+The original segment geometry remains code-rendered; no font binary is bundled.
+Image clues use pale cyan art beneath a full-field colored texture, rings,
+bubbles and crossing streaks. All interference pigments preserve the red channel,
+so the simulated red-filter view retains the original image detail. Neither
+renderer flashes the clue or changes its visibility over time.
 
 `GamepadAdapter` preserves ABXY/LR identity and binds a stable controller ID to a semantic role on press. The Gaming platform's `DrawingTabletAdapter` emits Pointer Event pressure and eraser metadata with touch/mouse normalization. It converts responsive CSS coordinates into the canvas backing-store coordinate system, clamps captured strokes to the canvas, and preserves independent pointer identities. Browser input is hosted by screen-framework and translated to `InteractionIntent` before experience code sees it.
 
@@ -56,21 +66,47 @@ projects individual setup for this mode while preserving the experience's team
 capabilities for competitive definitions. The rule setting controls behavior;
 hiding a scoreboard alone is not casual mode.
 
-A menu can launch a preconfigured individual roster directly, with no player or
-guest setup screen:
+Reusable games should be named YAML definitions (presets). A menu invokes only
+the preset reference:
 
 ```yaml
 - label: Charades
-  input: "app:party-games/charades:family?autostart=true&participants=person_a,person_b"
+  input: app:party-games/charades:fhe
   action: Open
 ```
 
-The menu owns the explicit participant IDs and automatic-start flag. The selected
-definition owns rounds, timing, clue count, competition and music. IDs resolve
-against the live household profile; missing, duplicate or unknown IDs produce a
-configuration error instead of silently selecting different players. Without
-`autostart=true`, normal setup remains available. Launch parameters persist in the
-durable screen URL; a saved session takes precedence over new setup on refresh.
+The preset directory is `household/gaming/games/charades:fhe/`. Its `rules.yml`
+owns rounds, timing, clue count, competition, decoder participants and music,
+plus launch defaults:
+
+```yaml
+launch:
+  autostart: true
+  participants: [person_a, person_b]
+```
+
+Its `content.yml` references the reusable bank and selects categories/difficulty:
+
+```yaml
+clue_bank: charades/choices.yml
+clue_filter:
+  categories: [animals, everyday-actions]
+  levels: [easy]
+```
+
+Bank entries may declare `category` and `level`. Filters combine both dimensions;
+omitted dimensions allow all values. Invalid filters or an empty selected pool
+fail visibly. Filtering happens before hashing and pinning, so a saved session
+retains its selected clues after preset or bank edits.
+
+The catalog projects preset launch defaults for both menu deep links and the game
+picker. IDs resolve against the live household profile; missing, duplicate or
+unknown IDs fail instead of selecting different players. A saved session takes
+precedence on refresh. Normal setup remains available without automatic start.
+
+Inline `?autostart=false` or `?participants=person_a,person_b` remain optional
+per-field overrides. Reusable configuration belongs in the preset; loading one
+does not expand its roster into the browser URL or admin menu input.
 
 Authored content may reference a clue bank beneath the configured data root:
 
@@ -91,9 +127,13 @@ version: 1
 clues:
   - id: rabbit
     text: Rabbit
+    category: animals
+    level: easy
     image: images/rabbit.svg
   - id: swimming
     text: Swimming
+    category: everyday-actions
+    level: easy
 ```
 
 Images are relative to the bank directory. Paths must remain inside that

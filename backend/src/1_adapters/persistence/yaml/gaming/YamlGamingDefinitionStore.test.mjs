@@ -62,6 +62,19 @@ describe('external Charades clue bank', () => {
     return { root, dir, bank, store, contentGamesDir };
   }
 
+  it('filters a shared bank by configured category and level before pinning', () => {
+    const {store,bank,dir}=bankFixture();
+    fs.writeFileSync(bank,'version: 1\nclues:\n- {id: rabbit, text: Rabbit, category: animals, level: easy, image: images/rabbit.svg}\n- {id: tiger, text: Tiger, category: animals, level: hard}\n- {id: swimming, text: Swimming, category: actions, level: easy}\n');
+    fs.appendFileSync(path.join(dir,'content.yml'),'clue_filter: {categories: [animals], levels: [easy]}\n');
+    const loaded=store.getCurrent('demo');
+    expect(loaded.definition.challenges).toHaveLength(1);
+    expect(loaded.definition.challenges[0]).toMatchObject({id:'rabbit',category:'animals',level:'easy'});
+    store.pin(loaded);
+    fs.writeFileSync(bank,'version: 1\nclues: [{id: jumping, text: Jumping, category: actions, level: easy}]\n');
+    expect(()=>store.getCurrent('demo')).toThrow(/matches no clues/);
+    expect(store.getPinned(loaded.hash).challenges[0].id).toBe('rabbit');
+  });
+
   it('compiles images and text, pins content, and hashes later bank edits independently', () => {
     const { store, bank } = bankFixture();
     const first = store.getCurrent('demo');

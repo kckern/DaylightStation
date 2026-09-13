@@ -68,6 +68,28 @@ function needsBuzzerBinding(state) {
   return state.inputProfile?.gamepad === 'host-and-buzzer';
 }
 
+function selectConfiguredSet(state, set, overrides = {}) {
+  const launch = { ...set?.launch, ...overrides };
+  if (!launch.autostart) return selectSet(state, set);
+  const ids = launch.participants;
+  let error;
+  if (!set) error = 'Configured game is not available';
+  else if ((set.setupProfile?.kind || set.setup) !== 'individuals') error = 'Automatic participant setup requires an individual game';
+  else if (!Array.isArray(ids) || !ids.length || new Set(ids).size !== ids.length) error = 'Automatic setup requires distinct participant IDs';
+  const known = new Map((state.config?.household_members || []).map(member => [member.id, member]));
+  if (!error) {
+    const unknown = ids.find(id => !known.has(id));
+    if (unknown) error = `Unknown configured participant: ${unknown}`;
+  }
+  if (error) return { ...state, phase: 'loading', error };
+  const seats = ids.map((id, index) => ({
+    id, name: known.get(id).name, members: [known.get(id)],
+    color: TEAM_COLORS[index % TEAM_COLORS.length], slot: `slot_${index + 1}`,
+  }));
+  const selected = selectSet(state, set);
+  return { ...selected, seats, phase: needsBuzzerBinding(selected) ? 'buzzer-bind' : 'playing' };
+}
+
 export function flowReducer(state, action) {
   switch (action.type) {
     case 'BOOT_LOADED': {
@@ -76,32 +98,13 @@ export function flowReducer(state, action) {
         ? set.definitionId === action.requestedDefinition
         : action.requestedGame && set.game === action.requestedGame));
       if (action.attachedSession || action.diagnosticSession) return attachSession(next, action.sets, action.attachedSession || action.diagnosticSession, action.requestedDefinition);
-      if (action.launch?.autostart) {
-        const ids = action.launch.participants;
-        let error;
-        if (!requestedSet) error = 'Configured game is not available';
-        else if ((requestedSet.setupProfile?.kind || requestedSet.setup) !== 'individuals') error = 'Automatic participant setup requires an individual game';
-        else if (!ids?.length || new Set(ids).size !== ids.length) error = 'Automatic setup requires distinct participant IDs';
-        const known = new Map((action.config?.household_members || []).map(member => [member.id, member]));
-        if (!error) {
-          const unknown = ids.find(id => !known.has(id));
-          if (unknown) error = `Unknown configured participant: ${unknown}`;
-        }
-        if (error) return { ...next, phase: 'loading', error };
-        const seats = ids.map((id, index) => ({
-          id, name: known.get(id).name, members: [known.get(id)],
-          color: TEAM_COLORS[index % TEAM_COLORS.length], slot: `slot_${index + 1}`,
-        }));
-        const selected = selectSet(next, requestedSet);
-        return { ...selected, seats, phase: needsBuzzerBinding(selected) ? 'buzzer-bind' : 'playing' };
-      }
-      if (requestedSet) return selectSet(next, requestedSet);
+      if (requestedSet || action.launch?.autostart) return selectConfiguredSet(next, requestedSet, action.launch);
       return { ...next, phase: 'set-picker' };
     }
     case 'BOOT_FAILED':
       return { ...state, error: action.error };
     case 'PICK_SET':
-      return selectSet(state, {
+      return selectConfiguredSet(state, {
         ...action,
         presenter_id: action.presenterId,
       });

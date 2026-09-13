@@ -11,7 +11,7 @@ const HOUSEHOLD_CFG = {
   defaults: { timer_seconds: 15 }, sounds: { pack: 'classic' },
 };
 
-function makeService({ cfg = HOUSEHOLD_CFG, casual = false } = {}) {
+function makeService({ cfg = HOUSEHOLD_CFG, casual = false, launch } = {}) {
   const userService = {
     getProfile: (id) => id === 'ghost_user' ? null : id === 'kckern'
       ? { username: id, display_name: 'KC Kern', group_label: 'Dad' }
@@ -19,7 +19,7 @@ function makeService({ cfg = HOUSEHOLD_CFG, casual = false } = {}) {
   };
   const definitions = new Map([
     ['quiz:night', { definition: { experience: { id: 'quiz', version: 1 } }, parts: { content: { artifact: {}, title: 'Fixture Night', description: 'Questions' } } }],
-    ['drawing:family', { definition: { experience: { id: 'drawing', version: 2 }, ...(casual ? { competition: false } : {}) }, parts: { content: { artifact: {}, catalog: { title: 'Draw Together', description: 'Prompts' } } } }],
+    ['drawing:family', { definition: { experience: { id: 'drawing', version: 2 }, ...(casual ? { competition: false } : {}), ...(launch ? { launch } : {}) }, parts: { content: { artifact: {}, catalog: { title: 'Draw Together', description: 'Prompts' } } } }],
     ['solo:private', { definition: { experience: { id: 'solo', version: 1 } }, parts: { content: { artifact: {}, title: 'Not Party Games' } } }],
     ['quiz:broken', { definition: { experience: { id: 'quiz', version: 1 } }, parts: { content: { artifact: {} } } }],
   ]);
@@ -85,4 +85,12 @@ it('projects individual setup for a casual definition without changing its compe
   expect(entry).toMatchObject({competition: false, setup: 'individuals', setup_profile: {kind: 'individuals'}});
   expect(entry.setup_profile.host_modes || []).toEqual([]);
   expect(makeService().listCatalog().find(e => e.definition_id === 'drawing:family').setup).toBe('individuals-or-teams');
+});
+
+it('projects the reusable definition launch preset and rejects malformed launch configuration', () => {
+  const launch={autostart:true,participants:['person-a','person-b']};
+  const entry=makeService({casual:true,launch}).listCatalog().find(e=>e.definition_id==='drawing:family');
+  expect(entry.launch).toEqual(launch);
+  expect(entry.launch).not.toBe(launch);
+  expect(makeService({casual:true,launch:{autostart:true,participants:'everyone'}}).listCatalog().find(e=>e.definition_id==='drawing:family')).toMatchObject({valid:false});
 });

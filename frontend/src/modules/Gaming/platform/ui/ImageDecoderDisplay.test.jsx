@@ -36,3 +36,9 @@ it('reports image failure without an answer label and supports retry', async () 
  expect(screen.getByTestId('image-decoder-subject').style.maskImage).toContain('decoder_retry=1');
  expect(container.querySelector('img').getAttribute('src')).toContain('decoder_retry=1');
 });
+
+it('covers the full image field with texture and crossing streaks, including between rings', () => {
+ const {container}=render(<ImageDecoderDisplay src="/clue.svg" seed="texture"/>);
+ expect(container.querySelectorAll('.image-decoder-display__texture-tile')).toHaveLength(625);
+ expect(container.querySelectorAll('.image-decoder-display__streak')).toHaveLength(40);
+});

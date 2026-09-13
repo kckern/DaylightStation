@@ -33,6 +33,15 @@ function catalogEntry(definitionId, loaded, manifest) {
   const setup = casual && manifestKind === 'individuals-or-teams' ? 'individuals' : manifestKind;
   const setupProfile = casual ? { kind: setup } : structuredClone(manifest.setup || { kind: 'none' });
   if (!['none', 'individuals', 'teams', 'individuals-or-teams'].includes(setup)) throw new Error(`invalid setup kind: ${setup}`);
+  const launch = loaded.definition?.launch;
+  if (launch != null && (
+    typeof launch !== 'object' || Array.isArray(launch)
+    || (launch.autostart != null && typeof launch.autostart !== 'boolean')
+    || (launch.participants != null && (!Array.isArray(launch.participants) || !launch.participants.length
+      || launch.participants.some(id => typeof id !== 'string' || !id.trim())
+      || new Set(launch.participants).size !== launch.participants.length))
+    || (launch.autostart === true && !launch.participants?.length)
+  )) throw new Error('launch requires a boolean autostart and distinct participant IDs');
   const surface = manifest.surfaces.find((candidate) => candidate.id === 'party-games');
   if (!surface) throw new Error('Party Games surface is required');
   return {
@@ -44,6 +53,7 @@ function catalogEntry(definitionId, loaded, manifest) {
     description: typeof authored.description === 'string' ? authored.description : String(content.description || ''),
     setup,
     setup_profile: setupProfile,
+    ...(launch ? { launch: structuredClone(launch) } : {}),
     ...(casual ? { competition: false } : {}),
     theme: structuredClone(manifest.theme || null),
     input_profile: structuredClone(manifest.input_profile || null),

@@ -36,3 +36,20 @@ export function generateDecoderArtifacts(seed, count = DEFAULT_ARTIFACT_COUNT) {
     };
   });
 }
+
+// Warm pigments vary green/blue strongly while preserving red. A physical red
+// filter removes the pattern; multiplying it over the signal preserves detail.
+export function generateDecoderTexture(seed) {
+  const random = seededRandom(`${seed}:texture`);
+  return {
+    tiles: Array.from({length:625}, (_, index) => ({
+      id:index, x:index % 25 * 4, y:Math.floor(index / 25) * 4,
+      tone:Math.floor(random() * 6), opacity:0.6 + random() * 0.4,
+    })),
+    streaks: Array.from({length:40}, (_, index) => ({
+      id:index, x1:random() * 100, y1:random() * 100,
+      x2:random() * 100, y2:random() * 100,
+      tone:index % 6, width:0.5 + random() * 1.2,
+    })),
+  };
+}

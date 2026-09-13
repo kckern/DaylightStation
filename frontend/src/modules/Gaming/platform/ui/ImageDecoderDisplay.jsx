@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { DEFAULT_ARTIFACT_COUNT, generateDecoderArtifacts } from './imageDecoderArtifacts.js';
+import { DEFAULT_ARTIFACT_COUNT, generateDecoderArtifacts, generateDecoderTexture } from './imageDecoderArtifacts.js';
 import './ImageDecoderDisplay.scss';
 
 function cssUrl(src) {
@@ -20,6 +20,8 @@ export default function ImageDecoderDisplay({
     () => generateDecoderArtifacts(seed, artifactCount),
     [seed, artifactCount],
   );
+  const texture = useMemo(() => generateDecoderTexture(seed), [seed]);
+  const tone = index => `var(--gp-decoder-noise-${index + 1})`;
   const resource = attempt ? `${src}${String(src).includes('?') ? '&' : '?'}decoder_retry=${attempt}` : src;
   const maskImage = cssUrl(resource);
 
@@ -39,6 +41,8 @@ export default function ImageDecoderDisplay({
         preserveAspectRatio="xMidYMid meet"
         aria-hidden="true"
       >
+        {texture.tiles.map(tile => <rect key={`tile:${tile.id}`} className="image-decoder-display__texture-tile"
+          x={tile.x} y={tile.y} width={4.1} height={4.1} fill={tone(tile.tone)} opacity={tile.opacity} />)}
         {artifacts.map((artifact) => (
           <ellipse
             key={artifact.id}
@@ -51,6 +55,8 @@ export default function ImageDecoderDisplay({
             transform={`rotate(${artifact.rotation} ${artifact.cx} ${artifact.cy})`}
           />
         ))}
+        {texture.streaks.map(streak => <line key={`streak:${streak.id}`} className="image-decoder-display__streak"
+          x1={streak.x1} y1={streak.y1} x2={streak.x2} y2={streak.y2} stroke={tone(streak.tone)} strokeWidth={streak.width} />)}
       </svg>
     </figure>
   );
