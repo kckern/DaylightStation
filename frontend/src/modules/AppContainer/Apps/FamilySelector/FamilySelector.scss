@@ -317,3 +317,11 @@
     font-size: 1.75rem;
   }
 }
+
+.family-selector--embedded {
+  background: transparent;
+  height: 290px;
+  max-height: 100%;
+  .family-selector-container { padding: 1.8rem 0 0; }
+  .wheel-pointer { font-size: 2rem; }
+}

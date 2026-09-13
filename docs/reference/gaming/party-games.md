@@ -47,3 +47,66 @@ npm run gaming:party -- delete diagnostic:ID
 Diagnostic endpoints require host authority. Sessions use the `diagnostic:` prefix, live only in the backend process, expire after four hours, and are capped at 32 active sessions. A restart removes them. Creating one reads the current authored definition without pinning/archive writes. Diagnostic effects are empty, printing is suppressed, and drawing checkpoints remain in memory. These guarantees make the path suitable for visual QA and observability, not recovery, replay certification, or multiplayer persistence testing.
 
 Set `DAYLIGHT_BASE_URL` or pass `--base-url` when the app is not available at the CLI default. `list` reports active diagnostics and `url` reprints an attach URL.
+
+## Casual family Charades
+
+A Charades definition can set `competition: false` to play without scorekeeping,
+rankings, correctness questions, verifier steps, or AI commentary. The catalog
+projects individual setup for this mode while preserving the experience's team
+capabilities for competitive definitions. The rule setting controls behavior;
+hiding a scoreboard alone is not casual mode.
+
+Authored content may reference a clue bank beneath the configured data root:
+
+```yaml
+# household/gaming/games/<definition-id>/content.yml
+artifact: { kind: gaming-content, version: 1, id: "<definition-id>" }
+title: Family Charades
+clue_bank: charades/choices.yml
+catalog:
+  description: Act together, just for fun
+  round_count: 3
+```
+
+The bank lives at `content/games/charades/choices.yml`:
+
+```yaml
+version: 1
+clues:
+  - id: rabbit
+    text: Rabbit
+    image: images/rabbit.svg
+  - id: swimming
+    text: Swimming
+```
+
+Images are relative to the bank directory. Paths must remain inside that
+directory, including after resolving symlinks. The loader validates clue IDs,
+text, and image files and compiles them into the content artifact before hashing
+and pinning. Editing the bank changes newly created games; already pinned
+sessions retain their clue content and archived image bytes. Read-only catalog
+and diagnostic loads do not archive images; their URLs verify the current image
+hash. Only image formats are served from this namespace. Image URLs use
+`/api/v1/gaming/media/content/<sha256>/<game>/<relative-image>`; the configured content
+root is distinct from the legacy Party Games sound/media directory.
+
+The corresponding rules use `rounds`, `timer_ms`, `clues_per_turn`,
+`turn_selection: seeded-rounds`, and `presentation.image_participants` for the
+household's image-player IDs. Image and text-only pools are separate, so word
+turns cannot consume picture clues needed by young players. For two image
+players over three rounds, provide at least six images to avoid repeats.
+
+Casual play requires a `guessing_music` rule setting containing a
+`source` content reference and local `volume`. The Party Games environment
+resolves that reference through the standard queue endpoint and randomly plays
+its media URLs. It advances on track end, follows screen master volume, and
+stops/cancels pending work when guessing ends or the experience unmounts. The
+source must be authored in configuration, never embedded in presenter code.
+
+Decoder reading is untimed. A fresh remote OK starts guessing. Casual early
+finish does not claim the answer was correct; expiry and early finish both
+reveal the clue without adjudication. Verify the complete flow with
+`tests/live/flow/gaming/fhe-charades.runtime.test.mjs`, selecting the target
+server through `BASE_URL`. That test uses real media and remote keys. Physical
+red-card readability still requires assessment on the intended display;
+rendered SVGs and successful HTTP responses alone do not establish it.

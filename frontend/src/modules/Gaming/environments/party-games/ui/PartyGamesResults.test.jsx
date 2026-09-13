@@ -19,3 +19,8 @@ describe('PartyGamesResults', () => {
     expect(screen.getByText('Thanks for playing.')).toBeInTheDocument();
   });
 });
+
+it('keeps casual participants unranked even when stale scores are present', () => {
+ render(<PartyGamesResults competition={false} seats={[{id:'a',name:'Alice'}]} result={{outcome:{winner_ids:['a']},scores:[{subject_id:'a',value:4}]}} />);
+ expect(screen.getByText('Game complete')).toBeInTheDocument(); expect(screen.queryByText(/wins/)).toBeNull(); expect(screen.queryByText('4')).toBeNull();
+});

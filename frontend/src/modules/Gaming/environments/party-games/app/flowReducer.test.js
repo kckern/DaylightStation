@@ -108,3 +108,16 @@ describe('flowReducer', () => {
     expect(s.error).toBe('boom');
   });
 });
+
+it('selects the exact definition and carries casual competition mode', () => {
+  const sets = ['other','family'].map(id => ({ valid:true, game:'charades', definitionId:`charades:${id}`, setId:id, setup:'individuals', competition:false }));
+  const state = flowReducer(initialFlowState, {type:'BOOT_LOADED', sets, config:CONFIG, requestedDefinition:'charades:family'});
+  expect(state).toMatchObject({phase:'team-setup',definitionId:'charades:family',competition:false});
+});
+
+it('resumes the requested definition and authoritative casual mode among multiple game variants', () => {
+ const sets = ['other','family'].map(id => ({valid:true,game:'charades',definitionId:`charades:${id}`,setup:'individuals',competition:true}));
+ const attachedSession={header:{session_id:'saved',experience:{id:'charades'},seats:[]},state:{competition:false}};
+ const state=flowReducer(initialFlowState,{type:'BOOT_LOADED',sets,config:CONFIG,requestedDefinition:'charades:family',attachedSession});
+ expect(state).toMatchObject({definitionId:'charades:family',competition:false,sessionId:'saved'});
+});

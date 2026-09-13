@@ -1,13 +1,13 @@
 .image-decoder-display {
   position: relative;
-  width: min(72vmin, 42rem);
+  width: min(100%, 280px);
   aspect-ratio: 1;
   margin: 0;
   overflow: hidden;
   border: clamp(.2rem, .6vmin, .4rem) solid var(--gp-image-decoder-frame);
   border-radius: clamp(1rem, 3vmin, 2rem);
-  background: var(--gp-image-decoder-well);
-  box-shadow: 0 0 3rem rgb(26 226 241 / 12%), inset 0 0 2rem rgb(0 0 0 / 85%);
+  background: #fff9ee;
+  isolation: isolate;
 }
 
 .image-decoder-display__subject,
@@ -19,8 +19,8 @@
 }
 
 .image-decoder-display__subject {
-  background: var(--gp-image-decoder-subject);
-  filter: drop-shadow(0 0 .35rem rgb(34 228 242 / 58%));
+  background: #00afbb;
+
   mask-position: center;
   mask-repeat: no-repeat;
   mask-size: contain;
@@ -31,6 +31,7 @@
 
 .image-decoder-display__artifacts {
   overflow: visible;
+  mix-blend-mode: multiply;
 }
 
 .image-decoder-display__artifact {
@@ -38,13 +39,16 @@
 }
 
 .image-decoder-display__artifact.is-bubble {
-  fill: var(--gp-image-decoder-bubble);
-  stroke: var(--gp-image-decoder-bubble-edge);
+  fill: #ffac92;
+  stroke: #ff593c;
   stroke-width: .45;
 }
 
 .image-decoder-display__artifact.is-ring {
   fill: none;
-  stroke: var(--gp-image-decoder-ring);
+  stroke: #ff6549;
   stroke-width: 2.2;
 }
+
+.image-decoder-display__probe { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.image-decoder-display__error { position: absolute; inset: 0; z-index: 2; background: var(--gp-stage); color: var(--gp-paper); display: grid; place-content: center; gap: 1rem; padding: 1rem; }

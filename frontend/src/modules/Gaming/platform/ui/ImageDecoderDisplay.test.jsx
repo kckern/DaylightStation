@@ -25,3 +25,14 @@ describe('ImageDecoderDisplay', () => {
     expect(container.querySelectorAll('.image-decoder-display__artifact')).toHaveLength(12);
   });
 });
+
+it('reports image failure without an answer label and supports retry', async () => {
+ const {fireEvent}=await import('@testing-library/react');
+ const {container}=render(<ImageDecoderDisplay src="/missing.svg" />);
+ fireEvent.error(container.querySelector('img'));
+ expect(screen.getByRole('alert')).toHaveTextContent('Clue image could not load');
+ fireEvent.click(screen.getByRole('button',{name:'Retry image'}));
+ expect(screen.queryByRole('alert')).toBeNull();
+ expect(screen.getByTestId('image-decoder-subject').style.maskImage).toContain('decoder_retry=1');
+ expect(container.querySelector('img').getAttribute('src')).toContain('decoder_retry=1');
+});

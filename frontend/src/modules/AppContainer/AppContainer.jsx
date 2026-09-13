@@ -26,6 +26,8 @@ export default function AppContainer({ open, clear }) {
 
   const entry = getApp(app);
 
+  const Component = useMemo(() => entry ? lazy(entry.component) : null, [entry]);
+
   if (!entry) {
     return (
       <div>
@@ -35,7 +37,6 @@ export default function AppContainer({ open, clear }) {
     );
   }
 
-  const Component = lazy(entry.component);
   const appProps = { clear };
   if (entry.param?.name && param) {
     appProps[entry.param.name] = param;
