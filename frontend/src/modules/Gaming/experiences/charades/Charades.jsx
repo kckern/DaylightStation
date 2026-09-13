@@ -18,6 +18,11 @@ import './Charades.scss';
 
 export default function Charades({ seats = [], sessionId, onComplete, gamingServices }) {
   const teams = seats;
+  // The wheel selects seats, but portraits belong to the people inside them.
+  const wheelMembers = useMemo(() => seats.map(seat => ({
+    ...seat,
+    avatar: seat.members?.[0]?.avatar,
+  })), [seats]);
   const audio = gamingServices?.audio;
   const [state, setState] = useState(null);
   const [definition, setDefinition] = useState(null);
@@ -108,7 +113,7 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
 
       {state.phase === 'performer-ready' && (
         <section className="charades__center">
-          {casual ? <><p className="charades__eyebrow">Choosing the next performer</p><FamilySelector key={`${state.challenge_index}:${state.performer_id}`} members={seats} winner={state.performer_id} autoSpin embedded durationMs={2600} onComplete={() => command({ type: 'performer.ready' })} /><strong>{performerName}, get the red decoder card ready</strong></> : <InstructionCard eyebrow="Next performer" title={`${performerName}, take the stage`}><p>Get the red decoder card. Your secret stays concealed until you are ready.</p><footer><GameButton tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'performer.ready' })}>Reveal with decoder</GameButton></footer></InstructionCard>}
+          {casual ? <><p className="charades__eyebrow">Choosing the next performer</p><FamilySelector key={`${state.challenge_index}:${state.performer_id}`} members={wheelMembers} winner={state.performer_id} autoSpin embedded durationMs={2600} onComplete={() => command({ type: 'performer.ready' })} /><strong>{performerName}, get the red decoder card ready</strong></> : <InstructionCard eyebrow="Next performer" title={`${performerName}, take the stage`}><p>Get the red decoder card. Your secret stays concealed until you are ready.</p><footer><GameButton tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'performer.ready' })}>Reveal with decoder</GameButton></footer></InstructionCard>}
         </section>
       )}
 
