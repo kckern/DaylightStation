@@ -37,14 +37,20 @@ describe('ImageDecoderDisplay', () => {
     expect(composite).toContainElement(artifacts);
     expect(composite).not.toHaveAttribute('style');
     expect(subject.style.transform).toBe('');
+    expect(card).toHaveAttribute('data-motion-index', '0');
+    expect(artifacts).toHaveAttribute('data-interference-rotation', '0');
     expect(artifacts.style.transform).toBe('rotate(0deg)');
     const first = card.style.transform;
     act(() => vi.advanceTimersByTime(1000));
     expect(card.style.transform).not.toBe(first);
+    expect(card).toHaveAttribute('data-motion-index', '1');
+    expect(artifacts).toHaveAttribute('data-interference-rotation', '90');
     expect(artifacts.style.transform).toBe('rotate(90deg)');
     const second = card.style.transform;
     act(() => vi.advanceTimersByTime(1000));
     expect(card.style.transform).not.toBe(second);
+    expect(card).toHaveAttribute('data-motion-index', '2');
+    expect(artifacts).toHaveAttribute('data-interference-rotation', '180');
     expect(artifacts.style.transform).toBe('rotate(180deg)');
 
     const frames = generateDecoderMotion('moving');
