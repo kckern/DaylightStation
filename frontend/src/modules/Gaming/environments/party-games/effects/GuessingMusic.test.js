@@ -12,6 +12,19 @@ const flush = async () => { for (let n = 0; n < 6; n++) await Promise.resolve();
 const tracks = { items: [{mediaUrl:'/first.mp3'}, {mediaUrl:'/second.mp3'}] };
 afterEach(_resetForTests);
 describe('GuessingMusic lifecycle', () => {
+  it('cleans up even when the error presenter throws', async () => {
+    const audio = new AudioDouble();
+    audio.play = () => { audio.paused = false; return Promise.reject(new Error('play failed')); };
+    const service = new GuessingMusic({ audioFactory: () => audio, resolveQueue: async () => tracks });
+    const onError = vi.fn(() => { throw new Error('presenter failed'); });
+    service.start({ source: 'test:failure' }, { onError }); await flush();
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(audio.paused).toBe(true); expect(audio.src).toBe('');
+    audio.dispatchEvent(new Event('ended')); await flush(); expect(audio.src).toBe('');
+    const stoppedVolume = audio.volume;
+    _publishMasterState(0.1, 0.1, false); expect(audio.volume).toBe(stoppedVolume);
+    service.stop();
+  });
   it('plays a configured queue, advances on ended, follows master volume and stops', async () => {
     const audio = new AudioDouble();
     const resolveQueue = vi.fn(async () => tracks);

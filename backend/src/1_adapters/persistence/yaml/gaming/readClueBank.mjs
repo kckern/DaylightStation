@@ -1,6 +1,7 @@
+import crypto from 'node:crypto';
 import path from 'node:path';
 import YAML from 'yaml';
-import { fileExists, readTextFromPath, resolveRealPath } from '#system/utils/FileIO.mjs';
+import { fileExists, readTextFromPath, readBinaryFromPath, resolveRealPath, ensureDir, writeFileExclusive } from '#system/utils/FileIO.mjs';
 
 function containedFile(root, relative, label) {
   if (typeof relative !== 'string' || !relative || relative.includes('\\') || path.isAbsolute(relative) || relative.split('/').includes('..')) {
@@ -33,10 +34,31 @@ export function readClueBank(content, contentGamesDir) {
       const imageFile = containedFile(path.dirname(bankFile), clue.image, `clue ${clue.id} image`);
       if (!['.svg', '.png', '.webp', '.jpg', '.jpeg'].includes(path.extname(imageFile).toLowerCase())) throw new Error(`clue ${clue.id} image format is unsupported`);
       const relative = path.relative(contentGamesDir, imageFile).split(path.sep).map(encodeURIComponent).join('/');
-      challenge.decoder = { image: `/api/v1/gaming/media/content/${relative}` };
+      const hash = crypto.createHash('sha256').update(readBinaryFromPath(imageFile)).digest('hex');
+      challenge.decoder = { image: `/api/v1/gaming/media/content/${hash}/${relative}` };
     }
     return challenge;
   });
   const { clue_bank: _source, ...artifact } = content;
   return { ...artifact, challenges };
+}
+
+
+// Ordinary sessions archive image bytes; read-only catalog/diagnostic loads do
+// not write. If authored art changes between load and pin, retry the new game.
+export function pinClueImages(content, contentGamesDir, imageArchiveDir) {
+  for (const challenge of content.challenges || []) {
+    const match = challenge.decoder?.image?.match(/^\/api\/v1\/gaming\/media\/content\/([a-f0-9]{64})\/(.+)$/);
+    if (!match) continue;
+    const [, hash, encodedRelative] = match;
+    const relative = encodedRelative.split('/').map(decodeURIComponent).join('/');
+    const extension = path.extname(relative).toLowerCase();
+    const target = path.join(imageArchiveDir, `${hash}${extension}`);
+    if (fileExists(target)) continue;
+    const source = containedFile(contentGamesDir, relative, 'clue image');
+    const bytes = readBinaryFromPath(source);
+    if (crypto.createHash('sha256').update(bytes).digest('hex') !== hash) throw new Error('Clue image changed while preparing the session; retry');
+    ensureDir(imageArchiveDir);
+    writeFileExclusive(target, bytes);
+  }
 }
