@@ -20,18 +20,19 @@ export function useScopedRemoteControls(rootRef, { onEscape } = {}) {
       controls[(Math.max(0,index) + delta + controls.length) % controls.length]?.focus();
     };
     const unsubscribe = bus.subscribe('controls:action', handle);
-    const nav = bus.subscribe('navigate', payload => handle({ ...payload, action:'navigate' }));
-    const select = bus.subscribe('select', payload => handle({ ...payload, action:'select' }));
-    const escape = bus.subscribe('escape', payload => handle({ ...payload, action:'escape' }));
+    const release = bus.capture(['navigate', 'select', 'escape'], (action, payload) => { handle({ ...payload, action }); return true; });
     const keydown = event => {
       const direction = {ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'}[event.key];
       const action = direction ? 'navigate' : ['Enter',' ','MediaPlayPause'].includes(event.key) ? 'select' : ['Escape','BrowserBack'].includes(event.key) ? 'escape' : null;
       if (!action) return;
       event.preventDefault(); event.stopImmediatePropagation();
+      // GamepadAdapter has already emitted this action on the semantic bus;
+      // swallow its compatibility key event so neither we nor legacy UI repeat it.
+      if (event.__gamepadSynthetic) return;
       bus.emit('controls:action', {action,direction,repeat:event.repeat});
     };
     window.addEventListener('keydown',keydown,true);
     const observer = new MutationObserver(focus); observer.observe(root,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled']}); focus();
-    return () => { window.removeEventListener('keydown',keydown,true); observer.disconnect(); unsubscribe(); nav(); select(); escape(); };
+    return () => { window.removeEventListener('keydown',keydown,true); observer.disconnect(); unsubscribe(); release(); };
   }, [rootRef]);
 }

@@ -19,7 +19,7 @@
 }
 
 .image-decoder-display__subject {
-  background: #00afbb;
+  background: #d0ffff;
 
   mask-position: center;
   mask-repeat: no-repeat;
@@ -35,19 +35,20 @@
 }
 
 .image-decoder-display__artifact {
-  vector-effect: non-scaling-stroke;
+  // Scale interference contours with the source image, preserving optical weight.
+  stroke-linecap: round;
 }
 
 .image-decoder-display__artifact.is-bubble {
-  fill: #ffac92;
-  stroke: #ff593c;
-  stroke-width: .45;
+  fill: #ffcfbb;
+  stroke: #ff684f;
+  stroke-width: 1.5;
 }
 
 .image-decoder-display__artifact.is-ring {
   fill: none;
-  stroke: #ff6549;
-  stroke-width: 2.2;
+  stroke: #ff6048;
+  stroke-width: 2.4;
 }
 
 .image-decoder-display__probe { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }

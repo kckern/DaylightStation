@@ -11,3 +11,10 @@ it('uses supplied members and completes the authoritative winner once', () => {
   expect(done).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({id:'b'}));
   expect(screen.queryByText('Not enough members')).toBeNull();
 });
+
+it('keeps standalone minimum at two members while embedded one-person turns can spin',()=>{
+ const {unmount}=render(<FamilySelector members={[{id:'a',name:'Alice'}]}/>);
+ expect(screen.getByText('Not enough members')).toBeInTheDocument();unmount();
+ render(<FamilySelector members={[{id:'a',name:'Alice'}]} embedded/>);
+ expect(screen.queryByText('Not enough members')).toBeNull();
+});
