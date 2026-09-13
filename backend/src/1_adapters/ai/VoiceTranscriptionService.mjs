@@ -194,6 +194,19 @@ export class VoiceTranscriptionService {
   }
 
   /**
+   * Is this transcript the profile's "there was nothing here" answer?
+   *
+   * Public because the caller has to know, and the marker is the PROFILE'S
+   * word for it — fitness says "[No Memo]", language says "[No Answer]". A
+   * caller that pattern-matched the string itself would be carrying a copy of
+   * a detail this class owns, and would put a literal "[No Answer]" in front
+   * of a child the first time the two drifted.
+   */
+  isEmpty(text) {
+    return this.#isEmptyMarker(text);
+  }
+
+  /**
    * Does the cleaned text carry the profile's "there was nothing here" marker?
    * @private
    */

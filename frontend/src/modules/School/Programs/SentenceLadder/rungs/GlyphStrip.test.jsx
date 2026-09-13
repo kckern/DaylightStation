@@ -37,7 +37,18 @@ describe('GlyphStrip', () => {
     const cols = colsOf(el);
     expect(cols.map(wantOf)).toEqual(['', '']);
     expect(el.textContent).toBe('');
-    expect(cols.every((c) => c.classList.contains('is-blind'))).toBe(true);
+    // The column the learner is in keeps its caret — it is theirs, not the
+    // model's. Everything past it is blind.
+    expect(cols[0].classList.contains('is-current')).toBe(true);
+    expect(el.querySelectorAll('.lang-strip__caret')).toHaveLength(1);
+    expect(cols.slice(1).every((c) => c.classList.contains('is-blind'))).toBe(true);
+  });
+
+  // Listen mode still has to draw the learner's own answer row.
+  it('draws the learner\'s typing in listen mode without leaking the model', () => {
+    const el = strip(columnsFor({ target: '오늘', committed: '오', pending: '느', reveal: 'none' }));
+    expect(colsOf(el).map(wantOf)).toEqual(['', '']);
+    expect(el.textContent).toBe('오느');
   });
 
   it('carries each column\'s state as a class so the styling can speak', () => {

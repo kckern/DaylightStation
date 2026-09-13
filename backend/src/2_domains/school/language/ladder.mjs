@@ -73,8 +73,23 @@ export function resolveRole(role, languages) {
 }
 
 /**
- * What a rung needs from the device, expressed concretely for THIS corpus.
- * `null` means it runs anywhere.
+ * Rungs whose TEXT answer may also be spoken and transcribed.
+ *
+ * Interpretation only, and deliberately not "every text rung". Dictation is
+ * typing the target script from audio; a spoken target answer there is the
+ * learner repeating what was just played — which is the repetition rung, one
+ * they have already done. Accepting it as dictation would credit listening as
+ * writing and remove the only rung that practises the script.
+ */
+const SPOKEN_ANSWER_RUNGS = Object.freeze(new Set(['interpretation']));
+
+/**
+ * What a rung needs from the device, expressed concretely for THIS corpus and
+ * THIS deployment. `null` means it runs anywhere.
+ *
+ * A requirement is a set of ALTERNATIVES, met by any one of them. Most rungs
+ * have exactly one, and the shape is uniform anyway so that no caller has to
+ * ask which sort of requirement it is holding — `{ anyOf: [...] }` always.
  *
  * Text input is reported per language rather than as one boolean, because the
  * two typing rungs are not interchangeable: `dictation` needs an IME for the
@@ -82,31 +97,57 @@ export function resolveRole(role, languages) {
  * US keyboard satisfies interpretation and not dictation, and collapsing both
  * to `keyboard` would offer the learner a rung they physically cannot enter.
  *
+ * `voiceAnswer` says whether this DEPLOYMENT can turn speech into text. It is
+ * a second argument rather than a capability because it is not a property of
+ * the panel: capabilities are declared by the client (down to a query string),
+ * and a client that could assert the server's transcriber into existence would
+ * be handed a rung with no way in and no way past — the exact dead end
+ * `chainFor` exists to prevent. Server facts travel server-side.
+ *
  * @param {object} rung - a RUNGS entry
  * @param {{source: string, target: string}} languages
- * @returns {{kind: 'microphone'} | {kind: 'textInput', language: string} | null}
+ * @param {{voiceAnswer?: boolean}} [options]
+ * @returns {{anyOf: Array<{kind: 'microphone'} | {kind: 'textInput', language: string|null}>} | null}
  */
-export function requirementFor(rung, languages) {
+export function requirementFor(rung, languages, { voiceAnswer = false } = {}) {
   if (!rung?.response) return null;
-  if (rung.response.modality === 'audio') return { kind: 'microphone' };
+  if (rung.response.modality === 'audio') return { anyOf: [{ kind: 'microphone' }] };
   if (rung.response.modality === 'text') {
-    return { kind: 'textInput', language: resolveRole(rung.response.role, languages) };
+    const typed = { kind: 'textInput', language: resolveRole(rung.response.role, languages) };
+    return voiceAnswer && SPOKEN_ANSWER_RUNGS.has(rung.id)
+      ? { anyOf: [typed, { kind: 'microphone' }] }
+      : { anyOf: [typed] };
   }
   return null;
 }
 
-/**
- * @param {{microphone?: boolean, textInput?: string[]}} capabilities
- */
-function satisfies(capabilities, requirement) {
-  if (requirement === null) return true;
-  if (requirement.kind === 'microphone') return capabilities.microphone === true;
-  if (requirement.kind === 'textInput') {
-    if (!requirement.language) return false;
+/** One alternative against what the device has. */
+function satisfiesAlternative(capabilities, alternative) {
+  if (alternative?.kind === 'microphone') return capabilities.microphone === true;
+  if (alternative?.kind === 'textInput') {
+    if (!alternative.language) return false;
     return Array.isArray(capabilities.textInput)
-      && capabilities.textInput.includes(requirement.language);
+      && capabilities.textInput.includes(alternative.language);
   }
   return false;
+}
+
+/**
+ * Whether a device can meet a requirement — ANY one alternative is enough.
+ *
+ * EXPORTED because the access gate asks the same question of the same
+ * requirement and used to answer it with its own copy of this branching. The
+ * two drifted, the queue offered a rung the gate then refused, and a child was
+ * told to connect a keyboard for a rung that needs none. One predicate, one
+ * answer; see `accessGate.allowsRung`.
+ *
+ * @param {{microphone?: boolean, textInput?: string[]}} capabilities
+ * @param {{anyOf: object[]}|null} requirement
+ */
+export function satisfiesRequirement(capabilities = {}, requirement) {
+  if (requirement === null || requirement === undefined) return true;
+  if (!Array.isArray(requirement.anyOf)) return false;
+  return requirement.anyOf.some((alt) => satisfiesAlternative(capabilities, alt));
 }
 
 /**
@@ -123,11 +164,14 @@ function satisfies(capabilities, requirement) {
  *
  * @param {{microphone?: boolean, textInput?: string[]}} [capabilities]
  * @param {{source: string, target: string}} languages
+ * @param {{voiceAnswer?: boolean}} [options] whether this deployment can
+ *        transcribe speech. Defaults to NO: a caller that forgets it offers a
+ *        rung too few, which degrades; the other way round dead-ends a child.
  * @returns {string[]} rung ids, in ladder order
  */
-export function chainFor(capabilities = {}, languages) {
+export function chainFor(capabilities = {}, languages, options = {}) {
   return RUNGS
-    .filter((rung) => satisfies(capabilities, requirementFor(rung, languages)))
+    .filter((rung) => satisfiesRequirement(capabilities, requirementFor(rung, languages, options)))
     .map((rung) => rung.id);
 }
 
@@ -140,8 +184,8 @@ export function chainFor(capabilities = {}, languages) {
  * than resurrected at a guessed position. Evidence recorded on a
  * better-equipped device must not create phantom work on a lesser one.
  */
-export function nextRung(rung, capabilities = {}, languages) {
-  const chain = chainFor(capabilities, languages);
+export function nextRung(rung, capabilities = {}, languages, options = {}) {
+  const chain = chainFor(capabilities, languages, options);
   const at = chain.indexOf(rung);
   if (at === -1) return null;
   return chain[at + 1] ?? null;
@@ -154,8 +198,8 @@ export function nextRung(rung, capabilities = {}, languages) {
  *
  * @returns {Array<{from: string, to: string}>}
  */
-export function graduationEdges(capabilities = {}, languages) {
-  const chain = chainFor(capabilities, languages);
+export function graduationEdges(capabilities = {}, languages, options = {}) {
+  const chain = chainFor(capabilities, languages, options);
   return chain.slice(0, -1).map((from, i) => ({ from, to: chain[i + 1] }));
 }
 

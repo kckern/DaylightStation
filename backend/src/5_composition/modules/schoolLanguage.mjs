@@ -24,6 +24,13 @@ import { EventBusSchoolRealtimeAdapter } from '#adapters/eventbus/EventBusSchool
  * @param {Function} [args.readProgramEnrollment] Learner's ladder enrollment, if any.
  * @param {string|null} [args.timezone]
  * @param {Function|null} [args.readGate] Resolved access gate; absent means open.
+ * @param {object|null} [args.languageTranscription] The SAME transcription
+ *   service the router is given, or null without an AI gateway. Passed as the
+ *   object rather than as a boolean so there is no second flag to set wrongly:
+ *   whether a rung may be answered by voice and whether the microphone is
+ *   drawn now come from one value. A service that offered the rung on a
+ *   deployment that cannot transcribe would hand a child a rung with no way in
+ *   and no way past.
  * @param {object} [args.logger]
  */
 export function createLanguageStudyService({
@@ -32,6 +39,7 @@ export function createLanguageStudyService({
   readProgramEnrollment = null,
   timezone = null,
   readGate = null,
+  languageTranscription = null,
   logger = console,
 }) {
   if (!datastore) throw new Error('createLanguageStudyService requires datastore');
@@ -41,6 +49,9 @@ export function createLanguageStudyService({
     readProgramEnrollment,
     timezone,
     readGate,
+    // Boolean HERE, not in the application layer: the service may not hold an
+    // adapter, and all it needs to know is whether the alternative exists.
+    voiceAnswer: Boolean(languageTranscription),
     logger,
     realtime: new EventBusSchoolRealtimeAdapter({ eventBus }),
   });
