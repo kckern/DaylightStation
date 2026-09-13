@@ -43,7 +43,7 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   const stage = page.locator('main.charades');
   const phase = async (value, timeout = 20_000) => expect(stage).toHaveAttribute('data-phase', value, {timeout});
   const expectFits = async locator => {
-    const clipped = await locator.evaluate(root => [root, ...root.querySelectorAll('button, .segmented-secret-text, .image-decoder-display')]
+    const clipped = await locator.evaluate(root => [root, ...root.querySelectorAll('button, img, .segmented-secret-text, .image-decoder-display')]
       .filter(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden')
       .filter(el => { const b = el.getBoundingClientRect(); return b.bottom > innerHeight + 1 || b.right > innerWidth + 1 || b.top < -1 || b.left < -1; })
       .map(el => ({tag:el.tagName,className:el.className,text:el.textContent?.slice(0,80)})));
@@ -181,6 +181,13 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
     }
     await expect.poll(async () => (await musicState()).some(a => !a.paused)).toBe(false);
     await expect(stage).toContainText(ready.state.challenge.prompt);
+    if (imageTurn) {
+      const revealedImage = stage.getByRole('img', {name:ready.state.challenge.prompt,exact:true});
+      await expect(revealedImage).toBeVisible();
+      await expect(revealedImage).toHaveAttribute('src', ready.state.challenge.decoder.image);
+      await expect.poll(() => revealedImage.evaluate(img => img.complete && img.naturalWidth > 0)).toBe(true);
+      await expect(stage.locator('.image-decoder-display')).toHaveCount(0);
+    }
     await expectFits(stage);
     await expect(stage).not.toContainText(/score committed|guessed it|not guessed|wins/i);
     await focusRemote(/next|finish|complete/i);

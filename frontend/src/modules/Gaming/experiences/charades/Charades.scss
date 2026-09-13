@@ -78,3 +78,19 @@
   .charades__rule { font-size: 18px; }
 }
 .charades__notice { z-index: 5; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 8px; background: var(--gp-stage); color: var(--gp-paper); }
+
+.charades__image-reveal {
+  .gp-outcome { padding: 12px 20px; gap: 8px; }
+  .gp-outcome h2 { font-size: 32px; }
+  .gp-outcome p { margin: 0; }
+}
+.charades__revealed-image {
+  display: block;
+  box-sizing: border-box;
+  width: 200px;
+  height: 200px;
+  padding: 8px;
+  object-fit: contain;
+  border-radius: 12px;
+  background: var(--gp-card);
+}

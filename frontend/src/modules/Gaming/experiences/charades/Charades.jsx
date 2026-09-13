@@ -142,8 +142,16 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
       )}
 
       {state.phase === 'challenge-complete' && (
-        <section className="charades__center">
-          <OutcomeReveal tone="success" eyebrow={casual ? "The clue was" : "Score committed"} title={casual ? prompt : "Clue complete"}><p>{casual ? "Thanks for acting!" : "Pass the stage to the next performer."}</p><GameButton tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'challenge.next' })}>{casual ? (anotherClue ? 'Next clue' : finalTurn ? 'Finish game' : 'Next performer') : 'Next clue'}</GameButton></OutcomeReveal>
+        <section className={`charades__center${casual && state.clue_presentation === 'image' ? ' charades__image-reveal' : ''}`}>
+          <OutcomeReveal tone="success" eyebrow={casual ? "The clue was" : "Score committed"} title={casual ? prompt : "Clue complete"}>
+            {casual && state.clue_presentation === 'image' && (
+              <img className="charades__revealed-image" src={state.challenge?.decoder?.image} alt={prompt} />
+            )}
+            <p>{casual ? "Thanks for acting!" : "Pass the stage to the next performer."}</p>
+            <GameButton tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'challenge.next' })}>
+              {casual ? (anotherClue ? 'Next clue' : finalTurn ? 'Finish game' : 'Next performer') : 'Next clue'}
+            </GameButton>
+          </OutcomeReveal>
         </section>
       )}
 
