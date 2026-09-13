@@ -26,27 +26,31 @@ describe('ImageDecoderDisplay', () => {
     expect(container.querySelectorAll('.image-decoder-display__artifact')).toHaveLength(12);
   });
 
-  it('moves the clue and interference as one rigid composite with substantial displacement', () => {
+  it('moves the full decoder card while its clue and interference stay full-card and locked together', () => {
     vi.useFakeTimers();
     const { container } = render(<ImageDecoderDisplay src="/clue.svg" seed="moving" motionIntervalMs={1000} />);
+    const card = container.querySelector('.image-decoder-display');
     const subject = screen.getByTestId('image-decoder-subject');
     const artifacts = container.querySelector('.image-decoder-display__artifacts');
     const composite = screen.getByTestId('image-decoder-composite');
     expect(composite).toContainElement(subject);
     expect(composite).toContainElement(artifacts);
+    expect(composite).not.toHaveAttribute('style');
     expect(subject.style.transform).toBe('');
-    expect(artifacts.style.transform).toBe('');
-    const first = `${composite.style.left}:${composite.style.top}:${composite.style.transform}`;
+    expect(artifacts.style.transform).toBe('rotate(0deg)');
+    const first = card.style.transform;
     act(() => vi.advanceTimersByTime(1000));
-    expect(`${composite.style.left}:${composite.style.top}:${composite.style.transform}`).not.toBe(first);
-    const second = `${composite.style.left}:${composite.style.top}:${composite.style.transform}`;
+    expect(card.style.transform).not.toBe(first);
+    expect(artifacts.style.transform).toBe('rotate(90deg)');
+    const second = card.style.transform;
     act(() => vi.advanceTimersByTime(1000));
-    expect(`${composite.style.left}:${composite.style.top}:${composite.style.transform}`).not.toBe(second);
+    expect(card.style.transform).not.toBe(second);
+    expect(artifacts.style.transform).toBe('rotate(180deg)');
 
     const frames = generateDecoderMotion('moving');
     for (let index = 1; index < frames.length; index += 1) {
       const distance = Math.hypot(frames[index].x - frames[index - 1].x, frames[index].y - frames[index - 1].y);
-      expect(distance / 60).toBeGreaterThanOrEqual(0.5);
+      expect(distance / 100).toBeGreaterThanOrEqual(0.5);
     }
   });
 });

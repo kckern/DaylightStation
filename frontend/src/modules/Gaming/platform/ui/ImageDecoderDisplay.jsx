@@ -37,14 +37,12 @@ export default function ImageDecoderDisplay({
   }, [motion.length, motionIntervalMs, seed]);
 
   return (
-    <figure className="image-decoder-display" data-status={failed ? "error" : loaded === `${src}:${attempt}` ? "ready" : "loading"} aria-label={alt}>
+    <figure className="image-decoder-display" data-status={failed ? "error" : loaded === `${src}:${attempt}` ? "ready" : "loading"} aria-label={alt} style={{
+      transform: `translate3d(${frame.x.toFixed(2)}%, ${frame.y.toFixed(2)}%, 0) scale(${frame.scale.toFixed(3)})`,
+    }}>
       <img key={`${src}:${attempt}`} className="image-decoder-display__probe" src={resource} alt="" aria-hidden="true" onLoad={() => { setFailure(null); setLoaded(`${src}:${attempt}`); }} onError={() => setFailure(src)} />
       {failed && <div className="image-decoder-display__error" role="alert">Clue image could not load.<button type="button" onClick={() => { setFailure(null); setAttempt(value => value + 1); }}>Retry image</button></div>}
-      <div className="image-decoder-display__composite" data-testid="image-decoder-composite" style={{
-        left: `${frame.x}%`,
-        top: `${frame.y}%`,
-        transform: `scale(${frame.scale.toFixed(3)})`,
-      }}>
+      <div className="image-decoder-display__composite" data-testid="image-decoder-composite">
         <div
           className="image-decoder-display__subject"
           data-testid="image-decoder-subject"
@@ -59,6 +57,7 @@ export default function ImageDecoderDisplay({
           viewBox="0 0 100 100"
           preserveAspectRatio="xMidYMid meet"
           aria-hidden="true"
+          style={{ transform: `rotate(${motionIndex * 90}deg)` }}
         >
           {texture.tiles.map(tile => <rect key={`tile:${tile.id}`} className="image-decoder-display__texture-tile"
             x={tile.x} y={tile.y} width={4.1} height={4.1} fill={tone(tile.tone)} opacity={tile.opacity} />)}
