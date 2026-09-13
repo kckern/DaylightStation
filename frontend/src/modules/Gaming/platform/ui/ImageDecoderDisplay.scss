@@ -8,15 +8,14 @@
   border-radius: clamp(1rem, 3vmin, 2rem);
   background: #fff9ee;
   isolation: isolate;
+  transform-origin: center;
+  transition: transform 320ms cubic-bezier(.22, .72, .24, 1);
+  will-change: transform;
 }
 
 .image-decoder-display__composite {
   position: absolute;
-  width: 60%;
-  height: 60%;
-  transform-origin: center;
-  transition: left 320ms cubic-bezier(.22, .72, .24, 1), top 320ms cubic-bezier(.22, .72, .24, 1), transform 320ms cubic-bezier(.22, .72, .24, 1);
-  will-change: left, top, transform;
+  inset: 0;
 }
 
 .image-decoder-display__subject,
@@ -40,6 +39,9 @@
 .image-decoder-display__artifacts {
   overflow: visible;
   mix-blend-mode: multiply;
+  transform-origin: center;
+  transition: transform 320ms cubic-bezier(.22, .72, .24, 1);
+  will-change: transform;
 }
 
 .image-decoder-display__artifact {

@@ -162,8 +162,24 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
       const movingComposite = stage.getByTestId('image-decoder-composite');
       await expect(movingComposite.getByTestId('image-decoder-subject')).toHaveCount(1);
       await expect(movingComposite.locator('.image-decoder-display__artifacts')).toHaveCount(1);
-      const firstPosition = await movingComposite.evaluate(element => `${element.style.left}:${element.style.top}:${element.style.transform}`);
-      await expect.poll(() => movingComposite.evaluate(element => `${element.style.left}:${element.style.top}:${element.style.transform}`), {timeout:2500}).not.toBe(firstPosition);
+      const decoderCard = stage.locator('.image-decoder-display');
+      const geometry = async () => decoderCard.evaluate(card => {
+        const box = element => {
+          const bounds = element.getBoundingClientRect();
+          return {left:bounds.left,top:bounds.top,width:bounds.width,height:bounds.height};
+        };
+        return {card:box(card),subject:box(card.querySelector('.image-decoder-display__subject')),artifacts:box(card.querySelector('.image-decoder-display__artifacts'))};
+      });
+      const firstGeometry = await geometry();
+      expect(Math.abs(firstGeometry.subject.left - firstGeometry.artifacts.left)).toBeLessThan(1);
+      expect(Math.abs(firstGeometry.subject.top - firstGeometry.artifacts.top)).toBeLessThan(1);
+      expect(Math.abs(firstGeometry.subject.width - firstGeometry.artifacts.width)).toBeLessThan(1);
+      expect(firstGeometry.subject.width).toBeGreaterThan(firstGeometry.card.width * 0.9);
+      await page.waitForTimeout(1400);
+      const secondGeometry = await geometry();
+      expect(Math.hypot(secondGeometry.card.left - firstGeometry.card.left, secondGeometry.card.top - firstGeometry.card.top)).toBeGreaterThanOrEqual(firstGeometry.card.width * 0.5);
+      expect(Math.abs(secondGeometry.subject.left - secondGeometry.artifacts.left)).toBeLessThan(1);
+      expect(Math.abs(secondGeometry.subject.width - secondGeometry.artifacts.width)).toBeLessThan(1);
       const asset = await request.get(ready.state.challenge.decoder.image);
       expect(asset.ok()).toBe(true);
       expect(asset.headers()['content-type']).toContain('image/svg+xml');

@@ -58,15 +58,15 @@ export function generateDecoderMotion(seed, count = 8) {
   const random = seededRandom(`${seed}:motion`);
   const startAtFarEdge = random() >= 0.5;
   return Array.from({ length: Math.max(2, count) }, (_, index) => {
-    // The composite is 60% of its viewport. Alternating between 4% and 36%
-    // moves it 53% of its own width on every frame, enough to break visual
-    // tracking while keeping the complete clue inside the decoder viewport.
+    // The entire card moves. Alternating horizontal edges guarantees a jump
+    // of 70% of the card width on every frame while a smaller vertical shift
+    // keeps the card inside the TV stage at short viewport heights.
     const farEdge = Boolean(index % 2) !== startAtFarEdge;
     return {
       id: index,
-      x: farEdge ? 36 : 4,
-      y: random() >= 0.5 ? 36 : 4,
-      scale: 0.94 + random() * 0.06,
+      x: farEdge ? 35 : -35,
+      y: -8 + random() * 16,
+      scale: 0.97 + random() * 0.03,
     };
   });
 }
