@@ -4,8 +4,9 @@ import { authorizeGamingSessionCreation, prepareGamingSessionSetup } from './gam
 
 function completedResult(view, { abandoned = false } = {}) {
   if (view?.header?.status !== 'complete' || !view.header.experience?.id) return null;
-  const winner = view.state?.winner_id || view.state?.winnerId || view.state?.winner || null;
-  const scores = Object.entries(view.state?.scores || {}).filter(([, value]) => Number.isFinite(value))
+  const casual = view.state?.competition === false;
+  const winner = casual ? null : view.state?.winner_id || view.state?.winnerId || view.state?.winner || null;
+  const scores = Object.entries(casual ? {} : view.state?.scores || {}).filter(([, value]) => Number.isFinite(value))
     .map(([subject_id, value]) => ({ subject_id, value }));
   return gamingResult({
     sessionId: view.header.session_id,
