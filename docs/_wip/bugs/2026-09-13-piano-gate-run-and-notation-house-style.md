@@ -404,3 +404,68 @@ extended exactly far enough to hold a ledger note and its head.
 Guarded by `staffAddressOctave.test.js` (8 files, 8 ranks, 64 squares, octave
 tiebreak) and, in Chromium over the shipped SCSS, `ExerciseRun.measure.test.jsx`
 (`expectClefOnItsLine`). 5,547 piano + notation specs green.
+
+---
+
+## Two more, from watching the younger child
+
+### 9 — a third of every three-key ask arrived with no staff
+
+**Reported:** "some of them didn't even have a staff on them — just the keyboard
+took the whole screen. It should always have a staff in front of them."
+
+**Confirmed, and it is one in three.** The lit-key rungs the younger learner
+climbs all author a staff: `keys-2` and `keys-3` carry
+`presentation: { prompt: follow, secondary: staff }`. But the staff is drawn only
+when `staffFitsAsk` says it is legible — no wider than an octave
+(`MAX_ASK_SPAN = 12`) and holdable on one clef — and `keysInstance` applies its
+spread between **adjacent** notes, so three notes a fifth apart span a ninth:
+
+```
+keys-3 / sightread-1, sweeping the pick index
+  pick  2: E4 B4 F5   span 13   staff NO
+  pick  5: A4 E5 B5   span 14   staff NO   (and no single clef holds it)
+  pick  8: D4 A4 E5   span 14   staff NO
+  pick 11: G4 D5 A5   span 14   staff NO
+  pick 14: C4 G4 D5   span 14   staff NO
+  pick 17: F4 C5 G5   span 14   staff NO
+  pick 20: B4 F5 C6   span 13   staff NO   (and no single clef holds it)
+  => 7 of 21 picks lose the staff
+```
+
+The pick index is persisted and advances on every serve, so this is not a rare
+shape — it is every third launch, unpredictably, with nothing in the ask to
+explain why this one had notation and the last one did not. The log confirms he
+met it: of his eight `keys-3` runs today, picks 8, 11 and 14 were bare keyboards.
+
+Two-key asks were never affected (0 of 21), and the flashcard deck keeps its
+staff regardless of this flag — it draws through the sequence staff, not
+`KeysAsk` — so `sightread-1` was fine.
+
+**Fixed:** the spread is chosen from the intervals that keep the whole shape
+inside the staff's window, instead of being chosen first and found illegible
+afterwards. 0 of 42 picks now lose the staff, and 14 distinct shapes survive, so
+the rung still varies rather than settling on one memorable triad.
+
+### 10 — the younger learner was addressing the board in chord symbols
+
+**Reported:** "check the configuration for connect four, chess, checkers for
+[the younger learner] — it's giving him chords. Instead of chords we should be
+giving him note cards."
+
+`gameAddressing.users` had him on `vocabulary: chords`, which puts chord symbols
+(`Am7`) on every board rim. He is a preschooler whose match-gate rung is
+`sightread-1` — one note on a staff, find the key. The two vocabularies are not
+difficulty levels of each other (grid-addressing.md §3.1): one is reading, the
+other is spelling, and he is being taught the first.
+
+**Fixed** in the household config (`gameAddressing.users.<learner>.vocabulary:
+staff`), with the reason recorded beside it. Note that one other learner is still
+on `chords` and was not part of this request.
+
+## Resolution (3)
+
+| # | Fix | Landed in |
+|---|---|---|
+| 9 | Lit-key spread chosen to fit the staff window | `Games/gateMaterial.js` (+ `gateMaterialStaffFit.test.js`) |
+| 10 | Learner moved to `staff` addressing | household `piano/config.yml` (data, not code) |

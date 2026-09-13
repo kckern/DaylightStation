@@ -500,6 +500,14 @@ The gate asks for material through a provider seam that names four kinds:
   three a third to a fifth apart. The floor of the ladder is made of these, and they
   reach a child without a network round trip, because a 502 between a four-year-old and
   the easiest thing the gate can ask is the one outage that must not exist.
+
+  **A lit-key ask always fits a staff.** The rungs a pre-reader climbs draw the keyboard AND a
+  staff above it, because the staff is the half of the mapping that teaches reading. The spread
+  is between ADJACENT notes, so three of them a fifth apart span a ninth — and it is chosen now
+  from the intervals that keep the whole shape inside the window one staff can draw
+  (`MAX_ASK_SPAN`), rather than chosen first and found illegible afterwards. A third of every
+  three-key ask used to arrive as a bare keyboard filling the screen, with nothing about the ask
+  to explain why this launch had notation and the last one did not.
 - **`exercise`** — an instance from the exercise bank. A level naming `roots` addresses
   the scales bank by id directly (`scales/modes@root=G,…`), because that bank expands over
   a root axis and needs no catalog walk to be found. A level naming only a `collection`

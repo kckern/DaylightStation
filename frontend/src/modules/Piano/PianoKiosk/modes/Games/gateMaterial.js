@@ -27,6 +27,7 @@
 import { DaylightAPIText } from '../../../../../lib/api.mjs';
 import { pianoLearningApi } from '../Exercises/pianoLearningApi.js';
 import { pickMaterial } from './gateRepertoire.js';
+import { MAX_ASK_SPAN } from '../../../ask/stagecraft.js';
 
 /**
  * The white keys of C4 through C6, in order.
@@ -38,8 +39,35 @@ import { pickMaterial } from './gateRepertoire.js';
 const WHITE_KEYS = Object.freeze([60, 62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79, 81, 83, 84]);
 /** The C4-B4 window a single-note ask is drawn from. */
 const WHITE_KEYS_IN_ONE_OCTAVE = 7;
-/** Diatonic steps between the notes of a multi-note ask: a third to a fifth. */
+/**
+ * Diatonic steps between ADJACENT notes of a multi-note ask: a third to a fifth.
+ *
+ * Adjacent, which is the trap: the step is applied between every pair, so three
+ * notes a fifth apart span a ninth and a bit — C4 G4 D5, fourteen semitones.
+ * `staffFitsAsk` refuses to draw a reinforcement staff wider than an octave
+ * (`MAX_ASK_SPAN`), so a third of every three-key ask arrived as a bare
+ * keyboard filling the screen with no notation on it at all: seven of every
+ * twenty-one picks, two of them too wide for any single clef. A preschooler on
+ * the lit-key rungs was being shown the staff on some launches and not others,
+ * with nothing about the ask to explain the difference. `spreadsFitting` below
+ * is the whole fix — the shape is chosen from the spreads that leave the ask
+ * legible, rather than chosen first and found illegible afterwards.
+ */
 const SPREADS = Object.freeze([2, 3, 4]);
+
+/**
+ * The spreads that keep an `notes`-note shape starting at `start` inside the
+ * window a reinforcement staff can draw. Never empty: the narrowest spread is
+ * the floor, because an ask with no shape at all is worse than a wide one.
+ */
+function spreadsFitting(start, notes) {
+  const root = WHITE_KEYS[start];
+  const fitting = SPREADS.filter((spread) => {
+    const top = WHITE_KEYS[start + (notes - 1) * spread];
+    return Number.isFinite(top) && top - root <= MAX_ASK_SPAN;
+  });
+  return fitting.length ? fitting : [SPREADS[0]];
+}
 /** How many keys one ask may light. Single note, dyad, triad — no further. */
 const MAX_REPS = 8;
 const MAX_LIT_KEYS = 3;
@@ -75,7 +103,8 @@ export function keysInstance(spec, pickIndex = 0) {
   const arrangement = spec?.arrangement === 'sequence' ? 'sequence' : 'together';
   const index = Math.abs(Math.trunc(Number(pickIndex)) || 0);
   const start = index % WHITE_KEYS_IN_ONE_OCTAVE;
-  const spread = notes > 1 ? SPREADS[index % SPREADS.length] : 0;
+  const spreads = spreadsFitting(start, notes);
+  const spread = notes > 1 ? spreads[index % spreads.length] : 0;
   const midis = Array.from({ length: notes }, (_, i) => WHITE_KEYS[start + (i * spread)]);
 
   // `ordering` follows the arrangement, and the spec may say so explicitly.
