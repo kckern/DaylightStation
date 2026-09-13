@@ -17,6 +17,10 @@ test('FHE Charades wheel renders and keeps every participant portrait upright', 
   expect(expected).toHaveLength(6);
   const wheel = page.locator('.family-selector');
   await expect(wheel).toHaveAttribute('data-selected-id', /.+/);
+  const selectedId = await wheel.getAttribute('data-selected-id');
+  const selectedName = profile.household_members.find(member => member.id === selectedId)?.name;
+  expect(selectedName).toBeTruthy();
+  await expect(page.getByText(selectedName, {exact:true})).toHaveCount(0);
   await expect(wheel.locator('image.segment-avatar')).toHaveCount(expected.length, { timeout: 2000 });
   expect(await wheel.locator('image.segment-avatar').evaluateAll(images => images.map(image => image.getAttribute('href')).sort())).toEqual(expected);
   await expect.poll(() => [...loaded].sort(), { timeout: 2000 }).toEqual(expected);
@@ -39,7 +43,7 @@ test('FHE Charades wheel renders and keeps every participant portrait upright', 
   expect(Math.max(...errors), `portrait tilted during spin: ${errors.join(', ')}`).toBeLessThan(2);
   const confirmation = page.locator('.winner-modal');
   await expect(confirmation).toBeVisible();
-  await expect(confirmation.locator('.winner-name')).toHaveText(/.+/);
+  await expect(confirmation.locator('.winner-name')).toHaveText(selectedName);
   await page.screenshot({ path: testInfo.outputPath('winner-confirmation.png') });
   await page.waitForTimeout(1000);
   await expect(confirmation).toBeVisible();

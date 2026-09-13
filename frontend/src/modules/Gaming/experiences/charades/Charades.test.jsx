@@ -5,14 +5,15 @@ import { fetchSession, sendRuleCommand } from '@gaming/platform/api/sessionClien
 const ws = vi.hoisted(() => ({ handler: null }));
 vi.mock('@/hooks/useWebSocket.js', () => ({ useWebSocketSubscription: (_topic, handler) => { ws.handler = handler; } }));
 vi.mock('@gaming/platform/api/sessionClient.js', () => ({ fetchSession: vi.fn(), sendRuleCommand: vi.fn() }));
-vi.mock('@/modules/AppContainer/Apps/FamilySelector/FamilySelector.jsx', () => ({default: ({onComplete}) => <button onClick={onComplete}>Complete wheel</button>}));
+vi.mock('@/modules/AppContainer/Apps/FamilySelector/FamilySelector.jsx', () => ({default: ({onComplete,onResult}) => <><button onClick={onResult}>Complete selection</button><button onClick={onComplete}>Complete wheel</button></>}));
 const seats = [{id:'a',name:'Alice', color:'#3273dc', members:[{id:'a',name:'Alice',avatar:'/alice.jpg'}]}];
 const state = { competition:false,phase:'challenge-ready',round:1,performer_id:'a',challenge:{prompt:'Rabbit',decoder:{image:'/rabbit.svg'}},clue_presentation:'image',challenge_index:0,turn_order:['a'] };
-const view = (s=state, revision=1) => ({state:s,header:{revision},definition:{competition:false,rounds:1,timer_ms:60000,guessing_music:{source:'test:music',volume:0.2,order:'shuffle',repeat:'after-cycle',memory:'session'}},result:null});
+const sound_cues={pack:'charades',performer_selected:'performer-selected',clue_revealed:'clue-revealed',acting_started:'acting-started',time_up:'time-up',turn_finished:'turn-finished',handoff:'handoff',game_finished:'game-finished'};
+const view = (s=state, revision=1) => ({state:s,header:{revision},definition:{competition:false,rounds:1,timer_ms:60000,sound_cues,guessing_music:{source:'test:music',volume:0.2,order:'shuffle',repeat:'after-cycle',memory:'session'}},result:null});
 beforeEach(() => { fetchSession.mockReset().mockResolvedValue(view()); sendRuleCommand.mockReset(); });
 it('shows image decoder and Go without leaking answer, then hides clue while acting and reveals neutrally', async () => {
- const music = {start:vi.fn(() => vi.fn())};
- const {container} = render(<Charades sessionId="one" seats={seats} gamingServices={{music}} />);
+ const music = {start:vi.fn(() => vi.fn())}; const audio = {play:vi.fn()};
+ const {container} = render(<Charades sessionId="one" seats={seats} gamingServices={{music,audio}} />);
  const go = await screen.findByRole('button',{name:'Go'}); expect(screen.queryByText('Rabbit')).toBeNull();
  expect(go.parentElement).toHaveClass('charades__center', 'charades__with-footer');
  expect(go.previousElementSibling).toHaveClass('charades__stage-content');
@@ -26,6 +27,7 @@ it('shows image decoder and Go without leaking answer, then hides clue while act
  expect(screen.queryByRole('img',{name:'Rabbit'})).toBeNull();
  sendRuleCommand.mockResolvedValueOnce(view({...state,phase:'performing',deadline:Date.now()+60000},2)); fireEvent.click(go);
  const finish = await screen.findByRole('button',{name:'Finish turn'}); expect(screen.queryByTestId('image-decoder-subject')).toBeNull();
+ expect(audio.play).toHaveBeenCalledWith('acting-started',{pack:'charades'});
  expect(finish.parentElement).toHaveClass('charades__center', 'charades__with-footer');
  expect(finish.previousElementSibling).toHaveClass('charades__stage-content');
  expect(screen.getByRole('timer')).toHaveAccessibleName(/seconds remaining/);
@@ -35,6 +37,7 @@ it('shows image decoder and Go without leaking answer, then hides clue while act
  expect(screen.queryByRole('img',{name:'Rabbit'})).toBeNull();
  sendRuleCommand.mockResolvedValueOnce(view({...state,phase:'challenge-complete'},3)); fireEvent.click(screen.getByRole('button',{name:'Finish turn'}));
  expect(await screen.findByText('Rabbit')).toBeInTheDocument();
+ expect(audio.play).toHaveBeenCalledWith('turn-finished',{pack:'charades'});
  expect(screen.getByRole('img',{name:'Rabbit'})).toHaveAttribute('src','/rabbit.svg');
  const revealContent = container.querySelector('.charades__reveal-content');
  expect(revealContent).toContainElement(screen.getByRole('heading',{name:'Rabbit'}));
@@ -58,8 +61,13 @@ it('drops concurrent commands and ignores an older refresh after a command respo
 });
 it('automatically advances from performer wheel completion', async () => {
  fetchSession.mockResolvedValue(view({...state,phase:'performer-ready'})); sendRuleCommand.mockResolvedValue(view());
- render(<Charades sessionId="one" seats={seats} />); fireEvent.click(await screen.findByRole('button',{name:'Complete wheel'}));
+ const audio={play:vi.fn()};render(<Charades sessionId="one" seats={seats} gamingServices={{audio}} />);
+ expect(screen.queryByText('Alice')).toBeNull();
+ fireEvent.click(await screen.findByRole('button',{name:'Complete selection'}));
+ expect(audio.play).toHaveBeenCalledWith('performer-selected',{pack:'charades'});
+ fireEvent.click(screen.getByRole('button',{name:'Complete wheel'}));
  await screen.findByRole('button',{name:'Go'}); expect(sendRuleCommand).toHaveBeenCalledWith('one',{type:'performer.ready'},undefined);
+ expect(audio.play).toHaveBeenCalledWith('clue-revealed',{pack:'charades'});
 });
 
 it('keeps music playing across equivalent refreshed definitions and cleans it up at reveal', async () => {
@@ -73,7 +81,7 @@ it('keeps music playing across equivalent refreshed definitions and cleans it up
  await act(async()=>ws.handler({kind:'session-updated',sessionId:'one'}));
  await waitFor(()=>expect(fetchSession).toHaveBeenCalledTimes(2));expect(music.start).toHaveBeenCalledTimes(1);expect(stop).not.toHaveBeenCalled();
  sendRuleCommand.mockResolvedValue(view({...state,phase:'challenge-complete'},3));fireEvent.click(screen.getByRole('button',{name:'Finish turn'}));
- await screen.findByText('Rabbit');expect(stop).toHaveBeenCalledTimes(1);
+ await screen.findByText('Rabbit');await waitFor(()=>expect(stop).toHaveBeenCalledTimes(1));
 });
 
 it('retries a failed automatic wheel command without leaving the performer stuck',async()=>{

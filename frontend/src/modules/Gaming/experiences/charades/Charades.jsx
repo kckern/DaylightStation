@@ -83,6 +83,12 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
   const failedCommand = React.useRef(null);
   const epoch = React.useRef(0);
   const logger = useMemo(() => getLogger().child({ component: 'charades', sessionId }), [sessionId]);
+  const soundCues = definition?.sound_cues;
+  const playLifecycleCue = useCallback((event, fallback = null) => {
+    const cue = soundCues?.[event];
+    if (cue) audio?.play(cue, { pack: soundCues.pack });
+    else if (state?.competition !== false && fallback) audio?.play(fallback);
+  }, [audio, soundCues, state?.competition]);
   const apply = useCallback((result) => {
     const nextRevision = result.header?.revision ?? 0;
     if (nextRevision < revision.current) return;
@@ -98,18 +104,19 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
       if (currentEpoch !== epoch.current) return null;
       apply(result); failedCommand.current = null;
       logger.info('charades.command', { command: value.type, phase: result.state?.phase, revision: result.header?.revision });
-      if (result.state?.competition !== false) {
-        if (value.type === 'outcome.correct') audio?.play('correct');
-        else if (value.type === 'outcome.incorrect') audio?.play('wrong');
-        else if (value.type === 'challenge.next') audio?.play('handoff');
-        else if (value.type === 'challenge.start') audio?.play('ready');
-      }
+      if (value.type === 'outcome.correct') playLifecycleCue('correct', 'correct');
+      else if (value.type === 'outcome.incorrect') playLifecycleCue('incorrect', 'wrong');
+      else if (value.type === 'performer.ready') playLifecycleCue('clue_revealed');
+      else if (value.type === 'challenge.start') playLifecycleCue('acting_started', 'ready');
+      else if (value.type === 'timer.expire') playLifecycleCue('time_up', 'wrong');
+      else if (value.type === 'challenge.finish') playLifecycleCue('turn_finished');
+      else if (value.type === 'challenge.next') playLifecycleCue(result.state?.phase === 'complete' ? 'game_finished' : 'handoff', 'handoff');
       return result;
     } catch (cause) {
       if (currentEpoch === epoch.current) { failedCommand.current = { value, options, revision: revision.current }; setError(cause.message); logger.warn('charades.command-failed', { command: value.type, error: cause.message }); }
       return null;
     } finally { if (currentEpoch === epoch.current) { inFlight.current = false; setBusy(false); } }
-  }, [apply, audio, logger, sessionId]);
+  }, [apply, logger, playLifecycleCue, sessionId]);
   const refresh = useCallback(async () => {
     const currentEpoch = epoch.current;
     try { const result = await fetchSession(sessionId); if (currentEpoch === epoch.current) { apply(result); return result; } }
@@ -163,12 +170,12 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
       <ShowHeader
         eyebrow={<RoundProgress current={state.round} total={definition.rounds} />}
         title={<span className="charades__title"><IconMasksTheater aria-hidden="true" />Charades</span>}
-        status={<MemberAvatar member={performerMember} teamColor={performer?.color} size={34} showName />}
+        status={state.phase === 'performer-ready' ? null : <MemberAvatar member={performerMember} teamColor={performer?.color} size={34} showName />}
       />
 
       {state.phase === 'performer-ready' && (
         <section className="charades__center">
-          {casual ? <><p className="charades__eyebrow">Choosing the next performer</p><FamilySelector key={`${state.challenge_index}:${state.performer_id}`} members={wheelMembers} winner={state.performer_id} autoSpin embedded durationMs={2600} onComplete={() => command({ type: 'performer.ready' })} /><strong>{performerName}, get the red decoder card ready</strong></> : <InstructionCard eyebrow="Next performer" title={`${performerName}, take the stage`}><p>Get the red decoder card. Your secret stays concealed until you are ready.</p><footer><GameButton tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'performer.ready' })}>Reveal with decoder</GameButton></footer></InstructionCard>}
+          {casual ? <FamilySelector key={`${state.challenge_index}:${state.performer_id}`} members={wheelMembers} winner={state.performer_id} autoSpin embedded durationMs={2600} onResult={() => playLifecycleCue('performer_selected')} onComplete={() => command({ type: 'performer.ready' })} /> : <InstructionCard eyebrow="Next performer" title={`${performerName}, take the stage`}><p>Get the red decoder card. Your secret stays concealed until you are ready.</p><footer><GameButton tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'performer.ready' })}>Reveal with decoder</GameButton></footer></InstructionCard>}
         </section>
       )}
 

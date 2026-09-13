@@ -56,10 +56,17 @@ export function generateDecoderTexture(seed) {
 
 export function generateDecoderMotion(seed, count = 8) {
   const random = seededRandom(`${seed}:motion`);
-  return Array.from({ length: Math.max(2, count) }, (_, index) => ({
-    id: index,
-    x: -4 + random() * 8,
-    y: -4 + random() * 8,
-    scale: 0.95 + random() * 0.09,
-  }));
+  const startAtFarEdge = random() >= 0.5;
+  return Array.from({ length: Math.max(2, count) }, (_, index) => {
+    // The composite is 60% of its viewport. Alternating between 4% and 36%
+    // moves it 53% of its own width on every frame, enough to break visual
+    // tracking while keeping the complete clue inside the decoder viewport.
+    const farEdge = Boolean(index % 2) !== startAtFarEdge;
+    return {
+      id: index,
+      x: farEdge ? 36 : 4,
+      y: random() >= 0.5 ? 36 : 4,
+      scale: 0.94 + random() * 0.06,
+    };
+  });
 }

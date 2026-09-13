@@ -21,3 +21,10 @@ it('keeps standalone minimum at two members while embedded one-person turns can 
  render(<FamilySelector members={[{id:'a',name:'Alice'}]} embedded/>);
  expect(screen.queryByText('Not enough members')).toBeNull();
 });
+
+it('announces the result hook only after the wheel has stopped',()=>{
+ vi.useFakeTimers();const onResult=vi.fn();
+ render(<FamilySelector members={[{id:'a',name:'Alice'},{id:'b',name:'Bob'}]} winner="b" autoSpin embedded durationMs={1000} onResult={onResult}/>);
+ act(()=>vi.advanceTimersByTime(999));expect(onResult).not.toHaveBeenCalled();
+ act(()=>vi.advanceTimersByTime(1));expect(onResult).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({id:'b'}));
+});

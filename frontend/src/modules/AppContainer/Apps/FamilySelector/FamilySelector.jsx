@@ -232,7 +232,7 @@ function RouletteWheel({ members, rotation, isSpinning, winnerIndex, showResult,
 /**
  * Inner FamilySelector Component (after data is loaded)
  */
-function FamilySelectorInner({ members, winner, title: _title, exclude, autoSpin, onComplete, embedded, durationMs, resultDurationMs }) {
+function FamilySelectorInner({ members, winner, title: _title, exclude, autoSpin, onComplete, onResult, embedded, durationMs, resultDurationMs }) {
   const riggedWinner = winner || null;
     const excludeList = (exclude || '')
     .split(',')
@@ -252,6 +252,7 @@ function FamilySelectorInner({ members, winner, title: _title, exclude, autoSpin
   const resultTimer = useRef(null);
   const busyRef = useRef(false);
   const completeRef = useRef(onComplete); completeRef.current = onComplete;
+  const resultRef = useRef(onResult); resultRef.current = onResult;
   const [wheelState, setWheelState] = useState(WHEEL_STATE.IDLE);
   const [rotation, setRotation] = useState(0);
   const [winnerIndex, setWinnerIndex] = useState(null);
@@ -308,6 +309,7 @@ function FamilySelectorInner({ members, winner, title: _title, exclude, autoSpin
     const finish = () => {
       if (completed) return; completed = true;
       clearTimeout(finishTimer.current); setWheelState(WHEEL_STATE.RESULT);
+      resultRef.current?.(member);
       clearTimeout(resultTimer.current);
       resultTimer.current = setTimeout(() => {
         busyRef.current = false;
@@ -427,7 +429,7 @@ useEffect(() => {
 /**
  * Main FamilySelector Container (Bootstrap + Loading)
  */
-export default function FamilySelector({ winner, title, exclude, autoSpin = false, members: suppliedMembers, onComplete, embedded = false, durationMs = SPIN_CONFIG.durationMs, resultDurationMs = SPIN_CONFIG.resultDurationMs }) {
+export default function FamilySelector({ winner, title, exclude, autoSpin = false, members: suppliedMembers, onComplete, onResult, embedded = false, durationMs = SPIN_CONFIG.durationMs, resultDurationMs = SPIN_CONFIG.resultDurationMs }) {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -483,7 +485,7 @@ export default function FamilySelector({ winner, title, exclude, autoSpin = fals
   return (
     <FamilySelectorInner
       members={(suppliedMembers || members).map((member, index) => ({ color: SEGMENT_COLORS[index % SEGMENT_COLORS.length], ...member }))}
-      autoSpin={autoSpin} onComplete={onComplete} embedded={embedded} durationMs={durationMs} resultDurationMs={resultDurationMs}
+      autoSpin={autoSpin} onComplete={onComplete} onResult={onResult} embedded={embedded} durationMs={durationMs} resultDurationMs={resultDurationMs}
       winner={winner}
       title={title}
       exclude={exclude}

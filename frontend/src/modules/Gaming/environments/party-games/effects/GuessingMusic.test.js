@@ -34,7 +34,7 @@ describe('GuessingMusic lifecycle', () => {
     expect(resolveQueue).toHaveBeenCalledWith('test:music', expect.any(AbortSignal));
     expect(audio.src).toBe('/first.mp3'); expect(audio.paused).toBe(false);
     _publishMasterState(0.5, 0.5, false); expect(audio.volume).toBe(0.2);
-    audio.dispatchEvent(new Event('ended')); await flush(); expect(audio.src).toBe('/second.mp3');
+    audio.dispatchEvent(new Event('ended')); await flush(); expect(audio.src).toBe('/second.mp3'); expect(audio.paused).toBe(false);
     stop(); expect(audio.paused).toBe(true); expect(audio.src).toBe('');
     audio.dispatchEvent(new Event('ended')); await flush(); expect(audio.src).toBe('');
   });

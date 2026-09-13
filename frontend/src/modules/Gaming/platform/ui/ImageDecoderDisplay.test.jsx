@@ -2,7 +2,7 @@ import React from 'react';
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ImageDecoderDisplay from './ImageDecoderDisplay.jsx';
-import { generateDecoderArtifacts } from './imageDecoderArtifacts.js';
+import { generateDecoderArtifacts, generateDecoderMotion } from './imageDecoderArtifacts.js';
 
 describe('ImageDecoderDisplay', () => {
   afterEach(() => vi.useRealTimers());
@@ -26,18 +26,28 @@ describe('ImageDecoderDisplay', () => {
     expect(container.querySelectorAll('.image-decoder-display__artifact')).toHaveLength(12);
   });
 
-  it('repositions and rescales only the concealed subject every configured interval', () => {
+  it('moves the clue and interference as one rigid composite with substantial displacement', () => {
     vi.useFakeTimers();
     const { container } = render(<ImageDecoderDisplay src="/clue.svg" seed="moving" motionIntervalMs={1000} />);
     const subject = screen.getByTestId('image-decoder-subject');
     const artifacts = container.querySelector('.image-decoder-display__artifacts');
-    const first = subject.style.transform;
+    const composite = screen.getByTestId('image-decoder-composite');
+    expect(composite).toContainElement(subject);
+    expect(composite).toContainElement(artifacts);
+    expect(subject.style.transform).toBe('');
+    expect(artifacts.style.transform).toBe('');
+    const first = `${composite.style.left}:${composite.style.top}:${composite.style.transform}`;
     act(() => vi.advanceTimersByTime(1000));
-    expect(subject.style.transform).not.toBe(first);
-    expect(artifacts).not.toHaveAttribute('style');
-    const second = subject.style.transform;
+    expect(`${composite.style.left}:${composite.style.top}:${composite.style.transform}`).not.toBe(first);
+    const second = `${composite.style.left}:${composite.style.top}:${composite.style.transform}`;
     act(() => vi.advanceTimersByTime(1000));
-    expect(subject.style.transform).not.toBe(second);
+    expect(`${composite.style.left}:${composite.style.top}:${composite.style.transform}`).not.toBe(second);
+
+    const frames = generateDecoderMotion('moving');
+    for (let index = 1; index < frames.length; index += 1) {
+      const distance = Math.hypot(frames[index].x - frames[index - 1].x, frames[index].y - frames[index - 1].y);
+      expect(distance / 60).toBeGreaterThanOrEqual(0.5);
+    }
   });
 });
 
