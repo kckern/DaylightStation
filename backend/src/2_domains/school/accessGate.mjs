@@ -12,6 +12,7 @@
  * severity: the typing rungs leave the ladder and sentences graduate across the
  * gap, which is the capability path already built and tested.
  */
+import { satisfiesRequirement } from './language/ladder.mjs';
 
 export const GATE_LEVELS = ['open', 'hindered', 'disabled'];
 
@@ -162,20 +163,21 @@ export function capabilitiesUnder(gate, claimed = {}) {
  * genuinely cannot run; stale means we do not know what is connected, and
  * guessing generously is how a gate stops being a gate.
  *
+ * The capability half of the question is answered by the LADDER'S predicate,
+ * not by a second copy of it here. The copy is what produced the incident
+ * above, and a requirement that is now a set of alternatives gives it a second
+ * way to drift: a gate that still read `requirement.kind` would refuse every
+ * spoken interpretation the queue had just offered. This file keeps only what
+ * is its own — the gate levels and what a hindered gate withholds.
+ *
  * @param {object} gate
- * @param {object|null} requirement - from ladder.requirementFor(rung, languages)
+ * @param {{anyOf: object[]}|null} requirement - from ladder.requirementFor()
  * @param {object} claimed - the device's claimed capabilities
  */
 export function allowsRung(gate, requirement, claimed = {}) {
   if (gate.level === 'disabled' || gate.stale) return false;
   if (gate.level === 'open') return true;
-  const allowed = capabilitiesUnder(gate, claimed);
-  if (requirement === null || requirement === undefined) return true;
-  if (requirement.kind === 'microphone') return allowed.microphone === true;
-  if (requirement.kind === 'textInput') {
-    return Array.isArray(allowed.textInput) && allowed.textInput.includes(requirement.language);
-  }
-  return false;
+  return satisfiesRequirement(capabilitiesUnder(gate, claimed), requirement);
 }
 
 /** Whether ANY tracked work is possible. Used for the whole-screen states. */

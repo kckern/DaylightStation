@@ -167,6 +167,40 @@ export const languageApi = {
     }
   },
 
+  /**
+   * A spoken answer, turned into text. Same raw-audio shape as `recording`
+   * above — one file, no fields — and deliberately a DIFFERENT route: this one
+   * stores nothing. The audio exists only long enough to be recognised, and
+   * what comes back is a transcript the learner still has to read, edit and
+   * submit through `log` like any other answer.
+   *
+   * `lang` is the language they are ANSWERING in, which the rung already knows
+   * from `entry.response.language`. The server maps it through an allowlist
+   * before it can reach a recognition prompt; nothing about the expected
+   * sentence is sent, and nothing here is in a position to send it.
+   */
+  async transcribe(userId, corpus, seq, lang, blob, capabilities, studyGrant) {
+    const path = `/users/${enc(userId)}/transcribe`;
+    const startedAt = clock();
+    const shape = { bytes: blob?.size ?? null, type: blob?.type || null };
+    try {
+      const r = await fetch(
+        `${BASE}${path}?corpus=${enc(corpus)}&seq=${enc(seq)}&lang=${enc(lang)}&${capabilityQuery(capabilities)}`,
+        {
+          method: 'POST',
+          headers: withRun({ 'Content-Type': blob.type || 'audio/webm', [GRANT_HEADER]: studyGrant }),
+          body: blob,
+        },
+      );
+      const data = await r.json().catch(() => null);
+      reportSettled(path, 'POST', r.status, r.ok, startedAt, shape);
+      return { ok: r.ok, status: r.status, data };
+    } catch (err) {
+      reportThrown(path, 'POST', startedAt, err, shape);
+      return { ok: false, status: 0, data: null };
+    }
+  },
+
   audioUrl: (corpus, seq, lang) => `${BASE}/audio/${enc(corpus)}/${enc(seq)}/${enc(lang)}`,
   /** A UI cue by role (`record` = the ding before the mic goes live). The day
    *  says which roles exist; nothing here guesses a file. */

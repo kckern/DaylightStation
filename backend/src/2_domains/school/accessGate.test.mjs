@@ -183,8 +183,10 @@ describe('what a hindered gate still permits', () => {
     presence: presence([dev(HEADSET, true), dev(KEYBOARD, false)]), now: NOW, required: REQUIRED,
   });
   const noReq = null;
-  const needsMic = { kind: 'microphone' };
-  const needsHangul = { kind: 'textInput', language: 'KR' };
+  const needsMic = { anyOf: [{ kind: 'microphone' }] };
+  const needsHangul = { anyOf: [{ kind: 'textInput', language: 'KR' }] };
+  // Interpretation where the server can transcribe: type the English OR say it.
+  const needsEnglishOrMic = { anyOf: [{ kind: 'textInput', language: 'EN' }, { kind: 'microphone' }] };
 
   it('still records the rungs the queue is offering', () => {
     // The bug this replaces: the queue showed a repetition drill under a
@@ -196,6 +198,15 @@ describe('what a hindered gate still permits', () => {
 
   it('refuses only the rung whose device is actually missing', () => {
     expect(allowsRung(hindered, needsHangul, claimed)).toBe(false);
+  });
+
+  it('permits a rung whose SECOND alternative survives the withheld keyboard', () => {
+    // A hindered gate withholds every keyboard, so the typed alternative is
+    // gone — but the mic is not, and the queue is offering interpretation on
+    // that basis. A gate with its own copy of this branching would refuse it,
+    // which is the original incident with a new cause.
+    expect(allowsRung(hindered, needsEnglishOrMic, claimed)).toBe(true);
+    expect(allowsRung(hindered, needsEnglishOrMic, { microphone: false, textInput: ['EN'] })).toBe(false);
   });
 
   it('refuses everything when disabled or stale', () => {

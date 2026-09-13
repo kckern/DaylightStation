@@ -36,6 +36,9 @@ const HangulTypingContext = createContext({
   toggle: () => {},
   // Outside a provider nothing is being composed, so every field is settled.
   compositionState: (el) => ({ committed: el?.value ?? '', pending: '' }),
+  // Outside a provider there is no keydown listener to gate, so registering an
+  // oracle is a no-op rather than an error.
+  setTypingOracle: () => {},
 });
 
 export function useHangulTyping() { return useContext(HangulTypingContext); }
@@ -131,6 +134,29 @@ export default function HangulTypingProvider({ children, enabled = true }) {
    */
   const compositionState = useCallback((el) => composer.current.compositionState(el), []);
 
+  /**
+   * THE COPY-MODE PREFIX ORACLE, handed in by whichever field is being traced.
+   *
+   * `FieldComposer.handleKey` takes the oracle as an optional third argument and
+   * behaves exactly as it always did without one — that default is what keeps
+   * listen mode honest, so the seam is "nobody registered one" rather than a
+   * flag some screen could forget to clear.
+   *
+   * SCOPED TO ONE ELEMENT, deliberately. This provider wraps the whole of
+   * School, and an oracle left armed over a field it was never meant for is a
+   * keyboard that refuses letters for no reason a child can see. The element is
+   * compared by identity, so an oracle whose rung has unmounted stops applying
+   * even if its cleanup never ran.
+   *
+   * A ref, not state: it is read inside the capture-phase keydown listener, and
+   * putting it in state would re-run that effect — tearing down and rebinding
+   * the document listener — every time a rung mounted.
+   */
+  const oracleRef = useRef(null);
+  const setTypingOracle = useCallback((el, oracle) => {
+    oracleRef.current = el && oracle ? { el, oracle } : null;
+  }, []);
+
   // A field may name its language; the nearest declaration wins and is released
   // when focus leaves it. `TypedRung` sets this from the rung's own response
   // language, so dictation and interpretation alternate without a keypress.
@@ -175,7 +201,11 @@ export default function HangulTypingProvider({ children, enabled = true }) {
       if (modeRef.current !== 'KR') return;
       const el = event.target;
       if (!isComposableField(el)) return;
-      if (composer.current.handleKey(event, el)) {
+      // Undefined unless THIS field registered one. `handleKey` with no oracle
+      // is the plain automaton: every key lands, nothing is corrected.
+      const armed = oracleRef.current;
+      const oracle = armed && armed.el === el ? armed.oracle : undefined;
+      if (composer.current.handleKey(event, el, oracle)) {
         event.preventDefault();
         // The field's own handlers must not also see a consumed jamo — a rung
         // that treats a keystroke as a shortcut would fire on every letter.
@@ -191,8 +221,8 @@ export default function HangulTypingProvider({ children, enabled = true }) {
   useEffect(() => { composer.current.end(); }, [mode]);
 
   const value = useMemo(
-    () => ({ mode, register, setMode, toggle, compositionState }),
-    [mode, register, setMode, toggle, compositionState],
+    () => ({ mode, register, setMode, toggle, compositionState, setTypingOracle }),
+    [mode, register, setMode, toggle, compositionState, setTypingOracle],
   );
 
   return (

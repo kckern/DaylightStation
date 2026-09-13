@@ -50,8 +50,20 @@ export function columnsFor({ target, committed, pending = '', reveal = 'model' }
     if (i < at) {
       return { want: reveal === 'none' ? '' : glyph, got: got[i], state: got[i] === glyph ? 'done' : 'wrong' };
     }
+    // THE LIVE COLUMN IS NEVER BLIND — it belongs to the learner, not the model.
+    // This branch used to sit BELOW the blind one, so in listen mode the column
+    // the child was actually typing into came back `blind` with `got: null`:
+    // no caret anywhere on the strip, and the syllable still in the IME's
+    // pending buffer invisible. Typing 오늘 drew one green 오 and nine empty
+    // writing lines, and the final syllable of every sentence stayed invisible
+    // right up to Submit. Withholding the model is the point of listen mode;
+    // withholding the learner's own keystrokes is just a broken screen. Same
+    // trick as the settled column above — blank the `want`, keep everything
+    // that is the learner's.
+    if (i === at) {
+      return { want: reveal === 'none' ? '' : glyph, got: ghost || null, state: 'current' };
+    }
     if (reveal === 'none') return { want: glyph, got: null, state: 'blind' };
-    if (i === at) return { want: glyph, got: ghost || null, state: 'current' };
     if (reveal === 'all') return { want: glyph, got: null, state: 'next' };
     return { want: glyph, got: null, state: i === at + 1 ? 'next' : 'hidden' };
   });
