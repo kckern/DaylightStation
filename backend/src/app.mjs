@@ -2082,6 +2082,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const gamingDefinitionStore = new YamlGamingDefinitionStore({
     definitionsDir: configService.getHouseholdPath('gaming/games'),
     archiveDir: configService.getHouseholdPath('gaming/definitions'),
+    contentGamesDir: join(contentPath, 'games'),
     logger: rootLogger.child({ module: 'gaming-definitions' }),
   });
   const gamingManifestStore = new YamlGamingExperienceManifestStore({
@@ -2135,6 +2136,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     gamingMediaService: new GamingMediaService({ repository: new FilesystemGamingMediaRepository({
       assetCatalog: gamingAssetCatalog,
       partyMediaRoot: join(mediaBasePath, 'games', 'party-games'),
+      contentGamesDir: join(contentPath, 'games'),
     }) }),
     broadcastEvent,
     logger: rootLogger.child({ module: 'gaming-api' }),

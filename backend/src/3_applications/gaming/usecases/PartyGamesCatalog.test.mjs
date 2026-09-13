@@ -11,7 +11,7 @@ const HOUSEHOLD_CFG = {
   defaults: { timer_seconds: 15 }, sounds: { pack: 'classic' },
 };
 
-function makeService({ cfg = HOUSEHOLD_CFG } = {}) {
+function makeService({ cfg = HOUSEHOLD_CFG, casual = false } = {}) {
   const userService = {
     getProfile: (id) => id === 'ghost_user' ? null : id === 'kckern'
       ? { username: id, display_name: 'KC Kern', group_label: 'Dad' }
@@ -19,7 +19,7 @@ function makeService({ cfg = HOUSEHOLD_CFG } = {}) {
   };
   const definitions = new Map([
     ['quiz:night', { definition: { experience: { id: 'quiz', version: 1 } }, parts: { content: { artifact: {}, title: 'Fixture Night', description: 'Questions' } } }],
-    ['drawing:family', { definition: { experience: { id: 'drawing', version: 2 } }, parts: { content: { artifact: {}, catalog: { title: 'Draw Together', description: 'Prompts' } } } }],
+    ['drawing:family', { definition: { experience: { id: 'drawing', version: 2 }, ...(casual ? { competition: false } : {}) }, parts: { content: { artifact: {}, catalog: { title: 'Draw Together', description: 'Prompts' } } } }],
     ['solo:private', { definition: { experience: { id: 'solo', version: 1 } }, parts: { content: { artifact: {}, title: 'Not Party Games' } } }],
     ['quiz:broken', { definition: { experience: { id: 'quiz', version: 1 } }, parts: { content: { artifact: {} } } }],
   ]);
@@ -78,4 +78,11 @@ describe('PartyGamesCatalog', () => {
     expect(() => service.getSet('drawing', 'night')).toThrow(/not found/);
     expect(() => service.getSet('../../etc', 'x')).toThrow(/invalid content/);
   });
+});
+
+it('projects individual setup for a casual definition without changing its competitive manifest', () => {
+  const entry = makeService({casual: true}).listCatalog().find(e => e.definition_id === 'drawing:family');
+  expect(entry).toMatchObject({competition: false, setup: 'individuals', setup_profile: {kind: 'individuals'}});
+  expect(entry.setup_profile.host_modes || []).toEqual([]);
+  expect(makeService().listCatalog().find(e => e.definition_id === 'drawing:family').setup).toBe('individuals-or-teams');
 });
