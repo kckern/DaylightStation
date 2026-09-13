@@ -61,13 +61,19 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   await expect(page.locator('.menu-item.active')).toContainText('Charades');
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('team-setup')).toBeVisible();
+  // Native Shield-style Back has one owner and returns to the original menu.
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.menu-item.active')).toContainText('Charades');
+  expect(new URL(page.url()).pathname).toBe('/screens/living-room/fhe');
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('team-setup')).toBeVisible();
   await expect(page.getByTestId('teams-confirm')).toHaveText('Start with 6 players');
   await expect(page.getByRole('button', {name:'Teams',exact:true})).toHaveCount(0);
   await expectFits(page.getByTestId('team-setup'));
   // Exercise the actual roster controls before keeping all six participants.
   const rosterButton = page.locator('.gp-teamsetup__individuals button[aria-pressed]').first();
-  const rosterName = (await rosterButton.innerText()).trim();
-  await focusRemote(new RegExp(`^${rosterName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
+  for (let step = 0; step < 35 && !(await rosterButton.evaluate(el => el === document.activeElement)); step++) await page.keyboard.press('ArrowDown');
+  await expect(rosterButton).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(rosterButton).toHaveAttribute('aria-pressed', 'false');
   await expect(page.getByTestId('teams-confirm')).toHaveText('Start with 5 players');
