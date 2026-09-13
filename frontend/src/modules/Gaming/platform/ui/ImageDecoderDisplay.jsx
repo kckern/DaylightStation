@@ -51,11 +51,13 @@ export default function ImageDecoderDisplay({
             maskImage,
             WebkitMaskImage: maskImage,
             opacity: frame.subjectOpacity.toFixed(3),
-            transform: `scaleX(${frame.mirrored ? -1 : 1}) scale(${frame.subjectScale.toFixed(3)})`,
+            transform: `translate(${frame.subjectX.toFixed(2)}%, ${frame.subjectY.toFixed(2)}%) scaleX(${frame.mirrored ? -1 : 1}) scale(${frame.subjectScale.toFixed(3)})`,
           }}
           data-mirrored={frame.mirrored}
           data-subject-scale={frame.subjectScale.toFixed(3)}
           data-subject-opacity={frame.subjectOpacity.toFixed(3)}
+          data-subject-x={frame.subjectX.toFixed(2)}
+          data-subject-y={frame.subjectY.toFixed(2)}
         />
         <svg
           className="image-decoder-display__artifacts"
@@ -66,7 +68,7 @@ export default function ImageDecoderDisplay({
           style={{ transform: `rotate(${motionIndex * 90}deg)` }}
         >
           {texture.tiles.map(tile => <rect key={`tile:${tile.id}`} className="image-decoder-display__texture-tile"
-            x={tile.x} y={tile.y} width={4.1} height={4.1} fill={tone(tile.tone)} opacity={tile.opacity} />)}
+            x={tile.x} y={tile.y} width={3} height={3} fill={tone(tile.tone)} opacity={tile.opacity} />)}
           {artifacts.map((artifact) => (
             <ellipse
               key={artifact.id}
