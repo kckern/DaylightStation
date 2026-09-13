@@ -71,6 +71,7 @@ import {
   startLevelFor,
 } from './gateRepertoire.js';
 import { isConfigOnlyDecline, materialOrder } from './gateMaterial.js';
+import { failureAdvice } from './failureCoaching.js';
 import { isDrillSpec, resolveGateDrill } from './gateDrill.js';
 import { resolveLearnerPath } from './gateDailyEscalation.js';
 import { preloadGame } from '../../../gameRegistry.js';
@@ -334,6 +335,10 @@ export default function GameGate({
   const [attempt, setAttempt] = useState(null);
   const [phase, setPhase] = useState('resolving'); // resolving | attempt | failed | no-access | opened
   const [eased, setEased] = useState(false);
+  // What went wrong, in words, for the fail panel. Held rather than derived:
+  // the result is gone by the time the panel renders, and a panel that can only
+  // say "try again" answers "what now" while never answering "what happened".
+  const [failureNote, setFailureNote] = useState(null);
   const [round, setRound] = useState(0);
   const openedRef = useRef(false);
   const presentedRef = useRef(false);
@@ -719,6 +724,7 @@ export default function GameGate({
   const handleFailed = (result) => {
     const score = typeof result?.score === 'number' ? result.score : null;
     emit('gate.failed', { ...context, score });
+    setFailureNote(failureAdvice(result, attempt?.level?.presentation?.timing === 'cued' || result?.mode === 'cued' ? 'cued' : 'free'));
     const failuresAtLevel = state.failuresAtLevel + 1;
     let next = { ...state, failuresAtLevel, cleanPasses: 0 };
     let easedNow = false;
@@ -745,6 +751,7 @@ export default function GameGate({
   const tryAgain = () => {
     retryRef.current = true;
     setEased(false);
+    setFailureNote(null);
     setRound((value) => value + 1);
   };
 
@@ -806,19 +813,31 @@ export default function GameGate({
       else handleAbandoned();
     },
   });
-  const recoveryChoices = <>
-    <p className="piano-game-gate__piano-guidance">{phase === 'failed'
-      ? 'Release all keys, then press any key to try again.'
-      : 'Release all keys, then press any key to leave.'}</p>
+  /**
+   * THE WAY OUT, AS A CONTROL RATHER THAN AS TWO MORE GREY SENTENCES.
+   *
+   * Both lines are the piano — there is no button on this surface — so they are
+   * drawn as one keyed instruction with the exit gesture demoted underneath it,
+   * rather than as a paragraph the same weight as everything else on the panel.
+   */
+  const recoveryChoices = <div className="piano-game-gate__ways">
+    <p className="piano-game-gate__piano-guidance">
+      <span className="piano-game-gate__key-hint" aria-hidden="true" />
+      {phase === 'failed'
+        ? 'Release all keys, then press any key to try again.'
+        : 'Release all keys, then press any key to leave.'}
+    </p>
     <p className="piano-game-gate__exit-guidance">Hold the lowest and highest piano keys together for 2 seconds to leave.</p>
-  </>;
+  </div>;
 
   if (phase === 'no-access') {
     return (
       <section className="piano-mode__placeholder piano-game-gate piano-game-gate--blocked" role="status">
-        <h2>Choose a player first</h2>
-        <p>A challenge is saved to whoever played it, so the piano needs to know who you are.</p>
-        {recoveryChoices}
+        <div className="piano-game-gate__card">
+          <h2>Choose a player first</h2>
+          <p className="piano-game-gate__guidance">A challenge is saved to whoever played it, so the piano needs to know who you are.</p>
+          {recoveryChoices}
+        </div>
       </section>
     );
   }
@@ -826,20 +845,36 @@ export default function GameGate({
   if (phase === 'failed') {
     return (
       <section className="piano-mode__placeholder piano-game-gate piano-game-gate--failed" role="status">
-        <h2>Not this time</h2>
-        {/* Always rendered. A result can arrive without a usable score (an
-            aborted attempt, and every level below tier 3, which has no numeric
-            bar at all), and gating the only words on the panel behind a number
-            reduced it to a bare heading over unexplained buttons. */}
-        <p className="piano-game-gate__guidance">Try the exercise again, or leave using the piano keys.</p>
-        {/* NO PERCENTAGE, and no seam for one. `requirementForLevel` writes
-            `passScore: null` for every level a repertoire can express, so a
-            numeric-bar branch here could never render — and a percentage with
-            no bar beside it invites comparison to a target that does not exist.
-            The score still reaches the log, where an adult tuning the ladder
-            reads it; what a failing child gets is words. */}
-        {eased && <p className="piano-game-gate__eased">We made it a little easier</p>}
-        {recoveryChoices}
+        {/* ONE CARD, IN THE INSTRUMENT'S OWN PALETTE — the mahogany, ivory and
+            antique gold the pass ceremony and the drill rail are already drawn
+            in. This was four grey sentences stacked on a black field, all the
+            same weight, with the browser's default heading on top: the one
+            screen in the gate a child only ever sees on a bad day was also the
+            only one nobody had designed. */}
+        <div className="piano-game-gate__card">
+          <p className="piano-game-gate__eyebrow">The challenge</p>
+          <h2>Not this time</h2>
+          {/* WHAT WENT WRONG, when it can be said honestly. A panel that only
+              says "try again" answers "what now" and never "what happened", and
+              a child with no answer to the second question tries exactly the
+              same thing again — which is what happened three times running on
+              2026-09-13. `failureAdvice` returns null rather than guessing, and
+              the standing line below is what stands in. */}
+          {failureNote && <p className="piano-game-gate__diagnosis">{failureNote}</p>}
+          {/* Always rendered. A result can arrive without a usable score (an
+              aborted attempt, and every level below tier 3, which has no numeric
+              bar at all), and gating the only words on the panel behind a number
+              reduced it to a bare heading over unexplained buttons. */}
+          <p className="piano-game-gate__guidance">Try the exercise again, or leave using the piano keys.</p>
+          {/* NO PERCENTAGE, and no seam for one. `requirementForLevel` writes
+              `passScore: null` for every level a repertoire can express, so a
+              numeric-bar branch here could never render — and a percentage with
+              no bar beside it invites comparison to a target that does not exist.
+              The score still reaches the log, where an adult tuning the ladder
+              reads it; what a failing child gets is words. */}
+          {eased && <p className="piano-game-gate__eased">We made it a little easier</p>}
+          {recoveryChoices}
+        </div>
       </section>
     );
   }

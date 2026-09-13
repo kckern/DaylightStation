@@ -98,6 +98,15 @@ narrowing, hover, pick-up, destination badges, the game record — works identic
 Chess currently defaults to `chords`; Checkers and Connect Four are `staff`-only. Chess's
 `addressing` key already exists in `config/chess.yml` and is per-user overridable.
 
+**The vocabulary belongs to the player, not to the screen.** Every host that mounts a board
+game hands it an `addressingPolicy` — `{ config, learnerId, completedGames }`, built by
+`addressingPolicyFor` (`game-platform/addressing/addressingPolicy.js`) and never assembled
+inline. A host that omits it does not get "the default policy"; it gets *no* policy, and the
+game falls through to its own built-in vocabulary, which for chess is `chords`. That is how
+the same child, on the same game, read staff cards at the piano kiosk and chord symbols on
+the office screen. `completedGames` comes from `useBoardGameDay(learnerId)` on both hosts —
+the ladder's only input (see `managedAddressing.js`).
+
 ### 3.2 Clef assignment (staff vocabulary only)
 
 Which staff each axis is read on.
