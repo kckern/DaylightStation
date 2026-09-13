@@ -1,4 +1,4 @@
-export const DEFAULT_ARTIFACT_COUNT = 180;
+export const DEFAULT_ARTIFACT_COUNT = 140;
 
 function hashSeed(value) {
   let hash = 2166136261;
@@ -32,7 +32,7 @@ export function generateDecoderArtifacts(seed, count = DEFAULT_ARTIFACT_COUNT) {
       ry: radius * (0.72 + random() * 0.56),
       rotation: random() * 180,
       kind: index % 5 === 0 ? 'bubble' : 'ring',
-      opacity: 0.72 + random() * 0.26,
+      opacity: 0.55 + random() * 0.3,
     };
   });
 }
@@ -62,13 +62,17 @@ export function generateDecoderMotion(seed, count = 8) {
     // of 70% of the card width on every frame while a smaller vertical shift
     // keeps the card inside the TV stage at short viewport heights.
     const farEdge = Boolean(index % 2) !== startAtFarEdge;
-    return {
+    const frame = {
       id: index,
       x: farEdge ? 35 : -35,
       y: -8 + random() * 16,
       mirrored: Boolean(index % 2),
-      subjectScale: 0.75 + random() * 0.25,
-      subjectOpacity: 0.5 + random() * 0.5,
+      subjectScale: 0.25 + random() * 0.5,
+      subjectOpacity: 0.25 + random() * 0.75,
     };
+    const availableOffset = 50 * (1 - frame.subjectScale);
+    frame.subjectX = (index % 2 ? 1 : -1) * availableOffset * (0.55 + random() * 0.45);
+    frame.subjectY = (index % 2 ? -1 : 1) * availableOffset * (0.55 + random() * 0.45);
+    return frame;
   });
 }

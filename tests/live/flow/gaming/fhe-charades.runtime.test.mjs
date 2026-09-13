@@ -179,11 +179,22 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
       const firstGeometry = await geometry();
       const firstIndex = Number(await decoderCard.getAttribute('data-motion-index'));
       const firstRotation = Number(await decoderCard.locator('.image-decoder-display__artifacts').getAttribute('data-interference-rotation'));
-      const firstMirror = await movingComposite.getByTestId('image-decoder-subject').getAttribute('data-mirrored');
-      expect(Math.abs((firstGeometry.subject.left + firstGeometry.subject.width / 2) - (firstGeometry.artifacts.left + firstGeometry.artifacts.width / 2))).toBeLessThan(1);
-      expect(Math.abs((firstGeometry.subject.top + firstGeometry.subject.height / 2) - (firstGeometry.artifacts.top + firstGeometry.artifacts.height / 2))).toBeLessThan(1);
-      expect(firstGeometry.subject.width / firstGeometry.artifacts.width).toBeGreaterThanOrEqual(0.75);
-      expect(firstGeometry.subject.width / firstGeometry.artifacts.width).toBeLessThanOrEqual(1);
+      const subject = movingComposite.getByTestId('image-decoder-subject');
+      const firstSubjectFrame = await subject.evaluate(element => ({
+        mirrored:element.dataset.mirrored,
+        x:Number(element.dataset.subjectX), y:Number(element.dataset.subjectY),
+        scale:Number(element.dataset.subjectScale), opacity:Number(element.dataset.subjectOpacity),
+      }));
+      expect(firstSubjectFrame.scale).toBeGreaterThanOrEqual(0.25);
+      expect(firstSubjectFrame.scale).toBeLessThanOrEqual(0.75);
+      expect(firstSubjectFrame.opacity).toBeGreaterThanOrEqual(0.25);
+      expect(firstSubjectFrame.opacity).toBeLessThanOrEqual(1);
+      expect(firstGeometry.subject.left).toBeGreaterThanOrEqual(firstGeometry.artifacts.left - 1);
+      expect(firstGeometry.subject.top).toBeGreaterThanOrEqual(firstGeometry.artifacts.top - 1);
+      expect(firstGeometry.subject.left + firstGeometry.subject.width).toBeLessThanOrEqual(firstGeometry.artifacts.left + firstGeometry.artifacts.width + 1);
+      expect(firstGeometry.subject.top + firstGeometry.subject.height).toBeLessThanOrEqual(firstGeometry.artifacts.top + firstGeometry.artifacts.height + 1);
+      expect(await movingComposite.locator('.image-decoder-display__artifact')).toHaveCount(140);
+      expect(await movingComposite.locator('.image-decoder-display__texture-tile').first().getAttribute('width')).toBe('3');
       const transitionDurations = await decoderCard.evaluate(card => ({
         card:getComputedStyle(card).transitionDuration,
         subject:getComputedStyle(card.querySelector('.image-decoder-display__subject')).transitionDuration,
@@ -194,12 +205,20 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
       const secondGeometry = await geometry();
       const secondIndex = Number(await decoderCard.getAttribute('data-motion-index'));
       const secondRotation = Number(await decoderCard.locator('.image-decoder-display__artifacts').getAttribute('data-interference-rotation'));
-      const secondMirror = await movingComposite.getByTestId('image-decoder-subject').getAttribute('data-mirrored');
+      const secondSubjectFrame = await subject.evaluate(element => ({
+        mirrored:element.dataset.mirrored,
+        x:Number(element.dataset.subjectX), y:Number(element.dataset.subjectY),
+      }));
       expect(Math.hypot(secondGeometry.card.left - firstGeometry.card.left, secondGeometry.card.top - firstGeometry.card.top)).toBeGreaterThanOrEqual(firstGeometry.card.width * 0.5);
       expect(secondIndex).toBe((firstIndex + 1) % 8);
       expect((secondRotation - firstRotation + 720) % 360).toBe(90);
-      expect(secondMirror).not.toBe(firstMirror);
-      expect(Math.abs((secondGeometry.subject.left + secondGeometry.subject.width / 2) - (secondGeometry.artifacts.left + secondGeometry.artifacts.width / 2))).toBeLessThan(1);
+      expect(secondSubjectFrame.mirrored).not.toBe(firstSubjectFrame.mirrored);
+      expect(secondSubjectFrame.x).not.toBe(firstSubjectFrame.x);
+      expect(secondSubjectFrame.y).not.toBe(firstSubjectFrame.y);
+      expect(secondGeometry.subject.left).toBeGreaterThanOrEqual(secondGeometry.artifacts.left - 1);
+      expect(secondGeometry.subject.top).toBeGreaterThanOrEqual(secondGeometry.artifacts.top - 1);
+      expect(secondGeometry.subject.left + secondGeometry.subject.width).toBeLessThanOrEqual(secondGeometry.artifacts.left + secondGeometry.artifacts.width + 1);
+      expect(secondGeometry.subject.top + secondGeometry.subject.height).toBeLessThanOrEqual(secondGeometry.artifacts.top + secondGeometry.artifacts.height + 1);
       const asset = await request.get(ready.state.challenge.decoder.image);
       expect(asset.ok()).toBe(true);
       expect(asset.headers()['content-type']).toContain('image/svg+xml');
@@ -299,12 +318,12 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   expect(imageIds.filter(id => textIds.includes(id))).toEqual([]);
   expect(heardTracks).toHaveLength(18);
   expect(new Set(heardTracks).size).toBe(18);
+  await expect(page.getByTestId('results')).toBeVisible();
   const heardCues = await page.evaluate(() => (window.__fheAudioElements || [])
     .map(audio => new URL(audio.src || '', location.origin).pathname)
     .filter(path => path.includes('/api/v1/gaming/media/charades/'))
     .map(path => path.split('/').pop()));
   expect(new Set(heardCues)).toEqual(new Set(['performer-selected.mp3','clue-revealed.mp3','acting-started.mp3','time-up.mp3','turn-finished.mp3','handoff.mp3','game-finished.mp3']));
-  await expect(page.getByTestId('results')).toBeVisible();
   await expectFits(page.getByTestId('results'));
   const terminal = await read();
   expect(terminal.state.phase).toBe('complete');
