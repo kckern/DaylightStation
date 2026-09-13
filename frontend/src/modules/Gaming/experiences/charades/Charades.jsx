@@ -99,7 +99,8 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
   if (!state || !definition) return error ? <div className="party-games__error" role="alert">{error}<GameButton onClick={retry}>Retry</GameButton></div> : <TitleCard title="Charades" subtitle="Choosing a secret…" />;
 
   const casual = state.competition === false;
-  const finalTurn = state.challenge_index === (state.turn_order?.length || 0) - 1 && (state.clue_index || 0) >= (definition.clues_per_turn || 1) - 1;
+  const anotherClue = state.remaining_ms > 0 && (state.clue_index || 0) + 1 < (definition.clues_per_turn || 1);
+  const finalTurn = !anotherClue && state.challenge_index === (state.turn_order?.length || 0) - 1;
   return (
     <main className="charades" data-phase={state.phase} data-casual={casual}>
       {error && <div role="alert" className="charades__notice">{error}<GameButton onClick={retry}>Retry</GameButton></div>}
@@ -142,7 +143,7 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
 
       {state.phase === 'challenge-complete' && (
         <section className="charades__center">
-          <OutcomeReveal tone="success" eyebrow={casual ? "The clue was" : "Score committed"} title={casual ? prompt : "Clue complete"}><p>{casual ? "Thanks for acting!" : "Pass the stage to the next performer."}</p><GameButton tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'challenge.next' })}>{casual ? (finalTurn ? 'Finish game' : 'Next performer') : 'Next clue'}</GameButton></OutcomeReveal>
+          <OutcomeReveal tone="success" eyebrow={casual ? "The clue was" : "Score committed"} title={casual ? prompt : "Clue complete"}><p>{casual ? "Thanks for acting!" : "Pass the stage to the next performer."}</p><GameButton tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'challenge.next' })}>{casual ? (anotherClue ? 'Next clue' : finalTurn ? 'Finish game' : 'Next performer') : 'Next clue'}</GameButton></OutcomeReveal>
         </section>
       )}
 

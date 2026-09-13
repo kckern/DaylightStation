@@ -1,4 +1,4 @@
-export const DEFAULT_ARTIFACT_COUNT = 72;
+export const DEFAULT_ARTIFACT_COUNT = 180;
 
 function hashSeed(value) {
   let hash = 2166136261;
@@ -31,7 +31,7 @@ export function generateDecoderArtifacts(seed, count = DEFAULT_ARTIFACT_COUNT) {
       rx: radius,
       ry: radius * (0.72 + random() * 0.56),
       rotation: random() * 180,
-      kind: index % 5 === 0 ? 'ring' : 'bubble',
+      kind: index % 5 === 0 ? 'bubble' : 'ring',
       opacity: 0.72 + random() * 0.26,
     };
   });

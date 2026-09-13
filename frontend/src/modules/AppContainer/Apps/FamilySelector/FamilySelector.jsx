@@ -286,7 +286,7 @@ function FamilySelectorInner({ members, winner, title: _title, exclude, autoSpin
    * global transition-duration: 0s !important.
    */
   const spin = useCallback(() => {
-    if (busyRef.current || !activeMembers.length) return;
+    if (busyRef.current || activeMembers.length < (embedded ? 1 : 2)) return;
     busyRef.current = true;
 
     if (animRef.current) {
@@ -324,7 +324,7 @@ function FamilySelectorInner({ members, winner, title: _title, exclude, autoSpin
       );
       animRef.current.onfinish = finish;
     }
-  }, [wheelState, selectWinner, activeMembers.length, rotation, durationMs]);
+  }, [wheelState, selectWinner, activeMembers.length, rotation, durationMs, embedded]);
 
   /**
    * Keyboard event handler
@@ -355,12 +355,12 @@ useEffect(() => {
   }, []);
 
   // Disable if < 2 members
-  if (activeMembers.length < 1) {
+  if (activeMembers.length < (embedded ? 1 : 2)) {
     return (
       <div className="family-selector family-selector-disabled">
         <div className="disabled-message">
           <h2>Not enough members</h2>
-          <p>At least 1 member are required to spin the wheel.</p>
+          <p>At least {embedded ? 1 : 2} members are required to spin the wheel.</p>
         </div>
       </div>
     );

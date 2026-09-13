@@ -55,3 +55,9 @@ it('retries a failed automatic wheel command without leaving the performer stuck
  await screen.findByRole('alert');sendRuleCommand.mockResolvedValueOnce(view());fireEvent.click(screen.getByRole('button',{name:'Retry'}));
  await screen.findByRole('button',{name:'Go'});expect(sendRuleCommand).toHaveBeenCalledTimes(2);
 });
+
+it('labels another clue within the same timed turn distinctly from the next performer',async()=>{
+ const result=view({...state,phase:'challenge-complete',clue_index:0,remaining_ms:5000});result.definition.clues_per_turn=2;
+ fetchSession.mockResolvedValue(result);render(<Charades sessionId="one" seats={seats}/>);
+ expect(await screen.findByRole('button',{name:'Next clue'})).toBeEnabled();expect(screen.queryByRole('button',{name:'Next performer'})).toBeNull();
+});
