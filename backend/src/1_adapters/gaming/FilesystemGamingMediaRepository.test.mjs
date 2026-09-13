@@ -1,0 +1,25 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, expect, it } from 'vitest';
+import { FilesystemGamingMediaRepository } from './FilesystemGamingMediaRepository.mjs';
+const dirs = [];
+afterEach(() => dirs.splice(0).forEach(dir => fs.rmSync(dir, { recursive: true, force: true })));
+it('serves content-bank images while retaining party media and rejecting escapes', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gaming-media-')); dirs.push(root);
+  const contentGamesDir = path.join(root, 'content'); const partyMediaRoot = path.join(root, 'party');
+  fs.mkdirSync(path.join(contentGamesDir, 'charades/images'), { recursive: true }); fs.mkdirSync(partyMediaRoot);
+  fs.writeFileSync(path.join(contentGamesDir, 'charades/images/rabbit.svg'), '<svg/>');
+  fs.writeFileSync(path.join(partyMediaRoot, 'ready.mp3'), 'audio');
+  fs.writeFileSync(path.join(root, 'secret.svg'), 'secret');
+  fs.symlinkSync(path.join(root, 'secret.svg'), path.join(contentGamesDir, 'escape.svg'));
+  const repo = new FilesystemGamingMediaRepository({ contentGamesDir, partyMediaRoot });
+  const image = repo.getPartyMedia('content/charades/images/rabbit.svg');
+  expect(image.kind).toBe('found');
+  expect(image.value.resource.mimeType).toBe('image/svg+xml');
+  expect(image.value.resource.size).toBe(6);
+  expect(repo.getPartyMedia('ready.mp3').kind).toBe('found');
+  expect(repo.getPartyMedia('content/../secret.svg').kind).toBe('not_found');
+  expect(repo.getPartyMedia('content/escape.svg').kind).toBe('not_found');
+  expect(repo.getPartyMedia('content/missing.svg').kind).toBe('not_found');
+});

@@ -1,3 +1,4 @@
+import { readClueBank } from './readClueBank.mjs';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import YAML from 'yaml';
@@ -9,10 +10,11 @@ const HASH_RE = /^[a-f0-9]{64}$/;
 const ARTIFACT_KINDS = Object.freeze({ rules: 'gaming-rules', content: 'gaming-content' });
 
 export class YamlGamingDefinitionStore {
-  constructor({ definitionsDir, archiveDir, logger = null }) {
+  constructor({ definitionsDir, archiveDir, contentGamesDir = null, logger = null }) {
     this.definitionsDir = definitionsDir;
     this.archiveDir = archiveDir;
     this.logger = logger;
+    this.contentGamesDir = contentGamesDir;
     ensureDir(this.definitionsDir);
     for (const dir of [this.archiveDir, this.#archiveDir('rules'), this.#archiveDir('content'), this.#archiveDir('bundles')]) ensureDir(dir);
   }
@@ -70,7 +72,8 @@ export class YamlGamingDefinitionStore {
     const contentFile = path.join(root, 'content.yml');
     const rules = this.#readArtifact(rulesFile, `rules artifact ${gameId}`);
     if (!rules) return null;
-    const content = this.#readArtifact(contentFile, `content artifact ${gameId}`);
+    const authoredContent = this.#readArtifact(contentFile, `content artifact ${gameId}`);
+    const content = authoredContent && readClueBank(authoredContent, this.contentGamesDir);
     if (!content) throw new Error(`content artifact ${gameId} is required`);
     this.#validateArtifact(rules, 'rules', gameId);
     this.#validateArtifact(content, 'content', gameId);

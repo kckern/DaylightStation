@@ -44,3 +44,55 @@ describe('YamlGamingDefinitionStore authored artifact boundaries', () => {
     expect(() => store.listIds({ prefix: '../bad' })).toThrow('invalid definition prefix');
   });
 });
+
+describe('external Charades clue bank', () => {
+  function bankFixture() {
+    const { root } = fixture();
+    const contentGamesDir = path.join(root, 'content');
+    const dir = path.join(root, 'games/demo');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(path.join(contentGamesDir, 'charades/images'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'rules.yml'), 'artifact: { kind: gaming-rules, version: 1, id: demo }\nrule_module: { id: activity-party, version: 1 }\nexperience: { id: charades, version: 1 }\n');
+    fs.writeFileSync(path.join(dir, 'content.yml'), 'artifact: { kind: gaming-content, version: 1, id: demo }\nclue_bank: charades/choices.yml\n');
+    const bank = path.join(contentGamesDir, 'charades/choices.yml');
+    fs.writeFileSync(path.join(contentGamesDir, 'charades/images/rabbit.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+    fs.writeFileSync(bank, 'version: 1\nclues:\n  - { id: rabbit, text: Rabbit, image: images/rabbit.svg }\n  - { id: swimming, text: Swimming }\n');
+    const store = new YamlGamingDefinitionStore({ definitionsDir: path.join(root, 'games'), archiveDir: path.join(root, 'archive'), contentGamesDir });
+    return { root, dir, bank, store, contentGamesDir };
+  }
+
+  it('compiles images and text, pins content, and hashes later bank edits independently', () => {
+    const { store, bank } = bankFixture();
+    const first = store.getCurrent('demo');
+    expect(first.definition.challenges).toEqual([
+      { id: 'rabbit', activity: 'charades', prompt: 'Rabbit', decoder: { image: '/api/v1/gaming/media/content/charades/images/rabbit.svg' } },
+      { id: 'swimming', activity: 'charades', prompt: 'Swimming' },
+    ]);
+    store.pin(first);
+    fs.writeFileSync(bank, 'version: 1\nclues:\n  - { id: flying, text: Flying }\n');
+    const second = store.getCurrent('demo');
+    expect(second.hash).not.toBe(first.hash);
+    expect(second.artifacts.rules_definition).toEqual(first.artifacts.rules_definition);
+    expect(store.getPinned(first.hash).challenges).toEqual(first.definition.challenges);
+  });
+
+  it.each([
+    ['version: 1\nclues: [{id: same, text: One}, {id: same, text: Two}]', /duplicate/i],
+    ['version: 1\nclues: [{id: empty, text: ""}]', /text/i],
+    ['version: 1\nclues: [{id: missing, text: Missing, image: images/nope.svg}]', /image/i],
+    ['version: 1\nclues: [{id: escape, text: Escape, image: ../../outside.svg}]', /contained|relative/i],
+  ])('rejects invalid authored bank %s', (yaml, error) => {
+    const { store, bank } = bankFixture(); fs.writeFileSync(bank, yaml);
+    expect(() => store.getCurrent('demo')).toThrow(error);
+  });
+
+  it('rejects bank path traversal and symlinks outside configured content root', () => {
+    const { store, bank, root, dir } = bankFixture();
+    fs.writeFileSync(path.join(dir, 'content.yml'), 'artifact: { kind: gaming-content, version: 1, id: demo }\nclue_bank: ../outside.yml\n');
+    expect(() => store.getCurrent('demo')).toThrow(/contained|relative/i);
+    fs.writeFileSync(path.join(dir, 'content.yml'), 'artifact: { kind: gaming-content, version: 1, id: demo }\nclue_bank: charades/choices.yml\n');
+    fs.unlinkSync(bank); fs.writeFileSync(path.join(root, 'outside.yml'), 'version: 1\nclues: []');
+    fs.symlinkSync(path.join(root, 'outside.yml'), bank);
+    expect(() => store.getCurrent('demo')).toThrow(/contained/i);
+  });
+});

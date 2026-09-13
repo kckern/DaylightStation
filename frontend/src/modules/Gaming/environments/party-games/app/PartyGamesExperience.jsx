@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useBuzzers } from '../interaction/useBuzzers.js';
+import { GuessingMusic } from '../effects/GuessingMusic.js';
 import { AudioCueEngine } from '../effects/AudioCueEngine.js';
 
 // Adapts Party Games hardware/effects to the environment-neutral capability
@@ -10,6 +11,7 @@ export default function PartyGamesExperience({ component: Experience, seats, buz
     () => new AudioCueEngine({ pack: config?.sounds?.pack, mute: config?.defaults?.mute }),
     [config?.defaults?.mute, config?.sounds?.pack],
   );
+  const music = useMemo(() => new GuessingMusic(), []);
   const onBuzz = useCallback((teamId) => {
     for (const listener of buzzListeners.current) listener(teamId);
   }, []);
@@ -22,10 +24,11 @@ export default function PartyGamesExperience({ component: Experience, seats, buz
   }, [arbiter, buzzerBindings]);
 
   useEffect(() => () => {
+    music.stop();
     audio.stopChannel('music');
     audio.stopChannel('sfx');
     audio.stopChannel('clue-media');
-  }, [audio]);
+  }, [audio, music]);
 
   const subscribe = useCallback((listener) => {
     buzzListeners.current.add(listener);
@@ -33,13 +36,14 @@ export default function PartyGamesExperience({ component: Experience, seats, buz
   }, []);
   const gamingServices = useMemo(() => ({
     audio,
+    music,
     buzzers: {
       get locked() { return lockedRef.current; },
       arm,
       disarm,
       subscribe,
     },
-  }), [audio, arm, disarm, subscribe]);
+  }), [audio, music, arm, disarm, subscribe]);
 
   return <Experience {...props} seats={seats} config={config} gamingServices={gamingServices} />;
 }

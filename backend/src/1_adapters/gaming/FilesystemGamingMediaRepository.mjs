@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { resolveRealPath } from '#system/utils/FileIO.mjs';
 import { IGamingMediaRepository } from '#apps/gaming/ports/IGamingMediaRepository.mjs';
 import { createLocalFileResource } from '#system/http/streamFile.mjs';
 
@@ -15,9 +16,10 @@ function fileResource(filePath, fallbackMime = 'application/octet-stream') {
 }
 
 export class FilesystemGamingMediaRepository extends IGamingMediaRepository {
-  constructor({ assetCatalog = null, partyMediaRoot = null } = {}) {
+  constructor({ assetCatalog = null, partyMediaRoot = null, contentGamesDir = null } = {}) {
     super();
     this.assetCatalog = assetCatalog;
+    this.contentGamesDir = contentGamesDir ? path.resolve(contentGamesDir) : null;
     this.partyMediaRoot = partyMediaRoot ? path.resolve(partyMediaRoot) : null;
   }
 
@@ -36,9 +38,15 @@ export class FilesystemGamingMediaRepository extends IGamingMediaRepository {
   }
 
   getPartyMedia(mediaId) {
-    if (!this.partyMediaRoot) return { kind: 'unavailable' };
-    const filePath = path.resolve(this.partyMediaRoot, mediaId);
-    if (!filePath.startsWith(`${this.partyMediaRoot}${path.sep}`)) return { kind: 'not_found' };
+    const isContent = String(mediaId).startsWith('content/');
+    const root = isContent ? this.contentGamesDir : this.partyMediaRoot;
+    if (!root) return { kind: 'unavailable' };
+    const relative = isContent ? mediaId.slice('content/'.length) : mediaId;
+    if (typeof relative !== 'string' || path.isAbsolute(relative) || relative.includes('\\') || relative.split('/').includes('..')) return { kind: 'not_found' };
+    const filePath = path.resolve(root, relative);
+    const realRoot = resolveRealPath(root);
+    const realFile = resolveRealPath(filePath);
+    if (!realRoot || !realFile?.startsWith(`${realRoot}${path.sep}`)) return { kind: 'not_found' };
     const resource = fileResource(filePath);
     return resource ? { kind: 'found', value: { resource } } : { kind: 'not_found' };
   }
