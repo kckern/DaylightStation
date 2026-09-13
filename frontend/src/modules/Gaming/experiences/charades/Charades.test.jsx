@@ -8,7 +8,7 @@ vi.mock('@gaming/platform/api/sessionClient.js', () => ({ fetchSession: vi.fn(),
 vi.mock('@/modules/AppContainer/Apps/FamilySelector/FamilySelector.jsx', () => ({default: ({onComplete}) => <button onClick={onComplete}>Complete wheel</button>}));
 const seats = [{id:'a',name:'Alice', members:[]}];
 const state = { competition:false,phase:'challenge-ready',round:1,performer_id:'a',challenge:{prompt:'Rabbit',decoder:{image:'/rabbit.svg'}},clue_presentation:'image',challenge_index:0,turn_order:['a'] };
-const view = (s=state, revision=1) => ({state:s,header:{revision},definition:{competition:false,rounds:1,timer_ms:60000,guessing_music:{source:'test:music',volume:0.2}},result:null});
+const view = (s=state, revision=1) => ({state:s,header:{revision},definition:{competition:false,rounds:1,timer_ms:60000,guessing_music:{source:'test:music',volume:0.2,order:'shuffle',repeat:'after-cycle',memory:'session'}},result:null});
 beforeEach(() => { fetchSession.mockReset().mockResolvedValue(view()); sendRuleCommand.mockReset(); });
 it('shows image decoder and Go without leaking answer, then hides clue while acting and reveals neutrally', async () => {
  const music = {start:vi.fn(() => vi.fn())};
@@ -47,6 +47,7 @@ it('keeps music playing across equivalent refreshed definitions and cleans it up
  fetchSession.mockResolvedValue(view(performing));
  render(<Charades sessionId="one" seats={seats} gamingServices={{music}}/>);
  await screen.findByRole('button',{name:'Finish turn'});expect(music.start).toHaveBeenCalledTimes(1);
+ expect(music.start).toHaveBeenCalledWith(expect.objectContaining({source:'test:music',order:'shuffle',repeat:'after-cycle',memory:'session'}),expect.objectContaining({sessionId:'one'}));
  fetchSession.mockResolvedValue(view({...performing},2));
  await act(async()=>ws.handler({kind:'session-updated',sessionId:'one'}));
  await waitFor(()=>expect(fetchSession).toHaveBeenCalledTimes(2));expect(music.start).toHaveBeenCalledTimes(1);expect(stop).not.toHaveBeenCalled();

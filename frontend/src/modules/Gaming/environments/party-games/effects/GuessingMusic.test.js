@@ -10,6 +10,7 @@ class AudioDouble extends EventTarget {
 }
 const flush = async () => { for (let n = 0; n < 6; n++) await Promise.resolve(); };
 const tracks = { items: [{mediaUrl:'/first.mp3'}, {mediaUrl:'/second.mp3'}] };
+const threeTracks = { items: [{mediaUrl:'/first.mp3'}, {mediaUrl:'/second.mp3'}, {mediaUrl:'/third.mp3'}] };
 afterEach(_resetForTests);
 describe('GuessingMusic lifecycle', () => {
   it('cleans up even when the error presenter throws', async () => {
@@ -57,5 +58,29 @@ describe('GuessingMusic lifecycle', () => {
     const onError = vi.fn(); const service = new GuessingMusic({resolveQueue: async () => { throw new Error('offline'); }, audioFactory: () => new AudioDouble()});
     const stop = service.start({source:'test:offline'}, {onError}); await flush();
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({message:'offline'})); stop();
+  });
+
+  it('uses every shuffled track before repeating across turn starts and page recreation', async () => {
+    const values = new Map();
+    const storage = {
+      getItem: key => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value),
+    };
+    const heard = [];
+    for (let turn = 0; turn < 4; turn++) {
+      const audio = new AudioDouble();
+      const service = new GuessingMusic({
+        audioFactory: () => audio,
+        resolveQueue: async () => threeTracks,
+        random: () => 0,
+        storage,
+      });
+      service.start({source:'plex:535255', order:'shuffle', repeat:'after-cycle', memory:'session'}, {sessionId:'fhe-session'});
+      await flush();
+      heard.push(audio.src);
+      service.stop();
+    }
+    expect(new Set(heard.slice(0, 3)).size).toBe(3);
+    expect(heard[3]).not.toBe(heard[2]);
   });
 });

@@ -154,8 +154,12 @@ players over three rounds, provide at least six images to avoid repeats.
 
 Casual play requires a `guessing_music` rule setting containing a
 `source` content reference and local `volume`. The Party Games environment
-resolves that reference through the standard queue endpoint and randomly plays
-its media URLs. It advances on track end, follows screen master volume, and
+resolves that reference through the standard queue endpoint. An authored
+`order: shuffle`, `repeat: after-cycle`, and `memory: session` consumes every
+playable track before reshuffling, avoids an immediate repeat at the cycle
+boundary, and retains the remaining bag across a page refresh. Definitions
+without those fields retain per-start random selection. Playback advances on
+track end, follows screen master volume, and
 stops/cancels pending work when guessing ends or the experience unmounts. The
 source must be authored in configuration, never embedded in presenter code.
 

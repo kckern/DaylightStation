@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('FHE Charades wheel renders and loads every participant portrait', async ({ page }, testInfo) => {
+test('FHE Charades wheel renders and keeps every participant portrait upright', async ({ page, request }, testInfo) => {
   const loaded = new Set();
   const failures = [];
   page.on('response', response => {
@@ -9,24 +9,34 @@ test('FHE Charades wheel renders and loads every participant portrait', async ({
     else failures.push({ url: response.url(), status: response.status() });
   });
   await page.setViewportSize({ width: 960, height: 540 });
-  await page.goto('/screens/living-room/fhe');
-  await expect(page.locator('.menu-item').filter({ hasText: 'Charades' })).toBeVisible();
-  for (let step = 0; step < 25 && !(await page.locator('.menu-item.active').innerText()).includes('Charades'); step++) await page.keyboard.press('ArrowRight');
-  await expect(page.locator('.menu-item.active')).toContainText('Charades');
-  const createdPromise = page.waitForResponse(response => response.url().endsWith('/api/v1/gaming/sessions') && response.request().method() === 'POST');
-  await page.keyboard.press('Enter');
-  const createdResponse = await createdPromise;
-  expect(createdResponse.status()).toBe(201);
-  const created = await createdResponse.json();
-  const expected = created.header.seats.map(seat => seat.members[0].avatar).sort();
+  const profileResponse = await request.get('/api/v1/gaming/environments/party-games/profile');
+  expect(profileResponse.ok()).toBe(true);
+  const profile = await profileResponse.json();
+  const expected = profile.household_members.map(member => member.avatar).sort();
+  await page.goto('/app/party-games/charades:fhe');
   expect(expected).toHaveLength(6);
   const wheel = page.locator('.family-selector');
-  await expect(wheel).toHaveAttribute('data-selected-id', created.state.performer_id);
+  await expect(wheel).toHaveAttribute('data-selected-id', /.+/);
   await expect(wheel.locator('image.segment-avatar')).toHaveCount(expected.length, { timeout: 2000 });
   expect(await wheel.locator('image.segment-avatar').evaluateAll(images => images.map(image => image.getAttribute('href')).sort())).toEqual(expected);
   await expect.poll(() => [...loaded].sort(), { timeout: 2000 }).toEqual(expected);
   await expect(wheel.locator('.segment-initials')).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('wheel-avatars.png') });
+  const orientationError = async () => wheel.evaluate(root => {
+    const angle = selector => {
+      const matrix = new DOMMatrix(getComputedStyle(root.querySelector(selector)).transform);
+      return Math.atan2(matrix.b, matrix.a) * 180 / Math.PI;
+    };
+    const combined = angle('.wheel-rotator') + angle('.avatar-wrapper');
+    return Math.abs(((combined + 180) % 360 + 360) % 360 - 180);
+  });
+  const errors = [];
+  while (await wheel.count() && await wheel.getAttribute('data-state') === 'spinning') {
+    errors.push(await orientationError());
+    await page.waitForTimeout(100);
+  }
+  expect(errors.length).toBeGreaterThan(15);
+  expect(Math.max(...errors), `portrait tilted during spin: ${errors.join(', ')}`).toBeLessThan(2);
   await expect(page.locator('main.charades')).toHaveAttribute('data-phase', 'challenge-ready');
   expect(failures).toEqual([]);
 });

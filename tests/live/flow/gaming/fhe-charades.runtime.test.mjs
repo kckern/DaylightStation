@@ -85,6 +85,7 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   const initial = await read();
   const definition = initial.definition;
   expect(definition).toMatchObject({rounds:3,timer_ms:60_000,clues_per_turn:1,competition:false});
+  expect(definition.guessing_music).toEqual({source:'plex:535255',volume:0.3,order:'shuffle',repeat:'after-cycle',memory:'session'});
   expect(definition.launch).toEqual({autostart:true,participants:seatIds});
   expect(definition.clue_filter).toEqual({categories:['animals','everyday-actions'],levels:['easy']});
   expect(definition.challenges.every(clue => definition.clue_filter.categories.includes(clue.category) && clue.level === 'easy')).toBe(true);
@@ -94,17 +95,19 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   expect(mediaUrls.length).toBeGreaterThan(0);
   const musicState = () => page.evaluate(urls => (window.__fheAudioElements || [])
     .filter(a => urls.some(url => a.src === new URL(url, location.origin).href))
-    .map(a => ({paused:a.paused,time:a.currentTime,ready:a.readyState})), mediaUrls);
+    .map(a => ({src:a.src,paused:a.paused,time:a.currentTime,ready:a.readyState})), mediaUrls);
   const turns = [];
   const imageIds = [];
   const textIds = [];
+  const heardTracks = [];
 
   for (let turn = 0; turn < 18; turn++) {
     await phase('challenge-ready');
     const ready = await read();
     if (ready.state.clue_presentation !== 'image') {
-      await expect(stage.locator('.segmented-secret-text__glyph')).toHaveCount(48);
+      await expect(stage.locator('.segmented-secret-text__glyph')).toHaveCount(ready.state.challenge.prompt.length);
       await expect(stage.locator('.segmented-secret-text__word-gap, .segmented-secret-text__space')).toHaveCount(0);
+      await expect(stage.locator('.segmented-secret-text__interference')).toHaveCount(0);
     }
     expect(ready.state.challenge_index).toBe(turn);
     expect(ready.state.round).toBe(Math.floor(turn / 6) + 1);
@@ -163,6 +166,7 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
     await phase('performing');
     await page.keyboard.up('Enter');
     await expect.poll(async () => (await musicState()).some(a => !a.paused && a.time > 0.1 && a.ready >= 2), {timeout:20_000}).toBe(true);
+    heardTracks.push((await musicState()).find(a => !a.paused)?.src);
     await expectFits(stage);
     const started = await read();
     expect(started.state.deadline).toBeGreaterThan(Date.now());
@@ -204,6 +208,8 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   expect(textIds).toHaveLength(12);
   expect(new Set(textIds).size).toBe(12);
   expect(imageIds.filter(id => textIds.includes(id))).toEqual([]);
+  expect(heardTracks).toHaveLength(18);
+  expect(new Set(heardTracks).size).toBe(18);
   await expect(page.getByTestId('results')).toBeVisible();
   await expectFits(page.getByTestId('results'));
   const terminal = await read();

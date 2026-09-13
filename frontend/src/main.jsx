@@ -93,11 +93,11 @@ configurePlaybackLogger({
 // Standalone /app/:appId route — renders a registered app directly without the TV shell.
 // Used for testing and direct linking to specific apps (e.g. /app/weekly-review).
 const AppDirectRoute = () => {
-  const { appId } = useParams();
+  const { appId, '*': appPath } = useParams();
   const navigate = useNavigate();
   return (
     <AppContainer
-      open={{ app: appId }}
+      open={{ app: appPath ? `${appId}/${appPath}` : appId }}
       clear={() => {
         if (window.history.length > 1) navigate(-1);
         else navigate('/');

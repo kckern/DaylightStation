@@ -4,24 +4,23 @@ import SegmentedSecretText from './SegmentedSecretText.jsx';
 import { activeSegmentsFor } from './segmentedSecretGeometry.js';
 
 describe('SegmentedSecretText', () => {
-  it('maps the full clue to segmented glyphs while retaining an accessible label', () => {
+  it('renders spaces as full masked glyphs so word boundaries are hidden without the decoder', () => {
     const { container } = render(<SegmentedSecretText text="Moon walk" />);
     expect(screen.getByRole('img', { name: 'Secret clue: MOON WALK' })).toBeInTheDocument();
-    expect(container.querySelectorAll('.segmented-secret-text__glyph')).toHaveLength(48);
-    expect(container.querySelectorAll('polygon.is-signal').length).toBeGreaterThan(20);
-    expect(container.querySelectorAll('.segmented-secret-text__artifact').length).toBeGreaterThan(100);
-    expect(container.querySelectorAll('.segmented-secret-text__word-gap')).toHaveLength(0);
+    const glyphs = [...container.querySelectorAll('.segmented-secret-text__glyph')];
+    expect(glyphs).toHaveLength(9);
+    expect(glyphs.every(glyph => glyph.querySelectorAll('polygon').length === 16)).toBe(true);
+    expect(glyphs[4].querySelectorAll('polygon.is-signal')).toHaveLength(0);
+    expect(glyphs[4].querySelectorAll('polygon.is-mask')).toHaveLength(16);
+    expect(container.querySelectorAll('.segmented-secret-text__space, .segmented-secret-text__word-gap')).toHaveLength(0);
   });
 
-  it('uses the same complete masked field for short words and multiword clues', () => {
-    const {container,rerender}=render(<SegmentedSecretText text="CAT"/>);
-    const viewBox=container.querySelector('svg').getAttribute('viewBox');
-    const noise=container.querySelector('.segmented-secret-text__interference').innerHTML;
-    rerender(<SegmentedSecretText text="CARRYING A HEAVY BOX"/>);
-    expect(container.querySelector('svg').getAttribute('viewBox')).toBe(viewBox);
-    expect(container.querySelectorAll('.segmented-secret-text__glyph')).toHaveLength(48);
-    expect(container.querySelector('.segmented-secret-text__interference').innerHTML).toBe(noise);
-    expect(container.querySelectorAll('.segmented-secret-text__space, .segmented-secret-text__word-gap')).toHaveLength(0);
+  it('keeps the original per-glyph signal and mask interference', () => {
+    const {container}=render(<SegmentedSecretText text="CAT"/>);
+    expect(container.querySelectorAll('.segmented-secret-text__glyph')).toHaveLength(3);
+    expect(container.querySelectorAll('polygon.is-signal').length).toBeGreaterThan(0);
+    expect(container.querySelectorAll('polygon.is-mask').length).toBeGreaterThan(0);
+    expect(container.querySelector('.segmented-secret-text__field')).toBeNull();
   });
 
   it('uses a recognizable sixteen-segment alphabet', () => {
