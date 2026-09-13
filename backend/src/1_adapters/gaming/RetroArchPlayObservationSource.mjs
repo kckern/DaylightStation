@@ -7,7 +7,8 @@
  *
  *  - **Foreground app** (kiosk REST): the primary presence signal. It needs no
  *    ADB and survives a device reboot without re-authorisation, which matters
- *    because ADB-over-WiFi is the flakier channel of the two.
+ *    because ADB-over-WiFi is the flakier channel of the two. If REST is down,
+ *    the focused Android activity supplies the same presence gate over ADB.
  *  - **Process CPU delta** (ADB): the confirmer. A misconfigured core once left
  *    the emulator foregrounded, alive, and burning zero CPU with no game
  *    loaded — foreground alone would have billed that as play. Measured on the
@@ -23,10 +24,9 @@
  * — which neither bills nor ends a session — and only a sustained absence is
  * reported as "nothing is loaded".
  *
- * KNOWN LIMIT: this source can confirm that *a* game is running, never *which*.
- * RetroArch exposes no queryable state (its network command interface is not
- * compiled into the Android build), so content identity comes from the launch we
- * issued and is echoed back, not discovered.
+ * RetroArch exposes no queryable command interface in the Android build. Load
+ * identity therefore comes from its per-session log (preferred) or the launch
+ * intent we recorded, never from a fictional remote status API.
  */
 import { IPlayObservationSource } from '#apps/gaming/ports/IPlayObservationSource.mjs';
 import { PlayState } from '#domains/gaming/value-objects/PlayState.mjs';
@@ -37,12 +37,14 @@ const DEFAULT_MISSES_BEFORE_GONE = 2;
 const IDLE_TICK_THRESHOLD = 2;
 
 export class RetroArchPlayObservationSource extends IPlayObservationSource {
-  #kiosk; #adb; #package; #pollIntervalMs; #missesBeforeGone; #logger;
+  #kiosk; #adb; #package; #pollIntervalMs; #missesBeforeGone; #logger; #logs; #resolveContent;
   #cpu = new Map();     // deviceId -> { ticks, at }
   #misses = new Map();  // deviceId -> consecutive non-foreground observations
+  #warnedMismatches = new Set();
 
   constructor({
     kioskClient, adbAdapter = null, packageName,
+    logReader = null, resolveContent = null,
     pollIntervalMs = DEFAULT_POLL_MS,
     missesBeforeGone = DEFAULT_MISSES_BEFORE_GONE,
     logger = console,
@@ -53,6 +55,8 @@ export class RetroArchPlayObservationSource extends IPlayObservationSource {
     this.#kiosk = kioskClient;
     this.#adb = adbAdapter;
     this.#package = packageName;
+    this.#logs = logReader;
+    this.#resolveContent = typeof resolveContent === 'function' ? resolveContent : null;
     this.#pollIntervalMs = pollIntervalMs;
     this.#missesBeforeGone = missesBeforeGone;
     this.#logger = logger;
@@ -64,11 +68,19 @@ export class RetroArchPlayObservationSource extends IPlayObservationSource {
     const observedAt = new Date().toISOString();
     const base = { observedAt, confidenceMs: this.#pollIntervalMs };
 
-    const foreground = await this.#foregroundApp();
+    let foreground = await this.#foregroundApp();
+    let presenceChannel = 'kiosk';
     if (foreground === null) {
-      // Could not ask the device. Not "stopped" — we simply cannot see.
-      this.#cpu.delete(deviceId);
-      return { ...base, state: PlayState.UNKNOWN, content: null, channel: 'none' };
+      // REST is the reboot-stable primary, not a single point of failure. ADB's
+      // focused activity is an independent presence signal and keeps the meter
+      // alive through a Fully Kiosk API outage.
+      const focused = await this.#focusedApp();
+      if (!focused.available) {
+        this.#cpu.delete(deviceId);
+        return { ...base, state: PlayState.UNKNOWN, loaded: null, content: null, channel: 'none' };
+      }
+      foreground = focused.app;
+      presenceChannel = 'adb';
     }
 
     if (foreground !== this.#package) {
@@ -76,28 +88,36 @@ export class RetroArchPlayObservationSource extends IPlayObservationSource {
       this.#misses.set(deviceId, misses);
       this.#cpu.delete(deviceId);
       if (misses < this.#missesBeforeGone) {
-        return { ...base, state: PlayState.UNKNOWN, content: null, channel: 'kiosk' };
+        return { ...base, state: PlayState.UNKNOWN, loaded: null, content: null, channel: presenceChannel };
       }
       // Sustained absence: nothing is loaded on this device.
-      return { ...base, state: PlayState.PAUSED, content: null, channel: 'kiosk' };
+      return { ...base, state: PlayState.PAUSED, loaded: false, content: null, channel: presenceChannel };
     }
 
     this.#misses.set(deviceId, 0);
+    const identity = await this.#currentIdentity(expectedContent);
 
     const cpu = await this.#cpuTicks();
     if (cpu === null) {
-      // ADB is gone. Foreground still says a game is up, so trust that, but say
-      // plainly that play-versus-paused could not be confirmed.
+      // With kiosk presence we can degrade to foreground-only. If ADB was also
+      // the presence source, losing its CPU read leaves no independent proof of
+      // play — loaded remains plausible, but time does not accrue.
       this.#cpu.delete(deviceId);
+      if (presenceChannel === 'adb') {
+        return {
+          ...base, ...identity, state: PlayState.UNKNOWN, loaded: true,
+          channel: 'adb', degraded: true,
+        };
+      }
       return {
-        ...base, state: PlayState.PLAYING, content: expectedContent,
+        ...base, ...identity, state: PlayState.PLAYING, loaded: true,
         channel: 'kiosk', degraded: true,
       };
     }
     if (cpu.pid === null) {
       // Foreground is stale but the process is gone — definitively over.
       this.#cpu.delete(deviceId);
-      return { ...base, state: PlayState.PAUSED, content: null, channel: 'adb' };
+      return { ...base, state: PlayState.PAUSED, loaded: false, content: null, channel: 'adb' };
     }
 
     const previous = this.#cpu.get(deviceId);
@@ -106,12 +126,41 @@ export class RetroArchPlayObservationSource extends IPlayObservationSource {
     // First sample after a (re)start, or after the process changed identity:
     // there is no delta to judge yet, so do not claim play.
     if (!previous || previous.pid !== cpu.pid) {
-      return { ...base, state: PlayState.UNKNOWN, content: expectedContent, channel: 'adb' };
+      return { ...base, ...identity, state: PlayState.UNKNOWN, loaded: true, channel: 'adb' };
     }
 
     const delta = cpu.ticks - previous.ticks;
     const state = delta > IDLE_TICK_THRESHOLD ? PlayState.PLAYING : PlayState.PAUSED;
-    return { ...base, state, content: expectedContent, channel: 'adb', cpuDelta: delta };
+    return { ...base, ...identity, state, loaded: true, channel: 'adb', cpuDelta: delta };
+  }
+
+  async #currentIdentity(expectedContent) {
+    if (!this.#logs?.readCurrentSession) {
+      return { loadId: null, loadedAt: null, content: expectedContent };
+    }
+    const current = await this.#logs.readCurrentSession();
+    if (!current) return { loadId: null, loadedAt: null, content: expectedContent };
+
+    const content = current.contentPath && this.#resolveContent
+      ? this.#resolveContent(current.contentPath)
+      : null;
+    if (expectedContent?.contentId && expectedContent.contentId !== content?.contentId
+        && !this.#warnedMismatches.has(current.file)) {
+      this.#warnedMismatches.add(current.file);
+      this.#logger.warn?.('play.content.intent_mismatch', {
+        loadId: current.file,
+        expectedContentId: expectedContent.contentId,
+        observedContentId: content?.contentId ?? null,
+        contentPath: current.contentPath ?? null,
+      });
+    }
+    return {
+      loadId: current.file,
+      loadedAt: current.startedAt,
+      content,
+      contentPath: current.contentPath ?? null,
+      corePath: current.corePath ?? null,
+    };
   }
 
   async #foregroundApp() {
@@ -123,6 +172,22 @@ export class RetroArchPlayObservationSource extends IPlayObservationSource {
     } catch (error) {
       this.#logger.debug?.('play.observe.kiosk_failed', { error: error.message });
       return null;
+    }
+  }
+
+  /** Focused package from Android's window service, or unavailable. */
+  async #focusedApp() {
+    if (!this.#adb?.shell) return { available: false, app: null };
+    try {
+      const result = await this.#adb.shell('dumpsys window');
+      if (!result?.ok) return { available: false, app: null };
+      // Shield TV may report mCurrentFocus=null while asleep but retain a
+      // useful mFocusedApp ActivityRecord. Accept either real package shape.
+      const match = /m(?:CurrentFocus|FocusedApp)=[^\n]*\su\d+\s+([A-Za-z0-9_.$]+)\//m.exec(result.output || '');
+      return { available: true, app: match?.[1] ?? null };
+    } catch (error) {
+      this.#logger.debug?.('play.observe.adb_focus_failed', { error: error.message });
+      return { available: false, app: null };
     }
   }
 

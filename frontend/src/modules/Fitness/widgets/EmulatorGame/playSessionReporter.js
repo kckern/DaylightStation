@@ -7,9 +7,9 @@
  * the same use case — the only difference is confidence, which is exact here
  * against a poll interval there.
  *
- * A heartbeat is still required while playing. Played time accrues between
- * consecutive observations that both saw play, so a session that announced
- * "playing" once and then went silent would accrue nothing at all.
+ * A heartbeat is required for the whole time content remains loaded. Playing
+ * heartbeats accrue time between samples; paused heartbeats prove that the
+ * session is still deliberately open rather than abandoned by a crashed tab.
  *
  * Reporting is fire-and-forget. A meter that cannot be reached must never
  * interrupt a child's game, so every failure is swallowed after one log.
@@ -24,6 +24,7 @@ export function createPlaySessionReporter({
   heartbeatMs = DEFAULT_HEARTBEAT_MS,
   setTimer = setInterval,
   clearTimer = clearInterval,
+  getControllers = () => null,
   logger = null,
 }) {
   if (!deviceId) throw new Error('createPlaySessionReporter requires deviceId');
@@ -31,48 +32,106 @@ export function createPlaySessionReporter({
 
   let timer = null;
   let current = null;
+  let failureReported = false;
+  let inFlight = false;
+  const queue = [];
 
-  const send = (state, content, userId) => {
-    const body = {
-      deviceId,
-      surface: SURFACE,
-      userId: userId ?? null,
-      observation: {
-        state,
-        observedAt: new Date().toISOString(),
-        // Exact: this surface is not being guessed at from outside.
-        confidenceMs: 0,
-        content: content ?? null,
-      },
-    };
-    try {
-      const result = post(body);
-      if (result && typeof result.catch === 'function') {
-        result.catch((error) => logger?.debug?.('play.report.failed', { error: error?.message }));
-      }
-    } catch (error) {
-      logger?.debug?.('play.report.failed', { error: error?.message });
+  const failed = (error) => {
+    if (!failureReported) {
+      failureReported = true;
+      logger?.warn?.('play.report.failed', { error: error?.message });
     }
   };
 
+  // Preserve lifecycle order across the network. Without this, a slow playing
+  // request can arrive after unload and reopen a ghost session on the server.
+  const dispatchNext = () => {
+    if (inFlight || queue.length === 0) return;
+    const body = queue.shift();
+    try {
+      const result = post(body);
+      if (result && typeof result.then === 'function') {
+        inFlight = true;
+        Promise.resolve(result)
+          .then(() => { failureReported = false; }, failed)
+          .finally(() => { inFlight = false; dispatchNext(); });
+      } else {
+        failureReported = false;
+        dispatchNext();
+      }
+    } catch (error) {
+      failed(error);
+      dispatchNext();
+    }
+  };
+
+  const send = (state, { loaded = true } = {}) => {
+    if (!current) return;
+    let controllers = null;
+    try {
+      const raw = getControllers();
+      const count = Number(raw);
+      controllers = raw !== null && raw !== undefined && Number.isFinite(count) ? count : null;
+    } catch { controllers = null; }
+    const body = {
+      deviceId,
+      surface: SURFACE,
+      userId: current.userId ?? null,
+      observation: {
+        state,
+        loaded,
+        loadId: current.loadId,
+        loadedAt: current.loadedAt,
+        observedAt: new Date().toISOString(),
+        // Exact: this surface is not being guessed at from outside.
+        confidenceMs: 0,
+        content: current.content ?? null,
+        controllers,
+      },
+    };
+    queue.push(body);
+    dispatchNext();
+  };
+
   const stopHeartbeat = () => { if (timer !== null) { clearTimer(timer); timer = null; } };
+  const startHeartbeat = () => {
+    stopHeartbeat();
+    timer = setTimer(() => {
+      if (current) send(current.state);
+    }, heartbeatMs);
+  };
 
   return {
     /** A game is on screen and running. */
-    started({ userId = null, content = null } = {}) {
-      current = { userId, content };
-      send('playing', content, userId);
-      stopHeartbeat();
-      timer = setTimer(() => {
-        if (current) send('playing', current.content, current.userId);
-      }, heartbeatMs);
+    started({ userId = null, content = null, loadId = null, loadedAt = null, state = 'playing' } = {}) {
+      current = {
+        userId, content, loadId,
+        loadedAt: loadedAt ?? new Date().toISOString(),
+        state,
+      };
+      send(state);
+      startHeartbeat();
     },
 
     /** Still on screen, not running — a menu, a pause, a lost focus. */
     paused() {
       if (!current) return;
-      stopHeartbeat();
-      send('paused', current.content, current.userId);
+      current.state = 'paused';
+      send('paused');
+      if (timer === null) startHeartbeat();
+    },
+
+    resumed() {
+      if (!current) return;
+      current.state = 'playing';
+      send('playing');
+      startHeartbeat();
+    },
+
+    updateIdentity(userId) {
+      if (!current || !userId) return;
+      current.userId = userId;
+      send(current.state);
     },
 
     /**
@@ -81,9 +140,8 @@ export function createPlaySessionReporter({
      */
     ended() {
       if (!current) return;
-      const { userId } = current;
       stopHeartbeat();
-      send('paused', null, userId);
+      send('paused', { loaded: false });
       current = null;
     },
 

@@ -7,7 +7,7 @@
  * each tracker is inspected on its own schedule and anything wrong is said out
  * loud.
  *
- * Three conditions, each a different kind of wrong:
+ * Four conditions, each a different kind of wrong:
  *
  *  - **Stale** — no tick within the tolerance. The loop has stopped, hung, or
  *    is wedged behind a probe that never returns. This is the serious one,
@@ -17,6 +17,8 @@
  *  - **Degraded** — observations arrive but cannot confirm playing versus
  *    paused, so time may be over-counted. Not a failure; a measurably worse
  *    meter, and worth knowing before the numbers are questioned.
+ *  - **Unrecordable** — play is positively loaded and running, but no durable
+ *    session is being produced. This is the metering equivalent of data loss.
  *
  * Alarms are edge-triggered: a condition is announced when it starts and when it
  * clears, not on every sweep. A watchdog that repeats itself every interval is
@@ -89,7 +91,10 @@ export class PlayObservationWatchdog {
 
     for (const tracker of this.#trackers) {
       for (const health of tracker.getHealth()) {
-        const { deviceId, lastTickAt, consecutiveErrors = 0, degraded, lastError } = health;
+        const {
+          deviceId, lastTickAt, consecutiveErrors = 0, degraded, lastError,
+          unrecordable = false, consecutiveUnrecordable = 0,
+        } = health;
 
         // A tracker that has never ticked is not yet stale — it may have only
         // just started. Staleness needs a previous success to be measured from.
@@ -104,6 +109,10 @@ export class PlayObservationWatchdog {
         this.#edge(deviceId, 'failing', failing, 'warn', { consecutiveErrors, lastError });
         this.#edge(deviceId, 'degraded', degraded === true, 'warn', {
           note: 'observations arriving but playing-versus-paused unconfirmed; played time may be over-counted',
+        });
+        this.#edge(deviceId, 'unrecordable', unrecordable === true, 'error', {
+          consecutiveObservations: consecutiveUnrecordable,
+          note: 'a game is loaded and playing but no durable play session is being recorded',
         });
 
         // Prolonged blindness: mark the device and tell someone. Never kill.
@@ -126,6 +135,7 @@ export class PlayObservationWatchdog {
         if (stale) found.push({ deviceId, condition: 'stale' });
         if (failing) found.push({ deviceId, condition: 'failing' });
         if (degraded === true) found.push({ deviceId, condition: 'degraded' });
+        if (unrecordable === true) found.push({ deviceId, condition: 'unrecordable' });
       }
     }
     return found;

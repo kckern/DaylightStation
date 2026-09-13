@@ -61,6 +61,15 @@ describe('PlayObservationWatchdog — failing and degraded', () => {
     expect(w.check()).toContainEqual({ deviceId: 'tv', condition: 'degraded' });
     expect(events()).toContain('play.watchdog.degraded');
   });
+
+  it('identifies a loaded game that the recorder cannot persist', () => {
+    const w = build([{
+      deviceId: 'tv', lastTickAt: at(-5), consecutiveErrors: 0,
+      degraded: true, unrecordable: true, consecutiveUnrecordable: 2,
+    }]);
+    expect(w.check()).toContainEqual({ deviceId: 'tv', condition: 'unrecordable' });
+    expect(events()).toContain('play.watchdog.unrecordable');
+  });
 });
 
 describe('PlayObservationWatchdog — alarms are edge-triggered', () => {

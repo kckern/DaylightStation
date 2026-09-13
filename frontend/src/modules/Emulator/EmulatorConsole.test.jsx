@@ -279,6 +279,20 @@ describe('EmulatorConsole', () => {
     expect(container.querySelector('.emulator-console').getAttribute('data-state')).toBe('paused');
   });
 
+  it('reports confirmed play only after a frame and follows governance pauses', async () => {
+    const onPlayStateChange = vi.fn();
+    const gate = makeGate();
+    renderConsole({ gate, props: { onPlayStateChange } });
+    expect(onPlayStateChange).not.toHaveBeenCalledWith('playing');
+    await act(async () => {});
+    expect(onPlayStateChange).toHaveBeenLastCalledWith('playing');
+
+    act(() => gate._set({ state: 'paused' }));
+    expect(onPlayStateChange).toHaveBeenLastCalledWith('paused');
+    act(() => gate._set({ state: 'playing' }));
+    expect(onPlayStateChange).toHaveBeenLastCalledWith('playing');
+  });
+
   it('the merged animation handler adds a transient class that clears', async () => {
     const { container, captured } = renderConsole();
     await act(async () => {});

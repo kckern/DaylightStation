@@ -18,6 +18,8 @@ export class AdbAdapter {
   #serial;
   #logger;
   #metrics;
+  #execCommand;
+  #execFileCommand;
 
   /**
    * @param {Object} config
@@ -25,6 +27,8 @@ export class AdbAdapter {
    * @param {number} [config.port=5555] - ADB port
    * @param {Object} [deps]
    * @param {Object} [deps.logger]
+   * @param {Function} [deps.execCommand] - Test seam for shell execution
+   * @param {Function} [deps.execFileCommand] - Test seam for argv execution
    */
   constructor(config, deps = {}) {
     if (!config.host) {
@@ -36,6 +40,8 @@ export class AdbAdapter {
 
     this.#serial = `${config.host}:${config.port || 5555}`;
     this.#logger = deps.logger || console;
+    this.#execCommand = deps.execCommand || execAsync;
+    this.#execFileCommand = deps.execFileCommand || execFileAsync;
 
     this.#metrics = {
       startedAt: Date.now(),
@@ -81,16 +87,27 @@ export class AdbAdapter {
    * @returns {Promise<{ok: boolean, output?: string, error?: string}>}
    */
   async shell(command) {
-    const result = await this.#exec(`adb -s ${this.#serial} shell ${JSON.stringify(command)}`);
+    const adbCommand = `adb -s ${this.#serial} shell ${JSON.stringify(command)}`;
+    // A cold ADB daemon is expected to miss once before connect. Defer the
+    // error log until we know whether this is a real command failure.
+    const result = await this.#exec(adbCommand, { logFailure: false });
 
     if (!result.ok && this.#isDeviceNotFound(result.error)) {
+      this.#logger.debug?.('adb.shell.disconnected', { serial: this.#serial, command });
       this.#logger.info?.('adb.shell.autoReconnect', { serial: this.#serial, command });
       const reconnect = await this.connect();
       if (reconnect.ok) {
-        return this.#exec(`adb -s ${this.#serial} shell ${JSON.stringify(command)}`);
+        const retry = await this.#exec(adbCommand);
+        if (retry.ok) {
+          this.#metrics.recoveries++;
+          this.#logger.info?.('adb.shell.recovered', { serial: this.#serial, command });
+        }
+        return retry;
       }
       return { ok: false, error: `reconnect failed: ${reconnect.error}` };
     }
+
+    if (!result.ok) this.#logExecError(adbCommand, result);
 
     return result;
   }
@@ -176,14 +193,14 @@ export class AdbAdapter {
    * Execute an ADB command
    * @private
    */
-  async #exec(command) {
+  async #exec(command, { logFailure = true } = {}) {
     this.#metrics.commands++;
     const startTime = Date.now();
 
     this.#logger.debug?.('adb.exec.start', { command, serial: this.#serial });
 
     try {
-      const { stdout, stderr } = await execAsync(command, { timeout: 10_000 });
+      const { stdout, stderr } = await this.#execCommand(command, { timeout: 10_000 });
       const elapsedMs = Date.now() - startTime;
 
       this.#logger.debug?.('adb.exec.success', { command, elapsedMs, stdout: stdout?.trim() });
@@ -193,15 +210,20 @@ export class AdbAdapter {
       this.#metrics.errors++;
       const elapsedMs = Date.now() - startTime;
 
-      this.#logger.error?.('adb.exec.error', {
-        command,
-        error: error.message,
-        code: error.code,
-        elapsedMs
-      });
+      const result = { ok: false, error: error.message, code: error.code, elapsedMs };
+      if (logFailure) this.#logExecError(command, result);
 
-      return { ok: false, error: error.message };
+      return result;
     }
+  }
+
+  #logExecError(command, result) {
+    this.#logger.error?.('adb.exec.error', {
+      command,
+      error: result.error,
+      code: result.code,
+      elapsedMs: result.elapsedMs,
+    });
   }
 
   /**
@@ -216,7 +238,7 @@ export class AdbAdapter {
     this.#logger.debug?.('adb.execArgs.start', { args: fullArgs });
 
     try {
-      const { stdout, stderr } = await execFileAsync('adb', fullArgs, { timeout: 10_000 });
+      const { stdout, stderr } = await this.#execFileCommand('adb', fullArgs, { timeout: 10_000 });
       const elapsedMs = Date.now() - startTime;
       this.#logger.debug?.('adb.execArgs.success', { elapsedMs, stdout: stdout?.trim() });
       return { ok: true, output: stdout?.trim(), stderr: stderr?.trim() };

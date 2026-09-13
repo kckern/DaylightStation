@@ -122,6 +122,28 @@ adb.getMetrics();                           // { commands, errors, recoveries }
 ```
 
 All commands have a 10-second timeout. The adapter tracks metrics (command count, error count, recovery count).
+`shell()` automatically reconnects once after a `device not found`, `no devices`
+or `offline` response. The initial cold-daemon miss is diagnostic noise, not a
+failed operation: it logs at debug, and a successful retry emits
+`adb.shell.recovered` at info. A failed reconnect or retry remains an error.
+
+### Play-session observation
+
+The console play-session observer uses Fully Kiosk's `foregroundApp` as its
+primary presence signal and ADB as an independent confirmer. While the emulator
+is foregrounded, `pidof` plus `/proc/<pid>/stat` CPU deltas distinguish actual
+emulation from a paused or failed core. If Fully Kiosk REST is unavailable, the
+observer falls back to `dumpsys window` for the focused package, then applies the
+same process/CPU test. An ADB-only observation is labelled `channel: adb`; if
+both presence paths fail, the observer publishes `unknown`/`loaded: null` and
+accrues nothing.
+
+The AudioBridge companion APK is not a substitute for this channel. Its existing
+WebSocket is a single-client microphone stream with no gameplay status or
+heartbeat, and connecting a monitor would start capture and displace its real
+audio consumer. Any future device-side telemetry must use a separate endpoint
+and remain corroborating evidence rather than equating companion liveness with
+gameplay.
 
 ### ResilientContentAdapter behavior
 
@@ -286,6 +308,15 @@ Recovery events are logged with the `resilient.*` prefix:
 | `resilient.recovery.complete` | info | Recovery finished, retrying primary |
 | `resilient.load.recoverySuccess` | info | Content loaded after recovery |
 | `resilient.load.recoveryFailed` | error | Content still failed after recovery |
+
+Low-level shell recovery also emits:
+
+| Event | Level | Meaning |
+|---|---|---|
+| `adb.shell.disconnected` | debug | First shell attempt found a cold/offline device |
+| `adb.shell.autoReconnect` | info | One reconnect is being attempted |
+| `adb.shell.recovered` | info | Reconnect and command retry both succeeded |
+| `adb.exec.error` | error | A command ultimately failed or was not a reconnectable miss |
 
 Lazy MIC release events use the `fullykiosk.*` prefix:
 

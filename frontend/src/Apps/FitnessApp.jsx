@@ -1656,7 +1656,7 @@ const FitnessApp = () => {
                   </div>
                 )}
                 {currentView === 'users' && (
-                  <FitnessModuleContainer moduleId="fitness_session" mode="standalone" />
+                  <FitnessModuleContainer moduleId="fitness_session" mode="standalone" deviceId={FLEET_DEVICE_ID} />
                 )}
                 {currentView === 'show' && selectedShow && (
                   <FitnessShow
@@ -1689,6 +1689,7 @@ const FitnessApp = () => {
                   <FitnessModuleContainer
                     moduleId={activeModule.id}
                     mode="standalone"
+                    deviceId={FLEET_DEVICE_ID}
                     config={activeModule.config ?? {}}
                     onClose={handleModuleClose}
                   />
@@ -1703,6 +1704,7 @@ const FitnessApp = () => {
                 <FitnessModuleContainer
                   moduleId={activeModule.id}
                   mode="standalone"
+                  deviceId={FLEET_DEVICE_ID}
                   config={activeModule.config ?? {}}
                   onClose={handleModuleClose}
                 />

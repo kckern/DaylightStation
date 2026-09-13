@@ -40,6 +40,7 @@ export class YamlPlaySessionDatastore extends IPlaySessionRepository {
   #root(householdId) { return this.#configService.getHouseholdPath('gaming/play-sessions', householdId); }
   #currentPath(deviceId, householdId) { return path.join(this.#root(householdId), 'current', String(deviceId)); }
   #historyPath(isoDate, householdId) { return path.join(this.#root(householdId), 'history', String(isoDate).slice(0, 10)); }
+  #evidencePath(deviceId, householdId) { return path.join(this.#root(householdId), 'reconciliation', String(deviceId)); }
 
   async save(session, { householdId = null } = {}) {
     const snapshot = session.toSnapshot();
@@ -62,6 +63,15 @@ export class YamlPlaySessionDatastore extends IPlaySessionRepository {
   async findOpenForDevice(deviceId, { householdId = null } = {}) {
     const session = await this.findCurrentForDevice(deviceId, { householdId });
     return session && !session.isEnded() ? session : null;
+  }
+
+  async listOpen({ householdId = null } = {}) {
+    const open = [];
+    for (const deviceId of await this.listTrackedDeviceIds({ householdId })) {
+      const session = await this.findOpenForDevice(deviceId, { householdId });
+      if (session) open.push(session);
+    }
+    return open.sort((a, b) => String(a.startedAt).localeCompare(String(b.startedAt)));
   }
 
   /** Latest session for a device, open or ended. Input to reconciliation. */
@@ -160,6 +170,29 @@ export class YamlPlaySessionDatastore extends IPlaySessionRepository {
       .map((entry) => (typeof entry === 'string' ? entry : entry?.name))
       .filter((name) => typeof name === 'string' && name.endsWith('.yml'))
       .map((name) => name.replace(/\.yml$/, ''));
+  }
+
+  async hasReconciliationEvidence(deviceId, evidenceId, { householdId = null } = {}) {
+    if (!evidenceId) return false;
+    const rows = loadYamlSafe(this.#evidencePath(deviceId, householdId)) || [];
+    return Array.isArray(rows) && rows.some((row) => row?.evidenceId === evidenceId);
+  }
+
+  async markReconciliationEvidence(deviceId, evidence, { householdId = null } = {}) {
+    if (!evidence?.evidenceId) return false;
+    const file = this.#evidencePath(deviceId, householdId);
+    ensureDir(path.dirname(file));
+    const loaded = loadYamlSafe(file) || [];
+    const rows = Array.isArray(loaded) ? loaded : [];
+    if (rows.some((row) => row?.evidenceId === evidence.evidenceId)) return false;
+    rows.push({
+      evidenceId: evidence.evidenceId,
+      startedAt: evidence.startedAt ?? null,
+      contentPath: evidence.contentPath ?? null,
+      firstReportedAt: evidence.firstReportedAt ?? new Date().toISOString(),
+    });
+    saveYaml(file, rows, { noRefs: true });
+    return true;
   }
 }
 
