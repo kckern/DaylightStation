@@ -11,7 +11,7 @@ export const INITIAL_REPEAT_DELAY = 200; // ms before hold-to-repeat kicks in
 export const REPEAT_INTERVAL = 100;      // ms between repeated actions
 
 // Actions that should NOT repeat on hold (one-shot per key press)
-const NO_REPEAT_ACTIONS = new Set(['hardDrop', 'hold', 'jump', 'duck']);
+const NO_REPEAT_ACTIONS = new Set(['hardDrop', 'hold', 'jump', 'duck', 'shoot']);
 
 // ─── Progression (line-driven difficulty ramp) ──────────────────
 

@@ -52,6 +52,16 @@ describe('resolveTheme', () => {
     expect(t.obstacles).toEqual(DEFAULT_THEME.obstacles);
   });
 
+  it('resolves the new pieces — pellet, block skins, explosion — with defaults', () => {
+    const t = resolveTheme({ theme: { obstacles: { block: { fill: ['#000', '#111'] } }, explosion: { edge: '#ff0000' } } });
+    expect(t.obstacles.block.fill).toEqual(['#000', '#111']);
+    expect(t.obstacles.block.pattern).toBe('brick');
+    expect(t.obstacles.block_hard).toEqual(DEFAULT_THEME.obstacles.block_hard);
+    expect(t.explosion).toMatchObject({ edge: '#ff0000', core: DEFAULT_THEME.explosion.core });
+    expect(t.projectile).toEqual(DEFAULT_THEME.projectile);
+    expect(Object.keys(t.sounds)).toEqual(expect.arrayContaining(['shoot', 'death', 'hit', 'jump']));
+  });
+
   it('merges configured sound paths over null defaults', () => {
     const t = resolveTheme({ theme: { sounds: { jump: '/jump.wav' } } });
     expect(t.sounds.jump).toBe('/jump.wav');
@@ -69,8 +79,23 @@ describe('getSpriteFrame', () => {
     expect(getSpriteFrame('running', 0, { idle: true }, theme)).toBe(pos(theme.player.frames.stand));
   });
 
-  it('returns the hit pose when invincible', () => {
-    expect(getSpriteFrame('running', 0, { invincible: true }, theme)).toBe(pos(theme.player.frames.hit));
+  it('returns the first hurt frame when invincible, cycling like any other', () => {
+    expect(getSpriteFrame('running', 0, { invincible: true }, theme)).toBe(pos(theme.player.frames.hit[0]));
+    expect(getSpriteFrame('running', 1 / 32, { invincible: true }, theme)).toBe(pos(theme.player.frames.hit[1]));
+  });
+
+  it('holds the shooting poses while shooting', () => {
+    expect(getSpriteFrame('running', 0, { shooting: true }, theme)).toBe(pos(theme.player.frames.shootRun[0]));
+    expect(getSpriteFrame('running', 3 / 32, { shooting: true }, theme)).toBe(pos(theme.player.frames.shootRun[3]));
+    expect(getSpriteFrame('jumping', 0, { shooting: true }, theme)).toBe(pos(theme.player.frames.shootJump));
+    // No slide-shot pose: ducking stays ducking
+    expect(getSpriteFrame('ducking', 0, { shooting: true }, theme)).toBe(pos(theme.player.frames.duck));
+  });
+
+  it('keeps plain poses for a theme that has no shooting frames', () => {
+    const plain = resolveTheme({ theme: { player: { frames: { stand: [0, 0], jump: [1, 0], duck: [2, 0], hit: [3, 0], run: [[0, 1], [1, 1]] } } } });
+    expect(getSpriteFrame('running', 0, { shooting: true }, plain)).toBe(frameToPosition([0, 1], plain.player.grid));
+    expect(getSpriteFrame('jumping', 0, { shooting: true }, plain)).toBe(frameToPosition([1, 0], plain.player.grid));
   });
 
   it('returns the jump pose while jumping', () => {

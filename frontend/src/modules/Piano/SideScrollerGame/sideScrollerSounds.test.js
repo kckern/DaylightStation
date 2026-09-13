@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createSfxPlayer } from './sideScrollerSounds.js';
+import { createSfxPlayer, resolveSoundSrc } from './sideScrollerSounds.js';
 
 // A fake audio element + factory so we never touch real DOM audio.
 function fakeAudioFactory() {
@@ -56,5 +56,25 @@ describe('createSfxPlayer', () => {
     const sfx = createSfxPlayer({ jump: '/jump.wav' }, { createAudio });
     expect(() => sfx.play('jump')).not.toThrow();
     expect(sfx.play('jump')).toBe(true);
+  });
+});
+
+describe('resolveSoundSrc', () => {
+  it('routes a /media path through the media proxy, like every other piano sfx', () => {
+    expect(resolveSoundSrc('/media/audio/sfx/side-scroller/shoot.mp3'))
+      .toMatch(/\/api\/v1\/proxy\/media\/audio\/sfx\/side-scroller\/shoot\.mp3$/);
+  });
+
+  it('leaves an /api route or any other path exactly as configured', () => {
+    expect(resolveSoundSrc('/api/v1/static/sfx/jump.wav')).toBe('/api/v1/static/sfx/jump.wav');
+    expect(resolveSoundSrc('/jump.wav')).toBe('/jump.wav');
+  });
+
+  it('is what the player preloads', () => {
+    const created = [];
+    createSfxPlayer({ death: '/media/audio/sfx/side-scroller/death.mp3' }, {
+      createAudio: (src) => { created.push(src); return { src, currentTime: 0, play: vi.fn(() => Promise.resolve()) }; },
+    });
+    expect(created[0]).toMatch(/\/api\/v1\/proxy\/media\/audio\/sfx\/side-scroller\/death\.mp3$/);
   });
 });
