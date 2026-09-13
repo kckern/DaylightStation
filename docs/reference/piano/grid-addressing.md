@@ -95,6 +95,13 @@ seventh chord is locked out of `chords` for years, and a child who has learned c
 may not read at all. They are two vocabularies for the same 64 squares, and the rest of the game —
 narrowing, hover, pick-up, destination badges, the game record — works identically under either.
 
+A household assigns the vocabulary per learner in `gameAddressing.users.{id}.vocabulary`. It is
+the one setting here that is a **teaching decision about a child**, not a difficulty: a
+pre-reader on the match gate's sight-reading rungs is being taught to read a note and find a
+key, and `chords` hands that same child `Am7` on the board rim — a spelling task they have no
+way into, which teaches nothing about the squares. Put a learner on the vocabulary they are
+being taught, and move it when the teaching moves.
+
 Chess currently defaults to `chords`; Checkers and Connect Four are `staff`-only. Chess's
 `addressing` key already exists in `config/chess.yml` and is per-user overridable.
 
