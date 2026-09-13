@@ -10,11 +10,12 @@ import { chainFor } from './ladder.mjs';
  * dictation set I did twice"). A derived queue cannot desynchronise from its
  * own evidence, because it has none of its own to lose.
  *
- * A day's work is:
- *   1. up to `dailyLimit` brand-new sentences, entering at the first rung; plus
- *   2. every sentence that cleared rung k on an EARLIER day and has not yet
- *      cleared rung k+1; plus
- *   3. PRACTICE, only while (2) cannot yet fill the day — see below.
+ * A day's work is `dailyLimit` steps at EVERY rung:
+ *   1. at the first rung, up to `dailyLimit` brand-new sentences;
+ *   2. at each rung above it, sentences that cleared the rung below on an
+ *      EARLIER day and have not yet cleared this one — oldest first, at most
+ *      `dailyLimit`; any beyond that stay owed for a later day; then
+ *   3. PRACTICE, only while (2) cannot fill that rung — see below.
  *
  * The "earlier day" test is what enforces one-rung-per-day. Without it a
  * sentence drilled at `repetition` this morning would immediately reappear as
@@ -28,13 +29,13 @@ import { chainFor } from './ladder.mjs';
  * first sitting being the emptiest is the wrong way round for a habit that has
  * to survive its own beginning.
  *
- * So a short day is topped up by walking TODAY'S OWN new set up the remaining
- * rungs as practice:
+ * So each rung graduates cannot fill is topped up with TODAY'S OWN new set as
+ * practice (one sentence a day, four rungs):
  *
  *              CREDITED                   PRACTICE
  *   Day 1  s1@r1                      s1@r2 r3 r4
- *   Day 2  s2@r1 s1@r2                s2@r2 r3
- *   Day 3  s3@r1 s2@r2 s1@r3          s3@r2
+ *   Day 2  s2@r1 s1@r2                s2@r3 r4
+ *   Day 3  s3@r1 s2@r2 s1@r3          s3@r4
  *   Day 4  s4@r1 s3@r2 s2@r3 s1@r4        --      <- steady
  *
  * It turns itself off: there is no warm-up flag, no day-number test and no
@@ -115,6 +116,10 @@ function clearedIndex(log) {
  * @param {string[]} [args.rungChain] enrollment-owned credit chain; device
  *        capabilities still remove rungs it cannot serve
  * @param {object}   [args.capabilities] {microphone, textInput[]} — filters the ladder
+ * @param {boolean}  [args.voiceAnswer] whether this deployment can transcribe
+ *        speech, which is what makes the microphone an alternative to typing
+ *        the interpretation. Same default as the ladder's — a queue built
+ *        without it is short a rung, never dead-ended on one.
  * @param {{source: string, target: string}} args.languages - the corpus role binding
  * @param {Set<number>} [args.playable] - sequences that have audio; omit for "all".
  *        A rung's prompt is audio, so a sentence without it cannot be drilled —
@@ -126,10 +131,11 @@ export function buildDayQueue({
   log = [], day, dailyLimit, corpusSize, capabilities = {}, languages, playable = null,
   admission = null,
   rungChain = null,
+  voiceAnswer = false,
 }) {
   const canDrill = (seq) => playable === null || playable.has(seq);
   const { byRung: cleared, everSeen, practiced } = clearedIndex(log);
-  const availableChain = chainFor(capabilities, languages);
+  const availableChain = chainFor(capabilities, languages, { voiceAnswer });
   const chain = Array.isArray(rungChain)
     ? rungChain.filter((rung) => availableChain.includes(rung))
     : availableChain;
@@ -178,49 +184,56 @@ export function buildDayQueue({
     admitted += 1;
   }
 
-  // --- 2. Graduates --------------------------------------------------------
-  const edges = chain.slice(0, -1).map((from, i) => ({ from, to: chain[i + 1] }));
-  for (const { from, to } of edges) {
-    const fromCleared = cleared.get(from) ?? new Map();
+  // --- 2 + 3. Every other rung: graduates, then the fill --------------------
+  // EVERY RUNG HOLDS THE SAME DAY: `dailyLimit` steps at each, the number the
+  // entry rung admits — which is what the enrollment's lessonSize already
+  // means. The fill used to top up the day's TOTAL instead, walking rungs in
+  // order, and a pipeline that did not match the limit came out lopsided: a
+  // learner whose first day ran at five a day and whose enrollment now says
+  // three got 3 repetitions, 8 dictations, 1 recording and no interpretation
+  // (2026-09-12). Now each rung is filled on its own, so the shape is the same
+  // on every rung whatever the log holds.
+  //
+  // A rung takes its graduates oldest first. Any beyond the limit are not
+  // dropped — they stay owed, graduating on a later day — so a pace change
+  // delays a sentence rather than losing it. One finished today stays on the
+  // rung, so finishing a step never pulls a new one in behind it.
+  const todaysSet = [...enteredToday, ...admittedSeqs].sort((a, b) => a - b);
+  const oldestFirst = (a, b) => a.clearedOn - b.clearedOn || a.seq - b.seq;
+  for (let i = 1; i < chain.length; i += 1) {
+    const to = chain[i];
+    const fromCleared = cleared.get(chain[i - 1]) ?? new Map();
     const toCleared = cleared.get(to) ?? new Map();
-    const due = [];
+    const finished = [];
+    const owed = [];
     for (const [seq, clearedOn] of fromCleared) {
       if (clearedOn >= day) continue;            // cleared today — not yet due
       if (!canDrill(seq)) continue;              // no audio: history, not work
       const graduatedOn = toCleared.get(seq);
-      if (graduatedOn === undefined) due.push({ seq, done: false });
-      else if (graduatedOn === day) due.push({ seq, done: true });
+      if (graduatedOn === undefined) owed.push({ seq, clearedOn });
+      else if (graduatedOn === day) finished.push({ seq, clearedOn });
       // graduatedOn < day → already climbed past this rung; not today's work
     }
-    due.sort((a, b) => a.seq - b.seq);
-    for (const item of due) queue.push({ seq: item.seq, rung: to, done: item.done });
-  }
+    finished.sort(oldestFirst);
+    owed.sort(oldestFirst);
 
-  // --- 3. Warm-up fill -----------------------------------------------------
-  // A full day is `dailyLimit` sentences at every rung, which is what the
-  // enrollment's lessonSize already means — so the target needs no parameter of
-  // its own. Short of it, today's own new set climbs the remaining rungs as
-  // practice. Once graduates fill the day this loop adds nothing and stops
-  // mattering, with no flag to turn off.
-  const target = dailyLimit * chain.length;
-  const todaysSet = [...enteredToday, ...admittedSeqs].sort((a, b) => a - b);
-  if (queue.length < target && todaysSet.length > 0) {
-    const held = new Set(queue.map((entry) => `${entry.rung}:${entry.seq}`));
-    for (const rung of chain.slice(1)) {
-      if (queue.length >= target) break;
-      for (const seq of todaysSet) {
-        if (queue.length >= target) break;
-        const key = `${rung}:${seq}`;
-        if (held.has(key)) continue;
-        held.add(key);
-        queue.push({
-          seq,
-          rung,
-          done: practiced.has(`${rung}:${seq}:${day}`),
-          practice: true,
-        });
-      }
+    const rung = [
+      ...finished.map(({ seq }) => ({ seq, rung: to, done: true })),
+      ...owed.slice(0, Math.max(0, dailyLimit - finished.length))
+        .map(({ seq }) => ({ seq, rung: to, done: false })),
+    ];
+
+    // Short of the limit — the cold start, or a pipeline drained by a break —
+    // today's own new set climbs this rung as practice. It turns itself off
+    // once graduates fill the rung, with no flag or day-number test.
+    const held = new Set(rung.map((entry) => entry.seq));
+    for (const seq of todaysSet) {
+      if (rung.length >= dailyLimit) break;
+      if (held.has(seq)) continue;
+      held.add(seq);
+      rung.push({ seq, rung: to, done: practiced.has(`${to}:${seq}:${day}`), practice: true });
     }
+    queue.push(...rung);
   }
 
   return queue;

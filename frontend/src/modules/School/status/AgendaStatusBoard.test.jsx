@@ -385,7 +385,7 @@ describe('AgendaStatusBoard render', () => {
   // anything. jsdom cannot see the colour or the glow — the harness screenshot
   // gate covers those — so the contract pinned here is the ATTRIBUTE the
   // stylesheet hangs both on.
-  it('flags a fully cleared day, and the CHIP REPLACES the count', async () => {
+  it('flags a fully cleared day, and prints nothing under the pins', async () => {
     schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [
       { learnerId: 'learner1', sessions: [
         { unitId: 'civ.01', subject: 'civilization', outcome: { result: 'passed' } },
@@ -400,8 +400,18 @@ describe('AgendaStatusBoard render', () => {
       ],
     } });
     render(<AgendaStatusBoard kids={[{ id: 'learner1', name: 'Learner One' }]} day="2026-08-24" />);
-    await waitFor(() => expect(screen.getByTestId('agenda-status-board')).toBeTruthy());
-    const row = screen.getByTestId('agenda-status-board').querySelector('.school-status-board__row');
+    // WAIT ON THE THING BEING ASSERTED, not on the board existing. The board
+    // renders as soon as it has rows — `loading` ones included — and this test
+    // needs TWO independent fetches to have landed. Waiting for the element
+    // and then reading `data-complete` synchronously left a window where a
+    // still-loading row was read as not-complete; it opened wide enough to
+    // fail under a full parallel suite run and never alone, which is what a
+    // flake looks like from the outside.
+    const row = await waitFor(() => {
+      const el = screen.getByTestId('agenda-status-board').querySelector('.school-status-board__row');
+      expect(el?.dataset.complete).toBe('true');
+      return el;
+    });
     expect(row.dataset.complete).toBe('true');
     // Nothing is printed under the pins at 100%: the row is green end to end
     // — nameplate, card, every disc — and a chip saying "DONE" underneath was a
