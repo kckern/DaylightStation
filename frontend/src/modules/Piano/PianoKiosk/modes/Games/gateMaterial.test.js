@@ -461,3 +461,61 @@ describe('keysInstance — reps make a sight-reading drill a drill', () => {
     }
   });
 });
+
+describe('keysInstance — sets repeat a whole shape, so an arpeggio is a 3x3 too', () => {
+  const ARPEGGIO_3x3 = { kind: 'keys', notes: 3, arrangement: 'sequence', sets: 3, reps: 3 };
+  const midisOf = (inst) => inst.events.map((ev) => ev.notes.map((note) => note.midi));
+
+  it('deals three different arpeggios, each played three times through', () => {
+    const inst = keysInstance(ARPEGGIO_3x3, 0);
+    const midis = midisOf(inst).map(([midi]) => midi);
+    expect(midis).toHaveLength(27);
+    const setsOf = [0, 1, 2].map((s) => midis.slice(s * 9, s * 9 + 9));
+    for (const set of setsOf) {
+      expect(set.slice(3, 6)).toEqual(set.slice(0, 3));
+      expect(set.slice(6, 9)).toEqual(set.slice(0, 3));
+      expect(new Set(set.slice(0, 3)).size).toBe(3);
+    }
+    expect(new Set(setsOf.map((set) => set.slice(0, 3).join('.'))).size).toBe(3);
+    expect(inst.ordering).toBe('strict');
+    expect(inst.deck).toEqual({ sets: 3, reps: 3, unit: 3 });
+  });
+
+  it('keeps every shape inside one octave, so each rep can carry its staff', () => {
+    for (let pickIndex = 0; pickIndex < 14; pickIndex += 1) {
+      const midis = midisOf(keysInstance(ARPEGGIO_3x3, pickIndex)).map(([midi]) => midi);
+      for (let s = 0; s < 3; s += 1) {
+        const shape = midis.slice(s * 9, s * 9 + 3);
+        expect(Math.max(...shape) - Math.min(...shape), `pick ${pickIndex} set ${s}`).toBeLessThanOrEqual(12);
+      }
+    }
+  });
+
+  it('gives every card its own id and names the sets in the instance id', () => {
+    const inst = keysInstance(ARPEGGIO_3x3, 2);
+    expect(new Set(inst.events.map((ev) => ev.id)).size).toBe(27);
+    expect(inst.id).toBe('keys/lit@notes=3,arrangement=sequence,sets=3,reps=3,pick=2');
+  });
+
+  it('deals dyad sets as ORDERED chord events, never one held chord', () => {
+    const inst = keysInstance({ kind: 'keys', notes: 2, arrangement: 'together', sets: 3, reps: 3 }, 0);
+    expect(inst.events).toHaveLength(9);
+    for (const event of inst.events) expect(event.notes).toHaveLength(2);
+    expect(inst.ordering).toBe('strict');
+    expect(inst.deck).toEqual({ sets: 3, reps: 3, unit: 1 });
+  });
+
+  it('leaves a rung that names no sets exactly as it was', () => {
+    const deck = keysInstance({ kind: 'keys', notes: 3, arrangement: 'sequence', reps: 3 }, 0);
+    expect(deck.deck).toBeUndefined();
+    expect(deck.id).toBe('keys/lit@notes=3,arrangement=sequence,reps=3,pick=0');
+    expect(keysInstance({ kind: 'keys', notes: 2, arrangement: 'together' }, 0).ordering).toBe('any');
+  });
+
+  it('refuses a nonsense set count rather than building an empty deck', () => {
+    const plain = keysInstance({ kind: 'keys', notes: 3, arrangement: 'sequence', reps: 3 }, 0);
+    for (const sets of [0, -1, 'lots', null, undefined]) {
+      expect(keysInstance({ kind: 'keys', notes: 3, arrangement: 'sequence', reps: 3, sets }, 0)).toEqual(plain);
+    }
+  });
+});

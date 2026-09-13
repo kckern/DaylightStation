@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { deckSets, deckProjection } from './deckProgress.js';
+import { deckSets, deckProjection, deckWindow } from './deckProgress.js';
 import { keysInstance } from '../Games/gateMaterial.js';
 
 /**
@@ -78,5 +78,53 @@ describe('where the child is in the deck', () => {
     expect(standing(instance, -5).steps[0].pass_count).toBe(0);
     expect(standing(instance, NaN).steps[0].pass_count).toBe(0);
     expect(standing(instance, undefined).steps[0].pass_count).toBe(0);
+  });
+});
+
+describe('a deck whose rep is a whole arpeggio', () => {
+  const instance = keysInstance({ kind: 'keys', notes: 3, arrangement: 'sequence', sets: 3, reps: 3 }, 0);
+
+  it('reads three sets of three reps off the declared deck', () => {
+    expect(deckSets(instance)).toHaveLength(3);
+    expect(standing(instance, 0).steps.map((s) => s.requirement.required_passes)).toEqual([3, 3, 3]);
+  });
+
+  it('banks a rep only when the whole arpeggio has been played', () => {
+    expect(standing(instance, 2).steps[0].pass_count).toBe(0);
+    expect(standing(instance, 3).steps[0].pass_count).toBe(1);
+    expect(standing(instance, 8).steps[0].pass_count).toBe(2);
+    expect(standing(instance, 9).steps[0]).toMatchObject({ passed: true, pass_count: 3 });
+    expect(standing(instance, 9).steps[1].state).toBe('current');
+    expect(standing(instance, 27).complete).toBe(true);
+  });
+
+  it('does not believe a declaration that does not add up to the events', () => {
+    const lying = { ...instance, deck: { sets: 3, reps: 3, unit: 2 } };
+    expect(deckSets(lying)).toHaveLength(27);
+  });
+});
+
+describe('what of a deck is on screen', () => {
+  const instance = keysInstance({ kind: 'keys', notes: 3, arrangement: 'sequence', sets: 3, reps: 3 }, 0);
+
+  it('shows only the rep the cursor is in, with the cursor inside it', () => {
+    const first = deckWindow(instance, 0);
+    expect(first.events).toEqual(instance.events.slice(0, 3));
+    expect(first.cursorIndex).toBe(0);
+    const later = deckWindow(instance, 13);
+    expect(later.events).toEqual(instance.events.slice(12, 15));
+    expect(later.cursorIndex).toBe(1);
+  });
+
+  it('holds the last rep, fully played, once the deck is finished', () => {
+    const done = deckWindow(instance, 27);
+    expect(done.events).toEqual(instance.events.slice(24, 27));
+    expect(done.cursorIndex).toBe(3);
+  });
+
+  it('returns a one-card deck and an undeclared run whole', () => {
+    const sightread = keysInstance(SIGHTREAD_3x3, 0);
+    expect(deckWindow(sightread, 4)).toEqual({ events: sightread.events, cursorIndex: 4 });
+    expect(deckWindow(null, 0)).toEqual({ events: [], cursorIndex: 0 });
   });
 });

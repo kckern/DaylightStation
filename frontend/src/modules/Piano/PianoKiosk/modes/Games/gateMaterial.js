@@ -70,6 +70,11 @@ function spreadsFitting(start, notes) {
 }
 /** How many keys one ask may light. Single note, dyad, triad — no further. */
 const MAX_REPS = 8;
+/**
+ * How many distinct shapes one deck may deal. Four stays under the seven start
+ * keys a shape is drawn from, so every set of a deck is a different ask.
+ */
+const MAX_SETS = 4;
 const MAX_LIT_KEYS = 3;
 const ROOT_PITCH_CLASSES = Object.freeze({
   C: 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, F: 5, 'F#': 6, Gb: 6,
@@ -102,37 +107,61 @@ export function keysInstance(spec, pickIndex = 0) {
   const notes = Number.isFinite(requested) && requested >= 1 ? Math.min(requested, MAX_LIT_KEYS) : 1;
   const arrangement = spec?.arrangement === 'sequence' ? 'sequence' : 'together';
   const index = Math.abs(Math.trunc(Number(pickIndex)) || 0);
-  const start = index % WHITE_KEYS_IN_ONE_OCTAVE;
-  const spreads = spreadsFitting(start, notes);
-  const spread = notes > 1 ? spreads[index % spreads.length] : 0;
-  const midis = Array.from({ length: notes }, (_, i) => WHITE_KEYS[start + (i * spread)]);
+  const shapeAt = (pick) => {
+    const start = pick % WHITE_KEYS_IN_ONE_OCTAVE;
+    const spreads = spreadsFitting(start, notes);
+    const spread = notes > 1 ? spreads[pick % spreads.length] : 0;
+    return Array.from({ length: notes }, (_, i) => WHITE_KEYS[start + (i * spread)]);
+  };
+
+  const requestedReps = Math.floor(Number(spec?.reps));
+  const reps = Number.isFinite(requestedReps) && requestedReps >= 1 ? Math.min(requestedReps, MAX_REPS) : 1;
+  const requestedSets = Math.floor(Number(spec?.sets));
+  const sets = Number.isFinite(requestedSets) && requestedSets >= 1 ? Math.min(requestedSets, MAX_SETS) : null;
+
+  const notesOf = (list) => list.map((midi) => ({ midi, hand: 'right' }));
+  let events;
+  let deck = null;
+  if (sets) {
+    // SETS deal distinct shapes, and REPS then repeat each WHOLE shape — an
+    // arpeggio played three times through, then a different arpeggio. Without
+    // this a three-key rung was one pass of three cards: a preschooler moved
+    // off the nine-card sight-reading deck onto `keys-3` and was asked for a
+    // single arpeggio, once (2026-09-13). A chord shape is one event, so a
+    // `together` deck is ordered chord events rather than one held chord.
+    const shapes = Array.from({ length: sets }, (_, s) => shapeAt(index + s));
+    events = shapes.flatMap((shape, s) => Array.from({ length: reps }, (_, r) => (
+      arrangement === 'sequence'
+        ? shape.map((midi, n) => ({ id: `lit-s${s + 1}-r${r + 1}-${n + 1}`, value: 'quarter', notes: notesOf([midi]) }))
+        : [{ id: `lit-s${s + 1}-r${r + 1}`, value: 'quarter', notes: notesOf(shape) }]
+    )).flat());
+    deck = { sets, reps, unit: arrangement === 'sequence' ? notes : 1 };
+  } else {
+    const midis = shapeAt(index);
+    // REPS repeat each note of a sequence CONSECUTIVELY — note 1 three times,
+    // then note 2 three times — rather than repeating the whole run. That is what
+    // makes a sight-reading drill a drill: the same card comes back while it is
+    // still fresh, and the pitch changes only once it has been found three times.
+    // Meaningless on a `together` ask (one event by definition), and ignored there.
+    events = arrangement === 'sequence'
+      ? midis.flatMap((midi, i) => Array.from({ length: reps }, (_, r) => ({
+        id: reps > 1 ? `lit-${i + 1}-${r + 1}` : `lit-${i + 1}`,
+        value: 'quarter',
+        notes: notesOf([midi]),
+      })))
+      : [{ id: 'lit-1', value: 'quarter', notes: notesOf(midis) }];
+  }
 
   // `ordering` follows the arrangement, and the spec may say so explicitly.
   // A chord graded in order would fail a child for rolling it; a sequence
-  // graded out of order would not be a sequence.
+  // graded out of order would not be a sequence. Several chord events are a
+  // sequence of chords, and only an ordered attempt can walk them.
   const ordering = spec?.ordering === 'strict' || spec?.ordering === 'any'
     ? spec.ordering
-    : (arrangement === 'sequence' ? 'strict' : 'any');
-
-  // REPS repeat each note of a sequence CONSECUTIVELY — note 1 three times,
-  // then note 2 three times — rather than repeating the whole run. That is what
-  // makes a sight-reading drill a drill: the same card comes back while it is
-  // still fresh, and the pitch changes only once it has been found three times.
-  // Meaningless on a `together` ask (one event by definition), and ignored there.
-  const requestedReps = Math.floor(Number(spec?.reps));
-  const reps = Number.isFinite(requestedReps) && requestedReps >= 1 ? Math.min(requestedReps, MAX_REPS) : 1;
-
-  const notesOf = (list) => list.map((midi) => ({ midi, hand: 'right' }));
-  const events = arrangement === 'sequence'
-    ? midis.flatMap((midi, i) => Array.from({ length: reps }, (_, r) => ({
-      id: reps > 1 ? `lit-${i + 1}-${r + 1}` : `lit-${i + 1}`,
-      value: 'quarter',
-      notes: notesOf([midi]),
-    })))
-    : [{ id: 'lit-1', value: 'quarter', notes: notesOf(midis) }];
+    : (arrangement === 'sequence' || events.length > 1 ? 'strict' : 'any');
 
   return {
-    id: `keys/lit@notes=${notes},arrangement=${arrangement}${reps > 1 ? `,reps=${reps}` : ''},pick=${index}`,
+    id: `keys/lit@notes=${notes},arrangement=${arrangement}${sets ? `,sets=${sets}` : ''}${reps > 1 ? `,reps=${reps}` : ''},pick=${index}`,
     title: notes === 1 ? 'One key' : `${notes} keys`,
     form: 'keys',
     ordering,
@@ -147,6 +176,10 @@ export function keysInstance(spec, pickIndex = 0) {
     axes: {},
     staff: 'treble',
     events,
+    // The deck's shape, stated rather than re-inferred: repeats of a whole
+    // arpeggio are not consecutive identical cards, so nothing reading the
+    // events alone could find the sets in them. See deckProgress.js.
+    ...(deck ? { deck } : {}),
   };
 }
 

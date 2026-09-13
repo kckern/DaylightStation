@@ -124,7 +124,8 @@
 
   // ─── Action Staves (diagonal from player) ────────────────────
   &__staff-above,
-  &__staff-below {
+  &__staff-below,
+  &__staff-shoot {
     position: absolute;
     width: 130px;
     z-index: 20;
@@ -143,6 +144,12 @@
 
   &__staff-below {
     bottom: 2%;
+    height: 28%;
+  }
+
+  // Beside the jump staff, dropped a little so the two read as a pair, not a row
+  &__staff-shoot {
+    top: 9%;
     height: 28%;
   }
 

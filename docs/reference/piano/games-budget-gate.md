@@ -508,6 +508,12 @@ The gate asks for material through a provider seam that names four kinds:
   (`MAX_ASK_SPAN`), rather than chosen first and found illegible afterwards. A third of every
   three-key ask used to arrive as a bare keyboard filling the screen, with nothing about the ask
   to explain why this launch had notation and the last one did not.
+
+  **`reps` and `sets` are two different repeats.** `reps` alone repeats each note back to back —
+  the sight-reading deck's three pitches, three cards each. `sets` deals that many distinct shapes
+  and `reps` then repeats each whole shape, so `{ notes: 3, arrangement: sequence, sets: 3, reps: 3 }`
+  is three arpeggios played three times through, and a `together` rung with `sets` becomes ordered
+  chord events rather than one held chord.
 - **`exercise`** — an instance from the exercise bank. A level naming `roots` addresses
   the scales bank by id directly (`scales/modes@root=G,…`), because that bank expands over
   a root axis and needs no catalog walk to be found. A level naming only a `collection`
@@ -573,6 +579,14 @@ draw, because the pills say where you are and the stage says what to play. A rea
 clusters carry **no label**: naming the pitch under a staff a child is being asked to read
 hands them the answer. A host-supplied drill projection always wins over an inferred one —
 it knows a standing that spans the whole study day.
+
+**A `keys` rung with `sets` states its shape outright.** `sets: 3, reps: 3` deals three
+distinct shapes and repeats each WHOLE shape three times — three arpeggios played three times
+through, or three dyads struck three times each — where `reps` alone repeats each note back to
+back. Repeats of a whole arpeggio are not consecutive identical cards, so the material records
+`{ sets, reps, unit }` and the pills read that instead of the events: a rep banks when its last
+key lands, never partway through. The stage shows only the rep being played, so the lit keys,
+the badge row and the reinforcement staff are one shape rather than all nine of them at once.
 
 **A cued run states the real note rate.** The count-in is a quarter-note pulse, and the
 exercise bank writes its scales in eighths, so "play at that speed" was false for every cued
@@ -665,14 +679,14 @@ gameGate:
       tier: 0
       material:
         - { kind: keys, notes: 1 }
-    - id: keys-2
+    - id: keys-2            # three dyads, three times each
       tier: 1
       material:
-        - { kind: keys, notes: 2, arrangement: together }
-    - id: keys-3
+        - { kind: keys, notes: 2, arrangement: together, sets: 3, reps: 3 }
+    - id: keys-3            # three arpeggios, each played three times through
       tier: 1
       material:
-        - { kind: keys, notes: 3, arrangement: sequence }
+        - { kind: keys, notes: 3, arrangement: sequence, sets: 3, reps: 3 }
     - id: L1                # C major, one octave
       tier: 2
       material:
