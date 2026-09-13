@@ -15,6 +15,7 @@ function harness({ saveMode = 'battery' } = {}) {
     }),
     getRomResource: vi.fn(() => ({ id: 'rom' })),
     getArtResource: vi.fn(() => ({ id: 'art' })),
+    getSystemLogoResource: vi.fn(() => ({ id: 'logo' })),
   };
   const saveRepository = {
     getSaveResource: vi.fn(), storeSaveArtifact: vi.fn(), deleteSave: vi.fn(),
@@ -38,6 +39,8 @@ describe('EmulatorResourceService', () => {
     expect(assetRepository.getRomResource).toHaveBeenCalledWith({ system: 'gb', gameId: 'game' });
     expect(service.getArtResource({ system: 'gb', gameId: 'game', kind: 'cover' })).toEqual({ id: 'art' });
     expect(assetRepository.getArtResource).toHaveBeenCalledWith({ system: 'gb', gameId: 'game', kind: 'cover' });
+    expect(service.getSystemLogoResource({ system: 'gb' })).toEqual({ id: 'logo' });
+    expect(assetRepository.getSystemLogoResource).toHaveBeenCalledWith({ system: 'gb' });
   });
 
   test('falls back missing browser locales to localization/en.json', () => {

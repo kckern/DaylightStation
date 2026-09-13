@@ -106,24 +106,46 @@ describe('resolveConsoles', () => {
   it('falls back to one real tab per system when none configured', () => {
     const out = resolveConsoles({ consoles: [] }, systems);
     expect(out).toEqual([
-      { system: 'gb', label: 'Game Boy', placeholder: false },
-      { system: 'nes', label: 'NES', placeholder: false },
+      { system: 'gb', label: 'Game Boy', placeholder: false, logo: null },
+      { system: 'nes', label: 'NES', placeholder: false, logo: null },
     ]);
   });
 
   it('resolves real consoles and blank placeholders in order', () => {
     const out = resolveConsoles({ consoles: [{ system: 'gb' }, {}, { system: 'unknown' }, { label: 'Soon' }] }, systems);
     expect(out).toEqual([
-      { system: 'gb', label: 'Game Boy', placeholder: false },
-      { system: null, label: null, placeholder: true },
-      { system: null, label: null, placeholder: true },
-      { system: null, label: 'Soon', placeholder: true },
+      { system: 'gb', label: 'Game Boy', placeholder: false, logo: null },
+      { system: null, label: null, placeholder: true, logo: null, comingSoon: false },
+      { system: null, label: null, placeholder: true, logo: null, comingSoon: false },
+      // A named placeholder is a console the house owns but has no games on.
+      { system: null, label: 'Soon', placeholder: true, logo: null, comingSoon: true },
     ]);
   });
 
   it('honors an explicit label override on a real console', () => {
     const out = resolveConsoles({ consoles: [{ system: 'gb', label: 'GameBoy™' }] }, systems);
-    expect(out[0]).toEqual({ system: 'gb', label: 'GameBoy™', placeholder: false });
+    expect(out[0]).toEqual({ system: 'gb', label: 'GameBoy™', placeholder: false, logo: null });
+  });
+
+  it('marks a console as having a logo only when its manifest declared one', () => {
+    const withArt = { gb: { label: 'Game Boy', logo: 'logo.png' }, nes: { label: 'NES' } };
+    const out = resolveConsoles({ consoles: [{ system: 'gb' }, { system: 'nes' }] }, withArt);
+    expect(out.map((c) => c.logo)).toEqual(['gb', null]);
+  });
+
+  it('resolves an "all" slot as a real tab with no system behind it', () => {
+    const out = resolveConsoles({ consoles: [{ all: true }, { system: 'gb' }] }, systems);
+    expect(out[0]).toEqual({ system: null, label: 'All Games', all: true, placeholder: false, logo: null });
+    // It must not be mistaken for a blank slot: a placeholder renders nothing.
+    expect(out[0].placeholder).toBe(false);
+    expect(out[1].system).toBe('gb');
+  });
+
+  it('keeps a named placeholder in the row rather than showing a gap', () => {
+    const out = resolveConsoles({ consoles: [{ label: 'Nintendo 64', logo: 'n64' }] }, systems);
+    expect(out[0].label).toBe('Nintendo 64');
+    expect(out[0].comingSoon).toBe(true);
+    expect(out[0].logo).toBe('n64');
   });
 
   it('buildCatalog attaches resolved consoles', () => {

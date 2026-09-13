@@ -298,3 +298,89 @@ describe('presentation passthrough (bezel hotspots + overlays)', () => {
     expect(resolved.presentation.overlays.map((o) => o.id).sort()).toEqual(['badges', 'hr']);
   });
 });
+
+describe('regions over the picture', () => {
+  const screen = { x: 20, y: 10, width: 60, height: 80 };   // picture: x 20..80, y 10..90
+  const load = (presentation, logger) => loadEmulatorConfig({
+    emulationDir: '/e',
+    readManifests: () => [{ system: 'genesis', manifest: {
+      system: 'genesis', label: 'Genesis', core: { ejs_core: 'segaMD' },
+      games: [{ id: 'g', rom: 'r.bin' }], presentation,
+    } }],
+    logger,
+  });
+  const warned = (logger) => (logger.warn.mock.calls || [])
+    .filter((c) => c[0] === 'emulator.config.region_over_screen')
+    .map((c) => `${c[1].kind}:${c[1].id}`);
+
+  const mkLogger = () => ({ warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() });
+
+  it('warns about an overlay that has crept onto the game', () => {
+    const logger = mkLogger();
+    load({ screen, overlays: [{ id: 'coins', region: { x: 33, y: 85, width: 11, height: 10 } }] }, logger);
+    expect(warned(logger)).toEqual(['overlay:coins']);
+  });
+
+  it('stays quiet for regions in the margin', () => {
+    const logger = mkLogger();
+    load({ screen, overlays: [{ id: 'timer', region: { x: 0, y: 0, width: 17, height: 9 } }] }, logger);
+    expect(warned(logger)).toEqual([]);
+  });
+
+  it('ignores a decorative hotspot, which renders no target at all', () => {
+    // HotspotLayer only draws hotspots carrying an action or a `do:` block.
+    // Several documented-but-inert regions already sit a hair over a screen
+    // edge; warning about them would make this alarm permanent and useless.
+    const logger = mkLogger();
+    load({ screen, hotspots: [{ id: 'stripe', region: { x: 30, y: 8, width: 7, height: 5 } }] }, logger);
+    expect(warned(logger)).toEqual([]);
+  });
+
+  it('does warn about an ACTIONABLE hotspot on the game', () => {
+    const logger = mkLogger();
+    load({ screen, hotspots: [{ id: 'exit', action: 'exit', region: { x: 30, y: 40, width: 7, height: 5 } }] }, logger);
+    expect(warned(logger)).toEqual(['hotspot:exit']);
+  });
+
+  it('says nothing when a system declares no screen', () => {
+    const logger = mkLogger();
+    load({ overlays: [{ id: 'x', region: { x: 0, y: 0, width: 10, height: 10 } }] }, logger);
+    expect(warned(logger)).toEqual([]);
+  });
+});
+
+describe('aperture vs drawn screen', () => {
+  const mkLogger = () => ({ warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() });
+  const load = (presentation, logger) => loadEmulatorConfig({
+    emulationDir: '/e',
+    readManifests: () => [{ system: 'genesis', manifest: {
+      system: 'genesis', label: 'G', core: { ejs_core: 'segaMD' },
+      games: [{ id: 'g', rom: 'r.bin' }], presentation,
+    } }],
+    logger,
+  });
+  const warned = (l) => (l.warn.mock.calls || []).filter((c) => c[0] === 'emulator.config.region_over_screen').length;
+
+  it('judges regions against the visible hole, not the overhanging picture', () => {
+    // The Genesis draws its picture wider than the hole so the bezel's notches
+    // fall on it. A chip on the console body sits over that overhang — and over
+    // the chrome that hides it — which is correct, not a fault.
+    const logger = mkLogger();
+    load({
+      screen: { x: 13.958, y: 1.944, width: 72.083, height: 96.111 },
+      aperture: { x: 18.281, y: 1.944, width: 63.438, height: 96.111 },
+      overlays: [{ id: 'timer', region: { x: 4.167, y: 17.593, width: 11.979, height: 11.111 } }],
+    }, logger);
+    expect(warned(logger)).toBe(0);
+  });
+
+  it('still catches a chip inside the hole itself', () => {
+    const logger = mkLogger();
+    load({
+      screen: { x: 13.958, y: 1.944, width: 72.083, height: 96.111 },
+      aperture: { x: 18.281, y: 1.944, width: 63.438, height: 96.111 },
+      overlays: [{ id: 'coins', region: { x: 40, y: 40, width: 10, height: 10 } }],
+    }, logger);
+    expect(warned(logger)).toBe(1);
+  });
+});

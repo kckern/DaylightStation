@@ -96,12 +96,19 @@
 
   // Hide EmulatorJS's native on-screen UI — the emulator is driven by gamepad
   // input + hooks/api, not its menu bar / virtual gamepad / context menu.
+  // `onscreen_controls: false` in a system manifest. EmulatorJS's own UI is
+  // hidden wholesale: this console is driven by the bezel hotspots and a
+  // gamepad, and two competing menus on one screen is worse than none.
   &--no-osd {
     .ejs_menu_bar,
     .ejs_menu_bar_hidden,
     .ejs_virtualGamepad_parent,
     .ejs_context_menu,
-    .ejs_popup_container { display: none !important; }
+    .ejs_popup_container,
+    // The hamburger that opens the menu bar. It was missed here, so it sat in
+    // the corner opening a menu that is `display: none` — a button that visibly
+    // did nothing when pressed.
+    .ejs_virtualGamepad_open { display: none !important; }
   }
 
   // Bezel control surface — environmental overlays + interactive hotspots.

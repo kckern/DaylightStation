@@ -130,13 +130,34 @@ export function resolveConsoles(cfg, systems = {}) {
       system,
       label: s?.label ?? system,
       placeholder: false,
+      logo: s?.logo ? system : null,
     }));
   }
   return configured.map((slot) => {
+    // The "all" slot is a real tab with no system filter behind it: every game
+    // in the arcade, in one shelf. It is declared in config like any other tab
+    // so its position among the consoles stays the household's choice.
+    if (slot?.all) {
+      return { system: null, label: slot.label || 'All Games', all: true, placeholder: false, logo: slot.logo ?? null };
+    }
     const system = slot?.system ?? null;
     if (system && system in systems) {
-      return { system, label: slot.label || systems[system].label || system, placeholder: false };
+      return {
+        system,
+        label: slot.label || systems[system].label || system,
+        placeholder: false,
+        logo: systems[system].logo ? system : null,
+      };
     }
-    return { system: null, label: slot?.label ?? null, placeholder: true };
+    // A console the house owns art for but has no games on yet. It keeps its
+    // name and its place in the row rather than showing as an unexplained gap,
+    // and says plainly that there is nothing on it.
+    return {
+      system: null,
+      label: slot?.label ?? null,
+      placeholder: true,
+      logo: slot?.logo ?? null,
+      comingSoon: !!slot?.label,
+    };
   });
 }

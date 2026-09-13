@@ -49,6 +49,11 @@ export class EmulatorResourceService {
     return this.#assets.getRomResource({ system, gameId });
   }
 
+  /** The console's wordmark for its tab (system-scoped; see the repository). */
+  getSystemLogoResource({ system }) {
+    return this.#assets.getSystemLogoResource({ system });
+  }
+
   getArtResource({ system, gameId, kind }) {
     return this.#assets.getArtResource({ system, gameId, kind });
   }

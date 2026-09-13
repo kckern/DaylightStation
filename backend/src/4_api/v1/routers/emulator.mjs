@@ -151,7 +151,10 @@ export function createEmulatorRouter({
             bezelUrl: `/api/v1/emulator/art/${game.system}/${game.id}/bezel`,
           };
         });
-      res.json({ ...library, games });
+      const consoles = (library.consoles || []).map((c) => (
+        c.logo ? { ...c, logoUrl: `/api/v1/emulator/logo/${c.logo}` } : c
+      ));
+      res.json({ ...library, consoles, games });
     } catch (err) {
       if (/unsafe path segment/.test(err.message)) return res.status(400).json({ error: 'bad request' });
       logger.error('emulator.library.error', { error: err.message });
@@ -176,6 +179,29 @@ export function createEmulatorRouter({
       if (err.code === 'ENOENT') return res.status(404).json({ error: 'not found' });
       logger.error('emulator.rom.error', { system, gameId, error: err.message });
       sendInternalError(res, { error: 'internal error' });
+    }
+  });
+
+  // ---- GET /logo/:system ---------------------------------------------------
+  // The console's wordmark for its tab. System-scoped on purpose: a console the
+  // house owns but has no games on yet still gets its name in the row.
+  router.get('/logo/:system', (req, res) => {
+    let system;
+    try {
+      system = safeSegment(req.params.system);
+    } catch {
+      return res.status(400).json({ error: 'bad request' });
+    }
+    try {
+      const resource = emulatorResources.getSystemLogoResource({ system });
+      // Art can be swapped under a stable name, so a moderate TTL, as for covers.
+      sendBinary(res, resource, { range: null, cache: MODERATE_CACHE });
+    } catch (err) {
+      if (err.code === 'ENOENT' || /no logo|unknown/.test(err.message)) {
+        return res.status(404).json({ error: 'not found' });
+      }
+      logger.error('emulator.logo.error', { system, error: err.message });
+      throw err;
     }
   });
 
