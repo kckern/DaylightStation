@@ -60,7 +60,17 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   const shellExit = dismiss || clear;
   const rootRef = useRef(null);
   const creation = useRef(null);
-  const requested = definitionId || param || appPath || '';
+  const [launch] = useState(() => {
+    const raw = definitionId || param || appPath || '';
+    const queryIndex = raw.indexOf('?');
+    const query = new URLSearchParams(queryIndex < 0 ? window.location.search : raw.slice(queryIndex + 1));
+    return {
+      definition: queryIndex < 0 ? raw : raw.slice(0, queryIndex),
+      autostart: query.get('autostart') === 'true',
+      participants: (query.get('participants') || '').split(',').map(id => id.trim()).filter(Boolean),
+    };
+  });
+  const requested = launch.definition;
   const requestedDefinition = requested.includes(':') ? requested : null;
   const requestedGame = requestedDefinition ? null : requested;
   // A direct-route mount has no originating menu stack beneath its overlay.
@@ -106,11 +116,11 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     let cancelled = false;
     fetchBoot(attachment)
       .then(({ config, sets, attachedSession }) => {
-        if (!cancelled) dispatchFlow({ type: 'BOOT_LOADED', config, sets, attachedSession, requestedDefinition, requestedGame });
+        if (!cancelled) dispatchFlow({ type: 'BOOT_LOADED', config, sets, attachedSession, requestedDefinition, requestedGame, launch });
       })
       .catch((err) => { if (!cancelled) dispatchFlow({ type: 'BOOT_FAILED', error: err.message }); });
     return () => { cancelled = true; };
-  }, [attachment, bootAttempt, requestedDefinition, requestedGame]);
+  }, [attachment, bootAttempt, requestedDefinition, requestedGame, launch]);
 
   // Reuse the pending creation during StrictMode effect replay; obsolete flows
   // cancel their attachment even if the HTTP response arrives later.
@@ -136,10 +146,14 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     const location = new URL(window.location.href);
     if (screenBase) location.pathname = `${screenBase}/party-games/${flow.definitionId}`;
     location.searchParams.set('return_to', returnTo);
+    if (launch.autostart) {
+      location.searchParams.set('autostart', 'true');
+      location.searchParams.set('participants', launch.participants.join(','));
+    }
     location.searchParams.delete('session'); location.searchParams.delete('diagnostic_session');
     if (flow.sessionId) location.searchParams.set(flow.sessionId.startsWith('diagnostic:') ? 'diagnostic_session' : 'session', flow.sessionId);
     window.history.replaceState({}, '', `${location.pathname}${location.search}`);
-  }, [flow.definitionId, flow.phase, flow.sessionId, returnTo]);
+  }, [flow.definitionId, flow.phase, flow.sessionId, returnTo, launch]);
   const playAgain = () => { creation.current = null; restoreLocation(); dispatchFlow({ type:'PLAY_AGAIN' }); };
 
   const onComplete = useCallback((result) => { dispatchFlow({ type: 'GAME_FINISHED', result }); }, []);
