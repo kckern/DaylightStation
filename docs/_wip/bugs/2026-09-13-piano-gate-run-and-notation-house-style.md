@@ -469,3 +469,21 @@ on `chords` and was not part of this request.
 |---|---|---|
 | 9 | Lit-key spread chosen to fit the staff window | `Games/gateMaterial.js` (+ `gateMaterialStaffFit.test.js`) |
 | 10 | Learner moved to `staff` addressing | household `piano/config.yml` (data, not code) |
+
+### 11 — the chess mount log named the wrong vocabulary, every time
+
+Found while confirming #10. `mounted` logged `scheme: scheme.id` — the component
+**prop**, whose default is `DEFAULT_CHORD_SCHEME` — not the scheme the board is
+addressed with. So every chess game ever recorded reads
+`scheme: "letters-by-difficulty-v1"` whatever the child was actually reading.
+
+Today's 19:14 game logs that line and, eight seconds later, a `move-played`
+carrying `chords: ["E–B/A–D","E–B/C–G"]` — staff dyads. The mount line was wrong
+and the move line was right; the board resolves its addressing into `game.scheme`
+after mount, and the log never looked there.
+
+This is the one field an investigation reaches for to ask which vocabulary a
+learner was on. It nearly sent this one to the wrong conclusion about #10.
+
+**Fixed:** the line logs `liveScheme.id` (`game.scheme`) plus an explicit
+`vocabulary: staff | chords`, and re-fires when the addressing resolves.
