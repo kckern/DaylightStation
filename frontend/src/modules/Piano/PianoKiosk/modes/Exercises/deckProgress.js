@@ -32,8 +32,34 @@ function signature(event) {
   return midis.length ? midis.join('.') : null;
 }
 
+const whole = (value) => Number.isInteger(value) && value >= 1;
+
 /**
- * The deck's sets: runs of CONSECUTIVE events asking for the same thing.
+ * The sets a deck DECLARES, when its material stated its own shape.
+ *
+ * Reps of a whole shape — an arpeggio played three times through — are not
+ * consecutive identical cards, so the event rule below would read 27 notes as
+ * 27 unrelated sets. The material says `{ sets, reps, unit }` instead, and a
+ * declaration that does not add up to the events it sits beside is ignored
+ * rather than believed.
+ */
+function declaredSets(instance) {
+  const deck = instance?.deck;
+  if (!deck || !whole(deck.sets) || !whole(deck.reps) || !whole(deck.unit)) return null;
+  if ((instance?.events ?? []).length !== deck.sets * deck.reps * deck.unit) return null;
+  return Array.from({ length: deck.sets }, (_, index) => ({
+    signature: `set-${index + 1}`,
+    size: deck.reps * deck.unit,
+    unit: deck.unit,
+  }));
+}
+
+/** How many reps a set holds: its cards divided by the cards in one rep. */
+const repsIn = (set) => Math.max(1, Math.floor(set.size / (set.unit || 1)));
+
+/**
+ * The deck's sets: runs of CONSECUTIVE events asking for the same thing, or the
+ * sets the material declared.
  *
  * Consecutive is the whole rule, and it is the material's rule rather than a
  * guess: reps are dealt back to back so the same card comes back while it is
@@ -45,6 +71,8 @@ function signature(event) {
  *   a rest, or a score's expectation before the engraver has answered).
  */
 export function deckSets(instance) {
+  const declared = declaredSets(instance);
+  if (declared) return declared;
   const events = instance?.events ?? [];
   if (events.length < 2) return null;
   const sets = [];
@@ -53,7 +81,7 @@ export function deckSets(instance) {
     if (!sig) return null;
     const last = sets[sets.length - 1];
     if (last && last.signature === sig) last.size += 1;
-    else sets.push({ signature: sig, size: 1 });
+    else sets.push({ signature: sig, size: 1, unit: 1 });
   }
   return sets;
 }
@@ -86,7 +114,7 @@ export function deckSets(instance) {
  */
 export function deckProjection(instance, sets, cursorIndex = 0) {
   if (!Array.isArray(sets) || sets.length < 2) return null;
-  if (!sets.some((set) => set.size > 1)) return null;
+  if (!sets.some((set) => repsIn(set) > 1)) return null;
 
   const parsed = Math.floor(Number(cursorIndex));
   const cursor = Number.isFinite(parsed) ? Math.max(parsed, 0) : 0;
@@ -97,11 +125,13 @@ export function deckProjection(instance, sets, cursorIndex = 0) {
     const passed = cursor >= start + set.size;
     const isCurrent = !passed && !currentTaken;
     if (isCurrent) currentTaken = true;
+    // A rep banks when its LAST card lands: half an arpeggio is not a rep.
+    const unit = set.unit || 1;
     const step = {
       id: `card-${index + 1}`,
       order: index + 1,
-      requirement: { required_passes: set.size },
-      pass_count: Math.min(Math.max(cursor - start, 0), set.size),
+      requirement: { required_passes: repsIn(set) },
+      pass_count: Math.min(Math.floor(Math.max(cursor - start, 0) / unit), repsIn(set)),
       passed,
       unlocked: passed || isCurrent,
       state: passed ? 'passed' : isCurrent ? 'current' : 'upcoming',
@@ -120,4 +150,26 @@ export function deckProjection(instance, sets, cursorIndex = 0) {
     complete: passedSteps === steps.length,
     current_step: steps.find((step) => step.state === 'current') ?? null,
   };
+}
+
+/**
+ * The part of a deck that belongs on screen: the rep the cursor is in.
+ *
+ * A deck whose rep is a whole shape would otherwise light and engrave all 27
+ * notes of three different arpeggios at once — a keyboard badge row counting to
+ * 27, and a staff too wide for any clef, so it would not be drawn at all. The
+ * engine still grades the whole deck; this only decides what the child sees.
+ * A deck whose rep is one card, and anything that is not a declared deck, is
+ * returned whole.
+ *
+ * @returns {{ events: object[], cursorIndex: number }}
+ */
+export function deckWindow(instance, cursorIndex = 0) {
+  const events = instance?.events ?? [];
+  const parsed = Math.floor(Number(cursorIndex));
+  const cursor = Number.isFinite(parsed) ? Math.max(parsed, 0) : 0;
+  const unit = declaredSets(instance)?.[0]?.unit ?? 1;
+  if (unit <= 1 || events.length === 0) return { events, cursorIndex: cursor };
+  const offset = Math.floor(Math.min(cursor, events.length - 1) / unit) * unit;
+  return { events: events.slice(offset, offset + unit), cursorIndex: cursor - offset };
 }

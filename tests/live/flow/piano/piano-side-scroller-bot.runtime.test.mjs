@@ -5,7 +5,7 @@
  * 1. Navigating to OfficeApp and triggering the piano visualizer via MIDI
  * 2. Activating the side-scroller game via MIDI combo (A1 + A7)
  * 3. Reading world state (via window.__SIDE_SCROLLER_DEBUG__)
- * 4. Detecting upcoming obstacles and deciding to jump or duck
+ * 4. Detecting upcoming obstacles and deciding to jump, duck or shoot
  * 5. Sending matching MIDI notes via WebSocket to execute actions
  *
  * Run headed:
@@ -148,8 +148,9 @@ function findNextObstacle(obstacles) {
 /**
  * Decide what action to take based on the nearest obstacle.
  *
- * Returns: 'jump' | 'duck' | 'hold_duck' | 'release' | null
+ * Returns: 'jump' | 'duck' | 'hold_duck' | 'shoot' | 'release' | null
  * - 'jump': tap the jump notes (brief press)
+ * - 'shoot': tap the shoot notes once per shot (a two-shot block needs two)
  * - 'duck' / 'hold_duck': hold the duck notes
  * - 'release': stop ducking
  * - null: no action needed yet
@@ -174,6 +175,13 @@ function decideAction(world, currentAction) {
     if (world.playerState === 'jumping') return null;
     if (currentAction === 'ducking') return 'release'; // un-duck first
     return 'jump';
+  }
+
+  if (obstacle.type === 'block' || obstacle.type === 'block_hard') {
+    // Shoot blocks — they can be neither jumped nor ducked. Shots don't fire
+    // from a slide, so stand up first.
+    if (currentAction === 'ducking') return 'release';
+    return 'shoot';
   }
 
   if (obstacle.type === 'high') {
@@ -313,6 +321,14 @@ test.describe('Piano Side-Scroller Bot', () => {
             duckNotes = [...duckPitches];
             midi.holdNotes(duckNotes);
             currentAction = 'ducking';
+          }
+        } else if (action === 'shoot') {
+          // One fresh press per shot; the release before the next loop is what
+          // lets a second press fire again.
+          const shootPitches = state.targets.shoot;
+          if (shootPitches?.length) {
+            await midi.playNotes(shootPitches, 120);
+            await sleep(80);
           }
         } else if (action === 'release') {
           // Release duck

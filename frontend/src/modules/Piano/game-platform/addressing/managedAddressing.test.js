@@ -98,6 +98,47 @@ describe('managed game addressing pressure', () => {
     expect(started.texture).toBe('dyad');
   });
 
+  // A day of games is a climb; a ceiling is a teaching decision about a child.
+  // Nine Connect Four games in one morning put a preschooler on triads by his
+  // sixth, and nothing a household could write stopped it.
+  describe('a learner ceiling', () => {
+    const capped = (maxTexture, completedGames, extra = {}) => managedAddressingAt(
+      { ...config, users: { user_4: { vocabulary: 'staff', maxTexture, ...extra } } },
+      { learnerId: 'user_4', completedGames },
+    );
+
+    it('holds a single-note learner on single notes however many games they finish', () => {
+      expect(capped('single', 0)).toMatchObject({ texture: 'single', x: { tier: 2 } });
+      for (const games of [1, 2, 5, 9, 99]) {
+        expect(capped('single', games), `games ${games}`).toMatchObject({ texture: 'single', x: { tier: 3 }, y: { tier: 3 } });
+      }
+      expect(capped('single', 9).managed).toMatchObject({ stage: 1, ceiling: 1 });
+    });
+
+    it('lets a dyad ceiling reach dyads with accidentals and no further', () => {
+      expect(capped('dyad', 3)).toMatchObject({ texture: 'dyad', x: { tier: 3 } });
+      expect(capped('dyad', 9)).toMatchObject({ texture: 'dyad', x: { tier: 3 } });
+    });
+
+    it('clamps a start stage authored above the ceiling', () => {
+      expect(capped('single', 0, { startStage: 4 })).toMatchObject({ texture: 'single', managed: { stage: 1 } });
+    });
+
+    it('is no ceiling at all when it cannot be read', () => {
+      for (const nonsense of [undefined, 'quartet', 3, null]) {
+        expect(capped(nonsense, 99).texture, String(nonsense)).toBe('triad');
+      }
+    });
+
+    it('never caps the chord path, which has no texture to cap', () => {
+      const chords = managedAddressingAt(
+        { ...config, users: { user_3: { vocabulary: 'chords', maxTexture: 'single' } } },
+        { learnerId: 'user_3', completedGames: 99 },
+      );
+      expect(chords.managed.stage).toBe(5);
+    });
+  });
+
   it('is off for a learner with no vocabulary, a disabled learner, or a disabled household', () => {
     expect(managedAddressingAt({ ...config, enabled: false }, { learnerId: 'user_4' })).toBeNull();
     expect(managedAddressingAt(config, { learnerId: 'nobody' })).toBeNull();

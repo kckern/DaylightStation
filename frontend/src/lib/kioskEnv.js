@@ -49,3 +49,22 @@ export function __resetKioskEnvCache() {
 }
 
 export default isKioskEnv;
+
+/**
+ * A developer's own machine — the only place a household approval may be
+ * skipped for "not being the kiosk".
+ *
+ * Deliberately NOT the inverse of isKioskEnv. That answers a presentation
+ * question (is this the Firefox kiosk, so hide the cursor?) and is false on every
+ * phone, tablet and laptop in the house. The arcade's admin gate once used it as
+ * its exemption, so any browser that was not the garage Firefox opened games with
+ * no approval at all.
+ */
+export function isLocalDevHost() {
+  try {
+    const host = window.location.hostname;
+    return host === 'localhost' || host === '127.0.0.1';
+  } catch {
+    return false;
+  }
+}

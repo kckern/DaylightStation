@@ -14,6 +14,9 @@ import { useMatchRematch } from '../game-platform/host/useMatchRematch.js';
 import { usePianoRunSession } from '../game-platform/runtime/usePianoRunSession.js';
 import './SideScrollerGame.scss';
 
+/** The staff that clears each obstacle type — the one a hint leaves bright. */
+const ACTION_FOR_OBSTACLE = { low: 'jump', high: 'duck', block: 'shoot', block_hard: 'shoot' };
+
 export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNoteOn, onNoteOff }) {
   const logger = useMemo(() => getChildLogger({ component: 'side-scroller-game' }), []);
 
@@ -21,7 +24,7 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNote
   usePianoRunSession({
     gameId: 'side-scroller', phase: game.phase, initialPhase: 'IDLE', score: game.score,
     metrics: { level: game.level, health: game.health, distance: game.distance },
-    activePhases: ['IDLE', 'STARTING', 'PLAYING'], terminalPhases: ['GAME_OVER'], logger,
+    activePhases: ['IDLE', 'STARTING', 'PLAYING', 'DYING'], terminalPhases: ['GAME_OVER'], logger,
   });
   useAutoGameLifecycle(game.phase, game.startGame, onDeactivate, logger, 'side-scroller');
   // A replay is a match boundary, so it goes through the host (D12) — this is
@@ -40,11 +43,11 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNote
     return computeKeyboardRange(noteRange);
   }, [currentLevelConfig]);
 
-  // Keyboard target highlights from jump/duck pitches
+  // Keyboard target highlights from every action's pitches
   const keyboardTargets = useMemo(() => {
     if (!game.targets) return null;
     const pitches = new Set();
-    for (const action of ['jump', 'duck']) {
+    for (const action of ['jump', 'duck', 'shoot']) {
       const actionPitches = game.targets[action];
       if (actionPitches) {
         for (const p of actionPitches) pitches.add(p);
@@ -53,13 +56,18 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNote
     return pitches.size > 0 ? pitches : null;
   }, [game.targets]);
 
-  // Invincibility check (for flashing)
-  const invincible = game.world.invincibleUntil > performance.now();
+  // Invincibility (hurt pose) and the shooting pose both hold for a moment
+  const now = performance.now();
+  const invincible = game.world.invincibleUntil > now;
+  const shooting = game.world.shootUntil > now;
+  // The HUD stays up through the death burst, so the empty meter is seen
+  const running = game.phase === 'PLAYING' || game.phase === 'DYING';
 
-  // Staff opacity hints — early levels (single complexity) highlight the relevant staff
+  // Staff opacity hints — early levels (single complexity) leave the staff that
+  // clears the next obstacle bright and dim the others
   const isSingleComplexity = (currentLevelConfig?.complexity ?? 'single') === 'single';
-  const jumpStaffOpacity = isSingleComplexity && game.nextObstacleType === 'high' ? 0.4 : 1;
-  const duckStaffOpacity = isSingleComplexity && game.nextObstacleType === 'low' ? 0.4 : 1;
+  const hintedAction = isSingleComplexity ? ACTION_FOR_OBSTACLE[game.nextObstacleType] : null;
+  const staffOpacity = (action) => (hintedAction && hintedAction !== action ? 0.4 : 1);
 
   // Expose game state for testing
   useEffect(() => {
@@ -92,7 +100,7 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNote
     <PianoGameHost
       gameId="side-scroller"
       phase={game.phase}
-      phaseMapping={{ GAME_OVER: 'result', COMPLETE: 'result' }}
+      phaseMapping={{ DYING: 'playing', GAME_OVER: 'result', COMPLETE: 'result' }}
       className="side-scroller"
       instrumentClassName="side-scroller__keyboard"
       instrument={{ activeNotes, startNote, endNote, showLabels: true, targetNotes: keyboardTargets, onNoteOn, onNoteOff }}
@@ -101,7 +109,7 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNote
       {/* Play area */}
       <div className="side-scroller__play-area">
         {/* Health bar — far left */}
-        {game.phase === 'PLAYING' && (
+        {running && (
           <div
             className="side-scroller__life-meter"
             role="meter"
@@ -124,10 +132,10 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNote
 
         {/* Game canvas — full width */}
         <div className="side-scroller__canvas">
-          <RunnerCanvas world={game.world} invincible={invincible} phase={game.phase} theme={game.theme} />
+          <RunnerCanvas world={game.world} invincible={invincible} shooting={shooting} phase={game.phase} theme={game.theme} />
 
           {/* Jump staff — 45° up-right from player */}
-          <div className="side-scroller__staff-above" style={{ left: `${(PLAYER_X + 0.12) * 100}%`, opacity: jumpStaffOpacity }}>
+          <div className="side-scroller__staff-above" style={{ left: `${(PLAYER_X + 0.12) * 100}%`, opacity: staffOpacity('jump') }}>
             <ActionStaff
               action="jump"
               targetPitches={game.targets?.jump ?? []}
@@ -137,7 +145,7 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNote
           </div>
 
           {/* Duck staff — 45° down-right from player */}
-          <div className="side-scroller__staff-below" style={{ left: `${(PLAYER_X + 0.12) * 100}%`, opacity: duckStaffOpacity }}>
+          <div className="side-scroller__staff-below" style={{ left: `${(PLAYER_X + 0.12) * 100}%`, opacity: staffOpacity('duck') }}>
             <ActionStaff
               action="duck"
               targetPitches={game.targets?.duck ?? []}
@@ -146,8 +154,21 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNote
             />
           </div>
 
+          {/* Shoot staff — top band, right of the jump staff and a little lower.
+              Only on levels that spawn blocks. */}
+          {game.targets?.shoot?.length > 0 && (
+            <div className="side-scroller__staff-shoot" style={{ left: `calc(${(PLAYER_X + 0.12) * 100}% + 150px)`, opacity: staffOpacity('shoot') }}>
+              <ActionStaff
+                action="shoot"
+                targetPitches={game.targets.shoot}
+                matched={game.matchedActions?.has('shoot') ?? false}
+                activeNotes={activeNotes}
+              />
+            </div>
+          )}
+
           {/* Score overlay */}
-          {game.phase === 'PLAYING' && (
+          {running && (
             <div className="side-scroller__hud">
               <div className="side-scroller__score">
                 <span className="side-scroller__score-value">{Math.floor(game.score)}</span>

@@ -102,6 +102,15 @@ key, and `chords` hands that same child `Am7` on the board rim — a spelling ta
 way into, which teaches nothing about the squares. Put a learner on the vocabulary they are
 being taught, and move it when the teaching moves.
 
+Two more per-learner keys shape the staff path, and they answer different questions.
+`startStage` is where a learner opens each day; the day's completed games then climb from there.
+`maxTexture` (`single` | `dyad` | `triad`) is a **ceiling** on how many notes a card may carry, and
+it clamps both the start and the climb. The material axis still climbs beneath it: a `single`
+ceiling reaches single notes with sharps and flats and never dyads or triads, however many games
+are finished. A value the resolver cannot read is no ceiling at all, and the chord path carries no
+texture, so it is never capped. The ceiling is for a learner the daily climb would otherwise carry
+past what they are being taught — a pre-reader who finishes nine quick games in a morning.
+
 Chess currently defaults to `chords`; Checkers and Connect Four are `staff`-only. Chess's
 `addressing` key already exists in `config/chess.yml` and is per-user overridable.
 
