@@ -113,6 +113,7 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   const definition = initial.definition;
   expect(definition).toMatchObject({rounds:3,timer_ms:60_000,clues_per_turn:1,competition:false});
   expect(definition.guessing_music).toEqual({source:'plex:535255',volume:0.3,order:'shuffle',repeat:'after-cycle',memory:'session'});
+  expect(definition.sound_cues).toEqual({pack:'charades',performer_selected:'performer-selected',clue_revealed:'clue-revealed',acting_started:'acting-started',time_up:'time-up',turn_finished:'turn-finished',handoff:'handoff',game_finished:'game-finished'});
   expect(definition.launch).toEqual({autostart:true,participants:seatIds});
   expect(definition.clue_filter).toEqual({categories:['animals','everyday-actions'],levels:['easy']});
   expect(definition.challenges.every(clue => definition.clue_filter.categories.includes(clue.category) && clue.level === 'easy')).toBe(true);
@@ -158,9 +159,11 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
     if (imageTurn) {
       imageIds.push(ready.state.challenge.id);
       await expect(stage.locator('.image-decoder-display')).toHaveAttribute('data-status', 'ready');
-      const movingSubject = stage.getByTestId('image-decoder-subject');
-      const firstTransform = await movingSubject.evaluate(subject => subject.style.transform);
-      await expect.poll(() => movingSubject.evaluate(subject => subject.style.transform), {timeout:2500}).not.toBe(firstTransform);
+      const movingComposite = stage.getByTestId('image-decoder-composite');
+      await expect(movingComposite.getByTestId('image-decoder-subject')).toHaveCount(1);
+      await expect(movingComposite.locator('.image-decoder-display__artifacts')).toHaveCount(1);
+      const firstPosition = await movingComposite.evaluate(element => `${element.style.left}:${element.style.top}:${element.style.transform}`);
+      await expect.poll(() => movingComposite.evaluate(element => `${element.style.left}:${element.style.top}:${element.style.transform}`), {timeout:2500}).not.toBe(firstPosition);
       const asset = await request.get(ready.state.challenge.decoder.image);
       expect(asset.ok()).toBe(true);
       expect(asset.headers()['content-type']).toContain('image/svg+xml');
@@ -260,6 +263,11 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   expect(imageIds.filter(id => textIds.includes(id))).toEqual([]);
   expect(heardTracks).toHaveLength(18);
   expect(new Set(heardTracks).size).toBe(18);
+  const heardCues = await page.evaluate(() => (window.__fheAudioElements || [])
+    .map(audio => new URL(audio.src || '', location.origin).pathname)
+    .filter(path => path.includes('/api/v1/gaming/media/charades/'))
+    .map(path => path.split('/').pop()));
+  expect(new Set(heardCues)).toEqual(new Set(['performer-selected.mp3','clue-revealed.mp3','acting-started.mp3','time-up.mp3','turn-finished.mp3','handoff.mp3','game-finished.mp3']));
   await expect(page.getByTestId('results')).toBeVisible();
   await expectFits(page.getByTestId('results'));
   const terminal = await read();

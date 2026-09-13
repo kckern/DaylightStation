@@ -40,39 +40,44 @@ export default function ImageDecoderDisplay({
     <figure className="image-decoder-display" data-status={failed ? "error" : loaded === `${src}:${attempt}` ? "ready" : "loading"} aria-label={alt}>
       <img key={`${src}:${attempt}`} className="image-decoder-display__probe" src={resource} alt="" aria-hidden="true" onLoad={() => { setFailure(null); setLoaded(`${src}:${attempt}`); }} onError={() => setFailure(src)} />
       {failed && <div className="image-decoder-display__error" role="alert">Clue image could not load.<button type="button" onClick={() => { setFailure(null); setAttempt(value => value + 1); }}>Retry image</button></div>}
-      <div
-        className="image-decoder-display__subject"
-        data-testid="image-decoder-subject"
-        role="img" aria-label={alt}
-        style={{
-          maskImage,
-          WebkitMaskImage: maskImage,
-          transform: `translate3d(${frame.x.toFixed(2)}%, ${frame.y.toFixed(2)}%, 0) scale(${frame.scale.toFixed(3)})`,
-        }}
-      />
-      <svg
-        className="image-decoder-display__artifacts"
-        viewBox="0 0 100 100"
-        preserveAspectRatio="xMidYMid meet"
-        aria-hidden="true"
-      >
-        {texture.tiles.map(tile => <rect key={`tile:${tile.id}`} className="image-decoder-display__texture-tile"
-          x={tile.x} y={tile.y} width={4.1} height={4.1} fill={tone(tile.tone)} opacity={tile.opacity} />)}
-        {artifacts.map((artifact) => (
-          <ellipse
-            key={artifact.id}
-            className={`image-decoder-display__artifact is-${artifact.kind}`}
-            cx={artifact.cx}
-            cy={artifact.cy}
-            rx={artifact.rx}
-            ry={artifact.ry}
-            opacity={artifact.opacity}
-            transform={`rotate(${artifact.rotation} ${artifact.cx} ${artifact.cy})`}
-          />
-        ))}
-        {texture.streaks.map(streak => <line key={`streak:${streak.id}`} className="image-decoder-display__streak"
-          x1={streak.x1} y1={streak.y1} x2={streak.x2} y2={streak.y2} stroke={tone(streak.tone)} strokeWidth={streak.width} />)}
-      </svg>
+      <div className="image-decoder-display__composite" data-testid="image-decoder-composite" style={{
+        left: `${frame.x}%`,
+        top: `${frame.y}%`,
+        transform: `scale(${frame.scale.toFixed(3)})`,
+      }}>
+        <div
+          className="image-decoder-display__subject"
+          data-testid="image-decoder-subject"
+          role="img" aria-label={alt}
+          style={{
+            maskImage,
+            WebkitMaskImage: maskImage,
+          }}
+        />
+        <svg
+          className="image-decoder-display__artifacts"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="xMidYMid meet"
+          aria-hidden="true"
+        >
+          {texture.tiles.map(tile => <rect key={`tile:${tile.id}`} className="image-decoder-display__texture-tile"
+            x={tile.x} y={tile.y} width={4.1} height={4.1} fill={tone(tile.tone)} opacity={tile.opacity} />)}
+          {artifacts.map((artifact) => (
+            <ellipse
+              key={artifact.id}
+              className={`image-decoder-display__artifact is-${artifact.kind}`}
+              cx={artifact.cx}
+              cy={artifact.cy}
+              rx={artifact.rx}
+              ry={artifact.ry}
+              opacity={artifact.opacity}
+              transform={`rotate(${artifact.rotation} ${artifact.cx} ${artifact.cy})`}
+            />
+          ))}
+          {texture.streaks.map(streak => <line key={`streak:${streak.id}`} className="image-decoder-display__streak"
+            x1={streak.x1} y1={streak.y1} x2={streak.x2} y2={streak.y2} stroke={tone(streak.tone)} strokeWidth={streak.width} />)}
+        </svg>
+      </div>
     </figure>
   );
 }
