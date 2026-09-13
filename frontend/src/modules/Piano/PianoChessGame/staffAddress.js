@@ -311,11 +311,50 @@ export function staffAxisMatch(heldNotes, scheme = DEFAULT_STAFF_SCHEME) {
   const below = notes.filter((note) => note < split.boundary);
   const [fileSide, rankSide] = split.filesAbove ? [above, below] : [below, above];
 
+  /**
+   * Which slot this hand named — EXACT PITCH FIRST, letters only as a tiebreak.
+   *
+   * This compared pitch-class sets and took `findIndex`, which is the first
+   * match. That is fine while every shape on an axis has its own letters, and
+   * an eight-slot axis of two-note shapes never does: the axis spans an octave
+   * inclusive, so its last slot is the octave of its first, and with dyads the
+   * top four shapes are octave transpositions of the bottom four — the same two
+   * letters, inverted. E4+B4 and B4+E5 both key as `4,11`.
+   *
+   * So four of the eight files, and four of the eight ranks, could not be
+   * played: the lower card of each pair answered for both, and only sixteen of
+   * the sixty-four squares were reachable at all. A child holding a piece and
+   * reading the fifth card correctly got nothing, over and over, because his
+   * notes had already been spent on the first (2026-09-13).
+   *
+   * The single-note path (`axisIndex`) never had this problem because it breaks
+   * its C-appears-twice tie by NEARNESS. The same rule generalises to a shape,
+   * and that is what this does — so a hand that is exactly right always wins,
+   * and a hand an octave off still lands on whichever card it is closer to
+   * rather than on whichever card happens to be dealt first.
+   */
   const matchAxis = (side, axis) => {
     if (!side.length) return null;
+    const exact = axis.findIndex((token) => tokenKey(token) === tokenKey(side));
+    if (exact >= 0) return exact;
     const key = pcKey(side);
-    const index = axis.findIndex((token) => pcKey(staffTokenNotes(token)) === key);
-    return index < 0 ? null : index;
+    const candidates = axis
+      .map((token, index) => ({ notes: staffTokenNotes(token), index }))
+      .filter((entry) => pcKey(entry.notes) === key);
+    if (!candidates.length) return null;
+    if (candidates.length === 1) return candidates[0].index;
+    // Nearest by pitch: the sum of how far each note of the shape sits from the
+    // played hand, low note to low note. Every candidate shares a pitch-class
+    // set, so they line up degree for degree once both are sorted.
+    const played = [...side].sort((a, b) => a - b);
+    const distance = (notes) => {
+      const shape = [...notes].sort((a, b) => a - b);
+      if (shape.length !== played.length) return Number.POSITIVE_INFINITY;
+      return shape.reduce((sum, note, i) => sum + Math.abs(note - played[i]), 0);
+    };
+    return candidates.reduce((best, entry) => (
+      distance(entry.notes) < distance(best.notes) ? entry : best
+    )).index;
   };
 
   const file = matchAxis(fileSide, scheme.roots ?? []);

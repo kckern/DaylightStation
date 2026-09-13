@@ -104,6 +104,13 @@ const COLUMN_W = 36;
 const GHOST_DX = 16;
 /** Air between the cursor lane and the edge of the box, so it reads as a lane and not a wall. */
 const CURSOR_INSET = 2;
+
+/**
+ * A staff position to a y. Module scope, not a render closure: it reads nothing
+ * but the constants above, and the cursor band below is computed before the
+ * render body would have defined it.
+ */
+const yOf = (position) => BOTTOM_LINE_Y - position * STEP_SIZE;
 const RIGHT_PAD = 30;
 const MIN_VIEWBOX_W = 100;
 
@@ -386,10 +393,32 @@ export function SvgSequenceStaff({
     emit('sustain', 'sustains', heldSustains);
   }, [heldGhosts, heldSustains, cursorIndex, cursorArrivedAt, cursorTargetMidis]);
 
+  /**
+   * The band the cursor lane covers: the staff, plus however far this ask's own
+   * ink actually reaches beyond it.
+   *
+   * Not the whole box. A lane sized to the full ink band always contains its
+   * note — which is the bug this started as, middle C hanging out of the bottom
+   * of a lane that stopped at its centre — but on a one-card flashcard it is a
+   * full-height yellow column behind a single notehead, marking a position that
+   * has no alternative. Measured from the drawn columns instead, so it hugs the
+   * music: a deck of staff-range cards gets a lane the height of the staff, and
+   * a middle-C or a C6 card gets exactly enough more to hold the head and its
+   * ledger line. Constant for the whole ask, so the lane slides sideways as the
+   * cursor advances and never changes shape underneath it.
+   */
+  const cursorBand = useMemo(() => {
+    const ys = columns.flatMap((col) => col.heads.map((head) => yOf(head.position)));
+    const clearance = NOTEHEAD_RY + 4;
+    const top = Math.max(CURSOR_INSET, Math.min(TOP_PAD, ...ys.map((y) => y - clearance)));
+    const bottom = Math.min(VIEWBOX_H - CURSOR_INSET, Math.max(BOTTOM_LINE_Y, ...ys.map((y) => y + clearance)));
+    return { y: top, height: Math.max(0, bottom - top) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columns]);
+
   const { width: viewBoxW } = sequenceStaffViewBox(columns.length);
   const viewBox = `0 0 ${viewBoxW} ${VIEWBOX_H}`;
   const staffLineYs = [0, 1, 2, 3, 4].map((i) => BOTTOM_LINE_Y - i * LINE_SPACING);
-  const yOf = (position) => BOTTOM_LINE_Y - position * STEP_SIZE;
   const showCursor = columns.length > 0 && cursorIndex >= 0 && cursorIndex < columns.length;
 
   return (
@@ -428,9 +457,9 @@ export function SvgSequenceStaff({
               className="sequence-staff__cursor"
               data-cursor-index={cursorIndex}
               x={FIRST_COLUMN_X + cursorIndex * COLUMN_W - COLUMN_W / 2}
-              y={CURSOR_INSET}
+              y={cursorBand.y}
               width={COLUMN_W}
-              height={VIEWBOX_H - CURSOR_INSET * 2}
+              height={cursorBand.height}
               rx="4"
             />
           )}
