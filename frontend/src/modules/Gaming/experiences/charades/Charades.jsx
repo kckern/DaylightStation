@@ -90,8 +90,11 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
   useEffect(() => {
     setMusicError(null);
     if (state?.phase !== 'performing' || !definition?.guessing_music) return;
-    return gamingServices?.music?.start(definition.guessing_music, { onError: cause => setMusicError(cause?.message || 'Music could not start') });
-  }, [state?.phase, state?.challenge_index, definition?.guessing_music?.source, definition?.guessing_music?.volume, gamingServices?.music, musicAttempt]);
+    return gamingServices?.music?.start(definition.guessing_music, {
+      sessionId,
+      onError: cause => setMusicError(cause?.message || 'Music could not start'),
+    });
+  }, [state?.phase, state?.challenge_index, definition?.guessing_music?.source, definition?.guessing_music?.volume, definition?.guessing_music?.order, definition?.guessing_music?.repeat, definition?.guessing_music?.memory, gamingServices?.music, musicAttempt, sessionId]);
 
   const performer = useMemo(
     () => teams.find((team) => team.id === state?.performer_id),

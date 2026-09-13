@@ -118,7 +118,7 @@ function getSegmentCenter(index, total, radius, cx, cy) {
 /**
  * Wheel Segment Component
  */
-function WheelSegment({ member, index, total, radius, cx, cy, isWinner, rotation, isSpinning, durationMs }) {
+function WheelSegment({ member, index, total, radius, cx, cy, isWinner, rotation }) {
   const path = getSegmentPath(index, total, radius, cx, cy);
   const center = getSegmentCenter(index, total, radius, cx, cy);
   const initials = getInitials(member.name);
@@ -133,9 +133,6 @@ function WheelSegment({ member, index, total, radius, cx, cy, isWinner, rotation
   const avatarStyle = {
     transformOrigin: `${center.x}px ${center.y}px`,
     transform: `rotate(${-rotation}deg)`,
-    transition: isSpinning
-      ? `transform ${durationMs}ms cubic-bezier(0.17, 0.67, 0.12, 0.99)`
-      : 'none',
   };
 
   return (
@@ -188,7 +185,7 @@ function WheelSegment({ member, index, total, radius, cx, cy, isWinner, rotation
 /**
  * Roulette Wheel Component
  */
-function RouletteWheel({ members, rotation, isSpinning, winnerIndex, showResult, wheelRef, durationMs }) {
+function RouletteWheel({ members, rotation, isSpinning, winnerIndex, showResult, wheelRef }) {
   const size = 400;
   const cx = size / 2;
   const cy = size / 2;
@@ -196,7 +193,6 @@ function RouletteWheel({ members, rotation, isSpinning, winnerIndex, showResult,
 
   const wheelStyle = {
     transform: `rotate(${rotation}deg)`,
-    '--wheel-rotation': `${rotation}deg`,
   };
 
   return (
@@ -222,8 +218,6 @@ function RouletteWheel({ members, rotation, isSpinning, winnerIndex, showResult,
               cy={cy}
               isWinner={showResult && index === winnerIndex}
               rotation={rotation}
-              isSpinning={isSpinning}
-              durationMs={durationMs}
             />
           ))}
           <circle cx={cx} cy={cy} r={30} fill="#333" stroke="#fff" strokeWidth="3" />
@@ -252,6 +246,7 @@ function FamilySelectorInner({ members, winner, title: _title, exclude, autoSpin
   // Spin state
   const wheelRef = useRef(null);
   const animRef = useRef(null);
+  const avatarAnimRefs = useRef([]);
   const finishTimer = useRef(null);
   const busyRef = useRef(false);
   const completeRef = useRef(onComplete); completeRef.current = onComplete;
@@ -293,6 +288,8 @@ function FamilySelectorInner({ members, winner, title: _title, exclude, autoSpin
       animRef.current.cancel();
       animRef.current = null;
     }
+    avatarAnimRefs.current.forEach(animation => animation.cancel());
+    avatarAnimRefs.current = [];
 
     const { index, member } = selectWinner();
     const angle = calculateSpinAngle(index, activeMembers.length, rotation);
@@ -311,17 +308,25 @@ function FamilySelectorInner({ members, winner, title: _title, exclude, autoSpin
     };
     finishTimer.current = setTimeout(finish, durationMs);
     if (el?.animate) {
+      const timing = {
+        duration: durationMs,
+        easing: 'cubic-bezier(0.17, 0.67, 0.12, 0.99)',
+        fill: 'forwards',
+      };
       animRef.current = el.animate(
         [
           { transform: `rotate(${rotation}deg)` },
           { transform: `rotate(${newRotation}deg)` },
         ],
-        {
-          duration: durationMs,
-          easing: 'cubic-bezier(0.17, 0.67, 0.12, 0.99)',
-          fill: 'forwards',
-        }
+        timing,
       );
+      avatarAnimRefs.current = [...el.querySelectorAll('.avatar-wrapper')].map(avatar => avatar.animate(
+        [
+          { transform: `rotate(${-rotation}deg)` },
+          { transform: `rotate(${-newRotation}deg)` },
+        ],
+        timing,
+      ));
       animRef.current.onfinish = finish;
     }
   }, [wheelState, selectWinner, activeMembers.length, rotation, durationMs, embedded]);
@@ -349,7 +354,13 @@ useEffect(() => {
 
   useEffect(() => {
     if (autoSpin) spin();
-    return () => { clearTimeout(finishTimer.current); animRef.current?.cancel(); busyRef.current = false; };
+    return () => {
+      clearTimeout(finishTimer.current);
+      animRef.current?.cancel();
+      avatarAnimRefs.current.forEach(animation => animation.cancel());
+      avatarAnimRefs.current = [];
+      busyRef.current = false;
+    };
   // One animation per mounted performer, including StrictMode effect replay.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -374,7 +385,6 @@ useEffect(() => {
         <div className="wheel-wrapper">
           <RouletteWheel
             wheelRef={wheelRef}
-            durationMs={durationMs}
             members={activeMembers}
             rotation={rotation}
             isSpinning={wheelState === WHEEL_STATE.SPINNING}
