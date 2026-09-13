@@ -82,16 +82,48 @@ export function canDirectPlayH264(metadata) {
 }
 
 /**
- * Video-only direct-stream gate. True when the video codec is h264 or hevc —
- * meaning Plex can copy the video track without re-encoding. Audio and
- * container mismatches are handled separately (audio is transcoded, container
- * is remuxed). The codec advertisement (h264,hevc only) already prevents
- * AV1/VP9 sources from being direct-streamed regardless of this flag.
+ * True when the source video is >8-bit (HEVC Main 10, H.264 Hi10P). Prefers the
+ * video stream's numeric bitDepth and falls back to the profile string, which
+ * carries the depth as a trailing token ("main 10", "high 10").
+ * @param {object} media - a Plex Media entry
+ */
+export function isHighBitDepthVideo(media) {
+  const videoStream = (media?.Part ?? [])
+    .flatMap((part) => part?.Stream ?? [])
+    .find((stream) => Number(stream?.streamType) === 1);
+
+  const depth = Number(videoStream?.bitDepth);
+  if (Number.isFinite(depth) && depth > 0) return depth > 8;
+
+  const profile = String(media?.videoProfile ?? videoStream?.profile ?? '').toLowerCase();
+  return /\b(10|12)\b/.test(profile);
+}
+
+/**
+ * Video-only direct-stream gate. True when Plex will actually COPY the video
+ * track rather than re-encode it. Audio and container mismatches are handled
+ * separately (audio is transcoded, container is remuxed). The codec
+ * advertisement (h264,hevc only) already prevents AV1/VP9 sources from being
+ * direct-streamed regardless of this flag.
+ *
+ * 10-bit sources are excluded (2026-09-12 incident, Tuttle Twins S03E02
+ * plex:663511 — HEVC Main 10, 1080p24, 1972 kbps). We advertise h264,hevc but
+ * NOT a 10-bit profile, so Plex cannot copy a Main 10 track to an 8-bit client:
+ * it inserts `format=pix_fmts=yuv420p` and re-encodes. Returning true here made
+ * the caller DROP the bitrate/resolution/frame-rate caps (they would disqualify
+ * a copy) — so the re-encode Plex actually performed ran uncapped at CRF 16 with
+ * a 20 Mbps ceiling, ~0.5x realtime in software libx264. Buffer drained 31s -> 0
+ * in ~110s, then a 3s-play / 1.7s-stall sawtooth for the rest of the episode.
+ * Predicting a copy that will not happen is worse than predicting a transcode:
+ * it removes the guardrails AND keeps the cost.
  * @param {{Media?: Array}} metadata - the Plex item metadata
  */
 export function canDirectStreamVideo(metadata) {
   const media = metadata?.Media?.[0];
   if (!media) return false;
   const codec = String(media.videoCodec ?? '').toLowerCase();
-  return codec === 'h264' || codec === 'hevc';
+  if (codec !== 'h264' && codec !== 'hevc') return false;
+  // >8-bit cannot be copied to our 8-bit client profile — Plex re-encodes it,
+  // so the caps must stay on.
+  return !isHighBitDepthVideo(media);
 }
