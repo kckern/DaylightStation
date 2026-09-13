@@ -15,10 +15,15 @@ it('shows image decoder and Go without leaking answer, then hides clue while act
  render(<Charades sessionId="one" seats={seats} gamingServices={{music}} />);
  const go = await screen.findByRole('button',{name:'Go'}); expect(screen.queryByText('Rabbit')).toBeNull();
  expect(screen.getByTestId('image-decoder-subject').style.maskImage).toContain('/rabbit.svg');
+ expect(screen.queryByRole('img',{name:'Rabbit'})).toBeNull();
  sendRuleCommand.mockResolvedValueOnce(view({...state,phase:'performing',deadline:Date.now()+60000},2)); fireEvent.click(go);
  await screen.findByRole('button',{name:'Finish turn'}); expect(screen.queryByTestId('image-decoder-subject')).toBeNull();
+ expect(screen.queryByRole('img',{name:'Rabbit'})).toBeNull();
  sendRuleCommand.mockResolvedValueOnce(view({...state,phase:'challenge-complete'},3)); fireEvent.click(screen.getByRole('button',{name:'Finish turn'}));
- expect(await screen.findByText('Rabbit')).toBeInTheDocument(); expect(screen.queryByText(/score committed|wins/i)).toBeNull(); expect(screen.getByRole('button',{name:'Finish game'})).toBeEnabled();
+ expect(await screen.findByText('Rabbit')).toBeInTheDocument();
+ expect(screen.getByRole('img',{name:'Rabbit'})).toHaveAttribute('src','/rabbit.svg');
+ expect(screen.queryByTestId('image-decoder-subject')).toBeNull();
+ expect(screen.queryByText(/score committed|wins/i)).toBeNull(); expect(screen.getByRole('button',{name:'Finish game'})).toBeEnabled();
 });
 it('drops concurrent commands and ignores an older refresh after a command response', async () => {
  render(<Charades sessionId="one" seats={seats} />); const go=await screen.findByRole('button',{name:'Go'});
@@ -60,4 +65,10 @@ it('labels another clue within the same timed turn distinctly from the next perf
  const result=view({...state,phase:'challenge-complete',clue_index:0,remaining_ms:5000});result.definition.clues_per_turn=2;
  fetchSession.mockResolvedValue(result);render(<Charades sessionId="one" seats={seats}/>);
  expect(await screen.findByRole('button',{name:'Next clue'})).toBeEnabled();expect(screen.queryByRole('button',{name:'Next performer'})).toBeNull();
+});
+
+it('keeps text-only clue reveals free of a plain image even if a decoder asset is present',async()=>{
+ fetchSession.mockResolvedValue(view({...state,phase:'challenge-complete',clue_presentation:'text'}));
+ render(<Charades sessionId="one" seats={seats}/>);
+ expect(await screen.findByText('Rabbit')).toBeInTheDocument();expect(screen.queryByRole('img',{name:'Rabbit'})).toBeNull();
 });
