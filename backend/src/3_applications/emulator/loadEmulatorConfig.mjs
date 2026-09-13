@@ -33,6 +33,59 @@ function resolveNative({ gameNative, systemNative, core }) {
 }
 
 /**
+ * Warn about any overlay or hotspot region that lands on the game picture.
+ *
+ * These coordinates are measured off bezel art by hand, and the screen rect
+ * moves whenever a cutout is re-measured — so a region that was safely in the
+ * margin can quietly end up over the picture. That happened to the Genesis
+ * coins chip: widening its cutout to the console's true 4:3 display aspect grew
+ * the screen downward into the bottom band the chip already occupied, and the
+ * only symptom was a stat sitting on the game.
+ *
+ * Refusing the region would cost a working console over a cosmetic fault, so
+ * this reports and moves on. The warning names the system and the region.
+ */
+function warnOnRegionsOverScreen(systemId, presentation, logger) {
+  // `screen` is where the picture is DRAWN, which may run wider than the hole:
+  // the chrome paints over it, so a console whose bezel art wants the picture to
+  // reach under its notches declares a rect that deliberately overhangs. What a
+  // chip must stay clear of is the VISIBLE hole, so a system may declare
+  // `aperture` for that separately. Most do not need to, and fall back to
+  // `screen` — for them the two are the same rectangle.
+  const screen = presentation?.aperture || presentation?.screen;
+  if (!screen || !Number.isFinite(screen.x) || !Number.isFinite(screen.width)) return;
+  const sx = screen.x;
+  const sy = screen.y;
+  const sr = sx + screen.width;
+  const sb = sy + screen.height;
+  // Only what actually appears on the frame. An overlay always renders a
+  // positioned box; a hotspot renders a target ONLY when it carries an action or
+  // a `do:` block — HotspotLayer skips the rest, which exist purely as notes for
+  // tuning. Several of those sit a hair over a screen edge already, and warning
+  // about them would make this a permanent false alarm that buries the real one.
+  const groups = [
+    ['overlay', presentation.overlays],
+    ['hotspot', (presentation.hotspots || []).filter((h) => h?.action || h?.do)],
+  ];
+  for (const [kind, list] of groups) {
+    for (const item of Array.isArray(list) ? list : []) {
+      const r = item?.region;
+      if (!r || !Number.isFinite(r.x) || !Number.isFinite(r.width)) continue;
+      // The aperture is a bounding box, but the real hole is a shape: bezel art
+      // often pushes a notch of solid chrome into it. A target ON such a notch
+      // is inside the box and still on art, so it says so explicitly rather than
+      // the guard guessing at the outline.
+      if (item.overlaps_aperture) continue;
+      const overlaps = r.x < sr && r.x + r.width > sx && r.y < sb && r.y + r.height > sy;
+      if (!overlaps) continue;
+      logger.warn?.('emulator.config.region_over_screen', {
+        system: systemId, kind, id: item.id ?? null, region: r, screen,
+      });
+    }
+  }
+}
+
+/**
  * Load + normalize per-system emulator manifests into the in-memory `cfg`
  * shape consumed by buildCatalog/resolveGameRules.
  *
@@ -81,6 +134,10 @@ export function loadEmulatorConfig({
       coverAspect: Number.isFinite(Number(manifest.cover_aspect))
         ? Number(manifest.cover_aspect)
         : null,
+      // Wordmark for the console tab. A filename, not a path, resolved inside
+      // the system's own folder — declared here so no asset name is baked into
+      // the code. Absent ⇒ the tab falls back to the label as type.
+      logo: typeof manifest.logo === 'string' && manifest.logo ? manifest.logo : null,
       native: manifest.native && Number.isFinite(manifest.native.width) && Number.isFinite(manifest.native.height)
         ? { width: manifest.native.width, height: manifest.native.height }
         : null,
@@ -88,6 +145,7 @@ export function loadEmulatorConfig({
 
     const sysDefaults = manifest.defaults ?? {};
     const presentation = manifest.presentation ?? {};
+    warnOnRegionsOverScreen(systemId, presentation, logger);
 
     for (const game of manifest.games ?? []) {
       if (!game?.id) {

@@ -219,7 +219,7 @@ describe('createEmulatorRouter', () => {
     it('includes resolved consoles (fallback: one tab per system)', async () => {
       const { app } = makeApp();
       const res = await request(app).get('/api/v1/emulator/library');
-      expect(res.body.consoles).toEqual([{ system: 'gb', label: 'Game Boy', placeholder: false }]);
+      expect(res.body.consoles).toEqual([{ system: 'gb', label: 'Game Boy', placeholder: false, logo: null }]);
     });
 
     it('passes configured consoles (real + blank placeholder) through', async () => {
@@ -228,8 +228,8 @@ describe('createEmulatorRouter', () => {
       });
       const res = await request(app).get('/api/v1/emulator/library');
       expect(res.body.consoles).toEqual([
-        { system: 'gb', label: 'Game Boy', placeholder: false },
-        { system: null, label: null, placeholder: true },
+        { system: 'gb', label: 'Game Boy', placeholder: false, logo: null },
+        { system: null, label: null, placeholder: true, logo: null, comingSoon: false },
       ]);
     });
 

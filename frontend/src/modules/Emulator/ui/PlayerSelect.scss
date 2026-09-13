@@ -3,17 +3,20 @@
 // presentation.screen: y 10.88% + height 66.667%), so we anchor just under it and
 // center horizontally under the screen — clear of the D-pad (left) and A/B (right).
 // Single-line horizontal bar so it reads as a slim toolbar, not a center-stage modal.
+// Anchored to the bottom-left cluster with the volume control and the reopen
+// button, NOT to the middle of the frame. At 50%/79% this pill sat squarely on
+// the game — the Genesis picture reaches 96% of the frame height — which is
+// exactly where a "who is playing" prompt must not be.
 .emu-player-select {
   position: absolute;
-  top: 79%;
-  left: 50%;
-  transform: translateX(-50%);
+  bottom: 4.2rem;   // stacked above the volume / reopen row, same corner
+  left: 1rem;
   z-index: 40;
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 0.6rem;
-  max-width: 52%;            // stay within the central grey frame, clear of side controls
+  max-width: 52%;            // never grow across the frame
   padding: 0.35rem 0.7rem;
   border-radius: 999px;      // pill toolbar
   background: rgba(12, 16, 24, 0.82);
@@ -44,8 +47,29 @@
 }
 
 // Collapsed affordance — the small re-open pill — sits in the same below-screen spot.
+// Every other console control lives in a corner (volume bottom-left, exit
+// bottom-right) precisely because the middle of the frame belongs to the game.
+// This one sat at 50%/79% and landed on the picture of any console whose
+// aperture is large — the Genesis screen reaches 93% of the frame height. It
+// now joins the volume control in the bottom-left cluster and matches it.
 .emu-player-select__reopen {
-  position: absolute; top: 79%; left: 50%; transform: translateX(-50%); z-index: 40;
-  width: 40px; height: 40px; border-radius: 50%; border: 0; cursor: pointer;
-  background: rgba(12, 16, 24, 0.78); font-size: 1.1rem;
+  position: absolute;
+  bottom: 1rem;
+  left: 4rem;   // immediately right of the volume control
+  z-index: 40;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.4);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1rem;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.15s ease, background 0.15s ease;
+
+  &:hover, &:focus-visible {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.65);
+  }
 }

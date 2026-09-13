@@ -77,11 +77,16 @@
 }
 
 // Grid wrapper keeps the grid block centered even when it doesn't fill the row.
+// It is also the panel the tiles are sized against, so it has to claim the full
+// height it is allowed rather than shrink-wrapping the grid.
 .emu-grid-wrap {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
 
   &--empty { min-height: 30vh; }
 }
@@ -96,11 +101,14 @@
   // follows the console's box-art shape (--emu-cover-aspect = width/height,
   // set per system from its manifest). Default 1 = square, which is what the
   // Game Boy's 512x512 cartridge labels are.
+  // Both set from JS (see gridLayout.js) once the panel has been measured; the
+  // fallbacks only ever show for the frame before that.
   --emu-cover-aspect: 1;
   --emu-cover-h: 14vh;
+  --emu-cover-gap: 28px;
   --emu-cover-w: calc(var(--emu-cover-h) * var(--emu-cover-aspect));
   grid-template-columns: repeat(auto-fit, var(--emu-cover-w));
-  gap: 3vh 3vw;
+  gap: var(--emu-cover-gap);
   justify-content: center;
   align-content: center;
 
@@ -116,11 +124,13 @@
   height: var(--emu-cover-h, 14vh);
   padding: 0;
   border: 2px solid transparent;
-  border-radius: 1.4vh;
+  // Proportional to the tile: a radius that is right at 160px reads as a
+  // rounded pebble at 420px, and the tiles now range over both.
+  border-radius: calc(var(--emu-cover-h, 14vh) * 0.05);
   background: #1a1d26;
   cursor: pointer;
   overflow: hidden;
-  box-shadow: 0 0.6vh 1.8vh rgba(0, 0, 0, 0.5);
+  box-shadow: 0 calc(var(--emu-cover-h, 14vh) * 0.035) calc(var(--emu-cover-h, 14vh) * 0.1) rgba(0, 0, 0, 0.55);
   transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
 
   &__img {

@@ -77,6 +77,22 @@ export class FilesystemEmulatorAssetRepository extends IEmulatorAssetRepository 
     return fileResource(containedPath(systemDir, game.rom));
   }
 
+  /**
+   * The console's wordmark, for its tab.
+   *
+   * System-scoped, not game-scoped: it belongs to the console, not to anything
+   * on it — which is also why a console with no games can still have one. The
+   * filename comes from the manifest, so nothing here knows what the file is
+   * called.
+   */
+  getSystemLogoResource({ system }) {
+    assertSafeSegment(system);
+    const declared = this.#loadCatalog()?.systems?.[system]?.logo;
+    if (!declared) throw missing(`no logo for ${system}`);
+    const systemDir = containedPath(this.#emulationDir, system);
+    return fileResource(containedPath(systemDir, declared));
+  }
+
   getArtResource({ system, gameId, kind }) {
     assertSafeSegment(system);
     assertSafeSegment(gameId);
