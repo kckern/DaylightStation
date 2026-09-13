@@ -49,10 +49,16 @@ function Cluster({ step, isCurrent, noteProgress }) {
 
   return (
     <div className="drill-cluster" data-active={isCurrent || undefined} data-done={done || undefined}>
-      <div className="drill-cluster__label">
-        {badge && <span className="drill-cluster__badge">{badge}</span>}
-        <span>{label}</span>
-      </div>
+      {/* A SET WITH NOTHING TO SAY SAYS NOTHING. A reading deck declares no
+          label on purpose — naming the pitch under a staff a child is being
+          asked to read hands them the answer — and an empty label row here
+          would still have reserved its line and its gap. */}
+      {(badge || label) && (
+        <div className="drill-cluster__label">
+          {badge && <span className="drill-cluster__badge">{badge}</span>}
+          {label && <span>{label}</span>}
+        </div>
+      )}
       <div className="drill-cluster__pills">
         {Array.from({ length: required }, (_, rep) => {
           const state = done || rep < banked ? 'banked' : (isCurrent && rep === banked ? 'current' : 'todo');
@@ -113,7 +119,11 @@ export default function DrillProgress({
       setFetched(found ?? null);
     }).catch(() => { /* no projection, no pills */ });
     return () => { alive = false; };
-  }, [programId, userId, stepId, settled, reloadKey, suppliedProgram]);
+    // `Boolean`, not the projection itself: a host that RECOMPUTES its
+    // projection every render (a deck's standing moves with the cursor) would
+    // otherwise re-arm this effect at MIDI rates. All it ever asks of the prop
+    // is whether there is one.
+  }, [programId, userId, stepId, settled, reloadKey, Boolean(suppliedProgram)]);
 
   const current = useMemo(() => {
     const steps = program?.steps ?? [];
@@ -137,11 +147,16 @@ export default function DrillProgress({
   // what the original attempt cost (a hook below an early return, 114 tests).
   if (!program || (program.steps?.length ?? 0) < 2) return fallback;
 
+  const placard = current?.display?.key ?? current?.title ?? null;
+
   return (
     <div className="drill-progress" data-phase={phase}>
-      {current && (
+      {/* The placard names the MATERIAL, so it draws only when the host declared
+          one to name. A deck's sets are positions, not subjects; the stage is
+          already showing the card. */}
+      {placard && (
         <div className="drill-placard">
-          <span className="drill-placard__key">{current.display?.key ?? current.title}</span>
+          <span className="drill-placard__key">{placard}</span>
           {current.display?.hand_label && (
             <>
               <span className="drill-placard__sep">·</span>

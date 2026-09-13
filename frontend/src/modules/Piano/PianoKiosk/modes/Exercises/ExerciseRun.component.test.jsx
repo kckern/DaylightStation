@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ExerciseRun from './ExerciseRun.jsx';
 import { BUILT_IN_FLOOR } from '../Games/gateRepertoire.js';
 import { requirementForLevel } from '../Games/gateAsk.js';
+import { keysInstance } from '../Games/gateMaterial.js';
 
 /**
  * A host-supplied requirement carrying a NUMERIC bar, as a local fixture.
@@ -579,7 +580,7 @@ describe('ExerciseRun shared assessment wiring', () => {
 
     const props = { instance: subject(), score: null, intent: 'challenge', requirement, onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
-    await screen.findByText("Press any key to start. You'll hear 4 clicks, then play at that speed.");
+    await screen.findByText("Press any key to start. You'll hear 4 clicks, then play one note on every click.");
     // The click is silent until a key arms the run.
     expect(h.metronome.mock.calls.at(-1)[0]).toMatchObject({ enabled: false });
 
@@ -607,6 +608,8 @@ describe('ExerciseRun shared assessment wiring', () => {
     const requirement = cuedRequirement({ passScore: 0.8 });
     const props = { instance: subject(), score: null, intent: 'challenge', requirement, onExit: vi.fn(), onPassed: vi.fn() };
     const view = render(<ExerciseRun {...props} />);
+    // ONE note has no speed to describe, so the sentence stays generic rather
+    // than inventing a rate — `askPace` needs two onsets to have an interval.
     await screen.findByText("Press any key to start. You'll hear 4 clicks, then play at that speed.");
 
     press(view, props, 72);
@@ -733,7 +736,7 @@ describe('ExerciseRun shared assessment wiring', () => {
     ['practice free', { intent: 'practice', practiceMode: 'free' }, 'Play the first note to begin.'],
     ['a free challenge', { intent: 'challenge', requirement: { mode: 'free' } }, 'Play the first note to begin.'],
     ['a cued challenge', { intent: 'challenge', requirement: cuedRequirement({ passScore: 0.8 }) },
-      "Press any key to start. You'll hear 4 clicks, then play at that speed."],
+      "Press any key to start. You'll hear 4 clicks, then play one note on every click."],
   ])('%s has no button to press and no fixed-tempo lecture', async (_label, extra, hint) => {
     h.instanceData = { ...h.instance, tempo: { start_bpm: 60 } };
     const props = { instance: subject(), score: null, onExit: vi.fn(), onPassed: vi.fn(), ...extra };
@@ -1673,4 +1676,76 @@ describe('timed exercise clock and input boundary', () => {
     expect(props.onPassed).not.toHaveBeenCalled();
   });
 
+});
+
+/**
+ * A NINE-CARD DECK IS A DRILL, AND IS DRAWN AS ONE.
+ *
+ * The gate's sight-reading rung deals `notes=3, reps=3`: three pitches, three
+ * consecutive cards each, one on screen at a time. It carried no chrome at all
+ * — `DrillProgress` was reachable only through the host-supplied program
+ * coordinates that `{ kind: 'drill' }` material sets — so a child was handed a
+ * paragraph of standing instructions nine times over and no way to see where
+ * in the nine they were.
+ */
+describe('ExerciseRun — a flashcard deck draws set/rep chrome', () => {
+  beforeEach(() => { vi.useRealTimers(); resetHarness(); });
+  afterEach(() => { h.instanceData = null; });
+
+  const DECK = keysInstance({ kind: 'keys', notes: 3, arrangement: 'sequence', reps: 3 }, 0);
+  const mountDeck = () => {
+    h.instanceData = DECK;
+    const props = { instance: DECK, score: null, intent: 'practice', practiceMode: 'free', ask: 'Play the lit keys in order.' };
+    return { view: render(<ExerciseRun {...props} />), props };
+  };
+
+  it('draws one cluster per pitch and one pill per rep', async () => {
+    const { view } = mountDeck();
+    await waitFor(() => expect(view.container.querySelectorAll('.drill-cluster')).toHaveLength(3));
+    for (const cluster of view.container.querySelectorAll('.drill-cluster')) {
+      expect(cluster.querySelectorAll('.drill-pill')).toHaveLength(3);
+    }
+  });
+
+  it('replaces the standing instruction rather than sitting beside it', async () => {
+    const { view } = mountDeck();
+    await waitFor(() => expect(view.container.querySelector('.drill-progress')).toBeTruthy());
+    expect(screen.queryByText('Play the first note to begin.')).not.toBeInTheDocument();
+    // ...and the ask sentence over the stage goes with it: nothing is lit here,
+    // the child is reading a staff.
+    expect(screen.queryByRole('heading', { name: 'Play the lit keys in order.' })).not.toBeInTheDocument();
+  });
+
+  it('prints no label on a set — that would hand a reader the answer', async () => {
+    const { view } = mountDeck();
+    await waitFor(() => expect(view.container.querySelector('.drill-progress')).toBeTruthy());
+    expect(view.container.querySelectorAll('.drill-cluster__label')).toHaveLength(0);
+    expect(view.container.querySelectorAll('.drill-placard')).toHaveLength(0);
+  });
+
+  it('marks the first rep of the first set live, and nothing banked, before a note', async () => {
+    const { view } = mountDeck();
+    await waitFor(() => expect(view.container.querySelector('.drill-progress')).toBeTruthy());
+    const states = [...view.container.querySelectorAll('.drill-pill')].map((p) => p.dataset.state);
+    expect(states).toEqual(['current', 'todo', 'todo', 'todo', 'todo', 'todo', 'todo', 'todo', 'todo']);
+  });
+
+  it('banks a rep when the card is played, and moves the live pill on', async () => {
+    const { view, props } = mountDeck();
+    await waitFor(() => expect(view.container.querySelector('.drill-progress')).toBeTruthy());
+    const first = DECK.events[0].notes[0].midi;
+    act(() => { h.activeNotes = new Map([[first, { velocity: 1 }]]); view.rerender(<ExerciseRun {...props} />); });
+    act(() => { h.activeNotes = new Map(); view.rerender(<ExerciseRun {...props} />); });
+    await waitFor(() => {
+      const states = [...view.container.querySelectorAll('.drill-pill')].map((p) => p.dataset.state);
+      expect(states.slice(0, 3)).toEqual(['banked', 'current', 'todo']);
+    });
+  });
+
+  it('leaves an ordinary two-note exercise with its instruction and its heading', async () => {
+    const props = { instance: h.instance, score: null, intent: 'practice', practiceMode: 'free', ask: 'Play the fragment.' };
+    render(<ExerciseRun {...props} />);
+    expect(await screen.findByText('Play the first note to begin.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Play the fragment.' })).toBeInTheDocument();
+  });
 });

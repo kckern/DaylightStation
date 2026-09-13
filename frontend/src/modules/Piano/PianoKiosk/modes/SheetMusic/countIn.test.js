@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { countInPlan } from './countIn.js';
+import { countInPlan, askPace, countInSentence } from './countIn.js';
 
 describe('countInPlan', () => {
   it('one measure of beats at the scaled tempo', () => {
@@ -79,5 +79,71 @@ describe('countInPlan', () => {
     const p = countInPlan({ beats: 4, bpm: 120, tempoMult: 1 }); // one bar = 2000ms
     expect(p.beats).toBe(4);
     expect(p.totalMs).toBe(2000);
+  });
+});
+
+/**
+ * "PLAY AT THAT SPEED" WAS NOT TRUE, AND IT WAS THE ONLY INSTRUCTION GIVEN.
+ *
+ * The count-in pulse is the quarter note; the exercise bank writes its scales
+ * in eighths. The gate's cued scale rung therefore clicked four times at 60bpm,
+ * promised "that speed", and graded eight notes 500ms apart. Every note of a
+ * correct, evenly played C major scale came back `wrong` — three attempts
+ * running, 2026-09-13 — and nothing on the screen could have told the child
+ * why. These pin the sentence to the grid the engine actually grades on.
+ */
+describe('what the clicks mean for the ask', () => {
+  const onsets = (step, count) => Array.from({ length: count }, (_, i) => i * step);
+
+  it('reads a scale written in eighths against a quarter-note click as two per click', () => {
+    expect(askPace(onsets(0.5, 8), 1)).toEqual({ notesPerClick: 2, even: true });
+  });
+
+  it('reads quarter notes against the same click as one per click', () => {
+    expect(askPace(onsets(1, 4), 1)).toEqual({ notesPerClick: 1, even: true });
+  });
+
+  it('reads half notes as one note every two clicks', () => {
+    expect(askPace(onsets(2, 4), 1)).toEqual({ notesPerClick: 0.5, even: true });
+  });
+
+  it('follows a COARSENED click rather than assuming the quarter', () => {
+    // Above ~140bpm the plan clicks half notes. Eighths against a half-note
+    // click is four notes per click, and saying "two" there would be the same
+    // failure in a new place.
+    expect(askPace(onsets(0.5, 8), 2)).toEqual({ notesPerClick: 4, even: true });
+  });
+
+  it('declines an ask with no steady pulse, and one with no interval at all', () => {
+    expect(askPace([0, 1, 1.5, 3], 1).even).toBe(false);
+    expect(askPace([0], 1)).toBeNull();
+    expect(askPace([], 1)).toBeNull();
+    expect(askPace(onsets(0.5, 4), 0)).toBeNull();
+  });
+
+  it('refuses events that go backwards or sit on top of each other', () => {
+    expect(askPace([0, 0, 1], 1)).toBeNull();
+    expect(askPace([0, 2, 1], 1)).toBeNull();
+  });
+});
+
+describe('the sentence a child is given', () => {
+  it('says two notes per click for the rung that failed', () => {
+    expect(countInSentence(4, askPace(Array.from({ length: 8 }, (_, i) => i * 0.5), 1)))
+      .toBe("Press any key to start. You'll hear 4 clicks, then play two notes on every click.");
+  });
+
+  it('keeps the generic promise when there is no single speed to name', () => {
+    expect(countInSentence(4, null)).toBe("Press any key to start. You'll hear 4 clicks, then play at that speed.");
+    expect(countInSentence(4, { notesPerClick: 1.5, even: false }))
+      .toBe("Press any key to start. You'll hear 4 clicks, then play at that speed.");
+    // An even but unspeakable ratio is still generic — better a vague truth
+    // than a precise sentence nobody can act on.
+    expect(countInSentence(4, { notesPerClick: 6, even: true }))
+      .toBe("Press any key to start. You'll hear 4 clicks, then play at that speed.");
+  });
+
+  it('counts its own clicks correctly in the singular', () => {
+    expect(countInSentence(1, null)).toContain('1 click,');
   });
 });

@@ -14,6 +14,7 @@ import {
   ACCIDENTAL_COLUMN_PITCH,
   NOTEHEAD_RX,
   NOTEHEAD_RY,
+  GHOST_INK,
   SharpShape,
   FlatShape,
   ledgerLineYs,
@@ -70,12 +71,26 @@ import './SvgSequenceStaff.scss';
  */
 
 // ── Geometry (viewBox units) ─────────────────────────────────────────────────
-// The vertical half matches SvgStaffRenderer exactly so a note is the same size
-// on both surfaces; only the horizontal extent is this component's own.
+// Note SIZE matches SvgStaffRenderer exactly — same line spacing, same notehead
+// — so a note is the same note on both surfaces; only the horizontal extent and
+// the vertical PADDING are this component's own.
 const LINE_SPACING = 14;
-const TOP_PAD = LINE_SPACING * 2;
+/**
+ * Room beyond each staff edge, and why it is not two line-spacings.
+ *
+ * Two ledger lines is the range the asks on this surface actually use: a
+ * flashcard deck is dealt from the white keys C4..C6, and on a treble staff
+ * that is two ledger positions below (middle C) and two above (C6). Padding of
+ * exactly `LINE_SPACING * 2` puts the CENTRE of those noteheads on the very
+ * edge of the box — so middle C kept half a head and its whole ledger line
+ * outside the cursor lane, and C6 lost the top of its head to the viewport
+ * itself. A notehead has a radius, and the box has to be told about it.
+ */
+const LEDGER_ROOM = LINE_SPACING * 2;
+const INK_PAD = LEDGER_ROOM + NOTEHEAD_RY + 3.5;
+const TOP_PAD = INK_PAD;
 const BOTTOM_LINE_Y = TOP_PAD + LINE_SPACING * 4;
-const VIEWBOX_H = BOTTOM_LINE_Y + LINE_SPACING * 2;
+const VIEWBOX_H = BOTTOM_LINE_Y + INK_PAD;
 const STEP_SIZE = LINE_SPACING / 2;
 /** Left edge of the first notehead column — clear of the clef and its accidental gutter. */
 const FIRST_COLUMN_X = 64;
@@ -87,6 +102,8 @@ const FIRST_COLUMN_X = 64;
 const COLUMN_W = 36;
 /** How far right of the cursor column a ghost stands: clear of the target, still in the same beat. */
 const GHOST_DX = 16;
+/** Air between the cursor lane and the edge of the box, so it reads as a lane and not a wall. */
+const CURSOR_INSET = 2;
 const RIGHT_PAD = 30;
 const MIN_VIEWBOX_W = 100;
 
@@ -397,14 +414,23 @@ export function SvgSequenceStaff({
         <svg className="action-staff__notation-svg" viewBox={viewBox} preserveAspectRatio="xMidYMid meet">
           <ClefGlyph clef={activeClef} lineSpacing={LINE_SPACING} bottomLineY={BOTTOM_LINE_Y} />
 
+          {/* THE LANE SPANS THE WHOLE INK BAND, not the staff.
+
+              A cursor sized to the five lines plus one spacing either side ends
+              at y = BOTTOM_LINE_Y + LINE_SPACING, which is exactly where middle
+              C's notehead CENTRE sits — so the note the lane exists to mark hung
+              out of the bottom of it, ledger line and all, on one of the
+              commonest cards a reading deck deals. The band the engraver can
+              draw ink in is what has to be covered, and that band is the box
+              (see INK_PAD). */}
           {showCursor && (
             <rect
               className="sequence-staff__cursor"
               data-cursor-index={cursorIndex}
               x={FIRST_COLUMN_X + cursorIndex * COLUMN_W - COLUMN_W / 2}
-              y={TOP_PAD - LINE_SPACING}
+              y={CURSOR_INSET}
               width={COLUMN_W}
-              height={LINE_SPACING * 6}
+              height={VIEWBOX_H - CURSOR_INSET * 2}
               rx="4"
             />
           )}
@@ -495,7 +521,7 @@ export function SvgSequenceStaff({
               {ledgerLineYs(ghost.position, BOTTOM_LINE_Y, STEP_SIZE).map((ly, li) => (
                 <line key={`ghost-ledger-${li}`} className="sequence-staff__ghost-ledger"
                   x1={ghostX - 14} y1={ly} x2={ghostX + 14} y2={ly}
-                  stroke="rgba(0,0,0,0.35)" strokeWidth="1" />
+                  {...GHOST_INK.ledger} />
               ))}
               <ellipse
                 className="sequence-note-wrong-ghost"
@@ -503,10 +529,12 @@ export function SvgSequenceStaff({
                 data-line-offset={ghost.position}
                 cx={ghostX} cy={yOf(ghost.position)} rx={NOTEHEAD_RX} ry={NOTEHEAD_RY}
                 transform={`rotate(-12, ${ghostX}, ${yOf(ghost.position)})`}
+                {...GHOST_INK.head}
               />
               {(ghost.isSharp || ghost.isFlat) && (
                 <g
                   className="sequence-staff__ghost-accidental"
+                  color={GHOST_INK.accidental}
                   data-kind={ghost.isSharp ? 'sharp' : 'flat'}
                   transform={`translate(${ghostX - NOTEHEAD_RX - ACCIDENTAL_GAP - ACCIDENTAL_WIDTH / 2}, ${yOf(ghost.position)})`}
                 >

@@ -173,6 +173,50 @@ describe('SvgSequenceStaff', () => {
       const { container } = render(<SvgSequenceStaff notes={notes(60, 62, 64)} cursorIndex={3} />);
       expect(container.querySelectorAll('.sequence-staff__cursor')).toHaveLength(0);
     });
+
+    // ── The lane has to CONTAIN the note it marks ────────────────────────────
+    // Not a layout assertion — these are viewBox coordinates the component
+    // publishes as attributes, which jsdom reports verbatim. The bug this pins
+    // was arithmetic, not CSS: the lane ended exactly on middle C's notehead
+    // centre, so half the head and its whole ledger line sat outside it.
+    describe('the cursor lane contains the note it marks', () => {
+      const NOTEHEAD_RY = 6.5;
+      const cursorBand = (container) => {
+        const rect = container.querySelector('.sequence-staff__cursor');
+        const y = Number(rect.getAttribute('y'));
+        return { top: y, bottom: y + Number(rect.getAttribute('height')) };
+      };
+      const headBand = (container, midi) => {
+        const head = container.querySelector(`.action-staff__note[data-midi="${midi}"]`);
+        const cy = Number(head.getAttribute('cy'));
+        return { top: cy - NOTEHEAD_RY, bottom: cy + NOTEHEAD_RY };
+      };
+
+      it.each([
+        ['middle C, two ledger lines BELOW a treble staff', 60],
+        ['C6, two ledger lines ABOVE it', 84],
+      ])('encloses %s', (_label, midi) => {
+        const { container } = render(<SvgSequenceStaff notes={notes(midi)} cursorIndex={0} clef="treble" />);
+        const lane = cursorBand(container);
+        const head = headBand(container, midi);
+        expect(head.top).toBeGreaterThanOrEqual(lane.top);
+        expect(head.bottom).toBeLessThanOrEqual(lane.bottom);
+      });
+
+      it('keeps those same noteheads inside the viewBox, so nothing is clipped', () => {
+        const { container } = render(<SvgSequenceStaff notes={notes(60, 84)} cursorIndex={0} clef="treble" />);
+        const [, , , boxH] = container
+          .querySelector('.action-staff__notation-svg')
+          .getAttribute('viewBox')
+          .split(' ')
+          .map(Number);
+        for (const midi of [60, 84]) {
+          const head = headBand(container, midi);
+          expect(head.top).toBeGreaterThanOrEqual(0);
+          expect(head.bottom).toBeLessThanOrEqual(boxH);
+        }
+      });
+    });
   });
 
   // ── An attempt in progress at the cursor (rule 2 + 5) ──────────────────────
