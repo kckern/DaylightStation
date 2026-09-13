@@ -43,8 +43,9 @@ export class GuessingMusic {
     const report = (error) => {
       if (cancelled) return;
       this.log.warn('gaming.music.failed', { error: error.message });
-      onError(error);
       cleanup();
+      try { onError(error); }
+      catch (presentationError) { this.log.warn('gaming.music.error-presenter-failed', { error: presentationError.message }); }
     };
     const playNext = () => {
       if (cancelled || !tracks.length) return;

@@ -2137,6 +2137,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       assetCatalog: gamingAssetCatalog,
       partyMediaRoot: join(mediaBasePath, 'games', 'party-games'),
       contentGamesDir: join(contentPath, 'games'),
+      imageArchiveDir: configService.getHouseholdPath('gaming/definitions/images'),
     }) }),
     broadcastEvent,
     logger: rootLogger.child({ module: 'gaming-api' }),

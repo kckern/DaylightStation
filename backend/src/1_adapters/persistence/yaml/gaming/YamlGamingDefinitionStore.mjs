@@ -1,4 +1,4 @@
-import { readClueBank } from './readClueBank.mjs';
+import { readClueBank, pinClueImages } from './readClueBank.mjs';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import YAML from 'yaml';
@@ -114,6 +114,7 @@ export class YamlGamingDefinitionStore {
     if (!loaded?.parts?.rules || !loaded?.parts?.content || !loaded?.artifacts) throw new Error('separate rules and content artifacts are required');
     const rules = structuredClone(loaded.parts.rules);
     const content = structuredClone(loaded.parts.content);
+    pinClueImages(content, this.contentGamesDir, path.join(this.archiveDir, 'images'));
     const rulesHash = this.#hash(rules);
     const contentHash = this.#hash(content);
     const bundle = { rules_hash: rulesHash, content_hash: contentHash };

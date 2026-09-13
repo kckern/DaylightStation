@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -65,7 +66,7 @@ describe('external Charades clue bank', () => {
     const { store, bank } = bankFixture();
     const first = store.getCurrent('demo');
     expect(first.definition.challenges).toEqual([
-      { id: 'rabbit', activity: 'charades', prompt: 'Rabbit', decoder: { image: '/api/v1/gaming/media/content/charades/images/rabbit.svg' } },
+      { id: 'rabbit', activity: 'charades', prompt: 'Rabbit', decoder: { image: `/api/v1/gaming/media/content/${crypto.createHash('sha256').update('<svg xmlns="http://www.w3.org/2000/svg"/>').digest('hex')}/charades/images/rabbit.svg` } },
       { id: 'swimming', activity: 'charades', prompt: 'Swimming' },
     ]);
     store.pin(first);
@@ -74,6 +75,21 @@ describe('external Charades clue bank', () => {
     expect(second.hash).not.toBe(first.hash);
     expect(second.artifacts.rules_definition).toEqual(first.artifacts.rules_definition);
     expect(store.getPinned(first.hash).challenges).toEqual(first.definition.challenges);
+  });
+
+  it('pins image bytes and changes image URLs when source art changes', () => {
+    const {store, root, contentGamesDir} = bankFixture();
+    const first = store.getCurrent('demo');
+    const imageUrl = first.definition.challenges[0].decoder.image;
+    const hash = imageUrl.split('/content/')[1].split('/')[0];
+    const archive = path.join(root, 'archive/images', `${hash}.svg`);
+    expect(fs.existsSync(archive)).toBe(false); // previews/diagnostics do not pin
+    store.pin(first);
+    const original = fs.readFileSync(archive, 'utf8');
+    fs.writeFileSync(path.join(contentGamesDir, 'charades/images/rabbit.svg'), '<svg><!-- changed --></svg>');
+    expect(store.getCurrent('demo').definition.challenges[0].decoder.image).not.toBe(imageUrl);
+    expect(store.getPinned(first.hash).challenges[0].decoder.image).toBe(imageUrl);
+    expect(fs.readFileSync(archive, 'utf8')).toBe(original);
   });
 
   it.each([
