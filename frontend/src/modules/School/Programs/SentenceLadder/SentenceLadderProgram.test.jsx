@@ -28,6 +28,7 @@ const answer = (i) => col(i).querySelector('.lang-strip__got').textContent;
 const dayMock = vi.fn();
 const previewDayMock = vi.fn();
 const logMock = vi.fn();
+const transcribeMock = vi.fn();
 const rollMock = vi.fn();
 const pacingMock = vi.fn();
 const historyMock = vi.fn();
@@ -97,6 +98,7 @@ vi.mock('./languageApi.js', () => ({
     pacing: (...a) => pacingMock(...a),
     history: (...a) => historyMock(...a),
     recording: vi.fn(async () => ({ ok: true, status: 200, data: {} })),
+    transcribe: (...a) => transcribeMock(...a),
     recordingBlob: vi.fn(async () => ({ ok: false, status: 404, data: null })),
     audioUrl: (c, seq, lang) => `/audio/${c}/${seq}/${lang}`,
     cueUrl: (name) => `/cue/${name}`,
@@ -139,7 +141,7 @@ const entry = (seq, rung, done = false, options = {}) => ({
 
 function dayPayload({
   queue, chain = ['repetition'], day = 1, dailyLimit = 5,
-  missingCreditRungs = [], missingCreditNeeds = {}, cues = [],
+  missingCreditRungs = [], missingCreditNeeds = {}, cues = [], voiceAnswer = false,
 }) {
   const done = queue.filter((e) => e.done).length;
   return {
@@ -150,11 +152,19 @@ function dayPayload({
       day,
       dailyLimit,
       chain,
-      queue,
+      // The server marks each entry itself — interpretation only, and only
+      // where it can transcribe. Stamped here the way `#decorate` stamps it so
+      // no test has to know which rungs may be spoken. An entry that says so
+      // explicitly wins.
+      queue: queue.map((e) => ({ spokenAnswer: voiceAnswer && e.rung === 'interpretation', ...e })),
       summary: { total: queue.length, done, byRung: {} },
       missingCreditRungs,
       missingCreditNeeds,
       cues,
+      // Whether this deployment can turn speech into text at all. Off by
+      // default here so every existing test keeps rendering the surface it was
+      // written against.
+      voiceAnswer,
       rollover: { roll: false, reason: 'queue-incomplete' },
     },
   };
@@ -324,7 +334,7 @@ describe('the day', () => {
       chain: ['repetition'],
       queue: [entry(1, 'repetition')],
       missingCreditRungs: ['recording'],
-      missingCreditNeeds: { recording: { kind: 'microphone' } },
+      missingCreditNeeds: { recording: { anyOf: [{ kind: 'microphone' }] } },
     }));
     const { container } = render(
       <SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />,
@@ -339,7 +349,7 @@ describe('the day', () => {
       chain: ['repetition', 'recording'],
       queue: [entry(1, 'repetition'), entry(2, 'recording')],
       missingCreditRungs: ['recording'],
-      missingCreditNeeds: { recording: { kind: 'microphone' } },
+      missingCreditNeeds: { recording: { anyOf: [{ kind: 'microphone' }] } },
     }));
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByText('Repetition');
@@ -357,7 +367,7 @@ describe('the day', () => {
       chain: ['repetition', 'interpretation'],
       queue: [entry(1, 'repetition'), entry(2, 'interpretation')],
       missingCreditRungs: ['dictation'],
-      missingCreditNeeds: { dictation: { kind: 'textInput', language: 'KR' } },
+      missingCreditNeeds: { dictation: { anyOf: [{ kind: 'textInput', language: 'KR' }] } },
     }));
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByText('Repetition');
@@ -370,7 +380,7 @@ describe('the day', () => {
       chain: ['repetition', 'dictation'],
       queue: [entry(1, 'repetition'), entry(2, 'dictation')],
       missingCreditRungs: ['recording'],
-      missingCreditNeeds: { recording: { kind: 'microphone' } },
+      missingCreditNeeds: { recording: { anyOf: [{ kind: 'microphone' }] } },
     }));
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByText('Repetition');
@@ -385,12 +395,64 @@ describe('the day', () => {
       missingCreditRungs: ['dictation'],
       // `resolveRole` yields null for a corpus whose languages map is missing
       // the rung's role, and the requirement object around it is still truthy.
-      missingCreditNeeds: { dictation: { kind: 'textInput', language: null } },
+      missingCreditNeeds: { dictation: { anyOf: [{ kind: 'textInput', language: null }] } },
     }));
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByText('Repetition');
     expect(screen.getByText('Not available on this device')).toBeTruthy();
     expect(screen.queryByText(/null/i)).toBeNull();
+  });
+
+  /**
+   * A rung short of ALTERNATIVES. Interpretation may be typed in English OR
+   * spoken and transcribed, so a device short of both must name both — and
+   * must never list them as though a child needed to find both.
+   */
+  it('says "or" when either of two things would unblock the rung', async () => {
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['repetition'],
+      queue: [entry(1, 'repetition')],
+      missingCreditRungs: ['interpretation'],
+      missingCreditNeeds: {
+        interpretation: { anyOf: [{ kind: 'textInput', language: 'EN' }, { kind: 'microphone' }] },
+      },
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />);
+    await screen.findByText('Repetition');
+    expect(screen.getByText('Needs an English keyboard or a microphone — on another device')).toBeTruthy();
+    expect(screen.queryByText(/and a microphone/)).toBeNull();
+  });
+
+  it('drops an alternative it cannot name rather than printing half a sentence', async () => {
+    // The null-language payload again, now beside a real alternative: the
+    // unprintable half goes, the true half stays, and the child is told
+    // something they can act on instead of "Needs a null keyboard or …".
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['repetition'],
+      queue: [entry(1, 'repetition')],
+      missingCreditRungs: ['interpretation'],
+      missingCreditNeeds: {
+        interpretation: { anyOf: [{ kind: 'textInput', language: null }, { kind: 'microphone' }] },
+      },
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />);
+    await screen.findByText('Repetition');
+    expect(screen.getByText('Needs a microphone — on another device')).toBeTruthy();
+    expect(screen.queryByText(/null/i)).toBeNull();
+  });
+
+  it('still reads a requirement from a server that predates alternatives', async () => {
+    // A bare `{kind}` with no `anyOf` — an older server, or a truncated
+    // payload. The card is the last place that may go blank.
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['repetition'],
+      queue: [entry(1, 'repetition')],
+      missingCreditRungs: ['recording'],
+      missingCreditNeeds: { recording: { kind: 'microphone' } },
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />);
+    await screen.findByText('Repetition');
+    expect(screen.getByText(/Needs a microphone/)).toBeTruthy();
   });
 
   it('draws the rung a mic-less device skips even when the chain omits it', async () => {
@@ -948,7 +1010,7 @@ describe('what the store can answer afterwards', () => {
       chain: ['repetition'],
       queue: [entry(1, 'repetition')],
       missingCreditRungs: ['dictation'],
-      missingCreditNeeds: { dictation: { kind: 'textInput', language: 'KR' } },
+      missingCreditNeeds: { dictation: { anyOf: [{ kind: 'textInput', language: 'KR' }] } },
     }));
     const { rerender } = render(
       <SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />,
@@ -962,6 +1024,27 @@ describe('what the store can answer afterwards', () => {
     // A rendered STATE, not an event: re-rendering it must not say it again.
     rerender(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     expect(capabilityLogMock.mock.calls.filter(([d]) => d === 'rung-blocked')).toHaveLength(1);
+  });
+
+  it('keeps the blocked-rung token countable when a rung has two ways through', async () => {
+    // `stats by` on this field is how someone answers "which capability is
+    // blocking the most work". A token built from an unordered list would be
+    // a different string for the same situation and count as two things, so
+    // the alternatives are sorted and joined with a separator that groups.
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['repetition'],
+      queue: [entry(1, 'repetition')],
+      missingCreditRungs: ['interpretation'],
+      missingCreditNeeds: {
+        interpretation: { anyOf: [{ kind: 'textInput', language: 'EN' }, { kind: 'microphone' }] },
+      },
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />);
+    await screen.findByText(/English keyboard or a microphone/);
+    expect(capabilityLogMock).toHaveBeenCalledWith('rung-blocked', {
+      corpus: 'glossika-korean', day: 1, rungs: ['interpretation'],
+      needs: { interpretation: 'microphone|textInput:EN' },
+    });
   });
 
   it('records the extra-practice banner it shows the child', async () => {
@@ -1048,8 +1131,11 @@ describe('typed rungs', () => {
     fireEvent.change(input, { target: { value: '한국어 1' } });
     fireEvent.click(screen.getByText('Submit'));
 
+    // `method` rides with every answer now, including this one: a row that
+    // says nothing about how it was produced is a row from before the question
+    // was asked, and going forward the log says which.
     await waitFor(() => expect(logMock).toHaveBeenCalledWith('kckern', {
-      corpus: 'glossika-korean', seq: 1, rung: 'dictation', given: '한국어 1',
+      corpus: 'glossika-korean', seq: 1, rung: 'dictation', given: '한국어 1', method: 'typed',
     }, expect.anything(), 'test-grant'));
     // Re-fetched rather than mutating a local copy of the queue.
     await waitFor(() => expect(dayMock.mock.calls.length).toBeGreaterThan(1));
@@ -1271,29 +1357,88 @@ describe('the typing surface', () => {
     // it the field never declares Korean and nothing composes.
     act(() => { input.blur(); input.focus(); });
 
-    // d h → ㅇ ㅗ → 오. Then s → ㄴ, and the FIELD now spells 온: a real word,
-    // one glyph, and not the 오 the learner is typing. Only the next vowel
-    // decides whether that ㄴ closed 오 or opened 늘.
+    // d h → ㅇ ㅗ → 오, and the GATE settles it the instant it is the syllable
+    // being traced. So the following s → ㄴ has no syllable left to attach to
+    // and opens the next one directly: the field never spells 온 here at all.
+    // That is copy mode's payoff — the ambiguity is not survived, it ceases to
+    // exist — and it is licensed only by knowing the target, which is why the
+    // listen-mode test below still has to survive it.
     typeJamo(input, 'dhs');
-    expect(input.value).toBe('온');
+    expect(input.value).toBe('오ㄴ');
 
-    // Nothing has SETTLED, so column 0 has not moved: 오 is still drawn, still
-    // the live column, still not wrong. Fed the field value instead, the strip
-    // would call column 0 settled-and-wrong, redden it, jump the caret to
-    // column 1 — and undo all of it one keystroke later.
-    expect(model(0)).toBe('오');
-    expect(col(0).className).toContain('is-current');
-    expect(col(0).className).not.toContain('is-wrong');
-    expect(answer(0)).toBe('온');
-
-    // m f → ㅡ ㄹ. The ㄴ leaves 오 for the next syllable, 오 settles, and the
-    // caret moves exactly once — when the ambiguity resolved.
-    typeJamo(input, 'mf');
-    expect(input.value).toBe('오늘');
     expect(col(0).className).toContain('is-done');
     expect(answer(0)).toBe('오');
     expect(col(1).className).toContain('is-current');
+    expect(answer(1)).toBe('ㄴ');
+
+    // m f → ㅡ ㄹ, and 늘 locks the same way.
+    typeJamo(input, 'mf');
+    expect(input.value).toBe('오늘');
+    expect(col(1).className).toContain('is-done');
     expect(answer(1)).toBe('늘');
+  });
+
+  it('holds the live column through the ambiguous syllable in listen mode, where nothing settles it', () => {
+    // NO GATE HERE, so the 두벌식 ambiguity is real and the strip has to
+    // survive it exactly as it always did. Fed the field's value the strip
+    // would call column 0 settled-and-wrong the moment 온 appeared, redden it,
+    // jump the caret on — and undo all of it one keystroke later.
+    rung();
+    const input = screen.getByLabelText('Type what you hear');
+    act(() => { input.blur(); input.focus(); });
+
+    typeJamo(input, 'dhs');
+    expect(input.value).toBe('온');
+    // Nothing has COMMITTED, so the live column has not moved and nothing is
+    // wrong — 온 is unfinished, not incorrect. It stays column 0's pending
+    // answer and the caret stays with it. The model is not in the DOM in
+    // either state: the learner sees their own keystrokes and nothing else.
+    expect(col(0).className).toContain('is-current');
+    expect(col(0).className).not.toContain('is-wrong');
+    expect(answer(0)).toBe('온');
+    expect(col(1).className).toContain('is-blind');
+    expect(document.querySelector('.lang-strip').textContent).toBe('온');
+
+    typeJamo(input, 'mf');
+    expect(input.value).toBe('오늘');
+    expect(answer(0)).toBe('오');
+    expect(col(0).className).toContain('is-done');
+  });
+
+  it('refuses a keystroke that would break the shape being traced, and shows the refusal', () => {
+    // THE COPY-MODE GATE, reached from the UI for the first time. A refused key
+    // is consumed — nothing else on the page acts on it — but nothing lands
+    // either, so without the flash the child's evidence is a keyboard that
+    // stopped working, and the answer to that is to press harder.
+    rung({ copyPrompt: true });
+    const input = screen.getByLabelText('Copy the sentence');
+    act(() => { input.blur(); input.focus(); });
+
+    typeJamo(input, 'r'); // ㄱ, where 오 wants ㅇ
+    expect(input.value).toBe('');
+    expect(document.querySelector('.lang-rung__strip').className).toContain('is-refused');
+    expect(rungLogMock).toHaveBeenCalledWith('refused', expect.objectContaining({ jamo: 'ㄱ' }));
+
+    // A refusal costs the stroke, not the run.
+    typeJamo(input, 'dh');
+    expect(input.value).toBe('오');
+  });
+
+  it('lets a wrong keystroke land in listen mode, because listen mode gets no oracle at all', () => {
+    // THE TRAP THIS WHOLE TASK IS BUILT AROUND. The program knows the target in
+    // BOTH modes. Gating here would refuse a keystroke the learner genuinely
+    // meant: a child who misheard 오늘 as 온… would be steered into the right
+    // answer with nothing on screen saying so, and the record would then claim
+    // they heard it correctly. A drill that looks like it is working while
+    // measuring nothing is worse than one that is visibly broken.
+    rung();
+    const input = screen.getByLabelText('Type what you hear');
+    act(() => { input.blur(); input.focus(); });
+
+    typeJamo(input, 'r'); // ㄱ — nowhere near the 오 this sentence wants
+    expect(input.value).toBe('ㄱ');
+    expect(document.querySelector('.lang-rung__strip').className).not.toContain('is-refused');
+    expect(rungLogMock).not.toHaveBeenCalledWith('refused', expect.anything());
   });
 
   it('does not print the model above a syllable the learner already typed, in listen mode', async () => {
@@ -1326,6 +1471,202 @@ describe('the typing surface', () => {
     expect(rule).not.toMatch(/display:\s*none/);
     expect(rule).not.toMatch(/visibility:\s*hidden/);
     expect(rule).toMatch(/position:\s*absolute/);
+  });
+});
+
+// PRESS TO PEEK, TYPE TO HIDE. The intermediate tier, with no third mode and no
+// third enum value: what separates intermediate from advanced is how often they
+// ask, which is in the log either way.
+describe('the peek', () => {
+  const rung = (options) => render(
+    <HangulTypingProvider>
+      <TypedRung
+        entry={entry(1, 'dictation', false, { text: { EN: 'today', KR: '오늘' }, ...options })}
+        audioUrl={(seq, lang) => `/audio/${seq}/${lang}`}
+        onComplete={() => {}}
+        saving={false}
+        idleReplayMs={0}
+      />
+    </HangulTypingProvider>,
+  );
+  const listen = (options) => {
+    rung(options);
+    return screen.getByLabelText('Type what you hear');
+  };
+
+  it('shows the whole sentence on F1 and takes it away on the next keystroke', async () => {
+    const input = listen();
+    // Blind to start with: not merely invisible, not in the document.
+    expect(model(0)).toBe('');
+    expect(document.body.textContent).not.toContain('오');
+
+    await act(async () => { fireEvent.keyDown(input, { key: 'F1', code: 'F1' }); });
+    expect(model(0)).toBe('오');
+    expect(model(1)).toBe('늘');
+    expect(rungLogMock).toHaveBeenCalledWith('peek', expect.objectContaining({ seq: 1, at: 0 }));
+
+    // TYPE TO HIDE. You can look, or you can type, and not both — which is the
+    // whole reason this is not just copy mode with an extra step.
+    await act(async () => { fireEvent.change(input, { target: { value: '오' } }); });
+    expect(model(0)).toBe('');
+    expect(model(1)).toBe('');
+  });
+
+  it('shows the model above syllables the learner has already settled, too', async () => {
+    // A recent fix made a SETTLED column respect `reveal` — it used to print
+    // the right glyph above every syllable the learner committed, right or
+    // wrong, which handed listen mode its answer one glyph at a time. A peek
+    // that inherited that guard would show only the part of the sentence the
+    // learner has not reached, which is the half they can already work out.
+    const input = listen();
+    await act(async () => { fireEvent.change(input, { target: { value: '우' } }); });
+    expect(model(0)).toBe('');
+
+    await act(async () => { fireEvent.keyDown(input, { key: 'F1', code: 'F1' }); });
+    expect(model(0)).toBe('오');
+    expect(col(0).className).toContain('is-wrong');
+    expect(answer(0)).toBe('우');
+  });
+
+  it('offers a button as well as the key, because the Portal is a touch panel', async () => {
+    const input = listen();
+    const peek = screen.getByRole('button', { name: 'Peek' });
+    await act(async () => { fireEvent.click(peek); });
+    expect(model(0)).toBe('오');
+    // And it says so: a control that only ever reads "Peek" gives a child no
+    // way to tell whether the sentence is up because they asked.
+    expect(screen.getByRole('button', { name: 'Hide' })).toBeTruthy();
+    // Focus goes back to the field, or the keystroke that is supposed to take
+    // the peek away lands on the button instead.
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('is not wired to Escape, which the Portal binds to reload', async () => {
+    // `screens/portal.yml` maps `actions.escape` to `reload` when the screen is
+    // idle. A stuck child reaching for the obvious key would have reloaded the
+    // kiosk out from under themselves.
+    const input = listen();
+    await act(async () => { fireEvent.keyDown(input, { key: 'Escape', code: 'Escape' }); });
+    expect(model(0)).toBe('');
+  });
+
+  it('has no peek in copy mode, where the sentence is already on screen', () => {
+    rung({ copyPrompt: true });
+    expect(screen.queryByRole('button', { name: 'Peek' })).toBeNull();
+  });
+});
+
+// THE REVEAL — and why it is not the peek.
+//
+// On dictation the withheld thing is the Korean: a peek shows it and the
+// learner still has to type it in Hangul, which is the skill being drilled.
+// On interpretation the withheld thing is the ENGLISH, which IS the answer —
+// showing it leaves nothing but transcription. So the interpretation rung has
+// no peek; it has a reveal, and a reveal ends the exercise and is recorded as
+// a reveal. Without that split the record would say a child interpreted 4,143
+// sentences when they pressed a button 4,143 times.
+describe('the reveal', () => {
+  const onComplete = vi.fn();
+  const rung = (rungId = 'interpretation', options) => render(
+    <HangulTypingProvider>
+      <TypedRung
+        entry={entry(1, rungId, false, { text: { EN: 'It is cold today', KR: '오늘 추워요' }, ...options })}
+        audioUrl={(seq, lang) => `/audio/${seq}/${lang}`}
+        onComplete={onComplete}
+        saving={false}
+        idleReplayMs={0}
+      />
+    </HangulTypingProvider>,
+  );
+
+  beforeEach(() => onComplete.mockClear());
+
+  it('is offered on interpretation, where the English IS the answer', () => {
+    rung();
+    expect(screen.getByRole('button', { name: 'Show answer' })).toBeTruthy();
+  });
+
+  it('is NOT offered on dictation, where seeing the sentence still leaves it to type', () => {
+    rung('dictation');
+    expect(screen.queryByRole('button', { name: 'Show answer' })).toBeNull();
+  });
+
+  it('replaces the peek rather than joining it — one rung, one kind of help', () => {
+    // The converse of the test above. On interpretation the model IS the
+    // answer, so the thing that shows it cannot be the gentle one.
+    rung();
+    expect(screen.queryByRole('button', { name: 'Peek' })).toBeNull();
+  });
+
+  it('draws no Hint, because the partial half has nothing to say yet', () => {
+    // Word glosses are tabled into their own plan. A Hint control with no
+    // gloss behind it is a button that does nothing, and a child who presses
+    // a dead button concludes the screen is broken.
+    rung();
+    expect(screen.queryByRole('button', { name: /hint/i })).toBeNull();
+  });
+
+  it('shows the English and plays it — the whole answer, in both forms we hold', async () => {
+    rung();
+    const play = window.HTMLMediaElement.prototype.play;
+    await waitFor(() => expect(play).toHaveBeenCalled());
+    const before = play.mock.calls.length;
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Show answer' })); });
+    expect(screen.getByText('It is cold today')).toBeTruthy();
+    expect(play.mock.calls.length).toBeGreaterThan(before);
+    expect(rungLogMock).toHaveBeenCalledWith('reveal', expect.objectContaining({
+      rung: 'interpretation', seq: 1,
+    }));
+  });
+
+  it('A REVEALED SENTENCE IS NOT RECORDED AS A CORRECT ATTEMPT', async () => {
+    rung();
+    const input = screen.getByLabelText('Type what it means');
+    // Half an answer typed before giving up. It must not travel: what the
+    // learner had is not what they produced, and the answer on screen is the
+    // one thing they must never be recorded as having written.
+    await act(async () => { fireEvent.change(input, { target: { value: 'It is co' } }); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Show answer' })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
+
+    expect(onComplete).toHaveBeenCalledWith({ seq: 1, rung: 'interpretation', revealed: true });
+    expect(onComplete.mock.calls[0][0].given).toBeUndefined();
+  });
+
+  it('takes the field away once the answer is up — there is nothing left to answer', async () => {
+    rung();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Show answer' })); });
+    // Gone, not merely disabled. A greyed field still holding half an answer,
+    // sitting directly under the answer, is an invitation to type it back in —
+    // and on a panel a disabled input barely looks different from a live one.
+    expect(screen.queryByLabelText('Type what it means')).toBeNull();
+    // The keys have somewhere to go: the one control left takes the focus the
+    // field just gave up, so Enter still moves the learner on.
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Continue' }));
+    // One commit point, and it is no longer called Submit: nothing is being
+    // submitted.
+    expect(screen.queryByRole('button', { name: 'Submit' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeTruthy();
+    // And no way back: an un-reveal would let a child read the answer, hide
+    // it, and type it in as their own — the exact corruption this splits off.
+    expect(screen.queryByRole('button', { name: 'Show answer' })).toBeNull();
+  });
+
+  it('sends the reveal to the server as a reveal, with no answer attached', async () => {
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['interpretation'], queue: [entry(1, 'interpretation')],
+    }));
+    logMock.mockResolvedValue({ ok: true, status: 200, data: {} });
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    await screen.findByLabelText(/Type what it means/i);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Show answer' })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
+
+    await waitFor(() => expect(logMock).toHaveBeenCalledWith('kckern', {
+      corpus: 'glossika-korean', seq: 1, rung: 'interpretation', revealed: true,
+    }, expect.anything(), 'test-grant'));
   });
 });
 
@@ -1432,6 +1773,12 @@ describe('day rollover', () => {
     expect(screen.queryByText('Leave for now')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Done' }));
     expect(onExit).toHaveBeenCalledTimes(1);
+
+    // The next day is offered on the kiosk as well. Without it a finished day
+    // was a wall: the child could only leave, never go on.
+    rollMock.mockResolvedValue({ ok: true, status: 200, data: { rolled: true, day: 2, reason: 'ahead' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Start the next day' }));
+    await waitFor(() => expect(rollMock).toHaveBeenCalledTimes(1));
   });
 
   it('refuses an early roll and says why, rather than silently doing nothing', async () => {
@@ -1510,6 +1857,78 @@ describe('dismissal and dead ends', () => {
     expect(screen.getByText('Korean keyboard')).toBeTruthy();
     expect(screen.getByText('English keyboard')).toBeTruthy();
     expect(screen.getByText('Microphone')).toBeTruthy();
+  });
+
+  it('shows a revealed sentence as shown, not as a repetition the learner did', async () => {
+    // A reveal writes no `given`, and the shelf's last branch — the one for a
+    // row with no written answer — is "Repetition". Left alone, every
+    // interpretation a child gave up on would appear on their own history as a
+    // repetition they completed. The one place the learner reads their record
+    // back must not be where the reveal quietly becomes something else.
+    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
+    historyMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: {
+        corpus: { languages: LANGUAGES },
+        days: [{
+          day: 1,
+          items: [{
+            seq: 1, rung: 'interpretation', day: 1, revealed: true,
+            language: 'EN', expected: 'English 1',
+            text: { EN: 'English 1', KR: '한국어 1' },
+          }],
+        }],
+      },
+    });
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    // Read off the shelf's own row, not the page: the ladder rail beside it
+    // legitimately says "Repetition" about the day's queue.
+    const row = await screen.findByText(/Answer shown/);
+    const item = row.closest('.lang-review__item');
+    expect(item.querySelector('.lang-review__rung').textContent).toBe('Interpretation');
+    expect(row.textContent).toContain('English 1');
+  });
+
+  // An interpretation row headlines the KOREAN it was asked about. Headlining
+  // the English printed the answer above a diff of the answer against itself,
+  // and left the sentence the child actually read off the row entirely — which
+  // also made an answered row and the revealed row above it look like two
+  // different exercises. Dictation is the other way round and stays that way:
+  // its prompt is audio, so the English line is the only gloss on the row.
+  it('headlines an interpretation row with its Korean prompt, and a dictation row with its English', async () => {
+    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
+    historyMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: {
+        corpus: { languages: LANGUAGES },
+        days: [{
+          day: 1,
+          items: [
+            {
+              seq: 1, rung: 'interpretation', day: 1, given: 'English 1', expected: 'English 1',
+              accuracy: 1, text: { EN: 'English 1', KR: '한국어 1' },
+            },
+            {
+              seq: 2, rung: 'dictation', day: 1, given: '한국어 2', expected: '한국어 2',
+              accuracy: 1, text: { EN: 'English 2', KR: '한국어 2' },
+            },
+          ],
+        }],
+      },
+    });
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    await screen.findByText('한국어 1');
+    const [interpretation, dictation] = Array.from(
+      document.querySelectorAll('.lang-review__item'),
+    ).map((li) => li.querySelector('.lang-review__sentence').textContent);
+    expect(interpretation).toBe('한국어 1');
+    expect(dictation).toBe('English 2');
   });
 
   it('lets the learner retry a failed history load', async () => {
@@ -1627,5 +2046,343 @@ describe('hands-free', () => {
     await screen.findByRole('button', { name: 'Start the next day' });
     pressKey('Enter');
     await waitFor(() => expect(rollMock).toHaveBeenCalled());
+  });
+});
+
+// SPEAKING THE ANSWER — interpretation only.
+//
+// A learner who understands a sentence perfectly can be defeated by an English
+// keyboard, and then the record measures typing rather than comprehension. So
+// the answer can be spoken: the transcript lands IN THE FIELD, unsubmitted, and
+// the learner reads and edits it before it goes. Auto-submitting would turn
+// every mistranscription into their mistake, silently.
+//
+// The response stays text — voice is an input method, not a different kind of
+// answer — so the only thing that changes on the record is `method`.
+describe('speaking the answer', () => {
+  const onComplete = vi.fn();
+  const onTranscribe = vi.fn();
+
+  /** jsdom has no microphone. One that opens, records, and hands back a blob. */
+  const fakeMic = () => {
+    const track = { stop: vi.fn() };
+    const stream = { getTracks: () => [track] };
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => stream),
+        enumerateDevices: vi.fn(async () => [{ kind: 'audioinput' }]),
+      },
+    });
+    class FakeRecorder {
+      constructor() { this.state = 'inactive'; this.mimeType = 'audio/webm'; }
+      start() { this.state = 'recording'; }
+      stop() {
+        this.state = 'inactive';
+        this.ondataavailable?.({ data: new Blob(['spoken'], { type: 'audio/webm' }) });
+        this.onstop?.();
+      }
+    }
+    window.MediaRecorder = FakeRecorder;
+    return { track };
+  };
+
+  /** A mic that will not open — the permission the kiosk never got. */
+  const deadMic = () => {
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => { throw new Error('NotAllowedError'); }),
+        enumerateDevices: vi.fn(async () => [{ kind: 'audioinput' }]),
+      },
+    });
+    window.MediaRecorder = class { };
+  };
+
+  const rung = (rungId = 'interpretation', props = {}) => render(
+    <HangulTypingProvider>
+      <TypedRung
+        entry={entry(1, rungId, false, { text: { EN: 'It is cold today', KR: '오늘 추워요' } })}
+        audioUrl={(seq, lang) => `/audio/${seq}/${lang}`}
+        onComplete={onComplete}
+        onTranscribe={onTranscribe}
+        saving={false}
+        idleReplayMs={0}
+        {...props}
+      />
+    </HangulTypingProvider>,
+  );
+
+  const speakButton = () => screen.getByRole('button', { name: 'Say the answer' });
+  const speak = async () => {
+    await act(async () => { fireEvent.click(speakButton()); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Stop speaking' })); });
+  };
+
+  beforeEach(() => {
+    onComplete.mockClear();
+    onTranscribe.mockReset().mockResolvedValue({ ok: true, transcript: 'it is cold today', empty: false });
+    fakeMic();
+  });
+
+  it('is offered on interpretation, where an English keyboard is the obstacle', () => {
+    rung();
+    expect(speakButton()).toBeTruthy();
+  });
+
+  /**
+   * NOT ON DICTATION, and not because it would be hard. Dictation's task IS
+   * entering the Korean script; a learner who could say the sentence instead
+   * would be handing in a recording of the one skill the rung exists to drill.
+   */
+  it('is NOT offered on dictation, where typing the script is the whole task', () => {
+    rung('dictation');
+    expect(screen.queryByRole('button', { name: 'Say the answer' })).toBeNull();
+  });
+
+  it('is not drawn at all where nothing could transcribe it', () => {
+    // No AI gateway, or no microphone: the program passes no handler and the
+    // control is ABSENT rather than present-and-failing. A child who presses a
+    // dead button concludes the screen is broken and stops trusting the rest.
+    rung('interpretation', { onTranscribe: null });
+    expect(screen.queryByRole('button', { name: 'Say the answer' })).toBeNull();
+    // And the way through is untouched.
+    expect(screen.getByLabelText('Type what it means')).toBeTruthy();
+  });
+
+  it('puts the transcript in the field and stops there', async () => {
+    rung();
+    await speak();
+
+    const input = screen.getByLabelText('Type what it means');
+    expect(input.value).toBe('it is cold today');
+    // NOT SUBMITTED. A transcription error must be something the learner can
+    // see and fix, never a mistake they are marked down for without being told.
+    expect(onComplete).not.toHaveBeenCalled();
+    // The field has the keys back, so the first correction is the first
+    // keystroke rather than a tap to get there.
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('replaces what was in the field, and says so before it does', async () => {
+    rung();
+    const input = screen.getByLabelText('Type what it means');
+    await act(async () => { fireEvent.change(input, { target: { value: 'it is co' } }); });
+    // An abandoned half-attempt is what is usually there, and splicing a spoken
+    // sentence onto it would produce a sentence nobody said — so it is replaced,
+    // and the caption stops being a surprise about it.
+    expect(screen.getByRole('button', { name: 'Say the answer' }).textContent).toContain('instead');
+
+    await speak();
+    expect(screen.getByLabelText('Type what it means').value).toBe('it is cold today');
+  });
+
+  /**
+   * A round trip through a model is not instant, and a control that looks
+   * identical for four seconds reads as broken — to a child at a TV with no
+   * pointer, who has no other way to ask what is happening.
+   */
+  it('looks different in each of its three states', async () => {
+    let settle;
+    onTranscribe.mockReturnValue(new Promise((resolve) => { settle = resolve; }));
+    rung();
+
+    expect(speakButton()).toBeTruthy();
+    await act(async () => { fireEvent.click(speakButton()); });
+    // Recording: a live control that says how to stop, not a second mystery.
+    expect(screen.getByRole('button', { name: 'Stop speaking' })).toBeTruthy();
+    expect(document.querySelector('.lang-btn--live')).toBeTruthy();
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Stop speaking' })); });
+    // In flight: not a button at all — there is nothing to press — but a status
+    // that says what is being waited on.
+    expect(screen.queryByRole('button', { name: 'Say the answer' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Stop speaking' })).toBeNull();
+    expect(screen.getByText(/writing it down/i)).toBeTruthy();
+
+    await act(async () => { settle({ ok: true, transcript: 'it is cold today', empty: false }); });
+    expect(speakButton()).toBeTruthy();
+  });
+
+  it('says so and leaves the field alone when nothing was heard', async () => {
+    onTranscribe.mockResolvedValue({ ok: true, transcript: '', empty: true });
+    rung();
+    const input = screen.getByLabelText('Type what it means');
+    await act(async () => { fireEvent.change(input, { target: { value: 'half an answer' } }); });
+    await speak();
+
+    expect(screen.getByRole('alert').textContent).toMatch(/didn’t hear/i);
+    // AND ON THE CONTROL, which is where the child is looking. The notice sits
+    // ~660px away at the top of an 800px panel; a reply only up there reads as
+    // the press having done nothing.
+    const caption = speakButton().querySelector('.lang-btn__key');
+    expect(caption.textContent).toMatch(/didn’t hear/i);
+    expect(caption.className).toContain('is-warn');
+    // Their own typing survives a mic that heard nothing.
+    expect(screen.getByLabelText('Type what it means').value).toBe('half an answer');
+    // And the control is back, not stuck mid-flight.
+    expect(speakButton()).toBeTruthy();
+  });
+
+  // The reason is a reply to a press, so the next press clears it: a stale
+  // "Didn't hear that" sitting on the button through a good take would say the
+  // take failed when it did not.
+  it('clears the reason off the control on the next take', async () => {
+    onTranscribe.mockResolvedValueOnce({ ok: true, transcript: '', empty: true });
+    rung();
+    await speak();
+    expect(speakButton().querySelector('.lang-btn__key').textContent).toMatch(/didn’t hear/i);
+
+    onTranscribe.mockResolvedValueOnce({ ok: true, transcript: 'it is cold today', empty: false });
+    await speak();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByLabelText('Type what it means').value).toBe('it is cold today');
+  });
+
+  it('survives a failed request without stranding the learner', async () => {
+    onTranscribe.mockResolvedValue({ ok: false, status: 500 });
+    rung();
+    await speak();
+
+    expect(screen.getByRole('alert').textContent).toMatch(/type it/i);
+    expect(speakButton()).toBeTruthy();
+    expect(screen.getByLabelText('Type what it means')).toBeTruthy();
+  });
+
+  it('survives a microphone that will not open, and keeps saying why', async () => {
+    deadMic();
+    rung();
+    await act(async () => { fireEvent.click(speakButton()); });
+
+    expect(screen.getByRole('alert').textContent).toMatch(/microphone/i);
+    expect(onTranscribe).not.toHaveBeenCalled();
+    // PRESENT-AND-EXPLAINING here, unlike the absent case above: the device
+    // said it had a microphone, so the control was honestly offered and the
+    // failure is a permission a second try may yet get.
+    expect(speakButton()).toBeTruthy();
+  });
+
+  it('marks the answer as spoken, and an edit of it still spoken', async () => {
+    rung();
+    await speak();
+    const input = screen.getByLabelText('Type what it means');
+    await act(async () => { fireEvent.change(input, { target: { value: "it's cold today" } }); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Submit' })); });
+
+    expect(onComplete).toHaveBeenCalledWith({
+      seq: 1, rung: 'interpretation', given: "it's cold today", method: 'spoken',
+    });
+  });
+
+  it('marks an answer that was typed all along as typed', async () => {
+    rung();
+    const input = screen.getByLabelText('Type what it means');
+    await act(async () => { fireEvent.change(input, { target: { value: 'typed by hand' } }); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Submit' })); });
+    expect(onComplete).toHaveBeenLastCalledWith({
+      seq: 1, rung: 'interpretation', given: 'typed by hand', method: 'typed',
+    });
+  });
+
+  it('calls a cleared-and-retyped answer typed, because none of it was spoken', async () => {
+    rung();
+    await speak();
+    const input = screen.getByLabelText('Type what it means');
+    // Cleared to nothing: whatever comes next is theirs from the keys.
+    await act(async () => { fireEvent.change(input, { target: { value: '' } }); });
+    await act(async () => { fireEvent.change(input, { target: { value: 'my own words' } }); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Submit' })); });
+
+    expect(onComplete).toHaveBeenLastCalledWith({
+      seq: 1, rung: 'interpretation', given: 'my own words', method: 'typed',
+    });
+  });
+
+  // A REVEALED SENTENCE HAS NO METHOD, because nobody answered it.
+  it('goes away after a reveal, and the reveal carries no method', async () => {
+    rung();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Show answer' })); });
+    expect(screen.queryByRole('button', { name: 'Say the answer' })).toBeNull();
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
+    expect(onComplete).toHaveBeenCalledWith({ seq: 1, rung: 'interpretation', revealed: true });
+    expect(onComplete.mock.calls[0][0].method).toBeUndefined();
+  });
+
+  it('is logged at every step, so a session can be read back', async () => {
+    rung();
+    await speak();
+    expect(rungLogMock).toHaveBeenCalledWith('speak-start', expect.objectContaining({ seq: 1 }));
+    expect(rungLogMock).toHaveBeenCalledWith('spoke', expect.objectContaining({ seq: 1, chars: 16 }));
+  });
+});
+
+// The program end of the same feature: the day says whether the server can
+// transcribe, and the method reaches the wire.
+describe('a spoken answer, end to end', () => {
+  const withMic = () => Object.defineProperty(navigator, 'mediaDevices', {
+    configurable: true,
+    value: {
+      getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })),
+      enumerateDevices: vi.fn(async () => [{ kind: 'audioinput' }]),
+    },
+  });
+
+  it('draws no microphone when the day says voice answers are unavailable', async () => {
+    withMic();
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['interpretation'], queue: [entry(1, 'interpretation')], voiceAnswer: false,
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />);
+    await screen.findByLabelText(/Type what it means/i);
+    expect(screen.queryByRole('button', { name: 'Say the answer' })).toBeNull();
+  });
+
+  it('draws no microphone on DICTATION, whatever the server can transcribe', async () => {
+    // Speaking the Korean back is the repetition rung wearing a microphone.
+    // The rung that exists to practise the script must not offer a way past it.
+    withMic();
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['dictation'], queue: [entry(1, 'dictation')], voiceAnswer: true,
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />);
+    await screen.findByLabelText(/Type what you hear/i);
+    expect(screen.queryByRole('button', { name: 'Say the answer' })).toBeNull();
+  });
+
+  it('sends the transcript up and the method back down', async () => {
+    withMic();
+    class FakeRecorder {
+      constructor() { this.state = 'inactive'; this.mimeType = 'audio/webm'; }
+      start() { this.state = 'recording'; }
+      stop() {
+        this.state = 'inactive';
+        this.ondataavailable?.({ data: new Blob(['spoken'], { type: 'audio/webm' }) });
+        this.onstop?.();
+      }
+    }
+    window.MediaRecorder = FakeRecorder;
+    transcribeMock.mockResolvedValue({ ok: true, status: 200, data: { transcript: 'it is cold today', empty: false } });
+    logMock.mockResolvedValue({ ok: true, status: 200, data: {} });
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['interpretation'], queue: [entry(1, 'interpretation')], voiceAnswer: true,
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="test-learner" corpusId="glossika-korean" />);
+
+    await screen.findByLabelText(/Type what it means/i);
+    const say = await screen.findByRole('button', { name: 'Say the answer' });
+    await act(async () => { fireEvent.click(say); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Stop speaking' })); });
+
+    await waitFor(() => expect(transcribeMock).toHaveBeenCalled());
+    const [userId, corpus, seq, lang, blob] = transcribeMock.mock.calls[0];
+    expect([userId, corpus, seq, lang]).toEqual(['test-learner', 'glossika-korean', 1, 'EN']);
+    expect(blob).toBeInstanceOf(Blob);
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Submit' })); });
+    await waitFor(() => expect(logMock).toHaveBeenCalledWith('test-learner', {
+      corpus: 'glossika-korean', seq: 1, rung: 'interpretation',
+      given: 'it is cold today', method: 'spoken',
+    }, expect.anything(), 'test-grant'));
   });
 });

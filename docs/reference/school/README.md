@@ -691,9 +691,10 @@ pacing knob is new-sentences-per-day.
   progress silently froze for weeks. Derived state cannot desynchronise from
   its own evidence.
 - **A study day runs 4am→4am**, not midnight→midnight, so a session past
-  midnight is the same day. Rollover needs the queue complete *and* the
-  boundary passed — finishing early must not hand out tomorrow's sentences,
-  because the spacing is the method.
+  midnight is the same day. Opening the ladder after the boundary rolls a
+  finished day forward by itself. A learner who has finished can always start
+  the next set, even the same day, but never while the credit queue still has
+  work in it. See `sentence-ladder.md` §Rollover.
 - **Transcription accuracy is recorded but gates nothing.** A wrong dictation
   still graduates; the diff is for the learner's review. Consistent with "No
   second gate anywhere".

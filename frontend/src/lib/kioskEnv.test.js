@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { isKioskEnv, __resetKioskEnvCache } from './kioskEnv.js';
+import { isKioskEnv, isLocalDevHost, __resetKioskEnvCache } from './kioskEnv.js';
 
 // jsdom defaults to http://localhost/ — override hostname/search per case.
 function setLocation({ hostname = 'localhost', search = '' }) {
@@ -33,5 +33,31 @@ describe('isKioskEnv', () => {
   it('?nokiosk forces kiosk off', () => {
     setLocation({ hostname: 'daylightlocal.kckern.net', search: '?nokiosk' });
     expect(isKioskEnv()).toBe(false);
+  });
+});
+
+// The admin gate's only exemption. It is NOT "not the kiosk": a tablet on the
+// household host is not the kiosk and must still be asked for approval.
+describe('isLocalDevHost', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('is true only on a developer\'s own machine', () => {
+    setLocation({ hostname: 'localhost' });
+    expect(isLocalDevHost()).toBe(true);
+    setLocation({ hostname: '127.0.0.1' });
+    expect(isLocalDevHost()).toBe(true);
+  });
+
+  it('is false for every browser on the household host, kiosk or not', () => {
+    setLocation({ hostname: 'daylightlocal.kckern.net' });
+    Object.defineProperty(navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15', configurable: true,
+    });
+    expect(isLocalDevHost()).toBe(false);
+  });
+
+  it('cannot be switched on by a URL parameter', () => {
+    setLocation({ hostname: 'daylightlocal.kckern.net', search: '?nokiosk' });
+    expect(isLocalDevHost()).toBe(false);
   });
 });

@@ -246,7 +246,7 @@ describe('getDay', () => {
       capabilities: { microphone: true, textInput: ['EN'] },
     });
     expect(day.missingCreditRungs).toEqual(['dictation']);
-    expect(day.missingCreditNeeds.dictation).toEqual({ kind: 'textInput', language: 'KR' });
+    expect(day.missingCreditNeeds.dictation).toEqual({ anyOf: [{ kind: 'textInput', language: 'KR' }] });
     // A rung this device CAN climb is not in the map at all.
     expect(day.missingCreditNeeds).not.toHaveProperty('recording');
   });
@@ -258,7 +258,7 @@ describe('getDay', () => {
       capabilities: { microphone: false, textInput: ['EN', 'KR'] },
     });
     expect(day.missingCreditRungs).toEqual(['recording']);
-    expect(day.missingCreditNeeds.recording).toEqual({ kind: 'microphone' });
+    expect(day.missingCreditNeeds.recording).toEqual({ anyOf: [{ kind: 'microphone' }] });
   });
 
   // The only case with TWO rungs blocked at once, which is the one way a
@@ -278,9 +278,77 @@ describe('getDay', () => {
     });
     expect(day.missingCreditRungs).toEqual(['dictation', 'recording']);
     expect(day.missingCreditNeeds).toEqual({
-      dictation: { kind: 'textInput', language: 'KR' },
-      recording: { kind: 'microphone' },
+      dictation: { anyOf: [{ kind: 'textInput', language: 'KR' }] },
+      recording: { anyOf: [{ kind: 'microphone' }] },
     });
+  });
+
+  /**
+   * THE PANEL WITH A MICROPHONE AND NO KEYBOARD.
+   *
+   * Until interpretation accepted a spoken answer this device was told to go
+   * elsewhere for three of the four rungs. It can now translate out loud —
+   * but only where the server can actually transcribe, which is a deployment
+   * fact and reaches the service from composition, never from the request.
+   */
+  const micOnly = { microphone: true, textInput: [] };
+
+  it('offers interpretation to a keyboard-less panel where speech can be transcribed', () => {
+    svc = makeService(ds, AT, { ...fullLadder(), voiceAnswer: true });
+    const day = svc.getDay({
+      userId: 'test-learner', corpusId: 'test-korean', capabilities: micOnly,
+    });
+    expect(day.chain).toEqual(['repetition', 'recording', 'interpretation']);
+    expect(day.missingCreditRungs).toEqual(['dictation']);
+    expect(day.missingCreditNeeds).not.toHaveProperty('interpretation');
+  });
+
+  it('does NOT offer it where the household has no AI gateway', () => {
+    // The dead end the chain filter exists to prevent, reintroduced by the
+    // change meant to open the rung up: a rung with no way in and no way past.
+    svc = makeService(ds, AT, fullLadder());
+    const day = svc.getDay({
+      userId: 'test-learner', corpusId: 'test-korean', capabilities: micOnly,
+    });
+    expect(day.chain).toEqual(['repetition', 'recording']);
+    expect(day.missingCreditRungs).toEqual(['dictation', 'interpretation']);
+    expect(day.missingCreditNeeds.interpretation)
+      .toEqual({ anyOf: [{ kind: 'textInput', language: 'EN' }] });
+  });
+
+  it('names BOTH ways through a rung that is short of both', () => {
+    svc = makeService(ds, AT, { ...fullLadder(), voiceAnswer: true });
+    const day = svc.getDay({
+      userId: 'test-learner', corpusId: 'test-korean',
+      capabilities: { microphone: false, textInput: ['KR'] },
+    });
+    expect(day.missingCreditNeeds.interpretation).toEqual({
+      anyOf: [{ kind: 'textInput', language: 'EN' }, { kind: 'microphone' }],
+    });
+  });
+
+  it('marks the queue entry that accepts a spoken answer, and only that one', () => {
+    // The client must not keep its own list of which rungs may be spoken —
+    // that second copy is what this whole change exists to delete. Dictation
+    // is typing the target script: a spoken answer there is repetition.
+    svc = makeService(ds, AT, { ...fullLadder(), voiceAnswer: true });
+    const day = svc.getDay({
+      userId: 'test-learner', corpusId: 'test-korean',
+      capabilities: { microphone: true, textInput: ['EN', 'KR'] },
+    });
+    const byRung = Object.fromEntries(day.queue.map((e) => [e.rung, e.spokenAnswer]));
+    expect(byRung.interpretation).toBe(true);
+    expect(byRung.dictation).toBe(false);
+    expect(byRung.repetition).toBe(false);
+  });
+
+  it('marks nothing spoken where the server cannot transcribe', () => {
+    svc = makeService(ds, AT, fullLadder());
+    const day = svc.getDay({
+      userId: 'test-learner', corpusId: 'test-korean',
+      capabilities: { microphone: true, textInput: ['EN', 'KR'] },
+    });
+    expect(day.queue.every((e) => e.spokenAnswer === false)).toBe(true);
   });
 });
 
@@ -343,6 +411,130 @@ describe('logAttempt', () => {
     expect(() => svc.logAttempt({
       userId: 'kckern', corpusId: 'test-korean', seq: 999, rung: 'repetition',
     })).toThrow(EntityNotFoundError);
+  });
+
+  /**
+   * A REVEAL IS NOT AN ATTEMPT. On interpretation the English text IS the
+   * answer, so showing it hands over the whole response — that is a skip, and
+   * the record has to say so. Without this the log would claim a child
+   * interpreted a sentence they only pressed a button on.
+   */
+  describe('a revealed answer', () => {
+    it('is recorded AS a reveal — no response, and no accuracy to mistake for one', () => {
+      makeDue(ds, 'interpretation');
+      const event = svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        revealed: true, capabilities: EQUIPPED,
+      });
+      expect(event.revealed).toBe(true);
+      // The learner produced nothing. An `accuracy` of any value would be a
+      // score for a sentence nobody answered, and 1.0 — which is what the
+      // expected text scored against itself would be — is the precise lie.
+      expect(event.given).toBeUndefined();
+      expect(event.accuracy).toBeUndefined();
+      // What was shown is still on the record, so the Review shelf can say so.
+      expect(event.expected).toBe("The weather's nice today.");
+      expect(event.language).toBe('EN');
+    });
+
+    it('will not carry a typed answer along with it', () => {
+      makeDue(ds, 'interpretation');
+      const event = svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        revealed: true, given: "The weather's nice today.", capabilities: EQUIPPED,
+      });
+      expect(event.given).toBeUndefined();
+      expect(event.accuracy).toBeUndefined();
+    });
+
+    it('needs no written response, where an ordinary attempt does', () => {
+      makeDue(ds, 'interpretation');
+      expect(() => svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        capabilities: EQUIPPED,
+      })).toThrow(ValidationError);
+    });
+
+    it('is refused on a rung with nothing written to reveal', () => {
+      expect(() => svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition',
+        revealed: true, capabilities: EQUIPPED,
+      })).toThrow(ValidationError);
+    });
+
+    it('still clears the rung — the sentence moves on, the record says how', () => {
+      makeDue(ds, 'interpretation');
+      svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        revealed: true, capabilities: EQUIPPED,
+      });
+      // Accuracy gates nothing in this program and neither does a reveal. What
+      // changes is what the evidence SAYS, not what it unlocks.
+      expect(() => svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        revealed: true, capabilities: EQUIPPED,
+      })).toThrow(/outstanding/);
+    });
+  });
+
+  /**
+   * HOW THE ANSWER WAS GIVEN. Interpretation can be answered by speaking: the
+   * learner says what the sentence means, the transcript lands in the field,
+   * and they read and edit it before submitting. The response is still TEXT —
+   * voice is an input method, not a different kind of answer — so the record
+   * changes by exactly one field, which is what lets a reader tell a spoken
+   * answer from a typed one without inventing a second kind of row.
+   */
+  describe('the answer method', () => {
+    it('is written down beside the answer it describes', () => {
+      makeDue(ds, 'interpretation');
+      const event = svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        given: "The weather's nice today.", method: 'spoken', capabilities: EQUIPPED,
+      });
+      expect(event.method).toBe('spoken');
+      // And it changes nothing else: a spoken answer is scored exactly as a
+      // typed one is, because it is the same answer.
+      expect(event.given).toBe("The weather's nice today.");
+      expect(event.accuracy).toBe(1);
+    });
+
+    it('stays absent when the client did not say, rather than being guessed at', () => {
+      makeDue(ds, 'interpretation');
+      const event = svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        given: 'something', capabilities: EQUIPPED,
+      });
+      expect(event.method).toBeUndefined();
+    });
+
+    it('refuses anything but the two methods that exist', () => {
+      makeDue(ds, 'interpretation');
+      expect(() => svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        given: 'something', method: 'telepathy', capabilities: EQUIPPED,
+      })).toThrow(ValidationError);
+    });
+
+    // A REVEALED SENTENCE HAS NO METHOD, because nobody answered it. The same
+    // rule that drops `given` and `accuracy` drops this.
+    it('is absent from a reveal, whatever the client sends', () => {
+      makeDue(ds, 'interpretation');
+      const event = svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+        revealed: true, method: 'spoken', capabilities: EQUIPPED,
+      });
+      expect(event.revealed).toBe(true);
+      expect(event.method).toBeUndefined();
+    });
+
+    it('is absent from a rung with no written answer at all', () => {
+      const event = svc.logAttempt({
+        userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition',
+        method: 'typed', capabilities: EQUIPPED,
+      });
+      expect(event.method).toBeUndefined();
+    });
   });
 
   it('stamps last activity so rollover has something to measure from', () => {
@@ -540,15 +732,76 @@ describe('rollDay', () => {
     expect(result).toEqual({ rolled: false, day: 1, reason: 'queue-incomplete' });
   });
 
-  it('refuses before the boundary even with the queue finished', () => {
-    // A client asking early must not be able to rush the spacing.
+  it('starts the next day early once today is finished — a finished day is never a wall', () => {
     const ds = new FakeDatastore();
     const svc = makeService(ds);
     svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 3 });
     finishDay(svc);
     const result = svc.rollDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
-    expect(result.rolled).toBe(false);
-    expect(result.reason).toBe('before-boundary');
+    expect(result).toEqual({ rolled: true, day: 2, reason: 'ahead' });
+    expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED }).day).toBe(2);
+  });
+
+  it('will not roll past a rung this device could not climb', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 3 });
+    const bare = { microphone: false, textInput: [] };
+    finishDay(svc, bare);
+    const result = svc.rollDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: bare });
+    expect(result).toEqual({ rolled: false, day: 1, reason: 'queue-incomplete' });
+  });
+
+  it('opening the ladder on the next study day serves the next day, with no button', () => {
+    // The kiosk hid the roll button, so a finished day came back as
+    // "complete" the following afternoon and the child could go no further.
+    const ds = new FakeDatastore();
+    let clock = AT;
+    const svc = makeService(ds, () => clock);
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 3 });
+    finishDay(svc);
+    clock = Date.parse('2026-07-22T10:00:00Z');
+
+    const day = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    expect(day.day).toBe(2);
+    expect(day.summary.done).toBeLessThan(day.summary.total);
+    expect(ds.readProgress('kckern', 'test-korean').day).toBe(2);
+    // Opening it again is the same day, not another roll.
+    expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED }).day).toBe(2);
+  });
+
+  it('a device-limited open never rolls past the rungs the credit still needs', () => {
+    const ds = new FakeDatastore();
+    let clock = AT;
+    const svc = makeService(ds, () => clock);
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 3 });
+    const bare = { microphone: false, textInput: [] };
+    finishDay(svc, bare);
+    clock = Date.parse('2026-07-22T10:00:00Z');
+    expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: bare }).day).toBe(1);
+  });
+
+  it('announces a finished day once — reading it back or rolling it never re-publishes', () => {
+    // Each re-publish closed the day again, and each close printed its receipt.
+    const ds = new FakeDatastore();
+    const eventBus = { publish: vi.fn() };
+    let clock = AT;
+    const svc = makeService(ds, () => clock, {
+      readProgramEnrollment: () => ({
+        programId: 'sentence-ladder', corpusId: 'test-korean', lessonSize: 2,
+        rungs: ['repetition', 'dictation'],
+      }),
+      realtime: new EventBusSchoolRealtimeAdapter({ eventBus }),
+    });
+    finishDay(svc);
+    expect(eventBus.publish).toHaveBeenCalledTimes(1);
+
+    for (let i = 0; i < 3; i += 1) svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    clock = Date.parse('2026-07-22T10:00:00Z');
+    svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    svc.rollDay({ userId: 'kckern', corpusId: 'test-korean' });
+    expect(eventBus.publish).toHaveBeenCalledTimes(1);
   });
 
   it('rolls once the boundary has passed', () => {
@@ -829,6 +1082,32 @@ describe('summarize — the agenda counts sentences, not steps', () => {
     expect(course.next.label).toBe('4 sentences today');
     expect(course.next.detail).toMatch(/^4 new · 15 steps left — /);
     expect(course.next.estimate).toEqual({ count: 15, unit: 'steps' });
+  });
+
+  it('keeps reveals out of the typing accuracy, and counts them where they show', () => {
+    const ds = new FakeDatastore();
+    makeDue(ds, 'interpretation');
+    const svc = makeService(ds);
+    svc.logAttempt({
+      userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
+      revealed: true, capabilities: EQUIPPED,
+    });
+    const [course] = svc.summarize({ userId: 'kckern' });
+    // Nothing was scored, so there is no accuracy figure to inflate. A reveal
+    // that landed in this average at 1.0 would read as perfect comprehension
+    // of a sentence the learner never rendered.
+    expect(course.metrics.find((m) => m.id === 'accuracy')).toBeUndefined();
+    // But it is not invisible either — a grown-up reading the card has to be
+    // able to see how much of the work was handed over.
+    expect(course.metrics.find((m) => m.id === 'reveals')).toMatchObject({ value: 1 });
+  });
+
+  it('shows no reveal count for a learner who never asked for one', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition', capabilities: EQUIPPED });
+    const [course] = svc.summarize({ userId: 'kckern' });
+    expect(course.metrics.find((m) => m.id === 'reveals')).toBeUndefined();
   });
 
   it('splits sentences entering today from those back for review', () => {

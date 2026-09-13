@@ -77,24 +77,55 @@ function learnerLabel(userId) {
  * domain is the one place that mapping lives.
  */
 function needNote(need) {
-  if (need?.kind === 'microphone') return 'Needs a microphone — on another device';
-  // A textInput requirement can arrive naming no language: `resolveRole` yields
-  // null when the corpus's languages map has no entry for the rung's role, and
-  // the wrapper object around that null is still truthy, so it survives every
-  // check upstream and reaches here intact. Fall through rather than print it —
-  // a child must never be shown a card reading "Needs a null keyboard".
-  //
-  // No matching server-side warning, deliberately: a corpus that cannot name
-  // both its languages is refused outright by `validateCorpus`, so this shape
-  // cannot come from a validated corpus. What it CAN come from is the payload —
-  // an older server, a truncated response — which is exactly why the guard
-  // belongs on this side and not there.
-  if (need?.kind === 'textInput' && need.language) {
-    return `Needs a ${languageName(need.language)} keyboard — on another device`;
-  }
+  const names = alternativeNames(need);
   // A rung the server could not explain still says something true: it is out of
-  // reach here. Silence would leave a dimmed rung with no reason at all.
-  return 'Not available on this device';
+  // reach here. Silence would leave a dimmed rung with no reason at all, and a
+  // requirement can arrive with nothing printable in it (see below).
+  if (names.length === 0) return 'Not available on this device';
+  // "or", never "and". A requirement is met by ANY ONE of its alternatives —
+  // interpretation can be typed in English OR spoken — and a card listing both
+  // as though a child had to find both would send them off for a keyboard they
+  // do not need.
+  return `Needs ${names.join(' or ')} — on another device`;
+}
+
+/**
+ * Each alternative in words, skipping any that cannot be named.
+ *
+ * A textInput requirement can arrive naming no language: `resolveRole` yields
+ * null when the corpus's languages map has no entry for the rung's role, and
+ * the wrapper object around that null is still truthy, so it survives every
+ * check upstream and reaches here intact. Dropped rather than printed — a child
+ * must never be shown a card reading "Needs a null keyboard". Dropping it
+ * rather than failing the whole note also matters now that a requirement has
+ * more than one alternative: the printable half still tells them what to do.
+ *
+ * No matching server-side warning, deliberately: a corpus that cannot name
+ * both its languages is refused outright by `validateCorpus`, so this shape
+ * cannot come from a validated corpus. What it CAN come from is the payload —
+ * an older server, a truncated response — which is exactly why the guard
+ * belongs on this side and not there. The same reasoning accepts a bare
+ * `{kind}` with no `anyOf`: that is what a server predating alternatives sends.
+ */
+function alternativeNames(need) {
+  return alternativesOf(need)
+    .map((alt) => {
+      if (alt?.kind === 'microphone') return 'a microphone';
+      if (alt?.kind === 'textInput' && alt.language) return `${anArticle(languageName(alt.language))} keyboard`;
+      return null;
+    })
+    .filter(Boolean);
+}
+
+/** Requirements old and new, as one list. */
+function alternativesOf(need) {
+  if (Array.isArray(need?.anyOf)) return need.anyOf;
+  return need?.kind ? [need] : [];
+}
+
+/** "an English keyboard", "a Korean keyboard" — the note reads as a sentence. */
+function anArticle(word) {
+  return `${/^[aeiou]/i.test(word) ? 'an' : 'a'} ${word}`;
 }
 
 /**
@@ -103,11 +134,19 @@ function needNote(need) {
  * sentence and would be a poor thing to group or count by; this is what a
  * `stats by` reads when someone asks which capability is blocking the most
  * children on the most devices.
+ *
+ * Alternatives are SORTED and joined with `|`. The ladder has few of them and
+ * a stable order makes `microphone|textInput:EN` one countable thing; built in
+ * payload order it would be two strings for one situation and group as two.
  */
 function needTag(need) {
-  if (need?.kind === 'microphone') return 'microphone';
-  if (need?.kind === 'textInput') return `textInput:${need.language ?? 'unnamed'}`;
-  return 'unspecified';
+  const parts = alternativesOf(need).map((alt) => {
+    if (alt?.kind === 'microphone') return 'microphone';
+    if (alt?.kind === 'textInput') return `textInput:${alt.language ?? 'unnamed'}`;
+    return null;
+  }).filter(Boolean);
+  if (parts.length === 0) return 'unspecified';
+  return [...parts].sort().join('|');
 }
 
 /**
@@ -368,7 +407,7 @@ export default function SentenceLadderProgram({
    * surfaced, never swallowed: an unrecorded attempt that looks recorded is
    * how a learner loses a session's work without knowing.
    */
-  const onComplete = useCallback(async ({ seq, rung, given, blob }) => {
+  const onComplete = useCallback(async ({ seq, rung, given, revealed, blob, method }) => {
     if (preview) {
       // The preview has no identity, grant, or mutable endpoint.  Completion
       // is a browser-only affordance so a teacher can experience the ladder
@@ -387,7 +426,19 @@ export default function SentenceLadderProgram({
     setNotice(null);
     const result = blob
       ? await languageApi.recording(userId, corpusId, seq, blob, capabilities, studyGrant)
-      : await languageApi.log(userId, { corpus: corpusId, seq, rung, given }, capabilities, studyGrant);
+      : await languageApi.log(userId, {
+        corpus: corpusId,
+        seq,
+        rung,
+        // A REVEAL CARRIES NO ANSWER. `revealed` replaces `given` rather than
+        // joining it: the learner produced nothing, and the text they were
+        // just shown must never travel as something they wrote. Spread, so an
+        // ordinary attempt's body is exactly what it has always been.
+        //
+        // `method` rides with `given` for the same reason and no other: it
+        // describes how an answer was produced, and a reveal is not an answer.
+        ...(revealed ? { revealed: true } : { given, ...(method ? { method } : {}) }),
+      }, capabilities, studyGrant);
     setSaving(false);
 
     if (!result.ok) {
@@ -399,10 +450,31 @@ export default function SentenceLadderProgram({
       );
       return result;
     }
-    languageLog.attempt('saved', { corpus: corpusId, seq, rung });
+    languageLog.attempt('saved', { corpus: corpusId, seq, rung, ...(revealed ? { revealed: true } : {}) });
     await load();
     return result;
   }, [userId, corpusId, capabilities, studyGrant, load, preview]);
+
+  /**
+   * A SPOKEN ANSWER to a typing rung. Audio up, a transcript back, and nothing
+   * written down: the transcript lands in the learner's own field, where they
+   * read and edit it before submitting through `onComplete` like any other
+   * answer. See `TypedRung`'s SPEAK_WORD for why it stops there.
+   *
+   * The rung is handed a plain function rather than the api client and the
+   * identity to go with it, for the same reason it is handed `onComplete`: a
+   * rung that knew how to address the server would be a second place for the
+   * grant, the corpus and the run id to be assembled, and they are assembled
+   * exactly once, here.
+   */
+  const onTranscribe = useCallback(async (blob) => {
+    const lang = entry?.response?.language;
+    const { ok, status, data } = await languageApi.transcribe(
+      userId, corpusId, entry.seq, lang, blob, capabilities, studyGrant,
+    );
+    if (!ok) return { ok: false, status };
+    return { ok: true, transcript: data?.transcript ?? '', empty: data?.empty === true };
+  }, [userId, corpusId, capabilities, studyGrant, entry]);
 
   const onRoll = useCallback(async () => {
     const { ok, data } = await languageApi.roll(userId, corpusId, capabilities, studyGrant);
@@ -700,8 +772,11 @@ export default function SentenceLadderProgram({
             {sessionFinished && locked && exitHandler && (
               <button type="button" className="lang-btn lang-btn--primary" onClick={exitHandler}>Done</button>
             )}
-            {allDone && !preview && !blockedByDevice && !locked && (
-              <button type="button" className="lang-btn lang-btn--primary" onClick={onRoll}>Start the next day</button>
+            {/* On the locked kiosk too. Hidden there, a child who finished a
+                day had no way on to the next one, and "complete" became a wall.
+                Done stays the primary there, so Enter still leaves. */}
+            {allDone && !preview && !blockedByDevice && (
+              <button type="button" className={locked ? 'lang-btn' : 'lang-btn lang-btn--primary'} onClick={onRoll}>Start the next day</button>
             )}
           </div>
         )}
@@ -735,6 +810,21 @@ export default function SentenceLadderProgram({
             entry={entry} nextEntry={nextEntry} audioUrl={audioUrl}
             onComplete={onComplete} saving={saving}
             showShortcuts={hasHardwareKeyboard}
+            /* THE THREE FACTS THAT DECIDE WHETHER A MICROPHONE IS DRAWN, and
+               all three live here rather than in the rung. A preview has no
+               identity or grant to spend; a device with no microphone cannot
+               open one; and the ENTRY says whether this rung takes a spoken
+               answer at all — the server folds `voiceAnswer` into that, so a
+               deployment with no AI gateway marks every entry false and
+               dictation is false even where it does have one. Any of them
+               missing and the rung is handed nothing, so it draws no control at
+               all — a dead button is worse than an absent one.
+
+               Read off the entry rather than recombined here on purpose: which
+               rungs may be spoken is the ladder's to say, and a second copy of
+               that list on this side is exactly what drifts. */
+            onTranscribe={!preview && entry.spokenAnswer && capabilities.microphone
+              ? onTranscribe : null}
           />
         )}
         {tab === 'study' && !allDone && entry && entry.rung === 'recording' && (

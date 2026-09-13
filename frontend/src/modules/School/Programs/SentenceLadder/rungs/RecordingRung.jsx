@@ -4,6 +4,7 @@ import { languageLog } from '../languageLog.js';
 import { bindMediaToMaster } from '../../../../../lib/volume/bindMediaToMaster.js';
 import Icon from '../../../home/icons/Icon.jsx';
 import VoiceBand from './VoiceBand.jsx';
+import useVoiceCapture from './useVoiceCapture.js';
 
 /**
  * Recording — say it yourself (design §1).
@@ -103,7 +104,6 @@ export default function RecordingRung({
   // idle → prompting → recording → playback → review
   const [phase, setPhase] = useState('idle');
   const [error, setError] = useState(null);
-  const [stream, setStream] = useState(null);
   const [take, setTake] = useState(null);
   const [silent, setSilent] = useState(false);
   /**
@@ -129,11 +129,6 @@ export default function RecordingRung({
    * a hard time with one sentence still has to say it.
    */
   const [refusals, setRefusals] = useState(0);
-  const takeStartedAtRef = useRef(0);
-
-  const recorderRef = useRef(null);
-  const chunksRef = useRef([]);
-  const streamRef = useRef(null);
   const blobRef = useRef(null);
   const takeUrlRef = useRef(null);
   const playbackRef = useRef(null);
@@ -142,13 +137,6 @@ export default function RecordingRung({
   const phaseRef = useRef(phase);
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   const rootRef = useRef(null);
-
-  const releaseMic = useCallback(() => {
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-    recorderRef.current = null;
-    setStream(null);
-  }, []);
 
   const stopPlayback = useCallback(() => {
     const el = playbackRef.current;
@@ -170,98 +158,93 @@ export default function RecordingRung({
     setTake(null);
   }, []);
 
+  /**
+   * A finished take. The mic is already closed by the time this runs (see
+   * `useVoiceCapture`), so everything here is about judging the take and
+   * playing it back — none of which is a reason to keep the microphone open.
+   */
+  const onTake = useCallback(({ blob, durationMs }) => {
+    blobRef.current = blob;
+    if (takeUrlRef.current) URL.revokeObjectURL(takeUrlRef.current);
+    takeUrlRef.current = URL.createObjectURL(blob);
+    const heard = silenceRef.current.heard;
+    languageLog.capture('stop', { seq: entry.seq, bytes: blob.size, heard, durationMs });
+    // The same facts the log has always carried, now also enforced.
+    // WE ONLY REFUSE ON WHAT WE COULD MEASURE. `heard` comes from a live
+    // level meter that needs an AudioContext; a browser without one reports
+    // no levels at all and the band just stays a baseline. There, `heard`
+    // is false for every take ever made, and refusing on it would lock the
+    // rung shut on a device where nothing is wrong. So loudness is only
+    // judged when a level actually arrived; length is judged always.
+    const measurable = silenceRef.current.sampled === true;
+    const verdict = measurable && !heard ? 'too-quiet'
+      : durationMs < MIN_TAKE_MS ? 'too-short'
+        : null;
+    setTakeVerdict(verdict);
+    if (verdict) {
+      setRefusals((n) => n + 1);
+      // Logged as its own event: a run of these is what tells a grown-up the
+      // rung is being tapped through rather than done, and it is not
+      // recoverable from `capture.stop` without knowing these thresholds.
+      languageLog.capture('refused', { seq: entry.seq, reason: verdict, durationMs, bytes: blob.size, heard, measurable });
+    } else {
+      setRefusals(0);
+    }
+
+    // Straight into hearing it. The Stop tap is the gesture behind this
+    // play(), so autoplay policy is satisfied; if it still refuses, the
+    // review controls appear and nothing is lost but the listen.
+    setPhase('playback');
+    const el = new Audio(takeUrlRef.current);
+    // The take plays back at the panel's master volume, like the prompt.
+    unbindPlaybackRef.current = bindMediaToMaster(el);
+    playbackRef.current = el;
+    const finish = () => {
+      unbindPlaybackRef.current?.();
+      unbindPlaybackRef.current = null;
+      playbackRef.current = null;
+      setPhase('review');
+    };
+    el.onended = finish;
+    el.onerror = finish;
+    const result = el.play();
+    if (result?.catch) {
+      result.catch((err) => {
+        languageLog.audioError('play-blocked', { url: 'take', error: err?.message });
+        playbackRef.current = null;
+        setPhase('review');
+      });
+    }
+    decodeTake(blob).then((samples) => { if (blobRef.current === blob) setTake(samples); });
+  }, [entry.seq]);
+
+  const onDenied = useCallback((err) => {
+    languageLog.captureError('denied', { seq: entry.seq, error: err?.message });
+    // The old copy told the learner to "skip this one" — and no skip existed
+    // anywhere in this component, so a denied mic stranded the recording
+    // badge forever pointing at a control that was never built. The real
+    // escape hatch is the ladder's own: drop the rung from this device and
+    // sentences graduate across the gap.
+    setError('The microphone is unavailable on this device.');
+    setPhase('idle');
+  }, [entry.seq]);
+
+  // Destructured, not held as an object: `beginCapture` is what
+  // `useSentenceAudio` fires at the end of the prompt sequence, so an identity
+  // that changed every render would re-arm that sequence mid-play.
+  const { start: startCapture, stop: stopCapture, release: releaseMic, stream } = useVoiceCapture({
+    onTake, onDenied,
+  });
+
   const beginCapture = useCallback(async () => {
     setError(null);
     setSilent(false);
     setTakeVerdict(null);
     silenceRef.current = { since: null, heard: false, sampled: false };
-    try {
-      const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = mic;
-      chunksRef.current = [];
-
-      const recorder = new MediaRecorder(mic);
-      recorderRef.current = recorder;
-      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-      recorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-        blobRef.current = blob;
-        if (takeUrlRef.current) URL.revokeObjectURL(takeUrlRef.current);
-        takeUrlRef.current = URL.createObjectURL(blob);
-        // Release the mic between takes rather than holding it for the whole
-        // session — on a shared kiosk another app may need it.
-        releaseMic();
-        const durationMs = Date.now() - takeStartedAtRef.current;
-        const heard = silenceRef.current.heard;
-        languageLog.capture('stop', { seq: entry.seq, bytes: blob.size, heard, durationMs });
-        // The same facts the log has always carried, now also enforced.
-        // WE ONLY REFUSE ON WHAT WE COULD MEASURE. `heard` comes from a live
-        // level meter that needs an AudioContext; a browser without one reports
-        // no levels at all and the band just stays a baseline. There, `heard`
-        // is false for every take ever made, and refusing on it would lock the
-        // rung shut on a device where nothing is wrong. So loudness is only
-        // judged when a level actually arrived; length is judged always.
-        const measurable = silenceRef.current.sampled === true;
-        const verdict = measurable && !heard ? 'too-quiet'
-          : durationMs < MIN_TAKE_MS ? 'too-short'
-            : null;
-        setTakeVerdict(verdict);
-        if (verdict) {
-          setRefusals((n) => n + 1);
-          // Logged as its own event: a run of these is what tells a grown-up the
-          // rung is being tapped through rather than done, and it is not
-          // recoverable from `capture.stop` without knowing these thresholds.
-          languageLog.capture('refused', { seq: entry.seq, reason: verdict, durationMs, bytes: blob.size, heard, measurable });
-        } else {
-          setRefusals(0);
-        }
-
-        // Straight into hearing it. The Stop tap is the gesture behind this
-        // play(), so autoplay policy is satisfied; if it still refuses, the
-        // review controls appear and nothing is lost but the listen.
-        setPhase('playback');
-        const el = new Audio(takeUrlRef.current);
-        // The take plays back at the panel's master volume, like the prompt.
-        unbindPlaybackRef.current = bindMediaToMaster(el);
-        playbackRef.current = el;
-        const finish = () => {
-          unbindPlaybackRef.current?.();
-          unbindPlaybackRef.current = null;
-          playbackRef.current = null;
-          setPhase('review');
-        };
-        el.onended = finish;
-        el.onerror = finish;
-        const result = el.play();
-        if (result?.catch) {
-          result.catch((err) => {
-            languageLog.audioError('play-blocked', { url: 'take', error: err?.message });
-            playbackRef.current = null;
-            setPhase('review');
-          });
-        }
-        decodeTake(blob).then((samples) => { if (blobRef.current === blob) setTake(samples); });
-      };
-
-      recorder.start();
-      takeStartedAtRef.current = Date.now();
-      setStream(mic);
-      setPhase('recording');
-      languageLog.capture('start', { seq: entry.seq });
-    } catch (err) {
-      // MediaRecorder construction/start can fail after getUserMedia succeeds.
-      // Release that already-open stream on every failure path.
-      releaseMic();
-      languageLog.captureError('denied', { seq: entry.seq, error: err?.message });
-      // The old copy told the learner to "skip this one" — and no skip existed
-      // anywhere in this component, so a denied mic stranded the recording
-      // badge forever pointing at a control that was never built. The real
-      // escape hatch is the ladder's own: drop the rung from this device and
-      // sentences graduate across the gap.
-      setError('The microphone is unavailable on this device.');
-      setPhase('idle');
-    }
-  }, [entry.seq, releaseMic]);
+    if (!await startCapture()) return;
+    setPhase('recording');
+    languageLog.capture('start', { seq: entry.seq });
+  }, [entry.seq, startCapture]);
 
   // The prompt plays, then the ding, then recording begins — one sequence,
   // one gesture. The learner shouldn't have to hunt for a second button
@@ -280,11 +263,11 @@ export default function RecordingRung({
     return () => {
       stop();
       stopPlayback();
-      streamRef.current?.getTracks().forEach((t) => t.stop());
+      releaseMic();
       if (takeUrlRef.current) URL.revokeObjectURL(takeUrlRef.current);
       takeUrlRef.current = null;
     };
-  }, [entry.seq, stop, stopPlayback]);
+  }, [entry.seq, stop, stopPlayback, releaseMic]);
 
   const cue = useCallback(() => (cueUrl ? [{ url: cueUrl, role: 'cue' }] : []), [cueUrl]);
 
@@ -312,9 +295,7 @@ export default function RecordingRung({
     setPhase('idle');
   }, [blocked, phase, stop]);
 
-  const stopRecording = useCallback(() => {
-    if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
-  }, []);
+  const stopRecording = stopCapture;
 
   const skipPlayback = useCallback(() => {
     stopPlayback();

@@ -3,7 +3,7 @@ import { createPlaySessionReporter } from './playSessionReporter.js';
 import { createPortal } from 'react-dom';
 import { DaylightAPI, DaylightMediaPath } from '../../../../lib/api.mjs';
 import getLogger from '../../../../lib/logging/Logger.js';
-import { isKioskEnv } from '@/lib/kioskEnv.js';
+import { isKioskEnv, isLocalDevHost } from '@/lib/kioskEnv.js';
 import { EmulatorConsole } from '../../../Emulator/EmulatorConsole.jsx';
 import { ArcadeShell } from '../../../Emulator/ui/ArcadeShell.jsx';
 import { PlayerSelect } from '../../../Emulator/ui/PlayerSelect.jsx';
@@ -238,8 +238,25 @@ export default function EmulatorGameWidget({ fitnessContext, onClose, config, on
   }, [startGame, openIdentitySurface]);
 
   // Game tapped → admin gate ONCE per session, then launch.
+  //
+  // THE GATE IS NOT A KIOSK FEATURE. It used to apply only where isKioskEnv()
+  // was true — the garage Firefox — so any other browser in the house opened
+  // games with no approval. A developer's localhost is the one exemption, and a
+  // gate turned off in settings.yml says so on every launch it lets through:
+  // on 2026-09-12 a test override left `adminGate: false` in the live file and
+  // the arcade stayed open for a day with nothing in the log to show it.
   const handleSelectGame = useCallback((game) => {
-    if (arcadeUnlocked || !adminGate || !isKioskEnv()) { launchFresh(game); return; }
+    if (arcadeUnlocked) { launchFresh(game); return; }
+    if (!adminGate) {
+      logger.warn('fitness-emulator.admin-gate-skipped', { game: game.id, reason: 'config-disabled' });
+      launchFresh(game);
+      return;
+    }
+    if (isLocalDevHost()) {
+      logger.debug('fitness-emulator.admin-gate-skipped', { game: game.id, reason: 'dev-host' });
+      launchFresh(game);
+      return;
+    }
     setPendingGame(game);
     setView('admin');
     registerAdmin('emulator').then((verdict) => {
@@ -251,7 +268,7 @@ export default function EmulatorGameWidget({ fitnessContext, onClose, config, on
         setView('arcade');
       }
     });
-  }, [arcadeUnlocked, adminGate, registerAdmin, launchFresh]);
+  }, [arcadeUnlocked, adminGate, registerAdmin, launchFresh, logger]);
 
   const cancelGate = useCallback(() => {
     setView(launch ? 'playing' : 'arcade');
