@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import SegmentedSecretText from './SegmentedSecretText.jsx';
+import SegmentedSecretText, { balanceSecretLines } from './SegmentedSecretText.jsx';
 import { activeSegmentsFor } from './segmentedSecretGeometry.js';
 
 describe('SegmentedSecretText', () => {
@@ -23,8 +23,17 @@ describe('SegmentedSecretText', () => {
     expect(container.querySelector('.segmented-secret-text__field')).toBeNull();
   });
 
+  it('balances multi-line clues at word boundaries without dropping the masked space', () => {
+    expect(balanceSecretLines('BLOWING UP A BALLOON')).toEqual(['BLOWING UP ', 'A BALLOON']);
+    expect(balanceSecretLines('LOOKING THROUGH BINOCULARS')).toEqual(['LOOKING THROUGH ', 'BINOCULARS']);
+    const { container } = render(<SegmentedSecretText text="Blowing up a balloon" />);
+    expect(container.querySelectorAll('.segmented-secret-text__line')).toHaveLength(2);
+    expect(container.querySelectorAll('.segmented-secret-text__glyph')).toHaveLength(20);
+  });
+
   it('uses a recognizable sixteen-segment alphabet', () => {
     expect(activeSegmentsFor('A')).toEqual(expect.arrayContaining(['a1', 'a2', 'b', 'e', 'f', 'g1', 'g2']));
+    expect(activeSegmentsFor('B')).toEqual(['a1', 'a2', 'b', 'c', 'd1', 'd2', 'e', 'f', 'g1', 'g2']);
     expect(activeSegmentsFor('X')).toEqual(expect.arrayContaining(['h', 'i', 'j', 'k']));
   });
 });

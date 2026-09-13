@@ -47,7 +47,7 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   const stage = page.locator('main.charades');
   const phase = async (value, timeout = 20_000) => expect(stage).toHaveAttribute('data-phase', value, {timeout});
   const expectFits = async locator => {
-    const clipped = await locator.evaluate(root => [root, ...root.querySelectorAll('button, img, .segmented-secret-text, .image-decoder-display')]
+    const clipped = await locator.evaluate(root => [root, ...root.querySelectorAll('button, img, .segmented-secret-text, .segmented-secret-text__glyph, .image-decoder-display, .charades__countdown')]
       .filter(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden')
       .filter(el => { const b = el.getBoundingClientRect(); return b.bottom > innerHeight + 1 || b.right > innerWidth + 1 || b.top < -1 || b.left < -1; })
       .map(el => ({tag:el.tagName,className:el.className,text:el.textContent?.slice(0,80)})));
@@ -104,8 +104,15 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   for (let turn = 0; turn < 18; turn++) {
     await phase('challenge-ready');
     const ready = await read();
+    await expect(stage.getByRole('img', {name:`Round ${ready.state.round} of 3`})).toBeVisible();
+    await expect(stage.locator('.charades__round-step')).toHaveCount(3);
+    await expect(stage.locator('.charades__round-step[data-state="current"]')).toHaveCount(1);
+    await expect(stage.locator('.gp-show-header__status .gp-avatar')).toBeVisible();
+    await expect(stage).not.toContainText(/Secret clue|Performer only/);
     if (ready.state.clue_presentation !== 'image') {
       await expect(stage.locator('.segmented-secret-text__glyph')).toHaveCount(ready.state.challenge.prompt.length);
+      const lineLengths = await stage.locator('.segmented-secret-text__line').evaluateAll(lines => lines.map(line => line.querySelectorAll('.segmented-secret-text__glyph').length));
+      if (ready.state.challenge.prompt.length > 18) expect(Math.max(...lineLengths) - Math.min(...lineLengths)).toBeLessThanOrEqual(6);
       await expect(stage.locator('.segmented-secret-text__word-gap, .segmented-secret-text__space')).toHaveCount(0);
       await expect(stage.locator('.segmented-secret-text__interference')).toHaveCount(0);
     }
@@ -160,6 +167,12 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
     await focusRemote(/^(Go|Start acting)/i);
     await page.keyboard.down('Enter');
     await phase('performing');
+    await expect(stage.getByRole('list', {name:'Charades rules'})).toContainText('No talkingNo spellingNo pointing');
+    await expect(stage).not.toContainText('Act it out');
+    await expect(stage.getByRole('button', {name:'Finish turn'}).locator('svg')).toBeVisible();
+    const progress = stage.locator('.charades__countdown-progress');
+    const initialOffset = await progress.evaluate(circle => circle.style.strokeDashoffset);
+    await expect.poll(() => progress.evaluate(circle => circle.style.strokeDashoffset), {timeout:2500}).not.toBe(initialOffset);
     // Repeated keydowns from the same held remote button cannot end acting.
     await page.keyboard.down('Enter');
     await page.keyboard.down('Enter');
@@ -189,6 +202,7 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
     }
     await expect.poll(async () => (await musicState()).some(a => !a.paused)).toBe(false);
     await expect(stage).toContainText(ready.state.challenge.prompt);
+    await expect(stage).not.toContainText(/The clue was|Thanks for acting/);
     if (imageTurn) {
       const revealedImage = stage.getByRole('img', {name:ready.state.challenge.prompt,exact:true});
       await expect(revealedImage).toBeVisible();
@@ -198,6 +212,7 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
     }
     await expectFits(stage);
     await expect(stage).not.toContainText(/score committed|guessed it|not guessed|wins/i);
+    await expect(stage.getByRole('button', {name:/Next clue|Next performer|Finish game/}).locator('svg')).toBeVisible();
     await focusRemote(/next|finish|complete/i);
     await page.keyboard.press('Enter');
     console.log(`Verified turn ${turn + 1}/18: ${ready.state.performer_id}, ${imageTurn ? 'image' : 'text'}`);
