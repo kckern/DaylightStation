@@ -20,7 +20,7 @@ import {
   pianoPersistenceOutcome,
 } from '../../../performance/attemptEvidence.js';
 import DrillProgress from './DrillProgress.jsx';
-import { deckSets, deckProjection } from './deckProgress.js';
+import { deckSets, deckProjection, deckWindow } from './deckProgress.js';
 import ExerciseNotation from './ExerciseNotation.jsx';
 import { timedRunPresentation } from './timedRunPresentation.js';
 import KeysAsk from './KeysAsk.jsx';
@@ -950,7 +950,11 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   // Tier 1's reinforcement staff is offered, not forced: an ask that no single
   // clef holds, or that spans more than an octave, is still a complete ask on
   // lit keys, and a staff it cannot draw legibly helps nobody.
-  const askStaff = !score && runTier >= 1 && staffFitsAsk(instance.events);
+  // A deck whose rep is a whole shape shows the rep being played, not all of
+  // them: the staff is judged on what is drawn, so three different arpeggios
+  // side by side never cost a child the staff they each fit on alone.
+  const keysWindow = deckWindow(instance, visualCursor.index);
+  const askStaff = !score && runTier >= 1 && staffFitsAsk(keysWindow.events);
   const staffShown = stage === 'keys' ? askStaff : true;
   // The bank splits a key across `key` (the root) and an axis (the quality);
   // `instanceKeySignature` re-joins them, so a minor instance is not spelled
@@ -1106,8 +1110,8 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
       <div className={`piano-exercise-run__stage ${stage === 'keys' ? 'piano-exercise-run__ask' : 'piano-exercise-run__score'}`}>
         {stage === 'keys' && (
           <KeysAsk
-            events={instance.events}
-            cursorIndex={visualCursor.index}
+            events={keysWindow.events}
+            cursorIndex={keysWindow.cursorIndex}
             activeNotes={feedbackNotes}
             wrongMidi={countingDown ? null : lastWrong?.midi ?? null}
             showStaff={askStaff}

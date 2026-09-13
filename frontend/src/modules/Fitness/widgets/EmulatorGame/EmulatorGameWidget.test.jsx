@@ -28,7 +28,10 @@ vi.mock('../../../Emulator/EmulatorConsole.jsx', () => ({
 
 // Identity + kiosk env are mocked so we can drive the launch flow deterministically.
 const kiosk = { value: false };
-vi.mock('@/lib/kioskEnv.js', () => ({ isKioskEnv: () => kiosk.value }));
+// A developer's localhost is the ONLY exemption from the admin gate. Tests that
+// are not about the gate run as dev; every gate test states the household host.
+const devHost = { value: true };
+vi.mock('@/lib/kioskEnv.js', () => ({ isKioskEnv: () => kiosk.value, isLocalDevHost: () => devHost.value }));
 const identity = {
   registerIdentify: vi.fn(),
   registerAdmin: vi.fn(),
@@ -75,6 +78,7 @@ function libraryWith(saveMode) {
 beforeEach(() => {
   api.mockReset();
   kiosk.value = false;
+  devHost.value = true;
   identity.registerIdentify.mockReset();
   identity.registerAdmin.mockReset();
   identity.clearUnlock.mockReset();
@@ -108,7 +112,7 @@ describe('EmulatorGameWidget arcade shell', () => {
     expect(window.__emulatorCapturingGamepad).toBe(true);
   });
 
-  it('off-kiosk: a save-enabled game skips fingerprint and cold-starts', async () => {
+  it('on a developer\'s localhost: a save-enabled game skips fingerprint and cold-starts', async () => {
     api.mockResolvedValue(libraryWith('battery'));
     render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
     await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
@@ -116,6 +120,31 @@ describe('EmulatorGameWidget arcade shell', () => {
     const el = await screen.findByTestId('console');
     expect(el.getAttribute('data-persist')).toBe('0');
     expect(identity.registerIdentify).not.toHaveBeenCalled();
+  });
+
+  // THE HOLE THIS CLOSES: the gate applied only on the Firefox kiosk, so a
+  // tablet or laptop on the household host opened any game with no approval.
+  it('a browser that is not the kiosk still needs the admin fingerprint', async () => {
+    kiosk.value = false;
+    devHost.value = false;
+    api.mockResolvedValue(libraryWith('none'));
+    identity.registerAdmin.mockResolvedValue({ matched: false });
+    render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
+    await waitFor(() => expect(identity.registerAdmin).toHaveBeenCalledWith('emulator'));
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    expect(screen.queryByTestId('console')).toBeNull();
+  });
+
+  it('only settings.adminGate:false opens the arcade on the household host', async () => {
+    devHost.value = false;
+    api.mockResolvedValue({ ...libraryWith('none'), settings: { adminGate: false } });
+    render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
+    await screen.findByTestId('console');
+    expect(identity.registerAdmin).not.toHaveBeenCalled();
   });
 
   it('a per-game core override (GBA in the gb category) reaches the engine config', async () => {
@@ -138,6 +167,7 @@ describe('EmulatorGameWidget arcade shell', () => {
 
   it('kiosk: the portaled fullscreen wrapper carries kiosk-ui (cursor-hide reaches it)', async () => {
     kiosk.value = true;
+    devHost.value = false;
     // On kiosk every launch passes the admin gate first (origin's save-flow); grant it so we reach 'playing'.
     identity.registerAdmin.mockResolvedValue({ matched: true, authz: { admin: true } });
     api.mockResolvedValue(libraryWith('none')); // no-save game then boots straight to playing
@@ -179,6 +209,7 @@ describe('fullscreenClass', () => {
 describe('EmulatorGameWidget save flow', () => {
   it('save-enabled kiosk launch: admin gate first, then boots fresh + opens PlayerSelect', async () => {
     kiosk.value = true;
+    devHost.value = false;
     api.mockImplementation((p) => {
       if (p === 'api/v1/emulator/library') return Promise.resolve(libraryWith('battery'));
       if (p.startsWith('api/v1/emulator/saves/')) return Promise.resolve({ users: ['user_5'] });
@@ -197,6 +228,7 @@ describe('EmulatorGameWidget save flow', () => {
 
   it('second launch in the same session skips the admin gate', async () => {
     kiosk.value = true;
+    devHost.value = false;
     api.mockImplementation((p) => (p === 'api/v1/emulator/library'
       ? Promise.resolve(libraryWith('none'))
       : Promise.resolve({ users: [] })));
@@ -214,6 +246,7 @@ describe('EmulatorGameWidget save flow', () => {
 
   it('loading a saver verifies identity then remounts persisting under them', async () => {
     kiosk.value = true;
+    devHost.value = false;
     api.mockImplementation((p) => (p === 'api/v1/emulator/library'
       ? Promise.resolve(libraryWith('battery'))
       : Promise.resolve({ users: ['user_5'] })));
@@ -233,6 +266,7 @@ describe('EmulatorGameWidget save flow', () => {
 
   it('claim as an existing saver warns, then Overwrite turns on persistence', async () => {
     kiosk.value = true;
+    devHost.value = false;
     api.mockImplementation((p) => (p === 'api/v1/emulator/library'
       ? Promise.resolve(libraryWith('battery'))
       : Promise.resolve({ users: ['user_5'] })));

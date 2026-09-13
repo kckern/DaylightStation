@@ -7,6 +7,7 @@ import {
   IconArrowBigDownLine,
   IconArrowBigUpLine,
   IconReplace,
+  IconCrosshair,
 } from '@tabler/icons-react';
 import './ActionStaff.scss';
 
@@ -24,6 +25,7 @@ const ACTION_ICONS = {
   hold: <IconReplace className="action-icon" />,
   jump: <IconArrowBigUpLine className="action-icon" />,
   duck: <IconArrowBigDownLine className="action-icon" />,
+  shoot: <IconCrosshair className="action-icon" />,
 };
 
 const ACTION_LABELS = {
@@ -35,6 +37,7 @@ const ACTION_LABELS = {
   hold: 'Hold piece',
   jump: 'Jump',
   duck: 'Duck',
+  shoot: 'Shoot',
 };
 
 /**

@@ -2,7 +2,7 @@
  * Sound-effect playback for the side-scroller game.
  *
  * Sounds come from the theme (`theme.sounds`), keyed by game event
- * (jump/duck/hit/dodge/levelup/gameover/start). Every path defaults to null —
+ * (jump/duck/shoot/hit/death/dodge/levelup/gameover/start). Every path defaults to null —
  * a null/missing path is a silent no-op, so the game is silent until real
  * assets are configured. See the theme design doc.
  *
@@ -12,6 +12,16 @@
  */
 import { useMemo } from 'react';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
+import { DaylightMediaPath } from '../../../lib/api.mjs';
+
+/**
+ * A `/media/...` path is resolved through the media proxy, the way every other
+ * piano sfx is (`/media/audio/sfx/...`). Anything else — an `/api/...` route or
+ * a full URL — is used exactly as configured.
+ */
+export function resolveSoundSrc(path) {
+  return typeof path === 'string' && /^\/?media\//.test(path) ? DaylightMediaPath(path) : path;
+}
 
 function defaultCreateAudio(src) {
   const el = new Audio();
@@ -29,7 +39,7 @@ export function createSfxPlayer(sounds = {}, { createAudio = defaultCreateAudio,
   const log = logger ?? getChildLogger({ component: 'side-scroller-sfx' });
   const elements = {};
   for (const [name, path] of Object.entries(sounds)) {
-    if (path) elements[name] = createAudio(path);
+    if (path) elements[name] = createAudio(resolveSoundSrc(path));
   }
 
   function play(name) {
