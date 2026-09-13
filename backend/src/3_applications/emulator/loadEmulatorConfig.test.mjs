@@ -256,6 +256,18 @@ describe('settings', () => {
     });
     expect(cfg.settings).toEqual({ autosaveSeconds: 30, idleRelockMinutes: 5, adminGate: false });
   });
+
+  // A test override once left `adminGate: false` in the live settings file and
+  // the arcade opened to everyone for a day with nothing in the log to say so.
+  it('warns whenever the admin gate is configured off, and never when it is on', () => {
+    const warn = vi.fn();
+    const logger = { warn, info() {}, debug() {}, error() {} };
+    loadEmulatorConfig({ emulationDir: '/x', readManifests: () => [], readSettings: () => ({ adminGate: false }), logger });
+    expect(warn).toHaveBeenCalledWith('emulator.config.admin_gate_disabled', { emulationDir: '/x' });
+    warn.mockClear();
+    loadEmulatorConfig({ emulationDir: '/x', readManifests: () => [], readSettings: () => null, logger });
+    expect(warn).not.toHaveBeenCalledWith('emulator.config.admin_gate_disabled', expect.anything());
+  });
 });
 
 describe('presentation passthrough (bezel hotspots + overlays)', () => {
