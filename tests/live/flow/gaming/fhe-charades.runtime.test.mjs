@@ -78,12 +78,16 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   await expect(page.getByTestId('team-setup')).toHaveCount(0);
   await expect(page.getByRole('button', {name:/Guest|Start with/})).toHaveCount(0);
   const launch = new URL(page.url()).searchParams;
-  expect(launch.get('autostart')).toBe('true');
-  expect(launch.get('participants').split(',')).toEqual(seatIds);
+  expect(launch.has('autostart')).toBe(false);
+  expect(launch.has('participants')).toBe(false);
+  expect(new URL(page.url()).pathname).toBe('/screens/living-room/party-games/charades:fhe');
   expect(creations).toHaveLength(1);
   const initial = await read();
   const definition = initial.definition;
   expect(definition).toMatchObject({rounds:3,timer_ms:60_000,clues_per_turn:1,competition:false});
+  expect(definition.launch).toEqual({autostart:true,participants:seatIds});
+  expect(definition.clue_filter).toEqual({categories:['animals','everyday-actions'],levels:['easy']});
+  expect(definition.challenges.every(clue => definition.clue_filter.categories.includes(clue.category) && clue.level === 'easy')).toBe(true);
   expect(definition.presentation.image_participants).toHaveLength(2);
   const musicQueue = await api(`/api/v1/queue/${encodeURIComponent(definition.guessing_music.source)}`);
   const mediaUrls = musicQueue.items.map(item => item.mediaUrl);
@@ -98,6 +102,10 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   for (let turn = 0; turn < 18; turn++) {
     await phase('challenge-ready');
     const ready = await read();
+    if (ready.state.clue_presentation !== 'image') {
+      await expect(stage.locator('.segmented-secret-text__glyph')).toHaveCount(48);
+      await expect(stage.locator('.segmented-secret-text__word-gap, .segmented-secret-text__space')).toHaveCount(0);
+    }
     expect(ready.state.challenge_index).toBe(turn);
     expect(ready.state.round).toBe(Math.floor(turn / 6) + 1);
     expect(ready.state.deadline).toBeNull();

@@ -23,6 +23,13 @@ export function readClueBank(content, contentGamesDir) {
   const bankFile = containedFile(contentGamesDir, content.clue_bank, 'clue_bank');
   const bank = YAML.parse(readTextFromPath(bankFile), { uniqueKeys: true });
   if (bank?.version !== 1 || !Array.isArray(bank.clues) || !bank.clues.length) throw new Error('clue_bank requires version 1 and nonempty clues');
+  const filter = content.clue_filter;
+  if (filter != null) {
+    if (typeof filter !== 'object' || Array.isArray(filter) || Object.keys(filter).some(key => !['categories', 'levels'].includes(key))) throw new Error('clue_filter supports categories and levels');
+    for (const values of Object.values(filter)) {
+      if (!Array.isArray(values) || !values.length || values.some(value => typeof value !== 'string' || !/^[a-z][a-z0-9-]*$/.test(value))) throw new Error('clue_filter values must be nonempty lists of category or level names');
+    }
+  }
   const ids = new Set();
   const challenges = bank.clues.map((clue) => {
     if (!/^[a-z][a-z0-9-]*$/.test(clue?.id || '')) throw new Error('clue requires a stable id');
@@ -30,6 +37,12 @@ export function readClueBank(content, contentGamesDir) {
     ids.add(clue.id);
     if (typeof clue.text !== 'string' || !clue.text.trim()) throw new Error(`clue ${clue.id} requires text`);
     const challenge = { id: clue.id, activity: 'charades', prompt: clue.text.trim() };
+    for (const field of ['category', 'level']) {
+      if (clue[field] != null) {
+        if (typeof clue[field] !== 'string' || !/^[a-z][a-z0-9-]*$/.test(clue[field])) throw new Error(`clue ${clue.id} has invalid ${field}`);
+        challenge[field] = clue[field];
+      }
+    }
     if (clue.image != null) {
       const imageFile = containedFile(path.dirname(bankFile), clue.image, `clue ${clue.id} image`);
       if (!['.svg', '.png', '.webp', '.jpg', '.jpeg'].includes(path.extname(imageFile).toLowerCase())) throw new Error(`clue ${clue.id} image format is unsupported`);
@@ -40,7 +53,9 @@ export function readClueBank(content, contentGamesDir) {
     return challenge;
   });
   const { clue_bank: _source, ...artifact } = content;
-  return { ...artifact, challenges };
+  const selected = challenges.filter(clue => (!filter?.categories || filter.categories.includes(clue.category)) && (!filter?.levels || filter.levels.includes(clue.level)));
+  if (!selected.length) throw new Error('clue_filter matches no clues');
+  return { ...artifact, challenges: selected };
 }
 
 

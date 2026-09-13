@@ -66,8 +66,8 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     const query = new URLSearchParams(queryIndex < 0 ? window.location.search : raw.slice(queryIndex + 1));
     return {
       definition: queryIndex < 0 ? raw : raw.slice(0, queryIndex),
-      autostart: query.get('autostart') === 'true',
-      participants: (query.get('participants') || '').split(',').map(id => id.trim()).filter(Boolean),
+      ...(query.has('autostart') ? { autostart: query.get('autostart') === 'true' } : {}),
+      ...(query.has('participants') ? { participants: query.get('participants').split(',').map(id => id.trim()).filter(Boolean) } : {}),
     };
   });
   const requested = launch.definition;
@@ -146,10 +146,8 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     const location = new URL(window.location.href);
     if (screenBase) location.pathname = `${screenBase}/party-games/${flow.definitionId}`;
     location.searchParams.set('return_to', returnTo);
-    if (launch.autostart) {
-      location.searchParams.set('autostart', 'true');
-      location.searchParams.set('participants', launch.participants.join(','));
-    }
+    if (launch.autostart !== undefined) location.searchParams.set('autostart', String(launch.autostart));
+    if (launch.participants) location.searchParams.set('participants', launch.participants.join(','));
     location.searchParams.delete('session'); location.searchParams.delete('diagnostic_session');
     if (flow.sessionId) location.searchParams.set(flow.sessionId.startsWith('diagnostic:') ? 'diagnostic_session' : 'session', flow.sessionId);
     window.history.replaceState({}, '', `${location.pathname}${location.search}`);
@@ -172,7 +170,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
           <TitleCard title="Party Games" subtitle="Pick a game" />
           {flow.sets.map((s) => (
             <button key={s.id} type="button" disabled={!s.valid} className="party-games__set-card"
-              onClick={() => dispatchFlow({ type: 'PICK_SET', setId: s.setId, game: s.game, definitionId: s.definitionId, presenterId: s.presenter_id, setup: s.setup, setupProfile: s.setupProfile, competition: s.competition, theme: s.theme, input_profile: s.input_profile, lifecycle_capabilities: s.lifecycle_capabilities })}>
+              onClick={() => dispatchFlow({ type: 'PICK_SET', setId: s.setId, game: s.game, definitionId: s.definitionId, presenterId: s.presenter_id, setup: s.setup, setupProfile: s.setupProfile, launch: s.launch, competition: s.competition, theme: s.theme, input_profile: s.input_profile, lifecycle_capabilities: s.lifecycle_capabilities })}>
               <strong>{s.title}</strong><span>{s.description || (s.setup === 'none' ? 'Jump right in' : s.setup === 'teams' ? 'Team play' : 'Choose your players')}</span>{s.valid && s.roundCount ? <small>{s.roundCount} {s.roundCount === 1 ? 'round' : 'rounds'}</small> : null}{!s.valid && <small>{s.error}</small>}
             </button>
           ))}

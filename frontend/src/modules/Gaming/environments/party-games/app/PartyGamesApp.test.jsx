@@ -113,3 +113,28 @@ it('keeps the saved session roster authoritative over automatic launch parameter
  await screen.findByRole('button',{name:'Complete saved'});
  expect(createSession).not.toHaveBeenCalled();expect(screen.queryByRole('alert')).toBeNull();
 });
+
+it('launches a named YAML preset without adding roster parameters to the URL',async()=>{
+ fetchBoot.mockResolvedValue({config,sets:[{...sets[0],launch:{autostart:true,participants:['b','a']}}]});
+ render(<React.StrictMode><AppContainer open={{app:'party-games/charades:family'}} clear={()=>{}}/></React.StrictMode>);
+ await screen.findByRole('button',{name:'Complete session-one'});
+ expect(createSession).toHaveBeenCalledTimes(1);
+ expect(createSession.mock.calls[0][0].seats.map(s=>s.id)).toEqual(['b','a']);
+ expect(screen.queryByTestId('team-setup')).toBeNull();
+ expect(new URLSearchParams(window.location.search).has('participants')).toBe(false);
+ expect(new URLSearchParams(window.location.search).has('autostart')).toBe(false);
+});
+it('allows explicit inline overrides of named preset defaults',async()=>{
+ fetchBoot.mockResolvedValue({config,sets:[{...sets[0],launch:{autostart:true,participants:['b','a']}}]});
+ render(<PartyGamesApp definitionId="charades:family?autostart=false"/>);
+ await screen.findByTestId('team-setup');expect(createSession).not.toHaveBeenCalled();
+});
+
+it('uses the same named preset defaults when selected from the game picker',async()=>{
+ fetchBoot.mockResolvedValue({config,sets:[{...sets[0],title:'FHE Charades',launch:{autostart:true,participants:['a','b']}}]});
+ render(<PartyGamesApp/>);
+ fireEvent.click(await screen.findByRole('button',{name:/FHE Charades/}));
+ await screen.findByRole('button',{name:'Complete session-one'});
+ expect(screen.queryByTestId('team-setup')).toBeNull();
+ expect(createSession.mock.calls[0][0].seats.map(s=>s.id)).toEqual(['a','b']);
+});
