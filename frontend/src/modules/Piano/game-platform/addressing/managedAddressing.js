@@ -72,6 +72,30 @@ const DEFAULT_CADENCE = Object.freeze({ order: 'shuffled', shuffle: 'each_turn' 
 
 const count = (value) => Math.max(0, Math.floor(Number(value) || 0));
 
+/** How many notes a card carries, as an order a ceiling can be compared against. */
+const TEXTURE_RANK = Object.freeze({ single: 0, dyad: 1, triad: 2 });
+
+/**
+ * The last stage of a path a learner's `maxTexture` allows.
+ *
+ * A CEILING, NOT A START. `startStage` says where a learner opens and the daily
+ * climb says how far a day of games carries them; neither could say "never past
+ * single notes", so a preschooler who finished five Connect Four games in a
+ * morning was reading triads by the sixth (observed 2026-09-13, nine games
+ * before lunch). The ceiling clamps both, and the material axis still climbs beneath
+ * it — single notes with sharps and flats is inside a `single` ceiling.
+ *
+ * Chord-path steps carry no texture and are never capped by it. A value this
+ * cannot read is no ceiling at all rather than a guessed one.
+ */
+function ceilingStage(path, maxTexture) {
+  const cap = TEXTURE_RANK[maxTexture];
+  if (cap === undefined) return path.length - 1;
+  return path.reduce((last, step, index) => (
+    (TEXTURE_RANK[step.texture ?? 'single'] ?? 0) <= cap ? index : last
+  ), 0);
+}
+
 function dailyOffset(config, completedGames) {
   const steps = Array.isArray(config?.steps) ? config.steps : DEFAULT_DAILY_STEPS;
   return steps.reduce((offset, step) => (
@@ -100,9 +124,10 @@ export function managedAddressingAt(raw, { learnerId, completedGames = 0 } = {})
   if (!vocabulary) return null;
 
   const path = PATHS[vocabulary];
-  const start = Math.min(path.length - 1, count(learner.startStage));
+  const ceiling = ceilingStage(path, learner.maxTexture);
+  const start = Math.min(ceiling, count(learner.startStage));
   const daily = raw.dailyEscalation?.enabled === false ? 0 : dailyOffset(raw.dailyEscalation, completedGames);
-  const stage = Math.min(path.length - 1, start + daily);
+  const stage = Math.min(ceiling, start + daily);
   const step = path[stage];
   const cadence = cadenceFor(raw);
 
@@ -121,7 +146,7 @@ export function managedAddressingAt(raw, { learnerId, completedGames = 0 } = {})
     shuffle: cadence.shuffle,
     inversions: rung ? rung.inversions : undefined,
     texture: step.texture ?? 'single',
-    managed: { stage, dailyOffset: daily, completedGames },
+    managed: { stage, ceiling, dailyOffset: daily, completedGames },
   };
 }
 
