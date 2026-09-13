@@ -22,6 +22,7 @@ import { gameSubRouteTarget } from './gameSubRoute.js';
 import usePianoChallengeProfile from '../../../ask/usePianoChallengeProfile.js';
 import { creditPianoChallengeGameTime } from '../../../ask/pianoChallengeEarnedTime.js';
 import useBoardGameDay from './useBoardGameDay.js';
+import { addressingPolicyFor } from '../../../game-platform/addressing/addressingPolicy.js';
 
 
 /**
@@ -420,11 +421,11 @@ function GameHost() {
               activeNotes={activeNotes}
               noteHistory={noteHistory}
               gameConfig={config.games?.[gameId]}
-              addressingPolicy={{
+              addressingPolicy={addressingPolicyFor({
                 config: config.gameAddressing,
                 learnerId,
                 completedGames: boardGameDay.completedGames,
-              }}
+              })}
               subRoute={subRoute ?? null}
               onSubRoute={goSubRoute}
               currentUser={currentUser}

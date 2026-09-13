@@ -168,17 +168,10 @@
   // what was played and what was asked. The target it displaced is coloured
   // miss-red in its own right (rule 2); the ghost's job is only to say where
   // the finger actually landed.
-  .sequence-note-wrong-ghost {
-    fill: rgba(0, 0, 0, 0.45);
-    stroke: rgba(0, 0, 0, 0.6);
-    stroke-width: 1;
-  }
-
-  .sequence-staff__ghost-accidental {
-    color: rgba(0, 0, 0, 0.55);
-  }
-
-  .sequence-staff__ghost-ledger {
-    stroke: rgba(0, 0, 0, 0.35);
-  }
+  //
+  // The VALUES are not here. They are `GHOST_INK` in ./staffGlyphs.jsx and are
+  // applied as attributes, because the single-simultaneity renderer draws the
+  // same ghost and a stylesheet cannot be shared with it — which is exactly how
+  // the two surfaces came to show a filled head and a dashed outline for the
+  // same fact. The classes below stay as hooks for querying, and carry no paint.
 }
