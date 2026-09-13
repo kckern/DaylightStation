@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import SegmentedSecretText, { balanceSecretLines } from './SegmentedSecretText.jsx';
-import { activeSegmentsFor } from './segmentedSecretGeometry.js';
+import { activeSegmentsFor, SEGMENTS } from './segmentedSecretGeometry.js';
 
 describe('SegmentedSecretText', () => {
   it('renders spaces as full masked glyphs so word boundaries are hidden without the decoder', () => {
@@ -34,6 +34,14 @@ describe('SegmentedSecretText', () => {
   it('uses a recognizable sixteen-segment alphabet', () => {
     expect(activeSegmentsFor('A')).toEqual(expect.arrayContaining(['a1', 'a2', 'b', 'e', 'f', 'g1', 'g2']));
     expect(activeSegmentsFor('B')).toEqual(['a1', 'a2', 'b', 'c', 'd1', 'd2', 'e', 'f', 'g1', 'g2']);
+    expect(activeSegmentsFor('K')).toEqual(['e', 'f', 'i', 'k']);
+    expect(activeSegmentsFor('V')).toEqual(['h', 'i']);
+    expect(activeSegmentsFor('W')).toEqual(['b', 'c', 'e', 'f', 'j', 'k']);
+    expect(SEGMENTS.k).toEqual([28, 56, 40, 90]);
     expect(activeSegmentsFor('X')).toEqual(expect.arrayContaining(['h', 'i', 'j', 'k']));
+    for (const letter of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
+      expect(activeSegmentsFor(letter).length, `${letter} must have a visible glyph`).toBeGreaterThan(0);
+      expect(new Set(activeSegmentsFor(letter)).size, `${letter} must not repeat a segment`).toBe(activeSegmentsFor(letter).length);
+    }
   });
 });

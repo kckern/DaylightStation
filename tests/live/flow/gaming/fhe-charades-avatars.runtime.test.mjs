@@ -37,6 +37,12 @@ test('FHE Charades wheel renders and keeps every participant portrait upright', 
   }
   expect(errors.length).toBeGreaterThan(15);
   expect(Math.max(...errors), `portrait tilted during spin: ${errors.join(', ')}`).toBeLessThan(2);
+  const confirmation = page.locator('.winner-modal');
+  await expect(confirmation).toBeVisible();
+  await expect(confirmation.locator('.winner-name')).toHaveText(/.+/);
+  await page.screenshot({ path: testInfo.outputPath('winner-confirmation.png') });
+  await page.waitForTimeout(1000);
+  await expect(confirmation).toBeVisible();
   await expect(page.locator('main.charades')).toHaveAttribute('data-phase', 'challenge-ready');
   expect(failures).toEqual([]);
 });

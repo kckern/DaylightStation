@@ -18,6 +18,7 @@ const SPIN_CONFIG = {
   minSpins: 3,
   maxSpins: 6,
   durationMs: 8000,
+  resultDurationMs: 1800,
 };
 
 // Wheel states
@@ -231,7 +232,7 @@ function RouletteWheel({ members, rotation, isSpinning, winnerIndex, showResult,
 /**
  * Inner FamilySelector Component (after data is loaded)
  */
-function FamilySelectorInner({ members, winner, title: _title, exclude, autoSpin, onComplete, embedded, durationMs }) {
+function FamilySelectorInner({ members, winner, title: _title, exclude, autoSpin, onComplete, embedded, durationMs, resultDurationMs }) {
   const riggedWinner = winner || null;
     const excludeList = (exclude || '')
     .split(',')
@@ -248,6 +249,7 @@ function FamilySelectorInner({ members, winner, title: _title, exclude, autoSpin
   const animRef = useRef(null);
   const avatarAnimRefs = useRef([]);
   const finishTimer = useRef(null);
+  const resultTimer = useRef(null);
   const busyRef = useRef(false);
   const completeRef = useRef(onComplete); completeRef.current = onComplete;
   const [wheelState, setWheelState] = useState(WHEEL_STATE.IDLE);
@@ -283,6 +285,7 @@ function FamilySelectorInner({ members, winner, title: _title, exclude, autoSpin
   const spin = useCallback(() => {
     if (busyRef.current || activeMembers.length < (embedded ? 1 : 2)) return;
     busyRef.current = true;
+    clearTimeout(resultTimer.current);
 
     if (animRef.current) {
       animRef.current.cancel();
@@ -303,8 +306,13 @@ function FamilySelectorInner({ members, winner, title: _title, exclude, autoSpin
     const el = wheelRef.current;
     let completed = false;
     const finish = () => {
-      if (completed) return; completed = true; busyRef.current = false;
-      clearTimeout(finishTimer.current); setWheelState(WHEEL_STATE.RESULT); completeRef.current?.(member);
+      if (completed) return; completed = true;
+      clearTimeout(finishTimer.current); setWheelState(WHEEL_STATE.RESULT);
+      clearTimeout(resultTimer.current);
+      resultTimer.current = setTimeout(() => {
+        busyRef.current = false;
+        completeRef.current?.(member);
+      }, resultDurationMs);
     };
     finishTimer.current = setTimeout(finish, durationMs);
     if (el?.animate) {
@@ -329,7 +337,7 @@ function FamilySelectorInner({ members, winner, title: _title, exclude, autoSpin
       ));
       animRef.current.onfinish = finish;
     }
-  }, [wheelState, selectWinner, activeMembers.length, rotation, durationMs, embedded]);
+  }, [wheelState, selectWinner, activeMembers.length, rotation, durationMs, resultDurationMs, embedded]);
 
   /**
    * Keyboard event handler
@@ -356,6 +364,7 @@ useEffect(() => {
     if (autoSpin) spin();
     return () => {
       clearTimeout(finishTimer.current);
+      clearTimeout(resultTimer.current);
       animRef.current?.cancel();
       avatarAnimRefs.current.forEach(animation => animation.cancel());
       avatarAnimRefs.current = [];
@@ -396,7 +405,7 @@ useEffect(() => {
       </div>
 
       {/* Winner Modal */}
-      {!embedded && wheelState === WHEEL_STATE.RESULT && selectedMember && (
+      {wheelState === WHEEL_STATE.RESULT && selectedMember && (
         <div className="winner-modal-overlay">
           <div className="winner-modal">
             <div className="winner-avatar">
@@ -418,7 +427,7 @@ useEffect(() => {
 /**
  * Main FamilySelector Container (Bootstrap + Loading)
  */
-export default function FamilySelector({ winner, title, exclude, autoSpin = false, members: suppliedMembers, onComplete, embedded = false, durationMs = SPIN_CONFIG.durationMs }) {
+export default function FamilySelector({ winner, title, exclude, autoSpin = false, members: suppliedMembers, onComplete, embedded = false, durationMs = SPIN_CONFIG.durationMs, resultDurationMs = SPIN_CONFIG.resultDurationMs }) {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -474,7 +483,7 @@ export default function FamilySelector({ winner, title, exclude, autoSpin = fals
   return (
     <FamilySelectorInner
       members={(suppliedMembers || members).map((member, index) => ({ color: SEGMENT_COLORS[index % SEGMENT_COLORS.length], ...member }))}
-      autoSpin={autoSpin} onComplete={onComplete} embedded={embedded} durationMs={durationMs}
+      autoSpin={autoSpin} onComplete={onComplete} embedded={embedded} durationMs={durationMs} resultDurationMs={resultDurationMs}
       winner={winner}
       title={title}
       exclude={exclude}

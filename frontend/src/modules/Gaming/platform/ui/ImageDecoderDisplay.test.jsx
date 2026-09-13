@@ -1,10 +1,11 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { act, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import ImageDecoderDisplay from './ImageDecoderDisplay.jsx';
 import { generateDecoderArtifacts } from './imageDecoderArtifacts.js';
 
 describe('ImageDecoderDisplay', () => {
+  afterEach(() => vi.useRealTimers());
   it('generates stable artifacts for a clue seed', () => {
     const first = generateDecoderArtifacts('monkey', 8);
     expect(generateDecoderArtifacts('monkey', 8)).toEqual(first);
@@ -23,6 +24,20 @@ describe('ImageDecoderDisplay', () => {
     expect(screen.getByTestId('image-decoder-subject').style.maskImage)
       .toContain('/api/v1/gaming/media/charades/monkey.svg');
     expect(container.querySelectorAll('.image-decoder-display__artifact')).toHaveLength(12);
+  });
+
+  it('repositions and rescales only the concealed subject every configured interval', () => {
+    vi.useFakeTimers();
+    const { container } = render(<ImageDecoderDisplay src="/clue.svg" seed="moving" motionIntervalMs={1000} />);
+    const subject = screen.getByTestId('image-decoder-subject');
+    const artifacts = container.querySelector('.image-decoder-display__artifacts');
+    const first = subject.style.transform;
+    act(() => vi.advanceTimersByTime(1000));
+    expect(subject.style.transform).not.toBe(first);
+    expect(artifacts).not.toHaveAttribute('style');
+    const second = subject.style.transform;
+    act(() => vi.advanceTimersByTime(1000));
+    expect(subject.style.transform).not.toBe(second);
   });
 });
 

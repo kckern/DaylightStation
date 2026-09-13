@@ -173,22 +173,26 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
       )}
 
       {state.phase === 'challenge-ready' && (
-        <section className="charades__center charades__clue">
-          {state.clue_presentation === 'image' ? <ImageDecoderDisplay src={state.challenge?.decoder?.image} alt="Encoded image clue for the performer" /> : <SegmentedSecretText text={prompt} label="Charades clue" accessibleText="Encoded charades clue for the performer" />}
+        <section className="charades__center charades__with-footer charades__clue">
+          <div className="charades__stage-content charades__clue-content">
+            {state.clue_presentation === 'image' ? <ImageDecoderDisplay src={state.challenge?.decoder?.image} alt="Encoded image clue for the performer" /> : <SegmentedSecretText text={prompt} label="Charades clue" accessibleText="Encoded charades clue for the performer" />}
+          </div>
           <GameButton className="charades__primary-action" tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'challenge.start' })}><IconPlayerPlayFilled aria-hidden="true" />{casual ? 'Go' : 'Start acting'}</GameButton>
         </section>
       )}
 
       {state.phase === 'performing' && (
-        <section className="charades__center charades__performing">
-          <CharadesCountdown deadline={state.deadline} durationMs={definition.timer_ms} onComplete={() => command({ type: 'timer.expire' })} />
-          {musicError && <div className="charades__notice" role="status">{musicError}<GameButton onClick={() => setMusicAttempt(value => value + 1)}>Retry music</GameButton></div>}
-          <div className="charades__spotlight" aria-label="The secret clue is concealed during play">Act!</div>
-          <ul className="charades__rules" aria-label="Charades rules">
-            <li><IconMessageOff aria-hidden="true" />No talking</li>
-            <li><IconLetterCase aria-hidden="true" />No spelling</li>
-            <li><IconPointerOff aria-hidden="true" />No pointing</li>
-          </ul>
+        <section className="charades__center charades__with-footer charades__performing">
+          <div className="charades__stage-content charades__performing-content">
+            <CharadesCountdown deadline={state.deadline} durationMs={definition.timer_ms} onComplete={() => command({ type: 'timer.expire' })} />
+            {musicError && <div className="charades__notice" role="status">{musicError}<GameButton onClick={() => setMusicAttempt(value => value + 1)}>Retry music</GameButton></div>}
+            <div className="charades__spotlight" aria-label="The secret clue is concealed during play">Act!</div>
+            <ul className="charades__rules" aria-label="Charades rules">
+              <li><IconMessageOff aria-hidden="true" />No talking</li>
+              <li><IconLetterCase aria-hidden="true" />No spelling</li>
+              <li><IconPointerOff aria-hidden="true" />No pointing</li>
+            </ul>
+          </div>
           <GameButton className="charades__primary-action" tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'challenge.finish' })}><IconPlayerStopFilled aria-hidden="true" />{casual ? 'Finish turn' : 'Stop timer'}</GameButton>
         </section>
       )}
@@ -205,13 +209,15 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
 
       {state.phase === 'challenge-complete' && (
         casual ? (
-          <section className="charades__center charades__reveal">
-            <h2>{prompt}</h2>
-            {state.clue_presentation === 'image' && (
-              <img className="charades__revealed-image" src={state.challenge?.decoder?.image} alt={prompt} />
-            )}
+          <section className="charades__center charades__with-footer charades__reveal">
+            <div className="charades__stage-content charades__reveal-content">
+              <h2>{prompt}</h2>
+              {state.clue_presentation === 'image' && (
+                <img className="charades__revealed-image" src={state.challenge?.decoder?.image} alt={prompt} />
+              )}
+            </div>
             <GameButton className="charades__primary-action" tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'challenge.next' })}>
-              {anotherClue ? 'Next clue' : finalTurn ? 'Finish game' : 'Next performer'}<IconArrowRight aria-hidden="true" />
+              <IconArrowRight aria-hidden="true" />{anotherClue ? 'Next clue' : finalTurn ? 'Finish game' : 'Next performer'}
             </GameButton>
           </section>
         ) : (
