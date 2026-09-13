@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import { resolveTranscodeCaps, buildClientProfileExtra } from '#adapters/content/media/plex/transcodeProfile.mjs';
+import { resolveTranscodeCaps, buildClientProfileExtra, canDirectStreamVideo, isHighBitDepthVideo } from '#adapters/content/media/plex/transcodeProfile.mjs';
 
 describe('resolveTranscodeCaps', () => {
   it('applies default caps when caller passes nothing', () => {
@@ -71,5 +71,59 @@ describe('canDirectPlayH264', () => {
   it('rejects missing/empty metadata', () => {
     expect(canDirectPlayH264(null)).toBe(false);
     expect(canDirectPlayH264({})).toBe(false);
+  });
+});
+
+// Regression guard for the 2026-09-12 stall: a 10-bit HEVC source was reported as
+// direct-streamable, which makes PlexAdapter drop the transcode caps. Plex then
+// re-encoded it anyway, uncapped (CRF 16 / 20 Mbps), at ~0.5x realtime.
+describe('canDirectStreamVideo bit-depth gate', () => {
+  const media = (overrides = {}) => ({
+    videoCodec: 'hevc',
+    Part: [{ Stream: [{ streamType: 1, codec: 'hevc', bitDepth: 8, profile: 'main' }] }],
+    ...overrides,
+  });
+
+  it('allows 8-bit hevc to direct-stream', () => {
+    expect(canDirectStreamVideo({ Media: [media()] })).toBe(true);
+  });
+
+  it('allows 8-bit h264 to direct-stream', () => {
+    expect(canDirectStreamVideo({
+      Media: [media({ videoCodec: 'h264', Part: [{ Stream: [{ streamType: 1, bitDepth: 8 }] }] })],
+    })).toBe(true);
+  });
+
+  it('refuses 10-bit hevc (Main 10) — Plex re-encodes it, so caps must stay on', () => {
+    expect(canDirectStreamVideo({
+      Media: [media({
+        videoProfile: 'main 10',
+        Part: [{ Stream: [{ streamType: 1, codec: 'hevc', bitDepth: 10, profile: 'main 10' }] }],
+      })],
+    })).toBe(false);
+  });
+
+  it('refuses 10-bit h264 (Hi10P)', () => {
+    expect(canDirectStreamVideo({
+      Media: [media({
+        videoCodec: 'h264',
+        Part: [{ Stream: [{ streamType: 1, bitDepth: 10, profile: 'high 10' }] }],
+      })],
+    })).toBe(false);
+  });
+
+  it('falls back to the profile string when bitDepth is absent', () => {
+    expect(isHighBitDepthVideo({ videoProfile: 'main 10', Part: [{ Stream: [{ streamType: 1 }] }] })).toBe(true);
+    expect(isHighBitDepthVideo({ videoProfile: 'main', Part: [{ Stream: [{ streamType: 1 }] }] })).toBe(false);
+    expect(isHighBitDepthVideo({ videoProfile: 'high', Part: [{ Stream: [{ streamType: 1 }] }] })).toBe(false);
+  });
+
+  it('does not mistake an 8-bit profile that merely contains digits for 10-bit', () => {
+    expect(isHighBitDepthVideo({ videoProfile: 'high 4:2:2', Part: [{ Stream: [{ streamType: 1, bitDepth: 8 }] }] })).toBe(false);
+  });
+
+  it('still refuses codecs that are never copyable, regardless of depth', () => {
+    expect(canDirectStreamVideo({ Media: [media({ videoCodec: 'av1' })] })).toBe(false);
+    expect(canDirectStreamVideo({ Media: [media({ videoCodec: 'vp9' })] })).toBe(false);
   });
 });

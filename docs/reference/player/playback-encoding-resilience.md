@@ -57,11 +57,17 @@ when the stream is **not** direct-streamable — i.e. when a re-encode is genuin
 unavoidable. The gate is direct-stream eligibility, not direct-play eligibility:
 
 - **directPlay-eligible** (h264 + aac + mp4): send no caps — serve as-is.
-- **directStream-eligible** (video codec is h264 or hevc): send **no caps** — let
-  Plex copy the video track at its native framerate/bitrate/resolution and only
-  transcode audio + remux. This is the path that keeps **native 60fps**.
-- **neither** (av1/vp9/etc.): send the caps — a re-encode is forced anyway, and
-  the caps keep that encode ahead of realtime.
+- **directStream-eligible** (video codec is h264 or hevc **at 8-bit**): send **no
+  caps** — let Plex copy the video track at its native framerate/bitrate/resolution
+  and only transcode audio + remux. This is the path that keeps **native 60fps**.
+- **neither** (av1/vp9, or any >8-bit source): send the caps — a re-encode is forced
+  anyway, and the caps keep that encode ahead of realtime.
+
+Bit depth is part of "copyable". We advertise `h264,hevc` but no 10-bit profile, so
+Plex cannot copy an HEVC **Main 10** or H.264 **Hi10P** track to this client: it
+inserts `format=pix_fmts=yuv420p` and re-encodes. Claiming such a source is
+copyable is the worst of both worlds — it removes the guardrails *and* keeps the
+cost. See the 2026-09-12 incident below.
 
 The codec advertisement (`h264,hevc` only) already prevents an av1/vp9 source from
 being direct-streamed as something MSE can't append, so opening up directStream for
@@ -88,7 +94,7 @@ through the decision request and the transcode-URL builder:
 | Gate | True when | Effect |
 |------|-----------|--------|
 | `allowDirectPlay` | h264 video **and** aac audio **and** mp4 container | Plex may serve the file as-is |
-| `allowDirectStream` | video codec is h264 **or** hevc (regardless of audio/container) | Plex may copy the video track; caps are **omitted** |
+| `allowDirectStream` | video codec is h264 **or** hevc, **and** the video is 8-bit (regardless of audio/container) | Plex may copy the video track; caps are **omitted** |
 
 `allowDirectStream` is the superset (`allowDirectPlay || canDirectStreamVideo`).
 Both the client-profile-extra (which carries the frame-rate limitation) and the
@@ -169,3 +175,63 @@ See the resilience runbook for diagnosing each.
 - `docs/reference/player/lessons-and-gotchas.md` — encoding/transcode failure modes & history (AV1/VP9 advertise revert, force-re-encode revert, idle-reap, warmup)
 - `docs/reference/media/dash-video-resilience.md` — stall/seek troubleshooting runbook
 - `docs/reference/content/content-playback.md` — content → playable → stream URL
+
+---
+
+## Incident: 10-bit HEVC reported as copyable (2026-09-12)
+
+Tuttle Twins S03E02 (`plex:663511`) — HEVC **Main 10**, 1080p24, **1972 kbps**,
+E-AC3 audio, MKV — sawtoothed for an entire episode on the garage display.
+
+`canDirectStreamVideo()` looked only at the codec name, saw `hevc`, and reported
+the source copyable. That made the adapter omit `maxVideoBitrate`,
+`maxVideoResolution` and the frame-rate limitation — correct behaviour *if* Plex
+were going to copy. It was not: with no 10-bit profile advertised, Plex tone-mapped
+to 8-bit and ran a full software `libx264` encode, and because the caps were absent
+that encode was **uncapped — CRF 16 with a 20 Mbps ceiling, for a 1972 kbps
+source**.
+
+Measured shape, from the log store:
+
+| Signal | Value |
+|--------|-------|
+| Transcode throughput | ~**0.5x realtime** (`speed` 0.5; `Plex Transcoder` 190–313% CPU) |
+| Buffer | built to 31s, drained to **0 in ~110s** |
+| Steady state | fetch one 3s segment, play 3s, stall ~1.7s — a **6.05s period**, forever |
+| `dash.buffer-stalled` | **always `type:"audio"`** |
+| Backend event-loop lag | healthy (p50 20ms, p99 ~100ms) — not a backend stall |
+
+Two traps in reading it:
+
+- **Every stall was `type:"audio"`, and audio was not the problem.** A single
+  ffmpeg process muxes the DASH output, so when the video encoder falls behind,
+  audio segments stop appearing too. dash.js just notices the smaller audio buffer
+  first. Chasing the E-AC3 → EAE audio path would have been wasted effort.
+- **The startup burst looks healthy.** Plex races ahead to fill the buffer, so the
+  first ~30s show fast segment fetches and a growing buffer. The failure only
+  appears as the buffer drains. Judge by `speed` and the buffer *trend*, not by the
+  first few seconds.
+
+Fix: `canDirectStreamVideo()` also requires 8-bit (`isHighBitDepthVideo()`, which
+prefers the video stream's numeric `bitDepth` and falls back to the `videoProfile`
+string). After the fix the same item transcodes at **CRF 23 / 7393k, ~1.1–2.4x
+realtime**.
+
+### Hardware transcoding is NOT available on this host (and the pref alone is a trap)
+
+Worth knowing before reaching for "just turn on hardware acceleration":
+`HardwareAcceleratedCodecs` was off, and turning it on does **not** work here.
+The GPU stack itself is fine — `vainfo` reports Mesa Gallium on AMD Radeon
+(renoir) with `VAProfileH264High: VAEntrypointEncSlice`, `/dev/dri` is passed into
+the container, and Plex Pass is active. But Plex Transcoder links its **own bundled
+`libc.so`**, and loading this container's Mesa driver fails with
+`__isoc23_strtoul: symbol not found` — the container base is too new for Plex's
+bundled libs. Plex's libva also hardcodes a conan build path for the driver
+directory (the same class of bug `plex-amdgpu-fix.sh` works around for
+`amdgpu.ids`); symlinking drivers into it gets past the *lookup* but not the
+*relocation*. Enabling the pref without fixing that just makes Plex attempt a HW
+path that cannot initialise, so it was left **off**. The real remedy is a Plex image
+whose base distro matches what Plex's bundled libs support.
+
+The caps are therefore the only thing keeping software encodes ahead of realtime.
+Do not weaken them on the assumption that the GPU will catch the slack.
