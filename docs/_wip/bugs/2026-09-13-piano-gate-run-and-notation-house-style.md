@@ -294,3 +294,113 @@ Guarded by new tests in `deckProgress.test.js`, `ExerciseRun.component.test.jsx`
 (one ghost, both engravers), `addressingPolicy.test.js` (including a source
 check that **both** hosts pass one), `countIn.test.js` and
 `failureCoaching.test.js`. 5,538 piano + notation specs green.
+
+---
+
+## Two more, reported the same evening
+
+### 7 — half the board was unreachable: a dyad axis matched by letters, not pitch
+
+**Reported:** "look at the first and the fifth on the treble clef — one is B and E
+and the other one is E and B. When we press E and B it seems not to be honoring
+the octave, so it's impossible to hit the fifth one because the first one keeps
+getting caught."
+
+**Confirmed, and it is worse than two cards.** A dyad axis is eight two-note
+shapes built over a pool that spans an octave *inclusive*, so the pool's last
+entry is the octave of its first. Running the real generator for the seed the
+log recorded (`mounted … "seed":"493680518","scheme":"letters-by-difficulty-v1"`):
+
+```
+TREBLE (files)                         BASS (ranks)
+ card 1: C4+G4   pc {0,7}               card 1: F2+B2   pc {5,11}
+ card 2: D4+A4   pc {2,9}               card 2: G2+C3   pc {0,7}
+ card 3: E4+B4   pc {4,11}              card 3: A2+D3   pc {2,9}
+ card 4: F4+C5   pc {0,5}               card 4: B2+E3   pc {4,11}
+ card 5: G4+C5   pc {0,7}  <- card 1    card 5: B2+F3   pc {5,11} <- card 1
+ card 6: A4+D5   pc {2,9}  <- card 2    card 6: C3+G3   pc {0,7}  <- card 2
+ card 7: B4+E5   pc {4,11} <- card 3    card 7: D3+A3   pc {2,9}  <- card 3
+ card 8: C5+F5   pc {0,5}  <- card 4    card 8: E3+B3   pc {4,11} <- card 4
+ -> 4 of 8 reachable                    -> 4 of 8 reachable
+```
+
+The top four cards of each axis are octave-transposed inversions of the bottom
+four — the same two letters, the other way up. `staffAxisMatch` compared
+**pitch-class sets** (`pcKey`) and took `findIndex`, the first hit, so the lower
+card of each pair answered for both. **Sixteen of the sixty-four squares could be
+addressed at all.**
+
+`validateStaffScheme` never caught it because it compares by exact MIDI
+(`tokenKey`) — eight distinct shapes, scheme valid. The matcher's notion of
+identity was looser than the validator's, which is how a dealt board can be
+legal and unplayable at the same time.
+
+The log shows the symptom plainly: 148 `chess.rejected` / `unrecognised_chord` in
+six hours, and three `pickup-window-missed` on `a2` in eight seconds at 19:21 —
+a child holding a piece and being told nothing was there.
+
+**Fixed:** `matchAxis` now matches EXACT pitch first and falls back to letters
+only as a nearness tiebreak — the same rule `axisIndex` has always used for the
+single-note axis, where C appears twice for the same reason. A hand that is
+exactly right always wins its own card; a hand an octave off still lands on
+whichever card it is nearer to, never on whichever was dealt first. All 64
+squares address.
+
+### 8 — the clefs were placed by bounding box, not by the line they name
+
+**Reported:** "the bass clef is floating way too high… the treble clef,
+shouldn't it be stuck on the G?"
+
+Both true, and the cause is one line. `ClefGlyph` drew a Unicode `<text>`
+(U+1D11E / U+1D122) in `serif`, measured its bounding box at runtime, scaled it
+to `min(2.2 spaces wide, 6 spaces tall)` and pinned the **top of that box** one
+space above the top staff line.
+
+A clef is not placed by its outline. It is placed by its line — a G clef's
+spiral curls around the G line, an F clef's two dots straddle the F line — and a
+box fit says nothing about where either landmark ends up:
+
+| | drawn at | should be |
+|---|---|---|
+| treble | ~85% size, spiral ~¼ space above the G line | full size, spiral **on** the G line |
+| bass | ~80% size (the width constraint binds), top pinned 2 spaces above the F line | full size, dots straddling the **F line**, one space lower |
+
+And none of it was deterministic: the measurement is of whatever font the device
+resolved for `serif`, so a card engraved differently on the kiosk than in a test.
+`staffGlyphs.jsx`'s own opening note already forbids exactly this for
+accidentals; the clefs were the last font glyph in the engraver.
+
+**Fixed:** both clefs are Bravura outlines now — the SMuFL reference font, the
+same one OSMD engraves the full score pages with — expressed in staff spaces
+with the origin **on** the defining line, so placement is
+`translate(x, lineY) scale(lineSpacing)` and nothing else. No measuring, no
+state, no effect.
+
+Two things worth writing down about the conversion: the outline coordinates in
+the vendored dump are **1.44× the declared metrics** beside them (360 units per
+staff space, not 250), which drew the clefs half again too large on the first
+pass; the scale is now derived per glyph from its own metrics and checked on both
+axes. And `clefWidth` was a single guessed constant (`2.2` spaces, "about what a
+bass clef is") — it answers from the real outlines now, per clef.
+
+Verified in a real layout engine, not jsdom: `expectClefOnItsLine` measures the
+drawn glyph against the five staff lines and requires the anchor to land within
+1.5px of its own line.
+
+**Also fixed while in there:** the cursor lane now hugs the music instead of
+filling the box. Item 2 made it span the whole ink band so middle C could not
+fall out of it, which on a one-card flashcard was a full-height yellow column
+behind a single notehead, marking a position with no alternative. It is sized
+from the ask's own drawn columns now: staff height for notes on the staff,
+extended exactly far enough to hold a ledger note and its head.
+
+## Resolution (2)
+
+| # | Fix | Landed in |
+|---|---|---|
+| 7 | Exact-pitch axis matching with a nearness tiebreak; all 64 squares reachable | `PianoChessGame/staffAddress.js` |
+| 8 | Bravura clef outlines anchored on the G and F lines; real widths; lane hugs the music | `MusicNotation/renderers/staffGlyphs.jsx`, `SvgSequenceStaff.jsx` |
+
+Guarded by `staffAddressOctave.test.js` (8 files, 8 ranks, 64 squares, octave
+tiebreak) and, in Chromium over the shipped SCSS, `ExerciseRun.measure.test.jsx`
+(`expectClefOnItsLine`). 5,547 piano + notation specs green.

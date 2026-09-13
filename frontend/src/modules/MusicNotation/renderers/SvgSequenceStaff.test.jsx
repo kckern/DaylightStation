@@ -36,21 +36,37 @@ describe('SvgSequenceStaff', () => {
 
   // ── Clef: chosen, never defaulted (engraving rule 1) ───────────────────────
   describe('clef', () => {
-    it('draws exactly one clef glyph', () => {
+    it('draws exactly one clef, as an outline and never as a font glyph', () => {
       const { container } = render(<SvgSequenceStaff notes={notes(60, 62, 64)} />);
-      expect(container.querySelectorAll('.action-staff__notation-svg text')).toHaveLength(1);
+      expect(container.querySelectorAll('.action-staff__clef')).toHaveLength(1);
+      // NOTHING in the notation layer is a <text>. A clef measured out of
+      // whatever font the device resolved for `serif` is a clef that lands in a
+      // different place on the tablet than in this test.
+      expect(container.querySelectorAll('.action-staff__notation-svg text')).toHaveLength(0);
+    });
+
+    it('anchors the treble clef on the G line and the bass clef on the F line', () => {
+      // The whole of clef placement, asserted where jsdom can see it: the
+      // outline's origin IS the defining line (SMuFL), so the transform's y is
+      // that line and nothing else. Bottom line is y=94 here, spacing 14.
+      const treble = render(<SvgSequenceStaff notes={notes(60, 62, 64)} clef="treble" />);
+      expect(treble.container.querySelector('.action-staff__clef').getAttribute('transform'))
+        .toContain(', 80) scale(14)');   // G line: one space above the bottom line
+      const bass = render(<SvgSequenceStaff notes={notes(43, 45, 47)} clef="bass" />);
+      expect(bass.container.querySelector('.action-staff__clef').getAttribute('transform'))
+        .toContain(', 52) scale(14)');   // F line: three spaces above the bottom line
     });
 
     it('is treble for an all-C4-and-above sequence', () => {
       const { container } = render(<SvgSequenceStaff notes={notes(60, 62, 64, 65, 67, 69, 71, 72)} />);
       expect(container.querySelector('[data-clef]').getAttribute('data-clef')).toBe('treble');
-      expect(container.querySelector('.action-staff__notation-svg text').textContent).toBe('\u{1D11E}');
+      expect(container.querySelector('.action-staff__clef').getAttribute('data-clef')).toBe('treble');
     });
 
     it('is bass for an all-below-C3 sequence', () => {
       const { container } = render(<SvgSequenceStaff notes={notes(36, 38, 40, 41, 43)} />);
       expect(container.querySelector('[data-clef]').getAttribute('data-clef')).toBe('bass');
-      expect(container.querySelector('.action-staff__notation-svg text').textContent).toBe('\u{1D122}');
+      expect(container.querySelector('.action-staff__clef').getAttribute('data-clef')).toBe('bass');
     });
 
     it('follows the MAJORITY pitch, not the first one', () => {
@@ -64,7 +80,7 @@ describe('SvgSequenceStaff', () => {
     it('an explicit clef prop wins over the derived one', () => {
       const { container } = render(<SvgSequenceStaff notes={notes(60, 62, 64)} clef="bass" />);
       expect(container.querySelector('[data-clef]').getAttribute('data-clef')).toBe('bass');
-      expect(container.querySelector('.action-staff__notation-svg text').textContent).toBe('\u{1D122}');
+      expect(container.querySelector('.action-staff__clef').getAttribute('data-clef')).toBe('bass');
     });
 
     it('positions notes against the CHOSEN clef, not each pitch\'s own', () => {
@@ -201,6 +217,19 @@ describe('SvgSequenceStaff', () => {
         const head = headBand(container, midi);
         expect(head.top).toBeGreaterThanOrEqual(lane.top);
         expect(head.bottom).toBeLessThanOrEqual(lane.bottom);
+      });
+
+      it('hugs the music rather than filling the box', () => {
+        // Containment is not licence to paint the whole card yellow. A note that
+        // sits inside the staff gets a staff-height lane; only a note that
+        // reaches past the lines makes the lane reach with it.
+        const inStaff = render(<SvgSequenceStaff notes={notes(67)} cursorIndex={0} clef="treble" />);
+        const wide = render(<SvgSequenceStaff notes={notes(84)} cursorIndex={0} clef="treble" />);
+        const h = (c) => Number(c.querySelector('.sequence-staff__cursor').getAttribute('height'));
+        const boxH = Number(inStaff.container
+          .querySelector('.action-staff__notation-svg').getAttribute('viewBox').split(' ')[3]);
+        expect(h(inStaff.container)).toBeLessThan(boxH * 0.8);
+        expect(h(wide.container)).toBeGreaterThan(h(inStaff.container));
       });
 
       it('keeps those same noteheads inside the viewBox, so nothing is clipped', () => {
@@ -453,8 +482,9 @@ describe('SvgSequenceStaff', () => {
         expect(acc.querySelector('text')).toBeNull();
         expect(acc.querySelectorAll('path, line').length).toBeGreaterThan(0);
       }
-      // The only <text> in the notation svg stays the clef.
-      expect(container.querySelectorAll('.action-staff__notation-svg text')).toHaveLength(1);
+      // And there is no <text> anywhere in the notation svg at all — the clef
+      // was the last font glyph in the engraver and is an outline now too.
+      expect(container.querySelectorAll('.action-staff__notation-svg text')).toHaveLength(0);
     });
 
     it('spells a D-flat major scale with flats when asked to', () => {
