@@ -660,7 +660,7 @@ the button set it, `onChange` clears it. Log through
 
 ## Phase 5 — interpretation needs help
 
-### Task 9: Separate a hint from a reveal
+### Task 9: Separate a hint from a reveal  [as built]
 
 **The distinction that makes this task necessary:** on interpretation the task is *"type
 what it means in English"*, so **the English text IS the answer**. Showing it is not a
@@ -681,6 +681,44 @@ repetition rung already plays the EN clip via `audioUrl(seq, 'EN')`. **No new da
 
 **Files:** `TypedRung.jsx`, `languageLog.js`, `LanguageStudyService.mjs` (record the
 reveal on the attempt), `docs/reference/school/sentence-ladder.md`.
+
+**[as built] — 2026-09-11.** The reveal ships; the Hint half does not, per the
+tabling note below. Where it departed from the text above:
+
+- **`languageLog.js` needed no change.** The reveal logs through the existing
+  `languageLog.rung('reveal', { rung, seq, typed })` and `rung('complete', {…,
+  revealed: true })` — the same category the peek and every other rung event
+  already use. Adding a facade line for one event would have been a fifth way
+  to say `emit('rung', …)`.
+- **Two commit points, not one press.** "Ends the exercise" cannot mean the
+  press itself writes the attempt: the program re-fetches the day and advances
+  on save, so the child would never see the answer they just asked for. The
+  reveal shows it; **Continue** records it. One commit path per sentence, and
+  the reveal cannot land twice.
+- **Text AND audio together, on one control.** The plan offers "EN text or EN
+  audio". Split into Show and Hear they read as two kinds of help, a child who
+  took one would reasonably take the other, and the log would carry two rows
+  for one sentence nobody answered. It is one surrender, so it is one button;
+  having given the answer away, playing it is the most useful thing left.
+- **No keyboard shortcut, unlike the peek's F1.** A key that ends the exercise
+  is a key that ends it by accident. The control is a deliberate tap, and there
+  is no un-reveal — an un-reveal would let a child read the answer, hide it,
+  and type it back as their own.
+- **The field is REMOVED on reveal, not disabled.** Found by rendering: a
+  greyed input still holding half an answer, sitting directly under the answer
+  it had just been handed, is an invitation to copy it in — and on a panel a
+  disabled field barely looks different from a live one. Focus moves to
+  Continue so a bonded keyboard still has somewhere to send Enter.
+- **Two readers had to change beyond `#recordAttempt`.** `ReviewPanel`'s last
+  branch treats "no written answer" as *repetition*, so every revealed
+  interpretation would have appeared on the learner's own history as a
+  repetition they completed. And `#summarizeCourse` gained an **Answers shown**
+  count: keeping reveals out of the accuracy average stops them lying, but it
+  does not make them visible, and a grown-up deciding whether the rung is too
+  hard needs the number.
+- **`accuracy` is absent on a revealed row, not zero.** A zero is a score for a
+  sentence nobody assessed; `accuracy(expected, expected)` — what storing the
+  shown text would have produced — is the 1.0 this task exists to prevent.
 
 ### Tasks 10 and 11 — TABLED
 
@@ -790,7 +828,7 @@ npx vitest run backend/src/1_adapters/ai/ tests/isolated/adapter --reporter=dot
 git commit -m "refactor(ai): voice transcription is a service with a profile, not a fitness detail"
 ```
 
-### Task 13: Interpretation accepts a spoken answer
+### Task 13: Interpretation accepts a spoken answer [as built]
 
 **The capture path already exists and works.** `RecordingRung.jsx` records a blob and
 `languageApi.recording(userId, corpusId, seq, blob, capabilities, studyGrant)` posts it —
@@ -810,7 +848,39 @@ find out why they were marked down.
 `POST /sentence-ladder/transcribe` guarded by the same `studyGrant` as every other write
 on this rung, and `LanguageStudyService.mjs` to carry `method` onto the record.
 
-### Task 14: A spoken answer changes what the rung needs
+**AS BUILT (2026-09-11).** Four departures from the text above, all for reasons the
+text implies:
+
+1. **The route is `POST /users/:userId/transcribe`, not `/sentence-ladder/transcribe`.**
+   The one property the plan actually asked for is the study-grant guard, and
+   `authorized(req, res, corpus)` reads `req.params.userId` — a top-level path could not
+   wear it. Every other write on this rung is learner-scoped for the same reason.
+2. **The route never touches the corpus, by construction.** It was tempting to resolve
+   the answering language server-side from `corpus.languages`, which means loading the
+   corpus, which puts the expected English in scope on the one code path that must never
+   see it. Instead the client sends `?lang=EN` (it already has
+   `entry.response.language`), the router maps it through a two-entry allowlist, and the
+   register is a constant. `seq` is accepted for the log line only. So the context the
+   profile receives is exactly `{ spokenLanguage, register }` from closed sets, and the
+   test asserts that key set *exactly* rather than with `objectContaining` — a new key
+   there is how an expected answer would arrive.
+3. **The day carries `voiceAnswer`**, composed at the HTTP layer beside `cues`. Without
+   it the client would learn there is no AI gateway by drawing a microphone that 503s,
+   which is the dead-button failure this screen keeps designing around. With it the
+   control is simply never drawn.
+4. **The recorder was extracted, not copied.** `rungs/useVoiceCapture.js` owns exactly
+   the part both rungs share — open mic, record, hand back a blob, release — and
+   `RecordingRung` was moved onto it with its phase machine, verdicts, band and logging
+   untouched (its 8 existing tests pass unchanged). It deliberately does not log: the two
+   rungs name the same events differently on purpose.
+
+Also decided here: **no glyph on the Speak control.** `record.svg` is a tape reel and it
+is the *recording* rung's start tile; borrowed here it would promise the take is kept,
+which is the one thing it is not. Same reasoning as the peek's missing glyph.
+`method: 'typed'` is now written on every new text attempt, not only spoken ones, so the
+log is self-describing going forward while old rows stay honestly silent.
+
+### Task 14: A spoken answer changes what the rung needs [as built]
 
 **This is the payoff, and it is a real domain change.** Interpretation currently declares
 it needs `textInput:EN`. Answerable by voice, it needs **`textInput:EN` OR `microphone`**
@@ -830,7 +900,55 @@ it needs `textInput:EN`. Answerable by voice, it needs **`textInput:EN` OR `micr
 microphone and no keyboard must now be offered interpretation instead of being told to
 go elsewhere.
 
+**AS BUILT (2026-09-11).** Four decisions worth recording:
+
+1. **Every requirement is `{anyOf: [...]}`, including the three with one alternative.**
+   A shape that is sometimes a requirement and sometimes a list of them would be branched
+   on at four call sites, which is how the queue and the gate drifted apart the last time.
+   The log token grammar is unchanged for the single cases (`microphone`, `textInput:KR`)
+   and sorted for the new one (`microphone|textInput:EN`), so `stats by` still counts it.
+2. **`voiceAnswer` is NOT a capability.** Capabilities are whatever the client declares —
+   they arrive in a query string — so a client that could assert the transcriber into
+   existence would be handed a rung with no way in and no way past: the dead end
+   `chainFor` exists to prevent, reintroduced by the change meant to open the rung up. It
+   is a second argument to `requirementFor`/`chainFor`, a constructor argument on the
+   service (defaulting to false, because a caller that forgets it offers one rung too few
+   rather than one too many), and composition derives it from the SAME transcription
+   service the router is given — one `const languageTranscription` in `app.mjs` now, where
+   there were two constructions.
+3. **The gate lost its copy of the predicate.** `accessGate.allowsRung` imported the
+   ladder's `satisfiesRequirement` instead of branching on `requirement.kind` itself. Its
+   own header comment records the incident two copies caused, and alternatives gave that
+   copy a second way to fail: a hindered gate withholds keyboards, and a gate still
+   reading `.kind` would have refused every spoken interpretation the queue had offered.
+4. **`#decorate` marks the entry, and that closed a live gap.** `TypedRung` serves both
+   typing rungs and its Speak control was gated on `day.voiceAnswer` alone — so DICTATION
+   was offering a spoken answer, with the client sending `lang=KR`. A child could have
+   spoken the Korean that had just been played to them and had it transcribed into the
+   field, on the one rung whose purpose is typing the script. Each entry now carries
+   `spokenAnswer`, decided by the ladder, and the client keeps no list of its own.
+
+Also found and left alone as its own thing: `getDay` returned `chain` from a second
+`chainFor(...)` call that ignored the enrollment's credit chain, while the log line beside
+it used the filtered value. The two are now the one filtered value, which is what the
+queue was already built from.
+
 ---
+
+## Closing note — what this plan shipped (2026-09-11)
+
+All fourteen tasks are built except Tasks 10 and 11, which were carved out to
+`docs/_wip/plans/2026-09-11-sentence-ladder-word-glosses.md` — the hint half of Task 9
+depends on glosses that do not exist yet, and inventing them inside a typing plan would
+have meant a corpus change riding on a UI change.
+
+What landed: the Shift bug (Task 1), the committed/pending IME seam (Task 2) and the
+glyph strip built on it (Tasks 3–4), the rail's identity and rung icons (Task 5),
+glyph-paced audio (Task 6), copy mode as tracing with a jamo-level gate (Task 7), the
+press-to-peek tier (Task 8), the reveal without the hint (Task 9), the transcription
+service lifted out of fitness with its own non-repairing profile (Task 12), interpretation
+accepting a spoken answer (Task 13), and the requirement becoming a set of alternatives so
+a keyboard-less panel can climb that rung at all (Task 14).
 
 ## Documentation
 

@@ -66,6 +66,15 @@ export class CloseLanguageDay {
       return { status: 'unassigned', sessionId };
     }
     const existing = reduceSession(await this.#sessions.readEvents(sessionId));
+    // SETTLED ONCE. A day that already has its outcome is not closed again:
+    // the close-out path treats a second close as a retry and re-prints the
+    // receipt, so every repeat of this fact put another "PASSED" slip on the
+    // roll for work finished the day before (2026-09-12: one open of a finished
+    // ladder day printed it six times). Reprinting is a grown-up's explicit act.
+    if (existing.outcome) {
+      this.#logger.info?.('school.language.close-already-settled', { learnerId, corpusId, day, sessionId });
+      return { status: 'already_settled', sessionId };
+    }
     if (!existing.sessionId) {
       const at = this.#clock().toISOString();
       for (const raw of [
