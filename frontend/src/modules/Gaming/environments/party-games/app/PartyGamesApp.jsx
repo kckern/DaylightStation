@@ -63,16 +63,30 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   const requested = definitionId || param || appPath || '';
   const requestedDefinition = requested.includes(':') ? requested : null;
   const requestedGame = requestedDefinition ? null : requested;
+  // A direct-route mount has no originating menu stack beneath its overlay.
+  // Capture that fact before the durable URL effect changes menu launches too.
+  const [needsDocumentReturn] = useState(() => /^\/screens?\/[^/]+\/party-games(?:\/|$)/.test(window.location.pathname));
   const [returnTo] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const saved = params.get('return_to');
-    if (saved?.startsWith('/') && !saved.startsWith('//')) return saved;
+    if (saved?.startsWith('/')) {
+      try {
+        const target = new URL(saved, window.location.origin);
+        if (target.origin === window.location.origin) return `${target.pathname}${target.search}${target.hash}`;
+      } catch { /* An invalid return target falls back to the screen root. */ }
+    }
     return window.location.pathname.replace(/\/party-games(?:\/.*)?$/, '') || '/';
   });
   const restoreLocation = useCallback(() => {
     window.history.replaceState({}, '', returnTo);
   }, [returnTo]);
-  const exit = useCallback(() => { restoreLocation(); shellExit?.(); }, [restoreLocation, shellExit]);
+  const exit = useCallback(() => {
+    if (needsDocumentReturn) {
+      window.location.replace(returnTo);
+      return;
+    }
+    restoreLocation(); shellExit?.();
+  }, [needsDocumentReturn, returnTo, restoreLocation, shellExit]);
   useScopedRemoteControls(rootRef, { onEscape: exit });
   const [attachment] = useState(() => {
     const params = new URLSearchParams(window.location.search);
