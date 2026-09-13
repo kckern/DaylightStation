@@ -36,7 +36,7 @@ export class ReconcilePlaySessions {
    * @param {string} input.since   Only consider device sessions starting at/after this.
    */
   async execute({ deviceId, since }) {
-    const result = { matched: [], unrecorded: [], enriched: [] };
+    const result = { matched: [], unrecorded: [], previouslyReported: [], enriched: [] };
 
     const recorded = await this.#sessions.listForDeviceSince(deviceId, since);
     const onDevice = (await this.#logReader.listRecentSessions({ limit: 40 }))
@@ -45,16 +45,30 @@ export class ReconcilePlaySessions {
     for (const entry of onDevice) {
       const match = this.#closest(recorded, entry.startedAt);
       if (!match) {
-        result.unrecorded.push({
+        const evidenceId = entry.file || `${entry.startedAt}|${entry.contentPath || ''}`;
+        const unrecorded = {
+          evidenceId,
           startedAt: entry.startedAt,
           contentPath: entry.contentPath,
           content: this.#resolve(entry.contentPath),
-        });
+        };
+        const alreadyReported = typeof this.#sessions.hasReconciliationEvidence === 'function'
+          && await this.#sessions.hasReconciliationEvidence(deviceId, evidenceId);
+        if (alreadyReported) {
+          result.previouslyReported.push(unrecorded);
+          continue;
+        }
+        result.unrecorded.push(unrecorded);
         // Loud on purpose: the device played something the meter never saw.
         this.#logger.warn?.('play.session.unrecorded', {
-          deviceId, startedAt: entry.startedAt, contentPath: entry.contentPath,
+          deviceId, evidenceId, startedAt: entry.startedAt, contentPath: entry.contentPath,
           note: 'device logged a session with no corresponding record; duration unknown and NOT billed',
         });
+        if (typeof this.#sessions.markReconciliationEvidence === 'function') {
+          await this.#sessions.markReconciliationEvidence(deviceId, {
+            evidenceId, startedAt: entry.startedAt, contentPath: entry.contentPath,
+          });
+        }
         continue;
       }
 

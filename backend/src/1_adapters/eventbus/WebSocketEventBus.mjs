@@ -15,7 +15,7 @@
 import { WebSocketServer } from 'ws';
 import { nowTs, nowTs24 } from '#system/utils/index.mjs';
 import crypto from 'crypto';
-import { parseDeviceTopic, PLAYBACK_STATE_TOPIC } from '#shared-contracts/media/topics.mjs';
+import { parseDeviceTopic, PLAYBACK_STATE_TOPIC, PLAY_SESSIONS_TOPIC } from '#shared-contracts/media/topics.mjs';
 import {
   buildDeviceStateBroadcast,
   validateCommandEnvelope,
@@ -43,6 +43,7 @@ const KNOWN_UNCONNECTED_TOPICS = new Set([
   // lock/unlock state. Consumed by frontend/src/hooks/useShutdownLock.js via
   // wsService.subscribe('shutdown.state', ...).
   'shutdown.state',
+  PLAY_SESSIONS_TOPIC,
 ]);
 
 /**
@@ -88,6 +89,12 @@ export class WebSocketEventBus {
 
   // External client tracking
   #clients = new Map(); // clientId -> { ws, meta }
+
+  // A kiosk publishes its generic screen state while the server independently
+  // projects a durable play session for the same device. The play-session
+  // projection is authoritative until it publishes idle; lower-authority
+  // heartbeats are suppressed so the Fleet never flickers back to idle mid-game.
+  #playSessionAuthority = new Set();
 
   // Event handlers
   #connectionHandlers = [];
@@ -387,6 +394,27 @@ export class WebSocketEventBus {
    * @param {Object} payload - Event payload
    */
   broadcast(topic, payload) {
+    const parsed = parseDeviceTopic(topic);
+    if (parsed?.kind === 'device-state') {
+      const snapshot = payload?.snapshot ?? payload;
+      const authority = snapshot?.meta?.authority;
+      const state = snapshot?.state ?? null;
+      if (authority === 'play-session') {
+        if (state === 'idle' || state === 'stopped') {
+          this.#playSessionAuthority.delete(parsed.deviceId);
+        } else {
+          this.#playSessionAuthority.add(parsed.deviceId);
+        }
+      } else if (this.#playSessionAuthority.has(parsed.deviceId)) {
+        this.#logger.debug?.('eventbus.device_state.suppressed_lower_authority', {
+          deviceId: parsed.deviceId,
+          state,
+          reason: payload?.reason ?? null,
+        });
+        return 0;
+      }
+    }
+
     // Publish internally first (always — internal handlers are topic-exact).
     this.publish(topic, payload);
 
@@ -417,8 +445,6 @@ export class WebSocketEventBus {
       this.#logger.debug?.('eventbus.broadcast.homeline-call', { topic, sentCount });
       return sentCount;
     }
-
-    const parsed = parseDeviceTopic(topic);
 
     // Per-device topics: deliver to that device's topic subscribers only.
     if (parsed) {
@@ -498,7 +524,7 @@ export class WebSocketEventBus {
     }
 
     // playback_state is a full broadcast topic.
-    if (topic === PLAYBACK_STATE_TOPIC) {
+    if (topic === PLAYBACK_STATE_TOPIC || topic === PLAY_SESSIONS_TOPIC) {
       let sentCount = 0;
       for (const [, { ws, meta }] of this.#clients) {
         if (ws.readyState !== ws.OPEN) continue;
@@ -508,7 +534,10 @@ export class WebSocketEventBus {
           sentCount++;
         }
       }
-      this.#logger.debug?.('eventbus.broadcast.playback_state', {
+      const logEvent = topic === PLAY_SESSIONS_TOPIC
+        ? 'eventbus.broadcast.play_sessions'
+        : 'eventbus.broadcast.playback_state';
+      this.#logger.debug?.(logEvent, {
         topic, sentCount
       });
       return sentCount;

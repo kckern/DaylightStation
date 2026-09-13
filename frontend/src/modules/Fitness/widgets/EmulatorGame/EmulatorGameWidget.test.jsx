@@ -5,6 +5,15 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 const api = vi.fn();
 vi.mock('../../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => api(...a), DaylightMediaPath: (p) => p }));
 vi.mock('../../../../lib/logging/Logger.js', () => ({ default: () => ({ child: () => ({ info(){}, debug(){}, warn(){}, error(){} }) }) }));
+const bus = vi.hoisted(() => {
+  const state = { subscriptions: [] };
+  state.subscribe = vi.fn((topic, handler) => {
+    state.subscriptions.push({ topic, handler });
+    return () => {};
+  });
+  return state;
+});
+vi.mock('../../../../services/WebSocketService.js', () => ({ wsService: bus }));
 
 // Stub the heavy console so the test asserts wiring, not EmulatorJS boot.
 vi.mock('../../../Emulator/EmulatorConsole.jsx', () => ({
@@ -22,6 +31,8 @@ vi.mock('../../../Emulator/EmulatorConsole.jsx', () => ({
         data-coins={props.overlayData?.['session.coins'] ?? ''}
       />
       <button data-testid="exit" onClick={() => props.onExit?.()}>exit</button>
+      <button data-testid="play-signal" onClick={() => props.onPlayStateChange?.('playing')}>playing</button>
+      <button data-testid="pause-signal" onClick={() => props.onPlayStateChange?.('paused')}>paused</button>
     </>
   ),
 }));
@@ -81,11 +92,66 @@ beforeEach(() => {
   saveClient.loadResume.mockReset();
   saveClient.persistResume.mockReset();
   saveClient.clearResume.mockReset();
+  bus.subscriptions = [];
+  bus.subscribe.mockClear();
   delete window.__emulatorCapturingGamepad;
 });
 afterEach(() => { delete window.__emulatorCapturingGamepad; });
 
 describe('EmulatorGameWidget arcade shell', () => {
+  it('meters the explicit fleet device with a stable canonical load lifecycle', async () => {
+    api.mockImplementation((path) => (path === 'api/v1/emulator/library'
+      ? Promise.resolve(libraryWith('none'))
+      : Promise.resolve({})));
+    render(
+      <EmulatorGameWidget
+        fitnessContext={fitnessContext}
+        deviceId="garage-tv"
+        onClose={() => {}}
+        config={{}}
+        onMount={() => {}}
+      />,
+    );
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
+    await screen.findByTestId('console');
+    await waitFor(() => {
+      const [, body] = api.mock.calls.find(([path]) => path === 'api/v1/play-sessions/observations') || [];
+      expect(body).toMatchObject({
+        deviceId: 'garage-tv',
+        observation: {
+          state: 'paused', loaded: true,
+          content: {
+            contentId: 'arcade:gb/example-quest', console: 'gb', consoleLabel: 'Game Boy',
+          },
+        },
+      });
+      expect(body.observation.loadId).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId('play-signal'));
+    await waitFor(() => expect(api.mock.calls.some(([path, body]) => (
+      path === 'api/v1/play-sessions/observations' && body?.observation?.state === 'playing'
+    ))).toBe(true));
+  });
+
+  it('subscribes to the device play feed and renders the server play clock', async () => {
+    api.mockResolvedValue(libraryWith('none'));
+    render(<EmulatorGameWidget fitnessContext={fitnessContext} deviceId="garage-tv" onClose={() => {}} config={{}} onMount={() => {}} />);
+    await waitFor(() => expect(bus.subscribe).toHaveBeenCalledWith(
+      'play-session:garage-tv', expect.any(Function),
+    ));
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
+    await screen.findByTestId('console');
+
+    const subscription = bus.subscriptions.find((entry) => entry.topic === 'play-session:garage-tv');
+    subscription.handler({ event: 'play.session.progress', state: 'playing', playedMs: 95_000 });
+
+    expect(await screen.findByTestId('play-budget')).toHaveTextContent('01:35');
+    expect(screen.getByTestId('play-budget')).toHaveTextContent('played');
+  });
+
   it('shows the arcade grid first (no console until a game is picked)', async () => {
     api.mockResolvedValue(libraryWith('none'));
     render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);

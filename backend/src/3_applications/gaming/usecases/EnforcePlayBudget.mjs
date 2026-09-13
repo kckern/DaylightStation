@@ -23,10 +23,10 @@ import { PlaySessionEndReason } from '#domains/gaming/entities/PlaySession.mjs';
  * courtesy, and every rung is announced on screen and out loud together.
  */
 export class EnforcePlayBudget extends IPlaySessionAnnouncer {
-  #grants; #terminator; #speaker; #notify; #sessions; #logger;
+  #grants; #terminator; #speaker; #notify; #sessions; #announcer; #logger;
   #warned = new Map();
 
-  constructor({ grants, terminator, speaker = null, notify = null, sessions = null, logger = console }) {
+  constructor({ grants, terminator, speaker = null, notify = null, sessions = null, announcer = null, logger = console }) {
     super();
     if (!grants?.forSession) throw new Error('EnforcePlayBudget requires a grants port');
     if (!terminator?.endPlay) throw new Error('EnforcePlayBudget requires a terminator port');
@@ -35,6 +35,7 @@ export class EnforcePlayBudget extends IPlaySessionAnnouncer {
     this.#speaker = speaker;
     this.#notify = notify;
     this.#sessions = sessions;
+    this.#announcer = announcer;
     this.#logger = logger;
   }
 
@@ -103,6 +104,11 @@ export class EnforcePlayBudget extends IPlaySessionAnnouncer {
     if (this.#sessions && !session.isEnded()) {
       session.end({ endedAt: new Date().toISOString(), reason: PlaySessionEndReason.EXPIRED });
       await this.#sessions.save(session);
+      // Expiry happens while handling a progress announcement, after the normal
+      // event/fleet/overlay projections already saw that progress. Publish the
+      // terminal fact explicitly; otherwise persistence says ended while every
+      // real-time consumer remains stuck on playing.
+      await this.#safely('announce', () => this.#announcer?.ended?.(session));
     }
     this.#warned.delete(session.id);
   }

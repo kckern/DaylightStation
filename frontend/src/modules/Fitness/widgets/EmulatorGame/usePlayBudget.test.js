@@ -27,6 +27,11 @@ describe('derivePlayBudget', () => {
     expect(at({ playedMs: 10_000 }, 5_000).ms).toBe(15_000);
   });
 
+  it('freezes played and remaining time while the game is paused', () => {
+    expect(at({ state: 'paused', remainingMs: 300_000 }, 5_000).ms).toBe(300_000);
+    expect(at({ state: 'paused', playedMs: 10_000 }, 5_000).ms).toBe(10_000);
+  });
+
   it('never counts past zero', () => {
     // Inside the live window, so it really does count down to zero — beyond it
     // the clock freezes instead, which the staleness tests cover.

@@ -3736,10 +3736,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'screen-presence' }),
   });
 
-  // Play-time observation for any device declaring `play_observation: true`.
-  // No-op if none does. READ-ONLY: it measures play and broadcasts it on
-  // `play-session:<deviceId>`; nothing acts on the result and nothing is ever
-  // shut off from here. While no game is in the foreground this costs one kiosk
+  // Play-time observation for devices declaring `play_observation: true`, plus
+  // the always-available HTTP ingress used by self-reporting browser emulators.
+  // Observation is the default; warning/termination behavior exists only when
+  // games.yml explicitly selects `play_sessions.mode: enabled`. While no game
+  // is in the foreground, each polled device costs one kiosk
   // REST call per device per interval — ADB is only consulted once the emulator
   // is actually in front, so an idle house is nearly free.
   const playSessionTracking = createPlaySessionTracking({
@@ -3755,6 +3756,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'play-sessions' }),
   });
   await playSessionTracking.start();
+  server?.once?.('close', () => playSessionTracking.stop());
 
   // HTTP surface: push ingress for surfaces that report their own lifecycle,
   // plus session and health reads. Present even when nothing is metered, so a
@@ -3764,6 +3766,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     sessions: playSessionTracking.sessions,
     trackers: playSessionTracking.trackers,
     watchdog: playSessionTracking.watchdog,
+    sessionMonitor: playSessionTracking.sessionMonitor,
     grantLedger: playSessionTracking.grantLedger,
     grantPlayTime: playSessionTracking.grantPlayTime,
     checkEligibility: playSessionTracking.checkEligibility,

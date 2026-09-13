@@ -15,6 +15,8 @@ import { buildFitnessGameGate } from './fitnessGameGate.js';
 import { useIdentity } from '../../identity/useIdentity.js';
 import UnlockPrompt from '../../player/overlays/UnlockPrompt.jsx';
 import { fullscreenClass } from './emulatorGameWidgetLayout.js';
+import { wsService } from '../../../../services/WebSocketService.js';
+import { formatClock, usePlayBudget } from './usePlayBudget.js';
 
 const ENGINE_PATH = '/api/v1/emulator/engine/';
 const DEFAULT_AUTOSAVE_SECONDS = 15;
@@ -47,7 +49,7 @@ function resolveControllerGamepad(controllers) {
  * The console + engine lifecycle lives in EmulatorConsole; this widget owns
  * the session unlock, identity surface, and save decisions.
  */
-export default function EmulatorGameWidget({ fitnessContext, onClose, config, onMount }) {
+export default function EmulatorGameWidget({ fitnessContext, deviceId = null, onClose, config, onMount }) {
   const logger = useMemo(() => getLogger().child({ component: 'fitness-emulator' }), []);
   const { registerIdentify, registerAdmin, clearUnlock, unlockState, unlockedUser } = useIdentity();
 
@@ -110,35 +112,66 @@ export default function EmulatorGameWidget({ fitnessContext, onClose, config, on
   // being watched from outside — the same observations the inferred source
   // produces, differing only in stated confidence.
   //
-  // DECLARED, never inferred: with no `meterDeviceId` in config the widget
-  // reports nothing at all, so a screen is only ever metered because it was
-  // named. It is also the device id the session is filed under, so guessing one
-  // would file this room's play against another room.
-  const meterDeviceId = config?.meterDeviceId ?? null;
+  // Device identity comes from the Fitness app's persisted ?device= binding.
+  // Keep the old config key as a compatibility fallback for embedded callers.
+  const meterDeviceId = deviceId ?? config?.meterDeviceId ?? null;
+  const subscribeToPlay = useCallback(
+    (topic, handler) => wsService.subscribe(topic, handler),
+    [],
+  );
+  const playBudget = usePlayBudget({ deviceId: meterDeviceId, subscribe: subscribeToPlay });
   const reporterRef = useRef(null);
   useEffect(() => {
     if (!meterDeviceId) return undefined;
-    if (!reporterRef.current) {
-      reporterRef.current = createPlaySessionReporter({
-        deviceId: meterDeviceId,
-        post: (body) => DaylightAPI('api/v1/play-sessions/observations', body),
-        logger,
-      });
-    }
+    const reporter = createPlaySessionReporter({
+      deviceId: meterDeviceId,
+      post: (body) => DaylightAPI('api/v1/play-sessions/observations', body),
+      getControllers: () => {
+        try {
+          return typeof navigator !== 'undefined' && typeof navigator.getGamepads === 'function'
+            ? Array.from(navigator.getGamepads() || []).filter(Boolean).length
+            : null;
+        } catch { return null; }
+      },
+      logger,
+    });
+    reporterRef.current = reporter;
+    return () => {
+      reporter.ended();
+      if (reporterRef.current === reporter) reporterRef.current = null;
+    };
+  }, [meterDeviceId, logger]);
+
+  const launchKey = launch?.key ?? null;
+  useEffect(() => {
     const reporter = reporterRef.current;
     const game = launch?.game;
-    if (view === 'playing' && game) {
-      reporter.started({
-        userId: launch.userId ?? null,
-        content: { contentId: `emulatorjs:${game.system}/${game.id}`, title: game.title ?? null },
-      });
-    } else {
-      reporter.ended();
-    }
-    // Leaving the widget entirely must close the session, not leave it open for
-    // the server to age out as lost.
-    return () => { reporterRef.current?.ended(); };
-  }, [view, launch, meterDeviceId, config, logger]);
+    if (!reporter || !launchKey || !game) return undefined;
+    const consoleEntry = library?.consoles?.find((entry) => entry?.system === game.system);
+    reporter.started({
+      state: 'paused', // loaded now; EmulatorConsole confirms first rendered play below
+      userId: launch.userId ?? null,
+      loadId: launchKey,
+      loadedAt: new Date(launch.startedAt).toISOString(),
+      content: {
+        contentId: `arcade:${game.system}/${game.id}`,
+        title: game.title ?? null,
+        console: game.system ?? null,
+        consoleLabel: consoleEntry?.label ?? null,
+      },
+    });
+    return () => { reporter.ended(); };
+    // Identity changes preserve launchKey and are reported by the next effect.
+  }, [launchKey, library?.consoles, meterDeviceId]);
+
+  useEffect(() => {
+    if (launchKey && launch?.userId) reporterRef.current?.updateIdentity(launch.userId);
+  }, [launchKey, launch?.userId]);
+
+  const handlePlayStateChange = useCallback((state) => {
+    if (state === 'playing') reporterRef.current?.resumed();
+    else reporterRef.current?.paused();
+  }, []);
 
   // Idle re-lock: while sitting at the unlocked grid, re-lock after N minutes.
   useEffect(() => {
@@ -408,8 +441,21 @@ export default function EmulatorGameWidget({ fitnessContext, onClose, config, on
             playStartedAt={launch.startedAt}
             resolveMediaUrl={(p) => DaylightMediaPath(p)}
             showInputActivity={settings.inputActivityLed !== false}
+            onPlayStateChange={handlePlayStateChange}
             onExit={handleExitGame}
           />
+          {playBudget.visible && (
+            <div
+              className={`fitness-emulator-play-budget${playBudget.urgency ? ` is-${playBudget.urgency}` : ''}${playBudget.stale ? ' is-stale' : ''}`}
+              data-testid="play-budget"
+              role="status"
+              aria-live="polite"
+            >
+              <strong>{formatClock(playBudget.ms)}</strong>
+              <span>{playBudget.stale ? 'meter offline' : playBudget.label}</span>
+              {playBudget.warning && <small>{playBudget.warning}</small>}
+            </div>
+          )}
           {anonymousSaveGame && (
             <PlayerSelect
               visible={playerSelectOpen}

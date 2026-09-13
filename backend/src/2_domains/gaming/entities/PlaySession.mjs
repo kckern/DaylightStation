@@ -32,6 +32,7 @@ export const PlaySessionStatus = Object.freeze({
 
 export const PlaySessionEndReason = Object.freeze({
   QUIT: 'quit',
+  SWITCHED: 'switched',
   EXPIRED: 'expired',
   LOST: 'lost',
 });
@@ -56,12 +57,13 @@ function requireText(value, field) {
 }
 
 export class PlaySession {
-  #id; #deviceId; #surface; #userId; #content; #grantRef; #participants; #controllers;
+  #id; #deviceId; #surface; #userId; #content; #loadId; #loadedAt; #grantRef; #participants; #controllers;
   #status; #startedAt; #endedAt; #endReason;
   #playedMs; #lastState; #lastObservedAt; #confidenceMs; #trustedGapMs;
 
   constructor({
-    id, deviceId, surface, userId = null, content = null, grantRef = null, participants = [],
+    id, deviceId, surface, userId = null, content = null, loadId = null, loadedAt = null,
+    grantRef = null, participants = [],
     status = PlaySessionStatus.PENDING,
     startedAt = null, endedAt = null, endReason = null,
     playedMs = 0, lastState = null, lastObservedAt = null, controllers = null,
@@ -77,6 +79,10 @@ export class PlaySession {
     }
     this.#userId = userId;
     this.#content = content;
+    this.#loadId = typeof loadId === 'string' && loadId.trim() ? loadId : null;
+    this.#loadedAt = loadedAt === null || loadedAt === undefined
+      ? null
+      : new Date(toMillis(loadedAt, 'loadedAt')).toISOString();
     this.#grantRef = grantRef;
     this.#participants = Array.from(new Set(participants.filter(Boolean)));
     this.#controllers = Number.isFinite(controllers) ? controllers : null;
@@ -95,8 +101,13 @@ export class PlaySession {
    * Open a session in response to a launch. It is PENDING, not ACTIVE: nothing
    * is billable until a PLAYING observation confirms the game is really running.
    */
-  static open({ id, deviceId, surface, userId = null, content = null, grantRef = null, participants = [], trustedGapMs }) {
-    return new PlaySession({ id, deviceId, surface, userId, content, grantRef, participants, trustedGapMs });
+  static open({
+    id, deviceId, surface, userId = null, content = null, loadId = null, loadedAt = null,
+    grantRef = null, participants = [], trustedGapMs,
+  }) {
+    return new PlaySession({
+      id, deviceId, surface, userId, content, loadId, loadedAt, grantRef, participants, trustedGapMs,
+    });
   }
 
   get id() { return this.#id; }
@@ -104,6 +115,8 @@ export class PlaySession {
   get surface() { return this.#surface; }
   get userId() { return this.#userId; }
   get content() { return this.#content; }
+  get loadId() { return this.#loadId; }
+  get loadedAt() { return this.#loadedAt; }
   /** The authorisation this session was opened against (7.1). */
   get grantRef() { return this.#grantRef; }
   /**
@@ -119,7 +132,7 @@ export class PlaySession {
    */
   get participants() { return [...this.#participants]; }
   /**
-   * The most controllers seen live at once during this session.
+   * The most compatible controllers seen connected during this session.
    *
    * A HIGH-WATER mark, not the latest reading: a four-player game is a
    * four-player game even if someone put their pad down before it ended, and
@@ -231,6 +244,28 @@ export class PlaySession {
     return { attributed: true };
   }
 
+  /** Fill a payer that was unknown when play began; never move an existing bill. */
+  attributeUser(userId) {
+    if (!userId) return { attributed: false, reason: 'no user' };
+    if (this.#userId) return { attributed: false, reason: 'already attributed' };
+    this.#userId = userId;
+    return { attributed: true };
+  }
+
+  /** Fill load evidence omitted by an older observer without rewriting it later. */
+  attributeLoad({ loadId = null, loadedAt = null } = {}) {
+    let attributed = false;
+    if (!this.#loadId && typeof loadId === 'string' && loadId.trim()) {
+      this.#loadId = loadId;
+      attributed = true;
+    }
+    if (!this.#loadedAt && loadedAt !== null && loadedAt !== undefined) {
+      this.#loadedAt = new Date(toMillis(loadedAt, 'loadedAt')).toISOString();
+      attributed = true;
+    }
+    return { attributed };
+  }
+
   reconcilePlayedMs(playedMs, { confidenceMs = 0 } = {}) {
     if (!Number.isFinite(playedMs) || playedMs < 0) {
       throw new ValidationError('playedMs must be a non-negative number', {
@@ -263,7 +298,8 @@ export class PlaySession {
   toSnapshot() {
     return {
       id: this.#id, deviceId: this.#deviceId, surface: this.#surface,
-      userId: this.#userId, content: this.#content, grantRef: this.#grantRef,
+      userId: this.#userId, content: this.#content, loadId: this.#loadId,
+      loadedAt: this.#loadedAt, grantRef: this.#grantRef,
       participants: [...this.#participants], status: this.#status,
       startedAt: this.#startedAt, endedAt: this.#endedAt, endReason: this.#endReason,
       playedMs: this.#playedMs, controllers: this.#controllers, lastState: this.#lastState,

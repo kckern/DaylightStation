@@ -1,5 +1,6 @@
 import { IPlaySessionAnnouncer } from '#apps/gaming/ports/IPlaySessionAnnouncer.mjs';
 import { createEmptyQueueSnapshot } from '#shared-contracts/media/shapes.mjs';
+import { buildDeviceStateBroadcast } from '#shared-contracts/media/envelopes.mjs';
 
 /**
  * Projects play sessions into the Fleet's device-state shape.
@@ -57,11 +58,21 @@ export class FleetPlaySessionAnnouncer extends IPlaySessionAnnouncer {
       // rejected by the fleet rather than rendered.
       queue: createEmptyQueueSnapshot(),
       config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1.0 },
-      meta: { ownerId: session.deviceId, updatedAt: new Date().toISOString() },
+      meta: {
+        ownerId: session.deviceId,
+        updatedAt: new Date().toISOString(),
+        // WebSocketEventBus uses this to arbitrate the kiosk's generic idle
+        // heartbeat while a durable game session owns this device state.
+        authority: 'play-session',
+      },
     };
 
     try {
-      this.#bus.broadcast(`device-state:${session.deviceId}`, snapshot);
+      this.#bus.broadcast(`device-state:${session.deviceId}`, buildDeviceStateBroadcast({
+        deviceId: session.deviceId,
+        snapshot,
+        reason: state === 'idle' ? 'change' : 'heartbeat',
+      }));
     } catch (error) {
       this.#logger.warn?.('play.fleet.publish_failed', { deviceId: session.deviceId, error: error.message });
     }

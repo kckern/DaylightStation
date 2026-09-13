@@ -1,10 +1,11 @@
 /**
  * Wires play-session observation for every device that DECLARES it.
  *
- * Nothing here discovers devices to meter. A device is watched only if its
- * configuration says `play_observation: true`, so adding a screen to the house
- * never silently adds a meter to it. A household where no device declares it
- * gets no timers, no clients and no bus traffic at all.
+ * Nothing here discovers devices to poll. A device is watched from outside only
+ * if its configuration says `play_observation: true`, so adding a screen to the
+ * house never silently adds an ADB meter to it. Persistence, HTTP ingress and
+ * bus publication are still built with no polled devices: self-reporting browser
+ * surfaces do not depend on a Shield being declared.
  *
  * One tracker per device rather than one tracker over all devices: each needs
  * its own kiosk client and its own ADB target, and a device that becomes
@@ -40,9 +41,9 @@ import { YamlPlayIntentDatastore } from '#adapters/persistence/yaml/YamlPlayInte
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
 import { RecordPlayObservation } from '#apps/gaming/usecases/RecordPlayObservation.mjs';
 import { ReconcileOpenSessions } from '#apps/gaming/usecases/ReconcileOpenSessions.mjs';
-import { NamePlaySessionContent } from '#apps/gaming/usecases/NamePlaySessionContent.mjs';
 import { ReconcilePlaySessions } from '#apps/gaming/usecases/ReconcilePlaySessions.mjs';
 import { PlayObservationWatchdog } from '#apps/gaming/runtime/PlayObservationWatchdog.mjs';
+import { OpenPlaySessionMonitor } from '#apps/gaming/runtime/OpenPlaySessionMonitor.mjs';
 import { PlaySessionTracker } from '#apps/gaming/runtime/PlaySessionTracker.mjs';
 
 const DEFAULT_INTERVAL_MS = 10_000;
@@ -78,7 +79,7 @@ export function buildContentResolver(catalog, gamesConfig = null) {
     for (const game of games || []) {
       if (!game?.rom) continue;
       byRom.set(game.rom, {
-        contentId: `retroarch:${consoleId}/${game.id}`,
+        contentId: `arcade:${consoleId}/${game.id}`,
         title: game.title,
         console: consoleId,
         consoleLabel: label,
@@ -140,17 +141,17 @@ export function createPlaySessionTracking(config) {
 
   if (declared.length === 0) {
     logger.info?.('play.tracking.none_declared', {});
-    return { trackers: [], sessions: null, intents: null, recordObservation: null, watchdog: null, grantLedger: null, grantPlayTime: null, checkEligibility: null, summarisePlayUsage: null, placements: () => ({}), async start() {}, stop() {} };
   }
 
   const packageName = gamesConfig?.launch?.package;
-  if (!packageName) {
+  let polledDevices = declared;
+  if (declared.length && !packageName) {
     // Without the package to watch there is no way to tell the emulator from
     // anything else in the foreground. Refuse rather than meter the wrong thing.
     logger.warn?.('play.tracking.no_launch_package', {
       devices: declared.map(([id]) => id),
     });
-    return { trackers: [], sessions: null, intents: null, recordObservation: null, watchdog: null, grantLedger: null, grantPlayTime: null, checkEligibility: null, summarisePlayUsage: null, placements: () => ({}), async start() {}, stop() {} };
+    polledDevices = [];
   }
 
   const sessions = new YamlPlaySessionDatastore({ configService, logger });
@@ -158,7 +159,7 @@ export function createPlaySessionTracking(config) {
   // Kiosk clients, built once per declared device and shared by the observation
   // source and the overlay driver.
   const kioskByDevice = new Map();
-  for (const [deviceId, device] of declared) {
+  for (const [deviceId, device] of polledDevices) {
     const content = device.content_control || {};
     const password = content.password
       || (content.auth_ref ? configService?.getHouseholdAuth?.(content.auth_ref)?.password : null);
@@ -172,7 +173,7 @@ export function createPlaySessionTracking(config) {
   // metered without ever carrying a countdown. Only `play_overlay: true` devices
   // get a client here, so no code path can put a film on a screen that did not
   // ask for one.
-  const overlayDevices = declared.filter(([, d]) => d?.play_overlay === true).map(([id]) => id);
+  const overlayDevices = polledDevices.filter(([, d]) => d?.play_overlay === true).map(([id]) => id);
   const overlayAnnouncer = (overlayDevices.length && daylightHost)
     ? new OverlayPlaySessionAnnouncer({
       overlay: new FullyKioskPlayOverlay({
@@ -187,11 +188,9 @@ export function createPlaySessionTracking(config) {
     logger.warn?.('play.overlay.no_host', { devices: overlayDevices });
   }
 
-  // Enforcement. `grants` decides whether ANY of this can act: the default
-  // answers "no grant" for every session, so warnings never fire and nothing is
-  // ever stopped. Metering still runs and still records what was played — the
-  // meter measures from day one and only starts costing anything when a real
-  // grant source replaces this.
+  // Enforcement is an explicit operational mode. Observation, persistence and
+  // clocks run by default; warning/termination behavior exists only after the
+  // household deliberately selects `play_sessions.mode: enabled`.
   const grantLedger = configService ? new YamlPlayGrantLedger({ configService, logger }) : null;
   const isAdmin = profileFor
     ? async (userId) => {
@@ -231,7 +230,20 @@ export function createPlaySessionTracking(config) {
 
   const adbByDevice = new Map();
   const controllerProbes = new Map();
-  const enforcement = new EnforcePlayBudget({
+  const enforcementMode = gamesConfig?.play_sessions?.mode ?? 'observe-only';
+  // The ordinary projections are also the terminal projection target for an
+  // expiry that occurs inside EnforcePlayBudget.progress(). Keep enforcement
+  // itself out of this inner fan-out to avoid recursively announcing to it.
+  const sessionProjections = new CompositePlaySessionAnnouncer({
+    announcers: [
+      new EventBusPlaySessionAnnouncer({ eventBus, placementFor, identify, sessions, logger }),
+      new FleetPlaySessionAnnouncer({ eventBus, logger }),
+      overlayAnnouncer,
+    ],
+    logger,
+  });
+
+  const enforcement = enforcementMode === 'enabled' && packageName ? new EnforcePlayBudget({
     // Adults play without a ceiling; everyone else plays the time on their
     // ledger, and nothing at all if none was granted. Where granted time came
     // from — a parent's phone or converted tokens — is the ledger's business,
@@ -265,17 +277,16 @@ export function createPlaySessionTracking(config) {
       }
     },
     sessions,
+    announcer: sessionProjections,
     logger,
-  });
+  }) : null;
 
   // Several audiences for the same fact: the domain events the economy consumes,
   // the fleet projection that renders a game like any other content on a device,
   // and the overlay that puts a countdown in front of the player.
   const announcer = new CompositePlaySessionAnnouncer({
     announcers: [
-      new EventBusPlaySessionAnnouncer({ eventBus, placementFor, identify, logger }),
-      new FleetPlaySessionAnnouncer({ eventBus, logger }),
-      overlayAnnouncer,
+      sessionProjections,
       enforcement,
     ],
     logger,
@@ -291,7 +302,7 @@ export function createPlaySessionTracking(config) {
 
   const resolveContent = buildContentResolver(gamesCatalog, gamesConfig);
 
-  const built = declared.map(([deviceId, device]) => {
+  const built = polledDevices.map(([deviceId, device]) => {
     const content = device.content_control || {};
     const fallback = content.fallback || {};
     const kioskClient = kioskByDevice.get(deviceId);
@@ -305,10 +316,6 @@ export function createPlaySessionTracking(config) {
       logger.warn?.('play.tracking.no_adb', { deviceId });
     }
 
-    const observationSource = new RetroArchPlayObservationSource({
-      kioskClient, adbAdapter, packageName, pollIntervalMs: intervalMs, logger,
-    });
-
     if (adbAdapter) {
       adbByDevice.set(deviceId, adbAdapter);
       controllerProbes.set(deviceId, new AndroidControllerProbe({ adbAdapter, logger }));
@@ -320,37 +327,42 @@ export function createPlaySessionTracking(config) {
       })
       : null;
 
-    // A game started at the device opens a session with no title. Ask the
-    // device's own logs once, while it is still running, so the countdown knows
-    // which system it is drawing on instead of waiting for the next restart.
-    const nameUnidentified = logReader
-      ? (session) => new NamePlaySessionContent({
-        sessions, logReader, resolveContent, logger,
-      }).execute(session)
-      : null;
+    const observationSource = new RetroArchPlayObservationSource({
+      kioskClient, adbAdapter, packageName, logReader, resolveContent,
+      pollIntervalMs: intervalMs, logger,
+    });
 
     const tracker = new PlaySessionTracker({
       devices: [{ deviceId, surface: CONSOLE_SURFACE }],
-      observationSource, intents, recordObservation, nameUnidentified,
+      observationSource, intents, recordObservation,
+      controllersFor: async () => {
+        const census = await controllerProbes.get(deviceId)?.census?.();
+        return census?.connected ?? null;
+      },
       intervalMs, scheduler, now, logger,
     });
     return { deviceId, tracker, logReader };
   });
 
   const trackers = built.map((b) => b.tracker);
+  const configuredStaleAfterMs = Number(gamesConfig?.play_sessions?.stale_after_ms);
+  const sessionStaleAfterMs = Number.isFinite(configuredStaleAfterMs) && configuredStaleAfterMs > 0
+    ? configuredStaleAfterMs
+    : intervalMs * STALE_AFTER_FACTOR;
+  const sessionMonitorIntervalMs = Math.min(intervalMs * 3, sessionStaleAfterMs);
 
   const watchdog = new PlayObservationWatchdog({
     trackers,
     scheduler,
     now,
-    staleAfterMs: intervalMs * STALE_AFTER_FACTOR,
+    staleAfterMs: sessionStaleAfterMs,
     intervalMs: intervalMs * 3,
     // Blindness is tolerable briefly and a person's problem after that. It never
     // stops a running game — only withholds NEW play until observation returns.
     escalateAfterMs: intervalMs * STALE_AFTER_FACTOR * 10,
     alert: new HomeAssistantPlayAlert({
       haGateway,
-      serviceByDevice: new Map(declared
+      serviceByDevice: new Map(polledDevices
         .filter(([, d]) => d?.notify_service)
         .map(([id, d]) => [id, d.notify_service])),
       logger,
@@ -359,11 +371,21 @@ export function createPlaySessionTracking(config) {
   });
 
   logger.info?.('play.tracking.configured', {
-    devices: declared.map(([id]) => id), intervalMs, packageName,
+    devices: polledDevices.map(([id]) => id), intervalMs, sessionStaleAfterMs,
+    packageName, enforcementMode,
   });
 
   const reconcile = new ReconcileOpenSessions({ sessions, announcer, logger });
-  const deviceIds = declared.map(([id]) => id);
+  const sessionMonitor = new OpenPlaySessionMonitor({
+    sessions,
+    announcer,
+    scheduler,
+    now,
+    staleAfterMs: sessionStaleAfterMs,
+    intervalMs: sessionMonitorIntervalMs,
+    logger,
+  });
+  const deviceIds = polledDevices.map(([id]) => id);
 
   // Eligibility: may play BEGIN? Rules live in configuration and in state-gate
   // assertions, never here. Absent inputs are permissive; a device the meter
@@ -405,6 +427,7 @@ export function createPlaySessionTracking(config) {
     // same use case the polled source uses.
     recordObservation,
     watchdog,
+    sessionMonitor,
     grantLedger,
     grantPlayTime,
     /**
@@ -415,7 +438,7 @@ export function createPlaySessionTracking(config) {
     async start() {
       try {
         const settled = await reconcile.execute({
-          deviceIds, now: now(), staleAfterMs: intervalMs * STALE_AFTER_FACTOR,
+          deviceIds, now: now(), staleAfterMs: sessionStaleAfterMs,
         });
         if (settled.resumed.length || settled.lost.length) {
           logger.info?.('play.tracking.reconciled', settled);
@@ -456,8 +479,9 @@ export function createPlaySessionTracking(config) {
 
       trackers.forEach((t) => t.start());
       watchdog.start();
+      sessionMonitor.start();
     },
-    stop() { watchdog.stop(); trackers.forEach((t) => t.stop()); },
+    stop() { sessionMonitor.stop(); watchdog.stop(); trackers.forEach((t) => t.stop()); },
   };
 }
 

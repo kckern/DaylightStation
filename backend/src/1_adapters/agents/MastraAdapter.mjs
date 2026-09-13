@@ -200,7 +200,10 @@ export class MastraAdapter extends IAgentRuntime {
       const agentOpts = {
         id: name,
         name,
-        instructions: systemPrompt,
+        // Current Mastra dereferences `instructions.content`; an omitted
+        // application prompt is valid, so adapt it to the SDK's safe string
+        // shape instead of passing undefined across the boundary.
+        instructions: systemPrompt ?? '',
         model: this.#model,
         tools: mastraTools,
         // Workaround for Mastra issue #16179 — autoResumeSuspendedTools

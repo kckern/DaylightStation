@@ -34,10 +34,14 @@ describe('FleetPlaySessionAnnouncer', () => {
     // Asserted unconditionally: a hedged check here would pass even if the
     // projection stopped being renderable, which is the one thing it is for.
     expect(typeof validateSessionSnapshot).toBe('function');
-    expect(validateSessionSnapshot(published[0][1])).toEqual({ valid: true, errors: [] });
+    expect(validateSessionSnapshot(published[0][1].snapshot)).toEqual({ valid: true, errors: [] });
     expect(published[0][1]).toMatchObject({
-      sessionId: 'ps_1', state: 'playing',
-      currentItem: { contentId: 'retroarch:gb/test', format: 'game', title: 'Test Game' },
+      deviceId: 'livingroom-tv', reason: 'heartbeat',
+      snapshot: {
+        sessionId: 'ps_1', state: 'playing',
+        currentItem: { contentId: 'retroarch:gb/test', format: 'game', title: 'Test Game' },
+        meta: { authority: 'play-session' },
+      },
     });
   });
 
@@ -48,12 +52,12 @@ describe('FleetPlaySessionAnnouncer', () => {
     session.observe({ state: PlayState.PLAYING, observedAt: at(615) });
     await announcer().progress(session, { state: 'playing' });
     // 615s of wall clock, 15s actually played.
-    expect(published[0][1].position).toBe(15);
+    expect(published[0][1].snapshot.position).toBe(15);
   });
 
   it('maps a paused observation to paused', async () => {
     await announcer().progress(playing(10), { state: 'paused' });
-    expect(published[0][1].state).toBe('paused');
+    expect(published[0][1].snapshot.state).toBe('paused');
   });
 
   it('validates in every state the fleet will see, not just the first', async () => {
@@ -63,7 +67,7 @@ describe('FleetPlaySessionAnnouncer', () => {
     s.end({ endedAt: at(20), reason: 'quit' });
     await a.ended(s);
     for (const [, snapshot] of published) {
-      expect(validateSessionSnapshot(snapshot)).toEqual({ valid: true, errors: [] });
+      expect(validateSessionSnapshot(snapshot.snapshot)).toEqual({ valid: true, errors: [] });
     }
   });
 
@@ -71,7 +75,9 @@ describe('FleetPlaySessionAnnouncer', () => {
     const s = playing(10);
     s.end({ endedAt: at(20), reason: 'quit' });
     await announcer().ended(s);
-    expect(published[0][1]).toMatchObject({ state: 'idle', currentItem: null });
+    expect(published[0][1]).toMatchObject({
+      reason: 'change', snapshot: { state: 'idle', currentItem: null, meta: { authority: 'play-session' } },
+    });
   });
 
   it('never throws when the bus rejects a broadcast', async () => {

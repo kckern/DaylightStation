@@ -3,14 +3,23 @@ import { EventBusPlaySessionAnnouncer } from './EventBusPlaySessionAnnouncer.mjs
 
 const quiet = { info() {}, warn() {}, debug() {}, error() {} };
 
-function harness({ placementFor } = {}) {
+function harness({ placementFor, sessions = null } = {}) {
   const sent = [];
+  const direct = [];
+  let onSubscription = null;
+  const eventBus = {
+    broadcast: (topic, payload) => sent.push({ topic, payload }),
+    onClientSubscription: (handler) => { onSubscription = handler; },
+    sendToClient: (clientId, payload) => direct.push({ clientId, payload }),
+  };
   const announcer = new EventBusPlaySessionAnnouncer({
-    eventBus: { broadcast: (topic, payload) => sent.push({ topic, payload }) },
-    placementFor,
+    eventBus, placementFor, sessions,
     logger: quiet,
   });
-  return { sent, announcer };
+  return {
+    sent, direct, announcer,
+    subscribe: (clientId, topics) => onSubscription?.(clientId, topics),
+  };
 }
 
 const PLACEMENT = { zone: 'bottom', box: [0, 0.79, 1, 0.21], toast: [0.525, 0.79, 0.22, 0.11], orientation: 'wide' };
@@ -18,6 +27,7 @@ const PLACEMENT = { zone: 'bottom', box: [0, 0.79, 1, 0.21], toast: [0.525, 0.79
 const session = (content = null) => ({
   id: 's1', deviceId: 'tv', surface: 'console', userId: 'kid',
   playedMs: 61_000, confidenceMs: 2_000, status: 'active',
+  loadId: 'load-1', loadedAt: '2026-09-11T17:59:30.000Z', controllers: 2,
   startedAt: '2026-09-11T18:00:00.000Z', endedAt: null, endReason: null,
   lastState: 'playing', lastObservedAt: '2026-09-11T18:01:01.000Z', content,
 });
@@ -39,7 +49,13 @@ describe('EventBusPlaySessionAnnouncer', () => {
       systemLabel: 'Game Boy',
       placement: PLACEMENT,
       playedMs: 61_000,
+      loadId: 'load-1',
+      loadedAt: '2026-09-11T17:59:30.000Z',
+      startedAt: '2026-09-11T18:00:00.000Z',
+      userId: 'kid',
+      contentId: GB.contentId,
     });
+    expect(sent[1]).toMatchObject({ topic: 'play-sessions', payload: { event: 'play.session.started' } });
   });
 
   // A film that reconnects mid-game must learn where it may draw straight away,
@@ -51,6 +67,11 @@ describe('EventBusPlaySessionAnnouncer', () => {
     expect(sent[0].payload.event).toBe('play.session.progress');
     expect(sent[0].payload.placement).toEqual(PLACEMENT);
     expect(sent[0].payload.system).toBe('gb');
+    expect(sent[0].payload).toMatchObject({
+      userId: 'kid', contentId: GB.contentId, title: GB.title,
+      loadId: 'load-1', loadedAt: '2026-09-11T17:59:30.000Z',
+      startedAt: '2026-09-11T18:00:00.000Z', controllers: 2,
+    });
   });
 
   it('reports no system for a session that is not yet named', async () => {
@@ -78,7 +99,7 @@ describe('EventBusPlaySessionAnnouncer', () => {
     });
     await announcer.started(session(GB));
 
-    expect(sent).toHaveLength(1);
+    expect(sent).toHaveLength(2);
     expect(sent[0].payload.placement).toBeNull();
     expect(sent[0].payload.playedMs).toBe(61_000);
   });
@@ -89,6 +110,37 @@ describe('EventBusPlaySessionAnnouncer', () => {
     await announcer.progress(s, { state: 'playing', observedAt: 'a' });
     await announcer.progress(s, { state: 'playing', observedAt: 'b' });
 
-    expect(sent.map((m) => m.payload.playedMs)).toEqual([61_000, 61_000]);
+    expect(sent.filter((m) => m.topic === 'play-session:tv').map((m) => m.payload.playedMs))
+      .toEqual([61_000, 61_000]);
+  });
+
+  it('replays an open session to a client subscribing mid-game', async () => {
+    const open = session(GB);
+    const { direct, subscribe } = harness({
+      sessions: {
+        findOpenForDevice: async (deviceId) => deviceId === 'tv' ? open : null,
+        listOpen: async () => [open],
+      },
+    });
+    await subscribe('client-1', ['play-session:tv']);
+    expect(direct).toHaveLength(1);
+    expect(direct[0]).toMatchObject({
+      clientId: 'client-1',
+      payload: {
+        topic: 'play-session:tv', event: 'play.session.progress',
+        sessionId: 's1', replay: true,
+      },
+    });
+  });
+
+  it('replays all open sessions to the house-wide topic', async () => {
+    const tv = session(GB);
+    const garage = { ...session(null), id: 's2', deviceId: 'garage-tv' };
+    const { direct, subscribe } = harness({
+      sessions: { listOpen: async () => [tv, garage] },
+    });
+    await subscribe('client-2', ['play-sessions']);
+    expect(direct.map((m) => m.payload.sessionId)).toEqual(['s1', 's2']);
+    expect(direct.every((m) => m.payload.topic === 'play-sessions')).toBe(true);
   });
 });

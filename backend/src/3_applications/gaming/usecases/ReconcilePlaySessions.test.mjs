@@ -17,7 +17,16 @@ const recordedSession = (id, startSec, content = { contentId: 'game:a' }) => {
 let sessions, logReader, warns;
 beforeEach(() => {
   warns = [];
-  sessions = { list: [], async listForDeviceSince() { return sessions.list; } };
+  sessions = {
+    list: [], evidence: new Set(),
+    async listForDeviceSince() { return sessions.list; },
+    async hasReconciliationEvidence(deviceId, evidenceId) {
+      return sessions.evidence.has(`${deviceId}:${evidenceId}`);
+    },
+    async markReconciliationEvidence(deviceId, evidence) {
+      sessions.evidence.add(`${deviceId}:${evidence.evidenceId}`);
+    },
+  };
   logReader = { entries: [], async listRecentSessions() { return logReader.entries; } };
 });
 
@@ -39,13 +48,25 @@ describe('ReconcilePlaySessions', () => {
 
   it('reports a session the meter never saw — loudly, and without billing it', async () => {
     sessions.list = [];
-    logReader.entries = [{ startedAt: at(0), contentPath: ROM }];
+    logReader.entries = [{ file: 'retroarch__2026_09_11__19_00_00.log', startedAt: at(0), contentPath: ROM }];
     const r = await build().execute({ deviceId: 'tv', since: at(-600) });
     expect(r.unrecorded).toHaveLength(1);
     expect(r.unrecorded[0].content.contentId).toBe('retroarch:gb/test-game');
     // No duration is invented anywhere in the result.
     expect(JSON.stringify(r)).not.toMatch(/playedMs|durationMs|endedAt/);
     expect(warns.map((w) => w[0])).toContain('play.session.unrecorded');
+  });
+
+  it('persists device-log evidence so the same missed session warns only once across restarts', async () => {
+    logReader.entries = [{ file: 'retroarch__2026_09_11__19_00_00.log', startedAt: at(0), contentPath: ROM }];
+
+    const first = await build().execute({ deviceId: 'tv', since: at(-600) });
+    const second = await build().execute({ deviceId: 'tv', since: at(-600) });
+
+    expect(first.unrecorded).toHaveLength(1);
+    expect(second.unrecorded).toEqual([]);
+    expect(second.previouslyReported).toHaveLength(1);
+    expect(warns.filter(([event]) => event === 'play.session.unrecorded')).toHaveLength(1);
   });
 
   it('repairs attribution when the session played something we could not name', async () => {
