@@ -488,10 +488,12 @@ export default function SentenceLadderProgram({
       languageLog.pacingWarn('roll-refused', {
         corpus: corpusId, reason: data?.reason ?? (ok ? 'not-rolled' : 'request-failed'),
       });
+      // The server refuses only where there is nothing to move to: a course
+      // with every sentence finished, or a day with no step taken yet.
       setNotice(
-        data?.reason === 'before-boundary'
-          ? 'Come back tomorrow for the next set.'
-          : 'Finish today\'s set first.',
+        data?.reason === 'nothing-left' ? 'Every sentence in this course is finished.'
+          : data?.reason === 'not-started' ? 'Do one step first, then the next day is yours.'
+            : 'That didn’t go through — try again.',
       );
     }
   }, [userId, corpusId, capabilities, studyGrant, load]);
@@ -631,6 +633,16 @@ export default function SentenceLadderProgram({
             onToggleLanguage={toggleLanguage}
             onToggleMic={toggleMicrophone}
           />}
+          {/* ANOTHER ROUND IS ALWAYS ONE TAP AWAY, once a step is done — on the
+              kiosk too, with work outstanding too. Offering it only on the
+              complete panel walled two children for days on practice passes
+              that credit nothing (2026-09-14). The complete panel carries its
+              own copy, so this one steps aside there. */}
+          {!preview && summary.done > 0 && !allDone && (
+            <button type="button" className="lang-btn lang-btn--quiet" onClick={onRoll}>
+              Start the next day
+            </button>
+          )}
           {locked && onExit && !sessionFinished && (
             <button
               type="button"
@@ -772,10 +784,11 @@ export default function SentenceLadderProgram({
             {sessionFinished && locked && exitHandler && (
               <button type="button" className="lang-btn lang-btn--primary" onClick={exitHandler}>Done</button>
             )}
-            {/* On the locked kiosk too. Hidden there, a child who finished a
-                day had no way on to the next one, and "complete" became a wall.
-                Done stays the primary there, so Enter still leaves. */}
-            {allDone && !preview && !blockedByDevice && (
+            {/* On the locked kiosk too, and on a device that cannot climb a rung.
+                Hidden in either place, a child had no way on to the next day,
+                and "complete" became a wall. Done stays the primary on the
+                kiosk, so Enter still leaves. */}
+            {allDone && !preview && (
               <button type="button" className={locked ? 'lang-btn' : 'lang-btn lang-btn--primary'} onClick={onRoll}>Start the next day</button>
             )}
           </div>
