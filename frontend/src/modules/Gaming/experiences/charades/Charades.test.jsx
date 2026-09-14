@@ -112,12 +112,19 @@ it('keeps text-only clue reveals free of a plain image even if a decoder asset i
 });
 
 it('registers remote Back as a rewind while the timer is running', async () => {
- const registerBackAction=vi.fn(handler=>{registerBackAction.handler=handler;return vi.fn();});
+ const removeBackAction=vi.fn(()=>{registerBackAction.handler=null;});
+ const registerBackAction=vi.fn(handler=>{registerBackAction.handler=handler;return removeBackAction;});
  fetchSession.mockResolvedValue(view({...state,phase:'performing',deadline:Date.now()+60000}));
- sendRuleCommand.mockResolvedValue(view(state,2));
+ let finishRewind;
+ sendRuleCommand.mockImplementation(()=>new Promise(resolve=>{finishRewind=resolve;}));
  render(<Charades sessionId="one" seats={seats} registerBackAction={registerBackAction}/>);
  await screen.findByRole('button',{name:'Finish turn'});
- expect(registerBackAction.handler()).toBe(true);
- await waitFor(()=>expect(sendRuleCommand).toHaveBeenCalledWith('one',{type:'challenge.rewind'},undefined));
+ let firstBack;let secondBack;
+ act(()=>{firstBack=registerBackAction.handler();secondBack=registerBackAction.handler();});
+ expect(firstBack).toBe(true);expect(secondBack).toBe(false);
+ expect(sendRuleCommand).toHaveBeenCalledExactlyOnceWith('one',{type:'challenge.rewind'},undefined);
+ await act(async()=>finishRewind(view(state,2)));
  await screen.findByRole('button',{name:'Go'});
+ expect(removeBackAction).toHaveBeenCalledTimes(1);
+ expect(registerBackAction.handler).toBeNull();
 });

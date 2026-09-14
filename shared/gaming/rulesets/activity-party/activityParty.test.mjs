@@ -159,8 +159,18 @@ describe('Activity Party rules', () => {
     state = activityPartyRuleModule.handleCommand(state, { type: 'performer.ready' }, casualDefinition, { actorId: state.performer_id, logicalTime: 100 }).state;
     state = activityPartyRuleModule.handleCommand(state, { type: 'challenge.start' }, casualDefinition, { actorId: 'host', logicalTime: 200 }).state;
     const rewound = activityPartyRuleModule.handleCommand(state, { type: 'challenge.rewind' }, casualDefinition, { actorId: 'host', logicalTime: 300 });
-    expect(rewound.state).toMatchObject({ phase: 'challenge-ready', deadline: null, challenge_index: 0, remaining_ms: 60_000 });
+    expect(rewound.state).toMatchObject({
+      phase: 'challenge-ready',
+      deadline: null,
+      challenge_index: state.challenge_index,
+      clue_index: state.clue_index,
+      performer_id: state.performer_id,
+      challenge: state.challenge,
+      remaining_ms: state.remaining_ms,
+    });
     expect(rewound.events).toEqual([{ type: 'challenge.rewound' }]);
+    expect(activityPartyRuleModule.handleCommand(rewound.state, { type: 'challenge.rewind' }, casualDefinition, { actorId: 'host', logicalTime: 300 }))
+      .toMatchObject({ error: { code: 'illegal_command' } });
     expect(activityPartyRuleModule.handleCommand(state, { type: 'challenge.rewind' }, casualDefinition, { actorId: 'a', logicalTime: 300 }))
       .toMatchObject({ error: { code: 'authorization_denied' } });
   });
