@@ -113,10 +113,14 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   const definition = initial.definition;
   expect(definition).toMatchObject({rounds:3,timer_ms:60_000,clues_per_turn:1,competition:false});
   expect(definition.guessing_music).toEqual({source:'plex:535255',volume:0.3,order:'shuffle',repeat:'after-cycle',memory:'session'});
-  expect(definition.sound_cues).toEqual({pack:'charades',performer_selected:'performer-selected',clue_revealed:'clue-revealed',acting_started:'acting-started',time_up:'time-up',turn_finished:'turn-finished',handoff:'handoff',game_finished:'game-finished'});
+  expect(definition.sound_cues).toEqual({pack:'charades',volume:0.4,performer_selected:'performer-selected',clue_revealed:'clue-revealed',acting_started:'acting-started',time_up:'time-up',turn_finished:'turn-finished',handoff:'handoff',game_finished:'game-finished'});
   expect(definition.launch).toEqual({autostart:true,participants:seatIds});
   expect(definition.clue_filter).toEqual({categories:['animals','everyday-actions'],levels:['easy']});
   expect(definition.challenges.every(clue => definition.clue_filter.categories.includes(clue.category) && clue.level === 'easy')).toBe(true);
+  expect(definition.challenges.length).toBeGreaterThanOrEqual(90);
+  const configuredImages = definition.challenges.filter(clue => clue.decoder?.image);
+  expect(configuredImages.length).toBeGreaterThanOrEqual(20);
+  expect(configuredImages.every(clue => /\/charades\/images\/[a-z-]+\.svg$/.test(clue.decoder.image))).toBe(true);
   expect(definition.presentation.image_participants).toHaveLength(2);
   const musicQueue = await api(`/api/v1/queue/${encodeURIComponent(definition.guessing_music.source)}`);
   const mediaUrls = musicQueue.items.map(item => item.mediaUrl);
@@ -324,6 +328,9 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
     .filter(path => path.includes('/api/v1/gaming/media/charades/'))
     .map(path => path.split('/').pop()));
   expect(new Set(heardCues)).toEqual(new Set(['performer-selected.mp3','clue-revealed.mp3','acting-started.mp3','time-up.mp3','turn-finished.mp3','handoff.mp3','game-finished.mp3']));
+  expect(await page.evaluate(() => (window.__fheAudioElements || [])
+    .filter(audio => audio.src.includes('/api/v1/gaming/media/charades/'))
+    .every(audio => audio.volume === 0.4))).toBe(true);
   await expectFits(page.getByTestId('results'));
   const terminal = await read();
   expect(terminal.state.phase).toBe('complete');

@@ -18,12 +18,14 @@ export class AudioCueEngine {
     if (mute) Object.keys(this.channels).forEach((c) => this.stopChannel(c));
   }
 
-  play(cue, { channel = 'sfx', loop = false, pack = this.pack } = {}) {
+  play(cue, { channel = 'sfx', loop = false, pack = this.pack, volume = 1 } = {}) {
     if (this.mute) return;
     try {
       // served by the party-games router's /media route (raw /media/* is not served)
       const audio = this.audioFactory(`/api/v1/gaming/media/${pack}/${cue}.mp3`);
       audio.loop = loop;
+      const requestedVolume = Number(volume);
+      audio.volume = Number.isFinite(requestedVolume) ? Math.max(0, Math.min(1, requestedVolume)) : 1;
       (this.channels[channel] ||= []).push(audio);
       if (channel === 'clue-media') this.#setChannelVolume('music', DUCKED);
       const p = audio.play();

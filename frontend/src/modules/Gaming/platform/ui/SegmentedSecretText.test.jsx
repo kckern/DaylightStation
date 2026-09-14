@@ -23,6 +23,13 @@ describe('SegmentedSecretText', () => {
     expect(container.querySelector('.segmented-secret-text__field')).toBeNull();
   });
 
+  it('varies mask colors at the same segment position across glyphs', () => {
+    const { container } = render(<SegmentedSecretText text="AAAA" />);
+    const colors = [...container.querySelectorAll('[data-segment="d1"]')]
+      .map(segment => segment.style.getPropertyValue('--segment-color'));
+    expect(new Set(colors).size).toBeGreaterThan(1);
+  });
+
   it('balances multi-line clues at word boundaries without dropping the masked space', () => {
     expect(balanceSecretLines('BLOWING UP A BALLOON')).toEqual(['BLOWING UP ', 'A BALLOON']);
     expect(balanceSecretLines('LOOKING THROUGH BINOCULARS')).toEqual(['LOOKING THROUGH ', 'BINOCULARS']);
@@ -34,6 +41,8 @@ describe('SegmentedSecretText', () => {
   it('uses a recognizable sixteen-segment alphabet', () => {
     expect(activeSegmentsFor('A')).toEqual(expect.arrayContaining(['a1', 'a2', 'b', 'e', 'f', 'g1', 'g2']));
     expect(activeSegmentsFor('B')).toEqual(['a1', 'a2', 'b', 'c', 'd1', 'd2', 'e', 'f', 'g1', 'g2']);
+    expect(activeSegmentsFor('D')).toEqual(['a1', 'a2', 'd1', 'd2', 'e', 'f', 'i', 'k']);
+    expect(activeSegmentsFor('D')).not.toEqual(activeSegmentsFor('O'));
     expect(activeSegmentsFor('K')).toEqual(['e', 'f', 'i', 'k']);
     expect(activeSegmentsFor('V')).toEqual(['h', 'i']);
     expect(activeSegmentsFor('W')).toEqual(['b', 'c', 'e', 'f', 'j', 'k']);

@@ -31,6 +31,15 @@ describe('AudioCueEngine', () => {
     expect(instances[0].src).toBe('/api/v1/gaming/media/charades/time-up.mp3');
   });
 
+  it('applies and bounds definition-driven cue volume', () => {
+    const { factory, instances } = makeFake();
+    const engine = new AudioCueEngine({ audioFactory: factory });
+    engine.play('ready', { volume: 0.4 });
+    engine.play('loud', { volume: 5 });
+    expect(instances[0].volume).toBe(0.4);
+    expect(instances[1].volume).toBe(1);
+  });
+
   it('mute suppresses playback; unmute restores', () => {
     const { factory, instances } = makeFake();
     const engine = new AudioCueEngine({ pack: 'classic', mute: true, audioFactory: factory });
