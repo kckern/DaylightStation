@@ -28,6 +28,9 @@ export function validateActivityPartyDefinition(definition) {
     else {
       if (typeof definition.guessing_music.source !== 'string' || definition.guessing_music.source.trim() === '') errors.push('guessing_music.source is required');
       if (!Number.isFinite(definition.guessing_music.volume) || definition.guessing_music.volume < 0 || definition.guessing_music.volume > 1) errors.push('guessing_music.volume must be between 0 and 1');
+      if (definition.guessing_music.order != null && definition.guessing_music.order !== 'shuffle') errors.push('guessing_music.order must be shuffle');
+      if (definition.guessing_music.repeat != null && !['after-cycle', 'one'].includes(definition.guessing_music.repeat)) errors.push('guessing_music.repeat must be after-cycle or one');
+      if (definition.guessing_music.memory != null && definition.guessing_music.memory !== 'session') errors.push('guessing_music.memory must be session');
     }
   }
   if (definition?.competition === false) {
@@ -107,6 +110,9 @@ export const activityPartyRuleModule = defineRuleModule({
     } else if (command.type === 'challenge.start' && requirePhase('challenge-ready')) {
       if (!actorIsHost(context.actorId)) return denied('Only the host may start the challenge timer');
       next.phase = 'performing'; next.deadline = context.logicalTime + (casual ? state.remaining_ms : definition.timer_ms); events.push({ type: 'challenge.started', deadline: next.deadline });
+    } else if (command.type === 'challenge.rewind' && requirePhase('performing')) {
+      if (!actorIsHost(context.actorId)) return denied('Only the host may rewind the challenge');
+      next.phase = 'challenge-ready'; next.deadline = null; events.push({ type: 'challenge.rewound' });
     } else if (command.type === 'host.reveal' && requirePhase('performing', 'adjudication')) {
       if (!actorIsHost(context.actorId)) return denied('Only the host may reveal an aid');
       const hints = state.challenge?.hints || [];

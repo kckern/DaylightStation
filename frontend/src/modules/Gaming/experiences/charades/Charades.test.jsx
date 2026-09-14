@@ -9,7 +9,7 @@ vi.mock('@/modules/AppContainer/Apps/FamilySelector/FamilySelector.jsx', () => (
 const seats = [{id:'a',name:'Alice', color:'#3273dc', members:[{id:'a',name:'Alice',avatar:'/alice.jpg'}]}];
 const state = { competition:false,phase:'challenge-ready',round:1,performer_id:'a',challenge:{prompt:'Rabbit',decoder:{image:'/rabbit.svg'}},clue_presentation:'image',challenge_index:0,turn_order:['a'] };
 const sound_cues={pack:'charades',volume:0.4,performer_selected:'performer-selected',clue_revealed:'clue-revealed',acting_started:'acting-started',time_up:'time-up',turn_finished:'turn-finished',handoff:'handoff',game_finished:'game-finished'};
-const view = (s=state, revision=1) => ({state:s,header:{revision},definition:{competition:false,rounds:1,timer_ms:60000,sound_cues,guessing_music:{source:'test:music',volume:0.2,order:'shuffle',repeat:'after-cycle',memory:'session'}},result:null});
+const view = (s=state, revision=1) => ({state:s,header:{revision},definition:{competition:false,rounds:1,timer_ms:60000,sound_cues,guessing_music:{source:'test:music',volume:0.2,order:'shuffle',repeat:'one',memory:'session'}},result:null});
 beforeEach(() => { fetchSession.mockReset().mockResolvedValue(view()); sendRuleCommand.mockReset(); });
 it('shows image decoder and Go without leaking answer, then hides clue while acting and reveals neutrally', async () => {
  const music = {start:vi.fn(() => vi.fn())}; const audio = {play:vi.fn()};
@@ -76,7 +76,7 @@ it('keeps music playing across equivalent refreshed definitions and cleans it up
  fetchSession.mockResolvedValue(view(performing));
  render(<Charades sessionId="one" seats={seats} gamingServices={{music}}/>);
  await screen.findByRole('button',{name:'Finish turn'});await waitFor(()=>expect(music.start).toHaveBeenCalledTimes(1));
- expect(music.start).toHaveBeenCalledWith(expect.objectContaining({source:'test:music',order:'shuffle',repeat:'after-cycle',memory:'session'}),expect.objectContaining({sessionId:'one'}));
+ expect(music.start).toHaveBeenCalledWith(expect.objectContaining({source:'test:music',order:'shuffle',repeat:'one',memory:'session'}),expect.objectContaining({sessionId:'one'}));
  fetchSession.mockResolvedValue(view({...performing},2));
  await act(async()=>ws.handler({kind:'session-updated',sessionId:'one'}));
  await waitFor(()=>expect(fetchSession).toHaveBeenCalledTimes(2));expect(music.start).toHaveBeenCalledTimes(1);expect(stop).not.toHaveBeenCalled();
@@ -101,4 +101,15 @@ it('keeps text-only clue reveals free of a plain image even if a decoder asset i
  fetchSession.mockResolvedValue(view({...state,phase:'challenge-complete',clue_presentation:'text'}));
  render(<Charades sessionId="one" seats={seats}/>);
  expect(await screen.findByText('Rabbit')).toBeInTheDocument();expect(screen.queryByRole('img',{name:'Rabbit'})).toBeNull();
+});
+
+it('registers remote Back as a rewind while the timer is running', async () => {
+ const registerBackAction=vi.fn(handler=>{registerBackAction.handler=handler;return vi.fn();});
+ fetchSession.mockResolvedValue(view({...state,phase:'performing',deadline:Date.now()+60000}));
+ sendRuleCommand.mockResolvedValue(view(state,2));
+ render(<Charades sessionId="one" seats={seats} registerBackAction={registerBackAction}/>);
+ await screen.findByRole('button',{name:'Finish turn'});
+ expect(registerBackAction.handler()).toBe(true);
+ await waitFor(()=>expect(sendRuleCommand).toHaveBeenCalledWith('one',{type:'challenge.rewind'},undefined));
+ await screen.findByRole('button',{name:'Go'});
 });
