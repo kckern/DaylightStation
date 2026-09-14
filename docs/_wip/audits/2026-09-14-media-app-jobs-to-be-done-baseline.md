@@ -449,7 +449,7 @@ row always plays locally.
 - **Stands out:**
   - The two UIs look nothing alike.
   - **The sheet cannot choose "This browser".** Its button needs at least one
-    device selected (`cast/useDispatchTargetPicker.js:385`). The only control
+    device selected (`cast/useDispatchTargetPicker.js:84`). The only control
     that clears targets is unticking boxes in the chip, and the chip is hidden
     on mobile.
   - So on a phone, once a TV is picked, every search row tap casts there for
@@ -518,7 +518,7 @@ row always plays locally.
 **F1 — Glance at whether anything is playing anywhere.** *Scattered.*
 - "Devices active/total" in the tablet+ dock, plus an active-count badge on the
   Devices tab or rail item at every width. "Active" means playing, paused,
-  buffering, or stalled (`fleet/useFleetSummary.js:7`).
+  buffering, or stalled (`fleet/useFleetSummary.js:6`).
 - **Stands out:** tablet+ shows the same number twice.
 
 **F2 — See what each device is doing.** *Single.*

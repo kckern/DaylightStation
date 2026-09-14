@@ -1,7 +1,7 @@
 # Media App Redesign — Requirements
 
 **Date:** 2026-09-14
-**Status:** Draft for owner review. Priorities (P0/P1/P2) are proposed, not yet confirmed.
+**Status:** Accepted by the owner on 2026-09-14, including the P0/P1/P2 priorities. Delivery follows the [implementation handoff](./2026-09-14-media-app-redesign-handoff.md): the app evolves in place, one shippable step at a time.
 **Replaces on delivery:** [`docs/reference/media/media-app-requirements.md`](../../reference/media/media-app-requirements.md) (C1–C10, N1–N6). §9 reconciles every current requirement.
 **Sources:**
 - [Baseline audit](../audits/2026-09-14-media-app-jobs-to-be-done-baseline.md): the app as built; job IDs A1…K3.
@@ -386,4 +386,5 @@ These still hold, restated functionally. The originals are cited for traceabilit
 | O2 | **What "similar" means** for "keep similar things playing" (RQ-STEER-19) depends on what the content platform can recommend. | Discovery in the handoff |
 | O3 | **What "this screen usually plays at this time of day" means** for suggestions (RQ-FIND-16) needs a definition. | Discovery in the handoff |
 | O4 | **Turning a speaker off** (RQ-STEER-11) may be meaningless; such screens simply don't offer it. | No |
-| O5 | **Priorities in this document are proposed.** The owner confirms P0/P1/P2 before the handoff sequences the work. | Yes |
+| O5 | ~~Priorities are proposed.~~ **Resolved 2026-09-14:** the owner accepted P0/P1/P2 as drafted. | — |
+| O6 | **An implementation dependency, not a scope change.** P0 labels need human device names (RQ-PLACE-01, RQ-HOUSE-02, RQ-AUTO-01). The minimum of RQ-HOUSE-06 (set a name, rename it, unique, persisted) and RQ-RELY-12's name prompt are therefore built in P0. Rename history and the routine warning stay P1. | No |

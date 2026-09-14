@@ -365,7 +365,8 @@ always ground truth and the app always converges to it.
 
 What scopes search exposes is household configuration, not code: it comes
 from the media app config
-(`data/household/apps/media/config.yml`, served at `/api/v1/media/config` —
+(the household `media/config.yml`, falling back to the legacy `media/app.yml`
+where the scopes live today; served at `/api/v1/media/config` —
 `searchScopes` becomes the scope tree; see
 [`search-scopes.md`](./search-scopes.md)). Adding a search scope is a config
 edit, not a deploy. `browse` entries in that file are no longer read: they fed
