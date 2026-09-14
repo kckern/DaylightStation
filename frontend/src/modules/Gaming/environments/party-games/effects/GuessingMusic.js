@@ -55,7 +55,10 @@ export class GuessingMusic {
     const played = Array.isArray(bag?.played) ? bag.played.filter(url => available.has(url)) : [];
     const known = new Set([...remaining, ...played]);
     remaining.push(...this.shuffle([...available].filter(url => !known.has(url))));
-    bag = { remaining, played, last: available.has(bag?.last) ? bag.last : null };
+    const selectedByTurn = Object.fromEntries(
+      Object.entries(bag?.selectedByTurn || {}).filter(([, url]) => available.has(url)),
+    );
+    bag = { remaining, played, last: available.has(bag?.last) ? bag.last : null, selectedByTurn };
     this.shuffleBags.set(key, bag);
     return { key, bag };
   }
@@ -67,7 +70,7 @@ export class GuessingMusic {
     catch { /* In-memory cycle tracking remains available when storage is blocked. */ }
   }
 
-  start(config, { onError = () => {}, sessionId = null } = {}) {
+  start(config, { onError = () => {}, sessionId = null, turnKey = null } = {}) {
     this.stop();
     if (!config?.source) return () => {};
     const abort = new AbortController();
@@ -78,6 +81,7 @@ export class GuessingMusic {
     let index = -1;
     let failures = 0;
     let shuffleState = null;
+    const selectionKey = turnKey === null || turnKey === undefined ? null : String(turnKey);
     const applyVolume = () => { audio.volume = Math.min(1, Math.max(0, config.volume ?? 0.25)) * getEffectiveMaster(); };
     const unsubscribe = subscribeMaster(applyVolume);
     applyVolume();
@@ -105,14 +109,18 @@ export class GuessingMusic {
       if (config.order === 'shuffle' && ['after-cycle', 'one'].includes(config.repeat)) {
         const { key, bag } = shuffleState || this.loadBag(config, sessionId, tracks);
         shuffleState = { key, bag };
-        if (!bag.remaining.length) {
-          bag.remaining = this.shuffle(tracks.map(track => track.mediaUrl), bag.last);
-          bag.played = [];
+        let mediaUrl = selectionKey === null ? null : bag.selectedByTurn[selectionKey];
+        if (!mediaUrl) {
+          if (!bag.remaining.length) {
+            bag.remaining = this.shuffle(tracks.map(track => track.mediaUrl), bag.last);
+            bag.played = [];
+          }
+          mediaUrl = bag.remaining.shift();
+          bag.played.push(mediaUrl);
+          bag.last = mediaUrl;
+          if (selectionKey !== null) bag.selectedByTurn[selectionKey] = mediaUrl;
+          this.saveBag(config, sessionId, key, bag);
         }
-        const mediaUrl = bag.remaining.shift();
-        bag.played.push(mediaUrl);
-        bag.last = mediaUrl;
-        this.saveBag(config, sessionId, key, bag);
         index = tracks.findIndex(track => track.mediaUrl === mediaUrl);
       } else {
         // Uniformly select among all tracks except the one that just ended.
@@ -134,6 +142,10 @@ export class GuessingMusic {
     };
     const failed = () => {
       if (cancelled) return;
+      if (shuffleState && selectionKey !== null && shuffleState.bag.selectedByTurn[selectionKey] === tracks[index]?.mediaUrl) {
+        delete shuffleState.bag.selectedByTurn[selectionKey];
+        this.saveBag(config, sessionId, shuffleState.key, shuffleState.bag);
+      }
       failures += 1;
       if (failures >= tracks.length) report(new Error('Guessing music could not be played'));
       else playNext();

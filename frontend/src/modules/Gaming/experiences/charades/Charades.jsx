@@ -145,6 +145,7 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
     if (state?.phase !== 'performing' || !definition?.guessing_music) return;
     return gamingServices?.music?.start(definition.guessing_music, {
       sessionId,
+      turnKey: String(state.challenge_index),
       onError: cause => setMusicError(cause?.message || 'Music could not start'),
     });
   }, [state?.phase, state?.challenge_index, definition?.guessing_music?.source, definition?.guessing_music?.volume, definition?.guessing_music?.order, definition?.guessing_music?.repeat, definition?.guessing_music?.memory, gamingServices?.music, musicAttempt, sessionId]);
