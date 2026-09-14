@@ -1061,12 +1061,12 @@ describe('what the store can answer afterwards', () => {
 
   it('records a refused roll — a decline reads exactly like a dead button', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition', true)] }));
-    rollMock.mockResolvedValue({ ok: true, status: 200, data: { rolled: false, reason: 'before-boundary' } });
+    rollMock.mockResolvedValue({ ok: true, status: 200, data: { rolled: false, reason: 'nothing-left' } });
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByText('Start the next day'));
     await waitFor(() => expect(pacingWarnMock).toHaveBeenCalledWith('roll-refused', {
-      corpus: 'glossika-korean', reason: 'before-boundary',
+      corpus: 'glossika-korean', reason: 'nothing-left',
     }));
   });
 
@@ -1781,13 +1781,48 @@ describe('day rollover', () => {
     await waitFor(() => expect(rollMock).toHaveBeenCalledTimes(1));
   });
 
-  it('refuses an early roll and says why, rather than silently doing nothing', async () => {
+  it('says why when there is nothing to move on to, rather than silently doing nothing', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition', true)] }));
-    rollMock.mockResolvedValue({ ok: true, status: 200, data: { rolled: false, day: 1, reason: 'before-boundary' } });
+    rollMock.mockResolvedValue({ ok: true, status: 200, data: { rolled: false, day: 1, reason: 'nothing-left' } });
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByText('Start the next day'));
-    expect(await screen.findByText(/Come back tomorrow/i)).toBeTruthy();
+    expect(await screen.findByText(/Every sentence in this course is finished/i)).toBeTruthy();
+  });
+
+  it('offers the next day mid-set on the kiosk once a step is done — outstanding practice is never a wall', async () => {
+    // 2026-09-14: two children held on a day whose credited work was done,
+    // with only practice passes left and no way on.
+    const onExit = vi.fn();
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['repetition', 'dictation'],
+      queue: [entry(1, 'repetition', true), entry(1, 'dictation', false, { practice: true })],
+    }));
+    rollMock.mockResolvedValue({ ok: true, status: 200, data: { rolled: true, day: 2, reason: 'early' } });
+    render(
+      <SentenceLadderProgram
+        studyGrant="test-grant" userId="kckern" corpusId="glossika-korean"
+        locked onExit={onExit}
+      />,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Start the next day' }));
+    await waitFor(() => expect(rollMock).toHaveBeenCalledTimes(1));
+    expect(onExit).not.toHaveBeenCalled();
+  });
+
+  it('does not offer the next day before a single step — it would be this day again', async () => {
+    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    await screen.findByText(/0 of 1 steps/);
+    expect(screen.queryByRole('button', { name: 'Start the next day' })).toBeNull();
+  });
+
+  it('offers the next day on a device that cannot climb a rung the credit needs', async () => {
+    dayMock.mockResolvedValue(dayPayload({
+      queue: [entry(1, 'repetition', true)], missingCreditRungs: ['dictation'],
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    expect(await screen.findByRole('button', { name: 'Start the next day' })).toBeTruthy();
   });
 });
 

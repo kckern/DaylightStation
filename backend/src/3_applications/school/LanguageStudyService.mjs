@@ -11,7 +11,7 @@
  */
 import {
   validateCorpus, indexBySeq, buildDayQueue, summarizeQueue,
-  shouldRollDay, chainFor, creditChain, rungById, resolveRole, accuracy,
+  shouldRollDay, studyDayIndex, chainFor, creditChain, rungById, resolveRole, accuracy,
   validateProgramEnrollment, unitFor, RUNG_IDS,
 } from '#domains/school/language/index.mjs';
 import { resolveGate, capabilitiesUnder, allowsRung, gateMessage } from '#domains/school/accessGate.mjs';
@@ -674,39 +674,128 @@ export class SentenceLadderService {
    * Announces nothing. The attempt that finished the day already published
    * `day-complete`; every read restating it closed the day again, and each
    * close put another receipt on the roll.
+   *
+   * SELF-HEALING. The stored progress record is squared with the attempt log
+   * before anything is judged, and a repair is written back and logged
+   * (`school.language.progress-repaired`). The log is the evidence; the record
+   * is a cache of it, and a cache that disagrees loses.
    */
   #openDay(userId, corpus, log, runId = null) {
-    const progress = this.#readProgress(userId, corpus.id);
+    const stored = this.#readProgress(userId, corpus.id);
+    const { progress, repairs } = this.#reconcileProgress(stored, log);
+    if (repairs.length) {
+      this.#writeProgress(userId, corpus.id, progress);
+      this.#log('warn', 'school.language.progress-repaired', {
+        learnerId: userId, corpus: corpus.id, repairs,
+        fromDay: stored.day, day: progress.day,
+        fromLastActivity: stored.lastActivity, lastActivity: progress.lastActivity,
+      }, runId);
+    }
     const queue = this.#fullDayQueue(userId, corpus.id, corpus, log, progress);
-    const now = this.#now();
-    const roll = shouldRollDay({
-      queue,
-      lastActivity: progress.lastActivity ? Date.parse(progress.lastActivity) : null,
-      now,
-      boundaryHour: this.#boundaryHour,
-      offsetMinutes: this.#offsetMinutes(now),
-    });
-    if (!roll.roll) return { progress, roll, rolled: false };
+    const roll = this.#rollOnOpen(queue, progress);
+    if (!roll.roll) return { progress, queue, roll, rolled: false };
     // Every sentence retired: there is no next day to open onto, and rolling
     // a vacuous day on every read would only inflate the day count.
-    if (queue.length === 0) return { progress, roll: { roll: false, reason: 'nothing-left' }, rolled: false };
+    if (queue.length === 0) return { progress, queue, roll: { roll: false, reason: 'nothing-left' }, rolled: false };
     const next = { ...progress, day: progress.day + 1 };
     this.#writeProgress(userId, corpus.id, next);
     this.#log('info', 'school.language.day-rolled', {
       learnerId: userId, corpus: corpus.id, day: next.day, via: 'open',
     }, runId);
-    return { progress: next, roll, rolled: true };
+    return { progress: next, queue: null, roll, rolled: true };
   }
 
   /**
-   * Advance to the next study day on request. A finished day is enough: a
-   * learner can always go on to the next set, even on a day already credited.
-   * Only rolling with work outstanding is refused, because that would skip a
-   * rung without saying so. `reason` says which it was — `earned` once the
-   * boundary has passed, `ahead` when the next set was taken the same day.
+   * Whether opening the ladder moves the learner on by itself.
    *
-   * Judged on the full credit queue, like `#openDay`, so a device that cannot
-   * climb a rung cannot roll past it; the client's capabilities play no part.
+   * PRACTICE IS NOT OWED. Practice passes top up today's rungs with today's
+   * own new set and credit nothing, so once the study day that served them is
+   * over they are not work anyone is waiting for. Counting them held two
+   * learners on a finished day for days (2026-09-14): every credited step done,
+   * six practice interpretations or two practice recordings outstanding, and
+   * no roll because the "queue" was incomplete.
+   */
+  #rollOnOpen(queue, progress) {
+    const now = this.#now();
+    return shouldRollDay({
+      queue: queue.filter((entry) => !entry.practice),
+      lastActivity: progress.lastActivity ? Date.parse(progress.lastActivity) : null,
+      now,
+      boundaryHour: this.#boundaryHour,
+      offsetMinutes: this.#offsetMinutes(now),
+    });
+  }
+
+  /**
+   * The progress record, squared with the attempt log. Pure: returns the
+   * repaired record and the names of the repairs, and writes nothing, so the
+   * read-only status path can apply the same answer without persisting it.
+   *
+   * - `day-behind-log` — attempts are logged against a later day than the
+   *   record holds (a lost or reverted progress file, a sync conflict). A day
+   *   built behind its own evidence counts later work as "not yet due" and
+   *   can serve an empty or finished day forever.
+   * - `last-activity-missing` — the record has no usable timestamp but the log
+   *   does. Without one a day can never be judged finished-yesterday.
+   * - `last-activity-stale` — the record's timestamp is from an earlier study
+   *   day than the newest attempt.
+   * - `last-activity-in-future` — a timestamp from a later study day than now
+   *   (clock skew, a hand edit) holds `before-boundary` true indefinitely.
+   *
+   * Compared by study day, not by millisecond, so ordinary writes never read
+   * as drift and a healthy record is never rewritten.
+   */
+  #reconcileProgress(progress, log) {
+    const now = this.#now();
+    const opts = { boundaryHour: this.#boundaryHour, offsetMinutes: this.#offsetMinutes(now) };
+    const repairs = [];
+    let loggedDay = 0;
+    let latest = null;
+    for (const event of log) {
+      const day = Number(event?.day);
+      if (Number.isInteger(day) && day > loggedDay) loggedDay = day;
+      const at = Date.parse(event?.at);
+      if (Number.isFinite(at) && at <= now && (latest === null || at > latest)) latest = at;
+    }
+
+    let { day, lastActivity } = progress;
+    if (loggedDay > day) {
+      day = loggedDay;
+      repairs.push('day-behind-log');
+    }
+
+    const storedAt = lastActivity == null ? NaN : Date.parse(lastActivity);
+    const latestIso = latest === null ? null : new Date(latest).toISOString();
+    if (!Number.isFinite(storedAt)) {
+      if (latestIso) { lastActivity = latestIso; repairs.push('last-activity-missing'); }
+    } else if (studyDayIndex(storedAt, opts) > studyDayIndex(now, opts)) {
+      lastActivity = latestIso;
+      repairs.push('last-activity-in-future');
+    } else if (latest !== null && studyDayIndex(latest, opts) > studyDayIndex(storedAt, opts)) {
+      lastActivity = latestIso;
+      repairs.push('last-activity-stale');
+    }
+
+    return { progress: { ...progress, day, lastActivity }, repairs };
+  }
+
+  /**
+   * Advance to the next study day on request. ANOTHER ROUND IS NEVER REFUSED
+   * to a learner who has started this one — finished or not, credited or not,
+   * on any device. `reason` says which it was: `earned` once the boundary has
+   * passed on a finished day, `ahead` when a finished day's next set is taken
+   * the same study day, `early` when work was still outstanding.
+   *
+   * Rolling early abandons nothing. The queue is derived from the log, so a
+   * new sentence never started is still untouched and is admitted first
+   * tomorrow, and a sentence owed at a rung stays owed — oldest first — until
+   * it climbs. Only practice passes are dropped, and they credit nothing.
+   * Refusing used to "protect" that work and instead walled children on a
+   * rung they could not or would not finish (2026-09-14).
+   *
+   * Refused only where there is nothing to move on from or to: `not-started`
+   * (no step done today — the next day would be this one again) and
+   * `nothing-left` (every sentence retired).
    */
   rollDay({ userId, corpusId, runId = null }) {
     this.#requireUser(userId);
@@ -715,15 +804,19 @@ export class SentenceLadderService {
     const opened = this.#openDay(userId, corpus, log, runId);
     if (opened.rolled) return { rolled: true, day: opened.progress.day, reason: opened.roll.reason };
 
-    const { progress, roll } = opened;
-    if (roll.reason !== 'before-boundary') return { rolled: false, day: progress.day, reason: roll.reason };
+    const { progress, queue } = opened;
+    if (queue.length === 0) return { rolled: false, day: progress.day, reason: 'nothing-left' };
+    const done = queue.filter((entry) => entry.done).length;
+    if (done === 0) return { rolled: false, day: progress.day, reason: 'not-started' };
 
+    const outstanding = queue.length - done;
+    const reason = outstanding === 0 ? 'ahead' : 'early';
     const next = { ...progress, day: progress.day + 1 };
     this.#writeProgress(userId, corpusId, next);
     this.#log('info', 'school.language.day-rolled', {
-      learnerId: userId, corpus: corpusId, day: next.day, via: 'ahead',
+      learnerId: userId, corpus: corpusId, day: next.day, via: reason, outstanding,
     }, runId);
-    return { rolled: true, day: next.day, reason: 'ahead' };
+    return { rolled: true, day: next.day, reason };
   }
 
   // -- history -------------------------------------------------------------
@@ -804,6 +897,31 @@ export class SentenceLadderService {
    * the progress it is built from) is derived exactly once per call site,
    * never duplicated.
    */
+  /**
+   * The most recent earlier day finished in THIS study day, or null.
+   *
+   * Walks back from the day before `day` while each day still has an attempt
+   * logged today, so it stops at the first day that belongs to an earlier
+   * study day and never scans a long history. A day auto-rolled this morning
+   * from one finished yesterday is not today's credit, and is not found.
+   */
+  #finishedToday(userId, corpusId, corpus, log, progress, day, nowMs) {
+    const opts = { boundaryHour: this.#boundaryHour, offsetMinutes: this.#offsetMinutes(nowMs) };
+    const today = studyDayIndex(nowMs, opts);
+    for (let earlier = day - 1; earlier >= 1; earlier -= 1) {
+      let latest = null;
+      for (const event of log) {
+        if (Number(event?.day) !== earlier) continue;
+        const at = Date.parse(event?.at);
+        if (Number.isFinite(at) && (latest === null || at > latest)) latest = at;
+      }
+      if (latest === null || studyDayIndex(latest, opts) !== today) return null;
+      const queue = this.#fullDayQueue(userId, corpusId, corpus, log, { ...progress, day: earlier });
+      if (queue.length > 0 && queue.every((entry) => entry.done)) return { day: earlier, total: queue.length };
+    }
+    return null;
+  }
+
   #fullDayQueue(userId, corpusId, corpus, log, progress) {
     const policy = this.#queuePolicy(userId, corpus, progress);
     return buildDayQueue({
@@ -875,7 +993,9 @@ export class SentenceLadderService {
         // is written: a status read is an observation, never an enrolment.
         if (!rawProgress && log.length === 0 && !corpusId) continue;
 
-        const progress = this.#readProgress(userId, candidateCorpusId);
+        // The same repairs `#openDay` makes, applied in memory only: this read
+        // must never write, and the next open persists them.
+        const { progress } = this.#reconcileProgress(this.#readProgress(userId, candidateCorpusId), log);
         let day = progress.day;
         let queue = this.#fullDayQueue(userId, candidateCorpusId, corpus, log, progress);
 
@@ -886,13 +1006,7 @@ export class SentenceLadderService {
         // and hides the subject (found live: a day-1 queue cleared 2026-07-22
         // still reported done on 07-30).
         const nowMs = this.#now();
-        const roll = shouldRollDay({
-          queue,
-          lastActivity: progress.lastActivity ? Date.parse(progress.lastActivity) : null,
-          now: nowMs,
-          boundaryHour: this.#boundaryHour,
-          offsetMinutes: this.#offsetMinutes(nowMs),
-        });
+        const roll = this.#rollOnOpen(queue, progress);
         if (roll.roll) {
           day += 1;
           queue = this.#fullDayQueue(userId, candidateCorpusId, corpus, log, { ...progress, day });
@@ -901,17 +1015,31 @@ export class SentenceLadderService {
         const summary = summarizeQueue(queue);
         const outstanding = summary.total - summary.done;
 
+        // A DAY FINISHED TODAY STAYS FINISHED. Another round is always on
+        // offer, and taking it moves the stored day on — so judging only the
+        // day in hand un-credited a child for doing MORE: the board went back
+        // to "not done" and every gate keyed on School re-locked. A day whose
+        // queue is complete and whose last attempt fell in this study day is
+        // today's credit, whatever round the learner is on now.
+        const finishedEarlier = outstanding === 0
+          ? null
+          : this.#finishedToday(userId, candidateCorpusId, corpus, log, progress, day, nowMs);
+
         // An empty queue counts as complete: a fresh learner can never present
         // one (new sentences fill it), so empty means every available sentence
         // has been retired — the same rule `shouldRollDay` uses to advance
         // rather than stall on a vacuous condition (rollover.mjs:45-46: "An
         // empty queue counts as complete...").
-        const doneToday = outstanding === 0;
+        const doneToday = outstanding === 0 || finishedEarlier !== null;
         const progressLabel = summary.total === 0 ? 'Course complete' : `Day ${day}`;
+        const servedLabel = finishedEarlier ? `Day ${finishedEarlier.day}` : progressLabel;
         return {
           doneToday, progressLabel, score: null,
           // How far through the day, for a board that draws partial progress.
-          obligationProgress: { completed: summary.done, total: summary.total },
+          // A credited day reads full even while an extra round is under way.
+          obligationProgress: finishedEarlier
+            ? { completed: finishedEarlier.total, total: finishedEarlier.total }
+            : { completed: summary.done, total: summary.total },
           // WHAT THE BOARD DRAWS AFTER THE OFFER IS GONE. `AgendaStatusBoard`
           // builds one disc per assignment from PLAN ∪ EVIDENCE, and a served
           // ladder is in neither set: the agenda drops `next` the moment the
@@ -930,7 +1058,7 @@ export class SentenceLadderService {
           // itself by the day it finished. No `assignmentUnitId` — the agenda
           // stamps that from the program entry that owns this program.
           servedWork: doneToday
-            ? [{ unitId: `sentence-ladder:${corpus.id}`, title: `${corpus.label ?? corpus.id} · ${progressLabel}` }]
+            ? [{ unitId: `sentence-ladder:${corpus.id}`, title: `${corpus.label ?? corpus.id} · ${servedLabel}` }]
             : [],
           // WHAT A CARD SAYS. `projectProgramEntry` reads `context` and
           // `progress` off this and feeds the breadcrumb, the unit line, the
@@ -1061,7 +1189,8 @@ export class SentenceLadderService {
       headline: `Day ${progress.day} · ${progress.dailyLimit} new a day`,
       next: outstanding.length
         ? this.#describeToday(queue, outstanding)
-        : { label: 'Done for today', detail: 'Come back tomorrow for the next set', blocked: false },
+        // Never "come back tomorrow": the next day is always there to take.
+        : { label: 'Done for today', detail: 'The next day is ready whenever you are', blocked: false },
       metrics,
     };
   }

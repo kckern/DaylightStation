@@ -726,10 +726,25 @@ describe('pacing', () => {
 });
 
 describe('rollDay', () => {
-  it('refuses while work is outstanding', () => {
+  it('refuses only before a step is taken — the next day would be this one again', () => {
     const svc = makeService(new FakeDatastore());
     const result = svc.rollDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
-    expect(result).toEqual({ rolled: false, day: 1, reason: 'queue-incomplete' });
+    expect(result).toEqual({ rolled: false, day: 1, reason: 'not-started' });
+  });
+
+  it('moves on with work outstanding, and nothing outstanding is lost', () => {
+    // Refusing here walled two children for days on practice passes they could
+    // not finish (2026-09-14). The queue is derived, so rolling early loses
+    // nothing: unstarted sentences are still new, started ones still climb.
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 3 });
+    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition', capabilities: EQUIPPED });
+
+    expect(svc.rollDay({ userId: 'kckern', corpusId: 'test-korean' })).toEqual({ rolled: true, day: 2, reason: 'early' });
+    const day = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    const credited = day.queue.filter((e) => !e.practice).map((e) => `${e.rung}:${e.seq}`);
+    expect(credited).toEqual(expect.arrayContaining(['repetition:2', 'repetition:3', 'dictation:1']));
   });
 
   it('starts the next day early once today is finished — a finished day is never a wall', () => {
@@ -742,14 +757,17 @@ describe('rollDay', () => {
     expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED }).day).toBe(2);
   });
 
-  it('will not roll past a rung this device could not climb', () => {
+  it('a device that cannot climb a rung can still move on — the rung stays owed', () => {
     const ds = new FakeDatastore();
     const svc = makeService(ds);
-    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 3 });
+    makeDue(ds, 'dictation', 1);
     const bare = { microphone: false, textInput: [] };
     finishDay(svc, bare);
-    const result = svc.rollDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: bare });
-    expect(result).toEqual({ rolled: false, day: 1, reason: 'queue-incomplete' });
+
+    expect(svc.rollDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: bare }))
+      .toEqual({ rolled: true, day: 3, reason: 'early' });
+    const day = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    expect(day.queue.some((e) => e.rung === 'dictation' && e.seq === 1 && !e.practice && !e.done)).toBe(true);
   });
 
   it('opening the ladder on the next study day serves the next day, with no button', () => {
@@ -770,15 +788,80 @@ describe('rollDay', () => {
     expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED }).day).toBe(2);
   });
 
-  it('a device-limited open never rolls past the rungs the credit still needs', () => {
+  it('a device-limited open never rolls past the credited rungs it could not climb', () => {
+    // Credited work, not practice: day 2 owes seq 1 at dictation, which a bare
+    // panel cannot type. Opening tomorrow must not quietly skip it.
+    const ds = new FakeDatastore();
+    let clock = AT;
+    const svc = makeService(ds, () => clock);
+    makeDue(ds, 'dictation', 1);
+    const bare = { microphone: false, textInput: [] };
+    finishDay(svc, bare);
+    clock = Date.parse('2026-07-22T10:00:00Z');
+    expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: bare }).day).toBe(2);
+  });
+
+  it('practice left over from an earlier study day never holds the ladder', () => {
+    // Found live 2026-09-14: every credited step done, practice passes left,
+    // and the ladder served the same finished day for three days running.
     const ds = new FakeDatastore();
     let clock = AT;
     const svc = makeService(ds, () => clock);
     svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 3 });
-    const bare = { microphone: false, textInput: [] };
-    finishDay(svc, bare);
+    const first = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    for (const entry of first.queue.filter((e) => !e.practice)) {
+      svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: entry.seq, rung: entry.rung, capabilities: EQUIPPED });
+    }
+    const held = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    expect(held.queue.some((e) => e.practice && !e.done)).toBe(true);
+
     clock = Date.parse('2026-07-22T10:00:00Z');
-    expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: bare }).day).toBe(1);
+    expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED }).day).toBe(2);
+  });
+
+  it('repairs a progress record that has fallen behind its own log', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    for (const day of [1, 2, 3]) {
+      ds.appendEvent('kckern', 'test-korean', {
+        at: new Date(AT - (4 - day) * 3_600_000).toISOString(),
+        day, seq: day, rung: 'repetition', attributedTo: 'kckern',
+      });
+    }
+    ds.writeProgress('kckern', 'test-korean', { corpus: 'test-korean', day: 1, daily_limit: 5, last_activity: null });
+
+    // A status read sees the repaired day but writes nothing.
+    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' }).progressLabel).toBe('Day 3');
+    expect(ds.readProgress('kckern', 'test-korean').day).toBe(1);
+
+    expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED }).day).toBe(3);
+    expect(ds.readProgress('kckern', 'test-korean')).toMatchObject({
+      day: 3, last_activity: new Date(AT - 3_600_000).toISOString(),
+    });
+  });
+
+  it('a missing or future last-activity stamp cannot hold a finished day', () => {
+    for (const stamp of [null, 'garbage', '2031-01-01T00:00:00Z']) {
+      const ds = new FakeDatastore();
+      let clock = AT;
+      const svc = makeService(ds, () => clock);
+      svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 3 });
+      finishDay(svc);
+      ds.writeProgress('kckern', 'test-korean', { ...ds.readProgress('kckern', 'test-korean'), last_activity: stamp });
+      clock = Date.parse('2026-07-22T10:00:00Z');
+      expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED }).day).toBe(2);
+    }
+  });
+
+  it('leaves a healthy record alone — reading never rewrites it', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    finishDay(svc);
+    const before = { ...ds.readProgress('kckern', 'test-korean') };
+    const writes = vi.spyOn(ds, 'writeProgress');
+    svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    expect(writes).not.toHaveBeenCalled();
+    expect(ds.readProgress('kckern', 'test-korean')).toEqual(before);
   });
 
   it('announces a finished day once — reading it back or rolling it never re-publishes', () => {
@@ -1011,6 +1094,51 @@ describe('todayStatus — the served work a finished disc is drawn from', () => 
     const svc = makeService(new FakeDatastore());
     finishDay(svc);
     expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' }).score).toBeNull();
+  });
+});
+
+describe('todayStatus — a day finished today stays credited', () => {
+  function oneStep(svc) {
+    const { queue } = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    const next = queue.find((entry) => !entry.done);
+    const args = { userId: 'kckern', corpusId: 'test-korean', seq: next.seq, capabilities: EQUIPPED };
+    if (next.rung === 'recording') svc.saveRecording({ ...args, buffer: Buffer.from('audio') });
+    else if (next.rung === 'dictation' || next.rung === 'interpretation') svc.logAttempt({ ...args, rung: next.rung, given: 'x' });
+    else svc.logAttempt({ ...args, rung: next.rung });
+  }
+
+  it('through another round, and another — doing more never un-credits a child', () => {
+    const svc = makeService(new FakeDatastore());
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 1 });
+    finishDay(svc);
+    expect(svc.rollDay({ userId: 'kckern', corpusId: 'test-korean' })).toMatchObject({ rolled: true, day: 2, reason: 'ahead' });
+
+    const status = svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' });
+    expect(status).toMatchObject({ doneToday: true, progressLabel: 'Day 2' });
+    expect(status.servedWork).toEqual([{ unitId: 'sentence-ladder:test-korean', title: 'Test Korean · Day 1' }]);
+    expect(status.obligationProgress.completed).toBe(status.obligationProgress.total);
+
+    oneStep(svc);
+    expect(svc.rollDay({ userId: 'kckern', corpusId: 'test-korean' })).toMatchObject({ rolled: true, day: 3, reason: 'early' });
+    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' }).doneToday).toBe(true);
+  });
+
+  it('a day finished yesterday is not today\'s credit', () => {
+    let clock = AT;
+    const svc = makeService(new FakeDatastore(), () => clock);
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 1 });
+    finishDay(svc);
+    clock = Date.parse('2026-07-22T10:00:00Z');
+    expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED }).day).toBe(2);
+    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' }).doneToday).toBe(false);
+  });
+
+  it('an unfinished day rolled early is not credit either', () => {
+    const svc = makeService(new FakeDatastore());
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 1 });
+    oneStep(svc);
+    expect(svc.rollDay({ userId: 'kckern', corpusId: 'test-korean' })).toMatchObject({ rolled: true, reason: 'early' });
+    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' }).doneToday).toBe(false);
   });
 });
 
