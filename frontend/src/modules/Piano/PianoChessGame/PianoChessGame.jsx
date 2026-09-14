@@ -49,6 +49,7 @@ import {
   checkTakeback, playerMoveCount, takebackNote, takebackRefusalMessage, willStillCount,
 } from './takebackBudget.js';
 import { buildChessRailViewModel } from './chessRailViewModel.js';
+import { rimStaffExtent } from '../../MusicNotation/renderers/RimStaffRenderer.jsx';
 import { useChessAddressingProgress } from './useChessAddressingProgress.js';
 import { useChessOpponentTurn } from './useChessOpponentTurn.js';
 import { useChessPersistenceLifecycle } from './useChessPersistenceLifecycle.js';
@@ -756,6 +757,10 @@ export function PianoChessGame({
   // on every note event as a result.
   const lockedFile = axisMatch?.fileComplete ? axisMatch.file : null;
   const lockedRank = axisMatch?.rankComplete ? axisMatch.rank : null;
+  // One rim box per axis, measured from every shape that axis can show, so the
+  // staff is the same size on all eight cards and does not resize as notes land.
+  const fileExtent = useMemo(() => (reading ? rimStaffExtent(liveScheme.roots) : null), [reading, liveScheme]);
+  const rankExtent = useMemo(() => (reading ? rimStaffExtent(liveScheme.qualities) : null), [reading, liveScheme]);
   const fileLabels = useMemo(() => (reading
     ? liveScheme.roots.map((midi, index) => (
       <StaffNoteLabel
@@ -763,9 +768,10 @@ export function PianoChessGame({
         midi={midi}
         held={heldFileNotes}
         locked={index === lockedFile}
+        extent={fileExtent}
       />
     ))
-    : liveScheme.roots), [reading, liveScheme, heldFileNotes, lockedFile]);
+    : liveScheme.roots), [reading, liveScheme, heldFileNotes, lockedFile, fileExtent]);
   const rankLabels = useMemo(() => (reading
     ? liveScheme.qualities.map((midi, index) => (
       <StaffNoteLabel
@@ -773,10 +779,11 @@ export function PianoChessGame({
         midi={midi}
         held={heldRankNotes}
         locked={index === lockedRank}
+        extent={rankExtent}
       />
     ))
     : liveScheme.qualities.map((quality) => CHORD_QUALITIES[quality]?.label || 'maj')),
-  [reading, liveScheme, heldRankNotes, lockedRank]);
+  [reading, liveScheme, heldRankNotes, lockedRank, rankExtent]);
 
   // The marks channel is empty until a gesture asks. "Show legal moves" means
   // the destinations of the piece being held — or, when none is held yet,
