@@ -73,6 +73,7 @@ const PoseDemoInner = ({ mode: _mode, onClose: _onClose, config: _config, onMoun
     primaryPose,
     isDetecting,
     isLoading,
+    error: poseError,
     fps,
     latency,
     backend,
@@ -232,11 +233,15 @@ const PoseDemoInner = ({ mode: _mode, onClose: _onClose, config: _config, onMoun
         {(isLoading || !isDetecting) && (
           <div className="loading-overlay">
             <div className="loading-content">
-              <div className="spinner"></div>
-              <h3>{isLoading ? 'Starting Vision Engine...' : 'Paused'}</h3>
-              <p>{backend} backend • {poseConfig?.modelType || modelType} model</p>
+              {!(poseError && !isLoading) && <div className="spinner"></div>}
+              <h3>{isLoading ? 'Starting Vision Engine...' : poseError ? 'Vision Engine Failed' : 'Paused'}</h3>
+              <p>
+                {poseError && !isLoading
+                  ? (poseError.message || String(poseError))
+                  : `${backend || poseConfig?.backend || ''} backend • ${poseConfig?.modelType || modelType} model`}
+              </p>
               {!isDetecting && !isLoading && (
-                <button className="start-btn" onClick={handleResume}>Resume</button>
+                <button className="start-btn" onClick={handleResume}>{poseError ? 'Retry' : 'Resume'}</button>
               )}
             </div>
           </div>
