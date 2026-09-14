@@ -30,12 +30,13 @@ describe('SegmentedSecretText', () => {
     expect(new Set(colors).size).toBeGreaterThan(1);
   });
 
-  it('balances multi-line clues at word boundaries without dropping the masked space', () => {
-    expect(balanceSecretLines('BLOWING UP A BALLOON')).toEqual(['BLOWING UP ', 'A BALLOON']);
-    expect(balanceSecretLines('LOOKING THROUGH BINOCULARS')).toEqual(['LOOKING THROUGH ', 'BINOCULARS']);
+  it('balances multi-line clues at word boundaries and trims only line-edge spaces', () => {
+    expect(balanceSecretLines('BLOWING UP A BALLOON')).toEqual(['BLOWING UP', 'A BALLOON']);
+    expect(balanceSecretLines('LOOKING THROUGH BINOCULARS')).toEqual(['LOOKING THROUGH', 'BINOCULARS']);
+    expect(balanceSecretLines('BUILDING A SAND CASTLE').every(line => line === line.trim())).toBe(true);
     const { container } = render(<SegmentedSecretText text="Blowing up a balloon" />);
     expect(container.querySelectorAll('.segmented-secret-text__line')).toHaveLength(2);
-    expect(container.querySelectorAll('.segmented-secret-text__glyph')).toHaveLength(20);
+    expect(container.querySelectorAll('.segmented-secret-text__glyph')).toHaveLength(19);
   });
 
   it('uses a recognizable segmented alphabet with an inward-pointing D bowl', () => {

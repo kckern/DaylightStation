@@ -41,7 +41,7 @@ export function balanceSecretLines(text, targetLength = TARGET_LINE_LENGTH) {
     start = end;
   }
   lines.push(value.slice(start));
-  return lines;
+  return lines.map(line => line.trim());
 }
 
 function Glyph({ character, index, seed }) {
