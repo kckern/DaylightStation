@@ -70,6 +70,14 @@ it('automatically advances from performer wheel completion', async () => {
  expect(audio.play).toHaveBeenCalledWith('clue-revealed',{pack:'charades',volume:0.4});
 });
 
+it('keeps competitive performer instructions in the centered stage', async () => {
+ fetchSession.mockResolvedValue(view({...state,competition:true,phase:'performer-ready'}));
+ render(<Charades sessionId="one" seats={seats}/>);
+ const section=(await screen.findByRole('button',{name:'Reveal with decoder'})).closest('.charades__center');
+ expect(section).toHaveClass('charades__center');
+ expect(section).not.toHaveClass('charades__selector-stage');
+});
+
 it('keeps music playing across equivalent refreshed definitions and cleans it up at reveal', async () => {
  const stop=vi.fn();const music={start:vi.fn(()=>stop)};
  const performing={...state,phase:'performing',deadline:Date.now()+60000};
