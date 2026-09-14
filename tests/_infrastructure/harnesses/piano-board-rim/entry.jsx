@@ -24,6 +24,7 @@ import AddressRail from '@/modules/Piano/game-platform/families/addressed-board/
 import { StaffNoteLabel } from '@/modules/Piano/game-platform/families/addressed-board/StaffNoteLabel.jsx';
 import { BOARD_LAYOUTS } from '@/modules/Piano/game-platform/families/addressed-board/contracts.js';
 import { PianoFullscreenProvider } from '@/modules/Piano/PianoKiosk/PianoFullscreenContext.jsx';
+import { rimStaffExtent } from '@/modules/MusicNotation/renderers/RimStaffRenderer.jsx';
 import '@/modules/Piano/components/ActionStaff.scss';
 import '@/modules/Piano/PianoChessGame/PianoChessGame.scss';
 import '@/modules/Piano/PianoCheckers/PianoCheckers.scss';
@@ -86,8 +87,8 @@ function Chess() {
           fen={START_FEN}
           status={{}}
           orientation="white"
-          fileLabels={TREBLE.map((midi) => <StaffNoteLabel key={midi} midi={midi} />)}
-          rankLabels={BASS.map((midi) => <StaffNoteLabel key={midi} midi={midi} />)}
+          fileLabels={TREBLE.map((midi) => <StaffNoteLabel key={midi} midi={midi} extent={rimStaffExtent(TREBLE)} />)}
+          rankLabels={BASS.map((midi) => <StaffNoteLabel key={midi} midi={midi} extent={rimStaffExtent(BASS)} />)}
         />
       )}
     />

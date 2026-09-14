@@ -1,4 +1,5 @@
 import { SvgStaffRenderer } from '../../../../MusicNotation/renderers/SvgStaffRenderer.jsx';
+import { RimStaffRenderer } from '../../../../MusicNotation/renderers/RimStaffRenderer.jsx';
 import './StaffNoteLabel.scss';
 
 /**
@@ -32,25 +33,46 @@ import './StaffNoteLabel.scss';
  * @param {number|number[]} midi the note (or shape) this card names
  * @param {number[]} [held] MIDI notes currently down on this card's axis
  * @param {boolean} [locked] this card's hand is completely and correctly played
+ * THE RIM GEOMETRY. Given an `extent` — the box its whole axis needs, from
+ * `rimStaffExtent` — the card is drawn by `RimStaffRenderer` instead: only the
+ * range the axis uses, a cue-size clef, no stems, filling whatever box the board
+ * gives it. Every card on one axis gets the same extent, so the staff is one size
+ * along the rim. Without one (the game launcher) it is the shared staff as before.
+ *
  * @param {'sharp'|'flat'} [accidental] spelling for black keys on this board
+ * @param {{lo: number, hi: number, width: number}} [extent] the axis's rim box
  */
-export function StaffNoteLabel({ midi, midis = null, held = null, locked = false, accidental = undefined }) {
+export function StaffNoteLabel({ midi, midis = null, held = null, locked = false, accidental = undefined, extent = null }) {
   const targetPitches = Array.isArray(midis) ? midis : (Array.isArray(midi) ? midi : [midi]);
   // `action-staff--matched` is the shared green treatment the other piano staves
   // already use for ink that is right; the local class adds the border and glow
   // that make it read as LOCKED from across the room.
-  const className = `chess-staff-label action-staff${locked ? ' action-staff--matched chess-staff-label--locked' : ''}`;
+  const className = [
+    'chess-staff-label action-staff',
+    extent && 'chess-staff-label--rim',
+    locked && 'action-staff--matched chess-staff-label--locked',
+  ].filter(Boolean).join(' ');
   return (
     <div
       className={className}
       data-locked={locked ? 'true' : undefined}
     >
-      <SvgStaffRenderer
-        targetPitches={targetPitches}
-        activeNotes={held}
-        matched={locked}
-        accidental={accidental}
-      />
+      {extent ? (
+        <RimStaffRenderer
+          targetPitches={targetPitches}
+          activeNotes={held}
+          matched={locked}
+          accidental={accidental}
+          extent={extent}
+        />
+      ) : (
+        <SvgStaffRenderer
+          targetPitches={targetPitches}
+          activeNotes={held}
+          matched={locked}
+          accidental={accidental}
+        />
+      )}
     </div>
   );
 }

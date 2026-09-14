@@ -96,18 +96,26 @@ for (const game of GAMES) {
     const params = new URLSearchParams({ game, header: String(scenario.header) });
     for (const key of ['kb', 'rail', 'boardMax', 'railTrack', 'ckRail', 'fullscreen']) if (scenario[key]) params.set(key, scenario[key]);
     await page.goto(`${pathToFileURL(resolve(OUT, 'index.html'))}?${params}`);
-    await page.waitForSelector('.chess-staff-label .action-staff__notation-svg', { timeout: 10000 });
+    await page.waitForSelector('.chess-staff-label svg', { timeout: 10000 });
     await page.waitForTimeout(150);
     const m = await page.evaluate(() => {
       const box = (el) => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, right: r.right, bottom: r.bottom }; };
       const axisOf = (el) => (el.closest('.chess-board__rank-axis, .checkers-stage__rank-rail') ? 'rank' : 'file');
-      const cards = [...document.querySelectorAll('.chess-staff-label')].map((el) => ({ axis: axisOf(el), ...box(el) }));
+      // Line spacing is read off the drawn staff lines, so it holds for both the
+      // shared staff (lines in their own stretched SVG) and the rim geometry.
+      const spacingOf = (el) => {
+        const lines = el.querySelector('.action-staff__rim-svg')
+          ? el.querySelectorAll('.action-staff__line')
+          : el.querySelectorAll('.action-staff__lines-svg line');
+        const ys = [...lines].map((line) => line.getBoundingClientRect().y);
+        return ys.length === 5 ? (Math.max(...ys) - Math.min(...ys)) / 4 : 0;
+      };
+      const cards = [...document.querySelectorAll('.chess-staff-label')].map((el) => ({ axis: axisOf(el), space: spacingOf(el), ...box(el) }));
       const summarise = (axis) => {
         const list = cards.filter((c) => c.axis === axis);
         if (!list.length) return null;
         const c = list[0];
-        const scale = Math.min(c.w / 100, c.h / 112);
-        return { n: list.length, w: +c.w.toFixed(1), h: +c.h.toFixed(1), space: +(14 * scale).toFixed(1) };
+        return { n: list.length, w: +c.w.toFixed(1), h: +c.h.toFixed(1), space: +c.space.toFixed(1) };
       };
       const boardEl = document.querySelector('.chess-board, .checkers-board, .connect-four-board');
       const kbEl = document.querySelector('.piano-game-host__instrument');
