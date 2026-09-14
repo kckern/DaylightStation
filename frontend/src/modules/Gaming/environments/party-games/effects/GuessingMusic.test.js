@@ -84,6 +84,20 @@ describe('GuessingMusic lifecycle', () => {
     expect(heard[3]).not.toBe(heard[2]);
   });
 
+  it('advances after-cycle shuffle when a turn key is provided', async () => {
+    const audio = new AudioDouble();
+    const service = new GuessingMusic({ audioFactory: () => audio, resolveQueue: async () => threeTracks, random: () => 0 });
+    service.start({ source: 'test:music', order: 'shuffle', repeat: 'after-cycle' }, { sessionId: 'fhe', turnKey: '4' });
+    await flush();
+    const selected = audio.src;
+
+    audio.dispatchEvent(new Event('ended'));
+    await flush();
+
+    expect(audio.src).not.toBe(selected);
+    service.stop();
+  });
+
   it('loops one selected track for the entire turn while rotating tracks between turns', async () => {
     const values = new Map();
     const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
@@ -128,5 +142,30 @@ describe('GuessingMusic lifecycle', () => {
       .start({ source: 'test:music', order: 'shuffle', repeat: 'one', memory: 'session' }, { sessionId: 'fhe', turnKey: '5' });
     await flush();
     expect(nextTurn.src).not.toBe(selected);
+  });
+
+  it('persists a repeat-one replacement after the selected track fails', async () => {
+    const values = new Map();
+    const storage = {
+      getItem: key => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value),
+    };
+    const first = new AudioDouble();
+    const service = new GuessingMusic({ audioFactory: () => first, resolveQueue: async () => threeTracks, random: () => 0, storage });
+    service.start({ source: 'test:music', order: 'shuffle', repeat: 'one', memory: 'session' }, { sessionId: 'fhe', turnKey: '4' });
+    await flush();
+    const failed = first.src;
+
+    first.dispatchEvent(new Event('error'));
+    await flush();
+    const replacement = first.src;
+    expect(replacement).not.toBe(failed);
+    service.stop();
+
+    const resumed = new AudioDouble();
+    new GuessingMusic({ audioFactory: () => resumed, resolveQueue: async () => threeTracks, random: () => 0, storage })
+      .start({ source: 'test:music', order: 'shuffle', repeat: 'one', memory: 'session' }, { sessionId: 'fhe', turnKey: '4' });
+    await flush();
+    expect(resumed.src).toBe(replacement);
   });
 });

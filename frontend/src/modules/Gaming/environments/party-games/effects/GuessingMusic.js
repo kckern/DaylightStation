@@ -81,7 +81,9 @@ export class GuessingMusic {
     let index = -1;
     let failures = 0;
     let shuffleState = null;
-    const selectionKey = turnKey === null || turnKey === undefined ? null : String(turnKey);
+    const selectionKey = config.repeat === 'one' && turnKey !== null && turnKey !== undefined
+      ? String(turnKey)
+      : null;
     const applyVolume = () => { audio.volume = Math.min(1, Math.max(0, config.volume ?? 0.25)) * getEffectiveMaster(); };
     const unsubscribe = subscribeMaster(applyVolume);
     applyVolume();
