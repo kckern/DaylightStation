@@ -128,3 +128,16 @@ it('registers remote Back as a rewind while the timer is running', async () => {
  expect(removeBackAction).toHaveBeenCalledTimes(1);
  expect(registerBackAction.handler).toBeNull();
 });
+
+it('registers the remote forward action for the current primary step', async () => {
+ const removeForwardAction=vi.fn(()=>{registerForwardAction.handler=null;});
+ const registerForwardAction=vi.fn(handler=>{registerForwardAction.handler=handler;return removeForwardAction;});
+ sendRuleCommand.mockResolvedValueOnce(view({...state,phase:'performing',deadline:Date.now()+60000},2));
+ render(<Charades sessionId="one" seats={seats} registerForwardAction={registerForwardAction}/>);
+ await screen.findByRole('button',{name:'Go'});
+ let handled;act(()=>{handled=registerForwardAction.handler();});
+ expect(handled).toBe(true);
+ expect(sendRuleCommand).toHaveBeenCalledExactlyOnceWith('one',{type:'challenge.start'},undefined);
+ await screen.findByRole('button',{name:'Finish turn'});
+ expect(removeForwardAction).toHaveBeenCalledTimes(1);
+});
