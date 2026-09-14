@@ -101,6 +101,30 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   const seatIds = created.header.seats.map(seat => seat.id);
   expect(new Set(seatIds).size).toBe(6);
   await expect(stage).toBeVisible();
+  const selectorLayout = await page.evaluate(() => {
+    const rect = selector => document.querySelector(selector)?.getBoundingClientRect();
+    const size = selector => {
+      const element = document.querySelector(selector);
+      return element && { width: element.offsetWidth, height: element.offsetHeight };
+    };
+    const stage = rect('.charades');
+    const header = rect('.charades .gp-show-header');
+    const selector = rect('.family-selector--embedded');
+    const wrapper = rect('.family-selector--embedded .wheel-wrapper');
+    const wheel = size('.family-selector--embedded .wheel-rotator');
+    const pointer = rect('.family-selector--embedded .wheel-pointer');
+    return { stage, header, selector, wrapper, wheel, pointer };
+  });
+  expect(selectorLayout.wheel.width).toBeGreaterThanOrEqual(380);
+  expect(Math.abs(selectorLayout.wheel.width - selectorLayout.wheel.height)).toBeLessThanOrEqual(1);
+  expect(selectorLayout.selector.top).toBeGreaterThanOrEqual(selectorLayout.header.bottom);
+  expect(selectorLayout.pointer.top).toBeGreaterThanOrEqual(selectorLayout.selector.top);
+  expect(selectorLayout.wrapper.top).toBeGreaterThanOrEqual(selectorLayout.stage.top);
+  expect(selectorLayout.wrapper.right).toBeLessThanOrEqual(selectorLayout.stage.right);
+  expect(selectorLayout.wrapper.bottom).toBeLessThanOrEqual(selectorLayout.stage.bottom);
+  expect(selectorLayout.wrapper.left).toBeGreaterThanOrEqual(selectorLayout.stage.left);
+  expect(selectorLayout.wheel.width).toBeLessThanOrEqual(selectorLayout.wrapper.width);
+  expect(selectorLayout.wheel.height).toBeLessThanOrEqual(selectorLayout.wrapper.height);
   expect(await page.evaluate(() => window.__fheSetupSeen)).toBe(false);
   await expect(page.getByTestId('team-setup')).toHaveCount(0);
   await expect(page.getByRole('button', {name:/Guest|Start with/})).toHaveCount(0);

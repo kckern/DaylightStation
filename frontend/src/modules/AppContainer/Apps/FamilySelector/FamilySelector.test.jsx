@@ -20,6 +20,10 @@ it('keeps standalone minimum at two members while embedded one-person turns can 
  expect(screen.getByText('Not enough members')).toBeInTheDocument();unmount();
  render(<FamilySelector members={[{id:'a',name:'Alice'}]} embedded/>);
  expect(screen.queryByText('Not enough members')).toBeNull();
+ const embeddedSelector = document.querySelector('.family-selector--embedded');
+ expect(embeddedSelector).not.toBeNull();
+ expect(embeddedSelector.querySelector('.wheel-rotator')).not.toBeNull();
+ expect(embeddedSelector.querySelectorAll('.avatar-wrapper')).toHaveLength(1);
 });
 
 it('announces the result hook only after the wheel has stopped',()=>{
