@@ -3,11 +3,10 @@ export const SEGMENTS = Object.freeze({
   d1: [7, 94, 23, 94], d2: [27, 94, 43, 94], e: [6, 56, 6, 90], f: [6, 10, 6, 44],
   g1: [9, 50, 23, 50], g2: [27, 50, 41, 50], h: [10, 10, 22, 44], i: [40, 10, 28, 44],
   j: [22, 56, 10, 90], k: [28, 56, 40, 90], l: [25, 10, 25, 44], m: [25, 56, 25, 90],
-  n: [25, 6, 44, 50], o: [25, 94, 44, 50],
 });
 
 const GLYPHS = Object.freeze({
-  A: 'a b c e f g1 g2', B: 'a b c d e f g1 g2', C: 'a d e f', D: 'a1 d1 e f n o', E: 'a d e f g1 g2', F: 'a e f g1 g2',
+  A: 'a b c e f g1 g2', B: 'a b c d e f g1 g2', C: 'a d e f', D: 'b c d e g1 g2', E: 'a d e f g1 g2', F: 'a e f g1 g2',
   G: 'a c d e f g2', H: 'b c e f g1 g2', I: 'a d l m', J: 'b c d e', K: 'e f i k', L: 'd e f', M: 'b c e f h i',
   N: 'b c e f h k', O: 'a b c d e f', P: 'a b e f g1 g2', Q: 'a b c d e f k', R: 'a b e f g1 g2 k', S: 'a c d f g1 g2',
   T: 'a l m', U: 'b c d e f', V: 'h i', W: 'b c e f j k', X: 'h i j k', Y: 'h i m', Z: 'a d i j',
