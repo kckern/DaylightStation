@@ -168,9 +168,16 @@
   .charades__spotlight { width: 14rem; }
 }
 
+.charades__selector-stage {
+  place-items: stretch;
+  align-content: stretch;
+  padding-block: 0;
+}
+
 .charades[data-casual="true"] {
   grid-template-rows: auto minmax(0, 1fr);
   .charades__center { gap: 8px; padding: 8px 16px; }
+  .charades__selector-stage { padding-block: 0; }
   .gp-show-header { box-sizing: border-box; height: 62px; padding: 8px 20px; h1 { font-size: 32px; } }
   .charades__eyebrow { font-size: 13px; }
   .gp-show-header__status .gp-avatar__name { color: var(--gp-paper-dim); font-size: var(--gp-fs-caption); letter-spacing: 0.08em; }

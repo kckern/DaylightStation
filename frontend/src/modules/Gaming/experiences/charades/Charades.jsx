@@ -183,7 +183,7 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
       />
 
       {state.phase === 'performer-ready' && (
-        <section className="charades__center">
+        <section className="charades__center charades__selector-stage">
           {casual ? <FamilySelector key={`${state.challenge_index}:${state.performer_id}`} members={wheelMembers} winner={state.performer_id} autoSpin embedded durationMs={2600} onResult={() => playLifecycleCue('performer_selected')} onComplete={() => command({ type: 'performer.ready' })} /> : <InstructionCard eyebrow="Next performer" title={`${performerName}, take the stage`}><p>Get the red decoder card. Your secret stays concealed until you are ready.</p><footer><GameButton tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'performer.ready' })}>Reveal with decoder</GameButton></footer></InstructionCard>}
         </section>
       )}
