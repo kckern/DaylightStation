@@ -26,6 +26,8 @@ const MAX_DAILY_LIMIT = 100;
 const DEFAULT_BOUNDARY_HOUR = 4;
 /** Untouched for this long and the program stops claiming to be active. */
 const IDLE_AFTER_DAYS = 14;
+/** How long an open waits before re-announcing a day it already announced. */
+const CREDIT_REANNOUNCE_MS = 10 * 60 * 1000;
 const TREND_BUCKETS = 12;
 
 export class SentenceLadderService {
@@ -35,6 +37,9 @@ export class SentenceLadderService {
   // most one line per reason: the guard below runs on every saved attempt, so
   // a per-call warn would bury the very signal it exists to raise.
   #suppressionsAnnounced = new Set();
+  // `learner:corpus:day` → epoch ms it was last announced, so the self-heal on
+  // open retries a lost credit without flooding the close-out with repeats.
+  #dayAnnounced = new Map();
 
   constructor({
     datastore,
@@ -243,13 +248,64 @@ export class SentenceLadderService {
       voiceAnswer: this.#voiceAnswer,
     });
     if (queue.length > 0 && summarizeQueue(queue).done === queue.length) {
-      this.#log('info', 'school.language.day-complete', {
-        learnerId: userId, corpus: corpus.id, day,
-        programId: policy.enrollment.programId, queueSize: queue.length,
-      }, runId);
-      this.#realtime.languageDayCompleted({
-        learnerId: userId, corpusId: corpus.id, day, programId: policy.enrollment.programId,
-      });
+      this.#announceDayComplete(userId, corpus, day, policy, queue.length, 'attempt', runId);
+    }
+  }
+
+  /**
+   * Publish one finished day. `via: attempt` is the step that finished it and
+   * always publishes; `via: heal` is an open re-announcing it and is throttled.
+   * Re-announcing is safe by construction: `CloseLanguageDay` settles a day
+   * once, serialised per session, and answers `already_settled` after that —
+   * so a repeat can neither double-credit nor reprint a receipt.
+   */
+  #announceDayComplete(userId, corpus, day, policy, queueSize, via, runId = null) {
+    const key = `${userId}:${corpus.id}:${day}`;
+    const now = this.#now();
+    const last = this.#dayAnnounced.get(key);
+    if (via === 'heal' && last != null && now - last < CREDIT_REANNOUNCE_MS) return;
+    this.#dayAnnounced.set(key, now);
+    this.#log('info', 'school.language.day-complete', {
+      learnerId: userId, corpus: corpus.id, day,
+      programId: policy.enrollment.programId, queueSize, via,
+    }, runId);
+    this.#realtime.languageDayCompleted({
+      learnerId: userId, corpusId: corpus.id, day, programId: policy.enrollment.programId,
+    });
+  }
+
+  /**
+   * CREDIT HEALS ITSELF. The ladder keeps no history a past-day verdict can
+   * replay, so a finished day's School credit is the work session its
+   * `day-complete` announcement opens — and an announcement lost to a restart
+   * or a failed close would lose that credit for good. Every open therefore
+   * re-announces each day finished IN THIS STUDY DAY.
+   *
+   * Only this study day, deliberately: the close-out stamps the session with
+   * the time it runs, so healing a day finished yesterday would credit the
+   * wrong date. Walks back from the day in hand while each day still has an
+   * attempt logged today, so it never scans a long history.
+   */
+  #healCredit(userId, corpus, log, progress, runId = null) {
+    const policy = this.#queuePolicy(userId, corpus, progress);
+    if (!policy.enrollment || !this.#realtime?.languageDayCompleted) return;
+    const nowMs = this.#now();
+    const opts = { boundaryHour: this.#boundaryHour, offsetMinutes: this.#offsetMinutes(nowMs) };
+    const today = studyDayIndex(nowMs, opts);
+    for (let day = progress.day; day >= 1; day -= 1) {
+      let latest = null;
+      for (const event of log) {
+        if (Number(event?.day) !== day) continue;
+        const at = Date.parse(event?.at);
+        if (Number.isFinite(at) && (latest === null || at > latest)) latest = at;
+      }
+      // The day in hand may be untouched — taken ahead a moment ago.
+      if (latest === null && day === progress.day) continue;
+      if (latest === null || studyDayIndex(latest, opts) !== today) return;
+      const queue = this.#fullDayQueue(userId, corpus.id, corpus, log, { ...progress, day });
+      if (queue.length > 0 && queue.every((entry) => entry.done)) {
+        this.#announceDayComplete(userId, corpus, day, policy, queue.length, 'heal', runId);
+      }
     }
   }
 
@@ -271,6 +327,7 @@ export class SentenceLadderService {
     const corpus = this.#requireCorpus(corpusId);
     const log = this.#ds.readAllEvents(userId, corpusId);
     const { progress, roll } = this.#openDay(userId, corpus, log, runId);
+    this.#healCredit(userId, corpus, log, progress, runId);
     const policy = this.#queuePolicy(userId, corpus, progress);
 
     // The client DECLARES what it can do; the gate KNOWS. A keyboard absent at
@@ -708,17 +765,16 @@ export class SentenceLadderService {
   /**
    * Whether opening the ladder moves the learner on by itself.
    *
-   * PRACTICE IS NOT OWED. Practice passes top up today's rungs with today's
-   * own new set and credit nothing, so once the study day that served them is
-   * over they are not work anyone is waiting for. Counting them held two
-   * learners on a finished day for days (2026-09-14): every credited step done,
-   * six practice interpretations or two practice recordings outstanding, and
-   * no roll because the "queue" was incomplete.
+   * ONLY A WHOLE DAY ROLLS, practice included. A partial lesson is continued
+   * the next study day exactly where it stopped — that is the household's
+   * rule, and it is what lets a day finished across two sittings still earn
+   * its credit. Nobody is held by it: `rollDay` moves on whenever the learner
+   * asks, finished or not.
    */
   #rollOnOpen(queue, progress) {
     const now = this.#now();
     return shouldRollDay({
-      queue: queue.filter((entry) => !entry.practice),
+      queue,
       lastActivity: progress.lastActivity ? Date.parse(progress.lastActivity) : null,
       now,
       boundaryHour: this.#boundaryHour,
@@ -1035,6 +1091,14 @@ export class SentenceLadderService {
         const servedLabel = finishedEarlier ? `Day ${finishedEarlier.day}` : progressLabel;
         return {
           doneToday, progressLabel, score: null,
+          // THE LADDER NEVER CLOSES FOR THE DAY. `doneToday` marks the subject
+          // served, and a served subject's code answers "You already did this
+          // today." with only a way out — unless its program declares itself
+          // reopenable (`findReopenableProgramEntry`). A child who met today's
+          // set and wants another round types the same code and gets the
+          // ladder, where "Start the next day" is waiting. Only a course with
+          // every sentence retired has nothing to reopen to.
+          reopenable: summary.total > 0,
           // How far through the day, for a board that draws partial progress.
           // A credited day reads full even while an extra round is under way.
           obligationProgress: finishedEarlier

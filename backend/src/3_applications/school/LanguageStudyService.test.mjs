@@ -801,9 +801,8 @@ describe('rollDay', () => {
     expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: bare }).day).toBe(2);
   });
 
-  it('practice left over from an earlier study day never holds the ladder', () => {
-    // Found live 2026-09-14: every credited step done, practice passes left,
-    // and the ladder served the same finished day for three days running.
+  it('a partial day — practice included — is continued the next study day, never skipped', () => {
+    // The household rule: a lesson left part-done picks up where it stopped.
     const ds = new FakeDatastore();
     let clock = AT;
     const svc = makeService(ds, () => clock);
@@ -812,11 +811,17 @@ describe('rollDay', () => {
     for (const entry of first.queue.filter((e) => !e.practice)) {
       svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: entry.seq, rung: entry.rung, capabilities: EQUIPPED });
     }
-    const held = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
-    expect(held.queue.some((e) => e.practice && !e.done)).toBe(true);
+    const left = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    const outstanding = left.queue.filter((e) => !e.done).map((e) => `${e.rung}:${e.seq}`);
+    expect(outstanding.length).toBeGreaterThan(0);
 
     clock = Date.parse('2026-07-22T10:00:00Z');
-    expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED }).day).toBe(2);
+    const next = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    expect(next.day).toBe(1);
+    expect(next.queue.filter((e) => !e.done).map((e) => `${e.rung}:${e.seq}`)).toEqual(outstanding);
+
+    // ...and asking for more is still never refused.
+    expect(svc.rollDay({ userId: 'kckern', corpusId: 'test-korean' })).toEqual({ rolled: true, day: 2, reason: 'early' });
   });
 
   it('repairs a progress record that has fallen behind its own log', () => {
@@ -913,6 +918,71 @@ describe('rollDay', () => {
     // None of that counts, so it is owed exactly one rung today.
     const credited = day.queue.filter((e) => !e.practice && e.seq === 1);
     expect(credited.map((e) => e.rung)).toEqual(['dictation']);
+  });
+});
+
+describe('day credit — self-healing', () => {
+  const enrolled = (ds, clock, eventBus) => makeService(ds, clock, {
+    readProgramEnrollment: () => ({
+      programId: 'sentence-ladder', corpusId: 'test-korean', lessonSize: 2,
+      rungs: ['repetition', 'dictation'],
+    }),
+    realtime: new EventBusSchoolRealtimeAdapter({ eventBus }),
+  });
+  const EQUIPPED_OPEN = { userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED };
+
+  it('re-announces a day finished today whose announcement was lost, and throttles the retry', () => {
+    const ds = new FakeDatastore();
+    let clock = AT;
+    const lost = { publish: vi.fn() };
+    finishDay(enrolled(ds, () => clock, lost));
+    expect(lost.publish).toHaveBeenCalledTimes(1);
+
+    // A restart: a fresh service over the same evidence, nothing remembered.
+    const bus = { publish: vi.fn() };
+    const svc = enrolled(ds, () => clock, bus);
+    svc.getDay(EQUIPPED_OPEN);
+    expect(bus.publish).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(bus.publish.mock.calls[0])).toContain('"day":1');
+
+    svc.getDay(EQUIPPED_OPEN);
+    expect(bus.publish).toHaveBeenCalledTimes(1);
+
+    // A close that failed is retried once the throttle has passed.
+    clock = AT + 11 * 60 * 1000;
+    svc.getDay(EQUIPPED_OPEN);
+    expect(bus.publish).toHaveBeenCalledTimes(2);
+  });
+
+  it('heals a day finished today even after another round was taken', () => {
+    const ds = new FakeDatastore();
+    const clock = AT;
+    finishDay(enrolled(ds, () => clock, { publish: vi.fn() }));
+    enrolled(ds, () => clock, { publish: vi.fn() }).rollDay({ userId: 'kckern', corpusId: 'test-korean' });
+
+    const bus = { publish: vi.fn() };
+    enrolled(ds, () => clock, bus).getDay(EQUIPPED_OPEN);
+    expect(bus.publish).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(bus.publish.mock.calls[0])).toContain('"day":1');
+  });
+
+  it('never re-announces a day finished on an earlier study day — that would credit the wrong date', () => {
+    const ds = new FakeDatastore();
+    let clock = AT;
+    finishDay(enrolled(ds, () => clock, { publish: vi.fn() }));
+    clock = Date.parse('2026-07-22T10:00:00Z');
+    const bus = { publish: vi.fn() };
+    enrolled(ds, () => clock, bus).getDay(EQUIPPED_OPEN);
+    expect(bus.publish).not.toHaveBeenCalled();
+  });
+
+  it('never announces a partial day', () => {
+    const ds = new FakeDatastore();
+    const bus = { publish: vi.fn() };
+    const svc = enrolled(ds, () => AT, bus);
+    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition', capabilities: EQUIPPED });
+    svc.getDay(EQUIPPED_OPEN);
+    expect(bus.publish).not.toHaveBeenCalled();
   });
 });
 
@@ -1131,6 +1201,16 @@ describe('todayStatus — a day finished today stays credited', () => {
     clock = Date.parse('2026-07-22T10:00:00Z');
     expect(svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED }).day).toBe(2);
     expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' }).doneToday).toBe(false);
+  });
+
+  it('stays reopenable once served, so the same code opens the ladder again', () => {
+    const svc = makeService(new FakeDatastore());
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 1 });
+    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' }).reopenable).toBe(true);
+    finishDay(svc);
+    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' })).toMatchObject({
+      doneToday: true, reopenable: true,
+    });
   });
 
   it('an unfinished day rolled early is not credit either', () => {
