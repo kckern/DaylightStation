@@ -195,6 +195,7 @@ export default function AskSession({
   intent = 'practice',
   practiceMode = 'free',
   framing = null,
+  bare = false,
   traceContext = null,
   onPassed,
   onFailed,
@@ -347,6 +348,7 @@ export default function AskSession({
       score={sources.score}
       requirement={requirement}
       framing={framingLine}
+      bare={bare}
       ask={askLine}
       askTuple={resolvedAsk.tuple}
       tier={tier}

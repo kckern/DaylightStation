@@ -32,6 +32,20 @@ const pills = () => [...document.querySelectorAll('.drill-pill')].map((p) => p.d
 beforeEach(() => { learning.mockReset(); });
 
 describe('DrillProgress', () => {
+  it('draws only pills when labels are off — no placard, no key, no hand', () => {
+    const program = {
+      id: 'rung:L2',
+      steps: [step(1, { state: 'passed', passed: true, pass_count: 3 }), step(2, { state: 'current', pass_count: 1 }), step(3)],
+    };
+    render(<DrillProgress program={program} stepId="scale-set-2" labels={false} />);
+
+    expect(document.querySelector('.drill-placard')).toBeNull();
+    expect(document.querySelector('.drill-cluster__label')).toBeNull();
+    expect(screen.queryByText('LH')).toBeNull();
+    expect(screen.queryByText('D major')).toBeNull();
+    expect(pills()).toEqual(['banked', 'banked', 'banked', 'banked', 'current', 'todo', 'todo', 'todo', 'todo']);
+  });
+
   it('banks a pill per pass and marks the live set current', async () => {
     learning.mockResolvedValue(drill([
       step(1, { state: 'current', pass_count: 2 }),

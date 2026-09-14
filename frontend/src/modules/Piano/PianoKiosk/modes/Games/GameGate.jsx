@@ -72,7 +72,7 @@ import {
 } from './gateRepertoire.js';
 import { isConfigOnlyDecline, materialOrder } from './gateMaterial.js';
 import { failureAdvice } from './failureCoaching.js';
-import { isDrillSpec, resolveGateDrill } from './gateDrill.js';
+import { needsDrillResolution, resolveGateDrill } from './gateDrill.js';
 import { resolveLearnerPath } from './gateDailyEscalation.js';
 import { preloadGame } from '../../../gameRegistry.js';
 import GateCeremony, { CEREMONY_MS } from './GateCeremony.jsx';
@@ -490,11 +490,11 @@ export default function GameGate({
    * place, for the same reasons.
    */
   useEffect(() => {
-    if (!attempt || !isDrillSpec(attempt.spec)) return undefined;
+    if (!attempt || !needsDrillResolution(attempt.spec)) return undefined;
     let alive = true;
     const servedFor = attempt.attemptId;
     const spec = attempt.spec;
-    resolveGateDrill({ spec, learnerId, studyDate }).then((resolved) => {
+    resolveGateDrill({ spec, learnerId, studyDate, levelId: attempt.level.id }).then((resolved) => {
       // The attempt this resolution was started for may already be gone — a
       // retry, a new round, an unmount. Landing on a stale attempt would swap
       // the material out from under a child mid-ask.
@@ -509,9 +509,12 @@ export default function GameGate({
         step: resolved.stepId,
         // What the pills will show. The one number an adult reading the log
         // wants is how far through today's nine this child is.
-        banked: resolved.projection.passed_steps * 3
-          + (resolved.projection.current_step?.pass_count ?? 0),
-        total: resolved.projection.total_steps * 3,
+        // Summed from the steps rather than assumed to be three a set: a rung
+        // drill's reps come from the YAML.
+        banked: resolved.projection.steps.reduce(
+          (sum, step) => sum + Math.min(step.pass_count ?? 0, step.requirement?.required_passes ?? 1), 0,
+        ),
+        total: resolved.projection.steps.reduce((sum, step) => sum + (step.requirement?.required_passes ?? 1), 0),
         complete: resolved.complete,
       });
       setAttempt({
@@ -883,7 +886,7 @@ export default function GameGate({
   // A drill spec is not askable until the effect above has turned it into an
   // instance. Handing it down unresolved would reach `resolveSpec` as an
   // unknown kind and decline the level a child is standing on.
-  if (isDrillSpec(attempt.spec)) return <SkeletonStage />;
+  if (needsDrillResolution(attempt.spec)) return <SkeletonStage />;
 
   return (
     <div className="piano-game-gate piano-game-gate--attempt">
@@ -921,6 +924,11 @@ export default function GameGate({
         stepId={attempt.drill?.stepId ?? null}
         drillProjection={attempt.drill?.projection ?? null}
         framing={framing}
+        // THE GATE RUN IS PILLS AND THE MUSIC, NOTHING ELSE. No framing line,
+        // no ask heading, no standing instruction, no "waiting for the piano":
+        // the set/rep row says where the child is, the staff says what to play,
+        // and the kiosk's own connection banner says when the piano is gone.
+        bare
         traceContext={{ attemptId: attempt.attemptId, sessionId }}
         onResolved={handleResolved}
         onPassed={handlePassed}

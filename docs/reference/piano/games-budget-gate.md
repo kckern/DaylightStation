@@ -569,7 +569,27 @@ The gate asks for material through a provider seam that names four kinds:
   A drill that cannot be reached fails open; a drill id that does not exist substitutes.
   Same two answers as every other kind, for the same reasons.
 
+  **A scale level writes the same drill in its own YAML.** An `exercise` spec with `roots`
+  that carries `sets` and `reps` —
+  `{ kind: exercise, collection: scales, roots: [G, D, F], direction: up-then-down, sets: 3, reps: 3 }`
+  — is resolved exactly like `kind: drill`: `sets` sets, one key each taken from the roots in
+  order (cycling when the level names fewer), each needing `reps` reps, one rep banked per
+  PASSED gate, counted over the study day. Only the counts come from the level; the day
+  boundary, which set is asked and the pills are the drill's. Because a short root list
+  repeats a key, passes are dealt to the sets in order — the fourth C major of the day is the
+  first rep of the second set, never a second set banked at once. Every scale level in the
+  household ladder is written this way, so every scale gate shows where the child stands in
+  its nine.
+
 ### What the run screen says while a child plays one
+
+**At the game gate it says nothing.** The gate run is the music, the keyboard and the set/rep
+pills. There is no framing line ("Play this to start…"), no ask heading, no key or tempo chip,
+no standing instruction ("Play the first note to begin.") and no "Waiting for the piano…" —
+the pills say where the child is, the staff says what to play, and the kiosk's connection
+banner says when the piano has gone. The pills carry no names either: no placard, no key, no
+hand badge. A gate level with no set/rep structure (a capstone passage) draws the music
+alone. Practice runs outside the gate keep their words.
 
 **A run with set/rep structure draws pills, not paragraphs.** Any ask whose events
 repeat consecutively — a `keys` rung with `reps`, as well as a `drill` — is projected into
@@ -690,20 +710,20 @@ gameGate:
     - id: L1                # C major, one octave
       tier: 2
       material:
-        - { kind: exercise, collection: scales, roots: [C] }
+        - { kind: exercise, collection: scales, roots: [C], sets: 3, reps: 3 }
     - id: L2                # one accidental — three roots, so gates differ
       tier: 2
       material:
-        - { kind: exercise, collection: scales, roots: [G, D, F] }
+        - { kind: exercise, collection: scales, roots: [G, D, F], sets: 3, reps: 3 }
     - id: L3                # two sharps each; see Material on enharmonics
       tier: 2
       material:
-        - { kind: exercise, collection: scales, roots: ['A', 'E'] }
+        - { kind: exercise, collection: scales, roots: ['A', 'E'], sets: 3, reps: 3 }
     - id: L4                # at tempo; the only level where wrong notes cost
       tier: 3
       grading: { cleanliness: 0.8 }
       material:
-        - { kind: exercise, collection: scales, roots: [C, G] }
+        - { kind: exercise, collection: scales, roots: [C, G], sets: 3, reps: 3 }
         # A passage of real music belongs here — four bars of the study piece,
         # engraved by the sheet-music renderer. The shape, when one is chosen:
         # - { kind: score, source: 'files:sheetmusic/minuet-in-g.musicxml', measures: [1, 4] }

@@ -487,3 +487,30 @@ learner was on. It nearly sent this one to the wrong conclusion about #10.
 
 **Fixed:** the line logs `liveScheme.id` (`game.scheme`) plus an explicit
 `vocabulary: staff | chords`, and re-fires when the addressing resolves.
+
+---
+
+## 12 — every scale rung still drew four lines of text (2026-09-14)
+
+**Reported:** the gate before Piano Chess showed "Play this to start Piano Chess",
+"G major · right hand", "Play the first note to begin." and "Waiting for the piano…",
+and no rep/set indicator — after #1 above had shipped.
+
+**Why #1 did not reach it.** #1 drew pills for a `keys` deck and kept them for
+`kind: drill`, and dropped the text only where pills drew. The ladder climbed the
+child off their scale-drill rung (three clean passes) onto `L2`–`L4`, which are plain
+`kind: exercise` scale rungs: one scale, once, no set/rep structure, so no pills —
+and therefore every line of the fallback text. The log for 2026-09-13 evening shows
+exactly that: `rung: L3` / `L4`, `material: scales/modes@root=A…`, no
+`gate.drill-served`.
+
+**Fixed, both halves:**
+
+1. A scale `exercise` spec with `sets`/`reps` resolves as a drill of its own
+   (`gateDrill.js`: `isRungDrillSpec`, `rungDrillProgram`, `projectRungDrill`) —
+   one key per set from the rung's roots, one rep per passed gate, over the study
+   day — and every scale rung in the household ladder now carries
+   `sets: 3, reps: 3`.
+2. The gate run is **bare**: `GameGate` → `AskSession` → `ExerciseRun` drops the
+   framing line, the ask heading, the key/tempo chips, the standing instruction
+   and the waiting line, and `DrillProgress` draws pills with no placard or labels.

@@ -1405,6 +1405,68 @@ function bankedRep(step, count) {
   }));
 }
 
+/**
+ * THE SAME DRILL, WRITTEN ON A SCALE RUNG. `sets` and `reps` in the YAML turn a
+ * plain scale level into three sets of three reps, banked one passed gate at a
+ * time — so the run draws pills instead of the four lines of text it used to.
+ */
+const RUNG_DRILL_LEVEL = {
+  id: 'scales-rung',
+  tier: 2,
+  presentation: DRILL_LEVEL.presentation,
+  material: [{ kind: 'exercise', collection: 'scales', roots: ['G', 'D'], direction: 'up-then-down', sets: 3, reps: 3 }],
+};
+const RUNG_DRILL_CONFIG = { repertoire: [REPERTOIRE[0], RUNG_DRILL_LEVEL], startLevel: 'scales-rung' };
+const scaleIdFor = (root) => `scales/modes@root=${root},mode=ionian,direction=up-then-down,span_octaves=1`;
+function gatePasses(root, count, passed = true) {
+  return Array.from({ length: count }, () => ({
+    status: 'completed',
+    purpose: 'challenge',
+    created_at: new Date(new Date().setHours(12, 0, 0, 0)).toISOString(),
+    prompt: { exercise_id: scaleIdFor(root) },
+    verdict: { passed },
+  }));
+}
+
+describe('GameGate — a scale rung with sets and reps', () => {
+  beforeEach(() => {
+    h.attempts.mockResolvedValue({ ok: true, status: 200, data: { attempts: [] } });
+  });
+
+  it('serves the rung as a drill: one key per set, the current set first, pills to draw', async () => {
+    renderGate({ learnerId: 'kid1', gateConfig: RUNG_DRILL_CONFIG });
+    await screen.findByTestId('ask-session');
+
+    const props = h.askProps.at(-1);
+    expect(props.materialSpec).toEqual({ kind: 'exercise', instanceId: scaleIdFor('G') });
+    expect(props.programId).toBe('rung:scales-rung');
+    expect(props.stepId).toBe('set-1');
+    expect(props.drillProjection.steps.map((step) => step.requirement.exercise_id))
+      .toEqual([scaleIdFor('G'), scaleIdFor('D'), scaleIdFor('G')]);
+  });
+
+  it('counts only passed gates, dealt to the sets in order', async () => {
+    h.attempts.mockResolvedValue({
+      ok: true, status: 200, data: { attempts: [...gatePasses('G', 3), ...gatePasses('D', 1), ...gatePasses('D', 2, false)] },
+    });
+    renderGate({ learnerId: 'kid1', gateConfig: RUNG_DRILL_CONFIG });
+    await screen.findByTestId('ask-session');
+
+    const props = h.askProps.at(-1);
+    expect(props.stepId).toBe('set-2');
+    expect(props.materialSpec.instanceId).toBe(scaleIdFor('D'));
+    expect(props.drillProjection.steps[1].pass_count).toBe(1);
+    const [, data] = eventNamed('gate.drill-served');
+    expect(data).toMatchObject({ drill: 'rung:scales-rung', step: 'set-2', banked: 4, total: 9, complete: false });
+  });
+
+  it('runs bare: no framing, heading or instruction text on the gate', async () => {
+    renderGate({ learnerId: 'kid1', gateConfig: RUNG_DRILL_CONFIG });
+    await screen.findByTestId('ask-session');
+    expect(h.askProps.at(-1).bare).toBe(true);
+  });
+});
+
 describe('GameGate — the three-by-three drill', () => {
   beforeEach(() => {
     h.program.mockResolvedValue({ ok: true, status: 200, data: DRILL_PROGRAM });

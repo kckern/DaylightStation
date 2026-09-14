@@ -220,7 +220,7 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   player on a dead end. Both callbacks are optional and additive: omit them
  *   and the surface behaves exactly as it did before.
  */
-export default function ExerciseRun({ instance, score, requirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, ask = null, askTuple = null, tier = null, traceContext = null, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, ask = null, askTuple = null, tier = null, traceContext = null, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
@@ -1014,7 +1014,9 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
    * host guessing from `programId && stepId` — a guess that was wrong for every
    * one-step program and left the rail empty and the child unaddressed.
    */
-  const standingInstruction = (
+  // A bare run (the game gate) has no standing instruction to fall back to:
+  // where there are no pills, there is simply nothing under the music.
+  const standingInstruction = bare ? null : (
     <>
       {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{!runtime ? 'Getting the music ready…' : snapshot.mode === 'cued' ? countInSentence(countIn?.clicks ?? beatsPerMeasure, cuedPace) : 'Play the first note to begin.'}</p>{!connected && <span>Waiting for the piano…</span>}</div>}
       {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : isWrong ? 'That note was not expected — keep going.' : stage === 'recall' ? 'Play the named music from memory.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.'}{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
@@ -1045,9 +1047,10 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
       phase={phase}
       noteProgress={noteProgress}
       fallback={standingInstruction}
+      labels={!bare}
     />
   ) : deckProgram ? (
-    <DrillProgress program={deckProgram} phase={phase} fallback={standingInstruction} />
+    <DrillProgress program={deckProgram} phase={phase} fallback={standingInstruction} labels={!bare} />
   ) : null;
   /**
    * WHETHER PILLS WILL ACTUALLY BE DRAWN — which `runProgress` cannot answer.
@@ -1083,7 +1086,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
     && Number.isFinite(result?.score);
 
   return (
-    <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}`} data-tier={runTier} data-stage={stage} data-phase={phase} data-expected-cursor={timeline?.expectedCursor ?? eventIndex} data-displayed-cursor={visualCursor.index}>
+    <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}`} data-tier={runTier} data-stage={stage} data-phase={phase} data-armed={runtime ? 'true' : undefined} data-expected-cursor={timeline?.expectedCursor ?? eventIndex} data-displayed-cursor={visualCursor.index}>
       <header className="piano-exercise-run__head">
         {/* WHY YOU ARE HERE, AND NOTHING ELSE, WHEN THERE IS CHROME.
             The sentence under the eyebrow is the run's second line of standing
@@ -1092,16 +1095,19 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
             ask reads "Play the lit keys in order" — nothing is lit; the child
             is reading a staff). The framing line stays: "Play this to start
             Connect Four" is the one sentence on this screen anybody reads. */}
-        <div><span>{framing ?? (challenge ? 'Pass challenge' : 'Practice')}</span>{!chromeDrawn && <h1>{ask ?? subject.title}</h1>}</div>
+        {/* A BARE RUN (the game gate) says nothing here at all. The header
+            element stays, empty and zero-height, because it is the grid's first
+            row: dropping it would slide the stage up into that row. */}
+        {!bare && <div><span>{framing ?? (challenge ? 'Pass challenge' : 'Practice')}</span>{!chromeDrawn && <h1>{ask ?? subject.title}</h1>}</div>}
         <div className="piano-exercise-run__context">
           {/* Each chip only where it means something: a key names how a STAFF is
               spelled, so it is silent when there is no staff; a meter is what a
               cued ask is counted in, and nothing at all in a free one. A score
               carries neither: both are printed on the page the child is reading,
               and a chip repeating them would be the kiosk talking over the music. */}
-          {staffShown && instance?.key && <span>Key of {instance.key}</span>}
-          {cued && instance?.meter && <span>{instance.meter}</span>}
-          {challenge && requirement.gates?.pace?.target_bpm && <strong>{requirement.gates.pace.target_bpm} BPM</strong>}
+          {!bare && staffShown && instance?.key && <span>Key of {instance.key}</span>}
+          {!bare && cued && instance?.meter && <span>{instance.meter}</span>}
+          {!bare && challenge && requirement.gates?.pace?.target_bpm && <strong>{requirement.gates.pace.target_bpm} BPM</strong>}
         </div>
       </header>
       {/* Notation and the sequence staff are ink, and ink needs paper on a dark
@@ -1207,7 +1213,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
       {/* The piano still starts the run; only the sentence about it is gone.
           A disconnected piano is the one thing the pills cannot say, so it
           keeps its own line whatever the surface. */}
-      {chromeDrawn && !connected && <span className="piano-exercise-run__waiting">Waiting for the piano…</span>}
+      {!bare && chromeDrawn && !connected && <span className="piano-exercise-run__waiting">Waiting for the piano…</span>}
       {phase === 'done' && result && !hostOwnsFailure && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}`}>
         <div><span>{passed ? 'Passed' : challenge ? 'Keep working' : 'Practice complete'}</span>{scoreReadout && <strong>{Math.round(result.score * 100)}%</strong>}</div>
         {/* A percentage is a reading task of its own, and the tiers below 2 are
