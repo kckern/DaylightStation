@@ -290,8 +290,46 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
       await phase('challenge-ready');
       const rewound = await read();
       expect(rewound.state.challenge_index).toBe(turn);
+      expect(rewound.state.performer_id).toBe(ready.state.performer_id);
       expect(rewound.state.challenge.id).toBe(ready.state.challenge.id);
       expect(rewound.state.deadline).toBeNull();
+
+      await page.keyboard.press('Escape');
+      const leaveDialog = page.getByRole('dialog', {name:'Leave game?'});
+      await expect(leaveDialog).toBeVisible();
+      await expect(page.getByRole('button', {name:'Keep playing'})).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(leaveDialog).toHaveCount(0);
+      await phase('challenge-ready');
+      expect((await read()).header.session_id).toBe(sessionId);
+
+      await page.keyboard.press('Escape');
+      await expect(leaveDialog).toBeVisible();
+      await page.keyboard.press('ArrowRight');
+      await expect(page.getByRole('button', {name:'Leave game'})).toBeFocused();
+      await page.keyboard.press('Enter');
+      const charadesMenuItem = page.locator('.menu-item').filter({hasText:'Charades'});
+      await expect(charadesMenuItem).toBeVisible();
+      expect(new URL(page.url()).pathname).toBe('/screens/living-room/fhe');
+      expect(new URL(page.url()).searchParams.has('session')).toBe(false);
+
+      for (let step = 0; step < 25 && !(await page.locator('.menu-item.active').innerText()).includes('Charades'); step++) await page.keyboard.press('ArrowRight');
+      await expect(page.locator('.menu-item.active')).toContainText('Charades');
+      const attachedPromise = page.waitForResponse(response => response.request().method() === 'GET'
+        && new URL(response.url()).pathname === sessionPath);
+      await page.keyboard.press('Enter');
+      const attachedResponse = await attachedPromise;
+      expect(attachedResponse.ok()).toBe(true);
+      expect((await attachedResponse.json()).header.session_id).toBe(sessionId);
+      await phase('challenge-ready');
+      expect(new URL(page.url()).pathname).toBe('/screens/living-room/party-games/charades:fhe');
+      expect(new URL(page.url()).searchParams.get('session')).toBe(sessionId);
+      expect(creations).toHaveLength(1);
+      const reopened = await read();
+      expect(reopened.header.session_id).toBe(sessionId);
+      expect(reopened.state.challenge_index).toBe(turn);
+      expect(reopened.state.performer_id).toBe(ready.state.performer_id);
+      expect(reopened.state.challenge.id).toBe(ready.state.challenge.id);
       await focusRemote(/^(Go|Start acting)/i);
       await page.keyboard.press('Enter');
       await phase('performing');
