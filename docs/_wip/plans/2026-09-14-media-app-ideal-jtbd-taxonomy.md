@@ -1,7 +1,7 @@
 # Media App: Ideal Jobs-to-be-Done Taxonomy
 
 **Date:** 2026-09-14
-**Status:** Proposal. A model of the jobs the app should serve. No screens designed yet.
+**Status:** Proposal. A model of the jobs the app should serve. No screens designed yet. The owner's decisions on the open questions are recorded in §5 and applied throughout.
 **Evidence:** the media app jobs-to-be-done baseline audit of 2026-09-14. Audit job IDs (A1…K3) appear in parentheses as evidence only.
 
 ---
@@ -25,6 +25,8 @@ Words used throughout:
 | **Lineup** | What is playing on a screen plus what is coming up next on that screen. |
 | **Steer** | Control something that is already playing (pause, skip, volume, reorder the lineup). |
 | **Send** | Start content on, or move playback to, a screen other than this device. |
+
+**Words on screen (decided, Q9):** this document keeps its working terms, but the product says **Play on…** for *send*, **Queue** for *lineup*, and **Remote** for *steering another screen*.
 
 ---
 
@@ -509,7 +511,7 @@ Story IDs extend the job ID with a letter. Acceptance criteria (AC) are observab
 - Kinds are shown as choices next to the search; the current one is always visible.
 - Choosing a kind updates results immediately without retyping.
 - Kinds that contain sub-kinds (for example, Music → Hymns) let me choose either level.
-- The kind I chose is kept consistently in the same way on every device (see Open question Q6 for how long).
+- The kind I chose stays while search is open; the next time search opens it starts at All. Same on every device (Q6).
 
 **FIND.3a** As a **Seeker**, I want to know whether the results are complete, so that I can trust a short list.
 - While sources are still answering, I see that results are still arriving.
@@ -537,7 +539,7 @@ Story IDs extend the job ID with a letter. Acceptance criteria (AC) are observab
 
 **FIND.7a** As a **Wanderer**, I want to be offered things that suit the moment, so that I have a place to start.
 - Opening the app shows a small set of suggestions (for example: what's unfinished, what the household plays at this time of day, new additions).
-- Suggestions are pictures I can open to learn more, not things that start playing on tap.
+- Suggestions follow the same tap rule as every other item: a collection opens, a playable item plays at the aim, and details are one step away (Q2).
 - Suggestions never repeat what's already playing on this device.
 
 ### FIND-L — Understand before choosing
@@ -549,7 +551,8 @@ Story IDs extend the job ID with a letter. Acceptance criteria (AC) are observab
 - Opening details never starts, stops, or changes playback.
 
 **FIND.8b** As a **Seeker**, I want tapping a result to do the obvious thing while details stay one step away, so that speed and understanding don't compete.
-- The main tap on a result does one consistent thing everywhere (see Open question Q2).
+- Tapping a playable item (episode, song, film) plays it at the aim; tapping a collection (show, season, album, playlist, artist, folder) opens it. Same everywhere (Q2).
+- A mis-tap costs nothing: the confirmation offers undo (`RELY.4`).
 - A secondary action on every result opens its details.
 
 ### FIND-R — Return to what we've played
@@ -598,7 +601,7 @@ Story IDs extend the job ID with a letter. Acceptance criteria (AC) are observab
 
 **PLAY.5a** As a **Lineup Builder**, I want one clear "play next" action, so that I know exactly where the item goes.
 - There is one "play next" verb, available on every item wherever it appears.
-- The item appears immediately after what's playing now; if I add several, I can see the order they'll play in.
+- The item appears immediately after what's playing now; if I add several, they play in the order I added them (Q4).
 - The confirmation names the item, "next", and the screen whose lineup it joined.
 
 **PLAY.6a** As a **Seeker**, I want to add something to the end without interrupting, so that the current playback isn't disturbed.
@@ -628,6 +631,7 @@ Story IDs extend the job ID with a letter. Acceptance criteria (AC) are observab
 **PLACE.2a** As a **Big-Screen Sender**, I want to aim at a TV for the evening, so that every play goes there without extra steps.
 - I can change the aim in one step from wherever the aim is shown.
 - The chosen aim persists as I move around the app and after a reload.
+- After a stretch of no use, the aim returns to "this device" on its own, so a phone is never left aimed at a TV for days (Q1).
 - Every play and line-up action then uses it (see `PLAY.1a`).
 
 **PLACE.2b** As a **Hand-Held Viewer**, I want to aim back at this device in one step, on any device, so that I'm never stuck sending to a TV.
@@ -644,6 +648,7 @@ Story IDs extend the job ID with a letter. Acceptance criteria (AC) are observab
 - When choosing a screen, I can choose more than one, with the choice clearly labelled as "several screens".
 - The aim then reads, for example, "Kitchen + Living Room".
 - Progress and confirmation are shown per screen, so one failing doesn't hide the others succeeding.
+- The screens start at about the same time, then each is steered on its own; they may drift apart (Q8).
 
 **PLACE.5a** As a **Big-Screen Sender**, I want to see what each screen is doing while I choose, so that I don't interrupt someone.
 - Each choice shows the screen's name, room, and whether it is playing (with title and time left), paused, idle, or off.
@@ -662,6 +667,7 @@ Story IDs extend the job ID with a letter. Acceptance criteria (AC) are observab
 - This device starts the same item at the same moment with the same lineup; the other screen stops.
 - A confirmation says it moved, and from where.
 - If it can't move, I'm told why and the other screen keeps playing.
+- Video, audio, and photo slideshows move at the same spot; a live channel or camera simply starts fresh on the new screen (Q5).
 
 **PLACE.8a** As a **Room Hopper**, I want to send what's playing here to a TV at the same moment, so that I switch to the big screen without starting over.
 - From the handle on my own playback, "move to…" is offered, wherever I am in the app.
@@ -688,6 +694,7 @@ Story IDs extend the job ID with a letter. Acceptance criteria (AC) are observab
 - Controls the screen can't support are shown as unavailable with a short reason, not missing.
 - It is always obvious which screen I am steering, and I can switch to another in one step.
 - Leaving the controls of another screen never changes my aim.
+- When I pause, change, or take over another screen's playback, that screen shows a brief note saying where it came from, for example "Paused from Dad's phone" (Q7).
 
 **STEER.1c** As a **Big-Screen Sender**, I want to go from "it's playing on the TV" straight to steering it, so that I can adjust it right away.
 - The confirmation that something started on a screen offers "steer it" (see `RELY.3`).
@@ -726,6 +733,7 @@ Story IDs extend the job ID with a letter. Acceptance criteria (AC) are observab
 - The lineup is reachable in one step from the handle on my playback and from any screen's controls.
 - It's still reachable after stopping, until I clear it or start fresh.
 - It shows what's playing now, what's next (including items placed "next"), and a count.
+- Photos have a queue like video and audio; a live channel or camera is a single thing with no queue or position (Q5).
 
 **STEER.8a** As a **Lineup Builder**, I want to reorder, jump to, remove, and clear lineup items, so that the order is exactly right.
 - I can move an item up or down, or drag it, and the new order shows immediately.
@@ -765,7 +773,7 @@ Story IDs extend the job ID with a letter. Acceptance criteria (AC) are observab
 
 **HOUSE.4a** As a **Routine Setter**, I want every screen, including browsers, to have a human name, so that people and routines can pick the right one.
 - Every screen is listed under a name like "Kitchen tablet" or "Dad's laptop", never a code.
-- The owner of a device can name or rename it from within the app.
+- Anyone can name or rename a device from within the app; TVs and kiosks come already named (Q10).
 - The name stays the same across reloads and appears everywhere the screen is mentioned.
 
 **HOUSE.5a** As a **House Watch**, I want to see whether a person or a routine started something, so that unexpected playback makes sense.
@@ -843,7 +851,7 @@ Story IDs extend the job ID with a letter. Acceptance criteria (AC) are observab
 - Progress and failures are reported like any other send, visible to anyone looking at that screen in the overview (see `HOUSE.5`).
 
 **AUTO.1b** As a **Hand-Held Viewer**, I want a routine to be able to start playback on the device I left open on the wall, so that the kitchen tablet can play the morning programme.
-- A device left open in the app can be a target for routines, by its name.
+- Any named device left open in the app can be a target for routines (Q10).
 - Playback started this way appears on that device as if someone had started it there.
 
 **AUTO.2a** As a **Routine Setter**, I want repeated or overlapping triggers to give one predictable result, so that routines don't pile up.
@@ -1030,31 +1038,33 @@ Reading the matrix:
 
 | # | Tension | Who pulls which way | Principle |
 |---|---|---|---|
-| T1 | **Where a plain "play" goes** | Big-Screen Sender wants taps to go to the TV by default. Hand-Held Viewer wants them to stay here. | **One aim, owned by the device in hand, always visible, always one step from "this device".** Neither default is imposed on the house: each device carries its own aim, a device new to the app starts aimed at itself, and every play action shows the aim beside it (PLACE.1, PLACE.2). Sending elsewhere once never needs the aim changed (PLACE.3). |
+| T1 | **Where a plain "play" goes** | Big-Screen Sender wants taps to go to the TV by default. Hand-Held Viewer wants them to stay here. | **One aim, owned by the device in hand, always visible, always one step from "this device".** Neither default is imposed on the house: each device carries its own aim, a device new to the app starts aimed at itself, the aim returns to itself after a stretch of no use (Q1), and every play action shows the aim beside it (PLACE.1, PLACE.2). Sending elsewhere once never needs the aim changed (PLACE.3). |
 | T2 | **Does steering a screen also aim at it?** | House Watch in a TV's controls expects a search result to go to that TV. Seeker expects the aim they set to hold. | **Steering is not aiming.** What you're steering (STEER.1) and where new things go (PLACE.1) are separate and both on screen. A visible shortcut can offer "aim here too", but nothing changes silently. |
-| T3 | **What a tap on a result does** | Seeker wants it to play. Wanderer wants to look first. | **One consistent main action per kind of result, with details always one step away** (FIND.8b). Collections open; playable items follow the owner's choice in Q2, identically everywhere. |
+| T3 | **What a tap on a result does** | Seeker wants it to play. Wanderer wants to look first. | **One consistent main action per kind of result, with details always one step away** (FIND.8b). Collections open; playable items play at the aim (Q2), identically everywhere, with undo covering a mis-tap. |
 | T4 | **Power vs safety on the lineup** | Lineup Builder wants instant reorder, remove, clear. Fixer wants nothing destroyed by accident. | **Undo instead of asking.** Reversible changes happen instantly and offer undo (RELY.4). Only truly irreversible actions ask first (RELY.8). |
 | T5 | **Sending to a busy screen** | Big-Screen Sender wants it to just work. Whoever is watching that screen doesn't want to be cut off. | **Warn before replacing someone else's playback; never block.** The choice shows what will be interrupted (PLACE.5), and undo can restore it (RELY.4). |
 | T6 | **Move or keep when sending** | Room Hopper wants this device to stop. A Sender starting a second room wants it to keep playing. | **Decide at the moment, with the remembered choice visible.** The keep-or-move choice appears whenever it applies, on every device size, pre-set to the last choice (PLACE.6). |
 | T7 | **Routines vs people in the room** | Routine Setter wants predictable results. People in the room want to change what's on. | **Routines are just another starter; the latest person wins.** Routine starts are shown as such (HOUSE.5), steered like anything else (STEER), and never override a later human action (AUTO.2). |
 | T8 | **How loud confirmation is** | Seeker wants no clutter. Sender and Fixer want certainty. | **Confirmation scales with distance; failure is always loud.** Quiet when the result is in your hands, explicit with progress when it's on another screen, and always a clear notice when something fails (RELY.1–RELY.5). |
-| T9 | **Whose history** | Resumer wants everything the house played, including the TV. A Hand-Held Viewer may not want their late-night listening on the family list. | **House-wide by default, always labelled with where it played.** Whether history is split by person is Q3. |
-| T10 | **Remembering a narrowed search** | A Seeker who narrows to Music wants it kept while they work. The next Seeker is confused by results limited to Music. | **Narrowing is always visible, and an empty narrowed search widens with a note.** How long narrowing lasts is Q6; whatever is chosen behaves the same on every device. |
+| T9 | **Whose history** | Resumer wants everything the house played, including the TV. A Hand-Held Viewer may not want their late-night listening on the family list. | **One household list, always labelled with where it played** (Q3). |
+| T10 | **Remembering a narrowed search** | A Seeker who narrows to Music wants it kept while they work. The next Seeker is confused by results limited to Music. | **Narrowing is always visible, and an empty narrowed search widens with a note.** Narrowing lasts until search closes (Q6), the same on every device. |
 
 ---
 
-## 5. Open questions for the owner
+## 5. Owner decisions
 
-| # | Question | Why it matters | Affects |
+The open questions from the first draft, answered by the owner on 2026-09-14. Each decision is applied to the stories and tensions listed.
+
+| # | Question | Decision | Applied to |
 |---|---|---|---|
-| Q1 | Should a device's aim return to "this device" on its own, for example after a period of no use? | Prevents the "stuck aimed at the TV" failure without an explicit step, but may surprise a Sender mid-evening. | PLACE.2, T1 |
-| Q2 | Tapping a playable result: play it at the aim, or open its details? | Decides the single main action used everywhere. | FIND.8, PLAY.1, T3 |
-| Q3 | Is the household one audience, or should history, unfinished items, and suggestions be per person? | Changes what "recent" and "carry on" mean, and whether the app needs to know who is using it. | FIND.7, FIND.9, FIND.10, T9 |
-| Q4 | When several things are added with "play next", should they play in the order added, or most recent first? | The one merged verb needs one behaviour. | PLAY.5 |
-| Q5 | Photos, live channels, and camera feeds: do they have lineups, positions, and moves between screens? | Decides which PLAY, STEER, and PLACE-M jobs apply to each kind. | PLAY, STEER, PLACE-M |
-| Q6 | How long should a narrowed search kind last: one search, until search closes, or until changed? | The audit shows it has been both kept and forgotten. | FIND.2, T10 |
-| Q7 | Should the person watching a screen get any sign when someone elsewhere pauses, changes, or takes over their playback? | Courtesy vs. convenience for the House Watch. | STEER.1, PLACE.5, PLACE.7 |
-| Q8 | When playing on several screens at once, should they stay in step, and are they steered as one group? | Sets expectations for multi-room music. | PLACE.4, STEER |
-| Q9 | Which words go in the product: "send", "cast", or "play on"; "lineup" or "queue"; "controls" or "remote"? | The audit shows the same idea under many words. This document uses one set; the product needs to choose. | All |
-| Q10 | Who may name a screen, and may any device be a target for routines? | Names matter for people and routines alike. | HOUSE.4, AUTO.1 |
-| Q11 | Should some people (children) be limited in what they can play, or on which screens? | No evidence either way in the audit; it would add a whole concern. | PLAY, PLACE |
+| Q1 | Should a device's aim return to "this device" on its own? | **Yes, after idle time.** The aim holds while the app is in active use; after a stretch of no use it returns to "this device". | PLACE.2a, T1 |
+| Q2 | What does tapping a result do? | **Depends on the kind of thing.** A collection (show, season, album, playlist, artist, folder) opens. A playable item (episode, song, film) plays at the aim. Details are a secondary action on every item; undo covers a mis-tap. | FIND.7a, FIND.8b, T3 |
+| Q3 | Whose history, unfinished items, and suggestions? | **One household list**, each item labelled with where it played. No "who's watching". | FIND.7, FIND.9, FIND.10, T9 |
+| Q4 | Order of several "play next" items? | **The order they were added.** | PLAY.5a |
+| Q5 | Do photos, live channels, and cameras have queues, positions, and moves? | **Photos queue** like video and audio (a slideshow). **Live channels and cameras are tuned**: no queue, no position, started fresh when sent to another screen. | STEER.7a, PLACE.7a |
+| Q6 | How long does a narrowed search kind last? | **Until search closes.** The next search starts at All. Same on every device. | FIND.2a, T10 |
+| Q7 | Should people watching a screen get a sign when someone elsewhere changes it? | **A brief note on that screen** naming where the change came from. No permission step. | STEER.1b |
+| Q8 | How do several screens playing at once behave? | **Start together, steered separately.** They may drift apart; there is no group control. | PLACE.4a |
+| Q9 | Which words go in the product? | **Play on · Queue · Remote.** | Words table |
+| Q10 | Who may name a screen, and which screens can routines target? | **Anyone can name a device** from the app; TVs and kiosks come already named. **Any named screen**, including a browser left open on a wall tablet, can be a routine target. | HOUSE.4a, AUTO.1b |
+| Q11 | Should children be limited in what or where they can play? | **Out of scope for this redesign.** Revisit as its own concern if needed. | — |
