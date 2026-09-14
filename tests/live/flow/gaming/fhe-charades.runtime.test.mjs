@@ -206,15 +206,13 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
         };
         return {card:box(card),subject:box(card.querySelector('.image-decoder-display__subject')),artifacts:box(card.querySelector('.image-decoder-display__artifacts'))};
       });
-      const waitForNextSettledFrame = async () => {
-        const startingIndex = await decoderCard.getAttribute('data-motion-index');
+      const waitForNextSettledFrame = async (startingIndex = null) => {
+        startingIndex ??= await decoderCard.getAttribute('data-motion-index');
         await expect.poll(() => decoderCard.getAttribute('data-motion-index')).not.toBe(startingIndex);
         await page.waitForTimeout(50);
       };
       await waitForNextSettledFrame();
       const firstGeometry = await geometry();
-      const firstIndex = Number(await decoderCard.getAttribute('data-motion-index'));
-      const firstRotation = Number(await decoderCard.locator('.image-decoder-display__artifacts').getAttribute('data-interference-rotation'));
       const subject = movingComposite.getByTestId('image-decoder-subject');
       const firstSubjectFrame = await subject.evaluate(element => ({
         mirrored:element.dataset.mirrored,
@@ -237,20 +235,35 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
         artifacts:getComputedStyle(card.querySelector('.image-decoder-display__artifacts')).transitionDuration,
       }));
       expect(transitionDurations).toEqual({card:'0s',subject:'0s',artifacts:'0s'});
-      await waitForNextSettledFrame();
+      // Capture the two motion frames next to each other. The static optical
+      // assertions above can span a timer tick and therefore cannot anchor an
+      // adjacent-frame displacement measurement.
+      const motionBefore = await decoderCard.evaluate(card => {
+        const bounds = card.getBoundingClientRect();
+        const clue = card.querySelector('.image-decoder-display__subject');
+        return {
+          index:Number(card.dataset.motionIndex), left:bounds.left, top:bounds.top, width:bounds.width,
+          rotation:Number(card.querySelector('.image-decoder-display__artifacts').dataset.interferenceRotation),
+          mirrored:clue.dataset.mirrored, x:Number(clue.dataset.subjectX), y:Number(clue.dataset.subjectY),
+        };
+      });
+      await waitForNextSettledFrame(String(motionBefore.index));
+      const motionAfter = await decoderCard.evaluate(card => {
+        const bounds = card.getBoundingClientRect();
+        const clue = card.querySelector('.image-decoder-display__subject');
+        return {
+          index:Number(card.dataset.motionIndex), left:bounds.left, top:bounds.top,
+          rotation:Number(card.querySelector('.image-decoder-display__artifacts').dataset.interferenceRotation),
+          mirrored:clue.dataset.mirrored, x:Number(clue.dataset.subjectX), y:Number(clue.dataset.subjectY),
+        };
+      });
       const secondGeometry = await geometry();
-      const secondIndex = Number(await decoderCard.getAttribute('data-motion-index'));
-      const secondRotation = Number(await decoderCard.locator('.image-decoder-display__artifacts').getAttribute('data-interference-rotation'));
-      const secondSubjectFrame = await subject.evaluate(element => ({
-        mirrored:element.dataset.mirrored,
-        x:Number(element.dataset.subjectX), y:Number(element.dataset.subjectY),
-      }));
-      expect(Math.hypot(secondGeometry.card.left - firstGeometry.card.left, secondGeometry.card.top - firstGeometry.card.top)).toBeGreaterThanOrEqual(firstGeometry.card.width * 0.5);
-      expect(secondIndex).toBe((firstIndex + 1) % 8);
-      expect((secondRotation - firstRotation + 720) % 360).toBe(90);
-      expect(secondSubjectFrame.mirrored).not.toBe(firstSubjectFrame.mirrored);
-      expect(secondSubjectFrame.x).not.toBe(firstSubjectFrame.x);
-      expect(secondSubjectFrame.y).not.toBe(firstSubjectFrame.y);
+      expect(motionAfter.index).toBe((motionBefore.index + 1) % 8);
+      expect(Math.hypot(motionAfter.left - motionBefore.left, motionAfter.top - motionBefore.top)).toBeGreaterThanOrEqual(motionBefore.width * 0.5);
+      expect((motionAfter.rotation - motionBefore.rotation + 720) % 360).toBe(90);
+      expect(motionAfter.mirrored).not.toBe(motionBefore.mirrored);
+      expect(motionAfter.x).not.toBe(motionBefore.x);
+      expect(motionAfter.y).not.toBe(motionBefore.y);
       expect(secondGeometry.subject.left).toBeGreaterThanOrEqual(secondGeometry.artifacts.left - 1);
       expect(secondGeometry.subject.top).toBeGreaterThanOrEqual(secondGeometry.artifacts.top - 1);
       expect(secondGeometry.subject.left + secondGeometry.subject.width).toBeLessThanOrEqual(secondGeometry.artifacts.left + secondGeometry.artifacts.width + 1);
@@ -292,8 +305,11 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
     await focusRemote(/^(Go|Start acting)/i);
     await page.keyboard.down('Enter');
     await phase('performing');
+    // Repeated keydowns from the same held remote button cannot end acting.
+    await page.keyboard.down('Enter');
+    await phase('performing');
+    await page.keyboard.up('Enter');
     if (turn === 0) {
-      await page.keyboard.up('Enter');
       await page.keyboard.press('Escape');
       await phase('challenge-ready');
       const rewound = await read();
@@ -349,11 +365,6 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
     const progress = stage.locator('.charades__countdown-progress');
     const initialOffset = await progress.evaluate(circle => circle.style.strokeDashoffset);
     await expect.poll(() => progress.evaluate(circle => circle.style.strokeDashoffset), {timeout:2500}).not.toBe(initialOffset);
-    // Repeated keydowns from the same held remote button cannot end acting.
-    await page.keyboard.down('Enter');
-    await page.keyboard.down('Enter');
-    await phase('performing');
-    await page.keyboard.up('Enter');
     await expect.poll(async () => (await musicState()).some(a => !a.paused && a.time > 0.1 && a.ready >= 2), {timeout:20_000}).toBe(true);
     const playingAudio = (await musicState()).find(a => !a.paused);
     const playingTrack = playingAudio?.src;
