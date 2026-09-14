@@ -23,6 +23,7 @@ import ChessBoard from '@/modules/Chess/ChessBoard.jsx';
 import AddressRail from '@/modules/Piano/game-platform/families/addressed-board/AddressRail.jsx';
 import { StaffNoteLabel } from '@/modules/Piano/game-platform/families/addressed-board/StaffNoteLabel.jsx';
 import { BOARD_LAYOUTS } from '@/modules/Piano/game-platform/families/addressed-board/contracts.js';
+import { PianoFullscreenProvider } from '@/modules/Piano/PianoKiosk/PianoFullscreenContext.jsx';
 import '@/modules/Piano/components/ActionStaff.scss';
 import '@/modules/Piano/PianoChessGame/PianoChessGame.scss';
 import '@/modules/Piano/PianoCheckers/PianoCheckers.scss';
@@ -39,6 +40,10 @@ const boardMax = q.get('boardMax');
 const railTrack = q.get('railTrack');
 // Checkers' rim thickness token (`--ck-rank-rail`, also its file rail).
 const ckRail = q.get('ckRail');
+// The kiosk's real full-screen capability: the provider reads it as remembered,
+// the header stand-in goes, and the games style themselves off the host class.
+const fullscreen = q.get('fullscreen') === '1';
+const fullscreenStore = { getItem: () => (fullscreen ? 'true' : null), setItem() {}, removeItem() {} };
 
 // The grand-staff default scheme both board games ship with (staffAddress.js).
 const TREBLE = [60, 62, 64, 65, 67, 69, 71, 72];
@@ -134,14 +139,16 @@ function ConnectFour() {
       className="piano-connect-four"
       instrument={{ activeNotes: noNotes, startNote: 48, endNote: 84, showLabels: true, onNoteOn() {}, onNoteOff() {} }}
       layout={BOARD_LAYOUTS.SINGLE}
-      topRail={<AddressRail addresses={TREBLE.slice(0, 7).map((midi) => ({ midi }))} orientation="horizontal" />}
       primary={(
-        <div className="connect-four-board pg-board">
-          {Array.from({ length: 42 }, (_, cell) => (
-            <div key={cell} className="connect-four-board__cell">
-              <span className="connect-four-board__disc connect-four-board__disc--empty" />
-            </div>
-          ))}
+        <div className="connect-four-stage">
+          <AddressRail addresses={TREBLE.slice(0, 7).map((midi) => ({ midi }))} orientation="horizontal" className="connect-four-stage__rail" />
+          <div className="connect-four-board pg-board">
+            {Array.from({ length: 42 }, (_, cell) => (
+              <div key={cell} className="connect-four-board__cell">
+                <span className="connect-four-board__disc connect-four-board__disc--empty" />
+              </div>
+            ))}
+          </div>
         </div>
       )}
       leftRail={<Rail label="Opponent" />}
@@ -281,7 +288,7 @@ function Harness() {
       style={{ width: 1280, height: 800, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative', background: '#16161b' }}
     >
       <style>{overrides}</style>
-      {header > 0 && (
+      {header > 0 && !fullscreen && (
         <header
           className="harness-header"
           style={{ flex: `0 0 ${header}px`, boxSizing: 'border-box', background: '#1f1f26', borderBottom: '1px solid #34343f' }}
@@ -291,7 +298,7 @@ function Harness() {
         className="piano-game-fullscreen"
         style={{ position: 'relative', flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}
       >
-        <Game />
+        <PianoFullscreenProvider storage={fullscreenStore}><Game /></PianoFullscreenProvider>
       </div>
     </div>
   );

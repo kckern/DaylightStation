@@ -26,6 +26,7 @@ import { openPianoContent, openPianoCourseLesson } from '../modules/Piano/PianoK
 import { PianoPlaybackProvider } from '../modules/Piano/PianoKiosk/PianoPlaybackContext.jsx';
 import { usePianoPlayback } from '../modules/Piano/PianoKiosk/usePianoPlayback.js';
 import { PianoChrome } from '../modules/Piano/PianoKiosk/PianoChrome.jsx';
+import { PianoFullscreenProvider, usePianoFullscreen } from '../modules/Piano/PianoKiosk/PianoFullscreenContext.jsx';
 import { DeviceStatePublisher } from '../screen-framework/publishers/DeviceStatePublisher.jsx';
 import { PianoBreadcrumbProvider } from '../modules/Piano/PianoKiosk/PianoBreadcrumbContext.jsx';
 import { PianoSoundProvider } from '../modules/Piano/PianoKiosk/PianoSoundContext.jsx';
@@ -161,6 +162,7 @@ function PianoShell() {
   const { playing, videoActive, playerLocks = [] } = usePianoPlayback();
   const { users, currentUser, setCurrentUser } = usePianoUser();
   const [whoOpen, setWhoOpen] = useState(false);
+  const { fullscreen } = usePianoFullscreen();
 
   // Who's-Playing "Turn off screen": for someone who just wants to play in peace.
   // The shared screen-off action (usePianoScreenOff) turns the backlight off,
@@ -253,7 +255,7 @@ function PianoShell() {
 
   return (
       <PianoBreadcrumbProvider>
-        <div className="piano-app">
+        <div className="piano-app" data-fullscreen={fullscreen ? 'true' : undefined}>
           <ProfilePicker
             open={whoOpen && playerLocks.length === 0}
             users={users}
@@ -333,7 +335,9 @@ function ActivePiano({ pianoId: pianoIdProp, basePath: basePathProp }) {
               <PianoMixProvider>
                 <PianoSoundProvider>
                   <PianoConnectionProvider>
-                    <PianoPresetProvider><PianoShell /></PianoPresetProvider>
+                    <PianoPresetProvider>
+                      <PianoFullscreenProvider><PianoShell /></PianoFullscreenProvider>
+                    </PianoPresetProvider>
                   </PianoConnectionProvider>
                 </PianoSoundProvider>
               </PianoMixProvider>

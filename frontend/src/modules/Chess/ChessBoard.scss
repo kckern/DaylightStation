@@ -55,6 +55,11 @@
   grid-template-rows: repeat(8, 1fr);
   height: var(--cb-size);
   padding-inline-end: 0.5rem;
+  /* Inset by the board's frame border (3px, below), so each label's row is the
+     square's row. Spanning the full --cb-size, the eight rows included the frame
+     and walked off the squares toward both ends — up to 4px on the reading rim,
+     a card visibly straddling two ranks. */
+  padding-block: 3px;
 }
 
 .chess-board__file-axis {
@@ -63,6 +68,8 @@
   display: grid;
   grid-template-columns: repeat(8, 1fr);
   width: var(--cb-size);
+  /* The same frame inset as the rank axis, for the same reason. */
+  padding-inline: 3px;
   padding-block-start: 0.35rem;
 }
 
