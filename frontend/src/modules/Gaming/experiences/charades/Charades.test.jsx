@@ -84,7 +84,7 @@ it('keeps music playing across equivalent refreshed definitions and cleans it up
  fetchSession.mockResolvedValue(view(performing));
  render(<Charades sessionId="one" seats={seats} gamingServices={{music}}/>);
  await screen.findByRole('button',{name:'Finish turn'});await waitFor(()=>expect(music.start).toHaveBeenCalledTimes(1));
- expect(music.start).toHaveBeenCalledWith(expect.objectContaining({source:'test:music',order:'shuffle',repeat:'one',memory:'session'}),expect.objectContaining({sessionId:'one'}));
+ expect(music.start).toHaveBeenCalledWith(expect.objectContaining({source:'test:music',order:'shuffle',repeat:'one',memory:'session'}),expect.objectContaining({sessionId:'one',turnKey:'0'}));
  fetchSession.mockResolvedValue(view({...performing},2));
  await act(async()=>ws.handler({kind:'session-updated',sessionId:'one'}));
  await waitFor(()=>expect(fetchSession).toHaveBeenCalledTimes(2));expect(music.start).toHaveBeenCalledTimes(1);expect(stop).not.toHaveBeenCalled();

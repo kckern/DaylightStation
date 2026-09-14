@@ -104,4 +104,29 @@ describe('GuessingMusic lifecycle', () => {
     expect(second.src).not.toBe(selected);
     nextTurn.stop();
   });
+
+  it('resumes the same selected track for the same session turn', async () => {
+    const values = new Map();
+    const storage = {
+      getItem: key => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value),
+    };
+    const first = new AudioDouble();
+    new GuessingMusic({ audioFactory: () => first, resolveQueue: async () => threeTracks, random: () => 0, storage })
+      .start({ source: 'test:music', order: 'shuffle', repeat: 'one', memory: 'session' }, { sessionId: 'fhe', turnKey: '4' });
+    await flush();
+    const selected = first.src;
+
+    const resumed = new AudioDouble();
+    new GuessingMusic({ audioFactory: () => resumed, resolveQueue: async () => threeTracks, random: () => 0, storage })
+      .start({ source: 'test:music', order: 'shuffle', repeat: 'one', memory: 'session' }, { sessionId: 'fhe', turnKey: '4' });
+    await flush();
+    expect(resumed.src).toBe(selected);
+
+    const nextTurn = new AudioDouble();
+    new GuessingMusic({ audioFactory: () => nextTurn, resolveQueue: async () => threeTracks, random: () => 0, storage })
+      .start({ source: 'test:music', order: 'shuffle', repeat: 'one', memory: 'session' }, { sessionId: 'fhe', turnKey: '5' });
+    await flush();
+    expect(nextTurn.src).not.toBe(selected);
+  });
 });
