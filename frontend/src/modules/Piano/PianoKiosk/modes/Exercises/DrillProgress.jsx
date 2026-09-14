@@ -40,12 +40,12 @@ function Pill({ state, progress }) {
   );
 }
 
-function Cluster({ step, isCurrent, noteProgress }) {
+function Cluster({ step, isCurrent, noteProgress, labels }) {
   const required = step.requirement?.required_passes ?? 1;
   const banked = Math.min(step.pass_count ?? 0, required);
   const done = step.passed;
-  const label = step.display?.key ?? step.title ?? '';
-  const badge = HAND_BADGE[step.display?.hand] ?? null;
+  const label = labels ? (step.display?.key ?? step.title ?? '') : '';
+  const badge = labels ? (HAND_BADGE[step.display?.hand] ?? null) : null;
 
   return (
     <div className="drill-cluster" data-active={isCurrent || undefined} data-done={done || undefined}>
@@ -87,10 +87,12 @@ function Cluster({ step, isCurrent, noteProgress }) {
  * @param {import('react').ReactNode} fallback what to render when there are no
  *   pills to draw — the host's own standing instruction. See the note at the
  *   return below for why this cannot be `null`.
+ * @param {boolean} labels whether sets are named — the placard and the cluster
+ *   labels. The game gate turns them off: its run is pills and nothing else.
  */
 export default function DrillProgress({
   programId, stepId, userId, program: suppliedProgram = null,
-  noteProgress = 0, phase = 'playing', reloadKey = 0, fallback = null,
+  noteProgress = 0, phase = 'playing', reloadKey = 0, fallback = null, labels = true,
 }) {
   const [fetched, setFetched] = useState(null);
   // A host that supplies a projection OWNS it — including when it changes. The
@@ -147,7 +149,7 @@ export default function DrillProgress({
   // what the original attempt cost (a hook below an early return, 114 tests).
   if (!program || (program.steps?.length ?? 0) < 2) return fallback;
 
-  const placard = current?.display?.key ?? current?.title ?? null;
+  const placard = labels ? (current?.display?.key ?? current?.title ?? null) : null;
 
   return (
     <div className="drill-progress" data-phase={phase}>
@@ -172,6 +174,7 @@ export default function DrillProgress({
             step={step}
             isCurrent={step.id === current?.id}
             noteProgress={noteProgress}
+            labels={labels}
           />
         ))}
       </div>

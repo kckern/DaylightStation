@@ -307,7 +307,7 @@ const SCALE_DEFAULTS = Object.freeze({ mode: 'ionian', direction: 'up', span_oct
 
 const onScale = (allowed, value, fallback) => (allowed.includes(value) ? value : fallback);
 
-const scaleInstanceId = (root, spec = {}) => {
+export const scaleInstanceId = (root, spec = {}) => {
   const mode = onScale(SCALE_MODES, spec.mode, SCALE_DEFAULTS.mode);
   const direction = onScale(SCALE_DIRECTIONS, spec.direction, SCALE_DEFAULTS.direction);
   const span = onScale(SCALE_SPANS, Math.floor(Number(spec.span_octaves)), SCALE_DEFAULTS.span_octaves);
@@ -324,7 +324,7 @@ const scaleInstanceId = (root, spec = {}) => {
 const SEED_ATTEMPTS = 3;
 
 /** The roots a level names, filtered to the strings the bank could address. */
-const rootsOf = (spec) => (Array.isArray(spec?.roots) ? spec.roots : []).filter((r) => typeof r === 'string' && r);
+export const rootsOf = (spec) => (Array.isArray(spec?.roots) ? spec.roots : []).filter((r) => typeof r === 'string' && r);
 
 async function loadInstance(instanceId) {
   const res = await pianoLearningApi.instance(instanceId);
