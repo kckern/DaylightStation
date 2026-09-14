@@ -367,7 +367,7 @@ Before staging, omit unchanged files from the `git add` command so this commit c
 - Consumes: the `charades:fhe` rules artifact and the queue referenced by its existing `guessing_music.source`.
 - Produces: `guessing_music: { source: <existing authored value>, volume: 0.18, order: shuffle, repeat: one, memory: session }`; live projection matches all five fields; documentation describes same-track repeat and same-turn resume.
 
-- [ ] **Step 1: Back up and edit the mounted FHE rules artifact**
+- [x] **Step 1: Back up and edit the mounted FHE rules artifact**
 
 Copy the current external file into the gitignored evidence directory before editing:
 
@@ -401,7 +401,7 @@ NODE
 
 The source appears here because this is the instance-owned YAML value already present in the artifact. Do not copy it into JavaScript, generic defaults, or reference documentation.
 
-- [ ] **Step 2: Update the live projection and effective-volume assertions**
+- [x] **Step 2: Update the live projection and effective-volume assertions**
 
 Replace the instance-specific source equality with a scheme assertion and check the reusable settings explicitly:
 
@@ -417,7 +417,7 @@ expect(definition.guessing_music).toMatchObject({
 
 For each observed guessing Audio element, assert `audio.volume` is `0.18 * effectiveMaster`. The living-room master is fixed at `1`, so the live expectation is `0.18`. Keep the separate sound-cue assertion at `0.4`; the requested reduction applies only to guessing music.
 
-- [ ] **Step 3: Correct the Party Games reference contract**
+- [x] **Step 3: Correct the Party Games reference contract**
 
 Replace the current paragraph that says `repeat: after-cycle` advances to a new track on media end. Document these two supported policies precisely:
 
@@ -430,7 +430,7 @@ change its music. Volume is a 0..1 definition value multiplied by the screen
 master volume.
 ```
 
-- [ ] **Step 4: Validate the authored catalog and focused tests**
+- [x] **Step 4: Validate the authored catalog and focused tests**
 
 Run:
 
@@ -455,7 +455,7 @@ BASE_URL="${DAYLIGHT_BASE_URL:?export the target HTTPS origin}" npx playwright t
 
 Expected: all commands exit 0. The live flow proves wheel geometry, remote rewind, confirmation cancel, confirmed leave and same-session reopen, stable per-turn looped track, effective volume `0.18`, no music after reveal, and all 18 turns completing once.
 
-- [ ] **Step 6: Commit tracked documentation and runtime assertions**
+- [x] **Step 6: Commit tracked documentation and runtime assertions**
 
 ```bash
 git add tests/live/flow/gaming/fhe-charades.runtime.test.mjs docs/reference/gaming/party-games.md docs/_wip/plans/2026-09-13-charades-recovery-music-selector-remediation.md

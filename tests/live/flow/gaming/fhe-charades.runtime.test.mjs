@@ -136,7 +136,13 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   const initial = await read();
   const definition = initial.definition;
   expect(definition).toMatchObject({rounds:3,timer_ms:60_000,clues_per_turn:1,competition:false});
-  expect(definition.guessing_music).toEqual({source:'plex:535255',volume:0.3,order:'shuffle',repeat:'one',memory:'session'});
+  expect(definition.guessing_music.source).toMatch(/^plex:/);
+  expect(definition.guessing_music).toMatchObject({
+    volume: 0.18,
+    order: 'shuffle',
+    repeat: 'one',
+    memory: 'session',
+  });
   expect(definition.sound_cues).toEqual({pack:'charades',volume:0.4,performer_selected:'performer-selected',clue_revealed:'clue-revealed',acting_started:'acting-started',time_up:'time-up',turn_finished:'turn-finished',handoff:'handoff',game_finished:'game-finished'});
   expect(definition.launch).toEqual({autostart:true,participants:seatIds});
   expect(definition.clue_filter).toEqual({categories:['animals','everyday-actions'],levels:['easy']});
@@ -151,7 +157,8 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   expect(mediaUrls.length).toBeGreaterThan(0);
   const musicState = () => page.evaluate(urls => (window.__fheAudioElements || [])
     .filter(a => urls.some(url => a.src === new URL(url, location.origin).href))
-    .map(a => ({src:a.src,paused:a.paused,time:a.currentTime,ready:a.readyState})), mediaUrls);
+    .map(a => ({src:a.src,paused:a.paused,time:a.currentTime,ready:a.readyState,volume:a.volume})), mediaUrls);
+  const effectiveMaster = 1;
   const turns = [];
   const imageIds = [];
   const textIds = [];
@@ -408,6 +415,9 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   expect(imageIds.filter(id => textIds.includes(id))).toEqual([]);
   expect(heardTracks).toHaveLength(18);
   expect(new Set(heardTracks).size).toBe(18);
+  const observedGuessingAudio = await musicState();
+  expect(observedGuessingAudio.length).toBeGreaterThan(0);
+  for (const audio of observedGuessingAudio) expect(audio.volume).toBeCloseTo(0.18 * effectiveMaster);
   await expect(page.getByTestId('results')).toBeVisible();
   const heardCues = await page.evaluate(() => (window.__fheAudioElements || [])
     .map(audio => new URL(audio.src || '', location.origin).pathname)
