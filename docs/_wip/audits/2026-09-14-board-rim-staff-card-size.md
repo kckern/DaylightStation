@@ -10,6 +10,26 @@ headlessly on the 1280×800 design canvas. Touches no kiosk, learner or API.
 node tests/_infrastructure/harnesses/piano-board-rim/run.mjs [outDir]
 ```
 
+## Outcome (2026-09-14)
+
+Option 1 shipped as a first-class kiosk capability rather than a game mode: one
+full-screen toggle (header, floating corner, or a board game's rail foot — never
+two at once), remembered per device. Board games opt in to a 3rem keyboard;
+Checkers raises its rim to 5rem and Connect Four lifts its ceiling while it is
+on. Connect Four's column rail moved inside the board slot so it stays aligned
+when the board goes height-bound (0px drift, measured). Chess's rim was also
+inset by the board frame border, which had walked cards up to 4px off their
+squares (now 1.4px, the card gap). Scenario `FS-kiosk` in the harness renders
+the real provider:
+
+| Game | Normal | Full screen |
+|---|---|---|
+| Chess | 8.3 / 7.4 px | 9.3 / 8.3 px |
+| Checkers | 7.2 / 7.3 px | 9.8 / 8.8 px |
+| Connect Four | 8.0 px | 10.8 px |
+
+Option 2 (range-cropped cards) is not built; it stacks with this.
+
 The metric is **line spacing**: rendered px between two staff lines. On the
 tablet one CSS px is roughly 0.18 mm, so 8px ≈ 1.4 mm. Ordinary printed music is
 about 1.75 mm (≈10px); beginner editions are larger.

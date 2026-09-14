@@ -312,6 +312,18 @@
 // MIDI OUT link feedback banner (PianoLinkBanner). Full-width strip under the
 // header so a dropped link — and its recovery — can't be missed while the player
 // is changing instrument/tone/volume. Amber = down (changes held), green = back.
+// Kiosk full screen: the header is gone and its toggle holds the corner, so the
+// way back is always one tap. Wears the header's round gear button so it reads as
+// the same control that was just pressed; a little dimmed, because it sits over
+// whatever the screen is showing.
+.piano-fullscreen-toggle--floating {
+  position: absolute;
+  top: var(--sp-2, 0.5rem);
+  right: var(--sp-2, 0.5rem);
+  z-index: 30;
+  opacity: 0.75;
+}
+
 .piano-linkbanner {
   display: flex;
   align-items: center;

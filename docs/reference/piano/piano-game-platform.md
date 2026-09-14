@@ -121,6 +121,31 @@ All three games use the frame. Chess also now uses `InstrumentBoardStage`; its
 board measures the stage's primary size container, while the rank-axis
 compensation remains game-owned.
 
+Connect Four's column rail sits inside the board slot with the board rather than
+in the stage's `topRail`. The slot is the size container, so the rail and the
+board size from one width solved against the slot's height as well as its width,
+and a card stays over its column whichever of the two binds.
+
+### Kiosk full screen
+
+The kiosk's full-screen toggle (see the [piano README](./README.md)) reaches a
+game through its host. While it is on, the host carries a full-screen state a
+game can style against, and a game that opts in to a compact instrument has its
+keyboard dock drop to a 3rem strip — still above the tap floor, because on
+Checkers and Connect Four those keys take a finger. `BoardGameFrame` opts in, and
+draws the toggle beside the settings gear in the rail foot, which withdraws the
+kiosk's own copy. Games whose keyboard is the playfield do not opt in.
+
+Each board spends the room its own way. Measured on the 1280×800 canvas with
+`tests/_infrastructure/harnesses/piano-board-rim` (line spacing is the distance
+between two staff lines on a rim card):
+
+| Game | Normal → full screen | What moves |
+|---|---|---|
+| Chess | files 8.4 → 9.4px, ranks 7.5 → 8.4px | nothing extra — the board is height-bound and grows by itself |
+| Checkers | files 7.2 → 9.8px, ranks 7.3 → 8.8px | the rim thickness, 3.6rem → 5rem; it pins one side of every card |
+| Connect Four | 8.0 → 10.8px | the board ceiling is lifted |
+
 ### Chess frontend boundaries
 
 `PianoChessGame.jsx` is the presentation composition root, not the owner of every chess use case.

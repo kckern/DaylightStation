@@ -80,6 +80,8 @@ const SCENARIOS = [
   // The per-game token changes on their own, with today's header and keyboard.
   { id: 'J-today-ck-rim', label: 'Today + checkers rim 5rem', header: 59, ckRail: '5rem' },
   { id: 'K-today-no-ceiling', label: 'Today + board ceiling lifted', header: 59, boardMax: '100rem' },
+  // The shipped capability, through the real provider and the real host classes.
+  { id: 'FS-kiosk', label: 'Kiosk full screen', header: 59, fullscreen: '1' },
 ];
 const GAMES = ['chess', 'checkers', 'connect-four'];
 
@@ -92,7 +94,7 @@ const rows = [];
 for (const game of GAMES) {
   for (const scenario of SCENARIOS) {
     const params = new URLSearchParams({ game, header: String(scenario.header) });
-    for (const key of ['kb', 'rail', 'boardMax', 'railTrack', 'ckRail']) if (scenario[key]) params.set(key, scenario[key]);
+    for (const key of ['kb', 'rail', 'boardMax', 'railTrack', 'ckRail', 'fullscreen']) if (scenario[key]) params.set(key, scenario[key]);
     await page.goto(`${pathToFileURL(resolve(OUT, 'index.html'))}?${params}`);
     await page.waitForSelector('.chess-staff-label .action-staff__notation-svg', { timeout: 10000 });
     await page.waitForTimeout(150);
@@ -113,6 +115,18 @@ for (const game of GAMES) {
       const rails = [...document.querySelectorAll('.instrument-board-stage__rail')].map(box);
       const board = box(boardEl);
       const clipped = cards.some((c) => c.bottom > 801 || c.right > 1281 || c.x < -1 || c.y < -1);
+      // How far the worst file card sits off the centre of the column it names.
+      const fileCards = cards.filter((c) => c.axis === 'file');
+      const firstRow = [...boardEl.children].slice(0, fileCards.length).map(box);
+      const drift = fileCards.length && firstRow.length === fileCards.length
+        ? +Math.max(...fileCards.map((c, i) => Math.abs((c.x + c.w / 2) - (firstRow[i].x + firstRow[i].w / 2)))).toFixed(1)
+        : null;
+      // And the worst rank card off the centre of the row it names (first column).
+      const rankCards = cards.filter((c) => c.axis === 'rank');
+      const firstColumn = [...boardEl.children].filter((_, i) => i % 8 === 0).slice(0, rankCards.length).map(box);
+      const rankDrift = rankCards.length && firstColumn.length === rankCards.length && boardEl.children.length === 64
+        ? +Math.max(...rankCards.map((c, i) => Math.abs((c.y + c.h / 2) - (firstColumn[i].y + firstColumn[i].h / 2)))).toFixed(1)
+        : null;
       return {
         file: summarise('file'),
         rank: summarise('rank'),
@@ -122,6 +136,8 @@ for (const game of GAMES) {
         kbH: kbEl && getComputedStyle(kbEl).display !== 'none' ? +box(kbEl).h.toFixed(1) : 0,
         overlapsKeyboard: kbEl ? board.bottom > box(kbEl).y + 1 && getComputedStyle(kbEl).display !== 'none' : false,
         clipped,
+        drift,
+        rankDrift,
       };
     });
     await page.screenshot({ path: resolve(OUT, `${game}-${scenario.id}.png`) });
@@ -140,7 +156,12 @@ writeFileSync(resolve(OUT, 'results.json'), JSON.stringify(rows, null, 2));
 const fmt = (a) => (a ? `${a.w}×${a.h} (${a.space}px)` : '—');
 console.log('game          scenario          board        rail   kb    file card (space)     rank card (space)     flags');
 for (const r of rows) {
-  const flags = [r.overlapsKeyboard && 'OVERLAPS-KB', r.clipped && 'CLIPPED'].filter(Boolean).join(' ');
+  const flags = [
+    r.overlapsKeyboard && 'OVERLAPS-KB',
+    r.clipped && 'CLIPPED',
+    r.drift != null && `drift ${r.drift}px`,
+    r.rankDrift != null && `rank drift ${r.rankDrift}px`,
+  ].filter(Boolean).join(' ');
   console.log(`${r.game.padEnd(13)} ${r.scenario.padEnd(17)} ${`${r.board.w}×${r.board.h}`.padEnd(12)} ${String(r.railW).padEnd(6)} ${String(r.kbH).padEnd(5)} ${fmt(r.file).padEnd(21)} ${fmt(r.rank).padEnd(21)} ${flags}`);
 }
 if (errors.length) console.log('\npage errors:', [...new Set(errors)].join('\n'));

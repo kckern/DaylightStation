@@ -2,8 +2,51 @@ import { fireEvent, render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import BoardGameFrame from './BoardGameFrame.jsx';
 import GameRail from '../chrome/GameRail.jsx';
+import { PianoFullscreenProvider } from '../../PianoKiosk/PianoFullscreenContext.jsx';
+
+const fullscreenStore = (on) => {
+  const data = on ? { 'piano.fullscreen': 'true' } : {};
+  return {
+    getItem: (key) => (key in data ? data[key] : null),
+    setItem: (key, value) => { data[key] = String(value); },
+    removeItem: (key) => { delete data[key]; },
+  };
+};
 
 describe('BoardGameFrame', () => {
+  it('hosts the kiosk full-screen toggle beside the settings gear', () => {
+    const { container, getByRole, getByLabelText } = render(
+      <PianoFullscreenProvider storage={fullscreenStore(false)}>
+        <BoardGameFrame
+          gameId="test"
+          primary={<div>board</div>}
+          rightRail={{ render: ({ settingsTrigger }) => <GameRail foot={settingsTrigger}>right</GameRail> }}
+          settings={{ rail: 'right', open: false, onOpen: vi.fn(), content: <div>settings</div> }}
+        />
+      </PianoFullscreenProvider>,
+    );
+    const toggle = getByRole('button', { name: 'Full screen' });
+    const cluster = container.querySelector('.pg-rail__foot .pg-rail__foot-actions');
+    expect(cluster.contains(toggle)).toBe(true);
+    expect(cluster.contains(getByLabelText('Settings'))).toBe(true);
+    expect(container.querySelector('.piano-game-host--fullscreen')).toBeNull();
+
+    fireEvent.click(toggle);
+    expect(container.querySelector('.piano-game-host.piano-game-host--fullscreen.piano-game-host--compact-instrument')).toBeTruthy();
+  });
+
+  it('draws no toggle outside the kiosk', () => {
+    const { queryByRole } = render(
+      <BoardGameFrame
+        gameId="test"
+        primary={<div>board</div>}
+        rightRail={{ render: ({ settingsTrigger }) => <GameRail foot={settingsTrigger}>right</GameRail> }}
+        settings={{ rail: 'right', open: false, onOpen: vi.fn(), content: <div>settings</div> }}
+      />,
+    );
+    expect(queryByRole('button', { name: 'Full screen' })).toBeNull();
+  });
+
   it('keeps semantic rails and injects settings into the selected foot', () => {
     const onOpen = vi.fn();
     const { container, getByLabelText } = render(

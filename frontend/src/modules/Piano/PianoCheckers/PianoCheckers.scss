@@ -72,6 +72,15 @@
   --ck-crown-shadow: #000;
 }
 
+/* Kiosk full screen. The board gains the header and most of the keyboard, and
+   the rim takes its share of that — the rim thickness is the one number that
+   has to move, because it pins one side of every staff card: at 3.6rem the
+   cards stayed 58px while the board grew from 540px to 700px around them.
+   Measured with tests/_infrastructure/harnesses/piano-board-rim. */
+.piano-checkers.piano-game-host--fullscreen {
+  --ck-rank-rail: 5rem;
+}
+
 .piano-checkers .instrument-board-stage {
   flex: 1;
   height: auto;

@@ -17,6 +17,16 @@
   height: var(--pg-keyboard-h);
 }
 
+/* Kiosk full screen, for a game that opted in: the keyboard gives most of its
+   height back to the board. Selected on the keyboard itself, one class deeper
+   than any game's own keyboard rule (chess sizes its keys in cq units), so the
+   compact height wins without every game having to know about it. 3rem stays
+   above the `--pg-tap` floor, because on Checkers and Connect Four these keys
+   still take a finger. */
+.piano-game-host--compact-instrument .piano-game-host__instrument .piano-keyboard {
+  height: var(--pg-keyboard-compact-h, 3rem);
+}
+
 .piano-game-host__overlays {
   position: absolute;
   inset: 0;
