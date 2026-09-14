@@ -154,6 +154,17 @@ describe('Activity Party rules', () => {
     expect(activityPartyRuleModule.handleCommand(state, { type: 'timer.expire' }, casualDefinition, { actorId: 'host', logicalTime: 60_100 })).toMatchObject({ error: { code: 'illegal_command' } });
   });
 
+  it('lets the host rewind an accidentally started clue without losing the turn', () => {
+    let state = activityPartyRuleModule.createInitialState(casualDefinition, { seed: 7, seats: [{ id: 'a' }, { id: 'b' }] });
+    state = activityPartyRuleModule.handleCommand(state, { type: 'performer.ready' }, casualDefinition, { actorId: state.performer_id, logicalTime: 100 }).state;
+    state = activityPartyRuleModule.handleCommand(state, { type: 'challenge.start' }, casualDefinition, { actorId: 'host', logicalTime: 200 }).state;
+    const rewound = activityPartyRuleModule.handleCommand(state, { type: 'challenge.rewind' }, casualDefinition, { actorId: 'host', logicalTime: 300 });
+    expect(rewound.state).toMatchObject({ phase: 'challenge-ready', deadline: null, challenge_index: 0, remaining_ms: 60_000 });
+    expect(rewound.events).toEqual([{ type: 'challenge.rewound' }]);
+    expect(activityPartyRuleModule.handleCommand(state, { type: 'challenge.rewind' }, casualDefinition, { actorId: 'a', logicalTime: 300 }))
+      .toMatchObject({ error: { code: 'authorization_denied' } });
+  });
+
   it('pauses the remaining per-turn budget while reading additional clues', () => {
     const multiClue = { ...casualDefinition, rounds: 1, clues_per_turn: 2, presentation: { image_participants: [] } };
     let state = activityPartyRuleModule.createInitialState(multiClue, { seed: 5, seats: [{ id: 'c' }, { id: 'd' }] });
@@ -184,6 +195,7 @@ describe('Activity Party rules', () => {
     expect(activityPartyRuleModule.validateDefinition({ ...casualDefinition, turn_selection: 'random' })).toMatchObject({ valid: false });
     expect(activityPartyRuleModule.validateDefinition({ ...casualDefinition, clues_per_turn: 0 })).toMatchObject({ valid: false });
     expect(activityPartyRuleModule.validateDefinition({ ...casualDefinition, guessing_music: { source: '', volume: 2 } })).toMatchObject({ valid: false });
+    expect(activityPartyRuleModule.validateDefinition({ ...casualDefinition, guessing_music: { source: 'plex:music', volume: 0.3, order: 'shuffle', repeat: 'sometimes', memory: 'session' } })).toMatchObject({ valid: false });
     expect(() => activityPartyRuleModule.createInitialState({
       ...casualDefinition,
       challenges: casualDefinition.challenges.filter((challenge) => !challenge.decoder?.image),

@@ -72,6 +72,7 @@ export class GuessingMusic {
     if (!config?.source) return () => {};
     const abort = new AbortController();
     const audio = this.audioFactory();
+    audio.loop = config.repeat === 'one';
     let cancelled = false;
     let tracks = [];
     let index = -1;
@@ -101,7 +102,7 @@ export class GuessingMusic {
     };
     const playNext = () => {
       if (cancelled || !tracks.length) return;
-      if (config.order === 'shuffle' && config.repeat === 'after-cycle') {
+      if (config.order === 'shuffle' && ['after-cycle', 'one'].includes(config.repeat)) {
         const { key, bag } = shuffleState || this.loadBag(config, sessionId, tracks);
         shuffleState = { key, bag };
         if (!bag.remaining.length) {
@@ -123,7 +124,14 @@ export class GuessingMusic {
       try { Promise.resolve(audio.play()).catch(error => { if (!cancelled) report(error); }); }
       catch (error) { report(error); }
     };
-    const ended = () => { failures = 0; playNext(); };
+    const ended = () => {
+      failures = 0;
+      if (config.repeat === 'one') {
+        audio.currentTime = 0;
+        try { Promise.resolve(audio.play()).catch(error => { if (!cancelled) report(error); }); }
+        catch (error) { report(error); }
+      } else playNext();
+    };
     const failed = () => {
       if (cancelled) return;
       failures += 1;

@@ -62,7 +62,7 @@ function CharadesCountdown({ deadline, durationMs, onComplete }) {
   );
 }
 
-export default function Charades({ seats = [], sessionId, onComplete, gamingServices }) {
+export default function Charades({ seats = [], sessionId, onComplete, gamingServices, registerBackAction }) {
   const teams = seats;
   // The wheel selects seats, but portraits belong to the people inside them.
   const wheelMembers = useMemo(() => seats.map(seat => ({
@@ -157,6 +157,15 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
   const performerMember = wheelMembers.find(member => member.id === state?.performer_id)
     || { id: state?.performer_id, name: performerName, avatar: null };
   const prompt = state?.challenge?.prompt || '';
+  const rewind = useCallback(() => {
+    if (state?.phase !== 'performing' || inFlight.current) return false;
+    command({ type: 'challenge.rewind' });
+    return true;
+  }, [command, state?.phase]);
+  useEffect(() => {
+    if (state?.phase !== 'performing') return undefined;
+    return registerBackAction?.(rewind);
+  }, [registerBackAction, rewind, state?.phase]);
 
 
   if (!state || !definition) return error ? <div className="party-games__error" role="alert">{error}<GameButton onClick={retry}>Retry</GameButton></div> : <TitleCard title="Charades" subtitle="Choosing a secret…" />;

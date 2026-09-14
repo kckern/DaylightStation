@@ -17,7 +17,7 @@ vi.mock('./PartyGamesExperience.jsx',()=>({default:({onComplete,sessionId})=><bu
 const config={household_members:[{id:'a',name:'Alice'},{id:'b',name:'Bob'}],team_presets:[]};
 const sets=[{id:'charades:family',definitionId:'charades:family',game:'charades',setId:'family',presenter_id:'charades-stage',setup:'individuals',setupProfile:{kind:'individuals'},competition:false,valid:true}];
 afterEach(()=>vi.restoreAllMocks());
-beforeEach(()=>{window.history.replaceState({},'','/screens/living-room/fhe'); fetchBoot.mockReset().mockResolvedValue({config,sets});createSession.mockReset().mockResolvedValue({header:{session_id:'session-one'}});});
+beforeEach(()=>{window.localStorage.clear();window.history.replaceState({},'','/screens/living-room/fhe'); fetchBoot.mockReset().mockResolvedValue({config,sets});createSession.mockReset().mockResolvedValue({header:{session_id:'session-one'}});});
 it('propagates AppContainer definition into casual setup and creates only one session in StrictMode', async()=>{
  render(<React.StrictMode><AppContainer open={{app:'party-games/charades:family'}} clear={()=>{}}/></React.StrictMode>);
  const start=await screen.findByRole('button',{name:'Start with 2 players'});
@@ -43,6 +43,28 @@ it('attaches durable session on refresh without creating another', async()=>{
  fetchBoot.mockResolvedValue({config,sets,attachedSession:{header:{session_id:'saved',experience:{id:'charades'},seats:[]},state:{competition:false}}});
  render(<PartyGamesApp appPath="charades:family"/>);
  await screen.findByRole('button',{name:'Complete saved'}); expect(createSession).not.toHaveBeenCalled(); expect(fetchBoot).toHaveBeenCalledWith({diagnosticSessionId:null,sessionId:'saved'});
+});
+
+it('reattaches the saved active preset after leaving and reopening from its menu item', async()=>{
+ window.localStorage.setItem('party-games:charades:family:active-session','saved');
+ fetchBoot.mockResolvedValue({config,sets,attachedSession:{header:{session_id:'saved',experience:{id:'charades'},seats:[],status:'active'},state:{competition:false}}});
+ render(<PartyGamesApp definitionId="charades:family"/>);
+ await screen.findByRole('button',{name:'Complete saved'});
+ expect(fetchBoot).toHaveBeenCalledWith(expect.objectContaining({sessionId:'saved'}));
+ expect(createSession).not.toHaveBeenCalled();
+});
+
+it('requires confirmation before Back leaves an active session', async()=>{
+ const exit=vi.fn();render(<PartyGamesApp definitionId="charades:family" dismiss={exit}/>);
+ fireEvent.click(await screen.findByRole('button',{name:'Start with 2 players'}));
+ await screen.findByRole('button',{name:'Complete session-one'});
+ fireEvent.keyDown(window,{key:'Escape'});
+ const dialog=await screen.findByRole('dialog',{name:'Leave game?'});
+ expect(exit).not.toHaveBeenCalled();expect(screen.getByRole('button',{name:'Keep playing'})).toHaveFocus();
+ fireEvent.keyDown(window,{key:'Enter'});expect(dialog).not.toBeInTheDocument();expect(exit).not.toHaveBeenCalled();
+ fireEvent.keyDown(window,{key:'Escape'});fireEvent.keyDown(window,{key:'ArrowRight'});fireEvent.keyDown(window,{key:'Enter'});
+ expect(exit).toHaveBeenCalledTimes(1);
+ expect(window.localStorage.getItem('party-games:charades:family:active-session')).toBe('session-one');
 });
 
 it('rebuilds the FHE menu when exiting a session reloaded without its original menu stack',async()=>{

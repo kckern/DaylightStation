@@ -83,4 +83,25 @@ describe('GuessingMusic lifecycle', () => {
     expect(new Set(heard.slice(0, 3)).size).toBe(3);
     expect(heard[3]).not.toBe(heard[2]);
   });
+
+  it('loops one selected track for the entire turn while rotating tracks between turns', async () => {
+    const values = new Map();
+    const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
+    const first = new AudioDouble();
+    const service = new GuessingMusic({ audioFactory: () => first, resolveQueue: async () => threeTracks, random: () => 0, storage });
+    service.start({source:'plex:535255', order:'shuffle', repeat:'one', memory:'session'}, {sessionId:'fhe-session'});
+    await flush();
+    const selected = first.src;
+    expect(first.loop).toBe(true);
+    first.dispatchEvent(new Event('ended')); await flush();
+    expect(first.src).toBe(selected);
+    service.stop();
+
+    const second = new AudioDouble();
+    const nextTurn = new GuessingMusic({ audioFactory: () => second, resolveQueue: async () => threeTracks, random: () => 0, storage });
+    nextTurn.start({source:'plex:535255', order:'shuffle', repeat:'one', memory:'session'}, {sessionId:'fhe-session'});
+    await flush();
+    expect(second.src).not.toBe(selected);
+    nextTurn.stop();
+  });
 });

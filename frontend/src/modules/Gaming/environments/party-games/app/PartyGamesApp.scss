@@ -74,6 +74,21 @@
     strong { color: var(--gp-danger); font: 2.5rem/1 var(--gp-font-display); text-transform: uppercase; }
     > div { display: flex; gap: 0.75rem; }
   }
+  &__confirm-exit {
+    position: absolute;
+    inset: 0;
+    z-index: 60;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 1.25rem;
+    padding: 2rem;
+    background: var(--gp-overlay);
+    color: var(--gp-paper);
+    text-align: center;
+    h2 { margin: 0; font: 2.5rem/1 var(--gp-font-display); text-transform: uppercase; }
+    > div { display: flex; gap: 0.75rem; }
+  }
   &__ws-warn {
     position: absolute;
     z-index: 20;

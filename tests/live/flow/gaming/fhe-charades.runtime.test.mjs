@@ -112,7 +112,7 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   const initial = await read();
   const definition = initial.definition;
   expect(definition).toMatchObject({rounds:3,timer_ms:60_000,clues_per_turn:1,competition:false});
-  expect(definition.guessing_music).toEqual({source:'plex:535255',volume:0.3,order:'shuffle',repeat:'after-cycle',memory:'session'});
+  expect(definition.guessing_music).toEqual({source:'plex:535255',volume:0.3,order:'shuffle',repeat:'one',memory:'session'});
   expect(definition.sound_cues).toEqual({pack:'charades',volume:0.4,performer_selected:'performer-selected',clue_revealed:'clue-revealed',acting_started:'acting-started',time_up:'time-up',turn_finished:'turn-finished',handoff:'handoff',game_finished:'game-finished'});
   expect(definition.launch).toEqual({autostart:true,participants:seatIds});
   expect(definition.clue_filter).toEqual({categories:['animals','everyday-actions'],levels:['easy']});
@@ -260,6 +260,18 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
     await focusRemote(/^(Go|Start acting)/i);
     await page.keyboard.down('Enter');
     await phase('performing');
+    if (turn === 0) {
+      await page.keyboard.up('Enter');
+      await page.keyboard.press('Escape');
+      await phase('challenge-ready');
+      const rewound = await read();
+      expect(rewound.state.challenge_index).toBe(turn);
+      expect(rewound.state.challenge.id).toBe(ready.state.challenge.id);
+      expect(rewound.state.deadline).toBeNull();
+      await focusRemote(/^(Go|Start acting)/i);
+      await page.keyboard.press('Enter');
+      await phase('performing');
+    }
     await expect(stage.getByRole('list', {name:'Charades rules'})).toContainText('No talkingNo spellingNo pointing');
     await expect(stage).not.toContainText('Act it out');
     await expect(stage.getByRole('button', {name:'Finish turn'}).locator('svg')).toBeVisible();
@@ -273,7 +285,19 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
     await phase('performing');
     await page.keyboard.up('Enter');
     await expect.poll(async () => (await musicState()).some(a => !a.paused && a.time > 0.1 && a.ready >= 2), {timeout:20_000}).toBe(true);
-    heardTracks.push((await musicState()).find(a => !a.paused)?.src);
+    const playingTrack = (await musicState()).find(a => !a.paused)?.src;
+    heardTracks.push(playingTrack);
+    if (turn === 0) {
+      const looped = await page.evaluate(url => {
+        const audio = (window.__fheAudioElements || []).find(candidate => candidate.src === url);
+        const loop = audio?.loop;
+        audio?.dispatchEvent(new Event('ended'));
+        return { loop, src: audio?.src };
+      }, playingTrack);
+      expect(looped).toEqual({ loop: true, src: playingTrack });
+      await page.waitForTimeout(100);
+      expect((await musicState()).find(a => !a.paused)?.src).toBe(playingTrack);
+    }
     await expectFits(stage);
     if (turn === 0) await page.screenshot({path:testInfo.outputPath('acting.png')});
     const started = await read();
