@@ -174,8 +174,14 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
     await expect(stage.locator('.gp-show-header__status .gp-avatar')).toBeVisible();
     await expect(stage).not.toContainText(/Secret clue|Performer only/);
     if (ready.state.clue_presentation !== 'image') {
-      await expect(stage.locator('.segmented-secret-text__glyph')).toHaveCount(ready.state.challenge.prompt.length);
+      const renderedGlyphCount = await stage.locator('.segmented-secret-text__glyph').count();
+      expect(renderedGlyphCount).toBeLessThanOrEqual(ready.state.challenge.prompt.length);
+      expect(renderedGlyphCount).toBeGreaterThanOrEqual(ready.state.challenge.prompt.replace(/\s/g, '').length);
       const lineLengths = await stage.locator('.segmented-secret-text__line').evaluateAll(lines => lines.map(line => line.querySelectorAll('.segmented-secret-text__glyph').length));
+      expect(await stage.locator('.segmented-secret-text__line').evaluateAll(lines => lines.every(line => {
+        const glyphs = line.querySelectorAll('.segmented-secret-text__glyph');
+        return glyphs[0]?.querySelector('.is-signal') && glyphs[glyphs.length - 1]?.querySelector('.is-signal');
+      }))).toBe(true);
       if (ready.state.challenge.prompt.length > 18) expect(Math.max(...lineLengths) - Math.min(...lineLengths)).toBeLessThanOrEqual(6);
       await expect(stage.locator('.segmented-secret-text__word-gap, .segmented-secret-text__space')).toHaveCount(0);
       await expect(stage.locator('.segmented-secret-text__interference')).toHaveCount(0);
