@@ -163,6 +163,7 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   const imageIds = [];
   const textIds = [];
   const heardTracks = [];
+  const observedGuessingVolumes = [];
 
   for (let turn = 0; turn < 18; turn++) {
     await phase('challenge-ready');
@@ -354,8 +355,11 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
     await phase('performing');
     await page.keyboard.up('Enter');
     await expect.poll(async () => (await musicState()).some(a => !a.paused && a.time > 0.1 && a.ready >= 2), {timeout:20_000}).toBe(true);
-    const playingTrack = (await musicState()).find(a => !a.paused)?.src;
+    const playingAudio = (await musicState()).find(a => !a.paused);
+    const playingTrack = playingAudio?.src;
     heardTracks.push(playingTrack);
+    observedGuessingVolumes.push(playingAudio?.volume);
+    expect(playingAudio?.volume).toBeCloseTo(0.18 * effectiveMaster);
     if (turn === 0) {
       const looped = await page.evaluate(url => {
         const audio = (window.__fheAudioElements || []).find(candidate => candidate.src === url);
@@ -415,9 +419,8 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
   expect(imageIds.filter(id => textIds.includes(id))).toEqual([]);
   expect(heardTracks).toHaveLength(18);
   expect(new Set(heardTracks).size).toBe(18);
-  const observedGuessingAudio = await musicState();
-  expect(observedGuessingAudio.length).toBeGreaterThan(0);
-  for (const audio of observedGuessingAudio) expect(audio.volume).toBeCloseTo(0.18 * effectiveMaster);
+  expect(observedGuessingVolumes).toHaveLength(18);
+  for (const volume of observedGuessingVolumes) expect(volume).toBeCloseTo(0.18 * effectiveMaster);
   await expect(page.getByTestId('results')).toBeVisible();
   const heardCues = await page.evaluate(() => (window.__fheAudioElements || [])
     .map(audio => new URL(audio.src || '', location.origin).pathname)
