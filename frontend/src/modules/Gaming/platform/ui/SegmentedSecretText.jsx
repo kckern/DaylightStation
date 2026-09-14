@@ -9,6 +9,15 @@ const SIGNAL_COLORS = Object.freeze(['var(--gp-segment-signal-1)', 'var(--gp-seg
 const MASK_COLORS = Object.freeze(['var(--gp-segment-mask-1)', 'var(--gp-segment-mask-2)', 'var(--gp-segment-mask-3)']);
 const TARGET_LINE_LENGTH = 18;
 
+function colorIndex(seed, glyphIndex, segmentName, paletteLength) {
+  let hash = 2166136261;
+  for (const character of `${seed}:${segmentName}`) {
+    hash ^= character.codePointAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return ((hash >>> 0) + glyphIndex) % paletteLength;
+}
+
 export function balanceSecretLines(text, targetLength = TARGET_LINE_LENGTH) {
   const value = String(text || '');
   const lineCount = Math.max(1, Math.ceil(value.length / targetLength));
@@ -35,7 +44,7 @@ export function balanceSecretLines(text, targetLength = TARGET_LINE_LENGTH) {
   return lines;
 }
 
-function Glyph({ character, index }) {
+function Glyph({ character, index, seed }) {
   const active = new Set(activeSegmentsFor(character));
   return (
     <svg className="segmented-secret-text__glyph" viewBox="0 0 50 100" aria-hidden="true">
@@ -44,7 +53,8 @@ function Glyph({ character, index }) {
         const palette = isSignal ? SIGNAL_COLORS : MASK_COLORS;
         return <polygon key={name} points={segmentPoints(SEGMENTS[name])}
           className={isSignal ? 'is-signal' : 'is-mask'}
-          style={{ '--segment-color': palette[(index * 3 + segmentIndex) % palette.length] }} />;
+          data-segment={name}
+          style={{ '--segment-color': palette[colorIndex(seed, index, `${isSignal ? 'signal' : 'mask'}:${name}:${segmentIndex}`, palette.length)] }} />;
       })}
     </svg>
   );
@@ -61,7 +71,7 @@ export default function SegmentedSecretText({ text, label = 'Secret clue', acces
           {[...line].map(character => {
             const index = glyphIndex;
             glyphIndex += 1;
-            return <Glyph key={index} character={character} index={index} />;
+            return <Glyph key={index} character={character} index={index} seed={value} />;
           })}
         </span>
       ))}

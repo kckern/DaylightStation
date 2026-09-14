@@ -86,7 +86,7 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
   const soundCues = definition?.sound_cues;
   const playLifecycleCue = useCallback((event, fallback = null) => {
     const cue = soundCues?.[event];
-    if (cue) audio?.play(cue, { pack: soundCues.pack });
+    if (cue) audio?.play(cue, { pack: soundCues.pack, volume: soundCues.volume });
     else if (state?.competition !== false && fallback) audio?.play(fallback);
   }, [audio, soundCues, state?.competition]);
   const apply = useCallback((result) => {
