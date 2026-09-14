@@ -50,9 +50,16 @@ export function resolveTranscodeCaps(opts = {}) {
 const CODEC_ADVERT = 'append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc&audioCodec=aac&protocol=dash)';
 
 /**
+ * Plex's audio-in-video limitation. `videoAudioCodec` is the scope that reaches an
+ * audio track inside a video session — `audioCodec` is read by nothing there, and
+ * Plex went on copying the track (verified against the decision endpoint).
+ */
+const AUDIO_DOWNMIX_LIMITATION = 'add-limitation(scope=videoAudioCodec&scopeName=aac&type=upperBound&name=audio.channels&value=2)';
+
+/**
  * Build the X-Plex-Client-Profile-Extra value: the existing codec advertisement
- * plus an optional frame-rate upper-bound limitation, '+'-joined.
- * @param {{maxFrameRate?:number}} opts
+ * plus optional limitations, '+'-joined.
+ * @param {{maxFrameRate?:number, downmixAudio?:boolean}} opts
  */
 export function buildClientProfileExtra(opts = {}) {
   const clauses = [CODEC_ADVERT];
@@ -60,7 +67,34 @@ export function buildClientProfileExtra(opts = {}) {
   if (Number.isFinite(fps) && fps > 0) {
     clauses.push(`add-limitation(scope=videoCodec&scopeName=*&type=upperBound&name=video.frameRate&value=${fps})`);
   }
+  if (opts.downmixAudio) clauses.push(AUDIO_DOWNMIX_LIMITATION);
   return clauses.join('+');
+}
+
+/**
+ * True when the source's audio is multichannel AAC with no standard channel
+ * layout — `channel_configuration 0`, the layout carried in a program config
+ * element instead of a channel code. Chromium's MP4 parser refuses it, so a
+ * stream-COPY of that track fails on the first appended audio segment with
+ * `CHUNK_DEMUXER_ERROR_APPEND_FAILED: RunSegmentParserLoop: stream parsing
+ * failed` and the video never starts (2026-09-14, plex:697368 — AAC-LC, 6
+ * channels, ffprobe `channel_layout=unknown`, Plex "Unknown (AAC 5.1)" with no
+ * `audioChannelLayout`). Plex reports the layout for every AAC track it can name,
+ * so its absence on a >2-channel track is the signal.
+ *
+ * Only that track is re-encoded (to stereo AAC, which is cheap); the video is
+ * still copied. Multichannel AAC with a named layout is left alone.
+ * @param {{Media?: Array}} metadata - the Plex item metadata
+ */
+export function needsAudioDownmix(metadata) {
+  const media = metadata?.Media?.[0];
+  const audio = (media?.Part ?? [])
+    .flatMap((part) => part?.Stream ?? [])
+    .find((stream) => Number(stream?.streamType) === 2 && (stream?.selected ?? true));
+  if (!audio) return false;
+  if (String(audio.codec ?? '').toLowerCase() !== 'aac') return false;
+  if (!(Number(audio.channels) > 2)) return false;
+  return !audio.audioChannelLayout;
 }
 
 /**
