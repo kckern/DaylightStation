@@ -324,6 +324,15 @@
   opacity: 0.75;
 }
 
+// The connection banner is the first thing under the corner once the header is
+// gone, and its Reconnect button sits at the right end — exactly where the
+// floating toggle lands. It covered the one button that matters when the piano
+// drops, so the banner keeps the corner clear: the toggle's width plus its inset
+// on both sides.
+.piano-app[data-fullscreen='true'] .piano-linkbanner {
+  padding-inline-end: calc(2.6rem + 2 * var(--sp-2, 0.5rem));
+}
+
 .piano-linkbanner {
   display: flex;
   align-items: center;
