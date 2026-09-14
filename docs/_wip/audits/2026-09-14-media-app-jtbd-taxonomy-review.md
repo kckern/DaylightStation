@@ -376,3 +376,12 @@ Each item can be accepted or rejected on its own.
 - **R48:** Tidy ownership. PLAY.6b becomes a PLACE.3 story; AUTO.1b is reassigned to the Routine Setter. Reword FIND's charter to "hosts PLAY verbs, owns none". Fill the missing steps in SK-1, BS-1, LB-3 and FX-1 (§6.17).
 - **R49:** Change PLACE.4's AC "Kitchen + Living Room" and the aim labels to use the device's own name for "this device" ("This device (Dad's phone)").
 - **R50:** First-use moment on a new device: name it, and explain the aim label once. Give a new household's empty start page a lead into browsing by kind.
+
+---
+
+## 11. Owner triage (2026-09-14)
+
+**Accepted (47):** R1–R4, R7–R11, R13–R50. Applied to the taxonomy; see its §6.
+
+**Rejected (3):** R5 (announce an aim reset), R6 (home aim for kiosks), R12 (far-screen undo timing). The taxonomy's §6 records what each rejection leaves open.
+
