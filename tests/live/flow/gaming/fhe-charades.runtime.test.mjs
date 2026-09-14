@@ -310,7 +310,7 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
     await phase('performing');
     await page.keyboard.up('Enter');
     if (turn === 0) {
-      await page.keyboard.press('Escape');
+      await page.keyboard.press('ArrowLeft');
       await phase('challenge-ready');
       const rewound = await read();
       expect(rewound.state.challenge_index).toBe(turn);
@@ -355,7 +355,7 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
       expect(reopened.state.performer_id).toBe(ready.state.performer_id);
       expect(reopened.state.challenge.id).toBe(ready.state.challenge.id);
       await focusRemote(/^(Go|Start acting)/i);
-      await page.keyboard.press('Enter');
+      await page.keyboard.press('ArrowRight');
       await phase('performing');
     }
     await expect(stage.getByRole('list', {name:'Charades rules'})).toContainText('No talkingNo spellingNo pointing');
@@ -400,7 +400,7 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
       await phase('challenge-complete', 70_000);
     } else {
       await focusRemote(/finish|stop timer|end turn/i);
-      await page.keyboard.press('Enter');
+      await page.keyboard.press('ArrowRight');
       await phase('challenge-complete');
     }
     await expect.poll(async () => (await musicState()).some(a => !a.paused)).toBe(false);
@@ -419,7 +419,7 @@ test('FHE Charades completes all eighteen remote-controlled casual turns', async
     await expect(stage).not.toContainText(/score committed|guessed it|not guessed|wins/i);
     await expect(stage.getByRole('button', {name:/Next clue|Next performer|Finish game/}).locator('svg')).toBeVisible();
     await focusRemote(/next|finish|complete/i);
-    await page.keyboard.press('Enter');
+    await page.keyboard.press('ArrowRight');
     console.log(`Verified turn ${turn + 1}/18: ${ready.state.performer_id}, ${imageTurn ? 'image' : 'text'}`);
   }
   for (let round = 0; round < 3; round++) expect(turns.slice(round * 6, round * 6 + 6).sort()).toEqual([...seatIds].sort());

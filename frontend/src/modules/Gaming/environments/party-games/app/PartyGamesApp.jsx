@@ -113,9 +113,14 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   const [confirmExit, setConfirmExit] = useState(false);
   const logger = useMemo(() => getLogger().child({ component: 'party-games' }), []);
   const backActionRef = useRef(null);
+  const forwardActionRef = useRef(null);
   const registerBackAction = useCallback((handler) => {
     backActionRef.current = handler;
     return () => { if (backActionRef.current === handler) backActionRef.current = null; };
+  }, []);
+  const registerForwardAction = useCallback((handler) => {
+    forwardActionRef.current = handler;
+    return () => { if (forwardActionRef.current === handler) forwardActionRef.current = null; };
   }, []);
   const requestExit = useCallback(() => {
     if (confirmExit) { logger.info('party-games.exit-cancelled', { sessionId: flow.sessionId }); setConfirmExit(false); return; }
@@ -126,7 +131,15 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     }
     exit();
   }, [confirmExit, exit, flow.phase, flow.sessionId, logger]);
-  useScopedRemoteControls(rootRef, { onEscape: requestExit });
+  const requestDirectionalBack = useCallback(() => {
+    if (flow.phase !== 'playing') return false;
+    requestExit(); return true;
+  }, [flow.phase, requestExit]);
+  const requestAdvance = useCallback(() => {
+    if (flow.phase !== 'playing' || confirmExit) return false;
+    return forwardActionRef.current?.() ?? false;
+  }, [confirmExit, flow.phase]);
+  useScopedRemoteControls(rootRef, { onEscape: requestExit, onLeft: requestDirectionalBack, onRight: requestAdvance });
   // Spec §9: WS disconnect badge — buzzer modes degrade to keyboard/inject.
   const { connected } = useWebSocketStatus();
 
@@ -252,6 +265,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
               buzzerBindings={flow.buzzerBindings}
               config={flow.config}
               registerBackAction={registerBackAction}
+              registerForwardAction={registerForwardAction}
               onComplete={onComplete}
             /></div>
             {flow.competition !== false && <div className="party-games__companion-rail"><HostQr sessionId={flow.sessionId} /></div>}

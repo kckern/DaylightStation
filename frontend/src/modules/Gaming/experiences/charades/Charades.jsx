@@ -62,7 +62,7 @@ function CharadesCountdown({ deadline, durationMs, onComplete }) {
   );
 }
 
-export default function Charades({ seats = [], sessionId, onComplete, gamingServices, registerBackAction }) {
+export default function Charades({ seats = [], sessionId, onComplete, gamingServices, registerBackAction, registerForwardAction }) {
   const teams = seats;
   // The wheel selects seats, but portraits belong to the people inside them.
   const wheelMembers = useMemo(() => seats.map(seat => ({
@@ -167,6 +167,21 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
     if (state?.phase !== 'performing') return undefined;
     return registerBackAction?.(rewind);
   }, [registerBackAction, rewind, state?.phase]);
+  const advance = useCallback(() => {
+    if (inFlight.current) return false;
+    const commandType = {
+      'challenge-ready': 'challenge.start',
+      performing: 'challenge.finish',
+      'challenge-complete': 'challenge.next',
+    }[state?.phase];
+    if (!commandType) return false;
+    command({ type: commandType });
+    return true;
+  }, [command, state?.phase]);
+  useEffect(() => {
+    if (!['challenge-ready', 'performing', 'challenge-complete'].includes(state?.phase)) return undefined;
+    return registerForwardAction?.(advance);
+  }, [advance, registerForwardAction, state?.phase]);
 
 
   if (!state || !definition) return error ? <div className="party-games__error" role="alert">{error}<GameButton onClick={retry}>Retry</GameButton></div> : <TitleCard title="Charades" subtitle="Choosing a secret…" />;

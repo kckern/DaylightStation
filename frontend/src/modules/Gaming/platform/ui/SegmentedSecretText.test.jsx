@@ -9,9 +9,9 @@ describe('SegmentedSecretText', () => {
     expect(screen.getByRole('img', { name: 'Secret clue: MOON WALK' })).toBeInTheDocument();
     const glyphs = [...container.querySelectorAll('.segmented-secret-text__glyph')];
     expect(glyphs).toHaveLength(9);
-    expect(glyphs.every(glyph => glyph.querySelectorAll('polygon').length === 16)).toBe(true);
+    expect(glyphs.every(glyph => glyph.querySelectorAll('polygon').length === 18)).toBe(true);
     expect(glyphs[4].querySelectorAll('polygon.is-signal')).toHaveLength(0);
-    expect(glyphs[4].querySelectorAll('polygon.is-mask')).toHaveLength(16);
+    expect(glyphs[4].querySelectorAll('polygon.is-mask')).toHaveLength(18);
     expect(container.querySelectorAll('.segmented-secret-text__space, .segmented-secret-text__word-gap')).toHaveLength(0);
   });
 
@@ -38,10 +38,12 @@ describe('SegmentedSecretText', () => {
     expect(container.querySelectorAll('.segmented-secret-text__glyph')).toHaveLength(20);
   });
 
-  it('uses a recognizable sixteen-segment alphabet', () => {
+  it('uses a recognizable segmented alphabet with an inward-pointing D bowl', () => {
     expect(activeSegmentsFor('A')).toEqual(expect.arrayContaining(['a1', 'a2', 'b', 'e', 'f', 'g1', 'g2']));
     expect(activeSegmentsFor('B')).toEqual(['a1', 'a2', 'b', 'c', 'd1', 'd2', 'e', 'f', 'g1', 'g2']);
-    expect(activeSegmentsFor('D')).toEqual(['a1', 'a2', 'd1', 'd2', 'e', 'f', 'i', 'k']);
+    expect(activeSegmentsFor('D')).toEqual(['a1', 'd1', 'e', 'f', 'n', 'o']);
+    expect(SEGMENTS.n).toEqual([25, 6, 44, 50]);
+    expect(SEGMENTS.o).toEqual([25, 94, 44, 50]);
     expect(activeSegmentsFor('D')).not.toEqual(activeSegmentsFor('O'));
     expect(activeSegmentsFor('K')).toEqual(['e', 'f', 'i', 'k']);
     expect(activeSegmentsFor('V')).toEqual(['h', 'i']);

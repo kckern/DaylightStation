@@ -3,12 +3,21 @@ import { useRef } from 'react';
 import { expect, it, vi } from 'vitest';
 import { useScopedRemoteControls } from './useScopedRemoteControls.js';
 function Controls({ action, exit }) { const ref=useRef(null); useScopedRemoteControls(ref,{onEscape:exit}); return <div ref={ref}><button onClick={action}>One</button><button onClick={action}>Two</button></div>; }
+function DirectionalControls({ back, forward }) { const ref=useRef(null); useScopedRemoteControls(ref,{onLeft:back,onRight:forward}); return <div ref={ref}><button>One</button><button>Two</button></div>; }
 it('owns native remote input and activates the focused button once per press', () => {
  const action=vi.fn(), exit=vi.fn(), outer=vi.fn(); window.addEventListener('keydown',outer);
  render(<Controls action={action} exit={exit}/>);
  fireEvent.keyDown(window,{key:'ArrowRight'}); expect(screen.getByText('Two')).toHaveFocus();
  fireEvent.keyDown(window,{key:'Enter'}); fireEvent.keyDown(window,{key:'Enter',repeat:true}); expect(action).toHaveBeenCalledTimes(1);
  fireEvent.keyDown(window,{key:'Escape'}); expect(exit).toHaveBeenCalledTimes(1); expect(outer).not.toHaveBeenCalled(); window.removeEventListener('keydown',outer);
+});
+
+it('maps left and right to game back and forward actions once per remote press', () => {
+ const back=vi.fn(()=>true),forward=vi.fn(()=>true);render(<DirectionalControls back={back} forward={forward}/>);
+ fireEvent.keyDown(window,{key:'ArrowLeft'});fireEvent.keyDown(window,{key:'ArrowLeft',repeat:true});
+ fireEvent.keyDown(window,{key:'ArrowRight'});fireEvent.keyDown(window,{key:'ArrowRight',repeat:true});
+ expect(back).toHaveBeenCalledTimes(1);expect(forward).toHaveBeenCalledTimes(1);
+ expect(screen.getByText('One')).toHaveFocus();
 });
 
 it('handles each real GamepadAdapter semantic action once despite its legacy synthetic key event',async()=>{
