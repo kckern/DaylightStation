@@ -145,6 +145,38 @@ describe('--write', () => {
     expect(fs.existsSync(path.join(data, DELETED, 'pianochess-archive'))).toBe(true);
   });
 
+  it('dedupes an id-less legacy game by its identity fields, not its filename, so it is never counted twice', async () => {
+    const record = game({
+      ended_at: '2026-08-25T10:00:00.000Z', move_count: 5,
+      opponent: { level: 0, name: 'Caterpie', id: 'pokemon:level-1' },
+    });
+    // Already in the current archive, under its real current-style name.
+    put(data, 'household/gaming/log/chess/2026-08-25/kid_level0_0s_5ply_win_checkmate_2026-08-25T10-00-00-000Z-real.yml', record);
+    // The identical game, no game_id on either copy, filed under a completely different legacy filename.
+    put(data, 'household/gaming/log/pianochess/2026-08-25/kid-2026-08-25T10-00-00-000Z.yml', record);
+
+    const report = await run({ data, write: true, now: NOW });
+    expect(report.consolidation.alreadyArchived).toBe(1);
+    const currentDay = tree(data).filter((file) => file.startsWith('household/gaming/log/chess/2026-08-25/'));
+    expect(currentDay).toHaveLength(1);
+    const ladder = read(data, 'users/kid/apps/chess/ladder.yml');
+    expect(ladder.results.filter((entry) => entry.at === '2026-08-25T10:00:00.000Z')).toHaveLength(1);
+  });
+
+  it('derives a ply count for a renamed legacy file that never recorded move_count, without rewriting its content', async () => {
+    const record = game({
+      game_id: 'chess-noply', ended_at: '2026-08-22T09:00:00.000Z', archived_at: '2026-08-22T09:00:01.000Z',
+      moves: [{ san: 'e4' }, { san: 'e5' }, { san: 'Nf3' }],
+    });
+    delete record.move_count;
+    put(data, 'household/gaming/log/pianochess/2026-08-22/kid-2026-08-22T09-00-01-000Z.yml', record);
+    await run({ data, write: true, now: NOW });
+    const files = tree(data).filter((file) => file.startsWith('household/gaming/log/chess/2026-08-22/'));
+    expect(files).toHaveLength(1);
+    expect(path.basename(files[0])).toMatch(/_3ply_/);
+    expect(read(data, files[0]).move_count).toBeUndefined();
+  });
+
   it('never overwrites an existing copy already in _deleteme, appending -1 to a taken destination', async () => {
     put(data, `${DELETED}/scorecards/kid/2026-08-23-1111.yml`, { already: 'here' });
     await run({ data, write: true, now: NOW });

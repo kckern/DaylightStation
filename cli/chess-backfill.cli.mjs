@@ -121,8 +121,24 @@ function ymlFilesByDay(root) {
   return files;
 }
 
-/** The identity a game is deduplicated by: its id, else its filename, plus when it started. */
-const archiveKey = (record, name) => `${record?.game_id || name}|${record?.started_at || ''}`;
+/**
+ * The identity a game is deduplicated by.
+ *
+ * `game_id` is authoritative when present. Older records carry none, and two
+ * copies of the same id-less game never share a filename — the legacy writer
+ * and the current one name files differently — so falling back to the
+ * filename let the same game load, and move, twice. The fields that *do*
+ * survive a rename are who played, when the game started and ended, and how
+ * many plies it ran; together they identify a game as well as an id would.
+ * Only when every one of those is also missing does the filename remain the
+ * last resort, so a truly bare record still dedupes against an exact re-run.
+ */
+const archiveKey = (record, name) => {
+  if (record?.game_id) return `id:${record.game_id}`;
+  const fields = [record?.user_id, record?.started_at, record?.ended_at, record?.move_count];
+  const allMissing = fields.every((value) => value === undefined || value === null || value === '');
+  return allMissing ? `name:${name}` : `key:${fields.map((value) => String(value ?? '')).join('|')}`;
+};
 
 /** Every archived game under these roots, each game once. */
 export function loadArchive(roots) {
@@ -163,7 +179,7 @@ export function consolidateArchive({ householdDir, deleteDir, write }) {
   const legacyRoot = path.join(householdDir, ...LEGACY_ARCHIVE_DIR.split('/'));
   const root = path.join(householdDir, ...CHESS_ARCHIVE_DIR.split('/'));
   const report = {
-    moved: 0, renamed: 0, alreadyArchived: 0, conflicts: [], retiredDir: null,
+    moved: 0, renamed: 0, alreadyArchived: 0, withoutGameId: 0, conflicts: [], retiredDir: null,
   };
   if (!fs.existsSync(legacyRoot)) return report;
   const currentKeys = new Set(
@@ -171,6 +187,7 @@ export function consolidateArchive({ householdDir, deleteDir, write }) {
   );
   for (const { day, name, file } of ymlFilesByDay(legacyRoot)) {
     const record = readYaml(file) || {};
+    if (!record?.game_id) report.withoutGameId += 1;
     const key = archiveKey(record, name);
     if (currentKeys.has(key)) {
       report.alreadyArchived += 1;
@@ -180,8 +197,11 @@ export function consolidateArchive({ householdDir, deleteDir, write }) {
       fs.renameSync(file, destination);
       continue;
     }
+    // Only the generated filename needs a ply count; the file's own content
+    // (and whether it ever recorded move_count) is never rewritten.
+    const namedRecord = { ...record, move_count: record.move_count ?? (Array.isArray(record.moves) ? record.moves.length : 0) };
     const target = isLegacyName(name)
-      ? `${buildChessArchiveFilename(record, record.user_id || 'guest', new Date(record.archived_at || record.ended_at || `${day}T12:00:00Z`))}.yml`
+      ? `${buildChessArchiveFilename(namedRecord, record.user_id || 'guest', new Date(record.archived_at || record.ended_at || `${day}T12:00:00Z`))}.yml`
       : name;
     const destination = path.join(root, day, target);
     if (fs.existsSync(destination)) {
@@ -307,7 +327,7 @@ export function renderReport(report) {
   const lines = [report.write ? 'Chess record backfill: WRITTEN' : 'Chess record backfill: DRY RUN (pass --write to apply)'];
   lines.push(`Archive: ${report.archive.games} games read`);
   const { consolidation } = report;
-  lines.push(`Old archive directory: ${consolidation.moved} files to move, ${consolidation.renamed} renamed from old names, ${consolidation.alreadyArchived} already archived, ${consolidation.conflicts.length} conflicts`);
+  lines.push(`Old archive directory: ${consolidation.moved} files to move, ${consolidation.renamed} renamed from old names, ${consolidation.alreadyArchived} already archived, ${consolidation.withoutGameId} without a game id, ${consolidation.conflicts.length} conflicts`);
   for (const conflict of consolidation.conflicts) lines.push(`  conflict, left in place: ${conflict}`);
   if (consolidation.retiredDir) lines.push(`  old directory moved to ${consolidation.retiredDir}`);
   for (const [userId, cards] of Object.entries(report.scorecards)) {
