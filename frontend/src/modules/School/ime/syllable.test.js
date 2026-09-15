@@ -24,21 +24,32 @@ describe('isViablePrefix', () => {
 });
 
 describe('isViablePrefix through a compound vowel and a compound final', () => {
-  // 왔 = ㅇ + ㅘ + ㅆ. The compound halves are intermediate states the automaton
-  // really passes through, and each one has to stay viable or the child is
-  // refused halfway through a jamo they are typing correctly.
-  it('accepts ㅗ on the way to ㅘ only once it has joined', () => {
-    expect(isViablePrefix({ cho: 'ㅇ', jung: 'ㅗ', jong: null }, '왔')).toBe(false);
-    expect(isViablePrefix({ cho: 'ㅇ', jung: 'ㅘ', jong: null }, '왔')).toBe(true);
+  // A compound is typed in halves, and each half is a real state the automaton
+  // passes through. Refusing a half refuses the only way into the compound.
+  it('accepts ㅗ on the way to ㅘ — 과 is ㄱ, ㅗ, then ㅏ', () => {
+    // Found live 2026-09-14: 고 was refused on the way to 과, so 과 could not be typed.
+    expect(isViablePrefix({ cho: 'ㄱ', jung: 'ㅗ', jong: null }, '과')).toBe(true);
+    expect(isViablePrefix({ cho: 'ㄱ', jung: 'ㅘ', jong: null }, '과')).toBe(true);
+    expect(isViablePrefix({ cho: 'ㅇ', jung: 'ㅗ', jong: null }, '왔')).toBe(true);
     expect(isViablePrefix({ cho: 'ㅇ', jung: 'ㅘ', jong: 'ㅆ' }, '왔')).toBe(true);
+    expect(isViablePrefix({ cho: 'ㅇ', jung: 'ㅜ', jong: null }, '원')).toBe(true);
+    expect(isViablePrefix({ cho: 'ㅇ', jung: 'ㅡ', jong: null }, '의')).toBe(true);
   });
 
-  // 닭 = ㄷ + ㅏ + ㄺ, and ㄺ is typed as ㄹ then ㄱ. The lone ㄹ is a real
-  // batchim of a real syllable (달), so it must be judged against the target
-  // rather than assumed wrong for not being the finished compound.
-  it('refuses the half-typed compound final, which is a defensible design call', () => {
-    expect(isViablePrefix({ cho: 'ㄷ', jung: 'ㅏ', jong: 'ㄹ' }, '닭')).toBe(false);
+  it('still refuses a vowel that is not the first half of the compound', () => {
+    expect(isViablePrefix({ cho: 'ㄱ', jung: 'ㅓ', jong: null }, '과')).toBe(false);
+    expect(isViablePrefix({ cho: 'ㄱ', jung: 'ㅜ', jong: null }, '과')).toBe(false);
+  });
+
+  it('refuses a final over a half-built compound vowel, which could then never finish', () => {
+    expect(isViablePrefix({ cho: 'ㄱ', jung: 'ㅗ', jong: 'ㅇ' }, '광')).toBe(false);
+    expect(isViablePrefix({ cho: 'ㄱ', jung: 'ㅘ', jong: 'ㅇ' }, '광')).toBe(true);
+  });
+
+  it('accepts the first half of a compound final — 닭 is ㄷ, ㅏ, ㄹ, then ㄱ', () => {
+    expect(isViablePrefix({ cho: 'ㄷ', jung: 'ㅏ', jong: 'ㄹ' }, '닭')).toBe(true);
     expect(isViablePrefix({ cho: 'ㄷ', jung: 'ㅏ', jong: 'ㄺ' }, '닭')).toBe(true);
+    expect(isViablePrefix({ cho: 'ㄷ', jung: 'ㅏ', jong: 'ㄴ' }, '닭')).toBe(false);
   });
 });
 

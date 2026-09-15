@@ -19,7 +19,7 @@
  * never gating (docs/reference/school/sentence-ladder.md). This is an input
  * constraint, like a worksheet with a shape printed on it to trace.
  */
-import { decompose } from './hangul.js';
+import { compoundHead, decompose } from './hangul.js';
 
 /**
  * Is `candidate` — the automaton's in-flight `{ cho, jung, jong }`, any of
@@ -37,8 +37,17 @@ export function isViablePrefix(candidate, target) {
   // Field by field, skipping what has not been reached. Nothing in flight at
   // all is a prefix of every syllable — that is the state each one starts in.
   if (cho !== null && cho !== want.cho) return false;
-  if (jung !== null && jung !== want.jung) return false;
-  if (jong !== null && jong !== want.jong) return false;
+  // A COMPOUND IS TYPED IN HALVES. 과 is ㄱ, ㅗ, ㅏ and 닭 is ㄷ, ㅏ, ㄹ, ㄱ, so
+  // the automaton really passes through 고 and 달 on the way. Comparing those
+  // halves to the finished jamo refused the only stroke that leads there, and
+  // 과 could not be typed at all (found live 2026-09-14).
+  if (jung !== null && jung !== want.jung && jung !== compoundHead(want.jung)) return false;
+  if (jong !== null) {
+    // A final over a half-built compound vowel can never be finished: the next
+    // vowel would steal that final forward instead of joining the first one.
+    if (jung !== want.jung) return false;
+    if (jong !== want.jong && jong !== compoundHead(want.jong)) return false;
+  }
   return true;
 }
 

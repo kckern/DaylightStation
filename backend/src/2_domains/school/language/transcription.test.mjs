@@ -83,3 +83,14 @@ describe('isCloseEnough', () => {
     expect(isCloseEnough('모르겠어요', '오늘 날씨가 좋아요.')).toBe(false);
   });
 });
+
+describe('accuracy skips what no keyboard can type', () => {
+  it('scores a perfect copy of a sentence with speaker markers as perfect', () => {
+    // The sentence a learner was typing, 2026-09-14.
+    expect(accuracy('형과 (오빠와) 저는 테니스를 잘 쳐요.', '♂형과 (♀오빠와) 저는 테니스를 잘 쳐요.')).toBe(1);
+  });
+
+  it('maps a curly apostrophe to the one the keyboard types', () => {
+    expect(accuracy("His mother's at home.", 'His mother’s at home.')).toBe(1);
+  });
+});

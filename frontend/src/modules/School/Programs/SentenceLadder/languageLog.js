@@ -40,6 +40,16 @@ function emit(category, detail, data, level = 'info') {
   logger()[level](`school.language.${category}.${detail}`, payload);
 }
 
+// A refused keystroke is the evidence behind "it would not let me type", so it
+// reaches the store — rate-limited, because a stuck child presses the same key
+// again and again. At debug it never left the tablet, and a live report of
+// exactly this (2026-09-14) had nothing to read.
+function emitSampled(category, detail, data) {
+  const payload = typeof data === 'object' && data !== null ? { ...data } : {};
+  payload.detail = detail;
+  logger().sampled(`school.language.${category}.${detail}`, payload, { maxPerMinute: 30, aggregate: true });
+}
+
 export const languageLog = {
   program: (detail, data) => emit('program', detail, data),              // mounted | unmounted | day-loaded
   // The same category one level down: the transitions BETWEEN those landmarks
@@ -50,7 +60,7 @@ export const languageLog = {
   programError: (detail, data) => emit('program', detail, data, 'error'), // day-failed
   // enter | selected | complete | held | replayed | advanced | practice |
   // stopped | idle-replay | glyph-replay | refused | peek
-  rung: (detail, data) => emit('rung', detail, data, 'debug'),
+  rung: (detail, data) => (detail === 'refused' ? emitSampled('rung', detail, data) : emit('rung', detail, data, 'debug')),
   /**
    * The one rung fact the log STORE keeps. Everything else in this category is
    * `debug`, and debug never reaches the store — it is dropped at ingest,

@@ -3,6 +3,7 @@ import { bindMediaToMaster } from '../../../../lib/volume/bindMediaToMaster.js';
 import { languageApi } from './languageApi.js';
 import { languageLog } from './languageLog.js';
 import { diffChars } from './textDiff.js';
+import { typeableText } from '@shared-contracts/language/typeableText.mjs';
 
 /**
  * Study history, newest day first (design §5).
@@ -18,7 +19,8 @@ import { diffChars } from './textDiff.js';
 function DiffLine({ expected, given }) {
   return (
     <span className="lang-diff">
-      {diffChars(expected, given).map((part, i) => (
+      {/* Against what could be typed, so a skipped ♂/♀ is not shown as missed. */}
+      {diffChars(typeableText(expected), given).map((part, i) => (
         <span key={i} className={`lang-diff__${part.type}`}>{part.text}</span>
       ))}
     </span>

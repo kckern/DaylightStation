@@ -3,6 +3,7 @@ import { useSentenceAudio, clipsFor } from '../useSentenceAudio.js';
 import { languageLog } from '../languageLog.js';
 import { useHangulTyping } from '../../../ime/HangulTypingProvider.jsx';
 import { columnsFor } from './glyphStrip.js';
+import { typeableText } from '@shared-contracts/language/typeableText.mjs';
 import GlyphStrip from './GlyphStrip.jsx';
 import Icon from '../../../home/icons/Icon.jsx';
 import useVoiceCapture from './useVoiceCapture.js';
@@ -303,7 +304,10 @@ export default function TypedRung({
   const promptLang = entry.prompt?.[0]?.language;
   const isDictation = entry.rung === 'dictation';
   const isCopying = isDictation && entry.copyPrompt === true;
-  const targetText = entry.text?.[promptLang] ?? '';
+  // What can actually be typed: ♂/♀ speaker markers and other characters no key
+  // produces are skipped, so the strip, the copy-mode gate and the glyph-paced
+  // replay all line up on the same columns (`typeableText`).
+  const targetText = typeableText(entry.text?.[promptLang] ?? '');
 
   /**
    * How much of the model the strip is allowed to draw. Copy mode traces a

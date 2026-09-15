@@ -45,6 +45,16 @@ const FINAL_JOIN = {
 const VOWEL_SPLIT = Object.fromEntries(Object.entries(VOWEL_JOIN).map(([k, v]) => [v, [k[0], k[1]]]));
 const FINAL_SPLIT = Object.fromEntries(Object.entries(FINAL_JOIN).map(([k, v]) => [v, [k[0], k[1]]]));
 
+/**
+ * The first half of a compound vowel (ㅘ → ㅗ) or compound final (ㄺ → ㄹ),
+ * or null for a jamo that is not a compound. In 두벌식 that half is the only
+ * way into the compound — 과 is typed ㄱ, ㅗ, ㅏ — so a copy-mode gate has to
+ * treat it as a stroke on the way there, not as a wrong vowel.
+ */
+export function compoundHead(jamo) {
+  return VOWEL_SPLIT[jamo]?.[0] ?? FINAL_SPLIT[jamo]?.[0] ?? null;
+}
+
 const isVowel = (j) => JUNG.includes(j);
 
 /**
