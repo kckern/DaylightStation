@@ -97,7 +97,7 @@ function issuer({
   companionCodes, units, rng = seededRng(1), now = '2026-08-26T17:00:00.000Z',
   householdId = HOUSEHOLD, sessions = new FakeSessionRepository(),
   cardRequests = [], printer: suppliedPrinter = null, allocationStore: suppliedAllocationStore = null,
-  issuedArtifacts = null, renderAllocation = null,
+  issuedArtifacts = null, renderAllocation = null, publishPrintDocument: suppliedPublish = null,
 }) {
   const unitsById = new Map(units.map((unit) => [unit.unitId, unit]));
   const instances = new Map();
@@ -138,7 +138,7 @@ function issuer({
       async findBySession(id) { return [...instances.values()].find((entry) => entry.sessionId === id) ?? null; },
       async put(instance) { instances.set(instance.id, instance); return instance; },
     },
-    publishPrintDocument: {
+    publishPrintDocument: suppliedPublish ?? {
       async execute({ source }) { published.set(`${source.id}@rev00000`, { ...source, rev: 'rev00000' }); return { id: source.id, rev: 'rev00000' }; },
     },
     printDocuments: { async getPublished(id, rev) { return published.get(`${id}@${rev}`) ?? null; } },
@@ -615,3 +615,35 @@ describe('requireParts is settled at mint time, from the unit', () => {
     expect((await mint(withRequireParts(9))).requireParts).toBe(4);
   });
 });
+
+describe('IssueDocument — a publish refusal is a render failure caught before the card', () => {
+  it('records the failure on the session and hands back a ticket, without ever rendering or allocating', async () => {
+    const companionCodes = codeStore();
+    const unit = unitFor({ participation: 'optional' });
+    const publishPrintDocument = {
+      async execute() {
+        const err = new Error('print document has TeX that does not render: blocks[1].blocks[0].md: Missing open brace for subscript in TeX: 230, 240, 250, ___');
+        err.code = 'INVALID_DOCUMENT_TEX';
+        throw err;
+      },
+    };
+    const releases = [];
+    const allocationStore = { async release(args) { releases.push(args); return []; } };
+    const { issueDocument, sessions, printer, cardRequests } = issuer({
+      companionCodes, units: [unit], publishPrintDocument, allocationStore,
+    });
+    const sessionId = await seedSession(sessions, { sessionId: 'ses-tex', learnerId: 'kid1', unitId: unit.unitId });
+
+    const result = await issueDocument.execute({ sessionId });
+
+    expect(result.status).toBe('render_failed');
+    expect(result.message).toMatch(/could not make that sheet/i);
+    // The slip in the child's hand carries a fresh recovery ticket to scan.
+    expect(JSON.stringify(result.document)).toMatch(/sch:[A-Z0-9]{16}/);
+    expect(sessions.types(sessionId)).toEqual(['created', 'failed']);
+    expect(cardRequests).toEqual([]);
+    expect(releases).toEqual([]);
+    expect(printer.jobs).toEqual([]);
+  });
+});
+

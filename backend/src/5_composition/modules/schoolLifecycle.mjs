@@ -108,6 +108,8 @@ import { YamlPassOverrideStore } from '#adapters/persistence/yaml/YamlPassOverri
 import { YamlAttestationLog } from '#adapters/persistence/yaml/YamlAttestationLog.mjs';
 import { YamlTeacherNotes } from '#adapters/persistence/yaml/YamlTeacherNotes.mjs';
 import { IssueDocument } from '#apps/school/usecases/IssueDocument.mjs';
+import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
+import { lintTex } from '#rendering/school/documents/texLint.mjs';
 import { IssueComposedWorksheet } from '#apps/school/usecases/IssueComposedWorksheet.mjs';
 import { DispatchMedia } from '#apps/school/usecases/DispatchMedia.mjs';
 import { RecordMediaCompletion } from '#apps/school/usecases/RecordMediaCompletion.mjs';
@@ -980,11 +982,16 @@ export async function createSchoolLifecycle({
   const renderIssuedArtifact = new RenderIssuedWorksheetArtifact({
     issuedArtifacts, renderPrintDocument, printDocuments, curriculum,
   });
+  // ONE publish use case for every issue path, and it renders each inline
+  // `$…$` through MathJax BEFORE the write — so a bank's TeX error is a
+  // refusal here, ahead of card allocation, not a failure at the printer
+  // after the learner's rows are already claimed (2026-09-15).
+  const publishPrintDocument = new PublishPrintDocument({ repository: printDocuments, texLint: lintTex });
 
   const issueDocument = new IssueDocument({
     curriculum, sessions: stores.sessions, tokens: stores.tokens,
     renderer: documentRenderer, printer: laserPrinter, formMaps: stores.formMaps,
-    printDocuments, renderPrintDocument, allocationStore,
+    printDocuments, renderPrintDocument, allocationStore, publishPrintDocument,
     assignments: stores.assignments, worksheetInstances, companions,
     // `householdId` is the first third of a finish code's scope — the reason
     // two houses on the same published lesson never share a code.
@@ -1002,7 +1009,7 @@ export async function createSchoolLifecycle({
   });
   const issueComposedWorksheet = new IssueComposedWorksheet({
     curriculum, sessions: stores.sessions, assignments: stores.assignments,
-    worksheetInstances, bankReader, printDocuments, renderPrintDocument,
+    worksheetInstances, bankReader, printDocuments, renderPrintDocument, publishPrintDocument,
     allocationStore, printer: laserPrinter, issuedArtifacts, answerSheetPolicy: cfg.answer_sheets ?? null,
     teacherGate, clock, logger,
   });

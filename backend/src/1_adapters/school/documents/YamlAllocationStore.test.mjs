@@ -864,3 +864,120 @@ describe('round-trip (real filesystem)', () => {
     }
   });
 });
+
+describe('allocateNext — rows that never reached paper are not occupied', () => {
+  const at = () => '2026-09-15T14:19:33.000Z';
+  const fresh = () => {
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({
+      directory: '/docs', io, rng: scriptedRng([[5, 2, 7, 8, 2, 9, 4], [1, 0, 0, 7, 9, 9, 8], [3, 3, 3, 3, 3, 3, 3]]), now: at,
+    });
+    return { io, store };
+  };
+  const math = (over = {}) => request({
+    documentId: 'math/elementary-math-2-3/ws-ses-ztgk4r6ah1', rev: 'fd94e0292', seed: 1328321809,
+    learnerId: 'user_4', rowRange: { start: 1, end: 6 }, ...over,
+  });
+  /** A delivered sheet: the card is physically in the learner's hands after this. */
+  const deliver = async (store, documentId, end) => {
+    const out = await store.allocateNext({
+      request: request({ documentId, rev: 'r1', seed: 7, learnerId: 'user_4', rowRange: { start: 1, end } }),
+    });
+    await store.markDelivered({ cardId: out.record.cardId, recordId: out.record.recordId });
+    return out.record;
+  };
+
+  it('reclaims the tail a cancelled-before-delivery allocation left behind', async () => {
+    const { store } = fresh();
+    const civ = await deliver(store, 'civ-1', 6);                                   // 1-6 on paper
+    const failed = await store.allocateNext({ request: math() });                   // 7-12, render fails
+    expect(failed.record.rowRange).toEqual({ start: 7, end: 12 });
+    await store.release({ cardId: failed.record.cardId, rows: failed.record.rowRange });
+
+    const next = await store.allocateNext({
+      request: request({ documentId: 'science/mammals/ws-ses-a', learnerId: 'user_4', rowRange: { start: 1, end: 6 } }),
+    });
+    expect(next.record.cardId).toBe(civ.cardId);
+    expect(next.record.rowRange).toEqual({ start: 7, end: 12 });
+    expect(next.firstUse).toBe(false);
+  });
+
+  it('never reclaims a released range that was delivered — those bubbles are on paper', async () => {
+    const { store } = fresh();
+    const printed = await store.allocateNext({ request: math() });
+    await store.markDelivered({ cardId: printed.record.cardId, recordId: printed.record.recordId });
+    await store.release({ cardId: printed.record.cardId, rows: printed.record.rowRange });
+
+    const next = await store.allocateNext({
+      request: request({ documentId: 'science/mammals/ws-ses-a', learnerId: 'user_4', rowRange: { start: 1, end: 3 } }),
+    });
+    expect(next.record.cardId).toBe(printed.record.cardId);
+    expect(next.record.rowRange).toEqual({ start: 7, end: 9 });
+  });
+
+  it('still mints a fresh card when the only record on the old one never reached paper', async () => {
+    const { store } = fresh();
+    const failed = await store.allocateNext({ request: math() });
+    await store.release({ cardId: failed.record.cardId, rows: failed.record.rowRange });
+    const retry = await store.allocateNext({ request: math() });
+    // Nothing was ever printed with the first id, so the learner never held
+    // it; a new first-use card is the physically honest answer.
+    expect(retry.record.cardId).not.toBe(failed.record.cardId);
+    expect(retry.firstUse).toBe(true);
+    expect(retry.record.rowRange).toEqual({ start: 1, end: 6 });
+  });
+
+  it('re-arms the identical retry in place rather than appending a second record with the same id', async () => {
+    const { store, io } = fresh();
+    const civ = await deliver(store, 'civ-1', 6);
+    const first = await store.allocateNext({ request: math() });                    // 7-12
+    await store.release({ cardId: first.record.cardId, rows: first.record.rowRange });
+
+    const retry = await store.allocateNext({ request: math() });
+    expect(retry.record.cardId).toBe(civ.cardId);
+    expect(retry.record.recordId).toBe(first.record.recordId);
+    expect(retry.record.rowRange).toEqual({ start: 7, end: 12 });
+    expect(retry.record.status).toBe('live');
+    expect(retry.record.deliveryState).toBe('pending');
+    expect(retry.duplicate).toBe(false);
+
+    const onDisk = io.load(`/docs/cards/${civ.cardId}.yml`);
+    expect(onDisk).toHaveLength(2);
+    expect(onDisk.filter((record) => record.recordId === first.record.recordId)).toHaveLength(1);
+
+    // The re-armed record is the one every id-keyed method now finds.
+    await store.markDelivered({ cardId: retry.record.cardId, recordId: retry.record.recordId });
+    expect(io.load(`/docs/cards/${civ.cardId}.yml`)[1].deliveryState).toBe('delivered');
+  });
+
+  it("lands the next sheet after the delivered rows, not on a dead range below them (the learner's card, 2026-09-15)", async () => {
+    const { store, io } = fresh();
+    const cardId = '5278294';
+    const rec = (documentId, start, end, { delivered = true, status = 'satisfied', rev = 'r1' } = {}) => ({
+      recordId: `${documentId}@${rev}:v0:${start}-${end}`, cardId, rowRange: { start, end },
+      documentId, rev, seed: 1, variant: 0, learnerId: 'user_4', sessionId: `ses_${documentId}`,
+      renderedAt: '2026-09-11T19:59:34.098Z', generation: 4, predecessorCardId: '8424408',
+      cardOrigin: 'reuse', identiconVersion: 'v1', cardCapacity: 50,
+      deliveryState: delivered ? 'delivered' : 'cancelled', deliveredAt: delivered ? '2026-09-11T19:59:34.011Z' : null,
+      status,
+    });
+    // The ledger exactly as three retries of one doomed render left it.
+    io.save(`/docs/cards/${cardId}.yml`, [
+      rec('civ-1', 1, 6), rec('math-1', 7, 12), rec('sci-1', 13, 18), rec('scr-1', 19, 21),
+      rec('math/elementary-math-2-3/ws-ses-ztgk4r6ah1', 22, 27, { delivered: false, status: 'released', rev: 'fd94e0292' }),
+      rec('civ-2', 28, 33, { status: 'live' }), rec('scr-2', 34, 36, { status: 'live' }), rec('sci-2', 37, 42, { status: 'live' }),
+      rec('math/elementary-math-2-3/ws-ses-ztgk4r6ah1', 43, 48, { delivered: false, status: 'released', rev: 'fd94e0292' }),
+    ]);
+
+    // The fixed bank publishes at a new rev: a different record, same rows.
+    const healed = await store.allocateNext({ request: math({ rev: 'a1b2c3d4e' }) });
+    expect(healed.record.cardId).toBe(cardId);
+    expect(healed.firstUse).toBe(false);
+    expect(healed.record.rowRange).toEqual({ start: 43, end: 48 });
+    expect(healed.record.cardOrigin).toBe('reuse');
+
+    const described = await store.describeCard(cardId);
+    expect(described.nextRow).toBe(49);
+    expect(described.remainingContiguousSlots).toBe(2);
+  });
+});

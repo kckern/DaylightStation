@@ -754,34 +754,48 @@ export class IssueDocument {
       if (companion?.refusal) {
         return this.#unavailable(sessionId, companion.refusal.reason, companion.refusal.message);
       }
-      const published = await this.#publishPrintDocument.execute({
-        source: worksheetInstanceDocument(instance, {
-          title: unit.title,
-          description: presentation.citation,
-          sourceTitle: presentation.sourceTitle,
-          printedPages: presentation.printedPages,
-          reading: presentation.reading,
-          subjectIcon: unit.subject ?? 'school',
-          subjectName: unit.subject ?? 'School',
-          breadcrumb: presentation.breadcrumb,
-          passPercent: unit.passing?.percent ?? null,
-          progress: await this.#lessonProgress({ state, unit, nowIso }),
-          companionCode: companion?.accessCode ?? null,
-          // TWO CODES, NEVER THE SAME FIELD. `companionCode` above is the
-          // SIX-DIGIT ACCESS CODE printed on the lesson card's Read Along
-          // panel — the number that OPENS the companion. `finishCode` is the
-          // A–E set that finishing it RELEASES, and it becomes the sheet's
-          // gate row (Task 8). Null for an optional companion, which has no
-          // gate at all, so its worksheet is unchanged.
-          //
-          // This is the ONLY place the finish code leaves this method. It
-          // travels into the published print document (server-side YAML, read
-          // by the renderer and the scan-back resolver, served to a browser by
-          // no route) and never onto `execute()`'s return value, which reaches
-          // `ResolveScanAction` and a child's screen.
-          finishCode: companion?.finishCode ?? null,
-        }),
-      });
+      // Publish can REFUSE — `PublishPrintDocument`'s TeX pre-flight renders
+      // every inline `$…$` before the write and throws `INVALID_DOCUMENT_TEX`
+      // on a segment MathJax rejects. That is a render failure discovered
+      // early, before any card row is claimed: record it exactly like one
+      // (session `failed` event, recovery ticket, "tell a grown-up") rather
+      // than letting the throw climb to the router's generic net, which
+      // would leave no trace on the session and no ticket in the child's hand.
+      let published;
+      try {
+        published = await this.#publishPrintDocument.execute({
+          source: worksheetInstanceDocument(instance, {
+            title: unit.title,
+            description: presentation.citation,
+            sourceTitle: presentation.sourceTitle,
+            printedPages: presentation.printedPages,
+            reading: presentation.reading,
+            subjectIcon: unit.subject ?? 'school',
+            subjectName: unit.subject ?? 'School',
+            breadcrumb: presentation.breadcrumb,
+            passPercent: unit.passing?.percent ?? null,
+            progress: await this.#lessonProgress({ state, unit, nowIso }),
+            companionCode: companion?.accessCode ?? null,
+            // TWO CODES, NEVER THE SAME FIELD. `companionCode` above is the
+            // SIX-DIGIT ACCESS CODE printed on the lesson card's Read Along
+            // panel — the number that OPENS the companion. `finishCode` is the
+            // A–E set that finishing it RELEASES, and it becomes the sheet's
+            // gate row (Task 8). Null for an optional companion, which has no
+            // gate at all, so its worksheet is unchanged.
+            //
+            // This is the ONLY place the finish code leaves this method. It
+            // travels into the published print document (server-side YAML, read
+            // by the renderer and the scan-back resolver, served to a browser by
+            // no route) and never onto `execute()`'s return value, which reaches
+            // `ResolveScanAction` and a child's screen.
+            finishCode: companion?.finishCode ?? null,
+          }),
+        });
+      } catch (err) {
+        return this.#recordFailure({
+          sessionId, stage: 'publish', reason: err.message, nowIso, state, cause: 'render',
+        });
+      }
       instance = { ...instance, documentId: published.id, documentRevision: published.rev };
     }
 

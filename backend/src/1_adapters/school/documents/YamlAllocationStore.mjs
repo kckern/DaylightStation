@@ -332,7 +332,18 @@ export class YamlAllocationStore {
         identiconVersion: ANSWER_SHEET_IDENTICON_VERSION,
         cardCapacity: capacity,
       });
-      existing.push(record);
+      // A retry of the SAME render context after a cancelled-before-delivery
+      // failure lands on the same rows and therefore the same recordId. Every
+      // id-keyed method on this store (`markDelivered`, `updateStatus`, ...)
+      // takes the first record with that id, so appending would leave the
+      // dead record shadowing the live one. Re-arm it in place instead: the
+      // record keeps its position (and any `rowQuarantines` metadata a first
+      // record carries) and comes back `live`/`pending` for this delivery.
+      const rearmIndex = existing.findIndex((entry) => (
+        entry.recordId === record.recordId && entry.deliveryState === 'cancelled'
+      ));
+      if (rearmIndex >= 0) existing[rearmIndex] = { ...existing[rearmIndex], ...record };
+      else existing.push(record);
       this.#save(cardId, existing);
       if (firstUse) {
         this.#logger?.info?.('school.answer-sheet.rollover', {
@@ -541,7 +552,7 @@ export class YamlAllocationStore {
       throw new Error('YamlAllocationStore.describeCard capacity must be 1..50');
     }
     const allocations = this.#load(cardId);
-    const occupiedThrough = allocations.reduce((max, record) => Math.max(max, record.rowRange?.end ?? 0), 0);
+    const occupiedThrough = cardOccupiedThrough(allocations);
     const learnerIds = [...new Set(allocations.map((record) => record.learnerId).filter(Boolean))];
     const mappedLearnerId = learnerIds.length === 1 ? learnerIds[0] : null;
     const statusCounts = Object.fromEntries(ALLOCATION_STATUSES.map((status) => [
@@ -857,8 +868,23 @@ function monotonicHead(cards) {
   return enriched[0];
 }
 
+/**
+ * The highest row anything on this card could have put graphite on.
+ *
+ * A record whose delivery was CANCELLED never reached paper — the issue path
+ * allocates before it renders, and a render or print failure orphans the
+ * record (`IssueDocument#orphanAllocation` → `release`) with its rows still
+ * blank on the physical card. Counting those rows as occupied is what
+ * burned two ranges of a child's card on 2026-09-15 and then rolled it over:
+ * three retries of one doomed render walked 22-27, 43-48 and a successor
+ * card without a single bubble ever being printed. A released/superseded/
+ * satisfied record that WAS delivered keeps its rows forever — those bubbles
+ * are on paper (spec §5: never reclaim a range that reached the learner).
+ */
 function cardOccupiedThrough(records) {
-  const allocated = Math.max(0, ...records.map((record) => record.rowRange?.end ?? 0));
+  const allocated = Math.max(0, ...records
+    .filter((record) => record.deliveryState !== 'cancelled')
+    .map((record) => record.rowRange?.end ?? 0));
   const quarantined = Math.max(0, ...(records[0]?.rowQuarantines ?? [])
     .filter((entry) => !(entry.clearances?.length > 0))
     .map((entry) => entry.rows?.end ?? 0));

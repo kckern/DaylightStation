@@ -104,6 +104,13 @@ describe('elementary math course generator', () => {
       });
     });
 
+    const bareUnderscore = structuredClone(placeValue);
+    Object.assign(bareUnderscore.items[0], { prompt: 'What comes next? $230, 240, 250, ___$' });
+    expect(auditElementaryMathBank(bareUnderscore).join('\n')).toMatch(/TeX does not render — prompt: Missing open brace for subscript/u);
+    const escapedUnderscore = structuredClone(placeValue);
+    Object.assign(escapedUnderscore.items[0], { prompt: 'What comes next? $230, 240, 250, \\_\\_\\_$' });
+    expect(auditElementaryMathBank(escapedUnderscore).filter((error) => /TeX/u.test(error))).toEqual([]);
+
     const invalidGreatest = structuredClone(banks.find((bank) => bank.unit === 'em23-02-01-greatest-numbers'));
     Object.assign(invalidGreatest.items[0], { answer: '382', decoys: ['383', '328', '283', '238'] });
     expect(auditElementaryMathBank(invalidGreatest).join('\n')).toMatch(/designated greatest answer is not uniquely correct/iu);
