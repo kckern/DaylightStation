@@ -18,29 +18,27 @@ import { DispatchTargetPicker } from '../cast/DispatchTargetPicker.jsx';
 import { playbackStateLabel, queuePositionLabel } from './stateCopy.js';
 import './NowPlaying.scss';
 
-const MEDIA_EL_POLL_MS = 400;
-const MEDIA_EL_GIVE_UP_MS = 15000;
-
-// The Player portals into the claimed host asynchronously; poll briefly for
-// its media element so the speed control can attach. Non-media renderers
-// (iframes, images) never produce one — the control simply stays hidden.
-function useHostMediaElement(controller, hostRef, itemKey) {
-  const [el, setEl] = useState(null);
+// Format enrichment may not arrive before a paused/autoplay-blocked video
+// renders. The native node is read only: it restores the visual affordance but
+// never controls rate, seek, or playback outside the session controller.
+function useActualVideoNode(controller, hostRef, itemKey) {
+  const [isVideo, setIsVideo] = useState(false);
   useEffect(() => {
-    const find = () => controller?.getMediaElement?.()
-      ?? hostRef.current?.querySelector?.('video, audio')
-      ?? null;
-    const first = find();
-    setEl(first);
-    if (first) return undefined;
-    const poll = setInterval(() => {
-      const found = find();
-      if (found) { setEl(found); clearInterval(poll); }
-    }, MEDIA_EL_POLL_MS);
-    const giveUp = setTimeout(() => clearInterval(poll), MEDIA_EL_GIVE_UP_MS);
-    return () => { clearInterval(poll); clearTimeout(giveUp); };
+    const inspect = () => {
+      const node = controller?.getMediaElement?.()
+        ?? hostRef.current?.querySelector?.('video')
+        ?? null;
+      const next = node?.tagName?.toLowerCase?.() === 'video';
+      setIsVideo((previous) => (previous === next ? previous : next));
+    };
+    inspect();
+    const host = hostRef.current;
+    if (!host || typeof MutationObserver === 'undefined') return undefined;
+    const observer = new MutationObserver(inspect);
+    observer.observe(host, { childList: true, subtree: true });
+    return () => observer.disconnect();
   }, [controller, hostRef, itemKey]);
-  return el;
+  return isVideo;
 }
 
 export function NowPlayingView() {
@@ -49,7 +47,7 @@ export function NowPlayingView() {
   const hostRef = useRef(null);
   const [expanded, setExpanded] = useState(false);
   usePlayerHost(hostRef, 2, true, { forceShader: expanded ? 'focused' : null });
-  const mediaEl = useHostMediaElement(controller, hostRef, item?.contentId ?? null);
+  const hasActualVideoNode = useActualVideoNode(controller, hostRef, item?.contentId ?? null);
   const { pop } = useNav();
 
   useEffect(() => setExpanded(false), [item?.contentId]);
@@ -78,7 +76,7 @@ export function NowPlayingView() {
     || item?.mediaType === 'video'
     || item?.mediaType === 'dash_video'
     || item?.mediaType === 'hls_video'
-    || mediaEl?.tagName === 'VIDEO';
+    || hasActualVideoNode;
 
   return (
     <div
@@ -150,7 +148,7 @@ export function NowPlayingView() {
             </div>
           </div>}
           <SeekBar target="local" />
-          <TransportBar target="local" mediaEl={mediaEl} />
+          <TransportBar target="local" targetLabel="This device" />
         </>
       )}
 

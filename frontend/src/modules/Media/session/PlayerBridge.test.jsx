@@ -21,6 +21,9 @@ let mediaElement = null;
 let mountedContentId = null;
 let mountedMediaGeneration = 0;
 let appliedShader = null;
+let mountedMediaRegistration = null;
+let mountedOperationObserver = null;
+let beginRendererBoundary = null;
 vi.mock('../../Player/Player.jsx', () => ({
   default: React.forwardRef(function MockPlayer(props, ref) {
     latestPlayerProps = props;
@@ -33,6 +36,12 @@ vi.mock('../../Player/Player.jsx', () => ({
       getMediaElement: () => mediaElement,
       getMountedContentId: () => mountedContentId,
       getMountedMediaGeneration: () => mountedMediaGeneration,
+      getMountedMediaRegistration: () => mountedMediaRegistration,
+      subscribeMountedMediaOperations: (observer) => {
+        mountedOperationObserver = observer;
+        return { observerId: 'media-player-bridge', unsubscribe: () => { mountedOperationObserver = null; } };
+      },
+      beginRendererBoundary: (request) => beginRendererBoundary?.(request) ?? { ok: true, operationId: request.operationId },
     }));
     React.useEffect(() => { mountSpy(); }, []);
     return <audio data-testid="mock-player" />;
@@ -107,6 +116,9 @@ describe('PlayerBridge host transitions', () => {
     mountedContentId = null;
     mountedMediaGeneration = 0;
     appliedShader = null;
+    mountedMediaRegistration = null;
+    mountedOperationObserver = null;
+    beginRendererBoundary = vi.fn((request) => ({ ok: true, operationId: request.operationId }));
   });
 
   it('does not remount the Player when a view claims the host', () => {
@@ -141,6 +153,9 @@ describe('PlayerBridge real Player contract', () => {
     mountedContentId = null;
     mountedMediaGeneration = 0;
     appliedShader = null;
+    mountedMediaRegistration = null;
+    mountedOperationObserver = null;
+    beginRendererBoundary = vi.fn((request) => ({ ok: true, operationId: request.operationId }));
   });
 
   it('holds receiver Add without a Player, then explicit Play loads and mounts exactly once', () => {
@@ -185,6 +200,28 @@ describe('PlayerBridge real Player contract', () => {
     expect(mountSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('carries idle adoption into the first renderer mount and attaches its observer without a second request', () => {
+    const destination = makeRealController();
+    const source = makeRealController();
+    source.queue.playNow({ contentId: 'plex:idle-adopt', title: 'Idle adopt', duration: 120, format: 'audio' });
+    const adopted = source.portability.snapshotForHandoff();
+    render(<Harness controller={destination} />);
+    expect(latestPlayerProps).toBeNull();
+
+    act(() => destination.lifecycle.adoptSnapshot(adopted, { autoplay: false }));
+
+    expect(mountSpy).toHaveBeenCalledTimes(1);
+    expect(latestPlayerProps.initialRendererOperation).toMatchObject({
+      expectedContentId: 'plex:idle-adopt', targetSeconds: 0, autoplay: false,
+      source: 'local-adopt_snapshot',
+    });
+    expect(beginRendererBoundary).toHaveBeenCalledTimes(1);
+    expect(beginRendererBoundary).toHaveBeenCalledWith(expect.objectContaining({
+      operationId: latestPlayerProps.initialRendererOperation.operationId,
+      requiredObserverIds: ['media-player-bridge'],
+    }));
+  });
+
   it('enriches missing duration/format from the real progress payload without replacing Player playback identity', () => {
     const controller = makeRealController();
     controller.queue.playNow({ contentId: 'plex:665667', title: 'Disclosure Day', duration: null, format: null });
@@ -215,7 +252,7 @@ describe('PlayerBridge real Player contract', () => {
     expect(mountSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('seeks actual media on every same-content adoption, including an identical repeated offset', () => {
+  it('requests one fresh paused boundary on every same-content adoption, including an identical offset', () => {
     const controller = makeRealController();
     controller.queue.playNow({
       contentId: 'plex:665667', title: 'Disclosure Day', duration: 5400, format: 'video',
@@ -237,17 +274,22 @@ describe('PlayerBridge real Player contract', () => {
     };
 
     act(() => controller.lifecycle.adoptSnapshot(adopted, { autoplay: false }));
-    expect(mediaElement.currentTime).toBe(87);
+    expect(mediaElement.currentTime).toBe(42);
     expect(mediaElement.play).not.toHaveBeenCalled();
     expect(mediaElement.paused).toBe(true);
+    expect(beginRendererBoundary).toHaveBeenLastCalledWith(expect.objectContaining({
+      expectedContentId: 'plex:665667', targetSeconds: 87, autoplay: false,
+      requiredObserverIds: ['media-player-bridge'], source: 'local-adopt_snapshot',
+    }));
 
     mediaElement.currentTime = 120;
     act(() => controller.lifecycle.adoptSnapshot(adopted, { autoplay: false }));
-    expect(mediaElement.currentTime).toBe(87);
+    expect(mediaElement.currentTime).toBe(120);
+    expect(beginRendererBoundary).toHaveBeenCalledTimes(2);
     expect(mountSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('seeks actual paused media to zero and resumes it for a same-content LOAD generation', () => {
+  it('requests a fresh autoplay boundary instead of replaying the old node for same-content LOAD', () => {
     const controller = makeRealController();
     const item = {
       contentId: 'plex:665667', title: 'Disclosure Day', duration: 5400, format: 'video',
@@ -270,11 +312,13 @@ describe('PlayerBridge real Player contract', () => {
 
     act(() => controller.queue.playNow(item));
 
-    expect(mediaElement.currentTime).toBe(0);
-    expect(mediaElement.play).toHaveBeenCalledTimes(1);
-    expect(mediaElement.paused).toBe(false);
-    act(() => mediaElement.dispatchEvent(new Event('playing')));
-    expect(controller.getSnapshot().state).toBe('playing');
+    expect(mediaElement.currentTime).toBe(42);
+    expect(mediaElement.play).not.toHaveBeenCalled();
+    expect(mediaElement.paused).toBe(true);
+    expect(beginRendererBoundary).toHaveBeenCalledWith(expect.objectContaining({
+      expectedContentId: 'plex:665667', targetSeconds: 0, autoplay: true,
+      requiredObserverIds: ['media-player-bridge'], source: 'local-load_item',
+    }));
     expect(mountSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -300,6 +344,7 @@ describe('PlayerBridge real Player contract', () => {
 
     expect(mediaElement.currentTime).toBe(42);
     expect(mediaElement.play).not.toHaveBeenCalled();
+    expect(beginRendererBoundary).not.toHaveBeenCalled();
     expect(latestPlayerProps.play.contentId).toBe('plex:new');
 
     // Repeating B while its replacement is still pending must still leave the
@@ -322,8 +367,12 @@ describe('PlayerBridge real Player contract', () => {
     act(() => controller.queue.playNow({
       contentId: 'plex:new', title: 'New', duration: 600, format: 'video',
     }));
-    expect(newMediaElement.currentTime).toBe(0);
-    expect(newMediaElement.play).toHaveBeenCalledTimes(1);
+    expect(newMediaElement.currentTime).toBe(55);
+    expect(newMediaElement.play).not.toHaveBeenCalled();
+    expect(beginRendererBoundary).toHaveBeenCalledWith(expect.objectContaining({
+      expectedContentId: 'plex:new', targetSeconds: 0, autoplay: true,
+      requiredObserverIds: ['media-player-bridge'], source: 'local-load_item',
+    }));
   });
 
   it('rejects callbacks from the previous generation of the same content ID', () => {
@@ -394,6 +443,65 @@ describe('PlayerBridge real Player contract', () => {
     Object.defineProperty(mediaElement, 'paused', { configurable: true, value: false });
     act(() => mediaElement.dispatchEvent(new Event('playing')));
     expect(controller.getSnapshot().state).toBe('playing');
+  });
+
+  it('acks an exact operation binding synchronously and publishes only post-playing advance', () => {
+    const controller = makeRealController();
+    controller.queue.playNow({ contentId: 'plex:operation', title: 'Operation', duration: 90, format: 'audio' });
+    const oldNode = document.createElement('audio');
+    mediaElement = oldNode;
+    mountedContentId = 'plex:operation';
+    mountedMediaGeneration = 1;
+    render(<Harness controller={controller} />);
+    expect(mountedOperationObserver).toBeTypeOf('function');
+
+    const freshNode = document.createElement('audio');
+    Object.defineProperties(freshNode, {
+      currentTime: { configurable: true, writable: true, value: 12 },
+      duration: { configurable: true, value: 90 },
+      readyState: { configurable: true, value: 3 },
+      paused: { configurable: true, value: false },
+      seeking: { configurable: true, value: false },
+      ended: { configurable: true, value: false },
+      error: { configurable: true, value: null },
+    });
+    const rendererToken = Object.freeze({ tokenId: 'media-operation-token', node: freshNode });
+    mediaElement = freshNode;
+    mountedMediaGeneration = 2;
+    mountedMediaRegistration = {
+      node: freshNode,
+      resolvedContentId: 'plex:operation',
+      resolvedGeneration: 2,
+      rendererToken,
+    };
+    const binding = {
+      operationId: 'media-operation-1', targetSeconds: 12,
+      node: freshNode, resolvedGeneration: 2, rendererToken,
+    };
+
+    expect(mountedOperationObserver(binding)).toEqual({ ready: true, ...binding });
+    freshNode.currentTime = 13;
+    act(() => freshNode.dispatchEvent(new Event('timeupdate')));
+    expect(controller.portability.getNativeObservation()).toMatchObject({
+      operationId: 'media-operation-1', rendererToken, playingObserved: false, advancedObserved: false,
+      targetSeekedObserved: false,
+    });
+    freshNode.currentTime = 10;
+    act(() => freshNode.dispatchEvent(new Event('seeking')));
+    act(() => freshNode.dispatchEvent(new Event('playing')));
+    freshNode.currentTime = 12;
+    act(() => freshNode.dispatchEvent(new Event('seeked')));
+    expect(controller.portability.getNativeObservation()).toMatchObject({
+      targetSeekedObserved: true, playingObserved: false, advancedObserved: false,
+    });
+    act(() => freshNode.dispatchEvent(new Event('playing')));
+    freshNode.currentTime = 14;
+    act(() => freshNode.dispatchEvent(new Event('timeupdate')));
+    expect(controller.portability.getNativeObservation()).toMatchObject({
+      operationId: 'media-operation-1', rendererToken, playingObserved: true, advancedObserved: true,
+    });
+    oldNode.dispatchEvent(new Event('playing'));
+    expect(controller.portability.getNativeObservation().node).toBe(freshNode);
   });
 
   it('observes the actual Media store generation and ignores pending/retired native nodes', () => {
@@ -507,6 +615,22 @@ describe('PlayerBridge real Player contract', () => {
     });
     expect(mediaElement.playbackRate).toBe(1.25);
     expect(appliedShader).toBe('night');
+    expect(mountSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('applies local config.setPlaybackRate through the stable Player/native surface', () => {
+    const controller = makeRealController();
+    controller.queue.playNow({ contentId: 'plex:rate-local', title: 'Rate', duration: 120, format: 'audio' });
+    mediaElement = document.createElement('audio');
+    Object.defineProperty(mediaElement, 'playbackRate', { configurable: true, writable: true, value: 1 });
+    mountedContentId = 'plex:rate-local';
+    render(<Harness controller={controller} />);
+    expect(mountSpy).toHaveBeenCalledTimes(1);
+
+    act(() => controller.config.setPlaybackRate(1.5));
+
+    expect(controller.getSnapshot().config.playbackRate).toBe(1.5);
+    expect(mediaElement.playbackRate).toBe(1.5);
     expect(mountSpy).toHaveBeenCalledTimes(1);
   });
 

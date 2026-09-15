@@ -272,6 +272,17 @@ describe('LocalSessionController — queue ops', () => {
 });
 
 describe('LocalSessionController — config + lifecycle', () => {
+  it('exposes finite positive local playback-rate configuration and rejects invalid values', () => {
+    const c = makeController();
+    expect(c.config.setPlaybackRate).toBeTypeOf('function');
+    c.config.setPlaybackRate(1.25);
+    expect(c.getSnapshot().config.playbackRate).toBe(1.25);
+    for (const invalid of [0, -1, NaN, Infinity, '1.5']) c.config.setPlaybackRate(invalid);
+    expect(c.getSnapshot().config.playbackRate).toBe(1.25);
+    c.config.setPlaybackRate(0.75);
+    expect(c.getSnapshot().config.playbackRate).toBe(0.75);
+  });
+
   it('config.setVolume clamps to 0..100', () => {
     const c = makeController();
     c.config.setVolume(-5);

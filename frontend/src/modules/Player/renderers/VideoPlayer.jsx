@@ -78,6 +78,7 @@ export function VideoPlayer({
   // native <video> branch but WITHOUT a static src — the attach effect below
   // assigns the source.
   const isHls = media?.mediaType === 'hls_video';
+  const isOwnerOperationMount = resilienceBridge?.remountDiagnostics?.remountClass === 'owner-operation';
   const hlsLogger = useMemo(() => getLogger().child({ component: 'video-player-hls' }), []);
   const hlsOwnerRef = useRef(null);
   const [displayReady, setDisplayReady] = useState(false);
@@ -143,7 +144,9 @@ export function VideoPlayer({
     handleProgressClick,
     elementKey,
     getMediaEl,
-    getContainerEl
+    getContainerEl,
+    beginMountedPlaybackOperation,
+    cancelMountedPlaybackOperation
   } = useCommonMediaController({
     // ?goto overrides the start position so the transcode mints AT the target
     // (stall-free) and the saved resume can't fight it. Normal playback is unchanged.
@@ -414,10 +417,12 @@ export function VideoPlayer({
         hardReset,
         fetchVideoInfo: fetchVideoInfo || null,
         autoplayBlocked,
-        onAutoplayResolved: handleAutoplayResolved
+        onAutoplayResolved: handleAutoplayResolved,
+        beginMountedPlaybackOperation,
+        cancelMountedPlaybackOperation
       });
     }
-  }, [resilienceBridge, getMediaEl, getContainerEl, hardReset, fetchVideoInfo, autoplayBlocked, handleAutoplayResolved]);
+  }, [resilienceBridge, getMediaEl, getContainerEl, hardReset, fetchVideoInfo, autoplayBlocked, handleAutoplayResolved, beginMountedPlaybackOperation, cancelMountedPlaybackOperation]);
 
   useEffect(() => {
     return () => {
@@ -807,7 +812,7 @@ export function VideoPlayer({
     // Detect autoplay block: Firefox won't fire canplay when autoplay is blocked
     // (readyState stays at 1). Poll the inner <video> after 3s — if it's still
     // paused, try play() to surface NotAllowedError.
-    const autoplayCheckTimer = setTimeout(() => {
+    const autoplayCheckTimer = isOwnerOperationMount ? null : setTimeout(() => {
       const inner = el.shadowRoot?.querySelector('video, audio') || el;
       if (inner.paused) {
         const p = inner.play?.();
@@ -953,13 +958,13 @@ export function VideoPlayer({
           ref={containerRef}
           class={`video-element ${displayReady ? 'show' : ''} ${crtShaderActive ? 'crt-source' : ''}`}
           src={mediaUrl}
-          autoplay=""
+          autoplay={isOwnerOperationMount ? undefined : ''}
           style={crtShaderActive ? undefined : effectStyles}
         />
       ) : (
         <video
           key={dashElementKey}
-          autoPlay
+          autoPlay={!isOwnerOperationMount}
           ref={containerRef}
           className={`video-element ${displayReady ? 'show' : ''} ${crtShaderActive ? 'crt-source' : ''}`}
           src={isHls ? undefined : mediaUrl}

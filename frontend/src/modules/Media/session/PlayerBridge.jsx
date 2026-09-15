@@ -22,6 +22,8 @@ import { LocalSessionContext } from './LocalSessionContext.js';
 import { PlayerHostContext, PlayerHostPresentationContext } from './playerHostContext.js';
 import { TIMING } from '../constants.js';
 
+const RENDERER_BOUNDARY_FORMATS = new Set(['video', 'hls_video', 'dash_video', 'audio']);
+
 export function PlayerBridge() {
   const ctx = useContext(LocalSessionContext);
   if (!ctx) throw new Error('PlayerBridge must be inside LocalSessionProvider');
@@ -37,6 +39,10 @@ export function PlayerBridge() {
   const stallTimerRef = useRef(null);
   const stallStartedAtRef = useRef(null);
   const playerRef = useRef(null);
+  const rendererOperationObserverRef = useRef(null);
+  const bindNativeOperationRef = useRef(null);
+  const rendererOperationSequenceRef = useRef(0);
+  const pendingInitialRendererOperationRef = useRef(null);
 
   // Hand the controller its imperative player surface.
   useEffect(() => {
@@ -49,9 +55,39 @@ export function PlayerBridge() {
       getMediaElement: () => playerRef.current?.getMediaElement?.() ?? null,
       getMountedContentId: () => playerRef.current?.getMountedContentId?.() ?? null,
       getMountedMediaGeneration: () => playerRef.current?.getMountedMediaGeneration?.() ?? null,
+      beginRendererBoundary: (request) => {
+        const observerId = rendererOperationObserverRef.current?.observerId ?? null;
+        if (!observerId) return { ok: false, code: 'OBSERVER_NOT_READY' };
+        return playerRef.current?.beginRendererBoundary?.({
+          ...request,
+          requiredObserverIds: [observerId],
+        }) ?? { ok: false, code: 'PLAYER_NOT_READY' };
+      },
     });
     return () => controller.setPlayerHandle({});
   }, [controller]);
+
+  const hasCurrentItem = Boolean(currentItem);
+  useEffect(() => {
+    if (!hasCurrentItem || typeof playerRef.current?.subscribeMountedMediaOperations !== 'function') return undefined;
+    const subscription = playerRef.current.subscribeMountedMediaOperations((binding) => {
+      const ready = bindNativeOperationRef.current?.(binding) === true;
+      return ready ? { ready: true, ...binding } : { ready: false };
+    });
+    rendererOperationObserverRef.current = subscription;
+    const pendingInitial = pendingInitialRendererOperationRef.current;
+    if (pendingInitial && subscription?.observerId) {
+      playerRef.current?.beginRendererBoundary?.({
+        ...pendingInitial,
+        requiredObserverIds: [subscription.observerId],
+      });
+      pendingInitialRendererOperationRef.current = null;
+    }
+    return () => {
+      if (rendererOperationObserverRef.current === subscription) rendererOperationObserverRef.current = null;
+      subscription?.unsubscribe?.();
+    };
+  }, [hasCurrentItem, currentItem?.contentId]);
 
   // Track volume so we can sync it to the media element as the user adjusts it.
   const [volume, setVolume] = useState(() => controller.getSnapshot().config?.volume ?? 100);
@@ -105,10 +141,21 @@ export function PlayerBridge() {
         const requestedStart = Number.isFinite(snap.position) ? snap.position : 0;
         startSecondsRef.current = requestedStart;
         playbackGenerationRef.current += 1;
-        if (
-          next?.contentId
-          && playerRef.current?.getMountedContentId?.() === next.contentId
-        ) {
+        if (action.type === 'ADOPT_SNAPSHOT' && next?.contentId && !playerRef.current
+          && next.isLive !== true && RENDERER_BOUNDARY_FORMATS.has(next.format)) {
+          pendingInitialRendererOperationRef.current = {
+            operationId: `local-owner-${++rendererOperationSequenceRef.current}`,
+            expectedContentId: next.contentId,
+            targetSeconds: requestedStart,
+            autoplay: action.autoplay !== false,
+            source: 'local-adopt_snapshot',
+            format: next.format,
+            isLive: next.isLive === true,
+          };
+        }
+        const mountedMatchesRequested = next?.contentId
+          && playerRef.current?.getMountedContentId?.() === next.contentId;
+        if (next?.contentId && (action.type === 'ADOPT_SNAPSHOT' || mountedMatchesRequested)) {
           // Shared Player intentionally derives identity from content, so a
           // same-content generation with the same scalar props (especially
           // zero or a repeated offset) will not restart on object identity.
@@ -116,13 +163,18 @@ export function PlayerBridge() {
           // LOAD_ITEM(B), while Player still exposes A's native element. Only
           // apply the generation when Player confirms that the actual accessor
           // node belongs to B; requested/store identity is not media evidence.
-          playerRef.current?.seek?.(requestedStart);
-          // LOAD/SET represent a new local queue selection and normally rely
-          // on changed Player inputs to autoplay. ADOPT records intent through
-          // that render path; never play an accessor that might still belong
-          // to the retired generation here.
-          if (action.type === 'LOAD_ITEM' || action.type === 'SET_CURRENT_ITEM') {
-            playerRef.current?.play?.();
+          const observerId = rendererOperationObserverRef.current?.observerId ?? null;
+          if (observerId) {
+            playerRef.current?.beginRendererBoundary?.({
+              operationId: `local-owner-${++rendererOperationSequenceRef.current}`,
+              expectedContentId: next.contentId,
+              targetSeconds: requestedStart,
+              autoplay: action.type === 'ADOPT_SNAPSHOT' ? action.autoplay !== false : true,
+              requiredObserverIds: [observerId],
+              source: `local-${String(action.type).toLowerCase()}`,
+              format: next.format,
+              isLive: next.isLive === true,
+            });
           }
         }
         setPlaybackGeneration(playbackGenerationRef.current);
@@ -224,20 +276,32 @@ export function PlayerBridge() {
   // replacement of the inner element without creating a second player.
   useEffect(() => {
     if (!contentId) return undefined;
-    const isActiveGeneration = () => playbackGenerationRef.current === playbackGeneration
-      && controller.getSnapshot().currentItem?.contentId === contentId;
     let bound = null;
     let boundContentId = null;
     let boundMediaGeneration = null;
     let detach = () => {};
 
-    const bind = () => {
-      const next = playerRef.current?.getMediaElement?.() ?? null;
+    const bind = (operationBinding = null) => {
+      const next = operationBinding?.node ?? playerRef.current?.getMediaElement?.() ?? null;
       const resolvedContentId = playerRef.current?.getMountedContentId?.() ?? null;
-      const resolvedMediaGeneration = playerRef.current?.getMountedMediaGeneration?.() ?? null;
+      const resolvedMediaGeneration = operationBinding?.resolvedGeneration
+        ?? playerRef.current?.getMountedMediaGeneration?.()
+        ?? null;
+      if (operationBinding) {
+        const accepted = playerRef.current?.getMountedMediaRegistration?.() ?? null;
+        if (playerRef.current?.getMediaElement?.() !== next
+          || accepted?.node !== next
+          || accepted?.resolvedGeneration !== operationBinding.resolvedGeneration
+          || accepted?.rendererToken !== operationBinding.rendererToken) return false;
+      }
       if (next === bound
         && resolvedContentId === boundContentId
-        && resolvedMediaGeneration === boundMediaGeneration) return;
+        && resolvedMediaGeneration === boundMediaGeneration) {
+        if (operationBinding) {
+          controller.bindNativeObservation?.(next, resolvedContentId, resolvedMediaGeneration, operationBinding);
+        }
+        return true;
+      }
       const retired = bound;
       const retiredGeneration = boundMediaGeneration;
       detach();
@@ -247,11 +311,13 @@ export function PlayerBridge() {
       if (!bound) {
         if (retired) controller.releaseNativeObservation?.(retired, retiredGeneration);
         detach = () => {};
-        return;
+        return false;
       }
       const observedElement = bound;
-      controller.bindNativeObservation?.(observedElement, resolvedContentId, resolvedMediaGeneration);
-      const isCurrentMedia = () => isActiveGeneration()
+      const observedPlaybackGeneration = playbackGenerationRef.current;
+      controller.bindNativeObservation?.(observedElement, resolvedContentId, resolvedMediaGeneration, operationBinding);
+      const isCurrentMedia = () => playbackGenerationRef.current === observedPlaybackGeneration
+        && controller.getSnapshot().currentItem?.contentId === contentId
         && playerRef.current?.getMediaElement?.() === observedElement
         && playerRef.current?.getMountedContentId?.() === contentId;
 
@@ -279,6 +345,7 @@ export function PlayerBridge() {
       };
       const observeSeeked = () => {
         if (!isCurrentMedia()) return;
+        observeNative('seeked');
         // A paused decoder need not emit another progress tick after seeked.
         // Reconcile its completed native position through the same hot/durable
         // path as Player progress, without publishing the requested target.
@@ -325,17 +392,24 @@ export function PlayerBridge() {
         bound?.removeEventListener('ended', observeEnded);
         bound?.removeEventListener('error', observeError);
       };
+      return true;
     };
 
+    bindNativeOperationRef.current = bind;
     bind();
     const poll = setInterval(bind, TIMING.VOLUME_APPLY_RETRY_MS);
     return () => {
       clearInterval(poll);
+      if (bindNativeOperationRef.current === bind) bindNativeOperationRef.current = null;
       const retired = bound;
       const retiredGeneration = boundMediaGeneration;
       detach();
-      const currentNode = playerRef.current?.getMediaElement?.() ?? null;
-      const currentGeneration = playerRef.current?.getMountedMediaGeneration?.() ?? null;
+      // The live imperative handle is intentionally read at cleanup so a
+      // replacement can be distinguished from the retired binding.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      const currentHandle = playerRef.current;
+      const currentNode = currentHandle?.getMediaElement?.() ?? null;
+      const currentGeneration = currentHandle?.getMountedMediaGeneration?.() ?? null;
       if (retired && (currentNode !== retired || currentGeneration !== retiredGeneration)) {
         controller.releaseNativeObservation?.(retired, retiredGeneration);
       }
@@ -405,6 +479,7 @@ export function PlayerBridge() {
       onProgress={onProgress}
       forceShader={forceShader ?? undefined}
       ignoreKeys
+      initialRendererOperation={pendingInitialRendererOperationRef.current}
     />,
     hostNodeRef.current
   );

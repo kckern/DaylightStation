@@ -356,6 +356,67 @@ test('[STEER.6a/AC1][STEER.6a/AC2][STEER.7a/AC2] stop ends actual playback and k
   }).toBe(true);
 });
 
+test('[STEER.6a/AC2] Stop explicitly says how many queue items were kept', async ({ page }) => {
+  await startMovie(page);
+  await page.getByTestId('np-stop').click();
+  await expect.poll(() => page.locator('video, audio').evaluateAll(els => els.every(el => el.paused || el.ended))).toBe(true);
+  const feedback = page.getByText('Queue kept: 1 item', { exact: true });
+  await expect(feedback).toBeVisible();
+  await expect(feedback).toBeInViewport();
+  expect(await feedback.evaluate(el => {
+    const box = el.getBoundingClientRect();
+    return box.top >= 0 && box.bottom <= innerHeight
+      && el.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));
+  }), 'Queue feedback must not sit under fixed compact controls/navigation').toBe(true);
+  await page.getByTestId('now-playing-back').click();
+  await expect(feedback).toBeVisible();
+  await page.getByTestId('mini-player-open-nowplaying').click();
+  await expect(feedback).toBeVisible();
+  await expect(page.getByTestId('queue-panel')).toContainText(title);
+});
+
+test('[STEER.5a/AC1] volume step buttons change actual playback and show its level', async ({ page }) => {
+  const video = await startMovie(page);
+  await page.getByTestId('np-volume').focus();
+  await page.keyboard.press('End');
+  await expect.poll(() => video.evaluate(el => el.volume)).toBe(1);
+  await page.getByRole('button', { name: /decrease volume|volume down/i }).click();
+  await expect.poll(() => video.evaluate(el => el.volume)).toBeLessThan(1);
+  const reduced = await video.evaluate(el => Math.round(el.volume * 100));
+  await expect(page.getByTestId('np-volume-level')).toHaveText(`${reduced}%`);
+  await page.getByRole('button', { name: /increase volume|volume up/i }).click();
+  await expect.poll(() => video.evaluate(el => el.volume)).toBe(1);
+  await expect(page.getByTestId('np-volume-level')).toHaveText('100%');
+});
+
+test('[STEER.1a/AC3] full local controls hide duplicate compact controls without losing playback', async ({ page }) => {
+  const video = await startMovie(page);
+  const original = await video.elementHandle();
+  const before = await video.evaluate(el => el.currentTime);
+  await expect(page.getByTestId('np-toggle')).toBeVisible();
+  await expect(page.getByTestId('media-mini-player')).not.toBeVisible();
+  await page.getByTestId('now-playing-back').click();
+  await expect(page.getByTestId('media-mini-player')).toBeVisible();
+  await expect.poll(() => original.evaluate((el, position) => el.isConnected && !el.paused && el.currentTime > position + 0.25, before)).toBe(true);
+});
+
+test('[STEER.5a/AC2] chosen playback speed survives Stop and retained-queue restart', async ({ page }) => {
+  const video = await startMovie(page);
+  await page.getByTestId('np-rate').click();
+  await expect.poll(() => video.evaluate(el => el.playbackRate)).toBe(1.25);
+  await expect(page.getByTestId('np-rate')).toHaveText('1.25×');
+  await page.getByTestId('np-stop').click();
+  await expect(page.getByTestId('mini-toggle')).toBeVisible();
+  await page.getByTestId('mini-toggle').click();
+  const restarted = page.getByTestId('now-playing-host').locator('video');
+  await expect(restarted).toHaveCount(1, { timeout: 30000 });
+  await expect.poll(() => restarted.evaluate(el => !el.paused && el.readyState >= 2), { timeout: 30000 }).toBe(true);
+  const before = await restarted.evaluate(el => el.currentTime);
+  await expect.poll(() => restarted.evaluate(el => el.currentTime)).toBeGreaterThan(before + 0.25);
+  await expect.poll(() => restarted.evaluate(el => el.playbackRate)).toBe(1.25);
+  await expect(page.getByTestId('np-rate')).toHaveText('1.25×');
+});
+
 test('[PLAY.1a] selecting another title does not restart the previously paused movie', async ({ page }) => {
   const firstVideo = await startMovie(page);
   await page.getByTestId('np-toggle').click();

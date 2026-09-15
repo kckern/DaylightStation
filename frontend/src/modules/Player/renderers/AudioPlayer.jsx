@@ -51,7 +51,9 @@ export function AudioPlayer({
     containerRef,
     handleProgressClick,
     getMediaEl,
-    getContainerEl
+    getContainerEl,
+    beginMountedPlaybackOperation,
+    cancelMountedPlaybackOperation
   } = useCommonMediaController({
     start: media.seconds,
     playbackRate: playbackRate || media.playbackRate || 1,
@@ -89,7 +91,9 @@ export function AudioPlayer({
     if (typeof resilienceBridge?.onRegisterMediaAccess === 'function') {
       resilienceBridge.onRegisterMediaAccess({
         getMediaEl,
-        fetchVideoInfo: fetchVideoInfo || null
+        fetchVideoInfo: fetchVideoInfo || null,
+        beginMountedPlaybackOperation,
+        cancelMountedPlaybackOperation
       });
     }
     return () => {
@@ -97,7 +101,7 @@ export function AudioPlayer({
         resilienceBridge.onRegisterMediaAccess({});
       }
     };
-  }, [resilienceBridge, getMediaEl, getContainerEl, fetchVideoInfo]);
+  }, [resilienceBridge, getMediaEl, getContainerEl, fetchVideoInfo, beginMountedPlaybackOperation, cancelMountedPlaybackOperation]);
 
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
   const header = !!effectiveArtist && !!effectiveAlbum ? `${effectiveArtist} - ${effectiveAlbum}` : effectiveArtist ? effectiveArtist : effectiveAlbum ? effectiveAlbum : title || 'Audio Track';
@@ -293,7 +297,7 @@ export function AudioPlayer({
       <audio
         ref={containerRef}
         src={mediaUrl}
-        autoPlay
+        autoPlay={resilienceBridge?.remountDiagnostics?.remountClass !== 'owner-operation'}
         style={{ display: 'none' }}
       />
     </div>

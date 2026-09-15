@@ -34,6 +34,10 @@ beforeEach(() => {
 afterEach(() => { cleanup(); _setSharedLedgerForTests(null); vi.useRealTimers(); vi.restoreAllMocks(); });
 
 async function mount(mediaType = 'hls_video', url = '/movie.m3u8', id = 'plex:55854', resilienceBridge) {
+  // Warm the deliberately lazy dependency before React commits the effect.
+  // A cold Vite dynamic import is not guaranteed to settle inside act, and
+  // polling for it would deadlock the recovery cases that use fake timers.
+  if (mediaType === 'hls_video' && engine.supported) await import('hls.js');
   let result;
   await act(async () => { result = render(<VideoPlayer media={{
     id, assetId: id, title: 'Arrival', mediaType, mediaUrl: url,

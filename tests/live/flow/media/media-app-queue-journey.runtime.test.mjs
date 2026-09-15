@@ -116,6 +116,7 @@ test('[PLAY.6a/AC1][STEER.8a/AC2] add without interrupting, then jump to a same-
   await expect.poll(() => video.evaluate(el => el.currentTime), {
     message: 'The decoder must advance before testing queue actions',
   }).toBeGreaterThan(startedAt + 0.25);
+  const originalVisit = await video.elementHandle();
   await page.getByTestId('np-toggle').click();
   await expect.poll(() => video.evaluate(el => el.paused)).toBe(true);
   await page.getByRole('button', { name: 'Forward 10 seconds' }).click();
@@ -135,11 +136,29 @@ test('[PLAY.6a/AC1][STEER.8a/AC2] add without interrupting, then jump to a same-
   await page.keyboard.press('Escape');
   const entries = page.getByTestId('queue-panel').locator('.queue-item-title');
   await expect(entries).toHaveCount(2);
+  expect(await originalVisit.evaluate(el => el.isConnected && el.paused), 'Add must retain the paused physical visit').toBe(true);
   await entries.nth(1).click();
   await expect.poll(() => video.evaluate(el => !el.paused && el.readyState >= 2
     && el.currentTime > 0 && el.currentTime < 3), {
     timeout: 30000, message: 'A new same-title queue entry must actually restart, not only update the selected row',
   }).toBe(true);
+  await expect.poll(() => originalVisit.evaluate(el => el.isConnected), {
+    message: 'An explicit same-content queue visit must retire the previous native node, so its events cannot prove the new visit',
+  }).toBe(false);
+
+  // A one-visit autoplay barrier must not leak into the next ordinary title.
+  const restartedSource = await video.evaluate(el => el.currentSrc);
+  const nextTitle = title === 'Arrival' ? 'Disclosure Day' : 'Arrival';
+  await search.fill(nextTitle);
+  const nextResult = page.getByRole('option').filter({ hasText: nextTitle }).filter({ hasText: 'Movie' });
+  await expect(nextResult).toHaveCount(1, { timeout: 15000 });
+  await nextResult.click();
+  await expect.poll(() => video.evaluate((el, priorSource) => el.currentSrc !== priorSource
+    && !el.paused && !el.seeking && el.readyState >= 2, restartedSource), {
+    timeout: 30000, message: 'An ordinary different title must play after the same-title restart',
+  }).toBe(true);
+  const nextStartedAt = await video.evaluate(el => el.currentTime);
+  await expect.poll(() => video.evaluate(el => el.currentTime)).toBeGreaterThan(nextStartedAt + 0.25);
 });
 
 test('[PLAY.6a/AC2] Add keeps the actual playing video advancing without pause or reload', async ({ page }) => {
