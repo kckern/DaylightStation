@@ -355,7 +355,8 @@ native-media evidence arrives. The bridge follows Player's native media
 accessor (including the video element inside the DASH player's shadow root),
 so host changes and focused-video presentation retain the same media element.
 Native seek completion publishes the element's actual position even while
-paused, when another progress tick may not arrive. Discrete native events
+paused, when another progress tick may not arrive. Seek completion does not
+prove that a buffering decoder has resumed playback. Discrete native events
 must match the active playback generation, accessor node, and mounted content
 identity before updating the session, so a pending source replacement cannot
 attribute the previous source's events to the newly selected item.

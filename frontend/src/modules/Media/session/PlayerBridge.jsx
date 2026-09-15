@@ -251,9 +251,10 @@ export function PlayerBridge() {
         onProgress({
           currentTime: bound.currentTime,
           duration: bound.duration,
-          paused: bound.paused,
+          // seeked proves position completion, not resumed frames. A true
+          // native pause is evidence; an unpaused decoder may still buffer.
+          ...(bound.paused ? { paused: true } : {}),
           isSeeking: false,
-          stalled: false,
         });
       };
       bound.addEventListener('loadedmetadata', observeDuration);
