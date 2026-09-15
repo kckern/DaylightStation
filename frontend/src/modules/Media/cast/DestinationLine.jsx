@@ -29,7 +29,7 @@ import './Cast.scss';
 const DESTINATION_MODAL_Z_INDEX = 600;
 
 function destinationLabel(targetIds, devices) {
-  if (targetIds.length === 0) return 'This browser';
+  if (targetIds.length === 0) return 'This device';
   if (targetIds.length === 1) {
     return deviceName(devices.find((d) => d.id === targetIds[0]), targetIds[0]);
   }

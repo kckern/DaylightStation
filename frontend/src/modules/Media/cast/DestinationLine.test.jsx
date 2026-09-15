@@ -72,9 +72,9 @@ beforeEach(() => {
 });
 
 describe('DestinationLine', () => {
-  it('reads "This browser" when no remote target is set', () => {
+  it('reads "This device" when no remote target is set', () => {
     renderLine();
-    expect(screen.getByTestId('destination-line-name')).toHaveTextContent('This browser');
+    expect(screen.getByTestId('destination-line-name')).toHaveTextContent('This device');
   });
 
   it('resolves a configured target id to its device name via the fleet', () => {
@@ -163,7 +163,7 @@ describe('DestinationLine', () => {
     fireEvent.click(screen.getByTestId('picker-stub-pick'));
 
     expect(screen.getByTestId('probe-targets')).toHaveTextContent('');
-    expect(screen.getByTestId('destination-line-name')).toHaveTextContent('This browser');
+    expect(screen.getByTestId('destination-line-name')).toHaveTextContent('This device');
     expect(mediaLog.destinationChanged).toHaveBeenCalledWith({
       from: 'livingroom-tv',
       to: 'local',

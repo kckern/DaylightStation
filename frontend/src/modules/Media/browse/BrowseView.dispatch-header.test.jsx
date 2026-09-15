@@ -116,7 +116,7 @@ describe('BrowseView — container dispatch header (Task 15)', () => {
     expect(screen.getByTestId('browse-dispatch-shuffle')).toHaveTextContent('Shuffle');
     expect(screen.getByTestId('browse-dispatch-queue')).toHaveTextContent('Queue');
     expect(screen.getByTestId('destination-line')).toBeInTheDocument();
-    expect(screen.getByTestId('destination-line-name')).toHaveTextContent('This browser');
+    expect(screen.getByTestId('destination-line-name')).toHaveTextContent('This device');
   });
 
   it('renders the header directly under the breadcrumb, above the row list', () => {
