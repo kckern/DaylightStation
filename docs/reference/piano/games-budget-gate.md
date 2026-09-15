@@ -546,40 +546,41 @@ The gate asks for material through a provider seam that names four kinds:
   focused without losing the run-up.
 
 - **`drill`** — a multi-set drill, named by its program id (`{ kind: drill, drill: scale-drill-3x3 }`;
-  the id may be omitted for the scale drill). It is the only kind whose answer depends on
-  the LEARNER rather than on the bank: which set is asked for is a function of how many
-  reps that child has banked today, so the gate resolves it against their own standing
-  and hands the run a plain instance plus the program coordinates its chrome reads.
+  the id may be omitted for the scale drill). It is the only kind that is a SEQUENCE of asks
+  rather than one: which set is on the stand is a function of the reps passed so far at this
+  gate, so the gate deals them itself and hands the run one plain instance at a time plus the
+  program coordinates its chrome reads.
 
   The scale drill is three sets of three reps — G right hand, D left hand, A both hands,
   every rep the whole gesture up to the octave and back. A set is a program step and its
-  `required_passes` IS the rep counter, so passing a gate banks a rep and the row of pills
-  carries across launches: a child works through the nine over the course of a day rather
-  than paying for each game with all of them.
+  `required_passes` IS the rep counter.
 
-  **It resets with the study day.** The projection counts only attempts inside the current
-  4am-to-4am day, because the drill is the price of a game rather than a course somebody
-  finishes once — without the reset, the ninth lifetime pass would retire the rung forever.
+  **The gate is the whole drill.** A passed scale banks one rep and puts the next rep on the
+  stand — nothing opens, nothing celebrates, the pills gild a ring. The game is the prize for
+  the last rep, and every rep is played at the gate the child is standing at. Reps are counted
+  from what was passed at THIS gate and from nothing else: not the learner's attempt ledger,
+  not this morning's reps, not yesterday's. Every launch is a new nine. (It used to bank one rep
+  per passed gate and carry the row across launches over the study day, which meant one G major
+  opened the game and the three-by-three the pills promised was walked through one rep at a
+  time. That was reported as the gate being broken, and it was.)
 
-  A rep banks on the DRILL's own requirement, which is stricter than the rung's: the rung
-  is completeness-only (a stray wrong key cannot fail a child), while a rep needs
-  cleanliness too. A scrappy take therefore opens the game and still asks for the rep
-  again, which is the right pair of answers.
+  A failed rep is a failed gate like any other — the fail panel, the ladder's retries, an ease
+  when they run out — and Try again is the SAME rep: the reps already banked at this gate stay
+  banked. Walking away closes the gate and the nine with it.
 
-  A drill that cannot be reached fails open; a drill id that does not exist substitutes.
-  Same two answers as every other kind, for the same reasons.
+  A drill that cannot be reached fails open; a drill id that does not exist, or a program with
+  no steps, substitutes. Same two answers as every other kind, for the same reasons.
 
   **A scale level writes the same drill in its own YAML.** An `exercise` spec with `roots`
   that carries `sets` and `reps` —
   `{ kind: exercise, collection: scales, roots: [G, D, F], direction: up-then-down, sets: 3, reps: 3 }`
   — is resolved exactly like `kind: drill`: `sets` sets, one key each taken from the roots in
-  order (cycling when the level names fewer), each needing `reps` reps, one rep banked per
-  PASSED gate, counted over the study day. Only the counts come from the level; the day
-  boundary, which set is asked and the pills are the drill's. Because a short root list
-  repeats a key, passes are dealt to the sets in order — the fourth C major of the day is the
-  first rep of the second set, never a second set banked at once. Every scale level in the
-  household ladder is written this way, so every scale gate shows where the child stands in
-  its nine.
+  order (cycling when the level names fewer), each needing `reps` reps, all of them at the gate.
+  Only the counts come from the level; which set is asked, how a rep banks and the pills are the
+  drill's. Because a short root list repeats a key, passes are dealt to the sets in order — the
+  fourth C major is the first rep of the second set, never a second set banked at once. Every
+  scale level in the household ladder is written this way, so every scale gate costs the same
+  nine and shows where the child stands in them.
 
 ### What the run screen says while a child plays one
 
