@@ -154,7 +154,12 @@ export function buildDayQueue({
     if (clearedOn === day) enteredToday.push(seq);
   }
   enteredToday.sort((a, b) => a - b);
-  for (const seq of enteredToday) queue.push({ seq, rung: entryRung, done: true });
+  // A RUNG NEVER HOLDS MORE THAN THE DAY. Steps done beyond the limit — a day
+  // worked under an older, larger limit — stay in the log as evidence and keep
+  // their sentences out of new material, but they are not today's steps: a
+  // 3×4 learner's day is 12 whatever the log holds (2026-09-14: 15 repetitions
+  // on a day now sized at five made a 20-step day read 33).
+  for (const seq of enteredToday.slice(0, dailyLimit)) queue.push({ seq, rung: entryRung, done: true });
 
   // Scan in sequence order and take the first UNTOUCHED sentences. Scanning
   // (rather than the original's `max(seq) + 1`) means a gap left by a skipped
@@ -217,17 +222,24 @@ export function buildDayQueue({
     finished.sort(oldestFirst);
     owed.sort(oldestFirst);
 
+    // Capped like the entry rung: four dictations finished under an old limit
+    // of five are still three steps on a three-a-day ladder.
+    const shownFinished = finished.slice(0, dailyLimit);
     const rung = [
-      ...finished.map(({ seq }) => ({ seq, rung: to, done: true })),
-      ...owed.slice(0, Math.max(0, dailyLimit - finished.length))
+      ...shownFinished.map(({ seq }) => ({ seq, rung: to, done: true })),
+      ...owed.slice(0, Math.max(0, dailyLimit - shownFinished.length))
         .map(({ seq }) => ({ seq, rung: to, done: false })),
     ];
 
     // Short of the limit — the cold start, or a pipeline drained by a break —
     // today's own new set climbs this rung as practice. It turns itself off
     // once graduates fill the rung, with no flag or day-number test.
+    // Passes already done fill the slots first, so a capped day never shows a
+    // practice step as outstanding while one the learner finished is hidden.
     const held = new Set(rung.map((entry) => entry.seq));
-    for (const seq of todaysSet) {
+    const donePractice = (seq) => practiced.has(`${to}:${seq}:${day}`);
+    const practiceOrder = [...todaysSet.filter(donePractice), ...todaysSet.filter((seq) => !donePractice(seq))];
+    for (const seq of practiceOrder) {
       if (rung.length >= dailyLimit) break;
       if (held.has(seq)) continue;
       held.add(seq);
