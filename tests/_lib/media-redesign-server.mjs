@@ -5,7 +5,12 @@
  * No Plex credential is loaded: the existing Plex passthrough supplies auth.
  */
 import express from 'express';
-import { createServer } from 'vite';
+import { build, createServer, preview } from 'vite';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { getAppPort } from './configHelper.mjs';
 import { PlexAdapter } from '../../backend/src/1_adapters/content/media/plex/PlexAdapter.mjs';
 import { HttpClient } from '../../backend/src/0_system/services/HttpClient.mjs';
@@ -20,6 +25,56 @@ const upstream = `http://127.0.0.1:${getAppPort()}`;
 const logger = createLogger({ app: 'media-redesign-acceptance' });
 const policy = process.env.MEDIA_ACCEPTANCE_POLICY || 'branch';
 if (!['branch', 'copy-675677', 'dash-720p-4mbps-675677', 'hls-copy-55854'].includes(policy)) throw new Error('Unknown acceptance policy');
+export const ACCEPTED_SOURCE_SHA = '0c0c37e77e66837efc4bd4d620f60e4d26194965';
+const PROVENANCE_FILE = 'acceptance-preview-provenance.json';
+
+export function requireExpectedSha(expectedSha = process.env.MEDIA_ACCEPTANCE_EXPECTED_SHA) {
+  if (!/^[0-9a-f]{40}$/.test(expectedSha || '')) throw new Error('MEDIA_ACCEPTANCE_EXPECTED_SHA must be an explicit full SHA');
+  return expectedSha;
+}
+
+export function validateAcceptedSnapshot({ head, branch, productStatus, expectedSha = ACCEPTED_SOURCE_SHA }) {
+  if (head !== expectedSha) throw new Error('Acceptance build requires the expected accepted HEAD');
+  if (branch !== 'HEAD') throw new Error('Acceptance build requires a detached checkout');
+  if (productStatus.trim()) throw new Error('Acceptance build requires clean product source');
+  return { head, branch };
+}
+
+export function readAcceptedSnapshot({ cwd = process.cwd(), exec = execFileSync, expectedSha = ACCEPTED_SOURCE_SHA } = {}) {
+  const runGit = args => exec('git', args, { cwd, encoding: 'utf8' }).trim();
+  return validateAcceptedSnapshot({
+    head: runGit(['rev-parse', 'HEAD']), expectedSha,
+    branch: runGit(['rev-parse', '--abbrev-ref', 'HEAD']),
+    productStatus: runGit(['status', '--porcelain', '--', 'frontend', 'backend', 'shared']),
+  });
+}
+
+export function resolveAcceptanceBuildOutput({ requestedDist } = {}) {
+  if (requestedDist) throw new Error('Build must not set MEDIA_ACCEPTANCE_DIST');
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'daylight-media-preview-'));
+}
+
+export function writeArtifactProvenance(dist, sourceSha = ACCEPTED_SOURCE_SHA) {
+  const provenance = {
+    schema: 'daylight.media.acceptance-preview/v1', sourceSha, buildId: sourceSha.slice(0, 12),
+  };
+  fs.writeFileSync(path.join(dist, PROVENANCE_FILE), `${JSON.stringify(provenance)}\n`, 'utf8');
+  return provenance;
+}
+
+export function validateArtifactProvenance(dist, expectedSha = ACCEPTED_SOURCE_SHA) {
+  let provenance;
+  try {
+    provenance = JSON.parse(fs.readFileSync(path.join(dist, PROVENANCE_FILE), 'utf8'));
+  } catch { throw new Error('Preview artifact lacks accepted provenance'); }
+  const expectedBuildId = expectedSha.slice(0, 12);
+  if (provenance.schema !== 'daylight.media.acceptance-preview/v1'
+    || provenance.sourceSha !== expectedSha) throw new Error('Preview artifact does not name the expected accepted SHA');
+  if (provenance.buildId !== expectedBuildId) throw new Error('Preview artifact build ID does not match the expected accepted SHA');
+  const index = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
+  if (!index.includes(`v=${expectedBuildId}`)) throw new Error('Preview artifact index build ID does not match provenance');
+  return provenance;
+}
 class AuthenticatedProxyHttpClient extends HttpClient {
   async get(url, options) {
     // The branch adapter appends an empty token when no local credential is
@@ -109,10 +164,57 @@ app.use('/api/v1/play', createPlayRouter({
 // only in a virtual browser, never on the configured garage screen.
 const allowedTitles = new Set(policy === 'branch' ? ['55854', '697368', '675677']
   : policy === 'hls-copy-55854' ? ['55854'] : ['675677']);
-const server = await createServer({
-  root: 'frontend',
-  configFile: 'frontend/vite.config.js',
-  plugins: [{
+
+/**
+ * Shared by Vite dev and Vite preview: production-built assets retain the
+ * exact branch mint/read composition rather than introducing another proxy.
+ */
+export function createAcceptancePreviewPlugin({ app, allowedTitles, policy, sourceSha, upstream }) {
+  if (!/^[0-9a-f]{40}$/.test(sourceSha || '')) throw new Error('Bundled preview source must be a full SHA');
+  const acceptanceSource = `accepted-${sourceSha}`;
+  const install = vite => {
+    vite.middlewares.use(async (req, res, next) => {
+    res.setHeader('X-Media-Acceptance-Source', acceptanceSource);
+    const path = new URL(req.url, upstream).pathname;
+    const playMatch = /^\/api\/v1\/play\/(?:plex:|plex\/)\d+$/.test(path);
+    if (policy === 'branch' && playMatch) {
+      const ratingKey = path.split(/[:/]/).at(-1);
+      if (req.method !== 'GET' || !allowedTitles.has(ratingKey)) {
+        res.statusCode = 403;
+        return res.end('Acceptance play read restricted to authorized test titles');
+      }
+      res.setHeader('X-Media-Acceptance-Read', 'worktree');
+      return app(req, res, next);
+    }
+    if (policy === 'hls-copy-55854' && /^\/api\/v1\/play\/(?:plex:|plex\/)55854$/.test(path)) {
+      if (req.method !== 'GET') { res.statusCode = 403; return res.end('GET only'); }
+      try {
+        const url = new URL(req.url, upstream);
+        // Existing API option supplies real from-beginning metadata and
+        // stream offset; no synthetic position/resume data is injected.
+        url.searchParams.set('resume', 'false');
+        const response = await fetch(url, { headers: { Accept: 'application/json' } });
+        res.statusCode = response.status;
+        res.setHeader('Content-Type', response.headers.get('content-type') || 'application/json');
+        res.setHeader('X-Media-Acceptance-Policy', policy);
+        if (!response.ok) return res.end(await response.text());
+        const body = await response.json();
+        return res.end(JSON.stringify({ ...body, mediaType: 'hls_video', format: 'hls_video' }));
+      } catch { res.statusCode = 502; return res.end('HLS control upstream request failed'); }
+    }
+    const match = /^\/api\/v1\/proxy\/plex\/stream\/([^/]+)$/.exec(path);
+    if (!match) return next();
+    if (req.method !== 'GET' || !allowedTitles.has(match[1])) {
+      res.statusCode = 403;
+      return res.end('Acceptance mint restricted to authorized test titles');
+    }
+    res.setHeader('X-Media-Acceptance-Mint', 'worktree');
+    res.setHeader('X-Media-Acceptance-Policy', policy);
+    return app(req, res, next);
+    });
+  };
+
+  return {
     name: 'media-redesign-branch-mint',
     enforce: 'pre',
     transform(code, id) {
@@ -133,64 +235,63 @@ const server = await createServer({
       // Read-only timestamp evidence; engine selection is production code.
       return { code: code.replace(anchor, anchor + observation), map: null };
     },
-    configureServer(vite) {
-      vite.middlewares.use(async (req, res, next) => {
-        const path = new URL(req.url, upstream).pathname;
-        const playMatch = /^\/api\/v1\/play\/(?:plex:|plex\/)\d+$/.test(path);
-        if (policy === 'branch' && playMatch) {
-          const ratingKey = path.split(/[:/]/).at(-1);
-          if (req.method !== 'GET' || !allowedTitles.has(ratingKey)) {
-            res.statusCode = 403;
-            return res.end('Acceptance play read restricted to authorized test titles');
-          }
-          res.setHeader('X-Media-Acceptance-Read', 'worktree');
-          return app(req, res, next);
-        }
-        if (policy === 'hls-copy-55854' && /^\/api\/v1\/play\/(?:plex:|plex\/)55854$/.test(path)) {
-          if (req.method !== 'GET') { res.statusCode = 403; return res.end('GET only'); }
-          try {
-            const url = new URL(req.url, upstream);
-            // Existing API option supplies real from-beginning metadata and
-            // stream offset; no synthetic position/resume data is injected.
-            url.searchParams.set('resume', 'false');
-            const response = await fetch(url, { headers: { Accept: 'application/json' } });
-            res.statusCode = response.status;
-            res.setHeader('Content-Type', response.headers.get('content-type') || 'application/json');
-            res.setHeader('X-Media-Acceptance-Policy', policy);
-            if (!response.ok) return res.end(await response.text());
-            const body = await response.json();
-            return res.end(JSON.stringify({ ...body, mediaType: 'hls_video', format: 'hls_video' }));
-          } catch { res.statusCode = 502; return res.end('HLS control upstream request failed'); }
-        }
-        const match = /^\/api\/v1\/proxy\/plex\/stream\/([^/]+)$/.exec(path);
-        if (!match) return next();
-        if (req.method !== 'GET' || !allowedTitles.has(match[1])) {
-          res.statusCode = 403;
-          return res.end('Acceptance mint restricted to authorized test titles');
-        }
-        res.setHeader('X-Media-Acceptance-Mint', 'worktree');
-        res.setHeader('X-Media-Acceptance-Policy', policy);
-        return app(req, res, next);
-      });
-    },
-  }],
-  server: {
+    configureServer: install,
+    configurePreviewServer: install,
+  };
+}
+
+const viteProxy = {
+  '/api': upstream,
+  '/ws': { target: upstream.replace('http:', 'ws:'), ws: true },
+};
+
+export async function runAcceptanceServer() {
+  const dist = process.env.MEDIA_ACCEPTANCE_DIST;
+  if (process.argv.includes('--build')) {
+    const expectedSha = requireExpectedSha();
+    const snapshot = readAcceptedSnapshot({ expectedSha });
+    const output = resolveAcceptanceBuildOutput({ requestedDist: dist });
+    const sourceSha = snapshot.head;
+    process.env.COMMIT_HASH = sourceSha;
+    const plugin = createAcceptancePreviewPlugin({ app, allowedTitles, policy, sourceSha, upstream });
+    await build({ root: 'frontend', configFile: 'frontend/vite.config.js', plugins: [plugin],
+      build: { outDir: output, emptyOutDir: false } });
+    writeArtifactProvenance(output, sourceSha);
+    validateArtifactProvenance(output, sourceSha);
+    logger.info('acceptance.preview.built', { dist: output, sourceSha, policy });
+    return;
+  }
+  let sourceSha = process.env.MEDIA_ACCEPTANCE_SOURCE_SHA || ACCEPTED_SOURCE_SHA;
+  if (dist) {
+    const expectedSha = requireExpectedSha();
+    const snapshot = readAcceptedSnapshot({ expectedSha });
+    sourceSha = snapshot.head;
+    validateArtifactProvenance(dist, sourceSha);
+  }
+  process.env.COMMIT_HASH = sourceSha;
+  const plugin = createAcceptancePreviewPlugin({ app, allowedTitles, policy, sourceSha, upstream });
+  const shared = {
+    root: 'frontend', configFile: 'frontend/vite.config.js', plugins: [plugin],
+  };
+  const server = dist ? await preview({ ...shared, build: { outDir: dist }, preview: {
+    host: '127.0.0.1', port: 0, strictPort: false, headers: {
+      'X-Media-Acceptance-Source': `accepted-${sourceSha}`,
+    }, proxy: viteProxy,
+  } }) : await createServer({ ...shared, server: {
     // Parallel workers may save unrelated files during a journey. Tests load
     // current source on navigation, but an HMR remount must not masquerade as
     // a user-visible state-loss defect in the middle of ordinary interaction.
     host: '127.0.0.1', port: 0, strictPort: false, hmr: false,
-    proxy: {
-      '/api': upstream,
-      '/ws': { target: upstream.replace('http:', 'ws:'), ws: true },
-      '/media': undefined,
-    },
-  },
-});
-await server.listen();
-logger.info('acceptance.server.ready', { urls: server.resolvedUrls.local, policy });
-for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.once(signal, async () => {
-    await server.close();
-    process.exit(0);
-  });
+    proxy: viteProxy,
+  } });
+  if (!dist) await server.listen();
+  logger.info('acceptance.server.ready', { urls: server.resolvedUrls?.local, policy, sourceSha, mode: dist ? 'preview' : 'dev' });
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.once(signal, async () => {
+      await server.close();
+      process.exit(0);
+    });
+  }
 }
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await runAcceptanceServer();

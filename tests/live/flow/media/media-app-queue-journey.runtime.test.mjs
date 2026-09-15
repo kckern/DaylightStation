@@ -38,10 +38,11 @@ async function expectHeldQueueThenPlay(page, requests) {
 
 test.afterEach(async ({ page }) => {
   // Release only this test's local playback through the ordinary UI.
-  const stop = page.getByTestId('np-stop');
-  if (!page.isClosed() && await stop.isVisible().catch(() => false)) {
-    await stop.click().catch(() => {});
-  }
+  if (page.isClosed()) return;
+  if (await page.getByRole('listbox').isVisible().catch(() => false)) await page.keyboard.press('Escape');
+  const expandedStop = page.getByTestId('np-stop');
+  const stop = await expandedStop.isVisible().catch(() => false) ? expandedStop : page.getByTestId('mini-stop');
+  if (await stop.isVisible().catch(() => false)) await stop.click();
 });
 
 test('[FIND.1a/AC5] keyboard opens row actions and adds without clearing search or starting playback', async ({ page }) => {
@@ -139,4 +140,38 @@ test('[PLAY.6a/AC1][STEER.8a/AC2] add without interrupting, then jump to a same-
     && el.currentTime > 0 && el.currentTime < 3), {
     timeout: 30000, message: 'A new same-title queue entry must actually restart, not only update the selected row',
   }).toBe(true);
+});
+
+test('[PLAY.6a/AC2] Add keeps the actual playing video advancing without pause or reload', async ({ page }) => {
+  await page.goto('/media');
+  const search = page.getByRole('textbox', { name: 'Search media…' });
+  await expect(search).toBeVisible({ timeout: 30000 });
+  await search.fill(title);
+  const result = page.getByRole('option').filter({ hasText: title }).filter({ hasText: 'Movie' });
+  await expect(result).toHaveCount(1, { timeout: 15000 });
+  await result.click();
+  await page.getByTestId('mini-player-open-nowplaying').click();
+  const video = page.getByTestId('now-playing-host').locator('video');
+  await expect(video).toHaveCount(1, { timeout: 30000 });
+  await expect.poll(() => video.evaluate(el => !el.paused && !el.seeking && el.readyState >= 2), { timeout: 30000 }).toBe(true);
+  const initial = await video.evaluate(el => el.currentTime);
+  await expect.poll(() => video.evaluate(el => el.currentTime)).toBeGreaterThan(initial + 0.25);
+  await video.evaluate(el => {
+    window.__queuePlayingNode = el;
+    window.__queuePlaybackInterruptions = [];
+    for (const event of ['pause', 'emptied', 'loadstart']) {
+      el.addEventListener(event, () => window.__queuePlaybackInterruptions.push(event));
+    }
+  });
+  const before = await video.evaluate(el => el.currentTime);
+  const source = await video.evaluate(el => el.currentSrc);
+  await search.fill(title);
+  await result.getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('menuitem', { name: 'Add to Queue', exact: true }).click();
+  await expect(search).toHaveValue(title);
+  await expect(page.getByTestId('queue-panel').locator('.queue-item-title')).toHaveCount(2);
+  await expect.poll(() => video.evaluate(el => el.currentTime)).toBeGreaterThan(before + 0.25);
+  expect(await video.evaluate(el => el === window.__queuePlayingNode && !el.paused && !el.seeking)).toBe(true);
+  expect(await video.evaluate(el => el.currentSrc)).toBe(source);
+  expect(await page.evaluate(() => window.__queuePlaybackInterruptions)).toEqual([]);
 });
