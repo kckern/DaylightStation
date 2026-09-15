@@ -16,6 +16,8 @@
 // sheet the recorder alone was ever built to understand — falls through to
 // the SAME behaviour as before this file existed: nothing else happens. This
 // consumer only ever ADDS a resolution; it can never subtract one.
+import { scanNoticeDocument } from '#domains/school/documents/scanNotices.mjs';
+
 /**
  * @param {object} deps
  * @param {import('../ports/ISchoolRealtimeGateway.mjs').ISchoolRealtimeGateway} deps.realtime
@@ -43,6 +45,13 @@
  *   job — see `schoolLifecycle.mjs`'s own `stores.allocationStore`/
  *   `stores.printDocuments`).
  * @param {object} [deps.logger]
+ * @param {{print: (document: object) => Promise<{printed: boolean, reason: string|null}>}} [deps.receipts] -
+ *   the thermal notice printer (`ReceiptPrinting`-shaped). Every non-graded
+ *   announcement also prints a slip through it; absent, the panel ceremony
+ *   alone speaks (a legitimate wiring for a house with no receipt printer).
+ * @param {{getPublished: Function}} [deps.printDocuments] - resolves a
+ *   sheet's published title for the slip and the panel; absent, slips are
+ *   untitled.
  * @param {{fire: Function}} [deps.gradingHook] - `SchoolGradingHookAdapter`-shaped
  *   (or any fake with a `fire(outcome)`), optional. Fired fire-and-forget
  *   (never awaited) at each of the four terminal scan outcomes — unresolved,
@@ -55,6 +64,7 @@
 export function createSchoolPrintScanConsumer({
   realtime, config = {}, resolveCardScan, recordCardScanOutcome = null,
   closeSessionOutcome = null, gradingHook = null, logger = console,
+  receipts = null, printDocuments = null,
 }) {
   if (!realtime?.onPrintSheet || !realtime?.printScanResolved) {
     throw new Error('createSchoolPrintScanConsumer: realtime print-sheet capability required');
@@ -91,6 +101,75 @@ export function createSchoolPrintScanConsumer({
       spoke = true;
       const { event: kind, ...announcement } = event;
       realtime.printScanResolved({ kind, ...announcement });
+      printSlip({ kind, ...announcement });
+    };
+
+    // EVERY FEED PUTS PAPER IN THE CHILD'S HAND (2026-09-15). The panel
+    // ceremony above is a short-lived toast; the two sheets on a card that
+    // graded each printed a receipt, the one that came back unfinished
+    // printed nothing, and the child spent the morning "done" with a sheet
+    // the grader had never accepted. So the same announcement that goes to
+    // the panel also goes to the thermal printer as a notice slip
+    // (`scanNoticeDocument` decides the copy; `scan-graded` yields none
+    // because `closeSessionOutcome` already printed the result receipt).
+    // Fire-and-forget, never awaited on the ceremony path: a printer fault
+    // must not delay or swallow the broadcast, and the funnel's guarantee
+    // is about speaking, which already happened.
+    const printSlip = (announcement) => {
+      if (!receipts?.print) return;
+      let document;
+      try {
+        document = scanNoticeDocument(announcement);
+      } catch (err) {
+        logger.warn?.('school.print.scan-slip-build-failed', { testId, kind: announcement.kind, error: err.message });
+        return;
+      }
+      if (!document) return;
+      Promise.resolve(receipts.print(document))
+        .then((printed) => {
+          logger[printed?.printed ? 'info' : 'warn']?.('school.print.scan-slip', {
+            testId, kind: announcement.kind, printed: printed?.printed === true, reason: printed?.reason ?? null,
+          });
+        })
+        .catch((err) => {
+          logger.warn?.('school.print.scan-slip', { testId, kind: announcement.kind, printed: false, reason: err.message });
+        });
+    };
+
+    /** The sheet's printed title, for the slip and the panel — null when unknown. */
+    const titleFor = async (card) => {
+      try {
+        const published = await printDocuments?.getPublished?.(card.documentId, card.rev);
+        return typeof published?.title === 'string' && published.title.trim() ? published.title.trim() : null;
+      } catch {
+        return null;
+      }
+    };
+
+    /** Blank/ambiguous rows and the answered count for one resolved sheet. */
+    const rowsWith = (card, status) => (card.results ?? [])
+      .filter((r) => r.status === status && Number.isFinite(r.row))
+      .map((r) => r.row)
+      .sort((a, b) => a - b);
+    const progressOf = (card) => {
+      const rows = (card.results ?? []).filter((r) => Number.isFinite(r.row));
+      return {
+        answered: rows.filter((r) => r.status !== 'blank').length,
+        total: rows.length,
+        blankRows: rowsWith(card, 'blank'),
+        ambiguousRows: rowsWith(card, 'ambiguous'),
+      };
+    };
+    /** Every sheet on this card that is still missing or double-marking a row. */
+    const unfinishedSheets = async (outcome) => {
+      const sheets = [];
+      for (const card of outcome?.results ?? []) {
+        if (card.error || !Array.isArray(card.results)) continue;
+        const progress = progressOf(card);
+        if (!progress.blankRows.length && !progress.ambiguousRows.length) continue;
+        sheets.push({ title: await titleFor(card), ...progress });
+      }
+      return sheets;
     };
 
     if (payload.error?.code === 'OMR_COLUMN_COUNT') {
@@ -107,13 +186,19 @@ export function createSchoolPrintScanConsumer({
         // ceremony it did not already get.
         const owedCeremony = await settleOutcome(outcome, speak);
         if (!spoke && owedCeremony) {
+          // A re-fed card whose sheets were all already recorded. If one of
+          // them is STILL unfinished, that is the thing to say — "nothing
+          // new" is true and useless, and it is the sentence a child repeats
+          // as "it says I'm done" (2026-09-15).
+          const unfinished = await unfinishedSheets(outcome);
           logger.warn?.('school.print.scan-not-recorded', {
-            testId, recordCount: outcome?.results?.length ?? 0,
+            testId, recordCount: outcome?.results?.length ?? 0, unfinished,
           });
           speak({
             event: 'scan-not-recorded',
             testId,
             learnerId: outcome?.results?.find((c) => c.learnerId)?.learnerId ?? null,
+            unfinished,
           });
         }
       })
@@ -402,7 +487,7 @@ export function createSchoolPrintScanConsumer({
           // Same outcome, second listener: the School panel ceremony
           // (Slice D) needs this on the wire too.
           speak({
-            event: 'scan-refused', code: card.error.code, recordId: card.recordId,
+            event: 'scan-refused', code: card.error.code, recordId: card.recordId, title: await titleFor(card),
           });
           continue;
         }
@@ -597,6 +682,7 @@ export function createSchoolPrintScanConsumer({
                 speak({
                   event: 'scan-review',
                   testId,
+                  title: await titleFor(card),
                   learnerId: card.learnerId ?? null,
                   sessionId: sectionOutcome.session.sessionId,
                   pendingReview: sectionOutcome.session.pendingReview,
@@ -623,12 +709,8 @@ export function createSchoolPrintScanConsumer({
                 // the other way a sheet stalls, and the two are easy to
                 // confuse on paper — a stray second mark reads as "I answered
                 // that one" to the child who made it.
-                const rowsWith = (status) => (card.results ?? [])
-                  .filter((row) => row.status === status && Number.isFinite(row.row))
-                  .map((row) => row.row)
-                  .sort((a, b) => a - b);
-                const blankRows = rowsWith('blank');
-                const ambiguousRows = rowsWith('ambiguous');
+                const { blankRows, ambiguousRows, answered, total } = progressOf(card);
+                const title = await titleFor(card);
                 logger.warn?.('school.print.scan-partial-unfinished', {
                   testId, recordId: card.recordId, learnerId: card.learnerId ?? null,
                   sessionId: sectionOutcome.session.sessionId, blankRows, ambiguousRows,
@@ -646,6 +728,9 @@ export function createSchoolPrintScanConsumer({
                   testId,
                   learnerId: card.learnerId ?? null,
                   sessionId: sectionOutcome.session.sessionId,
+                  title,
+                  answered,
+                  total,
                   blankRows,
                   ambiguousRows,
                 });

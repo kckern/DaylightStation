@@ -4167,6 +4167,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         recordCardScanOutcome,
         closeSessionOutcome: schoolLifecycle.useCases?.closeSessionOutcome ?? null,
         gradingHook,
+        // Every non-graded feed prints a notice slip through the same
+        // thermal printer the result receipts use (2026-09-15).
+        receipts: schoolLifecycle.receipts ?? null,
+        printDocuments: schoolLifecycle.stores.printDocuments,
         logger: rootLogger.child({ module: 'school-print-scan' }),
       });
     } catch (err) {
