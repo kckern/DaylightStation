@@ -77,7 +77,7 @@ function RateControl({ mediaEl }) {
 }
 
 export function TransportBar({ target, mediaEl = null }) {
-  const { snapshot, transport, config } = useSessionController(target);
+  const { snapshot, transport, config, capabilities } = useSessionController(target);
   if (!snapshot?.currentItem) return null;
 
   const isPlaying = PLAYING_STATES.has(snapshot.state);
@@ -93,7 +93,8 @@ export function TransportBar({ target, mediaEl = null }) {
   const hasNext = currentIndex >= 0
     && (currentIndex < items.length - 1 || (repeat === 'all' && items.length > 1));
 
-  const canSeek = !snapshot.currentItem.isLive;
+  const showSeek = !snapshot.currentItem.isLive;
+  const canSeek = !!capabilities?.seekable;
 
   return (
     <div className="np-transport" data-testid="np-transport">
@@ -108,12 +109,13 @@ export function TransportBar({ target, mediaEl = null }) {
         >
           <IconPlayerSkipBackFilled size={22} />
         </button>
-        {canSeek && (
+        {showSeek && (
           <button
             type="button"
             data-testid="np-rew"
             className="np-icon-btn"
             aria-label="Back 10 seconds"
+            disabled={!canSeek}
             onClick={() => transport.seekRel?.(-SKIP_STEP_S)}
           >
             <IconRewindBackward10 size={22} />
@@ -128,12 +130,13 @@ export function TransportBar({ target, mediaEl = null }) {
         >
           {isPlaying ? <IconPlayerPauseFilled size={30} /> : <IconPlayerPlayFilled size={30} />}
         </button>
-        {canSeek && (
+        {showSeek && (
           <button
             type="button"
             data-testid="np-ffw"
             className="np-icon-btn"
             aria-label="Forward 10 seconds"
+            disabled={!canSeek}
             onClick={() => transport.seekRel?.(SKIP_STEP_S)}
           >
             <IconRewindForward10 size={22} />

@@ -31,6 +31,8 @@ export function PlayerBridge() {
   // the moment the item becomes current (C9.1 resume, C7.3 take-over).
   // Normal advancement loads items with position 0, so this is 0 for them.
   const startSecondsRef = useRef(controller.getSnapshot().position ?? 0);
+  const playbackGenerationRef = useRef(0);
+  const [playbackGeneration, setPlaybackGeneration] = useState(0);
   const lastPersistedPosition = useRef(0);
   const stallTimerRef = useRef(null);
   const stallStartedAtRef = useRef(null);
@@ -79,12 +81,25 @@ export function PlayerBridge() {
     }
   }, []);
 
-  // Re-render only when the current item's identity changes — position,
-  // state, and config changes must not remount the Player.
+  // Re-render only for an explicit playback generation or a new content ID —
+  // position, state, config, and metadata observations must not remount the
+  // Player. Explicit LOAD/SET/ADOPT actions still restart same-ID content.
   useEffect(() => {
-    const check = (snap) => {
+    const check = (snap, action = null) => {
       const next = snap.currentItem;
+      const startsPlayback = action != null
+        && ['LOAD_ITEM', 'SET_CURRENT_ITEM', 'ADOPT_SNAPSHOT'].includes(action.type);
+      if (startsPlayback) {
+        startSecondsRef.current = snap.position ?? 0;
+        playbackGenerationRef.current += 1;
+        setPlaybackGeneration(playbackGenerationRef.current);
+      }
       setCurrentItem((prev) => {
+        if (startsPlayback) {
+          // ADOPT can reuse the same PlayableItem object. Clone it so the
+          // play prop records the new generation and requested start offset.
+          return next === prev && next ? { ...next } : next;
+        }
         if (prev === next) return prev;
         if (prev && next && prev.contentId === next.contentId) {
           // Resolved duration/format/title are session metadata, not playback
@@ -99,6 +114,9 @@ export function PlayerBridge() {
       });
     };
     check(controller.getSnapshot());
+    if (controller.store?.onTransition) {
+      return controller.store.onTransition((_prev, next, action) => check(next, action));
+    }
     return controller.subscribe(check);
   }, [controller]);
 
@@ -110,13 +128,17 @@ export function PlayerBridge() {
       stallTimerRef.current = null;
       stallStartedAtRef.current = null;
     }
-  }, [currentItem?.contentId]);
+  }, [currentItem?.contentId, playbackGeneration]);
 
   const contentId = currentItem?.contentId ?? null;
-  const onClear = useCallback(() => controller.onPlayerEnded(contentId), [controller, contentId]);
+  const onClear = useCallback(() => {
+    if (playbackGenerationRef.current !== playbackGeneration) return;
+    controller.onPlayerEnded(contentId);
+  }, [controller, contentId, playbackGeneration]);
 
   // Player emits onProgress with { currentTime, paused, isSeeking, stalled }.
   const onProgress = useCallback((payload) => {
+    if (playbackGenerationRef.current !== playbackGeneration) return;
     if (!contentId || controller.getSnapshot().currentItem?.contentId !== contentId) return;
     if (typeof payload === 'object' && payload !== null) {
       controller.onPlayerObservation?.(contentId, payload);
@@ -139,6 +161,7 @@ export function PlayerBridge() {
           stallTimerRef.current = null;
           stallStartedAtRef.current = null;
           if (startedAt == null) return;
+          if (playbackGenerationRef.current !== playbackGeneration) return;
           controller.onPlayerStalled({ stalledMs: Date.now() - startedAt });
         }, TIMING.STALL_THRESHOLD_MS);
       }
@@ -159,7 +182,7 @@ export function PlayerBridge() {
       controller.onPlayerProgress(positionSeconds, contentId);
       lastPersistedPosition.current = positionSeconds;
     }
-  }, [controller, contentId]);
+  }, [controller, contentId, playbackGeneration]);
 
   // Player's imperative accessor resolves the native media node even for DASH,
   // where the <video> lives inside <dash-video>'s shadow root. Bind discrete
@@ -168,6 +191,8 @@ export function PlayerBridge() {
   // replacement of the inner element without creating a second player.
   useEffect(() => {
     if (!contentId) return undefined;
+    const isActiveGeneration = () => playbackGenerationRef.current === playbackGeneration
+      && controller.getSnapshot().currentItem?.contentId === contentId;
     let bound = null;
     let detach = () => {};
 
@@ -178,15 +203,20 @@ export function PlayerBridge() {
       bound = next;
       if (!bound) { detach = () => {}; return; }
 
-      const observeDuration = () => controller.onPlayerObservation?.(contentId, {
-        duration: bound.duration,
-      });
-      const observePaused = () => {
-        if (!bound.ended) controller.onPlayerStateChange('paused', contentId);
+      const observeDuration = () => {
+        if (!isActiveGeneration()) return;
+        controller.onPlayerObservation?.(contentId, { duration: bound.duration });
       };
-      const observePlaying = () => controller.onPlayerStateChange('playing', contentId);
+      const observePaused = () => {
+        if (isActiveGeneration() && !bound.ended) controller.onPlayerStateChange('paused', contentId);
+      };
+      const observePlaying = () => {
+        if (isActiveGeneration()) controller.onPlayerStateChange('playing', contentId);
+      };
       const observeWaiting = () => {
-        if (!bound.paused) controller.onPlayerStateChange('buffering', contentId);
+        if (isActiveGeneration() && !bound.paused) {
+          controller.onPlayerStateChange('buffering', contentId);
+        }
       };
       bound.addEventListener('loadedmetadata', observeDuration);
       bound.addEventListener('durationchange', observeDuration);
@@ -206,7 +236,7 @@ export function PlayerBridge() {
     bind();
     const poll = setInterval(bind, TIMING.VOLUME_APPLY_RETRY_MS);
     return () => { clearInterval(poll); detach(); };
-  }, [controller, contentId]);
+  }, [controller, contentId, playbackGeneration]);
 
   // Stable play prop across re-renders of the same item. The platform
   // Player honors `seconds` as the start offset.
