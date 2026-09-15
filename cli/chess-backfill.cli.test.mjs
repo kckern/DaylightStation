@@ -1,0 +1,155 @@
+// @vitest-environment node
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import YAML from 'yaml';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { parseArgs, renderReport, run } from './chess-backfill.cli.mjs';
+
+const NOW = new Date('2026-09-15T12:00:00');
+const DELETED = '_deleteme/2026-09-15-chess-record-consolidation';
+
+const put = (root, rel, value) => {
+  const file = path.join(root, rel);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, YAML.stringify(value));
+};
+const read = (root, rel) => YAML.parse(fs.readFileSync(path.join(root, rel), 'utf8'));
+const tree = (root) => {
+  const files = [];
+  const walk = (dir) => {
+    for (const name of fs.readdirSync(dir).sort()) {
+      const full = path.join(dir, name);
+      if (fs.statSync(full).isDirectory()) walk(full);
+      else files.push(path.relative(root, full));
+    }
+  };
+  walk(root);
+  return files;
+};
+const game = (over) => ({
+  completed: true, ended_by: 'game_over', user_id: 'kid', result: 'win', outcome: 'checkmate',
+  help: { hints: 0, best_moves: 0, takebacks: 0 }, moves: [{ san: 'e4' }], move_count: 1, ...over,
+});
+
+let data;
+
+beforeEach(() => {
+  data = fs.mkdtempSync(path.join(os.tmpdir(), 'chess-backfill-'));
+  put(data, 'household/gaming/chess.yml', { ladder: { roster_pack: 'generic', promotion: { window: 7, wins_required: 5 } } });
+  put(data, 'users/kid/apps/chess/config.yml', { ladder: { roster_pack: 'pokemon' } });
+  put(data, 'users/kid/apps/chess/ladder.yml', { unlocked_through: 0, results: [] });
+  put(data, 'users/kid/apps/chess/rivalries.yml', { version: 2, rivals: {} });
+  // Old directory, old filename, no opponent: from before ladder telemetry.
+  put(data, 'household/gaming/log/pianochess/2026-08-13/kid-2026-08-13T17-03-53-612Z.yml', game({
+    game_id: 'chess-1', result: 'loss', ended_at: '2026-08-13T17:03:52.804Z', archived_at: '2026-08-13T17:03:53.612Z',
+    duration_ms: 3_499_621, help: { hints: 21, best_moves: 30, takebacks: 0 },
+  }));
+  // Old directory, current filename, an opponent with a name but no id yet.
+  put(data, 'household/gaming/log/pianochess/2026-08-23/kid_level0_31m29s_1ply_win_checkmate_2026-08-23T23-44-11-865Z-aaaa.yml', game({
+    game_id: 'chess-2', ended_at: '2026-08-23T23:44:11.850Z', duration_ms: 1_889_550, opponent: { level: 0, name: 'Caterpie' },
+  }));
+  // An abandoned game, which neither the ladder nor rivalry memory ever saw.
+  put(data, 'household/gaming/log/pianochess/2026-08-24/kid_level0_2m38s_7ply_quit_quit_2026-08-24T16-30-30-633Z-bbbb.yml', game({
+    game_id: 'chess-3', completed: false, ended_by: 'left', result: null, ended_at: '2026-08-24T16:30:30.000Z',
+    opponent: { level: 0, name: 'Caterpie' },
+  }));
+  // Current directory, carrying the id the old records lacked.
+  put(data, 'household/gaming/log/chess/2026-09-13/kid_level0_18m31s_1ply_win_checkmate_2026-09-13T16-12-09-595Z-cccc.yml', game({
+    game_id: 'chess-4', ended_at: '2026-09-13T16:12:08.352Z', duration_ms: 1_111_425,
+    opponent: { level: 0, name: 'Caterpie', id: 'pokemon:level-1' },
+  }));
+  // Scorecards: one from before game ids, one with an id, one the archive never received.
+  put(data, 'users/kid/apps/chess/games/2026-08-23-1111.yml', { result: 'win', duration_ms: 1_889_550, user_id: 'kid' });
+  put(data, 'users/kid/apps/chess/games/2026-09-13-2222.yml', { game_id: 'chess-4', result: 'win', duration_ms: 1_111_425, user_id: 'kid' });
+  put(data, 'users/kid/apps/chess/games/2026-09-14-3333.yml', { game_id: 'chess-99', result: 'win', duration_ms: 5, user_id: 'kid' });
+});
+
+afterEach(() => fs.rmSync(data, { recursive: true, force: true }));
+
+describe('parseArgs', () => {
+  it('is a dry run unless told to write', () => {
+    expect(parseArgs(['--data', '/srv/data'])).toMatchObject({ data: '/srv/data', write: false, user: null });
+    expect(parseArgs(['--data', '/srv/data', '--write', '--user', 'kid'])).toMatchObject({ write: true, user: 'kid' });
+  });
+
+  it('refuses a flag without its value, and an unknown flag', () => {
+    expect(() => parseArgs(['--data'])).toThrow('--data requires a value');
+    expect(() => parseArgs(['--force'])).toThrow('Unknown argument: --force');
+  });
+});
+
+describe('dry run', () => {
+  it('reports the whole plan and changes nothing on disk', async () => {
+    const before = tree(data);
+    const report = await run({ data, now: NOW });
+    expect(tree(data)).toEqual(before);
+    expect(report.consolidation).toMatchObject({ moved: 3, renamed: 1, conflicts: [] });
+    expect(report.scorecards.kid).toEqual({ matched: 2, unmatched: ['2026-09-14-3333.yml'] });
+    expect(report.derived.kid.rivalries.after).toEqual({ 'Caterpie (pokemon:level-1)': '2-0-0' });
+    expect(renderReport(report)).toContain('DRY RUN');
+  });
+});
+
+describe('--write', () => {
+  it('moves the old archive in under current names and retires the old directory', async () => {
+    await run({ data, write: true, now: NOW });
+    const files = tree(data);
+    expect(files.some((file) => file.startsWith('household/gaming/log/pianochess'))).toBe(false);
+    expect(fs.existsSync(path.join(data, DELETED, 'pianochess-archive'))).toBe(true);
+    const aug13 = files.filter((file) => file.startsWith('household/gaming/log/chess/2026-08-13/'));
+    expect(aug13).toHaveLength(1);
+    expect(path.basename(aug13[0])).toMatch(/^kid_levelunknown_58m19s_1ply_loss_checkmate_2026-08-13T17-03-53-612Z-.+\.yml$/);
+    expect(files).toContain('household/gaming/log/chess/2026-08-23/kid_level0_31m29s_1ply_win_checkmate_2026-08-23T23-44-11-865Z-aaaa.yml');
+  });
+
+  it('retires only the scorecards the archive holds', async () => {
+    await run({ data, write: true, now: NOW });
+    expect(fs.readdirSync(path.join(data, 'users/kid/apps/chess/games'))).toEqual(['2026-09-14-3333.yml']);
+    expect(fs.readdirSync(path.join(data, DELETED, 'scorecards/kid')).sort()).toEqual(['2026-08-23-1111.yml', '2026-09-13-2222.yml']);
+  });
+
+  it('rebuilds the ladder and rivalry files from every finished game, with real times', async () => {
+    await run({ data, write: true, now: NOW });
+    const ladder = read(data, 'users/kid/apps/chess/ladder.yml');
+    expect(ladder).toEqual({
+      unlocked_through: 0,
+      results: [
+        { level: 0, result: 'loss', counted: false, at: '2026-08-13T17:03:52.804Z' },
+        { level: 0, result: 'win', counted: true, at: '2026-08-23T23:44:11.850Z' },
+        { level: 0, result: 'win', counted: true, at: '2026-09-13T16:12:08.352Z' },
+      ],
+    });
+    const rivalries = read(data, 'users/kid/apps/chess/rivalries.yml');
+    expect(Object.keys(rivalries.rivals)).toEqual(['pokemon:level-1']);
+    expect(rivalries.rivals['pokemon:level-1'].record).toEqual({ win: 2, loss: 0, draw: 0 });
+  });
+
+  it('creates no chess profile for a player who never had one', async () => {
+    put(data, 'users/visitor/profile.yml', { name: 'Visitor' });
+    put(data, 'household/gaming/log/chess/2026-09-13/visitor_level0_1s_1ply_win_checkmate_2026-09-13T10-00-00-000Z-dddd.yml', game({
+      game_id: 'chess-5', user_id: 'visitor', ended_at: '2026-09-13T10:00:00.000Z', opponent: { level: 0, name: 'Pip' },
+    }));
+    const report = await run({ data, write: true, now: NOW });
+    expect(report.derived.visitor).toEqual({ games: 1, skipped: 'no chess profile' });
+    expect(fs.existsSync(path.join(data, 'users/visitor/apps'))).toBe(false);
+  });
+
+  it("keeps a copy of each player's derived files as they were before the first write", async () => {
+    put(data, 'users/kid/apps/chess/rivalries.yml', { version: 2, rivals: { stale: { opponent: { id: 'stale', name: 'Old' }, record: { win: 9, loss: 0, draw: 0 }, recent: [] } } });
+    await run({ data, write: true, now: NOW });
+    await run({ data, write: true, now: NOW });
+    const backup = read(data, `${DELETED}/derived-before/kid/rivalries.yml`);
+    expect(backup.rivals.stale.record.win).toBe(9);
+    expect(read(data, `${DELETED}/derived-before/kid/ladder.yml`)).toEqual({ unlocked_through: 0, results: [] });
+  });
+
+  it('is safe to run twice', async () => {
+    await run({ data, write: true, now: NOW });
+    const once = tree(data);
+    const again = await run({ data, write: true, now: NOW });
+    expect(tree(data)).toEqual(once);
+    expect(again.consolidation.moved).toBe(0);
+    expect(again.scorecards.kid).toEqual({ matched: 0, unmatched: ['2026-09-14-3333.yml'] });
+  });
+});

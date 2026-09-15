@@ -187,15 +187,16 @@ file, so the player watches the row and the column meet.
 ## The game history
 
 Every game played on this piano is archived under
-`data/household/history/gaming/pianochess/YYYY-MM-DD/`, where `YYYY-MM-DD` is the
+`data/household/gaming/log/chess/YYYY-MM-DD/`, where `YYYY-MM-DD` is the
 piano's local calendar day. One file is written per game, named
 `{user}_level{opponentLevel}_{duration}_{moveCount}ply_{result}_{outcome}_{timestamp}-{uuid}.yml`.
 The filename makes a directory listing useful without opening YAML; `levelunknown` is
 used honestly for an old/incomplete game where effective-opponent telemetry was never resolved.
 An abandoned game is named `quit_quit`; its YAML retains the event detail in `ended_by` — `left`
 for a game the player walked away from, `restarted` for one they started another game on top of.
-This is separate from the player's own scorecard (`apps/chess/games/`), which only exists for games
-that finished, and it answers a different question: *how is this child actually doing, over months?*
+It is the only per-game record. A player's ladder (`apps/chess/ladder.yml`) and rivalry memory
+(`apps/chess/rivalries.yml`) are derived from finished games, and the archive answers the question
+neither can: *how is this child actually doing, over months?*
 
 Three properties make it worth keeping.
 
@@ -216,6 +217,31 @@ can spell under time pressure, or which notes they can read, is what the piano i
 teaching, and it is invisible in a PGN.
 
 Guests are archived too, with a null player: the history is about what happened on the instrument.
+
+### Rebuilding derived records
+
+`cli/chess-backfill.cli.mjs` repairs everything derived from the archive. It moves any games still
+in the pre-reorganisation directory (`gaming/log/pianochess/`) into the current one, renaming the
+oldest `user-timestamp.yml` files to the current scheme so filename filters find them. It retires
+per-player scorecards (`apps/chess/games/`, no longer written) once the archive is shown to hold
+each game; one it cannot match stays where it is and is named in the report. Then it replays every
+finished game through the live ladder and rivalry rules and rewrites each player's `ladder.yml` and
+`rivalries.yml`.
+
+The replay never takes a rung away. A game played at a level proves that level was unlocked, and
+the stored level is never lowered. A player with finished games but no `apps/chess/` directory is
+reported and left alone.
+
+It is a dry run unless given `--write`, and nothing is deleted: moved files land in
+`data/_deleteme/<date>-chess-record-consolidation/`, including a copy of each player's `ladder.yml`
+and `rivalries.yml` as they stood before the first write (`derived-before/<userId>/`) — the backup
+is never replaced on a later run, so it stays the true pre-backfill copy. Writes must be made as the
+app's user, so run it inside the container, where created paths take their parent directory's owner:
+
+    sudo docker exec {env.docker_container} node cli/chess-backfill.cli.mjs --data data
+    sudo docker exec {env.docker_container} node cli/chess-backfill.cli.mjs --data data --write
+
+It is safe to run again. A second write finds nothing to move and rewrites identical files.
 
 ### Dialogue evidence
 
