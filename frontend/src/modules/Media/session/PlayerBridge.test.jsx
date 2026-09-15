@@ -157,13 +157,16 @@ describe('PlayerBridge real Player contract', () => {
     expect(mountSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('starts a new playback generation when adopting the same content at a new position', () => {
+  it('seeks actual media on every same-content adoption, including an identical repeated offset', () => {
     const controller = makeRealController();
     controller.queue.playNow({
       contentId: 'plex:665667', title: 'Disclosure Day', duration: 5400, format: 'video',
     });
+    mediaElement = document.createElement('video');
+    Object.defineProperty(mediaElement, 'currentTime', {
+      configurable: true, writable: true, value: 42,
+    });
     render(<Harness controller={controller} />);
-    const originalPlay = latestPlayerProps.play;
     const adopted = {
       ...controller.getSnapshot(),
       position: 87,
@@ -171,11 +174,29 @@ describe('PlayerBridge real Player contract', () => {
     };
 
     act(() => controller.lifecycle.adoptSnapshot(adopted, { autoplay: false }));
+    expect(mediaElement.currentTime).toBe(87);
 
-    expect(latestPlayerProps.play).not.toBe(originalPlay);
-    expect(latestPlayerProps.play).toEqual(expect.objectContaining({
-      contentId: 'plex:665667', seconds: 87,
-    }));
+    mediaElement.currentTime = 120;
+    act(() => controller.lifecycle.adoptSnapshot(adopted, { autoplay: false }));
+    expect(mediaElement.currentTime).toBe(87);
+    expect(mountSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('seeks actual media to zero for an intentional same-content LOAD generation', () => {
+    const controller = makeRealController();
+    const item = {
+      contentId: 'plex:665667', title: 'Disclosure Day', duration: 5400, format: 'video',
+    };
+    controller.queue.playNow(item);
+    mediaElement = document.createElement('video');
+    Object.defineProperty(mediaElement, 'currentTime', {
+      configurable: true, writable: true, value: 42,
+    });
+    render(<Harness controller={controller} />);
+
+    act(() => controller.queue.playNow(item));
+
+    expect(mediaElement.currentTime).toBe(0);
     expect(mountSpy).toHaveBeenCalledTimes(1);
   });
 
