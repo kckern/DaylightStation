@@ -8,7 +8,7 @@ const picture = frame => frame.map(line => line.map(({ char, cursor }) => (curso
 describe('decoderSettings', () => {
   it('fills every key with its default', () => {
     expect(decoderSettings()).toEqual(DECODER_DEFAULTS);
-    expect(DECODER_DEFAULTS).toMatchObject({ reveal: 'progressive', stepMs: 250, motion: true, motionMs: 1000, marqueeHoldSteps: 4, marqueeGapSteps: 4 });
+    expect(DECODER_DEFAULTS).toMatchObject({ reveal: 'marquee', stepMs: 100, motion: true, motionMs: 100, marqueeHoldSteps: 10, marqueeGapSteps: 4 });
   });
 
   it('reads the snake_case keys a rules file authors', () => {
@@ -21,7 +21,7 @@ describe('decoderSettings', () => {
   });
 
   it('shuffles static colors with the position jump, as before', () => {
-    expect(decoderSettings({ reveal: 'static' })).toMatchObject({ stepMs: 1000, motionMs: 1000 });
+    expect(decoderSettings({ reveal: 'static' })).toMatchObject({ stepMs: 100, motionMs: 100 });
   });
 });
 

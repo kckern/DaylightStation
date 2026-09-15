@@ -33,11 +33,11 @@ letters' segments warm and everything else cool, and gives every segment a new
 color. Every `motion_ms` it also jumps the card. Three reveal modes
 (`segmentedSecretReveal.js`):
 
-- **progressive** (default) — a typewriter loop. It starts with a cursor, the
+- **progressive** — a typewriter loop. It starts with a cursor, the
   cell's two bottom segments lit warm, then adds one character per step with
   the cursor moving ahead. Once the whole clue shows, it hides first-to-last at
   the same pace, then starts again. Lines are typed in reading order.
-- **marquee** — each line scrolls right to left through its own cells: in from
+- **marquee** (default) — each line scrolls right to left through its own cells: in from
   the right, held fully visible, out to the left, then an empty gap before it
   comes round again. Lines share one schedule sized to the longest.
 - **static** — the whole clue, always. Colors shuffle with the position jump.
@@ -54,11 +54,11 @@ defaults in `DECODER_DEFAULTS`:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `reveal` | `progressive` | `progressive`, `marquee` or `static` |
-| `step_ms` | `250` | one reveal or scroll step and one color shuffle (static mode shuffles every `motion_ms`) |
+| `reveal` | `marquee` | `marquee`, `progressive` or `static` |
+| `step_ms` | `100` | one reveal or scroll step and one color shuffle (static mode shuffles every `motion_ms`) |
 | `motion` | `true` | jump the card's position |
-| `motion_ms` | `1000` | time between position jumps (every fourth step at the defaults) |
-| `marquee_hold_steps` | `4` | steps held fully visible (1s at the defaults) |
+| `motion_ms` | `100` | time between position jumps (every step at the defaults, so the card jumps in sync with the scroll) |
+| `marquee_hold_steps` | `10` | steps held fully visible (1s at the defaults) |
 | `marquee_gap_steps` | `4` | empty steps before the text comes round again (a four-glyph gap) |
 
 The Activity Party ruleset validates the block (`validateActivityPartyDefinition`
