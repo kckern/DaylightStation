@@ -37,3 +37,7 @@ The new `tests/live/flow/media/media-app-playback-journey.runtime.test.mjs` sear
 `LocalSessionController.transport.play` can switch an already-playing session back to loading. The bridge only marks playback started once per item, so the subsequent loading state can outlive ongoing playback and trigger the slow-start watchdog. Ordinary pause/resume passing does not disprove that repeated-Play path.
 
 Repair must preserve the bridge-owned media element, update metadata without treating enrichment as a new playback identity, reconcile actual player state, and provide focused expansion/shrinking without restarting media. All stories retain individual acceptance criteria in the acceptance ledger.
+
+## Development fix verification
+
+The six real-browser playback journeys now pass against the development implementation: real duration/progress, keyboard and pointer seeking, normal pause/resume beyond the watchdog interval, ±10-second jumps, focused expansion/shrinking with the same media element/source and zero pause events, and Stop/reopen/restart of the retained queue. The routing case also confirms opening Office controls does not redirect a locally aimed movie or attempt a device command. Independent review and device/target parity remain required; this is not acceptance of all associated stories or a production deployment.
