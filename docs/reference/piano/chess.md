@@ -229,7 +229,11 @@ it recovers a level for any archived game that has none — and, with it, no `op
 — from the scorecard about to be retired for that same game, when that scorecard still carries one;
 the archived file itself is never rewritten, only the in-memory record used for the replay, and the
 report says how many levels were recovered this way. Then it replays every finished game through the
-live ladder and rivalry rules and rewrites each player's `ladder.yml` and `rivalries.yml`.
+live ladder and rivalry rules and rewrites each player's `ladder.yml` and `rivalries.yml`. A game
+with no `opponent` block still counts toward the ladder at its recovered level, but never becomes a
+rival: nothing can say who it was, and rivalry memory's own id fallback (level-only, keyed to the
+ruleset id) would otherwise mint a nameless rival under an id that may not even match the player's
+roster pack.
 
 The replay never takes a rung away. A game played at a level proves that level was unlocked, and
 the stored level is never lowered. A player with finished games but no `apps/chess/` directory is
@@ -239,9 +243,13 @@ win nothing in the archive backs up. Rather than write over that quietly, the CL
 plan first and refuses `--write` outright, before moving a single file, if any player's counted
 ladder wins would fall or any rival's win, loss or draw count would fall or disappear — except a
 falling ladder-win count is not a decrease when the replay also promotes the player past their
-stored level: the counted-wins tally legitimately resets for the new rung. The report names every
-player with a real decrease; `--allow-decrease` writes anyway. A dry run only ever reports a
-decrease, never refuses.
+stored level: the counted-wins tally legitimately resets for the new rung. A rival that disappears
+is also not a decrease when a same-named rival in the rebuilt set has equal-or-higher win, loss and
+draw counts under a different id — that is a re-key (old rivalry memory keyed under an id nothing
+rebuilds under any more, most often a pre-migration `chess:level-N`), reported on its own
+`re-keyed:` line rather than as a `DECREASE`; a re-key that actually loses ground still decreases.
+The report names every player with a real decrease; `--allow-decrease` writes anyway. A dry run only
+ever reports a decrease, never refuses.
 
 It is a dry run unless given `--write`, and nothing is deleted: moved files land in
 `data/_deleteme/<date>-chess-record-consolidation/`, including a copy of each player's `ladder.yml`

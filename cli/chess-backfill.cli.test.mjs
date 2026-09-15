@@ -331,6 +331,74 @@ describe('--write', () => {
     // Enrichment is in-memory only: the archived file itself is never rewritten.
     expect(read(data, archiveFile)).toEqual(beforeContent);
     expect(read(data, archiveFile).level).toBeUndefined();
+    // The recovered level is for the ladder replay only — the record still
+    // has no `opponent` block, so it must never fabricate a nameless rival
+    // (G1: this game used to mint `chess:level-3` under a `pokemon` roster).
+    expect(report.derived.kid.rivalries.after).toEqual({});
+    expect(read(data, 'users/kid/apps/chess/rivalries.yml').rivals).toEqual({});
+  });
+
+  it('re-keying a rival to a new id is not a decrease when the new totals are equal or higher, and is reported as a re-key', async () => {
+    // Isolate: only the re-key scenario, so the totals are exactly what the
+    // test sets up rather than the shared fixture's other games.
+    fs.rmSync(path.join(data, 'household/gaming/log/pianochess'), { recursive: true, force: true });
+    fs.rmSync(path.join(data, 'household/gaming/log/chess'), { recursive: true, force: true });
+    fs.rmSync(path.join(data, 'users/kid/apps/chess/games'), { recursive: true, force: true });
+    // Stored rivalry memory keyed under the pre-migration id nothing reads any more.
+    put(data, 'users/kid/apps/chess/rivalries.yml', {
+      version: 2,
+      rivals: { 'chess:level-1': { opponent: { id: 'chess:level-1', name: 'Caterpie' }, record: { win: 3, loss: 0, draw: 0 }, recent: [] } },
+    });
+    // Every archived game carries the live `pokemon` id: 3 wins, 2 losses.
+    for (let n = 1; n <= 3; n += 1) {
+      put(data, `household/gaming/log/chess/2026-08-2${n}/kid_level0_1s_1ply_win_checkmate_2026-08-2${n}T10-00-00-000Z-w${n}.yml`, game({
+        game_id: `rekey-win-${n}`, ended_at: `2026-08-2${n}T10:00:00.000Z`, opponent: { level: 0, name: 'Caterpie', id: 'pokemon:level-1' },
+      }));
+    }
+    for (let n = 4; n <= 5; n += 1) {
+      put(data, `household/gaming/log/chess/2026-08-2${n}/kid_level0_1s_1ply_loss_checkmate_2026-08-2${n}T10-00-00-000Z-l${n}.yml`, game({
+        game_id: `rekey-loss-${n}`, result: 'loss', ended_at: `2026-08-2${n}T10:00:00.000Z`, opponent: { level: 0, name: 'Caterpie', id: 'pokemon:level-1' },
+      }));
+    }
+    const report = await run({ data, now: NOW });
+    expect(report.decreases.kid).toBeUndefined();
+    const rendered = renderReport(report);
+    expect(rendered).toContain('re-keyed: Caterpie chess:level-1 -> pokemon:level-1 (3-0-0 -> 3-2-0)');
+    expect(rendered).not.toMatch(/DECREASE/);
+  });
+
+  it('still reports a decrease when a re-keyed rival\'s totals actually fall', async () => {
+    fs.rmSync(path.join(data, 'household/gaming/log/pianochess'), { recursive: true, force: true });
+    fs.rmSync(path.join(data, 'household/gaming/log/chess'), { recursive: true, force: true });
+    fs.rmSync(path.join(data, 'users/kid/apps/chess/games'), { recursive: true, force: true });
+    put(data, 'users/kid/apps/chess/rivalries.yml', {
+      version: 2,
+      rivals: { 'chess:level-1': { opponent: { id: 'chess:level-1', name: 'Caterpie' }, record: { win: 5, loss: 0, draw: 0 }, recent: [] } },
+    });
+    // Only one archived win survives under the live id — real lost ground, not a re-key.
+    put(data, 'household/gaming/log/chess/2026-08-21/kid_level0_1s_1ply_win_checkmate_2026-08-21T10-00-00-000Z-w1.yml', game({
+      game_id: 'rekey-fall-1', ended_at: '2026-08-21T10:00:00.000Z', opponent: { level: 0, name: 'Caterpie', id: 'pokemon:level-1' },
+    }));
+    const report = await run({ data, now: NOW });
+    expect(report.decreases.kid).toEqual(['rival Caterpie (chess:level-1) disappeared, was 5-0-0']);
+    expect(renderReport(report)).toMatch(/DECREASE/);
+  });
+
+  it('still reports a decrease when a rival vanishes with no same-name replacement', async () => {
+    fs.rmSync(path.join(data, 'household/gaming/log/pianochess'), { recursive: true, force: true });
+    fs.rmSync(path.join(data, 'household/gaming/log/chess'), { recursive: true, force: true });
+    fs.rmSync(path.join(data, 'users/kid/apps/chess/games'), { recursive: true, force: true });
+    put(data, 'users/kid/apps/chess/rivalries.yml', {
+      version: 2,
+      rivals: { 'pokemon:level-2': { opponent: { id: 'pokemon:level-2', name: 'Weedle' }, record: { win: 2, loss: 0, draw: 0 }, recent: [] } },
+    });
+    // The archive holds a completely different opponent — no same-name candidate anywhere.
+    put(data, 'household/gaming/log/chess/2026-08-21/kid_level0_1s_1ply_win_checkmate_2026-08-21T10-00-00-000Z-w1.yml', game({
+      game_id: 'other-opponent-1', ended_at: '2026-08-21T10:00:00.000Z', opponent: { level: 0, name: 'Metapod', id: 'pokemon:level-3' },
+    }));
+    const report = await run({ data, now: NOW });
+    expect(report.decreases.kid).toEqual(['rival Weedle (pokemon:level-2) disappeared, was 2-0-0']);
+    expect(renderReport(report)).toMatch(/DECREASE/);
   });
 
   it('is safe to run twice', async () => {
