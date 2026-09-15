@@ -31,7 +31,10 @@ export function MiniPlayer() {
   const dockRef = useRef(null);
   // `format` is the canonical signal (set by resultToQueueInput/formatForChild);
   // `mediaType` is a defensive fallback for items that carry only the raw type.
-  const isVideo = item?.format === 'video' || item?.mediaType === 'video';
+  const isVideo = item?.format === 'video'
+    || item?.format === 'dash_video'
+    || item?.mediaType === 'video'
+    || item?.mediaType === 'dash_video';
   const showVideoDock = !!item && isVideo && view !== 'nowPlaying';
   usePlayerHost(dockRef, 1, showVideoDock);
 

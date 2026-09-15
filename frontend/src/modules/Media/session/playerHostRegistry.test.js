@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveActiveHost } from './playerHostRegistry.js';
+import { resolveActiveHost, resolveActiveHostClaim } from './playerHostRegistry.js';
 
 const el = (name) => ({ name }); // stand-in DOM nodes
 
@@ -34,5 +34,13 @@ describe('resolveActiveHost', () => {
     const low = el('low');
     // Simulates the priority-2 claim having been released (removed from the set).
     expect(resolveActiveHost([{ el: low, priority: 1, seq: 1 }])).toBe(low);
+  });
+
+  it('keeps presentation metadata from the winning claim', () => {
+    const high = el('high');
+    expect(resolveActiveHostClaim([
+      { el: el('low'), priority: 1, seq: 1, forceShader: null },
+      { el: high, priority: 2, seq: 2, forceShader: 'focused' },
+    ])).toEqual({ el: high, priority: 2, seq: 2, forceShader: 'focused' });
   });
 });

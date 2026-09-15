@@ -17,15 +17,16 @@ import { PlayerHostRegistryContext } from './playerHostContext.js';
  * @param {{current: Element|null}} ref  element the Player should portal into
  * @param {number} [priority=1]          higher wins (Now Playing=2, dock=1)
  * @param {boolean} [active=true]        only claim while true
+ * @param {{forceShader?: string|null}} [presentation] ephemeral host presentation
  */
-export function usePlayerHost(ref, priority = 1, active = true) {
+export function usePlayerHost(ref, priority = 1, active = true, { forceShader = null } = {}) {
   const { claim, release } = useContext(PlayerHostRegistryContext);
   const id = useId();
   useEffect(() => {
-    if (active) claim(id, ref.current ?? null, priority);
+    if (active) claim(id, ref.current ?? null, priority, { forceShader });
     else release(id);
     return () => release(id);
-  }, [ref, priority, active, claim, release, id]);
+  }, [ref, priority, active, forceShader, claim, release, id]);
 }
 
 export default usePlayerHost;

@@ -347,6 +347,16 @@ off-screen park and was then remounted by the arriving claim; recovery fell to
 the 15s stall watchdog, 19s after the tap. Guarded by
 `PlayerBridge.test.jsx`.
 
+`contentId` is the bridge's playback identity. Resolved metadata, duration,
+position, and native paused/playing state are reconciled into the current
+session and matching queue entry without replacing the active Player item.
+Transport commands do not claim a state or position change until Player or
+native-media evidence arrives. The bridge follows Player's native media
+accessor (including the video element inside the DASH player's shadow root),
+so host changes and focused-video presentation retain the same media element.
+Host claims can request Player's existing `focused` shader without moving
+playback ownership out of the bridge.
+
 ### Concurrency: nothing blocks anything
 
 Every capability runs in parallel with every other: search while playing,

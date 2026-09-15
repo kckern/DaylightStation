@@ -33,7 +33,24 @@ function itemFromQueueEntry(entry) {
     ...(entry.containerTitle != null ? { containerTitle: entry.containerTitle } : {}),
     ...(entry.artist != null ? { artist: entry.artist } : {}),
     ...(entry.album != null ? { album: entry.album } : {}),
+    ...(entry.mediaType != null ? { mediaType: entry.mediaType } : {}),
+    ...(entry.isLive != null ? { isLive: !!entry.isLive } : {}),
   };
+}
+
+function observedItemPatch({ duration, media } = {}) {
+  const patch = {};
+  const source = media && typeof media === 'object' ? media : {};
+  for (const key of ['format', 'mediaType', 'title', 'thumbnail']) {
+    if (source[key] != null) patch[key] = source[key];
+  }
+  if (typeof source.isLive === 'boolean') patch.isLive = source.isLive;
+  if (source.isLive === true) patch.duration = null;
+  else if (typeof duration === 'number' && Number.isFinite(duration) && duration > 0) patch.duration = duration;
+  else if (typeof source.duration === 'number' && Number.isFinite(source.duration) && source.duration > 0) {
+    patch.duration = source.duration;
+  }
+  return patch;
 }
 
 export function createLocalSessionController({
@@ -55,7 +72,7 @@ export function createLocalSessionController({
 
   // PlayerBridge injects the imperative player surface; until it does (or
   // when no media element exists) these are no-ops.
-  let player = { play: () => {}, pause: () => {}, seek: () => {} };
+  let player = { play: () => {}, pause: () => {}, seek: () => {}, getMediaElement: () => null };
 
   const snap = () => store.getSnapshot();
 
@@ -199,17 +216,7 @@ export function createLocalSessionController({
           if (!first) return;
           moveCurrentTo(first);
         }
-        // Resuming something already rolling is instant — claim 'playing' so
-        // the transport bar doesn't flicker through a spinner. Starting cold
-        // is NOT: the element may still be waiting on a URL, a decision call,
-        // or the server. Claiming 'playing' there is a lie the whole app then
-        // repeats — on 2026-08-12 it emitted playback.started 51s before a
-        // single frame rendered, while Plex sat on the transcode decision.
-        // PlayerBridge promotes us to 'playing' on the first real progress
-        // tick; until then we are honestly 'loading'.
-        const wasRolling = snap().state === 'paused';
         player.play();
-        store.dispatch({ type: 'PLAYER_STATE', playerState: wasRolling ? 'playing' : 'loading' });
       },
       pause: () => {
         mediaLog.transportCommand({ action: 'pause', target: 'local' });
@@ -218,7 +225,6 @@ export function createLocalSessionController({
         const here = position.get().seconds;
         if (Number.isFinite(here) && here > 0) setDurablePosition(here);
         player.pause();
-        store.dispatch({ type: 'PLAYER_STATE', playerState: 'paused' });
       },
       stop: () => {
         mediaLog.transportCommand({ action: 'stop', target: 'local' });
@@ -232,7 +238,6 @@ export function createLocalSessionController({
       seekAbs: (seconds) => {
         mediaLog.transportCommand({ action: 'seekAbs', value: seconds, target: 'local' });
         player.seek(seconds);
-        setDurablePosition(seconds);
       },
       seekRel: (delta) => {
         mediaLog.transportCommand({ action: 'seekRel', value: delta, target: 'local' });
@@ -324,15 +329,40 @@ export function createLocalSessionController({
     },
 
     get capabilities() {
-      return { seekable: !snap().currentItem?.isLive, acked: false };
+      const item = snap().currentItem;
+      return {
+        seekable: !!item && item.isLive !== true && Number.isFinite(item.duration) && item.duration > 0,
+        acked: false,
+      };
     },
 
     // ---- PlayerBridge surface (not part of the controller shape) ----
     setPlayerHandle(handle) {
-      player = { play: () => {}, pause: () => {}, seek: () => {}, ...handle };
+      player = {
+        play: () => {}, pause: () => {}, seek: () => {}, getMediaElement: () => null, ...handle,
+      };
     },
-    onPlayerStateChange: (state) => store.dispatch({ type: 'PLAYER_STATE', playerState: state }),
-    onPlayerEnded: () => advance('item-ended'),
+    getMediaElement: () => player.getMediaElement?.() ?? null,
+    onPlayerObservation: (contentId, observation = {}) => {
+      if (snap().currentItem?.contentId !== contentId) return;
+      const playerState = typeof observation.paused === 'boolean'
+        ? (observation.paused ? 'paused' : 'playing')
+        : undefined;
+      store.dispatch({
+        type: 'PLAYER_OBSERVATION',
+        contentId,
+        itemPatch: observedItemPatch(observation),
+        playerState,
+      });
+    },
+    onPlayerStateChange: (state, contentId = null) => {
+      if (contentId != null && snap().currentItem?.contentId !== contentId) return;
+      store.dispatch({ type: 'PLAYER_STATE', playerState: state });
+    },
+    onPlayerEnded: (contentId = null) => {
+      if (contentId != null && snap().currentItem?.contentId !== contentId) return;
+      advance('item-ended');
+    },
     onPlayerError: ({ message, code } = {}) => {
       mediaLog.playbackError({
         sessionId: snap().sessionId,
@@ -355,12 +385,16 @@ export function createLocalSessionController({
       advance('stall-auto-advance');
     },
     /** Durable (≥5s cadence) position write. */
-    onPlayerProgress: (seconds) => {
+    onPlayerProgress: (seconds, contentId = null) => {
+      if (contentId != null && snap().currentItem?.contentId !== contentId) return;
       if (typeof seconds === 'number' && Number.isFinite(seconds)) setDurablePosition(seconds);
     },
     /** Hot-tier tick — feeds ONLY the position channel; snapshot subscribers
      *  do not re-render. */
-    onPlayerPositionTick: (seconds) => position.set(seconds),
+    onPlayerPositionTick: (seconds, contentId = null) => {
+      if (contentId != null && snap().currentItem?.contentId !== contentId) return;
+      position.set(seconds);
+    },
   };
 
   return controller;

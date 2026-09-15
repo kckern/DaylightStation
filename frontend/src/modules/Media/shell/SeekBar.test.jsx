@@ -142,4 +142,20 @@ describe('SeekBar', () => {
     expect(transport.seekAbs).not.toHaveBeenCalled();
     expect(screen.getByTestId('np-seek-remaining')).toHaveTextContent('–:––');
   });
+
+  it('renders an unknown-duration slider as disabled, not as LIVE', () => {
+    state.snapshot = makeSnapshot({ duration: null, isLive: false });
+    state.capabilities = { seekable: false, acked: false };
+    render(<SeekBar target="local" />);
+    expect(screen.getByTestId('np-seek')).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.queryByText('LIVE')).toBeNull();
+  });
+
+  it('normalizes a non-finite duration to an unknown disabled range', () => {
+    state.snapshot = makeSnapshot({ duration: Number.POSITIVE_INFINITY, isLive: false });
+    state.capabilities = { seekable: false, acked: false };
+    render(<SeekBar target="local" />);
+    expect(screen.getByTestId('np-seek')).toHaveAttribute('aria-valuemax', '0');
+    expect(screen.getByTestId('np-seek')).toHaveAttribute('aria-disabled', 'true');
+  });
 });

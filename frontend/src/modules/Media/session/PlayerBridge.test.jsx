@@ -8,14 +8,24 @@ import { render, act } from '@testing-library/react';
 import { PlayerHostProvider } from './PlayerHostProvider.jsx';
 import { LocalSessionContext } from './LocalSessionContext.js';
 import { usePlayerHost } from './usePlayerHost.js';
+import { createLocalSessionController } from './LocalSessionController.js';
 
 // Count how many times the platform Player is actually mounted. A remount is
 // what destroys the media element mid-play() and produces the browser's
 // "The play() request was interrupted because the media was removed from the
 // document" AbortError.
 const mountSpy = vi.fn();
+let latestPlayerProps = null;
+let mediaElement = null;
 vi.mock('../../Player/Player.jsx', () => ({
-  default: React.forwardRef(function MockPlayer(_props, _ref) {
+  default: React.forwardRef(function MockPlayer(props, ref) {
+    latestPlayerProps = props;
+    React.useImperativeHandle(ref, () => ({
+      play: () => mediaElement?.play?.(),
+      pause: () => mediaElement?.pause?.(),
+      seek: (seconds) => { if (mediaElement) mediaElement.currentTime = seconds; },
+      getMediaElement: () => mediaElement,
+    }));
     React.useEffect(() => { mountSpy(); }, []);
     return <audio data-testid="mock-player" />;
   }),
@@ -49,6 +59,14 @@ function makeController() {
   };
 }
 
+function makeRealController() {
+  return createLocalSessionController({
+    clientId: 'bridge-client',
+    randomUuid: () => 'bridge-session',
+    nowFn: () => new Date('2026-09-14T00:00:00.000Z'),
+  });
+}
+
 // A view that claims the Player host, mirroring NowPlayingView (priority 2).
 function HostClaimant() {
   const ref = useRef(null);
@@ -72,7 +90,11 @@ function Harness({ controller }) {
 }
 
 describe('PlayerBridge host transitions', () => {
-  beforeEach(() => { mountSpy.mockClear(); });
+  beforeEach(() => {
+    mountSpy.mockClear();
+    latestPlayerProps = null;
+    mediaElement = null;
+  });
 
   it('does not remount the Player when a view claims the host', () => {
     // Reproduces the 2026-08-16 mobile session: an audio track is dispatched
@@ -95,5 +117,86 @@ describe('PlayerBridge host transitions', () => {
     act(() => { getByTestId('toggle').click(); });
 
     expect(mountSpy).toHaveBeenCalledTimes(0);
+  });
+});
+
+describe('PlayerBridge real Player contract', () => {
+  beforeEach(() => {
+    mountSpy.mockClear();
+    latestPlayerProps = null;
+    mediaElement = null;
+  });
+
+  it('enriches missing duration/format from the real progress payload without replacing Player playback identity', () => {
+    const controller = makeRealController();
+    controller.queue.playNow({ contentId: 'plex:665667', title: 'Disclosure Day', duration: null, format: null });
+    render(<Harness controller={controller} />);
+    const originalPlay = latestPlayerProps.play;
+
+    act(() => latestPlayerProps.onProgress({
+      currentTime: 4.25,
+      duration: 5400.5,
+      paused: false,
+      isSeeking: false,
+      stalled: false,
+      media: {
+        contentId: 'plex:665667',
+        title: 'Disclosure Day',
+        format: 'video',
+        mediaType: 'dash_video',
+      },
+    }));
+
+    expect(controller.getSnapshot().currentItem).toEqual(expect.objectContaining({
+      contentId: 'plex:665667', duration: 5400.5, format: 'video', mediaType: 'dash_video',
+    }));
+    expect(controller.getSnapshot().queue.items[0]).toEqual(expect.objectContaining({
+      contentId: 'plex:665667', duration: 5400.5, format: 'video', mediaType: 'dash_video',
+    }));
+    expect(latestPlayerProps.play).toBe(originalPlay);
+    expect(mountSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a late progress callback retained by the previous content item', () => {
+    const controller = makeRealController();
+    controller.queue.playNow({ contentId: 'plex:old', title: 'Old', duration: null, format: null });
+    render(<Harness controller={controller} />);
+    const oldProgress = latestPlayerProps.onProgress;
+
+    act(() => controller.queue.playNow({ contentId: 'plex:new', title: 'New', duration: null, format: null }));
+    act(() => oldProgress({
+      currentTime: 91,
+      duration: 999,
+      paused: false,
+      media: { contentId: 'plex:old', format: 'video' },
+    }));
+
+    expect(controller.getSnapshot().currentItem).toEqual(expect.objectContaining({
+      contentId: 'plex:new', duration: null, format: null,
+    }));
+    expect(controller.position.get().seconds).toBe(0);
+  });
+
+  it('exposes and observes the Player media accessor used for a DASH shadow-root video', async () => {
+    const controller = makeRealController();
+    controller.queue.playNow({ contentId: 'plex:665667', title: 'Disclosure Day', duration: null, format: null });
+    mediaElement = document.createElement('video');
+    Object.defineProperties(mediaElement, {
+      duration: { configurable: true, value: 5400 },
+      currentTime: { configurable: true, writable: true, value: 12 },
+      paused: { configurable: true, value: true },
+    });
+
+    render(<Harness controller={controller} />);
+    expect(controller.getMediaElement()).toBe(mediaElement);
+
+    act(() => mediaElement.dispatchEvent(new Event('loadedmetadata')));
+    expect(controller.getSnapshot().currentItem.duration).toBe(5400);
+    act(() => mediaElement.dispatchEvent(new Event('pause')));
+    expect(controller.getSnapshot().state).toBe('paused');
+
+    Object.defineProperty(mediaElement, 'paused', { configurable: true, value: false });
+    act(() => mediaElement.dispatchEvent(new Event('playing')));
+    expect(controller.getSnapshot().state).toBe('playing');
   });
 });

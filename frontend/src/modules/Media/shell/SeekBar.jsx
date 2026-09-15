@@ -22,7 +22,7 @@ export function SeekBar({ target }) {
   const item = snapshot?.currentItem;
   if (!item) return null;
 
-  if (item.isLive || !capabilities.seekable) {
+  if (item.isLive) {
     return (
       <div className="np-seekbar np-seekbar--live">
         <span className="np-live-badge">LIVE</span>
@@ -30,7 +30,8 @@ export function SeekBar({ target }) {
     );
   }
 
-  const duration = item.duration ?? 0;
+  const duration = Number.isFinite(item.duration) && item.duration > 0 ? item.duration : 0;
+  const canSeek = capabilities.seekable && duration > 0;
   const position = scrub ?? live.seconds ?? snapshot.position ?? 0;
   const clamped = Math.min(Math.max(0, position), duration || 0);
   const fraction = duration > 0 ? clamped / duration : 0;
@@ -47,7 +48,7 @@ export function SeekBar({ target }) {
   };
 
   const onPointerDown = (e) => {
-    if (!duration) return;
+    if (!canSeek) return;
     const secs = secondsFromPointer(e);
     if (secs == null) return;
     draggingRef.current = true;
@@ -78,7 +79,7 @@ export function SeekBar({ target }) {
   };
 
   const onKeyDown = (e) => {
-    if (!duration) return;
+    if (!canSeek) return;
     let next = null;
     if (e.key === 'ArrowRight' || e.key === 'ArrowUp') next = Math.min(duration, clamped + KEYBOARD_STEP_S);
     else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') next = Math.max(0, clamped - KEYBOARD_STEP_S);
@@ -103,7 +104,7 @@ export function SeekBar({ target }) {
         aria-valuemax={Math.round(duration)}
         aria-valuenow={Math.round(clamped)}
         aria-valuetext={`${formatTime(clamped)} of ${duration ? formatTime(duration) : 'unknown length'}`}
-        aria-disabled={duration ? undefined : 'true'}
+        aria-disabled={canSeek ? undefined : 'true'}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
