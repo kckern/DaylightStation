@@ -551,3 +551,27 @@ describe('FieldComposer with no oracle is exactly what it was', () => {
     expect(el.value).toBe('온');
   });
 });
+
+describe('copy mode types compound jamo in halves — the only way 두벌식 can', () => {
+  // Found live 2026-09-14: the gate refused ㅗ on the way to 과 and ㅡ on the way
+  // to 의, so neither could be typed at all and the drill was unusable.
+  it.each([
+    ['rhk', '과'], ['dml', '의'], ['dnjs', '원'], ['ekfr', '닭'], ['rhkd', '광'], ['gudrhk', '형과'],
+  ])('typing %s traces %s with nothing refused', (keys, word) => {
+    const composer = new FieldComposer();
+    const el = field();
+    const { oracle, refused } = tracer(composer, el, word);
+    typeInto(composer, el, keys, oracle);
+    expect(refused).toEqual([]);
+    expect(el.value).toBe(word);
+  });
+
+  it('still refuses a vowel that cannot become the compound', () => {
+    const composer = new FieldComposer();
+    const el = field();
+    const { oracle, refused } = tracer(composer, el, '과');
+    typeInto(composer, el, 'rj', oracle); // ㄱ then ㅓ — not on the way to ㅘ
+    expect(refused).toEqual(['ㅓ']);
+    expect(el.value).toBe('ㄱ');
+  });
+});

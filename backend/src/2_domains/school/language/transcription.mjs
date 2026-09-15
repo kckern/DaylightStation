@@ -10,7 +10,13 @@
  * short-answer grading makes: trim, collapse whitespace, casefold. Nothing
  * clever. A near-miss that a smarter matcher would forgive is exactly what the
  * learner should see in their diff.
+ *
+ * One exception, applied to both sides: characters no keyboard can type —
+ * Glossika's ♂/♀ speaker markers, emoji, typographic punctuation — are mapped
+ * or skipped first (`typeableText`), so a perfect copy of what the learner was
+ * shown to type scores as perfect.
  */
+import { typeableText } from '#shared/contracts/language/typeableText.mjs';
 
 /**
  * Casefolding is a no-op for Hangul and every other unicameral script; it is
@@ -18,7 +24,7 @@
  * Latin. Harmless where it does not apply.
  */
 export function normalize(text) {
-  return String(text ?? '')
+  return typeableText(text)
     .trim()
     .replace(/\s+/gu, ' ')
     .toLowerCase();
