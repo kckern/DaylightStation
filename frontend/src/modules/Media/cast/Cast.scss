@@ -42,19 +42,12 @@
 }
 
 // The detail-result Cast button portals this picker near the viewport edge.
-// Bound only that floating instance: devices scroll while the selected mode
-// and CTA remain available.  The Now Playing handoff picker stays inline and
-// intentionally retains its existing natural-height layout.
+// Scroll the whole floating instance: reserving fixed mode/CTA space can
+// otherwise shrink a long device list to zero in a short viewport. The inline
+// Now Playing picker retains its existing natural-height layout.
 .cast-button-popover-portal .cast-picker {
   box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
   max-height: var(--cast-picker-max-height);
-}
-
-.cast-button-popover-portal .cast-picker-devices {
-  flex: 1 1 auto;
-  min-height: 0;
   overflow-y: auto;
 }
 
