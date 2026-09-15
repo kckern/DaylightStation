@@ -98,6 +98,10 @@
   }
 
   &[data-active] &__label { color: var(--drill-fg); }
+  // A deck's clusters carry no label, so the label's colour cannot be the only
+  // thing marking the live set. The roll-up track lights instead — visible
+  // whether or not there is text above it.
+  &[data-active] &__rollup { background: color-mix(in srgb, var(--drill-gold) 32%, var(--drill-track)); }
   &[data-done] &__label { color: var(--drill-gold-bright); }
   &[data-done] &__badge { color: var(--drill-gold-bright); }
 

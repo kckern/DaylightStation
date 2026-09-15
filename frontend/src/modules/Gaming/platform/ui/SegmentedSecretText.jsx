@@ -1,16 +1,111 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
+import { getChildLogger } from '../../../../lib/logging/singleton.js';
 import { SEGMENTS, activeSegmentsFor, segmentNames, segmentPoints } from './segmentedSecretGeometry.js';
+import { MASK_SEGMENT_COLORS, SIGNAL_SEGMENT_COLORS, segmentColorValue } from './segmentedSecretPalette.js';
+import { FLICKER_GROUP_COUNT, FLICKER_TICK_MS, assignFlickerGroups, nextColorIndex } from './segmentFlicker.js';
 import './SegmentedSecretText.scss';
 
 // A physical red decoder filter preserves the warm signal segments while
-// substantially dimming the cool mask segments. Every segment stays lit so
-// the unfiltered display reads as colorful noise rather than plain text.
-const SIGNAL_COLORS = Object.freeze(['var(--gp-segment-signal-1)', 'var(--gp-segment-signal-2)', 'var(--gp-segment-signal-3)', 'var(--gp-segment-signal-4)']);
-const MASK_COLORS = Object.freeze(['var(--gp-segment-mask-1)', 'var(--gp-segment-mask-2)', 'var(--gp-segment-mask-3)']);
+// substantially dimming the cool mask segments. Every cell stays filled so
+// whitespace cannot reveal a word boundary without the decoder. Colors keep
+// changing within each family so the warm/cool split is hard to sort by eye;
+// a change never moves a segment across families, so the filtered view holds.
+const SIGNAL_COLORS = Object.freeze(SIGNAL_SEGMENT_COLORS.map(segmentColorValue));
+const MASK_COLORS = Object.freeze(MASK_SEGMENT_COLORS.map(segmentColorValue));
+const TARGET_LINE_LENGTH = 18;
 
-function Glyph({ character, index }) {
+let _logger;
+function logger() {
+  if (!_logger) _logger = getChildLogger({ component: 'segmented-secret-text' });
+  return _logger;
+}
+
+function colorIndex(seed, glyphIndex, segmentName, paletteLength) {
+  let hash = 2166136261;
+  for (const character of `${seed}:${segmentName}`) {
+    hash ^= character.codePointAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return ((hash >>> 0) + glyphIndex) % paletteLength;
+}
+
+export function balanceSecretLines(text, targetLength = TARGET_LINE_LENGTH) {
+  const value = String(text || '');
+  const lineCount = Math.max(1, Math.ceil(value.length / targetLength));
+  if (lineCount === 1) return [value];
+
+  const lines = [];
+  let start = 0;
+  for (let line = 0; line < lineCount - 1; line += 1) {
+    const remainingLines = lineCount - line;
+    const idealBreak = start + (value.length - start) / remainingLines;
+    const wordBreaks = [...value].flatMap((character, index) => (
+      character === ' ' && index >= start ? [index + 1] : []
+    ));
+    const candidates = wordBreaks.filter(index => index > start && index < value.length);
+    const end = candidates.length > 0
+      ? candidates.reduce((best, candidate) => (
+        Math.abs(candidate - idealBreak) < Math.abs(best - idealBreak) ? candidate : best
+      ))
+      : Math.min(value.length, start + targetLength);
+    lines.push(value.slice(start, end));
+    start = end;
+  }
+  lines.push(value.slice(start));
+  return lines.map(line => line.trim());
+}
+
+// Writes colors straight to the polygons' custom property: a tick restyles a
+// third of the display, which would otherwise re-render every glyph 3x/second.
+function useSegmentFlicker(rootRef, value) {
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return undefined;
+    const segments = [...root.querySelectorAll('polygon')].map((element) => {
+      const palette = element.classList.contains('is-signal') ? SIGNAL_COLORS : MASK_COLORS;
+      let index = palette.indexOf(element.style.getPropertyValue('--segment-color'));
+      // A reused polygon can still hold a flickered color from the previous clue
+      // in the other family; never let it start there.
+      if (index < 0) {
+        index = 0;
+        element.style.setProperty('--segment-color', palette[index]);
+      }
+      return { element, palette, index };
+    });
+    const groups = assignFlickerGroups(segments.length);
+    const motionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    let tick = 0;
+    let timer = null;
+    const step = () => {
+      if (document.visibilityState === 'hidden') return;
+      for (const segmentIndex of groups[tick % FLICKER_GROUP_COUNT]) {
+        const segment = segments[segmentIndex];
+        segment.index = nextColorIndex(segment.index, segment.palette.length);
+        segment.element.style.setProperty('--segment-color', segment.palette[segment.index]);
+      }
+      tick += 1;
+    };
+    const sync = () => {
+      const reducedMotion = Boolean(motionQuery?.matches);
+      if (reducedMotion && timer) {
+        clearInterval(timer);
+        timer = null;
+      } else if (!reducedMotion && !timer) {
+        timer = setInterval(step, FLICKER_TICK_MS);
+      }
+      logger().debug('gaming.segmented-secret.flicker', { running: Boolean(timer), reducedMotion, segments: segments.length });
+    };
+    sync();
+    motionQuery?.addEventListener?.('change', sync);
+    return () => {
+      if (timer) clearInterval(timer);
+      motionQuery?.removeEventListener?.('change', sync);
+    };
+  }, [rootRef, value]);
+}
+
+function Glyph({ character, index, seed }) {
   const active = new Set(activeSegmentsFor(character));
-  if (character === ' ') return <span className="segmented-secret-text__space" aria-hidden="true" />;
   return (
     <svg className="segmented-secret-text__glyph" viewBox="0 0 50 100" aria-hidden="true">
       {segmentNames.map((name, segmentIndex) => {
@@ -18,26 +113,30 @@ function Glyph({ character, index }) {
         const palette = isSignal ? SIGNAL_COLORS : MASK_COLORS;
         return <polygon key={name} points={segmentPoints(SEGMENTS[name])}
           className={isSignal ? 'is-signal' : 'is-mask'}
-          style={{ '--segment-color': palette[(index * 3 + segmentIndex) % palette.length] }} />;
+          data-segment={name}
+          style={{ '--segment-color': palette[colorIndex(seed, index, `${isSignal ? 'signal' : 'mask'}:${name}:${segmentIndex}`, palette.length)] }} />;
       })}
     </svg>
   );
 }
 
 export default function SegmentedSecretText({ text, label = 'Secret clue', accessibleText = null }) {
+  const rootRef = useRef(null);
   const value = String(text || '').toUpperCase();
-  const words = value.split(/(\s+)/);
+  const lines = balanceSecretLines(value);
+  useSegmentFlicker(rootRef, value);
   let glyphIndex = 0;
   return (
-    <div className="segmented-secret-text" role="img" aria-label={accessibleText || `${label}: ${value}`}>
-      {words.map((word, wordIndex) => word.trim() === ''
-        ? <span key={`space:${wordIndex}`} className="segmented-secret-text__word-gap" aria-hidden="true" />
-        : <span key={`${word}:${wordIndex}`} className="segmented-secret-text__word">
-          {[...word].map((character) => {
-            const index = glyphIndex; glyphIndex += 1;
-            return <Glyph key={`${index}:${character}`} character={character} index={index} />;
+    <div ref={rootRef} className="segmented-secret-text" role="img" aria-label={accessibleText || `${label}: ${value}`}>
+      {lines.map((line, lineIndex) => (
+        <span className="segmented-secret-text__line" key={`${lineIndex}:${line}`}>
+          {[...line].map(character => {
+            const index = glyphIndex;
+            glyphIndex += 1;
+            return <Glyph key={index} character={character} index={index} seed={value} />;
           })}
-        </span>)}
+        </span>
+      ))}
     </div>
   );
 }

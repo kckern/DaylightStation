@@ -343,15 +343,22 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
       className="piano-connect-four"
       instrument={{ activeNotes, startNote: 48, endNote: 84, showLabels: true, onNoteOn, onNoteOff }}
         layout={BOARD_LAYOUTS.SINGLE}
-        topRail={(
-          <AddressRail
-            addresses={railAddresses}
-            notation={railNotation(addressing.vocabulary)}
-            orientation="horizontal"
-            active={hoveredColumn}
-          />
+        /* The column rail lives INSIDE the board's slot, not in the stage's
+           `topRail`: the slot is the size container, and only inside it can the
+           rail and the board be solved from the same numbers — see
+           `.connect-four-stage`. */
+        primary={(
+          <div className="connect-four-stage">
+            <AddressRail
+              addresses={railAddresses}
+              notation={railNotation(addressing.vocabulary)}
+              orientation="horizontal"
+              active={hoveredColumn}
+              className="connect-four-stage__rail"
+            />
+            <Board game={game} hint={hint} drop={drop} />
+          </div>
         )}
-        primary={<Board game={game} hint={hint} drop={drop} />}
         leftRail={(
           <GameRail label="Opponent">
             <GameSlot>

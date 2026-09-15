@@ -4,8 +4,12 @@ import {
   drillIdOf,
   drillStepFor,
   isDrillSpec,
+  isRungDrillSpec,
+  needsDrillResolution,
   projectGateDrill,
+  projectRungDrill,
   resolveGateDrill,
+  rungDrillProgram,
 } from './gateDrill.js';
 
 vi.mock('../Exercises/pianoLearningApi.js', () => ({
@@ -147,6 +151,80 @@ describe('where the drill stands', () => {
     expect(projection.complete).toBe(true);
     expect(projection.current_step).toBeNull();
     expect(drillStepFor(projection).id).toBe('scale-set-3');
+  });
+});
+
+/**
+ * A scale rung that writes `sets` and `reps` in the YAML is a drill of its own:
+ * one key per set from its roots, one rep per PASSED gate, over the study day.
+ */
+describe('a scale rung that names sets and reps', () => {
+  const SPEC = { kind: 'exercise', collection: 'scales', roots: ['C'], direction: 'up-then-down', sets: 3, reps: 3 };
+  const scaleId = (root) => `scales/modes@root=${root},mode=ionian,direction=up-then-down,span_octaves=1`;
+  const gatePass = (root, passed = true, createdAt = localNoon(2026, 9, 14)) => ({
+    status: 'completed',
+    purpose: 'challenge',
+    created_at: createdAt,
+    prompt: { exercise_id: scaleId(root) },
+    verdict: { passed },
+  });
+
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('is recognised only until it has been resolved to one instance', () => {
+    expect(isRungDrillSpec(SPEC)).toBe(true);
+    expect(isRungDrillSpec({ ...SPEC, instanceId: scaleId('C') })).toBe(false);
+    expect(isRungDrillSpec({ kind: 'exercise', collection: 'scales', roots: ['C'] })).toBe(false);
+    expect(isRungDrillSpec({ kind: 'keys', notes: 3, sets: 3, reps: 3 })).toBe(false);
+    expect(needsDrillResolution(SPEC)).toBe(true);
+    expect(needsDrillResolution({ kind: 'drill' })).toBe(true);
+  });
+
+  it('deals one set per root, cycling a list shorter than its sets, and names none of them', () => {
+    const program = rungDrillProgram({ ...SPEC, roots: ['A', 'E'] }, 'L3');
+    expect(program.id).toBe('rung:L3');
+    expect(program.steps.map((step) => step.requirement.exercise_id)).toEqual([scaleId('A'), scaleId('E'), scaleId('A')]);
+    expect(program.steps.every((step) => step.requirement.required_passes === 3)).toBe(true);
+    expect(program.steps.every((step) => step.display.key === undefined)).toBe(true);
+  });
+
+  it('deals passes of a repeated key out in set order, never banking two sets at once', () => {
+    const projection = projectRungDrill(rungDrillProgram(SPEC, 'L1'), [1, 2, 3, 4].map(() => gatePass('C')));
+    expect(projection.steps.map((step) => step.pass_count)).toEqual([3, 1, 0]);
+    expect(projection.current_step.id).toBe('set-2');
+    expect(projection.complete).toBe(false);
+  });
+
+  it('a failed gate banks no rep', () => {
+    const projection = projectRungDrill(rungDrillProgram(SPEC, 'L1'), [gatePass('C', false)]);
+    expect(projection.steps[0].pass_count).toBe(0);
+  });
+
+  it('resolves to the set the learner is on, without fetching a program', async () => {
+    pianoLearningApi.attempts.mockResolvedValue({
+      ok: true, status: 200, data: { attempts: [gatePass('G'), gatePass('G'), gatePass('G'), gatePass('D')] },
+    });
+    const resolved = await resolveGateDrill({
+      spec: { ...SPEC, roots: ['G', 'D', 'F'] }, learnerId: 'test-learner', studyDate: '2026-09-14', levelId: 'L2',
+    });
+    expect(pianoLearningApi.program).not.toHaveBeenCalled();
+    expect(resolved).toMatchObject({ ok: true, programId: 'rung:L2', stepId: 'set-2', complete: false });
+    expect(resolved.spec).toEqual({ kind: 'exercise', instanceId: scaleId('D') });
+    expect(resolved.projection.steps[1].pass_count).toBe(1);
+  });
+
+  it('yesterday’s passes do not count today', async () => {
+    pianoLearningApi.attempts.mockResolvedValue({
+      ok: true, status: 200, data: { attempts: [1, 2, 3].map(() => gatePass('C', true, localNoon(2026, 9, 13))) },
+    });
+    const resolved = await resolveGateDrill({ spec: SPEC, learnerId: 'test-learner', studyDate: '2026-09-14', levelId: 'L1' });
+    expect(resolved.stepId).toBe('set-1');
+  });
+
+  it('an unreadable ledger still serves set one', async () => {
+    pianoLearningApi.attempts.mockRejectedValue(new Error('offline'));
+    const resolved = await resolveGateDrill({ spec: SPEC, learnerId: 'test-learner', studyDate: '2026-09-14', levelId: 'L1' });
+    expect(resolved).toMatchObject({ ok: true, stepId: 'set-1' });
   });
 });
 

@@ -10,7 +10,38 @@ TV and companion presenters share two import aliases: `@gaming` resolves to the 
 
 Jeopardy and Activity Party use the direct Gaming coordinator. Activity Party supports Draw and Charades, performer-ready gates, rounds, deterministic timers and rotation, host modes, progressive reveals, score adjustments, and verifier confirmation for subjective hostless outcomes. Drawing checkpoints are transient and are deleted when an outcome commits.
 
-Charades is also mounted as a focused Party Games experience with a seeded, deterministic family word bank. Its text decoder is an original reusable sixteen-segment SVG display: every segment is illuminated, warm yellow/pink/orange/white segments encode the secret, and cool cyan/blue/green segments provide the mask that dims through a physical red filter. The segment proportions were visually informed by Kaiser Zhar Khan's donationware “Digital Display TFB” font from True Fonts Blog; the font binary and glyph outlines are not bundled. A separate image-decoder renderer is reserved for cyan SVG line art masked by red circles/bubbles.
+Charades is also mounted as a focused Party Games experience with a seeded,
+deterministic clue bank. Its reusable sixteen-segment text decoder
+(`SegmentedSecretText`) lights every segment of every cell, spaces included, so
+word boundaries do not show without the decoder. Clue lines balance at word
+boundaries without truncation.
+
+Letter segments use warm colors whose red channel is full (white, yellow, peach,
+pink, orange, magenta, hot pink, red). All other segments use cool colors whose
+red channel stays at or below `0x40` (aqua mint, cyan, green, sky, teal, forest,
+blue). A red filter keeps the warm segments bright and darkens the cool ones.
+The two families overlap in apparent brightness, so brightness alone does not
+mark the letters. Hex values live in `platform/ui/_tokens.scss`, the family
+lists in `segmentedSecretPalette.js`, and `segmentedSecretPalette.test.js`
+fails if a color breaks the red-channel rule.
+
+To keep a viewer from sorting the colors by eye, every segment changes to a
+different color in its own family about once a second (`segmentFlicker.js`).
+Segments are shuffled into three groups and one group changes every 333ms, so
+the display never jumps all at once. A change never crosses families, so the
+view through the filter is constant. The colors are written straight to each
+polygon's `--segment-color` rather than re-rendering glyphs. Under
+`prefers-reduced-motion` the colors stay still.
+
+`/dev/decoder-swatches` shows every palette color and a live sample; open it on
+the target screen and hold up the physical red card to confirm each warm bar
+stays bright and each cool bar goes dark. The segment geometry is code-rendered;
+no font binary is bundled.
+
+Image clues use pale cyan art beneath a full-field colored texture, rings,
+bubbles and crossing streaks. All interference pigments preserve the red channel,
+so the simulated red-filter view retains the original image detail. The image
+renderer does not flash the clue or change its visibility over time.
 
 `GamepadAdapter` preserves ABXY/LR identity and binds a stable controller ID to a semantic role on press. The Gaming platform's `DrawingTabletAdapter` emits Pointer Event pressure and eraser metadata with touch/mouse normalization. It converts responsive CSS coordinates into the canvas backing-store coordinate system, clamps captured strokes to the canvas, and preserves independent pointer identities. Browser input is hosted by screen-framework and translated to `InteractionIntent` before experience code sees it.
 
@@ -47,3 +78,118 @@ npm run gaming:party -- delete diagnostic:ID
 Diagnostic endpoints require host authority. Sessions use the `diagnostic:` prefix, live only in the backend process, expire after four hours, and are capped at 32 active sessions. A restart removes them. Creating one reads the current authored definition without pinning/archive writes. Diagnostic effects are empty, printing is suppressed, and drawing checkpoints remain in memory. These guarantees make the path suitable for visual QA and observability, not recovery, replay certification, or multiplayer persistence testing.
 
 Set `DAYLIGHT_BASE_URL` or pass `--base-url` when the app is not available at the CLI default. `list` reports active diagnostics and `url` reprints an attach URL.
+
+## Casual family Charades
+
+A Charades definition can set `competition: false` to play without scorekeeping,
+rankings, correctness questions, verifier steps, or AI commentary. The catalog
+projects individual setup for this mode while preserving the experience's team
+capabilities for competitive definitions. The rule setting controls behavior;
+hiding a scoreboard alone is not casual mode.
+
+Reusable games should be named YAML definitions (presets). A menu invokes only
+the preset reference:
+
+```yaml
+- label: Charades
+  input: app:party-games/charades:fhe
+  action: Open
+```
+
+The preset directory is `household/gaming/games/charades:fhe/`. Its `rules.yml`
+owns rounds, timing, clue count, competition, decoder participants and music,
+plus launch defaults:
+
+```yaml
+launch:
+  autostart: true
+  participants: [person_a, person_b]
+```
+
+Its `content.yml` references the reusable bank and selects categories/difficulty:
+
+```yaml
+clue_bank: charades/choices.yml
+clue_filter:
+  categories: [animals, everyday-actions]
+  levels: [easy]
+```
+
+Bank entries may declare `category` and `level`. Filters combine both dimensions;
+omitted dimensions allow all values. Invalid filters or an empty selected pool
+fail visibly. Filtering happens before hashing and pinning, so a saved session
+retains its selected clues after preset or bank edits.
+
+The catalog projects preset launch defaults for both menu deep links and the game
+picker. IDs resolve against the live household profile; missing, duplicate or
+unknown IDs fail instead of selecting different players. A saved session takes
+precedence on refresh. Normal setup remains available without automatic start.
+
+Inline `?autostart=false` or `?participants=person_a,person_b` remain optional
+per-field overrides. Reusable configuration belongs in the preset; loading one
+does not expand its roster into the browser URL or admin menu input.
+
+Authored content may reference a clue bank beneath the configured data root:
+
+```yaml
+# household/gaming/games/<definition-id>/content.yml
+artifact: { kind: gaming-content, version: 1, id: "<definition-id>" }
+title: Family Charades
+clue_bank: charades/choices.yml
+catalog:
+  description: Act together, just for fun
+  round_count: 3
+```
+
+The bank lives at `content/games/charades/choices.yml`:
+
+```yaml
+version: 1
+clues:
+  - id: rabbit
+    text: Rabbit
+    category: animals
+    level: easy
+    image: images/rabbit.svg
+  - id: swimming
+    text: Swimming
+    category: everyday-actions
+    level: easy
+```
+
+Images are relative to the bank directory. Paths must remain inside that
+directory, including after resolving symlinks. The loader validates clue IDs,
+text, and image files and compiles them into the content artifact before hashing
+and pinning. Editing the bank changes newly created games; already pinned
+sessions retain their clue content and archived image bytes. Read-only catalog
+and diagnostic loads do not archive images; their URLs verify the current image
+hash. Only image formats are served from this namespace. Image URLs use
+`/api/v1/gaming/media/content/<sha256>/<game>/<relative-image>`; the configured content
+root is distinct from the legacy Party Games sound/media directory.
+
+The corresponding rules use `rounds`, `timer_ms`, `clues_per_turn`,
+`turn_selection: seeded-rounds`, and `presentation.image_participants` for the
+household's image-player IDs. Image and text-only pools are separate, so word
+turns cannot consume picture clues needed by young players. For two image
+players over three rounds, provide at least six images to avoid repeats.
+
+Casual play requires a `guessing_music` rule setting containing a
+`source` content reference and local `volume`. The Party Games environment
+resolves that reference through the standard queue endpoint.
+`repeat: after-cycle` advances through the shuffled bag when a track ends.
+`repeat: one` assigns one shuffled track to the authoritative turn and loops
+that track until guessing ends. With `memory: session`, both the remaining bag
+and the turn assignment survive a page refresh, so resuming a turn does not
+change its music. Volume is a 0..1 definition value multiplied by the screen
+master volume.
+Definitions without those fields retain per-start random selection. Playback
+stops and cancels pending work when guessing ends or the experience unmounts.
+The source must be authored in configuration, never embedded in presenter code.
+
+Decoder reading is untimed. A fresh remote OK starts guessing. Casual early
+finish does not claim the answer was correct; expiry and early finish both
+reveal the clue without adjudication. Verify the complete flow with
+`tests/live/flow/gaming/fhe-charades.runtime.test.mjs`, selecting the target
+server through `BASE_URL`. That test uses real media and remote keys. Physical
+red-card readability still requires assessment on the intended display;
+rendered SVGs and successful HTTP responses alone do not establish it.

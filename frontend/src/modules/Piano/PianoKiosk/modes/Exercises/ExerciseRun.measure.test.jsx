@@ -579,8 +579,43 @@ const say = (box) => (box
   : 'absent');
 
 /** Clef glyph codepoints, as `ClefGlyph` writes them. */
-const TREBLE_GLYPH = '\u{1D11E}';
-const BASS_GLYPH = '\u{1D122}';
+/**
+ * WHERE A CLEF HAS TO SIT, measured in pixels against the lines themselves.
+ *
+ * The clef used to be a Unicode <text> fitted to a measured bounding box, so
+ * these cases could only ask "is a glyph there and did it size itself". They
+ * could not ask the question that matters — does the G clef's spiral land on
+ * the G line — and the answer was no: the treble sat about a quarter space
+ * high, and the bass floated a full space above the F line at 80% size.
+ *
+ * It is a Bravura outline now, in staff spaces with the origin ON the defining
+ * line, so the anchor is a fixed fraction of the drawn glyph's own height and
+ * a real layout engine can be asked directly. Numbers are SMuFL's:
+ * gClef spans -2.632..4.392 about the G line, fClef -2.54..1.048 about the F.
+ */
+const CLEF_ANCHOR_FRACTION = { treble: 4.392 / 7.024, bass: 1.048 / 3.588 };
+/** Which staff line the clef names, counted from the BOTTOM line (0). */
+const CLEF_ANCHOR_LINE = { treble: 1, bass: 3 };
+
+/**
+ * Assert the clef is the one expected AND that it is drawn on its own line.
+ * `lines` are the five staff lines as the probe measured them, bottom-first.
+ */
+async function expectClefOnItsLine(probeRef, clef) {
+  const drawn = await probeRef.all(`.action-staff__clef[data-clef="${clef}"]`);
+  expect(drawn.length, `no ${clef} clef was drawn`).toBe(1);
+  expect(drawn[0].painted, 'the clef is not visible on screen').toBe(true);
+  const lines = (await probeRef.all('.action-staff__lines-svg line')).sort((a, b) => b.cy - a.cy);
+  expect(lines.length, 'the staff did not draw five lines').toBe(5);
+  const anchor = drawn[0].top + CLEF_ANCHOR_FRACTION[clef] * drawn[0].height;
+  const target = lines[CLEF_ANCHOR_LINE[clef]].cy;
+  // One pixel of slack for rounding; the bug this replaces was off by a whole
+  // staff space, which at this size is more than a dozen.
+  expect(Math.abs(anchor - target),
+    `the ${clef} clef is anchored at y=${anchor.toFixed(1)} but its line is at y=${target.toFixed(1)}`)
+    .toBeLessThanOrEqual(1.5);
+  return drawn[0];
+}
 
 /**
  * Staves, counted across every stage that can draw one. Tier 0 must show ZERO
@@ -664,10 +699,15 @@ describe('the exercise run, per tier, in a real layout engine at 1280x800', () =
     // and the keyboard's sheets entirely and this would stay green, which is
     // exactly the silent omission it exists to catch.
     const OWNED = [
-      // SvgSequenceStaff.scss — the paper card, the ink, the cursor lane and the
-      // ghost's colours. Nothing else in frontend/src/**/*.scss names these.
-      ['.sequence-note-wrong-ghost', 'SvgSequenceStaff.scss', 'the wrong-note ghost would have no colour of its own'],
-      ['.sequence-staff__ghost-accidental', 'SvgSequenceStaff.scss', 'the staff\'s own sheet is missing'],
+      // SvgSequenceStaff.scss — the paper card, the run-state ink and the cursor
+      // lane. Nothing else in frontend/src/**/*.scss names these.
+      //
+      // NOT the ghost: its paint moved to `GHOST_INK` in staffGlyphs.jsx and is
+      // applied as attributes, because the single-simultaneity renderer draws
+      // the same ghost and cannot share a stylesheet. Asserting a ghost class
+      // here would be asserting that the fork came back.
+      ['.sequence-note-miss', 'SvgSequenceStaff.scss', 'a wrong note would not be coloured'],
+      ['.sequence-note-done', 'SvgSequenceStaff.scss', 'the staff\'s own sheet is missing'],
       ['.sequence-staff__cursor', 'SvgSequenceStaff.scss', 'the cursor lane would be invisible'],
       // PianoKeyboard.scss — `.piano-key` alone proves nothing (the shell has it).
       ['.target-dim', 'PianoKeyboard.scss', 'a lit key would be painted like any other'],
@@ -764,15 +804,12 @@ describe('the exercise run, per tier, in a real layout engine at 1280x800', () =
     expect(inside(await probe.one('.action-staff__staff-area'), stage),
       'the staff\'s ink is drawn outside the stage row that clips it').toBe(true);
 
-    // THE CLEF, AS DRAWN. `ClefGlyph` renders at opacity 0 until its own
-    // getBBox() sizes it — so a non-zero opacity here is the proof that the
-    // glyph was measured and placed, which is exactly what no jsdom test can
-    // establish.
-    const clefs = await probe.all('.action-staff__notation-svg > text');
-    expect(clefs.length, 'no clef glyph was drawn').toBe(1);
-    expect(clefs[0].text, 'a C4+E4 dyad was not engraved on a treble clef').toBe(TREBLE_GLYPH);
-    expect(clefs[0].opacity, 'the clef never sized itself — it is invisible on screen').toBe(1);
-    expect(inside(clefs[0], staff), `the clef ${say(clefs[0])} is drawn outside the staff ${say(staff)}`).toBe(true);
+    // THE CLEF, AS DRAWN — and on the line it names. No jsdom test can say
+    // where the spiral actually landed; this one can.
+    const clef = await expectClefOnItsLine(probe, 'treble');
+    expect(inside(clef, staff), `the clef ${say(clef)} is drawn outside the staff ${say(staff)}`).toBe(true);
+    expect(await probe.count('.action-staff__notation-svg text'),
+      'a font glyph is back in the notation layer — clefs are outlines').toBe(0);
 
     const heads = await probe.all('.action-staff__note');
     expect(heads.length, 'a two-note dyad should draw two noteheads').toBe(2);
@@ -792,9 +829,10 @@ describe('the exercise run, per tier, in a real layout engine at 1280x800', () =
 
     expect(await probe.count(STAFF_SELECTOR)).toBe(1);
     const staff = await probe.one('.sequence-staff');
-    const clefs = await probe.all('.action-staff__notation-svg > text');
-    expect(clefs[0].text, 'a G3+C4 ask was drawn on a treble staff — G3 falls off the bottom of the card').toBe(BASS_GLYPH);
-    expect(clefs[0].opacity).toBe(1);
+    // A G3+C4 ask on a TREBLE staff puts G3 five steps under the bottom line and
+    // off the card; the clef the ask was judged to fit on has to travel with it,
+    // and it has to be drawn on the F line once it gets here.
+    await expectClefOnItsLine(probe, 'bass');
 
     const heads = await probe.all('.action-staff__note');
     expect(heads.map((h) => h.midi).sort()).toEqual(['55', '60']);
@@ -843,9 +881,7 @@ describe('the exercise run, per tier, in a real layout engine at 1280x800', () =
     // And it is actually a staff, not a sliver: the run gives it the row.
     expect(staff.height).toBeGreaterThan(60);
 
-    const clefs = await probe.all('.action-staff__notation-svg > text');
-    expect(clefs[0].text, 'a right-hand C major scale was not engraved on a treble clef').toBe(TREBLE_GLYPH);
-    expect(clefs[0].opacity).toBe(1);
+    await expectClefOnItsLine(probe, 'treble');
 
     const heads = await probe.all('.action-staff__note');
     expect(heads.map((h) => Number(h.midi)), 'the engraved noteheads are not the ask').toEqual([...SCALE_MIDIS]);
@@ -897,9 +933,8 @@ describe('the exercise run, per tier, in a real layout engine at 1280x800', () =
       expect(inside(head, staff), `notehead midi ${head.midi} at ${say(head)} is cropped out of ${say(staff)}`).toBe(true);
       expect(onCanvas(head)).toBe(true);
     }
-    const clefs = await probe.all('.action-staff__notation-svg > text');
-    expect(clefs[0].opacity, 'the clef vanished when the staff was capped').toBe(1);
-    expect(inside(clefs[0], staff)).toBe(true);
+    const clef = await expectClefOnItsLine(probe, 'treble');
+    expect(inside(clef, staff), 'the clef left the card when the staff was capped').toBe(true);
   });
 
   it('tier 2 draws a wrong note at ITS OWN height, and moves the cursor on', async () => {

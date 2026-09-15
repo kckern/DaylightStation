@@ -49,6 +49,7 @@ import {
   checkTakeback, playerMoveCount, takebackNote, takebackRefusalMessage, willStillCount,
 } from './takebackBudget.js';
 import { buildChessRailViewModel } from './chessRailViewModel.js';
+import { rimStaffExtent } from '../../MusicNotation/renderers/RimStaffRenderer.jsx';
 import { useChessAddressingProgress } from './useChessAddressingProgress.js';
 import { useChessOpponentTurn } from './useChessOpponentTurn.js';
 import { useChessPersistenceLifecycle } from './useChessPersistenceLifecycle.js';
@@ -393,13 +394,27 @@ export function PianoChessGame({
     return () => clearTimeout(timer);
   }, [liveScheme.id, shuffleEachTurn]);
 
+  /**
+   * THE SCHEME IN PLAY, not the one this component defaults to.
+   *
+   * This logged `scheme.id` — the PROP, whose default is
+   * `DEFAULT_CHORD_SCHEME` — so every chess game ever recorded says
+   * `letters-by-difficulty-v1` whether the child was reading chord symbols or
+   * staff cards. It is the one field an investigator uses to ask which
+   * vocabulary somebody was on, and it always gave the same answer: on
+   * 2026-09-13 it read `chords` for a game whose own `move-played` line carried
+   * staff dyads two lines below it. `liveScheme` is `game.scheme`, the one the
+   * board actually addresses with once `loadedAddressing` has resolved.
+   */
   useEffect(() => {
     logger().info('mounted', {
-      player_color: playerColor, difficulty, scheme: scheme.id,
+      player_color: playerColor, difficulty,
+      scheme: liveScheme?.id ?? null,
+      vocabulary: liveScheme?.kind === 'staff' ? 'staff' : 'chords',
       shuffle: shuffleEachTurn ? 'each_turn' : 'never', seed: gameSeed,
     });
     if (game.schemeRejected) logger().warn('scheme-rejected', game.schemeRejected);
-  }, [difficulty, game.schemeRejected, gameSeed, playerColor, scheme.id, shuffleEachTurn]);
+  }, [difficulty, game.schemeRejected, gameSeed, playerColor, liveScheme?.id, liveScheme?.kind, shuffleEachTurn]);
 
   /**
    * The board, said out loud.
@@ -742,6 +757,10 @@ export function PianoChessGame({
   // on every note event as a result.
   const lockedFile = axisMatch?.fileComplete ? axisMatch.file : null;
   const lockedRank = axisMatch?.rankComplete ? axisMatch.rank : null;
+  // One rim box per axis, measured from every shape that axis can show, so the
+  // staff is the same size on all eight cards and does not resize as notes land.
+  const fileExtent = useMemo(() => (reading ? rimStaffExtent(liveScheme.roots) : null), [reading, liveScheme]);
+  const rankExtent = useMemo(() => (reading ? rimStaffExtent(liveScheme.qualities) : null), [reading, liveScheme]);
   const fileLabels = useMemo(() => (reading
     ? liveScheme.roots.map((midi, index) => (
       <StaffNoteLabel
@@ -749,9 +768,10 @@ export function PianoChessGame({
         midi={midi}
         held={heldFileNotes}
         locked={index === lockedFile}
+        extent={fileExtent}
       />
     ))
-    : liveScheme.roots), [reading, liveScheme, heldFileNotes, lockedFile]);
+    : liveScheme.roots), [reading, liveScheme, heldFileNotes, lockedFile, fileExtent]);
   const rankLabels = useMemo(() => (reading
     ? liveScheme.qualities.map((midi, index) => (
       <StaffNoteLabel
@@ -759,10 +779,11 @@ export function PianoChessGame({
         midi={midi}
         held={heldRankNotes}
         locked={index === lockedRank}
+        extent={rankExtent}
       />
     ))
     : liveScheme.qualities.map((quality) => CHORD_QUALITIES[quality]?.label || 'maj')),
-  [reading, liveScheme, heldRankNotes, lockedRank]);
+  [reading, liveScheme, heldRankNotes, lockedRank, rankExtent]);
 
   // The marks channel is empty until a gesture asks. "Show legal moves" means
   // the destinations of the piece being held — or, when none is held yet,

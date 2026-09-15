@@ -14,7 +14,7 @@ vi.mock('./PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ basePath: '/
 vi.mock('./PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumbBar: () => breadcrumbBar }));
 vi.mock('../ui/icons/Icon.jsx', () => ({ default: ({ name }) => <span data-icon={name} /> }));
 vi.mock('./PianoUserChip.jsx', () => ({ default: () => <button type="button">Player</button> }));
-vi.mock('./PianoLinkBanner.jsx', () => ({ default: () => null }));
+vi.mock('./PianoLinkBanner.jsx', () => ({ default: () => <div>Connection banner</div> }));
 vi.mock('./SoundPanel.jsx', () => ({ default: ({ open }) => open ? <div>Sound sheet</div> : null }));
 vi.mock('./OperatorDrawer.jsx', () => ({ default: ({ open }) => open ? <div>Piano maintenance</div> : null }));
 vi.mock('./useLongPress.js', () => ({
@@ -25,6 +25,22 @@ vi.mock('./useLongPress.js', () => ({
 }));
 
 import { PianoChrome } from './PianoChrome.jsx';
+import { FULLSCREEN_STORAGE_KEY, PianoFullscreenProvider, useHostedFullscreenToggle } from './PianoFullscreenContext.jsx';
+
+const memoryStore = () => {
+  const data = {};
+  return {
+    data,
+    getItem: (key) => (key in data ? data[key] : null),
+    setItem: (key, value) => { data[key] = String(value); },
+    removeItem: (key) => { delete data[key]; },
+  };
+};
+
+function HostingSurface() {
+  useHostedFullscreenToggle(true);
+  return null;
+}
 
 const renderChrome = (props = {}) => render(<MemoryRouter><PianoChrome {...props} /></MemoryRouter>);
 
@@ -63,5 +79,44 @@ describe('PianoChrome', () => {
     expect(document.querySelector('img')).toHaveAttribute('src', '/song.jpg');
     fireEvent.click(screen.getByRole('button', { name: /Listen/i }));
     expect(action).toHaveBeenCalledTimes(1);
+  });
+
+  it('has no full-screen toggle outside the kiosk provider', () => {
+    renderChrome();
+    expect(screen.queryByRole('button', { name: 'Full screen' })).toBeNull();
+  });
+
+  it('carries the toggle in the header, then floats it once the header is gone', () => {
+    const store = memoryStore();
+    const { container } = render(
+      <MemoryRouter><PianoFullscreenProvider storage={store}><PianoChrome /></PianoFullscreenProvider></MemoryRouter>,
+    );
+    const inHeader = screen.getByRole('button', { name: 'Full screen' });
+    expect(inHeader.closest('header')).toBeTruthy();
+    expect(inHeader.getAttribute('aria-pressed')).toBe('false');
+
+    fireEvent.click(inHeader);
+    expect(container.querySelector('.piano-chrome')).toBeNull();
+    const floating = screen.getByRole('button', { name: 'Full screen' });
+    expect(floating.classList.contains('piano-fullscreen-toggle--floating')).toBe(true);
+    expect(floating.getAttribute('aria-pressed')).toBe('true');
+    expect(store.data[FULLSCREEN_STORAGE_KEY]).toBe('true');
+    // A lost piano must still say so with the header gone.
+    expect(screen.getByText('Connection banner')).toBeTruthy();
+
+    fireEvent.click(floating);
+    expect(container.querySelector('.piano-chrome')).toBeTruthy();
+  });
+
+  it('draws no copy of its own while a surface hosts the toggle', () => {
+    render(
+      <MemoryRouter>
+        <PianoFullscreenProvider storage={memoryStore()}>
+          <HostingSurface />
+          <PianoChrome />
+        </PianoFullscreenProvider>
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole('button', { name: 'Full screen' })).toBeNull();
   });
 });

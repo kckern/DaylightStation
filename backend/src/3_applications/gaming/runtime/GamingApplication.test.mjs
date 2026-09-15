@@ -15,13 +15,13 @@ const manifest = {
   theme: { id: 'mounted-theme' }, result_schema: 'gaming-result/v1',
 };
 
-function fixture({ resumedState = {}, resumedView = null, manifestOverride = {}, partyGamesCatalog = null } = {}) {
+function fixture({ resumedState = {}, resumedView = null, closedState = null, manifestOverride = {}, partyGamesCatalog = null } = {}) {
   const coordinator = {
     create: vi.fn(async (request) => ({ header: { session_id: 'session:1', ruleset: request.ruleset }, definition: {} })),
     resume: vi.fn(async () => resumedView || ({ state: resumedState })),
     dispatch: vi.fn(), close: vi.fn(async () => ({
       header: { session_id: 'session:1', status: 'complete', revision: 3, experience: { id: 'experience' } },
-      state: { winner_id: 'red', scores: { red: 10, blue: 5 } },
+      state: closedState || { winner_id: 'red', scores: { red: 10, blue: 5 } },
     })),
   };
   const definitions = { getCurrent: vi.fn(async () => structuredClone(mounted)) };
@@ -133,6 +133,24 @@ describe('GamingApplication mounted launch authority', () => {
     const { application } = fixture({ resumedView });
     await expect(application.resumeSession('session:1', { role: 'host' })).resolves.toMatchObject({
       result: { schema: 'gaming-result/v1', outcome: { kind: 'win', winner_ids: ['blue'] } },
+    });
+  });
+
+  it('returns neutral scoreless results for closed casual sessions', async () => {
+    const { application } = fixture({ closedState: { competition: false, winner_id: 'red', scores: { red: 99 } } });
+    await expect(application.closeSession('session:1', { reason: 'experience_complete' })).resolves.toMatchObject({
+      result: { status: 'completed', outcome: { kind: 'completed' }, scores: [] },
+    });
+  });
+
+  it('returns neutral scoreless results when completed casual sessions resume', async () => {
+    const resumedView = {
+      header: { session_id: 'session:1', status: 'complete', revision: 4, experience: { id: 'experience' } },
+      state: { competition: false, winner_id: 'blue', scores: { blue: 20 } },
+    };
+    const { application } = fixture({ resumedView });
+    await expect(application.resumeSession('session:1', { role: 'host' })).resolves.toMatchObject({
+      result: { status: 'completed', outcome: { kind: 'completed' }, scores: [] },
     });
   });
 });

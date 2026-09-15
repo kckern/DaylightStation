@@ -169,8 +169,11 @@ describe('SvgStaffRenderer', () => {
     expect(acc).toBeTruthy();
     expect(acc.querySelector('text')).toBeNull();
     expect(acc.querySelectorAll('path, line, rect, polygon').length).toBeGreaterThan(0);
-    // The only <text> left in the notation svg is the clef glyph.
-    expect(container.querySelectorAll('.action-staff__notation-svg text')).toHaveLength(1);
+    // And no <text> is left in the notation svg at all: the clef was the last
+    // font glyph in the engraver and is a Bravura outline now too, anchored on
+    // the line it names rather than fitted to a measured bounding box.
+    expect(container.querySelectorAll('.action-staff__notation-svg text')).toHaveLength(0);
+    expect(container.querySelector('.action-staff__clef')).toBeTruthy();
   });
 
   it('the accidental clears the notehead by a real margin (no overlap)', () => {

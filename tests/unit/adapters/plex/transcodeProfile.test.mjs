@@ -1,6 +1,37 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import { resolveTranscodeCaps, buildClientProfileExtra, canDirectStreamVideo, isHighBitDepthVideo } from '#adapters/content/media/plex/transcodeProfile.mjs';
+import { resolveTranscodeCaps, buildClientProfileExtra, canDirectStreamVideo, isHighBitDepthVideo, needsAudioDownmix } from '#adapters/content/media/plex/transcodeProfile.mjs';
+
+/**
+ * 2026-09-14, plex:697368: AAC-LC 6 channels with `channel_configuration 0` (no
+ * standard layout). Plex stream-copied it into DASH and Chromium's MP4 parser
+ * rejected the first audio segment, so the film never started.
+ */
+describe('needsAudioDownmix', () => {
+  const audio = (stream) => ({ Media: [{ Part: [{ Stream: [{ streamType: 1, codec: 'h264', bitDepth: 8 }, { streamType: 2, ...stream }] }] }] });
+
+  it('downmixes multichannel AAC that Plex cannot name a layout for', () => {
+    expect(needsAudioDownmix(audio({ codec: 'aac', channels: 6 }))).toBe(true);
+  });
+
+  it('leaves multichannel AAC with a named layout alone', () => {
+    expect(needsAudioDownmix(audio({ codec: 'aac', channels: 6, audioChannelLayout: '5.1(side)' }))).toBe(false);
+  });
+
+  it('leaves stereo, non-AAC, and missing audio alone', () => {
+    expect(needsAudioDownmix(audio({ codec: 'aac', channels: 2 }))).toBe(false);
+    expect(needsAudioDownmix(audio({ codec: 'ac3', channels: 6 }))).toBe(false);
+    expect(needsAudioDownmix({ Media: [{ Part: [{ Stream: [{ streamType: 1, codec: 'h264' }] }] }] })).toBe(false);
+    expect(needsAudioDownmix(null)).toBe(false);
+  });
+
+  it('asks Plex for a two-channel AAC limitation scoped to the audio inside a video session', () => {
+    const extra = buildClientProfileExtra({ downmixAudio: true });
+    expect(extra.split('+')).toHaveLength(2);
+    expect(extra).toContain('add-limitation(scope=videoAudioCodec&scopeName=aac&type=upperBound&name=audio.channels&value=2)');
+    expect(buildClientProfileExtra({})).not.toContain('audio.channels');
+  });
+});
 
 describe('resolveTranscodeCaps', () => {
   it('applies default caps when caller passes nothing', () => {

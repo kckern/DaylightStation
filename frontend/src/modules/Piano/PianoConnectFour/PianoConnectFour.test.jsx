@@ -82,7 +82,7 @@ describe('PianoConnectFour opponent pacing', () => {
 describe('PianoConnectFour address rail', () => {
   it('renders seven staff cards above the board and drops the text legend', () => {
     const { container } = render(<PianoConnectFour activeNotes={new Map()} />);
-    const topRail = container.querySelector('.instrument-board-stage__top-rail .address-rail');
+    const topRail = container.querySelector('.connect-four-stage .address-rail');
     expect(topRail).toBeTruthy();
     expect(topRail.querySelectorAll('.address-rail__card')).toHaveLength(7);
     // The board now says it — the old "1: C  2: D ..." panel legend is gone.
@@ -97,7 +97,7 @@ describe('PianoConnectFour address rail', () => {
 
     await act(async () => { await Promise.resolve(); });
 
-    const topRail = container.querySelector('.instrument-board-stage__top-rail .address-rail');
+    const topRail = container.querySelector('.connect-four-stage .address-rail');
     expect(topRail.textContent).toMatch(/C/);
     expect(topRail.querySelectorAll('.chess-staff-label')).toHaveLength(0);
   });

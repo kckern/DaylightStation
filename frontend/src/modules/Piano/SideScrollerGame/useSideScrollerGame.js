@@ -1,17 +1,19 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { useStaffMatching } from '../game-platform/families/bound-action/useStaffMatching.js';
-import { shuffle, buildNotePool } from '../noteUtils.js';
 import { resolveTheme } from './sideScrollerTheme.js';
 import { useSideScrollerSfx } from './sideScrollerSounds.js';
+import { generateScrollerTargets } from './sideScrollerTargets.js';
 import {
   TOTAL_HEALTH,
   MAX_DUCK_MS,
+  PLAYER_X,
   createInitialWorld,
   spawnObstacle,
   tickWorld,
   applyJump,
   applyDuck,
+  applyShoot,
   releaseDuck,
   updateJump,
   updateDuck,
@@ -19,8 +21,8 @@ import {
   applyDamage,
   applyHeal,
   evaluateLevel,
-  OBSTACLE_LOW,
-  OBSTACLE_HIGH,
+  pickObstacleType,
+  mixIncludesShootable,
 } from './sideScrollerEngine.js';
 
 // Outcome types for pendingOutcomeRef (extracted from setWorld updater)
@@ -30,48 +32,8 @@ const OUTCOME_ADVANCE = 'advance';
 // ─── Constants ──────────────────────────────────────────────────
 const COUNTDOWN_STEPS = [3, 2, 1, 0];
 const COUNTDOWN_STEP_MS = 800;
-
-// ─── Target Generation (2 actions only) ─────────────────────────
-
-const MIN_ACTION_SEPARATION = 4; // Minimum semitones between notes of different actions
-
-function generateScrollerTargets(noteRange, complexity, whiteKeysOnly) {
-  const notesPerAction = { single: 1, dyad: 2, triad: 3 };
-  let count = notesPerAction[complexity] || 1;
-
-  const available = shuffle([...buildNotePool(noteRange, whiteKeysOnly)]);
-
-  // Separate by clef: treble (>= 60 / C4) for jump (top staff), bass (< 60) for duck (bottom staff)
-  const trebleNotes = available.filter(n => n >= 60);
-  const bassNotes = available.filter(n => n < 60);
-
-  if (bassNotes.length >= count && trebleNotes.length >= count) {
-    // Enough notes in both clefs — assign by clef (already shuffled)
-    return {
-      jump: trebleNotes.slice(0, count),
-      duck: bassNotes.slice(0, count),
-    };
-  }
-
-  // All in one clef — pick from shuffled pool, ensuring minimum separation
-  const totalNeeded = count * 2;
-  if (available.length < totalNeeded) count = 1;
-
-  // Pick duck notes first (from shuffled pool), then find well-separated jump notes
-  const duckPitches = available.slice(0, count);
-  const duckSet = new Set(duckPitches);
-
-  // Filter remaining notes to those at least MIN_ACTION_SEPARATION from all duck notes
-  const separated = available.filter(n =>
-    !duckSet.has(n) && duckPitches.every(d => Math.abs(n - d) >= MIN_ACTION_SEPARATION)
-  );
-
-  const jumpPitches = separated.length >= count
-    ? separated.slice(0, count)
-    : available.filter(n => !duckSet.has(n)).slice(0, count);
-
-  return { jump: jumpPitches, duck: duckPitches };
-}
+/** How long the death burst plays before the Game Over card. */
+export const DEATH_MS = 2000;
 
 // ─── Hook ───────────────────────────────────────────────────────
 
@@ -113,6 +75,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
   // Timer refs
   const rafRef = useRef(null);
   const countdownRef = useRef(null);
+  const deathTimerRef = useRef(null);
   const lastFrameRef = useRef(0);
   const lastSpawnRef = useRef(0);
   const prevDodgeCountRef = useRef(0);
@@ -123,6 +86,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
   const clearAllTimers = useCallback(() => {
     if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
+    if (deathTimerRef.current) { clearTimeout(deathTimerRef.current); deathTimerRef.current = null; }
   }, []);
 
   // ─── Target Regeneration ────────────────────────────────────
@@ -132,8 +96,10 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     const noteRange = lvlConfig.note_range || [60, 72];
     const complexity = lvlConfig.complexity || 'single';
     const whiteKeysOnly = lvlConfig.white_keys_only ?? false;
-    const newTargets = generateScrollerTargets(noteRange, complexity, whiteKeysOnly);
-    logger.info('side-scroller.targets-regenerated', { jump: newTargets.jump, duck: newTargets.duck });
+    // The shoot staff exists only where something can need shooting.
+    const shoot = mixIncludesShootable(lvlConfig.obstacle_mix);
+    const newTargets = generateScrollerTargets(noteRange, complexity, whiteKeysOnly, { shoot });
+    logger.info('side-scroller.targets-regenerated', { jump: newTargets.jump, duck: newTargets.duck, shoot: newTargets.shoot ?? null });
     setTargets(newTargets);
   }, [logger]);
 
@@ -162,7 +128,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     const nextInterval = intervalMin + Math.random() * (intervalMax - intervalMin);
     let spawnType = null;
     if (elapsed >= nextInterval || lastSpawnRef.current === 0) {
-      spawnType = Math.random() < 0.5 ? OBSTACLE_LOW : OBSTACLE_HIGH;
+      spawnType = pickObstacleType(lvlConfig.obstacle_mix);
       lastSpawnRef.current = timestamp;
     }
 
@@ -170,6 +136,14 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
       let next = tickWorld(prev, dt, scrollSpeed);
       next = updateJump(next, dt, config.jumpDurationMs);
       next = updateDuck(next, timestamp, config.maxDuckMs);
+
+      if (next.blockHits > (prev.blockHits ?? 0)) {
+        logger.info('side-scroller.block-hit', {
+          hits: next.blockHits - (prev.blockHits ?? 0),
+          broken: next.blocksBroken - (prev.blocksBroken ?? 0),
+          blocksBroken: next.blocksBroken,
+        });
+      }
 
       // Spawn obstacle (decision was made outside updater)
       if (spawnType) {
@@ -182,13 +156,13 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
         const hitIndices = collisions.map(c => next.obstacles.indexOf(c));
         next = applyDamage(next, config.damagePerHit, config.invincibilityMs, timestamp, hitIndices);
         sfx.play('hit');
-        logger.info('side-scroller.collision', { count: collisions.length, health: next.health, damagePerHit: config.damagePerHit });
+        logger.info('side-scroller.collision', { count: collisions.length, types: collisions.map(c => c.type), health: next.health, damagePerHit: config.damagePerHit });
         if (next.health <= TOTAL_HEALTH * 0.25 && next.health > 0) {
           logger.warn('side-scroller.health-warning', { health: next.health, totalHealth: TOTAL_HEALTH });
         }
       }
 
-      // Check for newly dodged obstacles → heal
+      // Check for newly cleared obstacles (dodged or shot down) → heal
       if (next.dodgeCount > prevDodgeCountRef.current) {
         const dodged = next.dodgeCount - prevDodgeCountRef.current;
         for (let i = 0; i < dodged; i++) {
@@ -219,9 +193,22 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     if (outcome) {
       pendingOutcomeRef.current = null;
       if (outcome.type === OUTCOME_FAIL) {
-        sfx.play('gameover');
-        logger.info('side-scroller.game-over', { score: outcome.score, level: outcome.level });
-        setPhase('GAME_OVER');
+        // The world freezes and the player bursts; Game Over follows the burst.
+        // The phase ref moves now, not on the next render, so a frame already
+        // queued cannot fail the run a second time.
+        phaseRef.current = 'DYING';
+        if (!deathTimerRef.current) {
+          sfx.play('death');
+          logger.info('side-scroller.death', { score: outcome.score, level: outcome.level });
+          setPhase('DYING');
+          deathTimerRef.current = setTimeout(() => {
+            deathTimerRef.current = null;
+            sfx.play('gameover');
+            logger.info('side-scroller.game-over', { score: outcome.score, level: outcome.level });
+            setPhase('GAME_OVER');
+          }, DEATH_MS);
+        }
+        return;
       } else if (outcome.type === OUTCOME_ADVANCE) {
         logger.info('side-scroller.level-advance', { from: outcome.from, score: outcome.score });
         if (outcome.nextLevel >= levels.length) {
@@ -255,12 +242,22 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
 
   const handleAction = useCallback((actionName) => {
     logger.info('side-scroller.action', { action: actionName });
-    sfx.play(actionName); // 'jump' / 'duck' — theme.sounds key
     if (actionName === 'jump') {
+      sfx.play('jump');
       setWorld(prev => applyJump(prev));
     } else if (actionName === 'duck') {
+      sfx.play('duck');
       const now = performance.now();
       setWorld(prev => applyDuck(prev, now));
+    } else if (actionName === 'shoot') {
+      // No slide-shot: a shot while ducking is ignored, and says so.
+      if (worldRef.current.playerState === 'ducking') {
+        logger.info('side-scroller.shot-ignored', { reason: 'ducking' });
+        return;
+      }
+      sfx.play('shoot');
+      const now = performance.now();
+      setWorld(prev => applyShoot(prev, now));
     }
   }, [logger, sfx]);
 
@@ -341,7 +338,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     let nearestDist = Infinity;
     for (const ob of world.obstacles) {
       if (ob.hit || ob.dodged) continue;
-      const dist = ob.x - 0.25; // PLAYER_X
+      const dist = ob.x - PLAYER_X;
       if (dist < -ob.width) continue;
       if (dist < nearestDist) {
         nearestDist = dist;

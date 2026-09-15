@@ -1,4 +1,6 @@
+import { useMemo } from 'react';
 import StaffNoteLabel from './StaffNoteLabel.jsx';
+import { rimStaffExtent } from '../../../../MusicNotation/renderers/RimStaffRenderer.jsx';
 import './AddressRail.scss';
 
 /**
@@ -39,6 +41,12 @@ export default function AddressRail({
   active = null,
   className = '',
 }) {
+  const staff = notation !== 'chords' && notation !== 'names';
+  // One box for the whole rail, so every card's staff is the same size.
+  const extent = useMemo(
+    () => (staff ? rimStaffExtent(addresses.map((address) => address?.midi)) : null),
+    [staff, addresses],
+  );
   return (
     <div
       className={`address-rail address-rail--${orientation} ${className}`.trim()}
@@ -56,7 +64,7 @@ export default function AddressRail({
         >
           {notation === 'chords' && <span className="address-rail__text">{address.chord}</span>}
           {notation === 'names' && <span className="address-rail__text">{address.label}</span>}
-          {notation !== 'chords' && notation !== 'names' && <StaffNoteLabel midi={address.midi} />}
+          {staff && <StaffNoteLabel midi={address.midi} extent={extent} />}
         </div>
       ))}
     </div>

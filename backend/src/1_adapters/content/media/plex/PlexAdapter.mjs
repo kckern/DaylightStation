@@ -5,7 +5,7 @@ import { ContentCategory } from '#domains/content/value-objects/ContentCategory.
 import { PlexClient } from './PlexClient.mjs';
 import { getCurriculumIndex, mergeEpisode, mergeSeason } from './CurriculumIndex.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { resolveTranscodeCaps, buildClientProfileExtra, canDirectPlayH264, canDirectStreamVideo } from './transcodeProfile.mjs';
+import { resolveTranscodeCaps, buildClientProfileExtra, canDirectPlayH264, canDirectStreamVideo, needsAudioDownmix } from './transcodeProfile.mjs';
 
 /**
  * Characters that may appear unescaped in a Plex session identifier.
@@ -1521,7 +1521,8 @@ export class PlexAdapter {
       session = null,
       startOffset = 0,
       allowDirectPlay = false,
-      allowDirectStream = allowDirectPlay
+      allowDirectStream = allowDirectPlay,
+      downmixAudio = false
     } = opts;
 
     const { clientIdentifier, sessionIdentifier } = this._generateSessionIds(session);
@@ -1548,7 +1549,7 @@ export class PlexAdapter {
     // incident). Gate on allowDirectStream so h264/hevc video copies untouched.
     params.append(
       'X-Plex-Client-Profile-Extra',
-      buildClientProfileExtra({ maxFrameRate: allowDirectStream ? null : caps.maxFrameRate })
+      buildClientProfileExtra({ maxFrameRate: allowDirectStream ? null : caps.maxFrameRate, downmixAudio })
     );
     params.append('autoAdjustQuality', '1');
     // directPlay/directStream default to 0 (forced transcode). Only an already
@@ -1647,7 +1648,7 @@ export class PlexAdapter {
    * @returns {string} Transcode URL
    * @private
    */
-  _buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate = null, maxResolution = null, startOffset = 0, allowDirectStream = false) {
+  _buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate = null, maxResolution = null, startOffset = 0, allowDirectStream = false, downmixAudio = false) {
     const mediaBufferSize = 5242880 * 20; // 100MB buffer for better streaming
     // Cap the transcode so software libx264 stays ahead of realtime (June 8 fix).
     const caps = resolveTranscodeCaps({ maxVideoBitrate, maxResolution });
@@ -1675,7 +1676,7 @@ export class PlexAdapter {
       // stalls every client at the same timestamp (2026-06-10 Daytona
       // incident — the source was 60fps, the 30fps limitation forced libx264).
       // A remux has no encoder, so the caps protect nothing on that path.
-      `X-Plex-Client-Profile-Extra=${encodeURIComponent(buildClientProfileExtra({ maxFrameRate: allowDirectStream ? null : caps.maxFrameRate }))}`
+      `X-Plex-Client-Profile-Extra=${encodeURIComponent(buildClientProfileExtra({ maxFrameRate: allowDirectStream ? null : caps.maxFrameRate, downmixAudio }))}`
     ];
 
     if (startOffset > 0) {
@@ -1770,6 +1771,10 @@ export class PlexAdapter {
       // directPlay. The codec advertisement (h264,hevc only) prevents AV1/VP9
       // from being direct-streamed regardless of this flag.
       const allowDirectStream = allowDirectPlay || canDirectStreamVideo(playableItem.metadata);
+      // Multichannel AAC with no standard layout cannot be appended by Chromium;
+      // re-encode that audio track to stereo and keep copying the video.
+      const downmixAudio = needsAudioDownmix(playableItem.metadata);
+      if (downmixAudio) this.logger.info?.('plex.loadMediaUrl.audio-downmix', { ratingKey });
       // Video: use decision API to authorize session
       const decisionResult = await this.requestTranscodeDecision(ratingKey, {
         maxVideoBitrate,
@@ -1777,7 +1782,8 @@ export class PlexAdapter {
         session,
         startOffset,
         allowDirectPlay,
-        allowDirectStream
+        allowDirectStream,
+        downmixAudio
       });
 
       if (!decisionResult.success) {
@@ -1794,7 +1800,8 @@ export class PlexAdapter {
             maxVideoBitrate,
             resolvedMaxResolution,
             startOffset,
-            allowDirectStream
+            allowDirectStream,
+            downmixAudio
           )
         };
       }
@@ -1817,7 +1824,8 @@ export class PlexAdapter {
           maxVideoBitrate,
           resolvedMaxResolution,
           startOffset,
-          allowDirectStream
+          allowDirectStream,
+          downmixAudio
         )
       };
     } catch (error) {

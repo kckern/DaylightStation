@@ -140,10 +140,12 @@ const gateElement = () => (
  */
 async function markupOf(trigger) {
   const view = render(gateElement());
-  // The run arms itself from the piano now, so its ready phase has no button to
-  // wait on — this hint is the settled-and-ready barrier in its place. The
-  // gate's level is cued (`GATE_CONFIG`'s tier-3 level), so it is this hint.
-  await screen.findByText(/Press any key to start\./);
+  // The run arms itself from the piano, so its ready phase has no button to wait
+  // on — and the gate run is bare, so there is no ready sentence either. The run
+  // marks itself armed once its runtime is installed; that is the barrier.
+  await waitFor(() => expect(
+    document.querySelector('.piano-exercise-run[data-phase="ready"][data-armed="true"]'),
+  ).toBeTruthy());
   if (trigger) await trigger(view);
   const html = document.body.firstElementChild.innerHTML;
   view.unmount();

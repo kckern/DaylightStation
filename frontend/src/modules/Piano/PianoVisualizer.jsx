@@ -30,6 +30,8 @@ import MatchGateContext from './PianoKiosk/modes/Games/MatchGateContext.js';
 import { gateAppliesTo, gateConfigForLearner } from './PianoKiosk/modes/Games/gateScope.js';
 import PianoUserContext from './PianoKiosk/PianoUserContext.jsx';
 import { ExternalPianoMidiProvider } from './PianoKiosk/PianoMidiContext.jsx';
+import useBoardGameDay from './PianoKiosk/modes/Games/useBoardGameDay.js';
+import { addressingPolicyFor } from './game-platform/addressing/addressingPolicy.js';
 
 /** How long the school-lock verdict stays up before it dismisses itself. */
 const SCHOOL_LOCK_DISMISS_MS = 8000;
@@ -92,6 +94,26 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   // this one is a chord on the piano itself, and a policy enforced on the two
   // that are visible and not on the one that is discovered would be no policy
   // at all.
+  /**
+   * HOW HARD THE READING IS, AND WHOSE READING IT IS.
+   *
+   * The office screen mounts the same board games the kiosk does, and used to
+   * mount them with no addressing policy at all — so a child reading staff
+   * cards at the piano was handed chord symbols the moment the same game came
+   * up here, because every game defaults the prop to null and chess's built-in
+   * default is `chords`. The ladder is a fact about the player; it does not
+   * belong to a room. Same builder, same day-counter hook as the kiosk.
+   */
+  const boardGameDay = useBoardGameDay(currentUser ?? null, getLogger());
+  const addressingPolicy = useMemo(
+    () => addressingPolicyFor({
+      config: appConfig?.gameAddressing,
+      learnerId: currentUser ?? null,
+      completedGames: boardGameDay.completedGames,
+    }),
+    [appConfig?.gameAddressing, currentUser, boardGameDay.completedGames],
+  );
+
   const gamesOff = gamesDisabledFor(appConfig?.gameAccess, currentUser ?? null);
   const schoolGameAccess = useSchoolGameAccess(currentUser ?? null, {
     schoolLearner: (users || []).find((u) => u.id === currentUser)?.schoolLearner,
@@ -530,6 +552,8 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
                    ActivePianoProvider to read it from. */
                 appConfig={appConfig}
                 gameConfig={gamesConfig?.[activeGameId] ?? null}
+                /* The player's reading ladder, identical to the kiosk's. */
+                addressingPolicy={addressingPolicy}
                 /* Games that keep a record (chess) file it per player. Without
                    this every office-screen game was played by nobody. */
                 currentUser={currentUser}

@@ -202,7 +202,13 @@ rung**, the same number on each:
 Graduates beyond the limit are not dropped. They stay owed and graduate on a
 later day, so a pace change delays a sentence without losing it. A step
 finished today stays on its rung, so finishing one never pulls another in
-behind it. Before 2026-09-12 the fill topped up the day's *total* rung by rung,
+behind it. **No rung ever holds more than `dailyLimit` steps**, even when more
+were done that day under an older, larger limit: a 3 × 4 learner's day is
+12 steps and a 5 × 4 learner's is 20, whatever the log holds. The surplus stays
+in the log as evidence and keeps its sentences out of new material. Practice
+slots take passes already done first, so capping never hides finished work
+behind an outstanding step (found live 2026-09-14: days that should have been
+12 and 20 steps read 13 and 33). Before 2026-09-12 the fill topped up the day's *total* rung by rung,
 and a pipeline that did not match the limit came out lopsided: a first day at
 five a day, followed by an enrollment of three, served 3 repetitions,
 8 dictations, 1 recording and no interpretation.
@@ -232,25 +238,69 @@ by skipping a week. The surface says "Extra practice — this one doesn't move
 up yet" over such an entry, because the same sentence arriving at three rungs
 in one sitting reads as a bug otherwise.
 
-**Rollover** needs the day's queue complete, judged on the full credit queue
-rather than the requesting device's filtered one, so a panel that cannot
-climb a rung can never roll past it. Rolling with work outstanding would skip
-a rung without telling the learner, and a refused roll says why.
+**Rollover.** Nobody is ever walled from another round. Two paths move a
+learner on, and neither can be held by work they cannot or will not finish.
 
-- **Opening the ladder rolls for you.** A day finished in an earlier study day
-  advances on the read (`school.language.day-rolled`, `via: open`). Nobody
-  needs to find a button, which is how a finished day came back as "complete"
-  the next afternoon on the locked kiosk (2026-09-12).
-- **A finished day is never a wall.** *Start the next day* is offered on the
-  day-complete panel everywhere, the kiosk included, and the server grants it
-  on the same day too (`reason: ahead`, `via: ahead`), even when today is
-  already credited.
+- **Opening the ladder rolls for you** once the whole day is done, practice
+  included, and the study-day boundary has passed
+  (`school.language.day-rolled`, `via: open`). Judged on the full credit
+  queue, not the device's filtered one, so a panel that cannot climb a rung
+  never skips it. **A partial day is continued the next study day** exactly
+  where it stopped. That is the household rule, and it lets a day finished
+  across two sittings still earn its credit.
+- **Start the next day is always offered once a step is done**, mid-day, on
+  the kiosk, and on the device-blocked panel. The server grants it whatever is
+  outstanding: `reason: ahead` for a finished day, `early` with work left
+  (the log line carries `outstanding`). Rolling early abandons nothing. The
+  queue is derived, so an unstarted new sentence is still untouched and is
+  admitted first tomorrow, and a sentence owed at a rung stays owed. Only
+  practice passes are dropped. It is refused only with a reason there is
+  nothing to move to: `not-started` (no step today; the next day would be this
+  one again, and the button is not shown) and `nothing-left` (every sentence
+  retired).
+- **A day finished today stays today's credit.** `todayStatus` reports
+  `doneToday` for a day whose queue is complete and whose last attempt fell in
+  this study day, whatever round the learner is on now. Taking another round
+  used to un-credit the day and re-lock every gate keyed on School.
+- **The same code reopens a served ladder.** `doneToday` marks the `language`
+  subject served, which turns its disc green on the status board. A served
+  subject's code normally answers "You already did this today." with only a
+  way out. `todayStatus` therefore also reports `reopenable: true` (false only
+  when every sentence is retired), and `findReopenableProgramEntry` opens the
+  ladder, where *Start the next day* is waiting.
 - **Neither path re-announces the day.** Only the attempt that finishes a day
   publishes `day-complete`. A read or a roll that restated it closed the day
   again, and each close printed another receipt.
 
 An empty queue counts as complete, but opening onto one does not roll: with
 every sentence retired there is no next day to serve.
+
+**Self-healing progress.** `progress.yml` is a cache of the attempt log, and
+every open squares it with the log before judging anything. Repairs are
+written back and logged at warn as `school.language.progress-repaired` with
+the repair names; the read-only status path applies them in memory only.
+
+| Repair | Condition |
+|---|---|
+| `day-behind-log` | attempts logged against a later day than the record holds (a lost or reverted file, a sync conflict) |
+| `last-activity-missing` | no parseable timestamp in the record, but the log has one |
+| `last-activity-stale` | the record's timestamp is from an earlier study day than the newest attempt |
+| `last-activity-in-future` | a timestamp from a later study day than now, which would hold `before-boundary` forever |
+| `daily-limit-drift` | an enrolled learner's stored pace differs from the enrollment's `lessonSize ÷ rungs` |
+
+Comparison is by study day, never by millisecond, so a healthy record is
+never rewritten.
+
+**Self-healing credit.** The ladder keeps no history a past-day verdict can
+replay, so a finished day's School credit is the work session its
+`day-complete` announcement opens. An announcement lost to a restart or a
+failed close would lose that credit for good. So every open re-announces each
+day finished *in this study day* (`school.language.day-complete`, `via: heal`),
+at most once per 10 minutes per day. `CloseLanguageDay` settles a day once and
+answers `already_settled` after, so a repeat can neither double-credit nor
+reprint a receipt. Days finished on an earlier study day are never
+re-announced: the close-out stamps the session with the time it runs, and
+healing yesterday would credit the wrong date.
 
 **Retirement.** A sentence that has cleared every rung of the chain is retired.
 Evidence recorded on a better-equipped device never creates phantom work on a
@@ -719,7 +769,7 @@ All under `/api/v1/school/sentence-ladder`. Learner routes carry
 | POST | `/users/:userId/recording` | raw audio for one outstanding recording step |
 | POST | `/users/:userId/transcribe` | raw audio of a spoken answer → `{ transcript, empty }`. Stores nothing and reads no corpus. 503 where the household has no AI gateway — the day says `voiceAnswer: false` in advance so no client has to find out this way |
 | PUT | `/users/:userId/pacing` | new sentences per day |
-| POST | `/users/:userId/roll` | ask for the next study day; refused with a reason when not earned |
+| POST | `/users/:userId/roll` | move to the next study day: `earned`, `ahead` or `early`. Refused only as `not-started` or `nothing-left` |
 | GET | `/users/:userId/history` | the Review shelf, newest day first |
 | GET | `/audio/:corpusId/:seq/:lang` | prompt audio (public) |
 | GET | `/cue/:name` | a UI cue such as the recording ding |

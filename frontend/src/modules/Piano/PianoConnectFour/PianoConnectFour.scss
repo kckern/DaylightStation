@@ -41,59 +41,73 @@
   padding-bottom: 0.4rem;
 }
 
-.piano-connect-four .instrument-board-stage__top-rail {
-  /* Deliberately only the two terms the board's first two share. The board also
-     clamps on `calc(100cqh * 7 / 6)` (its height budget), but that term CANNOT
-     be repeated here: the rail lives in the stage's row 1, outside the
-     `container-type: size` element (`__primary`) those cq units resolve
-     against, so it would silently measure the viewport instead. Measured on the
-     tablet 2026-08-23 the two bounds agree (board 804px, rail 817px), so the
-     visible drift was pitch, not width — see the grid below. If a slot ever
-     gets short enough for the board's height term to bind, the rail will read
-     wide and the honest fix is to move it inside the size container, not to
-     paste a cq unit somewhere it cannot see. */
-  width: min(100%, var(--pg-board-max));
-  margin-inline: auto;
+/* THE RAIL AND THE BOARD ARE ONE INSTRUMENT FACE, solved together inside the
+   board slot — the stage's size container (`.instrument-board-stage__primary`).
+
+   The column rail used to sit in the stage's top-rail row, OUTSIDE that
+   container, so it could measure only width while the board measured both
+   axes. The two agreed only while the ceiling bound them both; the moment the
+   board went height-bound (a lifted ceiling, a shorter slot) the rail stayed
+   wide and card N drifted off column N. Inside the slot both read one number,
+   `--c4-board-w`, so they cannot disagree.
+
+   The width is the smallest of the slot's width, the ceiling, and the height
+   budget. That budget is the board (6/7 of its width, border-box), the gap, and
+   the rail: a card is 78% of a column, a column is the board's width less its
+   two 2% insets over 7, and a staff card is 112/100 as tall as it is wide —
+   0.8736 of a column. Solved for the width:
+     W <= (100cqh - gap + 0.8736 * 4cqw / 7) * 7 / 6.8736.
+   The insets are 2% of the SLOT's width for the board and the rail alike (a
+   percentage padding resolves against the containing block, which for both is
+   this stage), which is what keeps a card over its hole. */
+.connect-four-stage {
+  --c4-rail-gap: 0.6rem;
+  --c4-board-w: min(
+    100cqw,
+    var(--pg-board-max),
+    calc((100cqh - var(--c4-rail-gap) + 0.4992cqw) * 1.0184)
+  );
+  display: grid;
+  grid-template-rows: auto auto;
+  justify-items: center;
+  align-content: center;
+  gap: var(--c4-rail-gap);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
 }
 
-/* The rail has to be laid out with the BOARD's geometry, not its own.
-   `.address-rail--horizontal` is a flex row with `gap: 0.4rem` and no padding;
-   the board is a 7-track grid with NO gap and a `padding: 2%` moulding ring.
-   Same width, two different pitches AND two different origins — so card N sat
-   left of column N, drifting further across the rail. Re-declare it here as
-   the same grid: 7 equal tracks, no gap, matching 2% inset. The breathing room
-   between cards comes from the card's own inline margin, which is symmetric
-   and therefore cannot move a card off its column's centre. */
-.piano-connect-four .instrument-board-stage__top-rail .address-rail {
+/* Laid out with the BOARD's geometry, not its own: 7 equal tracks, no gap, the
+   same 2% inset. `.address-rail--horizontal` is a flex row with a 0.4rem gap,
+   which put card N left of column N and further off with every column. The
+   height is stated rather than left to the cards so the width solve above holds. */
+.connect-four-stage__rail.address-rail {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 0;
+  box-sizing: border-box;
+  width: var(--c4-board-w);
+  height: calc((var(--c4-board-w) - 4cqw) / 7 * 0.8736);
   padding-inline: 2%;
 }
 
-.piano-connect-four .instrument-board-stage__top-rail .address-rail__card {
-  /* 78% of the cell, centred — the same proportion the discs use, so a card
-     reads as sitting over its hole rather than over the moulding between. */
+/* 78% of the cell, centred — the same proportion the discs use, so a card reads
+   as sitting over its hole rather than over the moulding between. */
+.connect-four-stage__rail .address-rail__card {
   width: 78%;
   margin-inline: auto;
 }
 
-/* Fit the slot on BOTH axes. `.pg-board` sizes on width alone, which is fine
-   until the slot is shorter than the board is tall: with `aspect-ratio` the
-   height falls out of the width, so a shorter slot did not shrink this board at
-   all — it drew 65px past the bottom and printed over the status line.
-   The third term is the height budget (`100cqh`, from the size container on
-   `.instrument-board-stage__primary`) converted into a width by the same 7:6
-   ratio the board declares, so whichever axis runs out first is the one that
-   decides and the ratio is never distorted.
-   Chess has always done this — PianoChessGame.scss takes a `min()` of a width
-   term and a `100cqh` term. That is precisely why chess fitted the office screen
-   and this did not.
-   Compound selector on purpose: `.pg-board` sets `width` at the same specificity,
-   so matching on both classes decides it by specificity rather than by whichever
-   stylesheet the bundler happened to emit last. */
-.connect-four-board.pg-board {
-  width: min(100%, var(--pg-board-max), calc(100cqh * 7 / 6));
+/* Compound on purpose: `.pg-board` sets `width` too, so this is decided by
+   specificity rather than by which stylesheet the bundler emitted last. */
+.connect-four-stage .connect-four-board.pg-board {
+  width: var(--c4-board-w);
+}
+
+/* Kiosk full screen: no ceiling. The board takes the room the header and the
+   keyboard gave back, and its column cards grow with it. */
+.piano-connect-four.piano-game-host--fullscreen {
+  --pg-board-max: 100rem;
 }
 
 .connect-four-board {

@@ -8,6 +8,7 @@ import { staffTokenNotes } from '../../../PianoChessGame/staffAddress.js';
 import {
   clefRightEdge, ACCIDENTAL_INK_LEFT, NOTEHEAD_RX,
 } from '../../../../MusicNotation/renderers/staffGlyphs.jsx';
+import { rimClefRight, rimStaffExtent } from '../../../../MusicNotation/renderers/RimStaffRenderer.jsx';
 
 const ghosts = (c) => c.querySelectorAll('.action-staff__ghost');
 const card = (c) => c.querySelector('.chess-staff-label');
@@ -72,6 +73,24 @@ describe('StaffNoteLabel', () => {
     });
   });
 
+  describe('with an axis extent', () => {
+    it('draws the rim geometry and marks the card for it', () => {
+      const extent = rimStaffExtent([60, 62, 64]);
+      const { container } = render(<StaffNoteLabel midi={62} extent={extent} />);
+      expect(card(container).className).toContain('chess-staff-label--rim');
+      expect(container.querySelector('svg.action-staff__rim-svg')).toBeTruthy();
+      expect(container.querySelector('.action-staff__staff-area')).toBeNull();
+    });
+
+    it('keeps ghosts and the locked treatment', () => {
+      const extent = rimStaffExtent([60, 62, 64, 65, 67]);
+      const { container } = render(<StaffNoteLabel midi={60} held={[64]} locked extent={extent} />);
+      expect(ghosts(container)).toHaveLength(1);
+      expect(card(container).className).toContain('chess-staff-label--locked');
+      expect(container.querySelectorAll('.action-staff__note--matched')).toHaveLength(1);
+    });
+  });
+
   it('spells black keys the way the board tells it to', () => {
     const sharp = render(<StaffNoteLabel midi={70} accidental="sharp" />).container;
     const flat = render(<StaffNoteLabel midi={70} accidental="flat" />).container;
@@ -126,5 +145,41 @@ describe('every shape the ladder can deal keeps its ink off the clef', () => {
       collisions.sort((a, b) => a.leftmost - b.leftmost).slice(0, 5),
       `the clef's right edge is ${clefRightEdge(14)}`,
     ).toEqual([]);
+  });
+
+  // The rim geometry draws each axis in a box measured from that axis's own
+  // shapes, so the failure it can have is different: ink outside the box, cut
+  // off by the card. Every deal the ladder can make, on both axes.
+  it('keeps rim ink off the clef and inside the axis box on every deal', () => {
+    const faults = [];
+    for (let completedGames = 0; completedGames <= 5; completedGames += 1) {
+      const managed = managedAddressingAt(CFG, { learnerId: 'learner', completedGames });
+      for (let seed = 0; seed < 12; seed += 1) {
+        const { scheme } = chessAddressingFor({}, DEFAULT_CHORD_SCHEME, seed, managed);
+        for (const axis of [scheme.roots, scheme.qualities]) {
+          const extent = rimStaffExtent(axis);
+          const height = (extent.hi - extent.lo) * 7;
+          for (const token of axis) {
+            const pitches = staffTokenNotes(token);
+            const { container } = render(<StaffNoteLabel midi={pitches} extent={extent} />);
+            const clef = container.querySelector('svg').getAttribute('data-clef');
+            const heads = [...container.querySelectorAll('.action-staff__note')];
+            const xs = heads.map((n) => Number(n.getAttribute('cx')));
+            const ys = heads.map((n) => Number(n.getAttribute('cy')));
+            const accidentalLefts = [...container.querySelectorAll('.action-staff__accidental')].map((a) => {
+              const x = Number(/translate\(([-\d.]+)/.exec(a.getAttribute('transform'))[1]);
+              return x - ACCIDENTAL_INK_LEFT[a.getAttribute('data-kind')];
+            });
+            const left = Math.min(...xs.map((x) => x - NOTEHEAD_RX), ...accidentalLefts);
+            const right = Math.max(...xs.map((x) => x + NOTEHEAD_RX));
+            if (left < rimClefRight(clef) - 0.01 || right > extent.width + 0.01
+              || Math.min(...ys) < 0 || Math.max(...ys) > height) {
+              faults.push({ completedGames, seed, pitches, left, right, ys });
+            }
+          }
+        }
+      }
+    }
+    expect(faults.slice(0, 5)).toEqual([]);
   });
 });

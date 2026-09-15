@@ -40,19 +40,25 @@ function Pill({ state, progress }) {
   );
 }
 
-function Cluster({ step, isCurrent, noteProgress }) {
+function Cluster({ step, isCurrent, noteProgress, labels }) {
   const required = step.requirement?.required_passes ?? 1;
   const banked = Math.min(step.pass_count ?? 0, required);
   const done = step.passed;
-  const label = step.display?.key ?? step.title ?? '';
-  const badge = HAND_BADGE[step.display?.hand] ?? null;
+  const label = labels ? (step.display?.key ?? step.title ?? '') : '';
+  const badge = labels ? (HAND_BADGE[step.display?.hand] ?? null) : null;
 
   return (
     <div className="drill-cluster" data-active={isCurrent || undefined} data-done={done || undefined}>
-      <div className="drill-cluster__label">
-        {badge && <span className="drill-cluster__badge">{badge}</span>}
-        <span>{label}</span>
-      </div>
+      {/* A SET WITH NOTHING TO SAY SAYS NOTHING. A reading deck declares no
+          label on purpose — naming the pitch under a staff a child is being
+          asked to read hands them the answer — and an empty label row here
+          would still have reserved its line and its gap. */}
+      {(badge || label) && (
+        <div className="drill-cluster__label">
+          {badge && <span className="drill-cluster__badge">{badge}</span>}
+          {label && <span>{label}</span>}
+        </div>
+      )}
       <div className="drill-cluster__pills">
         {Array.from({ length: required }, (_, rep) => {
           const state = done || rep < banked ? 'banked' : (isCurrent && rep === banked ? 'current' : 'todo');
@@ -81,10 +87,12 @@ function Cluster({ step, isCurrent, noteProgress }) {
  * @param {import('react').ReactNode} fallback what to render when there are no
  *   pills to draw — the host's own standing instruction. See the note at the
  *   return below for why this cannot be `null`.
+ * @param {boolean} labels whether sets are named — the placard and the cluster
+ *   labels. The game gate turns them off: its run is pills and nothing else.
  */
 export default function DrillProgress({
   programId, stepId, userId, program: suppliedProgram = null,
-  noteProgress = 0, phase = 'playing', reloadKey = 0, fallback = null,
+  noteProgress = 0, phase = 'playing', reloadKey = 0, fallback = null, labels = true,
 }) {
   const [fetched, setFetched] = useState(null);
   // A host that supplies a projection OWNS it — including when it changes. The
@@ -113,7 +121,11 @@ export default function DrillProgress({
       setFetched(found ?? null);
     }).catch(() => { /* no projection, no pills */ });
     return () => { alive = false; };
-  }, [programId, userId, stepId, settled, reloadKey, suppliedProgram]);
+    // `Boolean`, not the projection itself: a host that RECOMPUTES its
+    // projection every render (a deck's standing moves with the cursor) would
+    // otherwise re-arm this effect at MIDI rates. All it ever asks of the prop
+    // is whether there is one.
+  }, [programId, userId, stepId, settled, reloadKey, Boolean(suppliedProgram)]);
 
   const current = useMemo(() => {
     const steps = program?.steps ?? [];
@@ -137,11 +149,16 @@ export default function DrillProgress({
   // what the original attempt cost (a hook below an early return, 114 tests).
   if (!program || (program.steps?.length ?? 0) < 2) return fallback;
 
+  const placard = labels ? (current?.display?.key ?? current?.title ?? null) : null;
+
   return (
     <div className="drill-progress" data-phase={phase}>
-      {current && (
+      {/* The placard names the MATERIAL, so it draws only when the host declared
+          one to name. A deck's sets are positions, not subjects; the stage is
+          already showing the card. */}
+      {placard && (
         <div className="drill-placard">
-          <span className="drill-placard__key">{current.display?.key ?? current.title}</span>
+          <span className="drill-placard__key">{placard}</span>
           {current.display?.hand_label && (
             <>
               <span className="drill-placard__sep">·</span>
@@ -157,6 +174,7 @@ export default function DrillProgress({
             step={step}
             isCurrent={step.id === current?.id}
             noteProgress={noteProgress}
+            labels={labels}
           />
         ))}
       </div>

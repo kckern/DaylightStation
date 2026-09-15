@@ -60,12 +60,13 @@ enableGlobalKeyCapture();
  *
  * Runs once on mount, then cleans the URL to prevent re-triggering on reload.
  */
-function ScreenAutoplay({ routes, layout }) {
+export function ScreenAutoplay({ routes, layout }) {
   const { push } = useMenuNavigationContext();
+  const [initialLocation] = useState(() => ({ pathname: window.location.pathname, search: window.location.search }));
 
   useEffect(() => {
-    const pathname = window.location.pathname;
-    const search = window.location.search;
+    const { pathname, search } = initialLocation;
+    let timer;
 
     // Path-based navigation: /screens/living-room/weekly-review or /screens/living-room/fhe
     const pathMatch = pathname.match(/\/screens?\/[^/]+\/(.+)/);
@@ -79,7 +80,7 @@ function ScreenAutoplay({ routes, layout }) {
       const appRoute = resolveScreenAppPath(pathname, (appId) => Boolean(getApp(appId)), routes);
       if (appRoute) {
         logger.info('screen-autoplay.app', { app: appRoute.appId, appPath: appRoute.appPath });
-        setTimeout(() => {
+        timer = setTimeout(() => {
           const bus = getActionBus();
           bus.emit('menu:open', { menuId: appRoute.menuId });
         }, 500);
@@ -89,23 +90,23 @@ function ScreenAutoplay({ routes, layout }) {
         // props.list to TVMenu, dropping any sibling properties.
         const { contentId, ...routeProps } = routes[subPath];
         logger.info('screen-autoplay.route', { subPath, contentId });
-        setTimeout(() => {
+        timer = setTimeout(() => {
           push({ type: 'menu', props: { list: { contentId, ...routeProps } } });
         }, 500);
       } else {
         // Default: treat suffix as menu name
-        setTimeout(() => {
+        timer = setTimeout(() => {
           push({ type: 'menu', props: { list: { contentId: `menu:${subPath}` } } });
         }, 500);
       }
 
       // App deep links are durable: keep the canonical URL so a refresh opens
       // the same app/game. One-shot menu suffixes retain the legacy cleanup.
-      if (!appRoute?.appPath) {
+      if (!appRoute?.appPath && subPath !== 'fhe') {
         const cleanPath = pathname.replace(/\/[^/]+$/, '');
         window.history.replaceState({}, '', cleanPath);
       }
-      return;
+      return () => clearTimeout(timer);
     }
 
     // Query-based autoplay: ?queue=plex:642120&shader=dark
@@ -121,13 +122,14 @@ function ScreenAutoplay({ routes, layout }) {
     // Emit appropriate action after a brief delay to let the screen framework mount
     const action = autoplayToAction(autoplay);
     if (action) {
-      setTimeout(() => {
+      timer = setTimeout(() => {
         bus.emit(action.event, action.payload);
       }, 500);
     }
 
     // Clean URL to prevent re-trigger
     window.history.replaceState({}, '', pathname);
+    return () => clearTimeout(timer);
   // Deliberately mount-once (see docblock): this parses the URL for a one-shot
   // autoplay action and then rewrites the URL specifically so it can't re-fire.
   // Adding layout/routes would let a later config reload re-trigger the very

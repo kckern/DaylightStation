@@ -23,7 +23,7 @@ import { GmSynthScene } from './GmSynthScene.jsx';
  *       a synthesized background note-stream load. Logs `piano.test.latency`.
  *   keyboard/<nps>/<poly>      — render the keyboard from the bg stream only (paint stress).
  *   scroller                   — run the real SideScrollerGame, drive a white-key
- *       scale sweep (triggers jumps/ducks as it passes the target pitches), and
+ *       scale sweep (triggers jumps/ducks/shots as it passes the target pitches), and
  *       count FPS via gfxinfo. Logs `piano.test.scroller`.
  *   waterfall/<sweepMs>        — render the real NoteWaterfall under a dense
  *       self-driven note stream and count main-thread FPS with an rAF counter
@@ -47,7 +47,8 @@ const pct = (arr, p) => {
 // Beefy single-level config so the game survives the measurement window.
 const SCROLLER_CFG = {
   health: 200, damage_per_hit: 1, heal_per_dodge: 2, invincibility_ms: 1200, jump_duration_ms: 900,
-  levels: [{ name: 'Bench', note_range: [48, 72], complexity: 'single', scroll_speed: 3, obstacle_interval_ms: 3500, white_keys_only: true }],
+  // Every obstacle type, so the bench also exercises pellets, block breaks and the shoot staff.
+  levels: [{ name: 'Bench', note_range: [48, 72], complexity: 'single', scroll_speed: 3, obstacle_interval_ms: 3500, white_keys_only: true, obstacle_mix: { low: 1, high: 1, block: 1, block_hard: 1 } }],
 };
 const SWEEP_NOTES = (() => { const a = []; for (let n = 48; n <= 72; n++) if (isWhiteKey(n)) a.push(n); return a; })();
 const NOOP = () => {};

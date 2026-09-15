@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { DaylightAPI, DaylightMediaPath } from '@/lib/api.mjs';
 import './FamilySelector.scss';
+import getLogger from '@/lib/logging/Logger.js';
 
 /**
  * FamilySelector - Roulette wheel for selecting household members
@@ -17,6 +18,7 @@ const SPIN_CONFIG = {
   minSpins: 3,
   maxSpins: 6,
   durationMs: 8000,
+  resultDurationMs: 1800,
 };
 
 // Wheel states
@@ -117,7 +119,7 @@ function getSegmentCenter(index, total, radius, cx, cy) {
 /**
  * Wheel Segment Component
  */
-function WheelSegment({ member, index, total, radius, cx, cy, isWinner, rotation, isSpinning }) {
+function WheelSegment({ member, index, total, radius, cx, cy, isWinner, rotation }) {
   const path = getSegmentPath(index, total, radius, cx, cy);
   const center = getSegmentCenter(index, total, radius, cx, cy);
   const initials = getInitials(member.name);
@@ -132,9 +134,6 @@ function WheelSegment({ member, index, total, radius, cx, cy, isWinner, rotation
   const avatarStyle = {
     transformOrigin: `${center.x}px ${center.y}px`,
     transform: `rotate(${-rotation}deg)`,
-    transition: isSpinning
-      ? `transform ${SPIN_CONFIG.durationMs}ms cubic-bezier(0.17, 0.67, 0.12, 0.99)`
-      : 'none',
   };
 
   return (
@@ -195,7 +194,6 @@ function RouletteWheel({ members, rotation, isSpinning, winnerIndex, showResult,
 
   const wheelStyle = {
     transform: `rotate(${rotation}deg)`,
-    '--wheel-rotation': `${rotation}deg`,
   };
 
   return (
@@ -221,7 +219,6 @@ function RouletteWheel({ members, rotation, isSpinning, winnerIndex, showResult,
               cy={cy}
               isWinner={showResult && index === winnerIndex}
               rotation={rotation}
-              isSpinning={isSpinning}
             />
           ))}
           <circle cx={cx} cy={cy} r={30} fill="#333" stroke="#fff" strokeWidth="3" />
@@ -235,7 +232,7 @@ function RouletteWheel({ members, rotation, isSpinning, winnerIndex, showResult,
 /**
  * Inner FamilySelector Component (after data is loaded)
  */
-function FamilySelectorInner({ members, winner, title: _title, exclude }) {
+function FamilySelectorInner({ members, winner, title: _title, exclude, autoSpin, onComplete, onResult, embedded, durationMs, resultDurationMs }) {
   const riggedWinner = winner || null;
     const excludeList = (exclude || '')
     .split(',')
@@ -250,6 +247,12 @@ function FamilySelectorInner({ members, winner, title: _title, exclude }) {
   // Spin state
   const wheelRef = useRef(null);
   const animRef = useRef(null);
+  const avatarAnimRefs = useRef([]);
+  const finishTimer = useRef(null);
+  const resultTimer = useRef(null);
+  const busyRef = useRef(false);
+  const completeRef = useRef(onComplete); completeRef.current = onComplete;
+  const resultRef = useRef(onResult); resultRef.current = onResult;
   const [wheelState, setWheelState] = useState(WHEEL_STATE.IDLE);
   const [rotation, setRotation] = useState(0);
   const [winnerIndex, setWinnerIndex] = useState(null);
@@ -281,12 +284,16 @@ function FamilySelectorInner({ members, winner, title: _title, exclude }) {
    * global transition-duration: 0s !important.
    */
   const spin = useCallback(() => {
-    if (wheelState === WHEEL_STATE.SPINNING) return;
+    if (busyRef.current || activeMembers.length < (embedded ? 1 : 2)) return;
+    busyRef.current = true;
+    clearTimeout(resultTimer.current);
 
     if (animRef.current) {
       animRef.current.cancel();
       animRef.current = null;
     }
+    avatarAnimRefs.current.forEach(animation => animation.cancel());
+    avatarAnimRefs.current = [];
 
     const { index, member } = selectWinner();
     const angle = calculateSpinAngle(index, activeMembers.length, rotation);
@@ -298,35 +305,54 @@ function FamilySelectorInner({ members, winner, title: _title, exclude }) {
     setRotation(newRotation);
 
     const el = wheelRef.current;
-    if (el) {
+    let completed = false;
+    const finish = () => {
+      if (completed) return; completed = true;
+      clearTimeout(finishTimer.current); setWheelState(WHEEL_STATE.RESULT);
+      resultRef.current?.(member);
+      clearTimeout(resultTimer.current);
+      resultTimer.current = setTimeout(() => {
+        busyRef.current = false;
+        completeRef.current?.(member);
+      }, resultDurationMs);
+    };
+    finishTimer.current = setTimeout(finish, durationMs);
+    if (el?.animate) {
+      const timing = {
+        duration: durationMs,
+        easing: 'cubic-bezier(0.17, 0.67, 0.12, 0.99)',
+        fill: 'forwards',
+      };
       animRef.current = el.animate(
         [
           { transform: `rotate(${rotation}deg)` },
           { transform: `rotate(${newRotation}deg)` },
         ],
-        {
-          duration: SPIN_CONFIG.durationMs,
-          easing: 'cubic-bezier(0.17, 0.67, 0.12, 0.99)',
-          fill: 'forwards',
-        }
+        timing,
       );
-      animRef.current.onfinish = () => {
-        setWheelState(WHEEL_STATE.RESULT);
-      };
+      avatarAnimRefs.current = [...el.querySelectorAll('.avatar-wrapper')].map(avatar => avatar.animate(
+        [
+          { transform: `rotate(${-rotation}deg)` },
+          { transform: `rotate(${-newRotation}deg)` },
+        ],
+        timing,
+      ));
+      animRef.current.onfinish = finish;
     }
-  }, [wheelState, selectWinner, activeMembers.length, rotation]);
+  }, [wheelState, selectWinner, activeMembers.length, rotation, durationMs, resultDurationMs, embedded]);
 
   /**
    * Keyboard event handler
    */
 useEffect(() => {
+    if (embedded) return;
     const handleKeyDown = (e) => {
         // Space, Enter, or NVIDIA Shield Play/Center button
         const isPlayButton = e.code === 'Space' || e.code === 'Enter' || e.code === 'MediaPlayPause' || e.keyCode === 13;
         // Arrow keys (left/right)
         const isArrowKey = e.code === 'ArrowLeft' || e.code === 'ArrowRight';
 
-        if ((isPlayButton || isArrowKey) && wheelState !== WHEEL_STATE.SPINNING) {
+        if (!e.repeat && (isPlayButton || isArrowKey) && wheelState !== WHEEL_STATE.SPINNING) {
             e.preventDefault();
             spin();
         }
@@ -334,15 +360,29 @@ useEffect(() => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-}, [wheelState, spin]);
+}, [wheelState, spin, embedded]);
+
+  useEffect(() => {
+    if (autoSpin) spin();
+    return () => {
+      clearTimeout(finishTimer.current);
+      clearTimeout(resultTimer.current);
+      animRef.current?.cancel();
+      avatarAnimRefs.current.forEach(animation => animation.cancel());
+      avatarAnimRefs.current = [];
+      busyRef.current = false;
+    };
+  // One animation per mounted performer, including StrictMode effect replay.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Disable if < 2 members
-  if (activeMembers.length < 2) {
+  if (activeMembers.length < (embedded ? 1 : 2)) {
     return (
       <div className="family-selector family-selector-disabled">
         <div className="disabled-message">
           <h2>Not enough members</h2>
-          <p>At least 2 members are required to spin the wheel.</p>
+          <p>At least {embedded ? 1 : 2} members are required to spin the wheel.</p>
         </div>
       </div>
     );
@@ -350,7 +390,7 @@ useEffect(() => {
 
   
   return (
-    <div className="family-selector" data-state={wheelState}>
+    <div className={`family-selector${embedded ? " family-selector--embedded" : ""}`} data-state={wheelState} data-selected-id={selectedMember?.id}>
       <div className="family-selector-container">
 
         <div className="wheel-wrapper">
@@ -389,7 +429,7 @@ useEffect(() => {
 /**
  * Main FamilySelector Container (Bootstrap + Loading)
  */
-export default function FamilySelector({ winner, title, exclude, autoSpin: _autoSpin }) {
+export default function FamilySelector({ winner, title, exclude, autoSpin = false, members: suppliedMembers, onComplete, onResult, embedded = false, durationMs = SPIN_CONFIG.durationMs, resultDurationMs = SPIN_CONFIG.resultDurationMs }) {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -412,7 +452,7 @@ export default function FamilySelector({ winner, title, exclude, autoSpin: _auto
       setMembers(transformedMembers);
       setError(null);
     } catch (e) {
-      console.error('FamilySelector: Failed to load members', e);
+      getLogger().child({ component: 'FamilySelector' }).warn('family-selector.load-failed', { error: e.message });
       setError(e);
     } finally {
       setLoading(false);
@@ -420,10 +460,10 @@ export default function FamilySelector({ winner, title, exclude, autoSpin: _auto
   }, []);
 
   useEffect(() => {
-    loadMembers();
-  }, [loadMembers]);
+    if (!suppliedMembers) loadMembers();
+  }, [loadMembers, suppliedMembers]);
 
-  if (loading) {
+  if (loading && !suppliedMembers) {
     return (
       <div className="family-selector family-selector-loading">
         <div className="loading-message">Loading...</div>
@@ -444,7 +484,8 @@ export default function FamilySelector({ winner, title, exclude, autoSpin: _auto
 
   return (
     <FamilySelectorInner
-      members={members}
+      members={(suppliedMembers || members).map((member, index) => ({ color: SEGMENT_COLORS[index % SEGMENT_COLORS.length], ...member }))}
+      autoSpin={autoSpin} onComplete={onComplete} onResult={onResult} embedded={embedded} durationMs={durationMs} resultDurationMs={resultDurationMs}
       winner={winner}
       title={title}
       exclude={exclude}

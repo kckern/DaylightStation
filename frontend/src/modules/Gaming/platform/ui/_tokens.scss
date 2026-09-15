@@ -53,13 +53,33 @@
   --gp-image-decoder-bubble: #f12639;
   --gp-image-decoder-bubble-edge: #ff5a66;
   --gp-image-decoder-ring: #ff263b;
-  --gp-segment-signal-1: #fff34d;
-  --gp-segment-signal-2: #ff83d5;
-  --gp-segment-signal-3: #ff7438;
-  --gp-segment-signal-4: #ffffff;
-  --gp-segment-mask-1: #24dff2;
-  --gp-segment-mask-2: #2453ff;
-  --gp-segment-mask-3: #4de34c;
+  --gp-decoder-noise-1: #ffcc3a;
+  --gp-decoder-noise-2: #ff77b8;
+  --gp-decoder-noise-3: #ff7048;
+  --gp-decoder-noise-4: #fff9ee;
+  --gp-decoder-noise-5: #ffa45b;
+  --gp-decoder-noise-6: #fff173;
+  --gp-text-decoder-background: #fff9ee;
+  --gp-text-decoder-signal: #d0ffff;
+  --gp-text-decoder-bubble: #ffcfbb;
+  --gp-text-decoder-mask: #ff6048;
+  // A red decoder card passes only the red channel: signal segments keep red
+  // at ff, mask segments keep it at or below 40 (segmentedSecretPalette.test.js).
+  --gp-segment-signal-1: #ffffff;
+  --gp-segment-signal-2: #fff34d;
+  --gp-segment-signal-3: #ffc08a;
+  --gp-segment-signal-4: #ff83d5;
+  --gp-segment-signal-5: #ff7438;
+  --gp-segment-signal-6: #ff40ff;
+  --gp-segment-signal-7: #ff2d95;
+  --gp-segment-signal-8: #ff2a2a;
+  --gp-segment-mask-1: #1ff5b0;
+  --gp-segment-mask-2: #24dff2;
+  --gp-segment-mask-3: #3ae04a;
+  --gp-segment-mask-4: #2fa8ff;
+  --gp-segment-mask-5: #139a9a;
+  --gp-segment-mask-6: #1f9a45;
+  --gp-segment-mask-7: #2453ff;
 
   // geometry, depth, and motion
   --gp-radius-control: 0.65rem;

@@ -33,9 +33,12 @@
  * vocabulary, because a gate that cannot resolve its material must fail OPEN —
  * a child does not lose a game to an outage in the thing that measures them.
  */
-import { projectProgram, SCALE_DRILL_PROGRAM_ID } from '../../../../../../../shared/music/learningPrograms.mjs';
+import {
+  attemptExerciseId, attemptPurpose, projectProgram, SCALE_DRILL_PROGRAM_ID,
+} from '../../../../../../../shared/music/learningPrograms.mjs';
 import { pianoLearningApi } from '../Exercises/pianoLearningApi.js';
 import { clientStudyDate } from '../../clientStudyDate.js';
+import { rootsOf, scaleInstanceId } from './gateMaterial.js';
 
 /** The material kind a level writes to ask for a drill. */
 export const DRILL_MATERIAL_KIND = 'drill';
@@ -104,6 +107,140 @@ export function drillStepFor(projection) {
 }
 
 /**
+ * A SCALE LEVEL THAT NAMES ITS OWN SETS AND REPS.
+ *
+ * `{ kind: exercise, collection: scales, roots: [G, D, F], sets: 3, reps: 3 }`
+ * is the drill's shape written on the rung rather than in a program: `sets`
+ * sets, one key each, taken from the level's roots in order (cycling when it
+ * names fewer), each needing `reps` passes. It banks exactly like the drill —
+ * one rep per passed gate, counted over the study day — so every scale rung
+ * draws the same row of pills, and a child works through the nine across the
+ * day's launches instead of paying for one game with all of them.
+ *
+ * Only the counts come from the YAML. Everything else — the day boundary, which
+ * set is asked, the pills — is the drill's, unchanged.
+ */
+const RUNG_COUNT_MAX = 9;
+
+function rungCount(value) {
+  const count = Math.floor(Number(value));
+  return Number.isFinite(count) && count >= 1 ? Math.min(count, RUNG_COUNT_MAX) : null;
+}
+
+/** A scale level carrying `sets` or `reps`, not yet resolved to one instance. */
+export function isRungDrillSpec(spec) {
+  return spec?.kind === 'exercise'
+    && !(typeof spec.instanceId === 'string' && spec.instanceId)
+    && rootsOf(spec).length > 0
+    && Boolean(rungCount(spec.sets) || rungCount(spec.reps));
+}
+
+/** Whether a spec depends on the learner's standing before it can be asked. */
+export function needsDrillResolution(spec) {
+  return isDrillSpec(spec) || isRungDrillSpec(spec);
+}
+
+/**
+ * The program a rung's `sets` × `reps` describes. Steps carry no `display.key`
+ * on purpose: the run at the gate draws pills and never a name.
+ */
+export function rungDrillProgram(spec, levelId = null) {
+  const roots = rootsOf(spec);
+  if (!roots.length) return null;
+  const sets = rungCount(spec.sets) ?? 1;
+  const reps = rungCount(spec.reps) ?? 1;
+  return {
+    id: `rung:${levelId ?? 'level'}`,
+    ordered: true,
+    steps: Array.from({ length: sets }, (_, index) => {
+      const root = roots[index % roots.length];
+      return {
+        id: `set-${index + 1}`,
+        order: index + 1,
+        requirement: { exercise_id: scaleInstanceId(root, spec), required_passes: reps },
+        display: { root, reps },
+      };
+    }),
+  };
+}
+
+/**
+ * Today's standing on a rung drill, in the shape `DrillProgress` reads.
+ *
+ * Not `projectProgram`, for two reasons. A rep is a PASSED gate — the verdict
+ * the ladder itself moves on — where the program requirement counts any
+ * completed challenge that clears its criteria, and a rung names none. And a
+ * rung with fewer roots than sets repeats a key: `roots: [C]` with `sets: 3` is
+ * three sets of C major, and evidence counted per exercise id would bank all
+ * three the moment the first did. Passes are dealt out in set order instead, so
+ * the fourth C major is the first rep of the second set.
+ */
+export function projectRungDrill(program, attempts = []) {
+  if (!program?.steps?.length) return null;
+  const pool = new Map();
+  for (const attempt of attempts ?? []) {
+    if (attempt?.status !== 'completed' || attemptPurpose(attempt) !== 'challenge') continue;
+    if (attempt?.verdict?.passed !== true) continue;
+    const id = attemptExerciseId(attempt);
+    if (id) pool.set(id, (pool.get(id) ?? 0) + 1);
+  }
+  let currentTaken = false;
+  const steps = program.steps.map((step) => {
+    const id = step.requirement.exercise_id;
+    const needed = step.requirement.required_passes;
+    const available = pool.get(id) ?? 0;
+    const taken = Math.min(available, needed);
+    pool.set(id, available - taken);
+    const passed = taken >= needed;
+    const current = !passed && !currentTaken;
+    if (current) currentTaken = true;
+    return {
+      ...step,
+      pass_count: taken,
+      passed,
+      unlocked: passed || current,
+      state: passed ? 'passed' : current ? 'current' : 'upcoming',
+    };
+  });
+  const passedSteps = steps.filter((step) => step.passed).length;
+  return {
+    ...program,
+    steps,
+    passed_steps: passedSteps,
+    total_steps: steps.length,
+    complete: passedSteps === steps.length,
+    current_step: steps.find((step) => step.state === 'current') ?? null,
+  };
+}
+
+/**
+ * A rung drill needs no program fetch — the rung IS the program — so its only
+ * network read is the ledger, and a ledger that cannot be read stands the child
+ * at set one, rep one rather than costing them the game.
+ */
+async function resolveRungDrill({ spec, learnerId, studyDate, levelId }) {
+  let attempts = [];
+  if (learnerId) {
+    try {
+      const response = await pianoLearningApi.attempts(learnerId);
+      if (response?.ok) attempts = response.data?.attempts ?? [];
+    } catch {
+      // Chrome and position only; the scale is served either way.
+    }
+  }
+  const projection = projectRungDrill(rungDrillProgram(spec, levelId), attemptsOnStudyDate(attempts, studyDate));
+  const step = drillStepFor(projection);
+  return {
+    ok: true,
+    spec: { kind: 'exercise', instanceId: step.requirement.exercise_id },
+    programId: projection.id,
+    stepId: step.id,
+    projection,
+    complete: Boolean(projection.complete),
+  };
+}
+
+/**
  * Resolve a `{ kind: 'drill' }` spec into something the rest of the gate
  * already understands: an exercise spec naming one instance, plus the program
  * coordinates the run's chrome reads.
@@ -121,7 +258,8 @@ export function drillStepFor(projection) {
  *                     projection:object, complete:boolean}
  *                  | {ok:false, error:string}>}
  */
-export async function resolveGateDrill({ spec, learnerId, studyDate = clientStudyDate() }) {
+export async function resolveGateDrill({ spec, learnerId, studyDate = clientStudyDate(), levelId = null }) {
+  if (isRungDrillSpec(spec)) return resolveRungDrill({ spec, learnerId, studyDate, levelId });
   const programId = drillIdOf(spec);
   let programResponse;
   let attemptsResponse;

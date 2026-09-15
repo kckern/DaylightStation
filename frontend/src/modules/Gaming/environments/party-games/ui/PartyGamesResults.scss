@@ -13,3 +13,5 @@
 .party-games-results__rank::before { content: counter(result-rank); display: grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; color: var(--gp-paper); background: var(--gp-ink); font-weight: 900; }
 .party-games-results__score { margin-left: auto; font: 1.5rem/1 var(--gp-font-display); font-variant-numeric: tabular-nums; }
 .party-games-results__actions { display: flex; justify-content: center; gap: 1rem; }
+
+.party-games-results--casual { box-sizing: border-box; gap: 1rem; padding: 1rem; .party-games-results__list { grid-template-columns: 1fr 1fr; width: 100%; } }
