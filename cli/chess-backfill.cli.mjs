@@ -74,17 +74,38 @@ function matchOwner(target, reference) {
   } catch { /* see above */ }
 }
 
-function ensureDir(dir, reference) {
+function ensureDir(dir) {
   if (fs.existsSync(dir)) return;
-  ensureDir(path.dirname(dir), reference);
+  ensureDir(path.dirname(dir));
   fs.mkdirSync(dir);
-  matchOwner(dir, reference);
+  matchOwner(dir, path.dirname(dir));
 }
 
 function writeYaml(file, value) {
   const existed = fs.existsSync(file);
   fs.writeFileSync(file, YAML.stringify(value));
   if (!existed) matchOwner(file, path.dirname(file));
+}
+
+/**
+ * A destination that will not silently replace whatever is already there.
+ * A same-day re-run, or a `--user` run after a household one, can otherwise
+ * overwrite an earlier copy in `_deleteme/` or throw ENOTEMPTY partway
+ * through a directory rename. `-1`, `-2`, … is appended before the
+ * extension for a file, or to the whole name for a directory.
+ */
+function uniquePath(target) {
+  if (!fs.existsSync(target)) return target;
+  const dir = path.dirname(target);
+  const ext = path.extname(target);
+  const base = path.basename(target, ext);
+  let index = 1;
+  let candidate = path.join(dir, `${base}-${index}${ext}`);
+  while (fs.existsSync(candidate)) {
+    index += 1;
+    candidate = path.join(dir, `${base}-${index}${ext}`);
+  }
+  return candidate;
 }
 
 function ymlFilesByDay(root) {
@@ -100,6 +121,9 @@ function ymlFilesByDay(root) {
   return files;
 }
 
+/** The identity a game is deduplicated by: its id, else its filename, plus when it started. */
+const archiveKey = (record, name) => `${record?.game_id || name}|${record?.started_at || ''}`;
+
 /** Every archived game under these roots, each game once. */
 export function loadArchive(roots) {
   const seen = new Set();
@@ -108,7 +132,7 @@ export function loadArchive(roots) {
     for (const entry of ymlFilesByDay(root)) {
       const record = readYaml(entry.file);
       if (!record || typeof record !== 'object') continue;
-      const key = `${record.game_id || entry.name}|${record.started_at || ''}`;
+      const key = archiveKey(record, entry.name);
       if (seen.has(key)) continue;
       seen.add(key);
       records.push(record);
@@ -124,17 +148,38 @@ const isLegacyName = (name) => !/_level(\d+|unknown)_/.test(name);
  * Move the pre-reorganisation archive into the current one.
  *
  * Old-style names are rebuilt with the current scheme, stamped with when the
- * game was archived, so filename filters in the review CLIs see them. A file
- * whose destination already exists is a conflict and stays where it is, and
- * then the old directory is not retired either.
+ * game was archived, so filename filters in the review CLIs see them. A
+ * legacy file whose game the current archive already holds — by the same
+ * `game_id|started_at` identity `loadArchive` dedupes on, not by filename —
+ * is a duplicate, not a move: a rebuilt legacy name carries a fresh random
+ * UUID and would never collide with the copy already filed, and an old file
+ * that happens to share a current-style name with its own already-archived
+ * copy is not a *conflict* either, just the same game seen twice. Only a
+ * destination collision against a genuinely different game is a conflict,
+ * left in place, which is also the only thing that stops the old directory
+ * from retiring.
  */
 export function consolidateArchive({ householdDir, deleteDir, write }) {
   const legacyRoot = path.join(householdDir, ...LEGACY_ARCHIVE_DIR.split('/'));
   const root = path.join(householdDir, ...CHESS_ARCHIVE_DIR.split('/'));
-  const report = { moved: 0, renamed: 0, conflicts: [], retiredDir: null };
+  const report = {
+    moved: 0, renamed: 0, alreadyArchived: 0, conflicts: [], retiredDir: null,
+  };
   if (!fs.existsSync(legacyRoot)) return report;
+  const currentKeys = new Set(
+    ymlFilesByDay(root).map(({ name, file }) => archiveKey(readYaml(file) || {}, name)),
+  );
   for (const { day, name, file } of ymlFilesByDay(legacyRoot)) {
     const record = readYaml(file) || {};
+    const key = archiveKey(record, name);
+    if (currentKeys.has(key)) {
+      report.alreadyArchived += 1;
+      if (!write) continue;
+      const destination = uniquePath(path.join(deleteDir, 'pianochess-duplicates', day, name));
+      ensureDir(path.dirname(destination));
+      fs.renameSync(file, destination);
+      continue;
+    }
     const target = isLegacyName(name)
       ? `${buildChessArchiveFilename(record, record.user_id || 'guest', new Date(record.archived_at || record.ended_at || `${day}T12:00:00Z`))}.yml`
       : name;
@@ -145,13 +190,18 @@ export function consolidateArchive({ householdDir, deleteDir, write }) {
     }
     report.moved += 1;
     if (target !== name) report.renamed += 1;
+    // Recorded immediately, dry run or not: a second legacy file for the same
+    // game (unusual, but the pre-reorganisation directory is exactly where an
+    // old duplicate would live) must read as already-archived too, not as a
+    // second move.
+    currentKeys.add(key);
     if (!write) continue;
-    ensureDir(path.join(root, day), root);
+    ensureDir(path.join(root, day));
     fs.renameSync(file, destination);
   }
   if (write && report.conflicts.length === 0) {
-    ensureDir(deleteDir, path.dirname(deleteDir));
-    report.retiredDir = path.join(deleteDir, 'pianochess-archive');
+    ensureDir(deleteDir);
+    report.retiredDir = uniquePath(path.join(deleteDir, 'pianochess-archive'));
     fs.renameSync(legacyRoot, report.retiredDir);
   }
   return report;
@@ -169,9 +219,9 @@ export function retireScorecards({ dataDir, archive, deleteDir, write, users }) 
     report[userId] = { matched: matched.length, unmatched: unmatched.map((card) => path.basename(card.file)) };
     if (!write || matched.length === 0) continue;
     const target = path.join(deleteDir, 'scorecards', userId);
-    ensureDir(target, path.dirname(deleteDir));
-    for (const card of matched) fs.renameSync(card.file, path.join(target, path.basename(card.file)));
-    if (fs.readdirSync(gamesDir).length === 0) fs.renameSync(gamesDir, path.join(target, 'games-dir'));
+    ensureDir(target);
+    for (const card of matched) fs.renameSync(card.file, uniquePath(path.join(target, path.basename(card.file))));
+    if (fs.readdirSync(gamesDir).length === 0) fs.renameSync(gamesDir, uniquePath(path.join(target, 'games-dir')));
   }
   return report;
 }
@@ -185,9 +235,9 @@ function backupBeforeOverwrite(file, deleteDir, userId) {
   if (!fs.existsSync(file)) return;
   const target = path.join(deleteDir, 'derived-before', userId, path.basename(file));
   if (fs.existsSync(target)) return;
-  ensureDir(path.dirname(target), path.dirname(deleteDir));
+  ensureDir(path.dirname(target));
   fs.copyFileSync(file, target);
-  matchOwner(target, path.dirname(deleteDir));
+  matchOwner(target, path.dirname(target));
 }
 
 /** Rebuild each player's ladder and rivalry files from their finished games. */
@@ -257,7 +307,7 @@ export function renderReport(report) {
   const lines = [report.write ? 'Chess record backfill: WRITTEN' : 'Chess record backfill: DRY RUN (pass --write to apply)'];
   lines.push(`Archive: ${report.archive.games} games read`);
   const { consolidation } = report;
-  lines.push(`Old archive directory: ${consolidation.moved} files to move, ${consolidation.renamed} renamed from old names, ${consolidation.conflicts.length} conflicts`);
+  lines.push(`Old archive directory: ${consolidation.moved} files to move, ${consolidation.renamed} renamed from old names, ${consolidation.alreadyArchived} already archived, ${consolidation.conflicts.length} conflicts`);
   for (const conflict of consolidation.conflicts) lines.push(`  conflict, left in place: ${conflict}`);
   if (consolidation.retiredDir) lines.push(`  old directory moved to ${consolidation.retiredDir}`);
   for (const [userId, cards] of Object.entries(report.scorecards)) {

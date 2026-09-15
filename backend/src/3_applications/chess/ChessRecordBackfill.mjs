@@ -109,20 +109,32 @@ export async function planUserBackfill({ userId, records, policy, storedLadder }
  * Pair each per-player scorecard with the archived game it duplicates, so none
  * is retired unaccounted for.
  *
- * Scorecards from before game ids carry none. Those match on player, result
- * and a duration within 50ms: both writers took the duration from the same
- * game clock, and the measured drift between them is a few milliseconds.
+ * A card carrying a `game_id` matches only by that id — the archive not
+ * having it means the archive never received that game, whatever its result
+ * and duration happen to resemble, and that card must stay put. Scorecards
+ * from before game ids carry none; those match on player, result and a
+ * duration within 50ms (both writers took the duration from the same game
+ * clock, and the measured drift between them is a few milliseconds), and
+ * each archived game can satisfy at most one such card, so two id-less
+ * scorecards never both claim the same game.
  */
 export function matchScorecards(cards, archive) {
   const byId = new Map(archive.filter((record) => record?.game_id).map((record) => [record.game_id, record]));
+  const consumed = new Set();
   const matched = [];
   const unmatched = [];
   for (const card of cards) {
     const record = card.record || {};
-    const hit = (record.game_id && byId.get(record.game_id))
-      || archive.find((game) => game?.user_id === record.user_id && game?.result === record.result
+    let hit = null;
+    if (record.game_id) {
+      hit = byId.get(record.game_id) || null;
+    } else {
+      hit = archive.find((game) => !consumed.has(game) && game?.user_id === record.user_id
+        && game?.result === record.result
         && Number.isFinite(Number(record.duration_ms))
-        && Math.abs(Number(game?.duration_ms) - Number(record.duration_ms)) <= 50);
+        && Math.abs(Number(game?.duration_ms) - Number(record.duration_ms)) <= 50) || null;
+      if (hit) consumed.add(hit);
+    }
     (hit ? matched : unmatched).push(card);
   }
   return { matched, unmatched };
