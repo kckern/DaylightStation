@@ -2,10 +2,13 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { buildErrorBody, ERROR_CODES } from '#shared-contracts/media/errors.mjs';
+import { validateHandoffCommandAck, validateHandoffParams } from '#shared-contracts/media/handoff.mjs';
 import { validateSessionSnapshot } from '#shared-contracts/media/shapes.mjs';
 import { TRANSPORT_ACTIONS, QUEUE_OPS, REPEAT_MODES, isTransportAction, isQueueOp, isRepeatMode } from '#shared-contracts/media/commands.mjs';
 
 const nonEmpty = value => typeof value === 'string' && value.length > 0;
+const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const HANDOFF_TERMINAL_PHASES = new Set(['captured', 'started', 'stopped', 'cancelled', 'failed']);
 const parseLoadQuery = (query = {}) => {
   const content = { ...query };
   if (content.volume != null) {
@@ -34,6 +37,24 @@ function mapCommand(result, res) {
   }
   if (code === ERROR_CODES.IDEMPOTENCY_CONFLICT) return res.status(409).json(buildErrorBody({ error, code }));
   return res.status(502).json(buildErrorBody({ error, code }));
+}
+
+function mapHandoffCommand(result, command, deviceId, res) {
+  if (result?.handoff === undefined) {
+    if (result?.ok === true) {
+      return res.status(502).json(buildErrorBody({ error: 'Handoff result missing typed handoff evidence', code: 'INVALID_HANDOFF_RESULT' }));
+    }
+    return mapCommand(result, res);
+  }
+  const validation = validateHandoffCommandAck(command, result, { target: { kind: 'device', id: deviceId } });
+  if (!validation.valid) {
+    return res.status(502).json(buildErrorBody({ error: validation.errors[0] || 'Handoff result is not terminal', code: 'INVALID_HANDOFF_RESULT' }));
+  }
+  if (result.handoff.phase === 'starting') return res.status(202).json(result);
+  if (!HANDOFF_TERMINAL_PHASES.has(result.handoff.phase)) {
+    return res.status(502).json(buildErrorBody({ error: 'Handoff result is not terminal', code: 'INVALID_HANDOFF_RESULT' }));
+  }
+  return res.status(200).json(result);
 }
 
 function requireSessions(service, res) {
@@ -198,6 +219,22 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
     if (result?.ok === true) return res.status(200).json({ ok: true, commandId: result.commandId ?? commandId,
       snapshot: result.snapshot, stoppedAt: result.stoppedAt });
     return mapCommand(result, res);
+  }));
+
+  router.post('/:deviceId/session/handoff', asyncHandler(async (req, res) => {
+    if (!requireSessions(sessionService, res)) return;
+    const body = req.body;
+    if (!isRecord(body) || Object.keys(body).some((key) => key !== 'commandId' && key !== 'params')) {
+      return res.status(400).json(buildErrorBody({ error: 'handoff request must contain only commandId and params', code: 'VALIDATION' }));
+    }
+    const { commandId, params } = body;
+    if (!nonEmpty(commandId)) return res.status(400).json(buildErrorBody({ error: 'commandId required (non-empty string)', code: 'VALIDATION' }));
+    if (!isRecord(params)) return res.status(400).json(buildErrorBody({ error: 'params required (object)', code: 'VALIDATION' }));
+    const validation = validateHandoffParams(params);
+    if (!validation.valid) return res.status(400).json(buildErrorBody({ error: validation.errors[0], code: 'VALIDATION', details: validation.errors }));
+    const deviceId = req.params.deviceId;
+    const command = { targetDevice: deviceId, command: 'handoff', commandId, params };
+    return mapHandoffCommand(await sessionService.handoff(deviceId, { commandId, params }), command, deviceId, res);
   }));
 
   router.put('/:deviceId/session/volume', asyncHandler(async (req, res) => {

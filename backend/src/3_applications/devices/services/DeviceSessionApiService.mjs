@@ -1,3 +1,8 @@
+import { validateHandoffParams } from '#shared-contracts/media/handoff.mjs';
+
+const nonEmpty = (value) => typeof value === 'string' && value.length > 0;
+const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+
 export class DeviceSessionApiService {
   #sessions; #logger;
   constructor({ sessionControl = null, logger = console } = {}) { this.#sessions = sessionControl; this.#logger = logger; }
@@ -30,5 +35,17 @@ export class DeviceSessionApiService {
   claim(deviceId, commandId) {
     this.#logger.info?.('device.router.session.claim', { deviceId, commandId });
     return this.#sessions.claim(deviceId, { commandId });
+  }
+  handoff(deviceId, request) {
+    const { commandId, params } = request ?? {};
+    if (!isRecord(request) || Object.keys(request).some((key) => key !== 'commandId' && key !== 'params')) {
+      return Promise.resolve({ ok: false, commandId, code: 'INVALID_ENVELOPE', error: 'handoff request must contain only commandId and params' });
+    }
+    if (!nonEmpty(commandId)) return Promise.resolve({ ok: false, code: 'INVALID_ENVELOPE', error: 'commandId required (non-empty string)' });
+    if (!isRecord(params)) return Promise.resolve({ ok: false, commandId, code: 'INVALID_ENVELOPE', error: 'params required (object)' });
+    const validation = validateHandoffParams(params);
+    if (!validation.valid) return Promise.resolve({ ok: false, commandId, code: 'INVALID_ENVELOPE', error: validation.errors[0] || 'Invalid handoff params' });
+    this.#logger.info?.('device.router.session.handoff', { deviceId, commandId, op: params.op });
+    return this.#sessions.sendCommand({ targetDevice: deviceId, command: 'handoff', commandId, params });
   }
 }
