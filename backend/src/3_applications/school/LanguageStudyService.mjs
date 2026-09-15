@@ -739,7 +739,7 @@ export class SentenceLadderService {
    */
   #openDay(userId, corpus, log, runId = null) {
     const stored = this.#readProgress(userId, corpus.id);
-    const { progress, repairs } = this.#reconcileProgress(stored, log);
+    const { progress, repairs } = this.#reconcileProgress(stored, log, this.#enrolledLimit(userId, corpus, stored));
     if (repairs.length) {
       this.#writeProgress(userId, corpus.id, progress);
       this.#log('warn', 'school.language.progress-repaired', {
@@ -801,7 +801,16 @@ export class SentenceLadderService {
    * Compared by study day, not by millisecond, so ordinary writes never read
    * as drift and a healthy record is never rewritten.
    */
-  #reconcileProgress(progress, log) {
+  /** The pace an enrollment sets (`lessonSize ÷ rungs`), or null when unenrolled. */
+  #enrolledLimit(userId, corpus, progress) {
+    const policy = this.#queuePolicy(userId, corpus, progress);
+    return policy.enrollment ? policy.dailyLimit : null;
+  }
+
+  // `daily-limit-drift` — an enrolled learner's stored pace differs from the
+  // one the enrollment sets. The enrollment already wins when the queue is
+  // built; the record is squared so every reader sees one number.
+  #reconcileProgress(progress, log, enrolledLimit = null) {
     const now = this.#now();
     const opts = { boundaryHour: this.#boundaryHour, offsetMinutes: this.#offsetMinutes(now) };
     const repairs = [];
@@ -832,7 +841,13 @@ export class SentenceLadderService {
       repairs.push('last-activity-stale');
     }
 
-    return { progress: { ...progress, day, lastActivity }, repairs };
+    let { dailyLimit } = progress;
+    if (enrolledLimit != null && dailyLimit !== enrolledLimit) {
+      dailyLimit = enrolledLimit;
+      repairs.push('daily-limit-drift');
+    }
+
+    return { progress: { ...progress, day, lastActivity, dailyLimit }, repairs };
   }
 
   /**
@@ -1051,7 +1066,10 @@ export class SentenceLadderService {
 
         // The same repairs `#openDay` makes, applied in memory only: this read
         // must never write, and the next open persists them.
-        const { progress } = this.#reconcileProgress(this.#readProgress(userId, candidateCorpusId), log);
+        const storedProgress = this.#readProgress(userId, candidateCorpusId);
+        const { progress } = this.#reconcileProgress(
+          storedProgress, log, this.#enrolledLimit(userId, corpus, storedProgress),
+        );
         let day = progress.day;
         let queue = this.#fullDayQueue(userId, candidateCorpusId, corpus, log, progress);
 

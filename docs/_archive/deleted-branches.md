@@ -436,3 +436,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-13 | fix/charades-recovery | b20f74a92 | FHE Charades recovery certification: full-size embedded Family Selector, stable same-turn music across refresh, repeat-one playback semantics, rewind/leave/reopen coverage, and live configured-volume assertions. Fast-forwarded into main after a clean final re-review. |
 | 2026-09-13 | feat/side-scroller-shoot | 7a7e1b9a3 | Side-scroller shooting/blocks/death, keys sets 3x3, addressing maxTexture ceiling, arcade admin gate fix |
 | 2026-09-14 | fix/ladder-never-walls | c2dd8fb67 | Sentence Ladder: never wall a learner from another round; self-healing progress (merged to main) |
+| 2026-09-14 | fix/ladder-reopen | cf7d8725b | Sentence Ladder: served ladder reopens via same code, partial days carry over, credit self-heals (merged to main) |
