@@ -172,3 +172,32 @@ test('[STEER.6a/AC1][STEER.6a/AC2][STEER.7a/AC2] stop ends actual playback and k
     timeout: 30000, message: 'Restarting the retained queue must actually play its item',
   }).toBe(true);
 });
+
+test('[PLAY.1a] selecting another title does not restart the previously paused movie', async ({ page }) => {
+  const firstVideo = await startMovie(page);
+  await page.getByTestId('np-toggle').click();
+  await expect.poll(() => firstVideo.evaluate(el => el.paused)).toBe(true);
+  const original = await firstVideo.elementHandle();
+  const oldSource = await original.evaluate(el => {
+    const source = el.currentSrc;
+    el.dataset.oldSourcePlayEvents = '0';
+    el.addEventListener('play', () => {
+      if (el.currentSrc === source) {
+        el.dataset.oldSourcePlayEvents = String(Number(el.dataset.oldSourcePlayEvents) + 1);
+      }
+    });
+    return source;
+  });
+  const secondTitle = process.env.MEDIA_ACCEPTANCE_SECOND_TITLE || 'Arrival';
+  await page.getByRole('textbox', { name: 'Search media…' }).fill(secondTitle);
+  // The catalog ranks the film first; the title also names albums/tracks.
+  // Actual new video playback below is required, not merely title selection.
+  const second = page.getByRole('option').filter({ hasText: secondTitle }).first();
+  await expect(second).toBeVisible({ timeout: 15000 });
+  await second.click();
+  const nextVideo = page.getByTestId('now-playing-host').locator('video');
+  await expect.poll(() => nextVideo.evaluate((el, priorSource) => el.currentSrc !== priorSource
+    && !el.paused && el.readyState >= 2 && el.currentTime > 0, oldSource), { timeout: 30000 }).toBe(true);
+  expect(await original.evaluate(el => Number(el.dataset.oldSourcePlayEvents)),
+    'Selecting another title must never play the paused old source again').toBe(0);
+});
