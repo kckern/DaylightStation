@@ -1,7 +1,7 @@
 # Household Economy — First Slice: User Stories
 
 **Date:** 2026-09-14
-**Status:** Stories for the first vertical slice. Awaiting owner review, then build approaches.
+**Status:** Stories for the first vertical slice, reviewed with the owner 2026-09-14. Next: build approaches.
 **Vocabulary and decisions:** `2026-09-14-household-economy-taxonomy.md` (every D-number and L/P/H job below refers to it).
 **Seams named here:** `backend/src/3_applications/economy/EconomyService.mjs`,
 `backend/src/3_applications/gaming/usecases/GrantPlayTime.mjs`,
@@ -129,8 +129,11 @@ waiting for anyone, so a whole week feels like a thing I did.
   any makeup → makeup week tariff. The ruby is minted either way.
 - Evaluation is triggered by the same transition as S1, and by the makeup event in S4;
   there is no scheduled job for the week bonus.
-- A week with an exempt weekday (calendar off, not a school day) counts that day as met
-  for this rule, since the grid already does not ask for it.
+- **The week is five served days.** A calendar-off weekday (a holiday) does not count as
+  met; it leaves a slot, and work done on Saturday fills it. A Saturday day that fills a
+  holiday slot is priced on-time, since nothing was missed; a Saturday day that replaces a
+  weekday the learner skipped is makeup (S4). A week with a holiday and no Saturday work
+  pays no week bonus. (Owner decision 2026-09-14.)
 - The status board shows the ruby on the week strip once minted.
 - Log: `economy.earn` with `action: school-week-met`, `timeliness`, `isoWeek`.
 - Jobs: L3, H1. Seam: term grid read model (`GET …/learners/:id/term`), completion bridge.
@@ -222,6 +225,10 @@ silver into tickets, so I can decide how much of my week goes to games.
   (authorization).
 - Tickets are refundable until redeemed; the wallet shows them as tickets, not as silver.
 - Log: `economy.convert` with `from: silver`, `to: ticket`, `count`, `price`, `tariff`.
+- Purchase and redemption live in **one standalone wallet widget** in the fitness menu,
+  under the identify ceremony. It is the only place to buy or redeem; the browser arcade
+  launcher's "no time" refusal (S13) deep-links to it, and the console's refusal names it.
+  (Owner decision 2026-09-14.)
 - Jobs: L6, P2, H11. Seam: `IdentityProvider` identify ceremony; a new fitness widget
   alongside `EmulatorGameWidget`.
 
@@ -309,8 +316,13 @@ surprise.
 - Gems and gold are untouched. A learner with zero silver and zero tickets gets no entries.
 - The wallet after close answers `silver: 0`, `tickets: 0`.
 - Log: `economy.weekclose` with `learnerId`, `isoWeek`, `refunded`, `converted`.
-- Jobs: L5, H3. Seam: a new scheduled settlement in the economy composition module,
-  plus a lazy catch-up on read.
+- **Settlement is lazy-on-read, with a timer as a courtesy.** Every economy read first
+  settles any unclosed week and any unjudged award week for that learner, keyed on the
+  idempotent refs above, then answers. A timer in the economy composition module fires
+  at Saturday 12:00 and the week close so balances update unprompted; correctness never
+  depends on it. Same shape as the school lifecycle's verdict retry. (Owner decision
+  2026-09-14.)
+- Jobs: L5, H3. Seam: economy composition module; `EconomyService` reads.
 
 ### Govern
 
@@ -411,13 +423,10 @@ lost-session settlement already exists in gaming and is not changed here).
 
 ---
 
-## 5. Open before approaches
+## 5. Decided before approaches (2026-09-14)
 
-1. **Where the ticket screens live.** S8 and S9 assume a new widget in the fitness app's
-   menu next to the emulator, under the same identify ceremony. The alternative is folding
-   purchase and redemption into the game launcher itself (identify → buy → redeem → launch
-   in one flow). The one-flow version is fewer taps on Saturday and one more coupling.
-2. **Week bonus trigger for exempt weekdays.** S3 treats a calendar-off weekday as met.
-   Confirm that a four-day week pays the full bonus.
-3. **The week close job.** S14 needs the economy's first scheduled action. The house has a
-   scheduler (NewsReporter, school lifecycle timers); the approaches will pick one.
+1. **Ticket screens:** one standalone wallet widget in the fitness menu; both launchers
+   deep-link to it on a "no time" refusal. (S8, S9, S13)
+2. **The week is five served days.** A holiday leaves a slot Saturday work can fill; no
+   Saturday work, no bonus. (S3)
+3. **Week close:** lazy settlement on every read, timer as a courtesy. (S14, S6)
