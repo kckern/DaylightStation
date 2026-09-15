@@ -21,7 +21,7 @@
  */
 export class PlaySessionTracker {
   #devices; #source; #intents; #record; #nameUnidentified; #intervalMs;
-  #scheduler; #now; #logger;
+  #scheduler; #now; #logger; #controllersFor;
   #cancel = null; #running = false;
   #inFlight = new Set();
   #health = new Map();
@@ -29,6 +29,7 @@ export class PlaySessionTracker {
   constructor({
     devices = [], observationSource, intents, recordObservation,
     nameUnidentified = null,
+    controllersFor = null,
     intervalMs, scheduler, now, logger = console,
   }) {
     if (!observationSource?.observe) throw new Error('PlaySessionTracker requires an observationSource');
@@ -43,6 +44,7 @@ export class PlaySessionTracker {
     this.#intents = intents || null;
     this.#record = recordObservation;
     this.#nameUnidentified = nameUnidentified;
+    this.#controllersFor = typeof controllersFor === 'function' ? controllersFor : null;
     this.#intervalMs = intervalMs;
     this.#scheduler = scheduler;
     this.#now = now;
@@ -96,9 +98,17 @@ export class PlaySessionTracker {
     this.#inFlight.add(deviceId);
     try {
       const intent = await this.#intent(deviceId);
-      const observation = await this.#source.observe(deviceId, {
+      let observation = await this.#source.observe(deviceId, {
         expectedContent: intent?.content ?? null,
       });
+      if (this.#controllersFor && observation?.loaded === true) {
+        try {
+          const controllers = await this.#controllersFor(deviceId);
+          if (Number.isFinite(controllers)) observation = { ...observation, controllers };
+        } catch (error) {
+          this.#logger.debug?.('play.controllers.observe_failed', { deviceId, error: error.message });
+        }
+      }
       const result = await this.#record.execute({
         deviceId,
         surface,
@@ -123,6 +133,10 @@ export class PlaySessionTracker {
         state: observation?.state ?? null,
         degraded: observation?.degraded === true,
         error: null,
+        unrecordable: observation?.state === 'playing'
+          && observation?.loaded === true
+          && !result?.session,
+        observation,
       });
     } catch (error) {
       this.#mark(deviceId, { state: null, degraded: false, error: error.message });
@@ -145,25 +159,62 @@ export class PlaySessionTracker {
     return intent;
   }
 
-  #mark(deviceId, { state, degraded, error }) {
-    const previous = this.#health.get(deviceId) || { consecutiveErrors: 0 };
-    this.#health.set(deviceId, {
+  #mark(deviceId, { state, degraded, error, unrecordable = false, observation = null }) {
+    const previous = this.#health.get(deviceId) || {
+      consecutiveErrors: 0, consecutiveUnrecordable: 0, observationSignature: null,
+    };
+    const consecutiveUnrecordable = error
+      ? previous.consecutiveUnrecordable
+      : (unrecordable ? previous.consecutiveUnrecordable + 1 : 0);
+    const isUnrecordable = consecutiveUnrecordable >= 2;
+    const observationSignature = observation ? JSON.stringify({
+      state: observation.state ?? null,
+      loaded: observation.loaded ?? null,
+      loadId: observation.loadId ?? null,
+      contentId: observation.content?.contentId ?? null,
+    }) : previous.observationSignature;
+    const next = {
       lastTickAt: this.#now(),
       lastState: state,
       // True when the observation reached us but could not confirm
       // playing-versus-paused — a measurably worse meter, not a failure.
-      degraded: degraded === true,
+      degraded: degraded === true || isUnrecordable,
       lastError: error,
       consecutiveErrors: error ? previous.consecutiveErrors + 1 : 0,
-    });
+      consecutiveUnrecordable,
+      unrecordable: isUnrecordable,
+      observationSignature,
+    };
+    this.#health.set(deviceId, next);
+
+    if (observation && observationSignature !== previous.observationSignature) {
+      this.#logger.info?.('play.observe.transition', {
+        deviceId,
+        state: observation.state ?? null,
+        loaded: observation.loaded ?? null,
+        loadId: observation.loadId ?? null,
+        contentId: observation.content?.contentId ?? null,
+        channel: observation.channel ?? null,
+      });
+    }
+    if (isUnrecordable && !previous.unrecordable) {
+      this.#logger.warn?.('play.session.unrecordable', {
+        deviceId, consecutiveObservations: consecutiveUnrecordable,
+      });
+    } else if (!isUnrecordable && previous.unrecordable) {
+      this.#logger.info?.('play.session.unrecordable_cleared', { deviceId });
+    }
   }
 
   /** Per-device liveness, for the staleness watchdog and for diagnostics. */
   getHealth() {
-    return this.#devices.map(({ deviceId }) => ({
-      deviceId,
-      ...(this.#health.get(deviceId) || { lastTickAt: null, lastState: null, degraded: false, lastError: null, consecutiveErrors: 0 }),
-    }));
+    return this.#devices.map(({ deviceId }) => {
+      const { observationSignature: _internalSignature, ...health } = this.#health.get(deviceId) || {
+        lastTickAt: null, lastState: null, degraded: false, lastError: null,
+        consecutiveErrors: 0, consecutiveUnrecordable: 0, unrecordable: false,
+      };
+      return { deviceId, ...health };
+    });
   }
 }
 

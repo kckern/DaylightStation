@@ -503,6 +503,32 @@
   background: #000;
 }
 
+// Server-authoritative play clock. It sits above the emulator/bezel but never
+// accepts input, so showing the meter cannot interfere with gameplay.
+.fitness-emulator-play-budget {
+  position: absolute;
+  z-index: 55;
+  top: 2.2vh;
+  right: 2.2vh;
+  display: grid;
+  justify-items: end;
+  padding: 0.9vh 1.35vh;
+  border-radius: 1vh;
+  background: rgba(8, 10, 15, 0.82);
+  color: #f4f7fb;
+  box-shadow: 0 0.5vh 1.8vh rgba(0, 0, 0, 0.45);
+  font-family: system-ui, sans-serif;
+  line-height: 1;
+  pointer-events: none;
+
+  strong { font-size: 3.2vh; font-variant-numeric: tabular-nums; }
+  span { margin-top: 0.45vh; font-size: 1.25vh; text-transform: uppercase; letter-spacing: 0.08em; }
+  small { margin-top: 0.65vh; max-width: 28vh; font-size: 1.35vh; line-height: 1.25; text-align: right; }
+  &.is-warn { color: #ffd166; }
+  &.is-crit { color: #ff6b6b; }
+  &.is-stale { color: #c8ccd5; border: 1px solid rgba(255, 255, 255, 0.32); }
+}
+
 // Kiosk: the fullscreen emulator is portaled to <body>, escaping the
 // .fitness-app-container.kiosk-ui cursor-hide scope — re-apply it here so the
 // cursor stays hidden over the bezel on the touch-screen kiosk.

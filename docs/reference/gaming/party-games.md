@@ -11,16 +11,37 @@ TV and companion presenters share two import aliases: `@gaming` resolves to the 
 Jeopardy and Activity Party use the direct Gaming coordinator. Activity Party supports Draw and Charades, performer-ready gates, rounds, deterministic timers and rotation, host modes, progressive reveals, score adjustments, and verifier confirmation for subjective hostless outcomes. Drawing checkpoints are transient and are deleted when an outcome commits.
 
 Charades is also mounted as a focused Party Games experience with a seeded,
-deterministic clue bank. Its reusable sixteen-segment text decoder uses a fixed
-48-position field for ordinary clues, with uniform camouflage over letters,
-spaces and padding. Longer clues expand in complete rows without truncation.
-Pale cyan signal segments sit under warm colored segment decoys and rings;
-a red filter removes the camouflage and reveals text with readable spacing.
-The original segment geometry remains code-rendered; no font binary is bundled.
+deterministic clue bank. Its reusable sixteen-segment text decoder
+(`SegmentedSecretText`) lights every segment of every cell, spaces included, so
+word boundaries do not show without the decoder. Clue lines balance at word
+boundaries without truncation.
+
+Letter segments use warm colors whose red channel is full (white, yellow, peach,
+pink, orange, magenta, hot pink, red). All other segments use cool colors whose
+red channel stays at or below `0x40` (aqua mint, cyan, green, sky, teal, forest,
+blue). A red filter keeps the warm segments bright and darkens the cool ones.
+The two families overlap in apparent brightness, so brightness alone does not
+mark the letters. Hex values live in `platform/ui/_tokens.scss`, the family
+lists in `segmentedSecretPalette.js`, and `segmentedSecretPalette.test.js`
+fails if a color breaks the red-channel rule.
+
+To keep a viewer from sorting the colors by eye, every segment changes to a
+different color in its own family about once a second (`segmentFlicker.js`).
+Segments are shuffled into three groups and one group changes every 333ms, so
+the display never jumps all at once. A change never crosses families, so the
+view through the filter is constant. The colors are written straight to each
+polygon's `--segment-color` rather than re-rendering glyphs. Under
+`prefers-reduced-motion` the colors stay still.
+
+`/dev/decoder-swatches` shows every palette color and a live sample; open it on
+the target screen and hold up the physical red card to confirm each warm bar
+stays bright and each cool bar goes dark. The segment geometry is code-rendered;
+no font binary is bundled.
+
 Image clues use pale cyan art beneath a full-field colored texture, rings,
 bubbles and crossing streaks. All interference pigments preserve the red channel,
-so the simulated red-filter view retains the original image detail. Neither
-renderer flashes the clue or changes its visibility over time.
+so the simulated red-filter view retains the original image detail. The image
+renderer does not flash the clue or change its visibility over time.
 
 `GamepadAdapter` preserves ABXY/LR identity and binds a stable controller ID to a semantic role on press. The Gaming platform's `DrawingTabletAdapter` emits Pointer Event pressure and eraser metadata with touch/mouse normalization. It converts responsive CSS coordinates into the canvas backing-store coordinate system, clamps captured strokes to the canvas, and preserves independent pointer identities. Browser input is hosted by screen-framework and translated to `InteractionIntent` before experience code sees it.
 

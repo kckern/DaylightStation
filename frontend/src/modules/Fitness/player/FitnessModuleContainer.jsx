@@ -5,7 +5,7 @@ import FitnessModuleErrorBoundary from './FitnessModuleErrorBoundary.jsx';
 import FitnessSidebar from './FitnessSidebar.jsx';
 import './FitnessModuleContainer.scss';
 
-const FitnessModuleContainer = ({ moduleId, mode = 'standalone', onClose, config = {} }) => {
+const FitnessModuleContainer = ({ moduleId, mode = 'standalone', deviceId = null, onClose, config = {} }) => {
   const fitnessCtx = useFitnessContext();
   const ModuleComponent = getModule(moduleId);
   const manifest = getModuleManifest(moduleId);
@@ -27,6 +27,7 @@ const FitnessModuleContainer = ({ moduleId, mode = 'standalone', onClose, config
         mode={mode}
         onClose={onClose}
         fitnessContext={fitnessCtx}
+        deviceId={deviceId}
         config={config}
         onMount={() => setLoading(false)}
       />

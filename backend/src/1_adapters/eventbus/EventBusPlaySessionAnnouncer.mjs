@@ -1,4 +1,7 @@
 import { IPlaySessionAnnouncer } from '#apps/gaming/ports/IPlaySessionAnnouncer.mjs';
+import {
+  PLAY_SESSION_TOPIC, PLAY_SESSIONS_TOPIC, parseDeviceTopic,
+} from '#shared-contracts/media/topics.mjs';
 
 /**
  * Publishes play-session facts onto the house event bus.
@@ -19,7 +22,7 @@ import { IPlaySessionAnnouncer } from '#apps/gaming/ports/IPlaySessionAnnouncer.
  * twice lands on the same number.
  */
 export class EventBusPlaySessionAnnouncer extends IPlaySessionAnnouncer {
-  #bus; #placementFor; #identify; #logger;
+  #bus; #placementFor; #identify; #sessions; #logger;
 
   /**
    * @param {Object} config
@@ -29,23 +32,21 @@ export class EventBusPlaySessionAnnouncer extends IPlaySessionAnnouncer {
    * @param {(userId: string) => Promise<{displayName: string|null}|null>} [config.identify]
    *   User id → how to address them. A slug is an identifier, not a name.
    */
-  constructor({ eventBus, placementFor = null, identify = null, logger = console }) {
+  constructor({ eventBus, placementFor = null, identify = null, sessions = null, logger = console }) {
     super();
     if (!eventBus?.broadcast) throw new Error('EventBusPlaySessionAnnouncer requires an eventBus with broadcast()');
     this.#bus = eventBus;
     this.#placementFor = placementFor;
     this.#identify = identify;
+    this.#sessions = sessions;
     this.#logger = logger;
+    if (sessions && eventBus.onClientSubscription && eventBus.sendToClient) {
+      eventBus.onClientSubscription((clientId, topics) => this.#replay(clientId, topics));
+    }
   }
 
   async started(session) {
-    await this.#publish('play.session.started', session, {
-      surface: session.surface,
-      userId: session.userId,
-      contentId: session.content?.contentId ?? null,
-      title: session.content?.title ?? null,
-      startedAt: session.startedAt,
-    });
+    await this.#publish('play.session.started', session);
   }
 
   async progress(session, observation) {
@@ -99,22 +100,70 @@ export class EventBusPlaySessionAnnouncer extends IPlaySessionAnnouncer {
   }
 
   async #publish(event, session, extra) {
-    const topic = `play-session:${session.deviceId}`;
-    this.#bus.broadcast(topic, {
+    const payload = await this.#payload(event, session, extra);
+    this.#bus.broadcast(PLAY_SESSION_TOPIC(session.deviceId), payload);
+    this.#bus.broadcast(PLAY_SESSIONS_TOPIC, payload);
+    this.#logger.debug?.(event, { sessionId: session.id, deviceId: session.deviceId, playedMs: session.playedMs });
+  }
+
+  async #payload(event, session, extra = {}) {
+    return {
       event,
       sessionId: session.id,
       deviceId: session.deviceId,
+      surface: session.surface,
+      userId: session.userId ?? null,
+      grantRef: session.grantRef ?? null,
+      participants: session.participants ?? [],
+      contentId: session.content?.contentId ?? null,
+      title: session.content?.title ?? null,
+      loadId: session.loadId ?? null,
+      loadedAt: session.loadedAt ?? null,
+      startedAt: session.startedAt ?? null,
+      endedAt: session.endedAt ?? null,
+      reason: session.endReason ?? null,
+      state: session.lastState ?? null,
+      observedAt: session.lastObservedAt ?? null,
       playedMs: session.playedMs,          // cumulative, always
       confidenceMs: session.confidenceMs,  // how precisely that was measured
       status: session.status,
-      // How many pads were live at once — a group game is a different thing
-      // from a solo one, and the surface should be able to say so.
+      // High-water count of compatible pads connected during the session.
       controllers: session.controllers ?? null,
       ...this.#presentation(session),
       ...(await this.#identity(session)),
       ...extra,
-    });
-    this.#logger.debug?.(event, { sessionId: session.id, deviceId: session.deviceId, playedMs: session.playedMs });
+    };
+  }
+
+  async #replay(clientId, topics) {
+    try {
+      const delivered = new Set();
+      for (const topic of topics || []) {
+        let open = [];
+        if (topic === PLAY_SESSIONS_TOPIC && this.#sessions?.listOpen) {
+          open = await this.#sessions.listOpen();
+        } else {
+          const parsed = parseDeviceTopic(topic);
+          if (parsed?.kind === 'play-session' && this.#sessions?.findOpenForDevice) {
+            const session = await this.#sessions.findOpenForDevice(parsed.deviceId);
+            if (session) open = [session];
+          }
+        }
+        for (const session of open) {
+          const key = `${topic}:${session.id}`;
+          if (delivered.has(key)) continue;
+          delivered.add(key);
+          const payload = await this.#payload('play.session.progress', session, { replay: true });
+          this.#bus.sendToClient(clientId, {
+            topic,
+            timestamp: new Date().toISOString(),
+            ...payload,
+          });
+        }
+      }
+    } catch (error) {
+      this.#logger.warn?.('play.session.replay_failed', { clientId, error: error.message });
+    }
   }
 }
 

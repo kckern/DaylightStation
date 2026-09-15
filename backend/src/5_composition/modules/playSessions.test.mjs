@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { createPlaySessionTracking, buildBezelTable } from './playSessions.mjs';
 
 const quiet = { info() {}, warn() {}, debug() {}, error() {} };
@@ -25,11 +28,55 @@ const build = (devices, over = {}) => createPlaySessionTracking({
 });
 
 describe('play-session wiring is opt-in per device', () => {
-  it('builds nothing when no device declares it', async () => {
+  it('keeps push-ingress recording available when no polled device declares it', async () => {
     const r = build({ 'art-panel': notMetered, 'office-pc': notMetered });
     expect(r.trackers).toHaveLength(0);
-    expect(r.sessions).toBeNull();
+    expect(r.sessions).not.toBeNull();
+    expect(r.recordObservation).not.toBeNull();
     await expect(r.start()).resolves.not.toThrow();
+  });
+
+  it('settles a silent browser-only session and broadcasts its ending', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'daylight-browser-session-monitor-'));
+    const events = [];
+    let clock = '2026-09-12T20:00:00.000Z';
+    try {
+      const r = createPlaySessionTracking({
+        devicesConfig: {},
+        gamesConfig,
+        configService: {
+          getHouseholdPath: (relative) => path.join(root, relative),
+          getHouseholdAuth: () => null,
+        },
+        eventBus: { broadcast: (topic, payload) => events.push([topic, payload]) },
+        httpClient,
+        scheduler: { after: () => () => {} },
+        now: () => clock,
+        newSessionId: () => 'ps_browser_only',
+        logger: quiet,
+      });
+      await r.recordObservation.execute({
+        deviceId: 'fitness-console',
+        surface: 'browser-emulator',
+        observation: {
+          state: 'playing', loaded: true, loadId: 'launch-browser-1',
+          observedAt: clock, confidenceMs: 0,
+          content: { contentId: 'arcade:gb/test' },
+        },
+      });
+
+      clock = '2026-09-12T20:01:01.000Z';
+      await r.sessionMonitor.sweep();
+
+      expect(await r.sessions.findOpenForDevice('fitness-console')).toBeNull();
+      expect(events).toContainEqual([
+        'play-sessions', expect.objectContaining({
+          event: 'play.session.ended', sessionId: 'ps_browser_only', reason: 'lost',
+        }),
+      ]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('watches only the declared devices', () => {
@@ -42,6 +89,8 @@ describe('play-session wiring is opt-in per device', () => {
     // foreground" cannot distinguish a game from anything else on screen.
     const r = build({ 'livingroom-tv': metered }, { gamesConfig: {} });
     expect(r.trackers).toHaveLength(0);
+    expect(r.sessions).not.toBeNull();
+    expect(r.recordObservation).not.toBeNull();
   });
 
   it('starts and stops every tracker it built', async () => {
@@ -57,6 +106,46 @@ describe('play-session wiring is opt-in per device', () => {
     const noAdb = { play_observation: true, content_control: { host: '10.0.0.9', port: 2323, auth_ref: 'fullykiosk' } };
     const r = build({ 'livingroom-tv': noAdb });
     expect(r.trackers).toHaveLength(1);
+  });
+
+  it('records and broadcasts a hand-started unidentified game through the composed tracker', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'daylight-play-composition-'));
+    const events = [];
+    try {
+      const r = createPlaySessionTracking({
+        devicesConfig: {
+          'livingroom-tv': {
+            play_observation: true,
+            content_control: { host: '10.0.0.9', port: 2323, password: 'pw' },
+          },
+        },
+        gamesConfig,
+        gamesCatalog: null,
+        configService: {
+          getHouseholdPath: (relative) => path.join(root, relative),
+          getHouseholdAuth: () => null,
+        },
+        eventBus: { broadcast: (topic, payload) => events.push([topic, payload]) },
+        httpClient: { get: async () => ({ status: 200, data: { foregroundApp: 'com.example.emulator' } }) },
+        scheduler: { after: () => () => {} },
+        now: () => '2026-09-12T20:00:00.000Z',
+        newSessionId: () => 'ps_hand_started',
+        logger: quiet,
+      });
+
+      await r.trackers[0].tick();
+
+      expect((await r.sessions.findOpenForDevice('livingroom-tv'))?.toSnapshot()).toMatchObject({
+        id: 'ps_hand_started', content: null, status: 'active',
+      });
+      expect(events).toContainEqual([
+        'play-sessions', expect.objectContaining({
+          event: 'play.session.started', deviceId: 'livingroom-tv', contentId: null,
+        }),
+      ]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('accepts a bare device map without a `devices` wrapper', () => {
@@ -81,7 +170,7 @@ describe('catalog content resolver', () => {
     const { buildContentResolver } = await import('./playSessions.mjs');
     const resolve = buildContentResolver(catalog, { consoles: { snes: { label: 'Super Nintendo', core: 'snes9x.so' } } });
     expect(resolve('/Games/SNES/SB2.sfc')).toEqual({
-      contentId: 'retroarch:snes/bomberman-2', title: 'Super Bomberman 2',
+      contentId: 'arcade:snes/bomberman-2', title: 'Super Bomberman 2',
       console: 'snes', consoleLabel: 'Super Nintendo', core: 'snes9x.so',
     });
   });

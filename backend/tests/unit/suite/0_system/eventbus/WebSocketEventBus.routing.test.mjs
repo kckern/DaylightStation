@@ -20,6 +20,7 @@ import {
   SCREEN_COMMAND_TOPIC,
   CLIENT_CONTROL_TOPIC,
   PLAYBACK_STATE_TOPIC,
+  PLAY_SESSIONS_TOPIC,
 } from '#shared-contracts/media/topics.mjs';
 
 /** Simulated open WebSocket ready-state value. */
@@ -149,6 +150,48 @@ describe('WebSocketEventBus routing — per-device topics', () => {
     expect(clientWildcard.ws.send).toHaveBeenCalledTimes(1);
     // tv-1 did not subscribe to playback_state → no delivery.
     expect(clientTv1.ws.send).not.toHaveBeenCalled();
+  });
+
+  it('play-sessions is a quiet high-frequency broadcast topic', () => {
+    const sessions = makeClient([PLAY_SESSIONS_TOPIC]);
+    bus._testSetClientPool(makePool({ sessions }));
+
+    bus.broadcast(PLAY_SESSIONS_TOPIC, { event: 'play.session.progress' });
+
+    expect(sessions.ws.send).toHaveBeenCalledTimes(1);
+    expect(logger.info).not.toHaveBeenCalledWith('eventbus.broadcast', expect.anything());
+    expect(logger.debug).toHaveBeenCalledWith(
+      'eventbus.broadcast.play_sessions',
+      expect.objectContaining({ topic: PLAY_SESSIONS_TOPIC, sentCount: 1 }),
+    );
+  });
+
+  it('lets the durable play-session projection own device state until it ends', () => {
+    const observed = [];
+    bus.subscribe(DEVICE_STATE_TOPIC('tv-1'), (payload) => observed.push(payload));
+
+    bus.broadcast(DEVICE_STATE_TOPIC('tv-1'), {
+      deviceId: 'tv-1', reason: 'heartbeat',
+      snapshot: { state: 'playing', meta: { authority: 'play-session' } },
+    });
+    bus.broadcast(DEVICE_STATE_TOPIC('tv-1'), {
+      deviceId: 'tv-1', reason: 'heartbeat', snapshot: { state: 'idle', meta: {} },
+    });
+
+    expect(observed).toHaveLength(1);
+    expect(logger.debug).toHaveBeenCalledWith(
+      'eventbus.device_state.suppressed_lower_authority',
+      expect.objectContaining({ deviceId: 'tv-1', state: 'idle' }),
+    );
+
+    bus.broadcast(DEVICE_STATE_TOPIC('tv-1'), {
+      deviceId: 'tv-1', reason: 'change',
+      snapshot: { state: 'idle', meta: { authority: 'play-session' } },
+    });
+    bus.broadcast(DEVICE_STATE_TOPIC('tv-1'), {
+      deviceId: 'tv-1', reason: 'heartbeat', snapshot: { state: 'idle', meta: {} },
+    });
+    expect(observed).toHaveLength(3);
   });
 
   it('client-control:<clientId> with an invalid envelope is dropped with envelope-invalid warn', () => {

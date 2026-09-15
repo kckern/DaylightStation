@@ -30,6 +30,7 @@ const FILENAME = /retroarch__(\d{4})_(\d{2})_(\d{2})__(\d{2})_(\d{2})_(\d{2})\.l
 
 export class RetroArchSessionLogReader {
   #adb; #logDir; #logger;
+  #current = null;
 
   constructor({ adbAdapter, logDir, logger = console }) {
     if (!adbAdapter?.shell) throw new Error('RetroArchSessionLogReader requires an adbAdapter');
@@ -50,6 +51,28 @@ export class RetroArchSessionLogReader {
     const names = await this.#listNames(limit);
     if (names.length === 0) return [];
 
+    return this.#readSessions(names);
+  }
+
+  /**
+   * The load RetroArch is currently associated with. The filename probe is
+   * cheap enough to run every observation; body metadata is read only when a
+   * new per-load log appears.
+   */
+  async readCurrentSession() {
+    const names = await this.#listNames(1);
+    const file = names.at(-1) ?? null;
+    if (!file) {
+      this.#current = null;
+      return null;
+    }
+    if (this.#current?.file === file) return this.#current;
+    const [session] = await this.#readSessions([file]);
+    this.#current = session ?? null;
+    return this.#current;
+  }
+
+  async #readSessions(names) {
     const [mtimes, content, cores] = await Promise.all([
       this.#statMtimes(names),
       this.#grepField(names, 'Loading content file', CONTENT_LINE),

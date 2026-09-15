@@ -54,10 +54,31 @@ describe('RecordPlayObservation — opening', () => {
     expect(announcer.calls).toEqual([['started', 'ps_1']]);
   });
 
-  it('does not open a session with no content loaded', async () => {
+  it('opens a loaded hand-started game even before content is identified', async () => {
     const r = await useCase.execute({
       deviceId: 'livingroom-tv', surface: 'console-emulator',
-      observation: { state: PlayState.PLAYING, observedAt: at(0), content: null },
+      observation: {
+        state: PlayState.PLAYING,
+        loaded: true,
+        loadId: 'retroarch__2026_09_11__20_00_00.log',
+        loadedAt: at(-30),
+        observedAt: at(0),
+        content: null,
+      },
+    });
+    expect(r.started).toBe(true);
+    expect(r.session.content).toBeNull();
+    expect(r.session.loadId).toBe('retroarch__2026_09_11__20_00_00.log');
+    expect(r.session.loadedAt).toBe(at(-30));
+    expect(r.session.startedAt).toBe(at(0));
+  });
+
+  it('does not turn an explicit unknown load state into loaded just because content is named', async () => {
+    const r = await useCase.execute({
+      deviceId: 'livingroom-tv', surface: 'console-emulator',
+      observation: {
+        state: PlayState.PLAYING, loaded: null, observedAt: at(0), content: GAME_A,
+      },
     });
     expect(r.session).toBeNull();
   });
@@ -103,11 +124,21 @@ describe('RecordPlayObservation — ending and switching', () => {
     await observe(PlayState.PLAYING, 10);
     const r = await useCase.execute({
       deviceId: 'livingroom-tv', surface: 'console-emulator',
-      observation: { state: PlayState.PAUSED, observedAt: at(20), content: null },
+      observation: { state: PlayState.PAUSED, loaded: false, observedAt: at(20), content: null },
     });
     expect(r.ended.isEnded()).toBe(true);
     expect(r.ended.playedMs).toBe(10_000);
     expect(announcer.calls).toContainEqual(['ended', 'ps_1']);
+  });
+
+  it('ends on a definitive unload even when play-versus-pause is unknown', async () => {
+    await observe(PlayState.PLAYING, 0);
+    const r = await useCase.execute({
+      deviceId: 'livingroom-tv', surface: 'console-emulator',
+      observation: { state: PlayState.UNKNOWN, loaded: false, observedAt: at(10), content: null },
+    });
+    expect(r.ended?.isEnded()).toBe(true);
+    expect(await sessions.findOpenForDevice('livingroom-tv')).toBeNull();
   });
 
   it('switching games ends one session and starts another', async () => {
@@ -120,6 +151,39 @@ describe('RecordPlayObservation — ending and switching', () => {
     expect(r.session.content.contentId).toBe('game:b');
     expect(r.session.playedMs).toBe(0);   // time never carries across titles
     expect(r.started).toBe(true);
+  });
+
+  it('keeps an unidentified loaded game open while paused', async () => {
+    await useCase.execute({
+      deviceId: 'livingroom-tv', surface: 'console-emulator',
+      observation: {
+        state: PlayState.PLAYING, loaded: true, loadId: 'load-a', loadedAt: at(-10),
+        observedAt: at(0), content: null,
+      },
+    });
+    const r = await useCase.execute({
+      deviceId: 'livingroom-tv', surface: 'console-emulator',
+      observation: {
+        state: PlayState.PAUSED, loaded: true, loadId: 'load-a', loadedAt: at(-10),
+        observedAt: at(10), content: null,
+      },
+    });
+    expect(r.ended).toBeNull();
+    expect(r.session.isEnded()).toBe(false);
+  });
+
+  it('uses load identity to split two unidentified hand-started games', async () => {
+    await useCase.execute({
+      deviceId: 'livingroom-tv', surface: 'console-emulator',
+      observation: { state: PlayState.PLAYING, loaded: true, loadId: 'load-a', observedAt: at(0) },
+    });
+    const r = await useCase.execute({
+      deviceId: 'livingroom-tv', surface: 'console-emulator',
+      observation: { state: PlayState.PLAYING, loaded: true, loadId: 'load-b', observedAt: at(10) },
+    });
+    expect(r.switched).toBe(true);
+    expect(r.ended.endReason).toBe('switched');
+    expect(r.session.loadId).toBe('load-b');
   });
 });
 

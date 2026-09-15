@@ -39,6 +39,16 @@ function makeAdb({ names = [A, B], fail = false, missingContent = false } = {}) 
 const reader = (adb) => new RetroArchSessionLogReader({ adbAdapter: adb, logDir: LOG_DIR, logger: { debug() {} } });
 
 describe('RetroArchSessionLogReader', () => {
+  it('returns the active load identity and caches its parsed metadata until the filename changes', async () => {
+    const adb = makeAdb();
+    const r = reader(adb);
+    const first = await r.readCurrentSession();
+    const second = await r.readCurrentSession();
+    expect(first).toMatchObject({ file: B, startedAt: '2026-09-11T19:36:41' });
+    expect(second).toEqual(first);
+    expect(adb.calls).toHaveLength(5); // four reads initially; only the filename probe thereafter
+  });
+
   it('recovers an exact start time from the filename', async () => {
     const [first] = await reader(makeAdb()).listRecentSessions();
     expect(first.startedAt).toBe('2026-09-11T19:30:55');

@@ -37,6 +37,9 @@ const sessions = {
   findOpenForDevice: async (d) => (d === 'tv'
     ? { toSnapshot: () => ({ id: 'ps_1', deviceId: 'tv', playedMs: 42_000 }) }
     : null),
+  listOpen: async () => [
+    { toSnapshot: () => ({ id: 'ps_1', deviceId: 'tv', playedMs: 42_000, status: 'active' }) },
+  ],
 };
 
 beforeEach(() => { recorded = []; });
@@ -45,11 +48,17 @@ describe('POST /observations — push ingress for self-reporting surfaces', () =
   it('feeds the same use case the polled source uses', async () => {
     const r = await call(createPlaySessionsRouter({ recordObservation, logger: quiet }), 'POST', '/observations', {
       deviceId: 'fitness-console', surface: 'browser-emulator', userId: 'test-learner',
-      observation: { state: 'playing', observedAt: '2026-09-11T20:00:00.000Z', content: { contentId: 'g:1' } },
+      observation: {
+        state: 'playing', loaded: true, loadId: 'launch-1', loadedAt: '2026-09-11T19:59:55.000Z',
+        observedAt: '2026-09-11T20:00:00.000Z', controllers: 2, content: { contentId: 'g:1' },
+      },
     });
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ sessionId: 'ps_1', started: true, playedMs: 42_000 });
     expect(recorded[0].surface).toBe('browser-emulator');
+    expect(recorded[0].observation).toMatchObject({
+      loaded: true, loadId: 'launch-1', loadedAt: '2026-09-11T19:59:55.000Z', controllers: 2,
+    });
   });
 
   it('defaults a self-reported observation to exact confidence', async () => {
@@ -57,6 +66,21 @@ describe('POST /observations — push ingress for self-reporting surfaces', () =
       deviceId: 'd', surface: 'browser-emulator', observation: { state: 'playing' } },
     );
     expect(recorded[0].observation.confidenceMs).toBe(0);
+  });
+
+  it('temporarily derives loaded=true for a legacy identified observation', async () => {
+    await call(createPlaySessionsRouter({ recordObservation, logger: quiet }), 'POST', '/observations', {
+      deviceId: 'd', surface: 'browser-emulator',
+      observation: { state: 'playing', content: { contentId: 'arcade:gb/game' } },
+    });
+    expect(recorded[0].observation.loaded).toBe(true);
+  });
+
+  it('rejects an invalid loaded value', async () => {
+    const r = await call(createPlaySessionsRouter({ recordObservation, logger: quiet }), 'POST', '/observations', {
+      deviceId: 'd', surface: 'browser-emulator', observation: { state: 'playing', loaded: 'yes' },
+    });
+    expect(r.status).toBe(400);
   });
 
   it('rejects an observation missing its essentials', async () => {
@@ -82,6 +106,16 @@ describe('GET /devices/:deviceId', () => {
     const r = await call(createPlaySessionsRouter({ sessions, logger: quiet }), 'GET', '/devices/art-panel');
     expect(r.status).toBe(200);
     expect(r.body.session).toBeNull();
+  });
+});
+
+describe('GET /open', () => {
+  it('returns every open session for a house-wide initial snapshot', async () => {
+    const r = await call(createPlaySessionsRouter({ sessions, logger: quiet }), 'GET', '/open');
+    expect(r.status).toBe(200);
+    expect(r.body.sessions).toEqual([
+      { id: 'ps_1', deviceId: 'tv', playedMs: 42_000, status: 'active' },
+    ]);
   });
 });
 
@@ -123,6 +157,12 @@ describe('GET /health', () => {
     const watchdog = { blockedDevices: () => ['tv'] };
     const r = await call(createPlaySessionsRouter({ watchdog, logger: quiet }), 'GET', '/health');
     expect(r.body.blocked).toEqual(['tv']);
+  });
+
+  it('exposes the house-wide open-session monitor health', async () => {
+    const sessionMonitor = { getHealth: () => ({ running: true, staleAfterMs: 60_000, lostCount: 2 }) };
+    const r = await call(createPlaySessionsRouter({ sessionMonitor, logger: quiet }), 'GET', '/health');
+    expect(r.body.openSessions).toEqual({ running: true, staleAfterMs: 60_000, lostCount: 2 });
   });
 });
 

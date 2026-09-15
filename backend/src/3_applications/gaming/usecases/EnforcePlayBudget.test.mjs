@@ -90,6 +90,15 @@ describe('EnforcePlayBudget — expiry', () => {
     expect(sessions.saved).toEqual(['ps_1']);
   });
 
+  it('announces the ended session after a successful stop and durable settlement', async () => {
+    const ended = [];
+    const e = build(10 * MIN, { announcer: { ended: async (s) => ended.push(s.toSnapshot()) } });
+    const s = session(20 * 60);
+    for (let i = 0; i < 5; i += 1) await e.progress(s);
+    expect(ended).toHaveLength(1);
+    expect(ended[0]).toMatchObject({ id: 'ps_1', status: 'ended', endReason: 'expired' });
+  });
+
   it('does NOT settle the session when the stop failed', async () => {
     // The game is still running; recording it as finished would stop the meter
     // while a child keeps playing.

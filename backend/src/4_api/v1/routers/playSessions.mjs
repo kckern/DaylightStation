@@ -14,8 +14,9 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
  * surface is not a special case; it is simply an observation with better
  * confidence. That is what keeps one meter behind both kinds of play surface.
  */
-export function createPlaySessionsRouter({ recordObservation = null, sessions = null, trackers = [], watchdog = null, grantLedger = null, grantPlayTime = null, checkEligibility = null, summarisePlayUsage = null, placements = null, logger = console }) {
+export function createPlaySessionsRouter({ recordObservation = null, sessions = null, trackers = [], watchdog = null, sessionMonitor = null, grantLedger = null, grantPlayTime = null, checkEligibility = null, summarisePlayUsage = null, placements = null, logger = console }) {
   const router = express.Router();
+  let legacyShapeWarned = false;
 
   /**
    * POST /observations — a surface reports what it is doing.
@@ -31,6 +32,16 @@ export function createPlaySessionsRouter({ recordObservation = null, sessions = 
     if (!deviceId || !surface || !observation?.state) {
       return res.status(400).json({ error: 'deviceId, surface and observation.state are required' });
     }
+    const loaded = observation.loaded === undefined
+      ? (observation.content?.contentId ? true : null)
+      : observation.loaded;
+    if (loaded !== null && typeof loaded !== 'boolean') {
+      return res.status(400).json({ error: 'observation.loaded must be true, false, or null' });
+    }
+    if (observation.loaded === undefined && !legacyShapeWarned) {
+      legacyShapeWarned = true;
+      logger.warn?.('play.observation.legacy_shape', { surface });
+    }
     try {
       const result = await recordObservation.execute({
         deviceId,
@@ -41,7 +52,15 @@ export function createPlaySessionsRouter({ recordObservation = null, sessions = 
           state: observation.state,
           observedAt: observation.observedAt || new Date().toISOString(),
           confidenceMs: Number(observation.confidenceMs ?? 0),
+          loaded,
+          loadId: observation.loadId ?? null,
+          loadedAt: observation.loadedAt ?? null,
           content: observation.content ?? null,
+          controllers: observation.controllers !== null && observation.controllers !== undefined
+            && Number.isFinite(Number(observation.controllers))
+            ? Number(observation.controllers)
+            : null,
+          channel: observation.channel ?? null,
         },
       });
       return res.json({
@@ -54,6 +73,20 @@ export function createPlaySessionsRouter({ recordObservation = null, sessions = 
     } catch (error) {
       logger.error?.('play.api.observation_failed', { deviceId, error: error.message });
       return res.status(400).json({ error: error.message });
+    }
+  });
+
+  /** GET /open — every currently open session, for house-wide monitoring. */
+  router.get('/open', async (_req, res) => {
+    if (!sessions?.listOpen) {
+      return res.status(503).json({ error: 'Play-session metering is not configured' });
+    }
+    try {
+      const open = await sessions.listOpen();
+      return res.json({ sessions: open.map((session) => session.toSnapshot()) });
+    } catch (error) {
+      logger.error?.('play.api.open_failed', { error: error.message });
+      return sendInternalError(res, { error: 'Failed to read open play sessions' });
     }
   });
 
@@ -106,6 +139,7 @@ export function createPlaySessionsRouter({ recordObservation = null, sessions = 
       // Devices the meter has lost sight of for long enough that no NEW play
       // should be granted on them. Nothing here stops a game already running.
       blocked: watchdog?.blockedDevices?.() ?? [],
+      openSessions: sessionMonitor?.getHealth?.() ?? null,
     });
   });
 
