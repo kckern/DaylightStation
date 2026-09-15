@@ -2,7 +2,7 @@
 // State for the tap-a-device cast picker. Single-select is the primary
 // interaction (tap a tile, cast); multi-select is an explicit opt-in
 // affordance, not the default. Mode stays transfer/fork internally but the
-// UI only surfaces the choice when something is actually playing locally.
+// UI surfaces the choice whenever a source can potentially dispatch content.
 // A `snapshot` source dispatches in adopt mode (hand-off).
 import { useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useFleetContext } from '../fleet/useFleetContext.js';
@@ -43,7 +43,13 @@ export function useDispatchTargetPicker({ source, onComplete } = {}) {
   const [selected, setSelected] = useState(() => new Set(defaultTargets));
   const [multi, setMulti] = useState(() => defaultTargets.length > 1);
   const [mode, setMode] = useState(defaultMode ?? 'transfer');
+  const [dispatchError, setDispatchError] = useState(null);
   const localPlaying = useLocalPlaybackActive(source);
+  // This only controls whether the picker can offer playback choices. A
+  // getSnapshot source can disappear between render and submit, so it must
+  // never be used as proof that submit has a payload to dispatch.
+  const hasPotentialContent = !!(source?.getSnapshot || source?.snapshot || source?.play || source?.queue);
+  const moveUnavailable = hasPotentialContent && mode === 'transfer';
 
   const devices = fleet.devices ?? [];
 
@@ -83,8 +89,12 @@ export function useDispatchTargetPicker({ source, onComplete } = {}) {
 
   const canSubmit = selected.size > 0;
 
-  const submit = useCallback(() => {
+  const submit = useCallback(async () => {
     if (!canSubmit) return;
+    if (moveUnavailable) {
+      setDispatchError('Move playback is not available yet. Choose the non-destructive option instead.');
+      return { ok: false, error: 'move-unsupported' };
+    }
     const targetIds = Array.from(selected);
     const params = { targetIds, mode };
     // Hand-off snapshots are captured AT SUBMIT so the position is current.
@@ -98,17 +108,35 @@ export function useDispatchTargetPicker({ source, onComplete } = {}) {
     // Human title for the progress tray (never the raw content id).
     const title = source?.title ?? snapshot?.currentItem?.title ?? null;
     if (title) params.title = title;
-    // A destination-only sheet (DestinationLine) mounts this picker with NO
-    // source at all — it's changing the preferred target, not casting
-    // anything. dispatchToTarget requires play/queue/snapshot (buildDispatchUrl
-    // throws without one), so skip the actual dispatch when there's nothing
-    // to send; the preference change still happens via onComplete below.
-    const hasContent = !!(params.snapshot || params.play || params.queue);
-    if (hasContent) dispatchToTarget(params);
-    onComplete?.({ targetIds, mode });
-  }, [canSubmit, selected, mode, source, dispatchToTarget, onComplete]);
+    // The UI can expose a source before it resolves. Re-check the payload at
+    // submit time so stopped playback cannot become an invalid dispatch.
+    const hasDispatchContent = !!(params.snapshot || params.play || params.queue);
+    if (hasPotentialContent && !hasDispatchContent) {
+      setDispatchError('Playback is no longer available. Nothing was moved.');
+      return { ok: false, error: 'content-unavailable' };
+    }
 
-  return { devices, selected, multi, mode, canSubmit, localPlaying, select, toggleMulti, setMode, submit };
+    // A destination-only sheet (DestinationLine) mounts this picker with no
+    // source at all: it changes the preferred target but does not dispatch.
+    let dispatchIds = [];
+    if (hasDispatchContent) {
+      try {
+        dispatchIds = await dispatchToTarget(params);
+      } catch {
+        setDispatchError('Could not start playback on that device. Nothing was moved.');
+        return { ok: false, error: 'dispatch-failed' };
+      }
+    }
+    if (hasDispatchContent && (!Array.isArray(dispatchIds) || dispatchIds.length === 0)) {
+      setDispatchError('Could not start playback on that device. Nothing was moved.');
+      return { ok: false, error: 'dispatch-failed' };
+    }
+    setDispatchError(null);
+    onComplete?.({ targetIds, mode });
+    return { ok: true, dispatchIds };
+  }, [canSubmit, moveUnavailable, selected, mode, source, dispatchToTarget, onComplete, hasPotentialContent]);
+
+  return { devices, selected, multi, mode, canSubmit, localPlaying, hasPotentialContent, moveUnavailable, dispatchError, select, toggleMulti, setMode, submit };
 }
 
 export default useDispatchTargetPicker;

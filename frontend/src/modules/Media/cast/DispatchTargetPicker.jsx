@@ -13,7 +13,7 @@
 //     NowPlayingView). A pick really does dispatch, so the CTA/mode-toggle/
 //     busy-warning all speak in cast/dispatch terms.
 //   - "destination" — DestinationLine's device sheet. Its picker mounts with
-//     NO source, so submit() is a no-op dispatch (see the hasContent guard
+//     NO source, so submit() is a no-op dispatch (see the potential-content guard
 //     in useDispatchTargetPicker.js) — it only changes the preferred
 //     destination. The chrome must say that, not "Cast", or a button
 //     labeled Cast would do nothing when pressed (2026-08-21 review
@@ -78,7 +78,7 @@ function BusyWarning({ device, intent }) {
 
 export function DispatchTargetPicker({ source, onComplete, autoFocus = true, verb = 'Cast', intent = 'dispatch' }) {
   const {
-    devices, selected, multi, mode, canSubmit, localPlaying,
+    devices, selected, multi, mode, canSubmit, localPlaying, hasPotentialContent, moveUnavailable, dispatchError,
     select, toggleMulti, setMode, submit,
   } = useDispatchTargetPicker({ source, onComplete });
 
@@ -136,7 +136,7 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
           actually about to happen — a destination-only pick never plays or
           moves anything, so the choice would be pure noise (and a lie about
           what pressing the CTA does). */}
-      {localPlaying && devices.length > 0 && !isDestination && (
+      {hasPotentialContent && devices.length > 0 && !isDestination && (
         <div className="cast-picker-mode" role="radiogroup" aria-label="What happens to playback here">
           <button
             type="button"
@@ -144,10 +144,14 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
             aria-checked={mode === 'transfer'}
             data-testid="picker-mode-transfer"
             className={`cast-picker-mode-option ${mode === 'transfer' ? 'cast-picker-mode-option--on' : ''}`}
+            disabled
             onClick={() => setMode('transfer')}
           >
             Move playback to {targetLabel ?? 'device'}
           </button>
+          <div data-testid="picker-move-unavailable" className="cast-picker-warning" role="status">
+            Move playback is not available yet. Choose the non-destructive option instead.
+          </div>
           <button
             type="button"
             role="radio"
@@ -156,16 +160,17 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
             className={`cast-picker-mode-option ${mode === 'fork' ? 'cast-picker-mode-option--on' : ''}`}
             onClick={() => setMode('fork')}
           >
-            Keep playing here too
+            {localPlaying ? 'Keep playing here too' : 'Play on device without moving playback'}
           </button>
         </div>
       )}
+      {dispatchError && <div data-testid="picker-dispatch-failed" className="cast-picker-warning" role="status">{dispatchError}</div>}
       <button
         type="button"
         data-testid="picker-submit"
         className="cast-picker-cta"
         autoFocus={autoFocus}
-        disabled={!canSubmit}
+        disabled={!canSubmit || moveUnavailable}
         onClick={submit}
       >
         {ctaLabel}

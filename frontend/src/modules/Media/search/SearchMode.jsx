@@ -24,6 +24,7 @@
 // same useContentDispatch path MediaContentSearch already uses.
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { IconX, IconAlertTriangle } from '@tabler/icons-react';
+import { Button } from '@mantine/core';
 import { useContentCombobox } from '../../Content/combobox/useContentCombobox.js';
 import { StreamStatusLine } from '../../Content/combobox/StreamStatusLine.jsx';
 import { ResultRow } from '../../Content/combobox/ResultRow.jsx';
@@ -168,7 +169,10 @@ export function SearchMode({ onClose }) {
     allowFreeform: false,
     logApp: 'media',
   });
-  const { state, handleInput, isSearching, pendingSources, sourceErrors, fellBackToAll } = combo;
+  const {
+    state, handleInput, isSearching, pendingSources, sourceErrors,
+    streamError, retrySource = () => {}, fellBackToAll,
+  } = combo;
   const results = state.results;
   const searchText = state.search ?? '';
 
@@ -200,13 +204,16 @@ export function SearchMode({ onClose }) {
 
   const handleStreamRetry = useCallback((source) => {
     log.info('stream_status.retry', { source, text: searchText });
-    handleInput(searchText);
-  }, [handleInput, searchText, log]);
+    retrySource(source);
+  }, [retrySource, searchText, log]);
 
   const showHint = results.length === 0 && !isSearching && searchText.trim().length < 2;
+  // A completed transport can still retain an individually failed source.
+  // Keep that recovery state distinct from a successful empty search.
+  const hasUnresolvedSourceFailures = sourceErrors.length > 0;
   // The widening notice below already explains an empty widened search in
   // scope-aware wording, so the generic empty line would only repeat it.
-  const showEmpty = results.length === 0 && !isSearching && searchText.trim().length >= 2 && !fellBackToAll;
+  const showEmpty = results.length === 0 && !isSearching && !streamError && !hasUnresolvedSourceFailures && searchText.trim().length >= 2 && !fellBackToAll;
   // D5 widening notice (Finding 2 of the final review). The hook widens a
   // scope that settled empty and ContentCombobox says so on desktop — but this
   // surface, the one the whole remediation exists for, rendered nothing: the
@@ -215,7 +222,7 @@ export function SearchMode({ onClose }) {
   // scope that came up empty. Held back while the widened search is still in
   // flight so it can't flash "nothing anywhere" before the results land.
   const scopeThatCameUpEmpty = currentScope?.label || 'this scope';
-  const showWideningNotice = fellBackToAll && !isSearching;
+  const showWideningNotice = fellBackToAll && !isSearching && !streamError && !hasUnresolvedSourceFailures;
 
   return (
     <div className="search-mode" data-testid="search-mode" role="dialog" aria-modal="true" aria-label="Search media">
@@ -254,6 +261,15 @@ export function SearchMode({ onClose }) {
 
       <StreamStatusLine pending={pendingSources} sourceErrors={sourceErrors} onRetry={handleStreamRetry} />
 
+      {streamError && (
+        <div className="stream-status-line stream-status-line--error" data-testid="search-mode-stream-error" role="status">
+          <span>{streamError.message}</span>
+          <Button variant="subtle" size="compact-xs" data-testid="search-mode-stream-retry" onClick={() => retrySource()}>
+            Retry
+          </Button>
+        </div>
+      )}
+
       {showWideningNotice && (
         <div className="search-mode-widening-notice" data-testid="search-mode-widening-notice" role="status">
           {results.length > 0
@@ -265,6 +281,9 @@ export function SearchMode({ onClose }) {
       <ul className="search-mode-results media-search-results" data-testid="search-mode-results">
         {showHint && (
           <li className="search-mode-hint" data-testid="search-mode-hint">Type to search…</li>
+        )}
+        {isSearching && results.length === 0 && (
+          <li className="search-mode-hint" data-testid="search-mode-loading">Searching...</li>
         )}
         {showEmpty && (
           <li className="search-mode-hint" data-testid="search-mode-empty">

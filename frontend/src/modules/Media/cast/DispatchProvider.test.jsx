@@ -13,6 +13,7 @@ vi.mock('../logging/mediaLog.js', () => {
 import mediaLog from '../logging/mediaLog.js';
 import { DispatchProvider } from './DispatchProvider.jsx';
 import { useDispatch } from './useDispatch.js';
+import { LocalSessionContext } from '../session/LocalSessionContext.js';
 
 const TIMING_WINDOW = 6_000; // > DISPATCH_DEDUPE_WINDOW_MS (5s)
 
@@ -32,9 +33,30 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 
-const CAST = { targetIds: ['livingroom-tv'], play: 'plex:665668', mode: 'transfer', title: 'Wrestling with Socialism' };
+const CAST = { targetIds: ['livingroom-tv'], play: 'plex:665668', mode: 'fork', title: 'Wrestling with Socialism' };
 
 describe('DispatchProvider — duplicate suppression', () => {
+  it('fails a direct transfer before dispatch and never stops the local source', async () => {
+    const stop = vi.fn();
+    const withLocalSource = ({ children }) => (
+      <LocalSessionContext.Provider value={{ controller: { transport: { stop } } }}>
+        <DispatchProvider>{children}</DispatchProvider>
+      </LocalSessionContext.Provider>
+    );
+    const { result } = renderHook(() => useDispatch(), { wrapper: withLocalSource });
+
+    let outcome;
+    await act(async () => {
+      outcome = await result.current.dispatchToTarget({
+        ...CAST, mode: 'transfer', capabilities: { handoffV1: true },
+      });
+    });
+
+    expect(outcome).toEqual([]);
+    expect(DaylightAPI).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+  });
+
   // 2026-08-12: the LG's power step held for 80s. The 5s dedupe window had
   // lapsed, so a second identical cast went to the backend and only the
   // BACKEND deduplicated the third.
@@ -153,7 +175,7 @@ describe('DispatchProvider — duplicate suppression', () => {
     let dispatchIds;
     await act(async () => {
       dispatchIds = await result.current.dispatchToTarget({
-        targetIds: ['livingroom-tv'], snapshot, mode: 'transfer', title: 'Bluey',
+        targetIds: ['livingroom-tv'], snapshot, mode: 'fork', title: 'Bluey',
       });
       await Promise.resolve();
     });

@@ -53,6 +53,14 @@ beforeEach(() => {
 });
 
 describe('FleetView Play… affordance', () => {
+  it('disables Play here with a truthful Move-unavailable explanation for an active remote session', () => {
+    fleet.entries = { 'livingroom-tv': { snapshot: { state: 'playing', currentItem: { title: 'Bluey' } } } };
+    renderFleet();
+
+    expect(screen.getByTestId('fleet-takeover-livingroom-tv')).toBeDisabled();
+    expect(screen.getByTestId('fleet-takeover-unavailable-livingroom-tv')).toHaveTextContent('Move playback is not available yet');
+  });
+
   it('renders a Play… button on every card alongside the existing actions', () => {
     renderFleet();
     for (const id of ['livingroom-tv', 'office-tv']) {

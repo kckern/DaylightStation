@@ -50,6 +50,9 @@ class MockEventSource {
   simulateMessage(data) {
     if (this.onmessage) this.onmessage({ data: JSON.stringify(data) });
   }
+  simulateError() {
+    if (this.onerror) this.onerror(new Error('Connection failed'));
+  }
 }
 MockEventSource.instances = [];
 
@@ -989,6 +992,26 @@ describe('useContentCombobox', () => {
       const retryCallsAfterSecond = mockLog.info.mock.calls.filter(([event]) => event === 'search.retry_after_source_error');
       expect(retryCallsAfterSecond).toHaveLength(1); // still just the one retry, ever
     });
+
+    it('retries the failed source under the current scope instead of widening to a whole-query retry', async () => {
+      // Break caught: empty failure recovery opens another catalog-wide stream,
+      // so a known failed adapter is not the only source queried on retry.
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const { result } = setup({ searchParams: 'capability=listable&scope=kids' });
+
+      act(() => { result.current.handleInput('arrival'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      act(() => {
+        MockEventSource.instances[0].simulateMessage({ event: 'source_error', source: 'abs', error: 'offline', pending: [] });
+        MockEventSource.instances[0].simulateMessage({ event: 'complete' });
+      });
+
+      expect(MockEventSource.instances).toHaveLength(2);
+      expect(MockEventSource.instances[1].url).toContain('capability=listable');
+      expect(MockEventSource.instances[1].url).toContain('scope=kids');
+      expect(MockEventSource.instances[1].url).toContain('source=abs');
+    });
   });
 
   // ── Task 11: scoped-empty fallback to All (spec D5) ──
@@ -1066,7 +1089,7 @@ describe('useContentCombobox', () => {
       act(() => { MockEventSource.instances[0].simulateMessage({ event: 'complete' }); });
 
       expect(MockEventSource.instances).toHaveLength(2); // Task 5's retry fired
-      expect(MockEventSource.instances[1].url).toContain('source=ambient'); // SAME params — not widened
+      expect(MockEventSource.instances[1].url).toContain('source=plex'); // failed source only — not widened
       expect(result.current.fellBackToAll).toBe(false); // fallback did not fire this round
     });
 
@@ -1185,6 +1208,56 @@ describe('useContentCombobox', () => {
       expect(MockEventSource.instances[0].url).toContain('source=music');
     });
 
+    it('retires the active stream before the replacement text debounce can accept a late callback', async () => {
+      // Break caught: the visible query changes immediately but the old SSE
+      // remains current for 350ms and can publish results under new intent.
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const { result } = setup({ searchParams: '' });
+
+      act(() => { result.current.handleInput('bluey'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      const first = MockEventSource.instances[0];
+
+      act(() => { result.current.handleInput('arrival'); });
+      expect(first.readyState).toBe(2);
+      act(() => {
+        first.simulateMessage({ event: 'results', source: 'plex', items: [{ id: 'plex:stale', title: 'Stale' }], pending: [] });
+        first.simulateMessage({ event: 'complete' });
+        first.simulateError();
+      });
+
+      expect(result.current.state.search).toBe('arrival');
+      expect(result.current.state.results).toEqual([]);
+      expect(result.current.isSearching).toBe(true); // replacement debounce owns visible intent
+      expect(result.current.streamError).toBeNull();
+    });
+
+    it('retires the active stream immediately when scope changes, before its scoped debounce fires', async () => {
+      // Break caught: a scope chip changes while the old EventSource remains
+      // owner until the delayed replacement dispatch begins.
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const onChange = vi.fn();
+      const { result, rerender } = setup({ onChange, searchParams: '' });
+
+      act(() => { result.current.handleInput('bluey'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      const first = MockEventSource.instances[0];
+
+      rerender({ value: '', onChange, searchParams: 'source=music' });
+      expect(first.readyState).toBe(2);
+      act(() => {
+        first.simulateMessage({ event: 'results', source: 'plex', items: [{ id: 'plex:stale', title: 'Stale' }], pending: [] });
+        first.simulateMessage({ event: 'complete' });
+        first.simulateError();
+      });
+
+      expect(result.current.state.results).toEqual([]);
+      expect(result.current.isSearching).toBe(true); // replacement debounce owns visible intent
+      expect(result.current.streamError).toBeNull();
+    });
+
     it('re-arms the once-per-search guards: the same text under a new scope logs its own settle and widens again', async () => {
       vi.stubGlobal('EventSource', MockEventSource);
       vi.useFakeTimers();
@@ -1255,13 +1328,13 @@ describe('useContentCombobox', () => {
       act(() => { result.current.handleInput('bluey'); });
       await act(async () => { vi.advanceTimersByTime(350); });
 
-      // Settle 1: empty + a source error → rung 1, the same-params retry.
+      // Settle 1: empty + a source error → rung 1, the failed-source retry.
       act(() => {
         MockEventSource.instances[0].simulateMessage({ event: 'source_error', source: 'plex', error: 'down', pending: [] });
       });
       act(() => { MockEventSource.instances[0].simulateMessage({ event: 'complete' }); });
       expect(MockEventSource.instances).toHaveLength(2);
-      expect(MockEventSource.instances[1].url).toContain('source=ambient'); // same scope
+      expect(MockEventSource.instances[1].url).toContain('source=plex'); // failed source only
       expect(result.current.fellBackToAll).toBe(false); // rung 2 has NOT run yet
 
       // Settle 2: the retry errors again and is still empty. Pre-fix this was
