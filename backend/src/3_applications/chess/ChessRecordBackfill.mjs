@@ -98,7 +98,17 @@ export async function rebuildRivalries(records) {
     writeMemory: async (_gameId, _userId, next) => { memory = structuredClone(next); return true; },
     notableFacts: { chess: chessNotableFacts },
   });
-  for (const record of chronological(records)) await service.recordArchive('chess', record);
+  for (const record of chronological(records)) {
+    // A record with no `opponent` block has nobody rivalry memory could name.
+    // That is true even when `withScorecardLevels` has since given it a
+    // `level` for the ladder replay above — `GameRivalryMemoryService`'s
+    // `rivalryOpponentId` falls back to `record.level` and would happily mint
+    // `chess:level-<n+1>` for a player whose live roster pack is not `chess`.
+    // The recovered level exists for the ladder only; an opponent that
+    // cannot be named is not a rivalry.
+    if (!record?.opponent) continue;
+    await service.recordArchive('chess', record);
+  }
   return memory || { version: 2, rivals: {} };
 }
 

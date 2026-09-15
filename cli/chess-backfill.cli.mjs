@@ -278,14 +278,32 @@ function backupBeforeOverwrite(file, deleteDir, userId) {
   matchOwner(target, path.dirname(target));
 }
 
+/** `"Name (id)"`, as `summarizeRivalries` builds it, split back into its parts. */
+function parseRivalKey(key) {
+  const match = /^(.*) \(([^)]+)\)$/.exec(key);
+  return match ? { name: match[1], id: match[2] } : { name: key, id: key };
+}
+
+const sameOpponentName = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
 /**
  * Named drops in a player's counted progress between a before and after
  * report: falling ladder wins, or a rival whose win, loss or draw count
  * falls, or a rival that disappears entirely. Lost progress must never be
  * silent, so every one of these is a line, not a number.
+ *
+ * A rival can also disappear because it was re-keyed, not lost: stored
+ * memory keeps an opponent under an old id nothing rebuilds under any more
+ * (a pre-migration `chess:level-N`, say), while every archived game for that
+ * same opponent now carries the roster pack's real id. That is a rename, not
+ * a loss, provided the same-named rival that took its place in "after" has
+ * equal-or-higher win, loss and draw counts — a re-key that actually lost
+ * ground still reads as a decrease. The match is on name, never on id: the
+ * id is exactly what changed.
  */
 function findDecreases(entry) {
   const decreases = [];
+  const notes = [];
   const beforeWins = entry.ladder.before?.wins ?? 0;
   const afterWins = entry.ladder.after?.wins ?? 0;
   const beforeLevel = entry.ladder.before?.unlocked_through ?? 0;
@@ -300,14 +318,30 @@ function findDecreases(entry) {
   };
   for (const [rival, before] of Object.entries(entry.rivalries.before)) {
     const after = entry.rivalries.after[rival];
-    if (after === undefined) { decreases.push(`rival ${rival} disappeared, was ${before}`); continue; }
+    if (after === undefined) {
+      const beforeRecord = parseRecord(before);
+      const { name: beforeName, id: beforeId } = parseRivalKey(rival);
+      const rekey = Object.entries(entry.rivalries.after).find(([afterKey, afterValue]) => {
+        const { name: afterName, id: afterId } = parseRivalKey(afterKey);
+        if (afterId === beforeId || !sameOpponentName(afterName, beforeName)) return false;
+        const afterRecord = parseRecord(afterValue);
+        return afterRecord.win >= beforeRecord.win && afterRecord.loss >= beforeRecord.loss && afterRecord.draw >= beforeRecord.draw;
+      });
+      if (rekey) {
+        const [afterKey, afterValue] = rekey;
+        notes.push(`re-keyed: ${beforeName} ${beforeId} -> ${parseRivalKey(afterKey).id} (${before} -> ${afterValue})`);
+        continue;
+      }
+      decreases.push(`rival ${rival} disappeared, was ${before}`);
+      continue;
+    }
     const beforeRecord = parseRecord(before);
     const afterRecord = parseRecord(after);
     if (afterRecord.win < beforeRecord.win || afterRecord.loss < beforeRecord.loss || afterRecord.draw < beforeRecord.draw) {
       decreases.push(`rival ${rival} ${before} -> ${after}`);
     }
   }
-  return decreases;
+  return { decreases, notes };
 }
 
 /**
@@ -349,7 +383,9 @@ export async function rebuildDerived({
       ladder: { before: summarizeLadder(storedLadder, policy), after: summarizeLadder(plan.ladder, policy) },
       rivalries: { before: summarizeRivalries(readYaml(rivalriesFile)), after: summarizeRivalries(plan.rivalries) },
     };
-    entry.decreases = findDecreases(entry);
+    const { decreases, notes } = findDecreases(entry);
+    entry.decreases = decreases;
+    entry.notes = notes;
     report[userId] = entry;
     if (!write) continue;
     backupBeforeOverwrite(ladderFile, deleteDir, userId);
@@ -449,6 +485,7 @@ export function renderReport(report) {
     for (const rival of rivals) {
       lines.push(`  ${rival}: ${entry.rivalries.before[rival] || '0-0-0'} -> ${entry.rivalries.after[rival] || '0-0-0'}`);
     }
+    for (const note of entry.notes || []) lines.push(`  ${note}`);
     for (const decrease of entry.decreases || []) lines.push(`  DECREASE for ${userId}: ${decrease}`);
   }
   return lines.join('\n');

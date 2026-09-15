@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_LADDER_POLICY } from '#shared/gaming/rulesets/chess/ladder.mjs';
 import {
-  chronological, isFinishedGame, matchScorecards, planUserBackfill, recordLevel, replayLadder,
+  chronological, isFinishedGame, matchScorecards, planUserBackfill, rebuildRivalries, recordLevel, replayLadder,
   summarizeLadder, summarizeRivalries, withOpponentIds, withScorecardLevels,
 } from './ChessRecordBackfill.mjs';
 
@@ -123,6 +123,27 @@ describe('planUserBackfill', () => {
       'Weedle (pokemon:level-2)': '0-1-0',
     });
     expect(plan.ladder.results).toHaveLength(3);
+  });
+
+  it('counts an opponent-less game with a recovered level toward the ladder, but builds no rival for it', async () => {
+    const records = [finished({ opponent: null, level: 2 })];
+    const plan = await planUserBackfill({
+      userId: 'kid', records, policy: POLICY, storedLadder: null,
+    });
+    expect(plan.ladder.results).toEqual([expect.objectContaining({ level: 2, result: 'win', counted: true })]);
+    expect(plan.rivalries.rivals).toEqual({});
+  });
+});
+
+describe('rebuildRivalries', () => {
+  it('never contributes a rival for a game with no opponent block, even with a recovered level', async () => {
+    const memory = await rebuildRivalries([finished({ opponent: null, level: 2 })]);
+    expect(memory.rivals).toEqual({});
+  });
+
+  it('still contributes a rival for a game that carries an opponent block, as before', async () => {
+    const memory = await rebuildRivalries([finished()]);
+    expect(Object.keys(memory.rivals)).toEqual(['pokemon:level-1']);
   });
 });
 
