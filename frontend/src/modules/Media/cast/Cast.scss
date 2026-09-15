@@ -41,6 +41,23 @@
   margin-bottom: var(--mantine-spacing-xs);
 }
 
+// The detail-result Cast button portals this picker near the viewport edge.
+// Bound only that floating instance: devices scroll while the selected mode
+// and CTA remain available.  The Now Playing handoff picker stays inline and
+// intentionally retains its existing natural-height layout.
+.cast-button-popover-portal .cast-picker {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  max-height: var(--cast-picker-max-height);
+}
+
+.cast-button-popover-portal .cast-picker-devices {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 // A tile is a real button that reads as one: full-width, 44px+ target,
 // hover lift, amber ring when selected.
 .cast-tile {
