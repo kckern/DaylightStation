@@ -104,6 +104,14 @@ describe('resolvePianoConfig', () => {
     expect(cfg.sheetmusic.learn.defaultHands).toBe('rh');
   });
 
+  it('notation.keySignature defaults on, and a household can turn it off', () => {
+    expect(resolvePianoConfig({}, 'default').notation).toEqual({ keySignature: true });
+    expect(resolvePianoConfig({ notation: { keySignature: false } }, 'default').notation.keySignature).toBe(false);
+    expect(resolvePianoConfig(
+      { notation: { keySignature: true }, pianos: { upstairs: { notation: { keySignature: false } } } }, 'upstairs',
+    ).notation.keySignature).toBe(false);
+  });
+
   it('resolves separate playalong and singalong collections', () => {
     const raw = {
       playalong: { plexCollection: ['plex:676474'] },

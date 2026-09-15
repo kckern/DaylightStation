@@ -225,7 +225,11 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
   const { connected } = usePianoMidi();
-  const keyboardConfig = usePianoKioskConfigOptional()?.config?.keyboard;
+  const kioskConfig = usePianoKioskConfigOptional()?.config;
+  const keyboardConfig = kioskConfig?.keyboard;
+  // Off only when a household says so; a kiosk with no config at all engraves
+  // the signature, which is the default the model declares.
+  const showKeySignature = kioskConfig?.notation?.keySignature !== false;
   /**
    * The run's own set/rep structure, when it has one.
    *
@@ -960,6 +964,9 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   // `instanceKeySignature` re-joins them, so a minor instance is not spelled
   // with the sharps of its relative major.
   const accidental = accidentalForKey(instanceKeySignature(instance));
+  // The signature the staff stands after its clef. Same key the spelling reads,
+  // so a D major scale is spelled in sharps AND shows the two it is in.
+  const keySignature = showKeySignature ? instanceKeySignature(instance) : null;
   const allStaffNotes = eventsToStaffNotes(instance?.events);
   // A FLASHCARD DECK SHOWS ONE CARD. The single-note stage draws the event at
   // the cursor and nothing else, so a nine-card drill is nine big notes in a
@@ -969,7 +976,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
   const deckIndex = Math.min(Math.max(visualCursor.index, 0), Math.max(allStaffNotes.length - 1, 0));
   const staffNotes = stage === 'single-note' ? allStaffNotes.slice(deckIndex, deckIndex + 1) : allStaffNotes;
   const staffCursor = stage === 'single-note' ? 0 : visualCursor.index;
-  const staffViewBox = sequenceStaffViewBox(staffNotes.length);
+  const staffViewBox = sequenceStaffViewBox(staffNotes.length, { keySignature });
   const cued = selectedMode === 'cued';
   // Only the ordered stages carry a keyboard footer: KeysAsk brings its own
   // keyboard as its primary surface, and two pianos on one screen is a puzzle.
@@ -1172,6 +1179,7 @@ export default function ExerciseRun({ instance, score, requirement = null, inten
               activeNotes={feedbackNotes}
               clef={clefForInstance(instance)}
               accidental={accidental}
+              keySignature={keySignature}
             />
           </div>
         )}

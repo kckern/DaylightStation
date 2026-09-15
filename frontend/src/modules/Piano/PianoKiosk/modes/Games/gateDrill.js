@@ -190,6 +190,35 @@ export function drillStanding(projection) {
   };
 }
 
+/** How a mode reads on a card. Anything not named here reads as itself. */
+const MODE_LABEL = Object.freeze({ ionian: 'major', major: 'major', aeolian: 'minor', minor: 'minor' });
+
+/** `F#` → `F♯`, `Bb` → `B♭`, so a card prints the accidental, not the ASCII for it. */
+const printRoot = (root) => root.charAt(0).toUpperCase() + root.slice(1).replace('#', '\u266f').replace('b', '\u266d');
+
+/**
+ * What the coach calls a step: the key by name, and the hand when the step
+ * names one. A program step may say so itself (`display.key`,
+ * `display.hand_label`); a rung step carries its root; failing both, the
+ * instance id the step asks for still says which scale it is. Nulls, never a
+ * throw, for a step this cannot read — the card then simply does not name it.
+ *
+ * @returns {{ key: string|null, hand: string|null }}
+ */
+export function describeDrillStep(step) {
+  const display = step?.display ?? {};
+  const hand = typeof display.hand_label === 'string' && display.hand_label ? display.hand_label : null;
+  if (typeof display.key === 'string' && display.key) return { key: display.key, hand };
+  const id = step?.requirement?.exercise_id;
+  const axes = Object.fromEntries(
+    (typeof id === 'string' ? id.split('@')[1] ?? '' : '').split(',').filter(Boolean).map((pair) => pair.split('=')),
+  );
+  const root = typeof display.root === 'string' && display.root ? display.root : axes.root;
+  if (typeof root !== 'string' || !root) return { key: null, hand };
+  const mode = String(axes.mode ?? axes.quality ?? 'major').toLowerCase();
+  return { key: `${printRoot(root)} ${MODE_LABEL[mode] ?? mode}`, hand };
+}
+
 /** The gate's view of a program at its first rep: the shape every serve returns. */
 function serveDrill(program) {
   const projection = projectDrill(program, []);

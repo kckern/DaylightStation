@@ -126,6 +126,23 @@ export function SharpShape() {
 }
 
 /**
+ * Engraved natural: two offset verticals joined by two slanting bars — the
+ * left stem drops to the lower bar, the right stem rises from the upper one.
+ * Same box and the same "centred on the notehead's y" contract as the sharp,
+ * so every caller places it with the sharp's own translate.
+ */
+export function NaturalShape() {
+  return (
+    <>
+      <line x1="-2.6" y1="-13" x2="-2.6" y2="4.6" stroke="currentColor" strokeWidth="2" />
+      <line x1="2.6" y1="-4.6" x2="2.6" y2="13" stroke="currentColor" strokeWidth="2" />
+      <path d="M -3.6 -4.6 L 3.6 -7.4 L 3.6 -10.4 L -3.6 -7.6 Z" fill="currentColor" />
+      <path d="M -3.6 7.6 L 3.6 4.8 L 3.6 1.8 L -3.6 4.6 Z" fill="currentColor" />
+    </>
+  );
+}
+
+/**
  * Engraved flat: tall stem + an open bowl sitting on the notehead's line.
  *
  * The bowl is a RING, drawn as an outer shape with an inner counter subtracted

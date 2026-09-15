@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
-import { SvgSequenceStaff, classifyHeldPitch } from './SvgSequenceStaff.jsx';
+import { SvgSequenceStaff, classifyHeldPitch, sequenceStaffViewBox } from './SvgSequenceStaff.jsx';
 
 // jsdom sees SVG STRUCTURE, never layout: element counts, classes, and the
 // `data-` attributes the component publishes so vertical truth is assertable
@@ -702,5 +702,77 @@ describe('classifyHeldPitch', () => {
   it('an unknown press time falls back to ghost', () => {
     expect(classifyHeldPitch(61, { pressedAt: undefined, cursorArrivedAt: 1000, cursorTargets: targets })).toBe('ghost');
     expect(classifyHeldPitch(61, { pressedAt: 1500, cursorArrivedAt: NaN, cursorTargets: targets })).toBe('ghost');
+  });
+});
+
+// ── Key signature ───────────────────────────────────────────────────────────
+describe('SvgSequenceStaff — key signature', () => {
+  // D major, one octave up: D E F# G A B C# D.
+  const dMajor = notes(62, 64, 66, 67, 69, 71, 73, 74);
+  const marks = (c) => [...c.querySelectorAll('.sequence-staff__signature [data-kind]')];
+  const cursorX = (c) => Number(c.querySelector('.sequence-staff__cursor').getAttribute('x'));
+  const viewBoxW = (c) => Number(c.querySelector('.action-staff__notation-svg').getAttribute('viewBox').split(' ')[2]);
+
+  it('draws nothing extra without a key, and every black key keeps its accidental', () => {
+    const { container } = render(<SvgSequenceStaff notes={dMajor} />);
+    expect(marks(container)).toHaveLength(0);
+    expect(container.querySelectorAll('.action-staff__accidental')).toHaveLength(2);
+  });
+
+  it('draws D major as two sharps after the clef, on F and C, and none beside the notes', () => {
+    const { container } = render(<SvgSequenceStaff notes={dMajor} keySignature="D" />);
+    const drawn = marks(container);
+    expect(drawn.map((m) => m.getAttribute('data-kind'))).toEqual(['sharp', 'sharp']);
+    expect(drawn.map((m) => Number(m.getAttribute('data-line-offset')))).toEqual([8, 5]);
+    // F# and C# are in the signature: no accidental beside either notehead.
+    expect(container.querySelectorAll('.action-staff__accidental')).toHaveLength(0);
+  });
+
+  it('a note the signature alters, played natural, carries a natural sign', () => {
+    // D major with an F natural in it.
+    const { container } = render(<SvgSequenceStaff notes={notes(62, 64, 65)} keySignature="D" />);
+    const accs = [...container.querySelectorAll('.action-staff__accidental')];
+    expect(accs).toHaveLength(1);
+    expect(accs[0].getAttribute('data-kind')).toBe('natural');
+  });
+
+  it('a black key outside the signature still shows its own accidental', () => {
+    // G# in D major.
+    const { container } = render(<SvgSequenceStaff notes={notes(62, 68)} keySignature="D" />);
+    const accs = [...container.querySelectorAll('.action-staff__accidental')];
+    expect(accs.map((a) => a.getAttribute('data-kind'))).toEqual(['sharp']);
+  });
+
+  it('a flat key draws flats, on the bass staff where the bass staff puts them', () => {
+    // Spelled in flats, as the run spells every flat key (`accidentalForKey`).
+    const { container } = render(<SvgSequenceStaff notes={notes(46, 48, 50)} keySignature="Bb" clef="bass" accidental="flat" />);
+    const drawn = marks(container);
+    expect(drawn.map((m) => m.getAttribute('data-kind'))).toEqual(['flat', 'flat']);
+    expect(drawn.map((m) => Number(m.getAttribute('data-line-offset')))).toEqual([2, 5]);
+    expect(container.querySelectorAll('.action-staff__accidental')).toHaveLength(0);
+  });
+
+  it('moves the music right to make room, and the viewBox with it', () => {
+    const plain = render(<SvgSequenceStaff notes={dMajor} />);
+    const keyed = render(<SvgSequenceStaff notes={dMajor} keySignature="D" />);
+    expect(cursorX(keyed.container)).toBeGreaterThan(cursorX(plain.container));
+    expect(viewBoxW(keyed.container)).toBeGreaterThan(viewBoxW(plain.container));
+    // The host sizes its box from the same function, so it must agree.
+    expect(viewBoxW(keyed.container)).toBe(sequenceStaffViewBox(dMajor.length, { keySignature: 'D' }).width);
+    expect(viewBoxW(plain.container)).toBe(sequenceStaffViewBox(dMajor.length).width);
+  });
+
+  it('a ghost under a signature follows the same rule as a notehead', () => {
+    // Cursor on D; F# held off-target in D major draws a ghost with no sharp.
+    const held = new Map([[66, { pressedAt: Date.now() + 1000 }]]);
+    const { container } = render(<SvgSequenceStaff notes={dMajor} keySignature="D" activeNotes={held} />);
+    expect(container.querySelectorAll('.sequence-note-wrong-ghost')).toHaveLength(1);
+    expect(container.querySelectorAll('.sequence-staff__ghost-accidental')).toHaveLength(0);
+  });
+
+  it('C major is a signature of nothing', () => {
+    const { container } = render(<SvgSequenceStaff notes={notes(60, 62)} keySignature="C" />);
+    expect(marks(container)).toHaveLength(0);
+    expect(sequenceStaffViewBox(2, { keySignature: 'C' }).width).toBe(sequenceStaffViewBox(2).width);
   });
 });

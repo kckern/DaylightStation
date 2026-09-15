@@ -1493,6 +1493,40 @@ describe('GameGate — a scale rung with sets and reps', () => {
     expect(readStored('kid1').cleanPasses).toBe(1);
   });
 
+  /**
+   * THE CARD BETWEEN REPS. What used to be a black frame while the next rep
+   * resolved is now the coach: the score, which rep just banked, and the key
+   * of the next one by name. It is a card, not a curtain — the curtain is for
+   * the ninth rep, and nothing opens here.
+   */
+  it('shows the coach card between reps: score, rep banked, and the next key by name', async () => {
+    const { container } = renderGate({ learnerId: 'kid1', gateConfig: RUNG_DRILL_CONFIG });
+    await screen.findByTestId('ask-session');
+
+    fireEvent.click(await screen.findByText('stub-pass'));
+    const card = container.querySelector('.rep-card');
+    expect(card).toBeTruthy();
+    expect(card.textContent).toContain('91%');
+    expect(card.textContent).toContain('Rep 1 of 3');
+    expect(card.textContent).toContain('G major again');
+    expect(container.querySelector('.gate-ceremony')).toBeNull();
+    // It covers the run being re-served, which is what removes the black frame.
+    await waitFor(() => expect(attemptsLogged()).toBe(2));
+    expect(container.querySelector('.rep-card')).toBeTruthy();
+  });
+
+  it('after a set’s last rep the card says the set is clear and names the next key', async () => {
+    const { container } = renderGate({ learnerId: 'kid1', gateConfig: RUNG_DRILL_CONFIG });
+    await screen.findByTestId('ask-session');
+    await passRep();
+    await passRep();
+
+    fireEvent.click(await screen.findByText('stub-pass'));
+    const card = container.querySelector('.rep-card');
+    expect(card.textContent).toContain('Set 1 of 3 clear');
+    expect(card.textContent).toContain('Next: D major');
+  });
+
   it('a rep re-serve spends no rotation: nine reps, one pick', async () => {
     renderGate({ learnerId: 'kid1', gateConfig: RUNG_DRILL_CONFIG });
     await screen.findByTestId('ask-session');

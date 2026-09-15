@@ -568,6 +568,17 @@ The gate asks for material through a provider seam that names four kinds:
   when they run out — and Try again is the SAME rep: the reps already banked at this gate stay
   banked. Walking away closes the gate and the nine with it.
 
+  **Between reps the coach speaks — on a card, not on the run.** The instant a rep passes the
+  next one is dealt, and while its instance resolves the stage has nothing to draw; that frame
+  was a black flash, nine times a drill. `RepInterstitial` stands in it: an opaque card for
+  2.2 seconds saying how that one went (`100%` — a passed rep is the one place a number is
+  wanted, and `failureCoaching`'s no-number rule still holds on the fail panel), which rep
+  or set just banked (`Rep 1 of 3` / `Set 1 of 3 clear`), and what comes next BY NAME
+  (`G major again — rep 2 of 3` / `Next: D major, left hand`). It fades onto the next rep,
+  already on the stand beneath it. The name comes from `describeDrillStep`: a program step's
+  own `display.key`/`hand_label`, else the rung's root and the instance's mode. The ninth rep
+  gets no card; it gets the curtain.
+
   A drill that cannot be reached fails open; a drill id that does not exist, or a program with
   no steps, substitutes. Same two answers as every other kind, for the same reasons.
 
@@ -584,8 +595,9 @@ The gate asks for material through a provider seam that names four kinds:
 
 ### What the run screen says while a child plays one
 
-**At the game gate it says nothing.** The gate run is the music, the keyboard and the set/rep
-pills. There is no framing line ("Play this to start…"), no ask heading, no key or tempo chip,
+**At the game gate it says nothing.** (The coach's card between two reps is not the run —
+it covers the hand-over and is gone before the next rep is played.) The gate run is the
+music, the keyboard and the set/rep pills. There is no framing line ("Play this to start…"), no ask heading, no key or tempo chip,
 no standing instruction ("Play the first note to begin.") and no "Waiting for the piano…" —
 the pills say where the child is, the staff says what to play, and the kiosk's connection
 banner says when the piano has gone. The pills carry no names either: no placard, no key, no
@@ -608,6 +620,15 @@ back. Repeats of a whole arpeggio are not consecutive identical cards, so the ma
 `{ sets, reps, unit }` and the pills read that instead of the events: a rep banks when its last
 key lands, never partway through. The stage shows only the rep being played, so the lit keys,
 the badge row and the reinforcement staff are one shape rather than all nine of them at once.
+
+**A scale stands its key signature after the clef.** The sequence staff engraves the
+instance's key (`instanceKeySignature`, the relative major for a mode) as a signature — the
+sharps or flats in printed order on the printed lines — and drops the accidental beside every
+note the signature covers; a natural on an altered letter gets a natural sign. Reading a
+signature is the skill, so this is on by default for every household. `notation:
+{ keySignature: false }` in the piano YAML (household-wide or per piano) puts every accidental
+back beside its note for a child who has not met signatures yet. C major, and any key the
+table cannot name, draw nothing extra.
 
 **A cued run states the real note rate.** The count-in is a quarter-note pulse, and the
 exercise bank writes its scales in eighths, so "play at that speed" was false for every cued

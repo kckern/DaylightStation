@@ -1,0 +1,75 @@
+// RepInterstitial — the coach's card between two reps of a drill.
+//
+// TIMING IS SHARED WITH THE COMPONENT. RepInterstitial.jsx hands back at
+// REP_CARD_MS (2200). The card is fully opaque from the first frame — it exists
+// to cover the frame where the next rep is still resolving — holds, and fades
+// over the last 300ms onto the rep already mounted beneath it.
+//
+//   0ms                         1900ms      2200ms
+//   |  opaque, text settles in   |   fade    |
+//
+// MOTION: transform and opacity only. Animated `filter` is a known trap in this
+// codebase — low fps, zero long tasks, invisible to every profiler.
+
+.rep-card {
+  --case: var(--pg-case, #16161b);
+  --ivory: var(--pg-ivory, #f1f1f4);
+  --gold: #c9a227;
+  --gold-bright: #e8cf7a;
+
+  position: absolute;
+  inset: 0;
+  // Above the run, below the ceremony (160): the two never share a frame, but
+  // if they ever did the curtain must win.
+  z-index: 150;
+  display: grid;
+  place-content: center;
+  background: var(--case);
+  pointer-events: none;
+  font-family: 'Roboto Condensed', sans-serif;
+  animation: rep-card-out 300ms 1900ms ease-in both;
+
+  &__face {
+    display: grid;
+    justify-items: center;
+    gap: 0.35rem;
+    animation: rep-card-in 260ms ease-out both;
+  }
+
+  &__eyebrow {
+    font-size: 0.82rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--gold-bright) 62%, transparent);
+  }
+
+  &__headline {
+    font-size: 5.2rem;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.02em;
+    color: var(--gold);
+  }
+
+  &__line {
+    font-size: 1.7rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--ivory);
+  }
+}
+
+@keyframes rep-card-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes rep-card-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rep-card,
+  .rep-card__face { animation-duration: 1ms; }
+}
