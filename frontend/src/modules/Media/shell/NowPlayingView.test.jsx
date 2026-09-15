@@ -7,10 +7,11 @@ const transport = {
   seekAbs: vi.fn(), seekRel: vi.fn(), skipNext: vi.fn(), skipPrev: vi.fn(),
 };
 const config = { setShuffle: vi.fn(), setRepeat: vi.fn(), setVolume: vi.fn() };
-const state = { snapshot: null };
+const state = { snapshot: null, mediaElement: null };
+const hostClaimSpy = vi.fn();
 vi.mock('../controller/useSessionController.js', () => ({
   useSessionController: () => ({
-    controller: {},
+    controller: { getMediaElement: () => state.mediaElement },
     snapshot: state.snapshot,
     transport,
     config,
@@ -21,7 +22,7 @@ vi.mock('../controller/useSessionController.js', () => ({
 vi.mock('../controller/usePlaybackPosition.js', () => ({
   usePlaybackPosition: () => ({ seconds: 30, ts: 0 }),
 }));
-vi.mock('../session/usePlayerHost.js', () => ({ usePlayerHost: () => {} }));
+vi.mock('../session/usePlayerHost.js', () => ({ usePlayerHost: (...args) => hostClaimSpy(...args) }));
 const pop = vi.fn();
 vi.mock('./NavProvider.jsx', () => ({ useNav: () => ({ pop, push: vi.fn(), view: 'nowPlaying' }) }));
 vi.mock('./QueuePanel.jsx', () => ({ QueuePanel: () => <div data-testid="queue-stub" /> }));
@@ -57,6 +58,7 @@ function makeSnapshot({ item, index = 1, containerTitle = 'Primary Songs' } = {}
 beforeEach(() => {
   vi.clearAllMocks();
   state.snapshot = makeSnapshot();
+  state.mediaElement = null;
 });
 
 describe('NowPlayingView', () => {
@@ -114,5 +116,24 @@ describe('NowPlayingView', () => {
     render(<NowPlayingView />);
     fireEvent.click(screen.getByTestId('now-playing-back'));
     expect(pop).toHaveBeenCalledTimes(1);
+  });
+
+  it('expands with the exact accessible control, requests focused rendering, and keeps Stop reachable', () => {
+    render(<NowPlayingView />);
+    expect(screen.getByRole('button', { name: 'Expand video', exact: true })).toBeVisible();
+    expect(hostClaimSpy).toHaveBeenLastCalledWith(expect.any(Object), 2, true, { forceShader: null });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand video', exact: true }));
+
+    expect(screen.getByRole('button', { name: 'Shrink video', exact: true })).toBeVisible();
+    expect(screen.getByTestId('now-playing-view')).toHaveClass('now-playing-view--expanded');
+    expect(hostClaimSpy).toHaveBeenLastCalledWith(expect.any(Object), 2, true, { forceShader: 'focused' });
+    expect(screen.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
+  });
+
+  it('uses the controller media accessor so DASH shadow media gets the speed control', () => {
+    state.mediaElement = { playbackRate: 1 };
+    render(<NowPlayingView />);
+    expect(screen.getByTestId('np-rate')).toBeInTheDocument();
   });
 });

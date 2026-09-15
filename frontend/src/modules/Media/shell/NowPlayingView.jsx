@@ -6,7 +6,7 @@
 // transport. Playback-speed control gets the portaled media element found
 // inside the claimed host (the only rate pathway; see TransportBar).
 import React, { useEffect, useRef, useState } from 'react';
-import { IconMusic } from '@tabler/icons-react';
+import { IconArrowsMinimize, IconMaximize, IconMusic } from '@tabler/icons-react';
 import { useSessionController } from '../controller/useSessionController.js';
 import { usePlayerHost } from '../session/usePlayerHost.js';
 import { useNav } from './NavProvider.jsx';
@@ -24,10 +24,12 @@ const MEDIA_EL_GIVE_UP_MS = 15000;
 // The Player portals into the claimed host asynchronously; poll briefly for
 // its media element so the speed control can attach. Non-media renderers
 // (iframes, images) never produce one — the control simply stays hidden.
-function useHostMediaElement(hostRef, itemKey) {
+function useHostMediaElement(controller, hostRef, itemKey) {
   const [el, setEl] = useState(null);
   useEffect(() => {
-    const find = () => hostRef.current?.querySelector?.('video, audio') ?? null;
+    const find = () => controller?.getMediaElement?.()
+      ?? hostRef.current?.querySelector?.('video, audio')
+      ?? null;
     const first = find();
     setEl(first);
     if (first) return undefined;
@@ -37,17 +39,20 @@ function useHostMediaElement(hostRef, itemKey) {
     }, MEDIA_EL_POLL_MS);
     const giveUp = setTimeout(() => clearInterval(poll), MEDIA_EL_GIVE_UP_MS);
     return () => { clearInterval(poll); clearTimeout(giveUp); };
-  }, [hostRef, itemKey]);
+  }, [controller, hostRef, itemKey]);
   return el;
 }
 
 export function NowPlayingView() {
-  const { snapshot, portability } = useSessionController('local');
+  const { controller, snapshot, portability } = useSessionController('local');
   const item = snapshot?.currentItem;
   const hostRef = useRef(null);
-  usePlayerHost(hostRef, 2);
-  const mediaEl = useHostMediaElement(hostRef, item?.contentId ?? null);
+  const [expanded, setExpanded] = useState(false);
+  usePlayerHost(hostRef, 2, true, { forceShader: expanded ? 'focused' : null });
+  const mediaEl = useHostMediaElement(controller, hostRef, item?.contentId ?? null);
   const { pop } = useNav();
+
+  useEffect(() => setExpanded(false), [item?.contentId]);
 
   // The queue entry behind the current item carries display context the slim
   // currentItem does not (containerTitle = the show/album it expanded from).
@@ -67,9 +72,17 @@ export function NowPlayingView() {
     : null;
   const durationLabel = item?.duration ? formatTime(item.duration) : null;
   const metaSubParts = [positionLabel, durationLabel].filter(Boolean);
+  const isVideo = item?.format === 'video'
+    || item?.format === 'dash_video'
+    || item?.mediaType === 'video'
+    || item?.mediaType === 'dash_video'
+    || mediaEl?.tagName === 'VIDEO';
 
   return (
-    <div data-testid="now-playing-view" className="now-playing-view">
+    <div
+      data-testid="now-playing-view"
+      className={`now-playing-view ${expanded ? 'now-playing-view--expanded' : ''}`}
+    >
       <div className="now-playing-toolbar">
         <button
           type="button"
@@ -79,9 +92,22 @@ export function NowPlayingView() {
         >
           ← Back
         </button>
-        <span className="np-state" data-testid="np-state" data-state={snapshot?.state ?? ''}>
-          {playbackStateLabel(snapshot?.state)}
-        </span>
+        <div className="np-toolbar-status">
+          <span className="np-state" data-testid="np-state" data-state={snapshot?.state ?? ''}>
+            {playbackStateLabel(snapshot?.state)}
+          </span>
+          {item && isVideo && (
+            <button
+              type="button"
+              className="np-expand-btn"
+              aria-label={expanded ? 'Shrink video' : 'Expand video'}
+              onClick={() => setExpanded((value) => !value)}
+            >
+              {expanded ? <IconArrowsMinimize size={20} /> : <IconMaximize size={20} />}
+              <span>{expanded ? 'Shrink video' : 'Expand video'}</span>
+            </button>
+          )}
+        </div>
       </div>
 
       <h1
@@ -96,7 +122,7 @@ export function NowPlayingView() {
 
       {item && (
         <>
-          <div className="np-meta" data-testid="np-meta">
+          {!expanded && <div className="np-meta" data-testid="np-meta">
             {item.thumbnail ? (
               <img className="np-art" data-testid="np-meta-art" src={item.thumbnail} alt="" loading="lazy" />
             ) : (
@@ -120,15 +146,15 @@ export function NowPlayingView() {
                 </span>
               )}
             </div>
-          </div>
+          </div>}
           <SeekBar target="local" />
           <TransportBar target="local" mediaEl={mediaEl} />
         </>
       )}
 
-      <QueuePanel target="local" />
+      {!expanded && <QueuePanel target="local" />}
 
-      {item && (
+      {item && !expanded && (
         <div className="handoff-section" data-testid="handoff-section">
           <div className="np-handoff-label">Send to another device</div>
           <DispatchTargetPicker

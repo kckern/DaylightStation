@@ -175,6 +175,13 @@ describe('MiniPlayer', () => {
     expect(document.querySelector('.mini-player-thumb')).toBeNull();
   });
 
+  it('docks a resolved DASH video while browsing', () => {
+    state.snapshot = makeSnapshot({ format: 'dash_video' });
+    nav.view = 'home';
+    renderMiniPlayer();
+    expect(screen.getByTestId('mini-player-video-dock')).toBeInTheDocument();
+  });
+
   it('clicking the docked video promotes to Now Playing', () => {
     state.snapshot = makeSnapshot({ format: 'video' });
     nav.view = 'home';

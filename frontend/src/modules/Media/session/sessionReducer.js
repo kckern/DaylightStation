@@ -37,6 +37,10 @@ function nextUpdatedAt(prev) {
   return new Date(ms).toISOString();
 }
 
+function sameOwnFields(value, patch) {
+  return Object.entries(patch).every(([key, next]) => value?.[key] === next);
+}
+
 export function reduce(snapshot, action) {
   switch (action.type) {
     case 'LOAD_ITEM':
@@ -49,6 +53,28 @@ export function reduce(snapshot, action) {
     case 'PLAYER_STATE': {
       const mapped = PLAYER_STATE_MAP[action.playerState] ?? snapshot.state;
       return touch(snapshot, { state: mapped });
+    }
+
+    case 'PLAYER_OBSERVATION': {
+      if (!snapshot.currentItem || snapshot.currentItem.contentId !== action.contentId) return snapshot;
+      const itemPatch = action.itemPatch ?? {};
+      const mappedState = action.playerState == null
+        ? snapshot.state
+        : (PLAYER_STATE_MAP[action.playerState] ?? snapshot.state);
+      const itemChanged = !sameOwnFields(snapshot.currentItem, itemPatch);
+      const stateChanged = mappedState !== snapshot.state;
+      if (!itemChanged && !stateChanged) return snapshot;
+
+      const currentItem = itemChanged ? { ...snapshot.currentItem, ...itemPatch } : snapshot.currentItem;
+      const queueIndex = snapshot.queue.currentIndex;
+      const queueEntry = queueIndex >= 0 ? snapshot.queue.items[queueIndex] : null;
+      let queue = snapshot.queue;
+      if (itemChanged && queueEntry?.contentId === action.contentId && !sameOwnFields(queueEntry, itemPatch)) {
+        const items = [...snapshot.queue.items];
+        items[queueIndex] = { ...queueEntry, ...itemPatch };
+        queue = { ...snapshot.queue, items };
+      }
+      return touch(snapshot, { state: mappedState, currentItem, queue });
     }
 
     case 'UPDATE_POSITION':

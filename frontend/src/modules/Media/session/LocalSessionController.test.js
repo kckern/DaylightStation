@@ -58,19 +58,20 @@ describe('LocalSessionController — bootstrap', () => {
 });
 
 describe('LocalSessionController — transport', () => {
-  it('pause updates state; play/pause/seek reach the player handle', () => {
+  it('play/pause/seek issue commands without claiming an unobserved state or position', () => {
     const c = makeController();
     const handle = { play: vi.fn(), pause: vi.fn(), seek: vi.fn() };
     c.setPlayerHandle(handle);
     c.store.dispatch({ type: 'LOAD_ITEM', item: { contentId: 'p:1', format: 'video' } });
     c.store.dispatch({ type: 'PLAYER_STATE', playerState: 'playing' });
     c.transport.pause();
-    expect(c.getSnapshot().state).toBe('paused');
+    expect(c.getSnapshot().state).toBe('playing');
     expect(handle.pause).toHaveBeenCalled();
     c.transport.play();
     expect(handle.play).toHaveBeenCalled();
     c.transport.seekAbs(30);
     expect(handle.seek).toHaveBeenCalledWith(30);
+    expect(c.position.get().seconds).toBe(0);
   });
 
   // 2026-08-12: play() claimed 'playing' the instant it was called, so the app
@@ -90,14 +91,23 @@ describe('LocalSessionController — transport', () => {
     expect(c.getSnapshot().state).toBe('playing');
   });
 
-  it('resuming a paused item claims playing immediately — no spinner flicker', () => {
+  it('repeated Play while already playing does not re-enter loading or arm startup recovery', () => {
     const c = makeController();
     c.setPlayerHandle({ play: vi.fn(), pause: vi.fn(), seek: vi.fn() });
     c.store.dispatch({ type: 'LOAD_ITEM', item: { contentId: 'p:1', format: 'video' } });
     c.store.dispatch({ type: 'PLAYER_STATE', playerState: 'playing' });
-    c.transport.pause();
-    expect(c.getSnapshot().state).toBe('paused');
     c.transport.play();
+    expect(c.getSnapshot().state).toBe('playing');
+  });
+
+  it('resume stays paused until the Player reports actual playback', () => {
+    const c = makeController();
+    c.setPlayerHandle({ play: vi.fn(), pause: vi.fn(), seek: vi.fn() });
+    c.store.dispatch({ type: 'LOAD_ITEM', item: { contentId: 'p:1', format: 'video' } });
+    c.onPlayerStateChange('paused', 'p:1');
+    c.transport.play();
+    expect(c.getSnapshot().state).toBe('paused');
+    c.onPlayerStateChange('playing', 'p:1');
     expect(c.getSnapshot().state).toBe('playing');
   });
 
@@ -109,13 +119,18 @@ describe('LocalSessionController — transport', () => {
     expect(c.getSnapshot().currentItem).toBeNull();
   });
 
-  it('seekAbs writes both tiers; seekRel resolves from the hot tier', () => {
+  it('seek position changes only after real Player evidence; seekRel resolves from the hot tier', () => {
     const c = makeController();
+    const handle = { play: vi.fn(), pause: vi.fn(), seek: vi.fn() };
+    c.setPlayerHandle(handle);
     c.transport.seekAbs(60);
-    expect(c.getSnapshot().position).toBe(60);
-    expect(c.position.get().seconds).toBe(60);
+    expect(handle.seek).toHaveBeenCalledWith(60);
+    expect(c.getSnapshot().position).toBe(0);
+    expect(c.position.get().seconds).toBe(0);
+    c.onPlayerPositionTick(60);
     c.transport.seekRel(-15);
-    expect(c.getSnapshot().position).toBe(45);
+    expect(handle.seek).toHaveBeenLastCalledWith(45);
+    expect(c.position.get().seconds).toBe(60);
   });
 });
 
@@ -224,6 +239,40 @@ describe('LocalSessionController — config + lifecycle', () => {
 });
 
 describe('LocalSessionController — player events', () => {
+  it('reconciles observed metadata into current item and its queue entry without changing identity', () => {
+    const c = makeController();
+    c.queue.playNow({ contentId: 'plex:1', title: 'Disclosure Day', duration: null, format: null });
+    const originalQueueItemId = c.getSnapshot().queue.items[0].queueItemId;
+
+    c.onPlayerObservation('plex:1', {
+      duration: 5400,
+      media: { contentId: 'plex:1', format: 'video', mediaType: 'dash_video', isLive: false },
+    });
+
+    expect(c.getSnapshot().currentItem).toEqual(expect.objectContaining({
+      contentId: 'plex:1', duration: 5400, format: 'video', mediaType: 'dash_video', isLive: false,
+    }));
+    expect(c.getSnapshot().queue.items[0]).toEqual(expect.objectContaining({
+      queueItemId: originalQueueItemId, contentId: 'plex:1', duration: 5400, format: 'video', mediaType: 'dash_video',
+    }));
+  });
+
+  it('rejects observations and terminal callbacks from stale content identity', () => {
+    const c = makeController();
+    c.queue.add({ contentId: 'a', format: 'video' });
+    c.queue.add({ contentId: 'b', format: 'video' });
+    c.queue.jump(c.getSnapshot().queue.items[1].queueItemId);
+
+    c.onPlayerObservation('a', { duration: 900, paused: false });
+    c.onPlayerPositionTick(45, 'a');
+    c.onPlayerEnded('a');
+
+    expect(c.getSnapshot().currentItem.contentId).toBe('b');
+    expect(c.getSnapshot().currentItem.duration).toBeNull();
+    expect(c.position.get().seconds).toBe(0);
+    expect(c.getSnapshot().state).toBe('loading');
+  });
+
   it('onPlayerEnded auto-advances sequentially', () => {
     const c = makeController();
     c.queue.add({ contentId: 'a', format: 'video' });
@@ -332,10 +381,22 @@ describe('LocalSessionController — logging parity', () => {
 });
 
 describe('LocalSessionController — capabilities', () => {
+  it('does not invent seekability before a finite positive duration is observed', () => {
+    const c = makeController();
+    c.queue.playNow({ contentId: 'vod:1', format: 'video', duration: null });
+    expect(c.capabilities.seekable).toBe(false);
+    c.onPlayerObservation('vod:1', { duration: 0 });
+    expect(c.capabilities.seekable).toBe(false);
+    c.onPlayerObservation('vod:1', { duration: Number.POSITIVE_INFINITY });
+    expect(c.capabilities.seekable).toBe(false);
+    c.onPlayerObservation('vod:1', { duration: 120 });
+    expect(c.capabilities.seekable).toBe(true);
+  });
+
   it('seekable is false for live content', () => {
     const c = makeController();
-    expect(c.capabilities.seekable).toBe(true);
-    c.store.dispatch({ type: 'LOAD_ITEM', item: { contentId: 'cam:1', format: 'video', isLive: true } });
+    expect(c.capabilities.seekable).toBe(false);
+    c.store.dispatch({ type: 'LOAD_ITEM', item: { contentId: 'cam:1', format: 'video', isLive: true, duration: 120 } });
     expect(c.capabilities.seekable).toBe(false);
   });
 });

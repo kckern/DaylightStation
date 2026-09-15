@@ -19,7 +19,7 @@ import React, { useContext, useEffect, useState, useCallback, useRef, useMemo } 
 import { createPortal } from 'react-dom';
 import Player from '../../Player/Player.jsx';
 import { LocalSessionContext } from './LocalSessionContext.js';
-import { PlayerHostContext } from './playerHostContext.js';
+import { PlayerHostContext, PlayerHostPresentationContext } from './playerHostContext.js';
 import { TIMING } from '../constants.js';
 
 export function PlayerBridge() {
@@ -32,7 +32,6 @@ export function PlayerBridge() {
   // Normal advancement loads items with position 0, so this is 0 for them.
   const startSecondsRef = useRef(controller.getSnapshot().position ?? 0);
   const lastPersistedPosition = useRef(0);
-  const hasStartedRef = useRef(false);
   const stallTimerRef = useRef(null);
   const stallStartedAtRef = useRef(null);
   const playerRef = useRef(null);
@@ -43,6 +42,7 @@ export function PlayerBridge() {
       play: () => playerRef.current?.play?.(),
       pause: () => playerRef.current?.pause?.(),
       seek: (t) => playerRef.current?.seek?.(t),
+      getMediaElement: () => playerRef.current?.getMediaElement?.() ?? null,
     });
     return () => controller.setPlayerHandle({});
   }, [controller]);
@@ -86,10 +86,11 @@ export function PlayerBridge() {
       const next = snap.currentItem;
       setCurrentItem((prev) => {
         if (prev === next) return prev;
-        if (prev && next && prev.contentId === next.contentId && prev.format === next.format
-            && prev.title === next.title && prev.duration === next.duration
-            && prev.thumbnail === next.thumbnail) {
-          return prev; // same content, ignore new reference
+        if (prev && next && prev.contentId === next.contentId) {
+          // Resolved duration/format/title are session metadata, not playback
+          // identity. Keep the original object handed to Player so enrichment
+          // cannot restart the media or reapply its start position.
+          return prev;
         }
         // New item: its start position is whatever the snapshot carries at
         // adoption time (persisted resume, claimed take-over, or 0).
@@ -104,7 +105,6 @@ export function PlayerBridge() {
   // Reset per-item progress gating when the current item changes.
   useEffect(() => {
     lastPersistedPosition.current = 0;
-    hasStartedRef.current = false;
     if (stallTimerRef.current) {
       clearTimeout(stallTimerRef.current);
       stallTimerRef.current = null;
@@ -112,23 +112,24 @@ export function PlayerBridge() {
     }
   }, [currentItem?.contentId]);
 
-  const onClear = useCallback(() => controller.onPlayerEnded(), [controller]);
+  const contentId = currentItem?.contentId ?? null;
+  const onClear = useCallback(() => controller.onPlayerEnded(contentId), [controller, contentId]);
 
   // Player emits onProgress with { currentTime, paused, isSeeking, stalled }.
   const onProgress = useCallback((payload) => {
+    if (!contentId || controller.getSnapshot().currentItem?.contentId !== contentId) return;
+    if (typeof payload === 'object' && payload !== null) {
+      controller.onPlayerObservation?.(contentId, payload);
+    }
     const positionSeconds = typeof payload === 'number'
       ? payload
       : payload?.currentTime ?? payload?.seconds;
     if (typeof positionSeconds !== 'number' || !Number.isFinite(positionSeconds)) return;
 
     const isPaused = typeof payload === 'object' && payload !== null ? payload.paused : false;
-    if (!hasStartedRef.current && !isPaused) {
-      hasStartedRef.current = true;
-      controller.onPlayerStateChange('playing');
-    }
 
     // Stall detection — suppressed for live content (no progress contract).
-    const isLive = !!currentItem?.isLive;
+    const isLive = !!controller.getSnapshot().currentItem?.isLive;
     const isStalled = typeof payload === 'object' && payload !== null ? !!payload.stalled : false;
     if (isStalled && !isPaused && !isLive) {
       if (!stallTimerRef.current) {
@@ -150,15 +151,62 @@ export function PlayerBridge() {
     // Hot tier — suppressed while seeking so pre-seek ticks don't snap the
     // seek bar back to the old position.
     const isSeeking = typeof payload === 'object' && payload !== null ? !!payload.isSeeking : false;
-    if (!isSeeking) controller.onPlayerPositionTick(positionSeconds);
+    if (!isSeeking) controller.onPlayerPositionTick(positionSeconds, contentId);
 
     // Durable tier — ≥5s cadence.
     const delta = Math.abs(positionSeconds - lastPersistedPosition.current);
     if (delta >= TIMING.POSITION_PERSIST_INTERVAL_S) {
-      controller.onPlayerProgress(positionSeconds);
+      controller.onPlayerProgress(positionSeconds, contentId);
       lastPersistedPosition.current = positionSeconds;
     }
-  }, [controller, currentItem?.isLive]);
+  }, [controller, contentId]);
+
+  // Player's imperative accessor resolves the native media node even for DASH,
+  // where the <video> lives inside <dash-video>'s shadow root. Bind discrete
+  // native events so pause/resume and duration are observed even when no
+  // timeupdate happens at that boundary. Keep polling to follow a resilience
+  // replacement of the inner element without creating a second player.
+  useEffect(() => {
+    if (!contentId) return undefined;
+    let bound = null;
+    let detach = () => {};
+
+    const bind = () => {
+      const next = playerRef.current?.getMediaElement?.() ?? null;
+      if (next === bound) return;
+      detach();
+      bound = next;
+      if (!bound) { detach = () => {}; return; }
+
+      const observeDuration = () => controller.onPlayerObservation?.(contentId, {
+        duration: bound.duration,
+      });
+      const observePaused = () => {
+        if (!bound.ended) controller.onPlayerStateChange('paused', contentId);
+      };
+      const observePlaying = () => controller.onPlayerStateChange('playing', contentId);
+      const observeWaiting = () => {
+        if (!bound.paused) controller.onPlayerStateChange('buffering', contentId);
+      };
+      bound.addEventListener('loadedmetadata', observeDuration);
+      bound.addEventListener('durationchange', observeDuration);
+      bound.addEventListener('pause', observePaused);
+      bound.addEventListener('playing', observePlaying);
+      bound.addEventListener('waiting', observeWaiting);
+      observeDuration();
+      detach = () => {
+        bound?.removeEventListener('loadedmetadata', observeDuration);
+        bound?.removeEventListener('durationchange', observeDuration);
+        bound?.removeEventListener('pause', observePaused);
+        bound?.removeEventListener('playing', observePlaying);
+        bound?.removeEventListener('waiting', observeWaiting);
+      };
+    };
+
+    bind();
+    const poll = setInterval(bind, TIMING.VOLUME_APPLY_RETRY_MS);
+    return () => { clearInterval(poll); detach(); };
+  }, [controller, contentId]);
 
   // Stable play prop across re-renders of the same item. The platform
   // Player honors `seconds` as the start offset.
@@ -169,6 +217,7 @@ export function PlayerBridge() {
   }, [currentItem]);
 
   const hostEl = useContext(PlayerHostContext);
+  const { forceShader } = useContext(PlayerHostPresentationContext);
 
   // The Player ALWAYS portals into this one node, which React never reconciles
   // away, and the node is re-parented imperatively as views claim/release the
@@ -215,7 +264,14 @@ export function PlayerBridge() {
     /* ignoreKeys: the Player's global hotkeys (Space/Tab/Backspace/arrows)
        are for kiosk surfaces with no text inputs or tab order. This app
        has a search box and full transport UI — it owns its keys. */
-    <Player ref={playerRef} play={playProp} clear={onClear} onProgress={onProgress} ignoreKeys />,
+    <Player
+      ref={playerRef}
+      play={playProp}
+      clear={onClear}
+      onProgress={onProgress}
+      forceShader={forceShader ?? undefined}
+      ignoreKeys
+    />,
     hostNodeRef.current
   );
 }

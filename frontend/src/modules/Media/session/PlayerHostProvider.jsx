@@ -3,8 +3,12 @@
 // the highest-priority active claim becomes PlayerHostContext, which PlayerBridge
 // portals the single Player instance into.
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { PlayerHostContext, PlayerHostRegistryContext } from './playerHostContext.js';
-import { resolveActiveHost } from './playerHostRegistry.js';
+import {
+  PlayerHostContext,
+  PlayerHostPresentationContext,
+  PlayerHostRegistryContext,
+} from './playerHostContext.js';
+import { resolveActiveHostClaim } from './playerHostRegistry.js';
 import mediaLog from '../logging/mediaLog.js';
 
 // A host transition is the single most consequential event in the playback
@@ -25,9 +29,13 @@ export function PlayerHostProvider({ children }) {
   const seqRef = useRef(0);
   const [activeHost, setActiveHost] = useState(null);
   const activeHostRef = useRef(null);
+  const [forceShader, setForceShader] = useState(null);
+  const forceShaderRef = useRef(null);
 
   const recompute = useCallback((reason, id) => {
-    const next = resolveActiveHost([...claimsRef.current.values()]);
+    const activeClaim = resolveActiveHostClaim([...claimsRef.current.values()]);
+    const next = activeClaim?.el ?? null;
+    const nextForceShader = activeClaim?.forceShader ?? null;
     const prev = activeHostRef.current;
     if (next !== prev) {
       activeHostRef.current = next;
@@ -41,11 +49,20 @@ export function PlayerHostProvider({ children }) {
       });
     }
     setActiveHost(next);
+    if (nextForceShader !== forceShaderRef.current) {
+      forceShaderRef.current = nextForceShader;
+      setForceShader(nextForceShader);
+    }
   }, []);
 
-  const claim = useCallback((id, el, priority) => {
+  const claim = useCallback((id, el, priority, presentation = {}) => {
     if (el == null) claimsRef.current.delete(id);
-    else claimsRef.current.set(id, { el, priority, seq: ++seqRef.current });
+    else claimsRef.current.set(id, {
+      el,
+      priority,
+      seq: ++seqRef.current,
+      forceShader: presentation.forceShader ?? null,
+    });
     recompute('claim', id);
   }, [recompute]);
 
@@ -57,9 +74,11 @@ export function PlayerHostProvider({ children }) {
 
   return (
     <PlayerHostContext.Provider value={activeHost}>
-      <PlayerHostRegistryContext.Provider value={registry}>
-        {children}
-      </PlayerHostRegistryContext.Provider>
+      <PlayerHostPresentationContext.Provider value={{ forceShader }}>
+        <PlayerHostRegistryContext.Provider value={registry}>
+          {children}
+        </PlayerHostRegistryContext.Provider>
+      </PlayerHostPresentationContext.Provider>
     </PlayerHostContext.Provider>
   );
 }

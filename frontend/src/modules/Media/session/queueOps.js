@@ -39,6 +39,8 @@ function toQueueItem(input, { priority = 'queue' } = {}) {
     // above — omitted when absent so non-music items are unchanged.
     ...(input.artist != null ? { artist: input.artist } : {}),
     ...(input.album != null ? { album: input.album } : {}),
+    ...(input.mediaType != null ? { mediaType: input.mediaType } : {}),
+    ...(input.isLive != null ? { isLive: !!input.isLive } : {}),
   };
 }
 
@@ -65,6 +67,8 @@ function itemFields(entry) {
     ...(entry.containerTitle != null ? { containerTitle: entry.containerTitle } : {}),
     ...(entry.artist != null ? { artist: entry.artist } : {}),
     ...(entry.album != null ? { album: entry.album } : {}),
+    ...(entry.mediaType != null ? { mediaType: entry.mediaType } : {}),
+    ...(entry.isLive != null ? { isLive: !!entry.isLive } : {}),
   };
 }
 
