@@ -440,3 +440,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-14 | fix/ladder-caps | 60593460a | Sentence Ladder: rungs capped at dailyLimit (day = sentences x rungs), pace squared with enrollment (merged to main) |
 | 2026-09-14 | feature/decoder-color-flicker | 301c564c7 | Decoder segments flicker within their color family (8 signal / 7 mask, red-channel rule tested), B no longer matches 8, /dev/decoder-swatches card check (merged to main) |
 | 2026-09-14 | fix/remote-controls-svg | 9359ed74b | Remote select never clicks an SVG href (Charades 'click is not a function') (merged to main) |
+| 2026-09-14 | feat/secret-text-motion | 057634855 | Segmented decoder: card jumps every second, jet black mask, touching letter segments never match, 1s flicker; Charades test races (merged to main) |
