@@ -5,8 +5,8 @@ import { normalizeMaskPixels } from './decoderPixels.js';
 
 const logger = getChildLogger({ component: 'party-games-decoder' });
 
-export function DecoderText({ children, accessibleText = 'Encoded clue for the performer' }) {
-  return <SegmentedSecretText text={children} label="Activity clue" accessibleText={accessibleText} />;
+export function DecoderText({ children, accessibleText = 'Encoded clue for the performer', decoder = null }) {
+  return <SegmentedSecretText text={children} label="Activity clue" accessibleText={accessibleText} decoder={decoder} />;
 }
 
 export function HighContrastMask({ src, alt = '' }) {

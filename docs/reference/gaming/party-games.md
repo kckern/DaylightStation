@@ -27,26 +27,62 @@ brightness, so brightness alone does not mark the letters. Hex values live in
 and `segmentedSecretPalette.test.js` fails if a color breaks the red-channel
 rule.
 
-**Once a second, everything changes at once.** On a single tick the whole card
-jumps to its next position and every segment takes a new color in its own
-family, so a viewer who stares and squints never holds a steady image or a
-steady color map to sort by. The position follows `ImageDecoderDisplay`
-(`segmentedSecretMotion.js`): the card alternates between −2% and +2% of its
-own width, so every tick moves it most of a glyph, with a seeded vertical offset
-within ±10% of its height. The path is seeded by the clue and restarts with
-each new clue. It snaps rather than glides. The offsets are small because the
-card is nearly the full stage width: the image decoder's ±35% would push it off
-the TV.
+**The clue is never shown steadily.** One engine in `SegmentedSecretText` runs
+on a single clock. Each step it decides which letters show, lights those
+letters' segments warm and everything else cool, and gives every segment a new
+color. Every `motion_ms` it also jumps the card. Three reveal modes
+(`segmentedSecretReveal.js`):
+
+- **progressive** (default) — a typewriter loop. It starts with a cursor, the
+  cell's two bottom segments lit warm, then adds one character per step with
+  the cursor moving ahead. Once the whole clue shows, it hides first-to-last at
+  the same pace, then starts again. Lines are typed in reading order.
+- **marquee** — each line scrolls right to left through its own cells: in from
+  the right, held fully visible, out to the left, then an empty gap before it
+  comes round again. Lines share one schedule sized to the longest.
+- **static** — the whole clue, always. Colors shuffle with the position jump.
+
+A hidden letter is never a blank cell: its cell stays fully lit in mask colors,
+so the clue's length and word gaps never show. The cursor is warm, so it also
+shows only through the red card. The engine is a layout effect, so the first
+frame (cursor only) is on screen before the browser paints and the clue never
+flashes up.
+
+The display is configured per game under `decoder:` in its rules file
+(`gaming/games/<id>/rules.yml`). Every key is optional; missing keys take the
+defaults in `DECODER_DEFAULTS`:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `reveal` | `progressive` | `progressive`, `marquee` or `static` |
+| `step_ms` | `250` | one reveal or scroll step and one color shuffle (static mode shuffles every `motion_ms`) |
+| `motion` | `true` | jump the card's position |
+| `motion_ms` | `1000` | time between position jumps (every fourth step at the defaults) |
+| `marquee_hold_steps` | `4` | steps held fully visible (1s at the defaults) |
+| `marquee_gap_steps` | `4` | empty steps before the text comes round again (a four-glyph gap) |
+
+The Activity Party ruleset validates the block (`validateActivityPartyDefinition`
+fails closed on a bad value) and projects it to the screen as authored. Charades
+and Activity Party pass it to the decoder. `/dev/decoder-swatches?mode=marquee`
+(or `progressive`, `static`) tries a mode on the live sample.
+
+The position follows `ImageDecoderDisplay` (`segmentedSecretMotion.js`): the
+card alternates between −2% and +2% of its own width, so every jump moves it
+most of a glyph, with a seeded vertical offset within ±10% of its height. The
+path is seeded by the clue and restarts with each new clue. It snaps rather than
+glides. The offsets are small because the card is nearly the full stage width:
+the image decoder's ±35% would push it off the TV.
 
 A color change never crosses families, so the view through the filter is
 constant. Letter segments that touch — ends meeting at a joint, including pairs
 split by the middle joint such as the upper and lower right side
 (`SEGMENT_NEIGHBORS`) — never share a color: not on first draw, not after a
-tick, and not when a new clue reuses a segment. Segments are recolored in order,
-each avoiding the colors its touching neighbours hold at that moment
+step, and not when a new clue reuses a segment. Segments are recolored in order,
+each avoiding the colors its touching lit neighbours hold at that moment
 (`nextColorIndex` in `segmentFlicker.js`). Position and colors are written
 straight to the DOM rather than re-rendering glyphs. Under
-`prefers-reduced-motion` the card stays centred and the colors stay still.
+`prefers-reduced-motion` every mode shows the whole clue, centred, with the
+colors still.
 
 `/dev/decoder-swatches` shows every palette color and a live sample; open it on
 the target screen and hold up the physical red card to confirm each warm bar

@@ -1,9 +1,10 @@
-import React, { useEffect, useRef } from 'react';
+import React, { memo, useLayoutEffect, useRef } from 'react';
 import { getChildLogger } from '../../../../lib/logging/singleton.js';
 import { SEGMENTS, SEGMENT_NEIGHBORS, activeSegmentsFor, segmentNames, segmentPoints } from './segmentedSecretGeometry.js';
 import { MASK_SEGMENT_COLORS, SIGNAL_SEGMENT_COLORS, segmentColorValue } from './segmentedSecretPalette.js';
 import { nextColorIndex } from './segmentFlicker.js';
-import { SECRET_TEXT_MOTION_MS, generateSecretTextMotion } from './segmentedSecretMotion.js';
+import { generateSecretTextMotion } from './segmentedSecretMotion.js';
+import { CURSOR_SEGMENTS, decoderSettings, revealFrame } from './segmentedSecretReveal.js';
 import './SegmentedSecretText.scss';
 
 // A physical red decoder filter preserves the warm signal segments while
@@ -14,6 +15,9 @@ import './SegmentedSecretText.scss';
 const SIGNAL_COLORS = Object.freeze(SIGNAL_SEGMENT_COLORS.map(segmentColorValue));
 const MASK_COLORS = Object.freeze(MASK_SEGMENT_COLORS.map(segmentColorValue));
 const TARGET_LINE_LENGTH = 18;
+const CURSOR = new Set(CURSOR_SEGMENTS);
+const NOTHING = new Set();
+const STATIC = decoderSettings({ reveal: 'static' });
 
 let _logger;
 function logger() {
@@ -56,86 +60,112 @@ export function balanceSecretLines(text, targetLength = TARGET_LINE_LENGTH) {
   return lines.map(line => line.trim());
 }
 
-// ONE TICK, EVERYTHING AT ONCE. Every second the card jumps to its next seeded
-// position (alternating edges, following ImageDecoderDisplay) and every segment
-// takes a new color in its own family on that same tick, so a viewer who stares
-// and squints never holds a steady image or a steady color map to sort by.
-// Written straight to the DOM, so a tick never re-renders the glyphs.
-function useDecoderShuffle(rootRef, value, intervalMs) {
-  useEffect(() => {
+// THE DECODER ENGINE. One clock, `stepMs` per step. Each step it works out
+// which letters show (`revealFrame`: progressive typing, a marquee, or all of
+// it), lights those letters' segments warm and everything else cool, and gives
+// every segment a new color; every `motionMs` it also jumps the card to its
+// next seeded position (alternating edges, following ImageDecoderDisplay).
+//
+// A layout effect, not a plain one: the first frame — nothing showing but the
+// cursor — must be on screen before the browser paints, or the whole clue
+// flashes up for a frame. Everything is written straight to the DOM, so a step
+// never re-renders the glyphs.
+function useDecoderEngine(rootRef, value, settings) {
+  const settingsKey = JSON.stringify(settings);
+  useLayoutEffect(() => {
     const root = rootRef.current;
     if (!root) return undefined;
-    const segments = [...root.querySelectorAll('polygon')].map((element) => {
-      const palette = element.classList.contains('is-signal') ? SIGNAL_COLORS : MASK_COLORS;
-      let index = palette.indexOf(element.style.getPropertyValue('--segment-color'));
-      // A reused polygon can still hold a flickered color from the previous clue
-      // in the other family; never let it start there.
-      if (index < 0) {
-        index = 0;
-        element.style.setProperty('--segment-color', palette[index]);
-      }
-      return { element, palette, index, neighbors: [] };
+    const lines = balanceSecretLines(value);
+    const cells = [...root.querySelectorAll('.segmented-secret-text__glyph')].map((glyph) => {
+      const polygons = [...glyph.querySelectorAll('polygon')].map((element) => {
+        const signal = element.classList.contains('is-signal');
+        const palette = signal ? SIGNAL_COLORS : MASK_COLORS;
+        return { element, name: element.dataset.segment, signal, index: palette.indexOf(element.style.getPropertyValue('--segment-color')) };
+      });
+      return {
+        polygons,
+        byName: Object.fromEntries(polygons.map(polygon => [polygon.name, polygon])),
+      };
     });
-    // Touching letter segments of the same glyph, so a change can steer clear
-    // of their colors. Only letters are guarded; mask segments may match.
-    const byGlyph = new Map();
-    for (const segment of segments) {
-      const glyph = segment.element.parentNode;
-      if (!byGlyph.has(glyph)) byGlyph.set(glyph, []);
-      byGlyph.get(glyph).push(segment);
-    }
-    for (const glyphSegments of byGlyph.values()) {
-      const signal = glyphSegments.filter(segment => segment.element.classList.contains('is-signal'));
-      for (const segment of signal) {
-        const touching = SEGMENT_NEIGHBORS[segment.element.dataset.segment] ?? [];
-        segment.neighbors = signal.filter(other => other !== segment && touching.includes(other.element.dataset.segment));
-      }
-    }
-    const avoidFor = segment => segment.neighbors.map(other => other.index);
-    // A polygon reused from the previous clue can keep a flickered color that
-    // now matches a touching segment; repair it before the first tick.
-    for (const segment of segments) {
-      if (!segment.neighbors.some(other => other.index === segment.index)) continue;
-      segment.index = nextColorIndex(segment.index, segment.palette.length, Math.random, avoidFor(segment));
-      segment.element.style.setProperty('--segment-color', segment.palette[segment.index]);
-    }
-    const frames = generateSecretTextMotion(value);
+    // The segments of whichever character a frame puts in a cell. In a marquee
+    // that is rarely the cell's own character, so it is looked up per frame.
+    const letters = new Map();
+    const segmentsOf = (character) => {
+      if (!letters.has(character)) letters.set(character, new Set(activeSegmentsFor(character)));
+      return letters.get(character);
+    };
+    const positions = generateSecretTextMotion(value);
+    const motionEvery = Math.max(1, Math.round(settings.motionMs / settings.stepMs));
     const motionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
-    let frame = 0;
+    let step = 0;
     let timer = null;
+
+    // Light each cell for the frame, then recolor every segment in order: in its
+    // own family, never the color it just held, and never a color a touching lit
+    // letter segment holds right now (later segments see earlier ones' new colors).
+    const paint = (frame) => {
+      const flat = frame.flat();
+      cells.forEach((cell, cellIndex) => {
+        const shown = flat[cellIndex] ?? { char: null, cursor: false };
+        const lit = shown.char != null ? segmentsOf(shown.char) : shown.cursor ? CURSOR : NOTHING;
+        for (const polygon of cell.polygons) {
+          const signal = lit.has(polygon.name);
+          if (signal !== polygon.signal) {
+            polygon.signal = signal;
+            polygon.index = -1;
+            polygon.element.classList.toggle('is-signal', signal);
+            polygon.element.classList.toggle('is-mask', !signal);
+          }
+        }
+        for (const polygon of cell.polygons) {
+          const palette = polygon.signal ? SIGNAL_COLORS : MASK_COLORS;
+          const avoid = polygon.signal
+            ? SEGMENT_NEIGHBORS[polygon.name].map(name => cell.byName[name])
+              .filter(other => other?.signal && other.index >= 0).map(other => other.index)
+            : [];
+          polygon.index = nextColorIndex(polygon.index, palette.length, Math.random, avoid);
+          polygon.element.style.setProperty('--segment-color', palette[polygon.index]);
+        }
+      });
+    };
     const place = () => {
-      const offset = frames[frame];
-      root.style.transform = `translate3d(${offset.x.toFixed(2)}%, ${offset.y.toFixed(2)}%, 0)`;
-      root.dataset.motionIndex = String(frame);
-    };
-    // In order, so each segment steers clear of the colors its touching
-    // neighbours hold at that moment — new ones for those already recolored.
-    const recolor = () => {
-      for (const segment of segments) {
-        segment.index = nextColorIndex(segment.index, segment.palette.length, Math.random, avoidFor(segment));
-        segment.element.style.setProperty('--segment-color', segment.palette[segment.index]);
+      if (!settings.motion) {
+        root.style.transform = '';
+        root.dataset.motionIndex = '0';
+        return;
       }
+      const index = Math.floor(step / motionEvery) % positions.length;
+      const offset = positions[index];
+      root.style.transform = `translate3d(${offset.x.toFixed(2)}%, ${offset.y.toFixed(2)}%, 0)`;
+      root.dataset.motionIndex = String(index);
     };
-    const step = () => {
-      if (document.visibilityState === 'hidden') return;
-      frame = (frame + 1) % frames.length;
+    const show = () => {
+      root.dataset.revealStep = String(step);
+      paint(revealFrame(lines, step, settings));
       place();
-      recolor();
+    };
+    const tick = () => {
+      if (document.visibilityState === 'hidden') return;
+      step += 1;
+      show();
     };
     const sync = () => {
-      const still = Boolean(motionQuery?.matches) || !Number.isFinite(intervalMs) || intervalMs <= 0;
-      if (still) {
+      if (motionQuery?.matches) {
+        // Reduced motion: the whole clue, centred and still.
         if (timer) clearInterval(timer);
         timer = null;
-        frame = 0;
+        step = 0;
+        root.dataset.revealStep = '0';
+        paint(revealFrame(lines, 0, STATIC));
         root.style.transform = '';
         root.dataset.motionIndex = '0';
       } else if (!timer) {
-        place();
-        timer = setInterval(step, intervalMs);
+        show();
+        timer = setInterval(tick, settings.stepMs);
       }
-      logger().debug('gaming.segmented-secret.shuffle', {
-        running: Boolean(timer), intervalMs, segments: segments.length, frames: frames.length,
+      logger().debug('gaming.segmented-secret.engine', {
+        running: Boolean(timer), reveal: settings.reveal, stepMs: settings.stepMs,
+        motion: settings.motion, motionMs: settings.motionMs, cells: cells.length,
       });
     };
     sync();
@@ -144,10 +174,11 @@ function useDecoderShuffle(rootRef, value, intervalMs) {
       if (timer) clearInterval(timer);
       motionQuery?.removeEventListener?.('change', sync);
     };
-  }, [rootRef, value, intervalMs]);
+  }, [rootRef, value, settingsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
-function Glyph({ character, index, seed }) {
+// Drawn as the true letter; the engine takes over before the first paint.
+const Glyph = memo(function Glyph({ character, index, seed }) {
   const active = new Set(activeSegmentsFor(character));
   // Touching letter segments never start on the same color: each takes its
   // hashed color, stepping past any a touching segment already holds.
@@ -162,7 +193,7 @@ function Glyph({ character, index, seed }) {
     signalColor[name] = color;
   });
   return (
-    <svg className="segmented-secret-text__glyph" viewBox="0 0 50 100" aria-hidden="true">
+    <svg className="segmented-secret-text__glyph" viewBox="0 0 50 100" aria-hidden="true" data-char={character}>
       {segmentNames.map((name, segmentIndex) => {
         const isSignal = active.has(name);
         const palette = isSignal ? SIGNAL_COLORS : MASK_COLORS;
@@ -174,18 +205,25 @@ function Glyph({ character, index, seed }) {
       })}
     </svg>
   );
-}
+});
 
-export default function SegmentedSecretText({
-  text, label = 'Secret clue', accessibleText = null, motionIntervalMs = SECRET_TEXT_MOTION_MS,
-}) {
+/**
+ * @param {object} props
+ * @param {string} props.text
+ * @param {object|null} [props.decoder] a game's `decoder:` settings block
+ *   (`reveal`, `step_ms`, `motion`, `motion_ms`, `marquee_hold_steps`,
+ *   `marquee_gap_steps`); anything missing takes its default — see
+ *   `DECODER_DEFAULTS` in segmentedSecretReveal.js.
+ */
+export default function SegmentedSecretText({ text, label = 'Secret clue', accessibleText = null, decoder = null }) {
   const rootRef = useRef(null);
   const value = String(text || '').toUpperCase();
   const lines = balanceSecretLines(value);
-  useDecoderShuffle(rootRef, value, motionIntervalMs);
+  const settings = decoderSettings(decoder);
+  useDecoderEngine(rootRef, value, settings);
   let glyphIndex = 0;
   return (
-    <div ref={rootRef} className="segmented-secret-text" role="img" aria-label={accessibleText || `${label}: ${value}`}>
+    <div ref={rootRef} className="segmented-secret-text" role="img" aria-label={accessibleText || `${label}: ${value}`} data-reveal={settings.reveal}>
       {lines.map((line, lineIndex) => (
         <span className="segmented-secret-text__line" key={`${lineIndex}:${line}`}>
           {[...line].map(character => {

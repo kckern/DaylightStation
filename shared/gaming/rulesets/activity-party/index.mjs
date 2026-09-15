@@ -33,6 +33,22 @@ export function validateActivityPartyDefinition(definition) {
       if (definition.guessing_music.memory != null && definition.guessing_music.memory !== 'session') errors.push('guessing_music.memory must be session');
     }
   }
+  // The segmented text decoder's display. Optional; the frontend fills every
+  // missing key with its default (segmentedSecretReveal.js DECODER_DEFAULTS).
+  if (definition?.decoder != null) {
+    const decoder = definition.decoder;
+    if (typeof decoder !== 'object' || Array.isArray(decoder)) errors.push('decoder must be an object');
+    else {
+      if (decoder.reveal != null && !['progressive', 'marquee', 'static'].includes(decoder.reveal)) errors.push('decoder.reveal must be progressive, marquee or static');
+      for (const key of ['step_ms', 'motion_ms']) {
+        if (decoder[key] != null && (!Number.isFinite(decoder[key]) || decoder[key] <= 0)) errors.push(`decoder.${key} must be positive`);
+      }
+      if (decoder.motion != null && typeof decoder.motion !== 'boolean') errors.push('decoder.motion must be boolean');
+      for (const key of ['marquee_hold_steps', 'marquee_gap_steps']) {
+        if (decoder[key] != null && (!Number.isInteger(decoder[key]) || decoder[key] < 0)) errors.push(`decoder.${key} must be a whole number of steps`);
+      }
+    }
+  }
   if (definition?.competition === false) {
     if (definition.turn_selection !== 'seeded-rounds') errors.push('casual play requires turn_selection seeded-rounds');
     if (!Number.isInteger(definition.clues_per_turn) || definition.clues_per_turn < 1) errors.push('casual play requires positive clues_per_turn');
@@ -210,6 +226,7 @@ export const activityPartyRuleModule = defineRuleModule({
         turn_selection: definition.turn_selection, clues_per_turn: definition.clues_per_turn ?? 1,
         presentation: structuredClone(definition.presentation || { image_participants: [] }),
         guessing_music: structuredClone(definition.guessing_music || null),
+        decoder: structuredClone(definition.decoder || null),
       },
       interaction: { phase: state.phase, performer_id: state.performer_id, viewer_actor_id: viewerActorId, can_verify: state.phase === 'verification' && viewerActorId === state.verifier_id },
     };

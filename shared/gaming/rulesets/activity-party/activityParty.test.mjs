@@ -201,6 +201,25 @@ describe('Activity Party rules', () => {
     expect(projected.state).toMatchObject({ competition: false, clue_index: 0, clue_presentation: 'image' });
   });
 
+  it('projects the decoder display block as authored, and null when absent', () => {
+    const decoder = { reveal: 'marquee', step_ms: 250, motion: true, motion_ms: 1000, marquee_hold_steps: 4, marquee_gap_steps: 4 };
+    const withDecoder = { ...casualDefinition, decoder };
+    expect(activityPartyRuleModule.validateDefinition(withDecoder)).toMatchObject({ valid: true });
+    const state = activityPartyRuleModule.createInitialState(withDecoder, { seed: 2, seats: [{ id: 'a' }, { id: 'c' }] });
+    expect(activityPartyRuleModule.project(state, withDecoder, { role: 'host' }).definition.decoder).toEqual(decoder);
+    const plain = activityPartyRuleModule.createInitialState(casualDefinition, { seed: 2, seats: [{ id: 'a' }, { id: 'c' }] });
+    expect(activityPartyRuleModule.project(plain, casualDefinition, { role: 'host' }).definition.decoder).toBeNull();
+  });
+
+  it('rejects an invalid decoder display block', () => {
+    for (const decoder of [
+      'marquee', { reveal: 'sideways' }, { step_ms: 0 }, { motion_ms: -5 }, { motion: 'yes' },
+      { marquee_hold_steps: 1.5 }, { marquee_gap_steps: -1 },
+    ]) {
+      expect(activityPartyRuleModule.validateDefinition({ ...casualDefinition, decoder }), JSON.stringify(decoder)).toMatchObject({ valid: false });
+    }
+  });
+
   it('rejects invalid casual settings and missing eligible challenge pools', () => {
     expect(activityPartyRuleModule.validateDefinition({ ...casualDefinition, turn_selection: 'random' })).toMatchObject({ valid: false });
     expect(activityPartyRuleModule.validateDefinition({ ...casualDefinition, clues_per_turn: 0 })).toMatchObject({ valid: false });
