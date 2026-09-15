@@ -1318,9 +1318,11 @@ export function useCommonMediaController({
       // The second argument describes the renderer that actually owns this
       // native node. Player uses it for read-only mounted-media identity; a
       // requested prop is deliberately not a substitute during async swaps.
-      onMediaRef(mediaEl, { contentId: meta?.contentId ?? null });
+      // /play metadata uses `id`; pre-resolved queue entries may use
+      // `contentId`. Both identify this resolved renderer, not its request.
+      onMediaRef(mediaEl, { contentId: meta?.contentId ?? meta?.id ?? null });
     }
-  }, [meta.assetId, meta?.contentId, onMediaRef, getMediaEl, elementKey]);
+  }, [meta.assetId, meta?.contentId, meta?.id, onMediaRef, getMediaEl, elementKey]);
 
   // On asset change or unmount: save final position if playback was interrupted
   // (onEnded handles natural completion; this captures manual navigation away)

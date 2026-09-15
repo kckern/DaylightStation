@@ -1540,16 +1540,13 @@ export class PlexAdapter {
     // a consistent decision (H.264/HEVC only — never AV1/VP9, which Chromium's
     // MSE demuxer cannot append; see _buildTranscodeUrl comment).
     //
-    // The frame-rate upper-bound must ride ONLY on full forced-transcode
-    // decisions. A profile limitation disqualifies video stream-COPY too, not
-    // just direct play — so gating it on allowDirectPlay (false whenever audio
-    // is opus/ac3) sent the 30fps cap on h264 sources we meant to direct-STREAM,
-    // forcing a 60→30 video transcode that routes through Plex's universal
-    // transcoder and stalls on its delivery throttle (2026-06-16 garage 60fps
-    // incident). Gate on allowDirectStream so h264/hevc video copies untouched.
+    // Caps also disqualify direct playback/copy. Preserve eligible original
+    // MP4 playback and non-DASH copy; cap only a forced-transcode decision.
+    // DASH fallback URLs independently enforce their bounded transcode caps.
+    const allowUnencodedVideo = allowDirectPlay || allowDirectStream;
     params.append(
       'X-Plex-Client-Profile-Extra',
-      buildClientProfileExtra({ maxFrameRate: allowDirectStream ? null : caps.maxFrameRate, downmixAudio })
+      buildClientProfileExtra({ maxFrameRate: allowUnencodedVideo ? null : caps.maxFrameRate, downmixAudio })
     );
     params.append('autoAdjustQuality', '1');
     // directPlay/directStream default to 0 (forced transcode). Only an already
@@ -1571,7 +1568,7 @@ export class PlexAdapter {
     // Bitrate/resolution caps also gate stream-copy eligibility (same trap as
     // the frame-rate limitation above) — only send them when the video will be
     // re-encoded (i.e. NOT direct-streaming the h264/hevc track).
-    if (!allowDirectStream) {
+    if (!allowUnencodedVideo) {
       params.append('maxVideoBitrate', String(caps.maxVideoBitrate));
       params.append('maxVideoResolution', String(caps.maxResolution));
     }
@@ -1659,6 +1656,10 @@ export class PlexAdapter {
       `X-Plex-Session-Identifier=${sessionIdentifier}`,
       `X-Plex-Platform=${this.platform}`,
       'autoAdjustQuality=1',
+      // The start request must enforce the same policy as its decision.
+      // Bitrate/frame-rate ceilings alone can still admit stream-copy.
+      'directPlay=0',
+      `directStream=${allowDirectStream ? '1' : '0'}`,
       'fastSeek=1',
       `mediaBufferSize=${mediaBufferSize}`,
       // Advertise only H.264/HEVC as transcode targets. We deliberately do NOT
@@ -1766,13 +1767,17 @@ export class PlexAdapter {
       }
 
       const allowDirectPlay = canDirectPlayH264(playableItem.metadata);
-      // Allow directStream when the video codec is already h264/hevc — Plex can
-      // copy the video track even if audio or container don't qualify for full
-      // directPlay. The codec advertisement (h264,hevc only) prevents AV1/VP9
-      // from being direct-streamed regardless of this flag.
-      const allowDirectStream = allowDirectPlay || canDirectStreamVideo(playableItem.metadata);
+      // Plex's copied DASH fragments can have source-GOP timestamps that do
+      // not match its fixed-duration MPD (Arrival: advertised90s, actual154s).
+      // Re-encoding gives DASH a seek-correct segment timeline. Keep original
+      // MP4 direct play and non-DASH copy, where that faulty MPD is not used.
+      const allowDirectStream = this.protocol !== 'dash'
+        && (allowDirectPlay || canDirectStreamVideo(playableItem.metadata));
+      if (this.protocol === 'dash') this.logger.info?.('plex.loadMediaUrl.dash-timeline-policy', {
+        ratingKey, allowDirectPlay, allowDirectStream, fallback: 'bounded-transcode'
+      });
       // Multichannel AAC with no standard layout cannot be appended by Chromium;
-      // re-encode that audio track to stereo and keep copying the video.
+      // re-encode that audio track to stereo (independent of video policy).
       const downmixAudio = needsAudioDownmix(playableItem.metadata);
       if (downmixAudio) this.logger.info?.('plex.loadMediaUrl.audio-downmix', { ratingKey });
       // Video: use decision API to authorize session
