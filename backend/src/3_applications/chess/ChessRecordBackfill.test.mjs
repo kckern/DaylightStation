@@ -1,0 +1,135 @@
+import { describe, expect, it } from 'vitest';
+import { DEFAULT_LADDER_POLICY } from '#shared/gaming/rulesets/chess/ladder.mjs';
+import {
+  chronological, isFinishedGame, matchScorecards, planUserBackfill, recordLevel, replayLadder,
+  summarizeLadder, summarizeRivalries, withOpponentIds,
+} from './ChessRecordBackfill.mjs';
+
+const POLICY = DEFAULT_LADDER_POLICY;
+let clock = 0;
+/** An archived game played to checkmate, one hour after the previous one. */
+function finished(over = {}) {
+  clock += 1;
+  return {
+    game_id: `chess-${clock}`, user_id: 'kid', completed: true, ended_by: 'game_over',
+    result: 'win', outcome: 'checkmate', duration_ms: 60_000 + clock,
+    ended_at: new Date(Date.UTC(2026, 7, 13) + clock * 3_600_000).toISOString(),
+    help: { hints: 0, best_moves: 0, takebacks: 0 },
+    opponent: { level: 0, name: 'Caterpie', id: 'pokemon:level-1' },
+    moves: [{ san: 'e4' }, { san: 'Qxf7#' }], move_count: 2,
+    ...over,
+  };
+}
+
+describe('isFinishedGame and recordLevel', () => {
+  it('accepts only a named player\'s game played to the end', () => {
+    expect(isFinishedGame(finished())).toBe(true);
+    expect(isFinishedGame(finished({ completed: false, ended_by: 'left' }))).toBe(false);
+    expect(isFinishedGame(finished({ user_id: null }))).toBe(false);
+  });
+
+  it('reads the level from the record, then from its opponent, else unknown', () => {
+    expect(recordLevel(finished({ level: 3 }))).toBe(3);
+    expect(recordLevel(finished())).toBe(0);
+    expect(recordLevel(finished({ opponent: null }))).toBe(null);
+  });
+});
+
+describe('withOpponentIds', () => {
+  it('gives an old record the id a later record used for the same opponent', () => {
+    const [legacy] = withOpponentIds([
+      finished({ opponent: { level: 0, name: 'Caterpie' } }),
+      finished(),
+    ], () => 'generic');
+    expect(legacy.opponent.id).toBe('pokemon:level-1');
+  });
+
+  it('falls back to the player\'s roster pack and a one-based position', () => {
+    const [record] = withOpponentIds([finished({ opponent: { level: 3, name: 'Beedrill' } })], (userId) => `${userId}-pack`);
+    expect(record.opponent.id).toBe('kid-pack:level-4');
+  });
+
+  it('leaves a record with no opponent alone, since nobody can say who it was', () => {
+    const record = finished({ opponent: null });
+    expect(withOpponentIds([record], () => 'generic')[0]).toBe(record);
+  });
+});
+
+describe('replayLadder', () => {
+  it('promotes on five clean wins and keeps real times', () => {
+    const games = Array.from({ length: 5 }, () => finished());
+    const ladder = replayLadder(games, POLICY, null);
+    expect(ladder.unlocked_through).toBe(1);
+    expect(ladder.results.map((entry) => entry.at)).toEqual(games.map((game) => game.ended_at));
+  });
+
+  it('records help-heavy wins without counting them', () => {
+    const ladder = replayLadder([finished({ help: { hints: 11, best_moves: 14, takebacks: 1 } })], POLICY, null);
+    expect(ladder.results).toEqual([expect.objectContaining({ level: 0, result: 'win', counted: false })]);
+  });
+
+  it('treats a game played at a level as proof that level was unlocked', () => {
+    const strict = { ...POLICY, max_hints: 0 };
+    const early = Array.from({ length: 5 }, () => finished({ help: { hints: 1, best_moves: 0, takebacks: 0 } }));
+    const later = [finished({ opponent: { level: 1, name: 'Weedle', id: 'pokemon:level-2' } }), finished({ opponent: { level: 1, name: 'Weedle', id: 'pokemon:level-2' } })];
+    const ladder = replayLadder([...early, ...later], strict, null);
+    expect(ladder.unlocked_through).toBe(1);
+    expect(ladder.results.filter((entry) => entry.level === 1 && entry.counted)).toHaveLength(2);
+  });
+
+  it('never lowers the stored level', () => {
+    expect(replayLadder([finished()], POLICY, { unlocked_through: 3, results: [] }).unlocked_through).toBe(3);
+  });
+
+  it('files a game of unknown level at the current level and does not count it', () => {
+    const ladder = replayLadder([finished({ opponent: null, result: 'loss' })], POLICY, null);
+    expect(ladder.results).toEqual([expect.objectContaining({ level: 0, result: 'loss', counted: false })]);
+  });
+
+  it('replays in the order games ended, not the order given', () => {
+    const first = finished({ result: 'loss' });
+    const second = finished();
+    expect(replayLadder([second, first], POLICY, null).results.map((entry) => entry.result)).toEqual(['loss', 'win']);
+    expect(chronological([second, first])[0]).toBe(first);
+  });
+});
+
+describe('planUserBackfill', () => {
+  it('rebuilds rivalry totals per opponent from this player\'s finished games only', async () => {
+    const records = withOpponentIds([
+      finished({ opponent: { level: 0, name: 'Caterpie' } }),
+      finished(),
+      finished({ result: 'loss', opponent: { level: 1, name: 'Weedle', id: 'pokemon:level-2' } }),
+      finished({ completed: false, ended_by: 'left', result: null }),
+      finished({ user_id: 'sibling' }),
+    ], () => 'generic');
+    const plan = await planUserBackfill({ userId: 'kid', records, policy: POLICY, storedLadder: null });
+    expect(summarizeRivalries(plan.rivalries)).toEqual({
+      'Caterpie (pokemon:level-1)': '2-0-0',
+      'Weedle (pokemon:level-2)': '0-1-0',
+    });
+    expect(plan.ladder.results).toHaveLength(3);
+  });
+});
+
+describe('matchScorecards', () => {
+  it('matches by game id, else by result and duration within 50ms', () => {
+    const archive = [finished({ game_id: 'a', duration_ms: 3_499_621, result: 'loss' }), finished({ game_id: 'b' })];
+    const cards = [
+      { file: 'one.yml', record: { user_id: 'kid', result: 'loss', duration_ms: 3_499_617 } },
+      { file: 'two.yml', record: { user_id: 'kid', game_id: 'b', result: 'win' } },
+      { file: 'three.yml', record: { user_id: 'kid', game_id: 'zzz', result: 'win', duration_ms: 1 } },
+    ];
+    const { matched, unmatched } = matchScorecards(cards, archive);
+    expect(matched.map((card) => card.file)).toEqual(['one.yml', 'two.yml']);
+    expect(unmatched.map((card) => card.file)).toEqual(['three.yml']);
+  });
+});
+
+describe('summarizeLadder', () => {
+  it('reports level, counted wins and history length, or null for no file', () => {
+    expect(summarizeLadder(null, POLICY)).toBe(null);
+    const ladder = replayLadder([finished(), finished({ help: { hints: 5, best_moves: 0, takebacks: 0 } })], POLICY, null);
+    expect(summarizeLadder(ladder, POLICY)).toEqual({ unlocked_through: 0, wins: 1, needed: 5, results: 2 });
+  });
+});
