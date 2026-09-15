@@ -103,6 +103,11 @@ const createDefaultPlaybackMetrics = () => ({
  */
 const Player = forwardRef(function Player(props, ref) {
   const noop = useMemo(() => () => {}, []);
+  const issuedOwnerRevisionsRef = useRef({ playbackRevision: 0, queueRevision: 0 });
+  const issueOwnerRevision = useCallback(({ playback = false, queue = false } = {}) => {
+    if (playback) issuedOwnerRevisionsRef.current.playbackRevision += 1;
+    if (queue) issuedOwnerRevisionsRef.current.queueRevision += 1;
+  }, []);
 
   let {
     play,
@@ -146,6 +151,7 @@ const Player = forwardRef(function Player(props, ref) {
     advance: rawAdvance,
     queueAudio,
     queueSessionId,
+    queueSnapshot,
     jumpTo: rawJumpTo,
     onDeck,
     onDeckFlashKey,
@@ -160,6 +166,7 @@ const Player = forwardRef(function Player(props, ref) {
     shuffle: props?.shuffle,
     onError,
     queueFetchTimeoutMs: 10_000,
+    onOwnerRevision: issueOwnerRevision,
   });
 
   // Gated advance: marks the queue as advanced so activeSource starts following
@@ -284,6 +291,29 @@ const Player = forwardRef(function Player(props, ref) {
   // line it cancelled, and so the cancel branch can tell a user-initiated retry
   // from an automatic recovery attempt.
   const pendingRemountRef = useRef(null);
+  const ownedNativeNodeRef = useRef(null);
+  const retiredNativeNodesRef = useRef(new WeakSet());
+  const nativeRegistrationEpochRef = useRef(0);
+  const [nativeRegistrationEpoch, setNativeRegistrationEpoch] = useState(0);
+  const recordNativeNodeOwnership = useCallback((node, registrationToken) => {
+    if (!node || typeof node !== 'object' || ownedNativeNodeRef.current === node) return true;
+    if (retiredNativeNodesRef.current.has(node)) return false;
+    if (ownedNativeNodeRef.current) retiredNativeNodesRef.current.add(ownedNativeNodeRef.current);
+    ownedNativeNodeRef.current = node;
+    if (node.nodeType === 1) {
+      const epoch = ++nativeRegistrationEpochRef.current;
+      // The callback admitting this node remains authorized for it. Earlier
+      // callbacks are revoked synchronously, before React refreshes props.
+      if (registrationToken) registrationToken.epoch = epoch;
+      setNativeRegistrationEpoch(epoch);
+    }
+    // Synthetic slideshow accessors are recreated on bridge changes; they
+    // are not native-node generations and must not drive callback refreshes.
+    // Recovery/remount replacement is an owner action boundary. Native events
+    // remain observation-only and never mint provenance.
+    issueOwnerRevision({ playback: true });
+    return true;
+  }, [issueOwnerRevision]);
 
   useEffect(() => {
     remountInfoRef.current = remountState;
@@ -441,6 +471,15 @@ const Player = forwardRef(function Player(props, ref) {
     setPlaybackRate: setSessionPlaybackRate
   } = usePlaybackSession({ sessionKey: rateSessionKey });
 
+  const setOwnerVolume = useCallback((value) => {
+    issueOwnerRevision({ queue: true });
+    setSessionVolume(value);
+  }, [issueOwnerRevision, setSessionVolume]);
+  const setOwnerPlaybackRate = useCallback((value) => {
+    issueOwnerRevision({ queue: true });
+    setSessionPlaybackRate(value);
+  }, [issueOwnerRevision, setSessionPlaybackRate]);
+
   // The rate button (ScreenActionHandler) dispatches `player:cycle-playback-rate`
   // rather than poking the DOM — DOM pokes can't reach the dash-video shadow <video>
   // and get re-asserted by the controlled rate. Cycle the session rate here; the
@@ -448,10 +487,10 @@ const Player = forwardRef(function Player(props, ref) {
   const sessionPlaybackRateRef = useRef(sessionPlaybackRate);
   sessionPlaybackRateRef.current = sessionPlaybackRate;
   useEffect(() => {
-    const onCycle = () => setSessionPlaybackRate(nextPlaybackRate(sessionPlaybackRateRef.current));
+    const onCycle = () => setOwnerPlaybackRate(nextPlaybackRate(sessionPlaybackRateRef.current));
     window.addEventListener('player:cycle-playback-rate', onCycle);
     return () => window.removeEventListener('player:cycle-playback-rate', onCycle);
-  }, [setSessionPlaybackRate]);
+  }, [setOwnerPlaybackRate]);
 
   const {
     targetTimeSeconds,
@@ -510,7 +549,7 @@ const Player = forwardRef(function Player(props, ref) {
     });
   }, []);
 
-  const handleRegisterMediaAccess = useCallback((access = {}) => {
+  const handleRegisterMediaAccess = useCallback((access = {}, registrationToken) => {
     const newMediaAccess = {
       getMediaEl: typeof access.getMediaEl === 'function' ? access.getMediaEl : null,
       hardReset: typeof access.hardReset === 'function' ? access.hardReset : null,
@@ -518,6 +557,15 @@ const Player = forwardRef(function Player(props, ref) {
       autoplayBlocked: !!access.autoplayBlocked,
       onAutoplayResolved: typeof access.onAutoplayResolved === 'function' ? access.onAutoplayResolved : null
     };
+    try {
+      if (!recordNativeNodeOwnership(newMediaAccess.getMediaEl?.(), registrationToken)) return;
+    } catch { /* optional renderer accessor */ }
+    // Registration is synchronous; a deferred/replayed state updater must not
+    // overwrite a newer renderer's imperative accessor.
+    mediaAccessRef.current = newMediaAccess;
+    if (typeof window !== 'undefined' && window.__TEST_CAPTURE_METRICS__) {
+      window.__TEST_MEDIA_ACCESS__ = newMediaAccess;
+    }
     setMediaAccess((prev) => {
       const unchanged = Boolean(prev)
         && prev.getMediaEl === newMediaAccess.getMediaEl
@@ -526,15 +574,9 @@ const Player = forwardRef(function Player(props, ref) {
         && prev.autoplayBlocked === newMediaAccess.autoplayBlocked
         && prev.onAutoplayResolved === newMediaAccess.onAutoplayResolved;
 
-      const resolved = unchanged ? prev : newMediaAccess;
-      mediaAccessRef.current = resolved;
-      // Test hook for contract tests
-      if (typeof window !== 'undefined' && window.__TEST_CAPTURE_METRICS__) {
-        window.__TEST_MEDIA_ACCESS__ = resolved;
-      }
-      return resolved;
+      return unchanged ? prev : newMediaAccess;
     });
-  }, []);
+  }, [recordNativeNodeOwnership]);
 
   const handleRegisterResilienceBridge = useCallback((bridge) => {
     resilienceBridgeRef.current = bridge || null;
@@ -845,6 +887,16 @@ const Player = forwardRef(function Player(props, ref) {
     lastAdmittedKeyRef.current = candidate;
     return candidate;
   }, [singlePlayerProps, currentMediaGuid, remountState.nonce, activeSource?.mediaType, playerType, resolvedWaitKeyFields, isQueue, keyLogger]);
+
+  // Match the admitted renderer lifetime, including same-content recovery.
+  // A retired renderer's late registration/cleanup must not touch its successor.
+  const registrationLifetime = useMemo(() => ({ active: true }), [singlePlayerKey]);
+  const registrationLifetimeRef = useRef(registrationLifetime);
+  registrationLifetimeRef.current = registrationLifetime;
+  useEffect(() => {
+    registrationLifetime.active = true;
+    return () => { registrationLifetime.active = false; };
+  }, [registrationLifetime]);
 
   const exposedMediaRef = useRef(null);
   // Ownership follows the actual renderer-registered native node, not the
@@ -1186,6 +1238,7 @@ const Player = forwardRef(function Player(props, ref) {
       action: singlePlayerProps?.continuous ? 'loop' : 'clear',
       assetId: singlePlayerProps?.assetId ?? null,
     });
+    issueOwnerRevision({ playback: true, queue: true });
     if (singlePlayerProps?.continuous) {
       // For continuous single items, check if native loop is already handling it
       const mediaEl = document.querySelector(`[data-key="${singlePlayerProps.assetId || singlePlayerProps.plex}"]`);
@@ -1198,7 +1251,7 @@ const Player = forwardRef(function Player(props, ref) {
     } else {
       clear();
     }
-  }, [singlePlayerProps?.continuous, singlePlayerProps?.assetId, singlePlayerProps?.plex, clear]);
+  }, [singlePlayerProps?.continuous, singlePlayerProps?.assetId, singlePlayerProps?.plex, clear, issueOwnerRevision]);
 
   // Completion is a PLAYER fact, not a DOM-listener race. Renderers call the
   // `advance` handed down below only for a natural terminal condition (native
@@ -1267,7 +1320,8 @@ const Player = forwardRef(function Player(props, ref) {
   const manualAdvance = isQueue ? advance : singleAdvance;
 
   // Compose onMediaRef so we keep existing external callback semantics
-  const handleMediaRef = useCallback((el, ownership = null) => {
+  const handleMediaRef = useCallback((el, ownership = null, registrationToken) => {
+    if (!recordNativeNodeOwnership(el, registrationToken)) return;
     exposedMediaRef.current = el;
     if (el && typeof el === 'object') {
       const contentId = ownership?.contentId;
@@ -1282,7 +1336,22 @@ const Player = forwardRef(function Player(props, ref) {
     if (props.onMediaRef) props.onMediaRef(el, ownership);
     // ESLint's own message says the fix is to destructure specific props, which this already does — do not add `props`
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.onMediaRef]);
+  }, [props.onMediaRef, recordNativeNodeOwnership]);
+
+  const rendererRegistration = useMemo(() => {
+    const token = { epoch: nativeRegistrationEpoch };
+    const isCurrent = () => registrationLifetime.active
+      && registrationLifetimeRef.current === registrationLifetime
+      && token.epoch === nativeRegistrationEpochRef.current;
+    return {
+      onMediaRef: (node, ownership) => {
+        if (isCurrent()) handleMediaRef(node, ownership, token);
+      },
+      onRegisterMediaAccess: (access) => {
+        if (isCurrent()) handleRegisterMediaAccess(access, token);
+      },
+    };
+  }, [registrationLifetime, nativeRegistrationEpoch, handleMediaRef, handleRegisterMediaAccess]);
 
   const handleController = useCallback((controller) => {
     controllerRef.current = controller;
@@ -1326,18 +1395,21 @@ const Player = forwardRef(function Player(props, ref) {
       );
     },
     play: () => {
+      issueOwnerRevision({ playback: true });
       withTransport(
         (api) => api.play?.(),
         () => _getMediaElFallback()?.play?.()
       );
     },
     pause: () => {
+      issueOwnerRevision({ playback: true });
       withTransport(
         (api) => api.pause?.(),
         () => _getMediaElFallback()?.pause?.()
       );
     },
     toggle: () => {
+      issueOwnerRevision({ playback: true });
       withTransport(
         (api) => api.toggle?.(),
         () => {
@@ -1350,7 +1422,8 @@ const Player = forwardRef(function Player(props, ref) {
     advance: (count = 1) => {
       const advanceFn = isQueue ? advance : singleAdvance;
       if (typeof advanceFn === 'function') {
-        for (let i = 0; i < Math.max(1, count); i++) advanceFn();
+        if (isQueue && Number(count) < 0) advanceFn(Number(count));
+        else for (let i = 0; i < Math.max(1, count); i++) advanceFn();
       }
     },
     getCurrentTime: () => {
@@ -1365,8 +1438,8 @@ const Player = forwardRef(function Player(props, ref) {
       const el = _getMediaElFallback();
       return (el && Number.isFinite(el.duration)) ? el.duration : 0;
     },
-    setVolume: (value) => setSessionVolume(value),
-    setPlaybackRate: (value) => setSessionPlaybackRate(value),
+    setVolume: setOwnerVolume,
+    setPlaybackRate: setOwnerPlaybackRate,
     getVolume: () => sessionVolume,
     getPlaybackRate: () => sessionPlaybackRate,
     getMediaElement: _getMediaElFallback,
@@ -1378,6 +1451,15 @@ const Player = forwardRef(function Player(props, ref) {
     // Read-only now-playing metadata (current item meta + queue coordinates)
     // for external session bridges. Reads a render-mirrored ref — always fresh.
     getNowPlaying: () => nowPlayingRef.current,
+    // A bridge consumer must never be able to mutate the live queue owner.
+    getQueueSnapshot: () => JSON.parse(JSON.stringify(queueSnapshot)),
+    getPlayerInstanceId: () => playerInstanceId,
+    getPlaybackIdentity: () => ({
+      ownerInstanceId: playerInstanceId,
+      playbackRevision: issuedOwnerRevisionsRef.current.playbackRevision,
+      queueRevision: issuedOwnerRevisionsRef.current.queueRevision,
+    }),
+    getShader: () => queueShader,
     getMediaController: () => controllerRef.current,
     getMediaResilienceController: () => resilienceControllerRef.current,
     getMediaResilienceState: () => resilienceControllerRef.current?.getState?.() || null,
@@ -1403,7 +1485,7 @@ const Player = forwardRef(function Player(props, ref) {
         fromContentId: effectiveMeta?.contentId ?? effectiveMeta?.assetId ?? null,
       }, { level: 'info' });
     },
-  }), [isQueue, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setSessionVolume, setSessionPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport]);
+  }), [isQueue, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision]);
 
   useEffect(() => () => clearRemountTimer(), [clearRemountTimer]);
 
@@ -1520,12 +1602,12 @@ const Player = forwardRef(function Player(props, ref) {
     clear,
     shader: effectiveShader,
     volume: effectiveVolume,
-    setVolume: setSessionVolume,
+    setVolume: setOwnerVolume,
     setShader,
     cycleThroughClasses,
     classes,
     playbackRate: effectivePlaybackRate,
-    setPlaybackRate: setSessionPlaybackRate,
+    setPlaybackRate: setOwnerPlaybackRate,
     playbackKeys,
     playerType,
     queuePosition,
@@ -1533,11 +1615,11 @@ const Player = forwardRef(function Player(props, ref) {
     ignoreKeys,
     keyboardOverrides,
     onProgress: props.onProgress,
-    onMediaRef: handleMediaRef,
+    onMediaRef: rendererRegistration.onMediaRef,
     onController: handleController,
     onResolvedMeta: handleResolvedMeta,
     onPlaybackMetrics: handlePlaybackMetrics,
-    onRegisterMediaAccess: handleRegisterMediaAccess,
+    onRegisterMediaAccess: rendererRegistration.onRegisterMediaAccess,
     onRegisterResilienceBridge: handleRegisterResilienceBridge,
     onRequestRecovery: handleRequestRecovery,
     seekToIntentSeconds: targetTimeSeconds,

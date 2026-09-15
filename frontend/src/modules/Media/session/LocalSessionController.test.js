@@ -91,6 +91,18 @@ describe('LocalSessionController — transport', () => {
     expect(c.getSnapshot().state).toBe('playing');
   });
 
+  it('does not treat an unpaused observation without native playing evidence as confirmed playback', () => {
+    const c = createLocalSessionController({ clientId: 'state-client' });
+    c.queue.add({ contentId: 'plex:movie', format: 'video' });
+    c.transport.play();
+
+    c.onPlayerObservation('plex:movie', { paused: false });
+
+    expect(c.getSnapshot().state).toBe('loading');
+    c.onPlayerStateChange('playing', 'plex:movie');
+    expect(c.getSnapshot().state).toBe('playing');
+  });
+
   it('repeated Play while already playing does not re-enter loading or arm startup recovery', () => {
     const c = makeController();
     c.setPlayerHandle({ play: vi.fn(), pause: vi.fn(), seek: vi.fn() });
@@ -150,13 +162,63 @@ describe('LocalSessionController — transport', () => {
 });
 
 describe('LocalSessionController — queue ops', () => {
-  it('queue.add appends; first add sets currentItem and loads', () => {
+  it('queue.add exposes a ready queue without selecting or loading until explicit Play', () => {
     const c = makeController();
+    const handle = { play: vi.fn(), pause: vi.fn(), seek: vi.fn() };
+    const loadActions = [];
+    c.setPlayerHandle(handle);
+    c.store.onTransition((_prev, _next, action) => {
+      if (action?.type === 'LOAD_ITEM') loadActions.push(action);
+    });
+
     c.queue.add({ contentId: 'a', format: 'video', title: 'A' });
+
     expect(c.getSnapshot().queue.items).toHaveLength(1);
+    expect(c.getSnapshot().queue.currentIndex).toBe(-1);
+    expect(c.getSnapshot().currentItem).toBeNull();
+    expect(c.getSnapshot().state).toBe('ready');
+    expect(loadActions).toHaveLength(0);
+    expect(handle.play).not.toHaveBeenCalled();
+
+    c.transport.play();
+
     expect(c.getSnapshot().queue.currentIndex).toBe(0);
     expect(c.getSnapshot().currentItem?.contentId).toBe('a');
     expect(c.getSnapshot().state).toBe('loading');
+    expect(loadActions).toHaveLength(1);
+    expect(handle.play).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['playing', 'paused'])('queue.add preserves a %s source, position, and state', (state) => {
+    const c = makeController();
+    c.queue.playNow({ contentId: 'active', format: 'video', title: 'Active' }, { clearRest: true });
+    c.onPlayerProgress(31, 'active');
+    c.onPlayerStateChange(state, 'active');
+    const before = c.getSnapshot();
+
+    c.queue.add({ contentId: 'later', format: 'video', title: 'Later' });
+
+    const after = c.getSnapshot();
+    expect(after.queue.items.map((item) => item.contentId)).toEqual(['active', 'later']);
+    expect(after.queue.currentIndex).toBe(0);
+    expect(after.currentItem).toEqual(before.currentItem);
+    expect(after.position).toBe(31);
+    expect(c.position.get().seconds).toBe(31);
+    expect(after.state).toBe(state);
+  });
+
+  it('queue.add appends once to a stopped ready queue without selecting it', () => {
+    const c = makeController();
+    c.queue.playNow({ contentId: 'retained', format: 'video' }, { clearRest: true });
+    c.transport.stop();
+
+    c.queue.add({ contentId: 'later', format: 'video' });
+
+    expect(c.getSnapshot()).toMatchObject({
+      state: 'ready', currentItem: null,
+      queue: { currentIndex: -1 },
+    });
+    expect(c.getSnapshot().queue.items.map((item) => item.contentId)).toEqual(['retained', 'later']);
   });
 
   it('queue.playNow replaces-and-loads', () => {
@@ -301,6 +363,8 @@ describe('LocalSessionController — player events', () => {
     expect(c.getSnapshot().state).toBe('buffering');
 
     c.onPlayerObservation('plex:1', { currentTime: 15.5, paused: false, stalled: false });
+    expect(c.getSnapshot().state).toBe('buffering');
+    c.onPlayerStateChange('playing', 'plex:1');
     expect(c.getSnapshot().state).toBe('playing');
   });
 
@@ -324,6 +388,7 @@ describe('LocalSessionController — player events', () => {
     const c = makeController();
     c.queue.add({ contentId: 'a', format: 'video' });
     c.queue.add({ contentId: 'b', format: 'video' });
+    c.transport.play();
     c.onPlayerEnded();
     expect(c.getSnapshot().currentItem?.contentId).toBe('b');
     expect(c.getSnapshot().queue.currentIndex).toBe(1);
@@ -332,6 +397,7 @@ describe('LocalSessionController — player events', () => {
   it('onPlayerEnded at queue end with repeat=off goes to ended', () => {
     const c = makeController();
     c.queue.add({ contentId: 'a', format: 'video' });
+    c.transport.play();
     c.onPlayerEnded();
     expect(c.getSnapshot().state).toBe('ended');
   });
@@ -340,6 +406,7 @@ describe('LocalSessionController — player events', () => {
     const c = makeController();
     c.queue.add({ contentId: 'a', format: 'video' });
     c.queue.add({ contentId: 'b', format: 'video' });
+    c.transport.play();
     c.onPlayerError({ message: 'boom', code: 'E_X' });
     expect(mediaLog.playbackError).toHaveBeenCalledWith(expect.objectContaining({
       contentId: 'a', error: 'boom', code: 'E_X',
@@ -412,6 +479,7 @@ describe('LocalSessionController — logging parity', () => {
     const c = makeController();
     c.queue.add({ contentId: 'a', format: 'video' });
     c.queue.add({ contentId: 'b', format: 'video' });
+    c.transport.play();
     c.transport.skipNext();
     expect(mediaLog.playbackAdvanced).toHaveBeenCalledWith(expect.objectContaining({
       reason: 'skip-next', nextContentId: 'b',
@@ -457,6 +525,95 @@ describe('LocalSessionController — portability', () => {
     const snap = c.portability.snapshotForHandoff();
     expect(snap.position).toBe(14.2);
   });
+
+  it('captures its authoritative duplicate queue, hot position, and detached owner identity', () => {
+    const c = createLocalSessionController({ clientId: 'capture-client', ownerInstanceId: 'local-owner-1' });
+    c.queue.add({ contentId: 'plex:a', title: 'A', format: 'video' });
+    c.queue.add({ contentId: 'plex:b', title: 'B', format: 'video' });
+    c.queue.add({ contentId: 'plex:a', title: 'A again', format: 'video' });
+    const thirdId = c.getSnapshot().queue.items[2].queueItemId;
+    c.queue.jump(thirdId);
+    c.queue.playNext({ contentId: 'plex:next', title: 'Next', format: 'video' });
+    c.onPlayerPositionTick(37.25, 'plex:a');
+
+    const capture = c.portability.capture();
+
+    expect(capture.snapshot.queue.items.map((item) => item.contentId)).toEqual(['plex:a', 'plex:b', 'plex:a', 'plex:next']);
+    expect(new Set(capture.snapshot.queue.items.map((item) => item.queueItemId)).size).toBe(4);
+    expect(capture.snapshot.queue.currentIndex).toBe(2);
+    expect(capture.snapshot.queue.executionOrder).toEqual([thirdId, capture.snapshot.queue.items[3].queueItemId]);
+    expect(capture.snapshot.position).toBe(37.25);
+    expect(capture.identity).toMatchObject({
+      ownerInstanceId: 'local-owner-1', sessionId: c.getSnapshot().sessionId,
+      contentId: 'plex:a', queueItemId: thirdId,
+    });
+    expect(capture.capabilities.handoffV1).toBe(false);
+
+    capture.snapshot.queue.items[0].title = 'mutated by consumer';
+    expect(c.getSnapshot().queue.items[0].title).toBe('A');
+  });
+
+  it('revises playback for a same-content restart but not metadata or hot-position evidence', () => {
+    const c = createLocalSessionController({ clientId: 'revision-client', ownerInstanceId: 'local-owner-2' });
+    c.queue.add({ contentId: 'plex:a', title: 'A', format: 'video' });
+    const initial = c.portability.capture().identity;
+
+    c.onPlayerPositionTick(20, 'plex:a');
+    c.onPlayerObservation('plex:a', { duration: 120, paused: true });
+    const enriched = c.portability.capture().identity;
+    expect(enriched).toEqual(initial);
+
+    c.queue.playNow({ contentId: 'plex:a', title: 'A restarted', format: 'video' });
+    const restarted = c.portability.capture().identity;
+    expect(restarted.playbackRevision).toBeGreaterThan(initial.playbackRevision);
+    expect(restarted.queueRevision).toBeGreaterThan(initial.queueRevision);
+  });
+
+  it('advances only queue revision for Add into an idle queue', () => {
+    const c = createLocalSessionController({ clientId: 'add-revision-client', ownerInstanceId: 'local-owner-add' });
+    const before = c.portability.capture().identity;
+
+    c.queue.add({ contentId: 'plex:a', title: 'A', format: 'video' });
+
+    const after = c.portability.capture().identity;
+    expect(after.queueRevision).toBeGreaterThan(before.queueRevision);
+    expect(after.playbackRevision).toBe(before.playbackRevision);
+    expect(after.contentId).toBeNull();
+    expect(after.queueItemId).toBeNull();
+  });
+
+  it('captures one finite repeat-all lap from the current entry, including the wrap', () => {
+    const c = createLocalSessionController({ clientId: 'repeat-client', ownerInstanceId: 'local-repeat-owner' });
+    c.queue.add({ contentId: 'plex:a', format: 'video' });
+    c.queue.add({ contentId: 'plex:b', format: 'video' });
+    c.queue.add({ contentId: 'plex:a', format: 'video' });
+    const thirdId = c.getSnapshot().queue.items[2].queueItemId;
+    c.queue.jump(thirdId);
+    c.config.setRepeat('all');
+
+    const capture = c.portability.capture();
+    expect(capture.snapshot.queue.executionOrder).toEqual([
+      thirdId,
+      c.getSnapshot().queue.items[0].queueItemId,
+      c.getSnapshot().queue.items[1].queueItemId,
+    ]);
+  });
+
+  it('does not promise a future order while repeat-all shuffle chooses future visits randomly', () => {
+    const c = createLocalSessionController({ clientId: 'shuffle-capture-client', ownerInstanceId: 'local-shuffle-owner' });
+    c.queue.add({ contentId: 'plex:a', format: 'video' });
+    c.queue.add({ contentId: 'plex:b', format: 'video' });
+    c.queue.add({ contentId: 'plex:c', format: 'video' });
+    const secondId = c.getSnapshot().queue.items[1].queueItemId;
+    c.queue.jump(secondId);
+    c.config.setRepeat('all');
+    c.config.setShuffle(true);
+
+    const capture = c.portability.capture();
+    expect(capture.snapshot.queue.executionOrder).toEqual([secondId]);
+    expect(capture.snapshot.queue.items.map((item) => item.contentId)).toEqual(['plex:a', 'plex:b', 'plex:c']);
+    expect(capture.snapshot.config).toMatchObject({ repeat: 'all', shuffle: true });
+  });
 });
 
 // "Play album plays one track and stops" regression suite: container queue
@@ -487,8 +644,9 @@ describe('LocalSessionController — container expansion', () => {
   it('playNext on a container inserts the whole batch at the front of the band, in order', async () => {
     const fetchImpl = okFetch();
     const c = makeController({ fetchImpl });
-    c.queue.add({ contentId: 'now', format: 'video' }); // becomes current
+    c.queue.add({ contentId: 'now', format: 'video' });
     c.queue.add({ contentId: 'later', format: 'video' });
+    c.transport.play();
     c.queue.playNext(albumInput);
     await vi.waitFor(() => expect(c.getSnapshot().queue.items).toHaveLength(5));
     const snap = c.getSnapshot();
@@ -526,13 +684,42 @@ describe('LocalSessionController — container expansion', () => {
     expect(c.getSnapshot().queue.items[0].contentId).toBe('plex:900');
   });
 
-  it('add on a container into an empty queue appends all children and loads the first', async () => {
+  it('add on a container holds all children in natural order without loading the first', async () => {
     const fetchImpl = okFetch();
     const c = makeController({ fetchImpl });
+    const loadActions = [];
+    c.store.onTransition((_prev, _next, action) => {
+      if (action?.type === 'LOAD_ITEM') loadActions.push(action);
+    });
     c.queue.add(albumInput);
     await vi.waitFor(() => expect(c.getSnapshot().queue.items).toHaveLength(3));
     const snap = c.getSnapshot();
-    expect(snap.queue.currentIndex).toBe(0);
-    expect(snap.currentItem?.contentId).toBe('plex:1');
+    expect(snap.queue.items.map((item) => item.contentId)).toEqual(['plex:1', 'plex:2', 'plex:3']);
+    expect(snap.queue.currentIndex).toBe(-1);
+    expect(snap.currentItem).toBeNull();
+    expect(snap.state).toBe('ready');
+    expect(loadActions).toHaveLength(0);
+  });
+
+  it('does not let a delayed Add expansion replace newer explicit playback', async () => {
+    let resolveFetch;
+    const fetchImpl = vi.fn(() => new Promise((resolve) => { resolveFetch = resolve; }));
+    const c = makeController({ fetchImpl });
+    const loadActions = [];
+    c.store.onTransition((_prev, _next, action) => {
+      if (action?.type === 'LOAD_ITEM') loadActions.push(action.item.contentId);
+    });
+    c.queue.add(albumInput);
+    c.queue.playNow({ contentId: 'human-choice', format: 'video' }, { clearRest: true });
+
+    resolveFetch({ ok: true, json: async () => ({ items: albumChildren }) });
+    await vi.waitFor(() => expect(c.getSnapshot().queue.items).toHaveLength(4));
+
+    const snap = c.getSnapshot();
+    expect(snap.queue.items.map((item) => item.contentId))
+      .toEqual(['human-choice', 'plex:1', 'plex:2', 'plex:3']);
+    expect(snap.currentItem?.contentId).toBe('human-choice');
+    expect(snap.state).toBe('loading');
+    expect(loadActions).toEqual(['human-choice']);
   });
 });

@@ -9,6 +9,7 @@ import { PlayerHostProvider } from './PlayerHostProvider.jsx';
 import { LocalSessionContext } from './LocalSessionContext.js';
 import { usePlayerHost } from './usePlayerHost.js';
 import { createLocalSessionController } from './LocalSessionController.js';
+import { applyCommandEnvelope } from '../externalControl/commandHandler.js';
 
 // Count how many times the platform Player is actually mounted. A remount is
 // what destroys the media element mid-play() and produces the browser's
@@ -129,6 +130,48 @@ describe('PlayerBridge real Player contract', () => {
     latestPlayerProps = null;
     mediaElement = null;
     mountedContentId = null;
+  });
+
+  it('holds receiver Add without a Player, then explicit Play loads and mounts exactly once', () => {
+    const controller = makeRealController();
+    const loadActions = [];
+    controller.store.onTransition((_prev, _next, action) => {
+      if (action?.type === 'LOAD_ITEM') loadActions.push(action.item.contentId);
+    });
+    render(<Harness controller={controller} />);
+
+    act(() => {
+      expect(applyCommandEnvelope(controller, {
+        commandId: 'receiver-add-1',
+        command: 'queue',
+        params: { op: 'add', contentId: 'plex:held' },
+        ts: '2026-09-14T00:00:00.000Z',
+      })).toEqual({ ok: true });
+    });
+
+    expect(controller.getSnapshot()).toMatchObject({
+      state: 'ready', currentItem: null,
+      queue: { currentIndex: -1 },
+    });
+    expect(controller.getSnapshot().queue.items.map((item) => item.contentId)).toEqual(['plex:held']);
+    expect(loadActions).toEqual([]);
+    expect(latestPlayerProps).toBeNull();
+    expect(mountSpy).not.toHaveBeenCalled();
+
+    act(() => {
+      expect(applyCommandEnvelope(controller, {
+        commandId: 'receiver-play-1',
+        command: 'transport',
+        params: { action: 'play' },
+        ts: '2026-09-14T00:00:01.000Z',
+      })).toEqual({ ok: true });
+    });
+
+    expect(controller.getSnapshot().currentItem?.contentId).toBe('plex:held');
+    expect(controller.getSnapshot().state).toBe('loading');
+    expect(loadActions).toEqual(['plex:held']);
+    expect(latestPlayerProps.play.contentId).toBe('plex:held');
+    expect(mountSpy).toHaveBeenCalledTimes(1);
   });
 
   it('enriches missing duration/format from the real progress payload without replacing Player playback identity', () => {

@@ -99,10 +99,15 @@ function buildQueueSnapshot(queue) {
     ? Math.max(0, Number(getUpNext()) | 0)
     : items.filter((it) => it?.priority === 'upNext').length;
 
+  const getExecutionOrder = typeof queue.getExecutionOrder === 'function'
+    ? queue.getExecutionOrder.bind(queue)
+    : null;
+  const executionOrder = getExecutionOrder ? getExecutionOrder() : undefined;
   return {
     items: items.map((it) => ({ ...it })),  // shallow copy so consumers don't mutate
     currentIndex,
     upNextCount,
+    ...(Array.isArray(executionOrder) ? { executionOrder: [...executionOrder] } : {}),
   };
 }
 
@@ -141,22 +146,30 @@ export function createSessionSource({
       return createIdleSessionSnapshot({ sessionId: sid, ownerId });
     }
 
-    const rawState = typeof player?.getState === 'function' ? player.getState() : 'idle';
+    // New owner ports produce one immutable capture. Legacy queue controllers
+    // still use the additive individual-read fallback below.
+    let ownerCapture = null;
+    try { ownerCapture = queueController?.capture?.(sid) ?? null; } catch (err) {
+      logger().warn('owner-capture-failed', { error: String(err?.message ?? err) });
+    }
+
+    const rawState = ownerCapture?.state ?? (typeof player?.getState === 'function' ? player.getState() : 'idle');
     const state = mapState(rawState);
 
-    const currentItem = typeof queueController?.getCurrentItem === 'function'
+    const currentItem = ownerCapture?.currentItem ?? (typeof queueController?.getCurrentItem === 'function'
       ? (queueController.getCurrentItem() ?? null)
-      : null;
+      : null);
 
-    const rawPos = typeof player?.getPosition === 'function' ? player.getPosition() : 0;
+    const rawPos = ownerCapture?.position ?? (typeof player?.getPosition === 'function' ? player.getPosition() : 0);
     const position = typeof rawPos === 'number' && Number.isFinite(rawPos) && rawPos >= 0
       ? rawPos
       : 0;
 
-    const queue = buildQueueSnapshot(queueController);
+    const queue = ownerCapture?.queue ?? buildQueueSnapshot(queueController);
 
-    const cfg = typeof player?.getConfig === 'function' ? player.getConfig() : null;
+    const cfg = ownerCapture?.config ?? (typeof player?.getConfig === 'function' ? player.getConfig() : null);
     const config = normalizeConfig(cfg);
+    const playbackOwner = ownerCapture?.identity ?? null;
 
     return {
       sessionId: sid,
@@ -165,7 +178,11 @@ export function createSessionSource({
       position,
       queue,
       config,
-      meta: { ownerId, updatedAt: new Date().toISOString() },
+      meta: {
+        ownerId,
+        updatedAt: new Date().toISOString(),
+        ...(playbackOwner ? { playbackOwner } : {}),
+      },
     };
   }
 

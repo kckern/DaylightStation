@@ -156,12 +156,30 @@ describe('clear', () => {
 });
 
 describe('add', () => {
-  it('appends; first-into-empty becomes current', () => {
+  it('appends into an empty queue without selecting a current item', () => {
     const first = q.add(seed(), { contentId: 'c:a' });
-    expect(first.queue.currentIndex).toBe(0);
+    expect(first.queue.currentIndex).toBe(-1);
+    expect(first.currentItem).toBeNull();
+    expect(first.state).toBe('ready');
     const second = q.add(first, { contentId: 'c:b' });
     expect(ids(second)).toHaveLength(2);
-    expect(second.queue.currentIndex).toBe(0);
+    expect(second.queue.currentIndex).toBe(-1);
+  });
+
+  it('preserves an active source that is no longer represented in the queue', () => {
+    const active = {
+      ...q.clear(seed('a*')),
+      state: 'playing',
+      position: 37,
+    };
+
+    const next = q.add(active, { contentId: 'c:b' });
+
+    expect(ids(next)).toHaveLength(1);
+    expect(next.queue.currentIndex).toBe(-1);
+    expect(next.currentItem).toEqual(active.currentItem);
+    expect(next.position).toBe(37);
+    expect(next.state).toBe('playing');
   });
 });
 
@@ -199,12 +217,14 @@ describe('batch ops (playNowMany / playNextMany / addUpNextMany / addMany)', () 
       .toEqual(['c:a', 'c:u1', 'c:x', 'c:y', 'c:z', 'c:b']);
   });
 
-  it('addMany: appends in order; first-into-empty becomes current', () => {
+  it('addMany: appends in order and holds an empty queue for explicit Play', () => {
     const next = q.addMany(seed(), batch);
     expect(next.queue.items.map((i) => i.contentId)).toEqual(['c:x', 'c:y', 'c:z']);
-    expect(next.queue.currentIndex).toBe(0);
+    expect(next.queue.currentIndex).toBe(-1);
+    expect(next.currentItem).toBeNull();
+    expect(next.state).toBe('ready');
     const more = q.addMany(next, [{ contentId: 'c:w' }]);
-    expect(more.queue.currentIndex).toBe(0); // current unchanged
+    expect(more.queue.currentIndex).toBe(-1); // held queue remains unselected
   });
 
   it('empty batch is a no-op for all four', () => {

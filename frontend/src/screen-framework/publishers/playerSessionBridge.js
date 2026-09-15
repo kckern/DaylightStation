@@ -34,7 +34,7 @@ const DEFAULT_POLL_MS = 1000;
 
 // Mirror of shared/contracts/media/shapes.mjs FORMATS (not exported there).
 const KNOWN_FORMATS = new Set([
-  'video', 'dash_video', 'audio', 'singalong', 'readalong',
+  'video', 'dash_video', 'hls_video', 'audio', 'singalong', 'readalong',
   'readable_paged', 'readable_flow', 'app', 'image', 'composite',
 ]);
 
@@ -123,6 +123,9 @@ export function createPlayerSessionBridge({
   const queueSubs = new Set();
   let lastState = null;
   let lastItemKey = null;
+  let observedPlayingNode = null;
+  let observedPlaying = false;
+  let detachNativeObservation = () => {};
 
   const readHandle = () => {
     try {
@@ -151,6 +154,34 @@ export function createPlayerSessionBridge({
     }
   };
 
+  const observeNativeNode = (el) => {
+    if (el === observedPlayingNode) return;
+    try { detachNativeObservation(); } catch { /* ignore */ }
+    observedPlayingNode = el;
+    observedPlaying = false;
+    detachNativeObservation = () => {};
+    if (!el || typeof el.addEventListener !== 'function') return;
+    const markPlaying = () => { observedPlaying = true; };
+    const clearPlaying = () => { observedPlaying = false; };
+    const markEnded = () => { observedPlaying = false; };
+    try {
+      el.addEventListener('playing', markPlaying);
+      el.addEventListener('pause', clearPlaying);
+      el.addEventListener('waiting', clearPlaying);
+      el.addEventListener('seeking', clearPlaying);
+      el.addEventListener('ended', markEnded);
+      detachNativeObservation = () => {
+        el.removeEventListener?.('playing', markPlaying);
+        el.removeEventListener?.('pause', clearPlaying);
+        el.removeEventListener?.('waiting', clearPlaying);
+        el.removeEventListener?.('seeking', clearPlaying);
+        el.removeEventListener?.('ended', markEnded);
+      };
+    } catch {
+      detachNativeObservation = () => {};
+    }
+  };
+
   const readNowPlayingMeta = () => {
     const handle = readHandle();
     if (!handle) return null;
@@ -162,6 +193,61 @@ export function createPlayerSessionBridge({
     }
   };
 
+  const readQueueSnapshot = () => {
+    const handle = readHandle();
+    if (!handle) return null;
+    try {
+      const queue = handle.getQueueSnapshot?.();
+      return queue && typeof queue === 'object' ? queue : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const copyQueueSnapshot = (queue) => {
+    const items = Array.isArray(queue?.items) ? queue.items.map((item) => ({ ...item })) : [];
+    const currentIndex = Number.isInteger(queue?.currentIndex) ? queue.currentIndex : -1;
+    return {
+      items,
+      currentIndex,
+      upNextCount: Number.isInteger(queue?.upNextCount) && queue.upNextCount >= 0
+        ? queue.upNextCount
+        : items.filter((item) => item?.priority === 'upNext').length,
+      ...(Array.isArray(queue?.executionOrder) ? { executionOrder: [...queue.executionOrder] } : {}),
+    };
+  };
+
+  // Exactly one imperative queue read defines a capture. Consumers must carry
+  // this object through rather than re-reading items/index/order separately.
+  const readOwnerCapture = () => {
+    const handle = readHandle();
+    if (!handle) return null;
+    const queue = copyQueueSnapshot(readQueueSnapshot());
+    let issuedIdentity = null;
+    try { issuedIdentity = handle.getPlaybackIdentity?.() ?? null; } catch { /* ignore */ }
+    const validIssuedIdentity = issuedIdentity
+      && typeof issuedIdentity.ownerInstanceId === 'string'
+      && issuedIdentity.ownerInstanceId.length > 0
+      && Number.isInteger(issuedIdentity.playbackRevision)
+      && issuedIdentity.playbackRevision >= 0
+      && Number.isInteger(issuedIdentity.queueRevision)
+      && issuedIdentity.queueRevision >= 0
+      ? {
+        ownerInstanceId: issuedIdentity.ownerInstanceId,
+        playbackRevision: issuedIdentity.playbackRevision,
+        queueRevision: issuedIdentity.queueRevision,
+      }
+      : null;
+    return {
+      queue,
+      issuedIdentity: validIssuedIdentity,
+      currentItem: getCurrentItem(),
+      config: getConfig(),
+      state: getState(),
+      position: getPosition(),
+    };
+  };
+
   const getState = () => {
     const handle = readHandle();
     if (!handle) return 'idle';
@@ -169,10 +255,11 @@ export function createPlayerSessionBridge({
     // No media element yet (still resolving /play, or a non-AV format like an
     // image slideshow) — report loading rather than lying about playback.
     if (!el) return 'loading';
+    observeNativeNode(el);
     try {
       if (el.ended) return 'ended';
       if (el.paused) return 'paused';
-      return 'playing';
+      return observedPlaying ? 'playing' : 'buffering';
     } catch {
       return 'loading';
     }
@@ -215,6 +302,10 @@ export function createPlayerSessionBridge({
       const r = handle.getPlaybackRate?.();
       if (Number.isFinite(r)) config.playbackRate = r;
     } catch { /* ignore */ }
+    try {
+      const shader = handle.getShader?.();
+      if (shader === null || typeof shader === 'string') config.shader = shader;
+    } catch { /* ignore */ }
     return config;
   };
 
@@ -229,6 +320,8 @@ export function createPlayerSessionBridge({
   };
 
   const getCurrentIndex = () => {
+    const captured = readQueueSnapshot();
+    if (Number.isInteger(captured?.currentIndex) && captured.currentIndex >= 0) return captured.currentIndex;
     const handle = readHandle();
     if (!handle) return -1;
     try {
@@ -254,8 +347,35 @@ export function createPlayerSessionBridge({
 
   const queueController = {
     getCurrentItem,
-    getQueue: () => [],
+    getQueue: () => {
+      const items = readQueueSnapshot()?.items;
+      return Array.isArray(items) ? items.map((item) => ({ ...item })) : [];
+    },
     getCurrentIndex,
+    getExecutionOrder: () => {
+      const order = readQueueSnapshot()?.executionOrder;
+      return Array.isArray(order) ? [...order] : undefined;
+    },
+    capture(sessionId) {
+      const captured = readOwnerCapture();
+      if (!captured) return null;
+      const { issuedIdentity, queue, state } = captured;
+      const { items, currentIndex } = queue;
+      const currentEntry = currentIndex >= 0 ? items[currentIndex] : null;
+      const identity = issuedIdentity && sessionId
+        && (currentEntry?.queueItemId && currentEntry?.contentId || state === 'idle')
+        ? {
+        ...issuedIdentity,
+        sessionId,
+        contentId: currentEntry?.contentId ?? null,
+        queueItemId: currentEntry?.queueItemId ?? null,
+        }
+        : null;
+      return { ...captured, queue, identity };
+    },
+    getPlaybackOwner(sessionId) {
+      return this.capture(sessionId)?.identity ?? null;
+    },
     subscribe(cb) {
       if (typeof cb !== 'function') return () => {};
       queueSubs.add(cb);
@@ -331,6 +451,10 @@ export function createPlayerSessionBridge({
       }
       lastState = null;
       lastItemKey = null;
+      try { detachNativeObservation(); } catch { /* ignore */ }
+      detachNativeObservation = () => {};
+      observedPlayingNode = null;
+      observedPlaying = false;
     },
     // Exposed for tests / diagnostics.
     player,

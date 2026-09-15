@@ -66,6 +66,7 @@ export function createLocalSessionController({
   clientId,
   persistedSnapshot = null,
   randomUuid = defaultUuid,
+  ownerInstanceId = `local-owner:${defaultUuid()}`,
   nowFn = () => new Date(),
   clearPersisted = () => {},
   fetchImpl = undefined, // container expansion; defaults to globalThis.fetch
@@ -78,12 +79,82 @@ export function createLocalSessionController({
   const store = createSessionStore(initial);
   const position = createPositionChannel();
   position.set(initial.position ?? 0);
+  let playbackRevision = 0;
+  let queueRevision = 0;
+  let observedNativeNode = null;
+
+  const queueFingerprint = (snapshot) => JSON.stringify({
+    items: snapshot.queue?.items?.map((item) => ({
+      queueItemId: item.queueItemId,
+      contentId: item.contentId,
+      priority: item.priority,
+    })) ?? [],
+    currentIndex: snapshot.queue?.currentIndex ?? -1,
+    config: snapshot.config,
+  });
+
+  // Revisions change at the owner action boundary. Metadata/position updates
+  // are deliberately absent so an enrichment cannot invalidate a move guard.
+  store.onTransition((prev, next, action) => {
+    if (queueFingerprint(prev) !== queueFingerprint(next)) queueRevision += 1;
+    if (['LOAD_ITEM', 'ADOPT_SNAPSHOT', 'STOP', 'RESET'].includes(action?.type)) {
+      playbackRevision += 1;
+    }
+  });
 
   // PlayerBridge injects the imperative player surface; until it does (or
   // when no media element exists) these are no-ops.
   let player = { play: () => {}, pause: () => {}, seek: () => {}, getMediaElement: () => null };
 
   const snap = () => store.getSnapshot();
+
+  const capture = () => {
+    const current = snap();
+    const native = player.getMediaElement?.() ?? null;
+    // A replacement native node invalidates stale native evidence, even when
+    // recovery retained the logical item.
+    if (native !== observedNativeNode) {
+      observedNativeNode = native;
+      if (native) playbackRevision += 1;
+    }
+    const nativePosition = native?.currentTime;
+    const hotPosition = Number.isFinite(nativePosition) && nativePosition >= 0
+      ? nativePosition
+      : position.get().seconds;
+    const snapshot = JSON.parse(JSON.stringify(current));
+    snapshot.position = Number.isFinite(hotPosition) && hotPosition >= 0 ? hotPosition : 0;
+    const items = snapshot.queue?.items ?? [];
+    const currentIndex = snapshot.queue?.currentIndex ?? -1;
+    const forwardVisits = currentIndex >= 0 && items[currentIndex]
+      ? items.slice(currentIndex)
+      : [];
+    // Repeat-all is finite capture: include precisely the remaining current
+    // lap, stopping immediately before the next automatic repeat.
+    // Shuffle advancement chooses future items at action time. Capture only
+    // reports the current determined visit rather than inventing a stable
+    // sequence that the owner has not selected.
+    const executionVisits = snapshot.config?.shuffle
+      ? (currentIndex >= 0 && items[currentIndex] ? [items[currentIndex]] : [])
+      : (snapshot.config?.repeat === 'all' && currentIndex > 0
+        ? [...forwardVisits, ...items.slice(0, currentIndex)]
+        : forwardVisits);
+    snapshot.queue.executionOrder = executionVisits.map((item) => item.queueItemId);
+    const currentEntry = currentIndex >= 0 ? items[currentIndex] : null;
+    const identity = {
+      ownerInstanceId,
+      playbackRevision,
+      queueRevision,
+      sessionId: snapshot.sessionId,
+      contentId: currentEntry?.contentId ?? null,
+      queueItemId: currentEntry?.queueItemId ?? null,
+    };
+    snapshot.meta = { ...snapshot.meta, playbackOwner: { ...identity } };
+    return {
+      snapshot,
+      identity: { ...identity },
+      capabilities: { handoffV1: false, seekable: controller.capabilities.seekable, liveEdge: false },
+    };
+  };
 
   // Durable position writes flow down into the hot tier (never the reverse).
   const setDurablePosition = (seconds) => {
@@ -171,11 +242,9 @@ export function createLocalSessionController({
       store.replace(next);
     },
     add: (inputs, _opts, context) => {
-      const wasEmpty = snap().queue.items.length === 0;
       const next = qOps.addMany(snap(), inputs);
       logQueueMutation('add', next, context);
       store.replace(next);
-      if (wasEmpty && next.queue.currentIndex === 0) loadCurrent(next);
     },
   };
 
@@ -332,11 +401,8 @@ export function createLocalSessionController({
     portability: {
       // Position comes from the hot tier — the durable tier can lag by up to
       // 5s, which would blow the C7.3 hand-off tolerance.
-      snapshotForHandoff: () => {
-        const out = JSON.parse(JSON.stringify(snap()));
-        out.position = position.get().seconds ?? out.position;
-        return out;
-      },
+      snapshotForHandoff: () => capture().snapshot,
+      capture,
       receiveClaim: (snapshot) => controller.lifecycle.adoptSnapshot(snapshot, { autoplay: true }),
     },
 
@@ -359,9 +425,11 @@ export function createLocalSessionController({
       if (snap().currentItem?.contentId !== contentId) return;
       const playerState = observation.stalled === true && observation.paused === false
         ? 'buffering'
-        : (typeof observation.paused === 'boolean'
-          ? (observation.paused ? 'paused' : 'playing')
-          : undefined);
+        : (observation.paused === true
+          ? 'paused'
+          // A decoder can be unpaused while buffering or not yet rendered.
+          // Only the actual native `playing` event may establish playing.
+          : (observation.playing === true ? 'playing' : undefined));
       store.dispatch({
         type: 'PLAYER_OBSERVATION',
         contentId,
