@@ -21,10 +21,12 @@ import BoardGameFrame from '@/modules/Piano/game-platform/host/BoardGameFrame.js
 import { GameRail, GameSlot, GameStatusBar } from '@/modules/Piano/game-platform/chrome/index.js';
 import ChessBoard from '@/modules/Chess/ChessBoard.jsx';
 import AddressRail from '@/modules/Piano/game-platform/families/addressed-board/AddressRail.jsx';
-import { StaffNoteLabel } from '@/modules/Piano/game-platform/families/addressed-board/StaffNoteLabel.jsx';
+import { StaffClefLabel, StaffNoteLabel } from '@/modules/Piano/game-platform/families/addressed-board/StaffNoteLabel.jsx';
 import { BOARD_LAYOUTS } from '@/modules/Piano/game-platform/families/addressed-board/contracts.js';
 import { PianoFullscreenProvider } from '@/modules/Piano/PianoKiosk/PianoFullscreenContext.jsx';
-import { rimStaffExtent } from '@/modules/MusicNotation/renderers/RimStaffRenderer.jsx';
+import { rimAxisClef, rimStaffExtent } from '@/modules/MusicNotation/renderers/RimStaffRenderer.jsx';
+import ChordNamePanel from '@/modules/Piano/components/ChordNamePanel.jsx';
+import CurrentChordStaff from '@/modules/Piano/components/CurrentChordStaff.jsx';
 import '@/modules/Piano/components/ActionStaff.scss';
 import '@/modules/Piano/PianoChessGame/PianoChessGame.scss';
 import '@/modules/Piano/PianoCheckers/PianoCheckers.scss';
@@ -41,14 +43,22 @@ const boardMax = q.get('boardMax');
 const railTrack = q.get('railTrack');
 // Checkers' rim thickness token (`--ck-rank-rail`, also its file rail).
 const ckRail = q.get('ckRail');
-// The kiosk's real full-screen capability: the provider reads it as remembered,
-// the header stand-in goes, and the games style themselves off the host class.
+// Board-game full screen, through the real provider: mounting a board game
+// inside it claims full screen by default, the header stand-in goes, and the
+// games style themselves off the host class. Without it the games are windowed.
 const fullscreen = q.get('fullscreen') === '1';
-const fullscreenStore = { getItem: () => (fullscreen ? 'true' : null), setItem() {}, removeItem() {} };
+const fullscreenStore = { getItem: () => null, setItem() {}, removeItem() {} };
 
-// The grand-staff default scheme both board games ship with (staffAddress.js).
-const TREBLE = [60, 62, 64, 65, 67, 69, 71, 72];
-const BASS = [47, 48, 50, 52, 53, 55, 57, 59];
+// The grand-staff default scheme both board games ship with (staffAddress.js),
+// or (shape=dyad) the two-note shapes the ladder deals next.
+const dyads = q.get('shape') === 'dyad';
+const TREBLE = dyads
+  ? [[60, 67], [62, 69], [64, 71], [65, 72], [67, 74], [69, 76], [71, 77], [72, 79]]
+  : [60, 62, 64, 65, 67, 69, 71, 72];
+const BASS = dyads
+  ? [[41, 48], [43, 50], [45, 52], [47, 53], [48, 55], [50, 57], [52, 59], [53, 59]]
+  : [47, 48, 50, 52, 53, 55, 57, 59];
+const cardKey = (token) => [token].flat().join('-');
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 const noNotes = new Map();
 
@@ -71,7 +81,30 @@ function Rail({ label }) {
   );
 }
 
+// Chess's real right rail, down to the "Playing" card: the clock, identity and
+// opponent blocks are stand-ins of their measured height on the kiosk, and the
+// live staff card is the real component in the real rail.
+function ChessHandsRail() {
+  return (
+    <GameRail label="Your hands" className="piano-chess__rail piano-chess__rail--chords">
+      <GameSlot label="Clock"><div style={{ height: 64 }}>THEM 7:46 · YOU 39:13</div></GameSlot>
+      <GameSlot label="Player"><div style={{ height: 40 }}>Player · Yours (White)</div></GameSlot>
+      <GameSlot label="Opponent"><div style={{ height: 170 }}>Opponent card</div></GameSlot>
+      <h2 className="pg-slot__label">Playing</h2>
+      <ChordNamePanel midiNotes={[]} />
+      <div className="piano-chess__staff-card action-staff">
+        <CurrentChordStaff activeNotes={noNotes} />
+      </div>
+      <div className="piano-chess__captured">
+        <p className="piano-chess__captured-none">No pieces taken yet</p>
+      </div>
+    </GameRail>
+  );
+}
+
 function Chess() {
+  const fileExtent = rimStaffExtent(TREBLE, { clef: false });
+  const rankExtent = rimStaffExtent(BASS);
   return (
     <BoardGameFrame
       gameId="chess"
@@ -80,15 +113,18 @@ function Chess() {
       instrumentClassName="piano-chess__instrument"
       instrument={{ activeNotes: noNotes, startNote: 36, endNote: 84, showLabels: true }}
       leftRail={<Rail label="Move controls" />}
-      rightRail={<Rail label="Your hands" />}
+      rightRail={<ChessHandsRail />}
       status={<GameStatusBar>Play a piece&apos;s two notes twice to pick it up.</GameStatusBar>}
       primary={(
         <ChessBoard
           fen={START_FEN}
           status={{}}
           orientation="white"
-          fileLabels={TREBLE.map((midi) => <StaffNoteLabel key={midi} midi={midi} extent={rimStaffExtent(TREBLE)} />)}
-          rankLabels={BASS.map((midi) => <StaffNoteLabel key={midi} midi={midi} extent={rimStaffExtent(BASS)} />)}
+          fileLabels={TREBLE.map((token) => (
+            <StaffNoteLabel key={cardKey(token)} midi={token} extent={fileExtent} clef={false} />
+          ))}
+          rankLabels={BASS.map((token) => <StaffNoteLabel key={cardKey(token)} midi={token} extent={rankExtent} />)}
+          corner={<StaffClefLabel clef={rimAxisClef(TREBLE)} extent={fileExtent} />}
         />
       )}
     />
@@ -299,7 +335,9 @@ function Harness() {
         className="piano-game-fullscreen"
         style={{ position: 'relative', flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}
       >
-        <PianoFullscreenProvider storage={fullscreenStore}><Game /></PianoFullscreenProvider>
+        {fullscreen
+          ? <PianoFullscreenProvider storage={fullscreenStore}><Game /></PianoFullscreenProvider>
+          : <Game />}
       </div>
     </div>
   );

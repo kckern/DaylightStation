@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
-import { RimStaffRenderer, layoutRimCard, rimClefRight, rimStaffExtent } from './RimStaffRenderer.jsx';
+import {
+  RimClef, RimStaffRenderer, layoutRimCard, rimAxisClef, rimClefRight, rimStaffExtent,
+} from './RimStaffRenderer.jsx';
 import { NOTEHEAD_RX } from './staffGlyphs.jsx';
 
 const TREBLE_AXIS = [60, 62, 64, 65, 67, 69, 71, 72];
@@ -11,16 +13,23 @@ const viewBox = (c) => svgOf(c).getAttribute('viewBox').split(' ').map(Number);
 const lineYs = (c) => [...c.querySelectorAll('.action-staff__line')].map((l) => Number(l.getAttribute('y1')));
 
 describe('rimStaffExtent', () => {
-  it('spans exactly what the grand-staff treble axis needs: C4 ledger to half a space over the top line', () => {
+  it('spans what the grand-staff treble axis needs: C4 ledger and B4 stem below, A4 stem above', () => {
+    // A4 (position 3) stems up to 10; B4 (4, the middle line) and C4's ledger
+    // both reach -3.
     const { lo, hi } = rimStaffExtent(TREBLE_AXIS);
     expect(lo).toBe(-3);
-    expect(hi).toBe(9);
+    expect(hi).toBe(10);
   });
 
-  it('spans the bass axis from under the bottom line to B3 above the top line', () => {
+  it('spans the bass axis from D3\'s down-stem to C3\'s up-stem', () => {
     const { lo, hi } = rimStaffExtent(BASS_AXIS);
-    expect(lo).toBe(-1);
+    expect(lo).toBe(-3);
     expect(hi).toBe(10);
+  });
+
+  it('is narrower when the axis draws its clef once instead of on every card', () => {
+    expect(rimStaffExtent(TREBLE_AXIS, { clef: false }).width)
+      .toBeLessThan(rimStaffExtent(TREBLE_AXIS).width - rimClefRight('treble') + 10);
   });
 
   it('is at least as wide and tall as every card on the axis', () => {
@@ -55,12 +64,50 @@ describe('RimStaffRenderer', () => {
     expect(ys[1] - ys[0]).toBeCloseTo(14);
   });
 
-  it('draws the note with no stem, and a ledger line for middle C', () => {
+  it('draws the note with its stem, and a ledger line for middle C', () => {
     const { container } = render(<RimStaffRenderer targetPitches={[60]} extent={rimStaffExtent(TREBLE_AXIS)} />);
     expect(container.querySelectorAll('.action-staff__note')).toHaveLength(1);
-    expect(container.querySelector('.action-staff__stem')).toBeNull();
-    const ledgers = [...container.querySelectorAll('line:not(.action-staff__line)')];
+    const ledgers = [...container.querySelectorAll('line:not(.action-staff__line):not(.action-staff__stem)')];
     expect(ledgers).toHaveLength(1);
+    const stem = container.querySelector('.action-staff__stem');
+    const head = container.querySelector('.action-staff__note');
+    // Below the middle line: up, on the right of the head, three and a half spaces.
+    expect(Number(stem.getAttribute('x1'))).toBeGreaterThan(Number(head.getAttribute('cx')));
+    expect(Number(stem.getAttribute('y1')) - Number(stem.getAttribute('y2'))).toBeCloseTo(3.5 * 14);
+  });
+
+  it('stems a note on or above the middle line down, on the left', () => {
+    const { container } = render(<RimStaffRenderer targetPitches={[72]} extent={rimStaffExtent(TREBLE_AXIS)} />);
+    const stem = container.querySelector('.action-staff__stem');
+    const head = container.querySelector('.action-staff__note');
+    expect(Number(stem.getAttribute('x1'))).toBeLessThan(Number(head.getAttribute('cx')));
+    expect(Number(stem.getAttribute('y2'))).toBeGreaterThan(Number(stem.getAttribute('y1')));
+  });
+
+  it('gives a chord one stem', () => {
+    const { container } = render(<RimStaffRenderer targetPitches={[48, 52, 55]} />);
+    expect(container.querySelectorAll('.action-staff__stem')).toHaveLength(1);
+  });
+
+  it('keeps every stem inside the axis box', () => {
+    for (const axis of [TREBLE_AXIS, BASS_AXIS]) {
+      const extent = rimStaffExtent(axis, { clef: false });
+      const height = (extent.hi - extent.lo) * 7;
+      for (const midi of axis) {
+        const { container } = render(<RimStaffRenderer targetPitches={[midi]} extent={extent} showClef={false} />);
+        const stem = container.querySelector('.action-staff__stem');
+        for (const y of [stem.getAttribute('y1'), stem.getAttribute('y2')].map(Number)) {
+          expect(y).toBeGreaterThanOrEqual(-0.01);
+          expect(y).toBeLessThanOrEqual(height + 0.01);
+        }
+      }
+    }
+  });
+
+  it('draws no clef on a card whose axis carries one at its head', () => {
+    const { container } = render(<RimStaffRenderer targetPitches={[64]} extent={rimStaffExtent(TREBLE_AXIS, { clef: false })} showClef={false} />);
+    expect(container.querySelector('.action-staff__clef')).toBeNull();
+    expect(svgOf(container)).toHaveAttribute('data-show-clef', 'false');
   });
 
   it('draws the clef its first pitch asks for', () => {
@@ -106,6 +153,11 @@ describe('RimStaffRenderer', () => {
     });
   });
 
+  it('sets the clef against the card\'s left edge', () => {
+    const { container } = render(<RimStaffRenderer targetPitches={[50]} extent={rimStaffExtent(BASS_AXIS)} />);
+    expect(svgOf(container)).toHaveAttribute('preserveAspectRatio', 'xMinYMid meet');
+  });
+
   it('keeps every group clear of the clef and inside the extent', () => {
     const tokens = [[60, 62], [61, 63, 66], [70], [47, 49, 52], [72, 74]];
     const extent = rimStaffExtent(tokens, { accidental: 'sharp' });
@@ -116,5 +168,30 @@ describe('RimStaffRenderer', () => {
       expect(Math.min(...heads) - NOTEHEAD_RX).toBeGreaterThanOrEqual(rimClefRight(clef));
       expect(Math.max(...heads) + NOTEHEAD_RX).toBeLessThanOrEqual(extent.width);
     }
+  });
+});
+
+describe('RimClef', () => {
+  it('puts its staff lines exactly where a card of the same extent puts them', () => {
+    const extent = rimStaffExtent(TREBLE_AXIS, { clef: false });
+    const head = render(<RimClef clef="treble" extent={extent} />).container;
+    const card = render(<RimStaffRenderer targetPitches={[64]} extent={extent} showClef={false} />).container;
+    expect(viewBox(head)[3]).toBeCloseTo(viewBox(card)[3]);
+    expect(lineYs(head)).toEqual(lineYs(card));
+  });
+
+  it('draws the clef it is given, inside the box', () => {
+    const extent = rimStaffExtent(TREBLE_AXIS, { clef: false });
+    const { container } = render(<RimClef clef="treble" extent={extent} />);
+    expect(container.querySelector('.action-staff__clef')).toHaveAttribute('data-clef', 'treble');
+    expect(svgOf(container)).toHaveAttribute('data-clef', 'treble');
+  });
+});
+
+describe('rimAxisClef', () => {
+  it('reads the axis clef from its first shape', () => {
+    expect(rimAxisClef(TREBLE_AXIS)).toBe('treble');
+    expect(rimAxisClef(BASS_AXIS)).toBe('bass');
+    expect(rimAxisClef([[48, 52], [50, 53]])).toBe('bass');
   });
 });

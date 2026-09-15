@@ -1,5 +1,5 @@
 import { SvgStaffRenderer } from '../../../../MusicNotation/renderers/SvgStaffRenderer.jsx';
-import { RimStaffRenderer } from '../../../../MusicNotation/renderers/RimStaffRenderer.jsx';
+import { RimClef, RimStaffRenderer } from '../../../../MusicNotation/renderers/RimStaffRenderer.jsx';
 import './StaffNoteLabel.scss';
 
 /**
@@ -35,14 +35,22 @@ import './StaffNoteLabel.scss';
  * @param {boolean} [locked] this card's hand is completely and correctly played
  * THE RIM GEOMETRY. Given an `extent` — the box its whole axis needs, from
  * `rimStaffExtent` — the card is drawn by `RimStaffRenderer` instead: only the
- * range the axis uses, a cue-size clef, no stems, filling whatever box the board
- * gives it. Every card on one axis gets the same extent, so the staff is one size
- * along the rim. Without one (the game launcher) it is the shared staff as before.
+ * range the axis uses, a cue-size clef against the card's left edge, stems,
+ * filling whatever box the board gives it. Every card on one axis gets the same
+ * extent, so the staff is one size along the rim. Without one (the game
+ * launcher) it is the shared staff as before.
+ *
+ * `clef={false}` (rim geometry only) leaves the clef off this card, for an axis
+ * that draws it once at its head with `StaffClefLabel` — a row of narrow cards
+ * spent a third of each one on the same clef.
  *
  * @param {'sharp'|'flat'} [accidental] spelling for black keys on this board
  * @param {{lo: number, hi: number, width: number}} [extent] the axis's rim box
+ * @param {boolean} [clef] draw this card's clef (default true)
  */
-export function StaffNoteLabel({ midi, midis = null, held = null, locked = false, accidental = undefined, extent = null }) {
+export function StaffNoteLabel({
+  midi, midis = null, held = null, locked = false, accidental = undefined, extent = null, clef = true,
+}) {
   const targetPitches = Array.isArray(midis) ? midis : (Array.isArray(midi) ? midi : [midi]);
   // `action-staff--matched` is the shared green treatment the other piano staves
   // already use for ink that is right; the local class adds the border and glow
@@ -64,6 +72,7 @@ export function StaffNoteLabel({ midi, midis = null, held = null, locked = false
           matched={locked}
           accidental={accidental}
           extent={extent}
+          showClef={clef}
         />
       ) : (
         <SvgStaffRenderer
@@ -73,6 +82,22 @@ export function StaffNoteLabel({ midi, midis = null, held = null, locked = false
           accidental={accidental}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * The clef at the head of a rim axis whose cards carry none. Same card box and
+ * the same `extent` as those cards, so its staff lines are theirs; no border,
+ * because it is the start of the row rather than one more address in it.
+ *
+ * @param {'treble'|'bass'} clef
+ * @param {{lo: number, hi: number, width: number}} extent the axis's rim box
+ */
+export function StaffClefLabel({ clef, extent }) {
+  return (
+    <div className="chess-staff-label action-staff chess-staff-label--rim chess-staff-label--clef">
+      <RimClef clef={clef} extent={extent} />
     </div>
   );
 }

@@ -73,6 +73,24 @@
   padding-block-start: 0.35rem;
 }
 
+/* Where the two strips meet. Stretched over its whole grid cell — the rank
+   strip's column, the file strip's row — so whatever a host puts here is the
+   size of a file label's row without the host having to repeat that sum. */
+.chess-board__corner {
+  grid-column: 1;
+  grid-row: 2;
+  align-self: stretch;
+  justify-self: stretch;
+  display: grid;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  /* Takes the cell, never sizes it. An SVG in here has an intrinsic height of
+     its own (width over its viewBox ratio), and without containment it grew the
+     file row to fit — every file card stretched with it. */
+  contain: size;
+}
+
 .chess-board__axis-label {
   display: grid;
   place-items: center;

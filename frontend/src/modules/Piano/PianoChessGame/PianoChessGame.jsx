@@ -33,7 +33,7 @@ import { cuesFromConfig } from './chessCues.js';
 import ChessSettingsPanel from './ChessSettingsPanel.jsx';
 import { CHORD_QUALITIES, DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
 import { isStaffScheme, splitFor, staffAxisMatch } from './staffAddress.js';
-import StaffNoteLabel from '../game-platform/families/addressed-board/StaffNoteLabel.jsx';
+import StaffNoteLabel, { StaffClefLabel } from '../game-platform/families/addressed-board/StaffNoteLabel.jsx';
 import { candidateSquares } from './chordCandidates.js';
 import { destinationBadges } from './chessBadges.js';
 import { recognizeGesture } from './chordGestures.js';
@@ -49,7 +49,7 @@ import {
   checkTakeback, playerMoveCount, takebackNote, takebackRefusalMessage, willStillCount,
 } from './takebackBudget.js';
 import { buildChessRailViewModel } from './chessRailViewModel.js';
-import { rimStaffExtent } from '../../MusicNotation/renderers/RimStaffRenderer.jsx';
+import { rimAxisClef, rimStaffExtent } from '../../MusicNotation/renderers/RimStaffRenderer.jsx';
 import { useChessAddressingProgress } from './useChessAddressingProgress.js';
 import { useChessOpponentTurn } from './useChessOpponentTurn.js';
 import { useChessPersistenceLifecycle } from './useChessPersistenceLifecycle.js';
@@ -759,8 +759,17 @@ export function PianoChessGame({
   const lockedRank = axisMatch?.rankComplete ? axisMatch.rank : null;
   // One rim box per axis, measured from every shape that axis can show, so the
   // staff is the same size on all eight cards and does not resize as notes land.
-  const fileExtent = useMemo(() => (reading ? rimStaffExtent(liveScheme.roots) : null), [reading, liveScheme]);
+  // The file row draws its clef ONCE, in the board's corner, and its eight cards
+  // carry none: they are narrow, and the clef was a third of each one. The rank
+  // column's cards are wide enough to keep theirs.
+  const fileExtent = useMemo(
+    () => (reading ? rimStaffExtent(liveScheme.roots, { clef: false }) : null),
+    [reading, liveScheme],
+  );
   const rankExtent = useMemo(() => (reading ? rimStaffExtent(liveScheme.qualities) : null), [reading, liveScheme]);
+  const fileClef = useMemo(() => (reading
+    ? <StaffClefLabel clef={rimAxisClef(liveScheme.roots)} extent={fileExtent} />
+    : null), [reading, liveScheme, fileExtent]);
   const fileLabels = useMemo(() => (reading
     ? liveScheme.roots.map((midi, index) => (
       <StaffNoteLabel
@@ -769,6 +778,7 @@ export function PianoChessGame({
         held={heldFileNotes}
         locked={index === lockedFile}
         extent={fileExtent}
+        clef={false}
       />
     ))
     : liveScheme.roots), [reading, liveScheme, heldFileNotes, lockedFile, fileExtent]);
@@ -1049,6 +1059,7 @@ export function PianoChessGame({
           orientation={playerColor === 'b' ? 'black' : 'white'}
           fileLabels={fileLabels}
           rankLabels={rankLabels}
+          corner={fileClef}
           selected={game.origin}
           heldSquare={game.origin}
           /* Shape as well as text. The board has always had a dot-and-ring
@@ -1187,19 +1198,30 @@ export function PianoChessGame({
         </GameRail>
       )}
 
-      status={(<GameStatusBar
-        className="piano-chess__status"
-        aside={shuffleEachTurn
-          ? (justDealt ? 'New chord map — read the edges' : 'Map changes every turn')
-          : null}
-      >
-        <span className="piano-chess__prompt">
-          {opponentError ?? onboardCopy?.body ?? prompt}
-        </span>
-        {opponentError && (
-          <GameButton variant="ghost" onClick={retryOpponent}>Retry</GameButton>
-        )}
-      </GameStatusBar>)}
+      status={(
+        <>
+          <GameStatusBar
+            className="piano-chess__status"
+            aside={shuffleEachTurn
+              ? (justDealt ? 'New chord map — read the edges' : 'Map changes every turn')
+              : null}
+          >
+            <span className="piano-chess__prompt">
+              {opponentError ?? onboardCopy?.body ?? prompt}
+            </span>
+            {opponentError && (
+              <GameButton variant="ghost" onClick={retryOpponent}>Retry</GameButton>
+            )}
+          </GameStatusBar>
+          {/* Hangs from the status band's lower edge. It used to be pinned to
+              the stage's top-left corner, which is where the status band
+              lives, so every refusal covered the instruction it was refusing
+              under. */}
+          {toast && (
+            <output className="piano-chess__toast" key={toast.seq}>{toast.text}</output>
+          )}
+        </>
+      )}
 
       settings={chessConfig ? {
         rail: 'left',
@@ -1240,10 +1262,6 @@ export function PianoChessGame({
         />
       ) : null}
     >
-
-      {toast && (
-        <output className="piano-chess__toast" key={toast.seq}>{toast.text}</output>
-      )}
 
       {rosterOpen && ladder?.roster?.length > 0 && (
         <OpponentRosterSheet

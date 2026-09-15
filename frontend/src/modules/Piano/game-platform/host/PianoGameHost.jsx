@@ -27,6 +27,7 @@ export function PianoGameHost({
   phase = 'ready',
   phaseMapping = undefined,
   compactInstrument = false,
+  hostRef = undefined,
 }) {
   const { fullscreen } = usePianoFullscreen();
   const hostClassName = [
@@ -53,6 +54,7 @@ export function PianoGameHost({
 
   return (
     <div
+      ref={hostRef}
       className={hostClassName}
       data-piano-game={gameId}
       data-game-phase={projectHostPhase(phase, phaseMapping)}
