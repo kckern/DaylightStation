@@ -67,6 +67,12 @@ export const PIANO_CONFIG_DEFAULTS = {
   // (SM-T590 = 1280×800) and scales to fit any other browser — same layout
   // everywhere. Null either dimension to disable scaling.
   display: { designWidth: 1280, designHeight: 800 },
+  // How the kiosk engraves. `keySignature: true` stands a key signature after
+  // the clef on the sequence staff (scales, ordered asks) and drops the
+  // accidentals it covers — reading a signature is the skill being taught.
+  // False draws every accidental beside its note, which is the picture a child
+  // who has not met key signatures yet should see. Whole-node passthrough.
+  notation: { keySignature: true },
   // Daily piano-game time budget (see docs/reference/piano/games-budget-gate.md).
   // Off by default, like curfew — a household that never sets this block gets
   // unmetered games. Whole-node passthrough (like effects/videos): the server is
@@ -213,6 +219,7 @@ export function resolvePianoConfig(raw, pianoId) {
     producer: p.producer ?? shared.producer ?? PIANO_CONFIG_DEFAULTS.producer,
     autoStudio: { ...PIANO_CONFIG_DEFAULTS.autoStudio, ...(shared.autoStudio || {}), ...(p.autoStudio || {}) },
     display: { ...PIANO_CONFIG_DEFAULTS.display, ...(shared.display || {}), ...(p.display || {}) },
+    notation: { ...PIANO_CONFIG_DEFAULTS.notation, ...(shared.notation || {}), ...(p.notation || {}) },
     gameLimit: { ...PIANO_CONFIG_DEFAULTS.gameLimit, ...(shared.gameLimit || {}), ...(p.gameLimit || {}) },
     gameGate: { ...PIANO_CONFIG_DEFAULTS.gameGate, ...(shared.gameGate || {}), ...(p.gameGate || {}) },
     gameAccess: { ...PIANO_CONFIG_DEFAULTS.gameAccess, ...(shared.gameAccess || {}), ...(p.gameAccess || {}) },

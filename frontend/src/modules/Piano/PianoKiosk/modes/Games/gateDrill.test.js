@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
+  describeDrillStep,
   drillIdOf,
   drillStanding,
   drillStepFor,
@@ -207,5 +208,27 @@ describe('resolveGateDrill', () => {
   it('a program with no steps is a config mistake', async () => {
     pianoLearningApi.program.mockResolvedValue({ ok: true, status: 200, data: { id: 'empty', steps: [] } });
     expect(await resolveGateDrill({ spec: { kind: 'drill', drill: 'empty' } })).toEqual({ ok: false, error: 'drill-unknown' });
+  });
+});
+
+describe('describeDrillStep — what the coach calls the next rep', () => {
+  it('names a rung step from its root and the instance it asks for', () => {
+    const step = rungDrillProgram({ kind: 'exercise', collection: 'scales', roots: ['F#', 'Bb'], sets: 2, reps: 3 }, 'L9').steps;
+    expect(describeDrillStep(step[0])).toEqual({ key: 'F♯ major', hand: null });
+    expect(describeDrillStep(step[1])).toEqual({ key: 'B♭ major', hand: null });
+  });
+
+  it('prefers what a program step says about itself, hand included', () => {
+    expect(describeDrillStep(PROGRAM.steps[1])).toEqual({ key: 'D major', hand: 'left hand' });
+  });
+
+  it('reads a minor mode as minor', () => {
+    const step = { requirement: { exercise_id: 'scales/modes@root=A,mode=aeolian,direction=up', required_passes: 1 } };
+    expect(describeDrillStep(step)).toEqual({ key: 'A minor', hand: null });
+  });
+
+  it('answers with nulls rather than throwing on a step it cannot read', () => {
+    expect(describeDrillStep(null)).toEqual({ key: null, hand: null });
+    expect(describeDrillStep({ requirement: {} })).toEqual({ key: null, hand: null });
   });
 });

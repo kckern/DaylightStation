@@ -73,8 +73,9 @@ import {
 import { isConfigOnlyDecline, materialOrder } from './gateMaterial.js';
 import { failureAdvice } from './failureCoaching.js';
 import {
-  drillStanding, drillStepFor, needsDrillResolution, projectDrill, resolveGateDrill,
+  describeDrillStep, drillStanding, drillStepFor, needsDrillResolution, projectDrill, resolveGateDrill,
 } from './gateDrill.js';
+import RepInterstitial from './RepInterstitial.jsx';
 import { resolveLearnerPath } from './gateDailyEscalation.js';
 import { preloadGame } from '../../../gameRegistry.js';
 import GateCeremony, { CEREMONY_MS } from './GateCeremony.jsx';
@@ -314,6 +315,8 @@ export default function GameGate({
   const [state, setState] = useState(() => readGateState(learnerId, levels, config));
   /** Set the instant a pass lands; cleared by handing the game control. */
   const [ceremony, setCeremony] = useState(null);
+  /** The coach's card between two reps of a drill; cleared when it has said its piece. */
+  const [repCard, setRepCard] = useState(null);
   /**
    * The attempt this gate is currently making, in STATE rather than in a memo
    * over render-scoped values: that is what makes `level` and `spec` stable
@@ -699,6 +702,21 @@ export default function GameGate({
         emit('gate.rep-banked', {
           ...context, score, drill: held.drill.programId, step: step.id, ...standing,
         });
+        // The card: which rep of which set just banked, and what is next. The
+        // set just played is the one the held attempt was serving; whether it
+        // is now clear is whether the next step is a different one.
+        const steps = projection.steps;
+        const playedIndex = Math.max(0, steps.findIndex((entry) => entry.id === held.drill.stepId));
+        const played = steps[playedIndex];
+        setRepCard({
+          score,
+          setIndex: playedIndex + 1,
+          setCount: steps.length,
+          repIndex: played?.pass_count ?? 1,
+          repCount: played?.requirement?.required_passes ?? 1,
+          setClear: step.id !== held.drill.stepId,
+          next: describeDrillStep(step),
+        });
         setAttempt({
           ...held,
           attemptId: makeId('gate-attempt'),
@@ -789,6 +807,7 @@ export default function GameGate({
 
   const tryAgain = () => {
     retryRef.current = true;
+    setRepCard(null);
     setEased(false);
     setFailureNote(null);
     setRound((value) => value + 1);
@@ -981,6 +1000,15 @@ export default function GameGate({
         onExit={ceremony ? undefined : handleAbandoned}
         onUnavailable={handleUnavailable}
       />
+
+      {/* THE CARD COVERS THE RE-SERVE. It mounts in the same commit the rep
+          passes and the next rep is dealt, so the frame where the next
+          instance is still resolving — a black stage, nine times a drill — is
+          never seen. Under it the next rep is already on the stand by the time
+          it fades. A card, not a curtain: nothing opens behind it. */}
+      {repCard && !ceremony && (
+        <RepInterstitial {...repCard} onDone={() => setRepCard(null)} />
+      )}
 
       {ceremony && (
         <GateCeremony

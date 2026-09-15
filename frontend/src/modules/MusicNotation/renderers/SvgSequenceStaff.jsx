@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import { classifyHeldPitch, partitionHeldPitches } from '../model/heldPitch.js';
 import { getStaffPositionOnClef } from '../model/pitch.js';
+import { inkForHead, keySignatureMarks, keySignatureSpec } from '../model/keySignatureLayout.js';
 
 // Re-exported so this renderer's own suite can assert the rule it draws by.
 export { classifyHeldPitch };
@@ -17,8 +18,10 @@ import {
   GHOST_INK,
   SharpShape,
   FlatShape,
+  NaturalShape,
   ledgerLineYs,
   ClefGlyph,
+  clefRightEdge,
 } from './staffGlyphs.jsx';
 import './SvgSequenceStaff.scss';
 
@@ -68,6 +71,11 @@ import './SvgSequenceStaff.scss';
  *       a key is released — nothing here remembers a past mistake.
  * @param {'treble'|'bass'|null} clef - explicit clef; omit to derive from the majority pitch.
  * @param {'sharp'|'flat'} accidental - default spelling for black keys (per-note overridable).
+ * @param {string|null} keySignature - a major key to stand after the clef
+ *   (`'D'`, `'Bb'`). A sharp or flat the signature carries is not drawn beside
+ *   its note again; a natural on a letter the signature alters gets a natural
+ *   sign. Null — the default — draws every accidental beside its note, which is
+ *   what a child who has not met key signatures yet should see.
  */
 
 // ── Geometry (viewBox units) ─────────────────────────────────────────────────
@@ -95,6 +103,19 @@ const STEP_SIZE = LINE_SPACING / 2;
 /** Left edge of the first notehead column — clear of the clef and its accidental gutter. */
 const FIRST_COLUMN_X = 64;
 /**
+ * A key signature stands between the clef and the first column and pushes the
+ * music right by its own width: one glyph column per sharp or flat, plus a
+ * gutter before the first note. Tighter than the per-note accidental pitch —
+ * signature glyphs stagger by height and never share a letter, so their boxes
+ * may overlap the way printed ones do.
+ */
+const SIGNATURE_PITCH = 10;
+const SIGNATURE_GUTTER = 6;
+export function keySignatureWidth(keySignature) {
+  const spec = keySignatureSpec(keySignature);
+  return spec ? spec.count * SIGNATURE_PITCH + SIGNATURE_GUTTER : 0;
+}
+/**
  * Column pitch. A notehead is 18 wide and its accidental another 14 with air,
  * so 36 is the narrowest spacing at which an accidental never touches the
  * previous column's head — which is what keeps a Db major scale legible.
@@ -120,10 +141,10 @@ const MIN_VIEWBOX_W = 100;
  * notation scales uniformly and centres, so the two only agree at this ratio
  * (the STAFF_ASPECT lesson from SvgStaffRenderer).
  */
-export function sequenceStaffViewBox(entryCount = 0) {
+export function sequenceStaffViewBox(entryCount = 0, { keySignature = null } = {}) {
   const width = Math.max(
     MIN_VIEWBOX_W,
-    FIRST_COLUMN_X + Math.max(0, entryCount - 1) * COLUMN_W + RIGHT_PAD
+    FIRST_COLUMN_X + keySignatureWidth(keySignature) + Math.max(0, entryCount - 1) * COLUMN_W + RIGHT_PAD
   );
   return { width, height: VIEWBOX_H };
 }
@@ -156,6 +177,7 @@ export function SvgSequenceStaff({
   activeNotes = null,
   clef = null,
   accidental = 'sharp',
+  keySignature = null,
 }) {
   // The one gate for every per-note colour below (rule 5): with nothing held,
   // there is no attempt to judge, so the cursor entry reads as plain "not yet
@@ -186,6 +208,13 @@ export function SvgSequenceStaff({
   );
 
   const activeClef = clef ?? deriveClef(naturalClefs);
+
+  // The signature, and where the first column lands because of it. Every x
+  // below that used to start at FIRST_COLUMN_X starts here instead, so the
+  // cursor, the columns and the ghost all move together.
+  const signature = useMemo(() => keySignatureMarks(keySignature, activeClef), [keySignature, activeClef]);
+  const firstColumnX = FIRST_COLUMN_X + keySignatureWidth(keySignature);
+  const signatureX = clefRightEdge(LINE_SPACING, activeClef) + ACCIDENTAL_WIDTH / 2 + 2;
 
   const columns = useMemo(
     () =>
@@ -232,13 +261,18 @@ export function SvgSequenceStaff({
           ACCIDENTAL_HEIGHT / STEP_SIZE,
         );
         const drawn = heads.map((head, i) => {
-          const hasAccidental = head.isSharp || head.isFlat;
+          // Under a signature a covered sharp or flat is not drawn again, and a
+          // natural on an altered letter gets a natural sign; without one this
+          // is exactly the sharp-or-flat the head was spelled with.
+          const ink = inkForHead(head, keySignature, activeClef);
+          const hasAccidental = ink !== null;
           // Per-notehead hit/miss (rule 2), meaningful only while this entry
           // is under an active attempt; done/todo entries carry no verdict.
           const hit = active ? Boolean(activeNotes && activeNotes.has(head.midi)) : null;
           const noteState = state === 'active' ? (hit ? 'hit' : 'miss') : state;
           return {
             ...head,
+            ink,
             offset: offsets[i],
             hasAccidental,
             accStagger: hasAccidental ? accidentalColumn.get(i) : 0,
@@ -265,10 +299,10 @@ export function SvgSequenceStaff({
               : 'mixed')
             : 'done';
 
-        const colX = FIRST_COLUMN_X + index * COLUMN_W;
+        const colX = firstColumnX + index * COLUMN_W;
         return { index, heads: drawn, colX, state, stemState, stemUp, stemLen: LINE_SPACING * stemLengthUnits(outerPos, dir) };
       }),
-    [entries, activeClef, cursorIndex, activeNotes, attemptInProgress]
+    [entries, activeClef, cursorIndex, activeNotes, attemptInProgress, keySignature, firstColumnX]
   );
 
   // Rule 3's "the target" is the CURSOR ENTRY's targets, not the whole
@@ -283,7 +317,7 @@ export function SvgSequenceStaff({
   const cursorColumn = columns.length
     ? Math.min(Math.max(cursorIndex, 0), columns.length - 1)
     : 0;
-  const ghostX = FIRST_COLUMN_X + cursorColumn * COLUMN_W + GHOST_DX;
+  const ghostX = firstColumnX + cursorColumn * COLUMN_W + GHOST_DX;
 
   // Rule 3: every currently-held pitch that is not one of the cursor entry's
   // targets is a ghost — "you are here", drawn at the pitch actually played.
@@ -321,10 +355,13 @@ export function SvgSequenceStaff({
       cursorArrivedAt, cursorTargets: cursorTargetMidis,
     });
     return {
-      heldGhosts: ghosts.map((g) => ({ ...g, ...getStaffPositionOnClef(g.midi, activeClef, accidental) })),
+      heldGhosts: ghosts.map((g) => {
+        const head = getStaffPositionOnClef(g.midi, activeClef, accidental);
+        return { ...g, ...head, ink: inkForHead(head, keySignature, activeClef) };
+      }),
       heldSustains: sustains,
     };
-  }, [attemptInProgress, activeNotes, cursorTargetMidis, cursorArrivedAt, activeClef, accidental]);
+  }, [attemptInProgress, activeNotes, cursorTargetMidis, cursorArrivedAt, activeClef, accidental, keySignature]);
 
   /**
    * INDEPENDENT TIMESTAMPS FOR THE GHOST AND FOR THE KEY.
@@ -416,7 +453,7 @@ export function SvgSequenceStaff({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [columns]);
 
-  const { width: viewBoxW } = sequenceStaffViewBox(columns.length);
+  const { width: viewBoxW } = sequenceStaffViewBox(columns.length, { keySignature });
   const viewBox = `0 0 ${viewBoxW} ${VIEWBOX_H}`;
   const staffLineYs = [0, 1, 2, 3, 4].map((i) => BOTTOM_LINE_Y - i * LINE_SPACING);
   const showCursor = columns.length > 0 && cursorIndex >= 0 && cursorIndex < columns.length;
@@ -443,6 +480,27 @@ export function SvgSequenceStaff({
         <svg className="action-staff__notation-svg" viewBox={viewBox} preserveAspectRatio="xMidYMid meet">
           <ClefGlyph clef={activeClef} lineSpacing={LINE_SPACING} bottomLineY={BOTTOM_LINE_Y} />
 
+          {/* The key signature, after the clef and before the music, in the
+              printed order and on the printed lines. Same glyphs as the
+              per-note accidentals, drawn once here instead of beside every
+              note they cover — which is the whole lesson a key signature is. */}
+          {signature.length > 0 && (
+            <g className="sequence-staff__signature" data-key={keySignature}>
+              {signature.map((mark, i) => (
+                <g
+                  key={`${mark.letter}-${i}`}
+                  className="action-staff__signature-mark"
+                  data-kind={mark.kind}
+                  data-letter={mark.letter}
+                  data-line-offset={mark.position}
+                  transform={`translate(${signatureX + i * SIGNATURE_PITCH}, ${yOf(mark.position)})`}
+                >
+                  {mark.kind === 'sharp' ? <SharpShape /> : <FlatShape />}
+                </g>
+              ))}
+            </g>
+          )}
+
           {/* THE LANE SPANS THE WHOLE INK BAND, not the staff.
 
               A cursor sized to the five lines plus one spacing either side ends
@@ -456,7 +514,7 @@ export function SvgSequenceStaff({
             <rect
               className="sequence-staff__cursor"
               data-cursor-index={cursorIndex}
-              x={FIRST_COLUMN_X + cursorIndex * COLUMN_W - COLUMN_W / 2}
+              x={firstColumnX + cursorIndex * COLUMN_W - COLUMN_W / 2}
               y={cursorBand.y}
               width={COLUMN_W}
               height={cursorBand.height}
@@ -526,10 +584,10 @@ export function SvgSequenceStaff({
                     {head.hasAccidental && (
                       <g
                         className={`action-staff__accidental action-staff__accidental--${head.noteState}`}
-                        data-kind={head.isSharp ? 'sharp' : 'flat'}
+                        data-kind={head.ink}
                         transform={`translate(${accX}, ${noteY})`}
                       >
-                        {head.isSharp ? <SharpShape /> : <FlatShape />}
+                        {head.ink === 'sharp' ? <SharpShape /> : head.ink === 'flat' ? <FlatShape /> : <NaturalShape />}
                       </g>
                     )}
                   </g>
@@ -560,14 +618,14 @@ export function SvgSequenceStaff({
                 transform={`rotate(-12, ${ghostX}, ${yOf(ghost.position)})`}
                 {...GHOST_INK.head}
               />
-              {(ghost.isSharp || ghost.isFlat) && (
+              {ghost.ink && (
                 <g
                   className="sequence-staff__ghost-accidental"
                   color={GHOST_INK.accidental}
-                  data-kind={ghost.isSharp ? 'sharp' : 'flat'}
+                  data-kind={ghost.ink}
                   transform={`translate(${ghostX - NOTEHEAD_RX - ACCIDENTAL_GAP - ACCIDENTAL_WIDTH / 2}, ${yOf(ghost.position)})`}
                 >
-                  {ghost.isSharp ? <SharpShape /> : <FlatShape />}
+                  {ghost.ink === 'sharp' ? <SharpShape /> : ghost.ink === 'flat' ? <FlatShape /> : <NaturalShape />}
                 </g>
               )}
             </g>
