@@ -88,7 +88,8 @@ function logger() {
  *   scan-review       → warn     "Needs a grown-up"         "{count} had two answers filled in. Ask a grown-up to check it."
  *   scan-unresolved   → error    "Couldn't read that sheet" "The student number didn't come through. Try scanning again, slowly."
  *   scan-refused      → error    "That sheet doesn't match" "This paper doesn't line up with what's on file. Ask a grown-up."
- *   scan-not-recorded → error    "Already done"             "I read that sheet, but there was nothing new to mark."
+ *   scan-not-recorded → error    "No new result recorded"   "This scan did not record a new result. …"
+ *   scan-not-recorded + unfinished[] → error "Still not finished" "{title}: Row {n} is still empty. Fill it in, then scan again."
  *   scan-rows-unmarked→ error    "Nothing filled in yet"    "Your new questions are rows {start}–{end}. Fill them in, then scan again."
  *   scan-rows-incomplete→ error  "Not finished yet"        "Row {n} is still empty. Row {m} has more than one answer marked — erase the extra. Then scan again."
  *   reader-error      → error    "Scanner hiccup"           "The scanner didn't catch that. Feed the sheet again."
@@ -100,6 +101,14 @@ function logger() {
  * number — so the copy names how many questions need a look rather than
  * inventing a "{q}" the wire doesn't actually carry.
  */
+/** "Row 33" / "Rows 31, 32 and 33" — shared by the partial and re-fed cases. */
+function listRows(rows) {
+  const clean = (Array.isArray(rows) ? rows : []).filter((r) => typeof r === 'number');
+  if (!clean.length) return null;
+  if (clean.length === 1) return `Row ${clean[0]}`;
+  return `Rows ${clean.slice(0, -1).join(', ')} and ${clean[clean.length - 1]}`;
+}
+
 function buildCeremony(payload) {
   const at = typeof payload?.timestamp === 'number' ? payload.timestamp : Date.now();
   switch (payload?.event) {
@@ -155,7 +164,31 @@ function buildCeremony(payload) {
         at,
         code: payload.reason ?? null,
       };
-    case 'scan-not-recorded':
+    case 'scan-not-recorded': {
+      // A re-fed card with a sheet that is STILL unfinished says so, by name
+      // and by row — the same words the first feed used. "No new result
+      // recorded" was true on 2026-09-15 and read as the opposite of "Not
+      // finished yet" thirty seconds earlier; the child repeated it as "it
+      // says I'm done" for the rest of the morning.
+      const unfinished = (Array.isArray(payload.unfinished) ? payload.unfinished : [])
+        .map((sheet) => {
+          const blanks = listRows(sheet?.blankRows);
+          const doubles = listRows(sheet?.ambiguousRows);
+          if (!blanks && !doubles) return null;
+          const parts = [];
+          if (blanks) parts.push(`${blanks} ${blanks.startsWith('Rows') ? 'are' : 'is'} still empty`);
+          if (doubles) parts.push(`${doubles} ${doubles.startsWith('Rows') ? 'have' : 'has'} more than one answer marked`);
+          return `${sheet?.title ? `${sheet.title}: ` : ''}${parts.join('; ')}.`;
+        })
+        .filter(Boolean);
+      if (unfinished.length) {
+        return {
+          tone: 'error',
+          title: 'Still not finished',
+          detail: `${unfinished.join(' ')} Fill it in, then scan again.`,
+          at,
+        };
+      }
       // The sheet read fine and the child did nothing wrong — it had simply
       // already been marked, so there was no new work to bank and no score to
       // report. Before this existed the pipeline just went quiet here, which
@@ -169,6 +202,7 @@ function buildCeremony(payload) {
         detail: 'This scan did not record a new result. Check the agenda; if this work is still unfinished, ask a grown-up.',
         at,
       };
+    }
     case 'scan-rows-unmarked': {
       // The child's live worksheet got zero marks while the card's older,
       // already-graded rows still carry theirs — a cumulative card fed before
@@ -218,15 +252,12 @@ function buildCeremony(payload) {
       // feeding the card achieved nothing. Naming the exact rows is what makes
       // it fixable without an adult — unlike the unmarked case we know them
       // individually, so there is no need to make the child count a range.
-      const list = (rows) => {
-        const clean = (Array.isArray(rows) ? rows : []).filter((r) => typeof r === 'number');
-        if (!clean.length) return null;
-        if (clean.length === 1) return `Row ${clean[0]}`;
-        return `Rows ${clean.slice(0, -1).join(', ')} and ${clean[clean.length - 1]}`;
-      };
-      const blanks = list(payload.blankRows);
-      const doubles = list(payload.ambiguousRows);
+      const blanks = listRows(payload.blankRows);
+      const doubles = listRows(payload.ambiguousRows);
       const parts = [];
+      // Name the sheet: a card carries several, and "row 33" alone does not
+      // say which paper to pick up.
+      if (typeof payload.title === 'string' && payload.title.trim()) parts.push(`${payload.title.trim()}:`);
       if (blanks) parts.push(`${blanks} ${blanks.startsWith('Rows') ? 'are' : 'is'} still empty.`);
       if (doubles) {
         parts.push(`${doubles} ${doubles.startsWith('Rows') ? 'have' : 'has'} more than one answer marked — erase the extra.`);

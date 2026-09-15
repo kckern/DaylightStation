@@ -1518,6 +1518,9 @@ export async function createSchoolLifecycle({
 
   return {
     wired: true,
+    // The thermal notice printer, for the scan consumer's per-feed slips
+    // (`app.mjs` wires that consumer against this module's own stores).
+    receipts,
     reason: null,
     handlesCode: (code) => isSchoolToken(code),
     handleScan: ({ code, device = null }) => resolveScanAction.execute({ code, device }),

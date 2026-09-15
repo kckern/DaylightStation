@@ -130,6 +130,21 @@ curl -s {env.log_store_url}/select/logsql/query \
   burn a fresh row range on the answer card and could roll it over; it no
   longer does.
 
+## A child says a sheet is "done" but nothing graded it
+
+Since 2026-09-15 every feed of an answer card prints something: a result
+receipt for each sheet that graded, and a **notice slip** for each that did
+not ("SOUTH DAKOTA — NOT FINISHED YET · 5 of 6 answered · Row 33 is still
+empty"). If the child has a slip, do what it says. If they have nothing,
+the printer did not print — check `school.print.scan-slip` in the log store
+for `printed:false` and its `reason`, then the receipt printer itself.
+
+Before this, the only messenger was the panel toast, and a re-fed unfinished
+card said "No new result recorded", which children hear as "done". The
+scan rows themselves are on record in
+`records/assessments/omr/<reader>/<date>.yml`; a row missing there is a
+bubble missing on paper, not a grading fault.
+
 ## The single most common "it's broken" false alarm
 
 `school.yml` (`data/household/school/school.yml`) is **boot-cached**. Editing

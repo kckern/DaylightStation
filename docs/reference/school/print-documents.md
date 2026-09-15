@@ -1262,6 +1262,36 @@ that immutable missed-item roster; issuance then creates a fresh worksheet
 snapshot for only those items while the allocation planner continues on the
 same physical answer sheet when rows remain.
 
+### 8.1 Every feed prints a slip
+
+A scan has two messengers, and since 2026-09-15 both always speak:
+
+- **The panel** (`useScanCeremony.js`) shows a short-lived toast per outcome
+  (`scan-graded`, `scan-rows-incomplete`, `scan-not-recorded`, …).
+- **The thermal printer** prints a receipt for a graded sheet
+  (`resultDocument`, via `CloseSessionOutcome`) — and, for every other
+  outcome, a **notice slip** (`scanNotices.mjs`, `scanNoticeDocument`)
+  printed by the scan consumer through the same `ReceiptPrinting` port the
+  scan-action path uses. The slip says what the panel says, on paper that
+  does not disappear: the sheet's published title, how many rows are
+  answered, the exact rows still empty or double-marked (numbered as the
+  sheet prints them), and one action sentence.
+
+The rule came from a morning where a card carrying three sheets produced two
+receipts and one toast. The unfinished sheet (five of six, one row blank)
+printed nothing, and the next feed's toast said "No new result recorded" —
+true, and read by the child as "done". Two invariants now hold:
+
+- **A re-fed card that is still unfinished says "still not finished"**, by
+  sheet and by row, on both messengers. The consumer's `scan-not-recorded`
+  backstop carries `unfinished: [{title, answered, total, blankRows,
+  ambiguousRows}]`, derived from the resolved rows regardless of whether
+  anything new was recorded. "Nothing new to mark" is reserved for a card
+  with no unfinished sheet.
+- **A printer fault never delays or swallows the panel ceremony.** The slip
+  is fire-and-forget after the broadcast; the outcome is logged as
+  `school.print.scan-slip` (`printed`, `reason`).
+
 ## 8a. The companion gate row
 
 A lesson may attach a **companion**: a second piece of media (today a scripture

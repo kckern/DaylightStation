@@ -201,6 +201,30 @@ describe('useScanCeremony', () => {
     expect(result.current.current.detail).toBe('Then scan again.');
   });
 
+  it('names the sheet and the empty row when a re-fed card is still unfinished (2026-09-15)', () => {
+    const { result } = mount();
+    act(() => {
+      deliver({
+        topic: 'omr', event: 'scan-not-recorded', testId: '5278294', learnerId: 'learner3',
+        unfinished: [{ title: 'South Dakota', answered: 5, total: 6, blankRows: [33], ambiguousRows: [] }],
+      });
+    });
+    expect(result.current.current).toMatchObject({
+      tone: 'error',
+      title: 'Still not finished',
+      detail: 'South Dakota: Row 33 is still empty. Fill it in, then scan again.',
+    });
+  });
+
+  it('names the sheet on a partial scan', () => {
+    const { result } = mount();
+    act(() => {
+      deliver({ topic: 'omr', event: 'scan-rows-incomplete', testId: '5278294', title: 'South Dakota', blankRows: [33], ambiguousRows: [] });
+    });
+    expect(result.current.current).toMatchObject({ tone: 'error', title: 'Not finished yet' });
+    expect(result.current.current.detail).toBe('South Dakota: Row 33 is still empty. Then scan again.');
+  });
+
   it('maps scan-not-recorded to an error ceremony so a re-fed sheet is never met with silence', () => {
     const { result } = mount();
     act(() => {
