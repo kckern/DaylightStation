@@ -24,6 +24,7 @@ export function createRemoteSessionController({
   tickerIntervalMs = 1000,
   setIntervalFn = setInterval,
   clearIntervalFn = clearInterval,
+  onSteeringActivity = null,
 }) {
   const base = `api/v1/device/${deviceId}/session`;
   const position = createPositionChannel();
@@ -58,12 +59,37 @@ export function createRemoteSessionController({
     mediaLog.peekCommand({ deviceId, action, ...(value !== undefined ? { value } : {}) });
   };
 
+  // A remote-control panel opening is observation, not steering. Only a
+  // command that has made the full HTTP + device-ack round trip earns a
+  // steering lease, and even then only against a fresh, currently playing
+  // snapshot with a concrete playback identity. `meta.ownerId` names the
+  // receiving screen, so it is deliberately not used as source provenance.
+  const observedPlayback = () => {
+    const entry = fleetStore.getEntry(deviceId);
+    const current = entry?.snapshot?.currentItem;
+    const sessionId = entry?.snapshot?.sessionId;
+    if (entry?.isStale || entry?.offline || entry?.snapshot?.state !== PLAYING
+      || typeof sessionId !== 'string' || !sessionId
+      || typeof current?.contentId !== 'string' || !current.contentId) return null;
+    return {
+      sessionId,
+      contentId: current.contentId,
+      ...(typeof current.queueItemId === 'string' && current.queueItemId
+        ? { queueItemId: current.queueItemId }
+        : {}),
+    };
+  };
+
   const send = (method, path, body, action) => {
     const commandId = randomUuid();
     const ackPromise = ackRouter.register(commandId, { action, deviceId });
     const httpPromise = http(path, { ...body, commandId }, method);
     // HTTP failure rejects immediately; otherwise the ack decides.
-    return Promise.all([httpPromise, ackPromise]).then(([httpRes]) => ({ ok: true, http: httpRes, commandId }));
+    return Promise.all([httpPromise, ackPromise]).then(([httpRes]) => {
+      const playback = observedPlayback();
+      if (playback) onSteeringActivity?.({ deviceId, playback });
+      return { ok: true, http: httpRes, commandId };
+    });
   };
 
   const transportPost = (action, value) => {
