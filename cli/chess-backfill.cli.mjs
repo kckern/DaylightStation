@@ -33,17 +33,22 @@ export const HOUSEHOLD_CHESS_CONFIG = 'gaming/chess.yml';
 
 const USAGE = `Consolidate chess records and rebuild ladder and rivalry files.
 
-  node cli/chess-backfill.cli.mjs [--data <data dir>] [--user <id>] [--write]
+  node cli/chess-backfill.cli.mjs [--data <data dir>] [--user <id>] [--write] [--allow-decrease]
 
-  --data <dir>   The data directory (default: $DAYLIGHT_BASE_PATH/data)
-  --user <id>    Retire scorecards and rebuild derived files for one player only.
-                 Consolidating the archive is always household-wide.
-  --write        Apply. Without it, report what would change and touch nothing.
-  -h, --help     Show this help
+  --data <dir>       The data directory (default: $DAYLIGHT_BASE_PATH/data)
+  --user <id>        Retire scorecards and rebuild derived files for one player only.
+                      Consolidating the archive is always household-wide.
+  --write            Apply. Without it, report what would change and touch nothing.
+  --allow-decrease   Write even if a player's counted ladder wins or rivalry
+                      record would drop. Without it, --write refuses and
+                      changes nothing when that would happen.
+  -h, --help         Show this help
 `;
 
 export function parseArgs(argv) {
-  const options = { data: null, user: null, write: false, help: false };
+  const options = {
+    data: null, user: null, write: false, allowDecrease: false, help: false,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (token === '--data' || token === '--user') {
@@ -52,6 +57,7 @@ export function parseArgs(argv) {
       options[token.slice(2)] = value;
       index += 1;
     } else if (token === '--write') options.write = true;
+    else if (token === '--allow-decrease') options.allowDecrease = true;
     else if (token === '--help' || token === '-h') options.help = true;
     else throw new Error(`Unknown argument: ${token}`);
   }
@@ -260,10 +266,46 @@ function backupBeforeOverwrite(file, deleteDir, userId) {
   matchOwner(target, path.dirname(target));
 }
 
-/** Rebuild each player's ladder and rivalry files from their finished games. */
-export async function rebuildDerived({ dataDir, archive, users, write, deleteDir }) {
-  const householdConfig = readYaml(path.join(dataDir, 'household', ...HOUSEHOLD_CHESS_CONFIG.split('/')));
-  if (!householdConfig) throw new Error(`No household chess config at household/${HOUSEHOLD_CHESS_CONFIG}`);
+/**
+ * Named drops in a player's counted progress between a before and after
+ * report: falling ladder wins, or a rival whose win, loss or draw count
+ * falls, or a rival that disappears entirely. Lost progress must never be
+ * silent, so every one of these is a line, not a number.
+ */
+function findDecreases(entry) {
+  const decreases = [];
+  const beforeWins = entry.ladder.before?.wins ?? 0;
+  const afterWins = entry.ladder.after?.wins ?? 0;
+  if (afterWins < beforeWins) decreases.push(`ladder wins ${beforeWins} of ${entry.ladder.before?.needed} -> ${afterWins} of ${entry.ladder.after?.needed}`);
+  const parseRecord = (value) => {
+    const [win, loss, draw] = String(value || '0-0-0').split('-').map(Number);
+    return { win, loss, draw };
+  };
+  for (const [rival, before] of Object.entries(entry.rivalries.before)) {
+    const after = entry.rivalries.after[rival];
+    if (after === undefined) { decreases.push(`rival ${rival} disappeared, was ${before}`); continue; }
+    const beforeRecord = parseRecord(before);
+    const afterRecord = parseRecord(after);
+    if (afterRecord.win < beforeRecord.win || afterRecord.loss < beforeRecord.loss || afterRecord.draw < beforeRecord.draw) {
+      decreases.push(`rival ${rival} ${before} -> ${after}`);
+    }
+  }
+  return decreases;
+}
+
+/**
+ * Rebuild each player's ladder and rivalry files from their finished games.
+ *
+ * Always computes the full report, decreases included, whether or not
+ * `write` is set — `run` calls this once to plan (and to decide whether a
+ * write may proceed at all) and, only after that gate passes, a second time
+ * with `write: true` to actually persist. The household config is passed in
+ * rather than read here, because `run` must validate it before anything else
+ * moves.
+ */
+export async function rebuildDerived({
+  dataDir, archive, users, write, deleteDir, householdConfig,
+}) {
   const configFor = (userId) => mergeLadderConfig(
     householdConfig,
     readYaml(path.join(dataDir, 'users', String(userId), 'apps', 'chess', 'config.yml')) || {},
@@ -285,11 +327,13 @@ export async function rebuildDerived({ dataDir, archive, users, write, deleteDir
     const rivalriesFile = path.join(chessDir, 'rivalries.yml');
     const storedLadder = readYaml(ladderFile);
     const plan = await planUserBackfill({ userId, records, policy, storedLadder });
-    report[userId] = {
+    const entry = {
       games,
       ladder: { before: summarizeLadder(storedLadder, policy), after: summarizeLadder(plan.ladder, policy) },
       rivalries: { before: summarizeRivalries(readYaml(rivalriesFile)), after: summarizeRivalries(plan.rivalries) },
     };
+    entry.decreases = findDecreases(entry);
+    report[userId] = entry;
     if (!write) continue;
     backupBeforeOverwrite(ladderFile, deleteDir, userId);
     backupBeforeOverwrite(rivalriesFile, deleteDir, userId);
@@ -301,7 +345,9 @@ export async function rebuildDerived({ dataDir, archive, users, write, deleteDir
 
 const localDay = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
-export async function run({ data, user = null, write = false, now = new Date() }) {
+export async function run({
+  data, user = null, write = false, allowDecrease = false, now = new Date(),
+}) {
   if (!data) throw new Error('Pass --data <data dir> or set DAYLIGHT_BASE_PATH');
   const householdDir = path.join(data, 'household');
   const archiveRoot = path.join(householdDir, ...CHESS_ARCHIVE_DIR.split('/'));
@@ -315,12 +361,38 @@ export async function run({ data, user = null, write = false, now = new Date() }
     : [];
   const users = user ? allUsers.filter((id) => id === user) : allUsers;
 
-  // Read every game before anything moves, so a dry run and a write judge the same games.
+  // Read every game and validate the household config before anything moves,
+  // so a refusal to write — for a missing config, or (below) for lost
+  // progress — never leaves the tree half-changed.
   const archive = loadArchive([archiveRoot, legacyRoot]);
+  const householdConfig = readYaml(path.join(householdDir, ...HOUSEHOLD_CHESS_CONFIG.split('/')));
+  if (!householdConfig) throw new Error(`No household chess config at household/${HOUSEHOLD_CHESS_CONFIG}`);
+
+  // Plan the derived rewrite first — it only needs the in-memory archive and
+  // configs, not anything consolidateArchive/retireScorecards touch — so a
+  // decrease is caught before a single file moves.
+  const plan = await rebuildDerived({
+    dataDir: data, archive, users, write: false, deleteDir, householdConfig,
+  });
+  const decreases = Object.fromEntries(
+    Object.entries(plan).filter(([, entry]) => entry.decreases?.length).map(([id, entry]) => [id, entry.decreases]),
+  );
+  if (write && Object.keys(decreases).length > 0 && !allowDecrease) {
+    throw new Error(`Refusing to write: counted progress would decrease for ${Object.keys(decreases).join(', ')} (pass --allow-decrease to override)`);
+  }
+
   const consolidation = consolidateArchive({ householdDir, deleteDir, write });
-  const scorecards = retireScorecards({ dataDir: data, archive, deleteDir, write, users });
-  const derived = await rebuildDerived({ dataDir: data, archive, users, write, deleteDir });
-  return { write, archive: { games: archive.length }, consolidation, scorecards, derived };
+  const scorecards = retireScorecards({
+    dataDir: data, archive, deleteDir, write, users,
+  });
+  const derived = write
+    ? await rebuildDerived({
+      dataDir: data, archive, users, write: true, deleteDir, householdConfig,
+    })
+    : plan;
+  return {
+    write, archive: { games: archive.length }, consolidation, scorecards, derived, decreases,
+  };
 }
 
 export function renderReport(report) {
@@ -347,6 +419,7 @@ export function renderReport(report) {
     for (const rival of rivals) {
       lines.push(`  ${rival}: ${entry.rivalries.before[rival] || '0-0-0'} -> ${entry.rivalries.after[rival] || '0-0-0'}`);
     }
+    for (const decrease of entry.decreases || []) lines.push(`  DECREASE for ${userId}: ${decrease}`);
   }
   return lines.join('\n');
 }

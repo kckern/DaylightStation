@@ -77,6 +77,11 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['--data'])).toThrow('--data requires a value');
     expect(() => parseArgs(['--force'])).toThrow('Unknown argument: --force');
   });
+
+  it('accepts --allow-decrease', () => {
+    expect(parseArgs(['--data', '/srv/data'])).toMatchObject({ allowDecrease: false });
+    expect(parseArgs(['--data', '/srv/data', '--write', '--allow-decrease'])).toMatchObject({ allowDecrease: true });
+  });
 });
 
 describe('dry run', () => {
@@ -88,6 +93,19 @@ describe('dry run', () => {
     expect(report.scorecards.kid).toEqual({ matched: 2, unmatched: ['2026-09-14-3333.yml'] });
     expect(report.derived.kid.rivalries.after).toEqual({ 'Caterpie (pokemon:level-1)': '2-0-0' });
     expect(renderReport(report)).toContain('DRY RUN');
+  });
+
+  it('flags a DECREASE, but never refuses, when the stored ladder counts more wins than the archive supports', async () => {
+    // The stored ladder claims four counted wins at level 1 - the archive holds none.
+    put(data, 'users/kid/apps/chess/ladder.yml', {
+      unlocked_through: 1,
+      results: [1, 2, 3, 4].map((n) => ({ level: 1, result: 'win', counted: true, at: `2026-09-0${n}T00:00:00.000Z` })),
+    });
+    const before = tree(data);
+    const report = await run({ data, now: NOW });
+    expect(tree(data)).toEqual(before);
+    expect(report.decreases.kid.some((line) => /ladder wins/.test(line))).toBe(true);
+    expect(renderReport(report)).toMatch(/DECREASE/);
   });
 });
 
@@ -195,12 +213,52 @@ describe('--write', () => {
   });
 
   it("keeps a copy of each player's derived files as they were before the first write", async () => {
+    // A stale rival the archive knows nothing about: this is itself a
+    // decrease (FI1) once the ladder is replayed, so both writes need
+    // allowDecrease — the point of this test is the backup, not the guard.
     put(data, 'users/kid/apps/chess/rivalries.yml', { version: 2, rivals: { stale: { opponent: { id: 'stale', name: 'Old' }, record: { win: 9, loss: 0, draw: 0 }, recent: [] } } });
-    await run({ data, write: true, now: NOW });
-    await run({ data, write: true, now: NOW });
+    await run({
+      data, write: true, allowDecrease: true, now: NOW,
+    });
+    await run({
+      data, write: true, allowDecrease: true, now: NOW,
+    });
     const backup = read(data, `${DELETED}/derived-before/kid/rivalries.yml`);
     expect(backup.rivals.stale.record.win).toBe(9);
     expect(read(data, `${DELETED}/derived-before/kid/ladder.yml`)).toEqual({ unlocked_through: 0, results: [] });
+  });
+
+  it('refuses to write anything when counted progress would decrease, naming the player', async () => {
+    put(data, 'users/kid/apps/chess/ladder.yml', {
+      unlocked_through: 1,
+      results: [1, 2, 3, 4].map((n) => ({ level: 1, result: 'win', counted: true, at: `2026-09-0${n}T00:00:00.000Z` })),
+    });
+    const before = tree(data);
+    const beforeLadder = read(data, 'users/kid/apps/chess/ladder.yml');
+    await expect(run({ data, write: true, now: NOW })).rejects.toThrow(/kid/);
+    expect(tree(data)).toEqual(before);
+    expect(read(data, 'users/kid/apps/chess/ladder.yml')).toEqual(beforeLadder);
+  });
+
+  it('writes anyway when allowDecrease is passed', async () => {
+    put(data, 'users/kid/apps/chess/ladder.yml', {
+      unlocked_through: 1,
+      results: [1, 2, 3, 4].map((n) => ({ level: 1, result: 'win', counted: true, at: `2026-09-0${n}T00:00:00.000Z` })),
+    });
+    const report = await run({
+      data, write: true, allowDecrease: true, now: NOW,
+    });
+    expect(report.write).toBe(true);
+    expect(report.decreases.kid.length).toBeGreaterThan(0);
+    // unlocked_through is a floor: even an allowed decrease never lowers it.
+    expect(read(data, 'users/kid/apps/chess/ladder.yml').unlocked_through).toBe(1);
+  });
+
+  it('validates the household chess config before moving anything, and leaves the tree unchanged if it is missing', async () => {
+    fs.rmSync(path.join(data, 'household/gaming/chess.yml'));
+    const before = tree(data);
+    await expect(run({ data, write: true, now: NOW })).rejects.toThrow(/household chess config/);
+    expect(tree(data)).toEqual(before);
   });
 
   it('is safe to run twice', async () => {
