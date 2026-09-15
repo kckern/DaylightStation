@@ -59,7 +59,7 @@ $np-amber-ink: #1a1300;
     @include np-focus-ring;
   }
 
-  &--expanded {
+  &.now-playing-view--expanded {
     position: fixed;
     inset: 0;
     z-index: 1000;

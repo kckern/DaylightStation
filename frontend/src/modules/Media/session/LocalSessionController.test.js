@@ -132,6 +132,21 @@ describe('LocalSessionController — transport', () => {
     expect(handle.seek).toHaveBeenLastCalledWith(45);
     expect(c.position.get().seconds).toBe(60);
   });
+
+  it('resolves a relative seek from actual media time when the hot position is stale', () => {
+    const c = makeController();
+    const media = { currentTime: 40 };
+    const handle = {
+      play: vi.fn(), pause: vi.fn(), seek: vi.fn(), getMediaElement: () => media,
+    };
+    c.setPlayerHandle(handle);
+    c.onPlayerPositionTick(30);
+
+    c.transport.seekRel(-10);
+
+    expect(handle.seek).toHaveBeenCalledWith(30);
+    expect(c.position.get().seconds).toBe(30);
+  });
 });
 
 describe('LocalSessionController — queue ops', () => {
@@ -255,6 +270,38 @@ describe('LocalSessionController — player events', () => {
     expect(c.getSnapshot().queue.items[0]).toEqual(expect.objectContaining({
       queueItemId: originalQueueItemId, contentId: 'plex:1', duration: 5400, format: 'video', mediaType: 'dash_video',
     }));
+  });
+
+  it.each([0, Number.POSITIVE_INFINITY])(
+    'clears a known duration when Player explicitly reports %s as unknown or unbounded',
+    (unknownDuration) => {
+      const c = makeController();
+      c.queue.playNow({ contentId: 'plex:1', format: 'video', duration: null });
+      c.onPlayerObservation('plex:1', { duration: 120, paused: false });
+      expect(c.capabilities.seekable).toBe(true);
+
+      c.onPlayerObservation('plex:1', {
+        duration: unknownDuration,
+        media: { duration: 120 },
+        paused: false,
+      });
+
+      expect(c.getSnapshot().currentItem.duration).toBeNull();
+      expect(c.getSnapshot().queue.items[0].duration).toBeNull();
+      expect(c.capabilities.seekable).toBe(false);
+    }
+  );
+
+  it('keeps stalled progress in buffering until Player confirms recovery', () => {
+    const c = makeController();
+    c.queue.playNow({ contentId: 'plex:1', format: 'video', duration: 120 });
+    c.onPlayerStateChange('playing', 'plex:1');
+
+    c.onPlayerObservation('plex:1', { currentTime: 15, paused: false, stalled: true });
+    expect(c.getSnapshot().state).toBe('buffering');
+
+    c.onPlayerObservation('plex:1', { currentTime: 15.5, paused: false, stalled: false });
+    expect(c.getSnapshot().state).toBe('playing');
   });
 
   it('rejects observations and terminal callbacks from stale content identity', () => {

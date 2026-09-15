@@ -157,6 +157,54 @@ describe('PlayerBridge real Player contract', () => {
     expect(mountSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('starts a new playback generation when adopting the same content at a new position', () => {
+    const controller = makeRealController();
+    controller.queue.playNow({
+      contentId: 'plex:665667', title: 'Disclosure Day', duration: 5400, format: 'video',
+    });
+    render(<Harness controller={controller} />);
+    const originalPlay = latestPlayerProps.play;
+    const adopted = {
+      ...controller.getSnapshot(),
+      position: 87,
+      currentItem: { ...controller.getSnapshot().currentItem },
+    };
+
+    act(() => controller.lifecycle.adoptSnapshot(adopted, { autoplay: false }));
+
+    expect(latestPlayerProps.play).not.toBe(originalPlay);
+    expect(latestPlayerProps.play).toEqual(expect.objectContaining({
+      contentId: 'plex:665667', seconds: 87,
+    }));
+    expect(mountSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects callbacks from the previous generation of the same content ID', () => {
+    const controller = makeRealController();
+    controller.queue.playNow({
+      contentId: 'plex:665667', title: 'Disclosure Day', duration: null, format: 'video',
+    });
+    render(<Harness controller={controller} />);
+    const previousProgress = latestPlayerProps.onProgress;
+    const adopted = {
+      ...controller.getSnapshot(),
+      position: 87,
+      currentItem: { ...controller.getSnapshot().currentItem },
+    };
+    act(() => controller.lifecycle.adoptSnapshot(adopted, { autoplay: false }));
+
+    act(() => previousProgress({
+      currentTime: 200,
+      duration: 999,
+      paused: false,
+      stalled: false,
+      media: { contentId: 'plex:665667', format: 'video' },
+    }));
+
+    expect(controller.position.get().seconds).toBe(87);
+    expect(controller.getSnapshot().currentItem.duration).toBeNull();
+  });
+
   it('ignores a late progress callback retained by the previous content item', () => {
     const controller = makeRealController();
     controller.queue.playNow({ contentId: 'plex:old', title: 'Old', duration: null, format: null });

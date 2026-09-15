@@ -38,7 +38,8 @@ function itemFromQueueEntry(entry) {
   };
 }
 
-function observedItemPatch({ duration, media } = {}) {
+function observedItemPatch(observation = {}) {
+  const { duration, media } = observation;
   const patch = {};
   const source = media && typeof media === 'object' ? media : {};
   for (const key of ['format', 'mediaType', 'title', 'thumbnail']) {
@@ -46,9 +47,17 @@ function observedItemPatch({ duration, media } = {}) {
   }
   if (typeof source.isLive === 'boolean') patch.isLive = source.isLive;
   if (source.isLive === true) patch.duration = null;
-  else if (typeof duration === 'number' && Number.isFinite(duration) && duration > 0) patch.duration = duration;
-  else if (typeof source.duration === 'number' && Number.isFinite(source.duration) && source.duration > 0) {
-    patch.duration = source.duration;
+  else {
+    const hasObservedDuration = Object.prototype.hasOwnProperty.call(observation, 'duration');
+    const hasMediaDuration = Object.prototype.hasOwnProperty.call(source, 'duration');
+    if (hasObservedDuration || hasMediaDuration) {
+      const observedDuration = hasObservedDuration ? duration : source.duration;
+      patch.duration = typeof observedDuration === 'number'
+        && Number.isFinite(observedDuration)
+        && observedDuration > 0
+        ? observedDuration
+        : null;
+    }
   }
   return patch;
 }
@@ -241,7 +250,10 @@ export function createLocalSessionController({
       },
       seekRel: (delta) => {
         mediaLog.transportCommand({ action: 'seekRel', value: delta, target: 'local' });
-        const current = position.get().seconds ?? snap().position ?? 0;
+        const mediaTime = player.getMediaElement?.()?.currentTime;
+        const current = typeof mediaTime === 'number' && Number.isFinite(mediaTime)
+          ? mediaTime
+          : (position.get().seconds ?? snap().position ?? 0);
         controller.transport.seekAbs(Math.max(0, current + delta));
       },
       skipNext: () => {
@@ -345,9 +357,11 @@ export function createLocalSessionController({
     getMediaElement: () => player.getMediaElement?.() ?? null,
     onPlayerObservation: (contentId, observation = {}) => {
       if (snap().currentItem?.contentId !== contentId) return;
-      const playerState = typeof observation.paused === 'boolean'
-        ? (observation.paused ? 'paused' : 'playing')
-        : undefined;
+      const playerState = observation.stalled === true && observation.paused === false
+        ? 'buffering'
+        : (typeof observation.paused === 'boolean'
+          ? (observation.paused ? 'paused' : 'playing')
+          : undefined);
       store.dispatch({
         type: 'PLAYER_OBSERVATION',
         contentId,

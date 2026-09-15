@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   readPersistedSession,
   writePersistedSession,
@@ -23,6 +23,10 @@ describe('persistence', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('round-trips a SessionSnapshot under PERSIST_KEY with schemaVersion', () => {

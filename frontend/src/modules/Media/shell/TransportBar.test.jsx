@@ -12,9 +12,14 @@ const transport = {
   skipPrev: vi.fn(),
 };
 const config = { setShuffle: vi.fn(), setRepeat: vi.fn(), setVolume: vi.fn() };
-const state = { snapshot: null };
+const state = { snapshot: null, capabilities: { seekable: true, acked: false } };
 vi.mock('../controller/useSessionController.js', () => ({
-  useSessionController: () => ({ snapshot: state.snapshot, transport, config }),
+  useSessionController: () => ({
+    snapshot: state.snapshot,
+    transport,
+    config,
+    capabilities: state.capabilities,
+  }),
 }));
 
 import { TransportBar } from './TransportBar.jsx';
@@ -46,6 +51,7 @@ function makeSnapshot({
 beforeEach(() => {
   vi.clearAllMocks();
   state.snapshot = makeSnapshot();
+  state.capabilities = { seekable: true, acked: false };
 });
 
 describe('TransportBar', () => {
@@ -108,6 +114,20 @@ describe('TransportBar', () => {
     expect(screen.queryByTestId('np-rew')).toBeNull();
     expect(screen.queryByTestId('np-ffw')).toBeNull();
     expect(screen.getByTestId('np-toggle')).toBeInTheDocument();
+  });
+
+  it('disables rew/ffw and suppresses commands when duration is not seekable', () => {
+    state.snapshot = makeSnapshot({
+      item: { contentId: 'plex:100', title: 'Unknown length', duration: null, isLive: false },
+    });
+    state.capabilities = { seekable: false, acked: false };
+    render(<TransportBar target="local" />);
+
+    expect(screen.getByTestId('np-rew')).toBeDisabled();
+    expect(screen.getByTestId('np-ffw')).toBeDisabled();
+    fireEvent.click(screen.getByTestId('np-rew'));
+    fireEvent.click(screen.getByTestId('np-ffw'));
+    expect(transport.seekRel).not.toHaveBeenCalled();
   });
 
   it('toggles shuffle and cycles repeat through the session config', () => {
