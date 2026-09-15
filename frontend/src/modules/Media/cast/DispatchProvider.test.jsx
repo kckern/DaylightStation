@@ -189,6 +189,75 @@ describe('DispatchProvider — duplicate suppression', () => {
     );
   });
 
+  it.each([
+    {
+      difference: 'play versus queue verb',
+      first: { play: 'plex:665668' },
+      second: { queue: 'plex:665668' },
+    },
+    {
+      difference: 'shader',
+      first: { play: 'plex:665668', shader: 'dark' },
+      second: { play: 'plex:665668', shader: 'bright' },
+    },
+    {
+      difference: 'volume',
+      first: { play: 'plex:665668', volume: 17 },
+      second: { play: 'plex:665668', volume: 18 },
+    },
+    {
+      difference: 'shuffle',
+      first: { play: 'plex:665668', shuffle: false },
+      second: { play: 'plex:665668', shuffle: true },
+    },
+    {
+      difference: 'full adopt snapshot',
+      first: {
+        snapshot: {
+          sessionId: 'session-1', state: 'paused', position: 47,
+          currentItem: { contentId: 'plex:665668', title: 'Episode one' },
+          queue: { items: [], currentIndex: -1, upNextCount: 0 },
+          config: { shuffle: false, repeat: 'off', volume: 17, shader: null },
+          meta: { ownerId: 'phone', updatedAt: '2026-09-14T00:00:00.000Z' },
+        },
+      },
+      second: {
+        snapshot: {
+          sessionId: 'session-1', state: 'paused', position: 47,
+          currentItem: { contentId: 'plex:665668', title: 'Episode two' },
+          queue: { items: [], currentIndex: -1, upNextCount: 0 },
+          config: { shuffle: false, repeat: 'off', volume: 18, shader: null },
+          meta: { ownerId: 'phone', updatedAt: '2026-09-14T00:00:01.000Z' },
+        },
+      },
+    },
+  ])('RELY.6a retries distinct rows that differ by $difference while both are in flight', async ({ first, second }) => {
+    DaylightAPI.mockResolvedValue({ ok: false, error: 'offline' });
+    const { result } = renderHook(() => useDispatch(), { wrapper });
+    let firstIds;
+    let secondIds;
+
+    await act(async () => {
+      firstIds = await result.current.dispatchToTarget({
+        targetIds: ['livingroom-tv'], mode: 'fork', ...first,
+      });
+      await Promise.resolve();
+      secondIds = await result.current.dispatchToTarget({
+        targetIds: ['livingroom-tv'], mode: 'fork', ...second,
+      });
+      await Promise.resolve();
+    });
+
+    DaylightAPI.mockClear();
+    pendingLoad();
+    await act(async () => {
+      await result.current.retry(firstIds[0]);
+      await result.current.retry(secondIds[0]);
+    });
+
+    expect(DaylightAPI).toHaveBeenCalledTimes(2);
+  });
+
   it('still logs the dispatch lifecycle so a failed cast is visible in prod', async () => {
     const { resolve } = pendingLoad();
     const { result } = renderHook(() => useDispatch(), { wrapper });
