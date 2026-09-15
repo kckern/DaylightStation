@@ -80,6 +80,11 @@ describe('DispatchTargetPicker / useDispatchTargetPicker', () => {
   });
 
   describe('default intent="dispatch" (CastButton, NowPlayingView — unchanged)', () => {
+    it('PLACE.2b keeps This device out of explicit one-off dispatch pickers', () => {
+      render(<DispatchTargetPicker source={{ play: 'plex:1' }} />);
+      expect(screen.queryByRole('button', { name: 'This device' })).toBeNull();
+    });
+
     it('submit WITH a content source dispatches exactly as before', () => {
       const onComplete = vi.fn();
       render(<DispatchTargetPicker source={{ play: 'plex:1', title: 'Bluey' }} onComplete={onComplete} />);
@@ -124,6 +129,19 @@ describe('DispatchTargetPicker / useDispatchTargetPicker', () => {
   });
 
   describe('intent="destination" (DestinationLine\'s device sheet)', () => {
+    it('PLACE.2b offers This device and selects the local aim immediately', () => {
+      const onComplete = vi.fn();
+      castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
+      render(<DispatchTargetPicker intent="destination" onComplete={onComplete} />);
+
+      const localChoice = screen.getByRole('button', { name: 'This device' });
+      expect(localChoice).toHaveAttribute('aria-pressed', 'false');
+      fireEvent.click(localChoice);
+
+      expect(onComplete).toHaveBeenCalledWith({ targetIds: [], mode: 'transfer' });
+      expect(dispatchToTarget).not.toHaveBeenCalled();
+    });
+
     it('submit with NO source does NOT call dispatchToTarget', () => {
       const onComplete = vi.fn();
       render(<DispatchTargetPicker intent="destination" onComplete={onComplete} />);

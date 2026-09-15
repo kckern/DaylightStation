@@ -67,7 +67,7 @@ function rowCopy(d, phase, name) {
   }
 }
 
-function TrayRow({ d, retryLast, removeDispatch }) {
+function TrayRow({ d, retry, removeDispatch }) {
   const { device } = useDevice(d.deviceId);
   const name = deviceName(device, d.deviceId);
   const { push } = useNav();
@@ -113,7 +113,7 @@ function TrayRow({ d, retryLast, removeDispatch }) {
         <button
           type="button"
           data-testid={`dispatch-retry-${d.dispatchId}`}
-          onClick={retryLast}
+          onClick={() => retry(d.dispatchId)}
           className="cast-tray-action"
         >
           <IconRefresh size={14} /> Retry
@@ -135,12 +135,12 @@ function TrayRow({ d, retryLast, removeDispatch }) {
 }
 
 export function DispatchProgressTray() {
-  const { dispatches, retryLast, removeDispatch } = useDispatch();
+  const { dispatches, retry, removeDispatch } = useDispatch();
   if (dispatches.size === 0) return null;
   return (
     <div data-testid="dispatch-tray" className="cast-tray">
       {[...dispatches.values()].map((d) => (
-        <TrayRow key={d.dispatchId} d={d} retryLast={retryLast} removeDispatch={removeDispatch} />
+        <TrayRow key={d.dispatchId} d={d} retry={retry} removeDispatch={removeDispatch} />
       ))}
     </div>
   );

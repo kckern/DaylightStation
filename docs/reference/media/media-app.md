@@ -194,7 +194,7 @@ and a **canvas** that shows exactly one view at a time:
 │ Devs │                                                     │
 ├──────┴─────────────────────────────────────────────────────┤
 │ dispatch progress tray (while casting)                     │
-│ ♪ mini player (while a session has a current item)         │
+│ ♪ mini player (while playing, paused, or queue is retained)│
 └────────────────────────────────────────────────────────────┘
 ```
 
@@ -210,20 +210,23 @@ and a **canvas** that shows exactly one view at a time:
   house, linking to the fleet view,
 - the **cast target chip** — the currently-preferred dispatch target. It
   governs the search bar too: with a target configured, picking a search
-  result casts there in the chip's mode rather than playing locally. Peek
-  view is the one exception — while remote-controlling a device, selections
-  always go to that device (forked, never transferred),
+  result casts there in the chip's mode rather than playing locally. The
+  destination sheet always includes **This device**, which clears remote
+  targets immediately. Opening or leaving Peek never overrides or changes
+  that destination; a one-off picker still affects only its explicit action,
 - the **settings menu** — session reset (confirmed). The per-browser display
   name is read from storage but has no UI to set it.
 
 Below the canvas, at every width, the shell stacks:
 
 - the **dispatch progress tray** — live step-by-step progress of in-flight
-  casts, with retry on failure,
+  casts, with each failure row retrying only its original target, content,
+  options, and hand-off snapshot,
 - the **mini player** — current local item, live progress strip, queue
   position counter, play/pause/next/stop (a small live picture for video);
-  tapping the title opens Now Playing. It renders nothing without a current
-  item.
+  tapping the title opens Now Playing. Stop retains a ready handle while the
+  queue has items so the queue can be opened or restarted; clear/reset removes
+  the handle once both the current item and queue are empty.
 
 **On phones the dock cannot hold all of that at once — so it doesn't try.**
 At 360px there is ~336px to spend; splitting that between a scope selector, a

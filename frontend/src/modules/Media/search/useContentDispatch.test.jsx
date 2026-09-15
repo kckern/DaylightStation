@@ -9,13 +9,13 @@ vi.mock('../shell/NavProvider.jsx', () => ({
 }));
 
 const dispatchToTarget = vi.fn();
-const retryLast = vi.fn();
+const retry = vi.fn();
 // Mutable holder for the live per-dispatchId state DispatchProvider tracks —
 // the toast-on-failure watcher polls this the same way DispatchProgressTray
 // does. Empty Map by default (nothing pending).
 let dispatchesState = new Map();
 vi.mock('../cast/useDispatch.js', () => ({
-  useDispatch: () => ({ dispatchToTarget, dispatches: dispatchesState, retryLast }),
+  useDispatch: () => ({ dispatchToTarget, dispatches: dispatchesState, retry }),
 }));
 
 const playNow = vi.fn();
@@ -64,7 +64,7 @@ function setup() {
 
 beforeEach(() => {
   dispatchToTarget.mockClear();
-  retryLast.mockClear();
+  retry.mockClear();
   playNow.mockClear();
   queueAdd.mockClear();
   setShuffle.mockClear();
@@ -99,19 +99,17 @@ describe('useContentDispatch', () => {
     expect(dispatchToTarget).not.toHaveBeenCalled();
   });
 
-  it('peek view with a deviceId routes to dispatchToTarget in fork mode', () => {
+  it('PLACE.1a/STEER.1b Remote view still routes a leaf to the displayed local aim', () => {
     navState = { view: 'peek', params: { deviceId: 'shield-tv' } };
     const { dispatch } = setup();
     act(() => {
       dispatch('plex:99', { title: 'Lonesome Dove' });
     });
-    expect(dispatchToTarget).toHaveBeenCalledWith({
-      targetIds: ['shield-tv'],
-      play: 'plex:99',
-      mode: 'fork',
-      title: 'Lonesome Dove',
-    });
-    expect(playNow).not.toHaveBeenCalled();
+    expect(playNow).toHaveBeenCalledWith(
+      { contentId: 'plex:99', title: 'Lonesome Dove', thumbnail: null },
+      { clearRest: true }
+    );
+    expect(dispatchToTarget).not.toHaveBeenCalled();
   });
 
   it('peek view WITHOUT a deviceId falls back to local playNow', () => {
@@ -176,7 +174,7 @@ describe('useContentDispatch', () => {
     );
   });
 
-  it('peek view wins over a configured cast target (leaf)', () => {
+  it('PLACE.1a/STEER.1b Remote view preserves the displayed remote aim for a leaf', () => {
     navState = { view: 'peek', params: { deviceId: 'shield-tv' } };
     castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
     const { dispatch } = setup();
@@ -184,9 +182,9 @@ describe('useContentDispatch', () => {
       dispatch('plex:99', { title: 'Lonesome Dove' });
     });
     expect(dispatchToTarget).toHaveBeenCalledWith({
-      targetIds: ['shield-tv'],
+      targetIds: ['livingroom-tv'],
       play: 'plex:99',
-      mode: 'fork',
+      mode: 'transfer',
       title: 'Lonesome Dove',
     });
   });
@@ -205,7 +203,7 @@ describe('useContentDispatch', () => {
     navState = { view: 'peek', params: { deviceId: 'shield-tv' } };
     rerender();
     act(() => { route = result.current.dispatch('plex:3', { title: 'C' }); });
-    expect(route).toBe('peek');
+    expect(route).toBe('cast');
   });
 
   // ── Task 14 (spec D6): containers ALWAYS browse — tap never blows away a
@@ -314,24 +312,22 @@ describe('useContentDispatch', () => {
   });
 
   // ── Task 14: the ▶ verb — explicit "send the whole container" action,
-  // now the ONLY way a container reaches a cast target or the peeked
-  // device. Same destination precedence as leaves, minus the browse branch. ──
+  // now the ONLY way a container reaches an aimed cast target. Same
+  // destination precedence as leaves, minus the browse branch. ──
   describe('playContainerAsQueue — the ▶ verb', () => {
-    it('peek view sends it to the peeked device in fork mode (remote control never stops its own device)', () => {
+    it('PLACE.1a/STEER.1b Remote view plays a collection at the displayed local aim', () => {
       navState = { view: 'peek', params: { deviceId: 'shield-tv' } };
       const { playContainerAsQueue } = setup();
       let route;
       act(() => {
         route = playContainerAsQueue('plex:663508', { id: 'plex:663508', title: 'Tuttle Twins', type: 'show' });
       });
-      expect(route).toBe('peek');
-      expect(dispatchToTarget).toHaveBeenCalledWith({
-        targetIds: ['shield-tv'],
-        play: 'plex:663508',
-        mode: 'fork',
-        title: 'Tuttle Twins',
-      });
-      expect(playNow).not.toHaveBeenCalled();
+      expect(route).toBe('local');
+      expect(playNow).toHaveBeenCalledWith(
+        expect.objectContaining({ contentId: 'plex:663508', title: 'Tuttle Twins' }),
+        { clearRest: true }
+      );
+      expect(dispatchToTarget).not.toHaveBeenCalled();
     });
 
     it('an aimed cast target casts the whole container there', () => {
@@ -421,19 +417,18 @@ describe('useContentDispatch', () => {
       );
     });
 
-    it('peek: threads shuffle:true through to the peeked device, still fork mode', () => {
+    it('PLACE.1a/STEER.1b Remote view shuffles a collection at the displayed local aim', () => {
       navState = { view: 'peek', params: { deviceId: 'shield-tv' } };
       const { playContainerAsQueue } = setup();
       act(() => {
         playContainerAsQueue('plex:663508', { id: 'plex:663508', title: 'Tuttle Twins', type: 'show' }, { shuffle: true });
       });
-      expect(dispatchToTarget).toHaveBeenCalledWith({
-        targetIds: ['shield-tv'],
-        play: 'plex:663508',
-        mode: 'fork',
-        title: 'Tuttle Twins',
-        shuffle: true,
-      });
+      expect(setShuffle).toHaveBeenCalledWith(true);
+      expect(playNow).toHaveBeenCalledWith(
+        expect.objectContaining({ contentId: 'plex:663508' }),
+        { clearRest: true }
+      );
+      expect(dispatchToTarget).not.toHaveBeenCalled();
     });
   });
 
@@ -471,21 +466,18 @@ describe('useContentDispatch', () => {
       );
     });
 
-    it('peek: sends the container as queue: to the peeked device in fork mode', () => {
+    it('PLACE.1a/STEER.1b Remote view appends a collection at the displayed local aim', () => {
       navState = { view: 'peek', params: { deviceId: 'shield-tv' } };
       const { addContainerToQueue } = setup();
       let route;
       act(() => {
         route = addContainerToQueue('plex:663508', { id: 'plex:663508', title: 'Tuttle Twins', type: 'show' });
       });
-      expect(route).toBe('peek');
-      expect(dispatchToTarget).toHaveBeenCalledWith({
-        targetIds: ['shield-tv'],
-        queue: 'plex:663508',
-        mode: 'fork',
-        title: 'Tuttle Twins',
-      });
-      expect(queueAdd).not.toHaveBeenCalled();
+      expect(route).toBe('local');
+      expect(queueAdd).toHaveBeenCalledWith(
+        expect.objectContaining({ contentId: 'plex:663508', title: 'Tuttle Twins' })
+      );
+      expect(dispatchToTarget).not.toHaveBeenCalled();
     });
   });
 
@@ -531,7 +523,7 @@ describe('useContentDispatch', () => {
       expect(notificationsShow).not.toHaveBeenCalled();
     });
 
-    it('does not toast on peek dispatch — the destination is already the screen you are driving', () => {
+    it('does not toast when Remote is open but the displayed aim is local', () => {
       navState = { view: 'peek', params: { deviceId: 'shield-tv' } };
       const { dispatch } = setup();
       act(() => { dispatch('plex:1', { title: 'Bluey' }); });
@@ -570,7 +562,7 @@ describe('useContentDispatch', () => {
       expect(textEl.props.children).toBe('FKB rejected credentials: Please login');
     });
 
-    it('Retry on the failure toast re-invokes the exact same dispatch via retryLast', async () => {
+    it('RELY.6a Retry on a failure notice retries that dispatchId', async () => {
       castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
       dispatchToTarget.mockReturnValue(['d1']);
       const { dispatch, rerender } = setup();
@@ -583,7 +575,27 @@ describe('useContentDispatch', () => {
       const call = notificationsShow.mock.calls.find((c) => c[0].title === "Couldn't cast to Living Room TV");
       const [, retryButtonEl] = call[0].message.props.children;
       retryButtonEl.props.onClick();
-      expect(retryLast).toHaveBeenCalledTimes(1);
+      expect(retry).toHaveBeenCalledWith('d1');
+    });
+
+    it('RELY.6a several failure notices each retry their own attempt', async () => {
+      castTargetState = { targetIds: ['livingroom-tv', 'office-tv'], mode: 'transfer' };
+      dispatchToTarget.mockReturnValue(['d1', 'd2']);
+      const { dispatch, rerender } = setup();
+      act(() => { dispatch('plex:1', { title: 'Bluey' }); });
+      await flush();
+
+      dispatchesState = new Map([
+        ['d1', { status: 'failed', error: 'living room offline' }],
+        ['d2', { status: 'failed', error: 'office offline' }],
+      ]);
+      rerender();
+
+      const failures = notificationsShow.mock.calls.filter((c) => c[0].title.startsWith("Couldn't cast"));
+      expect(failures).toHaveLength(2);
+      failures.forEach((call) => call[0].message.props.children[1].props.onClick());
+      expect(retry).toHaveBeenNthCalledWith(1, 'd1');
+      expect(retry).toHaveBeenNthCalledWith(2, 'd2');
     });
 
     it('does not toast while the dispatch is still running', async () => {
