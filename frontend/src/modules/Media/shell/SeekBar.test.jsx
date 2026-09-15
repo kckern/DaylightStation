@@ -103,6 +103,54 @@ describe('SeekBar', () => {
     expect(transport.seekAbs).toHaveBeenCalledWith(120);
   });
 
+  it('commits against the press geometry when its elapsed label reflows before pointer release', () => {
+    render(<SeekBar target="local" />);
+    const track = screen.getByTestId('np-seek');
+    // A short elapsed label initially leaves a 200px track at x=0. Updating
+    // the preview to a long time label can move its left edge to x=10 and
+    // shrink it to 180px before the browser emits pointerup. The press at
+    // x=120 is 60% of the original track, so it must commit 144s, not 147s.
+    const rects = [
+      { left: 0, width: 200, right: 200, top: 0, bottom: 8, height: 8, x: 0, y: 0 },
+      { left: 10, width: 180, right: 190, top: 0, bottom: 8, height: 8, x: 10, y: 0 },
+    ];
+    track.getBoundingClientRect = () => rects.shift() ?? rects.at(-1);
+
+    firePointer(track, 'pointerdown', 120);
+    firePointer(track, 'pointerup', 120);
+
+    expect(transport.seekAbs).toHaveBeenCalledWith(144);
+  });
+
+  it('cancels an active pointer gesture without committing its preview', () => {
+    render(<SeekBar target="local" />);
+    const track = screen.getByTestId('np-seek');
+    measureTrack(track);
+
+    firePointer(track, 'pointerdown', 100);
+    firePointer(track, 'pointercancel', 100);
+    firePointer(track, 'pointerup', 100);
+
+    expect(transport.seekAbs).not.toHaveBeenCalled();
+    expect(screen.getByTestId('np-seek-elapsed')).toHaveTextContent('1:00');
+  });
+
+  it('does not start a pointer seek from a zero-width track or non-finite coordinate', () => {
+    render(<SeekBar target="local" />);
+    const track = screen.getByTestId('np-seek');
+    measureTrack(track, { width: 0 });
+    firePointer(track, 'pointerdown', 100);
+    firePointer(track, 'pointerup', 100);
+
+    measureTrack(track);
+    const nonFiniteDown = new window.MouseEvent('pointerdown', { bubbles: true, cancelable: true });
+    Object.defineProperty(nonFiniteDown, 'clientX', { value: Number.NaN });
+    fireEvent(track, nonFiniteDown);
+    firePointer(track, 'pointerup', 100);
+
+    expect(transport.seekAbs).not.toHaveBeenCalled();
+  });
+
   it('seeks with the keyboard: arrows nudge, Home/End jump', () => {
     render(<SeekBar target="local" />);
     const track = screen.getByTestId('np-seek');
