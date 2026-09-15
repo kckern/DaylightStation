@@ -3,6 +3,7 @@ import { getChildLogger } from '../../../../lib/logging/singleton.js';
 import { SEGMENTS, activeSegmentsFor, segmentNames, segmentPoints } from './segmentedSecretGeometry.js';
 import { MASK_SEGMENT_COLORS, SIGNAL_SEGMENT_COLORS, segmentColorValue } from './segmentedSecretPalette.js';
 import { FLICKER_GROUP_COUNT, FLICKER_TICK_MS, assignFlickerGroups, nextColorIndex } from './segmentFlicker.js';
+import { SECRET_TEXT_MOTION_MS, generateSecretTextMotion } from './segmentedSecretMotion.js';
 import './SegmentedSecretText.scss';
 
 // A physical red decoder filter preserves the warm signal segments while
@@ -104,6 +105,52 @@ function useSegmentFlicker(rootRef, value) {
   }, [rootRef, value]);
 }
 
+// Moves the whole card the way ImageDecoderDisplay does: a new seeded offset
+// every second, jumping to the opposite edge each time, so staring and
+// squinting never holds a steady image long enough to resolve the letters.
+// Written straight to the root like the flicker, so a tick never re-renders
+// the glyphs.
+function useSecretTextMotion(rootRef, value, intervalMs) {
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return undefined;
+    const frames = generateSecretTextMotion(value);
+    const motionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    let index = 0;
+    let timer = null;
+    const place = () => {
+      const frame = frames[index];
+      root.style.transform = `translate3d(${frame.x.toFixed(2)}%, ${frame.y.toFixed(2)}%, 0)`;
+      root.dataset.motionIndex = String(index);
+    };
+    const step = () => {
+      if (document.visibilityState === 'hidden') return;
+      index = (index + 1) % frames.length;
+      place();
+    };
+    const sync = () => {
+      const still = Boolean(motionQuery?.matches) || !Number.isFinite(intervalMs) || intervalMs <= 0;
+      if (still) {
+        if (timer) clearInterval(timer);
+        timer = null;
+        index = 0;
+        root.style.transform = '';
+        root.dataset.motionIndex = '0';
+      } else if (!timer) {
+        place();
+        timer = setInterval(step, intervalMs);
+      }
+      logger().debug('gaming.segmented-secret.motion', { running: Boolean(timer), intervalMs, frames: frames.length });
+    };
+    sync();
+    motionQuery?.addEventListener?.('change', sync);
+    return () => {
+      if (timer) clearInterval(timer);
+      motionQuery?.removeEventListener?.('change', sync);
+    };
+  }, [rootRef, value, intervalMs]);
+}
+
 function Glyph({ character, index, seed }) {
   const active = new Set(activeSegmentsFor(character));
   return (
@@ -120,11 +167,14 @@ function Glyph({ character, index, seed }) {
   );
 }
 
-export default function SegmentedSecretText({ text, label = 'Secret clue', accessibleText = null }) {
+export default function SegmentedSecretText({
+  text, label = 'Secret clue', accessibleText = null, motionIntervalMs = SECRET_TEXT_MOTION_MS,
+}) {
   const rootRef = useRef(null);
   const value = String(text || '').toUpperCase();
   const lines = balanceSecretLines(value);
   useSegmentFlicker(rootRef, value);
+  useSecretTextMotion(rootRef, value, motionIntervalMs);
   let glyphIndex = 0;
   return (
     <div ref={rootRef} className="segmented-secret-text" role="img" aria-label={accessibleText || `${label}: ${value}`}>

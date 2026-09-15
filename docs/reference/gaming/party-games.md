@@ -33,6 +33,16 @@ view through the filter is constant. The colors are written straight to each
 polygon's `--segment-color` rather than re-rendering glyphs. Under
 `prefers-reduced-motion` the colors stay still.
 
+The whole card also jumps once a second, following `ImageDecoderDisplay`
+(`segmentedSecretMotion.js`). It alternates between −2% and +2% of its own
+width, so every tick moves it most of a glyph, with a seeded vertical offset
+within ±10% of its height. The path is seeded by the clue and restarts with each
+new clue. It snaps rather than glides, so staring and squinting never holds a
+steady image. The offsets are small because the card is nearly the full stage
+width: the image decoder's ±35% would push it off the TV. Like the colors, the
+position is written straight to the card, and under `prefers-reduced-motion` the
+card stays centred.
+
 `/dev/decoder-swatches` shows every palette color and a live sample; open it on
 the target screen and hold up the physical red card to confirm each warm bar
 stays bright and each cool bar goes dark. The segment geometry is code-rendered;
