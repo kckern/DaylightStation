@@ -442,3 +442,5 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-14 | fix/remote-controls-svg | 9359ed74b | Remote select never clicks an SVG href (Charades 'click is not a function') (merged to main) |
 | 2026-09-14 | feat/secret-text-motion | 057634855 | Segmented decoder: card jumps every second, jet black mask, touching letter segments never match, 1s flicker; Charades test races (merged to main) |
 | 2026-09-14 | feat/decoder-shuffle | 816f87949 | Segmented decoder recolors every segment on the same 1s tick as the position jump; stagger removed (merged to main) |
+| 2026-09-14 | feat/decoder-reveal | bb15e24f0 | Segmented decoder reveal modes (progressive typing, marquee, static) from config (merged to main) |
+| 2026-09-14 | fix/ladder-typing | 3995848ff | Copy-mode typing accepts compound vowels/finals; untypeable characters skipped; refusals logged (merged to main) |
