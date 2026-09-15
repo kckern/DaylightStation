@@ -62,10 +62,12 @@ async function nextFrame() {
 
 function renderSearch() {
   const controller = createLocalSessionController({ clientId: 'combobox-action-test' });
-  controller.queue.add({ contentId: 'plex:existing', title: 'Paused movie', format: 'video' });
-  controller.onPlayerStateChange('paused', 'plex:existing');
   const play = vi.fn();
   controller.setPlayerHandle({ play, pause: vi.fn(), seek: vi.fn() });
+  controller.queue.add({ contentId: 'plex:existing', title: 'Paused movie', format: 'video' });
+  controller.transport.play();
+  controller.onPlayerStateChange('paused', 'plex:existing');
+  play.mockClear();
   render(
     <MantineProvider>
       <LocalSessionContext.Provider value={{ controller }}>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 
 import { guid } from '../lib/helpers.js';
@@ -28,11 +28,22 @@ function withTimeout(promise, timeoutMs, kind, ctx) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+function prewarmTransportFormat(url, fallbackFormat) {
+  try {
+    const pathname = new URL(url, globalThis.location?.origin ?? 'http://localhost').pathname.toLowerCase();
+    if (pathname.endsWith('.m3u8')) return 'hls_video';
+    if (pathname.endsWith('.mpd')) return 'dash_video';
+  } catch {
+    // A malformed redemption must retain its resolved descriptor, never guess DASH.
+  }
+  return ['video', 'hls_video', 'dash_video'].includes(fallbackFormat) ? fallbackFormat : null;
+}
+
 /**
  * Queue controller hook for managing playlist/queue playback
  * Handles queue initialization, advancement, and shader management
  */
-export function useQueueController({ play, queue, clear, shuffle, onError, contentRef: contentRefArg, queueFetchTimeoutMs = null }) {
+export function useQueueController({ play, queue, clear, shuffle, onError, contentRef: contentRefArg, queueFetchTimeoutMs = null, onOwnerRevision = null }) {
   // Legacy aliases: multiple old names can map to the same canonical shader
   const shaderAliases = {
     dark: 'blackout',
@@ -42,7 +53,7 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
   };
   const rawShader = play?.shader || queue?.shader || 'default';
   const resolvedShader = shaderAliases[rawShader] ?? rawShader;
-  const [shader, setShader] = useState(classes.includes(resolvedShader) ? resolvedShader : 'default');
+  const [shader, setShaderState] = useState(classes.includes(resolvedShader) ? resolvedShader : 'default');
   const [volume] = useState(play?.volume || queue?.volume || 1);
   // Trigger end-behavior queues must not loop — the marker would re-fire each cycle.
   const hasEndBehavior = !!(play?.endBehavior || queue?.endBehavior);
@@ -57,20 +68,32 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
   const [onDeck, setOnDeckState] = useState(null);
   const [onDeckFlashKey, setOnDeckFlashKey] = useState(0);
 
+  // The Player is the owner of these actions.  Issue counters before React
+  // queues its state update so a completed action burst remains visible even
+  // when no bridge poll observes its intermediate renders.
+  const issueOwnerRevision = useCallback((change) => {
+    try { onOwnerRevision?.(change); } catch { /* owner provenance is advisory */ }
+  }, [onOwnerRevision]);
+
   const pushOnDeck = useCallback((item, opts = {}) => {
+    // This is an insertion boundary: caller guids are untrusted provenance and
+    // must never alias an entry already owned by this queue.
+    const ownedItem = { ...item, guid: guid() };
+    issueOwnerRevision({ queue: true });
     setOnDeckState((prev) => {
       if (prev && opts.displaceToQueue) {
         // Prepend the displaced item to the queue head
         setQueue((q) => [prev, ...q]);
         setOriginalQueue((q) => [prev, ...q]);
       }
-      return item;
+      return ownedItem;
     });
-  }, []);
+  }, [issueOwnerRevision]);
 
   const clearOnDeck = useCallback(() => {
+    issueOwnerRevision({ queue: true });
     setOnDeckState(null);
-  }, []);
+  }, [issueOwnerRevision]);
 
   const flashOnDeck = useCallback(() => {
     setOnDeckFlashKey((k) => k + 1);
@@ -79,9 +102,11 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
   // In-place head replacement for op: 'play-now' from an active Player.
   // Replaces currently playing; queue tail and on-deck are untouched.
   const playNow = useCallback((item) => {
-    setQueue((prev) => prev.length > 0 ? [item, ...prev.slice(1)] : [item]);
-    setOriginalQueue((prev) => prev.length > 0 ? [item, ...prev.slice(1)] : [item]);
-  }, []);
+    const ownedItem = { ...item, guid: guid() };
+    issueOwnerRevision({ playback: true, queue: true });
+    setQueue((prev) => prev.length > 0 ? [ownedItem, ...prev.slice(1)] : [ownedItem]);
+    setOriginalQueue((prev) => prev.length > 0 ? [ownedItem, ...prev.slice(1)] : [ownedItem]);
+  }, [issueOwnerRevision]);
 
   // Single-item input (e.g. play: { contentId: 'watchlist:...' }) can resolve to a
   // multi-item playlist via the /api/v1/queue fetch. Reflect that here so consumers
@@ -105,15 +130,21 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
 
   const cycleThroughClasses = useCallback((upOrDownInt) => {
     upOrDownInt = parseInt(upOrDownInt) || 1;
+    issueOwnerRevision({ queue: true });
     setShaderUserCycled(true);
-    setShader((prevClass) => {
+    setShaderState((prevClass) => {
       const currentIndex = classes.indexOf(prevClass);
       const newIndex = (currentIndex + upOrDownInt + classes.length) % classes.length;
       const nextClass = classes[newIndex];
       playbackLog('shader-changed', { from: prevClass, to: nextClass });
       return nextClass;
     });
-  }, []);
+  }, [issueOwnerRevision]);
+
+  const setShader = useCallback((nextShader) => {
+    issueOwnerRevision({ queue: true });
+    setShaderState(nextShader);
+  }, [issueOwnerRevision]);
 
   useEffect(() => {
     const signatureParts = [];
@@ -123,12 +154,12 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
 
     if (Array.isArray(play)) {
       const playArraySignature = play
-        .map((item) => item?.guid || item?.media || item?.assetId || item?.id || '')
+        .map((item) => item?.guid || item?.media || item?.assetId || item?.id || item?.contentId || '')
         .join('|');
       signatureParts.push(`play:${play.length}:${playArraySignature}`);
     } else if (Array.isArray(queue)) {
       const queueArraySignature = queue
-        .map((item) => item?.guid || item?.media || item?.assetId || item?.id || '')
+        .map((item) => item?.guid || item?.media || item?.assetId || item?.id || item?.contentId || '')
         .join('|');
       signatureParts.push(`queue:${queue.length}:${queueArraySignature}`);
     }
@@ -199,8 +230,11 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
                 const resp = await DaylightAPI(`api/v1/prewarm/${prewarmToken}`);
                 if (resp?.url) {
                   firstItem.mediaUrl = resp.url;
-                  firstItem.format = 'dash_video';
-                  firstItem.mediaType = 'dash_video';
+                  const transportFormat = prewarmTransportFormat(resp.url, firstItem.format ?? firstItem.mediaType);
+                  if (transportFormat) {
+                    firstItem.format = transportFormat;
+                    firstItem.mediaType = transportFormat;
+                  }
                   playbackLog('prewarm-applied', {
                     contentId: prewarmContentId,
                     token: prewarmToken
@@ -277,6 +311,10 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
       }
 
       if (!isCancelled) {
+        // A committed resolve is an owner load transition, including a new
+        // source on the same mounted Player. Issue before scheduling React
+        // state so a later capture cannot miss it between polls.
+        issueOwnerRevision({ playback: true, queue: true });
         if (contentRef) _signatureCache.set(contentRef, nextSignature);
         setQueue(validQueue);
         setOriginalQueue(validQueue);
@@ -337,9 +375,10 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
     // core queue-init network-fetch effect; onError is an unmemoized parent prop —
     // adding it risks a fetch storm on unrelated parent re-renders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [play, queue, isShuffle, contentRef]);
+  }, [play, queue, isShuffle, contentRef, issueOwnerRevision]);
 
   const advance = useCallback((step = 1) => {
+    issueOwnerRevision({ playback: true, queue: true });
     // On-deck has priority when advancing forward.
     if (step > 0 && onDeck) {
       setQueue((prev) => {
@@ -408,7 +447,7 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
       clear();
       return [];
     });
-  }, [clear, isContinuous, originalQueue, onDeck]);
+  }, [clear, isContinuous, originalQueue, onDeck, issueOwnerRevision]);
 
   const jumpTo = useCallback((targetContentId, seekSeconds) => {
     const id = String(targetContentId ?? '');
@@ -418,6 +457,7 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
       return String(cid) === id;
     });
     if (origIdx < 0) return false;
+    issueOwnerRevision({ playback: true, queue: true });
     playbackLog('queue-advance', {
       action: 'jump-to-item',
       targetContentId: id,
@@ -431,9 +471,25 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
     }
     setQueue(sliced);
     return true;
-  }, [originalQueue]);
+  }, [originalQueue, issueOwnerRevision]);
 
   const queuePosition = originalQueue.findIndex(item => item.guid === playQueue[0]?.guid);
+
+  // Read-only owner capture: retain historical entries and the exact active
+  // visit order separately, since legacy slicing/rotation can make them diverge.
+  const queueSnapshot = useMemo(() => {
+    const byId = new Map();
+    for (const item of [...originalQueue, ...playQueue, ...(onDeck ? [onDeck] : [])]) {
+      if (item?.guid && !byId.has(item.guid)) byId.set(item.guid, { ...item, queueItemId: item.guid,
+        contentId: item.contentId ?? item.assetId ?? item.id ?? item.plex,
+        format: item.format ?? 'video', priority: item.guid === onDeck?.guid ? 'upNext' : 'queue' });
+    }
+    const items = [...byId.values()].filter((item) => item.contentId);
+    const order = [playQueue[0], ...(onDeck ? [onDeck] : []), ...playQueue.slice(1)]
+      .map((item) => item?.guid).filter(Boolean);
+    return { items, currentIndex: items.findIndex((item) => item.queueItemId === playQueue[0]?.guid),
+      upNextCount: items.filter((item) => item.priority === 'upNext').length, executionOrder: order };
+  }, [originalQueue, playQueue, onDeck]);
 
   // Trigger end-behavior side-effect dispatcher.
   // When the queue advances onto a virtual side-effect tail item, POST to the
@@ -505,6 +561,7 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
     // Stable identity for the whole queue (volume/rate/etc. persist across item swaps).
     // Null for inline-array inputs that have no canonical id.
     queueSessionId: contentRef || null,
+    queueSnapshot,
     onDeck,
     onDeckFlashKey,
     pushOnDeck,

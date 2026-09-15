@@ -290,8 +290,12 @@ describe('SearchMode history × dispatch', () => {
     fireEvent.click(await screen.findByTestId('result-action-add-plex:685088'));
 
     expect(localController.getSnapshot()).toMatchObject({
-      currentItem: { contentId: 'plex:685088', title: 'Bluey' },
-      queue: { items: [expect.objectContaining({ contentId: 'plex:685088' })] },
+      state: 'ready',
+      currentItem: null,
+      queue: {
+        currentIndex: -1,
+        items: [expect.objectContaining({ contentId: 'plex:685088', title: 'Bluey' })],
+      },
     });
     expect(screen.getByTestId('search-mode')).toBeInTheDocument();
     expect(screen.getByTestId('search-mode-input')).toHaveValue('bluey');

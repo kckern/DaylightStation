@@ -6,12 +6,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createPlayerSessionRegistry } from './playerSessionRegistry.js';
 import { createPlayerSessionBridge, normalizePlayableItem } from './playerSessionBridge.js';
 import { createRegistrySessionSource } from './registrySessionSource.js';
+import { createSessionSource } from './SessionSource.js';
 
 function makeMediaEl({ paused = false, ended = false } = {}) {
   return { paused, ended };
 }
 
-function makeHandle({ el = makeMediaEl(), meta = null, time = 12, duration = 300, volume = 0.4, rate = 1 } = {}) {
+function makeHandle({ el = makeMediaEl(), meta = null, time = 12, duration = 300, volume = 0.4, rate = 1, queueSnapshot = null } = {}) {
   return {
     getMediaElement: () => el,
     getNowPlaying: () => ({ item: meta, isQueue: false, queuePosition: null, queueLength: meta ? 1 : 0 }),
@@ -19,6 +20,7 @@ function makeHandle({ el = makeMediaEl(), meta = null, time = 12, duration = 300
     getDuration: () => duration,
     getVolume: () => volume,
     getPlaybackRate: () => rate,
+    getQueueSnapshot: () => queueSnapshot,
   };
 }
 
@@ -66,6 +68,12 @@ describe('normalizePlayableItem', () => {
 });
 
 describe('createPlayerSessionBridge', () => {
+  it('preserves hls_video in normalized owner metadata', () => {
+    expect(normalizePlayableItem({ contentId: 'plex:hls', format: 'hls_video', title: 'HLS' })).toMatchObject({
+      contentId: 'plex:hls', format: 'hls_video', title: 'HLS',
+    });
+  });
+
   let registry;
 
   beforeEach(() => {
@@ -100,12 +108,12 @@ describe('createPlayerSessionBridge', () => {
     bridge.stop();
   });
 
-  it('maps the media element to playing/paused/ended and no element to loading', () => {
+  it('maps the media element to buffering/paused/ended and no element to loading until playing is observed', () => {
     const el = makeMediaEl();
     let handle = makeHandle({ el });
     const bridge = startBridge(() => handle);
     vi.advanceTimersByTime(1000);
-    expect(bridge.player.getState()).toBe('playing');
+    expect(bridge.player.getState()).toBe('buffering');
 
     el.paused = true;
     expect(bridge.player.getState()).toBe('paused');
@@ -114,6 +122,21 @@ describe('createPlayerSessionBridge', () => {
 
     handle = { ...makeHandle(), getMediaElement: () => null };
     expect(bridge.player.getState()).toBe('loading');
+    bridge.stop();
+  });
+
+  it('requires a native playing event before an unpaused decoder is reported as playing', () => {
+    const el = document.createElement('video');
+    Object.defineProperties(el, {
+      paused: { configurable: true, value: false },
+      ended: { configurable: true, value: false },
+    });
+    const bridge = startBridge(() => makeHandle({ el }));
+    vi.advanceTimersByTime(1000);
+    expect(bridge.player.getState()).toBe('buffering');
+
+    el.dispatchEvent(new Event('playing'));
+    expect(bridge.player.getState()).toBe('playing');
     bridge.stop();
   });
 
@@ -141,6 +164,148 @@ describe('createPlayerSessionBridge', () => {
     bridge.stop();
   });
 
+  it('reads the legacy owner’s complete duplicate queue and current execution order', () => {
+    const queueSnapshot = {
+      items: [
+        { queueItemId: 'a-1', contentId: 'plex:a', format: 'video', priority: 'queue' },
+        { queueItemId: 'b-1', contentId: 'plex:b', format: 'video', priority: 'upNext' },
+        { queueItemId: 'a-2', contentId: 'plex:a', format: 'video', priority: 'queue' },
+      ],
+      currentIndex: 2,
+      upNextCount: 1,
+      executionOrder: ['a-2', 'b-1'],
+    };
+    const bridge = startBridge(() => makeHandle({ queueSnapshot }));
+    vi.advanceTimersByTime(1000);
+    expect(bridge.queueController.getQueue()).toEqual(queueSnapshot.items);
+    expect(bridge.queueController.getCurrentIndex()).toBe(2);
+    expect(bridge.queueController.getExecutionOrder()).toEqual(['a-2', 'b-1']);
+    bridge.stop();
+  });
+
+  it('publishes a detached full legacy capture with owner revisions and current Player config', () => {
+    const queueSnapshot = {
+      items: [
+        { queueItemId: 'a-1', contentId: 'plex:a', format: 'video', priority: 'queue' },
+        { queueItemId: 'b-1', contentId: 'plex:b', format: 'video', priority: 'queue' },
+        { queueItemId: 'a-2', contentId: 'plex:a', format: 'video', priority: 'queue' },
+      ],
+      currentIndex: 2,
+      upNextCount: 0,
+      executionOrder: ['a-2'],
+    };
+    let issuedIdentity = {
+      ownerInstanceId: 'legacy-player-owner-1', playbackRevision: 4, queueRevision: 7,
+    };
+    const handle = {
+      ...makeHandle({ queueSnapshot, meta: { contentId: 'plex:a', format: 'video' }, volume: 0.73, rate: 1.25 }),
+      getPlayerInstanceId: () => 'legacy-player-owner-1',
+      getPlaybackIdentity: () => issuedIdentity,
+      getShader: () => 'night',
+    };
+    const bridge = startBridge(() => handle);
+    vi.advanceTimersByTime(1000);
+    const source = createSessionSource({
+      player: bridge.player, queueController: bridge.queueController,
+      ownerId: 'screen-1', sessionId: 'screen-session-1',
+    });
+
+    const first = source.getSnapshot();
+    expect(first).toMatchObject({
+      position: 12,
+      config: { volume: 73, playbackRate: 1.25, shader: 'night' },
+      queue: { currentIndex: 2, executionOrder: ['a-2'] },
+      meta: { playbackOwner: {
+        ownerInstanceId: 'legacy-player-owner-1', sessionId: 'screen-session-1',
+        contentId: 'plex:a', queueItemId: 'a-2', queueRevision: 7, playbackRevision: 4,
+      } },
+    });
+    first.queue.items[0].contentId = 'mutated';
+    expect(source.getSnapshot().queue.items[0].contentId).toBe('plex:a');
+
+    const nextQueue = { ...queueSnapshot, currentIndex: 0, executionOrder: ['a-1', 'b-1', 'a-2'] };
+    handle.getQueueSnapshot = () => nextQueue;
+    issuedIdentity = { ...issuedIdentity, playbackRevision: 5, queueRevision: 8 };
+    const restarted = source.getSnapshot().meta.playbackOwner;
+    expect(restarted).toMatchObject({ playbackRevision: 5, queueRevision: 8 });
+    bridge.stop();
+  });
+
+  it('does not mint verified owner identity from unresolved requested metadata alone', () => {
+    const handle = {
+      ...makeHandle({ meta: { contentId: 'plex:requested', format: 'video' } }),
+      getPlayerInstanceId: () => 'legacy-player-owner-unresolved',
+      getPlaybackIdentity: () => ({ ownerInstanceId: 'legacy-player-owner-unresolved', playbackRevision: 0, queueRevision: 0 }),
+    };
+    const bridge = startBridge(() => handle);
+    vi.advanceTimersByTime(1000);
+    const source = createSessionSource({
+      player: bridge.player, queueController: bridge.queueController,
+      ownerId: 'screen-1', sessionId: 'screen-session-unresolved',
+    });
+
+    expect(source.getSnapshot()).not.toHaveProperty('meta.playbackOwner');
+    bridge.stop();
+  });
+
+  it('does not infer owner revisions from native events or polls', () => {
+    const queues = {
+      a: { items: [{ queueItemId: 'a-1', contentId: 'plex:a', format: 'video', priority: 'queue' }], currentIndex: 0, upNextCount: 0, executionOrder: ['a-1'] },
+      b: { items: [{ queueItemId: 'b-1', contentId: 'plex:b', format: 'video', priority: 'queue' }], currentIndex: 0, upNextCount: 0, executionOrder: ['b-1'] },
+    };
+    let queue = queues.a;
+    const el = document.createElement('video');
+    Object.defineProperties(el, { paused: { configurable: true, value: false }, ended: { configurable: true, writable: true, value: false } });
+    const handle = {
+      ...makeHandle({ el, meta: { contentId: 'plex:a', format: 'video' } }),
+      getQueueSnapshot: () => queue,
+      getPlayerInstanceId: () => 'owner-revision-events',
+      getPlaybackIdentity: () => ({ ownerInstanceId: 'owner-revision-events', playbackRevision: 7, queueRevision: 11 }),
+    };
+    const bridge = startBridge(() => handle);
+    vi.advanceTimersByTime(1000);
+    const source = createSessionSource({ player: bridge.player, queueController: bridge.queueController, ownerId: 'screen', sessionId: 'stable-session' });
+    const initial = source.getSnapshot().meta.playbackOwner;
+
+    queue = queues.b;
+    vi.advanceTimersByTime(1000);
+    queue = queues.a;
+    vi.advanceTimersByTime(1000);
+    el.dispatchEvent(new Event('playing')); // same entry restarted
+    el.ended = true;
+    vi.advanceTimersByTime(1000);
+    el.ended = false;
+    el.dispatchEvent(new Event('playing')); // stopped → playing
+    vi.advanceTimersByTime(1000);
+
+    const later = source.getSnapshot().meta.playbackOwner;
+    expect(later.playbackRevision).toBe(initial.playbackRevision);
+    expect(later.queueRevision).toBe(initial.queueRevision);
+    bridge.stop();
+  });
+
+  it('uses exactly one bridge queue capture for an internally coherent SessionSource snapshot', () => {
+    const a = { items: [{ queueItemId: 'a-1', contentId: 'plex:a', format: 'video', priority: 'queue' }], currentIndex: 0, upNextCount: 0, executionOrder: ['a-1'] };
+    const b = { items: [{ queueItemId: 'b-1', contentId: 'plex:b', format: 'video', priority: 'queue' }], currentIndex: 0, upNextCount: 0, executionOrder: ['b-1'] };
+    let calls = 0;
+    const handle = {
+      ...makeHandle({ meta: { contentId: 'plex:a', format: 'video' } }),
+      getQueueSnapshot: () => (++calls % 2 ? a : b),
+      getPlayerInstanceId: () => 'owner-one-capture',
+      getPlaybackIdentity: () => ({ ownerInstanceId: 'owner-one-capture', playbackRevision: 0, queueRevision: 0 }),
+    };
+    const bridge = startBridge(() => handle);
+    vi.advanceTimersByTime(1000);
+    calls = 0;
+    const source = createSessionSource({ player: bridge.player, queueController: bridge.queueController, ownerId: 'screen', sessionId: 'capture-session' });
+    const snapshot = source.getSnapshot();
+
+    expect(calls).toBe(1);
+    expect(snapshot.queue.executionOrder[0]).toBe(snapshot.queue.items[snapshot.queue.currentIndex].queueItemId);
+    expect(snapshot.meta.playbackOwner.queueItemId).toBe(snapshot.queue.items[snapshot.queue.currentIndex].queueItemId);
+    bridge.stop();
+  });
+
   it('emits player state changes and item changes only when they actually change', () => {
     const el = makeMediaEl();
     let meta = { id: 'plex:1', title: 'A' };
@@ -153,12 +318,12 @@ describe('createPlayerSessionBridge', () => {
 
     handle = makeHandle({ el, meta });
     vi.advanceTimersByTime(3000); // several ticks, steady playback
-    expect(states).toEqual(['playing']);
+    expect(states).toEqual(['buffering']);
     const itemEventsAfterSteady = queueEvents.mock.calls.length;
 
     el.paused = true;
     vi.advanceTimersByTime(1000);
-    expect(states).toEqual(['playing', 'paused']);
+    expect(states).toEqual(['buffering', 'paused']);
 
     handle = makeHandle({ el, meta: { id: 'plex:2', title: 'B' } });
     vi.advanceTimersByTime(1000);

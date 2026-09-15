@@ -1,7 +1,8 @@
 import { isSessionState, isRepeatMode } from './commands.mjs';
+import { validatePlaybackOwnerSessionSnapshot } from './playback-owner.mjs';
 
 const FORMATS = new Set([
-  'video', 'dash_video', 'audio', 'singalong', 'readalong',
+  'video', 'dash_video', 'hls_video', 'audio', 'singalong', 'readalong',
   'readable_paged', 'readable_flow', 'app', 'image', 'composite',
   // An emulated game session surfaced on a device. Distinct from 'app': the
   // fleet view renders it like any other content on any other device, which is
@@ -80,6 +81,8 @@ export function validateSessionSnapshot(obj) {
   if (!obj.meta || !isStr(obj.meta.ownerId) || !isStr(obj.meta.updatedAt)) {
     e.push('SessionSnapshot.meta: required { ownerId, updatedAt }');
   }
+  const ownerResult = validatePlaybackOwnerSessionSnapshot(obj);
+  if (!ownerResult.valid) e.push(...ownerResult.errors.map((error) => `SessionSnapshot.${error}`));
   return result(e);
 }
 

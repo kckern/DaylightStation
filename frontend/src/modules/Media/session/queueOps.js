@@ -168,19 +168,32 @@ export function addUpNextMany(snapshot, inputs) {
   return withQueue(snapshot, next, currentIdOf(snapshot));
 }
 
-/** Add to Queue: append to the end. First-into-empty becomes current. */
+/** Add to Queue: append to the end without changing playback selection. */
 export function add(snapshot, input) {
   return addMany(snapshot, [input]);
 }
 
-/** Batch Add to Queue: append in order. First-into-empty becomes current. */
+/** Batch Add to Queue: append in order without changing playback selection. */
 export function addMany(snapshot, inputs) {
   const newItems = toQueueItems(inputs);
   if (newItems.length === 0) return snapshot;
   const items = [...snapshot.queue.items, ...newItems];
-  const currentId = currentIdOf(snapshot)
-    ?? (snapshot.queue.items.length === 0 ? newItems[0].queueItemId : null);
-  return withQueue(snapshot, items, currentId);
+  const currentId = currentIdOf(snapshot);
+  const next = withQueue(snapshot, items, currentId);
+
+  // Clearing a queue deliberately leaves its source playing outside the
+  // queue. Appending later must not replace that actual source merely because
+  // there is no queue cursor to resolve.
+  if (currentId == null && snapshot.currentItem) {
+    return { ...next, currentItem: snapshot.currentItem };
+  }
+
+  // A held queue is ready for an explicit Play, but has no selected/current
+  // item and therefore no playback generation of its own.
+  if (currentId == null && !snapshot.currentItem && snapshot.state === 'idle') {
+    return { ...next, state: 'ready' };
+  }
+  return next;
 }
 
 /** Clear the queue. The current item keeps playing (it leaves the queue). */
