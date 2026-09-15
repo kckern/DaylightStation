@@ -223,27 +223,45 @@ export function PlayerBridge() {
       detach();
       bound = next;
       if (!bound) { detach = () => {}; return; }
+      const observedElement = bound;
+      const isCurrentMedia = () => isActiveGeneration()
+        && playerRef.current?.getMediaElement?.() === observedElement
+        && playerRef.current?.getMountedContentId?.() === contentId;
 
       const observeDuration = () => {
-        if (!isActiveGeneration()) return;
+        if (!isCurrentMedia()) return;
         controller.onPlayerObservation?.(contentId, { duration: bound.duration });
       };
       const observePaused = () => {
-        if (isActiveGeneration() && !bound.ended) controller.onPlayerStateChange('paused', contentId);
+        if (isCurrentMedia() && !bound.ended) controller.onPlayerStateChange('paused', contentId);
       };
       const observePlaying = () => {
-        if (isActiveGeneration()) controller.onPlayerStateChange('playing', contentId);
+        if (isCurrentMedia()) controller.onPlayerStateChange('playing', contentId);
       };
       const observeWaiting = () => {
-        if (isActiveGeneration() && !bound.paused) {
+        if (isCurrentMedia() && !bound.paused) {
           controller.onPlayerStateChange('buffering', contentId);
         }
+      };
+      const observeSeeked = () => {
+        if (!isCurrentMedia()) return;
+        // A paused decoder need not emit another progress tick after seeked.
+        // Reconcile its completed native position through the same hot/durable
+        // path as Player progress, without publishing the requested target.
+        onProgress({
+          currentTime: bound.currentTime,
+          duration: bound.duration,
+          paused: bound.paused,
+          isSeeking: false,
+          stalled: false,
+        });
       };
       bound.addEventListener('loadedmetadata', observeDuration);
       bound.addEventListener('durationchange', observeDuration);
       bound.addEventListener('pause', observePaused);
       bound.addEventListener('playing', observePlaying);
       bound.addEventListener('waiting', observeWaiting);
+      bound.addEventListener('seeked', observeSeeked);
       observeDuration();
       detach = () => {
         bound?.removeEventListener('loadedmetadata', observeDuration);
@@ -251,13 +269,14 @@ export function PlayerBridge() {
         bound?.removeEventListener('pause', observePaused);
         bound?.removeEventListener('playing', observePlaying);
         bound?.removeEventListener('waiting', observeWaiting);
+        bound?.removeEventListener('seeked', observeSeeked);
       };
     };
 
     bind();
     const poll = setInterval(bind, TIMING.VOLUME_APPLY_RETRY_MS);
     return () => { clearInterval(poll); detach(); };
-  }, [controller, contentId, playbackGeneration]);
+  }, [controller, contentId, playbackGeneration, onProgress]);
 
   // Stable play prop across re-renders of the same item. The platform
   // Player honors `seconds` as the start offset.
