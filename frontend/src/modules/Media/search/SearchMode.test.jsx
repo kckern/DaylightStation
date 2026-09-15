@@ -9,7 +9,7 @@
 // the dismiss-layer registrar, the device picker sheet body) are stubbed.
 // useContentCombobox and useContentDispatch are mocked at the hook boundary:
 // this suite exercises SearchMode's own wiring (autofocus, scope-reset,
-// open/close/back, row-tap -> dispatch -> close), not the combobox's search
+// open/close/back, playback retention, navigation exits), not the combobox's search
 // machine (already covered by its own tests) or the dispatch routing table
 // (useContentDispatch.test.jsx).
 import React, { useState } from 'react';
@@ -193,7 +193,7 @@ describe('SearchMode', () => {
     expect(mediaLog.searchModeExited).toHaveBeenCalledWith({ reason: 'back' });
   });
 
-  it('a select of a leaf result calls dispatch and closes', async () => {
+  it('a leaf Play keeps the exact query and narrowing open after dispatch', async () => {
     comboState = {
       search: 'bluey',
       results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }],
@@ -201,6 +201,7 @@ describe('SearchMode', () => {
     dispatchMock.mockReturnValue('local');
     render(<Harness />);
     await screen.findByTestId('search-mode-result-plex:685088');
+    fireEvent.click(await screen.findByTestId('scope-chip-ambient'));
 
     fireEvent.click(screen.getByTestId('search-mode-result-plex:685088'));
 
@@ -213,18 +214,15 @@ describe('SearchMode', () => {
       expect.objectContaining({ id: 'plex:685088', title: 'Bluey' }),
       { replaceHistoryEntry: true }
     );
-    expect(screen.queryByTestId('search-mode')).not.toBeInTheDocument();
+    expect(screen.getByTestId('search-mode')).toBeInTheDocument();
+    expect(screen.getByTestId('search-mode-input')).toHaveValue('bluey');
+    expect(screen.getByTestId('scope-chip-ambient')).toHaveAttribute('aria-pressed', 'true');
   });
 
-  // ── Fix round (Critical 1): the dispatch exit used to close WITHOUT
-  // consuming the history entry pushed on open — unlike the ✕ path, which
-  // always called history.back(). Every "tap a result" exit (the most
-  // common one) leaked an entry carrying `mediaSearchMode: true`, and that
-  // flag then propagated into every later pushState via the
-  // `{...history.state}` spread, so the user's next real back press would
-  // silently no-op. This asserts on actual history depth/state, not just
-  // that the surface closed. ──
-  it('consumes the history entry pushed on open when closing via a successful dispatch', async () => {
+  // Playback retains the marker SearchMode pushed on open. The later explicit
+  // close must consume that same entry exactly once; consuming it during Play
+  // loses the query, while failing to consume it on close creates a no-op Back.
+  it('retains the marker after Play, then explicit close consumes it in one Back step', async () => {
     comboState = {
       search: 'bluey',
       results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }],
@@ -239,31 +237,22 @@ describe('SearchMode', () => {
 
     fireEvent.click(screen.getByTestId('search-mode-result-plex:685088'));
 
-    // The dispatch exit must consume the SAME entry the ✕ path consumes:
-    // exactly one back() call (not zero — the leaked-entry bug — and not a
-    // second pushState, which would just push a fresh copy of the flag).
-    expect(backSpy).toHaveBeenCalledTimes(1);
+    // Playback is not navigation. Search still owns its one marker entry so
+    // its query/scope remain mounted and the eventual close has one entry to
+    // consume.
+    expect(screen.getByTestId('search-mode')).toBeInTheDocument();
+    expect(backSpy).not.toHaveBeenCalled();
     expect(pushSpy).toHaveBeenCalledTimes(1);
+    expect(window.history.state.mediaSearchMode).toBe(true);
 
-    // The resulting popstate must not re-fire a second close/log — closedRef
-    // already latched on the 'dispatch' exit. This is what actually proves
-    // depth returned to baseline rather than merely "one call happened":
-    // if the leaked-entry bug were still present, closeSurface would never
-    // call history.back() at all, so the guard here would be untested and
-    // a stray push would sit unconsumed — one push balanced by exactly one
-    // back, with no compensating second exit log, is the whole proof.
+    fireEvent.click(screen.getByTestId('search-mode-close'));
+    expect(backSpy).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('search-mode')).not.toBeInTheDocument();
     expect(mediaLog.searchModeExited).toHaveBeenCalledTimes(1);
-    expect(mediaLog.searchModeExited).toHaveBeenCalledWith({ reason: 'dispatch' });
+    expect(mediaLog.searchModeExited).toHaveBeenCalledWith({ reason: 'dismiss' });
 
-    // NOTE: happy-dom (this suite's DOM environment) does not actually
-    // replay `history.state` back to the prior entry after `history.back()`
-    // — verified directly against happy-dom's History implementation, which
-    // leaves `state` pointing at the last-pushed entry regardless of back()
-    // calls or elapsed time. A real browser does not have this limitation
-    // (that's what the ✕ path already relied on pre-fix-round), so a
-    // `window.history.state` assertion here would be asserting on a test
-    // environment gap, not on SearchMode's behavior — the push/back call
-    // parity above is the reliable, environment-agnostic proof instead.
+    // happy-dom does not replay the prior history.state after back(), so the
+    // one push / one back parity is the reliable assertion in this suite.
 
     pushSpy.mockRestore();
     backSpy.mockRestore();
@@ -284,7 +273,7 @@ describe('SearchMode', () => {
     );
   });
 
-  it('does not double-toast a cast route (useContentDispatch already toasts it)', async () => {
+  it('does not double-toast or close for an aimed cast route', async () => {
     comboState = {
       search: 'bluey',
       results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }],
@@ -295,7 +284,7 @@ describe('SearchMode', () => {
     fireEvent.click(screen.getByTestId('search-mode-result-plex:685088'));
 
     expect(notificationsShow).not.toHaveBeenCalled();
-    expect(screen.queryByTestId('search-mode')).not.toBeInTheDocument();
+    expect(screen.getByTestId('search-mode')).toBeInTheDocument();
   });
 
   it('mounts ScopeChips, DestinationLine, and StreamStatusLine', async () => {
@@ -390,7 +379,7 @@ describe('SearchMode', () => {
       expect(playContainerAsQueueMock).not.toHaveBeenCalled();
     });
 
-    it('▶ on a container calls playContainerAsQueue and closes the surface', async () => {
+    it('▶ on a container calls playContainerAsQueue and keeps the surface open', async () => {
       comboState = {
         search: 'tuttle',
         results: [{ id: 'plex:663508', title: 'Tuttle Twins', type: 'show', thumbnail: null }],
@@ -401,7 +390,7 @@ describe('SearchMode', () => {
       fireEvent.click(screen.getByTestId('result-play-all-plex:663508'));
 
       expect(playContainerAsQueueMock).toHaveBeenCalledWith('plex:663508', expect.objectContaining({ id: 'plex:663508' }));
-      expect(screen.queryByTestId('search-mode')).not.toBeInTheDocument();
+      expect(screen.getByTestId('search-mode')).toBeInTheDocument();
     });
 
     it('a container row never shows the ⋯ leaf menu', async () => {
@@ -424,7 +413,7 @@ describe('SearchMode', () => {
       expect(screen.queryByTestId('result-play-all-plex:685088')).toBeNull();
     });
 
-    it('⋯ on a leaf: Play Next calls queue.playNext and closes the surface', async () => {
+    it('⋯ on a leaf: Play Next calls queue.playNext and keeps the surface open', async () => {
       comboState = {
         search: 'bluey',
         results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }],
@@ -435,7 +424,7 @@ describe('SearchMode', () => {
       fireEvent.click(await screen.findByTestId('result-action-playNext-plex:685088'));
 
       expect(queuePlayNext).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'plex:685088' }));
-      expect(screen.queryByTestId('search-mode')).not.toBeInTheDocument();
+      expect(screen.getByTestId('search-mode')).toBeInTheDocument();
     });
 
     it('⋯ Up Next calls queue.addUpNext', async () => {
@@ -449,19 +438,24 @@ describe('SearchMode', () => {
       fireEvent.click(await screen.findByTestId('result-action-upNext-plex:685088'));
 
       expect(queueAddUpNext).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'plex:685088' }));
+      expect(screen.getByTestId('search-mode')).toBeInTheDocument();
     });
 
-    it('⋯ Add to Queue calls queue.add', async () => {
+    it('⋯ Add to Queue calls queue.add and preserves the query and narrowing', async () => {
       comboState = {
         search: 'bluey',
         results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }],
       };
       render(<Harness />);
       await screen.findByTestId('result-more-plex:685088');
+      fireEvent.click(await screen.findByTestId('scope-chip-ambient'));
       fireEvent.click(screen.getByTestId('result-more-plex:685088'));
       fireEvent.click(await screen.findByTestId('result-action-add-plex:685088'));
 
       expect(queueAdd).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'plex:685088' }));
+      expect(screen.getByTestId('search-mode')).toBeInTheDocument();
+      expect(screen.getByTestId('search-mode-input')).toHaveValue('bluey');
+      expect(screen.getByTestId('scope-chip-ambient')).toHaveAttribute('aria-pressed', 'true');
     });
 
     it('⋯ Open detail pushes the detail view and closes the surface, touching no queue applier', async () => {

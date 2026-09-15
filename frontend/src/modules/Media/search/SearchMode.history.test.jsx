@@ -1,6 +1,9 @@
 // frontend/src/modules/Media/search/SearchMode.history.test.jsx
-// Regression suite for CRITICAL 1 of the final pre-merge review: a container
-// tap in mobile Search Mode navigated and then IMMEDIATELY un-navigated.
+// SearchMode action/history integration. It retains its marker and mounted
+// query for playback/queue actions, then consumes that marker on explicit
+// close or Back. Container/detail navigation instead replaces the marker.
+// The latter also guards CRITICAL 1 of the earlier pre-merge review: a
+// container tap once navigated and then IMMEDIATELY un-navigated.
 //
 // The defect was emergent — it lived in the interaction between three pieces
 // that are each correct alone, which is exactly why SearchMode.test.jsx could
@@ -35,11 +38,11 @@
 //                            SSE transport; the search machine has its own
 //                            suite). Its `select` still calls SearchMode's own
 //                            onChange, so the tap wiring is real.
-//   • useDispatch/useFleetContext/useSessionController — the cast, fleet and
-//                            local-queue sinks. A CONTAINER tap returns from
-//                            dispatch() before any of them is consulted, and
-//                            the leaf case only needs to observe that no
-//                            navigation happened.
+//   • useDispatch/useFleetContext/useSessionController — only their React
+//                            bindings are mocked. Playback assertions use a
+//                            real LocalSessionController; aimed-cast tests run
+//                            the real useContentDispatch tracker through both
+//                            completion and failure states.
 //   • DismissStackProvider / DispatchTargetPicker / api.mjs / notifications /
 //     logging — DestinationLine's and SearchProvider's own leaf dependencies.
 //
@@ -48,7 +51,7 @@
 // finding is about.
 import React, { useState } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 // ── Search results, without a transport (see header) ──
@@ -66,15 +69,22 @@ vi.mock('../../Content/combobox/useContentCombobox.js', () => ({
 }));
 
 // ── Sinks the container branch never reaches; the leaf branch lands in queue ──
-const dispatchToTarget = vi.fn(() => Promise.resolve([]));
+let dispatchResult;
+let dispatches;
+const dispatchToTarget = vi.fn(() => dispatchResult);
 vi.mock('../cast/useDispatch.js', () => ({
-  useDispatch: () => ({ dispatchToTarget, dispatches: new Map(), retry: vi.fn() }),
+  useDispatch: () => ({ dispatchToTarget, dispatches, retry: vi.fn() }),
 }));
 const queuePlayNow = vi.fn();
+const queuePlayNext = vi.fn();
+const queueAddUpNext = vi.fn();
+const queueAdd = vi.fn();
+let localController;
+let controllerFetch;
 vi.mock('../controller/useSessionController.js', () => ({
   useSessionController: () => ({
-    queue: { playNow: queuePlayNow, playNext: vi.fn(), addUpNext: vi.fn(), add: vi.fn() },
-    config: { setShuffle: vi.fn() },
+    queue: { playNow: queuePlayNow, playNext: queuePlayNext, addUpNext: queueAddUpNext, add: queueAdd },
+    config: localController.config,
   }),
 }));
 vi.mock('../fleet/useFleetContext.js', () => ({
@@ -84,7 +94,8 @@ vi.mock('../shell/useDismissLayer.js', () => ({ useDismissLayer: () => {} }));
 vi.mock('../cast/DispatchTargetPicker.jsx', () => ({
   DispatchTargetPicker: () => <div data-testid="picker-stub" />,
 }));
-vi.mock('@mantine/notifications', () => ({ notifications: { show: vi.fn() } }));
+const notificationsShow = vi.fn();
+vi.mock('@mantine/notifications', () => ({ notifications: { show: (...args) => notificationsShow(...args) } }));
 vi.mock('../logging/mediaLog.js', () => {
   const stub = new Proxy({}, { get: (t, k) => (t[k] ??= vi.fn()) });
   return { default: stub };
@@ -104,6 +115,7 @@ import { SearchProvider } from './SearchProvider.jsx';
 import { CastTargetProvider } from '../cast/CastTargetProvider.jsx';
 import { NavProvider, useNav } from '../shell/NavProvider.jsx';
 import { SearchMode } from './SearchMode.jsx';
+import { createLocalSessionController } from '../session/LocalSessionController.js';
 
 // Reads the REAL NavProvider so "where did the user end up" is an assertion on
 // the live nav state, not on a spy's arguments.
@@ -138,6 +150,21 @@ const probe = () => screen.getByTestId('nav-probe');
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  dispatches = new Map();
+  dispatchResult = Promise.resolve([]);
+  controllerFetch = vi.fn(async () => ({
+    ok: true,
+    json: async () => ({ items: [{ id: 'plex:episode-1', title: 'First episode', type: 'episode' }] }),
+  }));
+  localController = createLocalSessionController({
+    clientId: 'search-mode-test',
+    randomUuid: () => 'session-search',
+    fetchImpl: controllerFetch,
+  });
+  queuePlayNow.mockImplementation((...args) => localController.queue.playNow(...args));
+  queuePlayNext.mockImplementation((...args) => localController.queue.playNext(...args));
+  queueAddUpNext.mockImplementation((...args) => localController.queue.addUpNext(...args));
+  queueAdd.mockImplementation((...args) => localController.queue.add(...args));
   // Each test starts from a clean single history entry on Home — NavProvider's
   // initialStack() reads window.history.state, so a leaked mediaNavStack from
   // the previous test would seed the wrong baseline.
@@ -145,7 +172,7 @@ beforeEach(() => {
   comboState = { search: null, results: [] };
 });
 
-describe('SearchMode history × dispatch (final review, Critical 1)', () => {
+describe('SearchMode history × dispatch', () => {
   it('a container tap lands the user ON the browse view — it does not un-navigate', async () => {
     comboState = { search: 'tuttle', results: [CONTAINER] };
     const pushSpy = vi.spyOn(window.history, 'pushState');
@@ -207,7 +234,7 @@ describe('SearchMode history × dispatch (final review, Critical 1)', () => {
     expect(top.params.containerItem).toMatchObject({ id: 'plex:663508' });
   });
 
-  it('a leaf tap (no navigation) still consumes the marker entry, exactly as before', async () => {
+  it('a leaf Play mutates playback while SearchMode and its marker stay open', async () => {
     comboState = { search: 'bluey', results: [LEAF] };
     const pushSpy = vi.spyOn(window.history, 'pushState');
     const backSpy = vi.spyOn(window.history, 'back');
@@ -218,16 +245,100 @@ describe('SearchMode history × dispatch (final review, Critical 1)', () => {
 
     fireEvent.click(screen.getByTestId('search-mode-result-plex:685088'));
 
-    // Leaf -> play locally: nothing navigated, so the marker entry is dead
-    // weight and must be traversed away — one push balanced by one back.
+    // Leaf -> play locally: playback changes, but navigation does not.
+    // Search therefore retains ownership of its original marker.
     expect(queuePlayNow).toHaveBeenCalledWith(
       expect.objectContaining({ contentId: 'plex:685088' }),
       { clearRest: true }
     );
-    expect(backSpy).toHaveBeenCalledTimes(1);
+    expect(localController.getSnapshot()).toMatchObject({
+      state: 'loading',
+      currentItem: { contentId: 'plex:685088', title: 'Bluey' },
+    });
+    expect(backSpy).not.toHaveBeenCalled();
     expect(pushSpy).toHaveBeenCalledTimes(1);
     expect(probe()).toHaveAttribute('data-view', 'home'); // never navigated
+    expect(window.history.state.mediaSearchMode).toBe(true);
+    expect(screen.getByTestId('search-mode')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('search-mode-close'));
+    expect(backSpy).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId('search-mode')).not.toBeInTheDocument();
+  });
+
+  it('a collection inline Play expands into the real local queue while search stays open', async () => {
+    comboState = { search: 'tuttle', results: [CONTAINER] };
+    render(<Harness />);
+
+    fireEvent.click(await screen.findByTestId('result-play-all-plex:663508'));
+
+    await waitFor(() => expect(localController.getSnapshot()).toMatchObject({
+      state: 'loading',
+      currentItem: { contentId: 'plex:episode-1', title: 'First episode' },
+      queue: { items: [expect.objectContaining({ contentId: 'plex:episode-1' })] },
+    }));
+    expect(controllerFetch).toHaveBeenCalledWith('/api/v1/list/plex/663508');
+    expect(screen.getByTestId('search-mode')).toBeInTheDocument();
+    expect(screen.getByTestId('search-mode-input')).toHaveValue('tuttle');
+  });
+
+  it('menu Add mutates the real local queue without closing search', async () => {
+    comboState = { search: 'bluey', results: [LEAF] };
+    render(<Harness />);
+
+    fireEvent.click(await screen.findByTestId('result-more-plex:685088'));
+    fireEvent.click(await screen.findByTestId('result-action-add-plex:685088'));
+
+    expect(localController.getSnapshot()).toMatchObject({
+      currentItem: { contentId: 'plex:685088', title: 'Bluey' },
+      queue: { items: [expect.objectContaining({ contentId: 'plex:685088' })] },
+    });
+    expect(screen.getByTestId('search-mode')).toBeInTheDocument();
+    expect(screen.getByTestId('search-mode-input')).toHaveValue('bluey');
+  });
+
+  it('an aimed cast stays open after the real dispatch tracker reports completion', async () => {
+    localStorage.setItem('media-app.cast-target', JSON.stringify({ mode: 'transfer', targetIds: ['livingroom-tv'] }));
+    comboState = { search: 'bluey', results: [LEAF] };
+    dispatchResult = Promise.resolve(['dispatch-1']);
+    const { rerender } = render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId('destination-line-name')).toHaveTextContent('Living Room TV'));
+
+    fireEvent.click(await screen.findByTestId('search-mode-result-plex:685088'));
+    expect(screen.getByTestId('search-mode')).toBeInTheDocument();
+    await waitFor(() => expect(dispatchToTarget).toHaveBeenCalledWith(expect.objectContaining({
+      targetIds: ['livingroom-tv'],
+      play: 'plex:685088',
+      mode: 'transfer',
+    })));
+    await act(async () => { await dispatchResult; });
+    dispatches.set('dispatch-1', { status: 'succeeded' });
+    rerender(<Harness />);
+
+    expect(screen.getByTestId('search-mode')).toBeInTheDocument();
+    expect(screen.getByTestId('search-mode-input')).toHaveValue('bluey');
+    expect(notificationsShow).not.toHaveBeenCalledWith(expect.objectContaining({ color: 'red' }));
+  });
+
+  it('an aimed cast stays open when the real dispatch tracker reports failure', async () => {
+    localStorage.setItem('media-app.cast-target', JSON.stringify({ mode: 'transfer', targetIds: ['livingroom-tv'] }));
+    comboState = { search: 'bluey', results: [LEAF] };
+    dispatchResult = Promise.resolve(['dispatch-2']);
+    const { rerender } = render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId('destination-line-name')).toHaveTextContent('Living Room TV'));
+
+    fireEvent.click(await screen.findByTestId('search-mode-result-plex:685088'));
+    expect(screen.getByTestId('search-mode')).toBeInTheDocument();
+    await act(async () => { await dispatchResult; });
+    dispatches.set('dispatch-2', { status: 'failed', error: 'receiver unavailable' });
+    rerender(<Harness />);
+
+    await waitFor(() => expect(notificationsShow).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'content-dispatch-failed-Living Room TV',
+      color: 'red',
+    })));
+    expect(screen.getByTestId('search-mode')).toBeInTheDocument();
+    expect(screen.getByTestId('search-mode-input')).toHaveValue('bluey');
   });
 
   it('the ⋯ "Open detail" verb navigates too, and gets the same treatment', async () => {
