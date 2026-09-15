@@ -162,10 +162,11 @@ export function ContentCombobox({
   }, []);
   const handleMoreMenuChange = useCallback((opened) => {
     moreMenuOpenRef.current = opened;
-    // Menu close completes either kind of action. For pointer selection the
-    // outer mousedown already consumed the internal-pointer guard before the
-    // later click armed this marker; it must not survive into an outside click.
+    // Menu close completes either kind of action. A cancelled pointerdown can
+    // suppress mousedown entirely, leaving its guard unconsumed. Neither that
+    // guard nor the click action marker may survive into the next outside click.
     if (!opened) {
+      moreMenuInternalPointerRef.current = false;
       moreMenuActionRef.current = false;
       moreMenuActionKindRef.current = null;
     }
