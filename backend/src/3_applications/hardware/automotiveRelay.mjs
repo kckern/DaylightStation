@@ -274,7 +274,11 @@ export function normalizeSnapshotReadings(source) {
     const diag = {};
     for (const [key, value] of Object.entries(source.diag)) {
       const n = numOrNull(value);
-      if (n !== null) diag[key] = n;
+      if (n === null) continue;
+      // Saturated 0x31 is "more than 65,534 km", not a distance — the same rule
+      // the top-level counter and `repair-telemetry` apply.
+      if (key === 'distance_since_cleared' && n === 65535) continue;
+      diag[key] = n;
     }
     if (Object.keys(diag).length) normalized.diag = diag;
   }

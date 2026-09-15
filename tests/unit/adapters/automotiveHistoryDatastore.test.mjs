@@ -107,6 +107,26 @@ describe('YamlVehicleHistoryDatastore', () => {
     expect(descriptor.endFix.lat).toBe(47.2);
   });
 
+  it('reads trip pointers the relay writes relative to the vehicle directory', async () => {
+    // The relay's trip store writes `trips/<month>/<name>`; the migration wrote
+    // `<month>/<name>`. Both must open, or every live trip loses its fuel
+    // readings, fixes and A6 anchors (live tree, 2026-08-14 to 2026-09-14).
+    writeDay('2026-09-14', [
+      { kind: 'trip', trip_id: 'live', file: 'trips/2026-09/l.yml', started: '2026-09-14T15:19:15-07:00', ended: null, distance_km: 4, samples: 2 },
+    ]);
+    writeTrip('2026-09/l.yml', {
+      meta: { odometer_start_km: 73045.3 },
+      samples: [{ t: 0, lat: 47.1, lon: -122.1, fuel_pct: 83 }, { t: 5, fuel_pct: 85 }],
+    });
+
+    const [descriptor] = await store.listTripDescriptors(VEHICLE, { withFixes: true });
+    expect(descriptor.startFix.lat).toBe(47.1);
+    expect(descriptor.fuelReadings.map((r) => r.pct)).toEqual([83, 85]);
+    expect(descriptor.odometerStartKm).toBe(73045.3);
+    expect(await store.readTrip(VEHICLE, 'trips/2026-09/l.yml')).not.toBeNull();
+    expect(await store.readTrip(VEHICLE, '2026-09/l.yml')).not.toBeNull();
+  });
+
   it('leaves fixes null when the trip carries no coordinates', async () => {
     // Observed in the real tree: a trip whose meta claims a GPS fix rate but
     // whose samples contain no lat/lon at all.

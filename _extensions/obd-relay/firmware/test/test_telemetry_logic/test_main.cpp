@@ -26,6 +26,18 @@ void test_fast_sleep_requires_all_off_votes() {
   TEST_ASSERT_FALSE(shouldFastSleep(13.3f, false, false, 13.2f));
 }
 
+void test_engine_off_vote_hysteresis() {
+  // Idle timer: only a reading below the off threshold starts it.
+  TEST_ASSERT_TRUE(engineOffVote(12.9f, false, 13.0f, 13.3f));
+  TEST_ASSERT_FALSE(engineOffVote(13.0f, false, 13.0f, 13.3f));
+  // Running timer: a resting battery bouncing 12.9/13.0/13.2 keeps it going.
+  TEST_ASSERT_TRUE(engineOffVote(13.0f, true, 13.0f, 13.3f));
+  TEST_ASSERT_TRUE(engineOffVote(13.2f, true, 13.0f, 13.3f));
+  // Charging voltage (engine back on, stop-start restart) cancels it.
+  TEST_ASSERT_FALSE(engineOffVote(13.3f, true, 13.0f, 13.3f));
+  TEST_ASSERT_FALSE(engineOffVote(14.6f, true, 13.0f, 13.3f));
+}
+
 void test_link_failure_threshold_and_recovery() {
   LinkFailureTracker tracker;
   TEST_ASSERT_FALSE(tracker.observe(0));
@@ -41,6 +53,7 @@ int main(int, char**) {
   RUN_TEST(test_distance_saturation);
   RUN_TEST(test_vin_validation);
   RUN_TEST(test_fast_sleep_requires_all_off_votes);
+  RUN_TEST(test_engine_off_vote_hysteresis);
   RUN_TEST(test_link_failure_threshold_and_recovery);
   return UNITY_END();
 }

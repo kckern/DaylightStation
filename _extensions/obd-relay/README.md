@@ -75,6 +75,7 @@ ECU link required**, so it works with the ignition off.
 | Constant | Default | Meaning |
 |---|---|---|
 | `STANDBY_ENGINE_OFF_V` | 13.0 V | below this = not charging = engine off |
+| `STANDBY_ENGINE_RESUME_V` | 13.3 V | once the engine-off timer runs, only a reading at/above this cancels it |
 | `STANDBY_WAKE_SLEEP_V` | 13.2 V | fast-sleep only if max grace voltage stays at/below this |
 | `STANDBY_WAKE_GRACE_S` | 8 s | observe voltage + motion, then try one ECU link |
 | `STANDBY_CONFIRM_S` | 120 s | sustained low volts before believing it |
@@ -97,6 +98,13 @@ Two deliberate choices worth knowing:
 - **The confirm delay is what keeps cranking from looking like switch-off** —
   the starter pulls the bus down hard, and the device does brown out and reboot
   on crank (observed).
+- **The engine-off timer has hysteresis** (`engineOffVote` in
+  `include/telemetry_logic.h`). `ATRV` answers in 0.1 V steps and a battery
+  just after a drive rests at 12.9–13.0 V, so with a single threshold every
+  13.0 reading restarted the 120 s confirm. Measured on the car, 2026-08-11 to
+  2026-09-14: 102 post-arrival "parked" trips, median 4.4 min awake, p90 14 min,
+  max 30 min — about 12 h of radio-on time in a month. Charging voltage
+  (engine running, or a stop-start restart) sits well above 13.3 V.
 
 Measured on the bench: fast-path wake stays up ~2.0 s per ~63.6 s cycle
 (**~3.2 % duty**, radio off). **Actual standby current is still unmeasured** —
