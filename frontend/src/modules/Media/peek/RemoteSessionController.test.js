@@ -9,7 +9,7 @@ vi.mock('../logging/mediaLog.js', () => {
   return { default: stub, mediaLog: stub };
 });
 
-function setup({ httpImpl } = {}) {
+function setup({ httpImpl, onSteeringActivity } = {}) {
   const fleetStore = createFleetStore();
   const ackRouter = createAckRouter();
   const http = vi.fn(httpImpl ?? (async () => ({ ok: true })));
@@ -20,6 +20,7 @@ function setup({ httpImpl } = {}) {
     ackRouter,
     http,
     randomUuid: () => `cmd-${++n}`,
+    onSteeringActivity,
   });
   return { fleetStore, ackRouter, http, ctl };
 }
@@ -57,6 +58,38 @@ describe('RemoteSessionController', () => {
     );
     ackRouter.resolve({ commandId: 'cmd-1', ok: true });
     await expect(p).resolves.toMatchObject({ ok: true, commandId: 'cmd-1' });
+  });
+
+  it('reports a successfully acknowledged command only for fresh observed playback identity', async () => {
+    const onSteeringActivity = vi.fn();
+    const { fleetStore, ackRouter, ctl } = setup({ onSteeringActivity });
+    fleetStore.receive({
+      deviceId: 'tv',
+      snapshot: {
+        sessionId: 'session-1', state: 'playing',
+        currentItem: { contentId: 'plex:1', queueItemId: 'queue-1' },
+      },
+      reason: 'change', ts: '2026-09-14T19:00:00.000Z',
+    });
+
+    const pending = ctl.transport.pause();
+    ackRouter.resolve({ commandId: 'cmd-1', ok: true });
+    await pending;
+
+    expect(onSteeringActivity).toHaveBeenCalledWith({
+      deviceId: 'tv',
+      playback: { sessionId: 'session-1', contentId: 'plex:1', queueItemId: 'queue-1' },
+    });
+  });
+
+  it('does not report steering for a rejected command or a missing playback observation', async () => {
+    const onSteeringActivity = vi.fn();
+    const { ackRouter, ctl } = setup({ onSteeringActivity });
+    const pending = ctl.transport.pause();
+    ackRouter.resolve({ commandId: 'cmd-1', ok: false, error: 'DENIED' });
+
+    await expect(pending).rejects.toThrow('DENIED');
+    expect(onSteeringActivity).not.toHaveBeenCalled();
   });
 
   it('ack arriving before HTTP settles still resolves', async () => {
