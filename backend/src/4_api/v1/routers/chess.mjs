@@ -16,7 +16,7 @@ import { safeSegment } from './lib/emulatorPaths.mjs';
  * route or transferring Piano composition to the Gaming kernel.
  */
 export function createChessRouter({
-  engine, configService, recordStore = null, archiveStore = null, ladderService = null,
+  engine, configService, archiveStore = null, ladderService = null,
   commentaryService = null, rivalryMemory = null, analyst = null, boardGameDayService = null, logger = null,
 }) {
   const router = express.Router();
@@ -144,32 +144,47 @@ export function createChessRouter({
     return res.json(await configService.read(userId));
   }));
 
+  /**
+   * A finished game, folded into the player's ladder.
+   *
+   * No per-game file is written here. The household archive (POST /history)
+   * is the only per-game record; the ladder is derived state, and it is what
+   * this endpoint must get right, so its write is the success condition.
+   */
   router.post('/games', asyncHandler(async (req, res) => {
     const userId = resolveUser(req, res);
     if (userId === undefined) return undefined; // resolveUser already answered
     if (!userId) return res.status(400).json({ error: 'user_required' });
-    // dataService.user.write (behind recordStore.save) returns false rather than
-    // throwing on a write failure (e.g. EACCES). This is the one record this task
-    // exists to make truthful — never answer 201 for a save that didn't happen.
-    const saved = await recordStore.save(userId, req.body || {});
-    if (!saved) {
-      logger?.warn?.('chess.game.record-failed', { userId, result: req.body?.result, moves: req.body?.moves });
+    if (!ladderService) return res.status(501).json({ error: 'ladder_unavailable' });
+    const record = req.body || {};
+    // Promotion is decided here, on the server, not by the kiosk: a reloaded tab
+    // mid-write would otherwise lose a rung the child had earned.
+    const ladder = await ladderService.recordGame(userId, record);
+    if (!ladder?.persisted) {
+      logger?.warn?.('chess.game.record-failed', { userId, result: record.result, moves: record.moves });
       return sendInternalError(res, { error: 'save_failed' });
     }
     logger?.info?.('chess.game.recorded', {
-      userId, result: req.body?.result, moves: req.body?.moves, opponent: req.body?.opponent || null,
+      userId, result: record.result, moves: record.moves, opponent: record.opponent || null,
+      counted: ladder.counted, promoted: ladder.promoted,
     });
-    // Promotion is decided here, on the server, not by the kiosk: a reloaded tab
-    // mid-write would otherwise lose a rung the child had earned.
-    const ladder = ladderService ? await ladderService.recordGame(userId, req.body || {}) : null;
+    // Cosmetic, so it can never turn a saved game into a failure.
+    let headToHead = null;
+    if (rivalryMemory?.headToHead) {
+      try {
+        headToHead = await rivalryMemory.headToHead(userId, record);
+      } catch (error) {
+        logger?.warn?.('chess.game.head-to-head-failed', { userId, reason: error.message });
+      }
+    }
     const boardGameDay = boardGameDayService?.record({
       learnerId: userId,
       gameId: 'chess',
-      gameSessionId: req.body?.game_id,
-      completed: req.body?.completed,
-      result: req.body?.result,
+      gameSessionId: record.game_id,
+      completed: record.completed,
+      result: record.result,
     }) ?? null;
-    return res.status(201).json({ saved: true, ladder, boardGameDay });
+    return res.status(201).json({ saved: true, ladder, head_to_head: headToHead, boardGameDay });
   }));
 
   /**
