@@ -2,7 +2,8 @@ import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import * as sass from 'sass';
-import { fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 
 vi.mock('./DispatchTargetPicker.jsx', () => ({
   DispatchTargetPicker: () => <div data-testid="picker-stub">Picker</div>,
@@ -51,11 +52,17 @@ describe('CastButton viewport-bounded picker', () => {
     expect(popover.style.getPropertyValue('--cast-picker-max-height')).toBe('836px');
   });
 
-  it('makes only the portal picker a bounded flex layout with a scrollable device list', () => {
-    const css = sass.compile(fileURLToPath(new URL('./Cast.scss', import.meta.url))).css.replace(/\s+/g, ' ');
+  it('scrolls the whole bounded portal so fixed controls cannot collapse the device list', () => {
+    // Both supported test roots stub CSS imports. Read the real stylesheet
+    // through Sass from either repository root or frontend project root.
+    const candidates = ['frontend/src/modules/Media/cast/Cast.scss', 'src/modules/Media/cast/Cast.scss']
+      .map((relative) => path.resolve(relative));
+    const stylesheet = candidates.find((candidate) => existsSync(candidate));
+    expect(stylesheet, 'real Cast.scss must exist under the supported test root').toBeTruthy();
+    const css = sass.compile(stylesheet).css.replace(/\s+/g, ' ');
 
-    expect(css).toMatch(/\.cast-button-popover-portal \.cast-picker \{[^}]*box-sizing: border-box;[^}]*display: flex;[^}]*flex-direction: column;[^}]*max-height: var\(--cast-picker-max-height\)/);
-    expect(css).toMatch(/\.cast-button-popover-portal \.cast-picker-devices \{[^}]*flex: 1 1 auto;[^}]*min-height: 0;[^}]*overflow-y: auto/);
+    expect(css).toMatch(/\.cast-button-popover-portal \.cast-picker \{[^}]*box-sizing: border-box;[^}]*max-height: var\(--cast-picker-max-height\);[^}]*overflow-y: auto/);
+    expect(css).not.toMatch(/\.cast-button-popover-portal \.cast-picker-devices \{[^}]*min-height: 0/);
     expect(css).not.toMatch(/\.handoff-section \.cast-picker \{[^}]*max-height: var\(--cast-picker-max-height\)/);
   });
 });
