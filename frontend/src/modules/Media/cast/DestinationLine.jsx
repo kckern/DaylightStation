@@ -23,6 +23,11 @@ import { useDismissLayer } from '../shell/useDismissLayer.js';
 import mediaLog from '../logging/mediaLog.js';
 import './Cast.scss';
 
+// SearchMode is a fixed phone surface at z-index 500. Mantine portals Modal
+// at the document root, so its default modal layer (200) would sit behind the
+// search surface and leave the visible picker unable to receive pointer taps.
+const DESTINATION_MODAL_Z_INDEX = 600;
+
 function destinationLabel(targetIds, devices) {
   if (targetIds.length === 0) return 'This browser';
   if (targetIds.length === 1) {
@@ -80,6 +85,7 @@ export function DestinationLine({ surface } = {}) {
         title="Destination"
         centered
         size="sm"
+        zIndex={DESTINATION_MODAL_Z_INDEX}
         transitionProps={{ duration: 0 }}
       >
         <div data-testid="destination-sheet">
