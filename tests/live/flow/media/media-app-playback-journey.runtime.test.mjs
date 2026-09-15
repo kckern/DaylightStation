@@ -4,16 +4,34 @@ import { test, expect } from '@playwright/test';
 // No fabricated responses, synthetic clicks, forced clicks, or fabricated session state.
 // Each test has a fresh browser context and targets only its own local player.
 const title = process.env.MEDIA_ACCEPTANCE_TITLE || 'Disclosure Day';
+const pageEvidence = new WeakMap();
+const sessionEvidence = new WeakMap();
 
 test.use({ viewport: { width: 1440, height: 900 }, trace: 'retain-on-failure', actionTimeout: 10000 });
 test.setTimeout(90000);
 
+test.beforeEach(async ({ page }) => {
+  const evidence = { observed: new Set(), stopped: new Map() };
+  sessionEvidence.set(page, evidence);
+  page.on('response', response => {
+    const url = new URL(response.url());
+    if (url.origin !== new URL(page.url()).origin) return;
+    const match = /^\/api\/v1\/proxy\/plex\/video\/:\/transcode\/universal\/session\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\//i.exec(url.pathname);
+    if (match && response.ok()) evidence.observed.add(match[1].toLowerCase());
+    if (url.pathname === '/api/v1/proxy/plex/video/:/transcode/universal/stop') {
+      evidence.stopped.set(url.searchParams.get('session')?.toLowerCase(), response.status());
+    }
+  });
+});
+
 test.afterEach(async ({ page }, testInfo) => {
   // Closing a browser context does not run React's unmount cleanup. Stop our
-  // own local playback through the UI so each case releases its DASH session.
+  // own local playback through the UI. For HLS, separately verify the exact
+  // observed server-session stop response; native unmount alone is not proof.
   if (page.isClosed()) return;
   const observations = await page.evaluate(() => ({
     events: window.__mediaJourneyEvents ?? [],
+    hls: window.__hlsAcceptance ?? [],
     videos: [...document.querySelectorAll('video, dash-video')].flatMap(el => {
       const video = el.tagName === 'DASH-VIDEO' ? el.shadowRoot?.querySelector('video') : el;
       return video ? [{ currentTime: video.currentTime, seeking: video.seeking,
@@ -23,6 +41,7 @@ test.afterEach(async ({ page }, testInfo) => {
     }),
     slider: document.querySelector('[data-testid="np-seek"]')?.getAttribute('aria-valuenow') ?? null,
   }));
+  observations.descriptors = pageEvidence.get(page)?.descriptors ?? [];
   await testInfo.attach('native-playback-observations', {
     body: JSON.stringify(observations, null, 2), contentType: 'application/json',
   });
@@ -32,6 +51,17 @@ test.afterEach(async ({ page }, testInfo) => {
     if (await open.isVisible()) await open.click();
   }
   if (await stop.isVisible()) await stop.click();
+  const sessions = sessionEvidence.get(page);
+  if (process.env.MEDIA_EXPECT_HLS === '1' && sessions?.observed.size) {
+    await expect.poll(() => [...sessions.observed].every(id => {
+      const status = sessions.stopped.get(id);
+      return status >= 200 && status < 300;
+    }), { timeout: 15000, message: 'Ordinary Stop must receive a successful stop response for every observed HLS session' }).toBe(true);
+    await testInfo.attach('owned-hls-session-stop-responses', {
+      body: JSON.stringify([...sessions.observed].map(id => ({ sessionId: id, status: sessions.stopped.get(id) }))),
+      contentType: 'application/json',
+    });
+  }
 });
 
 async function startMovie(page) {
@@ -48,9 +78,18 @@ async function expectPausedSeekComplete(video) {
 
 async function playMovie(page) {
   const mintOrigins = [];
-  const observeMint = response => {
+  const descriptors = [];
+  pageEvidence.set(page, { descriptors });
+  const observeMint = async response => {
     if (/\/api\/v1\/proxy\/plex\/stream\//.test(response.url())) {
       mintOrigins.push(response.headers()['x-media-acceptance-mint'] ?? 'upstream');
+    }
+    if (/\/api\/v1\/play\/(?:plex:|plex\/)\d+$/.test(new URL(response.url()).pathname)) {
+      const body = await response.json().catch(() => null);
+      if (body) descriptors.push({ id: body.id, mediaType: body.mediaType, format: body.format,
+        duration: body.duration, resume_position: body.resume_position,
+        mediaPath: body.mediaUrl ? new URL(body.mediaUrl, response.url()).pathname : null,
+        origin: response.headers()['x-media-acceptance-read'] ?? 'upstream' });
     }
   };
   page.on('response', observeMint);
@@ -94,9 +133,25 @@ async function playMovie(page) {
   await expect.poll(() => video.evaluate(el => el.currentTime), {
     timeout: 10000, message: 'Ready playback must actually advance beyond its first observed position',
   }).toBeGreaterThan(observedAt + 0.25);
+  if (process.env.MEDIA_BRANCH_MINT === '1' || process.env.MEDIA_BRANCH_READ === '1' || process.env.MEDIA_EXPECT_HLS === '1') {
+    // response.json() observation is asynchronous; settle it before deciding
+    // whether this is an intentional original MP4 or a minted stream.
+    await expect.poll(() => descriptors.length).toBeGreaterThan(0);
+  }
   if (process.env.MEDIA_BRANCH_MINT === '1') {
-    expect(mintOrigins, 'Playback must exercise the branch mint composition').toContain('worktree');
-    expect(mintOrigins).not.toContain('upstream');
+    const descriptor = descriptors.at(-1);
+    if (descriptor?.mediaType === 'video' && descriptor.mediaPath?.startsWith('/api/v1/proxy/plex/library/parts/')) {
+      // A branch-qualified original MP4 intentionally does not mint a
+      // transcoder session. Verify its descriptor and actual native source.
+      expect(descriptor.origin).toBe('worktree');
+      expect(await video.evaluate(el => new URL(el.currentSrc).pathname)).toBe(descriptor.mediaPath);
+    } else {
+      expect(mintOrigins, 'Stream playback must exercise the branch mint composition').toContain('worktree');
+      expect(mintOrigins).not.toContain('upstream');
+    }
+  }
+  if (process.env.MEDIA_BRANCH_READ === '1') {
+    expect(descriptors.every(descriptor => descriptor.origin === 'worktree')).toBe(true);
   }
   page.off('response', observeMint);
   return video;
@@ -159,6 +214,42 @@ test('[PLAY.1b/AC1][STEER.4a/AC1] discovered movie duration and progress reach t
   await expect.poll(async () => Math.abs(await video.evaluate(el => el.currentTime) - requested), { timeout: 15000 }).toBeLessThanOrEqual(2);
   await expect.poll(async () => Math.abs(Number(await slider.getAttribute('aria-valuenow')) - await video.evaluate(el => el.currentTime))).toBeLessThanOrEqual(2);
   await expectPausedSeekComplete(video);
+});
+
+test('[STEER.4a] a deep paused seek completes on the full-content timeline', async ({ page }) => {
+  const video = await startMovie(page);
+  const descriptor = pageEvidence.get(page)?.descriptors.at(-1);
+  if (process.env.MEDIA_EXPECT_HLS === '1') {
+    expect(descriptor?.mediaType).toBe('hls_video');
+    await expect.poll(() => page.evaluate(() => (window.__hlsAcceptance ?? []).some(row => row.kind === 'INIT_PTS_FOUND'))).toBe(true);
+  }
+  const resume = descriptor?.resume_position ?? 0;
+  if (resume > 0) {
+    const actual = await video.evaluate(el => el.currentTime);
+    expect(actual).toBeGreaterThanOrEqual(resume - 2);
+    expect(actual).toBeLessThan(resume + 15);
+  }
+  await page.getByTestId('np-toggle').click();
+  await expect.poll(() => video.evaluate(el => el.paused)).toBe(true);
+  const slider = page.getByRole('slider', { name: 'Seek', exact: true });
+  const duration = await video.evaluate(el => el.duration);
+  const bounds = await slider.boundingBox();
+  expect(bounds).not.toBeNull();
+  const before = await video.evaluate(el => ({ position: el.currentTime,
+    ranges: Array.from({ length: el.buffered.length }, (_, i) => [el.buffered.start(i), el.buffered.end(i)]) }));
+  // Earlier real probes may have saved a deep spot. Choose a distant target
+  // without rewriting saved state or manufacturing a resume DTO to force setup.
+  const fraction = before.position > duration * 0.4 ? 0.2 : 0.6;
+  const destination = Math.floor(duration * fraction);
+  expect(before.ranges.some(([start, end]) => destination >= start && destination <= end)).toBe(false);
+  await page.mouse.click(bounds.x + bounds.width * fraction, bounds.y + bounds.height / 2);
+  await expect.poll(async () => Math.abs(Number(await slider.getAttribute('aria-valuenow')) - destination))
+    .toBeLessThanOrEqual(duration / bounds.width + 1);
+  const requested = Number(await slider.getAttribute('aria-valuenow'));
+  expect(Math.abs(requested - destination)).toBeLessThanOrEqual(duration / bounds.width + 1);
+  await expect.poll(async () => Math.abs(await video.evaluate(el => el.currentTime) - requested), { timeout: 15000 }).toBeLessThanOrEqual(2);
+  await expectPausedSeekComplete(video);
+  await expect.poll(async () => Math.abs(Number(await slider.getAttribute('aria-valuenow')) - await video.evaluate(el => el.currentTime))).toBeLessThanOrEqual(2);
 });
 
 test('[STEER.3a/AC1][STEER.3a/AC3] pause and resume reflect the real player without a false startup stall', async ({ page }) => {

@@ -2,7 +2,19 @@
 
 Status: reproduced in part; implementation in progress through the media redesign execution plan. No presumption that existing playback controls work end to end.
 
-## Today's session
+## Later controlled verification (September 14, 22:07–22:09 Pacific)
+
+The redesigned branch's HLS controls now have actual decoder evidence for saved-position resume, deep paused seek, matching progress, pause/resume, focus continuity and ordinary Stop. This does not establish a reliable startup baseline: the seven-case run passed five and missed the existing 30-second readiness budget twice.
+
+Correlated Plex logs locate the dominant wait inside Plex, not merely in the browser/proxy:
+
+- First decision: received22:07:52.938, completed22:08:18.980 (26.042s); Plex reports25.870s waiting to start a transaction at `Statistics/Device.cpp:46`. Its explicit blocker is `Statistics/StatisticsManager.cpp:288`, held29.46s.
+- Second decision: received22:08:49.240, completed22:09:16.916 (27.676s); transaction-start wait27.590s. A nearby long StatisticsManager transaction exists, but this request's explicit blocker names `Library/Database/SqliteDB.h:100`; they must not be conflated.
+- Overlapping retry metadata also waited inside Plex (6.154s). Why the blocking transactions lasted so long is not established; disk or CPU contention is not proven.
+
+The prior application bug is separately repaired: the 15-second recovery no longer rewrites an engine-owned HLS blob URL or detaches the media source while loading. No timeout inflation, Plex restart, database write or resource/configuration change was made. All seven cases received HTTP200 for ordinary Stop of their exact observed HLS sessions; that response alone is not process-release proof.
+
+## Original session observations
 
 Structured log-store observations, September 14, Pacific time:
 
