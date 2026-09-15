@@ -12,6 +12,7 @@ export class PlexClient {
   #platform;
   #httpClient;
   #logger;
+  #requestSequence = 0;
 
   /**
    * @param {Object} config
@@ -53,6 +54,22 @@ export class PlexClient {
    */
   async request(path, options = {}) {
     let url = `${this.#host}${path}`;
+    // Log only recognized startup phase fields, never an authenticated URL
+    // or arbitrary query/error text. A started event without its completion
+    // distinguishes an upstream wait from a decoder that never initialized.
+    const parsedPath = new URL(path, 'http://plex.invalid');
+    const metadataKey = parsedPath.pathname.match(/^\/library\/metadata\/(\d+)$/)?.[1];
+    const isDecision = parsedPath.pathname === '/video/:/transcode/universal/decision';
+    const phase = metadataKey ? 'metadata' : isDecision ? 'decision' : null;
+    const sessionId = parsedPath.searchParams.get('X-Plex-Session-Identifier');
+    const phaseFields = phase ? {
+      requestId: ++this.#requestSequence,
+      phase,
+      ratingKey: metadataKey ?? parsedPath.searchParams.get('path')?.match(/^\/library\/metadata\/(\d+)$/)?.[1] ?? null,
+      ...(sessionId && /^[A-Za-z0-9._~:-]{1,200}$/.test(sessionId) ? { sessionIdentifier: sessionId } : {}),
+    } : null;
+    const startedAt = Date.now();
+    if (phaseFields) this.#logger.info?.('plex.request.phase-started', phaseFields);
 
     // Always include token as query param when available to support reverse proxies
     if (this.#token) {
@@ -68,12 +85,18 @@ export class PlexClient {
         }
       });
 
+      if (phaseFields) this.#logger.info?.('plex.request.phase-completed', {
+        ...phaseFields, elapsedMs: Date.now() - startedAt, status: response.status ?? null,
+      });
+
       return response.data;
     } catch (error) {
-      this.#logger.error?.('plex.request.failed', {
-        path,
-        error: error.message,
-        code: error.code
+      this.#logger.error?.(phaseFields ? 'plex.request.phase-failed' : 'plex.request.failed', {
+        ...(phaseFields ?? { path: parsedPath.pathname }),
+        elapsedMs: Date.now() - startedAt,
+        code: error.code ?? null,
+        status: error.response?.status ?? error.status ?? null,
+        errorName: error.name,
       });
       const wrapped = new Error('Media API request failed');
       wrapped.code = error.code || 'MEDIA_API_ERROR';

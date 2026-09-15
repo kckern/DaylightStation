@@ -244,7 +244,7 @@ shared row:
 ```
 ┌────────────────────────────────────────┐
 │ ✕  [ search…                        ]   │
-│ ▶ Playing to: This browser              │
+│ ▶ Playing to: This device               │
 │ [All] [Video] [Music] [Books]           │
 │ results…                                │
 └────────────────────────────────────────┘
@@ -257,10 +257,15 @@ rather than mounting the Mantine `Combobox` popover, which doesn't fit a
 full-screen surface. It mounts `ScopeChips` and `DestinationLine` unchanged —
 the same components the desktop dock and Now Playing use — so "where does a
 tap go" reads identically everywhere. A row tap dispatches through the same
-`useContentDispatch` path as the desktop search bar and closes the surface
-(with a toast) on success; browser Back closes it too (a history entry is
-pushed on open, consumed on close either way, so the user is never left
-needing two backs). The fleet indicator and cast target chip are desktop/
+`useContentDispatch` path as the desktop search bar. Ordinary Play, explicit
+container playback and existing queue actions retain the search surface,
+query and narrowing; leaf Play deliberately avoids the combobox's selecting
+close transition. Container/detail navigation closes search and replaces its
+history marker. Browser Back or explicit close consumes the one marker pushed
+on open, so repeated playback actions do not add extra Back presses. The
+redesign's explicit **Play on…** action still needs its separate integration;
+this retention repair does not establish that missing path. The fleet
+indicator and cast target chip are desktop/
 tablet-only now — on mobile the fleet-active signal moved to a small badge on
 the Devices tab (`PrimaryNav.jsx`, sourced from `useFleetSummary`) instead of
 occupying dock space that search now owns outright.
