@@ -3,6 +3,7 @@ import {
   DEFAULT_LADDER_POLICY, DEFAULT_ROSTER, LADDER_SIZE, TOP_LEVEL, describeLevel,
   applyGameToProgress, availableOpponents, countsTowardPromotion, createLadderProgress,
   normalizeProgress, promotionStatus, resolvePolicy, resolveRoster, rungForLevel,
+  promotionIneligibility, mergeLadderConfig,
 } from './ladder.mjs';
 
 const POLICY = DEFAULT_LADDER_POLICY;
@@ -317,5 +318,52 @@ describe('engine settings', () => {
       ladder: { levels: [{ engine: 'homegrown', depth: 2, blunder_rate: 0 }] },
     });
     expect(rungForLevel(0, policy).blunder_rate).toBe(0);
+  });
+});
+
+describe('promotionIneligibility', () => {
+  it('names nothing for a clean finished game at the current level', () => {
+    expect(promotionIneligibility(game(), POLICY, 0)).toBe(null);
+  });
+
+  it('names the first broken ceiling: best moves, then hints, then takebacks', () => {
+    expect(promotionIneligibility(game({ help: { hints: 11, best_moves: 14, takebacks: 1 } }), POLICY, 0))
+      .toEqual({ reason: 'best_moves', used: 14, allowed: 0 });
+    expect(promotionIneligibility(game({ help: { hints: 3, best_moves: 0, takebacks: 2 } }), POLICY, 0))
+      .toEqual({ reason: 'hints', used: 3, allowed: 1 });
+    expect(promotionIneligibility(game({ help: { hints: 0, best_moves: 0, takebacks: 2 } }), POLICY, 0))
+      .toEqual({ reason: 'takebacks', used: 2, allowed: 1 });
+  });
+
+  it('calls a game against an already-beaten opponent practice', () => {
+    expect(promotionIneligibility(game({ level: 0 }), POLICY, 1)).toEqual({ reason: 'other_level', level: 0 });
+  });
+
+  it('refuses an unfinished game', () => {
+    expect(promotionIneligibility(game({ completed: false }), POLICY, 0)).toEqual({ reason: 'unfinished' });
+  });
+
+  it('agrees with countsTowardPromotion on every case', () => {
+    const cases = [
+      [game(), 0], [game({ completed: false }), 0], [game({ level: 0 }), 1],
+      [game({ help: { hints: 2, best_moves: 0 } }), 0], [game({ help: { hints: 9, best_moves: 9 } }), 0],
+    ];
+    for (const [record, level] of cases) {
+      expect(countsTowardPromotion(record, POLICY, level)).toBe(promotionIneligibility(record, POLICY, level) === null);
+    }
+  });
+});
+
+describe('mergeLadderConfig', () => {
+  it('lays the player ladder block over the household one and leaves the rest alone', () => {
+    const merged = mergeLadderConfig(
+      { default_rung: 'learner', ladder: { roster_pack: 'generic', promotion: { window: 7 } } },
+      { ladder: { roster_pack: 'pokemon' } },
+    );
+    expect(merged).toEqual({ default_rung: 'learner', ladder: { roster_pack: 'pokemon', promotion: { window: 7 } } });
+  });
+
+  it('tolerates a missing household or player layer', () => {
+    expect(mergeLadderConfig(null, null)).toEqual({ ladder: {} });
   });
 });
