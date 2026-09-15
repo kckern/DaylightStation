@@ -15,7 +15,7 @@ import { compile } from 'sass';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import pkg from '/opt/Code/DaylightStation/node_modules/playwright/index.js';
+import pkg from 'playwright';
 
 const { chromium } = pkg;
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -80,10 +80,14 @@ const SCENARIOS = [
   // The per-game token changes on their own, with today's header and keyboard.
   { id: 'J-today-ck-rim', label: 'Today + checkers rim 5rem', header: 59, ckRail: '5rem' },
   { id: 'K-today-no-ceiling', label: 'Today + board ceiling lifted', header: 59, boardMax: '100rem' },
-  // The shipped capability, through the real provider and the real host classes.
-  { id: 'FS-kiosk', label: 'Kiosk full screen', header: 59, fullscreen: '1' },
-];
-const GAMES = ['chess', 'checkers', 'connect-four'];
+  // The shipped capability, through the real provider and the real host classes:
+  // a board game claims board-game full screen on arrival.
+  { id: 'FS-board', label: 'Board-game full screen (default)', header: 59, fullscreen: '1' },
+  // The dyad ladder rung, windowed and in full screen.
+  { id: 'A-today-dyad', label: 'Windowed, dyad cards', header: 59, shape: 'dyad' },
+  { id: 'FS-board-dyad', label: 'Board-game full screen, dyad cards', header: 59, fullscreen: '1', shape: 'dyad' },
+].filter((scenario) => !process.env.SCENARIOS || process.env.SCENARIOS.split(',').includes(scenario.id));
+const GAMES = (process.env.GAMES || 'chess,checkers,connect-four').split(',');
 
 const browser = await chromium.launch({ args: ['--no-sandbox'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
@@ -94,7 +98,7 @@ const rows = [];
 for (const game of GAMES) {
   for (const scenario of SCENARIOS) {
     const params = new URLSearchParams({ game, header: String(scenario.header) });
-    for (const key of ['kb', 'rail', 'boardMax', 'railTrack', 'ckRail', 'fullscreen']) if (scenario[key]) params.set(key, scenario[key]);
+    for (const key of ['kb', 'rail', 'boardMax', 'railTrack', 'ckRail', 'fullscreen', 'shape']) if (scenario[key]) params.set(key, scenario[key]);
     await page.goto(`${pathToFileURL(resolve(OUT, 'index.html'))}?${params}`);
     await page.waitForSelector('.chess-staff-label svg', { timeout: 10000 });
     await page.waitForTimeout(150);
@@ -110,7 +114,25 @@ for (const game of GAMES) {
         const ys = [...lines].map((line) => line.getBoundingClientRect().y);
         return ys.length === 5 ? (Math.max(...ys) - Math.min(...ys)) / 4 : 0;
       };
-      const cards = [...document.querySelectorAll('.chess-staff-label')].map((el) => ({ axis: axisOf(el), space: spacingOf(el), ...box(el) }));
+      const cards = [...document.querySelectorAll('.chess-staff-label:not(.chess-staff-label--clef)')].map((el) => ({ axis: axisOf(el), space: spacingOf(el), ...box(el) }));
+      // The head clef's staff lines against the first file card's: they must be
+      // one staff, so every line at the same height.
+      const lineYsOf = (el) => (el ? [...el.querySelectorAll('.action-staff__line')].map((l) => l.getBoundingClientRect().y).sort((a, b) => a - b) : []);
+      const headLines = lineYsOf(document.querySelector('.chess-staff-label--clef'));
+      const firstFileLines = lineYsOf(document.querySelector('.chess-board__file-axis .chess-staff-label'));
+      const cornerDrift = headLines.length === 5 && firstFileLines.length === 5
+        ? +Math.max(...headLines.map((y, i) => Math.abs(y - firstFileLines[i]))).toFixed(2)
+        : null;
+      // The live "Playing" staff: how big its drawing actually is.
+      const playingCard = document.querySelector('.piano-chess__staff-card');
+      const playingSvg = playingCard?.querySelector('svg');
+      const playing = playingCard ? {
+        cardH: +box(playingCard).h.toFixed(1),
+        svgH: playingSvg ? +box(playingSvg).h.toFixed(1) : 0,
+        rail: (() => { const r = playingCard.closest('.pg-rail'); return r ? { scrollH: r.scrollHeight, clientH: r.clientHeight } : null; })(),
+      } : null;
+      const headerVisible = Boolean(document.querySelector('.harness-header'));
+      const hostFullscreen = Boolean(document.querySelector('.piano-game-host--fullscreen'));
       const summarise = (axis) => {
         const list = cards.filter((c) => c.axis === axis);
         if (!list.length) return null;
@@ -146,6 +168,10 @@ for (const game of GAMES) {
         clipped,
         drift,
         rankDrift,
+        cornerDrift,
+        playing,
+        headerVisible,
+        hostFullscreen,
       };
     });
     await page.screenshot({ path: resolve(OUT, `${game}-${scenario.id}.png`) });
@@ -169,6 +195,10 @@ for (const r of rows) {
     r.clipped && 'CLIPPED',
     r.drift != null && `drift ${r.drift}px`,
     r.rankDrift != null && `rank drift ${r.rankDrift}px`,
+    r.cornerDrift != null && `clef-line drift ${r.cornerDrift}px`,
+    r.playing && `playing card ${r.playing.cardH}/svg ${r.playing.svgH}px rail ${r.playing.rail?.scrollH}/${r.playing.rail?.clientH}`,
+    r.headerVisible ? 'header' : 'no-header',
+    r.hostFullscreen && 'FS',
   ].filter(Boolean).join(' ');
   console.log(`${r.game.padEnd(13)} ${r.scenario.padEnd(17)} ${`${r.board.w}×${r.board.h}`.padEnd(12)} ${String(r.railW).padEnd(6)} ${String(r.kbH).padEnd(5)} ${fmt(r.file).padEnd(21)} ${fmt(r.rank).padEnd(21)} ${flags}`);
 }

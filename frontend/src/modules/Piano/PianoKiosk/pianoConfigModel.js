@@ -91,6 +91,23 @@ export const PIANO_CONFIG_DEFAULTS = {
   // Managed board vocabulary and its daily/per-turn pressure. Independent of
   // opponent strength and of the PianoChallenge ladder; off unless configured.
   gameAddressing: { enabled: false },
+  // Board-game full screen: its own state, separate from the kiosk's remembered
+  // full screen (see PianoKiosk/PianoFullscreenContext.jsx). ON by default — a
+  // board game arrives with the header gone and the keyboard shortened, and the
+  // player steps out with the toggle beside the settings gear.
+  //   enterOnOpen          arrive in full screen (false: arrive windowed)
+  //   keyboardHeightScale  the game's own keyboard height, times this
+  //   keyboardRange        per game, [startNote, endNote] while in full screen;
+  //                        a shorter keyboard is stubby at the same width, so
+  //                        chess (display-only keys) shows more octaves. Games
+  //                        not named keep their own range — Checkers and
+  //                        Connect Four keys take a finger, and narrower keys
+  //                        would fall under the tap floor.
+  boardGameFullscreen: {
+    enterOnOpen: true,
+    keyboardHeightScale: 0.6,
+    keyboardRange: { chess: [24, 96] },
+  },
 };
 
 /** Resolve screensaver config: per-piano values override shared, over defaults. */
@@ -203,6 +220,16 @@ export function resolvePianoConfig(raw, pianoId) {
       ...PIANO_CONFIG_DEFAULTS.gameAddressing,
       ...(shared.gameAddressing || {}),
       ...(p.gameAddressing || {}),
+    },
+    boardGameFullscreen: {
+      ...PIANO_CONFIG_DEFAULTS.boardGameFullscreen,
+      ...(shared.boardGameFullscreen || {}),
+      ...(p.boardGameFullscreen || {}),
+      keyboardRange: {
+        ...PIANO_CONFIG_DEFAULTS.boardGameFullscreen.keyboardRange,
+        ...(shared.boardGameFullscreen?.keyboardRange || {}),
+        ...(p.boardGameFullscreen?.keyboardRange || {}),
+      },
     },
   };
 }

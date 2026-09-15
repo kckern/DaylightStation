@@ -17,14 +17,17 @@
   height: var(--pg-keyboard-h);
 }
 
-/* Kiosk full screen, for a game that opted in: the keyboard gives most of its
-   height back to the board. Selected on the keyboard itself, one class deeper
-   than any game's own keyboard rule (chess sizes its keys in cq units), so the
-   compact height wins without every game having to know about it. 3rem stays
-   above the `--pg-tap` floor, because on Checkers and Connect Four these keys
-   still take a finger. */
+/* Full screen, for a game that opted in: the keyboard gives part of its height
+   back to the board. A SCALE of the game's own keyboard height rather than a
+   fixed strip, so a game that sized its keyboard (chess, in cq units) shrinks
+   from what it drew, not from a number that ignores it. The scale comes from
+   the household config (`boardGameFullscreen.keyboardHeightScale`, set inline by
+   BoardGameFrame). Floored at `--pg-tap`, because on Checkers and Connect Four
+   these keys still take a finger. Selected on the keyboard itself, one class
+   deeper than any game's own keyboard rule, so it wins without every game
+   having to know about it. */
 .piano-game-host--compact-instrument .piano-game-host__instrument .piano-keyboard {
-  height: var(--pg-keyboard-compact-h, 3rem);
+  height: max(var(--pg-tap, 2.75rem), calc(var(--pg-keyboard-h) * var(--pg-fullscreen-keyboard-scale, 0.6)));
 }
 
 .piano-game-host__overlays {

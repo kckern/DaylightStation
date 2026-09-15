@@ -38,6 +38,20 @@ describe('resolvePianoConfig', () => {
     expect(cfg.videos.plexCollection).toBe('999');
     expect(cfg.inactivityMinutes).toBe(PIANO_CONFIG_DEFAULTS.inactivityMinutes);
   });
+  it('resolves board-game full screen: on by default, per-game keyboard ranges merged', () => {
+    expect(resolvePianoConfig({}, 'default').boardGameFullscreen).toEqual({
+      enterOnOpen: true, keyboardHeightScale: 0.6, keyboardRange: { chess: [24, 96] },
+    });
+    const cfg = resolvePianoConfig({
+      boardGameFullscreen: { keyboardHeightScale: 0.5, keyboardRange: { checkers: [36, 84] } },
+      pianos: { 'yellow-room': { boardGameFullscreen: { enterOnOpen: false } } },
+    }, 'yellow-room');
+    expect(cfg.boardGameFullscreen).toEqual({
+      enterOnOpen: false,
+      keyboardHeightScale: 0.5,
+      keyboardRange: { chess: [24, 96], checkers: [36, 84] },
+    });
+  });
   it('falls back to defaults for an unknown piano', () => {
     const cfg = resolvePianoConfig({}, 'ghost');
     expect(cfg.effects).toEqual(PIANO_CONFIG_DEFAULTS.effects);

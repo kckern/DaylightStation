@@ -266,15 +266,24 @@
 
 /* A refusal is already repeated in the "What the game is thinking" rail.
    Keep the brief extra cue beside the board, not on top of it: a chord error
-   should not hide the position the player needs to correct. */
+   should not hide the position the player needs to correct.
+
+   Hung from the lower edge of the status band it is rendered inside. It was
+   pinned 1rem into the stage's top-left corner — exactly where the status band
+   sits — so every refusal covered the instruction above it. Below the band it
+   briefly overlaps the top of the rail instead, which is only a slot label. */
+.piano-chess .instrument-board-stage__status {
+  position: relative;
+}
+
 .piano-chess__toast {
   position: absolute;
-  inset-inline-start: 1rem;
+  inset-inline-start: 0;
   inset-inline-end: auto;
-  inset-block-start: 1rem;
+  inset-block-start: calc(100% + 0.25rem);
   z-index: 5;
   width: fit-content;
-  max-width: min(20rem, calc(var(--pg-rail-w) - 2rem));
+  max-width: 100%;
   padding: 0.45rem 0.7rem;
   border: 1px solid color-mix(in srgb, var(--piano-danger) 55%, transparent);
   border-radius: var(--r-md, 12px);
@@ -317,8 +326,16 @@
    flex item forced ChordReadout out to the far right while the plaque's
    pill floated centred inside its own oversized box. Scoped to .piano-chess
    so TheoryPanel's card usage is untouched. */
+/* Chess's keyboard height, set as the platform token rather than as a height
+   on the keys, so board-game full screen shortens it FROM this (the host's
+   compact rule scales `--pg-keyboard-h`). Two classes, to win over the
+   platform's own declaration on `.piano-game-host`. */
+.piano-chess.piano-game-host {
+  --pg-keyboard-h: clamp(4.5rem, 12cqh, 7rem);
+}
+
 .piano-chess__instrument .piano-keyboard {
-  height: clamp(4.5rem, 12cqh, 7rem);
+  height: var(--pg-keyboard-h);
 }
 
 /* The read-out rides above the keys, where the player's eyes already are when
@@ -364,6 +381,7 @@
    charcoal. A taller staff is also simply a better staff — more room between
    the lines is more legible, which is the entire job of this rail. */
 .piano-chess__staff-card.action-staff {
+  position: relative;
   width: 100%;
   flex: 1;
   min-height: 8rem;
@@ -375,8 +393,17 @@
    bottom strip, where they competed for one narrow row. */
 .piano-chess__rail--chords .piano-chord-name { width: 100%; }
 
+/* PINNED to the card, not sized by percentage. The wrapper and the staff inside
+   it are both `height: 100%`, and the card's height is a flex result (`flex: 1`
+   over a `min-height`), which a percentage cannot resolve against — so the
+   wrapper collapsed to its padding, the absolutely positioned staff SVG inside
+   it drew at 0px, and the card showed as blank paper with no staff at all.
+   Measured in the piano-board-rim harness: card 128px, staff 0px. */
 .piano-chess__rail--chords .current-chord-staff-wrapper {
-  width: 100%;
+  position: absolute;
+  inset: 0.25rem;
+  width: auto;
+  height: auto;
   min-height: 0;
   overflow: hidden;
 }
@@ -444,6 +471,15 @@
   grid-template-columns: repeat(8, minmax(0, 1fr));
   padding-block-start: 0.35rem;
   gap: 0.2rem;
+}
+
+/* The file row's clef, drawn once at its head. The same top inset as the file
+   strip, so the card here is exactly a file card's height and its staff lines
+   continue theirs; the same end inset as the rank strip, so it lines up under
+   the rank column. */
+.piano-chess--reading .chess-board__corner {
+  padding-block-start: 0.35rem;
+  padding-inline-end: 0.35rem;
 }
 
 

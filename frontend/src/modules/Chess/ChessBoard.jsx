@@ -172,6 +172,12 @@ export function ChessBoard({
   onSelect = null,
   className = '',
   /**
+   * What sits in the corner where the rank strip and the file strip meet — the
+   * one cell of the frame's grid nothing else uses. A host whose file labels
+   * share a clef draws it here once, at the head of that row.
+   */
+  corner = null,
+  /**
    * Changes whenever the rim labels are re-dealt.
    *
    * Used only as a React key on the axis labels, which remounts them and so
@@ -382,6 +388,8 @@ export function ChessBoard({
           </span>
         ))}
       </div>
+
+      {corner && <div className="chess-board__corner" aria-hidden="true">{corner}</div>}
     </div>
   );
 }

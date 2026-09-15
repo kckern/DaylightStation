@@ -223,15 +223,17 @@ A few components appear across many modes because they are the kiosk's visual vo
   when a voice has none. Neither sheet scrolls at 1280×800. There is deliberately no
   Settings gear. Connection health, the reconnect banner, and Maintenance share one connection model,
   so only Maintenance exposes diagnostics, Bluetooth pairing, repair, or recovery actions.
-- **Full screen** — one kiosk-wide toggle that hides the header so whatever is on screen
-  gets the room. There is only ever one button: at the end of the header; in the top-right
-  corner while the header is hidden, so the way back is one tap; and on a board game, in
-  the rail foot beside the settings gear, in which case the kiosk draws no copy of its own.
-  The choice is remembered on the device and survives the reload a deploy causes. The
+- **Full screen** — hides the header so whatever is on screen gets the room. Two states.
+  The **kiosk's**: a toggle at the end of the header (in the top-right corner while the
+  header is hidden, so the way back is one tap), remembered on the device so it survives
+  the reload a deploy causes. **Board games'** own (Chess, Checkers, Connect Four): a board
+  game opens in full screen, with its keyboard shortened, and the toggle in its rail foot
+  beside the settings gear steps out for that game only — not remembered, so the next
+  board game opens full screen again. While a board game is on screen the kiosk draws no
+  toggle of its own. Configured by `boardGameFullscreen` in the piano config; see the game
+  platform reference for the keys, the log events and what each board gains. The
   connection banner still shows in full screen — a lost piano is the one thing it must
-  never hide. What a screen does with the room is its own business: board games slim their
-  keyboard to a strip and grow the staff cards on their rim (see the game platform
-  reference); every other screen simply gains the header's height. Leaving a game in full
+  never hide. Every other screen simply gains the header's height. Leaving a game in full
   screen takes two taps — the toggle, then the Games crumb.
 - **Icons** — inline single-colour SVGs that inherit their button's colour.
 - **Transport primitives** — the touch controls shared by every player-style mode

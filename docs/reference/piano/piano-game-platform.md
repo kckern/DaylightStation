@@ -126,25 +126,66 @@ in the stage's `topRail`. The slot is the size container, so the rail and the
 board size from one width solved against the slot's height as well as its width,
 and a card stays over its column whichever of the two binds.
 
-### Kiosk full screen
+### Board-game full screen
 
-The kiosk's full-screen toggle (see the [piano README](./README.md)) reaches a
-game through its host. While it is on, the host carries a full-screen state a
-game can style against, and a game that opts in to a compact instrument has its
-keyboard dock drop to a 3rem strip — still above the tap floor, because on
-Checkers and Connect Four those keys take a finger. `BoardGameFrame` opts in, and
-draws the toggle beside the settings gear in the rail foot, which withdraws the
-kiosk's own copy. Games whose keyboard is the playfield do not opt in.
+Board games have a full-screen state of their own, separate from the kiosk's
+remembered full screen (see the [piano README](./README.md)); both live in
+`PianoKiosk/PianoFullscreenContext.jsx`. `BoardGameFrame` claims it on mount
+(`useBoardGameFullscreen`): the game arrives in full screen with the header gone,
+and the toggle in the rail foot beside the settings gear steps out for that game.
+Stepping out is never written to the device. A rematch that remounts the same
+game within 2s keeps the choice; any later arrival is full screen again. When the
+game unmounts, the kiosk's own answer comes back.
+
+While full screen is on the host carries `piano-game-host--fullscreen`, and
+because `BoardGameFrame` opts in to a compact instrument the keyboard is the
+game's own `--pg-keyboard-h` times `keyboardHeightScale`, floored at `--pg-tap`
+(Checkers and Connect Four keys take a finger). Chess sets its keyboard height as
+that token rather than as a height on the keys, so it shrinks from what it drew.
+Games whose keyboard is the playfield do not opt in.
+
+Configured by `boardGameFullscreen` in the household piano config, resolved in
+`PianoKiosk/pianoConfigModel.js` (per-piano values over shared, over defaults):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `enterOnOpen` | `true` | arrive in full screen; `false` arrives windowed |
+| `keyboardHeightScale` | `0.6` | the game's keyboard height is multiplied by this in full screen |
+| `keyboardRange` | `{ chess: [24, 96] }` | per game, `[startNote, endNote]` shown in full screen. A shorter keyboard is stubby at the same width, so chess (display-only keys) shows C1–C7. Games not named keep their own range: narrower keys would fall under the tap floor |
+
+Observability, all queryable in the log store:
+
+- `piano.fullscreen.board.enter` / `piano.fullscreen.board.exit` — `surface` (game id), `fullscreen`, `resumed`, `heldMs`, `kioskFullscreen`
+- `piano.fullscreen.change` — `fullscreen`, `source` (`game:<id>`, `header`, `floating`), `mode` (`board-game` | `kiosk`), `surface`
+- `piano-game.fullscreen.layout` — emitted by the frame after every change, in layout pixels: `hostW`/`hostH`, `keyboardH`, `boardSlotW`/`boardSlotH`, `headerVisible`, `keyboardRange`. This is the line that answers "the header is still there" or "the keyboard did not shrink" without a photo of the tablet.
 
 Each board spends the room its own way. Measured on the 1280×800 canvas with
 `tests/_infrastructure/harnesses/piano-board-rim` (line spacing is the distance
-between two staff lines on a rim card):
+between two staff lines on a rim card; the harness also reports the head clef's
+line drift and the chess "Playing" staff's drawn height):
 
-| Game | Normal → full screen | What moves |
+| Game | Windowed → full screen | What moves |
 |---|---|---|
-| Chess | files 8.4 → 9.4px, ranks 7.5 → 8.4px | nothing extra — the board is height-bound and grows by itself |
-| Checkers | files 7.2 → 9.8px, ranks 7.3 → 8.8px | the rim thickness, 3.6rem → 5rem; it pins one side of every card |
-| Connect Four | 8.0 → 10.8px | the board ceiling is lifted |
+| Chess | board 500 → 560px; files 13.6px (dyads 10.4px) both; ranks 8.8 → 9.9px (dyads 6.7 → 7.6px) | nothing extra — the board is height-bound and grows by itself; the file strip is a fixed height |
+| Checkers | board 540 → 613px; files 8.6 → 12.0px, ranks 8.7 → 10.1px | the rim thickness, 3.6rem → 5rem; it pins one side of every card |
+| Connect Four | board 544 → 708px; 9.6 → 12.7px | the board ceiling is lifted |
+
+### Rim staff cards
+
+`RimStaffRenderer` draws an addressed board's rim cards over only the range their
+axis uses (`rimStaffExtent`), with the shared engraving rules: stems by
+`model/stems.js`, seconds across the stem, accidental columns, ledger lines and
+ghost ink. The card measures its own box and widens the drawing to fill it, so a
+card's clef sits at its left edge and the note is centred in the room after it.
+Rim cards are size-contained (`contain: size`): the board gives them their box,
+and a tall narrow drawing can never grow the strip.
+
+Chess's file row carries no clef on its cards (`clef={false}`, and
+`rimStaffExtent(tokens, { clef: false })` for the axis). Its clef is drawn once in
+the board's corner cell (`ChessBoard`'s `corner` slot, `StaffClefLabel` /
+`RimClef`) at the same extent and card height, so its staff lines continue the
+cards' and the row reads as one staff. The rank column's cards are wide enough to
+keep their own bass clefs. Checkers and Connect Four keep a clef on every card.
 
 ### Chess frontend boundaries
 

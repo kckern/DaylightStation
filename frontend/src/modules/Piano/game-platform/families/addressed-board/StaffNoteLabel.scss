@@ -79,6 +79,12 @@
   max-height: none;
   margin: 0;
   padding: 0;
+  /* Takes its cell, never sizes it. The drawing's viewBox gives the SVG an
+     intrinsic ratio, and a card with no clef of its own is narrow and tall:
+     left to size itself, it grew 96px file cells to 146px and ran off the
+     stage. The renderer measures the box and widens its drawing to fit, so the
+     box has to come from the board, not from the drawing. */
+  contain: size;
 
   .action-staff__rim-svg {
     display: block;
@@ -87,6 +93,15 @@
     height: 100%;
     min-height: 0;
   }
+}
+
+/* The clef at the head of an axis. Paper, because its ink needs it, but no edge:
+   it is where the row of addresses starts, not one more address. The border is
+   made transparent rather than removed so the drawn box is exactly a card's, and
+   its staff lines stay level with theirs. */
+.chess-staff-label.action-staff.chess-staff-label--clef {
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .chess-staff-label.action-staff.chess-staff-label--locked {
