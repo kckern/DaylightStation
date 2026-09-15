@@ -39,25 +39,31 @@ export function chronological(records) {
 /**
  * Opponent ids for games archived before records carried one.
  *
- * Rivalry memory is keyed by id, and an old record has only a level and a
- * name. Where a later record used an id for that same level and name, that id
- * is the right one. Otherwise it is the id the live roster would build: the
- * player's roster pack and a one-based position. A record with no opponent at
- * all is left alone, because nothing can say who it was.
+ * Rivalry memory is keyed by id, and an old record has only a level and,
+ * usually, a name. Where a later record from the *same player* used an id for
+ * that same level and name, that id is the right one — borrowing is per
+ * player, because two players' rosters are not the same roster. Otherwise it
+ * is the id the live roster would build: that player's roster pack and a
+ * one-based position, which applies whether or not the record carries a name.
+ * A record with no opponent at all is left alone, because nothing can say who
+ * it was.
  */
 export function withOpponentIds(records, rosterPackFor) {
   const known = new Map();
   for (const record of records) {
     const level = recordLevel(record);
     if (record?.opponent?.id && record.opponent.name && level !== null) {
-      known.set(`${level}|${record.opponent.name}`, record.opponent.id);
+      known.set(`${record.user_id}|${level}|${record.opponent.name}`, record.opponent.id);
     }
   }
   return records.map((record) => {
-    if (!record?.opponent?.name || record.opponent.id) return record;
+    if (!record?.opponent || record.opponent.id) return record;
     const level = recordLevel(record);
     if (level === null) return record;
-    const id = known.get(`${level}|${record.opponent.name}`) || `${rosterPackFor(record.user_id)}:level-${level + 1}`;
+    const fallback = `${rosterPackFor(record.user_id)}:level-${level + 1}`;
+    const id = record.opponent.name
+      ? (known.get(`${record.user_id}|${level}|${record.opponent.name}`) || fallback)
+      : fallback;
     return { ...record, opponent: { ...record.opponent, id } };
   });
 }

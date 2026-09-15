@@ -53,6 +53,20 @@ describe('withOpponentIds', () => {
     const record = finished({ opponent: null });
     expect(withOpponentIds([record], () => 'generic')[0]).toBe(record);
   });
+
+  it('assigns a roster id to an opponent with a known level but no name', () => {
+    const [record] = withOpponentIds([finished({ opponent: { level: 2 } })], (userId) => `${userId}-pack`);
+    expect(record.opponent.id).toBe('kid-pack:level-3');
+  });
+
+  it('keeps id-borrowing per player, so two players never share a rival id', () => {
+    const [sibling, kid] = withOpponentIds([
+      finished({ user_id: 'sibling', opponent: { level: 0, name: 'Caterpie', id: 'other-pack:level-1' } }),
+      finished({ user_id: 'kid', opponent: { level: 0, name: 'Caterpie' } }),
+    ], (userId) => `${userId}-pack`);
+    expect(sibling.opponent.id).toBe('other-pack:level-1');
+    expect(kid.opponent.id).toBe('kid-pack:level-1');
+  });
 });
 
 describe('replayLadder', () => {
