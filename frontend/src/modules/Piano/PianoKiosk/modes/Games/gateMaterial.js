@@ -27,6 +27,7 @@
 import { DaylightAPIText } from '../../../../../lib/api.mjs';
 import { pianoLearningApi } from '../Exercises/pianoLearningApi.js';
 import { pickMaterial } from './gateRepertoire.js';
+import { MAX_ASK_SPAN } from '../../../ask/stagecraft.js';
 
 /**
  * The white keys of C4 through C6, in order.
@@ -38,10 +39,42 @@ import { pickMaterial } from './gateRepertoire.js';
 const WHITE_KEYS = Object.freeze([60, 62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79, 81, 83, 84]);
 /** The C4-B4 window a single-note ask is drawn from. */
 const WHITE_KEYS_IN_ONE_OCTAVE = 7;
-/** Diatonic steps between the notes of a multi-note ask: a third to a fifth. */
+/**
+ * Diatonic steps between ADJACENT notes of a multi-note ask: a third to a fifth.
+ *
+ * Adjacent, which is the trap: the step is applied between every pair, so three
+ * notes a fifth apart span a ninth and a bit — C4 G4 D5, fourteen semitones.
+ * `staffFitsAsk` refuses to draw a reinforcement staff wider than an octave
+ * (`MAX_ASK_SPAN`), so a third of every three-key ask arrived as a bare
+ * keyboard filling the screen with no notation on it at all: seven of every
+ * twenty-one picks, two of them too wide for any single clef. A preschooler on
+ * the lit-key rungs was being shown the staff on some launches and not others,
+ * with nothing about the ask to explain the difference. `spreadsFitting` below
+ * is the whole fix — the shape is chosen from the spreads that leave the ask
+ * legible, rather than chosen first and found illegible afterwards.
+ */
 const SPREADS = Object.freeze([2, 3, 4]);
+
+/**
+ * The spreads that keep an `notes`-note shape starting at `start` inside the
+ * window a reinforcement staff can draw. Never empty: the narrowest spread is
+ * the floor, because an ask with no shape at all is worse than a wide one.
+ */
+function spreadsFitting(start, notes) {
+  const root = WHITE_KEYS[start];
+  const fitting = SPREADS.filter((spread) => {
+    const top = WHITE_KEYS[start + (notes - 1) * spread];
+    return Number.isFinite(top) && top - root <= MAX_ASK_SPAN;
+  });
+  return fitting.length ? fitting : [SPREADS[0]];
+}
 /** How many keys one ask may light. Single note, dyad, triad — no further. */
 const MAX_REPS = 8;
+/**
+ * How many distinct shapes one deck may deal. Four stays under the seven start
+ * keys a shape is drawn from, so every set of a deck is a different ask.
+ */
+const MAX_SETS = 4;
 const MAX_LIT_KEYS = 3;
 const ROOT_PITCH_CLASSES = Object.freeze({
   C: 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, F: 5, 'F#': 6, Gb: 6,
@@ -74,36 +107,61 @@ export function keysInstance(spec, pickIndex = 0) {
   const notes = Number.isFinite(requested) && requested >= 1 ? Math.min(requested, MAX_LIT_KEYS) : 1;
   const arrangement = spec?.arrangement === 'sequence' ? 'sequence' : 'together';
   const index = Math.abs(Math.trunc(Number(pickIndex)) || 0);
-  const start = index % WHITE_KEYS_IN_ONE_OCTAVE;
-  const spread = notes > 1 ? SPREADS[index % SPREADS.length] : 0;
-  const midis = Array.from({ length: notes }, (_, i) => WHITE_KEYS[start + (i * spread)]);
+  const shapeAt = (pick) => {
+    const start = pick % WHITE_KEYS_IN_ONE_OCTAVE;
+    const spreads = spreadsFitting(start, notes);
+    const spread = notes > 1 ? spreads[pick % spreads.length] : 0;
+    return Array.from({ length: notes }, (_, i) => WHITE_KEYS[start + (i * spread)]);
+  };
+
+  const requestedReps = Math.floor(Number(spec?.reps));
+  const reps = Number.isFinite(requestedReps) && requestedReps >= 1 ? Math.min(requestedReps, MAX_REPS) : 1;
+  const requestedSets = Math.floor(Number(spec?.sets));
+  const sets = Number.isFinite(requestedSets) && requestedSets >= 1 ? Math.min(requestedSets, MAX_SETS) : null;
+
+  const notesOf = (list) => list.map((midi) => ({ midi, hand: 'right' }));
+  let events;
+  let deck = null;
+  if (sets) {
+    // SETS deal distinct shapes, and REPS then repeat each WHOLE shape — an
+    // arpeggio played three times through, then a different arpeggio. Without
+    // this a three-key rung was one pass of three cards: a preschooler moved
+    // off the nine-card sight-reading deck onto `keys-3` and was asked for a
+    // single arpeggio, once (2026-09-13). A chord shape is one event, so a
+    // `together` deck is ordered chord events rather than one held chord.
+    const shapes = Array.from({ length: sets }, (_, s) => shapeAt(index + s));
+    events = shapes.flatMap((shape, s) => Array.from({ length: reps }, (_, r) => (
+      arrangement === 'sequence'
+        ? shape.map((midi, n) => ({ id: `lit-s${s + 1}-r${r + 1}-${n + 1}`, value: 'quarter', notes: notesOf([midi]) }))
+        : [{ id: `lit-s${s + 1}-r${r + 1}`, value: 'quarter', notes: notesOf(shape) }]
+    )).flat());
+    deck = { sets, reps, unit: arrangement === 'sequence' ? notes : 1 };
+  } else {
+    const midis = shapeAt(index);
+    // REPS repeat each note of a sequence CONSECUTIVELY — note 1 three times,
+    // then note 2 three times — rather than repeating the whole run. That is what
+    // makes a sight-reading drill a drill: the same card comes back while it is
+    // still fresh, and the pitch changes only once it has been found three times.
+    // Meaningless on a `together` ask (one event by definition), and ignored there.
+    events = arrangement === 'sequence'
+      ? midis.flatMap((midi, i) => Array.from({ length: reps }, (_, r) => ({
+        id: reps > 1 ? `lit-${i + 1}-${r + 1}` : `lit-${i + 1}`,
+        value: 'quarter',
+        notes: notesOf([midi]),
+      })))
+      : [{ id: 'lit-1', value: 'quarter', notes: notesOf(midis) }];
+  }
 
   // `ordering` follows the arrangement, and the spec may say so explicitly.
   // A chord graded in order would fail a child for rolling it; a sequence
-  // graded out of order would not be a sequence.
+  // graded out of order would not be a sequence. Several chord events are a
+  // sequence of chords, and only an ordered attempt can walk them.
   const ordering = spec?.ordering === 'strict' || spec?.ordering === 'any'
     ? spec.ordering
-    : (arrangement === 'sequence' ? 'strict' : 'any');
-
-  // REPS repeat each note of a sequence CONSECUTIVELY — note 1 three times,
-  // then note 2 three times — rather than repeating the whole run. That is what
-  // makes a sight-reading drill a drill: the same card comes back while it is
-  // still fresh, and the pitch changes only once it has been found three times.
-  // Meaningless on a `together` ask (one event by definition), and ignored there.
-  const requestedReps = Math.floor(Number(spec?.reps));
-  const reps = Number.isFinite(requestedReps) && requestedReps >= 1 ? Math.min(requestedReps, MAX_REPS) : 1;
-
-  const notesOf = (list) => list.map((midi) => ({ midi, hand: 'right' }));
-  const events = arrangement === 'sequence'
-    ? midis.flatMap((midi, i) => Array.from({ length: reps }, (_, r) => ({
-      id: reps > 1 ? `lit-${i + 1}-${r + 1}` : `lit-${i + 1}`,
-      value: 'quarter',
-      notes: notesOf([midi]),
-    })))
-    : [{ id: 'lit-1', value: 'quarter', notes: notesOf(midis) }];
+    : (arrangement === 'sequence' || events.length > 1 ? 'strict' : 'any');
 
   return {
-    id: `keys/lit@notes=${notes},arrangement=${arrangement}${reps > 1 ? `,reps=${reps}` : ''},pick=${index}`,
+    id: `keys/lit@notes=${notes},arrangement=${arrangement}${sets ? `,sets=${sets}` : ''}${reps > 1 ? `,reps=${reps}` : ''},pick=${index}`,
     title: notes === 1 ? 'One key' : `${notes} keys`,
     form: 'keys',
     ordering,
@@ -118,6 +176,10 @@ export function keysInstance(spec, pickIndex = 0) {
     axes: {},
     staff: 'treble',
     events,
+    // The deck's shape, stated rather than re-inferred: repeats of a whole
+    // arpeggio are not consecutive identical cards, so nothing reading the
+    // events alone could find the sets in them. See deckProgress.js.
+    ...(deck ? { deck } : {}),
   };
 }
 
@@ -245,7 +307,7 @@ const SCALE_DEFAULTS = Object.freeze({ mode: 'ionian', direction: 'up', span_oct
 
 const onScale = (allowed, value, fallback) => (allowed.includes(value) ? value : fallback);
 
-const scaleInstanceId = (root, spec = {}) => {
+export const scaleInstanceId = (root, spec = {}) => {
   const mode = onScale(SCALE_MODES, spec.mode, SCALE_DEFAULTS.mode);
   const direction = onScale(SCALE_DIRECTIONS, spec.direction, SCALE_DEFAULTS.direction);
   const span = onScale(SCALE_SPANS, Math.floor(Number(spec.span_octaves)), SCALE_DEFAULTS.span_octaves);
@@ -262,7 +324,7 @@ const scaleInstanceId = (root, spec = {}) => {
 const SEED_ATTEMPTS = 3;
 
 /** The roots a level names, filtered to the strings the bank could address. */
-const rootsOf = (spec) => (Array.isArray(spec?.roots) ? spec.roots : []).filter((r) => typeof r === 'string' && r);
+export const rootsOf = (spec) => (Array.isArray(spec?.roots) ? spec.roots : []).filter((r) => typeof r === 'string' && r);
 
 async function loadInstance(instanceId) {
   const res = await pianoLearningApi.instance(instanceId);

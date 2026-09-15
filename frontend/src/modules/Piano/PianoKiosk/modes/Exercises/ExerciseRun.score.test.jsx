@@ -149,6 +149,20 @@ beforeEach(() => {
 });
 
 describe('ExerciseRun — score material, handed down as props', () => {
+  // The game gate runs bare: the music and nothing written around it. The same
+  // run with the same props says "Play the first note to begin." below, which is
+  // what makes this a test of `bare` and not of an empty screen.
+  it('a bare run writes no framing, heading, chips or standing instruction', async () => {
+    render(<ExerciseRun {...props()} framing="Play this to start Piano Chess" ask="G major · right hand" bare />);
+
+    await waitFor(() => expect(h.createAttempt).toHaveBeenCalled());
+    expect(screen.queryByText('Play the first note to begin.')).toBeNull();
+    expect(screen.queryByText('Play this to start Piano Chess')).toBeNull();
+    expect(screen.queryByText('G major · right hand')).toBeNull();
+    expect(screen.queryByText(/Waiting for the piano/)).toBeNull();
+    expect(document.querySelector('.piano-exercise-run__head').textContent).toBe('');
+  });
+
   it('builds the attempt from the compiled score expectation, never from the exercise bank', async () => {
     const current = props();
     render(<ExerciseRun {...current} />);

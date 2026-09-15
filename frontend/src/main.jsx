@@ -25,6 +25,7 @@ const TeacherConsole = React.lazy(() => import('./modules/School/teacher/Teacher
 const GamingApp = React.lazy(() => import('./Apps/GamingApp.jsx'));
 const GamePresentationHarness = React.lazy(() => import('./dev/GamePresentationHarness/GamePresentationHarness.jsx'));
 const DsGallery = React.lazy(() => import('./dev/DsGallery/DsGallery.jsx'));
+const DecoderSwatches = React.lazy(() => import('./dev/DecoderSwatches/DecoderSwatches.jsx'));
 const TeacherConsoleRoute = () => (
   <React.Suspense fallback={<div />}> <TeacherConsole /> </React.Suspense>
 );
@@ -93,11 +94,11 @@ configurePlaybackLogger({
 // Standalone /app/:appId route — renders a registered app directly without the TV shell.
 // Used for testing and direct linking to specific apps (e.g. /app/weekly-review).
 const AppDirectRoute = () => {
-  const { appId } = useParams();
+  const { appId, '*': appPath } = useParams();
   const navigate = useNavigate();
   return (
     <AppContainer
-      open={{ app: appId }}
+      open={{ app: appPath ? `${appId}/${appPath}` : appId }}
       clear={() => {
         if (window.history.length > 1) navigate(-1);
         else navigate('/');
@@ -181,6 +182,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/dev/gaming/*" element={<React.Suspense fallback={null}><GamingApp /></React.Suspense>} />
         <Route path="/dev/game-presentation-harness" element={<React.Suspense fallback={null}><GamePresentationHarness /></React.Suspense>} />
         <Route path="/dev/ds-gallery" element={<React.Suspense fallback={null}><DsGallery /></React.Suspense>} />
+        <Route path="/dev/decoder-swatches" element={<React.Suspense fallback={null}><DecoderSwatches /></React.Suspense>} />
         <Route path="/life/*" element={<LifeApp />} />
         <Route path="/admin/*" element={<AdminApp />} />
         {["/screen/:screenId/*", "/screens/:screenId/*"].map(p => <Route key={p} path={p} element={<WebSocketProvider><ScreenRenderer /></WebSocketProvider>} />)}

@@ -3,6 +3,17 @@ import { activityPartyRuleModule } from './index.mjs';
 
 const definition = { activities: ['draw', 'charades'], rounds: 1, timer_ms: 30_000, correct_points: 2, challenges: [{ activity: 'draw', prompt: 'Tree' }, { activity: 'charades', prompt: 'Moon' }] };
 
+const casualDefinition = {
+  title: 'FHE Charades', activities: ['charades'], rounds: 3, timer_ms: 60_000,
+  competition: false, turn_selection: 'seeded-rounds', clues_per_turn: 1,
+  presentation: { image_participants: ['a', 'b'] },
+  guessing_music: { source: 'plex:charades-music', volume: 0.4 },
+  challenges: [
+    ...Array.from({ length: 6 }, (_, index) => ({ id: `image-${index}`, activity: 'charades', prompt: `Image ${index}`, decoder: { image: `/image-${index}.svg` } })),
+    ...Array.from({ length: 12 }, (_, index) => ({ id: `text-${index}`, activity: 'charades', prompt: `Text ${index}` })),
+  ],
+};
+
 describe('Activity Party rules', () => {
   it('selects from a word bank in deterministic seeded order when requested', () => {
     const shuffled = { ...definition, challenge_selection: 'seeded' };
@@ -94,5 +105,110 @@ describe('Activity Party rules', () => {
       state = activityPartyRuleModule.handleCommand(state, { type: 'challenge.next' }, twoRounds, { actorId: 'host' }).state;
     }
     expect(state).toMatchObject({ status: 'complete', phase: 'complete', challenge_index: 4 });
+  });
+
+  it('executes all casual turns using seeded rounds and presentation-specific clue pools', () => {
+    const seats = ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => ({ id }));
+    let state = activityPartyRuleModule.createInitialState(casualDefinition, { seed: 42, seats, setup: { host: { mode: 'human' } } });
+    const replay = activityPartyRuleModule.createInitialState(casualDefinition, { seed: 42, seats, setup: { host: { mode: 'human' } } });
+    const different = activityPartyRuleModule.createInitialState(casualDefinition, { seed: 43, seats, setup: { host: { mode: 'human' } } });
+    expect(state.turn_order).toEqual(replay.turn_order);
+    expect(state.challenge_order).toEqual(replay.challenge_order);
+    expect(state.turn_order).not.toEqual(different.turn_order);
+
+    const observedTurns = [];
+    const imageClues = [];
+    let logicalTime = 1_000;
+    while (state.phase !== 'complete') {
+      observedTurns.push(state.performer_id);
+      if (state.clue_presentation === 'image') imageClues.push(state.challenge.id);
+      else expect(state.challenge.decoder?.image).toBeUndefined();
+      state = activityPartyRuleModule.handleCommand(state, { type: 'performer.ready' }, casualDefinition, { actorId: state.performer_id, logicalTime }).state;
+      state = activityPartyRuleModule.handleCommand(state, { type: 'challenge.start' }, casualDefinition, { actorId: 'host', logicalTime }).state;
+      expect(state.deadline).toBe(logicalTime + 60_000);
+      state = activityPartyRuleModule.handleCommand(state, { type: 'challenge.finish' }, casualDefinition, { actorId: state.performer_id, logicalTime: logicalTime + 1_000 }).state;
+      expect(state).toMatchObject({ phase: 'challenge-complete', scores: {} });
+      state = activityPartyRuleModule.handleCommand(state, { type: 'challenge.next' }, casualDefinition, { actorId: 'host', logicalTime: logicalTime + 2_000 }).state;
+      logicalTime += 10_000;
+    }
+
+    expect(observedTurns).toHaveLength(18);
+    for (let round = 0; round < 3; round += 1) {
+      const roundTurns = observedTurns.slice(round * 6, (round + 1) * 6);
+      expect(roundTurns.sort()).toEqual(seats.map((seat) => seat.id).sort());
+    }
+    expect(new Set(imageClues).size).toBe(6);
+    expect(state.scores).toEqual({});
+    expect(state.phase).toBe('complete');
+  });
+
+  it('rejects duplicate commands and early casual expiry without advancing state', () => {
+    const seats = [{ id: 'a' }, { id: 'b' }];
+    let state = activityPartyRuleModule.createInitialState(casualDefinition, { seed: 7, seats });
+    state = activityPartyRuleModule.handleCommand(state, { type: 'performer.ready' }, casualDefinition, { actorId: state.performer_id, logicalTime: 100 }).state;
+    expect(activityPartyRuleModule.handleCommand(state, { type: 'performer.ready' }, casualDefinition, { actorId: state.performer_id, logicalTime: 100 })).toMatchObject({ error: { code: 'illegal_command' } });
+    state = activityPartyRuleModule.handleCommand(state, { type: 'challenge.start' }, casualDefinition, { actorId: 'host', logicalTime: 100 }).state;
+    expect(activityPartyRuleModule.handleCommand(state, { type: 'timer.expire' }, casualDefinition, { actorId: 'host', logicalTime: 60_099 })).toMatchObject({ error: { code: 'illegal_command' } });
+    state = activityPartyRuleModule.handleCommand(state, { type: 'timer.expire' }, casualDefinition, { actorId: 'host', logicalTime: 60_100 }).state;
+    expect(state).toMatchObject({ phase: 'challenge-complete', scores: {} });
+    expect(activityPartyRuleModule.handleCommand(state, { type: 'timer.expire' }, casualDefinition, { actorId: 'host', logicalTime: 60_100 })).toMatchObject({ error: { code: 'illegal_command' } });
+  });
+
+  it('lets the host rewind an accidentally started clue without losing the turn', () => {
+    let state = activityPartyRuleModule.createInitialState(casualDefinition, { seed: 7, seats: [{ id: 'a' }, { id: 'b' }] });
+    state = activityPartyRuleModule.handleCommand(state, { type: 'performer.ready' }, casualDefinition, { actorId: state.performer_id, logicalTime: 100 }).state;
+    state = activityPartyRuleModule.handleCommand(state, { type: 'challenge.start' }, casualDefinition, { actorId: 'host', logicalTime: 200 }).state;
+    const rewound = activityPartyRuleModule.handleCommand(state, { type: 'challenge.rewind' }, casualDefinition, { actorId: 'host', logicalTime: 300 });
+    expect(rewound.state).toMatchObject({
+      phase: 'challenge-ready',
+      deadline: null,
+      challenge_index: state.challenge_index,
+      clue_index: state.clue_index,
+      performer_id: state.performer_id,
+      challenge: state.challenge,
+      remaining_ms: state.remaining_ms,
+    });
+    expect(rewound.events).toEqual([{ type: 'challenge.rewound' }]);
+    expect(activityPartyRuleModule.handleCommand(rewound.state, { type: 'challenge.rewind' }, casualDefinition, { actorId: 'host', logicalTime: 300 }))
+      .toMatchObject({ error: { code: 'illegal_command' } });
+    expect(activityPartyRuleModule.handleCommand(state, { type: 'challenge.rewind' }, casualDefinition, { actorId: 'a', logicalTime: 300 }))
+      .toMatchObject({ error: { code: 'authorization_denied' } });
+  });
+
+  it('pauses the remaining per-turn budget while reading additional clues', () => {
+    const multiClue = { ...casualDefinition, rounds: 1, clues_per_turn: 2, presentation: { image_participants: [] } };
+    let state = activityPartyRuleModule.createInitialState(multiClue, { seed: 5, seats: [{ id: 'c' }, { id: 'd' }] });
+    state = activityPartyRuleModule.handleCommand(state, { type: 'performer.ready' }, multiClue, { actorId: state.performer_id, logicalTime: 1_000 }).state;
+    state = activityPartyRuleModule.handleCommand(state, { type: 'challenge.start' }, multiClue, { actorId: 'host', logicalTime: 1_000 }).state;
+    state = activityPartyRuleModule.handleCommand(state, { type: 'challenge.finish' }, multiClue, { actorId: state.performer_id, logicalTime: 11_000 }).state;
+    state = activityPartyRuleModule.handleCommand(state, { type: 'challenge.next' }, multiClue, { actorId: 'host', logicalTime: 20_000 }).state;
+    expect(state).toMatchObject({ phase: 'challenge-ready', challenge_index: 0, clue_index: 1, deadline: null });
+    state = activityPartyRuleModule.handleCommand(state, { type: 'challenge.start' }, multiClue, { actorId: 'host', logicalTime: 40_000 }).state;
+    expect(state.deadline).toBe(90_000);
+    state = activityPartyRuleModule.handleCommand(state, { type: 'timer.expire' }, multiClue, { actorId: 'host', logicalTime: 90_000 }).state;
+    state = activityPartyRuleModule.handleCommand(state, { type: 'challenge.next' }, multiClue, { actorId: 'host', logicalTime: 90_001 }).state;
+    expect(state).toMatchObject({ phase: 'performer-ready', challenge_index: 1, clue_index: 0 });
+  });
+
+  it('projects casual presentation and music settings with stable names', () => {
+    const state = activityPartyRuleModule.createInitialState(casualDefinition, { seed: 2, seats: [{ id: 'a' }, { id: 'c' }] });
+    const projected = activityPartyRuleModule.project(state, casualDefinition, { role: 'host' });
+    expect(projected.definition).toMatchObject({
+      competition: false, turn_selection: 'seeded-rounds', clues_per_turn: 1,
+      presentation: { image_participants: ['a', 'b'] },
+      guessing_music: { source: 'plex:charades-music', volume: 0.4 },
+    });
+    expect(projected.state).toMatchObject({ competition: false, clue_index: 0, clue_presentation: 'image' });
+  });
+
+  it('rejects invalid casual settings and missing eligible challenge pools', () => {
+    expect(activityPartyRuleModule.validateDefinition({ ...casualDefinition, turn_selection: 'random' })).toMatchObject({ valid: false });
+    expect(activityPartyRuleModule.validateDefinition({ ...casualDefinition, clues_per_turn: 0 })).toMatchObject({ valid: false });
+    expect(activityPartyRuleModule.validateDefinition({ ...casualDefinition, guessing_music: { source: '', volume: 2 } })).toMatchObject({ valid: false });
+    expect(activityPartyRuleModule.validateDefinition({ ...casualDefinition, guessing_music: { source: 'plex:music', volume: 0.3, order: 'shuffle', repeat: 'sometimes', memory: 'session' } })).toMatchObject({ valid: false });
+    expect(() => activityPartyRuleModule.createInitialState({
+      ...casualDefinition,
+      challenges: casualDefinition.challenges.filter((challenge) => !challenge.decoder?.image),
+    }, { seed: 2, seats: [{ id: 'a' }] })).toThrow('image challenge pool');
   });
 });

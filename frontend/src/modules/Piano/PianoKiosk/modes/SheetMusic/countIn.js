@@ -90,4 +90,56 @@ export function countInPlan({ beats, bpm, tempoMult = 1 }) {
   return { beats: clicks, periodMs, totalMs: clicks * periodMs, subdivision };
 }
 
-export default { countInPlan };
+/**
+ * HOW FAST THE ASK ACTUALLY IS, relative to the clicks the child is about to
+ * hear — because "play at that speed" is not always true and, when it is not,
+ * it is the only instruction they get.
+ *
+ * A cued run counts in on the QUARTER pulse (`countInPlan` coarsens above
+ * ~140bpm and never subdivides below it, which is right for a piece). A scale
+ * out of the bank is written in EIGHTHS. So the gate's tier-3 rung clicked four
+ * times at 60bpm, said "play at that speed", and then graded eight notes 500ms
+ * apart. On 2026-09-13 a nine-year-old played C D E F G, in order, evenly, at
+ * the tempo he had just been given — and every single note was scored `wrong`
+ * with a `miss` beside it, three attempts running, because the grader's grid
+ * was twice the speed of the grid he was counted in on. He did nothing wrong
+ * and the screen had told him nothing that was true.
+ *
+ * @param {number[]} onsetQuarters where the ask's events fall, in quarter notes
+ * @param {number} clickQuarters quarter notes between count-in clicks
+ * @returns {{notesPerClick:number, even:boolean}|null} null when the ask has no
+ *   steady pulse to describe (one note, or an uneven rhythm — where any single
+ *   sentence about "the speed" would be a new lie rather than a fixed one).
+ */
+export function askPace(onsetQuarters = [], clickQuarters = 1) {
+  if (!Array.isArray(onsetQuarters) || onsetQuarters.length < 2) return null;
+  if (!(clickQuarters > 0)) return null;
+  const steps = [];
+  for (let i = 1; i < onsetQuarters.length; i += 1) {
+    const step = Number(onsetQuarters[i]) - Number(onsetQuarters[i - 1]);
+    if (!Number.isFinite(step) || step <= 0) return null;
+    steps.push(step);
+  }
+  // An ask has one speed to describe only if it HAS one speed. A dotted rhythm
+  // is a real ask and a true sentence about it is longer than this surface has
+  // room for; it keeps the generic line.
+  const first = steps[0];
+  const even = steps.every((step) => Math.abs(step - first) < 1e-6);
+  if (!even) return { notesPerClick: clickQuarters / first, even: false };
+  return { notesPerClick: clickQuarters / first, even: true };
+}
+
+/** The count-in promise, in words a child can act on. */
+export function countInSentence(clicks, pace) {
+  const lead = `Press any key to start. You'll hear ${clicks} click${clicks === 1 ? '' : 's'}`;
+  if (!pace?.even) return `${lead}, then play at that speed.`;
+  const { notesPerClick } = pace;
+  if (Math.abs(notesPerClick - 1) < 1e-6) return `${lead}, then play one note on every click.`;
+  if (Math.abs(notesPerClick - 2) < 1e-6) return `${lead}, then play two notes on every click.`;
+  if (Math.abs(notesPerClick - 3) < 1e-6) return `${lead}, then play three notes on every click.`;
+  if (Math.abs(notesPerClick - 4) < 1e-6) return `${lead}, then play four notes on every click.`;
+  if (Math.abs(notesPerClick - 0.5) < 1e-6) return `${lead}, then play one note every two clicks.`;
+  return `${lead}, then play at that speed.`;
+}
+
+export default { countInPlan, askPace, countInSentence };

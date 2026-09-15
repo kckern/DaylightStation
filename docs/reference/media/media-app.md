@@ -73,9 +73,10 @@ this app with zero app changes.
   from every source at once, so I can find content without knowing where it
   lives.
 - I want to narrow a search to a scope ("Movies", "Music", "Books") from the
-  search box itself, and have the app remember my last scope.
-- I want a home screen with my in-progress item, recent plays, and curated
-  category cards, so the common case is zero typing.
+  search box itself. Every new search starts catalog-wide; scope is
+  deliberately never carried over between searches or reloads.
+- I want a home screen with my in-progress item and recent plays, so the
+  common case is zero typing.
 - I want to drill into any category, folder, or collection and page through
   it, with containers and playable items distinguished.
 - I want a detail page for any item showing artwork, description, and every
@@ -185,20 +186,26 @@ and a **canvas** that shows exactly one view at a time:
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│ DOCK   [ search…          ▾scope ]  fleet● cast▸ ♪mini ⚙   │
+│ DOCK   [ scope chips ][ search…     ]  fleet●  cast▸   ⚙   │
 ├──────┬─────────────────────────────────────────────────────┤
 │ NAV  │  CANVAS                                             │
 │ Home │    one of: Home · Browse · Detail · Now Playing ·   │
-│ Devs │            Fleet · Peek                             │
-│Browse│                                                     │
-└──────┴─────────────────────────────────────────────────────┘
+│Browse│            Fleet · Peek                             │
+│ Devs │                                                     │
+├──────┴─────────────────────────────────────────────────────┤
+│ dispatch progress tray (while casting)                     │
+│ ♪ mini player (while a session has a current item)         │
+└────────────────────────────────────────────────────────────┘
 ```
 
 **The dock is the app's constant.** It carries:
 
 - the **search bar** with scope selector — search is always one keystroke
-  away, never a destination page; results drop down inline and every result
-  row carries the full action set (queue actions + cast),
+  away, never a destination page; results drop down inline. A row tap plays
+  a playable item at the current destination and opens a container in
+  Browse; containers carry a trailing ▶ (play the whole thing) and playable
+  items a trailing ⋯ (Play Now / Play Next / Up Next / Add to Queue / Open
+  detail). Per-item Cast lives on the Detail view, not on result rows,
 - the **fleet indicator** — an at-a-glance summary of what's playing in the
   house, linking to the fleet view,
 - the **cast target chip** — the currently-preferred dispatch target. It
@@ -206,11 +213,17 @@ and a **canvas** that shows exactly one view at a time:
   result casts there in the chip's mode rather than playing locally. Peek
   view is the one exception — while remote-controlling a device, selections
   always go to that device (forked, never transferred),
-- the **mini player** — current local item, queue position counter,
-  play/pause/stop; tapping the title opens Now Playing,
-- the **settings menu** — session reset (confirmed) and client identity,
+- the **settings menu** — session reset (confirmed). The per-browser display
+  name is read from storage but has no UI to set it.
+
+Below the canvas, at every width, the shell stacks:
+
 - the **dispatch progress tray** — live step-by-step progress of in-flight
-  casts, with retry on failure.
+  casts, with retry on failure,
+- the **mini player** — current local item, live progress strip, queue
+  position counter, play/pause/next/stop (a small live picture for video);
+  tapping the title opens Now Playing. It renders nothing without a current
+  item.
 
 **On phones the dock cannot hold all of that at once — so it doesn't try.**
 At 360px there is ~336px to spend; splitting that between a scope selector, a
@@ -258,11 +271,11 @@ is decoration, never a tap target.
 
 | View | Purpose | Reached from |
 |---|---|---|
-| **Home** | Landing surface: resume card (current session), recents row, config-driven category cards. | Default; nav; breadcrumb. |
-| **Browse** | Hierarchical catalog listing with breadcrumb, container drill-down, inline Play Now/Add per playable row, paging ("load more"). | Home cards; nav; container rows. |
+| **Home** | Landing surface: resume card (current session) and recents row. (Config-driven category cards were removed; the Browse tab covers them.) | Default; nav; breadcrumb. |
+| **Browse** | Hierarchical catalog listing with breadcrumb, container drill-down, inline Play Now/Add per playable row, paging ("load more"). A view opened for a specific container adds a Play / Shuffle / Queue header acting on the whole container at the current destination. | Nav; container rows; container taps in search. |
 | **Detail** | One item: artwork, description, full action row (Play Now / Play Next / Up Next / Add / Cast). | Browse rows; search results. |
 | **Now Playing** | Full local transport: seek bar, prev/play-pause/next/stop, volume, the queue panel, and the hand-off picker. Hosts the visual output of the player. | Mini player; Escape/Back returns. |
-| **Fleet** | All devices, live state cards, with Peek always and Take Over when a session is active. | Nav; fleet indicator. |
+| **Fleet** | All devices, live state cards. Each card offers **Remote** (Peek), **Play…** (inline search that plays straight to that device), and **Play here** (Take Over) when a session is active. | Nav; fleet indicator. |
 | **Peek** | Remote control for one device: transport, seek, volume, and the same queue panel bound to the remote session. Optimistic — controls reflect the predicted state instantly and lock until the device confirms. | Fleet cards. |
 
 The queue panel is **one component used twice**: bound to the local session in
@@ -350,12 +363,14 @@ always ground truth and the app always converges to it.
 
 ### Config-driven surfaces
 
-What the home screen offers and what scopes search exposes are household
-configuration, not code: both come from the media app config
-(`data/household/apps/media/config.yml`, served at `/api/v1/media/config` —
-`browse` entries become home cards, `searchScopes` becomes the scope tree;
-see [`search-scopes.md`](./search-scopes.md)). Adding a category card or a
-search scope is a config edit, not a deploy.
+What scopes search exposes is household configuration, not code: it comes
+from the media app config
+(the household `media/config.yml`, falling back to the legacy `media/app.yml`
+where the scopes live today; served at `/api/v1/media/config` —
+`searchScopes` becomes the scope tree; see
+[`search-scopes.md`](./search-scopes.md)). Adding a search scope is a config
+edit, not a deploy. `browse` entries in that file are no longer read: they fed
+the home category cards, which were removed.
 
 ### Conceptual subsystems
 

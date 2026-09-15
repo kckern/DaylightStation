@@ -1,10 +1,11 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { act, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import ImageDecoderDisplay from './ImageDecoderDisplay.jsx';
-import { generateDecoderArtifacts } from './imageDecoderArtifacts.js';
+import { generateDecoderArtifacts, generateDecoderMotion } from './imageDecoderArtifacts.js';
 
 describe('ImageDecoderDisplay', () => {
+  afterEach(() => vi.useRealTimers());
   it('generates stable artifacts for a clue seed', () => {
     const first = generateDecoderArtifacts('monkey', 8);
     expect(generateDecoderArtifacts('monkey', 8)).toEqual(first);
@@ -24,4 +25,73 @@ describe('ImageDecoderDisplay', () => {
       .toContain('/api/v1/gaming/media/charades/monkey.svg');
     expect(container.querySelectorAll('.image-decoder-display__artifact')).toHaveLength(12);
   });
+
+  it('moves the full decoder card while its clue and interference stay full-card and locked together', () => {
+    vi.useFakeTimers();
+    const { container } = render(<ImageDecoderDisplay src="/clue.svg" seed="moving" motionIntervalMs={1000} />);
+    const card = container.querySelector('.image-decoder-display');
+    const subject = screen.getByTestId('image-decoder-subject');
+    const artifacts = container.querySelector('.image-decoder-display__artifacts');
+    const composite = screen.getByTestId('image-decoder-composite');
+    expect(composite).toContainElement(subject);
+    expect(composite).toContainElement(artifacts);
+    expect(composite).not.toHaveAttribute('style');
+    expect(subject.style.transform).toMatch(/^translate\([^)]+\) scaleX\([^)]+\) scale\(0\./);
+    expect(Number(subject.dataset.subjectScale)).toBeGreaterThanOrEqual(0.25);
+    expect(Number(subject.dataset.subjectScale)).toBeLessThanOrEqual(0.75);
+    expect(Number(subject.dataset.subjectOpacity)).toBeGreaterThanOrEqual(0.25);
+    expect(Number(subject.dataset.subjectOpacity)).toBeLessThanOrEqual(1);
+    expect(card).toHaveAttribute('data-motion-index', '0');
+    expect(artifacts).toHaveAttribute('data-interference-rotation', '0');
+    expect(artifacts.style.transform).toBe('rotate(0deg)');
+    const first = card.style.transform;
+    const firstMirror = subject.dataset.mirrored;
+    const firstX = subject.dataset.subjectX;
+    const firstY = subject.dataset.subjectY;
+    act(() => vi.advanceTimersByTime(1000));
+    expect(card.style.transform).not.toBe(first);
+    expect(subject.dataset.mirrored).not.toBe(firstMirror);
+    expect(subject.dataset.subjectX).not.toBe(firstX);
+    expect(subject.dataset.subjectY).not.toBe(firstY);
+    expect(card).toHaveAttribute('data-motion-index', '1');
+    expect(artifacts).toHaveAttribute('data-interference-rotation', '90');
+    expect(artifacts.style.transform).toBe('rotate(90deg)');
+    const second = card.style.transform;
+    act(() => vi.advanceTimersByTime(1000));
+    expect(card.style.transform).not.toBe(second);
+    expect(card).toHaveAttribute('data-motion-index', '2');
+    expect(artifacts).toHaveAttribute('data-interference-rotation', '180');
+    expect(artifacts.style.transform).toBe('rotate(180deg)');
+
+    const frames = generateDecoderMotion('moving');
+    for (let index = 1; index < frames.length; index += 1) {
+      const distance = Math.hypot(frames[index].x - frames[index - 1].x, frames[index].y - frames[index - 1].y);
+      expect(distance / 100).toBeGreaterThanOrEqual(0.5);
+      expect(frames[index].mirrored).not.toBe(frames[index - 1].mirrored);
+      expect(frames[index].subjectScale).toBeGreaterThanOrEqual(0.25);
+      expect(frames[index].subjectScale).toBeLessThanOrEqual(0.75);
+      expect(frames[index].subjectOpacity).toBeGreaterThanOrEqual(0.25);
+      expect(frames[index].subjectOpacity).toBeLessThanOrEqual(1);
+      expect(frames[index].subjectX).not.toBe(frames[index - 1].subjectX);
+      expect(frames[index].subjectY).not.toBe(frames[index - 1].subjectY);
+    }
+  });
+});
+
+it('reports image failure without an answer label and supports retry', async () => {
+ const {fireEvent}=await import('@testing-library/react');
+ const {container}=render(<ImageDecoderDisplay src="/missing.svg" />);
+ fireEvent.error(container.querySelector('img'));
+ expect(screen.getByRole('alert')).toHaveTextContent('Clue image could not load');
+ fireEvent.click(screen.getByRole('button',{name:'Retry image'}));
+ expect(screen.queryByRole('alert')).toBeNull();
+ expect(screen.getByTestId('image-decoder-subject').style.maskImage).toContain('decoder_retry=1');
+ expect(container.querySelector('img').getAttribute('src')).toContain('decoder_retry=1');
+});
+
+it('covers the full image field with texture and crossing streaks, including between rings', () => {
+ const {container}=render(<ImageDecoderDisplay src="/clue.svg" seed="texture"/>);
+ expect(container.querySelectorAll('.image-decoder-display__texture-tile')).toHaveLength(625);
+ expect([...container.querySelectorAll('.image-decoder-display__texture-tile')].reduce((area, tile) => area + Number(tile.getAttribute('width')) * Number(tile.getAttribute('height')), 0)).toBeLessThan(6000);
+ expect(container.querySelectorAll('.image-decoder-display__streak')).toHaveLength(40);
 });

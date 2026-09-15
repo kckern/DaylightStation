@@ -139,6 +139,13 @@ space and time, so an authorisation names what it permits, expires if unredeemed
 and is recorded on the session it opens. A walk to the reader is not a blank
 cheque.
 
+The browser arcade asks for an admin's fingerprint before the first launch of a
+session, on every browser in the house — the garage kiosk, a tablet, a laptop.
+A developer's own localhost is the only exemption. A household may switch the
+approval off in the emulation settings (`adminGate: false`); the arcade then
+opens to anyone, and both the backend and the arcade log a warning on every load
+and launch it lets through, so an approval that is off is never silent.
+
 Controllers are counted as supporting evidence, not as proof of participation:
 a pad paired but idle is not a player. On Android, counting requires looking for
 an analog stick — the television's own remote reports itself as a gamepad, and

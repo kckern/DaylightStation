@@ -377,7 +377,9 @@ export class GamepadAdapter {
     }
 
     // Emit to ActionBus for useScreenAction consumers
-    this.actionBus.emit(mapping.action, mapping.payload);
+    // A scoped owner can consume and synchronously unmount on Back. Do not
+    // send a second legacy event into the newly exposed parent screen.
+    if (this.actionBus.emit(mapping.action, mapping.payload) === true) return;
 
     // Dispatch synthetic KeyboardEvent for direct keydown listeners (Menu.jsx, ArcadeSelector.jsx)
     const event = new KeyboardEvent('keydown', {

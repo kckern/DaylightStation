@@ -1,11 +1,11 @@
 /**
  * Theme resolution for the side-scroller game.
  *
- * The renderer is generic: all visuals (sprite sheet, obstacle skins,
- * background, ground) and sound effects come from a `theme` block on the
- * per-game config (`config.games['side-scroller'].theme`), which lives in the
- * household piano YAML in the data dir — not the repo. DEFAULT_THEME reproduces
- * the original Mega Man + procedural-CSS look so an absent/empty theme is a
+ * The renderer is generic: all visuals (sprite sheet, pellet, obstacle skins,
+ * explosion, background, ground) and sound effects come from a `theme` block on
+ * the per-game config (`config.games['side-scroller'].theme`), which lives in
+ * the household piano YAML in the data dir — not the repo. DEFAULT_THEME
+ * reproduces the Mega Man + procedural-CSS look so an absent/empty theme is a
  * no-op. See docs/plans/2026-06-24-side-scroller-theme-config-design.md.
  */
 
@@ -22,25 +22,47 @@ export const DEFAULT_THEME = {
       stand: [0, 0],
       jump: [4, 0],
       duck: [0, 3],
-      hit: [2, 3],
+      hit: [[1, 3], [2, 3]],
       run: [[0, 1], [1, 1], [2, 1], [3, 1]],
+      shoot: [4, 1],
+      shootRun: [[1, 2], [2, 2], [3, 2], [4, 2]],
+      shootJump: [0, 2],
     },
+  },
+  // The buster pellet. A null src/grid reuses the player sheet.
+  projectile: {
+    src: null,
+    grid: null,
+    frame: [2, 4],
+    displaySize: 144,
   },
   obstacles: {
     // Procedural CSS fallback (matches the original gradients).
     low: { src: null, fill: ['#cc3333', '#991a1a'], border: '#ff6666' },
     high: { src: null, fill: ['#3366cc', '#1a3399'], border: '#6699ff' },
+    // Shootable blocks. `pattern` draws mortar/rivets over a procedural skin.
+    block: { src: null, fill: ['#c8742c', '#8a4a17'], border: '#f0a060', pattern: 'brick' },
+    block_hard: { src: null, fill: ['#9aa3ad', '#5b636c'], border: '#d7dde3', pattern: 'steel' },
+  },
+  // Death burst: orbs radiating from where the player stood.
+  explosion: {
+    core: '#ffffff',
+    ring: '#9eeaff',
+    edge: '#1f6fff',
+    size: 34,
   },
   background: {
     src: null,
     color: 'linear-gradient(180deg, #0c0c1e 0%, #141432 60%, #1a1a3a 100%)',
   },
   ground: { color: 'rgba(100, 200, 255, 0.5)' },
-  // All null until real assets land; a null path is a silent no-op.
+  // All null by default; a null path is a silent no-op.
   sounds: {
     jump: null,
     duck: null,
+    shoot: null,
     hit: null,
+    death: null,
     dodge: null,
     levelup: null,
     gameover: null,
@@ -74,10 +96,14 @@ export function resolveTheme(gameConfig) {
   const t = gameConfig?.theme ?? {};
   return {
     player: mergePiece(DEFAULT_THEME.player, t.player),
+    projectile: mergePiece(DEFAULT_THEME.projectile, t.projectile),
     obstacles: {
       low: mergePiece(DEFAULT_THEME.obstacles.low, t.obstacles?.low),
       high: mergePiece(DEFAULT_THEME.obstacles.high, t.obstacles?.high),
+      block: mergePiece(DEFAULT_THEME.obstacles.block, t.obstacles?.block),
+      block_hard: mergePiece(DEFAULT_THEME.obstacles.block_hard, t.obstacles?.block_hard),
     },
+    explosion: mergePiece(DEFAULT_THEME.explosion, t.explosion),
     background: mergePiece(DEFAULT_THEME.background, t.background),
     ground: mergePiece(DEFAULT_THEME.ground, t.ground),
     sounds: mergePiece(DEFAULT_THEME.sounds, t.sounds),
@@ -85,17 +111,25 @@ export function resolveTheme(gameConfig) {
 }
 
 /**
- * Resolve the player sprite frame (as a background-position) for the current
- * state. Run frames cycle by world position; the cycle length comes from the
- * theme's `run` array, not a hardcoded value.
+ * A frame entry is either one cell ([col, row]) or a cycle of cells. Cycles
+ * advance by world position, so their speed tracks the scroll.
  */
-export function getSpriteFrame(state, worldPos, { idle, invincible } = {}, theme) {
+function cellAt(entry, worldPos) {
+  if (!Array.isArray(entry?.[0])) return entry;
+  return entry[Math.floor((worldPos * 32) % entry.length)];
+}
+
+/**
+ * Resolve the player sprite frame (as a background-position) for the current
+ * state. Cycle lengths come from the theme's arrays, not hardcoded values. A
+ * theme without shooting frames keeps its plain poses while shooting.
+ */
+export function getSpriteFrame(state, worldPos, { idle, invincible, shooting } = {}, theme) {
   const { frames, grid } = theme.player;
-  if (idle) return frameToPosition(frames.stand, grid);
-  if (invincible) return frameToPosition(frames.hit, grid);
-  if (state === 'jumping') return frameToPosition(frames.jump, grid);
-  if (state === 'ducking') return frameToPosition(frames.duck, grid);
-  const run = frames.run;
-  const frameIdx = Math.floor((worldPos * 32) % run.length);
-  return frameToPosition(run[frameIdx], grid);
+  const pick = (entry) => frameToPosition(cellAt(entry, worldPos), grid);
+  if (idle) return pick(frames.stand);
+  if (invincible) return pick(frames.hit);
+  if (state === 'jumping') return pick(shooting && frames.shootJump ? frames.shootJump : frames.jump);
+  if (state === 'ducking') return pick(frames.duck);
+  return pick(shooting && frames.shootRun ? frames.shootRun : frames.run);
 }

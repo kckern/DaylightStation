@@ -2,7 +2,7 @@
 
 .party-games {
   width: 100%;
-  height: 100dvh;
+  height: 100%;
   min-height: 0;
   box-sizing: border-box;
   position: relative;
@@ -72,6 +72,21 @@
     padding: 2rem;
     text-align: center;
     strong { color: var(--gp-danger); font: 2.5rem/1 var(--gp-font-display); text-transform: uppercase; }
+    > div { display: flex; gap: 0.75rem; }
+  }
+  &__confirm-exit {
+    position: absolute;
+    inset: 0;
+    z-index: 60;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 1.25rem;
+    padding: 2rem;
+    background: var(--gp-overlay);
+    color: var(--gp-paper);
+    text-align: center;
+    h2 { margin: 0; font: 2.5rem/1 var(--gp-font-display); text-transform: uppercase; }
     > div { display: flex; gap: 0.75rem; }
   }
   &__ws-warn {
@@ -172,3 +187,5 @@
 @media (max-width: 720px) {
   .party-games__set-card { flex-basis: calc((100% - 2rem) / 3); }
 }
+
+.party-games-container { width: 100%; height: 100%; min-height: 0; }

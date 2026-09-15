@@ -22,7 +22,7 @@ export class PlaybackReadService {
     if (shuffle) {
       let selectedItem;
       if (this.contentQueryService) {
-        const result = await this.contentQueryService.resolve(source, localId, { now: this.now() }, { pick: 'random' });
+        const result = await this.contentQueryService.resolve(source, localId, { now: this.now() }, { pick: 'random', allowFallback: true });
         if (!result.items.length) return { kind: 'no_playables' };
         selectedItem = result.items[0];
       } else {
@@ -40,7 +40,13 @@ export class PlaybackReadService {
       let playables;
       if (this.contentQueryService) {
         try {
-          const result = await this.contentQueryService.resolve(source, localId, { now: this.now() });
+          // `allowFallback`: PLAY a container, never refuse it. The selection
+          // strategy drops watched items, which is right for "what's next" —
+          // and made a season whose every episode was finished answer 404 "No
+          // playable items in container" (2026-09-14, plex:696233, all three
+          // Études at 100%). The fallback relaxes the filters only when they
+          // leave nothing, so an unfinished container still resumes where it was.
+          const result = await this.contentQueryService.resolve(source, localId, { now: this.now() }, { allowFallback: true });
           playables = result.items;
         } catch {
           playables = await this.contentCatalog.resolvePlayables(resolved) || [];

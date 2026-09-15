@@ -31,7 +31,7 @@ export class GamingEffectService {
       try { await this.drawingCheckpoints?.delete(sessionId); }
       catch (error) { this.reportFailure('drawing-checkpoint-delete', error, { sessionId }); }
     }
-    if (!this.aiPolicy) return;
+    if (!this.aiPolicy || result.state?.competition === false) return;
     for (const envelope of result.events || []) {
       if (!['challenge.finished', 'outcome.committed', 'outcome.proposed'].includes(envelope.event?.type)) continue;
       if (envelope.event.type === 'outcome.proposed' && !this.aiAdvisoryJudgment) continue;

@@ -16,6 +16,7 @@ export class ActionBus {
   constructor() {
     this.subscribers = new Map();
     this.wildcardSubscribers = new Set();
+    this.captures = new Set();
   }
 
   /**
@@ -43,16 +44,28 @@ export class ActionBus {
     };
   }
 
+  /** Give an active modal first ownership of selected semantic actions.
+   * Newest owner runs first. Return true to consume; observers still see it.
+   */
+  capture(actions, handler) {
+    const entry = { actions: new Set(actions), handler };
+    this.captures.add(entry);
+    return () => this.captures.delete(entry);
+  }
+
   /**
-   * Emit an action to all subscribers
+   * Emit an action, returning whether a capture owner consumed it.
    * @param {string} action - Action name
    * @param {*} payload - Action payload
    */
   emit(action, payload) {
+    const consumed = [...this.captures].reverse().some(entry => entry.actions.has(action) && entry.handler(action, payload) === true);
     const handlers = this.subscribers.get(action);
     const subscriberCount = handlers ? handlers.size : 0;
 
-    if (subscriberCount === 0) {
+    if (consumed) {
+      logger().debug('actionbus.emit.captured', { action });
+    } else if (subscriberCount === 0) {
       logger().warn('actionbus.emit.unhandled', { action, subscriberCount: 0 });
     } else {
       logger().debug('actionbus.emit', { action, subscriberCount });
@@ -61,6 +74,7 @@ export class ActionBus {
 
     // Notify wildcard subscribers
     this.wildcardSubscribers.forEach(handler => handler(action, payload));
+    return consumed;
   }
 
   /**
@@ -69,6 +83,7 @@ export class ActionBus {
   clear() {
     this.subscribers.clear();
     this.wildcardSubscribers.clear();
+    this.captures.clear();
   }
 }
 

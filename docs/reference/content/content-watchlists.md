@@ -199,6 +199,12 @@ When all items are filtered out (everything watched, on hold, or outside its win
 
 This ensures a watchlist **always has something to play** rather than returning empty.
 
+Playing any container through `/api/v1/play` — a watchlist, a Plex season or show,
+an album — always uses the cascade. A container whose every item is finished
+therefore starts again at its first item instead of answering 404 "No playable items
+in container", while a container with anything unfinished still starts at the next
+unwatched item, because the cascade only relaxes a filter that has emptied the list.
+
 ---
 
 ## Backend Architecture

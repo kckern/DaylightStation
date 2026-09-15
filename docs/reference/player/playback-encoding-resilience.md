@@ -95,8 +95,23 @@ through the decision request and the transcode-URL builder:
 |------|-----------|--------|
 | `allowDirectPlay` | h264 video **and** aac audio **and** mp4 container | Plex may serve the file as-is |
 | `allowDirectStream` | video codec is h264 **or** hevc, **and** the video is 8-bit (regardless of audio/container) | Plex may copy the video track; caps are **omitted** |
+| `downmixAudio` | the audio is AAC with more than two channels **and** Plex names no channel layout for it | the audio track is re-encoded to stereo AAC; the video is still copied |
 
 `allowDirectStream` is the superset (`allowDirectPlay || canDirectStreamVideo`).
+
+`downmixAudio` exists because a stream-COPY of multichannel AAC with
+`channel_configuration 0` — a layout carried in a program config element rather
+than a standard channel code — cannot be appended by Chromium. The first audio
+segment fails with `CHUNK_DEMUXER_ERROR_APPEND_FAILED: RunSegmentParserLoop: stream
+parsing failed` and the video never starts; a reload reproduces it exactly. Plex
+reports `audioChannelLayout` for every AAC track it can name, so its absence on a
+>2-channel track is the signal (ffprobe shows the same track as
+`channel_layout=unknown`). The gate adds
+`add-limitation(scope=videoAudioCodec&scopeName=aac&type=upperBound&name=audio.channels&value=2)`
+to the client-profile-extra of both the decision request and the stream URL. The
+scope must be `videoAudioCodec`: an `audioCodec`-scoped limitation is not applied
+to the audio inside a video session and Plex keeps copying. Multichannel AAC with a
+named layout, and every other audio codec, are untouched.
 Both the client-profile-extra (which carries the frame-rate limitation) and the
 `maxVideoBitrate` / `maxVideoResolution` query caps are gated on
 `!allowDirectStream`. When the stream can be copied, none of them are sent.

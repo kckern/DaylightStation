@@ -500,6 +500,20 @@ The gate asks for material through a provider seam that names four kinds:
   three a third to a fifth apart. The floor of the ladder is made of these, and they
   reach a child without a network round trip, because a 502 between a four-year-old and
   the easiest thing the gate can ask is the one outage that must not exist.
+
+  **A lit-key ask always fits a staff.** The rungs a pre-reader climbs draw the keyboard AND a
+  staff above it, because the staff is the half of the mapping that teaches reading. The spread
+  is between ADJACENT notes, so three of them a fifth apart span a ninth — and it is chosen now
+  from the intervals that keep the whole shape inside the window one staff can draw
+  (`MAX_ASK_SPAN`), rather than chosen first and found illegible afterwards. A third of every
+  three-key ask used to arrive as a bare keyboard filling the screen, with nothing about the ask
+  to explain why this launch had notation and the last one did not.
+
+  **`reps` and `sets` are two different repeats.** `reps` alone repeats each note back to back —
+  the sight-reading deck's three pitches, three cards each. `sets` deals that many distinct shapes
+  and `reps` then repeats each whole shape, so `{ notes: 3, arrangement: sequence, sets: 3, reps: 3 }`
+  is three arpeggios played three times through, and a `together` rung with `sets` becomes ordered
+  chord events rather than one held chord.
 - **`exercise`** — an instance from the exercise bank. A level naming `roots` addresses
   the scales bank by id directly (`scales/modes@root=G,…`), because that bank expands over
   a root axis and needs no catalog walk to be found. A level naming only a `collection`
@@ -554,6 +568,58 @@ The gate asks for material through a provider seam that names four kinds:
 
   A drill that cannot be reached fails open; a drill id that does not exist substitutes.
   Same two answers as every other kind, for the same reasons.
+
+  **A scale level writes the same drill in its own YAML.** An `exercise` spec with `roots`
+  that carries `sets` and `reps` —
+  `{ kind: exercise, collection: scales, roots: [G, D, F], direction: up-then-down, sets: 3, reps: 3 }`
+  — is resolved exactly like `kind: drill`: `sets` sets, one key each taken from the roots in
+  order (cycling when the level names fewer), each needing `reps` reps, one rep banked per
+  PASSED gate, counted over the study day. Only the counts come from the level; the day
+  boundary, which set is asked and the pills are the drill's. Because a short root list
+  repeats a key, passes are dealt to the sets in order — the fourth C major of the day is the
+  first rep of the second set, never a second set banked at once. Every scale level in the
+  household ladder is written this way, so every scale gate shows where the child stands in
+  its nine.
+
+### What the run screen says while a child plays one
+
+**At the game gate it says nothing.** The gate run is the music, the keyboard and the set/rep
+pills. There is no framing line ("Play this to start…"), no ask heading, no key or tempo chip,
+no standing instruction ("Play the first note to begin.") and no "Waiting for the piano…" —
+the pills say where the child is, the staff says what to play, and the kiosk's connection
+banner says when the piano has gone. The pills carry no names either: no placard, no key, no
+hand badge. A gate level with no set/rep structure (a capstone passage) draws the music
+alone. Practice runs outside the gate keep their words.
+
+**A run with set/rep structure draws pills, not paragraphs.** Any ask whose events
+repeat consecutively — a `keys` rung with `reps`, as well as a `drill` — is projected into
+`DrillProgress`: one cluster per set, one ring per rep, banked rings gilded. The ask sentence
+over the stage and the standing instruction under it both drop wherever the pills actually
+draw, because the pills say where you are and the stage says what to play. A reading deck's
+clusters carry **no label**: naming the pitch under a staff a child is being asked to read
+hands them the answer. A host-supplied drill projection always wins over an inferred one —
+it knows a standing that spans the whole study day.
+
+**A `keys` rung with `sets` states its shape outright.** `sets: 3, reps: 3` deals three
+distinct shapes and repeats each WHOLE shape three times — three arpeggios played three times
+through, or three dyads struck three times each — where `reps` alone repeats each note back to
+back. Repeats of a whole arpeggio are not consecutive identical cards, so the material records
+`{ sets, reps, unit }` and the pills read that instead of the events: a rep banks when its last
+key lands, never partway through. The stage shows only the rep being played, so the lit keys,
+the badge row and the reinforcement staff are one shape rather than all nine of them at once.
+
+**A cued run states the real note rate.** The count-in is a quarter-note pulse, and the
+exercise bank writes its scales in eighths, so "play at that speed" was false for every cued
+scale rung — it clicked four times at 60bpm and then graded eight notes 500ms apart. The
+ready line now says "then play two notes on every click", derived from the **compiled
+expectation** rather than the written note values: the sentence has to describe the grid the
+engine measures on. An ask with no steady pulse keeps the generic line rather than inventing
+a rate.
+
+**A failed attempt is told what went wrong, in one sentence and never a number.**
+`failureAdvice` names the weakest criterion — nothing arrived, notes missing, off the beat,
+extra notes — and answers `null` rather than guessing, in which case the panel keeps its
+standing line. The no-percentage rule is unchanged and is stated above.
 
 A level may mix kinds; the rotation serves one per attempt. An entry that cannot be
 served — a bank 502, a score naming no document — is skipped, logged as
@@ -633,31 +699,31 @@ gameGate:
       tier: 0
       material:
         - { kind: keys, notes: 1 }
-    - id: keys-2
+    - id: keys-2            # three dyads, three times each
       tier: 1
       material:
-        - { kind: keys, notes: 2, arrangement: together }
-    - id: keys-3
+        - { kind: keys, notes: 2, arrangement: together, sets: 3, reps: 3 }
+    - id: keys-3            # three arpeggios, each played three times through
       tier: 1
       material:
-        - { kind: keys, notes: 3, arrangement: sequence }
+        - { kind: keys, notes: 3, arrangement: sequence, sets: 3, reps: 3 }
     - id: L1                # C major, one octave
       tier: 2
       material:
-        - { kind: exercise, collection: scales, roots: [C] }
+        - { kind: exercise, collection: scales, roots: [C], sets: 3, reps: 3 }
     - id: L2                # one accidental — three roots, so gates differ
       tier: 2
       material:
-        - { kind: exercise, collection: scales, roots: [G, D, F] }
+        - { kind: exercise, collection: scales, roots: [G, D, F], sets: 3, reps: 3 }
     - id: L3                # two sharps each; see Material on enharmonics
       tier: 2
       material:
-        - { kind: exercise, collection: scales, roots: ['A', 'E'] }
+        - { kind: exercise, collection: scales, roots: ['A', 'E'], sets: 3, reps: 3 }
     - id: L4                # at tempo; the only level where wrong notes cost
       tier: 3
       grading: { cleanliness: 0.8 }
       material:
-        - { kind: exercise, collection: scales, roots: [C, G] }
+        - { kind: exercise, collection: scales, roots: [C, G], sets: 3, reps: 3 }
         # A passage of real music belongs here — four bars of the study piece,
         # engraved by the sheet-music renderer. The shape, when one is chosen:
         # - { kind: score, source: 'files:sheetmusic/minuet-in-g.musicxml', measures: [1, 4] }

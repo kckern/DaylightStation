@@ -436,6 +436,31 @@ describe('warm-up fill', () => {
     expect(dictation.map((e) => [e.seq, e.done])).toEqual([[1, true], [2, false], [3, false]]);
   });
 
+  it('never holds more than the limit on a rung, even when more were done that day under an older limit', () => {
+    // Found live 2026-09-14: 15 repetitions on a day now sized at five read as
+    // a 33-step day, and 4 dictations on a three-a-day ladder as 13.
+    const entered = Array.from({ length: 15 }, (_, i) => ({ day: 1, seq: i + 1, rung: 'repetition' }));
+    const dayOne = build(entered, 1);
+    for (const rung of CHAIN) expect(dayOne.filter((e) => e.rung === rung)).toHaveLength(LIMIT);
+    expect(dayOne.filter((e) => e.rung === 'repetition').map((e) => [e.seq, e.done]))
+      .toEqual([[1, true], [2, true], [3, true]]);
+
+    const graduated = [1, 2, 3, 4, 5].map((seq) => ({ day: 1, seq, rung: 'repetition' }));
+    [1, 2, 3, 4].forEach((seq) => graduated.push({ day: 2, seq, rung: 'dictation' }));
+    const dayTwo = build(graduated, 2);
+    expect(dayTwo.filter((e) => e.rung === 'dictation').map((e) => [e.seq, e.done]))
+      .toEqual([[1, true], [2, true], [3, true]]);
+    expect(dayTwo).toHaveLength(FULL_DAY);
+  });
+
+  it('fills practice slots with passes already done first, so finished work is never hidden', () => {
+    const log = [1, 2, 3, 4].map((seq) => ({ day: 1, seq, rung: 'repetition' }));
+    log.push({ day: 1, seq: 4, rung: 'dictation', practice: true });
+    const dictation = build(log, 1).filter((e) => e.rung === 'dictation');
+    expect(dictation).toHaveLength(LIMIT);
+    expect(dictation[0]).toMatchObject({ seq: 4, done: true, practice: true });
+  });
+
   it('leaves credited entries in their original shape', () => {
     const credited = build([], 1).filter((e) => !e.practice);
     for (const entry of credited) expect(entry).not.toHaveProperty('practice');

@@ -26,3 +26,10 @@ describe('TeamSetup mounted setup modes', () => {
     expect(screen.getAllByRole('button', { name: /\+ A|\+ B/ })).toHaveLength(4);
   });
 });
+
+it('preselects household members for casual individual setup', () => {
+ render(<TeamSetup config={config} setupKind="individuals" selectAll onConfirm={() => {}} />);
+ expect(screen.getByRole('button', {name:'Start with 2 players'})).toBeEnabled();
+ fireEvent.click(screen.getByRole('button',{name:'A'}));
+ expect(screen.getByRole('button',{name:'Start with 1 players'})).toBeEnabled();
+});

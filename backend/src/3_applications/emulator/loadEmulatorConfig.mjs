@@ -214,6 +214,12 @@ export function loadEmulatorConfig({
     idleRelockMinutes: num(rawSettings.idleRelockMinutes, 10),
     adminGate: rawSettings.adminGate !== false,
   };
+  // Turning the gate off opens every game to anyone with a controller. That can
+  // be a household's choice — and it is also exactly what a test override left
+  // in the live settings file looks like (2026-09-12), so it is never silent.
+  if (!settings.adminGate) {
+    logger.warn('emulator.config.admin_gate_disabled', { emulationDir });
+  }
 
   return {
     systems,

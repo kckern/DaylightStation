@@ -6,10 +6,10 @@ export const SEGMENTS = Object.freeze({
 });
 
 const GLYPHS = Object.freeze({
-  A: 'a b c e f g1 g2', B: 'c d e f g1 g2 l m', C: 'a d e f', D: 'a b c d e f', E: 'a d e f g1 g2', F: 'a e f g1 g2',
-  G: 'a c d e f g2', H: 'b c e f g1 g2', I: 'a d l m', J: 'b c d e', K: 'e f g1 h i k', L: 'd e f', M: 'b c e f h i',
+  A: 'a b c e f g1 g2', B: 'a d e f g1 i k', C: 'a d e f', D: 'b c d e g1 g2', E: 'a d e f g1 g2', F: 'a e f g1 g2',
+  G: 'a c d e f g2', H: 'b c e f g1 g2', I: 'a d l m', J: 'b c d e', K: 'e f i k', L: 'd e f', M: 'b c e f h i',
   N: 'b c e f h k', O: 'a b c d e f', P: 'a b e f g1 g2', Q: 'a b c d e f k', R: 'a b e f g1 g2 k', S: 'a c d f g1 g2',
-  T: 'a l m', U: 'b c d e f', V: 'e f j k', W: 'b c e f j m', X: 'h i j k', Y: 'h i m', Z: 'a d i j',
+  T: 'a l m', U: 'b c d e f', V: 'h i', W: 'b c e f j k', X: 'h i j k', Y: 'h i m', Z: 'a d i j',
   0: 'a b c d e f', 1: 'b c', 2: 'a b d e g1 g2', 3: 'a b c d g1 g2', 4: 'b c f g1 g2', 5: 'a c d f g1 g2',
   6: 'a c d e f g1 g2', 7: 'a b c', 8: 'a b c d e f g1 g2', 9: 'a b c d f g1 g2', '-': 'g1 g2', '?': 'a b g2 m',
 });

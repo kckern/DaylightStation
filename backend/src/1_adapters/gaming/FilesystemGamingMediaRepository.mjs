@@ -1,4 +1,6 @@
+import crypto from 'node:crypto';
 import path from 'node:path';
+import { resolveRealPath, readBinaryFromPath, isFile } from '#system/utils/FileIO.mjs';
 import { IGamingMediaRepository } from '#apps/gaming/ports/IGamingMediaRepository.mjs';
 import { createLocalFileResource } from '#system/http/streamFile.mjs';
 
@@ -15,9 +17,11 @@ function fileResource(filePath, fallbackMime = 'application/octet-stream') {
 }
 
 export class FilesystemGamingMediaRepository extends IGamingMediaRepository {
-  constructor({ assetCatalog = null, partyMediaRoot = null } = {}) {
+  constructor({ assetCatalog = null, partyMediaRoot = null, contentGamesDir = null, imageArchiveDir = null } = {}) {
     super();
     this.assetCatalog = assetCatalog;
+    this.imageArchiveDir = imageArchiveDir ? path.resolve(imageArchiveDir) : null;
+    this.contentGamesDir = contentGamesDir ? path.resolve(contentGamesDir) : null;
     this.partyMediaRoot = partyMediaRoot ? path.resolve(partyMediaRoot) : null;
   }
 
@@ -36,10 +40,34 @@ export class FilesystemGamingMediaRepository extends IGamingMediaRepository {
   }
 
   getPartyMedia(mediaId) {
-    if (!this.partyMediaRoot) return { kind: 'unavailable' };
-    const filePath = path.resolve(this.partyMediaRoot, mediaId);
-    if (!filePath.startsWith(`${this.partyMediaRoot}${path.sep}`)) return { kind: 'not_found' };
-    const resource = fileResource(filePath);
+    const isContent = String(mediaId).startsWith('content/');
+    const root = isContent ? this.contentGamesDir : this.partyMediaRoot;
+    if (!root) return { kind: 'unavailable' };
+    let relative = isContent ? mediaId.slice('content/'.length) : mediaId;
+    let hash = null;
+    if (isContent) {
+      const match = relative.match(/^([a-f0-9]{64})\/(.+)$/);
+      if (!match) return { kind: 'not_found' };
+      [, hash, relative] = match;
+      if (path.isAbsolute(relative) || relative.includes('\\') || relative.split('/').includes('..')) return { kind: 'not_found' };
+      const extension = path.extname(relative).toLowerCase();
+      if (!['.svg', '.png', '.webp', '.jpg', '.jpeg'].includes(extension)) return { kind: 'not_found' };
+      if (this.imageArchiveDir) {
+        const archiveRoot = resolveRealPath(this.imageArchiveDir);
+        const archived = resolveRealPath(path.join(this.imageArchiveDir, `${hash}${extension}`));
+        if (archiveRoot && archived?.startsWith(`${archiveRoot}${path.sep}`) && isFile(archived)
+          && crypto.createHash('sha256').update(readBinaryFromPath(archived)).digest('hex') === hash) {
+          return { kind: 'found', value: { resource: fileResource(archived) } };
+        }
+      }
+    }
+    if (typeof relative !== 'string' || path.isAbsolute(relative) || relative.includes('\\') || relative.split('/').includes('..')) return { kind: 'not_found' };
+    const filePath = path.resolve(root, relative);
+    const realRoot = resolveRealPath(root);
+    const realFile = resolveRealPath(filePath);
+    if (!realRoot || !realFile?.startsWith(`${realRoot}${path.sep}`) || !isFile(realFile)) return { kind: 'not_found' };
+    if (hash && crypto.createHash('sha256').update(readBinaryFromPath(realFile)).digest('hex') !== hash) return { kind: 'not_found' };
+    const resource = fileResource(realFile);
     return resource ? { kind: 'found', value: { resource } } : { kind: 'not_found' };
   }
 }
