@@ -2052,13 +2052,15 @@ The report must satisfy all of these before writing:
 - The learner's ladder goes from level 1, 2 of 5 wins, 11 results, to level 1, 2 of 5 wins, 11 results.
 - their Caterpie record goes to 5-0-0 and their Weedle record stays 5-0-0.
 - No player's level decreases.
+- No line in the report contains `DECREASE`.
+- `withoutGameId` is 0, or every such file is accounted for as already archived.
 
 If any of these is false, stop and investigate before continuing.
 
 - [ ] **Step 7: Write**
 
 ```bash
-sudo docker exec {env.docker_container} node cli/chess-backfill.cli.mjs --data data --write
+./scripts/piano-kiosk-idle.sh && sudo docker exec {env.docker_container} node cli/chess-backfill.cli.mjs --data data --write
 ```
 
 - [ ] **Step 8: Verify the result on disk and through the API**
@@ -2082,6 +2084,9 @@ Expected:
 - Every ladder result carries a timestamp.
 - The `_deleteme` folder exists.
 - The API reports `unlocked_through: 1` with `wins: 2, needed: 5`.
+- For every player, the ladder wins and every rivalry W/L/D on disk after the write match that
+  player's "after" values from the Step 6 dry-run report exactly — the write must reproduce the
+  plan it was gated on, not something computed fresh from a changed archive.
 
 - [ ] **Step 9: Remove the worktree and record the branch**
 
