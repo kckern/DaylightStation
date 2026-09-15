@@ -102,6 +102,13 @@ export function PlayerBridge() {
           // zero or a repeated offset) will not restart on object identity.
           // Apply the explicit generation through Player's real transport.
           playerRef.current?.seek?.(requestedStart);
+          // LOAD/SET represent a new local queue selection and normally rely
+          // on changed Player inputs to autoplay. ADOPT keeps its explicit
+          // autoplay option in LocalSessionController, so do not override an
+          // adoptSnapshot(..., { autoplay: false }) pause here.
+          if (action.type === 'LOAD_ITEM' || action.type === 'SET_CURRENT_ITEM') {
+            playerRef.current?.play?.();
+          }
         }
         setPlaybackGeneration(playbackGenerationRef.current);
       }
