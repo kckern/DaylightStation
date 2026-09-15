@@ -2,14 +2,14 @@
 // Dispatch orchestration: client-side fan-out (one /load per target,
 // independent dispatchIds), live wake-progress via homeline:* broadcasts,
 // idempotency dedupe window (C9.8), and retry by exact dispatch attempt
-// (C6.4). Transfer mode stops local playback only on confirmed success.
+// (C6.4). M0 blocks destructive transfer until an owner-qualified handoff
+// exists; explicit fork/keep dispatch remains available.
 // Hand-off sends the full SessionSnapshot with mode:"adopt" (§4.7).
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
+import React, { createContext, useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { subscribeTopicKind } from '../net/ws.js';
 import { reduceDispatch, initialDispatchState } from './dispatchReducer.js';
 import { buildDispatchUrl } from './dispatchUrl.js';
-import { LocalSessionContext } from '../session/LocalSessionContext.js';
 import { TIMING } from '../constants.js';
 import mediaLog from '../logging/mediaLog.js';
 
@@ -70,11 +70,6 @@ export function DispatchProvider({ children }) {
   // long it has been running. Kept in a ref, not reducer state, so
   // dispatchToTarget's identity stays stable.
   const inFlightRef = useRef(new Map());
-  // The controller object is stable for the provider's lifetime — no
-  // ref-mirroring needed to use it inside async callbacks.
-  const localCtx = useContext(LocalSessionContext);
-  const localController = localCtx?.controller ?? null;
-
   useEffect(() => {
     return subscribeTopicKind('homeline', (msg) => {
       const { dispatchId, step, status, elapsedMs, error } = msg;
@@ -87,6 +82,14 @@ export function DispatchProvider({ children }) {
 
   const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot, title }, { bypassDedupe = false } = {}) => {
     if (!Array.isArray(targetIds) || targetIds.length === 0) return [];
+    if (mode === 'transfer') {
+      mediaLog.dispatchFailed({
+        deviceId: targetIds[0] ?? null,
+        contentId: play ?? queue ?? snapshot?.currentItem?.contentId ?? null,
+        error: 'move-unsupported',
+      });
+      return [];
+    }
 
     const key = buildDedupKey({
       targetIds, play, queue, mode, shader, volume, shuffle, snapshot,
@@ -143,10 +146,6 @@ export function DispatchProvider({ children }) {
           if (res?.ok) {
             dispatch({ type: 'SUCCEEDED', dispatchId, totalElapsedMs: res.totalElapsedMs ?? null });
             mediaLog.dispatchSucceeded({ dispatchId, totalElapsedMs: res.totalElapsedMs });
-            // Cast Transfer: local stops only after the target confirms.
-            if (mode === 'transfer') {
-              try { localController?.transport?.stop?.(); } catch { /* ignore */ }
-            }
           } else {
             // Failure must not poison the idempotency cache — the user's
             // retry within the window has to actually re-dispatch (C6.4).
@@ -169,7 +168,7 @@ export function DispatchProvider({ children }) {
 
     dedupCacheRef.current.set(key, { ts: Date.now(), dispatchIds });
     return dispatchIds;
-  }, [localController]);
+  }, []);
 
   const retry = useCallback((dispatchId) => {
     const attempt = attemptsRef.current.get(dispatchId);

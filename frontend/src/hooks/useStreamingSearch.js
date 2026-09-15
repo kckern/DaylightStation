@@ -118,48 +118,231 @@ export function mergeSearchResults(prev, incoming, query) {
 }
 
 /**
- * Hook for streaming search via SSE with AbortController for race condition handling.
+ * Hook for streaming search via SSE with request-owned terminal cleanup.
  *
  * @param {string} endpoint - SSE endpoint URL (without query params)
  * @param {string} [extraQueryString] - Additional query params to append (e.g. 'capability=listable&source=plex')
+ * @param {{streamDeadlineMs?: number}} [options] - test-only timing injection;
+ *   production keeps the server-aligned 30 second stream budget.
  * @returns {{
  *   results: Array,
  *   pending: string[],
  *   isSearching: boolean,
- *   error: {kind: 'stream'|'connection', message: string}|null,
- *   search: (query: string, overrideExtraQuery?: string) => void
+ *   error: {kind: 'stream'|'connection'|'timeout', message: string}|null,
+ *   search: (query: string, overrideExtraQuery?: string) => void,
+ *   retry: (source?: string) => void,
+ *   cancel: () => void
  * }}
  */
-export function useStreamingSearch(endpoint, extraQueryString = '') {
+export function useStreamingSearch(endpoint, extraQueryString = '', options = {}) {
+  const streamDeadlineMs = options.streamDeadlineMs ?? 30000;
   const [results, setResults] = useState([]);
   const [pending, setPending] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState(null);
   const [sourceErrors, setSourceErrors] = useState([]);
-  const eventSourceRef = useRef(null);
   const queryRef = useRef('');
   const resultCountRef = useRef(0);
   const startedAtRef = useRef(null);
+  const generationRef = useRef(0);
+  const requestsRef = useRef(new Set());
+  const currentSearchRef = useRef(null);
+  const primaryPendingRef = useRef(new Set());
+
+  const recomputePending = useCallback(() => {
+    const names = new Set(primaryPendingRef.current);
+    for (const request of requestsRef.current) {
+      if (request.source && request.sourcePending) names.add(request.source);
+    }
+    setPending([...names]);
+  }, []);
+
+  const closeRequest = useCallback((request) => {
+    if (!request?.active) return;
+    request.active = false;
+    if (request.timer) clearTimeout(request.timer);
+    request.timer = null;
+    request.eventSource.close();
+    requestsRef.current.delete(request);
+  }, []);
+
+  const cancelAllRequests = useCallback((reason) => {
+    for (const request of [...requestsRef.current]) closeRequest(request);
+    primaryPendingRef.current = new Set();
+    if (reason) logger().debug('search.cancelled', { reason });
+  }, [closeRequest]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      eventSourceRef.current?.close();
+      cancelAllRequests('unmount');
     };
-  }, []);
+  }, [cancelAllRequests]);
 
-  const search = useCallback((query, overrideExtraQuery) => {
-    // Cancel any in-flight request
-    if (eventSourceRef.current) {
-      logger().debug('search.cancelled', { reason: 'new-query' });
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
+  const startRequest = useCallback((query, effectiveExtra, {
+    preserveResults = false,
+    source = null,
+    replaceGeneration = true,
+  } = {}) => {
+    if (replaceGeneration) {
+      cancelAllRequests('new-query');
+      generationRef.current += 1;
+      primaryPendingRef.current = new Set();
+      setError(null);
+      setSourceErrors([]);
+      if (!preserveResults) {
+        resultCountRef.current = 0;
+        setResults([]);
+      }
+    } else {
+      // A source retry is a sibling of the active primary stream. It must not
+      // retire that stream: other sources may still be validly pending.
+      setError(null);
+      setSourceErrors(prev => prev.filter((entry) => entry.source !== source));
     }
 
-    setError(null);
+    queryRef.current = query;
+    if (replaceGeneration) {
+      currentSearchRef.current = { query, effectiveExtra, generation: generationRef.current };
+    }
+    if (replaceGeneration) startedAtRef.current = Date.now();
+    setIsSearching(true);
+    recomputePending();
 
+    const url = `${endpoint}?text=${encodeURIComponent(query)}${effectiveExtra ? '&' + effectiveExtra : ''}`;
+    const eventSource = new EventSource(url);
+    const request = {
+      eventSource,
+      generation: generationRef.current,
+      query,
+      source,
+      sourcePending: Boolean(source),
+      active: true,
+      timer: null,
+    };
+    requestsRef.current.add(request);
+    recomputePending();
+    logger().info('search.started', {
+      query,
+      endpoint,
+      filterParams: effectiveExtra || null,
+      sourceRetry: source,
+    });
+
+    const isCurrent = () => request.active
+      && request.generation === generationRef.current
+      && requestsRef.current.has(request);
+
+    const finish = ({ failure = null, promoteUnanswered = false, sourceError = null } = {}) => {
+      if (!isCurrent()) return;
+      // The backend's hard deadline ends the response without a `complete`
+      // frame. Snapshot identity before close clears the pending bookkeeping,
+      // so an ordinary connection/error terminal state retains retryable
+      // sources but never invents one before the stream named it.
+      const unanswered = request.source
+        ? (request.sourcePending ? [request.source] : [])
+        : [...primaryPendingRef.current];
+      if (promoteUnanswered && unanswered.length > 0) {
+        setSourceErrors(prev => {
+          const existing = new Set(prev.map((entry) => entry.source));
+          return [...prev, ...unanswered
+            .filter((name) => !existing.has(name))
+            .map((name) => ({ source: name, error: sourceError ?? failure?.message ?? 'Search stream ended before all sources answered.' }))];
+        });
+      }
+      closeRequest(request);
+      if (request.source) request.sourcePending = false;
+      else primaryPendingRef.current = new Set();
+      if (failure) setError(failure);
+      recomputePending();
+      if (requestsRef.current.size === 0) setIsSearching(false);
+    };
+
+    const timeout = () => {
+      if (!isCurrent()) return;
+      logger().warn('search.timeout', { query: request.query, source: request.source, deadlineMs: streamDeadlineMs });
+      finish({
+        failure: { kind: 'timeout', message: 'Search service did not complete in time. Please retry.' },
+        promoteUnanswered: true,
+        sourceError: 'Search stream timed out.',
+      });
+    };
+    request.timer = setTimeout(timeout, streamDeadlineMs);
+
+    eventSource.onmessage = (event) => {
+      if (!isCurrent()) {
+        eventSource.close();
+        return;
+      }
+
+      try {
+        const data = JSON.parse(event.data);
+
+        if (data.event === 'pending') {
+          if (request.source) request.sourcePending = true;
+          else primaryPendingRef.current = new Set(Array.isArray(data.sources) ? data.sources : []);
+          recomputePending();
+        } else if (data.event === 'results') {
+          const newItems = data.items?.length || 0;
+          setResults(prev => {
+            const merged = mergeSearchResults(prev, data.items ?? [], request.query);
+            resultCountRef.current = merged.length;
+            return merged;
+          });
+          logger().info('search.results-received', { source: data.source, newItems });
+          if (request.source) request.sourcePending = false;
+          else primaryPendingRef.current = new Set(Array.isArray(data.pending) ? data.pending : []);
+          recomputePending();
+        } else if (data.event === 'complete') {
+          logger().info('search.completed', {
+            query: request.query,
+            resultCount: resultCountRef.current,
+            totalMs: startedAtRef.current ? Date.now() - startedAtRef.current : null,
+          });
+          finish();
+        } else if (data.event === 'source_error') {
+          logger().warn('search.source-error', { query: request.query, source: data.source, error: data.error });
+          setSourceErrors(prev => (
+            prev.some((entry) => entry.source === data.source)
+              ? prev
+              : [...prev, { source: data.source, error: data.error }]
+          ));
+          if (request.source) request.sourcePending = false;
+          else if (Array.isArray(data.pending)) primaryPendingRef.current = new Set(data.pending);
+          else primaryPendingRef.current.delete(data.source);
+          recomputePending();
+        } else if (data.event === 'error') {
+          logger().warn('search.error', { query: request.query, error: data.message });
+          finish({
+            failure: { kind: 'stream', message: data.message ?? 'Search adapter reported an error.' },
+            promoteUnanswered: true,
+          });
+        }
+      } catch {
+        // Ignore malformed JSON; the deadline still bounds a malformed stream.
+      }
+    };
+
+    eventSource.onerror = () => {
+      if (!isCurrent()) {
+        eventSource.close();
+        return;
+      }
+      logger().warn('search.connection-error', { endpoint });
+      finish({
+        failure: { kind: 'connection', message: 'Lost connection to the search service.' },
+        promoteUnanswered: true,
+      });
+    };
+  }, [cancelAllRequests, closeRequest, endpoint, recomputePending, streamDeadlineMs]);
+
+  const search = useCallback((query, overrideExtraQuery) => {
     // Short queries: clear and don't search
     if (!query || query.length < 2) {
+      cancelAllRequests('clear-or-short-query');
+      generationRef.current += 1;
+      currentSearchRef.current = null;
+      setError(null);
       setResults([]);
       setPending([]);
       setSourceErrors([]);
@@ -169,85 +352,52 @@ export function useStreamingSearch(endpoint, extraQueryString = '') {
 
     // Use override if provided, otherwise use hook-level extraQueryString
     const effectiveExtra = overrideExtraQuery !== undefined ? overrideExtraQuery : extraQueryString;
+    startRequest(query, effectiveExtra);
+  }, [cancelAllRequests, extraQueryString, startRequest]);
 
-    // Start new search
-    queryRef.current = query;
-    // A completed search that found nothing used to be indistinguishable from
-    // one that found plenty — `search.completed` carried only the query, so a
-    // zero-result query could only be read as the ABSENCE of a preceding
-    // `search.results-received`. Count it directly (2026-08-16).
+  // Intent can change before a consumer's debounce has chosen the next query.
+  // Revoke synchronously rather than leaving the old stream current for that
+  // gap; `search()` will start the replacement later without a second engine.
+  const cancel = useCallback(() => {
+    cancelAllRequests('superseded-intent');
+    generationRef.current += 1;
+    currentSearchRef.current = null;
+    queryRef.current = '';
     resultCountRef.current = 0;
-    startedAtRef.current = Date.now();
-    setIsSearching(true);
-    logger().info('search.started', { query, endpoint, filterParams: effectiveExtra || null });
     setResults([]);
     setPending([]);
+    setError(null);
     setSourceErrors([]);
+    setIsSearching(false);
+  }, [cancelAllRequests]);
 
-    const url = `${endpoint}?text=${encodeURIComponent(query)}${effectiveExtra ? '&' + effectiveExtra : ''}`;
-    const eventSource = new EventSource(url);
-    eventSourceRef.current = eventSource;
+  const retry = useCallback((source) => {
+    const current = currentSearchRef.current;
+    if (!current?.query) return;
+    if (!source) {
+      startRequest(current.query, current.effectiveExtra);
+      return;
+    }
+    // The status control can receive repeated click/keyboard activation while
+    // its first retry is still opening. One source owns at most one sibling
+    // request in a generation; duplicate streams add no information and make
+    // terminal ordering ambiguous.
+    if ([...requestsRef.current].some((request) => (
+      request.active
+      && request.generation === current.generation
+      && request.source === source
+    ))) return;
+    const params = new URLSearchParams(current.effectiveExtra);
+    params.delete('source');
+    params.set('source', source);
+    startRequest(current.query, params.toString(), {
+      preserveResults: true,
+      source,
+      replaceGeneration: false,
+    });
+  }, [startRequest]);
 
-    eventSource.onmessage = (event) => {
-      // Check if this request was cancelled
-      if (eventSourceRef.current !== eventSource) {
-        eventSource.close();
-        return;
-      }
-
-      try {
-        const data = JSON.parse(event.data);
-
-        if (data.event === 'pending') {
-          setPending(data.sources);
-        } else if (data.event === 'results') {
-          const newItems = data.items?.length || 0;
-          // Keep the list relevance-sorted as batches arrive: dedupe, collapse
-          // plex/abs near-duplicates, insert by score (arrival-stable ties).
-          setResults(prev => {
-            const merged = mergeSearchResults(prev, data.items ?? [], queryRef.current);
-            resultCountRef.current = merged.length;
-            return merged;
-          });
-          logger().info('search.results-received', { source: data.source, newItems });
-          setPending(data.pending);
-        } else if (data.event === 'complete') {
-          logger().info('search.completed', {
-            query,
-            resultCount: resultCountRef.current,
-            totalMs: startedAtRef.current ? Date.now() - startedAtRef.current : null,
-          });
-          setPending([]);
-          setIsSearching(false);
-          eventSource.close();
-        } else if (data.event === 'source_error') {
-          logger().warn('search.source-error', { query, source: data.source, error: data.error });
-          setSourceErrors(prev => [...prev, { source: data.source, error: data.error }]);
-          if (Array.isArray(data.pending)) setPending(data.pending);
-        } else if (data.event === 'error') {
-          logger().warn('search.error', { query, error: data.message });
-          setError({ kind: 'stream', message: data.message ?? 'Search adapter reported an error.' });
-          setIsSearching(false);
-          setPending([]);
-          eventSource.close();
-        }
-      } catch {
-        // Ignore malformed JSON
-      }
-    };
-
-    eventSource.onerror = () => {
-      logger().warn('search.connection-error', { endpoint });
-      if (eventSourceRef.current === eventSource) {
-        setError({ kind: 'connection', message: 'Lost connection to the search service.' });
-        setIsSearching(false);
-        setPending([]);
-      }
-      eventSource.close();
-    };
-  }, [endpoint, extraQueryString]);
-
-  return { results, pending, isSearching, error, sourceErrors, search };
+  return { results, pending, isSearching, error, sourceErrors, search, retry, cancel };
 }
 
 export default useStreamingSearch;

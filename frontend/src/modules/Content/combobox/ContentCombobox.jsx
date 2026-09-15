@@ -120,7 +120,7 @@ export function ContentCombobox({
     handleInput, activeScope, clearScope,
     openWithSiblings, drill, goUp, goToCrumb, paginate,
     handleClose, select, commit,
-    resolvedTitle, isSearching, pendingSources, sourceErrors, truncatedAt, fellBackToAll,
+    resolvedTitle, isSearching, pendingSources, sourceErrors, streamError, retrySource, truncatedAt, fellBackToAll,
   } = useContentCombobox({
     value, onChange, searchParams, fallbackSearchParams, scopeKey, scopeLabel,
     appResults, selectContainers, allowFreeform, logApp,
@@ -278,16 +278,10 @@ export function ContentCombobox({
   }, [search, value, onChange, handleClose, log]);
 
   // ── Stream status retry (Task 10) ──
-  // No dedicated per-source retry transport exists — the streaming search
-  // hook only exposes a whole-query dispatch (handleInput, which feeds
-  // debouncedSearch). Re-running the currently-typed text is the same
-  // recovery useContentCombobox already performs automatically once after a
-  // settled-empty result (search.retry_after_source_error); this just lets
-  // the user trigger it manually without editing the box.
   const handleStreamRetry = useCallback((source) => {
     log.info('stream_status.retry', { source, text: search });
-    handleInput(search ?? '');
-  }, [handleInput, search, log]);
+    retrySource(source);
+  }, [retrySource, search, log]);
 
   // ── Option submit (mouse path; keyboard is fully component-owned) ──
   const handleOptionSubmit = (val) => {
@@ -633,7 +627,11 @@ export function ContentCombobox({
   }
 
   const displayValue = search !== null ? search : (value || '');
-  const showFreeform = allowFreeform && !!search && search !== value && !isBrowse && search.length >= 2;
+  // A named source error means this query has not completed successfully,
+  // even when its transport emitted `complete` and no global error remains.
+  // Do not turn that recoverable state into an empty-success/freeform claim.
+  const hasUnresolvedSourceFailures = sourceErrors.length > 0;
+  const showFreeform = allowFreeform && !!search && search !== value && !isBrowse && !streamError && !hasUnresolvedSourceFailures && search.length >= 2;
 
   return (
     <div onKeyDownCapture={handleMoreMenuEscapeCapture}>
@@ -799,6 +797,15 @@ export function ContentCombobox({
           <StreamStatusLine pending={pendingSources} sourceErrors={sourceErrors} onRetry={handleStreamRetry} />
         )}
 
+        {!isBrowse && streamError && (
+          <Group gap="xs" p="xs" data-testid="stream-global-error" aria-live="polite">
+            <Text size="xs" c="red">{streamError.message}</Text>
+            <button type="button" className="stream-status-retry-btn" data-testid="stream-global-retry" onClick={() => retrySource()}>
+              Retry
+            </button>
+          </Group>
+        )}
+
         {/* D5 widening notice (Task 11 fix round): a search scoped to a narrow
             library (activeScope's parent — e.g. Music›Ambient) that settled
             empty was silently re-run catalog-wide by the hook. Say so, above
@@ -807,7 +814,7 @@ export function ContentCombobox({
             anymore, so a message gated on the empty branch would never be
             seen. Hidden while the widened search is still in flight
             (isSearching) so it doesn't flash "0 results" before they arrive. */}
-        {!isBrowse && fellBackToAll && !isSearching && (
+        {!isBrowse && fellBackToAll && !isSearching && !streamError && !hasUnresolvedSourceFailures && (
           <Box p="xs" data-testid="combobox-fallback-notice" style={{ borderBottom: '1px solid var(--mantine-color-dark-4)' }}>
             <Text size="xs" c="dimmed">
               {items.length > 0
@@ -836,7 +843,7 @@ export function ContentCombobox({
                   <Text size="sm" c="dimmed">{browseLoading ? 'Loading...' : 'Searching...'}</Text>
                 </Group>
               </Combobox.Empty>
-            ) : items.length === 0 ? (
+            ) : items.length === 0 && !streamError && !hasUnresolvedSourceFailures ? (
               <Combobox.Empty>
                 {isBrowse
                   ? 'No items in this container'
@@ -850,9 +857,9 @@ export function ContentCombobox({
                           ? 'No results — select “Use as raw value” or press Enter'
                           : 'No results')}
               </Combobox.Empty>
-            ) : (
+            ) : items.length > 0 ? (
               items.map(renderOption)
-            )}
+            ) : null}
             {showFreeform && (
               <Combobox.Option value="__freeform__" key="__freeform__" data-testid="freeform-commit-option">
                 <Group gap="xs"><IconPencil size={14} /><Text size="sm">Use “{search}” as raw value</Text></Group>

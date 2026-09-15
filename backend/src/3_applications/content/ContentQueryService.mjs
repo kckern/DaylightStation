@@ -315,7 +315,12 @@ export class ContentQueryService extends IContentQueryPort {
         yield { event: 'source_error', source, error: error.message, pending: [...pending] };
         continue;
       }
+      // A successful source must always advance the client protocol, even
+      // when it had no visible matches. Otherwise the client cannot
+      // distinguish this answered source from a genuinely hanging sibling at
+      // its bounded deadline.
       if (skipped || !result?.items?.length) {
+        yield { event: 'results', source, items: [], pending: [...pending] };
         continue;
       }
 
@@ -342,8 +347,10 @@ export class ContentQueryService extends IContentQueryPort {
         return true;
       });
 
-      // Skip if all items filtered out
+      // Capability/media filters can turn a successful adapter response into
+      // an answered-empty source just as surely as an empty adapter response.
       if (items.length === 0) {
+        yield { event: 'results', source, items: [], pending: [...pending] };
         continue;
       }
 
@@ -362,9 +369,10 @@ export class ContentQueryService extends IContentQueryPort {
         .filter(item => !query.text || item.score > 0)
         .sort((a, b) => b.score - a.score);
 
-      // A batch can empty out entirely once non-matches are dropped; say
-      // nothing rather than yielding an empty results event.
+      // Relevance filtering is also a successful answer; preserve its source
+      // identity so a later timeout only names sources still pending.
       if (items.length === 0) {
+        yield { event: 'results', source, items: [], pending: [...pending] };
         continue;
       }
 
