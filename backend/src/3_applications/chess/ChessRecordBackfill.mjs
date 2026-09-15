@@ -141,9 +141,36 @@ export function matchScorecards(cards, archive) {
         && Math.abs(Number(game?.duration_ms) - Number(record.duration_ms)) <= 50) || null;
       if (hit) consumed.add(hit);
     }
-    (hit ? matched : unmatched).push(card);
+    // Each matched card carries the archive record it matched, as `archived`
+    // — `withScorecardLevels` below uses that to recover a level a scorecard
+    // is about to take to `_deleteme/` with it.
+    if (hit) matched.push({ ...card, archived: hit });
+    else unmatched.push(card);
   }
   return { matched, unmatched };
+}
+
+/**
+ * Recover a level for an archive record that has none, from the scorecard
+ * that duplicates it.
+ *
+ * A few games were archived before a record carried `level` (and, with it,
+ * no `opponent` block either), so `recordLevel` returns null and a replay
+ * files the game at the current level, uncounted, losing a real, already
+ * counted win. The scorecard for that same game, about to be retired, is the
+ * only place the level survives. Pairing reuses `matchScorecards`' own rule
+ * rather than a second one, and this never rewrites anything on disk — only
+ * the in-memory record used for the replay.
+ */
+export function withScorecardLevels(records, cards) {
+  const { matched } = matchScorecards(cards, records);
+  const levelByRecord = new Map();
+  for (const { record: cardRecord, archived } of matched) {
+    if (recordLevel(archived) !== null || levelByRecord.has(archived)) continue;
+    const level = recordLevel(cardRecord);
+    if (level !== null) levelByRecord.set(archived, level);
+  }
+  return records.map((record) => (levelByRecord.has(record) ? { ...record, level: levelByRecord.get(record) } : record));
 }
 
 /** One line's worth of a ladder file, for a before-and-after report. */
@@ -166,5 +193,5 @@ export function summarizeRivalries(memory) {
 
 export default {
   isFinishedGame, recordLevel, chronological, withOpponentIds, replayLadder, rebuildRivalries,
-  planUserBackfill, matchScorecards, summarizeLadder, summarizeRivalries,
+  planUserBackfill, matchScorecards, withScorecardLevels, summarizeLadder, summarizeRivalries,
 };

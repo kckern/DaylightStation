@@ -224,9 +224,12 @@ Guests are archived too, with a null player: the history is about what happened 
 in the pre-reorganisation directory (`gaming/log/pianochess/`) into the current one, renaming the
 oldest `user-timestamp.yml` files to the current scheme so filename filters find them. It retires
 per-player scorecards (`apps/chess/games/`, no longer written) once the archive is shown to hold
-each game; one it cannot match stays where it is and is named in the report. Then it replays every
-finished game through the live ladder and rivalry rules and rewrites each player's `ladder.yml` and
-`rivalries.yml`.
+each game; one it cannot match stays where it is and is named in the report. Before replaying,
+it recovers a level for any archived game that has none — and, with it, no `opponent` block either
+— from the scorecard about to be retired for that same game, when that scorecard still carries one;
+the archived file itself is never rewritten, only the in-memory record used for the replay, and the
+report says how many levels were recovered this way. Then it replays every finished game through the
+live ladder and rivalry rules and rewrites each player's `ladder.yml` and `rivalries.yml`.
 
 The replay never takes a rung away. A game played at a level proves that level was unlocked, and
 the stored level is never lowered. A player with finished games but no `apps/chess/` directory is
@@ -234,9 +237,11 @@ reported and left alone. But the stored level is not the only counted number a r
 stored `ladder.yml` or `rivalries.yml` can hold results the archive does not — most often a rivalry
 win nothing in the archive backs up. Rather than write over that quietly, the CLI computes the whole
 plan first and refuses `--write` outright, before moving a single file, if any player's counted
-ladder wins would fall or any rival's win, loss or draw count would fall or disappear. The report
-names every such player; `--allow-decrease` writes anyway. A dry run only ever reports a decrease,
-never refuses.
+ladder wins would fall or any rival's win, loss or draw count would fall or disappear — except a
+falling ladder-win count is not a decrease when the replay also promotes the player past their
+stored level: the counted-wins tally legitimately resets for the new rung. The report names every
+player with a real decrease; `--allow-decrease` writes anyway. A dry run only ever reports a
+decrease, never refuses.
 
 It is a dry run unless given `--write`, and nothing is deleted: moved files land in
 `data/_deleteme/<date>-chess-record-consolidation/`, including a copy of each player's `ladder.yml`
