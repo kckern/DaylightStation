@@ -98,7 +98,7 @@ export class YamlVehicleHistoryDatastore extends IVehicleHistoryRepository {
     try {
       // Containment matters: `tripRef` originates in a YAML field and can reach
       // this method from an HTTP route, so it is untrusted path input.
-      return loadContainedYaml(tripsDir, tripRef) || null;
+      return loadContainedYaml(tripsDir, tripsRelative(tripRef)) || null;
     } catch (error) {
       this.#logger.warn?.('automotive.history.trip_read_failed', {
         vehicleId, tripRef, error: error.message,
@@ -353,3 +353,12 @@ function toDateOrNull(value) {
 
 const numberOrNull = (v) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Number(v) : null);
 const sanitize = (s) => String(s).replace(/[^a-zA-Z0-9_-]/g, '_');
+
+/**
+ * Day-log `file` pointers exist in two spellings. The migration wrote them
+ * relative to `trips/` (`2026-08/x.yml`); the relay's trip store writes them
+ * relative to the vehicle directory (`trips/2026-09/x.yml`). Reading the second
+ * form against `trips/` looked for `trips/trips/…` and returned null, so from
+ * 2026-08-14 on every trip lost its fixes, fuel readings and A6 anchors.
+ */
+const tripsRelative = (ref) => String(ref).replace(/^trips\//, '');

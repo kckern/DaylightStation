@@ -50,6 +50,9 @@
 #ifndef STANDBY_ENGINE_OFF_V
 #define STANDBY_ENGINE_OFF_V     13.0f  // below this = not charging = engine off
 #endif
+#ifndef STANDBY_ENGINE_RESUME_V
+#define STANDBY_ENGINE_RESUME_V  13.3f  // once timing engine-off, only this cancels it
+#endif
 #ifndef STANDBY_WAKE_SLEEP_V
 #define STANDBY_WAKE_SLEEP_V     13.2f  // parked-wake threshold after grace sampling
 #endif
@@ -1775,7 +1778,8 @@ void loop() {
   if (inhibited && g_engineOffSinceMs) g_engineOffSinceMs = millis();  // don't bank time while held
   if (!g_otaActive && !inhibited) {
     if (g_batteryV > 0) {
-      if (g_batteryV < STANDBY_ENGINE_OFF_V) {
+      if (obdrelay::engineOffVote(g_batteryV, g_engineOffSinceMs != 0,
+                                  STANDBY_ENGINE_OFF_V, STANDBY_ENGINE_RESUME_V)) {
         if (!g_engineOffSinceMs) g_engineOffSinceMs = millis();
         else if (millis() - g_engineOffSinceMs > (uint32_t)STANDBY_CONFIRM_S * 1000) {
           enterStandby("engine off");

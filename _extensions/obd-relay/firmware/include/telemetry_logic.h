@@ -38,6 +38,18 @@ inline bool shouldFastSleep(float maxVoltage, bool motion, bool ecuAnswered,
   return maxVoltage > 0 && maxVoltage <= wakeSleepVoltage && !motion && !ecuAnswered;
 }
 
+// Engine-off confirmation vote, with hysteresis. True = start or keep the
+// engine-off timer; false = cancel it. ATRV answers in 0.1 V steps, and a
+// battery just after a drive rests right at the 13.0 V threshold — a single
+// threshold let every 13.0 reading cancel the timer, keeping the device awake
+// a median 4.4 min (p90 14 min, max 30 min) after parking. Once the timer runs,
+// only a charging-level reading cancels it.
+inline bool engineOffVote(float volts, bool timerRunning, float offBelowV,
+                          float resumeAtV) {
+  if (volts < offBelowV) return true;
+  return timerRunning && volts < resumeAtV;
+}
+
 struct LinkFailureTracker {
   uint8_t consecutiveFullFailures = 0;
 
