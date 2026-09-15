@@ -33,3 +33,15 @@ export function segmentPoints([x1, y1, x2, y2]) {
     [x2 - ux * taper - px, y2 - uy * taper - py], [x1 + ux * taper - px, y1 + uy * taper - py],
   ].map((point) => point.join(',')).join(' ');
 }
+
+// Segments that touch: an end of one within a joint's reach of an end of the
+// other. The reach spans the middle joint, so pairs split by it (b/c, e/f, l/m)
+// count as touching too. Letter segments that touch never share a color.
+const JOINT_REACH = 13;
+const endsOf = ([x1, y1, x2, y2]) => [[x1, y1], [x2, y2]];
+export const SEGMENT_NEIGHBORS = Object.freeze(Object.fromEntries(segmentNames.map(name => [
+  name,
+  Object.freeze(segmentNames.filter(other => other !== name && endsOf(SEGMENTS[name]).some(([x, y]) => (
+    endsOf(SEGMENTS[other]).some(([ox, oy]) => Math.hypot(x - ox, y - oy) <= JOINT_REACH)
+  )))),
+])));

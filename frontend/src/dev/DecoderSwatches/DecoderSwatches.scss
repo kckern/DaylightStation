@@ -37,6 +37,8 @@
   border-radius: 0.5rem;
   background: var(--swatch-color);
   box-shadow: 0 0 0.75rem var(--swatch-color);
+  // Jet black sits on a near-black stage; the outline keeps its bar findable.
+  outline: 1px solid var(--gp-surface-border);
 }
 
 .decoder-swatches__name {

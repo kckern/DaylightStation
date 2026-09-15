@@ -24,6 +24,8 @@ export const MASK_SEGMENT_COLORS = Object.freeze([
   { name: 'teal', token: '--gp-segment-mask-5' },
   { name: 'forest', token: '--gp-segment-mask-6' },
   { name: 'blue', token: '--gp-segment-mask-7' },
+  // Jet black: a dark member so the greens and blues are not the only masks.
+  { name: 'jet black', token: '--gp-segment-mask-8' },
 ]);
 
 export const segmentColorValue = ({ token }) => `var(${token})`;

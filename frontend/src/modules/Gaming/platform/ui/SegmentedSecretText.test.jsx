@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import SegmentedSecretText, { balanceSecretLines } from './SegmentedSecretText.jsx';
-import { activeSegmentsFor, SEGMENTS } from './segmentedSecretGeometry.js';
+import { activeSegmentsFor, SEGMENTS, SEGMENT_NEIGHBORS } from './segmentedSecretGeometry.js';
 import { MASK_SEGMENT_COLORS, SIGNAL_SEGMENT_COLORS, segmentColorValue } from './segmentedSecretPalette.js';
 import { FLICKER_TICK_MS } from './segmentFlicker.js';
 import { SECRET_TEXT_MOTION_MS, SECRET_TEXT_MOTION_X, SECRET_TEXT_MOTION_Y } from './segmentedSecretMotion.js';
@@ -156,5 +156,46 @@ describe('SegmentedSecretText position jump', () => {
     vi.advanceTimersByTime(SECRET_TEXT_MOTION_MS * 5);
     expect(card.style.transform).toBe('');
     expect(card).toHaveAttribute('data-motion-index', '0');
+  });
+});
+
+describe('touching letter segments', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+  const clashes = container => [...container.querySelectorAll('.segmented-secret-text__glyph')].flatMap((glyph) => {
+    const signal = [...glyph.querySelectorAll('polygon.is-signal')];
+    return signal.flatMap(polygon => signal
+      .filter(other => other !== polygon
+        && SEGMENT_NEIGHBORS[polygon.dataset.segment].includes(other.dataset.segment)
+        && colorOf(other) === colorOf(polygon))
+      .map(other => `${polygon.dataset.segment}=${other.dataset.segment}`));
+  });
+
+  it('knows which segments touch, both ways', () => {
+    expect(SEGMENT_NEIGHBORS.a1).toEqual(expect.arrayContaining(['a2', 'f']));
+    expect(SEGMENT_NEIGHBORS.g1).toEqual(expect.arrayContaining(['g2', 'f', 'e']));
+    expect(SEGMENT_NEIGHBORS.b).toContain('c');
+    expect(SEGMENT_NEIGHBORS.a1).not.toContain('d1');
+    for (const [name, neighbors] of Object.entries(SEGMENT_NEIGHBORS)) {
+      for (const other of neighbors) expect(SEGMENT_NEIGHBORS[other]).toContain(name);
+    }
+  });
+
+  it('never shows two touching letter segments in the same color, on first draw or after any change', () => {
+    vi.useFakeTimers();
+    const { container, rerender } = render(<SegmentedSecretText text="B8 SPHINX OF BLACK QUARTZ JUDGE MY VOW" />);
+    expect(clashes(container)).toEqual([]);
+    for (let tick = 0; tick < 30; tick += 1) {
+      vi.advanceTimersByTime(FLICKER_TICK_MS);
+      expect(clashes(container)).toEqual([]);
+    }
+    rerender(<SegmentedSecretText text="WAXING MOON HEIGHTS 2468" />);
+    expect(clashes(container)).toEqual([]);
+    for (let tick = 0; tick < 30; tick += 1) {
+      vi.advanceTimersByTime(FLICKER_TICK_MS);
+      expect(clashes(container)).toEqual([]);
+    }
   });
 });
