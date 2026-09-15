@@ -1,7 +1,7 @@
 // Real ContentCombobox + shared SSE hook contract for bounded search failures.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { ContentCombobox } from './ContentCombobox.jsx';
 
@@ -55,6 +55,20 @@ async function typeSearch(input, text) {
   await waitFor(() => expect(MockEventSource.instances).toHaveLength(1));
 }
 
+// Include the browser focus move omitted by fireEvent.click: input blur can
+// remove Retry before its click handler ever runs.
+function pointerRetry(button) {
+  act(() => {
+    const down = createEvent.mouseDown(button);
+    fireEvent(button, down);
+    if (!down.defaultPrevented) button.focus();
+  });
+  if (button.isConnected) {
+    fireEvent.mouseUp(button);
+    fireEvent.click(button);
+  }
+}
+
 describe('ContentCombobox streaming-search lifecycle', () => {
   beforeEach(() => {
     MockEventSource.instances = [];
@@ -80,8 +94,10 @@ describe('ContentCombobox streaming-search lifecycle', () => {
 
     expect(screen.getByText('Arrival')).toBeInTheDocument();
     expect(screen.queryByText('No results')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('stream-status-retry-abs'));
+    pointerRetry(screen.getByTestId('stream-status-retry-abs'));
 
+    expect(input).toHaveValue('arrival');
+    expect(screen.getByRole('listbox')).toBeVisible();
     await waitFor(() => expect(MockEventSource.instances).toHaveLength(2));
     expect(MockEventSource.instances[1].url).toContain('text=arrival');
     expect(MockEventSource.instances[1].url).toContain('capability=listable');
@@ -102,7 +118,9 @@ describe('ContentCombobox streaming-search lifecycle', () => {
     const retry = screen.getByTestId('stream-global-retry');
     expect(retry).toHaveAccessibleName('Retry');
     expect(retry).toHaveClass('stream-status-retry-btn');
-    fireEvent.click(retry);
+    pointerRetry(retry);
+    expect(input).toHaveValue('arrival');
+    expect(screen.getByRole('listbox')).toBeVisible();
     await waitFor(() => expect(MockEventSource.instances).toHaveLength(2));
     expect(MockEventSource.instances[1].url).toContain('capability=listable');
     expect(MockEventSource.instances[1].url).toContain('scope=kids');

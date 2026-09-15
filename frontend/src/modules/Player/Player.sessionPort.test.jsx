@@ -33,6 +33,7 @@ import { createPlayerSessionBridge } from '../../screen-framework/publishers/pla
 import { createPlayerSessionRegistry } from '../../screen-framework/publishers/playerSessionRegistry.js';
 import { createRegistrySessionSource } from '../../screen-framework/publishers/registrySessionSource.js';
 import { __resetPlayerQueueOpRegistryForTests, getPlayerQueueOpRegistry } from './lib/queueOpRegistry.js';
+import { DaylightAPI } from '../../lib/api.mjs';
 
 afterEach(() => {
   cleanup();
@@ -42,6 +43,502 @@ afterEach(() => {
 });
 
 describe('Player session port', () => {
+  const adoptionSnapshot = ({
+    items, executionOrder, repeat = 'off', playbackRate = 1, shader = null,
+  }) => ({
+    sessionId: 'adoption-session', state: 'paused',
+    currentItem: { contentId: items[0].contentId, format: items[0].format ?? 'video', title: items[0].title },
+    position: 0,
+    queue: { items, currentIndex: 0, upNextCount: items.filter((item) => item.priority === 'upNext').length, executionOrder },
+    config: { shuffle: false, repeat, shader, volume: 50, playbackRate },
+    meta: { ownerId: 'source', updatedAt: '2026-09-14T00:00:00.000Z' },
+  });
+
+  it('adopts an exact [A,B,A] owner capture into the existing destination Player', async () => {
+    const sourceRef = createRef();
+    const destinationRef = createRef();
+    const view = render(<>
+      <Player ref={destinationRef} play={[]} />
+      <Player ref={sourceRef} play={[
+        { contentId: 'plex:a', title: 'A', format: 'video' },
+        { contentId: 'plex:b', title: 'B', format: 'video' },
+        { contentId: 'plex:a', title: 'A again', format: 'video' },
+      ]} shuffle />
+    </>);
+    await waitFor(() => expect(sourceRef.current?.getQueueSnapshot()?.items).toHaveLength(3));
+    await waitFor(() => expect(destinationRef.current).toBeTruthy());
+
+    act(() => {
+      sourceRef.current.advance();
+      sourceRef.current.advance();
+      sourceRef.current.setVolume(0.73);
+      sourceRef.current.setPlaybackRate(1.25);
+    });
+    await waitFor(() => expect(sourceRef.current.getQueueSnapshot().currentIndex).toBe(2));
+    await act(async () => {
+      await getPlayerQueueOpRegistry().dispatch({ op: 'play-next', contentId: 'plex:next', shader: 'night' });
+    });
+    await waitFor(() => expect(sourceRef.current.getQueueSnapshot().items).toHaveLength(4));
+
+    const sourceRegistry = createPlayerSessionRegistry();
+    const destinationRegistry = createPlayerSessionRegistry();
+    const sourceBridge = createPlayerSessionBridge({ getPlayerHandle: () => sourceRef.current, registry: sourceRegistry, setIntervalFn: () => 1, clearIntervalFn: () => {} });
+    const destinationBridge = createPlayerSessionBridge({ getPlayerHandle: () => destinationRef.current, registry: destinationRegistry, setIntervalFn: () => 1, clearIntervalFn: () => {} });
+    sourceBridge.start();
+    destinationBridge.start();
+    const source = createRegistrySessionSource({ registry: sourceRegistry, ownerId: 'source-screen', sessionId: 'source-session' });
+    const destination = createRegistrySessionSource({ registry: destinationRegistry, ownerId: 'destination-screen', sessionId: 'destination-session' });
+    const detached = source.capture();
+    const sourceOwnerId = detached.identity.ownerInstanceId;
+    detached.snapshot.config.repeat = 'one';
+    const before = destination.capture().identity;
+
+    const malformed = structuredClone(detached.snapshot);
+    malformed.queue.executionOrder = ['missing-entry'];
+    expect(destination.adopt(malformed, { autoplay: false, transferId: 'transfer-player-bad' }))
+      .toMatchObject({ ok: false, code: 'INVALID_SNAPSHOT' });
+    expect(destinationRef.current.getQueueSnapshot().items).toHaveLength(0);
+    expect(destination.capture().identity).toEqual(before);
+    const wrongCurrent = structuredClone(detached.snapshot);
+    wrongCurrent.currentItem = { contentId: 'plex:wrong', format: 'video' };
+    expect(destination.adopt(wrongCurrent, { autoplay: false })).toMatchObject({ ok: false, code: 'INVALID_SNAPSHOT' });
+    const missingSession = structuredClone(detached.snapshot);
+    delete missingSession.meta.playbackOwner;
+    delete missingSession.sessionId;
+    expect(destination.adopt(missingSession, { autoplay: false })).toMatchObject({ ok: false, code: 'INVALID_SNAPSHOT' });
+
+    expect(destination.adopt(detached.snapshot, { autoplay: false, transferId: 'transfer-player-1' })).toEqual({ ok: true });
+    await waitFor(() => expect(destinationRef.current.getQueueSnapshot().items).toHaveLength(4));
+    const adopted = destination.capture();
+
+    expect(adopted.snapshot.queue).toEqual(detached.snapshot.queue);
+    expect(adopted.snapshot.config).toEqual(detached.snapshot.config);
+    expect(adopted.snapshot.queue.items.map((item) => item.contentId)).toEqual(['plex:a', 'plex:b', 'plex:a', 'plex:next']);
+    expect(adopted.snapshot.queue.currentIndex).toBe(2);
+    expect(adopted.snapshot.queue.executionOrder).toEqual(detached.snapshot.queue.executionOrder);
+    expect(adopted.identity.ownerInstanceId).toBe(destinationRef.current.getPlayerInstanceId());
+    expect(adopted.identity.playbackRevision).toBeGreaterThan(before.playbackRevision);
+    expect(adopted.identity.queueRevision).toBeGreaterThan(before.queueRevision);
+    expect(adopted.capabilities.handoffV1).toBe(false);
+    expect(source.capture().identity.ownerInstanceId).toBe(sourceOwnerId);
+    expect(adopted.identity.ownerInstanceId).toBe(before.ownerInstanceId);
+    expect(view.getAllByTestId('single-player')).toHaveLength(2);
+    sourceBridge.stop();
+    destinationBridge.stop();
+  });
+
+  it('revokes an in-flight queue initialization before committing adoption', async () => {
+    let resolvePending;
+    DaylightAPI.mockImplementationOnce(() => new Promise((resolve) => { resolvePending = resolve; }));
+    const ref = createRef();
+    render(<Player ref={ref} play={{ contentId: 'plex:pending-review' }} />);
+    await waitFor(() => expect(resolvePending).toEqual(expect.any(Function)));
+    const adopted = adoptionSnapshot({
+      items: [
+        { queueItemId: 'adopt-a', contentId: 'plex:adopt-a', title: 'Adopt A', format: 'video', priority: 'queue' },
+        { queueItemId: 'adopt-b', contentId: 'plex:adopt-b', title: 'Adopt B', format: 'video', priority: 'queue' },
+      ],
+      executionOrder: ['adopt-a', 'adopt-b'],
+    });
+    expect(ref.current.adoptSessionSnapshot(adopted, { autoplay: false })).toEqual({ ok: true });
+    await waitFor(() => expect(ref.current.getQueueSnapshot().items.map((item) => item.contentId))
+      .toEqual(['plex:adopt-a', 'plex:adopt-b']));
+
+    resolvePending({ items: [{ contentId: 'plex:old-result', title: 'Old', format: 'video' }], audio: null });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(ref.current.getQueueSnapshot().items.map((item) => item.contentId))
+      .toEqual(['plex:adopt-a', 'plex:adopt-b']);
+  });
+
+  it.each(['empty', 'error'])('revokes stale %s queue initialization side effects after adoption', async (mode) => {
+    let settlePending;
+    DaylightAPI.mockImplementationOnce(() => new Promise((resolve, reject) => {
+      settlePending = mode === 'empty'
+        ? () => resolve({ items: [], audio: null })
+        : () => reject(new Error('stale queue failure'));
+    }));
+    const clear = vi.fn();
+    const onError = vi.fn();
+    const ref = createRef();
+    render(<Player ref={ref} play={{ contentId: `plex:pending-${mode}` }} clear={clear} onError={onError} />);
+    await waitFor(() => expect(settlePending).toEqual(expect.any(Function)));
+    const adopted = adoptionSnapshot({
+      items: [{ queueItemId: 'kept', contentId: 'plex:kept', format: 'video', priority: 'queue' }],
+      executionOrder: ['kept'],
+    });
+    expect(ref.current.adoptSessionSnapshot(adopted, { autoplay: false })).toEqual({ ok: true });
+    await waitFor(() => expect(ref.current.getQueueSnapshot().items[0]?.queueItemId).toBe('kept'));
+
+    settlePending();
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(ref.current.getQueueSnapshot().items[0]?.queueItemId).toBe('kept');
+    expect(clear).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('preserves explicit execution order when a later visit retains upNext priority', async () => {
+    const ref = createRef();
+    render(<Player ref={ref} play={[]} />);
+    await waitFor(() => expect(ref.current).toBeTruthy());
+    const adopted = adoptionSnapshot({
+      items: [
+        { queueItemId: 'a', contentId: 'plex:a', format: 'video', priority: 'queue' },
+        { queueItemId: 'b', contentId: 'plex:b', format: 'video', priority: 'queue' },
+        { queueItemId: 'c', contentId: 'plex:c', format: 'video', priority: 'upNext' },
+      ],
+      executionOrder: ['a', 'b', 'c'],
+    });
+    expect(ref.current.adoptSessionSnapshot(adopted, { autoplay: false })).toEqual({ ok: true });
+    await waitFor(() => expect(ref.current.getQueueSnapshot().executionOrder).toEqual(['a', 'b', 'c']));
+    act(() => ref.current.advance());
+    await waitFor(() => expect(ref.current.getQueueSnapshot().items[ref.current.getQueueSnapshot().currentIndex].queueItemId).toBe('b'));
+  });
+
+  it('executes repeated adopted visits through the real legacy queue owner', async () => {
+    const ref = createRef();
+    render(<Player ref={ref} play={[]} />);
+    await waitFor(() => expect(ref.current).toBeTruthy());
+    const adopted = adoptionSnapshot({
+      items: [
+        { queueItemId: 'a', contentId: 'plex:a', format: 'video', priority: 'queue' },
+        { queueItemId: 'b', contentId: 'plex:b', format: 'video', priority: 'queue' },
+        { queueItemId: 'c', contentId: 'plex:c', format: 'video', priority: 'queue' },
+      ],
+      executionOrder: ['a', 'c', 'a', 'b'],
+    });
+    expect(ref.current.adoptSessionSnapshot(adopted, { autoplay: false })).toEqual({ ok: true });
+    for (const expected of ['c', 'a', 'b']) {
+      act(() => ref.current.advance());
+      await waitFor(() => expect(
+        ref.current.getQueueSnapshot().items[ref.current.getQueueSnapshot().currentIndex].queueItemId,
+      ).toBe(expected));
+    }
+  });
+
+  it('applies adopted rate and shader through the production Player renderer props', async () => {
+    const ref = createRef();
+    render(<Player ref={ref} play={[]} />);
+    await waitFor(() => expect(ref.current).toBeTruthy());
+    const adopted = adoptionSnapshot({
+      items: [{ queueItemId: 'rate-config-a', contentId: 'plex:rate-config', format: 'video', priority: 'queue' }],
+      executionOrder: ['rate-config-a'], playbackRate: 1.25, shader: 'night',
+    });
+    expect(ref.current.adoptSessionSnapshot(adopted, { autoplay: false })).toEqual({ ok: true });
+    await waitFor(() => expect(latestSinglePlayerProps).toMatchObject({
+      playbackRate: 1.25, shader: 'night', volume: 0.5,
+    }));
+    expect(ref.current.getPlaybackRate()).toBe(1.25);
+    expect(ref.current.getShader()).toBe('night');
+  });
+
+  it('repeats adopted repeat-one on natural completion but manual Skip still advances', async () => {
+    const node = document.createElement('video');
+    Object.defineProperties(node, {
+      currentTime: { configurable: true, writable: true, value: 18 },
+      play: { configurable: true, value: vi.fn(() => Promise.resolve()) },
+    });
+    mockMediaElement = node;
+    const ref = createRef();
+    render(<Player ref={ref} play={[]} />);
+    await waitFor(() => expect(ref.current).toBeTruthy());
+    const adopted = adoptionSnapshot({
+      items: [
+        { queueItemId: 'a', contentId: 'plex:a', format: 'video', priority: 'queue' },
+        { queueItemId: 'b', contentId: 'plex:b', format: 'video', priority: 'queue' },
+      ],
+      executionOrder: ['a', 'b'], repeat: 'one',
+    });
+    act(() => ref.current.adoptSessionSnapshot(adopted, { autoplay: false }));
+    await waitFor(() => expect(ref.current.getQueueConfig()).toMatchObject({ repeat: 'one' }));
+    await waitFor(() => expect(ref.current.getQueueSnapshot().executionOrder).toEqual(['a', 'b']));
+    act(() => latestSinglePlayerProps.advance());
+    expect(ref.current.getQueueSnapshot().items[ref.current.getQueueSnapshot().currentIndex].queueItemId).toBe('a');
+    expect(node.currentTime).toBe(0);
+    expect(node.play).toHaveBeenCalledTimes(1);
+    act(() => latestSinglePlayerProps.advance());
+    expect(node.play).toHaveBeenCalledTimes(1);
+    act(() => latestSinglePlayerProps.onPlaybackMetrics({ seconds: 0, isPaused: false }));
+    act(() => latestSinglePlayerProps.onPlaybackMetrics({ seconds: 1, isPaused: false }));
+    act(() => latestSinglePlayerProps.advance());
+    expect(ref.current.getQueueSnapshot().items[ref.current.getQueueSnapshot().currentIndex].queueItemId).toBe('a');
+    expect(node.play).toHaveBeenCalledTimes(2);
+    act(() => latestSinglePlayerProps.advance());
+    expect(node.play).toHaveBeenCalledTimes(2);
+    act(() => ref.current.advance());
+    await waitFor(() => expect(ref.current.getQueueSnapshot().items[ref.current.getQueueSnapshot().currentIndex].queueItemId).toBe('b'));
+  });
+
+  it('loops a single adopted repeat-all entry across laps and suppresses duplicate terminals', async () => {
+    // Break caught: the legacy queue owner clears a one-entry repeat-all plan,
+    // and merely retaining it would still leave the ended decoder at its end.
+    const node = document.createElement('video');
+    const play = vi.fn()
+      .mockRejectedValueOnce(new Error('autoplay rejected'))
+      .mockResolvedValue(undefined);
+    Object.defineProperties(node, {
+      currentTime: { configurable: true, writable: true, value: 18 },
+      play: { configurable: true, value: play },
+    });
+    mockMediaElement = node;
+    const clear = vi.fn();
+    const ref = createRef();
+    render(<Player ref={ref} play={[]} clear={clear} />);
+    await waitFor(() => expect(ref.current).toBeTruthy());
+    act(() => ref.current.adoptSessionSnapshot(adoptionSnapshot({
+      items: [{ queueItemId: 'only', contentId: 'plex:only', format: 'video', priority: 'queue' }],
+      executionOrder: ['only'], repeat: 'all',
+    }), { autoplay: false }));
+    await waitFor(() => expect(ref.current.getQueueConfig()).toMatchObject({ repeat: 'all' }));
+    await waitFor(() => expect(ref.current.getQueueSnapshot().executionOrder).toEqual(['only']));
+    const seek = vi.fn(() => {
+      node.currentTime = 0;
+      return Promise.reject(new Error('seek acknowledgement rejected'));
+    });
+    act(() => latestSinglePlayerProps.onController({
+      transport: { getMediaEl: () => node, seek, play },
+    }));
+    act(() => latestSinglePlayerProps.onMediaRef(node, { contentId: 'plex:only' }));
+    const registry = createPlayerSessionRegistry();
+    const bridge = createPlayerSessionBridge({
+      getPlayerHandle: () => ref.current,
+      registry,
+      setIntervalFn: () => 1,
+      clearIntervalFn: () => {},
+    });
+    bridge.start();
+    const source = createRegistrySessionSource({ registry, ownerId: 'screen', sessionId: 'repeat-all-native' });
+    expect(source.getNativeObservation().identity).not.toBeNull();
+
+    await act(async () => {
+      latestSinglePlayerProps.advance();
+      await Promise.resolve();
+    });
+    expect(ref.current.getQueueSnapshot()).toMatchObject({ currentIndex: 0, executionOrder: ['only'] });
+    expect(clear).not.toHaveBeenCalled();
+    expect(node.currentTime).toBe(0);
+    expect(seek).toHaveBeenCalledTimes(1);
+    expect(play).toHaveBeenCalledTimes(1);
+    // A same-node restart is only requested here. Without an immutable
+    // renderer operation token it cannot become proof for the new visit.
+    expect(source.getNativeObservation()).toMatchObject({
+      identity: null,
+      playingObserved: false,
+      advancedObserved: false,
+    });
+    act(() => latestSinglePlayerProps.advance());
+    expect(play).toHaveBeenCalledTimes(1);
+
+    act(() => latestSinglePlayerProps.onPlaybackMetrics({ seconds: 0, isPaused: false }));
+    act(() => latestSinglePlayerProps.onPlaybackMetrics({ seconds: 1, isPaused: false }));
+    node.currentTime = 18;
+    act(() => latestSinglePlayerProps.advance());
+    expect(ref.current.getQueueSnapshot()).toMatchObject({ currentIndex: 0, executionOrder: ['only'] });
+    expect(node.currentTime).toBe(0);
+    expect(seek).toHaveBeenCalledTimes(2);
+    expect(play).toHaveBeenCalledTimes(2);
+    act(() => latestSinglePlayerProps.advance());
+    expect(play).toHaveBeenCalledTimes(2);
+    bridge.stop();
+  });
+
+  it('replays a consecutive [A,A,B] visit before advancing the logical plan to B', async () => {
+    // Break caught: consuming a repeated reference changes executionOrder but
+    // not the renderer input, so the ended native node never starts visit two.
+    const node = document.createElement('video');
+    const play = vi.fn(() => Promise.resolve());
+    Object.defineProperties(node, {
+      currentTime: { configurable: true, writable: true, value: 18 },
+      play: { configurable: true, value: play },
+    });
+    mockMediaElement = node;
+    const ref = createRef();
+    render(<Player ref={ref} play={[]} />);
+    await waitFor(() => expect(ref.current).toBeTruthy());
+    act(() => ref.current.adoptSessionSnapshot(adoptionSnapshot({
+      items: [
+        { queueItemId: 'a', contentId: 'plex:a', format: 'video', priority: 'queue' },
+        { queueItemId: 'b', contentId: 'plex:b', format: 'video', priority: 'queue' },
+      ],
+      executionOrder: ['a', 'a', 'b'], repeat: 'off',
+    }), { autoplay: false }));
+    await waitFor(() => expect(ref.current.getQueueSnapshot().executionOrder).toEqual(['a', 'a', 'b']));
+
+    act(() => latestSinglePlayerProps.advance());
+    expect(ref.current.getQueueSnapshot()).toMatchObject({ currentIndex: 0, executionOrder: ['a', 'b'] });
+    expect(node.currentTime).toBe(0);
+    expect(play).toHaveBeenCalledTimes(1);
+    // A second ended/watchdog delivery from visit one cannot consume visit two.
+    act(() => latestSinglePlayerProps.advance());
+    expect(ref.current.getQueueSnapshot()).toMatchObject({ currentIndex: 0, executionOrder: ['a', 'b'] });
+    expect(play).toHaveBeenCalledTimes(1);
+
+    act(() => latestSinglePlayerProps.onPlaybackMetrics({ seconds: 0, isPaused: false }));
+    act(() => latestSinglePlayerProps.onPlaybackMetrics({ seconds: 1, isPaused: false }));
+    node.currentTime = 18;
+    act(() => latestSinglePlayerProps.advance());
+    expect(ref.current.getQueueSnapshot()).toMatchObject({ currentIndex: 1, executionOrder: ['b'] });
+    expect(play).toHaveBeenCalledTimes(1);
+  });
+
+  it('withholds legacy native proof after same-content adoption until actual registration changes', async () => {
+    const node = document.createElement('video');
+    Object.defineProperties(node, {
+      currentTime: { configurable: true, writable: true, value: 10 },
+      duration: { configurable: true, value: 180 },
+      readyState: { configurable: true, value: 3 },
+      paused: { configurable: true, value: false },
+      seeking: { configurable: true, value: false },
+      ended: { configurable: true, value: false },
+      error: { configurable: true, value: null },
+    });
+    mockMediaElement = node;
+    const ref = createRef();
+    render(<Player ref={ref} play={[{ contentId: 'plex:native-a', title: 'A', format: 'video' }]} />);
+    await waitFor(() => expect(ref.current?.getQueueSnapshot()?.items).toHaveLength(1));
+    act(() => latestSinglePlayerProps.onMediaRef(node, { contentId: 'plex:native-a' }));
+
+    const registry = createPlayerSessionRegistry();
+    const bridge = createPlayerSessionBridge({
+      getPlayerHandle: () => ref.current,
+      registry,
+      setIntervalFn: () => 1,
+      clearIntervalFn: () => {},
+    });
+    bridge.start();
+    const source = createRegistrySessionSource({ registry, ownerId: 'screen', sessionId: 'native-adopt-session' });
+    expect(source.getNativeObservation().identity).not.toBeNull();
+    node.dispatchEvent(new Event('playing'));
+    node.currentTime = 11;
+    node.dispatchEvent(new Event('timeupdate'));
+    expect(source.getNativeObservation()).toMatchObject({ playingObserved: true, advancedObserved: true });
+
+    const actualGeneration = ref.current.getMountedMediaGeneration();
+    const captured = source.capture().snapshot;
+    captured.position = 40;
+    expect(source.adopt(captured, { autoplay: false })).toEqual({ ok: true });
+    await waitFor(() => expect(ref.current.getQueueSnapshot().executionOrder).toEqual(captured.queue.executionOrder));
+    expect(ref.current.getMountedMediaGeneration()).toBe(actualGeneration);
+    expect(source.getNativeObservation()).toMatchObject({
+      identity: null,
+      playingObserved: false,
+      advancedObserved: false,
+    });
+    node.dispatchEvent(new Event('playing'));
+    node.currentTime = 12;
+    node.dispatchEvent(new Event('timeupdate'));
+    expect(source.getNativeObservation()).toMatchObject({
+      identity: null,
+      playingObserved: false,
+      advancedObserved: false,
+    });
+    bridge.stop();
+  });
+
+  it('withholds fresh-bridge proof when same-content adoption postdates actual registration', async () => {
+    // Break caught: bridge-local history cannot be required for provenance; a
+    // fresh bridge must see that this unchanged node was registered by the old
+    // logical owner rather than attributing it to the adopted revision.
+    const node = document.createElement('video');
+    Object.defineProperties(node, {
+      currentTime: { configurable: true, writable: true, value: 10 },
+      duration: { configurable: true, value: 180 },
+      readyState: { configurable: true, value: 3 },
+      paused: { configurable: true, value: false },
+      seeking: { configurable: true, value: false },
+      ended: { configurable: true, value: false },
+      error: { configurable: true, value: null },
+    });
+    mockMediaElement = node;
+    const ref = createRef();
+    render(<Player ref={ref} play={[{ contentId: 'plex:native-a', title: 'A', format: 'video' }]} />);
+    await waitFor(() => expect(ref.current?.getQueueSnapshot()?.items).toHaveLength(1));
+    act(() => latestSinglePlayerProps.onMediaRef(node, { contentId: 'plex:native-a' }));
+    const registeredGeneration = ref.current.getMountedMediaGeneration();
+    const registeredRevision = ref.current.getPlaybackIdentity().playbackRevision;
+
+    act(() => ref.current.adoptSessionSnapshot(adoptionSnapshot({
+      items: [{ queueItemId: 'adopted-a', contentId: 'plex:native-a', format: 'video', priority: 'queue' }],
+      executionOrder: ['adopted-a'], repeat: 'off',
+    }), { autoplay: false }));
+    await waitFor(() => expect(ref.current.getQueueSnapshot().executionOrder).toEqual(['adopted-a']));
+    expect(ref.current.getMountedMediaGeneration()).toBe(registeredGeneration);
+    expect(ref.current.getPlaybackIdentity().playbackRevision).toBeGreaterThan(registeredRevision);
+
+    const registry = createPlayerSessionRegistry();
+    const bridge = createPlayerSessionBridge({
+      getPlayerHandle: () => ref.current,
+      registry,
+      setIntervalFn: () => 1,
+      clearIntervalFn: () => {},
+    });
+    bridge.start();
+    const source = createRegistrySessionSource({ registry, ownerId: 'screen', sessionId: 'fresh-native-adopt' });
+    expect(source.getNativeObservation()).toMatchObject({
+      node,
+      resolvedContentId: 'plex:native-a',
+      resolvedGeneration: registeredGeneration,
+      identity: null,
+      playingObserved: false,
+      advancedObserved: false,
+    });
+    node.dispatchEvent(new Event('playing'));
+    node.currentTime = 11;
+    node.dispatchEvent(new Event('timeupdate'));
+    expect(source.getNativeObservation()).toMatchObject({
+      identity: null,
+      playingObserved: false,
+      advancedObserved: false,
+    });
+    bridge.stop();
+  });
+
+  it('retains a single adopted repeat-one entry on natural completion', async () => {
+    const ref = createRef();
+    render(<Player ref={ref} play={[]} />);
+    await waitFor(() => expect(ref.current).toBeTruthy());
+    ref.current.adoptSessionSnapshot(adoptionSnapshot({
+      items: [{ queueItemId: 'only', contentId: 'plex:only', format: 'video', priority: 'queue' }],
+      executionOrder: ['only'], repeat: 'one',
+    }), { autoplay: false });
+    await waitFor(() => expect(latestSinglePlayerProps?.advance).toEqual(expect.any(Function)));
+    act(() => latestSinglePlayerProps.advance());
+    expect(ref.current.getQueueSnapshot()).toMatchObject({ currentIndex: 0, executionOrder: ['only'] });
+  });
+
+  it('guards legacy Stop at the Player owner and retains its queue', async () => {
+    const node = document.createElement('video');
+    const pause = vi.fn();
+    Object.defineProperties(node, {
+      pause: { configurable: true, value: pause },
+      paused: { configurable: true, value: false },
+      ended: { configurable: true, value: false },
+      currentTime: { configurable: true, writable: true, value: 17 },
+    });
+    const ref = createRef();
+    render(<Player ref={ref} play={[
+      { contentId: 'plex:a', title: 'Same title', format: 'video' },
+      { contentId: 'plex:b', title: 'B', format: 'video' },
+    ]} />);
+    await waitFor(() => expect(ref.current?.getQueueSnapshot()?.items).toHaveLength(2));
+    act(() => latestSinglePlayerProps.onMediaRef(node, { contentId: 'plex:a' }));
+    const registry = createPlayerSessionRegistry();
+    const bridge = createPlayerSessionBridge({ getPlayerHandle: () => ref.current, registry, setIntervalFn: () => 1, clearIntervalFn: () => {} });
+    bridge.start();
+    const source = createRegistrySessionSource({ registry, ownerId: 'screen', sessionId: 'guard-session' });
+    const stale = source.capture().identity;
+
+    act(() => ref.current.play());
+    expect(source.stopIfCurrent(stale)).toEqual({ ok: false, code: 'SOURCE_CHANGED' });
+    expect(pause).not.toHaveBeenCalled();
+    const fresh = source.capture().identity;
+    const retained = ref.current.getQueueSnapshot().items.map((item) => item.queueItemId);
+    expect(source.stopIfCurrent(fresh)).toEqual({ ok: true });
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(ref.current.getQueueSnapshot().items.map((item) => item.queueItemId)).toEqual(retained);
+    expect(source.capture().snapshot.state).toBe('ready');
+    bridge.stop();
+  });
+
   it('exposes a detached, lossless duplicate queue from the actual Player owner', async () => {
     const ref = createRef();
     render(<Player ref={ref} play={[

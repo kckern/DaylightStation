@@ -123,9 +123,14 @@ export function createPlayerSessionBridge({
   const queueSubs = new Set();
   let lastState = null;
   let lastItemKey = null;
-  let observedPlayingNode = null;
   let observedPlaying = false;
+  let observedAdvance = false;
+  let observedLastTime = null;
+  let observedBindingKey = null;
+  let observedResolvedContentId = null;
+  let nativeNodeGeneration = 0;
   let detachNativeObservation = () => {};
+  const nativeSubs = new Set();
 
   const readHandle = () => {
     try {
@@ -154,33 +159,165 @@ export function createPlayerSessionBridge({
     }
   };
 
-  const observeNativeNode = (el) => {
-    if (el === observedPlayingNode) return;
+  const nativeError = (el) => {
+    const error = el?.error;
+    if (!error) return null;
+    return { code: error.code ?? null, message: error.message ?? null };
+  };
+
+  const emitNative = () => {
+    for (const sub of [...nativeSubs]) {
+      try { sub.listener(getNativeObservation(sub.sessionId)); } catch (err) {
+        logger().warn('native-subscriber-threw', { error: String(err?.message ?? err) });
+      }
+    }
+  };
+
+  const observeNativeNode = (el, handle = readHandle()) => {
+    let issued = null;
+    let resolvedContentId = null;
+    let resolvedGeneration = null;
+    let acceptedRegistration = null;
+    try { issued = handle?.getPlaybackIdentity?.() ?? null; } catch { /* ignore */ }
+    try { resolvedContentId = handle?.getMountedContentId?.() ?? null; } catch { /* ignore */ }
+    try { resolvedGeneration = handle?.getMountedMediaGeneration?.() ?? null; } catch { /* ignore */ }
+    try { acceptedRegistration = handle?.getMountedMediaRegistration?.() ?? null; } catch { /* ignore */ }
+    const registrationMatches = Boolean(el && acceptedRegistration
+      && acceptedRegistration.node === el
+      && acceptedRegistration.resolvedContentId === resolvedContentId
+      && acceptedRegistration.resolvedGeneration === resolvedGeneration
+      && typeof acceptedRegistration.ownerInstanceId === 'string'
+      && Number.isInteger(acceptedRegistration.playbackRevision));
+    const bindingKey = el && handle ? {
+      node: el,
+      resolvedContentId,
+      resolvedGeneration,
+      ownerInstanceId: registrationMatches ? acceptedRegistration.ownerInstanceId : null,
+      ownerPlaybackRevision: registrationMatches ? acceptedRegistration.playbackRevision : null,
+      logicalOwnerInstanceId: issued?.ownerInstanceId ?? null,
+      logicalOwnerPlaybackRevision: issued?.playbackRevision ?? null,
+      registrationAdmitted: registrationMatches,
+    } : null;
+    if (bindingKey && observedBindingKey
+      && bindingKey.node === observedBindingKey.node
+      && bindingKey.resolvedContentId === observedBindingKey.resolvedContentId
+      && bindingKey.resolvedGeneration === observedBindingKey.resolvedGeneration) {
+      if (bindingKey.ownerInstanceId !== observedBindingKey.ownerInstanceId
+        || bindingKey.ownerPlaybackRevision !== observedBindingKey.ownerPlaybackRevision
+        || bindingKey.logicalOwnerInstanceId !== observedBindingKey.logicalOwnerInstanceId
+        || bindingKey.logicalOwnerPlaybackRevision !== observedBindingKey.logicalOwnerPlaybackRevision) {
+        observedPlaying = false;
+        observedAdvance = false;
+        observedLastTime = Number.isFinite(el?.currentTime) ? el.currentTime : null;
+      }
+      return;
+    }
+    if (!bindingKey && !observedBindingKey) return;
     try { detachNativeObservation(); } catch { /* ignore */ }
-    observedPlayingNode = el;
     observedPlaying = false;
+    observedAdvance = false;
+    observedLastTime = Number.isFinite(el?.currentTime) ? el.currentTime : null;
+    observedBindingKey = bindingKey;
+    observedResolvedContentId = resolvedContentId;
+    nativeNodeGeneration += 1;
     detachNativeObservation = () => {};
     if (!el || typeof el.addEventListener !== 'function') return;
-    const markPlaying = () => { observedPlaying = true; };
-    const clearPlaying = () => { observedPlaying = false; };
-    const markEnded = () => { observedPlaying = false; };
+    const thisBinding = bindingKey;
+    const isCurrent = () => {
+      if (observedBindingKey !== thisBinding || readMediaEl() !== el) return false;
+      const currentHandle = readHandle();
+      let currentIdentity = null;
+      let currentGeneration = null;
+      try { currentIdentity = currentHandle?.getPlaybackIdentity?.() ?? null; } catch { /* ignore */ }
+      try { currentGeneration = currentHandle?.getMountedMediaGeneration?.() ?? null; } catch { /* ignore */ }
+      const ownerStillAdmitted = thisBinding.registrationAdmitted
+        && currentIdentity?.ownerInstanceId === thisBinding.ownerInstanceId
+        && currentIdentity?.playbackRevision === thisBinding.ownerPlaybackRevision
+        && currentIdentity?.ownerInstanceId === thisBinding.logicalOwnerInstanceId
+        && currentIdentity?.playbackRevision === thisBinding.logicalOwnerPlaybackRevision;
+      return ownerStillAdmitted && currentGeneration === thisBinding.resolvedGeneration;
+    };
+    const update = (fn) => {
+      if (!isCurrent()) return;
+      fn();
+      emitNative();
+    };
+    const markPlaying = () => update(() => { observedPlaying = true; });
+    const clearPlaying = () => update(() => { observedPlaying = false; });
+    const markEnded = () => update(() => { observedPlaying = false; });
+    const markAdvanced = () => update(() => {
+      const current = Number.isFinite(el.currentTime) ? el.currentTime : null;
+      if (current != null && observedLastTime != null && current > observedLastTime) observedAdvance = true;
+      observedLastTime = current;
+    });
     try {
       el.addEventListener('playing', markPlaying);
       el.addEventListener('pause', clearPlaying);
       el.addEventListener('waiting', clearPlaying);
       el.addEventListener('seeking', clearPlaying);
       el.addEventListener('ended', markEnded);
+      el.addEventListener('error', markEnded);
+      el.addEventListener('timeupdate', markAdvanced);
       detachNativeObservation = () => {
         el.removeEventListener?.('playing', markPlaying);
         el.removeEventListener?.('pause', clearPlaying);
         el.removeEventListener?.('waiting', clearPlaying);
         el.removeEventListener?.('seeking', clearPlaying);
         el.removeEventListener?.('ended', markEnded);
+        el.removeEventListener?.('error', markEnded);
+        el.removeEventListener?.('timeupdate', markAdvanced);
       };
     } catch {
       detachNativeObservation = () => {};
     }
   };
+
+  function getNativeObservation(sessionId) {
+    const handle = readHandle();
+    if (!handle) return null;
+    let el = null;
+    try { el = handle.getMediaElement?.() ?? null; } catch { /* ignore */ }
+    observeNativeNode(el, handle);
+    if (!el) return null;
+    let queue = null;
+    let issued = null;
+    try { queue = copyQueueSnapshot(handle.getQueueSnapshot?.()); } catch { /* ignore */ }
+    try { issued = handle.getPlaybackIdentity?.() ?? null; } catch { /* ignore */ }
+    const current = queue?.currentIndex >= 0 ? queue.items[queue.currentIndex] : null;
+    const ownerMatchesNode = current
+      && observedResolvedContentId != null
+      && String(current.contentId) === String(observedResolvedContentId)
+      && issued?.ownerInstanceId
+      && issued.ownerInstanceId === observedBindingKey?.ownerInstanceId
+      && issued.playbackRevision === observedBindingKey?.ownerPlaybackRevision
+      && observedBindingKey?.registrationAdmitted === true
+      && Number.isInteger(issued.playbackRevision)
+      && Number.isInteger(issued.queueRevision);
+    const identity = ownerMatchesNode && sessionId ? {
+      ownerInstanceId: issued.ownerInstanceId,
+      playbackRevision: issued.playbackRevision,
+      queueRevision: issued.queueRevision,
+      sessionId,
+      contentId: current.contentId,
+      queueItemId: current.queueItemId,
+    } : null;
+    return {
+      node: el,
+      nodeGeneration: nativeNodeGeneration,
+      resolvedContentId: observedResolvedContentId,
+      resolvedGeneration: observedBindingKey?.resolvedGeneration ?? null,
+      identity,
+      currentTime: Number.isFinite(el.currentTime) ? el.currentTime : 0,
+      duration: Number.isFinite(el.duration) && el.duration > 0 ? el.duration : null,
+      readyState: Number.isInteger(el.readyState) ? el.readyState : 0,
+      paused: Boolean(el.paused),
+      seeking: Boolean(el.seeking),
+      ended: Boolean(el.ended),
+      error: nativeError(el),
+      playingObserved: observedPlaying,
+      advancedObserved: observedAdvance,
+    };
+  }
 
   const readNowPlayingMeta = () => {
     const handle = readHandle();
@@ -238,24 +375,38 @@ export function createPlayerSessionBridge({
         queueRevision: issuedIdentity.queueRevision,
       }
       : null;
+    const currentEntry = queue.currentIndex >= 0 ? queue.items[queue.currentIndex] : null;
+    const canResolveMountedContent = typeof handle.getMountedContentId === 'function';
+    let resolvedContentId = null;
+    try { resolvedContentId = handle.getMountedContentId?.() ?? null; } catch { /* ignore */ }
+    const resolvedCurrent = !canResolveMountedContent || (currentEntry
+      && resolvedContentId != null
+      && String(currentEntry.contentId) === String(resolvedContentId));
     return {
       queue,
       issuedIdentity: validIssuedIdentity,
       currentItem: getCurrentItem(),
       config: getConfig(),
       state: getState(),
-      position: getPosition(),
+      // A pending B load may still expose A's accessor node. Never attach
+      // A's clock to B's queue identity; the native observation port reports
+      // the mismatch explicitly until Player resolves the current content.
+      position: resolvedCurrent ? getPosition() : 0,
     };
   };
 
   const getState = () => {
     const handle = readHandle();
     if (!handle) return 'idle';
+    try {
+      const ownerState = handle.getOwnerState?.();
+      if (ownerState) return ownerState;
+    } catch { /* native state fallback below */ }
     const el = readMediaEl();
     // No media element yet (still resolving /play, or a non-AV format like an
     // image slideshow) — report loading rather than lying about playback.
     if (!el) return 'loading';
-    observeNativeNode(el);
+    observeNativeNode(el, handle);
     try {
       if (el.ended) return 'ended';
       if (el.paused) return 'paused';
@@ -291,6 +442,11 @@ export function createPlayerSessionBridge({
     const handle = readHandle();
     if (!handle) return null;
     const config = {};
+    try {
+      const queueConfig = handle.getQueueConfig?.();
+      if (typeof queueConfig?.shuffle === 'boolean') config.shuffle = queueConfig.shuffle;
+      if (['off', 'one', 'all'].includes(queueConfig?.repeat)) config.repeat = queueConfig.repeat;
+    } catch { /* ignore */ }
     try {
       const v = handle.getVolume?.();
       if (Number.isFinite(v)) {
@@ -376,6 +532,37 @@ export function createPlayerSessionBridge({
     getPlaybackOwner(sessionId) {
       return this.capture(sessionId)?.identity ?? null;
     },
+    getOwnerCapabilities() {
+      const current = readOwnerCapture();
+      const item = current?.currentItem;
+      return {
+        handoffV1: false,
+        seekable: Boolean(item && Number.isFinite(current?.position) && getDuration() != null),
+        liveEdge: false,
+      };
+    },
+    adopt(snapshot, options = {}) {
+      const handle = readHandle();
+      if (!handle || typeof handle.adoptSessionSnapshot !== 'function') {
+        return { ok: false, code: 'UNSUPPORTED' };
+      }
+      return handle.adoptSessionSnapshot(snapshot, options);
+    },
+    stopIfCurrent(expected, sessionId) {
+      const handle = readHandle();
+      if (!handle || typeof handle.stopIfCurrent !== 'function') {
+        return { ok: false, code: 'SOURCE_CHANGED' };
+      }
+      return handle.stopIfCurrent(expected, sessionId);
+    },
+    getNativeObservation,
+    subscribeNative(listener, sessionId) {
+      if (typeof listener !== 'function') return () => {};
+      const sub = { listener, sessionId };
+      nativeSubs.add(sub);
+      getNativeObservation(sessionId);
+      return () => nativeSubs.delete(sub);
+    },
     subscribe(cb) {
       if (typeof cb !== 'function') return () => {};
       queueSubs.add(cb);
@@ -453,8 +640,12 @@ export function createPlayerSessionBridge({
       lastItemKey = null;
       try { detachNativeObservation(); } catch { /* ignore */ }
       detachNativeObservation = () => {};
-      observedPlayingNode = null;
       observedPlaying = false;
+      observedAdvance = false;
+      observedLastTime = null;
+      observedBindingKey = null;
+      observedResolvedContentId = null;
+      nativeSubs.clear();
     },
     // Exposed for tests / diagnostics.
     player,

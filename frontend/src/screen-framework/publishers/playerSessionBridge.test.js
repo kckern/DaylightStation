@@ -131,12 +131,109 @@ describe('createPlayerSessionBridge', () => {
       paused: { configurable: true, value: false },
       ended: { configurable: true, value: false },
     });
-    const bridge = startBridge(() => makeHandle({ el }));
+    const acceptedRegistration = {
+      node: el,
+      resolvedContentId: 'plex:state',
+      resolvedGeneration: 1,
+      ownerInstanceId: 'state-owner',
+      playbackRevision: 1,
+    };
+    const handle = {
+      ...makeHandle({ el }),
+      getMountedContentId: () => 'plex:state',
+      getMountedMediaGeneration: () => 1,
+      getMountedMediaRegistration: () => acceptedRegistration,
+      getPlaybackIdentity: () => ({ ownerInstanceId: 'state-owner', playbackRevision: 1, queueRevision: 1 }),
+    };
+    const bridge = startBridge(() => handle);
     vi.advanceTimersByTime(1000);
     expect(bridge.player.getState()).toBe('buffering');
 
     el.dispatchEvent(new Event('playing'));
     expect(bridge.player.getState()).toBe('playing');
+    bridge.stop();
+  });
+
+  it('binds native observations to the resolved node/generation and ignores retired events', () => {
+    const nodeA = document.createElement('video');
+    const nodeB = document.createElement('video');
+    for (const [node, time] of [[nodeA, 11], [nodeB, 23]]) {
+      Object.defineProperties(node, {
+        currentTime: { configurable: true, writable: true, value: time },
+        duration: { configurable: true, value: 180 },
+        readyState: { configurable: true, value: 3 },
+        paused: { configurable: true, value: false },
+        seeking: { configurable: true, value: false },
+        ended: { configurable: true, value: false },
+        error: { configurable: true, value: null },
+      });
+    }
+    const queueB = {
+      items: [{ queueItemId: 'entry-b', contentId: 'plex:b', format: 'video', priority: 'queue' }],
+      currentIndex: 0, upNextCount: 0, executionOrder: ['entry-b'],
+    };
+    let node = nodeA;
+    let mountedContentId = 'plex:a';
+    let mountedGeneration = 1;
+    let playbackRevision = 4;
+    let acceptedRegistration = {
+      node: nodeA,
+      resolvedContentId: 'plex:a',
+      resolvedGeneration: mountedGeneration,
+      ownerInstanceId: 'native-owner',
+      playbackRevision,
+    };
+    const handle = {
+      ...makeHandle({ meta: { contentId: 'plex:b', format: 'video' }, queueSnapshot: queueB }),
+      getMediaElement: () => node,
+      getMountedContentId: () => mountedContentId,
+      getMountedMediaGeneration: () => mountedGeneration,
+      getMountedMediaRegistration: () => acceptedRegistration,
+      getPlaybackIdentity: () => ({ ownerInstanceId: 'native-owner', playbackRevision, queueRevision: 7 }),
+    };
+    const bridge = startBridge(() => handle);
+    const source = createRegistrySessionSource({ registry, ownerId: 'screen', sessionId: 'native-session' });
+
+    const pending = source.getNativeObservation();
+    expect(pending).toMatchObject({ node: nodeA, resolvedContentId: 'plex:a', identity: null });
+    expect(pending.playingObserved).toBe(false);
+
+    const observations = [];
+    const unsubscribe = source.subscribeNative((observation) => observations.push(observation));
+    node = nodeB;
+    mountedContentId = 'plex:b';
+    mountedGeneration += 1;
+    playbackRevision += 1;
+    acceptedRegistration = {
+      node: nodeB,
+      resolvedContentId: 'plex:b',
+      resolvedGeneration: mountedGeneration,
+      ownerInstanceId: 'native-owner',
+      playbackRevision,
+    };
+    const resolved = source.getNativeObservation();
+    expect(resolved).toMatchObject({
+      node: nodeB,
+      resolvedContentId: 'plex:b',
+      identity: { ownerInstanceId: 'native-owner', playbackRevision: 5, queueRevision: 7, sessionId: 'native-session', contentId: 'plex:b', queueItemId: 'entry-b' },
+      currentTime: 23, duration: 180, readyState: 3, paused: false, seeking: false, ended: false,
+      playingObserved: false, advancedObserved: false,
+    });
+
+    nodeB.dispatchEvent(new Event('playing'));
+    nodeB.currentTime = 24;
+    nodeB.dispatchEvent(new Event('timeupdate'));
+    expect(source.getNativeObservation()).toMatchObject({ playingObserved: true, advancedObserved: true, currentTime: 24 });
+    const eventCount = observations.length;
+    nodeA.dispatchEvent(new Event('playing'));
+    nodeA.currentTime = 99;
+    nodeA.dispatchEvent(new Event('timeupdate'));
+    expect(observations).toHaveLength(eventCount);
+    expect(source.getNativeObservation().currentTime).toBe(24);
+
+    unsubscribe();
+    nodeB.dispatchEvent(new Event('pause'));
+    expect(observations).toHaveLength(eventCount);
     bridge.stop();
   });
 
@@ -404,5 +501,90 @@ describe('createRegistrySessionSource', () => {
     expect(snap).toBeTruthy();
     // SessionSource maps unknown/broken states to a valid one; identity intact.
     expect(snap.meta.ownerId).toBe('tv');
+  });
+
+  it('routes guarded Stop only to the currently registered owner', () => {
+    const makeOwner = (ownerInstanceId, queueItemId) => {
+      const stopIfCurrent = vi.fn((expected, sessionId) => {
+        const actual = {
+          ownerInstanceId, playbackRevision: 1, queueRevision: 1,
+          sessionId, contentId: `plex:${ownerInstanceId}`, queueItemId,
+        };
+        return JSON.stringify(expected) === JSON.stringify(actual)
+          ? { ok: true }
+          : { ok: false, code: 'SOURCE_CHANGED' };
+      });
+      return {
+        stopIfCurrent,
+        registration: {
+          queueController: {
+            capture: (sessionId) => ({
+              queue: {
+                items: [{ queueItemId, contentId: `plex:${ownerInstanceId}`, format: 'video', priority: 'normal' }],
+                currentIndex: 0, upNextCount: 0, executionOrder: [queueItemId],
+              },
+              currentItem: { contentId: `plex:${ownerInstanceId}`, format: 'video' },
+              config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1 },
+              state: 'paused', position: 0,
+              identity: {
+                ownerInstanceId, playbackRevision: 1, queueRevision: 1,
+                sessionId, contentId: `plex:${ownerInstanceId}`, queueItemId,
+              },
+            }),
+            getOwnerCapabilities: () => ({ handoffV1: false, seekable: true, liveEdge: false }),
+            stopIfCurrent,
+            subscribe: () => () => {},
+          },
+        },
+      };
+    };
+    const ownerA = makeOwner('owner-a', 'queue-a');
+    const ownerB = makeOwner('owner-b', 'queue-b');
+    registry.registerPlayerSession(ownerA.registration);
+    const src = createRegistrySessionSource({ registry, ownerId: 'tv', sessionId: 'registry-guard' });
+    const stale = src.capture().identity;
+
+    registry.registerPlayerSession(ownerB.registration);
+    expect(src.stopIfCurrent(stale)).toEqual({ ok: false, code: 'SOURCE_CHANGED' });
+    expect(ownerA.stopIfCurrent).not.toHaveBeenCalled();
+    expect(ownerB.stopIfCurrent).toHaveBeenCalledTimes(1);
+
+    const fresh = src.capture().identity;
+    expect(src.stopIfCurrent(fresh)).toEqual({ ok: true });
+    expect(ownerB.stopIfCurrent).toHaveBeenCalledTimes(2);
+  });
+
+  it('rewires native subscriptions on owner replacement and retires old emitters', () => {
+    const makeNativeOwner = (label) => {
+      const listeners = new Set();
+      return {
+        emit: () => { for (const listener of [...listeners]) listener({ label }); },
+        listenerCount: () => listeners.size,
+        registration: {
+          queueController: {
+            subscribeNative: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
+            subscribe: () => () => {},
+          },
+        },
+      };
+    };
+    const ownerA = makeNativeOwner('a');
+    const ownerB = makeNativeOwner('b');
+    registry.registerPlayerSession(ownerA.registration);
+    const src = createRegistrySessionSource({ registry, ownerId: 'tv', sessionId: 'native-rewire' });
+    const seen = [];
+    const unsubscribe = src.subscribeNative((observation) => seen.push(observation.label));
+    ownerA.emit();
+    expect(seen).toEqual(['a']);
+
+    registry.registerPlayerSession(ownerB.registration);
+    expect(ownerA.listenerCount()).toBe(0);
+    expect(ownerB.listenerCount()).toBe(1);
+    ownerA.emit();
+    ownerB.emit();
+    expect(seen).toEqual(['a', 'b']);
+
+    unsubscribe();
+    expect(ownerB.listenerCount()).toBe(0);
   });
 });

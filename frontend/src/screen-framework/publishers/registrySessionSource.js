@@ -93,6 +93,43 @@ export function createRegistrySessionSource({ registry, ownerId, sessionId } = {
     }
   }
 
+  const invokeCurrent = (method, fallback, ...args) => {
+    try {
+      const source = currentSource();
+      return typeof source?.[method] === 'function' ? source[method](...args) : fallback;
+    } catch (err) {
+      logger().warn('owner-port-failed', { method, error: String(err?.message ?? err) });
+      return fallback;
+    }
+  };
+
+  const fallbackCapture = () => ({
+    snapshot: getSnapshot(),
+    identity: null,
+    capabilities: { handoffV1: false, seekable: false, liveEdge: false },
+  });
+
+  function subscribeNative(listener) {
+    if (typeof listener !== 'function') return () => {};
+    let innerUnsub = null;
+    const wireInner = () => {
+      try { innerUnsub?.(); } catch { /* ignore */ }
+      innerUnsub = null;
+      try { innerUnsub = currentSource().subscribeNative?.(listener) ?? null; } catch (err) {
+        logger().warn('native-subscribe-failed', { error: String(err?.message ?? err) });
+      }
+    };
+    wireInner();
+    let registryUnsub = () => {};
+    try { registryUnsub = registry.subscribe(wireInner); } catch (err) {
+      logger().warn('registry-native-subscribe-failed', { error: String(err?.message ?? err) });
+    }
+    return () => {
+      try { registryUnsub(); } catch { /* ignore */ }
+      try { innerUnsub?.(); } catch { /* ignore */ }
+    };
+  }
+
   function subscribe({ onChange, onStateTransition } = {}) {
     let innerUnsub = null;
 
@@ -141,6 +178,19 @@ export function createRegistrySessionSource({ registry, ownerId, sessionId } = {
 
   return {
     getSnapshot,
+    capture: () => {
+      try {
+        const source = currentSource();
+        return typeof source?.capture === 'function' ? source.capture() : fallbackCapture();
+      } catch (err) {
+        logger().warn('owner-port-failed', { method: 'capture', error: String(err?.message ?? err) });
+        return fallbackCapture();
+      }
+    },
+    adopt: (snapshot, options) => invokeCurrent('adopt', { ok: false, code: 'UNSUPPORTED' }, snapshot, options),
+    getNativeObservation: () => invokeCurrent('getNativeObservation', null),
+    subscribeNative,
+    stopIfCurrent: (expected) => invokeCurrent('stopIfCurrent', { ok: false, code: 'SOURCE_CHANGED' }, expected),
     subscribe,
     get sessionId() { return sid; },
     get ownerId() { return ownerId; },

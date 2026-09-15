@@ -800,7 +800,10 @@ export function ContentCombobox({
         {!isBrowse && streamError && (
           <Group gap="xs" p="xs" data-testid="stream-global-error" aria-live="polite">
             <Text size="xs" c="red">{streamError.message}</Text>
-            <button type="button" className="stream-status-retry-btn" data-testid="stream-global-retry" onClick={() => retrySource()}>
+            <button type="button" className="stream-status-retry-btn" data-testid="stream-global-retry"
+              // Keep the input's editing session alive until Retry runs.
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => retrySource()}>
               Retry
             </button>
           </Group>

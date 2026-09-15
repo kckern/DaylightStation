@@ -60,6 +60,9 @@ export function StreamStatusLine({ pending = [], sourceErrors = [], onRetry }) {
               type="button"
               className="stream-status-retry-btn"
               data-testid={`stream-status-retry-${source}`}
+              // A pointer focus move would blur the combobox input and remove
+              // this action before click. Keyboard activation remains native.
+              onMouseDown={(event) => event.preventDefault()}
               onClick={() => onRetry(source)}
             >
               Retry
