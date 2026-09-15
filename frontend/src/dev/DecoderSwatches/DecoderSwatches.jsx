@@ -12,6 +12,10 @@ import './DecoderSwatches.scss';
 
 const SAMPLE = 'B8 SPHINX OF BLACK QUARTZ JUDGE MY VOW';
 
+// `?mode=progressive|marquee|static` tries a reveal mode on the live sample;
+// anything else takes the default.
+const modeFromUrl = () => new URLSearchParams(window.location.search).get('mode');
+
 function SwatchRow({ title, hint, colors }) {
   return (
     <section className="decoder-swatches__row">
@@ -34,6 +38,7 @@ export default function DecoderSwatches() {
     getLogger().child({ component: 'decoder-swatches' }).info('gaming.decoder-swatches.mounted', {
       signal: SIGNAL_SEGMENT_COLORS.length,
       mask: MASK_SEGMENT_COLORS.length,
+      mode: modeFromUrl(),
     });
   }, []);
 
@@ -48,7 +53,7 @@ export default function DecoderSwatches() {
       <section className="decoder-swatches__sample">
         <h2>Live sample</h2>
         <p>Should read clearly through the card, B and 8 included.</p>
-        <SegmentedSecretText text={SAMPLE} label="Decoder sample" />
+        <SegmentedSecretText text={SAMPLE} label="Decoder sample" decoder={{ reveal: modeFromUrl() }} />
       </section>
     </main>
   );

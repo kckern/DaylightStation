@@ -207,7 +207,7 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
       {state.phase === 'challenge-ready' && (
         <section className="charades__center charades__with-footer charades__clue">
           <div className="charades__stage-content charades__clue-content">
-            {state.clue_presentation === 'image' ? <ImageDecoderDisplay src={state.challenge?.decoder?.image} alt="Encoded image clue for the performer" /> : <SegmentedSecretText text={prompt} label="Charades clue" accessibleText="Encoded charades clue for the performer" />}
+            {state.clue_presentation === 'image' ? <ImageDecoderDisplay src={state.challenge?.decoder?.image} alt="Encoded image clue for the performer" /> : <SegmentedSecretText text={prompt} label="Charades clue" accessibleText="Encoded charades clue for the performer" decoder={definition.decoder} />}
           </div>
           <GameButton className="charades__primary-action" tone="primary" busy={busy} autoFocus onClick={() => command({ type: 'challenge.start' })}><IconPlayerPlayFilled aria-hidden="true" />{casual ? 'Go' : 'Start acting'}</GameButton>
         </section>
