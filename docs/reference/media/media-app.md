@@ -362,6 +362,8 @@ prove that a buffering decoder has resumed playback. Discrete native events
 must match the active playback generation, accessor node, and mounted content
 identity before updating the session, so a pending source replacement cannot
 attribute the previous source's events to the newly selected item.
+Mounted identity comes from resolved renderer metadata (`contentId`, or the
+`id` field returned by `/play`), never from an unresolved playback request.
 Host claims can request Player's existing `focused` shader without moving
 playback ownership out of the bridge.
 
@@ -370,6 +372,16 @@ DASH's initial autoplay probe expires as soon as the native element emits
 cannot be resumed by the delayed startup check, including a pause while the
 first frame is still buffering. A source that has never accepted playback
 keeps its startup probe so browser autoplay rejection can still be detected.
+
+Plex DASH fallback streams explicitly disable stream-copy at both decision
+and start. Copied source GOPs were observed at timestamps different from the
+fixed-duration MPD, leaving a seek permanently without a decoded frame.
+Re-encoding restores the advertised segment timeline; eligible original MP4
+direct play, audio URLs, and non-DASH copy remain available. This is a global
+DASH policy, not a Media-only setting: it adds encoder load and may reduce
+quality/frame rate (existing defaults: 8 Mbps, 1080 resolution, 30 fps).
+The historical garage 60 fps software-transcode/throttle stall remains a
+regression risk; passing two movie seeks does not verify those other clients.
 
 ### Concurrency: nothing blocks anything
 
