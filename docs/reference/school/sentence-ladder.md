@@ -202,7 +202,13 @@ rung**, the same number on each:
 Graduates beyond the limit are not dropped. They stay owed and graduate on a
 later day, so a pace change delays a sentence without losing it. A step
 finished today stays on its rung, so finishing one never pulls another in
-behind it. Before 2026-09-12 the fill topped up the day's *total* rung by rung,
+behind it. **No rung ever holds more than `dailyLimit` steps**, even when more
+were done that day under an older, larger limit: a 3 × 4 learner's day is
+12 steps and a 5 × 4 learner's is 20, whatever the log holds. The surplus stays
+in the log as evidence and keeps its sentences out of new material. Practice
+slots take passes already done first, so capping never hides finished work
+behind an outstanding step (found live 2026-09-14: days that should have been
+12 and 20 steps read 13 and 33). Before 2026-09-12 the fill topped up the day's *total* rung by rung,
 and a pipeline that did not match the limit came out lopsided: a first day at
 five a day, followed by an enrollment of three, served 3 repetitions,
 8 dictations, 1 recording and no interpretation.
@@ -280,6 +286,7 @@ the repair names; the read-only status path applies them in memory only.
 | `last-activity-missing` | no parseable timestamp in the record, but the log has one |
 | `last-activity-stale` | the record's timestamp is from an earlier study day than the newest attempt |
 | `last-activity-in-future` | a timestamp from a later study day than now, which would hold `before-boundary` forever |
+| `daily-limit-drift` | an enrolled learner's stored pace differs from the enrollment's `lessonSize ÷ rungs` |
 
 Comparison is by study day, never by millisecond, so a healthy record is
 never rewritten.
