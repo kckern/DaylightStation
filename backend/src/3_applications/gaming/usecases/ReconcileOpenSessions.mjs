@@ -34,8 +34,19 @@ export class ReconcileOpenSessions {
   async execute({ deviceIds = [], now, staleAfterMs }) {
     const at = Date.parse(now);
     const result = { resumed: [], lost: [] };
+    let persistedDeviceIds = [];
+    try {
+      persistedDeviceIds = typeof this.#sessions.listTrackedDeviceIds === 'function'
+        ? await this.#sessions.listTrackedDeviceIds()
+        : [];
+    } catch (error) {
+      // Configured pollers can still be reconciled even if directory discovery
+      // fails. Name the blind spot rather than turning recovery into a boot gate.
+      this.#logger.warn?.('play.reconcile.discovery_failed', { error: error.message });
+    }
+    const allDeviceIds = [...new Set([...deviceIds, ...persistedDeviceIds])];
 
-    for (const deviceId of deviceIds) {
+    for (const deviceId of allDeviceIds) {
       let session;
       try {
         session = await this.#sessions.findOpenForDevice(deviceId);

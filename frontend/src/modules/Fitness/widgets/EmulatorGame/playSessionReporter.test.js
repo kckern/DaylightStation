@@ -16,22 +16,25 @@ const build = (over = {}) => {
   timers = fakeTimers();
   return createPlaySessionReporter({
     deviceId: 'fitness-console',
-    post: async (body) => { posted.push(body); },
+    post: (body) => { posted.push(body); },
     setTimer: timers.setTimer, clearTimer: timers.clearTimer,
     logger: { debug() {} },
     ...over,
   });
 };
 
-const CONTENT = { contentId: 'emulatorjs:gb/test', title: 'Test Game' };
+const CONTENT = { contentId: 'arcade:gb/test', title: 'Test Game', console: 'gb', consoleLabel: 'Game Boy' };
 beforeEach(() => { posted = []; });
 
 describe('playSessionReporter', () => {
   it('reports the same shape the inferred source produces', async () => {
-    build().started({ userId: 'test-learner', content: CONTENT });
+    build().started({ userId: 'test-learner', content: CONTENT, loadId: 'launch-1', loadedAt: '2026-09-11T20:00:00.000Z' });
     expect(posted[0]).toMatchObject({
       deviceId: 'fitness-console', surface: 'browser-emulator', userId: 'test-learner',
-      observation: { state: 'playing', content: CONTENT },
+      observation: {
+        state: 'playing', loaded: true, loadId: 'launch-1',
+        loadedAt: '2026-09-11T20:00:00.000Z', content: CONTENT,
+      },
     });
   });
 
@@ -49,22 +52,60 @@ describe('playSessionReporter', () => {
     expect(posted.every((p) => p.observation.state === 'playing')).toBe(true);
   });
 
-  it('stops heartbeating when paused', () => {
+  it('heartbeats while paused so a loaded game is not mistaken for an abandoned session', () => {
     const r = build();
     r.started({ content: CONTENT });
     r.paused();
     posted.length = 0;
     timers.tick();
-    expect(posted).toEqual([]);
+    expect(posted).toHaveLength(1);
+    expect(posted[0].observation).toMatchObject({ state: 'paused', loaded: true });
   });
 
-  it('ends with no content, which is what closes the session', () => {
+  it('heartbeats when initially mounted paused behind governance', () => {
+    build().started({ content: CONTENT, state: 'paused' });
+    posted.length = 0;
+    timers.tick();
+    expect(posted).toHaveLength(1);
+    expect(posted[0].observation.state).toBe('paused');
+  });
+
+  it('ends with an explicit unload while retaining the load identity', () => {
     const r = build();
-    r.started({ userId: 'test-learner', content: CONTENT });
+    r.started({ userId: 'test-learner', content: CONTENT, loadId: 'launch-1' });
     posted.length = 0;
     r.ended();
-    expect(posted[0].observation.content).toBeNull();
+    expect(posted[0].observation).toMatchObject({ loaded: false, loadId: 'launch-1', content: CONTENT });
     expect(r.isReporting).toBe(false);
+  });
+
+  it('resumes heartbeat after a pause', () => {
+    const r = build();
+    r.started({ content: CONTENT, loadId: 'launch-1' });
+    r.paused();
+    r.resumed();
+    posted.length = 0;
+    timers.tick();
+    expect(posted).toHaveLength(1);
+    expect(posted[0].observation.state).toBe('playing');
+  });
+
+  it('attributes a claimed player without ending or changing the load', () => {
+    const r = build();
+    r.started({ content: CONTENT, loadId: 'launch-1' });
+    posted.length = 0;
+    r.updateIdentity('test-learner');
+    expect(posted).toHaveLength(1);
+    expect(posted[0]).toMatchObject({
+      userId: 'test-learner',
+      observation: { state: 'playing', loaded: true, loadId: 'launch-1' },
+    });
+  });
+
+  it('reports the connected controller count on each observation', () => {
+    const r = build({ getControllers: () => 2 });
+    r.started({ content: CONTENT, loadId: 'launch-1' });
+    expect(posted[0].observation.controllers).toBe(2);
   });
 
   it('ending twice reports once', () => {
@@ -87,6 +128,23 @@ describe('playSessionReporter', () => {
     r.started({ content: CONTENT });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(r.isReporting).toBe(true);
+  });
+
+  it('serializes observations so a delayed playing request cannot arrive after unload', async () => {
+    const releases = [];
+    const r = build({
+      post: (body) => {
+        posted.push(body);
+        return new Promise((resolve) => releases.push(resolve));
+      },
+    });
+    r.started({ content: CONTENT, loadId: 'launch-1' });
+    r.ended();
+    expect(posted.map((body) => body.observation.loaded)).toEqual([true]);
+
+    releases.shift()();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(posted.map((body) => body.observation.loaded)).toEqual([true, false]);
   });
 
   it('requires its essentials rather than silently reporting nothing', () => {

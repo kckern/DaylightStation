@@ -1,0 +1,47 @@
+@use '@gaming-ui/tokens' as gp;
+
+.decoder-swatches {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: clamp(1rem, 3vw, 2.5rem);
+  display: grid;
+  align-content: start;
+  gap: clamp(1rem, 2.5vh, 2rem);
+  background: var(--gp-stage);
+  color: var(--gp-paper);
+
+  h1, h2, p { margin: 0; }
+  h1 { font-size: clamp(1.5rem, 3vw, 2.5rem); }
+  h2 { font-size: clamp(1.1rem, 2vw, 1.6rem); }
+  p { color: var(--gp-paper-dim); }
+}
+
+.decoder-swatches__row ul {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(0.5rem, 1.5vw, 1.25rem);
+}
+
+.decoder-swatches__row li {
+  display: grid;
+  justify-items: center;
+  gap: 0.4rem;
+}
+
+.decoder-swatches__bar {
+  width: clamp(3rem, 8vw, 7rem);
+  height: clamp(5rem, 14vh, 10rem);
+  border-radius: 0.5rem;
+  background: var(--swatch-color);
+  box-shadow: 0 0 0.75rem var(--swatch-color);
+}
+
+.decoder-swatches__name {
+  font-size: clamp(0.9rem, 1.5vw, 1.2rem);
+  color: var(--gp-paper-dim);
+}
+
+.decoder-swatches__sample .segmented-secret-text { margin-top: 0.75rem; }

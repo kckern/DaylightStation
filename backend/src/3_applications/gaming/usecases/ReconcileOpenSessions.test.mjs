@@ -10,6 +10,7 @@ const quiet = { info() {}, warn() {} };
 class FakeSessions {
   constructor() { this.open = new Map(); }
   async findOpenForDevice(d) { const s = this.open.get(d); return s && !s.isEnded() ? s : null; }
+  async listTrackedDeviceIds() { return [...this.open.keys()]; }
   async save(s) { this.open.set(s.deviceId, s); }
   seed(deviceId, lastObservedSec) {
     const s = PlaySession.open({ id: `ps_${deviceId}`, deviceId, surface: 'console-emulator', content: { contentId: 'g' }, trustedGapMs: 25_000 });
@@ -48,6 +49,13 @@ describe('ReconcileOpenSessions', () => {
   it('does nothing for devices with no open session', async () => {
     const r = await useCase.execute({ deviceIds: ['art-panel'], now: at(10), staleAfterMs: 60_000 });
     expect(r).toEqual({ resumed: [], lost: [] });
+  });
+
+  it('also reconciles persisted self-reporting devices not present in polling configuration', async () => {
+    const s = sessions.seed('fitness-console', 20);
+    const r = await useCase.execute({ deviceIds: ['livingroom-tv'], now: at(3600), staleAfterMs: 60_000 });
+    expect(r.lost).toEqual(['ps_fitness-console']);
+    expect(s.isEnded()).toBe(true);
   });
 
   it('a broken read on one device does not stop the others', async () => {

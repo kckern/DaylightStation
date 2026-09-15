@@ -28,7 +28,7 @@ export function derivePlayBudget({ message, receivedAt, now }) {
   const age = now - receivedAt;
   const stale = age > STALE_AFTER_MS;
   // A stale feed freezes the number rather than extrapolating from it.
-  const drift = stale ? 0 : age;
+  const drift = stale || message.state === 'paused' ? 0 : age;
 
   if (message.remainingMs == null) {
     return {

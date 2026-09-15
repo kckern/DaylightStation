@@ -438,3 +438,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-09-14 | fix/ladder-never-walls | c2dd8fb67 | Sentence Ladder: never wall a learner from another round; self-healing progress (merged to main) |
 | 2026-09-14 | fix/ladder-reopen | cf7d8725b | Sentence Ladder: served ladder reopens via same code, partial days carry over, credit self-heals (merged to main) |
 | 2026-09-14 | fix/ladder-caps | 60593460a | Sentence Ladder: rungs capped at dailyLimit (day = sentences x rungs), pace squared with enrollment (merged to main) |
+| 2026-09-14 | feature/decoder-color-flicker | 301c564c7 | Decoder segments flicker within their color family (8 signal / 7 mask, red-channel rule tested), B no longer matches 8, /dev/decoder-swatches card check (merged to main) |

@@ -7,7 +7,8 @@ const at = (secs) => new Date(T0 + secs * 1000).toISOString();
 
 const open = (trustedGapMs = 25_000) => PlaySession.open({
   id: 'ps_1', deviceId: 'livingroom-tv', surface: 'console-emulator',
-  userId: 'test-learner', content: { contentId: 'game:1', title: 'Test Game' }, trustedGapMs,
+  userId: 'test-learner', content: { contentId: 'game:1', title: 'Test Game' },
+  loadId: 'retroarch__2026_09_11__20_00_00.log', loadedAt: at(0), trustedGapMs,
 });
 
 describe('PlaySession — starting', () => {
@@ -173,9 +174,32 @@ describe('PlaySession — validation and persistence', () => {
     const revived = PlaySession.fromSnapshot(s.toSnapshot());
     expect(revived.playedMs).toBe(15_000);
     expect(revived.status).toBe(PlaySessionStatus.ACTIVE);
+    expect(revived.loadId).toBe('retroarch__2026_09_11__20_00_00.log');
+    expect(revived.loadedAt).toBe(at(0));
     // and it keeps accruing correctly after a restart
     revived.observe({ state: PlayState.PLAYING, observedAt: at(25) });
     expect(revived.playedMs).toBe(25_000);
+  });
+
+  it('hydrates legacy snapshots with no load identity', () => {
+    const snapshot = open().toSnapshot();
+    delete snapshot.loadId;
+    delete snapshot.loadedAt;
+    const revived = PlaySession.fromSnapshot(snapshot);
+    expect(revived.loadId).toBeNull();
+    expect(revived.loadedAt).toBeNull();
+  });
+});
+
+describe('PlaySession — late attribution', () => {
+  it('fills an anonymous payer once without replacing an established payer', () => {
+    const anonymous = PlaySession.open({
+      id: 'ps_anon', deviceId: 'garage-tv', surface: 'browser-emulator', trustedGapMs: 25_000,
+    });
+    expect(anonymous.attributeUser('user_5')).toEqual({ attributed: true });
+    expect(anonymous.userId).toBe('user_5');
+    expect(anonymous.attributeUser('user_6')).toEqual({ attributed: false, reason: 'already attributed' });
+    expect(anonymous.userId).toBe('user_5');
   });
 });
 

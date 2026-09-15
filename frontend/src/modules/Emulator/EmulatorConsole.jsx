@@ -128,6 +128,7 @@ export function EmulatorConsole({
   // emulator-consumed) and emit the matching diagnostic logs. Default on — it's
   // subtle and host-agnostic; a host can disable it.
   showInputActivity = true,
+  onPlayStateChange = null,
   fetchImpl = () => globalThis.fetch,
 }) {
   const fns = useMemo(() => ({ ...DEFAULT_FACTORIES, ...(factories || {}) }), [factories]);
@@ -156,7 +157,8 @@ export function EmulatorConsole({
 
   const [status, setStatus] = useState(() => governanceGate?.getStatus?.() || { state: 'playing' });
   const [gameState, setGameState] = useState({});
-  const [, setHotspotState] = useState({ volume: 1, muted: false, paused: false });
+  const [hotspotState, setHotspotState] = useState({ volume: 1, muted: false, paused: false });
+  const [playReady, setPlayReady] = useState(false);
   const [animClass, setAnimClass] = useState('');
   // Boot error state — now actually RENDERED (was previously discarded, making
   // setError a no-op). `bootNonce` re-runs the boot effect for a clean retry.
@@ -176,6 +178,19 @@ export function EmulatorConsole({
 
   // Reset ("start over") confirm modal.
   const [resetOpen, setResetOpen] = useState(false);
+
+  let governancePlaying = status.state === 'playing';
+  try {
+    governancePlaying = typeof governanceGate?.isPlayable === 'function'
+      ? governanceGate.isPlayable()
+      : governancePlaying;
+  } catch { governancePlaying = false; }
+  const effectivePlayState = playReady && governancePlaying && !hotspotState.paused
+    ? 'playing'
+    : 'paused';
+  useEffect(() => {
+    onPlayStateChange?.(effectivePlayState);
+  }, [effectivePlayState, onPlayStateChange]);
 
   // Count-up play timer (seconds since launch), ticked every 1s.
   const [elapsedSec, setElapsedSec] = useState(0);
@@ -591,6 +606,7 @@ export function EmulatorConsole({
     let cancelled = false;
 
     const mountedAt = Date.now();
+    setPlayReady(false);
     logger.info('emulator.console.mount', { game: game?.id, system: game?.system });
 
     const engine = fns.createEngine({ logger });
@@ -765,6 +781,7 @@ export function EmulatorConsole({
           setError({ kind: 'no-frames', message: 'The game booted but never appeared.' });
           return;
         }
+        setPlayReady(true);
 
         // Inject the user's resume blob (battery .srm or save-state) after boot.
         // saveClient returns a discriminated result so an absent save and a

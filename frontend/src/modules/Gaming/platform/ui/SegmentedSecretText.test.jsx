@@ -1,7 +1,14 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import SegmentedSecretText, { balanceSecretLines } from './SegmentedSecretText.jsx';
 import { activeSegmentsFor, SEGMENTS } from './segmentedSecretGeometry.js';
+import { MASK_SEGMENT_COLORS, SIGNAL_SEGMENT_COLORS, segmentColorValue } from './segmentedSecretPalette.js';
+import { FLICKER_TICK_MS } from './segmentFlicker.js';
+
+const SIGNAL = new Set(SIGNAL_SEGMENT_COLORS.map(segmentColorValue));
+const MASK = new Set(MASK_SEGMENT_COLORS.map(segmentColorValue));
+const colorOf = polygon => polygon.style.getPropertyValue('--segment-color');
+const inOwnFamily = polygon => (polygon.classList.contains('is-signal') ? SIGNAL : MASK).has(colorOf(polygon));
 
 describe('SegmentedSecretText', () => {
   it('renders spaces as full masked glyphs so word boundaries are hidden without the decoder', () => {
@@ -41,7 +48,6 @@ describe('SegmentedSecretText', () => {
 
   it('uses a recognizable segmented alphabet with a lowercase-style D', () => {
     expect(activeSegmentsFor('A')).toEqual(expect.arrayContaining(['a1', 'a2', 'b', 'e', 'f', 'g1', 'g2']));
-    expect(activeSegmentsFor('B')).toEqual(['a1', 'a2', 'b', 'c', 'd1', 'd2', 'e', 'f', 'g1', 'g2']);
     expect(activeSegmentsFor('D')).toEqual(['b', 'c', 'd1', 'd2', 'e', 'g1', 'g2']);
     expect(activeSegmentsFor('D')).not.toEqual(activeSegmentsFor('O'));
     expect(activeSegmentsFor('K')).toEqual(['e', 'f', 'i', 'k']);
@@ -53,5 +59,56 @@ describe('SegmentedSecretText', () => {
       expect(activeSegmentsFor(letter).length, `${letter} must have a visible glyph`).toBeGreaterThan(0);
       expect(new Set(activeSegmentsFor(letter)).size, `${letter} must not repeat a segment`).toBe(activeSegmentsFor(letter).length);
     }
+  });
+
+  it('draws B with diagonals meeting at the center so it cannot be read as 8', () => {
+    expect(activeSegmentsFor('B')).toEqual(['a1', 'a2', 'd1', 'd2', 'e', 'f', 'g1', 'i', 'k']);
+    expect(SEGMENTS.i).toEqual([40, 10, 28, 44]);
+    expect(activeSegmentsFor('B')).not.toEqual(activeSegmentsFor('8'));
+  });
+});
+
+describe('SegmentedSecretText color flicker', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('changes one third of the segments per tick, each to a new color in its own family', () => {
+    vi.useFakeTimers();
+    const { container } = render(<SegmentedSecretText text="CAT" />);
+    const polygons = [...container.querySelectorAll('polygon')];
+    const initial = polygons.map(colorOf);
+    expect(polygons.every(inOwnFamily)).toBe(true);
+
+    vi.advanceTimersByTime(FLICKER_TICK_MS);
+    const changed = polygons.filter((polygon, index) => colorOf(polygon) !== initial[index]);
+    expect(changed).toHaveLength(polygons.length / 3);
+
+    vi.advanceTimersByTime(FLICKER_TICK_MS * 2);
+    polygons.forEach((polygon, index) => {
+      expect(colorOf(polygon)).not.toBe(initial[index]);
+      expect(inOwnFamily(polygon)).toBe(true);
+    });
+  });
+
+  it('never leaves a segment in the wrong family when the clue changes', () => {
+    vi.useFakeTimers();
+    const { container, rerender } = render(<SegmentedSecretText text="CAT" />);
+    vi.advanceTimersByTime(FLICKER_TICK_MS * 7);
+    rerender(<SegmentedSecretText text="BOX" />);
+    expect([...container.querySelectorAll('polygon')].every(inOwnFamily)).toBe(true);
+  });
+
+  it('keeps colors still when the viewer prefers reduced motion', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('matchMedia', query => ({
+      matches: query.includes('reduce'), media: query, addEventListener() {}, removeEventListener() {},
+    }));
+    const { container } = render(<SegmentedSecretText text="CAT" />);
+    const polygons = [...container.querySelectorAll('polygon')];
+    const initial = polygons.map(colorOf);
+    vi.advanceTimersByTime(FLICKER_TICK_MS * 9);
+    expect(polygons.map(colorOf)).toEqual(initial);
   });
 });

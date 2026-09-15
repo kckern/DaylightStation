@@ -40,7 +40,7 @@ const tracker = (over = {}) => new PlaySessionTracker({
 beforeEach(() => {
   clock = Date.parse('2026-09-11T20:00:00.000Z');
   timers = makeTimers();
-  source = { observed: [], observe: async (deviceId, opts) => { source.observed.push({ deviceId, ...opts }); return { state: 'playing', observedAt: now(), confidenceMs: 10_000, content: opts.expectedContent }; } };
+  source = { observed: [], observe: async (deviceId, opts) => { source.observed.push({ deviceId, ...opts }); return { state: 'playing', loaded: true, observedAt: now(), confidenceMs: 10_000, content: opts.expectedContent }; } };
   record = { calls: [], execute: async (input) => { record.calls.push(input); return {}; } };
   intents = { findForDevice: async () => intentFor() };
 });
@@ -67,6 +67,42 @@ describe('PlaySessionTracker — attribution', () => {
   it('works with no intent store at all', async () => {
     await tracker({ intents: null }).tick();
     expect(record.calls[0].userId).toBeNull();
+  });
+
+  it('adds the observed controller count to the session sample', async () => {
+    await tracker({ controllersFor: async () => 2 }).tick();
+    expect(record.calls[0].observation.controllers).toBe(2);
+  });
+});
+
+describe('PlaySessionTracker — recording health', () => {
+  it('marks loaded play degraded after two observations fail to produce a session', async () => {
+    source.observe = async () => ({
+      state: 'playing', loaded: true, loadId: 'load-a', observedAt: now(), content: null,
+    });
+    const t = tracker();
+    await t.tick();
+    expect(t.getHealth()[0].consecutiveUnrecordable).toBe(1);
+    await t.tick();
+    expect(t.getHealth()[0]).toMatchObject({
+      consecutiveUnrecordable: 2, unrecordable: true, degraded: true,
+    });
+  });
+
+  it('clears unrecordable health as soon as recording recovers', async () => {
+    source.observe = async () => ({
+      state: 'playing', loaded: true, loadId: 'load-a', observedAt: now(), content: null,
+    });
+    let session = null;
+    record.execute = async (input) => { record.calls.push(input); return { session }; };
+    const t = tracker();
+    await t.tick();
+    await t.tick();
+    session = { id: 'ps_1', content: null };
+    await t.tick();
+    expect(t.getHealth()[0]).toMatchObject({
+      consecutiveUnrecordable: 0, unrecordable: false,
+    });
   });
 });
 
