@@ -4,12 +4,14 @@ import { test, expect } from '@playwright/test';
 test.use({ viewport: { width: 1440, height: 900 }, trace: 'on', actionTimeout: 10000 });
 test.setTimeout(300000);
 
-test('verified 60fps source sustains virtual playback under branch DASH policy', async ({ page }, testInfo) => {
+test('verified 60fps source sustains virtual playback under the selected branch policy', async ({ page }, testInfo) => {
   test.skip(process.env.MEDIA_CAPACITY_PROBE !== '1', 'Run explicitly and serialize decoder load');
   const samples = [];
   const requests = [];
   const mints = [];
   const deviceCommands = [];
+  const hlsSessions = new Set();
+  const stoppedSessions = new Map();
   await page.route('**/api/v1/device/**', async route => {
     if (route.request().method() !== 'GET' || /\/load(?:\?|$)/.test(route.request().url())) {
       deviceCommands.push(route.request().method());
@@ -19,6 +21,18 @@ test('verified 60fps source sustains virtual playback under branch DASH policy',
   });
   page.on('response', response => {
     const url = new URL(response.url());
+    if (url.origin === new URL(page.url()).origin) {
+      const session = /^\/api\/v1\/proxy\/plex\/video\/:\/transcode\/universal\/session\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\//i.exec(url.pathname);
+      const sessionId = session?.[1].toLowerCase();
+      if (sessionId && response.ok() && !hlsSessions.has(sessionId)) {
+        hlsSessions.add(sessionId);
+        // Safe correlation for a read-only host process sample during the run.
+        console.log(JSON.stringify({ ownedHlsSession: sessionId }));
+      }
+      if (url.pathname === '/api/v1/proxy/plex/video/:/transcode/universal/stop') {
+        stoppedSessions.set(url.searchParams.get('session')?.toLowerCase(), response.status());
+      }
+    }
     if (/\/api\/v1\/proxy\/plex\/stream\//.test(url.pathname)) {
       mints.push({ path: url.pathname, origin: response.headers()['x-media-acceptance-mint'],
         policy: response.headers()['x-media-acceptance-policy'] });
@@ -56,6 +70,10 @@ test('verified 60fps source sustains virtual playback under branch DASH policy',
     }).toBe(true);
     const firstPosition = await video.evaluate(el => el.currentTime);
     await expect.poll(() => video.evaluate(el => el.currentTime)).toBeGreaterThan(firstPosition + 0.25);
+    if (process.env.MEDIA_EXPECT_HLS === '1') {
+      await expect.poll(() => page.evaluate(() => (window.__hlsAcceptance ?? []).some(row => row.kind === 'INIT_PTS_FOUND'))).toBe(true);
+      expect(hlsSessions.size).toBeGreaterThan(0);
+    }
     const steadyStart = Date.now();
     while (Date.now() - steadyStart < 180000) {
       samples.push(await video.evaluate(el => {
@@ -91,5 +109,15 @@ test('verified 60fps source sustains virtual playback under branch DASH policy',
     });
     const stop = page.getByTestId('np-stop');
     if (await stop.isVisible().catch(() => false)) await stop.click().catch(() => {});
+    if (process.env.MEDIA_EXPECT_HLS === '1' && hlsSessions.size) {
+      await expect.poll(() => [...hlsSessions].every(id => {
+        const status = stoppedSessions.get(id);
+        return status >= 200 && status < 300;
+      }), { timeout: 15000 }).toBe(true);
+      await testInfo.attach('owned-hls-stop-responses', {
+        body: JSON.stringify([...hlsSessions].map(id => ({ sessionId: id, status: stoppedSessions.get(id) }))),
+        contentType: 'application/json',
+      });
+    }
   }
 });

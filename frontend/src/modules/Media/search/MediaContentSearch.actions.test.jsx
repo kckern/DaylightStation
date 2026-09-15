@@ -32,6 +32,7 @@ vi.mock('../../../lib/logging/singleton.js', () => ({
 import { MediaContentSearch } from './MediaContentSearch.jsx';
 import { LocalSessionContext } from '../session/LocalSessionContext.js';
 import { createLocalSessionController } from '../session/LocalSessionController.js';
+import { DismissStackProvider } from '../shell/DismissStackProvider.jsx';
 
 const leaf = { id: 'plex:697368', title: 'Disclosure Day', source: 'plex', type: 'movie' };
 
@@ -60,7 +61,7 @@ async function nextFrame() {
   });
 }
 
-function renderSearch() {
+function renderSearch({ onBaseDismiss = vi.fn() } = {}) {
   const controller = createLocalSessionController({ clientId: 'combobox-action-test' });
   const play = vi.fn();
   controller.setPlayerHandle({ play, pause: vi.fn(), seek: vi.fn() });
@@ -70,14 +71,16 @@ function renderSearch() {
   play.mockClear();
   render(
     <MantineProvider>
-      <LocalSessionContext.Provider value={{ controller }}>
-        <MediaContentSearch />
-        <div data-testid="outside-surface" />
-        <button data-testid="outside-focus">Outside</button>
-      </LocalSessionContext.Provider>
+      <DismissStackProvider onBaseDismiss={onBaseDismiss}>
+        <LocalSessionContext.Provider value={{ controller }}>
+          <MediaContentSearch />
+          <div data-testid="outside-surface" />
+          <button data-testid="outside-focus">Outside</button>
+        </LocalSessionContext.Provider>
+      </DismissStackProvider>
     </MantineProvider>
   );
-  return { controller, play };
+  return { controller, play, onBaseDismiss };
 }
 
 describe('MediaContentSearch action-menu retention', () => {
@@ -103,6 +106,35 @@ describe('MediaContentSearch action-menu retention', () => {
     expect(play).not.toHaveBeenCalled();
     expect(dispatchContent).not.toHaveBeenCalled();
     await waitFor(() => expect(input).toHaveValue('Disclosure Day'));
+  });
+
+  it('[RELY.10a] Escape after pointer Add dismisses search before the Now Playing back action', async () => {
+    const { controller, play, onBaseDismiss } = renderSearch();
+    const input = screen.getByRole('textbox', { name: 'Search media…' });
+    act(() => input.focus());
+    fireEvent.change(input, { target: { value: 'Disclosure Day' } });
+
+    pointerActivate(await screen.findByTestId('result-more-plex:697368'));
+    pointerActivate(await screen.findByTestId('result-action-add-plex:697368'));
+    await waitFor(() => expect(screen.queryByTestId('result-action-add-plex:697368')).toBeNull());
+    expect(screen.getByRole('listbox')).toBeVisible();
+
+    // The real browser's pointer menu close leaves focus outside the combobox.
+    // Fire at document.body to reproduce Playwright page.keyboard.press(), not
+    // the input-only Escape path ContentCombobox already covers.
+    fireEvent.keyDown(document.body, { key: 'Escape', code: 'Escape' });
+
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    expect(onBaseDismiss).not.toHaveBeenCalled();
+    expect(controller.getSnapshot()).toMatchObject({
+      state: 'paused',
+      currentItem: { contentId: 'plex:existing' },
+      queue: { items: [{ contentId: 'plex:existing' }, { contentId: 'plex:697368' }] },
+    });
+    expect(play).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(document.body, { key: 'Escape', code: 'Escape' });
+    expect(onBaseDismiss).toHaveBeenCalledTimes(1);
   });
 
   it.each([
