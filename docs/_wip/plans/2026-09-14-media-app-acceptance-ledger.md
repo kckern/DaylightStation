@@ -4,7 +4,7 @@
 
 **Contract:** taxonomy §3 and accepted requirements. P0 first, then P1/P2. Each criterion must have evidence of the complete applicable path: user input → target → command → actual player/result → state → displayed feedback. Office is the only physical test screen authorized.
 
-**Baseline (2026-09-14, 25d5f671c):** Vitest reported 513/513 passing, zero skipped; process exit 0 with worker shutdown timeout warning in persistence.test.js. This is unit evidence only. Browser test inspection found synthetic JavaScript clicks bypassing overlays and title-only playback assertions; these do not prove user journeys. Runtime baseline pending target-safe execution.
+**Baseline (2026-09-14, 25d5f671c):** Vitest reported 513/513 passing, zero skipped; process exit 0 with worker shutdown timeout warning in persistence.test.js. This is unit evidence only. Browser test inspection found synthetic JavaScript clicks bypassing overlays and title-only playback assertions; these do not prove user journeys. Target-safe runtime baseline stopped after five failures; results are recorded below, with tests not run distinguished from passes.
 
 ## Evidence runs
 
@@ -12,7 +12,9 @@
 |---|---|---|---|
 | BASE-UNIT | Media module + MediaApp | 513 passed; worker termination warning | Not story acceptance |
 | TASK-1 | D1–D4 | In progress | Unverified end to end |
-| JOURNEY-LOCAL | Disclosure Day search → actual video → seek/pause/stop | Pending | Unverified |
+| JOURNEY-AIM | Phone search → destination sheet → Office → This device | Destination modal visible but underlying Search Mode intercepts device taps: RED | GREEN after layer fix: ordinary taps switch aim and persist deselection on reopening; no playback commands. Phone subset only; full story needs tablet/laptop and reset |
+| BASE-BROWSER | Existing Media flow suite, screenshot-only tests excluded | 1 passed, 5 failed, 30 not run after failure cap; obsolete selectors prevent acceptance | Not story acceptance |
+| JOURNEY-LOCAL | Disclosure Day search → actual video → seek/pause/stop | Actual video advances; visible seek slider disabled with duration/position zero. Expand video control absent. | Real pause/resume passed after correcting harness closure; ±10-second actual seeking passed; retained-queue stop passed with Task 1 work in progress; full stories remain unverified |
 
 ## Criteria
 

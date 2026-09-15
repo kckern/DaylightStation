@@ -1,6 +1,6 @@
 # Media App redesign — separation of concerns in the `/media` UX
 
-**Status:** Accepted, not implemented. The next action is P0 · Step 0. **No application code has changed.**
+**Status:** Implementation in progress on `feat/media-redesign`. First defect repairs are under test/review; nothing from this branch is deployed. All 82 stories remain unverified until their complete acceptance criteria have end-to-end evidence.
 
 **Started:** 2026-09-14 · **Planning baseline:** `b2ff8a460` (the code the baseline audit describes)
 **Authorised by:** the owner, 2026-09-14. They accepted the requirements and their P0/P1/P2 phasing, chose to evolve the app in place, and gave the implementer authority to commit to `main` and deploy only when the deploy gate is clear.
@@ -9,7 +9,7 @@
 
 ## What this refactor is
 
-`/media` works, but its UX is tangled.
+The owner reports that `/media` is largely unusable. Existing code is an inventory, not a functional baseline.
 - Each button decides on its own where things play.
 - Three searches behave three ways.
 - Your own playback and a TV are controlled differently.
@@ -17,18 +17,18 @@
 
 The redesign reorganises the app around one home per concern: **one aim, one verb set, one search, one set of controls for any screen, one voice for outcomes.** It also fixes the defects the audit found.
 
-It is a UX refactor with deliberate behaviour changes; the requirements define exactly which. It is **not** a rebuild: the existing session, fleet, dispatch and player-hosting machinery is reused, and the app evolves one shippable step at a time.
+The requirements define the target behavior. Each story must be built and verified without assuming its existing pieces are wired correctly; reuse is justified by evidence. Changes evolve the app in place while preserving the single media-node hosting contract.
 
 ## What has actually happened
 
 | | |
 |---|---|
-| Application code changed | **None** |
-| Runtime behaviour changed | **None** |
+| Application code changed | D1–D4 repairs in progress in the isolated worktree |
+| Runtime behaviour changed | Development browser only; production unchanged |
 | Design | Complete: audit → ideal model → adversarial review → owner triage → requirements → handoff |
 | Owner decisions | All recorded (Q1–Q11; 47 of 50 review proposals accepted) |
 | Reference docs | Factual drift in `docs/reference/media/media-app.md` corrected; not yet rewritten for the redesign |
-| Implementation | Not started. No worktree or branch exists for it. |
+| Implementation | `feat/media-redesign`; 82 stories / 288 acceptance criteria tracked; real Disclosure Day seek-bar failure reproduced |
 
 ## Where everything lives
 
@@ -41,6 +41,10 @@ It is a UX refactor with deliberate behaviour changes; the requirements define e
 | [Adversarial review](../audits/2026-09-14-media-app-jtbd-taxonomy-review.md) | 387 | **Holes in the model**, found blind: missing jobs, tap counts, intent-versus-result mismatches, contradictions, stress tests of the decisions, and proposals R1–R50. §11 records the owner's triage. |
 | [Requirements](../plans/2026-09-14-media-app-redesign-requirements.md) | 390 | **The contract.** 10 principles, scope changes, 101 requirements with priorities and traces, non-functional budgets and defaults, reconciliation of the current C1–C10/N1–N6, and open items. Replaces `docs/reference/media/media-app-requirements.md` at the end of P0. |
 | [Implementation handoff](../plans/2026-09-14-media-app-redesign-handoff.md) | 310 | **How to build it.** A reuse map, capability gaps, 10 ordered P0 steps, P1/P2 work items, invariants, verification, the deploy procedure and the doc endstate. |
+| [Story implementation map](../plans/2026-09-14-media-app-story-implementation-map.md) | — | Each story mapped to JSX/controller/API ownership. |
+| [Execution plan](../plans/2026-09-14-media-app-execution.md) | — | Current slices and binding verification/safety constraints. |
+| [Acceptance ledger](../plans/2026-09-14-media-app-acceptance-ledger.md) | — | Every criterion and its evidence; passing unit counts are not story acceptance. |
+| [Disclosure Day session evidence](../bugs/2026-09-14-media-disclosure-day-playback.md) | — | Today's logs, real-player browser reproduction, and demonstrated wiring failures. |
 
 ### The decision record
 
