@@ -85,7 +85,7 @@ export function PlayerBridge() {
   // position, state, config, and metadata observations must not remount the
   // Player. Explicit LOAD/SET/ADOPT actions still restart same-ID content.
   useEffect(() => {
-    const check = (snap, action = null, previousSnapshot = null) => {
+    const check = (snap, action = null) => {
       const next = snap.currentItem;
       const startsPlayback = action != null
         && ['LOAD_ITEM', 'SET_CURRENT_ITEM', 'ADOPT_SNAPSHOT'].includes(action.type);
@@ -95,12 +95,15 @@ export function PlayerBridge() {
         playbackGenerationRef.current += 1;
         if (
           next?.contentId
-          && previousSnapshot?.currentItem?.contentId === next.contentId
+          && playerRef.current?.getMountedContentId?.() === next.contentId
         ) {
           // Shared Player intentionally derives identity from content, so a
           // same-content generation with the same scalar props (especially
           // zero or a repeated offset) will not restart on object identity.
-          // Apply the explicit generation through Player's real transport.
+          // The controller may replace its queue snapshot with B before its
+          // LOAD_ITEM(B), while Player still exposes A's native element. Only
+          // apply the generation when Player confirms that the actual accessor
+          // node belongs to B; requested/store identity is not media evidence.
           playerRef.current?.seek?.(requestedStart);
           // LOAD/SET represent a new local queue selection and normally rely
           // on changed Player inputs to autoplay. ADOPT keeps its explicit
@@ -133,7 +136,7 @@ export function PlayerBridge() {
     };
     check(controller.getSnapshot());
     if (controller.store?.onTransition) {
-      return controller.store.onTransition((prev, next, action) => check(next, action, prev));
+      return controller.store.onTransition((_prev, next, action) => check(next, action));
     }
     return controller.subscribe(check);
   }, [controller]);

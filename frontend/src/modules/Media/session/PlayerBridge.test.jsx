@@ -17,6 +17,7 @@ import { createLocalSessionController } from './LocalSessionController.js';
 const mountSpy = vi.fn();
 let latestPlayerProps = null;
 let mediaElement = null;
+let mountedContentId = null;
 vi.mock('../../Player/Player.jsx', () => ({
   default: React.forwardRef(function MockPlayer(props, ref) {
     latestPlayerProps = props;
@@ -25,6 +26,7 @@ vi.mock('../../Player/Player.jsx', () => ({
       pause: () => mediaElement?.pause?.(),
       seek: (seconds) => { if (mediaElement) mediaElement.currentTime = seconds; },
       getMediaElement: () => mediaElement,
+      getMountedContentId: () => mountedContentId,
     }));
     React.useEffect(() => { mountSpy(); }, []);
     return <audio data-testid="mock-player" />;
@@ -94,6 +96,7 @@ describe('PlayerBridge host transitions', () => {
     mountSpy.mockClear();
     latestPlayerProps = null;
     mediaElement = null;
+    mountedContentId = null;
   });
 
   it('does not remount the Player when a view claims the host', () => {
@@ -125,6 +128,7 @@ describe('PlayerBridge real Player contract', () => {
     mountSpy.mockClear();
     latestPlayerProps = null;
     mediaElement = null;
+    mountedContentId = null;
   });
 
   it('enriches missing duration/format from the real progress payload without replacing Player playback identity', () => {
@@ -170,6 +174,7 @@ describe('PlayerBridge real Player contract', () => {
       configurable: true, value: true,
     });
     mediaElement.play = vi.fn();
+    mountedContentId = 'plex:665667';
     render(<Harness controller={controller} />);
     const adopted = {
       ...controller.getSnapshot(),
@@ -206,6 +211,7 @@ describe('PlayerBridge real Player contract', () => {
       paused = false;
       return Promise.resolve();
     });
+    mountedContentId = 'plex:665667';
     render(<Harness controller={controller} />);
 
     act(() => controller.queue.playNow(item));
@@ -216,6 +222,54 @@ describe('PlayerBridge real Player contract', () => {
     act(() => mediaElement.dispatchEvent(new Event('playing')));
     expect(controller.getSnapshot().state).toBe('playing');
     expect(mountSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not seek or play the mounted old media during a cross-content queue load', () => {
+    const controller = makeRealController();
+    controller.queue.playNow({
+      contentId: 'plex:old', title: 'Old', duration: 300, format: 'video',
+    });
+    mediaElement = document.createElement('video');
+    Object.defineProperty(mediaElement, 'currentTime', {
+      configurable: true, writable: true, value: 42,
+    });
+    Object.defineProperty(mediaElement, 'paused', {
+      configurable: true, value: true,
+    });
+    mediaElement.play = vi.fn();
+    mountedContentId = 'plex:old';
+    render(<Harness controller={controller} />);
+
+    act(() => controller.queue.playNow({
+      contentId: 'plex:new', title: 'New', duration: 600, format: 'video',
+    }));
+
+    expect(mediaElement.currentTime).toBe(42);
+    expect(mediaElement.play).not.toHaveBeenCalled();
+    expect(latestPlayerProps.play.contentId).toBe('plex:new');
+
+    // Repeating B while its replacement is still pending must still leave the
+    // accessor's actually mounted A alone.
+    act(() => controller.queue.playNow({
+      contentId: 'plex:new', title: 'New', duration: 600, format: 'video',
+    }));
+    expect(mediaElement.currentTime).toBe(42);
+    expect(mediaElement.play).not.toHaveBeenCalled();
+
+    // Once Player exposes B's native element, an explicit B generation owns
+    // that element and must retain the same-content restart behavior.
+    const newMediaElement = document.createElement('video');
+    Object.defineProperty(newMediaElement, 'currentTime', {
+      configurable: true, writable: true, value: 55,
+    });
+    newMediaElement.play = vi.fn();
+    mediaElement = newMediaElement;
+    mountedContentId = 'plex:new';
+    act(() => controller.queue.playNow({
+      contentId: 'plex:new', title: 'New', duration: 600, format: 'video',
+    }));
+    expect(newMediaElement.currentTime).toBe(0);
+    expect(newMediaElement.play).toHaveBeenCalledTimes(1);
   });
 
   it('rejects callbacks from the previous generation of the same content ID', () => {

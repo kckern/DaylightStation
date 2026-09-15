@@ -1314,8 +1314,13 @@ export function useCommonMediaController({
 
   useEffect(() => {
     const mediaEl = getMediaEl();
-    if (mediaEl && onMediaRef) onMediaRef(mediaEl);
-  }, [meta.assetId, onMediaRef, getMediaEl, elementKey]);
+    if (mediaEl && onMediaRef) {
+      // The second argument describes the renderer that actually owns this
+      // native node. Player uses it for read-only mounted-media identity; a
+      // requested prop is deliberately not a substitute during async swaps.
+      onMediaRef(mediaEl, { contentId: meta?.contentId ?? null });
+    }
+  }, [meta.assetId, meta?.contentId, onMediaRef, getMediaEl, elementKey]);
 
   // On asset change or unmount: save final position if playback was interrupted
   // (onEnded handles natural completion; this captures manual navigation away)
